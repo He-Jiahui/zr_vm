@@ -428,3 +428,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - 支持提交后复核时间：2026-08-30 10:07 +08:00。`7b7996d` 的 semantic-fact helper
   Windows 导出声明已同步到独立 GCC/Clang/MSVC 快照并重链；三工具链 16-target 结果
   仍为 `10 PASS / 6 FAIL`，source-contract 仍为 `70/70`，不改变上述阻塞归属。
+
+- 补充完成时间：2026-08-30 10:26 +08:00。external type-member references/highlights
+  现在要求 query 与 candidate 都有完整 declaration URI/range 且 exact 相等；缺失
+  identity 或 range mismatch 均 fail closed。已删除 LSP 中按 member/module/owner-type
+  name 匹配的 fallback，新增 parity regression；GCC/Clang/MSVC parity 与 source-contract
+  均真实 exit 0。interface 与 stdio 的既有 producer/fixture failures 保持未完成，Task 7/8
+  不标记 GREEN。

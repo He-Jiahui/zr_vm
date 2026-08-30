@@ -1563,6 +1563,7 @@ int main(void) {
     test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(state);
     test_external_member_references_reject_mismatched_declaration_identity(state);
     test_external_member_query_rejects_stale_document_snapshot(state);
+    test_external_member_query_rejects_missing_declaration_identity(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

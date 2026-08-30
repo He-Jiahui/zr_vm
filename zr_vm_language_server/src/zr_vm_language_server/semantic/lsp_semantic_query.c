@@ -764,23 +764,13 @@ static TZrBool semantic_query_matches_external_type_member(SZrLspSemanticQuery *
         return ZR_FALSE;
     }
 
-    if (query->resolvedMember.hasDeclaration || candidate->hasDeclaration) {
-        return query->resolvedMember.hasDeclaration && candidate->hasDeclaration &&
-               query->resolvedMember.declarationUri != ZR_NULL && candidate->declarationUri != ZR_NULL &&
-               ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.declarationUri, candidate->declarationUri) &&
-               semantic_query_file_ranges_equal(query->resolvedMember.declarationRange, candidate->declarationRange);
-    }
-
-    if (query->memberName == ZR_NULL || candidate->memberName == ZR_NULL) {
+    if (!query->resolvedMember.hasDeclaration || !candidate->hasDeclaration ||
+        query->resolvedMember.declarationUri == ZR_NULL || candidate->declarationUri == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return query->resolvedMember.memberKind == candidate->memberKind &&
-           ZrLanguageServer_Lsp_StringsEqual(query->memberName, candidate->memberName) &&
-           ZrLanguageServer_Lsp_StringsEqual(query->moduleName, candidate->module.moduleName) &&
-           ((query->resolvedMember.ownerTypeDescriptor != ZR_NULL &&
-             query->resolvedMember.ownerTypeDescriptor == candidate->ownerTypeDescriptor) ||
-            ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.ownerTypeName, candidate->ownerTypeName));
+    return ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.declarationUri, candidate->declarationUri) &&
+           semantic_query_file_ranges_equal(query->resolvedMember.declarationRange, candidate->declarationRange);
 }
 
 static TZrBool semantic_query_try_resolve_receiver_external_type_member(SZrState *state,

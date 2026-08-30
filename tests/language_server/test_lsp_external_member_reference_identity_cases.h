@@ -210,3 +210,66 @@ cleanup:
                 failure);
     }
 }
+
+static void test_external_member_query_rejects_missing_declaration_identity(
+        SZrState *state) {
+    static const TZrChar *content =
+            "var {LinkedList} = import(\"zr.container\");\n"
+            "var list: LinkedList<int> = null;\n"
+            "list.addLast(1);\n"
+            "list.addLast(2);\n";
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrLspPosition memberPosition;
+    SZrLspSemanticQuery query;
+    SZrArray references = {0};
+    SZrArray highlights = {0};
+    SZrParityTimer timer;
+    const TZrChar *failure = "fixture initialization";
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START("LSP External Member Query Rejects Missing Declaration Identity");
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///external_member_missing_identity.zr",
+            strlen("file:///external_member_missing_identity.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "list.addLast", 0U, 5, &memberPosition) ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, memberPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER ||
+        !query.resolvedMember.hasDeclaration) {
+        goto cleanup;
+    }
+
+    query.resolvedMember.hasDeclaration = ZR_FALSE;
+    query.resolvedMember.declarationUri = ZR_NULL;
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4U);
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 4U);
+    failure = "missing declaration identity must fail closed";
+    valid = !ZrLanguageServer_LspSemanticQuery_AppendReferences(
+                    state, context, &query, ZR_FALSE, &references) &&
+            references.length == 0U &&
+            !ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                    state, context, &query, &highlights) &&
+            highlights.length == 0U;
+
+cleanup:
+    free_local_reference_projection_results(state, &references, &highlights);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (valid) {
+        TEST_PASS(timer, "LSP External Member Query Rejects Missing Declaration Identity");
+    } else {
+        TEST_FAIL(timer,
+                  "LSP External Member Query Rejects Missing Declaration Identity",
+                  failure);
+    }
+}

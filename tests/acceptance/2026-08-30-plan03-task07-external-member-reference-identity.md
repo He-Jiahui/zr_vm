@@ -11,6 +11,8 @@
   module/type/member spelling 返回两个 `addLast` usage，进程 exit 1。
 - GREEN：任一侧声明 exact identity 后，不相等即不产生 usage location；原始 query 仍返回两个
   usage，mismatch 返回 false/zero locations。
+- 补充 GREEN：query 清空 declaration identity 后，references/highlights 均返回 unavailable
+  且 zero locations；不再按 member/module/owner type spelling 匹配。
 
 ## 验收结果
 
@@ -24,6 +26,16 @@
   工作树中 benchmark、ownership 与 Syntax05 的并行修改。
 - `git diff --check` 通过；测试命令均让可执行文件直接决定退出码，未使用会被 PowerShell 提前
   展开的 bash 状态变量 wrapper。
+
+## 补充验收
+
+- 完成时间：2026-08-30 10:26 +08:00。
+- GCC/Clang/MSVC 的 semantic-query parity 均通过新增缺失 declaration identity 用例，
+  每套共 15 项，真实 exit 0；source-contract 三工具链均 `PASSED`、真实 exit 0。
+- GCC/Clang interface 仍各保留 2 个既有 producer/fixture failure：project imported-function
+  references 与 classes fixture diagnostics；MSVC 同样 2 个。三套 stdio smoke 仍在
+  `stdio_smoke.js:2003` 缺少 `short_circuit_unreachable` producer warning 处真实 exit 1。
+  这些结果不归因于本次 LSP identity 变更，也不将 Plan 03 标为 GREEN。
 
 ## 状态与产出记录
 
