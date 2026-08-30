@@ -41,6 +41,13 @@ receiver forms catch `NullReferenceError`, while the broad `RuntimeError`
 handlers remain untouched. This is additional focused evidence for the `.`
 receiver contract; it does not change the pending full-graph status.
 
+A clean source snapshot at `dd5bcfe`, including each submodule at its recorded
+commit, was then built independently with GCC 11.4 and Clang 14 as static Debug
+targets. Both fresh binaries report `52 Tests / 0 Failures / 0 Ignored` and
+exit 0, matching the MSVC 19.44 result above. This closes the latest focused
+three-toolchain replay; only the stable integrated registered graph remains as
+the umbrella promotion gate.
+
 `ctest -N` on the available MSVC build now enumerates 152 registered tests,
 including newly added benchmark targets; several executables are not present
 in that cache, so this enumeration is not a full pass. The full registered

@@ -1195,6 +1195,13 @@ reports `52 Tests / 0 Failures / 0 Ignored`; both forms catch the named
 handler. This is focused evidence only; the stable full graph remains the
 required promotion gate.
 
+The same 52-case target was rebuilt from a clean `dd5bcfe` snapshot with every
+submodule exported at its recorded commit. GCC 11.4 and Clang 14 both report
+`52 Tests / 0 Failures / 0 Ignored` with direct exit zero, matching MSVC 19.44.
+The latest focused ownership matrix is therefore green on all three supported
+toolchains; Step 5 remains open only for the stable integrated registered
+graph and final exact-diff review.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
