@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 07:15 +08:00。
-- 总体状态：进行中。Task 5.17 已把canonical graph唯一tuple marker的旧keywordless
+- 最近更新时间：2026-08-31 07:40 +08:00。
+- 总体状态：进行中。Task 4.24 已让source `ref/out` call mapping消费parser保存的structured
+  marker range，返回完整`ref value`/`out value` argument range；`in`保持expression range，
+  passing mode与两侧TypeId继续来自selected canonical callable，LSP无需扫描source keyword。
+  Task 5.17 已把canonical graph唯一tuple marker的旧keywordless
   fixture切换到当前`fn pair(): [int, bool]`合同，tuple AST/TypeId/formatter链恢复真实GREEN，
   未在生产parser或formatter兼容旧语法；Task 6.38 已让一个canonical query fact清除同identity的多重stale
   analyzer rows，保留最早槽位并完整替换，最终只发布一个protocol diagnostic；Task 6.37
@@ -218,7 +221,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -922,3 +925,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   均不计GREEN。本项未运行MSVC、完整16-target matrix或三套stdio smoke；Task 5仅剩LSP旧名称
   映射删除，按Syntax05 ownership与Task 7 consumer迁移顺序继续；receiver/member与binary/native
   parity及Plan 03 Task 7/Task 8仍未完成。
+
+- 补充完成时间：2026-08-31 07:40 +08:00。Task 4.24 以独立source
+  `in/ref/out` call query case复核Task 4.23后的producer状态：`hasCallInfo`、passing mode与canonical
+  TypeId已存在，但显式`ref/out` mapping range遗漏marker。RED为calls `26 Tests / 1 Failure`、
+  `Expected 236 Was 240`；GREEN直接消费`SZrFunctionCall.argumentMarkers`中的structured
+  `markerLocation`并与argument AST range合并，named label与无marker `in` range保持原合同，不允许
+  LSP扫描source补偿。固定GCC/Clang snapshot均通过parser/display/calls/query/relations/symbols/
+  parity/source-contract/facts/canonical/type-inference
+  `74/22/26/30/22/21/15/70/15/21/124`、真实exit 0；type-inference两套串行。
+  两套interface均真实exit 1且精确保持fixed parent同一8个producer marker，delta 0、不计GREEN。
+  本项未运行MSVC、完整16-target matrix或三套stdio smoke；receiver/member、receiver `TypeId`、
+  binary/native mapping parity、Syntax05 imported identity producer及Plan 03 Task 7/Task 8继续未完成。

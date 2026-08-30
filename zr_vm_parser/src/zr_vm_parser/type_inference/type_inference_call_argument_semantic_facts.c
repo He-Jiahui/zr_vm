@@ -40,6 +40,28 @@ static SZrString *call_argument_name(
     return name != ZR_NULL ? *name : ZR_NULL;
 }
 
+static SZrFileRange call_argument_range(
+        const SZrFunctionCall *call,
+        const SZrAstNode *argument,
+        TZrSize argumentIndex) {
+    const SZrCallArgumentSyntax *syntax;
+
+    if (argument == ZR_NULL) {
+        return (SZrFileRange){0};
+    }
+    if (call == ZR_NULL || call->argumentMarkers == ZR_NULL ||
+        !call->argumentMarkers->isValid ||
+        argumentIndex >= call->argumentMarkers->length) {
+        return argument->location;
+    }
+    syntax = (const SZrCallArgumentSyntax *)ZrCore_Array_Get(
+            call->argumentMarkers, argumentIndex);
+    if (syntax == ZR_NULL || syntax->marker == ZR_CALL_ARGUMENT_MARKER_NONE) {
+        return argument->location;
+    }
+    return ZrParser_FileRange_Merge(syntax->markerLocation, argument->location);
+}
+
 static TZrBool call_argument_parameter_index(
         const SZrFunctionCall *call,
         const SZrAstNodeArray *parameters,
@@ -200,9 +222,8 @@ TZrBool type_inference_call_argument_facts_build(
 
         memset(&mapping, 0, sizeof(mapping));
         mapping.argumentIndex = argumentIndex;
-        mapping.argumentRange = argument != ZR_NULL
-                                        ? argument->location
-                                        : (SZrFileRange){0};
+        mapping.argumentRange = call_argument_range(
+                call, argument, argumentIndex);
         mapping.argumentTypeId = ZR_SEMANTIC_ID_INVALID;
         mapping.parameterTypeId = ZR_SEMANTIC_ID_INVALID;
         if (argument == ZR_NULL ||

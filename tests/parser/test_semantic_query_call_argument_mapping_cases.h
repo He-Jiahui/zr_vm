@@ -171,4 +171,114 @@ static void test_call_at_projects_source_argument_mapping_and_conversion(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_call_at_projects_source_argument_passing_modes(void) {
+    const TZrChar *source =
+            "fn inspect(value: in int): int { return value; }\n"
+            "fn touch(value: ref int): int { return value; }\n"
+            "fn fill(value: out int): void { value = 1; }\n"
+            "fn caller(): int {\n"
+            "    var value = 1;\n"
+            "    var observed = inspect(value);\n"
+            "    observed = touch(ref value);\n"
+            "    fill(out value);\n"
+            "    return observed + value;\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_call_argument_passing_modes.zr");
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    SZrParserSemanticCallQuery call;
+    const SZrSemanticCallArgumentFact *mapping;
+    const TZrChar *argumentText;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    memset(&call, 0, sizeof(call));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "inspect", 1U),
+            ZR_NULL,
+            &call));
+    TEST_ASSERT_NOT_NULL(call.expression);
+    TEST_ASSERT_TRUE(call.expression->hasCallInfo);
+    TEST_ASSERT_EQUAL_UINT(1U, call.argumentCount);
+    TEST_ASSERT_NOT_NULL(call.argumentMappings);
+    TEST_ASSERT_EQUAL_UINT(1U, call.argumentMappings->length);
+    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+            (SZrArray *)call.argumentMappings, 0U);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_INT(ZR_PARAMETER_PASSING_MODE_IN, mapping->passingMode);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->argumentTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->parameterTypeId);
+    argumentText = strstr(source, "inspect(value)");
+    TEST_ASSERT_NOT_NULL(argumentText);
+    argumentText += strlen("inspect(");
+    TEST_ASSERT_EQUAL_UINT((TZrSize)(argumentText - source),
+                           mapping->argumentRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT((TZrSize)(argumentText - source) + strlen("value"),
+                           mapping->argumentRange.end.offset);
+
+    memset(&call, 0, sizeof(call));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "touch", 1U),
+            ZR_NULL,
+            &call));
+    TEST_ASSERT_NOT_NULL(call.expression);
+    TEST_ASSERT_TRUE(call.expression->hasCallInfo);
+    TEST_ASSERT_NOT_NULL(call.argumentMappings);
+    TEST_ASSERT_EQUAL_UINT(1U, call.argumentMappings->length);
+    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+            (SZrArray *)call.argumentMappings, 0U);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_INT(ZR_PARAMETER_PASSING_MODE_REF, mapping->passingMode);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->argumentTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->parameterTypeId);
+    argumentText = strstr(source, "ref value");
+    TEST_ASSERT_NOT_NULL(argumentText);
+    TEST_ASSERT_EQUAL_UINT((TZrSize)(argumentText - source),
+                           mapping->argumentRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT((TZrSize)(argumentText - source) + strlen("ref value"),
+                           mapping->argumentRange.end.offset);
+
+    memset(&call, 0, sizeof(call));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "fill", 1U),
+            ZR_NULL,
+            &call));
+    TEST_ASSERT_NOT_NULL(call.expression);
+    TEST_ASSERT_TRUE(call.expression->hasCallInfo);
+    TEST_ASSERT_NOT_NULL(call.argumentMappings);
+    TEST_ASSERT_EQUAL_UINT(1U, call.argumentMappings->length);
+    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+            (SZrArray *)call.argumentMappings, 0U);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_INT(ZR_PARAMETER_PASSING_MODE_OUT, mapping->passingMode);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->argumentTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->parameterTypeId);
+    argumentText = strstr(source, "out value");
+    TEST_ASSERT_NOT_NULL(argumentText);
+    TEST_ASSERT_EQUAL_UINT((TZrSize)(argumentText - source),
+                           mapping->argumentRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT((TZrSize)(argumentText - source) + strlen("out value"),
+                           mapping->argumentRange.end.offset);
+
+    call_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 #endif

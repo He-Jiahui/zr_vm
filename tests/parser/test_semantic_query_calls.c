@@ -905,5 +905,6 @@ int main(void) {
     RUN_TEST(test_call_at_rejects_source_less_target_for_sourced_expression);
     RUN_TEST(test_call_at_exact_expression_resists_later_approximate_downgrade);
     RUN_TEST(test_call_at_projects_source_argument_mapping_and_conversion);
+    RUN_TEST(test_call_at_projects_source_argument_passing_modes);
     return UNITY_END();
 }

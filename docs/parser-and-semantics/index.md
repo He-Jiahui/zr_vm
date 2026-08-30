@@ -41,6 +41,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_argument_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
@@ -113,6 +114,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_argument_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
@@ -172,6 +174,8 @@ tests:
   - tests/parser/test_dataflow_engine.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_semantic_query.c
+  - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_query_call_argument_mapping_cases.h
   - tests/parser/test_semantic_facts.c
   - tests/parser/test_type_inference.c
   - tests/parser/test_parser.c
@@ -364,6 +368,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - receiver method overload 与参数失配只由 parser/type inference 解析和发布
   - descriptor 2011、argument/parameter ranges、related information 与 typed fix 共用 canonical producer
   - LSP 删除 method-name/parameter/type-text 重建，仅投影 semantic query fact
+- `canonical-call-argument-mapping.md`
+  - source call argument-to-parameter dense mapping 与 snapshot borrowed ownership
+  - named binding、canonical TypeId、passing mode、exact/implicit conversion
+  - `ref`/`out` structured marker range 与 argument AST range合并，不扫描source text
+  - malformed mapping按selected callable contract fail closed
 - `semantic-fact-layer.md`
   - `SZrSemanticContext` 统一持有表达式、引用、数值、可达性、逻辑和所有权事实
   - 事实层提供 append-by-copy、reset/free 和按节点/位置查询契约
@@ -493,4 +502,6 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 29. 再看 `lsp-semantic-cache-storage.md`，了解 semantic cache 的计量、释放和重新初始化边界。
 30. 再看 `lsp-workspace-semantic-cache-lru.md`，了解 workspace 预算如何只淘汰精确计量的 cache storage。
 31. 再看 `lsp-incremental-declaration-reparse.md`，了解声明级替换、明确 fallback 和 public-contract 驱动的下游失效边界。
-32. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+32. 再看 `canonical-call-argument-mapping.md`，了解 call mapping、passing marker range 与
+    snapshot ownership合同。
+33. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
