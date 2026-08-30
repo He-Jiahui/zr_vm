@@ -74,3 +74,7 @@ metadata 或 Syntax05 归属路径收口后重跑。本记录不以 LSP 兼容�
   closed-generic/borrow-return facts、cross-project metadata identity、semantic-token
   canonical migration 与既有 `short_circuit_unreachable` producer fixture；之后重跑同一
   16-target 矩阵和三套 smoke。
+
+- 支持提交后复核时间：2026-08-30 10:07 +08:00。`7b7996d` 的 Windows semantic-fact
+  helper 导出已在 VSDevCmd `17.14.38` 下重链；三工具链 source-contract 仍为 `70/70`
+  真实 exit 0，16-target 仍为 `10 PASS / 6 FAIL`，不改变 producer/fixture 阻塞结论。

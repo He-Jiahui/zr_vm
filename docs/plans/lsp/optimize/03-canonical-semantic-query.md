@@ -424,3 +424,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - 本轮未完成项目：canonical tuple、member-write、imported-type、interface/analyzer
   producer 或 fixture 缺口，以及 `short_circuit_unreachable` producer warning；需待
   Syntax05/parser/metadata ownership 释放后再重跑完整门禁。
+
+- 支持提交后复核时间：2026-08-30 10:07 +08:00。`7b7996d` 的 semantic-fact helper
+  Windows 导出声明已同步到独立 GCC/Clang/MSVC 快照并重链；三工具链 16-target 结果
+  仍为 `10 PASS / 6 FAIL`，source-contract 仍为 `70/70`，不改变上述阻塞归属。

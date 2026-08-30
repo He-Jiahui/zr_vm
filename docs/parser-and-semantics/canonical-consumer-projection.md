@@ -277,6 +277,11 @@ reference consumer 仅委托 parser relation query；GCC/Clang/MSVC source-contr
 matrix、interface fixture 和 analyzer producer 失败均保持在 producer/metadata ownership；
 Plan 03 Task 7/8 尚未完成，LSP 不以名称、类型文本或消息重建关系。
 
+支持提交 `7b7996d` 后复核（2026-08-30 10:07 +08:00）确认 Windows semantic-fact
+helper 导出在 GCC/Clang/MSVC 受影响目标中均可重链；source-contract `70/70` 真实
+exit 0，16-target 仍为 `10 PASS / 6 FAIL`。该支持提交不改变 canonical consumer 的
+fail-closed 边界，剩余 producer/metadata fixture 失败继续等待所属路径收口。
+
 ## Compatibility boundary
 
 M5 不把 legacy `SZrIo` 二进制解释成 `ZRAF`，也不允许 canonical API 回退到 legacy

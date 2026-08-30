@@ -64,3 +64,7 @@ identity 边界。GREEN 删除该 local-only aggregation block，保留 parser r
 - 未完成项目：canonical tuple、member-write、imported-type、interface fixture、analyzer
   producer 与 `short_circuit_unreachable` fixture 缺口；不在 LSP 侧增加兼容，待 producer
   归属路径收口后重跑完整矩阵与三套 smoke。
+
+- 支持提交后复核时间：2026-08-30 10:07 +08:00。Windows semantic-fact helper 导出
+  已在 VSDevCmd `17.14.38` 下重链；三工具链 source-contract 仍为 `70/70`，16-target
+  仍为 `10/16`，未引入新的 LSP fallback。

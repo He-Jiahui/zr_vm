@@ -31,3 +31,7 @@ doc_type: acceptance-record
   其余失败为 canonical tuple、member-write、imported-type、interface fixture 与 analyzer
   producer 边界。producer/metadata ownership 收口前，LSP 不按名称、类型文本或消息增加
   兼容。
+
+- 支持提交后复核时间：2026-08-30 10:07 +08:00。`7b7996d` 导出兼容已完成 GCC/Clang/
+  MSVC 受影响目标重链；source-contract `70/70` 通过，16-target 仍为 `10/16`，阻塞
+  项集合未变化。
