@@ -444,6 +444,7 @@ static void test_owner_inner_type_use_publishes_source_display_alias(void) {
 
 #include "test_semantic_display_generic_alias_cases.h"
 #include "test_semantic_display_nominal_alias_cases.h"
+#include "test_semantic_display_owner_cases.h"
 
 static void test_qualified_type_use_publishes_source_display_alias(void) {
     const TZrChar *source = "var patch: declaration.Patch = null;\n";
@@ -974,6 +975,7 @@ int main(void) {
     RUN_TEST(test_owner_type_value_alias_preserves_inner_source_alias);
     RUN_TEST(test_gc_bridge_type_value_aliases_preserve_inner_source_aliases);
     RUN_TEST(test_reference_readonly_type_value_aliases_preserve_inner_alias);
+    RUN_TEST(test_semantic_display_formats_all_owner_variants);
     RUN_TEST(test_qualified_type_use_publishes_source_display_alias);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);

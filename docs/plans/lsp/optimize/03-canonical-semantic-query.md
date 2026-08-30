@@ -103,10 +103,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Create: `zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c`
 - Create: `tests/parser/test_semantic_display.c`
 
-- [ ] 为 canonical type、symbol signature、call signature、property contract 提供结构化 display API；输出由 TypeId/SymbolId 生成。
-- [ ] primitive、union、nullable、ref/owner/readonly、generic const/type args、tuple、function effects/passing modes 全覆盖。
+- [x] 为 canonical type、symbol signature、call signature、property contract 提供结构化 display API；输出由 TypeId/SymbolId 生成。
+- [x] primitive、union、nullable、ref/owner/readonly、generic const/type args、tuple、function effects/passing modes 全覆盖。
 - [ ] 删除 LSP `semantic_type_prototypes.c` 中把 `int/i64`、`string/str` 等名称映射回类型的职责；展示 alias 与 canonical identity 分开返回。
-- [ ] documentation 作为 symbol metadata fact 进入 query；completion/hover/signature 不再彼此提取文本。
+- [x] documentation 作为 symbol metadata fact 进入 query；completion/hover/signature 不再彼此提取文本。
 
 ## Task 6：让结构化诊断成为唯一语义诊断
 
@@ -150,8 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 06:10 +08:00。
-- 总体状态：进行中。Task 5.15 已让direct type-value aliases在`readonly`、`ref`和
+- 最近更新时间：2026-08-31 06:16 +08:00。
+- 总体状态：进行中。Task 5.16 已以semantic display public API直接覆盖
+  `Unique<int>`、`Shared<int>`、`Weak<int>`与`AtomicShared<int>`；四种owner variants在首轮
+  GCC/Clang characterization即全部通过，未制造production修复。Task 5.15 已让direct type-value aliases在`readonly`、`ref`和
   `ref readonly` source wrappers下发布inner target alias；outer canonical分别保持
   `readonly Document`、`ref Document`、`ref readonly Document`，exact `Word` range只绑定
   inner `Document` TypeId。Task 5.14 已在GcBridge target通过canonical ordinary/resource class world
@@ -189,13 +191,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
 - 固定 GCC/Clang 快照中的 parser/display/call/query/relation/symbol/parity/source-contract 门禁分别为
-  `74/21/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
+  `74/22/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
   type inference `124/124`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -888,3 +890,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   marker，两套interface仍为fixed parent同一8个producer marker，delta 0且均不计GREEN。本项未
   运行MSVC、完整16-target matrix或三套stdio smoke；Shared/Weak/AtomicShared全变体display gate、
   LSP alias consumer、receiver/member与binary/native parity及Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 06:16 +08:00。Task 5.16 新增独立owner display cases，
+  通过`ZrParser_SemanticDisplay_FormatType`验证同一primitive target下Unique、Shared、Weak与
+  AtomicShared四种canonical owner labels。该characterization在GCC/Clang首轮即为
+  `22 Tests / 0 Failures`，无需production修复；既有invalid owner fail-closed测试继续有效。
+  固定GCC/Clang快照均通过parser/display/calls/query/relations/symbols/parity/source-contract/
+  facts/canonical/type-inference `74/22/26/30/22/21/15/70/15/21/124`、真实exit 0；两套canonical
+  graph仍只有既有tuple marker，两套interface仍为fixed parent同一8个producer marker，delta 0且
+  均不计GREEN。本项未运行MSVC、完整16-target matrix或三套stdio smoke；Task 5仅剩LSP旧名称
+  映射删除，按Syntax05 ownership与Task 7 consumer迁移顺序继续；receiver/member与binary/native
+  parity及Plan 03 Task 7/Task 8仍未完成。

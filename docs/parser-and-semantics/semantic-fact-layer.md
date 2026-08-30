@@ -3890,3 +3890,16 @@ This is not a display-text reconstruction. The producer first resolves the
 compiler state's structured `Word -> Document` binding, then uses the parsed
 identifier range and copied target type. Generic, qualified, malformed, or
 unbound names remain outside this narrow path and continue to fail closed.
+
+## Plan 03 Task 5.16 Owner Variant Display Acceptance
+
+The semantic display gate now directly covers every canonical owner variant:
+`Unique<T>`, `Shared<T>`, `Weak<T>`, and `AtomicShared<T>`. The test interns each
+owner from the same primitive target TypeId and formats it through
+`ZrParser_SemanticDisplay_FormatType`, ensuring callers do not depend on a
+separate formatter path.
+
+This was an acceptance characterization rather than a production repair: all
+four variants passed on the first GCC and Clang run. It closes the remaining
+owner-variant coverage item while retaining malformed-owner fail-closed tests
+from the earlier composite integrity milestone.
