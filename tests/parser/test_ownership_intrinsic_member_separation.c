@@ -657,6 +657,54 @@ static void test_intrinsic_spellings_remain_legal_member_names(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_intrinsic_spellings_remain_legal_interface_member_names(void) {
+    static const TZrChar *const names[] = {
+            "share",
+            "degrade",
+            "wake",
+            "intoGc",
+            "drop",
+    };
+    SZrAstNode *script = parse_source(
+            "interface IntrinsicMethods {\n"
+            "  fn share(): int;\n"
+            "  fn degrade(): int;\n"
+            "  fn wake(): int;\n"
+            "  fn intoGc(): int;\n"
+            "  fn drop(): int;\n"
+            "}\n");
+    SZrAstNode *declaration;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
+    TEST_ASSERT_NOT_NULL(script->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)script->data.script.statements->count);
+
+    declaration = script->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTERFACE_DECLARATION, declaration->type);
+    TEST_ASSERT_NOT_NULL(declaration->data.interfaceDeclaration.members);
+    TEST_ASSERT_EQUAL_UINT32(
+            (TZrUInt32)(sizeof(names) / sizeof(names[0])),
+            (TZrUInt32)declaration->data.interfaceDeclaration.members->count);
+
+    for (index = 0u; index < sizeof(names) / sizeof(names[0]); index++) {
+        SZrAstNode *member = declaration->data.interfaceDeclaration.members->nodes[index];
+
+        TEST_ASSERT_NOT_NULL(member);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_INTERFACE_METHOD_SIGNATURE, member->type);
+        TEST_ASSERT_NOT_NULL(member->data.interfaceMethodSignature.name);
+        TEST_ASSERT_NOT_NULL(member->data.interfaceMethodSignature.name->name);
+        TEST_ASSERT_EQUAL_STRING(
+                names[index],
+                ZrCore_String_GetNativeString(
+                        member->data.interfaceMethodSignature.name->name));
+    }
+
+    ZrParser_Ast_Free(g_state, script);
+}
+
 static void test_intrinsic_spellings_remain_ordinary_fields_and_properties(void) {
     const TZrChar *source =
             "class Box {\n"
@@ -2082,6 +2130,7 @@ int main(void) {
     RUN_TEST(test_reserved_intrinsics_have_independent_ast);
     RUN_TEST(test_optional_member_and_call_segments_record_access_mode);
     RUN_TEST(test_intrinsic_spellings_remain_legal_member_names);
+    RUN_TEST(test_intrinsic_spellings_remain_legal_interface_member_names);
     RUN_TEST(test_intrinsic_spellings_remain_ordinary_fields_and_properties);
     RUN_TEST(test_intrinsic_spellings_are_object_literal_member_names);
     RUN_TEST(test_direct_and_optional_callable_syntax_are_distinct);

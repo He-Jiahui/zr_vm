@@ -25,6 +25,14 @@ resources (`21/21`), and Unique/Drop resources (`20/20`). The syntax status
 verifier remains `TOTAL=55 COMPLETE=55 MISSING_STATUS=0 NON_COMPLETE=0`, and
 the migration inventory remains `findings=0` across 1,005 scanned files.
 
+The focused collision coverage now also parses an interface declaring methods
+named `share`, `degrade`, `wake`, `intoGc`, and `drop`; all five names resolve
+through `parse_member_identifier` as ordinary interface method signatures.
+The rebuilt MSVC runner reports this new case as passing. The same run still
+reports the pre-existing artifact round-trip failure while loading its runtime
+entry function, so the focused target is `50/51` for this cache and is not
+promoted as a full acceptance result.
+
 `ctest -N` on the available MSVC build now enumerates 152 registered tests,
 including newly added benchmark targets; several executables are not present
 in that cache, so this enumeration is not a full pass. The full registered
