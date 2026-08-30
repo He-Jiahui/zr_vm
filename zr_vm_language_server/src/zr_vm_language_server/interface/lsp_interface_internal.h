@@ -230,9 +230,6 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
 SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *state,
                                                                     SZrLspContext *context,
                                                                     SZrString *uri);
-SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri(SZrState *state,
-                                                                          SZrLspContext *context,
-                                                                          SZrString *projectUri);
 TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri,

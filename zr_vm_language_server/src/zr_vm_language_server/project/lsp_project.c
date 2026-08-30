@@ -2266,46 +2266,6 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateForUri(SZrState *stat
     return projectIndex;
 }
 
-SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri(SZrState *state,
-                                                                          SZrLspContext *context,
-                                                                          SZrString *projectUri) {
-    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrSize existingIndex;
-    SZrLspProjectIndex *projectIndex;
-
-    if (state == ZR_NULL || context == ZR_NULL || projectUri == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    projectIndex = ZrLanguageServer_LspProject_FindProjectByProjectUri(context, projectUri, &existingIndex);
-    if (projectIndex != ZR_NULL) {
-        if (!projectIndex->hasSemanticProjectLoad &&
-            (projectIndex->project == ZR_NULL || projectIndex->project->entry == ZR_NULL ||
-             !project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry))) {
-            return ZR_NULL;
-        }
-        projectIndex->hasSemanticProjectLoad = ZR_TRUE;
-        return projectIndex;
-    }
-
-    if (!ZrLanguageServer_LspUri_FileToNativePath(projectUri, projectPath, sizeof(projectPath))) {
-        return ZR_NULL;
-    }
-
-    projectIndex = project_index_new_from_path(state, projectPath);
-    if (projectIndex == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Array_Push(state, &context->projectIndexes, &projectIndex);
-    if (projectIndex->project == ZR_NULL || projectIndex->project->entry == ZR_NULL ||
-        !project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry)) {
-        return ZR_NULL;
-    }
-    projectIndex->hasSemanticProjectLoad = ZR_TRUE;
-    return projectIndex;
-}
-
 SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateByProjectUri(SZrState *state,
                                                                         SZrLspContext *context,
                                                                         SZrString *projectUri) {

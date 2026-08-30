@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 17:14 +08:00。
-- 总体状态：进行中。Task 7.53 已删除 virtual-document 层两个零调用的 module/type declaration
-  query wrapper，production/header净删116行；固定 GCC/Clang 快照中的 source-contract
-  70/70全部通过，GCC五个virtual-document/navigation case全部PASS，interface与parent保持
-  同一8个既有producer marker，delta 0。
+- 最近更新时间：2026-08-30 17:22 +08:00。
+- 总体状态：进行中。Task 7.54 已删除project层零调用的旧project-URI ensure API，
+  production/header净删43行；固定GCC/Clang快照中的source-contract 70/70全部通过，project
+  保持同一42 Pass/18个既有producer marker，GCC interface与parent保持同一8个marker，
+  delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -591,3 +591,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   marker，delta 0且不计本任务GREEN。Clang仍报告Syntax05 exact-owned metadata provider的五个
   既有unused helper，本任务未越权修改。完整三工具链16-target matrix、三套stdio smoke、
   Syntax05 producer及其余analyzer/symbol-table consumers仍未完成。
+
+- 补充完成时间：2026-08-30 17:22 +08:00。Task 7.54 删除全仓无调用的
+  `ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri` 声明与完整实现；活跃
+  `ZrLanguageServer_LspProject_GetOrCreateByProjectUri` 仍由interface调用并保留既有project
+  load语义。source-contract在旧生产代码上精确RED source/header两项后转GREEN。固定
+  `1cab9f1 + 3 code/test overlays` 的GCC/Clang快照均完成source-contract与project features
+  重链；source-contract 70/70且真实exit 0，project两套均为进程exit 0、42 Pass/18个已登记
+  producer marker，GCC/Clang失败名称delta 0。GCC interface与固定parent仍为同一8个marker，
+  delta 0且不计本任务GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05
+  producer及其余analyzer/symbol-table consumers仍未完成。

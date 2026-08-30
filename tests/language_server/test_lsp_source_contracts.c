@@ -1638,6 +1638,8 @@ static void test_imported_reference_consumers_require_canonical_identity(void) {
 }
 
 static void test_dead_project_semantic_fallbacks_are_removed(void) {
+    char *projectSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c");
     char *projectNavigation = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
     char *projectImports = read_repo_text_file_owned(
@@ -1647,10 +1649,11 @@ static void test_dead_project_semantic_fallbacks_are_removed(void) {
     char *interfaceInternal = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h");
 
-    if (projectNavigation == NULL || projectImports == NULL || projectInternal == NULL ||
-        interfaceInternal == NULL) {
+    if (projectSource == NULL || projectNavigation == NULL || projectImports == NULL ||
+        projectInternal == NULL || interfaceInternal == NULL) {
         printf("FAIL: could not read project semantic fallback sources\n");
         g_failures++;
+        free(projectSource);
         free(projectNavigation);
         free(projectImports);
         free(projectInternal);
@@ -1676,7 +1679,14 @@ static void test_dead_project_semantic_fallbacks_are_removed(void) {
         "ZrLanguageServer_LspProject_FindImportedMemberHit");
     assert_text_contains_none(projectImports, "find_imported_member_hit_recursive");
     assert_text_contains_none(projectImports, "find_imported_member_hit_in_node_array");
+    assert_text_contains_none(
+        projectSource,
+        "ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri");
+    assert_text_contains_none(
+        interfaceInternal,
+        "ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri");
 
+    free(projectSource);
     free(projectNavigation);
     free(projectImports);
     free(projectInternal);
