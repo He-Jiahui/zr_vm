@@ -3712,3 +3712,18 @@ Corrupt composite snapshots are unavailable display data. The formatter clears
 its output and fails rather than normalizing rank zero into `[]`, treating an
 unknown storage enum as managed, or emitting empty `<>`/union contracts. LSP
 consumers must not replace these failures with source or name reconstruction.
+
+## Plan 03 Task 5.4 Callable Effect Display Integrity
+
+`ZrParser_SemanticDisplay_CreateCallableSignature` now projects callable effect
+bits from the same canonical function TypeId used for parameter contracts and
+the return type. `async` and `generator` are emitted before the receiver prefix;
+`throws` is emitted after the return type. The order matches canonical type
+formatting and does not inspect declaration spelling or infer effects from a
+symbol name.
+
+Value, `in`, `ref`, `ref readonly`, and `out` parameters continue to use the
+shared canonical parameter validator and their structured passing/escape
+contracts. Unsupported effect bits or malformed parameter contracts remain
+unavailable instead of producing a partial signature. LSP consumers must use
+this SymbolId/TypeId display and must not add an effect suffix from AST text.

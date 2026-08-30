@@ -576,6 +576,112 @@ static void test_callable_signature_rejects_malformed_canonical_contracts(void) 
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_callable_signature_formats_canonical_effects_and_passing_modes(void) {
+    const TZrChar *source =
+            "fn execute(value: int, input: in int, mutable: ref int, "
+            "readonlyValue: ref readonly int, output: out int): int { return value; }\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_display_callable_effects.zr");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrSemanticContext *context;
+    SZrCanonicalParameterContract parameters[5];
+    SZrString *signature;
+    TZrTypeId intType;
+    TZrTypeId readonlyRefType;
+    TZrTypeId writableRefType;
+    TZrTypeId callableType;
+    TZrSymbolId symbolId;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT(1U, ast->data.script.statements->count);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, declaration->type);
+    TEST_ASSERT_NOT_NULL(declaration->data.functionDeclaration.params);
+    TEST_ASSERT_EQUAL_UINT(5U, declaration->data.functionDeclaration.params->count);
+
+    context = ZrParser_SemanticContext_New(g_state);
+    TEST_ASSERT_NOT_NULL(context);
+    intType = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_INT64);
+    readonlyRefType = ZrParser_CanonicalType_InternRef(
+            context, intType, ZR_CANONICAL_REF_READONLY);
+    writableRefType = ZrParser_CanonicalType_InternRef(
+            context, intType, ZR_CANONICAL_REF_WRITABLE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, intType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, readonlyRefType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, writableRefType);
+
+    memset(parameters, 0, sizeof(parameters));
+    parameters[0].typeId = intType;
+    parameters[0].passingForm = ZR_CANONICAL_PASSING_VALUE;
+    parameters[0].escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+    parameters[0].entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
+    parameters[0].exitInitialization = ZR_CANONICAL_EXIT_UNCHANGED;
+    parameters[0].acceptsTemporary = ZR_TRUE;
+
+    parameters[1].typeId = readonlyRefType;
+    parameters[1].passingForm = ZR_CANONICAL_PASSING_IN;
+    parameters[1].escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+    parameters[1].entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
+    parameters[1].exitInitialization = ZR_CANONICAL_EXIT_UNCHANGED;
+    parameters[1].acceptsTemporary = ZR_TRUE;
+
+    parameters[2].typeId = writableRefType;
+    parameters[2].passingForm = ZR_CANONICAL_PASSING_REF;
+    parameters[2].escapeUpperBound = ZR_CANONICAL_ESCAPE_CALLER;
+    parameters[2].entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
+    parameters[2].exitInitialization = ZR_CANONICAL_EXIT_UNCHANGED;
+    parameters[2].callSiteMarker = ZR_CANONICAL_CALL_SITE_REF;
+
+    parameters[3].typeId = readonlyRefType;
+    parameters[3].passingForm = ZR_CANONICAL_PASSING_REF_READONLY;
+    parameters[3].escapeUpperBound = ZR_CANONICAL_ESCAPE_CALLER;
+    parameters[3].entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
+    parameters[3].exitInitialization = ZR_CANONICAL_EXIT_UNCHANGED;
+    parameters[3].callSiteMarker = ZR_CANONICAL_CALL_SITE_REF;
+
+    parameters[4].typeId = writableRefType;
+    parameters[4].passingForm = ZR_CANONICAL_PASSING_OUT;
+    parameters[4].escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+    parameters[4].entryInitialization = ZR_CANONICAL_ENTRY_UNINITIALIZED;
+    parameters[4].exitInitialization = ZR_CANONICAL_EXIT_DEFINITELY_INITIALIZED;
+    parameters[4].callSiteMarker = ZR_CANONICAL_CALL_SITE_OUT;
+
+    callableType = ZrParser_CanonicalType_InternFunction(
+            context,
+            parameters,
+            sizeof(parameters) / sizeof(parameters[0]),
+            intType,
+            ZR_CANONICAL_RECEIVER_NONE,
+            ZR_CANONICAL_CALLABLE_EFFECT_ASYNC |
+                    ZR_CANONICAL_CALLABLE_EFFECT_GENERATOR |
+                    ZR_CANONICAL_CALLABLE_EFFECT_THROWS);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, callableType);
+    symbolId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "execute"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            callableType,
+            ZR_SEMANTIC_ID_INVALID,
+            declaration,
+            declaration->location);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, symbolId);
+
+    signature = ZrParser_SemanticDisplay_CreateCallableSignature(context, symbolId);
+    TEST_ASSERT_NOT_NULL(signature);
+    TEST_ASSERT_EQUAL_STRING(
+            "async generator execute(value: int, input: in int, mutable: ref int, "
+            "readonlyValue: ref readonly int, output: out int): int throws",
+            ZrCore_String_GetNativeString(signature));
+
+    ZrParser_SemanticContext_Free(context);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_display_formats_canonical_type_symbol_and_property);
@@ -586,5 +692,6 @@ int main(void) {
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);
     RUN_TEST(test_semantic_display_rejects_malformed_canonical_contracts);
     RUN_TEST(test_callable_signature_rejects_malformed_canonical_contracts);
+    RUN_TEST(test_callable_signature_formats_canonical_effects_and_passing_modes);
     return UNITY_END();
 }

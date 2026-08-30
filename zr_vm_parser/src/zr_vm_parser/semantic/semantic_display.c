@@ -259,7 +259,13 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         receiverPrefix = "fn ";
     }
     buffer[0] = '\0';
-    if (!semantic_display_append(buffer, sizeof(buffer), &offset, receiverPrefix) ||
+    if (((functionType->data.function.effectFlags &
+          ZR_CANONICAL_CALLABLE_EFFECT_ASYNC) != 0U &&
+         !semantic_display_append(buffer, sizeof(buffer), &offset, "async ")) ||
+        ((functionType->data.function.effectFlags &
+          ZR_CANONICAL_CALLABLE_EFFECT_GENERATOR) != 0U &&
+         !semantic_display_append(buffer, sizeof(buffer), &offset, "generator ")) ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, receiverPrefix) ||
         !semantic_display_append(buffer,
                                  sizeof(buffer),
                                  &offset,
@@ -321,7 +327,10 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
                                        typeBuffer,
                                        sizeof(typeBuffer)) ||
         !semantic_display_append(buffer, sizeof(buffer), &offset, "): ") ||
-        !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer)) {
+        !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer) ||
+        ((functionType->data.function.effectFlags &
+          ZR_CANONICAL_CALLABLE_EFFECT_THROWS) != 0U &&
+         !semantic_display_append(buffer, sizeof(buffer), &offset, " throws"))) {
         return ZR_NULL;
     }
     return ZrCore_String_Create(context->state, buffer, offset);
