@@ -1284,6 +1284,15 @@ opcode. Its eventual removal belongs to the destructive migration cleanup once
 the external L8 write set is released, so the final review must not report the
 string-map gate as closed prematurely.
 
+The 2026-08-30 MSVC shared-DLL replay exposed a separate parser ABI gap rather
+than a missing CMake edge: the language-server DLL called three parser
+semantic-fact helpers that were not exported from the shared parser DLL.
+Commit `7b7996d` adds `ZR_PARSER_API` to their declarations. The parser and
+language-server DLLs now link, the parser export table contains all three
+symbols, and the interface/debug targets build. The focused runners still
+retain unrelated baseline assertion failures, so this closes only the linker
+blocker and leaves Step 5 and Step 7 pending the stable integrated full graph.
+
 - [ ] **Step 7: Commit final acceptance status**
 
 ```powershell

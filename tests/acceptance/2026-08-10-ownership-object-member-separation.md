@@ -51,6 +51,28 @@ but it does not promote this record because the three external L8/debug full-
 graph failures remain. Final status still requires a stable integrated HEAD,
 the same 135-test replay, and a final exact-path diff review.
 
+## 2026-08-30 MSVC shared-DLL linker replay
+
+The Windows shared-library replay then reproduced a separate ABI boundary
+failure in `zr_vm_language_server_shared`: the parser DLL did not export
+`type_inference_record_super_constructor_call_facts`,
+`type_inference_source_constructor_member_build`, or
+`type_inference_source_constructor_member_free`, even though the language
+server already linked the parser library and called these helpers. Commit
+`7b7996d` adds the existing `ZR_PARSER_API` annotation to their shared
+semantic-fact declarations. Before the change, the target failed with three
+LNK2019 diagnostics; afterward the parser and language-server DLLs and
+`zr_vm_language_server_lsp_interface_test` linked successfully, and the parser
+DLL export table contained all three names.
+
+The fresh MSVC interface runner reported 111 passing cases and two unrelated
+existing assertion failures (`LSP Project References Include Imported Function
+Usage` and `LSP Class Member Navigation And Completion`). The fresh debug
+expression diagnostics target linked successfully and reported 55 passing
+cases with one unrelated semantic-summary assertion failure. These runtime
+failures remain classified as external baseline work; this ABI correction does
+not promote the umbrella status or replace the pending stable full-graph replay.
+
 ## 2026-08-30 object-literal member namespace follow-up
 
 The final source audit found that class fields, properties, and methods already
