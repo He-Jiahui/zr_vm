@@ -6,6 +6,14 @@
 
 #include "semantic_relations_identity.h"
 
+static TZrBool semantic_relations_same_source(
+        SZrString *left,
+        SZrString *right) {
+    return (TZrBool)(left == right ||
+                     (left != ZR_NULL && right != ZR_NULL &&
+                      ZrCore_String_Equal(left, right)));
+}
+
 static SZrString *semantic_relations_clone_string(
         SZrSemanticContext *context,
         SZrString *value) {
@@ -24,11 +32,9 @@ static SZrString *semantic_relations_clone_string(
 
 static TZrBool semantic_relations_range_contains(
         const SZrFileRange *outer,
-        const SZrFileRange *inner) {
+    const SZrFileRange *inner) {
     if (outer == ZR_NULL || inner == ZR_NULL ||
-        (outer->source != ZR_NULL && inner->source != ZR_NULL &&
-         outer->source != inner->source &&
-         !ZrCore_String_Equal(outer->source, inner->source))) {
+        !semantic_relations_same_source(outer->source, inner->source)) {
         return ZR_FALSE;
     }
     if ((outer->start.offset > 0U || outer->end.offset > 0U) &&

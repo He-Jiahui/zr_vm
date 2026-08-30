@@ -1457,6 +1457,7 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
 }
 
 #include "test_semantic_query_meta_override_cases.h"
+#include "test_semantic_query_relation_source_identity_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1480,5 +1481,6 @@ int main(void) {
     RUN_TEST(test_compiled_type_value_alias_publishes_canonical_target_relation);
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
+    RUN_TEST(test_relation_node_scope_fails_closed_for_missing_fact_source);
     return UNITY_END();
 }

@@ -238,6 +238,10 @@ are read-only projections: they clear reused output arrays, return copied values
 with borrowed URI fields, and order edges by relation kind, stable ids, and
 ranges. A node scope admits only an edge whose source or target range is within
 the root. The query does not scan AST names or manufacture external origins.
+Node-scope containment also requires exact optional source identity: missing
+source matches only missing source, while non-null sources compare by string
+value. A source-unavailable relation therefore cannot enter a known-document
+node query merely because its offsets overlap the root.
 
 Task 3.2 publishes source property-accessor edges from the existing
 `SZrSemanticPropertyContract` rows after compiler property binding completes.
