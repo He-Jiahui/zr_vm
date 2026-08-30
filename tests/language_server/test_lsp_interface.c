@@ -1393,6 +1393,51 @@ static TZrBool semantic_tokens_contain(SZrArray *data,
     return ZR_FALSE;
 }
 
+static TZrBool semantic_tokens_contain_modifier(SZrArray *data,
+                                                TZrInt32 line,
+                                                TZrInt32 character,
+                                                TZrInt32 length,
+                                                const TZrChar *typeName,
+                                                TZrUInt32 modifierMask) {
+    TZrUInt32 currentLine = 0;
+    TZrUInt32 currentCharacter = 0;
+    TZrInt32 typeIndex = semantic_token_type_index(typeName);
+
+    if (data == ZR_NULL || typeIndex < 0) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index + 4 < data->length; index += 5) {
+        TZrUInt32 *deltaLinePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index);
+        TZrUInt32 *deltaStartPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 1);
+        TZrUInt32 *lengthPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 2);
+        TZrUInt32 *typePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 3);
+        TZrUInt32 *modifiersPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 4);
+
+        if (deltaLinePtr == ZR_NULL || deltaStartPtr == ZR_NULL || lengthPtr == ZR_NULL ||
+            typePtr == ZR_NULL || modifiersPtr == ZR_NULL) {
+            continue;
+        }
+
+        currentLine += *deltaLinePtr;
+        if (*deltaLinePtr == 0) {
+            currentCharacter += *deltaStartPtr;
+        } else {
+            currentCharacter = *deltaStartPtr;
+        }
+
+        if ((TZrInt32)currentLine == line &&
+            (TZrInt32)currentCharacter == character &&
+            (TZrInt32)(*lengthPtr) == length &&
+            (TZrInt32)(*typePtr) == typeIndex &&
+            (*modifiersPtr & modifierMask) == modifierMask) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static SZrLspCompletionItem *find_completion_item_by_label(SZrArray *completions, const TZrChar *label) {
     for (TZrSize index = 0; completions != ZR_NULL && index < completions->length; index++) {
         SZrLspCompletionItem **itemPtr =
@@ -7130,6 +7175,7 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
             "    return Unique;\n"
             "}\n";
     SZrLspPosition ownershipTypePosition;
+    SZrLspPosition declarationPosition;
     SZrLspPosition localPosition;
     SZrSemanticAnalyzer *analyzer;
     SZrFilePosition ownershipTypeFilePosition;
@@ -7159,7 +7205,8 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
     if (uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
         !lsp_find_position_for_substring(
-                content, "Unique<Socket>", 0, 0, &ownershipTypePosition) ||
+            content, "Unique<Socket>", 0, 0, &ownershipTypePosition) ||
+        !lsp_find_position_for_substring(content, "Socket", 0, 0, &declarationPosition) ||
         !lsp_find_position_for_substring(content, "var Unique", 0, 4, &localPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -7229,6 +7276,12 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
                                   localPosition.character,
                                   6,
                                   "variable") ||
+        !semantic_tokens_contain_modifier(&tokens,
+                                          declarationPosition.line,
+                                          declarationPosition.character,
+                                          6,
+                                          "class",
+                                          1U) ||
         semantic_tokens_contain(&tokens,
                                  localPosition.line,
                                  localPosition.character,

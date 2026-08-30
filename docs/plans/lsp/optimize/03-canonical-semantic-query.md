@@ -450,3 +450,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   两个 production source 与 source-contract test 的 `-fsyntax-only` 均真实 exit 0，
   手工链接的 source-contract executable 真实 exit 0。该项未重跑完整 runtime matrix
   或 stdio smoke，Plan 03 Task 7/Task 8 继续未完成。
+
+- 补充完成时间：2026-08-30 13:10 +08:00。Task 7.41 将 source-local semantic
+  tokens 的 declaration enumeration 与 identifier/member classification 迁移到
+  parser `DeclaredSymbols`/`SymbolAt` canonical facts；删除 analyzer symbol-table
+  遍历、request-time semantic query、parameter name lookup 和 owner-type inference
+  fallback。声明 role 投影为 declaration modifier，并同步 stdio token legend；新增
+  source-contract 与 interface runtime regression。WSL GCC/Clang syntax checks 和
+  source-contract executable 真实 exit 0，focused Ninja 因 CMake glob 校验 184 秒
+  超时，尚无有效 interface runtime exit。外部 metadata chain producer、三工具链
+  完整 16-target matrix 与三套 stdio smoke 仍未完成，Task 7/Task 8 不标记全局 GREEN。

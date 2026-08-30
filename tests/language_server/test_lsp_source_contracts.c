@@ -708,6 +708,75 @@ static void test_semantic_tokens_source_scan_uses_content_snapshot(void) {
     free(source);
 }
 
+static void test_semantic_tokens_use_canonical_symbol_queries(void) {
+    char *source = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c");
+    char *stdioSource = read_repo_text_file_owned(
+        "zr_vm_language_server/stdio/stdio_semantic_tokens_json.c");
+    const char *declarationsStart;
+    const char *declarationsEnd;
+    const char *canonicalStart;
+    const char *canonicalEnd;
+    const char *scanStart;
+    const char *scanEnd;
+
+    if (source == NULL) {
+        printf("FAIL: could not read lsp_semantic_tokens.c\n");
+        g_failures++;
+        return;
+    }
+    if (stdioSource == NULL) {
+        printf("FAIL: could not read stdio_semantic_tokens_json.c\n");
+        g_failures++;
+        free(source);
+        return;
+    }
+
+    declarationsStart = strstr(source, "static void semantic_token_add_symbol_tokens(");
+    declarationsEnd = declarationsStart != NULL
+                          ? strstr(declarationsStart, "static TZrBool semantic_token_is_meta_method(")
+                          : NULL;
+    assert_text_section_contains("semantic_token_add_symbol_tokens",
+                                 declarationsStart,
+                                 declarationsEnd,
+                                 "ZrParser_SemanticQuery_DeclaredSymbols");
+    assert_text_section_contains_none("semantic_token_add_symbol_tokens",
+                                      declarationsStart,
+                                      declarationsEnd,
+                                      "analyzer->symbolTable");
+
+    canonicalStart = find_next_text(
+        source, "static TZrInt32 semantic_token_resolve_canonical_symbol(");
+    canonicalEnd = canonicalStart != NULL
+                       ? strstr(canonicalStart, "static TZrInt32 semantic_token_resolve_metadata_chain_member(")
+                       : NULL;
+    assert_text_section_contains("semantic_token_resolve_canonical_symbol",
+                                 canonicalStart,
+                                 canonicalEnd,
+                                 "ZrParser_SemanticQuery_SymbolAt");
+
+    scanStart = strstr(source, "static void semantic_token_scan_source(");
+    scanEnd = scanStart != NULL
+                  ? strstr(scanStart, "TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(")
+                  : NULL;
+    assert_text_section_contains("semantic_token_scan_source",
+                                 scanStart,
+                                 scanEnd,
+                                 "semantic_token_resolve_canonical_symbol");
+    assert_text_section_contains_none("semantic_token_scan_source",
+                                      scanStart,
+                                      scanEnd,
+                                      "ZrLanguageServer_LspSemanticQuery_ResolveAtPosition");
+    assert_text_section_contains_none("semantic_token_scan_source",
+                                      scanStart,
+                                      scanEnd,
+                                      "ZrLanguageServer_SymbolTable_LookupAtPosition");
+    assert_text_contains(stdioSource, "cJSON_CreateString(\"declaration\")");
+
+    free(source);
+    free(stdioSource);
+}
+
 static void test_folding_ranges_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_folding_ranges.c");
@@ -1754,6 +1823,7 @@ int main(void) {
     test_editor_features_use_content_snapshot();
     test_token_metadata_hover_uses_content_snapshot();
     test_semantic_tokens_source_scan_uses_content_snapshot();
+    test_semantic_tokens_use_canonical_symbol_queries();
     test_folding_ranges_uses_content_snapshot();
     test_document_links_uses_content_snapshot_for_open_documents();
     test_signature_help_code_span_uses_content_snapshot();
@@ -1831,6 +1901,7 @@ int main(void) {
     printf("PASS: Editor features use content snapshot\n");
     printf("PASS: Token metadata hover uses content snapshot\n");
     printf("PASS: Semantic tokens source scan uses content snapshot\n");
+    printf("PASS: Semantic tokens use canonical symbol queries\n");
     printf("PASS: Folding ranges use content snapshot\n");
     printf("PASS: Document links use content snapshot for open documents\n");
     printf("PASS: Signature help code span uses content snapshot\n");
