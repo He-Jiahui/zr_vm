@@ -335,6 +335,8 @@ typedef struct SZrType {
 typedef struct SZrGenericType {
     SZrIdentifier *name;
     SZrAstNodeArray *params; // Type / const expression 数组
+    // Exact source span from the generic name through its closing angle.
+    SZrFileRange wholeRange;
 } SZrGenericType;
 
 // 元组类型

@@ -3611,6 +3611,11 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                 return ZR_FALSE;
             }
         }
+        type_inference_publish_explicit_type_display_alias(
+                cs,
+                result,
+                extract_type_name_string(cs, (SZrType *)astType),
+                astType);
         return ZR_TRUE;
     }
 

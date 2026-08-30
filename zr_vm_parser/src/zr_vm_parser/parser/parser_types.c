@@ -532,8 +532,12 @@ static SZrAstNode *parse_generic_argument_node(SZrParserState *ps) {
     return parse_additive_expression(ps);
 }
 
-SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
+static SZrAstNodeArray *parse_generic_argument_list_with_closing_range(
+        SZrParserState *ps,
+        SZrFileRange *outClosingRange) {
     SZrAstNodeArray *params;
+    SZrFileRange closingRange;
+    TZrBool hasClosingRange = ZR_FALSE;
 
     expect_token(ps, ZR_TK_LESS_THAN);
     ZrParser_Lexer_Next(ps->lexer);
@@ -572,6 +576,17 @@ SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
         ZrParser_AstNodeArray_Add(ps->state, params, param);
     }
 
+    if (ps->lexer->t.token == ZR_TK_GREATER_THAN ||
+        ps->lexer->t.token == ZR_TK_RIGHT_SHIFT) {
+        closingRange = get_current_token_location(ps);
+        hasClosingRange = ZR_TRUE;
+        if (ps->lexer->t.token == ZR_TK_RIGHT_SHIFT) {
+            closingRange.end = closingRange.start;
+            closingRange.end.offset++;
+            closingRange.end.column++;
+        }
+    }
+
     if (!consume_type_closing_angle(ps)) {
         expect_token(ps, ZR_TK_GREATER_THAN);
         if (!consume_token(ps, ZR_TK_GREATER_THAN)) {
@@ -579,18 +594,27 @@ SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
             return ZR_NULL;
         }
     }
+    if (outClosingRange != ZR_NULL && hasClosingRange) {
+        *outClosingRange = closingRange;
+    }
 
     return params;
 }
 
+SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
+    return parse_generic_argument_list_with_closing_range(ps, ZR_NULL);
+}
+
 SZrAstNode *parse_generic_type(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange closingLoc;
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
 
-    SZrAstNodeArray *params = parse_generic_argument_list(ps);
+    SZrAstNodeArray *params = parse_generic_argument_list_with_closing_range(
+            ps, &closingLoc);
     if (params == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, nameNode);
         return ZR_NULL;
@@ -608,6 +632,8 @@ SZrAstNode *parse_generic_type(SZrParserState *ps) {
 
     node->data.genericType.name = &nameNode->data.identifier;
     node->data.genericType.params = params;
+    node->data.genericType.wholeRange = ZrParser_FileRange_Merge(
+            nameNode->location, closingLoc);
     return node;
 }
 

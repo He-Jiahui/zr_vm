@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 03:55 +08:00。
-- 总体状态：进行中。Task 5.9 已让structured qualified resolver在最终canonical inferred type
+- 最近更新时间：2026-08-31 04:50 +08:00。
+- 总体状态：进行中。Task 5.10 已为generic type use发布独立authoritative whole range；
+  `Box<i64>`的canonical文本为`Box<int>`，source alias只在包含closing angle的exact range可用，
+  nested `Box<Box<i64>>`对outer/inner分别保留精确range，并维持既有generic AST node location
+  合同不变。Task 5.9 已让structured qualified resolver在最终canonical inferred type
   形成后发布whole name-chain use alias；`declaration.Patch`的canonical文本为
   `zr.compile.declaration.Patch`，source alias只在exact whole-use range可用，wrapped-qualified
   缺authoritative整体range时fail closed。Task 5.8 已补齐 ownership generic 临时关闭 semantic context造成的内层
@@ -172,14 +175,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   structured argument mapping 从“字段非空”收紧为
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
-- 固定 GCC/Clang 快照中的 display/call/query/relation/symbol/parity/source-contract 门禁分别为
-  `14/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
+- 固定 GCC/Clang 快照中的 parser/display/call/query/relation/symbol/parity/source-contract 门禁分别为
+  `74/16/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
   type inference `124/124`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -802,3 +805,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   marker，delta 0且不计GREEN。只读反向审计确认source `in/ref/out`调用当前尚未发布`hasCallInfo`
   expression fact，未进入mapping query；该producer缺口、receiver/member、`.zro`/native parity、
   receiver `TypeId`、MSVC、完整16-target matrix与三套stdio smoke继续未完成。
+
+- 补充完成时间：2026-08-31 04:50 +08:00。Task 5.10 为generic type use增加独立
+  `SZrGenericType.wholeRange`，从generic name覆盖到exact closing angle；nested `>>`分别保存outer/inner
+  range。首个RED中`Box<i64>`仍只有从`i64`开始的legacy generic node location，display为
+  `15 Tests / 1 Failure`。直接扩大node location的初版虽使display GREEN，却让interface新增
+  `LSP Closed Generic Type Display And Definition` marker，因此被门禁拒绝；最终保留legacy node location，
+  仅由alias producer消费wholeRange。固定GCC/Clang快照均通过parser/display/calls/query/relations/
+  symbols/parity/source-contract/facts/canonical/type-inference
+  `74/16/26/30/22/21/15/70/15/21/124`、真实exit 0；两套canonical graph仍只含同一既有tuple
+  marker，两套interface恢复固定8个既有producer marker，delta 0且均不计GREEN。本项未运行MSVC、
+  完整16-target matrix或三套stdio smoke；const-expression/nominal/GcBridge alias producer、LSP alias
+  consumer、receiver/member与binary/native parity及Plan 03 Task 7/Task 8继续未完成。

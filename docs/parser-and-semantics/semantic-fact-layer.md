@@ -3800,3 +3800,20 @@ source slicing. It publishes only when the name/subtype chain is the complete
 authoritative range. Array suffixes and ref, owner, or readonly wrappers do not
 have a whole `SZrType` range today, so those qualified forms fail closed rather
 than binding a wrapped TypeId to a partial name range.
+
+## Plan 03 Task 5.10 Generic Type-Use Alias Range
+
+Generic type uses now carry a parser-owned `SZrGenericType.wholeRange` from the
+generic name through the exact closing angle. The parser records the first
+closing angle when a nested generic ends in a split `>>`, so `Box<Box<i64>>`
+publishes distinct authoritative ranges for the outer and inner uses. The
+legacy generic `SZrAstNode.location` remains unchanged because reference
+producers already depend on that location contract.
+
+After structured generic inference forms the final canonical TypeId, the
+explicit alias producer publishes parsed type text against `wholeRange`.
+`Box<i64>` therefore formats canonically as `Box<int>` while its exact use-site
+alias remains `Box<i64>`; the nested form likewise keeps `Box<Box<i64>>` and
+`Box<i64>` at their respective ranges. Missing, empty, or source-inconsistent
+whole ranges fail closed. Consumers must query the snapshot fact and must not
+recover the alias by slicing source text or changing canonical identity.

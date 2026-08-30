@@ -5,6 +5,26 @@
 #include "zr_vm_parser/semantic_display.h"
 #include "type_inference_internal.h"
 
+static TZrBool type_inference_type_use_name_range(
+        const SZrAstNode *nameNode,
+        SZrFileRange *outRange) {
+    if (nameNode == ZR_NULL || outRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (nameNode->type == ZR_AST_GENERIC_TYPE) {
+        const SZrFileRange *wholeRange = &nameNode->data.genericType.wholeRange;
+        if (wholeRange->source == ZR_NULL ||
+            wholeRange->end.offset <= wholeRange->start.offset) {
+            return ZR_FALSE;
+        }
+        *outRange = *wholeRange;
+        return ZR_TRUE;
+    }
+    *outRange = nameNode->location;
+    return outRange->source != ZR_NULL &&
+           outRange->end.offset > outRange->start.offset;
+}
+
 void type_inference_publish_explicit_type_display_alias(
         SZrCompilerState *cs,
         const SZrInferredType *type,
@@ -29,8 +49,17 @@ void type_inference_publish_explicit_type_display_alias(
     if (terminalType->name == ZR_NULL) {
         return;
     }
-    useRange = typeUse->name->location;
-    useRange.end = terminalType->name->location.end;
+    if (!type_inference_type_use_name_range(typeUse->name, &useRange)) {
+        return;
+    }
+    {
+        SZrFileRange terminalRange;
+        if (!type_inference_type_use_name_range(
+                    terminalType->name, &terminalRange)) {
+            return;
+        }
+        useRange.end = terminalRange.end;
+    }
     typeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, type);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
         return;
