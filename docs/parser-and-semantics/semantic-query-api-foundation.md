@@ -454,6 +454,14 @@ returns only copied candidate values. It therefore requires the selected
 inexact selected call returns an empty candidate result rather than exposing
 uncertainty without an exactness field.
 
+When more than one callable reference fact covers the selected call target,
+`CallAt` chooses the structurally most complete fact. A resolved reference with
+a valid SymbolId outranks an earlier display-only reference; an exact
+declaration range and `signatureDisplay` refine ties but display text never
+outranks target identity. Equal-completeness facts retain stable publication
+order. The query does not recover identity from a name, AST node, or signature
+string.
+
 `ZrParser_SemanticQuery_FormatCall` is also a value-only projection: its
 caller receives text rather than the borrowed expression fact. It consequently
 requires an `EXACT` selected expression before producing a signature. It clears

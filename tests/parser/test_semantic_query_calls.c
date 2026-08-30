@@ -7,6 +7,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
@@ -872,6 +873,7 @@ static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
 
 #include "test_semantic_query_call_edge_refinement_cases.h"
 #include "test_semantic_query_call_candidate_consistency_cases.h"
+#include "test_semantic_query_call_selection_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -892,5 +894,6 @@ int main(void) {
     RUN_TEST(test_call_candidates_fail_closed_when_overload_set_omits_selected_target);
     RUN_TEST(test_call_candidates_fail_closed_when_overload_set_record_is_missing);
     RUN_TEST(test_call_candidates_fail_closed_when_overload_member_is_missing);
+    RUN_TEST(test_call_at_prefers_resolved_reference_over_earlier_display_fact);
     return UNITY_END();
 }

@@ -44,6 +44,29 @@ static TZrSize canonical_query_width(const SZrFileRange *range) {
     return ZR_MAX_SIZE;
 }
 
+static TZrSize canonical_query_call_reference_completeness(
+        const SZrSemanticReferenceFact *reference) {
+    TZrSize completeness = 0u;
+
+    if (reference->isResolved &&
+        reference->symbolId != ZR_SEMANTIC_ID_INVALID) {
+        completeness += 4u;
+    }
+    if (reference->declarationRange.source != ZR_NULL ||
+        reference->declarationRange.start.offset > 0u ||
+        reference->declarationRange.end.offset > 0u ||
+        reference->declarationRange.start.line > 0 ||
+        reference->declarationRange.end.line > 0 ||
+        reference->declarationRange.start.column > 0 ||
+        reference->declarationRange.end.column > 0) {
+        completeness += 2u;
+    }
+    if (reference->signatureDisplay != ZR_NULL) {
+        completeness += 1u;
+    }
+    return completeness;
+}
+
 TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -117,6 +140,7 @@ TZrBool ZrParser_SemanticQuery_CallAt(
     const SZrSemanticExpressionFact *best = ZR_NULL;
     const SZrSemanticReferenceFact *bestReference = ZR_NULL;
     TZrSize bestWidth = ZR_MAX_SIZE;
+    TZrSize bestReferenceCompleteness = 0u;
     TZrSize index;
 
     if (outQuery != ZR_NULL) memset(outQuery, 0, sizeof(*outQuery));
@@ -154,9 +178,14 @@ TZrBool ZrParser_SemanticQuery_CallAt(
             if (callableType == ZR_NULL || callableType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
                 continue;
             }
-            bestReference = reference;
-            if (reference->signatureDisplay != ZR_NULL) {
-                break;
+            {
+                TZrSize completeness =
+                        canonical_query_call_reference_completeness(reference);
+                if (bestReference == ZR_NULL ||
+                    completeness > bestReferenceCompleteness) {
+                    bestReference = reference;
+                    bestReferenceCompleteness = completeness;
+                }
             }
         }
     }
