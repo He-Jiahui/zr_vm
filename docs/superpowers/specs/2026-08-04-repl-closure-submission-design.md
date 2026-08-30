@@ -1,6 +1,6 @@
 # REPL Closure-Submission Design
 
-**Status:** Approved architecture, pending written-spec review
+**Status:** Approved for implementation on 2026-08-05
 
 ## Scope
 

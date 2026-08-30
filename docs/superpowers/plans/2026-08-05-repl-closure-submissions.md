@@ -415,7 +415,7 @@ Add direct parser and CLI cases that prove the policy is driven by inferred type
 ```text
 var owned: Unique<Resource> = init Resource();
 
-owned.share();
+share(owned);
 
 var borrowed = readonly ref owned.member;
 
