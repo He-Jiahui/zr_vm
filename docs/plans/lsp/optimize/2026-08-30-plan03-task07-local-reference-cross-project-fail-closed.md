@@ -41,19 +41,26 @@ identity 边界。GREEN 删除该 local-only aggregation block，保留 parser r
 ## Verification
 
 - source-contract target 必须从当前工作树源码编译并以仓库根目录为工作目录执行；测试进程
-  的真实退出码与 source-contract 结果必须一致。
-- GCC、Clang、MSVC 的 source-contract focused processes 均真实 exit 0；生产
-  `lsp_semantic_query.c` 的 GCC/Clang/MSVC 单文件语法检查也通过。三套 interface、
-  stdio smoke 与 Plan 03 16-target matrix 仍需在最终门禁阶段使用同一基线重跑。
+  的真实退出码与 source-contract 结果必须一致。2026-08-30 09:50 +08:00 的 GCC、Clang、
+  MSVC source-contract 均为 `70/70`、真实 exit 0；MSVC 临时验证快照的 LF 行尾已与源码
+  contract 的多行片段一致。
+- 同一验证基线的 Plan 03 16-target matrix 三套均为 `10 PASS / 6 FAIL`。失败只来自
+  canonical tuple producer、semantic analyzer producer markers、interface imported/class
+  fixture、local member-write producer fact 与 imported-type matrix；Task 7.38 相关
+  local reference cases通过。三套 stdio smoke 均在 `stdio_smoke.js:2003` 因
+  `short_circuit_unreachable` producer warning 缺失真实 exit 1，三套 CLI `--version`
+  均真实 exit 0。
 - 现有 member-write producer fact、class-member interface fixture、imported metadata
   及 `short_circuit_unreachable` producer warning 失败不在本任务中伪造或改写。
 
 ## 状态与产出记录
 
-- 完成时间：2026-08-30 08:31 +08:00。
-- 状态：Task 7.38 focused GREEN；Plan 03 Task 7/Task 8 仍未完成。
+- 完成时间：2026-08-30 09:50 +08:00。
+- 状态：Task 7.38 focused GREEN；post-commit overall gate 未通过。三工具链 source-contract
+  `70/70` 通过，但最终 16-target 仅 `10/16`，Plan 03 Task 7/Task 8 仍未完成。
 - 完成项目：local reference consumer 的 name-based cross-project aggregation 已移除；
-  source-contract regression 已加入并通过；imported/external canonical 分支与 Syntax05
-  producer ownership 已保持。
-- 未完成项目：同一工作树基线上的 interface、stdio smoke 与最终 16-target matrix
-  重放；既有 producer/metadata 阻塞项不在 LSP 侧增加兼容。
+  source-contract regression 与三工具链真实退出复核已通过；同基线 16-target、stdio smoke
+  和 CLI 回放完成；imported/external canonical 分支与 Syntax05 producer ownership 保持。
+- 未完成项目：canonical tuple、member-write、imported-type、interface fixture、analyzer
+  producer 与 `short_circuit_unreachable` fixture 缺口；不在 LSP 侧增加兼容，待 producer
+  归属路径收口后重跑完整矩阵与三套 smoke。

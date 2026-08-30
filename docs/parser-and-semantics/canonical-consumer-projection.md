@@ -269,6 +269,14 @@ semantic analyzer 仍保留 producer/metadata 失败 marker，三套 stdio smoke
 与协议投影保持 canonical ownership，但 Plan 03 Task 7/8 不得据此标记完成；待 Syntax05
 producer 与跨项目 metadata identity 收口后，必须重跑同一矩阵和 smoke。
 
+Plan 03 Task 7.38 post-commit gate（2026-08-30 09:50 +08:00）已确认 local-symbol
+reference consumer 仅委托 parser relation query；GCC/Clang/MSVC source-contract 均为
+`70/70`、真实 exit 0，原定义 16-target 集合均为 `10 PASS / 6 FAIL`。三套 stdio smoke
+共同在 `stdio_smoke.js:2003` 缺少 `short_circuit_unreachable` producer warning 处退出 1，
+三套 CLI `--version` 通过。tuple canonical graph、member-write reference、imported-type
+matrix、interface fixture 和 analyzer producer 失败均保持在 producer/metadata ownership；
+Plan 03 Task 7/8 尚未完成，LSP 不以名称、类型文本或消息重建关系。
+
 ## Compatibility boundary
 
 M5 不把 legacy `SZrIo` 二进制解释成 `ZRAF`，也不允许 canonical API 回退到 legacy

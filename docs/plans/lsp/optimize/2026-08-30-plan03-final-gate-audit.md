@@ -38,17 +38,19 @@ Syntax05-owned parser producer、semantic-token producer 或 project metadata pr
   fixture 处停止：
   缺少 `short_circuit_unreachable` warning（`tests/language_server/stdio_smoke.js:2003`）。
   这不是 stdio transport、shutdown 或 CLI 启动失败。三套 CLI 版本检查仍通过。
-- 2026-08-30 07:44 +08:00 的有效 16-target 回放在 GCC、Clang、MSVC 均保持
-  `10 PASS / 6 FAIL`，且每个测试进程的真实退出码与 marker 一致。三套 CLI
-  `--version` 也分别真实 exit 0（GCC GNU 11.4.0、Clang 14.0.0、MSVC
-  19.44.35228.0）。通过项包括 semantic query、compiler diagnostics、semantic facts、
-  canonical consumers、LSP diagnostic query、incremental parser、project features、
-  UTF-16 ranges、source contracts 与 expression facts。失败项在三套工具链一致：canonical
-  type graph 的 tuple AST producer、semantic analyzer 的既有 producer markers、interface
-  的 class-member fixture、local query/hover 的 member-write producer fact、language
-  feature matrix 的 imported-type binding，以及 project pooling guard marker。Task 7.37
-  修复的 short-circuit local case 在该回放中保持通过；stdio smoke 仍因同一
-  `short_circuit_unreachable` producer warning 缺失而真实 exit 1。
+- 2026-08-30 09:50 +08:00 的 post-commit 16-target 回放在 GCC、Clang、MSVC 均为
+  `10 PASS / 6 FAIL`，且每个测试进程的真实退出码与 marker 一致。三套 source-contract
+  均为 `70/70`、真实 exit 0；MSVC 临时验证 worktree 的 LF source snapshot 已校正后重链，
+  不再把 CRLF 造成的结构断言误报计入失败。三套 CLI `--version` 也真实 exit 0（GCC
+  GNU 11.4.0、Clang 14.0.0、MSVC 19.44.35228.0）。通过项包括 semantic query、compiler
+  diagnostics、semantic facts、canonical consumers、LSP diagnostic query、incremental
+  parser、project features、UTF-16 ranges、source contracts 与 expression facts。失败项在
+  三套工具链一致：canonical type graph 的 tuple AST producer、semantic analyzer 的既有
+  producer markers、interface 的 imported-function/class-member fixture、local query/hover
+  的 member-write producer fact，以及 language feature matrix 的 imported-type binding。
+  三套 stdio smoke 均在 `tests/language_server/stdio_smoke.js:2003` 因 generic fixture
+  缺少 `short_circuit_unreachable` warning 真实 exit 1；Task 7.37 的 local short-circuit
+  case 本身保持通过。
 
 ## Ownership Boundary
 
@@ -59,15 +61,15 @@ metadata 或 Syntax05 归属路径收口后重跑。本记录不以 LSP 兼容�
 
 ## 状态与产出记录
 
-- 完成时间：2026-08-30 07:44 +08:00（Task 7.37 focused 实现完成于 07:29，最终矩阵与
-  CLI 回放于 07:44 完成）。
-- 状态：最终门禁审计已更新至 Task 7.37；Task 7/Task 8 仍未完成，不声明本阶段
+- 完成时间：2026-08-30 09:50 +08:00（Task 7.38 post-commit source-contract、三工具链
+  16-target、stdio smoke 与 CLI 回放完成）。
+- 状态：Task 7.38 local cross-project reference consumer 已完成并通过三工具链
+  source-contract；最终门禁仍为 `10/16`，因此 Task 7/Task 8 仍未完成，不声明 Plan 03
   GREEN 或完成。
-- 完成项目：三工具链 parity/source-contract/inlay/CLI 复核；Task 7.35 reference-call
-  structured diagnostic bridge、Task 7.36 ownership range projection 与 Task 7.37
-  short-circuit reachability projection 的 GCC/Clang/MSVC 回归；interface/project/analyzer
- 失败 marker 复核；三套 stdio smoke 与 16-target 矩阵真实退出码复核；三套 CLI
-  `--version` 复核；producer 与 LSP ownership 分层。
+- 完成项目：三工具链 source-contract `70/70` 与 production snapshot 校验；Task 7.35
+  structured diagnostic bridge、Task 7.36 ownership projection、Task 7.37 reachability
+  projection、Task 7.38 local reference fail-closed 的回归；16-target 真实退出与 marker
+  复核；三套 stdio smoke 与 CLI `--version` 复核；producer 与 LSP ownership 分层。
 - 阻塞项目：Syntax05 producer/metadata 路径释放；short-circuit/member-write、
   closed-generic/borrow-return facts、cross-project metadata identity、semantic-token
   canonical migration 与既有 `short_circuit_unreachable` producer fixture；之后重跑同一

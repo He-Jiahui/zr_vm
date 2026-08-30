@@ -359,12 +359,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    跨项目 imported-member aggregation 的分支。source-contract regression 只检查
    `AppendReferences` local branch 不再读取该 name；local 结果完全来自 parser relation
    query，缺失 canonical cross-project relation 时保持 fail-closed。imported-member 与
-   external-metadata 分支的 structured declaration identity 不变。该实现尚待当前工作树
-   GCC/Clang/MSVC focused、interface、stdio smoke 与同基线 16-target final gate，暂不
-   声明 Task 7/8 或 Plan 03 GREEN。Task 7.38 focused GREEN 已于 2026-08-30 08:31
-   +08:00 完成：local-symbol references consumer 仅返回 parser relation query，不再按
-   `query->symbol->name` 聚合跨项目结果；GCC/Clang/MSVC source-contract 与生产单文件
-   语法检查均通过。interface、stdio smoke 与同基线 16-target final gate 仍待重放。
+   external-metadata 分支的 structured declaration identity 不变。Task 7.38 focused GREEN
+   已于 2026-08-30 08:31 +08:00 完成；09:50 +08:00 的 post-commit gate 在 GCC/Clang/MSVC
+   均确认 source-contract `70/70` 真实 exit 0，原定义 16-target 集合均为 `10 PASS / 6 FAIL`。
+   三套 CLI `--version` 真实 exit 0；三套 stdio smoke 均在 generic fixture 缺失
+   `short_circuit_unreachable` warning 处真实 exit 1。失败项全部落在已知 parser/metadata
+   producer 或 fixture：tuple canonical graph、semantic analyzer producer markers、interface
+   class/import fixture、local member-write reference query/hover、imported-type matrix；
+   LSP 未增加名称、类型文本或消息 fallback。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续
