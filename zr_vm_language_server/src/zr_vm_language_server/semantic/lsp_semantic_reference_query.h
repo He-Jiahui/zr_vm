@@ -3,14 +3,6 @@
 
 #include "semantic/lsp_semantic_query.h"
 
-TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
-        SZrState *state,
-        SZrLspContext *context,
-        SZrSemanticAnalyzer *analyzer,
-        SZrSymbol *symbol,
-        TZrBool includeDeclaration,
-        SZrArray *result,
-        TZrBool *outAppended);
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
         SZrState *state,
         SZrLspContext *context,

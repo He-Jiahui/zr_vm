@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 16:44 +08:00。
-- 总体状态：进行中。Task 7.50 已删除 virtual-document builder 中零调用的 format helper 及
-  专用 varargs 依赖；固定 GCC/Clang 快照中的 source-contract 70/70 全部通过，GCC
-  interface 的五个 virtual-document/navigation case 全部 PASS，整体与 parent 保持同一
-  8 个既有 producer marker，delta 0。
+- 最近更新时间：2026-08-30 16:55 +08:00。
+- 总体状态：进行中。Task 7.51 已删除 local-reference consumer 中零调用的 Symbol wrapper；
+  固定 GCC/Clang 快照中的 source-contract 70/70、semantic parity 15/15 全部通过，
+  local-query 保持同一 32 Pass/1 个既有 member-write producer marker，GCC interface 与
+  parent 保持同一 8 个既有 producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -557,3 +557,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   名称与 Task 7.47 parent 的 8 个已登记 producer marker 完全一致，delta 0且不计本任务
   GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05 producer及其余
   analyzer/symbol-table consumers仍未完成。
+
+- 补充完成时间：2026-08-30 16:55 +08:00。Task 7.51 删除全仓无调用的
+  `ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol` 声明与 wrapper
+  实现；活跃 `AppendReferences(query)` 继续从 canonical SymbolId 直接调用内部 relation
+  projector，未恢复 `SZrSymbol` 或 name fallback。source-contract 在旧生产代码上精确 RED
+  header/source 两项后转 GREEN。固定 `c20a968 + 3 code/test overlays` 的 GCC/Clang 快照均
+  完成 source-contract、local semantic query 与 semantic parity 重链；前后两项分别为
+  70/70、15/15且真实 exit 0，local-query 两套均只保留同一 member-write unresolved producer
+  marker。GCC interface 与固定 parent 的失败测试名称均为同一 8 个已登记 producer marker，
+  delta 0且不计本任务 GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05
+  producer及其余 analyzer/symbol-table consumers仍未完成。

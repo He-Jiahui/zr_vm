@@ -1471,15 +1471,18 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
 static void test_local_reference_consumers_use_parser_relation_queries(void) {
     char *referenceQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c");
+    char *referenceQueryHeader = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.h");
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
     const char *appendReferencesStart;
     const char *appendReferencesEnd;
 
-    if (referenceQuery == NULL || semanticQuery == NULL) {
+    if (referenceQuery == NULL || referenceQueryHeader == NULL || semanticQuery == NULL) {
         printf("FAIL: could not read local reference consumer sources\n");
         g_failures++;
         free(referenceQuery);
+        free(referenceQueryHeader);
         free(semanticQuery);
         return;
     }
@@ -1492,6 +1495,12 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         referenceQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
     assert_text_contains_none(referenceQuery, "referenceTracker");
     assert_text_contains_none(referenceQuery, "symbol->name");
+    assert_text_contains_none(
+        referenceQuery,
+        "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol");
+    assert_text_contains_none(
+        referenceQueryHeader,
+        "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol");
     appendReferencesStart = strstr(
         semanticQuery,
         "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReferences(");
@@ -1508,6 +1517,7 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         semanticQuery, "semantic_query_normalize_symbol_reference_range");
 
     free(referenceQuery);
+    free(referenceQueryHeader);
     free(semanticQuery);
 }
 

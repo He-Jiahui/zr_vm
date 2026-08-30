@@ -232,27 +232,6 @@ static TZrBool semantic_reference_query_append_references_for_symbol_id(
     return ZR_TRUE;
 }
 
-TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
-        SZrState *state,
-        SZrLspContext *context,
-        SZrSemanticAnalyzer *analyzer,
-        SZrSymbol *symbol,
-        TZrBool includeDeclaration,
-        SZrArray *result,
-        TZrBool *outAppended) {
-    if (symbol == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    return semantic_reference_query_append_references_for_symbol_id(
-            state,
-            context,
-            analyzer,
-            symbol->semanticId,
-            includeDeclaration,
-            result,
-            outAppended);
-}
-
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
         SZrState *state,
         SZrLspContext *context,
