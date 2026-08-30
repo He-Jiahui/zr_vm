@@ -194,6 +194,7 @@ static void test_call_edge_merge_preserves_distinct_line_only_callsites(void) {
     TZrSymbolId callerId;
     TZrSymbolId targetId;
     SZrArray edges;
+    const SZrParserSemanticCallEdgeQuery *edge;
 
     TEST_ASSERT_NOT_NULL(sourceName);
     TEST_ASSERT_NOT_NULL(context);
@@ -227,7 +228,7 @@ static void test_call_edge_merge_preserves_distinct_line_only_callsites(void) {
 
     memset(&callReference, 0, sizeof(callReference));
     callReference.kind = ZR_SEMANTIC_REFERENCE_CALL;
-    callReference.range = call_line_range(sourceName, 2, 5, 11);
+    callReference.range = call_line_range(sourceName, 3, 5, 11);
     callReference.symbolId = targetId;
     callReference.typeId = 32U;
     callReference.declarationRange = call_line_range(sourceName, 1, 10, 16);
@@ -235,7 +236,7 @@ static void test_call_edge_merge_preserves_distinct_line_only_callsites(void) {
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
             context, &callReference));
 
-    callReference.range = call_line_range(sourceName, 3, 5, 11);
+    callReference.range = call_line_range(sourceName, 2, 5, 11);
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
             context, &callReference));
     TEST_ASSERT_TRUE(ZrParser_SemanticCalls_Publish(context));
@@ -244,6 +245,12 @@ static void test_call_edge_merge_preserves_distinct_line_only_callsites(void) {
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_OutgoingCalls(
             context, callerId, ZR_NULL, &edges));
     TEST_ASSERT_EQUAL_UINT(2U, edges.length);
+    edge = (const SZrParserSemanticCallEdgeQuery *)ZrCore_Array_Get(&edges, 0U);
+    TEST_ASSERT_NOT_NULL(edge);
+    TEST_ASSERT_EQUAL_INT(2, edge->callSiteRange.start.line);
+    edge = (const SZrParserSemanticCallEdgeQuery *)ZrCore_Array_Get(&edges, 1U);
+    TEST_ASSERT_NOT_NULL(edge);
+    TEST_ASSERT_EQUAL_INT(3, edge->callSiteRange.start.line);
 
     ZrCore_Array_Free(g_state, &edges);
     ZrParser_SemanticContext_Free(context);

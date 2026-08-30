@@ -345,11 +345,64 @@ static TZrBool semantic_calls_prepare_output(
     return ZR_TRUE;
 }
 
+static TZrInt32 semantic_calls_compare_sources(
+        const SZrString *left,
+        const SZrString *right) {
+    if (left == right) {
+        return 0;
+    }
+    if (left == ZR_NULL) {
+        return -1;
+    }
+    if (right == ZR_NULL) {
+        return 1;
+    }
+    return strcmp(ZrCore_String_GetNativeString(left),
+                  ZrCore_String_GetNativeString(right));
+}
+
+static TZrInt32 semantic_calls_compare_ranges(
+        const SZrFileRange *left,
+        const SZrFileRange *right) {
+    TZrInt32 sourceOrder = semantic_calls_compare_sources(
+            left->source, right->source);
+
+    if (sourceOrder != 0) {
+        return sourceOrder;
+    }
+    if (left->start.offset > 0U || left->end.offset > 0U ||
+        right->start.offset > 0U || right->end.offset > 0U) {
+        if (left->start.offset != right->start.offset) {
+            return left->start.offset < right->start.offset ? -1 : 1;
+        }
+        if (left->end.offset != right->end.offset) {
+            return left->end.offset < right->end.offset ? -1 : 1;
+        }
+        return 0;
+    }
+    if (left->start.line != right->start.line) {
+        return left->start.line < right->start.line ? -1 : 1;
+    }
+    if (left->start.column != right->start.column) {
+        return left->start.column < right->start.column ? -1 : 1;
+    }
+    if (left->end.line != right->end.line) {
+        return left->end.line < right->end.line ? -1 : 1;
+    }
+    if (left->end.column != right->end.column) {
+        return left->end.column < right->end.column ? -1 : 1;
+    }
+    return 0;
+}
+
 static TZrBool semantic_calls_query_precedes(
         const SZrParserSemanticCallEdgeQuery *left,
         const SZrParserSemanticCallEdgeQuery *right) {
-    if (left->callSiteRange.start.offset != right->callSiteRange.start.offset) {
-        return left->callSiteRange.start.offset < right->callSiteRange.start.offset;
+    TZrInt32 rangeOrder = semantic_calls_compare_ranges(
+            &left->callSiteRange, &right->callSiteRange);
+
+    if (rangeOrder != 0) {
+        return rangeOrder < 0;
     }
     if (left->callerSymbolId != right->callerSymbolId) {
         return left->callerSymbolId < right->callerSymbolId;

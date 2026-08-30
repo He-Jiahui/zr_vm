@@ -414,6 +414,12 @@ both ranges are line-only, source plus all four line/column coordinates form
 the key. Two line-only calls in the same function therefore remain separate
 edges instead of collapsing merely because both offset pairs are zero.
 
+The copied edge queries use the same coordinate model for deterministic output.
+They order source identities first, then offset ranges when offsets are present
+or complete line/column ranges otherwise, and only then caller/target ids and
+resolution. Reversing producer append order therefore cannot reverse two
+line-only callsites in an incoming or outgoing result.
+
 Repeated lifecycle publication merges facts for the same caller and exact
 call-site range by structured completeness. A resolved target supersedes an
 earlier unresolved edge, and a later unresolved fact cannot downgrade it. A
