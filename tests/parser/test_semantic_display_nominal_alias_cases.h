@@ -287,3 +287,92 @@ static void test_gc_bridge_type_value_aliases_preserve_inner_source_aliases(void
     ZrParser_CompilerState_Free(&cs);
     ZrParser_Ast_Free(g_state, ast);
 }
+
+static void test_reference_readonly_type_value_aliases_preserve_inner_alias(void) {
+    const struct {
+        const TZrChar *source;
+        const TZrChar *expectedDisplay;
+    } cases[] = {
+            {"var view: readonly Word = null;\n", "readonly Document"},
+            {"var writable: ref Word = null;\n", "ref Document"},
+            {"var observed: ref readonly Word = null;\n", "ref readonly Document"},
+    };
+    TZrSize index;
+
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        SZrString *sourceName = ZrCore_String_CreateFromNative(
+                g_state, "wrapped_type_value_alias_display.zr");
+        SZrString *aliasName = ZrCore_String_CreateFromNative(g_state, "Word");
+        SZrString *targetName = ZrCore_String_CreateFromNative(g_state, "Document");
+        SZrAstNode *ast;
+        SZrAstNode *declaration;
+        SZrType *typeUse;
+        SZrCompilerState cs;
+        SZrTypeBinding binding;
+        SZrInferredType inferred;
+        SZrInferredType target;
+        TZrTypeId wrapperTypeId;
+        TZrTypeId targetTypeId;
+        SZrString *alias;
+        TZrChar buffer[64];
+
+        TEST_ASSERT_NOT_NULL(sourceName);
+        TEST_ASSERT_NOT_NULL(aliasName);
+        TEST_ASSERT_NOT_NULL(targetName);
+        ast = ZrParser_Parse(
+                g_state,
+                cases[index].source,
+                strlen(cases[index].source),
+                sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_UINT(1U, ast->data.script.statements->count);
+        declaration = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(declaration);
+        typeUse = declaration->data.variableDeclaration.typeInfo;
+        TEST_ASSERT_NOT_NULL(typeUse);
+        TEST_ASSERT_NOT_NULL(typeUse->name);
+
+        memset(&cs, 0, sizeof(cs));
+        ZrParser_CompilerState_Init(&cs, g_state);
+        TEST_ASSERT_NOT_NULL(cs.semanticContext);
+        memset(&binding, 0, sizeof(binding));
+        binding.name = aliasName;
+        ZrParser_InferredType_InitFull(
+                g_state,
+                &binding.type,
+                ZR_VALUE_TYPE_OBJECT,
+                ZR_FALSE,
+                targetName);
+        ZrCore_Array_Push(g_state, &cs.typeValueAliases, &binding);
+
+        ZrParser_InferredType_Init(g_state, &inferred, ZR_VALUE_TYPE_UNKNOWN);
+        TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+                &cs, typeUse, &inferred));
+        wrapperTypeId = ZrParser_CanonicalType_FromInferred(
+                cs.semanticContext, &inferred);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, wrapperTypeId);
+        TEST_ASSERT_TRUE(ZrParser_SemanticDisplay_FormatType(
+                cs.semanticContext, wrapperTypeId, buffer, sizeof(buffer)));
+        TEST_ASSERT_EQUAL_STRING(cases[index].expectedDisplay, buffer);
+
+        ZrParser_InferredType_InitFull(
+                g_state,
+                &target,
+                ZR_VALUE_TYPE_OBJECT,
+                ZR_FALSE,
+                targetName);
+        targetTypeId = ZrParser_CanonicalType_FromInferred(
+                cs.semanticContext, &target);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, targetTypeId);
+        alias = ZrParser_SemanticQuery_TypeDisplayAliasAt(
+                cs.semanticContext, targetTypeId, &typeUse->name->location);
+        TEST_ASSERT_NOT_NULL(alias);
+        TEST_ASSERT_EQUAL_STRING("Word", ZrCore_String_GetNativeString(alias));
+
+        ZrParser_InferredType_Free(g_state, &target);
+        ZrParser_InferredType_Free(g_state, &inferred);
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(g_state, ast);
+    }
+}

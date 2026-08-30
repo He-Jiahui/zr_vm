@@ -376,6 +376,7 @@ void type_inference_publish_type_value_display_alias(
         const SZrInferredType *type,
         const SZrType *typeUse) {
     SZrTypeBinding *binding;
+    SZrType innerTypeUse;
 
     if (typeUse == ZR_NULL || typeUse->name == ZR_NULL ||
         typeUse->name->type != ZR_AST_IDENTIFIER_LITERAL) {
@@ -386,6 +387,11 @@ void type_inference_publish_type_value_display_alias(
     if (binding == ZR_NULL) {
         return;
     }
+    innerTypeUse = *typeUse;
+    innerTypeUse.dimensions = 0;
+    innerTypeUse.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    innerTypeUse.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+    innerTypeUse.isReadonlyView = ZR_FALSE;
     type_inference_publish_explicit_type_display_alias(
-            cs, type, binding->name, typeUse);
+            cs, type, binding->name, &innerTypeUse);
 }

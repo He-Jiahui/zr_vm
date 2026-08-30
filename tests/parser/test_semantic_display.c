@@ -973,6 +973,7 @@ int main(void) {
     RUN_TEST(test_type_value_alias_use_preserves_nominal_source_alias);
     RUN_TEST(test_owner_type_value_alias_preserves_inner_source_alias);
     RUN_TEST(test_gc_bridge_type_value_aliases_preserve_inner_source_aliases);
+    RUN_TEST(test_reference_readonly_type_value_aliases_preserve_inner_alias);
     RUN_TEST(test_qualified_type_use_publishes_source_display_alias);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);

@@ -3326,9 +3326,9 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
         }
 
         if (type_inference_resolve_type_value_alias(cs, typeName, result)) {
+            type_inference_publish_type_value_display_alias(
+                    cs, result, astType);
             result->ownershipQualifier = astType->ownershipQualifier;
-            type_inference_publish_explicit_type_display_alias(
-                    cs, result, typeName, astType);
             return ZR_TRUE;
         }
 

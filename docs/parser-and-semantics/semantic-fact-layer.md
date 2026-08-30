@@ -3876,3 +3876,17 @@ could expose an alias for an invalid bridge target, while publishing after the
 bridge kind is attached would bind the alias to the outer wrapper TypeId. The
 producer does neither and remains gated by the structured alias table and
 ordinary/resource class prototype identity.
+
+## Plan 03 Task 5.15 Reference/Readonly Type-Value Alias Producer
+
+Direct type-value aliases wrapped by `readonly`, `ref`, or `ref readonly` now
+publish the exact identifier alias against the inner canonical target TypeId.
+The producer normalizes only a local copy of the parsed type-use wrapper flags;
+the AST and inferred result remain unchanged. Consequently `readonly Word`,
+`ref Word`, and `ref readonly Word` retain canonical displays based on
+`Document`, while the exact `Word` range resolves to the source alias.
+
+This is not a display-text reconstruction. The producer first resolves the
+compiler state's structured `Word -> Document` binding, then uses the parsed
+identifier range and copied target type. Generic, qualified, malformed, or
+unbound names remain outside this narrow path and continue to fail closed.

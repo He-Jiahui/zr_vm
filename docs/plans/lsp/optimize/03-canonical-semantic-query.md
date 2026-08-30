@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 05:59 +08:00。
-- 总体状态：进行中。Task 5.14 已在GcBridge target通过canonical ordinary/resource class world
+- 最近更新时间：2026-08-31 06:10 +08:00。
+- 总体状态：进行中。Task 5.15 已让direct type-value aliases在`readonly`、`ref`和
+  `ref readonly` source wrappers下发布inner target alias；outer canonical分别保持
+  `readonly Document`、`ref Document`、`ref readonly Document`，exact `Word` range只绑定
+  inner `Document` TypeId。Task 5.14 已在GcBridge target通过canonical ordinary/resource class world
   校验后、附加bridge kind前重放type-value alias producer；`Gc<DocAlias>`与
   `GcBox<ResourceAlias>`分别保持canonical `Gc<Document>`/`GcBox<BoxedResource>`，inner exact
   ranges返回source aliases且不会绑定outer wrapper TypeId。Task 5.13 已在ownership wrapper恢复semantic context后重放structured
@@ -186,13 +189,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
 - 固定 GCC/Clang 快照中的 parser/display/call/query/relation/symbol/parity/source-contract 门禁分别为
-  `74/20/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
+  `74/21/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
   type inference `124/124`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -873,3 +876,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   marker，两套interface仍为fixed parent同一8个producer marker，delta 0且均不计GREEN。本项未
   运行MSVC、完整16-target matrix或三套stdio smoke；LSP alias consumer、receiver/member与
   binary/native parity及Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 06:10 +08:00。Task 5.15 让type-value alias producer对
+  parsed type-use的局部副本清除`ownershipQualifier`、`referenceAccess`、`isReadonlyView`与array
+  dimensions，再以原identifier exact range和resolved binding target发布inner alias；AST与最终
+  inferred wrapper不变。RED中`readonly Word`已正确格式化为`readonly Document`，但inner
+  `Document` TypeId的alias query为`NULL`，display `21 Tests / 1 Failure`；GREEN同时覆盖
+  `ref Word`与`ref readonly Word`，三种outer canonical均保持。固定GCC/Clang快照均通过parser/
+  display/calls/query/relations/symbols/parity/source-contract/facts/canonical/type-inference
+  `74/21/26/30/22/21/15/70/15/21/124`、真实exit 0；两套canonical graph仍只有既有tuple
+  marker，两套interface仍为fixed parent同一8个producer marker，delta 0且均不计GREEN。本项未
+  运行MSVC、完整16-target matrix或三套stdio smoke；Shared/Weak/AtomicShared全变体display gate、
+  LSP alias consumer、receiver/member与binary/native parity及Plan 03 Task 7/Task 8继续未完成。
