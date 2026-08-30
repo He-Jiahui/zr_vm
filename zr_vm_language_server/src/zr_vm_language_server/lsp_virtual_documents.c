@@ -2,7 +2,6 @@
 
 #include "metadata/lsp_metadata_provider.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -167,26 +166,6 @@ static void virtual_builder_append_text(SZrLspVirtualBuilder *builder, const TZr
     for (TZrSize index = 0; text[index] != '\0'; index++) {
         virtual_builder_append_char(builder, text[index]);
     }
-}
-
-static void virtual_builder_append_format(SZrLspVirtualBuilder *builder, const TZrChar *format, ...) {
-    TZrChar buffer[ZR_LSP_DOCUMENTATION_BUFFER_LENGTH];
-    va_list arguments;
-    TZrInt32 written;
-
-    if (builder == ZR_NULL || format == ZR_NULL) {
-        return;
-    }
-
-    va_start(arguments, format);
-    written = vsnprintf(buffer, sizeof(buffer), format, arguments);
-    va_end(arguments);
-    if (written <= 0) {
-        return;
-    }
-
-    buffer[sizeof(buffer) - 1] = '\0';
-    virtual_builder_append_text(builder, buffer);
 }
 
 static SZrFilePosition virtual_builder_position(const SZrLspVirtualBuilder *builder) {

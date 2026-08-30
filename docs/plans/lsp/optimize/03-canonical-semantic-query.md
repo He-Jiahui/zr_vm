@@ -150,10 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 16:28 +08:00。
-- 总体状态：进行中。Task 7.49 已删除 analyzer/import-chain 中三个零调用 dead text helper；
-  固定 GCC/Clang 快照中的 source-contract 69/69、semantic parity 15/15 全部通过，
-  analyzer 保持同一 65 Pass/2 个既有 producer marker，GCC interface 与 parent 保持同一
+- 最近更新时间：2026-08-30 16:44 +08:00。
+- 总体状态：进行中。Task 7.50 已删除 virtual-document builder 中零调用的 format helper 及
+  专用 varargs 依赖；固定 GCC/Clang 快照中的 source-contract 70/70 全部通过，GCC
+  interface 的五个 virtual-document/navigation case 全部 PASS，整体与 parent 保持同一
   8 个既有 producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
@@ -547,3 +547,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   GCC interface 与 Task 7.48 parent 的失败测试名称均为同一 8 个已登记 producer marker，
   delta 0且不计本任务 GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05
   producer及其余 analyzer/symbol-table consumers仍未完成。
+
+- 补充完成时间：2026-08-30 16:44 +08:00。Task 7.50 删除全仓零调用的
+  `virtual_builder_append_format` 及其独占 `<stdarg.h>` 依赖，保留活跃的 structured
+  virtual-document renderer 与 native descriptor adapter。source-contract 在旧生产代码上
+  精确 RED 一项后转 GREEN；固定 `eaad830 + 2 code/test overlays` 的 GCC/Clang 快照均完成
+  language-server static library 与 source-contract 重链，source-contract 70/70 且真实
+  exit 0。GCC interface 中五个 virtual-document/navigation case 全部 PASS；整体失败测试
+  名称与 Task 7.47 parent 的 8 个已登记 producer marker 完全一致，delta 0且不计本任务
+  GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05 producer及其余
+  analyzer/symbol-table consumers仍未完成。
