@@ -479,7 +479,8 @@ TZrTypeId ZrParser_CanonicalType_InternNominal(
     TZrSize index;
     TZrUInt64 structuralHash;
 
-    if (context == ZR_NULL || name == ZR_NULL) {
+    if (context == ZR_NULL || name == ZR_NULL ||
+        ZrCore_String_GetByteLength(name) == 0U) {
         return ZR_SEMANTIC_ID_INVALID;
     }
 

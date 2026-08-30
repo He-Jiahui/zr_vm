@@ -400,6 +400,39 @@ static void test_semantic_display_rejects_malformed_composite_shapes(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_display_rejects_empty_nominal_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *moduleIdentity = ZrCore_String_CreateFromNative(g_state, "app.model");
+    SZrString *emptyName = ZrCore_String_Create(g_state, "", 0U);
+    TZrTypeId emptyType;
+    TZrTypeId validType;
+    SZrCanonicalTypeNode *validNode;
+    SZrString *validName;
+    TZrChar buffer[64];
+
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(moduleIdentity);
+    TEST_ASSERT_NOT_NULL(emptyName);
+    emptyType = ZrParser_CanonicalType_InternNominal(
+            context, moduleIdentity, emptyName, 0x02000041U);
+    TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, emptyType);
+
+    validName = ZrCore_String_CreateFromNative(g_state, "Document");
+    TEST_ASSERT_NOT_NULL(validName);
+    validType = ZrParser_CanonicalType_InternNominal(
+            context, moduleIdentity, validName, 0x02000042U);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, validType);
+    validNode = (SZrCanonicalTypeNode *)ZrParser_CanonicalType_Find(context, validType);
+    TEST_ASSERT_NOT_NULL(validNode);
+    validNode->data.nominal.name = emptyName;
+    strcpy(buffer, "sentinel");
+    TEST_ASSERT_FALSE(ZrParser_SemanticDisplay_FormatType(
+            context, validType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("", buffer);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_display_rejects_malformed_canonical_contracts(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     TZrTypeId intType;
@@ -690,6 +723,7 @@ int main(void) {
     RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);
+    RUN_TEST(test_semantic_display_rejects_empty_nominal_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_canonical_contracts);
     RUN_TEST(test_callable_signature_rejects_malformed_canonical_contracts);
     RUN_TEST(test_callable_signature_formats_canonical_effects_and_passing_modes);

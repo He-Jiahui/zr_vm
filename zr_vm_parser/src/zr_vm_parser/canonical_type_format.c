@@ -165,7 +165,8 @@ static TZrBool canonical_type_format_generic_arguments(
 static TZrBool canonical_type_format_nominal(
         SZrCanonicalTypeFormatState *state,
         const SZrCanonicalNominalType *nominal) {
-    if (state == ZR_NULL || nominal == ZR_NULL || nominal->name == ZR_NULL) {
+    if (state == ZR_NULL || nominal == ZR_NULL || nominal->name == ZR_NULL ||
+        ZrCore_String_GetByteLength(nominal->name) == 0U) {
         return ZR_FALSE;
     }
     if (nominal->moduleIdentity != ZR_NULL &&

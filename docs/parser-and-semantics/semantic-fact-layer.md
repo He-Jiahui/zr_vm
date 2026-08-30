@@ -3727,3 +3727,17 @@ shared canonical parameter validator and their structured passing/escape
 contracts. Unsupported effect bits or malformed parameter contracts remain
 unavailable instead of producing a partial signature. LSP consumers must use
 this SymbolId/TypeId display and must not add an effect suffix from AST text.
+
+## Plan 03 Task 5.5 Nominal Display Identity Integrity
+
+A canonical nominal type must have a non-empty name. The public nominal
+interner rejects an empty name before reserving a TypeId, matching the existing
+qualified-name adapter contract. An empty module identity remains valid for an
+unqualified nominal and is not confused with a missing type name.
+
+Canonical type formatting repeats the non-empty-name check before emitting a
+nominal. This protects consumers from corrupt or stale snapshots whose stored
+presentation identity was cleared after interning: formatting fails and clears
+the output instead of returning success with an empty type label. LSP consumers
+must treat that result as unavailable and must not recover a name from source
+tokens or an alias table.
