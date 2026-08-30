@@ -150,15 +150,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 19:14 +08:00。
-- 总体状态：进行中。Task 4.16 已让 `CallAt` 在同一 call target 的多条 callable facts 中
-  优先选择具有 resolved SymbolId 的结构化身份，较早的 display-only fact 不再遮蔽目标。
+- 最近更新时间：2026-08-30 21:52 +08:00。
+- 总体状态：进行中。Task 4.17 已要求同一 call target 内同一精确 reference range 的 resolved
+  callable facts 对 SymbolId 完全一致；不同已解析目标不再任取其一，不同嵌套范围仍保持独立。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
-  `18/30/22/21/15/70`，均真实
+  `20/30/22/21/15/70`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.16 resolved call-reference refinement；Task 4.15 overload member
+- 本阶段完成项目：Task 4.17 resolved call-target conflict detection；Task 4.16 resolved
+  call-reference refinement；Task 4.15 overload member
   completeness；Task 4.14 overload-set record
   exactness；Task 4.13 overload selected-target
   atomic consistency；Task 3.16 relation
@@ -687,5 +688,19 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   相同完整度保持稳定发布顺序。RED 先发布未解析 display fact、后发布 resolved identity fact，
   call-query `18 Tests / 1 Failure`、`Expected TRUE Was FALSE`；GREEN 后 GCC/Clang 均通过
   `18/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套 interface
+  仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未
+  运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-30 21:52 +08:00。Task 4.17 将同一 call target、同一精确 reference
+  range 的 resolved identity 从“完整度相同时保留首项”收紧为一致性门禁：扫描到两个不同有效
+  SymbolId 时清零输出并 fail closed；不同 nested ranges 保持独立，同一 target 的重复事实仍可
+  按 declaration range/display 完整度 refinement。
+  RED 为同一 call-site 发布两个不同 resolved function facts，call-query `19 Tests / 1 Failure`、
+  `Expected FALSE Was TRUE`；反向 RED 为同一容器内不同 nested ranges，`20 Tests / 1 Failure`、
+  `Expected TRUE Was FALSE`；单遍 range-scoped 实现再由“先发布同 range fact、后以更高完整度
+  选中冲突 fact”的 `20 Tests / 1 Failure`、`Expected FALSE Was TRUE` 证明仍会漏检。最终
+  query 先稳定选择，再第二遍复核 selected exact range。固定 `1e8584c + 3 overlays` 的
+  GCC/Clang 快照均通过
+  `20/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套 interface
   仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未
   运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。

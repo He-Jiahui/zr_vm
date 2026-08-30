@@ -44,12 +44,33 @@ static TZrSize canonical_query_width(const SZrFileRange *range) {
     return ZR_MAX_SIZE;
 }
 
+static TZrBool canonical_query_ranges_equal(const SZrFileRange *left,
+                                             const SZrFileRange *right) {
+    if (left == ZR_NULL || right == ZR_NULL ||
+        (left->source == ZR_NULL) != (right->source == ZR_NULL) ||
+        (left->source != ZR_NULL &&
+         !canonical_query_same_source(left->source, right->source))) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(left->start.offset == right->start.offset &&
+                     left->start.line == right->start.line &&
+                     left->start.column == right->start.column &&
+                     left->end.offset == right->end.offset &&
+                     left->end.line == right->end.line &&
+                     left->end.column == right->end.column);
+}
+
+static TZrBool canonical_query_call_reference_has_resolved_target(
+        const SZrSemanticReferenceFact *reference) {
+    return (TZrBool)(reference->isResolved &&
+                     reference->symbolId != ZR_SEMANTIC_ID_INVALID);
+}
+
 static TZrSize canonical_query_call_reference_completeness(
         const SZrSemanticReferenceFact *reference) {
     TZrSize completeness = 0u;
 
-    if (reference->isResolved &&
-        reference->symbolId != ZR_SEMANTIC_ID_INVALID) {
+    if (canonical_query_call_reference_has_resolved_target(reference)) {
         completeness += 4u;
     }
     if (reference->declarationRange.source != ZR_NULL ||
@@ -65,6 +86,22 @@ static TZrSize canonical_query_call_reference_completeness(
         completeness += 1u;
     }
     return completeness;
+}
+
+static TZrBool canonical_query_call_reference_is_candidate(
+        const SZrSemanticContext *context,
+        const SZrFileRange *callTargetRange,
+        const SZrSemanticReferenceFact *reference) {
+    const SZrCanonicalTypeNode *callableType;
+
+    if (reference == ZR_NULL || reference->kind != ZR_SEMANTIC_REFERENCE_CALL ||
+        reference->typeId == ZR_SEMANTIC_ID_INVALID ||
+        !canonical_query_contains(callTargetRange, &reference->range)) {
+        return ZR_FALSE;
+    }
+    callableType = ZrParser_CanonicalType_Find(context, reference->typeId);
+    return (TZrBool)(callableType != ZR_NULL &&
+                     callableType->kind == ZR_CANONICAL_TYPE_FUNCTION);
 }
 
 TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
@@ -170,26 +207,39 @@ TZrBool ZrParser_SemanticQuery_CallAt(
         const SZrSemanticReferenceFact *reference =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
                         (SZrArray *)&context->referenceFacts, index);
-        const SZrCanonicalTypeNode *callableType;
-        if (reference != ZR_NULL && reference->kind == ZR_SEMANTIC_REFERENCE_CALL &&
-            reference->typeId != ZR_SEMANTIC_ID_INVALID &&
-            canonical_query_contains(&best->callTargetRange, &reference->range)) {
-            callableType = ZrParser_CanonicalType_Find(context, reference->typeId);
-            if (callableType == ZR_NULL || callableType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
-                continue;
-            }
-            {
-                TZrSize completeness =
-                        canonical_query_call_reference_completeness(reference);
-                if (bestReference == ZR_NULL ||
-                    completeness > bestReferenceCompleteness) {
-                    bestReference = reference;
-                    bestReferenceCompleteness = completeness;
-                }
-            }
+        TZrSize completeness;
+
+        if (!canonical_query_call_reference_is_candidate(
+                    context, &best->callTargetRange, reference)) {
+            continue;
+        }
+        completeness = canonical_query_call_reference_completeness(reference);
+        if (bestReference == ZR_NULL ||
+            completeness > bestReferenceCompleteness) {
+            bestReference = reference;
+            bestReferenceCompleteness = completeness;
         }
     }
     if (bestReference == ZR_NULL) return ZR_FALSE;
+    if (canonical_query_call_reference_has_resolved_target(bestReference)) {
+        for (index = 0u; index < context->referenceFacts.length; ++index) {
+            const SZrSemanticReferenceFact *reference =
+                    (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                            (SZrArray *)&context->referenceFacts, index);
+
+            if (reference == bestReference ||
+                !canonical_query_call_reference_is_candidate(
+                        context, &best->callTargetRange, reference) ||
+                !canonical_query_ranges_equal(
+                        &bestReference->range, &reference->range) ||
+                !canonical_query_call_reference_has_resolved_target(reference)) {
+                continue;
+            }
+            if (bestReference->symbolId != reference->symbolId) {
+                return ZR_FALSE;
+            }
+        }
+    }
     outQuery->callableTypeId = bestReference->typeId;
     outQuery->expression = best;
     outQuery->reference = bestReference;
@@ -198,8 +248,7 @@ TZrBool ZrParser_SemanticQuery_CallAt(
     outQuery->argumentCount = best->argumentCount;
     outQuery->hasNamedArguments = best->hasNamedArguments;
     outQuery->isMemberCall = best->isMemberCall;
-    if (bestReference->isResolved &&
-        bestReference->symbolId != ZR_SEMANTIC_ID_INVALID) {
+    if (canonical_query_call_reference_has_resolved_target(bestReference)) {
         outQuery->hasResolvedTarget = ZR_TRUE;
         outQuery->targetSymbolId = bestReference->symbolId;
         outQuery->targetDeclarationRange = bestReference->declarationRange;

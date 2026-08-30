@@ -462,6 +462,13 @@ outranks target identity. Equal-completeness facts retain stable publication
 order. The query does not recover identity from a name, AST node, or signature
 string.
 
+All resolved facts at the same exact reference range within that target must
+agree on SymbolId. Two distinct resolved targets at that range are
+contradictory canonical producer output, so `CallAt` clears the result and
+fails closed instead of selecting either fact by completeness or publication
+order. References at distinct nested ranges remain independent. Repeated facts
+for the same resolved target may still refine its declaration range or display.
+
 `ZrParser_SemanticQuery_FormatCall` is also a value-only projection: its
 caller receives text rather than the borrowed expression fact. It consequently
 requires an `EXACT` selected expression before producing a signature. It clears
