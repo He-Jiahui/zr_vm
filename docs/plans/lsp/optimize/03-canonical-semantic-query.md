@@ -150,14 +150,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 17:22 +08:00。
-- 总体状态：进行中。Task 7.54 已删除project层零调用的旧project-URI ensure API，
-  production/header净删43行；固定GCC/Clang快照中的source-contract 70/70全部通过，project
-  保持同一42 Pass/18个既有producer marker，GCC interface与parent保持同一8个marker，
-  delta 0。
+- 最近更新时间：2026-08-30 17:46 +08:00。
+- 总体状态：进行中。Task 3.14 已让公共 relation append 按完整结构身份幂等，完全重复
+  edge 不再扩大 snapshot，同时同一 SymbolId 的不同 definition range 仍作为多定义保留；
+  固定 GCC/Clang 快照中的 relation/query/symbol/call/parity focused 门禁与 source-contract
+  `70/70` 均真实 exit 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
+- 本阶段完成项目：Task 3.14 relation append exact identity deduplication；
+  Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
   ownership return-escape canonical producer/query/LSP projection；Task 6.33
   variance persistent-fact producer migration；Task 6.34 const-assignment

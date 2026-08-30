@@ -226,6 +226,13 @@ An external fact without a source range is rejected unless its metadata
 projection supplies both values. A source import relation still has the local
 alias source range and may omit a virtual declaration until an exact metadata
 producer supplies one; consumers must not synthesize that URI.
+Append is idempotent for a fully identical relation identity: kind, stable ids,
+range-presence flags and exact ranges, external classification, origin URI, and
+virtual declaration URI must all match before an existing edge is reused.
+Distinct declaration/definition ranges therefore remain separate edges even
+when both endpoints use the same SymbolId and TypeId. The comparison protocol
+lives in the narrow internal `semantic_relations_identity.c` module so the
+relation publisher/query file remains the orchestration boundary.
 `RelationsOfSymbol`, `ImplementationsOf`, `BaseTypesOf`, and `DerivedTypesOf`
 are read-only projections: they clear reused output arrays, return copied values
 with borrowed URI fields, and order edges by relation kind, stable ids, and

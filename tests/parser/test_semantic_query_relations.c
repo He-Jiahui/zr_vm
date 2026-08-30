@@ -239,6 +239,97 @@ static void test_relations_of_symbol_projects_sorted_snapshot_edges(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_relation_append_deduplicates_exact_edges_and_preserves_multiple_definitions(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *first;
+    const SZrParserSemanticRelationQuery *second;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrCore_Array_Construct(&relations);
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION,
+                    7U,
+                    7U,
+                    17U,
+                    17U,
+                    10U,
+                    20U,
+                    ZR_NULL);
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION,
+                    7U,
+                    7U,
+                    17U,
+                    17U,
+                    10U,
+                    20U,
+                    ZR_NULL);
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION,
+                    7U,
+                    7U,
+                    17U,
+                    17U,
+                    10U,
+                    30U,
+                    ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, 7U, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
+    first = relation_at(&relations, 0U);
+    second = relation_at(&relations, 1U);
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NOT_NULL(second);
+    TEST_ASSERT_EQUAL_UINT(20U, first->targetRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(30U, second->targetRange.start.offset);
+
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
+                    8U,
+                    9U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    ZR_SEMANTIC_ID_INVALID,
+                    40U,
+                    50U,
+                    "zro://fixtures/one.zro");
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
+                    8U,
+                    9U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    ZR_SEMANTIC_ID_INVALID,
+                    40U,
+                    50U,
+                    "zro://fixtures/one.zro");
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
+                    8U,
+                    9U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    ZR_SEMANTIC_ID_INVALID,
+                    40U,
+                    50U,
+                    "zro://fixtures/two.zro");
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, 8U, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
+    first = relation_at(&relations, 0U);
+    second = relation_at(&relations, 1U);
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NOT_NULL(second);
+    TEST_ASSERT_EQUAL_STRING(
+            "zro://fixtures/one.zro",
+            ZrCore_String_GetNativeString(first->externalOriginUri));
+    TEST_ASSERT_EQUAL_STRING(
+            "zro://fixtures/two.zro",
+            ZrCore_String_GetNativeString(second->externalOriginUri));
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_external_relation_requires_and_projects_virtual_declaration_uri(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrSemanticRelationFact fact;
@@ -1370,6 +1461,7 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
+    RUN_TEST(test_relation_append_deduplicates_exact_edges_and_preserves_multiple_definitions);
     RUN_TEST(test_external_relation_requires_and_projects_virtual_declaration_uri);
     RUN_TEST(test_type_and_implementation_queries_preserve_edge_direction);
     RUN_TEST(test_relation_queries_project_canonical_module_identities);

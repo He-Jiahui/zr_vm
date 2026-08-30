@@ -4,6 +4,8 @@
 
 #include "zr_vm_parser/canonical_type.h"
 
+#include "semantic_relations_identity.h"
+
 static SZrString *semantic_relations_clone_string(
         SZrSemanticContext *context,
         SZrString *value) {
@@ -227,6 +229,7 @@ TZrBool ZrParser_SemanticRelations_Append(
         SZrSemanticContext *context,
         const SZrSemanticRelationFact *fact) {
     SZrSemanticRelationFact copy;
+    TZrSize index;
 
     if (context == ZR_NULL || fact == ZR_NULL || !context->relationFacts.isValid ||
         fact->kind == ZR_SEMANTIC_RELATION_UNKNOWN ||
@@ -238,6 +241,14 @@ TZrBool ZrParser_SemanticRelations_Append(
          (fact->externalOriginUri == ZR_NULL ||
           fact->virtualDeclarationUri == ZR_NULL))) {
         return ZR_FALSE;
+    }
+    for (index = 0U; index < context->relationFacts.length; index++) {
+        const SZrSemanticRelationFact *existing =
+                (const SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        &context->relationFacts, index);
+        if (ZrParser_SemanticRelations_FactsEqual(existing, fact)) {
+            return ZR_TRUE;
+        }
     }
     copy = *fact;
     copy.externalOriginUri = semantic_relations_clone_string(context, fact->externalOriginUri);
@@ -322,23 +333,6 @@ static TZrBool semantic_relations_property_contract_is_valid(
                               contract->initializerCallableTypeId));
 }
 
-static TZrBool semantic_relations_ranges_equal(
-        const SZrFileRange *left,
-        const SZrFileRange *right) {
-    if (left == ZR_NULL || right == ZR_NULL ||
-        left->start.offset != right->start.offset ||
-        left->end.offset != right->end.offset ||
-        left->start.line != right->start.line ||
-        left->start.column != right->start.column ||
-        left->end.line != right->end.line ||
-        left->end.column != right->end.column) {
-        return ZR_FALSE;
-    }
-    return (TZrBool)(left->source == right->source ||
-                      (left->source != ZR_NULL && right->source != ZR_NULL &&
-                       ZrCore_String_Equal(left->source, right->source)));
-}
-
 static TZrBool semantic_relations_has_reference_definition(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -358,7 +352,8 @@ static TZrBool semantic_relations_has_reference_definition(
             fact->sourceSymbolId == symbolId &&
             fact->targetSymbolId == symbolId &&
             fact->hasTargetRange &&
-            semantic_relations_ranges_equal(&fact->targetRange, definitionRange)) {
+            ZrParser_SemanticRelations_RangesEqual(
+                    &fact->targetRange, definitionRange)) {
             return ZR_TRUE;
         }
     }
