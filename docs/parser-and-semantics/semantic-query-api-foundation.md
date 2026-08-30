@@ -401,6 +401,14 @@ never selects a same-name function. A resolved target without a declaration
 range uses `TARGET_DECLARATION_UNAVAILABLE`. Output arrays are reusable and
 contain no pointers into mutable AST structures.
 
+Repeated lifecycle publication merges facts for the same caller and exact
+call-site range by structured completeness. A resolved target supersedes an
+earlier unresolved edge, and a later unresolved fact cannot downgrade it. A
+fact for the same resolved target may refresh the closed callable TypeId and
+declaration range after inference refinement. Two different resolved target
+SymbolIds are not silently merged, because that would hide contradictory
+canonical producers rather than resolve them.
+
 Call-edge value rows have no exactness field. When a matching call expression
 fact is present, the producer therefore publishes an edge only when that fact
 is `EXACT`; `UNKNOWN` and `APPROXIMATE` facts publish no hierarchy edge. It

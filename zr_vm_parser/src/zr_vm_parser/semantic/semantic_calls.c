@@ -139,8 +139,33 @@ static const SZrSemanticSymbolRecord *semantic_calls_canonical_function(
     return symbol;
 }
 
-static TZrBool semantic_calls_has_edge(
-        const SZrSemanticContext *context,
+static TZrUInt32 semantic_calls_edge_completeness(
+        const SZrSemanticCallEdgeFact *edge) {
+    TZrUInt32 score = 0U;
+
+    if (edge == ZR_NULL) {
+        return 0U;
+    }
+    if (edge->callerSymbolId != ZR_SEMANTIC_ID_INVALID) {
+        score += 8U;
+    }
+    if (edge->targetSymbolId != ZR_SEMANTIC_ID_INVALID) {
+        score += 4U;
+    }
+    if (edge->hasTargetDeclarationRange) {
+        score += 2U;
+    }
+    if (edge->callableTypeId != ZR_SEMANTIC_ID_INVALID) {
+        score += 1U;
+    }
+    if (edge->resolution == ZR_SEMANTIC_CALL_EDGE_RESOLUTION_RESOLVED) {
+        score += 16U;
+    }
+    return score;
+}
+
+static TZrBool semantic_calls_merge_edge(
+        SZrSemanticContext *context,
         const SZrSemanticCallEdgeFact *candidate) {
     TZrSize index;
 
@@ -148,17 +173,26 @@ static TZrBool semantic_calls_has_edge(
         return ZR_FALSE;
     }
     for (index = 0U; index < context->callEdgeFacts.length; index++) {
-        const SZrSemanticCallEdgeFact *edge =
-                (const SZrSemanticCallEdgeFact *)ZrCore_Array_Get(
-                        (SZrArray *)&context->callEdgeFacts, index);
-        if (edge != ZR_NULL &&
-            edge->callerSymbolId == candidate->callerSymbolId &&
-            edge->targetSymbolId == candidate->targetSymbolId &&
-            edge->resolution == candidate->resolution &&
+        SZrSemanticCallEdgeFact *edge =
+                (SZrSemanticCallEdgeFact *)ZrCore_Array_Get(
+                        &context->callEdgeFacts, index);
+        if (edge == ZR_NULL) {
+            continue;
+        }
+        if (edge->callerSymbolId == candidate->callerSymbolId &&
             edge->callSiteRange.start.offset == candidate->callSiteRange.start.offset &&
             edge->callSiteRange.end.offset == candidate->callSiteRange.end.offset &&
             semantic_calls_same_source(
                     edge->callSiteRange.source, candidate->callSiteRange.source)) {
+            if (edge->resolution == ZR_SEMANTIC_CALL_EDGE_RESOLUTION_RESOLVED &&
+                candidate->resolution == ZR_SEMANTIC_CALL_EDGE_RESOLUTION_RESOLVED &&
+                edge->targetSymbolId != candidate->targetSymbolId) {
+                continue;
+            }
+            if (semantic_calls_edge_completeness(candidate) >=
+                semantic_calls_edge_completeness(edge)) {
+                *edge = *candidate;
+            }
             return ZR_TRUE;
         }
     }
@@ -245,7 +279,7 @@ TZrBool ZrParser_SemanticCalls_Publish(SZrSemanticContext *context) {
         if (edge.callerSymbolId == ZR_SEMANTIC_ID_INVALID) {
             edge.resolution = ZR_SEMANTIC_CALL_EDGE_RESOLUTION_CALLER_UNAVAILABLE;
         }
-        if (!semantic_calls_has_edge(context, &edge)) {
+        if (!semantic_calls_merge_edge(context, &edge)) {
             ZrCore_Array_Push(context->state, &context->callEdgeFacts, &edge);
         }
     }

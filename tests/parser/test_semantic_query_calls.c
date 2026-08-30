@@ -870,6 +870,8 @@ static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+#include "test_semantic_query_call_edge_refinement_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compiled_call_edges_publish_stable_incoming_and_outgoing);
@@ -883,5 +885,6 @@ int main(void) {
     RUN_TEST(test_call_candidates_fail_closed_for_approximate_call_fact);
     RUN_TEST(test_format_call_fails_closed_for_approximate_call_fact);
     RUN_TEST(test_format_call_fails_closed_for_mismatched_reference_fact);
+    RUN_TEST(test_resolved_call_edge_supersedes_unresolved_same_site);
     return UNITY_END();
 }
