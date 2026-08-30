@@ -34,6 +34,13 @@ including the artifact round-trip case. This closes the focused interface-name
 coverage gap; it does not promote the umbrella result while the registered full
 graph remains pending a stable L8/debug rebuild and replay.
 
+The focused runtime contract was extended with a direct field-access case for
+both an expired `Weak<T>` and the nullable result of `wake(weak)`. The rebuilt
+MSVC runner now reports `52 Tests / 0 Failures / 0 Ignored` (exit 0): both
+receiver forms catch `NullReferenceError`, while the broad `RuntimeError`
+handlers remain untouched. This is additional focused evidence for the `.`
+receiver contract; it does not change the pending full-graph status.
+
 `ctest -N` on the available MSVC build now enumerates 152 registered tests,
 including newly added benchmark targets; several executables are not present
 in that cache, so this enumeration is not a full pass. The full registered

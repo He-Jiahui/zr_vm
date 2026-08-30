@@ -1188,6 +1188,13 @@ GCC and Clang were not relabeled `50/50` because their available WSL caches
 were stale or blocked on DrvFS I/O. A fresh 50-case GCC/Clang replay is still
 required before the final integrated acceptance can be promoted.
 
+The focused runtime contract then added direct field access for an expired
+`Weak<T>` and for the nullable result of `wake(weak)`. The rebuilt MSVC runner
+reports `52 Tests / 0 Failures / 0 Ignored`; both forms catch the named
+`NullReferenceError` and neither falls through to the broad `RuntimeError`
+handler. This is focused evidence only; the stable full graph remains the
+required promotion gate.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
