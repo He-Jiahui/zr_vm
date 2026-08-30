@@ -150,10 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 05:22 +08:00。
-- 总体状态：进行中。Task 6 的最后一个已知 LSP producer consumer loop 因
-  Syntax05 exact ownership 等待释放；Task 7 已开始无重叠 consumer 边界迁移，
-  Task 8 尚未完成，不声明 Plan 03 完成。
+- 最近更新时间：2026-08-30 09:50 +08:00。
+- 总体状态：进行中。Task 7.38 已完成 local cross-project reference 的 fail-closed
+  consumer 收口并通过三工具链 source-contract；但最终 16-target 为 `10/16`，三套
+  stdio smoke 仍因 producer warning 缺失退出 1，Task 7/Task 8 尚未完成，不声明
+  Plan 03 GREEN 或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
   ownership return-escape canonical producer/query/LSP projection；Task 6.33
@@ -415,3 +416,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   full analyzer 仍仅保留相同两条既有 closed-generic/borrow-range marker，未计
   GREEN，也未在 LSP 增加兼容。Task 7.3 full interface 在 fixed parent 与
   overlay 均为相同 4 条既有 marker，delta 0，同样未计 GREEN。
+
+- 本轮完成时间：2026-08-30 09:50 +08:00。
+- 本轮状态：Task 7.38 focused GREEN；post-commit overall gate 未通过。完成三工具链
+  source-contract `70/70`、原定义 16-target `10 PASS / 6 FAIL`、三套 stdio smoke 与
+  CLI `--version` 的真实退出复核，并保持 LSP 不按名称、类型文本或消息重建语义。
+- 本轮未完成项目：canonical tuple、member-write、imported-type、interface/analyzer
+  producer 或 fixture 缺口，以及 `short_circuit_unreachable` producer warning；需待
+  Syntax05/parser/metadata ownership 释放后再重跑完整门禁。
