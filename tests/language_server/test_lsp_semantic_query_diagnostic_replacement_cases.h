@@ -252,3 +252,110 @@ static void test_semantic_query_preserves_distinct_source_diagnostic(
     ZrParser_SemanticContext_Free(context);
     TEST_PASS(timer, summary);
 }
+
+static void test_semantic_query_collapses_duplicate_stale_diagnostics(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Semantic Query Collapses Duplicate Stale Diagnostics";
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(state);
+    SZrSemanticAnalyzer *analyzer =
+            ZrLanguageServer_SemanticAnalyzer_New(state);
+    SZrStructuredDiagnostic structured;
+    SZrSemanticDiagnosticFact fact;
+    SZrDiagnostic *firstStale;
+    SZrDiagnostic *secondStale;
+    SZrDiagnostic **canonicalSlot;
+    SZrFileRange location = diagnostic_replacement_range(
+            state, 16U, 20U, "duplicate_stale_diagnostics.zr");
+    SZrTestTimer timer;
+
+    TEST_START(summary);
+    if (context == ZR_NULL || analyzer == ZR_NULL || location.source == ZR_NULL ||
+        !ZrParser_DiagnosticBuilder_Build(
+                state,
+                &structured,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "numeric_overflow",
+                "Canonical duplicate diagnostic.",
+                "Duplicate analyzer rows are stale.",
+                "Project only the canonical query row.")) {
+        if (analyzer != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        }
+        if (context != ZR_NULL) {
+            ZrParser_SemanticContext_Free(context);
+        }
+        TEST_FAIL(timer, summary, "Failed to initialize duplicate fixture");
+        return;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &structured,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(state, &structured);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Failed to complete duplicate fixture");
+        return;
+    }
+    memset(&fact, 0, sizeof(fact));
+    fact.diagnostic = structured;
+    if (!ZrParser_SemanticFacts_AppendDiagnostic(context, &fact)) {
+        ZrParser_StructuredDiagnostic_Free(state, &structured);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Failed to publish duplicate fixture fact");
+        return;
+    }
+    ZrParser_StructuredDiagnostic_Free(state, &structured);
+
+    firstStale = ZrLanguageServer_Diagnostic_New(
+            state,
+            ZR_DIAGNOSTIC_WARNING,
+            location,
+            "First stale diagnostic.",
+            "numeric_overflow");
+    secondStale = ZrLanguageServer_Diagnostic_New(
+            state,
+            ZR_DIAGNOSTIC_INFO,
+            location,
+            "Second stale diagnostic.",
+            "numeric_overflow");
+    if (firstStale == ZR_NULL || secondStale == ZR_NULL) {
+        if (firstStale != ZR_NULL) {
+            ZrLanguageServer_Diagnostic_Free(state, firstStale);
+        }
+        if (secondStale != ZR_NULL) {
+            ZrLanguageServer_Diagnostic_Free(state, secondStale);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Failed to create duplicate stale diagnostics");
+        return;
+    }
+    analyzer->semanticContext = context;
+    ZrCore_Array_Push(state, &analyzer->diagnostics, &firstStale);
+    ZrCore_Array_Push(state, &analyzer->diagnostics, &secondStale);
+    ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
+            state, analyzer);
+
+    canonicalSlot = analyzer->diagnostics.length == 1U
+                            ? (SZrDiagnostic **)ZrCore_Array_Get(
+                                      &analyzer->diagnostics, 0U)
+                            : ZR_NULL;
+    if (canonicalSlot == ZR_NULL || *canonicalSlot == ZR_NULL ||
+        *canonicalSlot == firstStale || *canonicalSlot == secondStale ||
+        (*canonicalSlot)->severity != ZR_DIAGNOSTIC_ERROR ||
+        test_string_text((*canonicalSlot)->message) == ZR_NULL ||
+        strcmp(test_string_text((*canonicalSlot)->message),
+               "Canonical duplicate diagnostic.") != 0) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Duplicate stale diagnostics survived canonical projection");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    ZrParser_SemanticContext_Free(context);
+    TEST_PASS(timer, summary);
+}

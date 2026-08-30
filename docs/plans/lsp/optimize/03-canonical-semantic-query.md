@@ -150,8 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 06:55 +08:00。
-- 总体状态：进行中。Task 6.37 已把source identity纳入canonical diagnostic duplicate key；
+- 最近更新时间：2026-08-31 07:07 +08:00。
+- 总体状态：进行中。Task 6.38 已让一个canonical query fact清除同identity的多重stale
+  analyzer rows，保留最早槽位并完整替换，最终只发布一个protocol diagnostic；Task 6.37
+  已把source identity纳入canonical diagnostic duplicate key；
   一侧source缺失时，即使offset/code相同也fail closed并保留两条diagnostic，禁止跨document/
   snapshot替换。Task 6.36 已让canonical semantic-query diagnostic在同一exact range与
   stable code命中旧LSP analyzer diagnostic时替换完整投影，不再只合并relatedInformation并保留
@@ -208,7 +210,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 6.37 fixed GCC/Clang LSP diagnostic `18/18`，并重放parser diagnostics `11/11`、
   compiler diagnostics `64/64`、parity/source-contract真实exit 0；interface保持同一8个既有
   producer markers，delta 0。未运行MSVC、完整16-target matrix或三套stdio smoke。
-- 本阶段完成项目：Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- Task 6.38 fixed GCC/Clang LSP diagnostic `19/19`，parser/compiler diagnostics仍为
+  `11/11`与`64/64`，parity/source-contract真实exit 0；interface fixed 8 markers，delta 0。
+  未运行MSVC、完整16-target matrix或三套stdio smoke。
+- 本阶段完成项目：Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display

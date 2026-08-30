@@ -1,5 +1,7 @@
 #include "semantic_analyzer_internal.h"
 
+#include <string.h>
+
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
@@ -101,6 +103,45 @@ static SZrDiagnostic **query_diagnostic_find_reported_slot(
     return ZR_NULL;
 }
 
+static void query_diagnostic_remove_other_reported_slots(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        const SZrStructuredDiagnostic *structured,
+        SZrDiagnostic **retainedSlot) {
+    TZrSize candidateIndex;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || structured == ZR_NULL ||
+        retainedSlot == ZR_NULL || !analyzer->diagnostics.isValid) {
+        return;
+    }
+    candidateIndex = analyzer->diagnostics.length;
+    while (candidateIndex > 0U) {
+        TZrSize index = candidateIndex - 1U;
+        SZrDiagnostic **diagnosticSlot =
+                (SZrDiagnostic **)ZrCore_Array_Get(
+                        &analyzer->diagnostics, index);
+
+        candidateIndex--;
+        if (diagnosticSlot == retainedSlot || diagnosticSlot == ZR_NULL ||
+            *diagnosticSlot == ZR_NULL ||
+            !query_diagnostic_same_range(
+                    &(*diagnosticSlot)->location, &structured->location) ||
+            !query_diagnostic_same_code(
+                    (*diagnosticSlot)->code, structured->code)) {
+            continue;
+        }
+        ZrLanguageServer_Diagnostic_Free(state, *diagnosticSlot);
+        if (index + 1U < analyzer->diagnostics.length) {
+            memmove(
+                    diagnosticSlot,
+                    diagnosticSlot + 1,
+                    (analyzer->diagnostics.length - index - 1U) *
+                            analyzer->diagnostics.elementSize);
+        }
+        analyzer->diagnostics.length--;
+    }
+}
+
 void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer) {
@@ -138,6 +179,8 @@ void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
             if (diagnostic != ZR_NULL) {
                 ZrLanguageServer_Diagnostic_Free(state, *reportedSlot);
                 *reportedSlot = diagnostic;
+                query_diagnostic_remove_other_reported_slots(
+                        state, analyzer, structured, reportedSlot);
             }
             continue;
         }
