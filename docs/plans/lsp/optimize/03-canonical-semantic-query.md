@@ -150,14 +150,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 17:56 +08:00。
-- 总体状态：进行中。Task 4.9 已让同一 caller/callsite 的 resolved call edge 取代旧
-  unresolved edge，并允许同 target 的 closed callable fact 在后续 inference pass 刷新；
-  固定 GCC/Clang 快照中的 call/query/relation/parity focused 门禁与 source-contract `70/70`
-  均真实 exit 0，interface 保持同一8个既有producer marker，delta 0。
+- 最近更新时间：2026-08-30 18:05 +08:00。
+- 总体状态：进行中。Task 4.10 已把 call-edge source identity 从 `NULL` 通配收紧为
+  exact optional identity；缺失 source 的 edge 不再归属已知 source 的 caller scope，也不再
+  被已知 source 的位置查询命中。固定 GCC/Clang 快照中的
+  call/query/relation/parity focused 门禁与 source-contract `70/70` 均真实 exit 0，interface
+  保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.9 call-edge refinement merge；Task 3.14 relation append exact
+- 本阶段完成项目：Task 4.10 call-edge exact source identity；Task 4.9 call-edge refinement
+  merge；Task 3.14 relation append exact
   identity deduplication；
   Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
@@ -603,3 +605,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   producer marker，GCC/Clang失败名称delta 0。GCC interface与固定parent仍为同一8个marker，
   delta 0且不计本任务GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05
   producer及其余analyzer/symbol-table consumers仍未完成。
+
+- 补充完成时间：2026-08-30 18:05 +08:00。Task 4.10 收紧 parser call-edge 的 source
+  identity：`NULL` 只与 `NULL` 相等，非空 source 按字符串值比较；缺失 source 的 call fact
+  保留为 `CALLER_UNAVAILABLE`，但不能匹配已知文档 scope、位置查询或 callsite refinement。
+  RED 为 call-query `13 Tests / 1 Failure`、`Expected 0 Was 1`；GREEN 后 GCC/Clang 均通过
+  `13/30/20/15/70` focused 门禁。两套 interface 仍为同一8个既有producer marker，失败名称
+  对 fixed parent 的 delta 0且不计 GREEN。本项未运行 MSVC、完整16-target matrix或三套
+  stdio smoke，Plan 03 Task 7/Task 8 继续未完成。

@@ -401,6 +401,13 @@ never selects a same-name function. A resolved target without a declaration
 range uses `TARGET_DECLARATION_UNAVAILABLE`. Output arrays are reusable and
 contain no pointers into mutable AST structures.
 
+Call-edge source identity is exact. Two missing sources compare equal, and two
+non-null sources compare by string value, but a missing source never matches a
+known source. Consequently an edge with no source remains queryable only by an
+equally source-unavailable position, cannot be attributed to a function scope
+from another document at the same offsets, and cannot replace a source-bound
+edge during callsite refinement.
+
 Repeated lifecycle publication merges facts for the same caller and exact
 call-site range by structured completeness. A resolved target supersedes an
 earlier unresolved edge, and a later unresolved fact cannot downgrade it. A
