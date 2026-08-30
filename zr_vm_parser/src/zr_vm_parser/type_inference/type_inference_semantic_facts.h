@@ -69,19 +69,19 @@ void type_inference_record_construct_call_facts(
         SZrAstNode *node,
         const SZrInferredType *constructedType);
 
-void type_inference_record_super_constructor_call_facts(
+ZR_PARSER_API void type_inference_record_super_constructor_call_facts(
         SZrCompilerState *cs,
         SZrAstNode *metaFunctionNode,
         SZrString *superTypeName,
         SZrAstNodeArray *superArgs);
 
-TZrBool type_inference_source_constructor_member_build(
+ZR_PARSER_API TZrBool type_inference_source_constructor_member_build(
         SZrCompilerState *cs,
         SZrAstNode *target,
         SZrString *typeName,
         SZrTypeMemberInfo *outMember);
 
-void type_inference_source_constructor_member_free(
+ZR_PARSER_API void type_inference_source_constructor_member_free(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *member);
 
