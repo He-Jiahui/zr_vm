@@ -169,4 +169,84 @@ static void test_call_edge_source_identity_fails_closed_when_fact_source_is_miss
     ZrParser_SemanticContext_Free(context);
 }
 
+static SZrFileRange call_line_range(
+        SZrString *source,
+        TZrInt32 line,
+        TZrInt32 startColumn,
+        TZrInt32 endColumn) {
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    range.source = source;
+    range.start.line = line;
+    range.start.column = startColumn;
+    range.end.line = line;
+    range.end.column = endColumn;
+    return range;
+}
+
+static void test_call_edge_merge_preserves_distinct_line_only_callsites(void) {
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "call_edge_line_identity.zr");
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticScopeFact scope;
+    SZrSemanticReferenceFact callReference;
+    TZrSymbolId callerId;
+    TZrSymbolId targetId;
+    SZrArray edges;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(context);
+    callerId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "caller"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            31U,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_NULL,
+            call_line_range(sourceName, 1, 1, 7));
+    targetId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "target"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            32U,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_NULL,
+            call_line_range(sourceName, 1, 10, 16));
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, callerId);
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, targetId);
+
+    memset(&scope, 0, sizeof(scope));
+    scope.kind = ZR_SEMANTIC_SCOPE_KIND_FUNCTION;
+    scope.ownerSymbolId = callerId;
+    scope.range = call_line_range(sourceName, 1, 1, 1);
+    scope.range.end.line = 10;
+    TEST_ASSERT_NOT_EQUAL_UINT(
+            ZR_SEMANTIC_ID_INVALID,
+            ZrParser_Semantic_PublishScopeFact(context, &scope));
+
+    memset(&callReference, 0, sizeof(callReference));
+    callReference.kind = ZR_SEMANTIC_REFERENCE_CALL;
+    callReference.range = call_line_range(sourceName, 2, 5, 11);
+    callReference.symbolId = targetId;
+    callReference.typeId = 32U;
+    callReference.declarationRange = call_line_range(sourceName, 1, 10, 16);
+    callReference.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
+            context, &callReference));
+
+    callReference.range = call_line_range(sourceName, 3, 5, 11);
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
+            context, &callReference));
+    TEST_ASSERT_TRUE(ZrParser_SemanticCalls_Publish(context));
+
+    ZrCore_Array_Construct(&edges);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_OutgoingCalls(
+            context, callerId, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(2U, edges.length);
+
+    ZrCore_Array_Free(g_state, &edges);
+    ZrParser_SemanticContext_Free(context);
+}
+
 #endif

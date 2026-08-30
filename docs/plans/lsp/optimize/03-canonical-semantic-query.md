@@ -150,15 +150,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 18:05 +08:00。
-- 总体状态：进行中。Task 4.10 已把 call-edge source identity 从 `NULL` 通配收紧为
-  exact optional identity；缺失 source 的 edge 不再归属已知 source 的 caller scope，也不再
-  被已知 source 的位置查询命中。固定 GCC/Clang 快照中的
+- 最近更新时间：2026-08-30 18:11 +08:00。
+- 总体状态：进行中。Task 4.11 已让 call-edge refinement 使用完整可用 range identity；
+  只有 line/column 的不同 callsite 不再因 offsets 同为零而合并。固定 GCC/Clang 快照中的
   call/query/relation/parity focused 门禁与 source-contract `70/70` 均真实 exit 0，interface
   保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.10 call-edge exact source identity；Task 4.9 call-edge refinement
+- 本阶段完成项目：Task 4.11 call-edge line-only range identity；Task 4.10 call-edge exact
+  source identity；Task 4.9 call-edge refinement
   merge；Task 3.14 relation append exact
   identity deduplication；
   Task 6.30 exact-type inference diagnostic query projection；
@@ -613,3 +613,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `13/30/20/15/70` focused 门禁。两套 interface 仍为同一8个既有producer marker，失败名称
   对 fixed parent 的 delta 0且不计 GREEN。本项未运行 MSVC、完整16-target matrix或三套
   stdio smoke，Plan 03 Task 7/Task 8 继续未完成。
+
+- 补充完成时间：2026-08-30 18:11 +08:00。Task 4.11 修正 call-edge refinement 的
+  callsite key：存在 offset 时比较 source + start/end offsets；双方均无 offset 时比较 source
+  与完整 line/column range。RED 为 call-query `14 Tests / 1 Failure`、`Expected 2 Was 1`；
+  GREEN 后 GCC/Clang 均通过 `14/30/20/15/70` focused 门禁。两套 interface 仍为同一8个
+  既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未运行 MSVC、
+  完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。

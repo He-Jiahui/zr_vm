@@ -408,6 +408,12 @@ equally source-unavailable position, cannot be attributed to a function scope
 from another document at the same offsets, and cannot replace a source-bound
 edge during callsite refinement.
 
+Callsite refinement compares the complete available coordinate identity. If
+either range has an offset, source plus start/end offsets are authoritative. If
+both ranges are line-only, source plus all four line/column coordinates form
+the key. Two line-only calls in the same function therefore remain separate
+edges instead of collapsing merely because both offset pairs are zero.
+
 Repeated lifecycle publication merges facts for the same caller and exact
 call-site range by structured completeness. A resolved target supersedes an
 earlier unresolved edge, and a later unresolved fact cannot downgrade it. A

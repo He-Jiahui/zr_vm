@@ -11,6 +11,24 @@ static TZrBool semantic_calls_same_source(SZrString *left, SZrString *right) {
                       ZrCore_String_Equal(left, right)));
 }
 
+static TZrBool semantic_calls_same_range(
+        const SZrFileRange *left,
+        const SZrFileRange *right) {
+    if (left == ZR_NULL || right == ZR_NULL ||
+        !semantic_calls_same_source(left->source, right->source)) {
+        return ZR_FALSE;
+    }
+    if (left->start.offset > 0U || left->end.offset > 0U ||
+        right->start.offset > 0U || right->end.offset > 0U) {
+        return (TZrBool)(left->start.offset == right->start.offset &&
+                         left->end.offset == right->end.offset);
+    }
+    return (TZrBool)(left->start.line == right->start.line &&
+                     left->start.column == right->start.column &&
+                     left->end.line == right->end.line &&
+                     left->end.column == right->end.column);
+}
+
 static TZrBool semantic_calls_range_contains(
         const SZrFileRange *outer,
         const SZrFileRange *inner) {
@@ -181,10 +199,8 @@ static TZrBool semantic_calls_merge_edge(
             continue;
         }
         if (edge->callerSymbolId == candidate->callerSymbolId &&
-            edge->callSiteRange.start.offset == candidate->callSiteRange.start.offset &&
-            edge->callSiteRange.end.offset == candidate->callSiteRange.end.offset &&
-            semantic_calls_same_source(
-                    edge->callSiteRange.source, candidate->callSiteRange.source)) {
+            semantic_calls_same_range(
+                    &edge->callSiteRange, &candidate->callSiteRange)) {
             if (edge->resolution == ZR_SEMANTIC_CALL_EDGE_RESOLUTION_RESOLVED &&
                 candidate->resolution == ZR_SEMANTIC_CALL_EDGE_RESOLUTION_RESOLVED &&
                 edge->targetSymbolId != candidate->targetSymbolId) {

@@ -887,5 +887,6 @@ int main(void) {
     RUN_TEST(test_format_call_fails_closed_for_mismatched_reference_fact);
     RUN_TEST(test_resolved_call_edge_supersedes_unresolved_same_site);
     RUN_TEST(test_call_edge_source_identity_fails_closed_when_fact_source_is_missing);
+    RUN_TEST(test_call_edge_merge_preserves_distinct_line_only_callsites);
     return UNITY_END();
 }
