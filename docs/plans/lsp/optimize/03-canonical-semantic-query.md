@@ -92,7 +92,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 - [ ] CallAt 返回 selected target、overload candidate set、receiver TypeId、closed callable TypeId、argument-to-parameter mapping、conversion/exactness 和 call-site range。
 - [ ] semantic context 构建 caller SymbolId → call edges 索引；incoming/outgoing query 不扫描源文本。
-- [ ] 动态/无法解析调用返回 unresolved edge 与 reason，不把第一个同名函数当目标。
+- [x] 动态/无法解析调用返回 unresolved edge 与 reason，不把第一个同名函数当目标。
 - [ ] source、`.zro`、native descriptor external callable 共用同一 callable contract；当前 L8 overlay 的 `isExternalCallable`/signatureDisplay 必须在 parser 层封闭，不再由 hover/signature 各自拼装。
 
 ## Task 5：补齐 formatter/display 与 documentation facts
@@ -150,8 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 07:40 +08:00。
-- 总体状态：进行中。Task 4.24 已让source `ref/out` call mapping消费parser保存的structured
+- 最近更新时间：2026-08-31 07:55 +08:00。
+- 总体状态：进行中。Task 4.25 已冻结unresolved call edge reason矩阵：有效target缺声明坐标时
+  保留SymbolId并返回`TARGET_DECLARATION_UNAVAILABLE`，resolved id指向非函数时清零target并返回
+  `TARGET_UNRESOLVED`，同名function不能替代canonical id。Task 4.24 已让source `ref/out` call mapping消费parser保存的structured
   marker range，返回完整`ref value`/`out value` argument range；`in`保持expression range，
   passing mode与两侧TypeId继续来自selected canonical callable，LSP无需扫描source keyword。
   Task 5.17 已把canonical graph唯一tuple marker的旧keywordless
@@ -202,7 +204,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
 - 固定 GCC/Clang 快照中的 parser/display/call/query/relation/symbol/parity/source-contract 门禁分别为
-  `74/22/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
+  `74/22/28/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
   type inference `124/124`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
@@ -221,7 +223,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -935,5 +937,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   parity/source-contract/facts/canonical/type-inference
   `74/22/26/30/22/21/15/70/15/21/124`、真实exit 0；type-inference两套串行。
   两套interface均真实exit 1且精确保持fixed parent同一8个producer marker，delta 0、不计GREEN。
+  本项未运行MSVC、完整16-target matrix或三套stdio smoke；receiver/member、receiver `TypeId`、
+  binary/native mapping parity、Syntax05 imported identity producer及Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 07:55 +08:00。Task 4.25 新增unresolved call reason
+  matrix：有效target function没有declaration coordinates时保留target SymbolId并返回
+  `TARGET_DECLARATION_UNAVAILABLE`；resolved reference指向variable SymbolId时，即使registry存在
+  同名function也清零target并返回`TARGET_UNRESOLVED`。现有production首轮满足合同，calls
+  `28 Tests / 0 Failures`，因此无需生产补丁。固定GCC/Clang snapshot均通过parser/display/calls/
+  query/relations/symbols/parity/source-contract/facts/canonical/type-inference
+  `74/22/28/30/22/21/15/70/15/21/124`、真实exit 0，type-inference两套串行；两套
+  interface均真实exit 1且精确保持fixed parent同一8个producer marker，delta 0、不计GREEN。
   本项未运行MSVC、完整16-target matrix或三套stdio smoke；receiver/member、receiver `TypeId`、
   binary/native mapping parity、Syntax05 imported identity producer及Plan 03 Task 7/Task 8继续未完成。

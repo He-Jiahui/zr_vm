@@ -877,6 +877,7 @@ static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
 #include "test_semantic_query_call_source_identity_cases.h"
 #include "test_semantic_query_call_expression_refinement_cases.h"
 #include "test_semantic_query_call_argument_mapping_cases.h"
+#include "test_semantic_query_call_unresolved_reason_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -906,5 +907,7 @@ int main(void) {
     RUN_TEST(test_call_at_exact_expression_resists_later_approximate_downgrade);
     RUN_TEST(test_call_at_projects_source_argument_mapping_and_conversion);
     RUN_TEST(test_call_at_projects_source_argument_passing_modes);
+    RUN_TEST(test_resolved_call_edge_reports_missing_declaration_reason);
+    RUN_TEST(test_resolved_call_edge_rejects_non_function_target_identity);
     return UNITY_END();
 }

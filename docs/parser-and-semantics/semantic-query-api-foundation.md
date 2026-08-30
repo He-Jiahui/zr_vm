@@ -58,6 +58,7 @@ related_code:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_symbols.c
   - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
   - tests/parser/test_semantic_display.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
@@ -124,6 +125,7 @@ tests:
   - tests/parser/test_semantic_query_symbols.c
   - tests/parser/test_semantic_query_relations.c
   - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
   - tests/parser/test_semantic_display.c
   - tests/parser/test_type_inference.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
@@ -631,6 +633,13 @@ the compiler-registered lambda SymbolId rather than the enclosing `outer`
 function. A fact-only nested function scope with an invalid owner proves that
 the publisher returns `CALLER_UNAVAILABLE` instead of falling back to the
 outer function scope.
+
+`test_semantic_query_call_unresolved_reason_cases.h` freezes the remaining
+endpoint reason matrix. A valid function target without a declaration range
+retains its SymbolId and reports `TARGET_DECLARATION_UNAVAILABLE`; a resolved
+reference whose SymbolId names a non-function is cleared and reports
+`TARGET_UNRESOLVED`. Registering a same-name function does not change either
+result, so no spelling-based target substitution can enter the call graph.
 
 The same target compiles a returned lambda that has no compiler-registered
 lambda SymbolId. It verifies that the return-expression traversal creates the
