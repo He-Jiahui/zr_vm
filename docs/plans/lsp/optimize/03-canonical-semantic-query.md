@@ -442,3 +442,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   名称/文本 fallback。`node --check` 与 `git diff --check` 通过。独立 GCC binary 因缺少
   `libzr_vm_lib_math.so` 未能提供有效运行时 smoke 证据，故不宣称 GREEN；补齐三工具链
   快照后仍须重跑 16-target matrix、stdio 与 CLI smoke，Task 7/Task 8 继续未完成。
+
+- 补充完成时间：2026-08-30 12:26 +08:00。Task 7.40 将 local rename consumer
+  收紧为 `hasCanonicalSymbol + canonicalSymbol.symbolId`，声明和引用统一通过
+  `LspSemanticReferenceQuery` 投影 parser relation facts；canonical identity 缺失或与
+  raw LSP symbol 不一致时 fail closed，不再使用 symbol lookup range/name。WSL GCC 对
+  两个 production source 与 source-contract test 的 `-fsyntax-only` 均真实 exit 0，
+  手工链接的 source-contract executable 真实 exit 0。该项未重跑完整 runtime matrix
+  或 stdio smoke，Plan 03 Task 7/Task 8 继续未完成。

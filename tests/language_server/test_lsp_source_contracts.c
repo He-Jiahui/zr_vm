@@ -1419,6 +1419,76 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     free(projectNavigation);
 }
 
+static void test_local_rename_consumers_require_canonical_symbol_identity(void) {
+    char *interfaceSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
+    char *referenceQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c");
+    const char *renameStart;
+    const char *renameEnd;
+    const char *placeholderStart;
+    const char *placeholderEnd;
+
+    if (interfaceSource == NULL || referenceQuery == NULL) {
+        printf("FAIL: could not read canonical rename consumer sources\n");
+        g_failures++;
+        free(interfaceSource);
+        free(referenceQuery);
+        return;
+    }
+
+    renameStart = find_next_text(
+        interfaceSource, "static TZrBool lsp_semantic_query_append_rename_locations(");
+    renameEnd = renameStart != NULL
+                    ? strstr(renameStart, "static SZrString *lsp_semantic_query_rename_placeholder(")
+                    : NULL;
+    assert_text_section_contains(
+        "lsp_semantic_query_append_rename_locations",
+        renameStart,
+        renameEnd,
+        "query->hasCanonicalSymbol");
+    assert_text_section_contains(
+        "lsp_semantic_query_append_rename_locations",
+        renameStart,
+        renameEnd,
+        "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences");
+    assert_text_section_contains_none(
+        "lsp_semantic_query_append_rename_locations",
+        renameStart,
+        renameEnd,
+        "ZrLanguageServer_Lsp_GetSymbolLookupRange");
+    assert_text_section_contains_none(
+        "lsp_semantic_query_append_rename_locations",
+        renameStart,
+        renameEnd,
+        "query->symbol->location");
+
+    placeholderStart = find_next_text(
+        interfaceSource, "static SZrString *lsp_semantic_query_rename_placeholder(");
+    placeholderEnd = placeholderStart != NULL
+                         ? strstr(placeholderStart, "static SZrString *lsp_append_markdown_section(")
+                         : NULL;
+    assert_text_section_contains(
+        "lsp_semantic_query_rename_placeholder",
+        placeholderStart,
+        placeholderEnd,
+        "query->canonicalSymbol.displayName");
+    assert_text_section_contains_none(
+        "lsp_semantic_query_rename_placeholder",
+        placeholderStart,
+        placeholderEnd,
+        "query->symbol->name");
+
+    assert_text_contains(
+        referenceQuery, "query->canonicalSymbol.symbolId == ZR_SEMANTIC_ID_INVALID");
+    assert_text_contains(
+        referenceQuery, "query->symbol->semanticId != query->canonicalSymbol.symbolId");
+    assert_text_contains_none(referenceQuery, "return query->symbol != ZR_NULL");
+
+    free(interfaceSource);
+    free(referenceQuery);
+}
+
 static void test_local_definition_consumer_uses_snapshot_source(void) {
     char *definitionQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c");
@@ -1711,6 +1781,7 @@ int main(void) {
     test_assignment_ownership_uses_parser_diagnostic_projection();
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
+    test_local_rename_consumers_require_canonical_symbol_identity();
     test_local_definition_consumer_uses_snapshot_source();
     test_local_implementation_consumer_uses_parser_relations();
     test_local_type_hierarchy_uses_parser_relations();
@@ -1786,6 +1857,7 @@ int main(void) {
     printf("PASS: Assignment ownership uses parser diagnostic projection\n");
     printf("PASS: Reference tracker uses SymbolId and snapshot source identity\n");
     printf("PASS: Local references and highlights use parser relation queries\n");
+    printf("PASS: Local rename uses canonical SymbolId and reference queries\n");
     printf("PASS: Local definition uses analyzer snapshot source identity\n");
     printf("PASS: Local implementation uses parser relation queries\n");
     printf("PASS: Local type hierarchy uses parser relation queries\n");

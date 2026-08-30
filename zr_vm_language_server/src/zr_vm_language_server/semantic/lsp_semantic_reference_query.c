@@ -90,17 +90,15 @@ static TZrInt32 semantic_reference_query_highlight_kind(
 
 static TZrSymbolId semantic_reference_query_symbol_id(
         const SZrLspSemanticQuery *query) {
-    if (query == ZR_NULL) {
+    if (query == ZR_NULL || !query->hasCanonicalSymbol ||
+        query->canonicalSymbol.symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_SEMANTIC_ID_INVALID;
     }
-    if (query->hasCanonicalSymbol &&
-        (query->symbol == ZR_NULL ||
-         query->symbol->semanticId == query->canonicalSymbol.symbolId)) {
-        return query->canonicalSymbol.symbolId;
+    if (query->symbol != ZR_NULL &&
+        query->symbol->semanticId != query->canonicalSymbol.symbolId) {
+        return ZR_SEMANTIC_ID_INVALID;
     }
-    return query->symbol != ZR_NULL
-            ? query->symbol->semanticId
-            : ZR_SEMANTIC_ID_INVALID;
+    return query->canonicalSymbol.symbolId;
 }
 
 static SZrLspDocumentHighlight *semantic_reference_query_find_highlight(

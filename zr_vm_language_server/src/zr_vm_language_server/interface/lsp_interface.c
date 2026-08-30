@@ -8,6 +8,7 @@
 #include "project/lsp_project_internal.h"
 #include "project/lsp_workspace.h"
 #include "semantic/lsp_local_semantic_query.h"
+#include "semantic/lsp_semantic_reference_query.h"
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/semantic_analyzer_internal.h"
 
@@ -529,18 +530,11 @@ static TZrBool lsp_semantic_query_append_rename_locations(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL && query->symbol != ZR_NULL) {
-        SZrFileRange symbolRange = ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol);
-        SZrString *symbolUri = query->symbol->location.source;
-        SZrLspRange lspRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, symbolUri, symbolRange);
-        if (!lsp_append_location_result(state,
-                                        result,
-                                        symbolUri,
-                                        lspRange)) {
-            return ZR_FALSE;
-        }
-        (void)ZrLanguageServer_LspSemanticQuery_AppendReferences(state, context, query, ZR_FALSE, result);
-        return result->length > 0;
+    if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL &&
+        query->hasCanonicalSymbol &&
+        query->canonicalSymbol.symbolId != ZR_SEMANTIC_ID_INVALID) {
+        return ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
+                state, context, query, ZR_TRUE, result) && result->length > 0;
     }
 
     if (lsp_semantic_query_is_project_member_rename_target(query)) {
@@ -555,8 +549,10 @@ static SZrString *lsp_semantic_query_rename_placeholder(SZrLspSemanticQuery *que
         return ZR_NULL;
     }
 
-    if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL && query->symbol != ZR_NULL) {
-        return query->symbol->name;
+    if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL &&
+        query->hasCanonicalSymbol &&
+        query->canonicalSymbol.symbolId != ZR_SEMANTIC_ID_INVALID) {
+        return query->canonicalSymbol.displayName;
     }
 
     if (lsp_semantic_query_is_project_member_rename_target(query)) {
