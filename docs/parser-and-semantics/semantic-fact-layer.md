@@ -3861,3 +3861,18 @@ parsed inner identifier node. It does not register a nominal `Word` identity,
 publish an alias for the outer ownership TypeId, or infer from an unbound name.
 GcBridge wrappers remain separate producer work because they additionally
 require canonical class/resource prototype validation.
+
+## Plan 03 Task 5.14 GcBridge Type-Value Alias Producer
+
+GcBridge conversion now replays the compiler type-value alias producer only
+after the resolved target passes the canonical prototype world check and before
+the inferred type receives its `Gc` or `GcBox` bridge kind. Thus
+`Gc<DocAlias>` can format canonically as `Gc<Document>` while the exact inner
+range returns `DocAlias`; the same rule maps `GcBox<ResourceAlias>` to
+`GcBox<BoxedResource>` plus the exact `ResourceAlias` use-site fact.
+
+The ordering is part of the contract. Publishing before prototype validation
+could expose an alias for an invalid bridge target, while publishing after the
+bridge kind is attached would bind the alias to the outer wrapper TypeId. The
+producer does neither and remains gated by the structured alias table and
+ordinary/resource class prototype identity.

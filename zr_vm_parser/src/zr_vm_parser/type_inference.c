@@ -3460,6 +3460,8 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                 ZrParser_InferredType_Free(cs->state, result);
                 return ZR_FALSE;
             }
+            type_inference_publish_type_value_display_alias(
+                    cs, result, gcBridgeInnerType);
             result->gcBridgeKind = gcBridgeKind;
             if (cs->semanticContext != ZR_NULL && result->typeName != ZR_NULL) {
                 ZrParser_Semantic_RegisterInferredType(
