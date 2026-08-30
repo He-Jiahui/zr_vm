@@ -150,14 +150,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 18:49 +08:00。
-- 总体状态：进行中。Task 4.14 已区分无 overload set 与缺失 overload-set record；后者属于
-  snapshot 不一致并 fail closed。固定 GCC/Clang 快照中的
-  call/query/relation/symbol/parity/source-contract 门禁分别为 `16/30/22/21/15/70`，均真实
+- 最近更新时间：2026-08-30 18:56 +08:00。
+- 总体状态：进行中。Task 4.15 已要求 structured overload-set 的每个 member 都可精确投影；
+  缺失或 malformed member 不再被静默跳过。固定 GCC/Clang 快照中的
+  call/query/relation/symbol/parity/source-contract 门禁分别为 `17/30/22/21/15/70`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.14 overload-set record exactness；Task 4.13 overload selected-target
+- 本阶段完成项目：Task 4.15 overload member completeness；Task 4.14 overload-set record
+  exactness；Task 4.13 overload selected-target
   atomic consistency；Task 3.16 relation
   deterministic structured ordering；Task 3.15 relation
   node-scope exact source identity；Task 4.12 call-edge
@@ -668,3 +669,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   call/query/relation/symbol/parity/source-contract 门禁。两套 interface 仍为同一8个既有producer
   marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未运行 MSVC、完整16-target
   matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-30 18:56 +08:00。Task 4.15 将 overload-set member projection 从
+  best-effort skip 收紧为原子完整性：每个 member SymbolId 必须解析为 registered function 与有效
+  callable TypeId；任一缺失/malformed row 都清空整个输出并 fail closed，重复 member仍幂等。
+  RED 保留 selected member、把另一 member 改为不存在的 SymbolId，call-query
+  `17 Tests / 1 Failure`、`Expected FALSE Was TRUE`；GREEN 后 GCC/Clang 均通过
+  `17/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套 interface
+  仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未
+  运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。

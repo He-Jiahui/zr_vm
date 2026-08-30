@@ -573,7 +573,7 @@ static TZrBool semantic_calls_has_candidate(
     return ZR_FALSE;
 }
 
-static void semantic_calls_append_candidate(
+static TZrBool semantic_calls_append_candidate(
         const SZrSemanticContext *context,
         SZrArray *outCandidates,
         const SZrSemanticSymbolRecord *symbol,
@@ -583,9 +583,11 @@ static void semantic_calls_append_candidate(
     if (context == ZR_NULL || outCandidates == ZR_NULL || symbol == ZR_NULL ||
         symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
         symbol->id == ZR_SEMANTIC_ID_INVALID ||
-        symbol->typeId == ZR_SEMANTIC_ID_INVALID ||
-        semantic_calls_has_candidate(outCandidates, symbol->id)) {
-        return;
+        symbol->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (semantic_calls_has_candidate(outCandidates, symbol->id)) {
+        return ZR_TRUE;
     }
     memset(&candidate, 0, sizeof(candidate));
     candidate.symbolId = symbol->id;
@@ -593,6 +595,7 @@ static void semantic_calls_append_candidate(
     candidate.declarationRange = symbol->location;
     candidate.isSelected = symbol->id == selectedSymbolId;
     ZrCore_Array_Push(context->state, outCandidates, &candidate);
+    return ZR_TRUE;
 }
 
 static void semantic_calls_sort_candidates(SZrArray *candidates) {
@@ -666,18 +669,22 @@ TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
         }
     }
     if (overloads == ZR_NULL) {
-        semantic_calls_append_candidate(
-                context, outCandidates, selected, call.targetSymbolId);
+        if (!semantic_calls_append_candidate(
+                    context, outCandidates, selected, call.targetSymbolId)) {
+            return ZR_FALSE;
+        }
     } else {
         for (index = 0U; index < overloads->members.length; index++) {
             const TZrSymbolId *symbolId = (const TZrSymbolId *)ZrCore_Array_Get(
                     (SZrArray *)&overloads->members, index);
-            if (symbolId != ZR_NULL) {
-                semantic_calls_append_candidate(
+            if (symbolId == ZR_NULL ||
+                !semantic_calls_append_candidate(
                         context,
                         outCandidates,
                         ZrParser_Semantic_FindSymbolById(context, *symbolId),
-                        call.targetSymbolId);
+                        call.targetSymbolId)) {
+                outCandidates->length = 0U;
+                return ZR_FALSE;
             }
         }
     }

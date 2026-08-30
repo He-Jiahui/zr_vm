@@ -505,7 +505,10 @@ overload-set row omits the already-resolved target, the query clears its reusabl
 output and fails closed instead of returning a candidate list with no selected
 row or inserting a same-name substitute. A non-invalid `overloadSetId` must also
 resolve to an existing snapshot row; a missing row is inconsistent metadata, not
-permission to reinterpret the call as a single-candidate invocation.
+permission to reinterpret the call as a single-candidate invocation. Every member
+of a resolved overload-set row must project to a registered function with a valid
+callable TypeId. Missing or malformed members invalidate the whole copied result;
+the query never returns a silently truncated overload set.
 
 ### CallAt Metadata Projection
 
