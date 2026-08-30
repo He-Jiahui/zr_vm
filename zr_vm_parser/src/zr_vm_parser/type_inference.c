@@ -9,6 +9,7 @@
 #include "type_inference/type_inference_semantic_facts.h"
 #include "type_inference/type_inference_reflection_surface.h"
 #include "type_inference/type_inference_call_diagnostics.h"
+#include "type_inference/type_inference_type_display_alias.h"
 #include "zr_vm_parser/ast.h"
 #include "type_inference/type_inference_constant_eval.h"
 #include "compiler/compile_tool_binding.h"
@@ -3378,7 +3379,10 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
         }
 
         result->ownershipQualifier = astType->ownershipQualifier;
-        if (!isPrimitiveAlias && cs->semanticContext != ZR_NULL) {
+        if (isPrimitiveAlias) {
+            type_inference_publish_explicit_type_display_alias(
+                    cs, result, typeName, astType->name);
+        } else if (cs->semanticContext != ZR_NULL) {
             ZrParser_Semantic_RegisterNamedType(cs->semanticContext,
                                                 typeName,
                                                 ZR_SEMANTIC_TYPE_KIND_UNKNOWN,

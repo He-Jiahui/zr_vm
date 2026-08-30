@@ -3757,3 +3757,17 @@ another source, shifted range, another TypeId, a conflicting duplicate, or an
 empty alias fails closed. Reset clears the facts. The query returns a borrowed
 snapshot string and does not format a type, inspect AST spelling, or resolve a
 name. Source producers and LSP consumers remain separate migration steps.
+
+## Plan 03 Task 5.7 Primitive Type-Use Alias Producer
+
+Explicit primitive type uses publish their source spelling through the
+snapshot-scoped type display alias fact. After resolving the AST type to an
+inferred type, the producer canonicalizes that type and publishes the alias
+under the exact type-name range. For example, source `i64` has canonical
+display `int` while an exact `(TypeId, FileRange)` alias query returns `i64`.
+
+Alias publication is presentation-only and best-effort. It does not alter
+inference success, TypeId identity, compatibility, or diagnostics. The
+producer does not register the spelling as a named type, and consumers must
+not reconstruct a missing alias from source text. Generic, nominal, qualified,
+binary, and native alias producers remain separate migration steps.
