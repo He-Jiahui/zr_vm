@@ -9,7 +9,8 @@
 
 ## 2026-08-30 current-main audit
 
-The current main tree is `248cdc6`. Read-only parser and documentation review
+The audited source baseline was `248cdc6` (this audit is recorded by commit
+`cb31f66`). Read-only parser and documentation review
 confirms that `%`-prefixed names are handled only by the unified
 `report_removed_percent_syntax` migration diagnostic; statement, class,
 struct, type, and expression-start branches return no production AST. The
@@ -30,6 +31,14 @@ in that cache, so this enumeration is not a full pass. The full registered
 graph is therefore still intentionally pending a stable rebuild and replay on
 the integrated L8/debug baseline. No unrelated dirty source, build output, or
 log path was staged by this audit.
+
+After the focused replay, the available MSVC cache completed `ALL_BUILD` and
+CTest was started across the full registered graph with `--parallel 2`. The
+run reached checkpoint 152 but remained inside the long-running
+`language_pipeline` / `zr_vm_compiler_integration_test` command for more than
+ten minutes without producing a terminal CTest summary. The agent-owned CTest
+process tree was then stopped; this is recorded as an execution timeout, not a
+test pass or failure. The full graph remains pending a bounded, stable replay.
 
 ## 2026-08-30 fixed-snapshot replay
 
