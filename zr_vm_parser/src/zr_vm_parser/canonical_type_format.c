@@ -115,7 +115,7 @@ static TZrBool canonical_type_format_generic_arguments(
         TZrSize depth) {
     TZrSize index;
 
-    if (state == ZR_NULL || arguments == ZR_NULL) {
+    if (state == ZR_NULL || arguments == ZR_NULL || arguments->length == 0U) {
         return ZR_FALSE;
     }
     for (index = 0; index < arguments->length; index++) {
@@ -183,7 +183,8 @@ static TZrBool canonical_type_format_generic_parameter(
     TZrChar text[64];
     TZrInt32 written;
 
-    if (state == ZR_NULL || parameter == ZR_NULL) {
+    if (state == ZR_NULL || parameter == ZR_NULL ||
+        parameter->ownerSymbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
     written = snprintf(
@@ -203,16 +204,24 @@ static TZrBool canonical_type_format_array(
         TZrSize depth) {
     TZrUInt32 rank;
 
-    if (state == ZR_NULL || arrayType == ZR_NULL) {
+    if (state == ZR_NULL || arrayType == ZR_NULL || arrayType->rank == 0U) {
         return ZR_FALSE;
     }
-    if (arrayType->storageKind == ZR_CANONICAL_ARRAY_STORAGE_INLINE &&
-        !canonical_type_format_append(state, "inline ")) {
-        return ZR_FALSE;
-    }
-    if (arrayType->storageKind == ZR_CANONICAL_ARRAY_STORAGE_NATIVE &&
-        !canonical_type_format_append(state, "native ")) {
-        return ZR_FALSE;
+    switch (arrayType->storageKind) {
+        case ZR_CANONICAL_ARRAY_STORAGE_MANAGED:
+            break;
+        case ZR_CANONICAL_ARRAY_STORAGE_INLINE:
+            if (!canonical_type_format_append(state, "inline ")) {
+                return ZR_FALSE;
+            }
+            break;
+        case ZR_CANONICAL_ARRAY_STORAGE_NATIVE:
+            if (!canonical_type_format_append(state, "native ")) {
+                return ZR_FALSE;
+            }
+            break;
+        default:
+            return ZR_FALSE;
     }
     if (!canonical_type_format_node(state, arrayType->elementTypeId, depth + 1U)) {
         return ZR_FALSE;
@@ -412,6 +421,9 @@ static TZrBool canonical_type_format_node(
                            depth + 1U) &&
                    canonical_type_format_append(state, ")");
         case ZR_CANONICAL_TYPE_UNION:
+            if (node->data.unionType.variantTypeIds.length == 0U) {
+                return ZR_FALSE;
+            }
             return canonical_type_format_node(state, node->data.unionType.definitionTypeId, depth + 1U) &&
                    canonical_type_format_append(state, "{") &&
                    canonical_type_format_id_array(

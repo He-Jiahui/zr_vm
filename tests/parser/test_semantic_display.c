@@ -312,6 +312,94 @@ static void test_semantic_display_separates_const_parameter_alias_from_identity(
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_display_rejects_malformed_composite_shapes(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrCanonicalTypeNode *genericParameterNode;
+    SZrCanonicalTypeNode *genericInstanceNode;
+    SZrCanonicalTypeNode *arrayNode;
+    SZrCanonicalTypeNode *unionNode;
+    TZrTypeId intType;
+    TZrTypeId genericDefinition;
+    TZrTypeId genericParameterType;
+    TZrTypeId genericArguments[1];
+    TZrTypeId genericInstanceType;
+    TZrTypeId arrayType;
+    TZrTypeId unionType;
+    TZrSize storedLength;
+    TZrChar buffer[128];
+
+    TEST_ASSERT_NOT_NULL(context);
+    intType = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_INT64);
+    genericDefinition = ZrParser_CanonicalType_InternNominal(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "app.types"),
+            ZrCore_String_CreateFromNative(g_state, "Box"),
+            0x02000052U);
+    genericParameterType = ZrParser_CanonicalType_InternGenericParameter(
+            context, 81U, 0U);
+    genericArguments[0] = intType;
+    genericInstanceType = ZrParser_CanonicalType_InternGenericInstance(
+            context, genericDefinition, genericArguments, 1U);
+    arrayType = ZrParser_CanonicalType_InternArray(
+            context, intType, 1U, ZR_CANONICAL_ARRAY_STORAGE_MANAGED);
+    unionType = ZrParser_CanonicalType_InternUnion(
+            context, genericDefinition, genericArguments, 1U);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, genericDefinition);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, genericParameterType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, genericInstanceType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, arrayType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, unionType);
+
+    genericParameterNode = (SZrCanonicalTypeNode *)ZrParser_CanonicalType_Find(
+            context, genericParameterType);
+    genericInstanceNode = (SZrCanonicalTypeNode *)ZrParser_CanonicalType_Find(
+            context, genericInstanceType);
+    arrayNode = (SZrCanonicalTypeNode *)ZrParser_CanonicalType_Find(context, arrayType);
+    unionNode = (SZrCanonicalTypeNode *)ZrParser_CanonicalType_Find(context, unionType);
+    TEST_ASSERT_NOT_NULL(genericParameterNode);
+    TEST_ASSERT_NOT_NULL(genericInstanceNode);
+    TEST_ASSERT_NOT_NULL(arrayNode);
+    TEST_ASSERT_NOT_NULL(unionNode);
+
+    genericParameterNode->data.genericParameter.ownerSymbolId = ZR_SEMANTIC_ID_INVALID;
+    strcpy(buffer, "sentinel");
+    TEST_ASSERT_FALSE(ZrParser_SemanticDisplay_FormatType(
+            context, genericParameterType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("", buffer);
+    genericParameterNode->data.genericParameter.ownerSymbolId = 81U;
+
+    storedLength = genericInstanceNode->data.genericInstance.arguments.length;
+    genericInstanceNode->data.genericInstance.arguments.length = 0U;
+    strcpy(buffer, "sentinel");
+    TEST_ASSERT_FALSE(ZrParser_SemanticDisplay_FormatType(
+            context, genericInstanceType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("", buffer);
+    genericInstanceNode->data.genericInstance.arguments.length = storedLength;
+
+    arrayNode->data.array.rank = 0U;
+    strcpy(buffer, "sentinel");
+    TEST_ASSERT_FALSE(ZrParser_SemanticDisplay_FormatType(
+            context, arrayType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("", buffer);
+    arrayNode->data.array.rank = 1U;
+    arrayNode->data.array.storageKind = (EZrCanonicalArrayStorageKind)99;
+    strcpy(buffer, "sentinel");
+    TEST_ASSERT_FALSE(ZrParser_SemanticDisplay_FormatType(
+            context, arrayType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("", buffer);
+    arrayNode->data.array.storageKind = ZR_CANONICAL_ARRAY_STORAGE_MANAGED;
+
+    storedLength = unionNode->data.unionType.variantTypeIds.length;
+    unionNode->data.unionType.variantTypeIds.length = 0U;
+    strcpy(buffer, "sentinel");
+    TEST_ASSERT_FALSE(ZrParser_SemanticDisplay_FormatType(
+            context, unionType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("", buffer);
+    unionNode->data.unionType.variantTypeIds.length = storedLength;
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_display_rejects_malformed_canonical_contracts(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     TZrTypeId intType;
@@ -495,6 +583,7 @@ int main(void) {
     RUN_TEST(test_semantic_display_uses_matching_declaration_signature_fact);
     RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
+    RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);
     RUN_TEST(test_semantic_display_rejects_malformed_canonical_contracts);
     RUN_TEST(test_callable_signature_rejects_malformed_canonical_contracts);
     return UNITY_END();

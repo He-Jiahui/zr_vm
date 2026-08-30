@@ -3699,3 +3699,16 @@ Type arguments and closed integer arguments continue to format directly. A
 consumer that needs the source alias must obtain an explicit display fact tied
 to the relevant symbol/use site; it must not reinterpret `displayName` as part
 of canonical identity or reconstruct the alias from source text.
+
+## Plan 03 Task 5.3 Composite Display Integrity
+
+Canonical composite formatting validates the same structural domain accepted
+by interning before emitting text. Generic-parameter nodes require a valid owner
+SymbolId; generic instances and unions require non-empty argument/variant lists;
+arrays require a positive rank and a published managed/inline/native storage
+kind.
+
+Corrupt composite snapshots are unavailable display data. The formatter clears
+its output and fails rather than normalizing rank zero into `[]`, treating an
+unknown storage enum as managed, or emitting empty `<>`/union contracts. LSP
+consumers must not replace these failures with source or name reconstruction.
