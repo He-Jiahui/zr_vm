@@ -28,10 +28,11 @@ the migration inventory remains `findings=0` across 1,005 scanned files.
 The focused collision coverage now also parses an interface declaring methods
 named `share`, `degrade`, `wake`, `intoGc`, and `drop`; all five names resolve
 through `parse_member_identifier` as ordinary interface method signatures.
-The rebuilt MSVC runner reports this new case as passing. The same run still
-reports the pre-existing artifact round-trip failure while loading its runtime
-entry function, so the focused target is `50/51` for this cache and is not
-promoted as a full acceptance result.
+The rebuilt MSVC runner reports this new case as passing. A fresh direct replay
+of the rebuilt binary now reports `51 Tests / 0 Failures / 0 Ignored` (exit 0),
+including the artifact round-trip case. This closes the focused interface-name
+coverage gap; it does not promote the umbrella result while the registered full
+graph remains pending a stable L8/debug rebuild and replay.
 
 `ctest -N` on the available MSVC build now enumerates 152 registered tests,
 including newly added benchmark targets; several executables are not present
