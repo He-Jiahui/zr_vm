@@ -355,6 +355,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    parser/metadata producer 或既有 fixture，包括 tuple canonical graph、member-write
    reference、class-member interface、imported-type matrix、pooling guard 和 analyzer
    marker；不在 LSP 侧增加名称、类型文本或消息 fallback。
+   Task 7.38 移除 local-symbol references consumer 中按 `query->symbol->name` 扩展
+   跨项目 imported-member aggregation 的分支。source-contract regression 只检查
+   `AppendReferences` local branch 不再读取该 name；local 结果完全来自 parser relation
+   query，缺失 canonical cross-project relation 时保持 fail-closed。imported-member 与
+   external-metadata 分支的 structured declaration identity 不变。该实现尚待当前工作树
+   GCC/Clang/MSVC focused、interface、stdio smoke 与同基线 16-target final gate，暂不
+   声明 Task 7/8 或 Plan 03 GREEN。Task 7.38 focused GREEN 已于 2026-08-30 08:31
+   +08:00 完成：local-symbol references consumer 仅返回 parser relation query，不再按
+   `query->symbol->name` 聚合跨项目结果；GCC/Clang/MSVC source-contract 与生产单文件
+   语法检查均通过。interface、stdio smoke 与同基线 16-target final gate 仍待重放。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续

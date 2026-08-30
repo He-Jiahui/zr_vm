@@ -2980,33 +2980,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        TZrBool appended =
-            ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
-                    state,
-                    context,
-                    query,
-                    includeDeclaration,
-                    result);
-
-        if (!appended || query->projectIndex == ZR_NULL || query->symbol == ZR_NULL ||
-            query->symbol->accessModifier != ZR_ACCESS_PUBLIC) {
-            return appended;
-        }
-
-        {
-            SZrLspProjectFileRecord *record =
-                ZrLanguageServer_LspProject_FindRecordByUri(query->projectIndex, query->symbol->location.source);
-            if (record == ZR_NULL || record->moduleName == ZR_NULL) {
-                return appended;
-            }
-
-            return semantic_query_append_project_imported_member_references(state,
-                                                                            context,
-                                                                            query->projectIndex,
-                                                                            record->moduleName,
-                                                                            query->symbol->name,
-                                                                            result) || appended;
-        }
+        return ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
+                state,
+                context,
+                query,
+                includeDeclaration,
+                result);
     }
 
     return ZR_FALSE;

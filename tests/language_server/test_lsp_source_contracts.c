@@ -1374,6 +1374,8 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
     char *projectNavigation = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
+    const char *appendReferencesStart;
+    const char *appendReferencesEnd;
 
     if (referenceQuery == NULL || semanticQuery == NULL || projectNavigation == NULL) {
         printf("FAIL: could not read local reference consumer sources\n");
@@ -1392,6 +1394,18 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         referenceQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
     assert_text_contains_none(referenceQuery, "referenceTracker");
     assert_text_contains_none(referenceQuery, "symbol->name");
+    appendReferencesStart = strstr(
+        semanticQuery,
+        "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReferences(");
+    appendReferencesEnd = appendReferencesStart != NULL
+                              ? strstr(appendReferencesStart,
+                                       "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(")
+                              : NULL;
+    assert_text_section_contains_none(
+        "ZrLanguageServer_LspSemanticQuery_AppendReferences",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "query->symbol->name");
     assert_text_contains_none(
         semanticQuery, "semantic_query_normalize_symbol_reference_range");
     assert_text_contains(

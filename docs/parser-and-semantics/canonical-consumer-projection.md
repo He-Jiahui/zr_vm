@@ -250,6 +250,13 @@ Semantic tokens 尚未通过本阶段迁移：当前 source token projector 仍�
 diagnostics 视为 poisoned module。这样 compiler error 即使尚未经过 diagnostics query，也不会
 产生看似可用的 schema-v1 public-contract hash。
 
+Local reference consumers use the parser relation projector as the complete source-local
+result. The local-symbol branch no longer expands a public symbol through project/module and
+member-name aggregation; when a canonical cross-project relation is unavailable, the LSP result
+stays empty. Imported-member and external-metadata branches retain their structured declaration
+identity adapters, and no branch may infer a relation from an equal name. Task 7.38 verified this
+contract with GCC/Clang/MSVC source-contract and production syntax checks.
+
 LSP call hover 的文本和范围也来自同一 resolved call query。receiver fast path 与 free-call
 signature fallback 都把 `query.reference->range` 转为 UTF-16 range；通用 local-symbol hover
 只有在查询点确实落入 callee reference range 时才替换范围，避免把普通实参 hover 错误投影
