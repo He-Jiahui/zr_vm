@@ -1303,10 +1303,14 @@ blocker and leaves Step 5 and Step 7 pending the stable integrated full graph.
 - [ ] **Step 7: Commit final acceptance status**
 
 ```powershell
-git add -- tests/CMakeLists.txt tests/parser/test_ownership_receiver_guard_performance.c tests/acceptance/2026-08-10-ownership-object-member-separation.md docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
+git add -- docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md tests/acceptance/2026-08-10-ownership-object-member-separation.md
 git diff --cached --check
+git diff --cached --name-only
 git commit -m "test(syntax): accept ownership member separation"
 ```
 
+The final staging command is intentionally limited to the three ownership
+acceptance documents. It must not include shared `tests/CMakeLists.txt`,
+benchmark files, LSP files, or any other path owned by a concurrent task.
 Final evidence must show an empty index, only pre-existing unrelated worktree
 changes, the exact commit series, and no unhandled design requirement.
