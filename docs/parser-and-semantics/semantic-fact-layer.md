@@ -3846,3 +3846,18 @@ register `Word` as a nominal type, alter the copied TypeId, infer by identifier
 text, or change alias-target relation facts. Wrapped uses whose inner inference
 runs without a semantic context and GcBridge propagation remain separate
 producer work.
+
+## Plan 03 Task 5.13 Wrapped Type-Value Alias Producer
+
+Ownership generic conversion temporarily suppresses semantic publication while
+it resolves the inner type. After restoring the semantic context, the wrapper
+now replays both primitive and compiler type-value alias producers. A binding
+`Word -> int` used as `Unique<Word>` therefore keeps canonical display
+`Unique<int>`, while an exact query for the inner canonical `int` TypeId at the
+`Word` range returns `Word`.
+
+The replay is gated by the compiler state's structured alias binding and the
+parsed inner identifier node. It does not register a nominal `Word` identity,
+publish an alias for the outer ownership TypeId, or infer from an unbound name.
+GcBridge wrappers remain separate producer work because they additionally
+require canonical class/resource prototype validation.

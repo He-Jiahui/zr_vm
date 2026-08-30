@@ -971,6 +971,7 @@ int main(void) {
     RUN_TEST(test_nested_generic_type_uses_preserve_split_angle_ranges);
     RUN_TEST(test_const_generic_type_use_preserves_source_expression_alias);
     RUN_TEST(test_type_value_alias_use_preserves_nominal_source_alias);
+    RUN_TEST(test_owner_type_value_alias_preserves_inner_source_alias);
     RUN_TEST(test_qualified_type_use_publishes_source_display_alias);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);

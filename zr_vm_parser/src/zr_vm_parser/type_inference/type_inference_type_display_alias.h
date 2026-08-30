@@ -3,6 +3,11 @@
 
 #include "zr_vm_parser/type_inference.h"
 
+TZrBool type_inference_resolve_type_value_alias(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrInferredType *result);
+
 void type_inference_publish_explicit_type_display_alias(
         SZrCompilerState *cs,
         const SZrInferredType *type,
@@ -15,6 +20,11 @@ void type_inference_publish_generic_type_display_alias(
         const SZrType *typeUse);
 
 void type_inference_publish_primitive_type_display_alias(
+        SZrCompilerState *cs,
+        const SZrInferredType *type,
+        const SZrType *typeUse);
+
+void type_inference_publish_type_value_display_alias(
         SZrCompilerState *cs,
         const SZrInferredType *type,
         const SZrType *typeUse);

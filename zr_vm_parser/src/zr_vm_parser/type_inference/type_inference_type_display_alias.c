@@ -8,6 +8,42 @@
 #include "zr_vm_parser/semantic_display.h"
 #include "type_inference_internal.h"
 
+static SZrTypeBinding *type_inference_find_type_value_alias_binding(
+        SZrCompilerState *cs,
+        SZrString *name) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(
+                &cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL &&
+            ZrCore_String_Equal(binding->name, name)) {
+            return binding;
+        }
+    }
+    return ZR_NULL;
+}
+
+TZrBool type_inference_resolve_type_value_alias(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrInferredType *result) {
+    SZrTypeBinding *binding;
+
+    if (result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    binding = type_inference_find_type_value_alias_binding(cs, name);
+    if (binding == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Copy(cs->state, result, &binding->type);
+    return ZR_TRUE;
+}
+
 static TZrBool type_inference_type_use_name_range(
         const SZrAstNode *nameNode,
         SZrFileRange *outRange) {
@@ -333,4 +369,23 @@ void type_inference_publish_primitive_type_display_alias(
     }
     type_inference_publish_explicit_type_display_alias(
             cs, type, alias, typeUse);
+}
+
+void type_inference_publish_type_value_display_alias(
+        SZrCompilerState *cs,
+        const SZrInferredType *type,
+        const SZrType *typeUse) {
+    SZrTypeBinding *binding;
+
+    if (typeUse == ZR_NULL || typeUse->name == ZR_NULL ||
+        typeUse->name->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return;
+    }
+    binding = type_inference_find_type_value_alias_binding(
+            cs, typeUse->name->data.identifier.name);
+    if (binding == ZR_NULL) {
+        return;
+    }
+    type_inference_publish_explicit_type_display_alias(
+            cs, type, binding->name, typeUse);
 }

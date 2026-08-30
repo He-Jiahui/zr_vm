@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_type_display_alias.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_type_display_alias.h
 tests:
   - tests/parser/test_semantic_display.c
   - tests/parser/test_semantic_display_nominal_alias_cases.h
@@ -30,7 +32,7 @@ RED在compiler state中注册`Word -> inferred int`，再推断真实parser AST�
 inference与canonical formatter `int`均已通过，但exact alias query返回`NULL`；GCC display真实
 exit 1，`18 Tests / 1 Failure`。
 
-GREEN在`compiler_lookup_type_value_alias`成功后复用existing explicit alias publisher，以target
+GREEN在`type_inference_resolve_type_value_alias`成功后复用existing explicit alias publisher，以target
 canonical TypeId和exact identifier range发布`Word`。GCC/Clang display均为`18/18`、真实exit 0。
 
 ## Verification

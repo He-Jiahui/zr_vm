@@ -3214,24 +3214,6 @@ static TZrBool ast_type_is_reserved_decorator_pseudo_type_name(const TZrNativeSt
            (nameLen == 6 && strncmp(nameStr, "Object", 6) == 0);
 }
 
-static TZrBool compiler_lookup_type_value_alias(SZrCompilerState *cs,
-                                                SZrString *name,
-                                                SZrInferredType *result) {
-    if (cs == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            ZrParser_InferredType_Copy(cs->state, result, &binding->type);
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
 static TZrBool ast_type_report_missing_explicit_binding(SZrCompilerState *cs,
                                                         SZrString *typeName,
                                                         SZrFileRange location) {
@@ -3343,7 +3325,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             return ZR_TRUE;
         }
 
-        if (compiler_lookup_type_value_alias(cs, typeName, result)) {
+        if (type_inference_resolve_type_value_alias(cs, typeName, result)) {
             result->ownershipQualifier = astType->ownershipQualifier;
             type_inference_publish_explicit_type_display_alias(
                     cs, result, typeName, astType);
@@ -3426,6 +3408,8 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             cs->semanticContext = savedSemanticContext;
 
             type_inference_publish_primitive_type_display_alias(
+                    cs, result, ownershipGenericInnerType);
+            type_inference_publish_type_value_display_alias(
                     cs, result, ownershipGenericInnerType);
             result->ownershipQualifier = ownershipGenericQualifier;
             if (cs->semanticContext != ZR_NULL && result->typeName != ZR_NULL) {
