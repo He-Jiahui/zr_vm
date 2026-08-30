@@ -496,7 +496,7 @@ static void test_lsp_inlay_position_conversion_uses_shared_document_helper(void)
     free(source);
 }
 
-static void test_project_navigation_position_conversion_uses_interface_helper(void) {
+static void test_project_navigation_has_no_legacy_position_conversion(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
 
@@ -506,7 +506,6 @@ static void test_project_navigation_position_conversion_uses_interface_helper(vo
         return;
     }
 
-    assert_text_contains(source, "ZrLanguageServer_Lsp_GetDocumentFilePosition");
     assert_text_contains_none(source, "ZrLanguageServer_LspPosition_ToFilePosition");
 
     free(source);
@@ -1441,17 +1440,14 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c");
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
-    char *projectNavigation = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
     const char *appendReferencesStart;
     const char *appendReferencesEnd;
 
-    if (referenceQuery == NULL || semanticQuery == NULL || projectNavigation == NULL) {
+    if (referenceQuery == NULL || semanticQuery == NULL) {
         printf("FAIL: could not read local reference consumer sources\n");
         g_failures++;
         free(referenceQuery);
         free(semanticQuery);
-        free(projectNavigation);
         return;
     }
 
@@ -1477,15 +1473,9 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         "query->symbol->name");
     assert_text_contains_none(
         semanticQuery, "semantic_query_normalize_symbol_reference_range");
-    assert_text_contains(
-        projectNavigation,
-        "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol");
-    assert_text_contains_none(
-        projectNavigation, "ReferenceTracker_FindReferences");
 
     free(referenceQuery);
     free(semanticQuery);
-    free(projectNavigation);
 }
 
 static void test_imported_reference_consumers_require_canonical_identity(void) {
@@ -1585,6 +1575,35 @@ static void test_imported_reference_consumers_require_canonical_identity(void) {
         "semantic_query_append_imported_member_highlights");
 
     free(semanticQuery);
+}
+
+static void test_dead_project_semantic_fallbacks_are_removed(void) {
+    char *projectNavigation = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
+    char *interfaceInternal = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h");
+
+    if (projectNavigation == NULL || interfaceInternal == NULL) {
+        printf("FAIL: could not read project semantic fallback sources\n");
+        g_failures++;
+        free(projectNavigation);
+        free(interfaceInternal);
+        return;
+    }
+
+    assert_text_contains_none(projectNavigation, "find_global_symbol_by_name");
+    assert_text_contains_none(projectNavigation, "project_resolve_symbol_at_position");
+    assert_text_contains_none(projectNavigation, "append_symbol_references_from_facts");
+    assert_text_contains_none(projectNavigation, "ZrLanguageServer_Lsp_ProjectTryGetDefinition");
+    assert_text_contains_none(projectNavigation, "ZrLanguageServer_Lsp_ProjectTryFindReferences");
+    assert_text_contains_none(projectNavigation, "ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights");
+    assert_text_contains_none(interfaceInternal, "ZrLanguageServer_Lsp_ProjectTryGetDefinition");
+    assert_text_contains_none(interfaceInternal, "ZrLanguageServer_Lsp_ProjectTryFindReferences");
+    assert_text_contains_none(interfaceInternal, "ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights");
+    assert_text_contains_none(projectNavigation, "SZrLspProjectResolvedSymbol");
+
+    free(projectNavigation);
+    free(interfaceInternal);
 }
 
 static void test_local_rename_consumers_require_canonical_symbol_identity(void) {
@@ -1912,7 +1931,7 @@ int main(void) {
     test_lsp_interface_completion_code_span_uses_content_snapshot();
     test_lsp_interface_hover_documentation_uses_content_snapshot();
     test_lsp_inlay_position_conversion_uses_shared_document_helper();
-    test_project_navigation_position_conversion_uses_interface_helper();
+    test_project_navigation_has_no_legacy_position_conversion();
     test_project_navigation_uses_content_snapshot();
     test_project_refresh_uses_content_snapshot();
     test_metadata_provider_uses_content_snapshot();
@@ -1951,6 +1970,7 @@ int main(void) {
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
     test_imported_reference_consumers_require_canonical_identity();
+    test_dead_project_semantic_fallbacks_are_removed();
     test_local_rename_consumers_require_canonical_symbol_identity();
     test_local_definition_consumer_uses_snapshot_source();
     test_local_implementation_consumer_uses_parser_relations();
@@ -1991,7 +2011,7 @@ int main(void) {
     printf("PASS: LSP interface completion code span uses content snapshot\n");
     printf("PASS: LSP interface hover documentation uses content snapshot\n");
     printf("PASS: LSP inlay position conversion uses shared document helper\n");
-    printf("PASS: Project navigation position conversion uses interface helper\n");
+    printf("PASS: Project navigation avoids legacy position conversion\n");
     printf("PASS: Project navigation uses content snapshot\n");
     printf("PASS: Project refresh uses content snapshot\n");
     printf("PASS: Metadata provider uses content snapshot\n");

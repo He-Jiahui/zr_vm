@@ -17,13 +17,6 @@ typedef struct SZrLspImportedMemberHit {
     SZrFileRange location;
 } SZrLspImportedMemberHit;
 
-typedef struct SZrLspProjectResolvedSymbol {
-    SZrLspProjectIndex *projectIndex;
-    SZrLspProjectFileRecord *record;
-    SZrSemanticAnalyzer *analyzer;
-    SZrSymbol *symbol;
-} SZrLspProjectResolvedSymbol;
-
 typedef struct SZrLspProjectPublicContractSnapshot {
     SZrString *moduleName;
     TZrUInt64 hash;

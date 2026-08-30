@@ -233,22 +233,6 @@ SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *st
 SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri(SZrState *state,
                                                                           SZrLspContext *context,
                                                                           SZrString *projectUri);
-TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
-                                                     SZrLspContext *context,
-                                                     SZrString *uri,
-                                                     SZrLspPosition position,
-                                                     SZrArray *result);
-TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
-                                                      SZrLspContext *context,
-                                                      SZrString *uri,
-                                                      SZrLspPosition position,
-                                                      TZrBool includeDeclaration,
-                                                      SZrArray *result);
-TZrBool ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights(SZrState *state,
-                                                             SZrLspContext *context,
-                                                             SZrString *uri,
-                                                             SZrLspPosition position,
-                                                             SZrArray *result);
 TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri,

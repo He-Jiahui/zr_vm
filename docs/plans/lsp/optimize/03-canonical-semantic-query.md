@@ -150,11 +150,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 13:55 +08:00。
-- 总体状态：进行中。Task 7.42 已完成 imported-member references/highlights consumer
-  的 canonical identity 收口；当前 focused source-contract 与 GCC/Clang syntax checks
-  通过，但完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration
-  identity producer 尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN 或完成。
+- 最近更新时间：2026-08-30 14:22 +08:00。
+- 总体状态：进行中。Task 7.43 已删除无调用者的 project definition/reference/highlight
+  第二套语义 API 及其全局名称/raw-symbol resolver；当前 focused source-contract 与
+  GCC/Clang syntax checks 通过，但完整 16-target matrix、三套 stdio smoke 和 Syntax05
+  imported declaration identity producer 尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN
+  或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
   ownership return-escape canonical producer/query/LSP projection；Task 6.33
@@ -471,3 +472,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   对 production source 的 `-fsyntax-only` 均真实 exit 0，重新编译运行的 source-contract
   executable 真实 exit 0。Syntax05 imported declaration producer、完整三工具链 16-target
   matrix 与三套 stdio smoke 仍未完成，Task 7/Task 8 不标记全局 GREEN。
+
+- 补充完成时间：2026-08-30 14:22 +08:00。Task 7.43 删除已经没有调用者的
+  `ProjectTryGetDefinition/FindReferences/GetDocumentHighlights` API、内部声明和
+  `SZrLspProjectResolvedSymbol` raw-symbol transport；同时删除其独占的 imported-member
+  AST/name resolver、global symbol name lookup 与 name-based cross-project reference bridge。
+  主接口继续只走 `LspSemanticQuery` canonical consumer，active binary/native metadata
+  adapters 保持不变。production 净删 519 行，source-contract RED 精确失败 9 项后转
+  GREEN；WSL GCC/Clang production `-fsyntax-only` 与重新编译运行的 source-contract
+  executable 均真实 exit 0。完整三工具链 16-target matrix、三套 stdio smoke 与 Syntax05
+  producer 仍未完成，Task 7/Task 8 不标记全局 GREEN。
