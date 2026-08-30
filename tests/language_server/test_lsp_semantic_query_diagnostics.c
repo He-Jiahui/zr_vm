@@ -13,6 +13,9 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
+#include "zr_vm_parser/diagnostic_builder.h"
+#include "zr_vm_parser/semantic_facts.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h"
 
 typedef struct SZrTestTimer {
     clock_t startTime;
@@ -897,6 +900,7 @@ static void test_lsp_diagnostics_publish_non_integer_array_index(SZrState *state
 }
 
 #include "test_lsp_duplicate_definition_diagnostic_cases.h"
+#include "test_lsp_semantic_query_diagnostic_replacement_cases.h"
 #include "test_lsp_type_mismatch_diagnostic_cases.h"
 
 int main(void) {
@@ -938,6 +942,7 @@ int main(void) {
     test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mismatch(state);
     test_lsp_diagnostics_publish_detailed_function_call_argument_type_mismatch(state);
     test_lsp_diagnostics_publish_detailed_method_call_argument_type_mismatch(state);
+    test_semantic_query_replaces_stale_duplicate_diagnostic(state);
 
     ZrCore_GlobalState_Free(global);
 

@@ -78,7 +78,7 @@ void ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
             location);
 }
 
-static SZrDiagnostic *query_diagnostic_find_reported(
+static SZrDiagnostic **query_diagnostic_find_reported_slot(
         SZrSemanticAnalyzer *analyzer,
         const SZrStructuredDiagnostic *structured) {
     if (analyzer == ZR_NULL || structured == ZR_NULL || !analyzer->diagnostics.isValid) {
@@ -91,71 +91,11 @@ static SZrDiagnostic *query_diagnostic_find_reported(
             *diagnosticPtr != ZR_NULL &&
             query_diagnostic_same_range(&(*diagnosticPtr)->location, &structured->location) &&
             query_diagnostic_same_code((*diagnosticPtr)->code, structured->code)) {
-            return *diagnosticPtr;
+            return diagnosticPtr;
         }
     }
 
     return ZR_NULL;
-}
-
-static TZrBool query_diagnostic_has_related_information(
-        const SZrDiagnostic *diagnostic,
-        const SZrStructuredDiagnosticRelatedInformation *structured) {
-    TZrSize index;
-
-    if (diagnostic == ZR_NULL ||
-        structured == ZR_NULL ||
-        !diagnostic->relatedInformation.isValid) {
-        return ZR_FALSE;
-    }
-    for (index = 0; index < diagnostic->relatedInformation.length; index++) {
-        const SZrDiagnosticRelatedInformation *related =
-                (const SZrDiagnosticRelatedInformation *)ZrCore_Array_Get(
-                        (SZrArray *)&diagnostic->relatedInformation,
-                        index);
-        if (related != ZR_NULL &&
-            query_diagnostic_same_range(&related->location, &structured->location) &&
-            query_diagnostic_same_code(related->message, structured->message)) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
-static TZrBool query_diagnostic_merge_related_information(
-        SZrState *state,
-        SZrDiagnostic *diagnostic,
-        const SZrStructuredDiagnostic *structured) {
-    TZrSize index;
-
-    if (state == ZR_NULL || diagnostic == ZR_NULL || structured == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    for (index = 0; structured->relatedInformation.isValid &&
-                    index < structured->relatedInformation.length; index++) {
-        const SZrStructuredDiagnosticRelatedInformation *related =
-                (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
-                        (SZrArray *)&structured->relatedInformation,
-                        index);
-        const TZrChar *message;
-
-        if (related == ZR_NULL ||
-            query_diagnostic_has_related_information(diagnostic, related)) {
-            continue;
-        }
-        message = related->message != ZR_NULL
-                          ? ZrCore_String_GetNativeString(related->message)
-                          : ZR_NULL;
-        if (message == ZR_NULL ||
-            !ZrLanguageServer_Diagnostic_AddRelatedInformation(
-                    state,
-                    diagnostic,
-                    related->location,
-                    message)) {
-            return ZR_FALSE;
-        }
-    }
-    return ZR_TRUE;
 }
 
 void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
@@ -187,10 +127,15 @@ void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
     for (TZrSize index = 0; index < diagnostics.count; index++) {
         const SZrStructuredDiagnostic *structured = &diagnostics.items[index];
         SZrDiagnostic *diagnostic;
+        SZrDiagnostic **reportedSlot;
 
-        diagnostic = query_diagnostic_find_reported(analyzer, structured);
-        if (diagnostic != ZR_NULL) {
-            (void)query_diagnostic_merge_related_information(state, diagnostic, structured);
+        reportedSlot = query_diagnostic_find_reported_slot(analyzer, structured);
+        if (reportedSlot != ZR_NULL) {
+            diagnostic = ZrLanguageServer_Diagnostic_FromStructured(state, structured);
+            if (diagnostic != ZR_NULL) {
+                ZrLanguageServer_Diagnostic_Free(state, *reportedSlot);
+                *reportedSlot = diagnostic;
+            }
             continue;
         }
 
