@@ -4,8 +4,32 @@
 
 - Design: `docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md`
 - Implementation plan: `docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md`
-- Review date: 2026-08-29 (UTC+08:00)
+- Review date: 2026-08-30 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
+
+## 2026-08-30 current-main audit
+
+The current main tree is `248cdc6`. Read-only parser and documentation review
+confirms that `%`-prefixed names are handled only by the unified
+`report_removed_percent_syntax` migration diagnostic; statement, class,
+struct, type, and expression-start branches return no production AST. The
+remaining `%` branches in expression parsing are the ordinary modulo and
+modulo-assignment operators. The current positive surface is `module path;`,
+`import("path")`, `native extern(...)`, `comptime`, the five reserved
+intrinsics, and direct/optional `.`/`?.` access including `?.(args)`.
+
+The current MSVC focused replay directly returned zero for ownership intrinsic
+member separation (`50/50`), receiver guard performance (`1/1`), Shared/Weak
+resources (`21/21`), and Unique/Drop resources (`20/20`). The syntax status
+verifier remains `TOTAL=55 COMPLETE=55 MISSING_STATUS=0 NON_COMPLETE=0`, and
+the migration inventory remains `findings=0` across 1,005 scanned files.
+
+`ctest -N` on the available MSVC build now enumerates 152 registered tests,
+including newly added benchmark targets; several executables are not present
+in that cache, so this enumeration is not a full pass. The full registered
+graph is therefore still intentionally pending a stable rebuild and replay on
+the integrated L8/debug baseline. No unrelated dirty source, build output, or
+log path was staged by this audit.
 
 ## 2026-08-30 fixed-snapshot replay
 
