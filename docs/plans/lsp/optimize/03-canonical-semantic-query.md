@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 16:55 +08:00。
-- 总体状态：进行中。Task 7.51 已删除 local-reference consumer 中零调用的 Symbol wrapper；
-  固定 GCC/Clang 快照中的 source-contract 70/70、semantic parity 15/15 全部通过，
-  local-query 保持同一 32 Pass/1 个既有 member-write producer marker，GCC interface 与
-  parent 保持同一 8 个既有 producer marker，delta 0。
+- 最近更新时间：2026-08-30 17:08 +08:00。
+- 总体状态：进行中。Task 7.52 已删除 project import 层零调用的 imported-member position
+  wrapper及两层 AST walker，净删253行；固定 GCC/Clang 快照中的 source-contract 70/70、
+  semantic parity 15/15 全部通过，project parent/overlay 与 GCC/Clang 均保持同一
+  42 Pass/18 个既有 producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -568,3 +568,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   marker。GCC interface 与固定 parent 的失败测试名称均为同一 8 个已登记 producer marker，
   delta 0且不计本任务 GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05
   producer及其余 analyzer/symbol-table consumers仍未完成。
+
+- 补充完成时间：2026-08-30 17:08 +08:00。Task 7.52 删除全仓无调用的
+  `ZrLanguageServer_LspProject_FindImportedMemberHit` 声明/实现及其独占两层 request-time
+  AST position walker；活跃 import-binding walker 与 imported-location projector保持不变，
+  未新增 module/member name fallback。source-contract 在旧生产代码上精确 RED 四项后转
+  GREEN。初次连续区间删除误含活跃 binding walker，链接失败轮已作废；按函数边界恢复后，
+  固定 `78d862c + 3 code/test overlays` 的 GCC/Clang 快照均完成 source-contract、semantic
+  parity 与 project features重链，前两项分别为70/70、15/15且真实 exit 0。project runner
+  两套进程均 exit 0但日志含同一42 Pass/18个已登记 producer marker；GCC同构 parent/overlay
+  及 GCC/Clang marker名称均delta 0，不计本任务 GREEN。GCC interface 与固定 parent仍为同一
+  8个marker。完整三工具链16-target matrix、三套stdio smoke、Syntax05 producer及其余
+  analyzer/symbol-table consumers仍未完成。

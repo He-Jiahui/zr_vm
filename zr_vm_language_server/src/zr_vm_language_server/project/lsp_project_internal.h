@@ -122,10 +122,6 @@ TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
                                                          SZrFileRange position,
                                                          SZrLspImportBinding **outBinding,
                                                          SZrFileRange *outLocation);
-TZrBool ZrLanguageServer_LspProject_FindImportedMemberHit(SZrAstNode *node,
-                                                          SZrArray *bindings,
-                                                          SZrFileRange position,
-                                                          SZrLspImportedMemberHit *outHit);
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrState *state,
                                                                           SZrLspContext *context,
                                                                           SZrString *uri,

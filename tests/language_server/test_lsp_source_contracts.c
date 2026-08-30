@@ -1623,13 +1623,20 @@ static void test_imported_reference_consumers_require_canonical_identity(void) {
 static void test_dead_project_semantic_fallbacks_are_removed(void) {
     char *projectNavigation = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
+    char *projectImports = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_imports.c");
+    char *projectInternal = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h");
     char *interfaceInternal = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h");
 
-    if (projectNavigation == NULL || interfaceInternal == NULL) {
+    if (projectNavigation == NULL || projectImports == NULL || projectInternal == NULL ||
+        interfaceInternal == NULL) {
         printf("FAIL: could not read project semantic fallback sources\n");
         g_failures++;
         free(projectNavigation);
+        free(projectImports);
+        free(projectInternal);
         free(interfaceInternal);
         return;
     }
@@ -1644,8 +1651,18 @@ static void test_dead_project_semantic_fallbacks_are_removed(void) {
     assert_text_contains_none(interfaceInternal, "ZrLanguageServer_Lsp_ProjectTryFindReferences");
     assert_text_contains_none(interfaceInternal, "ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights");
     assert_text_contains_none(projectNavigation, "SZrLspProjectResolvedSymbol");
+    assert_text_contains_none(
+        projectImports,
+        "ZrLanguageServer_LspProject_FindImportedMemberHit");
+    assert_text_contains_none(
+        projectInternal,
+        "ZrLanguageServer_LspProject_FindImportedMemberHit");
+    assert_text_contains_none(projectImports, "find_imported_member_hit_recursive");
+    assert_text_contains_none(projectImports, "find_imported_member_hit_in_node_array");
 
     free(projectNavigation);
+    free(projectImports);
+    free(projectInternal);
     free(interfaceInternal);
 }
 
