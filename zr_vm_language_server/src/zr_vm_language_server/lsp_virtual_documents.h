@@ -47,18 +47,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_RenderDeclar
         SZrString *uri,
         SZrString **outText);
 ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(SZrString *uri);
-TZrBool ZrLanguageServer_LspVirtualDocuments_FindModuleLinkDeclaration(SZrState *state,
-                                                                       const ZrLibModuleDescriptor *descriptor,
-                                                                       SZrString *uri,
-                                                                       const TZrChar *linkName,
-                                                                       SZrFileRange *outRange,
-                                                                       const ZrLibModuleLinkDescriptor **outLink);
-TZrBool ZrLanguageServer_LspVirtualDocuments_FindTypeDeclaration(SZrState *state,
-                                                                 const ZrLibModuleDescriptor *descriptor,
-                                                                 SZrString *uri,
-                                                                 const TZrChar *typeName,
-                                                                 SZrFileRange *outRange,
-                                                                 const ZrLibTypeDescriptor **outType);
 TZrBool ZrLanguageServer_LspVirtualDocuments_FindTypeMemberDeclaration(SZrState *state,
                                                                        const ZrLibModuleDescriptor *descriptor,
                                                                        SZrString *uri,

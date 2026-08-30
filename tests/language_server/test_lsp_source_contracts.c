@@ -175,19 +175,36 @@ static void test_import_chain_location_conversion_does_not_use_static_append_sta
     free(source);
 }
 
-static void test_virtual_document_builder_has_no_dead_format_helper(void) {
+static void test_virtual_document_builder_has_no_dead_query_surface(void) {
     char *source = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c");
+    char *header = read_repo_text_file_owned(
+            "zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h");
 
-    if (source == NULL) {
-        printf("FAIL: could not read LSP virtual document source\n");
+    if (source == NULL || header == NULL) {
+        printf("FAIL: could not read LSP virtual document sources\n");
         g_failures++;
+        free(source);
+        free(header);
         return;
     }
 
     assert_text_contains_none(source, "virtual_builder_append_format");
+    assert_text_contains_none(
+            source,
+            "ZrLanguageServer_LspVirtualDocuments_FindModuleLinkDeclaration");
+    assert_text_contains_none(
+            header,
+            "ZrLanguageServer_LspVirtualDocuments_FindModuleLinkDeclaration");
+    assert_text_contains_none(
+            source,
+            "ZrLanguageServer_LspVirtualDocuments_FindTypeDeclaration");
+    assert_text_contains_none(
+            header,
+            "ZrLanguageServer_LspVirtualDocuments_FindTypeDeclaration");
 
     free(source);
+    free(header);
 }
 
 static void test_semantic_query_location_conversion_uses_shared_document_helper(void) {
@@ -1980,7 +1997,7 @@ int main(void) {
     printf("==========\n\n");
 
     test_import_chain_location_conversion_does_not_use_static_append_state();
-    test_virtual_document_builder_has_no_dead_format_helper();
+    test_virtual_document_builder_has_no_dead_query_surface();
     test_semantic_query_location_conversion_uses_shared_document_helper();
     test_binary_metadata_coordinate_projection_is_explicitly_scoped();
     test_descriptor_metadata_coordinate_projection_is_explicitly_scoped();
@@ -2061,7 +2078,7 @@ int main(void) {
     }
 
     printf("PASS: Import-chain location conversion avoids static append state\n");
-    printf("PASS: Virtual document builder has no dead format helper\n");
+    printf("PASS: Virtual document builder has no dead query surface\n");
     printf("PASS: Semantic query location conversion uses shared document helper\n");
     printf("PASS: Binary metadata coordinate projection is explicitly scoped\n");
     printf("PASS: Descriptor metadata coordinate projection is explicitly scoped\n");

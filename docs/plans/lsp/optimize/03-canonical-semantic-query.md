@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 17:08 +08:00。
-- 总体状态：进行中。Task 7.52 已删除 project import 层零调用的 imported-member position
-  wrapper及两层 AST walker，净删253行；固定 GCC/Clang 快照中的 source-contract 70/70、
-  semantic parity 15/15 全部通过，project parent/overlay 与 GCC/Clang 均保持同一
-  42 Pass/18 个既有 producer marker，delta 0。
+- 最近更新时间：2026-08-30 17:14 +08:00。
+- 总体状态：进行中。Task 7.53 已删除 virtual-document 层两个零调用的 module/type declaration
+  query wrapper，production/header净删116行；固定 GCC/Clang 快照中的 source-contract
+  70/70全部通过，GCC五个virtual-document/navigation case全部PASS，interface与parent保持
+  同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -580,3 +580,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   及 GCC/Clang marker名称均delta 0，不计本任务 GREEN。GCC interface 与固定 parent仍为同一
   8个marker。完整三工具链16-target matrix、三套stdio smoke、Syntax05 producer及其余
   analyzer/symbol-table consumers仍未完成。
+
+- 补充完成时间：2026-08-30 17:14 +08:00。Task 7.53 删除全仓无调用的
+  `ZrLanguageServer_LspVirtualDocuments_FindModuleLinkDeclaration/FindTypeDeclaration` 声明与
+  实现，保留活跃 `FindTypeMemberDeclaration/FindDeclarationAtPosition`、record collector及
+  structured descriptor renderer。source-contract 在旧生产代码上精确RED source/header四项后
+  转GREEN。固定 `2ad5abb + 3 code/test overlays` 的GCC/Clang快照均完成language-server
+  static library与source-contract重链，source-contract 70/70且真实exit 0。GCC interface中
+  五个virtual-document/navigation case全部PASS，整体与固定parent保持同一8个已登记producer
+  marker，delta 0且不计本任务GREEN。Clang仍报告Syntax05 exact-owned metadata provider的五个
+  既有unused helper，本任务未越权修改。完整三工具链16-target matrix、三套stdio smoke、
+  Syntax05 producer及其余analyzer/symbol-table consumers仍未完成。
