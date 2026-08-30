@@ -1781,6 +1781,47 @@ static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_expired_weak_direct_member_access_throws_named_runtime_error(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service(7);\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    drop(shared);\n"
+            "    var nullable = wake(weak);\n"
+            "    var mask = 0;\n"
+            "    try { var ignored = weak.value; }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 1; }\n"
+            "    catch (error: RuntimeError) { mask = mask + 8; }\n"
+            "    try { var ignored = nullable.value; }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 4; }\n"
+            "    catch (error: RuntimeError) { mask = mask + 16; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "expired_weak_direct_member_access.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(5, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_weak_receiver_guard_releases_wake_on_suffix_throw(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -2156,6 +2197,7 @@ int main(void) {
     RUN_TEST(test_absent_nullable_optional_void_call_skips_arguments);
     RUN_TEST(test_live_weak_optional_call_runs_suffix_after_one_wake);
     RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
+    RUN_TEST(test_expired_weak_direct_member_access_throws_named_runtime_error);
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
     RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
     RUN_TEST(test_weak_optional_field_chain_releases_hidden_owner_after_success);
