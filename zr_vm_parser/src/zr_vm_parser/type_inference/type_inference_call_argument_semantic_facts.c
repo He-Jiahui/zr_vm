@@ -225,6 +225,13 @@ TZrBool type_inference_call_argument_facts_build(
                             mapping.parameterIndex,
                             validateCompatibility,
                             &mapping);
+        if (mapping.argumentTypeId == ZR_SEMANTIC_ID_INVALID ||
+            mapping.parameterTypeId == ZR_SEMANTIC_ID_INVALID ||
+            mapping.conversion == ZR_SEMANTIC_CALL_CONVERSION_UNKNOWN) {
+            ZrCore_Array_Free(cs->state, outMappings);
+            ZrCore_Array_Construct(outMappings);
+            return ZR_FALSE;
+        }
         ZrCore_Array_Push(cs->state, outMappings, &mapping);
     }
     return outMappings->length == argumentCount;

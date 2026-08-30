@@ -150,11 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 00:28 +08:00。
-- 总体状态：进行中。Task 4.21 已把 Task 4.20 的 structured argument mapping 扩展到 source
-  class/struct constructor：缺失 exact argument fact 时只在 parser producer 阶段补 canonical
-  expression inference，并以 resolved parameter 做 compatibility gate；class widening 与 struct
-  named reorder 均由同一 snapshot-owned rows 投影。
+- 最近更新时间：2026-08-31 00:45 +08:00。
+- 总体状态：进行中。Task 4.22 已把 structured argument mapping 扩展到 source `super(...)`，
+  由resolved base-constructor signature发布implicit/exact rows；任一row无法证明时producer原子清空
+  可选mapping，保留基础call/signature contract且禁止consumer补推。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
   `25/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15` 和
   独占串行 type-inference `124/124`，均真实
@@ -162,7 +161,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.21 source constructor argument mapping/conversion；Task 4.20
+- 本阶段完成项目：Task 4.22 source super-constructor argument mapping；Task 4.21 source
+  constructor argument mapping/conversion；Task 4.20
   source free-call argument mapping/conversion；Task 4.19
   call-expression exactness refinement；Task 4.18 call source
   identity exactness；Task 4.17 resolved call-target
@@ -752,3 +752,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `21/25/30/22/21/15/70/15`，独占串行 type-inference均`124/124`、真实 exit 0；interface仍为同一
   8个既有producer marker，delta 0且不计GREEN。receiver/member、`.zro`/native mapping parity、
   receiver `TypeId`、MSVC、完整16-target matrix与三套stdio smoke尚未完成。
+
+- 补充完成时间：2026-08-31 00:45 +08:00。Task 4.22 为 source `super(...)` 的 canonical
+  reference fact发布base-constructor argument mapping。RED 将base参数设为canonical `double`、derived
+  `seed`保留`int`，canonical consumers `21 Tests / 1 Failure`，唯一失败为mapping `NULL`。初次GREEN
+  接线后focused全绿，但interface新增`LSP Signature Help Resolves Super Constructor` marker；根因是
+  analyzer snapshot无法证明argument TypeId时producer仍发布UNKNOWN row，`CallAt`按malformed规则拒绝
+  整个call。最终修复使mapping publication原子化：任一row不完整即清空可选数组，保留基础signature，
+  不允许LSP补推。固定GCC/Clang快照均通过canonical/calls/query/relations/symbols/parity/
+  source-contract/facts `21/25/30/22/21/15/70/15`，独占串行type-inference均`124/124`；super
+  signature interface case恢复PASS，两套interface仅余固定8个既有marker、delta 0且不计GREEN。
+  receiver/member、`.zro`/native mapping parity、receiver `TypeId`、MSVC、完整16-target matrix与
+  三套stdio smoke尚未完成。

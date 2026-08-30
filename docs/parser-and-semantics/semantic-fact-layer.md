@@ -836,9 +836,15 @@ Constructor fact production runs after the constructor target and signature are
 resolved. When that path has not already published an exact argument expression
 fact, it invokes parser expression inference at production time and validates
 the inferred type against the resolved parameter before publishing an exact or
-implicit conversion. An incompatible constructor argument remains unknown, so
-`CallAt` fails closed and the parser-owned compatibility diagnostic remains the
-only error source.
+implicit conversion. Source `super(...)` calls use the same builder against the
+resolved base constructor signature.
+
+Mapping publication is atomic. If any argument cannot provide exact canonical
+type identity or a proven conversion, the producer clears the complete optional
+mapping array. `CallAt` still returns the base callable contract with
+`argumentMappings == NULL`; consumers must not reconstruct the omitted
+refinement. A non-empty malformed array can therefore only be stale/corrupt
+snapshot data and makes `CallAt` fail closed.
 
 Spread arguments currently publish no one-to-one mapping rather than an
 approximate row. Receiver calls and `.zro`/native descriptor producers remain
