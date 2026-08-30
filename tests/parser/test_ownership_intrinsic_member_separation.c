@@ -1822,6 +1822,50 @@ static void test_expired_weak_direct_member_access_throws_named_runtime_error(vo
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_direct_receiver_guard_skips_computed_index_before_throw(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub var values: int[1];\n"
+            "    pub @constructor() { this.values = [7]; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return 0; }\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    drop(shared);\n"
+            "    var nullable = wake(weak);\n"
+            "    var mask = 0;\n"
+            "    try { var ignored = weak.values[bump()]; }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 1; }\n"
+            "    catch (error: RuntimeError) { mask = mask + 8; }\n"
+            "    try { var ignored = nullable.values[bump()]; }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 2; }\n"
+            "    catch (error: RuntimeError) { mask = mask + 16; }\n"
+            "    if (sideEffects != 0) { return 32; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "direct_guard_computed_index_order.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(3, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_weak_receiver_guard_releases_wake_on_suffix_throw(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -2198,6 +2242,7 @@ int main(void) {
     RUN_TEST(test_live_weak_optional_call_runs_suffix_after_one_wake);
     RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
     RUN_TEST(test_expired_weak_direct_member_access_throws_named_runtime_error);
+    RUN_TEST(test_direct_receiver_guard_skips_computed_index_before_throw);
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
     RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
     RUN_TEST(test_weak_optional_field_chain_releases_hidden_owner_after_success);
