@@ -150,15 +150,19 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 22:03 +08:00。
-- 总体状态：进行中。Task 4.19 已让 `CallAt` 的等宽 expression refinement 单调化：`EXACT`
-  优先于后发布 `APPROXIMATE`，同 exactness 保留稳定首项，不再由 append order 降级。
+- 最近更新时间：2026-08-31 00:03 +08:00。
+- 总体状态：进行中。Task 4.20 已让 source free-call 的 canonical reference fact 发布
+  argument-to-parameter mapping、argument/parameter `TypeId`、passing mode、named 标志、exact/
+  implicit conversion 与精确 argument range；`CallAt` 只借用 snapshot-owned structured rows，
+  malformed payload 清零并 fail closed。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
-  `24/30/22/21/15/70`，均真实
+  `25/30/22/21/15/70`，并补 semantic-facts `15/15`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
-  完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
+  receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
+  三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.19 call-expression exactness refinement；Task 4.18 call source
+- 本阶段完成项目：Task 4.20 source free-call argument mapping/conversion；Task 4.19
+  call-expression exactness refinement；Task 4.18 call source
   identity exactness；Task 4.17 resolved call-target
   conflict detection；Task 4.16 resolved
   call-reference refinement；Task 4.15 overload member
@@ -723,3 +727,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `24/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套 interface
   仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未
   运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 00:03 +08:00。Task 4.20 为 resolved source free-call 的同一
+  canonical reference fact 发布 dense argument-to-parameter rows，覆盖 named reorder、精确
+  argument range、argument/parameter `TypeId`、passing mode 与 exact/implicit conversion；
+  `CallAt` 对 borrowed mapping 做 call-count、callable parameter、type id、conversion、source/range
+  完整性校验，malformed payload 清零并 fail closed。RED 首次编译因 public mapping 类型/API 缺失
+  真实 exit 1；测试定位修正后 GREEN。固定 GCC/Clang 快照均通过
+  `25/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 与 semantic-facts `15/15`，
+  全部真实 exit 0；两套 interface 仍为同一8个既有producer marker，delta 0且不计 GREEN。
+  receiver/member、`.zro`/native mapping parity、receiver `TypeId`、MSVC、完整16-target matrix及
+  三套stdio smoke尚未完成，Plan 03 Task 7/Task 8继续未完成。

@@ -201,6 +201,49 @@ static TZrBool semantic_facts_reference_copy_definition_ranges(SZrSemanticContex
     return ZR_TRUE;
 }
 
+static void semantic_facts_reference_free_argument_mappings(
+        SZrSemanticContext *context,
+        SZrSemanticReferenceFact *fact) {
+    if (context == ZR_NULL || context->state == ZR_NULL || fact == ZR_NULL) {
+        return;
+    }
+    if (fact->argumentMappings.isValid) {
+        ZrCore_Array_Free(context->state, &fact->argumentMappings);
+    }
+    ZrCore_Array_Construct(&fact->argumentMappings);
+}
+
+static TZrBool semantic_facts_reference_copy_argument_mappings(
+        SZrSemanticContext *context,
+        SZrSemanticReferenceFact *dst,
+        const SZrSemanticReferenceFact *src) {
+    TZrSize index;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || dst == ZR_NULL ||
+        src == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Construct(&dst->argumentMappings);
+    if (!src->argumentMappings.isValid || src->argumentMappings.length == 0U) {
+        return ZR_TRUE;
+    }
+    ZrCore_Array_Init(context->state,
+                      &dst->argumentMappings,
+                      sizeof(SZrSemanticCallArgumentFact),
+                      src->argumentMappings.length);
+    for (index = 0U; index < src->argumentMappings.length; index++) {
+        const SZrSemanticCallArgumentFact *mapping =
+                (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+                        (SZrArray *)&src->argumentMappings, index);
+        if (mapping != ZR_NULL) {
+            SZrSemanticCallArgumentFact mappingCopy = *mapping;
+            ZrCore_Array_Push(
+                    context->state, &dst->argumentMappings, &mappingCopy);
+        }
+    }
+    return dst->argumentMappings.length == src->argumentMappings.length;
+}
+
 static const SZrSemanticReferenceFact *semantic_facts_find_previous_definition(
         SZrSemanticContext *context,
         TZrSize beforeIndex,
@@ -416,6 +459,7 @@ void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context) {
             SZrSemanticReferenceFact *fact =
                     (SZrSemanticReferenceFact *)ZrCore_Array_Get(&context->referenceFacts, index);
             semantic_facts_reference_free_definition_ranges(context, fact);
+            semantic_facts_reference_free_argument_mappings(context, fact);
         }
         context->referenceFacts.length = 0;
     }
@@ -562,6 +606,11 @@ TZrBool ZrParser_SemanticFacts_AppendReference(SZrSemanticContext *context,
     copy = *fact;
     copy.signatureDisplay = semantic_facts_clone_string(context, fact->signatureDisplay);
     if (!semantic_facts_reference_copy_definition_ranges(context, &copy, fact)) {
+        return ZR_FALSE;
+    }
+    if (!semantic_facts_reference_copy_argument_mappings(context, &copy, fact)) {
+        semantic_facts_reference_free_definition_ranges(context, &copy);
+        semantic_facts_reference_free_argument_mappings(context, &copy);
         return ZR_FALSE;
     }
     semantic_facts_reference_set_own_definition(&copy);

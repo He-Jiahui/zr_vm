@@ -63,6 +63,7 @@ typedef struct SZrParserSemanticCallQuery {
     TZrBool hasResolvedTarget;
     TZrSymbolId targetSymbolId;
     SZrFileRange targetDeclarationRange;
+    const SZrArray *argumentMappings;
 } SZrParserSemanticCallQuery;
 
 typedef struct SZrParserSemanticCallEdgeQuery {

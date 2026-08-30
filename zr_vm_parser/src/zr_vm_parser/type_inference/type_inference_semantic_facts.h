@@ -19,6 +19,14 @@ SZrString *type_inference_callable_signature_display(
         const SZrArray *genericParameters,
         TZrTypeId callTypeId);
 
+TZrBool type_inference_call_argument_facts_build(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        const SZrAstNodeArray *parameters,
+        const SZrArray *parameterNames,
+        const SZrResolvedCallSignature *resolvedSignature,
+        SZrArray *outMappings);
+
 TZrSymbolId type_inference_member_symbol_id(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *memberInfo,

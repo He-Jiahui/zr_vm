@@ -28,6 +28,12 @@ typedef enum EZrSemanticFactExactness {
     ZR_SEMANTIC_FACT_EXACT
 } EZrSemanticFactExactness;
 
+typedef enum EZrSemanticCallConversion {
+    ZR_SEMANTIC_CALL_CONVERSION_UNKNOWN = 0,
+    ZR_SEMANTIC_CALL_CONVERSION_EXACT,
+    ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT
+} EZrSemanticCallConversion;
+
 typedef enum EZrSemanticExpressionFactKind {
     ZR_SEMANTIC_EXPRESSION_FACT_UNKNOWN = 0,
     ZR_SEMANTIC_EXPRESSION_FACT_LITERAL,
@@ -161,12 +167,24 @@ typedef struct SZrSemanticExpressionFact {
     EZrSemanticDiagnosticSeverity diagnosticSeverity;
 } SZrSemanticExpressionFact;
 
+typedef struct SZrSemanticCallArgumentFact {
+    TZrSize argumentIndex;
+    TZrSize parameterIndex;
+    SZrFileRange argumentRange;
+    TZrTypeId argumentTypeId;
+    TZrTypeId parameterTypeId;
+    EZrParameterPassingMode passingMode;
+    EZrSemanticCallConversion conversion;
+    TZrBool isNamed;
+} SZrSemanticCallArgumentFact;
+
 typedef struct SZrSemanticReferenceFact {
     SZrAstNode *node;
     SZrFileRange range;
     SZrFileRange declarationRange;
     SZrFileRange definitionRange;
     SZrArray definitionRanges;
+    SZrArray argumentMappings;
     TZrBool hasDefinitionRange;
     EZrSemanticReferenceKind kind;
     TZrSymbolId symbolId;

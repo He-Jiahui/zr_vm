@@ -80,7 +80,11 @@ static TZrSize canonical_query_call_reference_completeness(
     TZrSize completeness = 0u;
 
     if (canonical_query_call_reference_has_resolved_target(reference)) {
-        completeness += 4u;
+        completeness += 8u;
+    }
+    if (reference->argumentMappings.isValid &&
+        reference->argumentMappings.length > 0U) {
+        completeness += 1u;
     }
     if (reference->declarationRange.source != ZR_NULL ||
         reference->declarationRange.start.offset > 0u ||
@@ -89,12 +93,52 @@ static TZrSize canonical_query_call_reference_completeness(
         reference->declarationRange.end.line > 0 ||
         reference->declarationRange.start.column > 0 ||
         reference->declarationRange.end.column > 0) {
-        completeness += 2u;
+        completeness += 4u;
     }
     if (reference->signatureDisplay != ZR_NULL) {
-        completeness += 1u;
+        completeness += 2u;
     }
     return completeness;
+}
+
+static TZrBool canonical_query_call_argument_mappings_valid(
+        const SZrSemanticContext *context,
+        const SZrSemanticExpressionFact *expression,
+        const SZrSemanticReferenceFact *reference) {
+    const SZrCanonicalTypeNode *callableType;
+    TZrSize index;
+
+    if (context == ZR_NULL || expression == ZR_NULL || reference == ZR_NULL ||
+        !reference->argumentMappings.isValid ||
+        reference->argumentMappings.length == 0U) {
+        return ZR_TRUE;
+    }
+    if (reference->argumentMappings.length != expression->argumentCount) {
+        return ZR_FALSE;
+    }
+    callableType = ZrParser_CanonicalType_Find(context, reference->typeId);
+    if (callableType == ZR_NULL ||
+        callableType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < reference->argumentMappings.length; index++) {
+        const SZrSemanticCallArgumentFact *mapping =
+                (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+                        (SZrArray *)&reference->argumentMappings, index);
+        if (mapping == ZR_NULL || mapping->argumentIndex != index ||
+            mapping->parameterIndex >=
+                    callableType->data.function.parameterContracts.length ||
+            mapping->argumentTypeId == ZR_SEMANTIC_ID_INVALID ||
+            mapping->parameterTypeId == ZR_SEMANTIC_ID_INVALID ||
+            mapping->conversion == ZR_SEMANTIC_CALL_CONVERSION_UNKNOWN ||
+            !canonical_query_same_optional_source_exact(
+                    expression->range.source, mapping->argumentRange.source) ||
+            !canonical_query_contains(
+                    &expression->range, &mapping->argumentRange)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool canonical_query_call_reference_is_candidate(
@@ -261,6 +305,10 @@ TZrBool ZrParser_SemanticQuery_CallAt(
             }
         }
     }
+    if (!canonical_query_call_argument_mappings_valid(
+                context, best, bestReference)) {
+        return ZR_FALSE;
+    }
     outQuery->callableTypeId = bestReference->typeId;
     outQuery->expression = best;
     outQuery->reference = bestReference;
@@ -273,6 +321,10 @@ TZrBool ZrParser_SemanticQuery_CallAt(
         outQuery->hasResolvedTarget = ZR_TRUE;
         outQuery->targetSymbolId = bestReference->symbolId;
         outQuery->targetDeclarationRange = bestReference->declarationRange;
+    }
+    if (bestReference->argumentMappings.isValid &&
+        bestReference->argumentMappings.length > 0U) {
+        outQuery->argumentMappings = &bestReference->argumentMappings;
     }
     return ZR_TRUE;
 }

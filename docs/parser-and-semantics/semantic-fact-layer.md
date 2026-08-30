@@ -811,6 +811,31 @@ or construct type/ownership messages itself. Receiver method calls remain a
 separate migration boundary because their detailed producer path is still
 owned by the active Syntax L8 milestone.
 
+## Canonical Call Argument Mapping
+
+Resolved source free calls publish their argument binding on the same
+`SZrSemanticReferenceFact` that owns the selected callable identity. Each
+`SZrSemanticCallArgumentFact` records the source argument index, canonical
+parameter index, exact argument range, argument and parameter `TypeId`,
+parameter passing mode, named-argument classification, and an exact or implicit
+conversion classification. Named arguments are matched only against the
+resolved declaration or metadata parameter-name array; no member-name, source
+text, or LSP symbol-table fallback is permitted.
+
+`ZrParser_SemanticQuery_CallAt` returns `argumentMappings` as a borrowed array
+owned by the semantic snapshot. The reference-fact append path deep-copies the
+array, and snapshot reset frees it. A consumer that retains mappings beyond the
+snapshot lifetime must copy the scalar ids and ranges. The query fails closed
+when a non-empty mapping is not dense by argument index, disagrees with the
+call argument count, references a missing callable parameter, carries invalid
+type ids or unknown conversion, or has a range/source outside the selected
+call expression.
+
+Spread arguments currently publish no one-to-one mapping rather than an
+approximate row. Receiver calls and `.zro`/native descriptor producers remain
+separate parity work; consumers must not reconstruct absent mappings from AST
+shape, names, or formatted signatures.
+
 ## Assignment Compatibility Diagnostic Ownership
 
 Ordinary assignment, explicit typed initialization, and return-value

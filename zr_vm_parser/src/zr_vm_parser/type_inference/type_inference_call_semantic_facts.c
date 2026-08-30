@@ -367,7 +367,17 @@ void type_inference_record_primary_call_reference_fact(
     fact.name = funcTypeInfo->name;
     fact.signatureDisplay = type_inference_call_signature_display(cs, funcTypeInfo, callTypeId);
     fact.isResolved = !funcTypeInfo->isExternalCallable;
+    (void)type_inference_call_argument_facts_build(
+            cs,
+            &callNode->data.functionCall,
+            type_inference_call_parameters(funcTypeInfo->declarationNode),
+            ZR_NULL,
+            resolvedSignature,
+            &fact.argumentMappings);
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+    if (fact.argumentMappings.isValid) {
+        ZrCore_Array_Free(cs->state, &fact.argumentMappings);
+    }
 }
 
 static TZrTypeId type_inference_resolved_member_call_type_id(
