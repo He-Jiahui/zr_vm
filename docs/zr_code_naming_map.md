@@ -331,7 +331,6 @@
 | `ZrSymbolTableFindDefinition` | `ZrLanguageServer_SymbolTable_FindDefinition` |
 | `ZrSymbolTableFree` | `ZrLanguageServer_SymbolTable_Free` |
 | `ZrSymbolTableGetCurrentScope` | `ZrLanguageServer_SymbolTable_GetCurrentScope` |
-| `ZrSymbolTableGetSymbolsInRange` | `ZrLanguageServer_SymbolTable_GetSymbolsInRange` |
 | `ZrSymbolTableLookup` | `ZrLanguageServer_SymbolTable_Lookup` |
 | `ZrSymbolTableLookupAll` | `ZrLanguageServer_SymbolTable_LookupAll` |
 | `ZrSymbolTableNew` | `ZrLanguageServer_SymbolTable_New` |

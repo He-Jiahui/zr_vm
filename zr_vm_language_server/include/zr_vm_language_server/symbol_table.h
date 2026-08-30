@@ -111,18 +111,10 @@ ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *state, SZrSymbolTable *table, 
                                                        SZrString *name, SZrSymbolScope *scope,
                                                        SZrArray *result);
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition(SZrState *state,
-                                                                                         SZrSymbolTable *table,
-                                                                                         SZrFileRange position,
-                                                                                         SZrArray *result);
 
 // 查找定义位置
 ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, 
                                                                 SZrFileRange position);
-
-// 获取范围内的符号
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_GetSymbolsInRange(SZrState *state, SZrSymbolTable *table,
-                                                            SZrFileRange range, SZrArray *result);
 
 // 作用域管理函数
 

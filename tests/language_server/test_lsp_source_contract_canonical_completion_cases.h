@@ -10,14 +10,21 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
         "zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h");
     char *analyzerSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
+    char *symbolTableHeader = read_repo_text_file_owned(
+        "zr_vm_language_server/include/zr_vm_language_server/symbol_table.h");
+    char *symbolTableSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/symbol_table.c");
 
-    if (projector == NULL || consumer == NULL || analyzerHeader == NULL || analyzerSource == NULL) {
+    if (projector == NULL || consumer == NULL || analyzerHeader == NULL || analyzerSource == NULL ||
+        symbolTableHeader == NULL || symbolTableSource == NULL) {
         printf("FAIL: could not read canonical completion sources\n");
         g_failures++;
         free(projector);
         free(consumer);
         free(analyzerHeader);
         free(analyzerSource);
+        free(symbolTableHeader);
+        free(symbolTableSource);
         return;
     }
 
@@ -39,11 +46,25 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     assert_text_contains_none(
         analyzerSource,
         "ZrLanguageServer_SemanticAnalyzer_GetCompletions");
+    assert_text_contains_none(
+        symbolTableHeader,
+        "ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition");
+    assert_text_contains_none(
+        symbolTableSource,
+        "ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition");
+    assert_text_contains_none(
+        symbolTableHeader,
+        "ZrLanguageServer_SymbolTable_GetSymbolsInRange");
+    assert_text_contains_none(
+        symbolTableSource,
+        "ZrLanguageServer_SymbolTable_GetSymbolsInRange");
 
     free(projector);
     free(consumer);
     free(analyzerHeader);
     free(analyzerSource);
+    free(symbolTableHeader);
+    free(symbolTableSource);
 }
 
 static void test_source_hover_uses_parser_symbol_query(void) {
