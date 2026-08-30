@@ -1275,6 +1275,15 @@ prepared for final replay, but concurrent host I/O blocked CMake before any
 new full-graph result could be collected. Keep Step 5 and Step 7 open until
 that replay and the final exact-path review run on a stable integrated HEAD.
 
+The same audit distinguishes the remaining `removed_ownership_member_intrinsic`
+helper in the active L8 type-inference path from a production ownership
+classifier. It runs only after canonical receiver typing, call-shape validation,
+and target-member lookup failure, and it publishes a structured migration fix;
+it cannot select `GET_MEMBER`, create an ownership fact, or lower an ownership
+opcode. Its eventual removal belongs to the destructive migration cleanup once
+the external L8 write set is released, so the final review must not report the
+string-map gate as closed prematurely.
+
 - [ ] **Step 7: Commit final acceptance status**
 
 ```powershell

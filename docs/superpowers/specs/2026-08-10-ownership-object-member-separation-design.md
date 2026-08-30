@@ -412,10 +412,12 @@ the compiler may emit a dedicated migration diagnostic with a structured safe
 fix.
 
 The migration diagnostic is fact-driven: it requires the canonical receiver
-type, resolved call shape, and failed target-member lookup. It cannot trigger
-from name or message text alone. LSP exposes only the structured edit stored on
-the diagnostic. It must not add its own AST, spelling, regex, or display-type
-fallback.
+type, resolved call shape, and failed target-member lookup. A spelling table is
+allowed only inside this post-lookup diagnostic adapter to choose the suggested
+replacement; it cannot select `GET_MEMBER`, publish an ownership fact, or emit
+an ownership opcode. It cannot trigger from name or message text alone. LSP
+exposes only the structured edit stored on the diagnostic. It must not add its
+own AST, spelling, regex, or display-type fallback.
 
 The repository migration is atomic at the source-language boundary:
 
@@ -603,7 +605,9 @@ The design is implemented only when all of the following are true:
 - a Weak target is woken once and retained through the complete postfix chain;
 - intrinsic and guard behavior flows through canonical facts into every backend;
 - member names matching intrinsic names remain legal and unambiguous;
-- old syntax and string-based compatibility branches are removed;
+- old syntax and string-based ownership lowering/dispatch compatibility
+  branches are removed; any remaining spelling map is isolated to the
+  fact-gated migration diagnostic boundary;
 - artifacts, LSP, documentation, tests, and status records describe one language;
 - validation evidence is fresh, reproducible, and clean on all supported
   toolchains.
