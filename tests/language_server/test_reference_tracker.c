@@ -147,8 +147,8 @@ static void test_reference_tracker_add_and_find(SZrState *state) {
         source
     );
     
-    ZrLanguageServer_SymbolTable_AddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
-                          defLocation, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL);
+    ZrLanguageServer_SymbolTable_AddSymbolEx(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
+                            defLocation, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL, ZR_NULL);
     
     SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(symbolTable, name, ZR_NULL);
     if (symbol == ZR_NULL) {
@@ -221,8 +221,8 @@ static void test_reference_tracker_finds_each_exact_location(SZrState *state) {
         source
     );
     
-    ZrLanguageServer_SymbolTable_AddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
-                          defLocation, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL);
+    ZrLanguageServer_SymbolTable_AddSymbolEx(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
+                            defLocation, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL, ZR_NULL);
     
     SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(symbolTable, name, ZR_NULL);
     if (symbol == ZR_NULL) {
@@ -305,7 +305,7 @@ static void test_reference_tracker_requires_exact_source_identity(
             ZrParser_FilePosition_Create(0, 1, 0),
             ZrParser_FilePosition_Create(11, 1, 11),
             sourceA);
-    ZrLanguageServer_SymbolTable_AddSymbol(
+    ZrLanguageServer_SymbolTable_AddSymbolEx(
             state,
             symbolTable,
             ZR_SYMBOL_VARIABLE,
@@ -313,6 +313,7 @@ static void test_reference_tracker_requires_exact_source_identity(
             location,
             ZR_NULL,
             ZR_ACCESS_PUBLIC,
+            ZR_NULL,
             ZR_NULL);
     symbol = ZrLanguageServer_SymbolTable_Lookup(symbolTable, name, ZR_NULL);
     if (symbol == ZR_NULL) {

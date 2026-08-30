@@ -145,8 +145,8 @@ static void test_symbol_table_add_and_lookup(SZrState *state) {
     );
     
     // 添加符号
-    TZrBool success = ZrLanguageServer_SymbolTable_AddSymbol(state, table, ZR_SYMBOL_VARIABLE, name,
-                                            location, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL);
+    TZrBool success = ZrLanguageServer_SymbolTable_AddSymbolEx(state, table, ZR_SYMBOL_VARIABLE, name,
+                                              location, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL, ZR_NULL);
     if (!success) {
         ZrLanguageServer_SymbolTable_Free(state, table);
         TEST_FAIL(timer, "Symbol Table Add and Lookup", "Failed to add symbol");
@@ -236,8 +236,8 @@ static void test_symbol_reference_storage(SZrState *state) {
         ZR_NULL
     );
     
-    ZrLanguageServer_SymbolTable_AddSymbol(state, table, ZR_SYMBOL_VARIABLE, name,
-                          location, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL);
+    ZrLanguageServer_SymbolTable_AddSymbolEx(state, table, ZR_SYMBOL_VARIABLE, name,
+                            location, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL, ZR_NULL);
     
     SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(table, name, ZR_NULL);
     if (symbol == ZR_NULL) {

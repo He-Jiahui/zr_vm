@@ -1409,16 +1409,20 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
         "zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c");
     char *symbolTable = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/symbol_table.c");
+    char *symbolTableHeader = read_repo_text_file_owned(
+        "zr_vm_language_server/include/zr_vm_language_server/symbol_table.h");
     char *analyzer = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
     char *querySource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_source.c");
 
-    if (tracker == NULL || symbolTable == NULL || analyzer == NULL || querySource == NULL) {
+    if (tracker == NULL || symbolTable == NULL || symbolTableHeader == NULL || analyzer == NULL ||
+        querySource == NULL) {
         printf("FAIL: could not read reference identity sources\n");
         g_failures++;
         free(tracker);
         free(symbolTable);
+        free(symbolTableHeader);
         free(analyzer);
         free(querySource);
         return;
@@ -1432,6 +1436,8 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
     assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_GetReferenceCount");
     assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_GetReferenceLocations");
     assert_text_contains_none(symbolTable, "ZrLanguageServer_Symbol_GetReferenceCount");
+    assert_text_contains_none(symbolTableHeader, "ZrLanguageServer_SymbolTable_AddSymbol(");
+    assert_text_contains_none(symbolTable, "ZrLanguageServer_SymbolTable_AddSymbol(");
     assert_text_contains(
         analyzer,
         "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
@@ -1439,6 +1445,7 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
 
     free(tracker);
     free(symbolTable);
+    free(symbolTableHeader);
     free(analyzer);
     free(querySource);
 }

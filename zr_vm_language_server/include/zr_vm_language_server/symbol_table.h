@@ -86,12 +86,6 @@ ZR_LANGUAGE_SERVER_API SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SymbolTable_Free(SZrState *state, SZrSymbolTable *table);
 
 // 添加符号定义
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_AddSymbol(SZrState *state, SZrSymbolTable *table, 
-                                                      EZrSymbolType type, SZrString *name,
-                                                      SZrFileRange location, 
-                                                      SZrInferredType *typeInfo,
-                                                      EZrAccessModifier accessModifier,
-                                                      SZrAstNode *astNode);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable *table,
                                                       EZrSymbolType type, SZrString *name,
                                                       SZrFileRange location,

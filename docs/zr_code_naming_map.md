@@ -324,7 +324,6 @@
 | `ZrSymbolFree` | `ZrLanguageServer_Symbol_Free` |
 | `ZrSymbolGetReferenceCount` | `ZrLanguageServer_Symbol_GetReferenceCount` |
 | `ZrSymbolNew` | `ZrLanguageServer_Symbol_New` |
-| `ZrSymbolTableAddSymbol` | `ZrLanguageServer_SymbolTable_AddSymbol` |
 | `ZrSymbolTableAddSymbolEx` | `ZrLanguageServer_SymbolTable_AddSymbolEx` |
 | `ZrSymbolTableEnterScope` | `ZrLanguageServer_SymbolTable_EnterScope` |
 | `ZrSymbolTableExitScope` | `ZrLanguageServer_SymbolTable_ExitScope` |

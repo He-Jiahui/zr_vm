@@ -909,23 +909,6 @@ TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable
     return ZR_TRUE;
 }
 
-TZrBool ZrLanguageServer_SymbolTable_AddSymbol(SZrState *state, SZrSymbolTable *table,
-                             EZrSymbolType type, SZrString *name,
-                             SZrFileRange location,
-                             SZrInferredType *typeInfo,
-                             EZrAccessModifier accessModifier,
-                             SZrAstNode *astNode) {
-    return ZrLanguageServer_SymbolTable_AddSymbolEx(state,
-                                    table,
-                                    type,
-                                    name,
-                                    location,
-                                    typeInfo,
-                                    accessModifier,
-                                    astNode,
-                                    ZR_NULL);
-}
-
 // 查找符号（返回第一个匹配的符号）
 SZrSymbol *ZrLanguageServer_SymbolTable_Lookup(SZrSymbolTable *table, SZrString *name, SZrSymbolScope *scope) {
     if (table == ZR_NULL || name == ZR_NULL) {

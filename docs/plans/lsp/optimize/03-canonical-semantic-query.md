@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 16:06 +08:00。
-- 总体状态：进行中。Task 7.47 已删除无调用的 symbol-table visible-symbol/range-query API
-  及范围扫描独占 helper；固定 GCC/Clang 快照中的 source-contract 69/69、symbol-table
-  4/4、semantic parity 15/15 全部通过，GCC interface parent/overlay 保持同一 8 个既有
-  producer marker，delta 0。
+- 最近更新时间：2026-08-30 16:18 +08:00。
+- 总体状态：进行中。Task 7.48 已删除无生产调用的 `SymbolTable_AddSymbol` compatibility
+  wrapper，五处 legacy test setup 统一使用活跃的 `AddSymbolEx`；固定 GCC/Clang 快照中的
+  source-contract 69/69、symbol-table 4/4、reference-tracker 5/5、semantic parity 15/15
+  全部通过，GCC interface 与 parent 保持同一 8 个既有 producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -525,3 +525,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   15/15 且真实 exit 0。GCC interface parent/overlay 失败集合均为同一 8 个已登记 producer
   marker，delta 0且不计本任务 GREEN。完整三工具链16-target matrix、三套stdio smoke、
   Syntax05 producer及其余 symbol-table/analyzer consumers仍未完成。
+
+- 补充完成时间：2026-08-30 16:18 +08:00。Task 7.48 删除全仓无生产调用的
+  `ZrLanguageServer_SymbolTable_AddSymbol` 公开声明与 wrapper 实现；五处 legacy
+  symbol-table/reference-tracker test setup 改为直接调用活跃 `AddSymbolEx` 并忽略可选
+  out-symbol，未新增兼容 helper。source-contract RED 在旧代码上精确失败声明/实现两项后
+  转 GREEN。固定 `5826e0a + 5 code/test overlays` 的 GCC/Clang 静态快照均完成
+  source-contract、symbol-table、reference-tracker、semantic parity 与 interface 目标重链；
+  前四个运行目标分别为 69/69、4/4、5/5、15/15 且真实 exit 0。GCC interface 与 Task 7.47
+  parent 的失败测试名称均为同一 8 个已登记 producer marker，delta 0且不计本任务 GREEN。
+  完整三工具链16-target matrix、三套stdio smoke、Syntax05 producer及其余
+  symbol-table/analyzer consumers仍未完成。
