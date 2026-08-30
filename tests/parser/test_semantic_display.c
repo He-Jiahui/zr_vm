@@ -267,6 +267,51 @@ static void test_semantic_documentation_projects_exact_symbol_fact(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_display_separates_const_parameter_alias_from_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrCanonicalGenericArgument arguments[3];
+    TZrTypeId intType;
+    TZrTypeId matrixDefinition;
+    TZrTypeId firstType;
+    TZrTypeId sameType;
+    TZrChar buffer[128];
+
+    TEST_ASSERT_NOT_NULL(context);
+    intType = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_INT64);
+    matrixDefinition = ZrParser_CanonicalType_InternNominal(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "app.types"),
+            ZrCore_String_CreateFromNative(g_state, "Matrix"),
+            0x02000051U);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, matrixDefinition);
+
+    memset(arguments, 0, sizeof(arguments));
+    arguments[0].kind = ZR_CANONICAL_GENERIC_ARGUMENT_TYPE;
+    arguments[0].data.typeId = intType;
+    arguments[1].kind = ZR_CANONICAL_GENERIC_ARGUMENT_CONST_INT;
+    arguments[1].data.constIntValue = 4;
+    arguments[2].kind = ZR_CANONICAL_GENERIC_ARGUMENT_CONST_PARAMETER;
+    arguments[2].data.constParameter.ownerSymbolId = 77U;
+    arguments[2].data.constParameter.ordinal = 2U;
+    arguments[2].data.constParameter.displayName =
+            ZrCore_String_CreateFromNative(g_state, "N");
+    firstType = ZrParser_CanonicalType_InternGenericInstanceEx(
+            context, matrixDefinition, arguments, 3U);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, firstType);
+
+    arguments[2].data.constParameter.displayName =
+            ZrCore_String_CreateFromNative(g_state, "OtherAlias");
+    sameType = ZrParser_CanonicalType_InternGenericInstanceEx(
+            context, matrixDefinition, arguments, 3U);
+    TEST_ASSERT_EQUAL_UINT32(firstType, sameType);
+    TEST_ASSERT_TRUE(ZrParser_SemanticDisplay_FormatType(
+            context, firstType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING(
+            "app.types.Matrix<int, 4, $const(77,2)>", buffer);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_display_rejects_malformed_canonical_contracts(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     TZrTypeId intType;
@@ -449,6 +494,7 @@ int main(void) {
     RUN_TEST(test_semantic_display_fails_closed_for_missing_identity);
     RUN_TEST(test_semantic_display_uses_matching_declaration_signature_fact);
     RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);
+    RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_canonical_contracts);
     RUN_TEST(test_callable_signature_rejects_malformed_canonical_contracts);
     return UNITY_END();

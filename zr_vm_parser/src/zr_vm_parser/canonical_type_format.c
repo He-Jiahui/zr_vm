@@ -124,6 +124,7 @@ static TZrBool canonical_type_format_generic_arguments(
                         (SZrArray *)arguments,
                         index);
         TZrChar constBuffer[32];
+        TZrInt32 written;
 
         if ((index > 0U && !canonical_type_format_append(state, ", ")) ||
             argument == ZR_NULL) {
@@ -134,29 +135,24 @@ static TZrBool canonical_type_format_generic_arguments(
                 return ZR_FALSE;
             }
         } else if (argument->kind == ZR_CANONICAL_GENERIC_ARGUMENT_CONST_INT) {
-            if (snprintf(
-                        constBuffer,
-                        sizeof(constBuffer),
-                        "%lld",
-                        (long long)argument->data.constIntValue) < 0 ||
+            written = snprintf(
+                    constBuffer,
+                    sizeof(constBuffer),
+                    "%lld",
+                    (long long)argument->data.constIntValue);
+            if (written < 0 || (TZrSize)written >= sizeof(constBuffer) ||
                 !canonical_type_format_append(state, constBuffer)) {
                 return ZR_FALSE;
             }
         } else if (argument->kind == ZR_CANONICAL_GENERIC_ARGUMENT_CONST_PARAMETER) {
-            if (argument->data.constParameter.displayName != ZR_NULL) {
-                if (!canonical_type_format_append(
-                            state,
-                            ZrCore_String_GetNativeString(
-                                    argument->data.constParameter.displayName))) {
-                    return ZR_FALSE;
-                }
-            } else if (snprintf(
-                               constBuffer,
-                               sizeof(constBuffer),
-                               "$const(%u,%u)",
-                               (unsigned int)argument->data.constParameter.ownerSymbolId,
-                               (unsigned int)argument->data.constParameter.ordinal) < 0 ||
-                       !canonical_type_format_append(state, constBuffer)) {
+            written = snprintf(
+                    constBuffer,
+                    sizeof(constBuffer),
+                    "$const(%u,%u)",
+                    (unsigned int)argument->data.constParameter.ownerSymbolId,
+                    (unsigned int)argument->data.constParameter.ordinal);
+            if (written < 0 || (TZrSize)written >= sizeof(constBuffer) ||
+                !canonical_type_format_append(state, constBuffer)) {
                 return ZR_FALSE;
             }
         } else {

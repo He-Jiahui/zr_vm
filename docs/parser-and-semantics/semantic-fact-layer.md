@@ -3686,3 +3686,16 @@ parameter contract. Formatting failure leaves the caller's output buffer empty,
 and callable display returns no string. Consumers must treat this as unavailable
 semantic presentation and must not recover a signature from AST spelling, type
 text, or member names.
+
+## Plan 03 Task 5.2 Const Generic Display Identity
+
+A canonical const-parameter generic argument is identified by its owner
+SymbolId and ordinal. Its optional `displayName` is presentation metadata and
+does not participate in structural hash or TypeId equality. Canonical type
+formatting therefore emits `$const(owner,ordinal)` and never selects the first
+alias that happened to intern the TypeId.
+
+Type arguments and closed integer arguments continue to format directly. A
+consumer that needs the source alias must obtain an explicit display fact tied
+to the relevant symbol/use site; it must not reinterpret `displayName` as part
+of canonical identity or reconstruct the alias from source text.
