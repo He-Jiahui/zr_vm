@@ -875,6 +875,7 @@ static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
 #include "test_semantic_query_call_candidate_consistency_cases.h"
 #include "test_semantic_query_call_selection_cases.h"
 #include "test_semantic_query_call_source_identity_cases.h"
+#include "test_semantic_query_call_expression_refinement_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -901,5 +902,6 @@ int main(void) {
     RUN_TEST(test_call_at_rejects_source_less_expression_for_sourced_request);
     RUN_TEST(test_call_at_rejects_source_less_reference_for_sourced_call);
     RUN_TEST(test_call_at_rejects_source_less_target_for_sourced_expression);
+    RUN_TEST(test_call_at_exact_expression_resists_later_approximate_downgrade);
     return UNITY_END();
 }

@@ -477,6 +477,13 @@ mismatch clears the query and fails closed before any target or display is
 projected. This requirement is local to the call query contract and does not
 silently redefine containment for other semantic query APIs.
 
+Call-expression refinement is monotonic. `CallAt` first selects the narrowest
+containing call range; among equal-width facts, an `EXACT` expression outranks
+an approximate expression regardless of publication order. Equal-width facts
+with the same exactness retain the first stable publication. A later
+approximate producer therefore cannot downgrade an exact call and make
+`FormatCall` or `CallCandidatesAt` spuriously unavailable.
+
 `ZrParser_SemanticQuery_FormatCall` is also a value-only projection: its
 caller receives text rather than the borrowed expression fact. It consequently
 requires an `EXACT` selected expression before producing a signature. It clears

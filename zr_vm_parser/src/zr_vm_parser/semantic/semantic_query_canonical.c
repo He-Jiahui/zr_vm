@@ -210,7 +210,11 @@ TZrBool ZrParser_SemanticQuery_CallAt(
             continue;
         }
         width = canonical_query_width(&fact->range);
-        if (best == ZR_NULL || width <= bestWidth) {
+        if (best == ZR_NULL || width < bestWidth ||
+            (width == bestWidth &&
+             ZrParser_SemanticQuery_ExactnessAllowsProjection(fact->exactness) &&
+             !ZrParser_SemanticQuery_ExactnessAllowsProjection(
+                     best->exactness))) {
             best = fact;
             bestWidth = width;
         }

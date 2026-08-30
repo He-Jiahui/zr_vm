@@ -150,15 +150,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 21:58 +08:00。
-- 总体状态：进行中。Task 4.18 已要求 `CallAt` 的 request、expression、callTarget 与 reference
-  三层 source identity 精确一致；缺失 source 不再作为有明确 URI 请求的通配符。
+- 最近更新时间：2026-08-30 22:03 +08:00。
+- 总体状态：进行中。Task 4.19 已让 `CallAt` 的等宽 expression refinement 单调化：`EXACT`
+  优先于后发布 `APPROXIMATE`，同 exactness 保留稳定首项，不再由 append order 降级。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
-  `23/30/22/21/15/70`，均真实
+  `24/30/22/21/15/70`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.18 call source identity exactness；Task 4.17 resolved call-target
+- 本阶段完成项目：Task 4.19 call-expression exactness refinement；Task 4.18 call source
+  identity exactness；Task 4.17 resolved call-target
   conflict detection；Task 4.16 resolved
   call-reference refinement；Task 4.15 overload member
   completeness；Task 4.14 overload-set record
@@ -714,3 +715,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   快照均通过 `23/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套
   interface 仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。
   本项未运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-30 22:03 +08:00。Task 4.19 将 `CallAt` 的 expression 选择从等宽
+  `<=` 后项覆盖收紧为 range width优先、等宽时 `EXACT` 优先、同 exactness 保留首项。RED 在同一
+  exact call range 先发布 exact、后发布 approximate fact，call-query `24 Tests / 1 Failure`，
+  唯一失败为 selected expression pointer不一致；GREEN 后固定 GCC/Clang 快照均通过
+  `24/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套 interface
+  仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未
+  运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
