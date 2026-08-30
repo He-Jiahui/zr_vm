@@ -170,6 +170,7 @@ static void test_import_chain_location_conversion_does_not_use_static_append_sta
     assert_text_contains_none(source, "ZrLanguageServer_LspRange_FromFileRange(range)");
     assert_text_contains_none(source, "g_semanticImportChainAppend");
     assert_text_contains_none(source, "fileVersion->content");
+    assert_text_contains_none(source, "semantic_import_chain_string_text");
 
     free(source);
 }
@@ -1166,6 +1167,8 @@ static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
     assert_text_contains_none(
         typecheck,
         "Type mismatch in method call");
+    assert_text_contains_none(typecheck, "semantic_member_property_text");
+    assert_text_contains_none(typecheck, "semantic_identifier_node_text");
 
     consumerStart = strstr(
         support,

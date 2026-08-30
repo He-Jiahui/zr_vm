@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 16:18 +08:00。
-- 总体状态：进行中。Task 7.48 已删除无生产调用的 `SymbolTable_AddSymbol` compatibility
-  wrapper，五处 legacy test setup 统一使用活跃的 `AddSymbolEx`；固定 GCC/Clang 快照中的
-  source-contract 69/69、symbol-table 4/4、reference-tracker 5/5、semantic parity 15/15
-  全部通过，GCC interface 与 parent 保持同一 8 个既有 producer marker，delta 0。
+- 最近更新时间：2026-08-30 16:28 +08:00。
+- 总体状态：进行中。Task 7.49 已删除 analyzer/import-chain 中三个零调用 dead text helper；
+  固定 GCC/Clang 快照中的 source-contract 69/69、semantic parity 15/15 全部通过，
+  analyzer 保持同一 65 Pass/2 个既有 producer marker，GCC interface 与 parent 保持同一
+  8 个既有 producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -536,3 +536,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   parent 的失败测试名称均为同一 8 个已登记 producer marker，delta 0且不计本任务 GREEN。
   完整三工具链16-target matrix、三套stdio smoke、Syntax05 producer及其余
   symbol-table/analyzer consumers仍未完成。
+
+- 补充完成时间：2026-08-30 16:28 +08:00。Task 7.49 删除全仓零调用且编译器已报告
+  unused 的 `semantic_member_property_text`、`semantic_import_chain_string_text`，并在重链后
+  继续删除失去唯一调用者的 `semantic_identifier_node_text`。source-contract 首轮在旧代码
+  上精确失败两项，follow-up RED 再精确失败尾随 helper 一项，最终转 GREEN；未新增名称、
+  token 或类型文本 fallback。固定 `c575d8a + 3 code/test overlays` 的 GCC/Clang 静态快照
+  均完成 source-contract、semantic parity、analyzer 与 interface 目标重链；前两项分别为
+  69/69、15/15且真实 exit 0，analyzer 两套均保持同一 65 Pass/2 个已登记 producer marker。
+  GCC interface 与 Task 7.48 parent 的失败测试名称均为同一 8 个已登记 producer marker，
+  delta 0且不计本任务 GREEN。完整三工具链16-target matrix、三套stdio smoke、Syntax05
+  producer及其余 analyzer/symbol-table consumers仍未完成。

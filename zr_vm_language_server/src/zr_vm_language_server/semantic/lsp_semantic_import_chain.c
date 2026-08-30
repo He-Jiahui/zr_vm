@@ -194,15 +194,6 @@ static TZrBool semantic_import_chain_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
-static const TZrChar *semantic_import_chain_string_text(SZrString *value) {
-    if (value == ZR_NULL) {
-        return ZR_NULL;
-    }
-    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
-               ? ZrCore_String_GetNativeStringShort(value)
-               : ZrCore_String_GetNativeString(value);
-}
-
 static TZrBool semantic_import_chain_resolve_primary_expression(SZrState *state,
                                                                 SZrLspMetadataProvider *provider,
                                                                 SZrSemanticAnalyzer *analyzer,

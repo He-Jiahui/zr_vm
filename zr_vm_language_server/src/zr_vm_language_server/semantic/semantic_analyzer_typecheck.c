@@ -30,23 +30,6 @@ static void semantic_typecheck_switch_expression(SZrState *state,
                                                  SZrSemanticAnalyzer *analyzer,
                                                  SZrAstNode *node);
 
-static const TZrChar *semantic_identifier_node_text(SZrAstNode *node) {
-    if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return semantic_string_native(node->data.identifier.name);
-}
-
-static const TZrChar *semantic_member_property_text(SZrAstNode *node) {
-    if (node == ZR_NULL || node->type != ZR_AST_MEMBER_EXPRESSION ||
-        node->data.memberExpression.computed) {
-        return ZR_NULL;
-    }
-
-    return semantic_identifier_node_text(node->data.memberExpression.property);
-}
-
 static TZrBool semantic_text_equals(const TZrChar *value, const TZrChar *expected) {
     return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
 }
