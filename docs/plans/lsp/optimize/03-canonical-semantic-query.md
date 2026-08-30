@@ -150,18 +150,20 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 00:03 +08:00。
-- 总体状态：进行中。Task 4.20 已让 source free-call 的 canonical reference fact 发布
-  argument-to-parameter mapping、argument/parameter `TypeId`、passing mode、named 标志、exact/
-  implicit conversion 与精确 argument range；`CallAt` 只借用 snapshot-owned structured rows，
-  malformed payload 清零并 fail closed。
+- 最近更新时间：2026-08-31 00:28 +08:00。
+- 总体状态：进行中。Task 4.21 已把 Task 4.20 的 structured argument mapping 扩展到 source
+  class/struct constructor：缺失 exact argument fact 时只在 parser producer 阶段补 canonical
+  expression inference，并以 resolved parameter 做 compatibility gate；class widening 与 struct
+  named reorder 均由同一 snapshot-owned rows 投影。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
-  `25/30/22/21/15/70`，并补 semantic-facts `15/15`，均真实
+  `25/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15` 和
+  独占串行 type-inference `124/124`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.20 source free-call argument mapping/conversion；Task 4.19
+- 本阶段完成项目：Task 4.21 source constructor argument mapping/conversion；Task 4.20
+  source free-call argument mapping/conversion；Task 4.19
   call-expression exactness refinement；Task 4.18 call source
   identity exactness；Task 4.17 resolved call-target
   conflict detection；Task 4.16 resolved
@@ -738,3 +740,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   全部真实 exit 0；两套 interface 仍为同一8个既有producer marker，delta 0且不计 GREEN。
   receiver/member、`.zro`/native mapping parity、receiver `TypeId`、MSVC、完整16-target matrix及
   三套stdio smoke尚未完成，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 00:28 +08:00。Task 4.21 为 source class/struct constructor 的
+  canonical reference fact 复用 structured argument mapping。首个 RED 为 constructor query mapping
+  `NULL`，canonical consumers `21 Tests / 1 Failure`；首次 producer 接线后 mapping index/range存在但
+  argument/parameter `TypeId` 为0、conversion为UNKNOWN，query按既有完整性门禁 fail closed。GREEN
+  在缺 exact argument fact时仅于 parser producer阶段调用 canonical expression inference，并对
+  resolved parameter执行 compatibility gate；class `int -> double` 发布 implicit row，struct named
+  `y/x` 发布 `arg0 -> param1`、`arg1 -> param0` exact rows。固定 GCC/Clang 快照均通过 canonical/
+  calls/query/relations/symbols/parity/source-contract/facts
+  `21/25/30/22/21/15/70/15`，独占串行 type-inference均`124/124`、真实 exit 0；interface仍为同一
+  8个既有producer marker，delta 0且不计GREEN。receiver/member、`.zro`/native mapping parity、
+  receiver `TypeId`、MSVC、完整16-target matrix与三套stdio smoke尚未完成。

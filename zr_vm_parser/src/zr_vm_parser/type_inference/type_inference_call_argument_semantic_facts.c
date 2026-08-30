@@ -96,9 +96,13 @@ static void call_argument_types(
         const SZrAstNode *argument,
         const SZrResolvedCallSignature *resolvedSignature,
         TZrSize parameterIndex,
+        TZrBool validateCompatibility,
         SZrSemanticCallArgumentFact *mapping) {
     const SZrSemanticExpressionFact *argumentFact;
+    const SZrInferredType *argumentType;
     const SZrInferredType *parameterType;
+    SZrInferredType inferredArgument;
+    TZrBool ownsInferredArgument = ZR_FALSE;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || argument == ZR_NULL ||
         resolvedSignature == ZR_NULL || mapping == ZR_NULL ||
@@ -109,22 +113,47 @@ static void call_argument_types(
             cs->semanticContext, argument);
     parameterType = (const SZrInferredType *)ZrCore_Array_Get(
             (SZrArray *)&resolvedSignature->parameterTypes, parameterIndex);
-    if (argumentFact == ZR_NULL ||
-        argumentFact->exactness != ZR_SEMANTIC_FACT_EXACT ||
-        argumentFact->typeId == ZR_SEMANTIC_ID_INVALID ||
-        parameterType == ZR_NULL) {
+    if (parameterType == ZR_NULL) {
         return;
     }
-    mapping->argumentTypeId = argumentFact->typeId;
+    if (argumentFact != ZR_NULL &&
+        argumentFact->exactness == ZR_SEMANTIC_FACT_EXACT &&
+        argumentFact->typeId != ZR_SEMANTIC_ID_INVALID) {
+        argumentType = &argumentFact->inferredType;
+        mapping->argumentTypeId = argumentFact->typeId;
+    } else {
+        ZrParser_InferredType_Init(
+                cs->state, &inferredArgument, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(
+                    cs, (SZrAstNode *)argument, &inferredArgument)) {
+            ZrParser_InferredType_Free(cs->state, &inferredArgument);
+            return;
+        }
+        argumentType = &inferredArgument;
+        ownsInferredArgument = ZR_TRUE;
+        mapping->argumentTypeId = ZrParser_CanonicalType_FromInferred(
+                cs->semanticContext, argumentType);
+    }
     mapping->parameterTypeId = ZrParser_CanonicalType_FromInferred(
             cs->semanticContext, parameterType);
-    if (mapping->parameterTypeId == ZR_SEMANTIC_ID_INVALID) {
+    if (mapping->argumentTypeId == ZR_SEMANTIC_ID_INVALID ||
+        mapping->parameterTypeId == ZR_SEMANTIC_ID_INVALID ||
+        (validateCompatibility &&
+         !ZrParser_TypeCompatibility_Check(
+                 cs, argumentType, parameterType, argument->location))) {
         mapping->argumentTypeId = ZR_SEMANTIC_ID_INVALID;
+        mapping->parameterTypeId = ZR_SEMANTIC_ID_INVALID;
+        if (ownsInferredArgument) {
+            ZrParser_InferredType_Free(cs->state, &inferredArgument);
+        }
         return;
     }
     mapping->conversion = mapping->argumentTypeId == mapping->parameterTypeId
                                   ? ZR_SEMANTIC_CALL_CONVERSION_EXACT
                                   : ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT;
+    if (ownsInferredArgument) {
+        ZrParser_InferredType_Free(cs->state, &inferredArgument);
+    }
 }
 
 TZrBool type_inference_call_argument_facts_build(
@@ -133,6 +162,7 @@ TZrBool type_inference_call_argument_facts_build(
         const SZrAstNodeArray *parameters,
         const SZrArray *parameterNames,
         const SZrResolvedCallSignature *resolvedSignature,
+        TZrBool validateCompatibility,
         SZrArray *outMappings) {
     TZrSize argumentCount;
     TZrSize parameterCount;
@@ -193,6 +223,7 @@ TZrBool type_inference_call_argument_facts_build(
                             argument,
                             resolvedSignature,
                             mapping.parameterIndex,
+                            validateCompatibility,
                             &mapping);
         ZrCore_Array_Push(cs->state, outMappings, &mapping);
     }

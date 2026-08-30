@@ -25,6 +25,7 @@ TZrBool type_inference_call_argument_facts_build(
         const SZrAstNodeArray *parameters,
         const SZrArray *parameterNames,
         const SZrResolvedCallSignature *resolvedSignature,
+        TZrBool validateCompatibility,
         SZrArray *outMappings);
 
 TZrSymbolId type_inference_member_symbol_id(

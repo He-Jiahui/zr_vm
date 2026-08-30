@@ -813,8 +813,9 @@ owned by the active Syntax L8 milestone.
 
 ## Canonical Call Argument Mapping
 
-Resolved source free calls publish their argument binding on the same
-`SZrSemanticReferenceFact` that owns the selected callable identity. Each
+Resolved source free calls and class/struct constructor calls publish their
+argument binding on the same `SZrSemanticReferenceFact` that owns the selected
+callable identity. Each
 `SZrSemanticCallArgumentFact` records the source argument index, canonical
 parameter index, exact argument range, argument and parameter `TypeId`,
 parameter passing mode, named-argument classification, and an exact or implicit
@@ -830,6 +831,14 @@ when a non-empty mapping is not dense by argument index, disagrees with the
 call argument count, references a missing callable parameter, carries invalid
 type ids or unknown conversion, or has a range/source outside the selected
 call expression.
+
+Constructor fact production runs after the constructor target and signature are
+resolved. When that path has not already published an exact argument expression
+fact, it invokes parser expression inference at production time and validates
+the inferred type against the resolved parameter before publishing an exact or
+implicit conversion. An incompatible constructor argument remains unknown, so
+`CallAt` fails closed and the parser-owned compatibility diagnostic remains the
+only error source.
 
 Spread arguments currently publish no one-to-one mapping rather than an
 approximate row. Receiver calls and `.zro`/native descriptor producers remain

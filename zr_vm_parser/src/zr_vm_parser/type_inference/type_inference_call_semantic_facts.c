@@ -373,6 +373,7 @@ void type_inference_record_primary_call_reference_fact(
             type_inference_call_parameters(funcTypeInfo->declarationNode),
             ZR_NULL,
             resolvedSignature,
+            ZR_FALSE,
             &fact.argumentMappings);
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
     if (fact.argumentMappings.isValid) {
@@ -919,9 +920,20 @@ void type_inference_record_construct_call_facts(
             callTypeId);
     referenceFact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID ||
                                constructor->contractRole != ZR_MEMBER_CONTRACT_ROLE_NONE;
+    (void)type_inference_call_argument_facts_build(
+            cs,
+            &call,
+            type_inference_call_parameters(constructor->declarationNode),
+            &constructor->parameterNames,
+            &resolvedSignature,
+            ZR_TRUE,
+            &referenceFact.argumentMappings);
     if (!constructor->parameterNames.isValid ||
         referenceFact.signatureDisplay != ZR_NULL) {
         ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &referenceFact);
+    }
+    if (referenceFact.argumentMappings.isValid) {
+        ZrCore_Array_Free(cs->state, &referenceFact.argumentMappings);
     }
     free_resolved_call_signature(cs->state, &resolvedSignature);
     type_inference_source_constructor_member_free(cs, &temporaryConstructor);

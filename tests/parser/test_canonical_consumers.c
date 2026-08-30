@@ -644,7 +644,7 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
 static void test_source_constructors_publish_canonical_call_contracts(void) {
     const TZrChar *source =
             "class Hero {\n"
-            "  pub @constructor(seed: int) { }\n"
+            "  pub @constructor(seed: float) { }\n"
             "}\n"
             "struct Point {\n"
             "  pub var x: int;\n"
@@ -665,6 +665,7 @@ static void test_source_constructors_publish_canonical_call_contracts(void) {
     SZrFileRange position;
     SZrParserSemanticCallQuery query;
     const SZrSemanticReferenceFact *declaration;
+    const SZrSemanticCallArgumentFact *mapping;
     const SZrCanonicalTypeNode *callableType;
     TZrChar typeLabel[128];
     TZrChar callLabel[160];
@@ -724,9 +725,26 @@ static void test_source_constructors_publish_canonical_call_contracts(void) {
     TEST_ASSERT_EQUAL_UINT64(
             (TZrUInt64)classConstructor->location.end.offset,
             (TZrUInt64)query.targetDeclarationRange.end.offset);
+    TEST_ASSERT_NOT_NULL(query.argumentMappings);
+    TEST_ASSERT_EQUAL_UINT(1U, query.argumentMappings->length);
+    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+            (SZrArray *)query.argumentMappings, 0U);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_UINT(0U, mapping->argumentIndex);
+    TEST_ASSERT_EQUAL_UINT(0U, mapping->parameterIndex);
+    TEST_ASSERT_FALSE(mapping->isNamed);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT, mapping->conversion);
+    TEST_ASSERT_NOT_EQUAL(mapping->argumentTypeId, mapping->parameterTypeId);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(classCall - source + strlen("new Hero(")),
+            (TZrUInt64)mapping->argumentRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(classCall - source + strlen("new Hero(42")),
+            (TZrUInt64)mapping->argumentRange.end.offset);
     TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
             cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
-    TEST_ASSERT_EQUAL_STRING("fn(int) -> null", typeLabel);
+    TEST_ASSERT_EQUAL_STRING("fn(double) -> null", typeLabel);
     callableType = ZrParser_CanonicalType_Find(
             cs.semanticContext, query.callableTypeId);
     TEST_ASSERT_NOT_NULL(callableType);
@@ -736,7 +754,7 @@ static void test_source_constructors_publish_canonical_call_contracts(void) {
             callableType->data.function.receiverEffect);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
             cs.semanticContext, &query, callLabel, sizeof(callLabel)));
-    TEST_ASSERT_EQUAL_STRING("@constructor(seed: int): null", callLabel);
+    TEST_ASSERT_EQUAL_STRING("@constructor(seed: double): null", callLabel);
     declaration = ZrParser_SemanticQuery_DeclarationOf(
             cs.semanticContext, query.targetSymbolId, ZR_NULL);
     TEST_ASSERT_NOT_NULL(declaration);
@@ -762,6 +780,26 @@ static void test_source_constructors_publish_canonical_call_contracts(void) {
     TEST_ASSERT_EQUAL_UINT64(
             (TZrUInt64)structConstructor->location.end.offset,
             (TZrUInt64)query.targetDeclarationRange.end.offset);
+    TEST_ASSERT_NOT_NULL(query.argumentMappings);
+    TEST_ASSERT_EQUAL_UINT(2U, query.argumentMappings->length);
+    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+            (SZrArray *)query.argumentMappings, 0U);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_UINT(0U, mapping->argumentIndex);
+    TEST_ASSERT_EQUAL_UINT(1U, mapping->parameterIndex);
+    TEST_ASSERT_TRUE(mapping->isNamed);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_CALL_CONVERSION_EXACT, mapping->conversion);
+    TEST_ASSERT_EQUAL_UINT64(mapping->argumentTypeId, mapping->parameterTypeId);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(structCall - source + strlen("init Point(y: ")),
+            (TZrUInt64)mapping->argumentRange.start.offset);
+    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+            (SZrArray *)query.argumentMappings, 1U);
+    TEST_ASSERT_NOT_NULL(mapping);
+    TEST_ASSERT_EQUAL_UINT(1U, mapping->argumentIndex);
+    TEST_ASSERT_EQUAL_UINT(0U, mapping->parameterIndex);
+    TEST_ASSERT_TRUE(mapping->isNamed);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_CALL_CONVERSION_EXACT, mapping->conversion);
     TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
             cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
     TEST_ASSERT_EQUAL_STRING("fn(int, int) -> null", typeLabel);
