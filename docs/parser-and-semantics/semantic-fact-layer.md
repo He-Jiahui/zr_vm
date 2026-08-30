@@ -3671,3 +3671,18 @@ and function fallback paths. A source call whose canonical payload is missing
 still fails closed before those paths. Runtime coverage detaches both compiler
 and symbol state, then proves exact signature projection and missing-fact
 unavailability in the same fixture.
+
+## Plan 03 Task 5.1 Canonical Display Integrity
+
+`ZrParser_CanonicalType_ValidateParameterContract` is the single read-only
+validator for callable parameter snapshots. Function interning, canonical type
+formatting, and SymbolId-based callable display all consume this validator;
+they do not maintain separate passing, escape, initialization, temporary, or
+call-site marker rules.
+
+Canonical type formatting and callable display fail closed when a snapshot
+contains an invalid reference access, receiver effect, callable effect bit, or
+parameter contract. Formatting failure leaves the caller's output buffer empty,
+and callable display returns no string. Consumers must treat this as unavailable
+semantic presentation and must not recover a signature from AST spelling, type
+text, or member names.

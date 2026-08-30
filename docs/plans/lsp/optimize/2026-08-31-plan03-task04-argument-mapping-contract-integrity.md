@@ -57,6 +57,8 @@ form、parameter唯一性与conversion一致性在同一门禁完成。合法sou
 - 完成项目：parameter binding唯一性；parameter TypeId integrity；passing-form integrity；
   conversion exactness integrity；
   malformed snapshot fail-closed；GCC/Clang focused与interface marker复核；模块与计划记录。
-- 未完成项目：source `in/ref/out` call-fact producer、receiver/member mapping、receiver `TypeId`、
+- 更正：后续固定快照的隔离复核证明 source `in/ref/out` 已发布 `hasCallInfo` 与 mapping，临时
+  focused case 为 `26/26`；此前把它列为 producer gap 属于审计误判，测试未保留。
+- 未完成项目：receiver/member mapping、receiver `TypeId`、
   `.zro`/native callable mapping parity、Syntax05 imported property/declaration producer、MSVC、
   完整16-target matrix、三套stdio smoke、Plan 03 Task 8总门禁。

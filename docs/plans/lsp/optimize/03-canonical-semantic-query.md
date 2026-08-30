@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 01:13 +08:00。
-- 总体状态：进行中。Task 4.23 已把 non-empty structured argument mapping 从“字段非空”收紧为
+- 最近更新时间：2026-08-31 02:02 +08:00。
+- 总体状态：进行中。Task 5.1 已把 canonical parameter contract 的完整校验发布为
+  intern/formatter/callable display 共用的只读 API，并让 malformed ref access、receiver/effect、
+  passing/escape/init/temporary/call-site snapshot 一律 fail closed；Task 4.23 已把 non-empty
+  structured argument mapping 从“字段非空”收紧为
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
@@ -160,7 +163,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.23 argument mapping canonical-contract integrity；Task 4.22 source
+- 本阶段完成项目：Task 5.1 canonical display integrity；Task 4.23 argument mapping
+  canonical-contract integrity；Task 4.22 source
   super-constructor argument mapping；Task 4.21 source
   constructor argument mapping/conversion；Task 4.20
   source free-call argument mapping/conversion；Task 4.19

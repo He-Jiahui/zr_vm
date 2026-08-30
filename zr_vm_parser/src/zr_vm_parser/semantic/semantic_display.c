@@ -203,8 +203,9 @@ static const TZrChar *semantic_display_passing_prefix(
         case ZR_CANONICAL_PASSING_OUT:
             return "out ";
         case ZR_CANONICAL_PASSING_VALUE:
-        default:
             return "";
+        default:
+            return ZR_NULL;
     }
 }
 
@@ -215,6 +216,10 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
     const SZrCanonicalTypeNode *functionType;
     const SZrAstNodeArray *parameters;
     const SZrGenericDeclaration *generic;
+    const TZrUInt32 supportedEffects =
+            ZR_CANONICAL_CALLABLE_EFFECT_THROWS |
+            ZR_CANONICAL_CALLABLE_EFFECT_ASYNC |
+            ZR_CANONICAL_CALLABLE_EFFECT_GENERATOR;
     const TZrChar *receiverPrefix = "";
     TZrChar buffer[1024];
     TZrChar typeBuffer[256];
@@ -231,7 +236,11 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         return ZR_NULL;
     }
     functionType = ZrParser_CanonicalType_Find(context, symbol->typeId);
-    if (functionType == ZR_NULL || functionType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+    if (functionType == ZR_NULL || functionType->kind != ZR_CANONICAL_TYPE_FUNCTION ||
+        (TZrInt32)functionType->data.function.receiverEffect <
+                (TZrInt32)ZR_CANONICAL_RECEIVER_NONE ||
+        functionType->data.function.receiverEffect > ZR_CANONICAL_RECEIVER_MUTABLE ||
+        (functionType->data.function.effectFlags & ~supportedEffects) != 0U) {
         return ZR_NULL;
     }
     parameters = semantic_display_callable_parameters(symbol->astNode);
@@ -273,7 +282,8 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         const TZrChar *name;
         TZrTypeId displayTypeId;
 
-        if (contract == ZR_NULL || parameterNode == ZR_NULL ||
+        if (!ZrParser_CanonicalType_ValidateParameterContract(context, contract) ||
+            parameterNode == ZR_NULL ||
             parameterNode->type != ZR_AST_PARAMETER) {
             return ZR_NULL;
         }

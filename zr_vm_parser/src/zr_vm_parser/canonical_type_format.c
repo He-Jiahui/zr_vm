@@ -239,9 +239,22 @@ static TZrBool canonical_type_format_ref(
         SZrCanonicalTypeFormatState *state,
         const SZrCanonicalRefType *refType,
         TZrSize depth) {
-    return canonical_type_format_append(
-                   state,
-                   refType->access == ZR_CANONICAL_REF_READONLY ? "ref readonly " : "ref ") &&
+    const TZrChar *prefix;
+
+    if (refType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (refType->access) {
+        case ZR_CANONICAL_REF_WRITABLE:
+            prefix = "ref ";
+            break;
+        case ZR_CANONICAL_REF_READONLY:
+            prefix = "ref readonly ";
+            break;
+        default:
+            return ZR_FALSE;
+    }
+    return canonical_type_format_append(state, prefix) &&
            canonical_type_format_node(state, refType->pointeeTypeId, depth + 1U);
 }
 
@@ -271,7 +284,9 @@ static TZrBool canonical_type_format_parameter(
     TZrTypeId displayTypeId;
     const TZrChar *prefix = "";
 
-    if (state == ZR_NULL || parameter == ZR_NULL) {
+    if (state == ZR_NULL ||
+        !ZrParser_CanonicalType_ValidateParameterContract(
+                state->context, parameter)) {
         return ZR_FALSE;
     }
     typeNode = ZrParser_CanonicalType_Find(state->context, parameter->typeId);
@@ -311,8 +326,18 @@ static TZrBool canonical_type_format_function(
         SZrCanonicalTypeFormatState *state,
         const SZrCanonicalFunctionType *function,
         TZrSize depth) {
+    const TZrUInt32 supportedEffects =
+            ZR_CANONICAL_CALLABLE_EFFECT_THROWS |
+            ZR_CANONICAL_CALLABLE_EFFECT_ASYNC |
+            ZR_CANONICAL_CALLABLE_EFFECT_GENERATOR;
     TZrSize index;
 
+    if (function == ZR_NULL ||
+        (TZrInt32)function->receiverEffect < (TZrInt32)ZR_CANONICAL_RECEIVER_NONE ||
+        function->receiverEffect > ZR_CANONICAL_RECEIVER_MUTABLE ||
+        (function->effectFlags & ~supportedEffects) != 0U) {
+        return ZR_FALSE;
+    }
     if ((function->effectFlags & ZR_CANONICAL_CALLABLE_EFFECT_ASYNC) != 0U &&
         !canonical_type_format_append(state, "async ")) {
         return ZR_FALSE;

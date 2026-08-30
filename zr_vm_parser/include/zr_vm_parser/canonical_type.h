@@ -354,6 +354,10 @@ ZR_PARSER_API const SZrCanonicalTypeNode *ZrParser_CanonicalType_Find(
         const struct SZrSemanticContext *context,
         TZrTypeId typeId);
 
+ZR_PARSER_API TZrBool ZrParser_CanonicalType_ValidateParameterContract(
+        const struct SZrSemanticContext *context,
+        const SZrCanonicalParameterContract *contract);
+
 ZR_PARSER_API TZrBool ZrParser_CanonicalType_Format(
         const struct SZrSemanticContext *context,
         TZrTypeId typeId,

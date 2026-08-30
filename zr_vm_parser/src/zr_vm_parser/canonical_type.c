@@ -153,7 +153,7 @@ static TZrUInt64 canonical_qualified_target_hash(
     return canonical_type_hash_word(hash, qualifier);
 }
 
-static TZrBool canonical_parameter_contract_is_valid(
+TZrBool ZrParser_CanonicalType_ValidateParameterContract(
         const SZrSemanticContext *context,
         const SZrCanonicalParameterContract *contract) {
     const SZrCanonicalTypeNode *typeNode;
@@ -928,7 +928,8 @@ TZrTypeId ZrParser_CanonicalType_InternFunction(
     structuralHash = canonical_type_hash_word(structuralHash, (TZrUInt64)ZR_CANONICAL_TYPE_FUNCTION);
     structuralHash = canonical_type_hash_word(structuralHash, parameterCount);
     for (index = 0; index < parameterCount; index++) {
-        if (!canonical_parameter_contract_is_valid(context, &parameterContracts[index])) {
+        if (!ZrParser_CanonicalType_ValidateParameterContract(
+                    context, &parameterContracts[index])) {
             return ZR_SEMANTIC_ID_INVALID;
         }
         structuralHash = canonical_parameter_contract_hash(structuralHash, &parameterContracts[index]);
