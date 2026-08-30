@@ -443,6 +443,7 @@ static void test_owner_inner_type_use_publishes_source_display_alias(void) {
 }
 
 #include "test_semantic_display_generic_alias_cases.h"
+#include "test_semantic_display_nominal_alias_cases.h"
 
 static void test_qualified_type_use_publishes_source_display_alias(void) {
     const TZrChar *source = "var patch: declaration.Patch = null;\n";
@@ -969,6 +970,7 @@ int main(void) {
     RUN_TEST(test_generic_type_use_publishes_exact_whole_display_alias);
     RUN_TEST(test_nested_generic_type_uses_preserve_split_angle_ranges);
     RUN_TEST(test_const_generic_type_use_preserves_source_expression_alias);
+    RUN_TEST(test_type_value_alias_use_preserves_nominal_source_alias);
     RUN_TEST(test_qualified_type_use_publishes_source_display_alias);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);

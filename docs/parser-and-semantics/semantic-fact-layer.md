@@ -3832,3 +3832,17 @@ unary, and binary const-expression nodes. It normalizes separators and binary
 operator spacing from AST structure; it does not slice source text. Unsupported
 nodes, owner/ref/readonly wrappers, incomplete generic lists, invalid ranges,
 or buffer overflow fail closed without suppressing successful type inference.
+
+## Plan 03 Task 5.12 Type-Value Alias Producer
+
+A direct type-position identifier resolved through the compiler state's
+canonical type-value alias table now publishes the identifier as a use-site
+display alias for the copied target inferred type. For example, a binding
+`Word -> int` keeps canonical display `int`, while an exact query at the `Word`
+annotation returns `Word`.
+
+The producer runs only after the alias-table lookup succeeds. It does not
+register `Word` as a nominal type, alter the copied TypeId, infer by identifier
+text, or change alias-target relation facts. Wrapped uses whose inner inference
+runs without a semantic context and GcBridge propagation remain separate
+producer work.
