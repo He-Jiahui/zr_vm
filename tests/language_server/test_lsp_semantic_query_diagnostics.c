@@ -943,6 +943,7 @@ int main(void) {
     test_lsp_diagnostics_publish_detailed_function_call_argument_type_mismatch(state);
     test_lsp_diagnostics_publish_detailed_method_call_argument_type_mismatch(state);
     test_semantic_query_replaces_stale_duplicate_diagnostic(state);
+    test_semantic_query_preserves_distinct_source_diagnostic(state);
 
     ZrCore_GlobalState_Free(global);
 

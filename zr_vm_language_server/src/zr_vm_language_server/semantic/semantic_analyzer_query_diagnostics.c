@@ -4,8 +4,11 @@
 #include "zr_vm_parser/semantic_query.h"
 
 static TZrBool query_diagnostic_same_source(SZrString *left, SZrString *right) {
-    if (left == ZR_NULL || right == ZR_NULL || left == right) {
+    if (left == right) {
         return ZR_TRUE;
+    }
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
     }
 
     return ZrCore_String_Equal(left, right);

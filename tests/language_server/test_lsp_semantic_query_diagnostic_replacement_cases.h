@@ -1,7 +1,8 @@
 static SZrFileRange diagnostic_replacement_range(
         SZrState *state,
         TZrSize startOffset,
-        TZrSize endOffset) {
+        TZrSize endOffset,
+        TZrNativeString source) {
     SZrFileRange range;
 
     memset(&range, 0, sizeof(range));
@@ -11,8 +12,9 @@ static SZrFileRange diagnostic_replacement_range(
     range.end.offset = endOffset;
     range.end.line = 1;
     range.end.column = (TZrInt32)endOffset + 1;
-    range.source = ZrCore_String_CreateFromNative(
-            state, "semantic_query_diagnostic_replacement.zr");
+    range.source = source != ZR_NULL
+                           ? ZrCore_String_CreateFromNative(state, source)
+                           : ZR_NULL;
     return range;
 }
 
@@ -29,8 +31,10 @@ static void test_semantic_query_replaces_stale_duplicate_diagnostic(
     SZrDiagnostic *projected;
     SZrDiagnostic **projectedSlot;
     SZrDiagnosticRelatedInformation *related;
-    SZrFileRange location = diagnostic_replacement_range(state, 8U, 12U);
-    SZrFileRange relatedLocation = diagnostic_replacement_range(state, 2U, 6U);
+    SZrFileRange location = diagnostic_replacement_range(
+            state, 8U, 12U, "semantic_query_diagnostic_replacement.zr");
+    SZrFileRange relatedLocation = diagnostic_replacement_range(
+            state, 2U, 6U, "semantic_query_diagnostic_replacement.zr");
     TZrUInt32 descriptorId;
     SZrTestTimer timer;
 
@@ -136,6 +140,111 @@ static void test_semantic_query_replaces_stale_duplicate_diagnostic(
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
         ZrParser_SemanticContext_Free(context);
         TEST_FAIL(timer, summary, "Canonical query projection did not replace stale duplicate");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    ZrParser_SemanticContext_Free(context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_semantic_query_preserves_distinct_source_diagnostic(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Semantic Query Preserves Distinct Source Diagnostic";
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(state);
+    SZrSemanticAnalyzer *analyzer =
+            ZrLanguageServer_SemanticAnalyzer_New(state);
+    SZrStructuredDiagnostic structured;
+    SZrSemanticDiagnosticFact fact;
+    SZrDiagnostic *stale;
+    SZrDiagnostic **staleSlot;
+    SZrDiagnostic **canonicalSlot;
+    SZrFileRange canonicalLocation = diagnostic_replacement_range(
+            state, 8U, 12U, "canonical_diagnostic_source.zr");
+    SZrFileRange staleLocation = diagnostic_replacement_range(
+            state, 8U, 12U, ZR_NULL);
+    SZrTestTimer timer;
+
+    TEST_START(summary);
+    if (context == ZR_NULL || analyzer == ZR_NULL ||
+        canonicalLocation.source == ZR_NULL ||
+        !ZrParser_DiagnosticBuilder_Build(
+                state,
+                &structured,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                canonicalLocation,
+                "numeric_overflow",
+                "Canonical source diagnostic.",
+                "Canonical source identity differs.",
+                "Keep both source-scoped diagnostics.")) {
+        if (analyzer != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        }
+        if (context != ZR_NULL) {
+            ZrParser_SemanticContext_Free(context);
+        }
+        TEST_FAIL(timer, summary, "Failed to initialize source identity fixture");
+        return;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &structured,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(state, &structured);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Failed to complete source identity fixture");
+        return;
+    }
+    memset(&fact, 0, sizeof(fact));
+    fact.diagnostic = structured;
+    if (!ZrParser_SemanticFacts_AppendDiagnostic(context, &fact)) {
+        ZrParser_StructuredDiagnostic_Free(state, &structured);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Failed to publish source-scoped diagnostic fact");
+        return;
+    }
+    ZrParser_StructuredDiagnostic_Free(state, &structured);
+
+    stale = ZrLanguageServer_Diagnostic_New(
+            state,
+            ZR_DIAGNOSTIC_WARNING,
+            staleLocation,
+            "Distinct source diagnostic.",
+            "numeric_overflow");
+    if (stale == ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Failed to create distinct source diagnostic");
+        return;
+    }
+    analyzer->semanticContext = context;
+    ZrCore_Array_Push(state, &analyzer->diagnostics, &stale);
+    ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
+            state, analyzer);
+
+    staleSlot = analyzer->diagnostics.length == 2U
+                        ? (SZrDiagnostic **)ZrCore_Array_Get(
+                                  &analyzer->diagnostics, 0U)
+                        : ZR_NULL;
+    canonicalSlot = analyzer->diagnostics.length == 2U
+                            ? (SZrDiagnostic **)ZrCore_Array_Get(
+                                      &analyzer->diagnostics, 1U)
+                            : ZR_NULL;
+    if (staleSlot == ZR_NULL || *staleSlot != stale ||
+        canonicalSlot == ZR_NULL || *canonicalSlot == ZR_NULL ||
+        *canonicalSlot == stale ||
+        (*canonicalSlot)->location.source == ZR_NULL ||
+        !ZrCore_String_Equal(
+                (*canonicalSlot)->location.source,
+                canonicalLocation.source) ||
+        test_string_text((*canonicalSlot)->message) == ZR_NULL ||
+        strcmp(test_string_text((*canonicalSlot)->message),
+               "Canonical source diagnostic.") != 0) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        ZrParser_SemanticContext_Free(context);
+        TEST_FAIL(timer, summary, "Cross-source diagnostic was replaced or lost");
         return;
     }
 
