@@ -580,8 +580,10 @@ exits, and backend parity pass on GCC, Clang, and MSVC.
   spelling lookup isolated to the fact-gated migration-diagnostic adapter;
 - remove old completion, hover, diagnostic, and lowering expectations.
 
-Gate: repository search finds no old ownership-member use except deliberate
-ordinary-member collision tests and migration-diagnostic inputs.
+Gate: repository search finds no old ownership-member use in positive ownership
+inference, lowering, or dispatch paths. The only permitted remaining uses are
+deliberate ordinary-member collision tests, migration-diagnostic inputs, and
+the isolated fact-gated adapter that publishes their structured replacement.
 
 ### Milestone 5: tooling and full acceptance
 
