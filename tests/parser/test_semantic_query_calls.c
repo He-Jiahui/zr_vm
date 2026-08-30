@@ -874,6 +874,7 @@ static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
 #include "test_semantic_query_call_edge_refinement_cases.h"
 #include "test_semantic_query_call_candidate_consistency_cases.h"
 #include "test_semantic_query_call_selection_cases.h"
+#include "test_semantic_query_call_source_identity_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -897,5 +898,8 @@ int main(void) {
     RUN_TEST(test_call_at_prefers_resolved_reference_over_earlier_display_fact);
     RUN_TEST(test_call_at_fails_closed_for_conflicting_resolved_references);
     RUN_TEST(test_call_at_keeps_distinct_nested_reference_ranges_separate);
+    RUN_TEST(test_call_at_rejects_source_less_expression_for_sourced_request);
+    RUN_TEST(test_call_at_rejects_source_less_reference_for_sourced_call);
+    RUN_TEST(test_call_at_rejects_source_less_target_for_sourced_expression);
     return UNITY_END();
 }

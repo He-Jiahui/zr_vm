@@ -150,15 +150,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 21:52 +08:00。
-- 总体状态：进行中。Task 4.17 已要求同一 call target 内同一精确 reference range 的 resolved
-  callable facts 对 SymbolId 完全一致；不同已解析目标不再任取其一，不同嵌套范围仍保持独立。
+- 最近更新时间：2026-08-30 21:58 +08:00。
+- 总体状态：进行中。Task 4.18 已要求 `CallAt` 的 request、expression、callTarget 与 reference
+  三层 source identity 精确一致；缺失 source 不再作为有明确 URI 请求的通配符。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
-  `20/30/22/21/15/70`，均真实
+  `23/30/22/21/15/70`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.17 resolved call-target conflict detection；Task 4.16 resolved
+- 本阶段完成项目：Task 4.18 call source identity exactness；Task 4.17 resolved call-target
+  conflict detection；Task 4.16 resolved
   call-reference refinement；Task 4.15 overload member
   completeness；Task 4.14 overload-set record
   exactness；Task 4.13 overload selected-target
@@ -704,3 +705,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `20/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套 interface
   仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未
   运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-30 21:58 +08:00。Task 4.18 将 `CallAt` 的 source identity 从
+  `NULL` 通配收紧为 request↔expression、expression↔callTarget、callTarget↔reference 三层 exact
+  optional identity；一侧缺 source、另一侧有明确 source 时清零并 fail closed。三个 focused RED
+  分别移除 expression、reference、callTarget source，call-query `23 Tests / 3 Failures`，三项均为
+  `Expected FALSE Was TRUE`；GREEN 后固定 `1e8584c + Task 4.17/4.18 overlays` 的 GCC/Clang
+  快照均通过 `23/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。两套
+  interface 仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。
+  本项未运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。

@@ -469,6 +469,14 @@ fails closed instead of selecting either fact by completeness or publication
 order. References at distinct nested ranges remain independent. Repeated facts
 for the same resolved target may still refine its declaration range or display.
 
+`CallAt` also requires exact optional source identity across the complete query
+chain: request position to call expression, call expression to call-target
+range, and call-target range to callable reference. A missing source equals
+only another missing source; it is not a wildcard for a sourced document. A
+mismatch clears the query and fails closed before any target or display is
+projected. This requirement is local to the call query contract and does not
+silently redefine containment for other semantic query APIs.
+
 `ZrParser_SemanticQuery_FormatCall` is also a value-only projection: its
 caller receives text rather than the borrowed expression fact. It consequently
 requires an `EXACT` selected expression before producing a signature. It clears

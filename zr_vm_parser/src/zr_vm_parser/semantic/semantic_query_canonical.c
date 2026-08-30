@@ -10,6 +10,16 @@ static TZrBool canonical_query_same_source(SZrString *left, SZrString *right) {
                      ZrCore_String_Equal(left, right));
 }
 
+static TZrBool canonical_query_same_optional_source_exact(
+        SZrString *left,
+        SZrString *right) {
+    if ((left == ZR_NULL) != (right == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(left == ZR_NULL || left == right ||
+                     ZrCore_String_Equal(left, right));
+}
+
 static TZrBool canonical_query_contains(const SZrFileRange *range,
                                         const SZrFileRange *position) {
     if (range == ZR_NULL || position == ZR_NULL ||
@@ -47,9 +57,8 @@ static TZrSize canonical_query_width(const SZrFileRange *range) {
 static TZrBool canonical_query_ranges_equal(const SZrFileRange *left,
                                              const SZrFileRange *right) {
     if (left == ZR_NULL || right == ZR_NULL ||
-        (left->source == ZR_NULL) != (right->source == ZR_NULL) ||
-        (left->source != ZR_NULL &&
-         !canonical_query_same_source(left->source, right->source))) {
+        !canonical_query_same_optional_source_exact(
+                left->source, right->source)) {
         return ZR_FALSE;
     }
     return (TZrBool)(left->start.offset == right->start.offset &&
@@ -96,6 +105,8 @@ static TZrBool canonical_query_call_reference_is_candidate(
 
     if (reference == ZR_NULL || reference->kind != ZR_SEMANTIC_REFERENCE_CALL ||
         reference->typeId == ZR_SEMANTIC_ID_INVALID ||
+        !canonical_query_same_optional_source_exact(
+                callTargetRange->source, reference->range.source) ||
         !canonical_query_contains(callTargetRange, &reference->range)) {
         return ZR_FALSE;
     }
@@ -192,6 +203,8 @@ TZrBool ZrParser_SemanticQuery_CallAt(
                         (SZrArray *)&context->expressionFacts, index);
         TZrSize width;
         if (fact == ZR_NULL || !fact->hasCallInfo ||
+            !canonical_query_same_optional_source_exact(
+                    fact->range.source, position.source) ||
             !canonical_query_contains(&fact->range, &position) ||
             !canonical_query_scope_allows(scope, &fact->range)) {
             continue;
@@ -203,6 +216,10 @@ TZrBool ZrParser_SemanticQuery_CallAt(
         }
     }
     if (best == ZR_NULL) return ZR_FALSE;
+    if (!canonical_query_same_optional_source_exact(
+                best->range.source, best->callTargetRange.source)) {
+        return ZR_FALSE;
+    }
     for (index = 0u; index < context->referenceFacts.length; ++index) {
         const SZrSemanticReferenceFact *reference =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
