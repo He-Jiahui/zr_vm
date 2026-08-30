@@ -661,6 +661,9 @@ TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
                 break;
             }
         }
+        if (overloads == ZR_NULL) {
+            return ZR_FALSE;
+        }
     }
     if (overloads == ZR_NULL) {
         semantic_calls_append_candidate(

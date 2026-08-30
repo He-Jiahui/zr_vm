@@ -503,7 +503,9 @@ mapping, or a text-derived alternative when the target is unresolved.
 The selected target and overload membership are atomic: if a referenced
 overload-set row omits the already-resolved target, the query clears its reusable
 output and fails closed instead of returning a candidate list with no selected
-row or inserting a same-name substitute.
+row or inserting a same-name substitute. A non-invalid `overloadSetId` must also
+resolve to an existing snapshot row; a missing row is inconsistent metadata, not
+permission to reinterpret the call as a single-candidate invocation.
 
 ### CallAt Metadata Projection
 

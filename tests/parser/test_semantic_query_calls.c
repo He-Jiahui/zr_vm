@@ -890,5 +890,6 @@ int main(void) {
     RUN_TEST(test_call_edge_source_identity_fails_closed_when_fact_source_is_missing);
     RUN_TEST(test_call_edge_merge_preserves_distinct_line_only_callsites);
     RUN_TEST(test_call_candidates_fail_closed_when_overload_set_omits_selected_target);
+    RUN_TEST(test_call_candidates_fail_closed_when_overload_set_record_is_missing);
     return UNITY_END();
 }
