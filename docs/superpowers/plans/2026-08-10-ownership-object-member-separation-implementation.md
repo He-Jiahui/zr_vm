@@ -1202,6 +1202,13 @@ The latest focused ownership matrix is therefore green on all three supported
 toolchains; Step 5 remains open only for the stable integrated registered
 graph and final exact-diff review.
 
+Commit `f7a2920` extends the direct guard contract to a computed suffix. Both
+an expired `Weak<T>` and the nullable result of `wake(weak)` now have a focused
+case proving that `NullReferenceError` is raised before `bump()` evaluates the
+index. The current MSVC runner passes 53/53 with the side-effect counter at
+zero; clean GCC/Clang 53-case replay remains separate from the recorded 52-case
+fixed-snapshot matrix.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before

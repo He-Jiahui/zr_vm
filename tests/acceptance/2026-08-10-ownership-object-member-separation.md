@@ -48,6 +48,13 @@ exit 0, matching the MSVC 19.44 result above. This closes the latest focused
 three-toolchain replay; only the stable integrated registered graph remains as
 the umbrella promotion gate.
 
+Commit `f7a2920` adds the remaining direct evaluation-order regression:
+`weak.values[bump()]` and the equivalent nullable receiver both throw
+`NullReferenceError` before the computed index runs. The current MSVC runner
+reports `53 Tests / 0 Failures / 0 Ignored`, with the observable side-effect
+counter still zero. This result is not substituted for a clean GCC/Clang
+53-case replay or the pending registered graph.
+
 `ctest -N` on the available MSVC build now enumerates 152 registered tests,
 including newly added benchmark targets; several executables are not present
 in that cache, so this enumeration is not a full pass. The full registered
