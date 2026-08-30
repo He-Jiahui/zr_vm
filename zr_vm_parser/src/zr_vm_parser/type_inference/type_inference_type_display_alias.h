@@ -9,6 +9,11 @@ void type_inference_publish_explicit_type_display_alias(
         SZrString *alias,
         const SZrType *typeUse);
 
+void type_inference_publish_generic_type_display_alias(
+        SZrCompilerState *cs,
+        const SZrInferredType *type,
+        const SZrType *typeUse);
+
 void type_inference_publish_primitive_type_display_alias(
         SZrCompilerState *cs,
         const SZrInferredType *type,

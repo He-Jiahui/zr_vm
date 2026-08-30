@@ -170,3 +170,66 @@ static void test_nested_generic_type_uses_preserve_split_angle_ranges(void) {
     ZrParser_CompilerState_Free(&cs);
     ZrParser_Ast_Free(g_state, ast);
 }
+
+static void test_const_generic_type_use_preserves_source_expression_alias(void) {
+    const TZrChar *source = "var value: Matrix<i64, 2 + 2> = null;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "const_generic_alias_display.zr");
+    SZrString *matrixName = ZrCore_String_CreateFromNative(g_state, "Matrix");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrAstNode *genericNode;
+    SZrFileRange expectedRange;
+    SZrCompilerState cs;
+    SZrInferredType inferred;
+    TZrTypeId typeId;
+    SZrString *alias;
+    TZrChar buffer[64];
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(matrixName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    genericNode = declaration->data.variableDeclaration.typeInfo->name;
+    TEST_ASSERT_NOT_NULL(genericNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, genericNode->type);
+
+    memset(&expectedRange, 0, sizeof(expectedRange));
+    expectedRange.start.offset = 11U;
+    expectedRange.start.line = 1;
+    expectedRange.start.column = 12;
+    expectedRange.end.offset = 29U;
+    expectedRange.end.line = 1;
+    expectedRange.end.column = 30;
+    expectedRange.source = sourceName;
+    TEST_ASSERT_EQUAL_UINT(
+            expectedRange.end.offset,
+            genericNode->data.genericType.wholeRange.end.offset);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+            g_state, cs.typeEnv, matrixName));
+    ZrParser_InferredType_Init(g_state, &inferred, ZR_VALUE_TYPE_UNKNOWN);
+    TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+            &cs, declaration->data.variableDeclaration.typeInfo, &inferred));
+    typeId = ZrParser_CanonicalType_FromInferred(cs.semanticContext, &inferred);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, typeId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticDisplay_FormatType(
+            cs.semanticContext, typeId, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>", buffer);
+
+    alias = ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            cs.semanticContext, typeId, &expectedRange);
+    TEST_ASSERT_NOT_NULL(alias);
+    TEST_ASSERT_EQUAL_STRING(
+            "Matrix<i64, 2 + 2>", ZrCore_String_GetNativeString(alias));
+
+    ZrParser_InferredType_Free(g_state, &inferred);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}

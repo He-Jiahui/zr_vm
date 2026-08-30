@@ -3817,3 +3817,18 @@ alias remains `Box<i64>`; the nested form likewise keeps `Box<Box<i64>>` and
 `Box<i64>` at their respective ranges. Missing, empty, or source-inconsistent
 whole ranges fail closed. Consumers must query the snapshot fact and must not
 recover the alias by slicing source text or changing canonical identity.
+
+## Plan 03 Task 5.11 Const-Generic Expression Alias
+
+Generic alias publication now uses an alias-specific structured AST renderer
+instead of the compiler's canonical generic-argument evaluator. A use such as
+`Matrix<i64, 2 + 2>` keeps canonical display `Matrix<int, 4>` while the exact
+whole-use alias remains `Matrix<i64, 2 + 2>`. Canonical const value identity,
+generic compatibility, and the compiler's general type-name formatter are
+unchanged.
+
+The alias renderer accepts parsed type arguments plus integer, identifier,
+unary, and binary const-expression nodes. It normalizes separators and binary
+operator spacing from AST structure; it does not slice source text. Unsupported
+nodes, owner/ref/readonly wrappers, incomplete generic lists, invalid ranges,
+or buffer overflow fail closed without suppressing successful type inference.
