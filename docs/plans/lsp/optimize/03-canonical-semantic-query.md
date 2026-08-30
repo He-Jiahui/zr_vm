@@ -435,3 +435,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   name 匹配的 fallback，新增 parity regression；GCC/Clang/MSVC parity 与 source-contract
   均真实 exit 0。interface 与 stdio 的既有 producer/fixture failures 保持未完成，Task 7/8
   不标记 GREEN。
+
+- 补充完成时间：2026-08-30 11:35 +08:00。Task 7.39 已将通用 stdio smoke 的 generic
+  reachability 断言对齐 parser canonical `unreachable_code` fact 与 `Unreachable code`
+  message，并保留 warning severity 校验；未增加 `short_circuit_unreachable` 兼容或任何
+  名称/文本 fallback。`node --check` 与 `git diff --check` 通过。独立 GCC binary 因缺少
+  `libzr_vm_lib_math.so` 未能提供有效运行时 smoke 证据，故不宣称 GREEN；补齐三工具链
+  快照后仍须重跑 16-target matrix、stdio 与 CLI smoke，Task 7/Task 8 继续未完成。

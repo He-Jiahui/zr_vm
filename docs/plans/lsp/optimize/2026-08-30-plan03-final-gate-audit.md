@@ -78,3 +78,10 @@ metadata 或 Syntax05 归属路径收口后重跑。本记录不以 LSP 兼容�
 - 支持提交后复核时间：2026-08-30 10:07 +08:00。`7b7996d` 的 Windows semantic-fact
   helper 导出已在 VSDevCmd `17.14.38` 下重链；三工具链 source-contract 仍为 `70/70`
   真实 exit 0，16-target 仍为 `10 PASS / 6 FAIL`，不改变 producer/fixture 阻塞结论。
+
+- 补充复核时间：2026-08-30 11:35 +08:00。通用 `stdio_smoke.js` 的 generic reachability
+  断言已从已废弃的 `short_circuit_unreachable` 改为 parser canonical
+  `unreachable_code`/`Unreachable code`，与专用 reachability smoke 的 fail-closed 合同一致。
+  `node --check` 与 `git diff --check` 通过；当前独立 GCC binary 启动前缺少
+  `libzr_vm_lib_math.so`，本轮没有运行时 GREEN 或新的三工具链 smoke 证据。Plan 03
+  仍保持未完成，补齐 native library 后必须重跑同一 16-target matrix 与三套 smoke。

@@ -2000,14 +2000,14 @@ async function main() {
 
     const genericDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(genericDiagnostics.uri === genericUri, 'generic diagnostics uri mismatch');
-    const genericShortCircuitDiagnostic = assertDiagnosticIncludes(
+    const genericReachabilityDiagnostic = assertDiagnosticIncludes(
         genericDiagnostics,
-        'short_circuit_unreachable',
-        'Right-hand branch is unreachable due to deterministic short-circuit',
-        'generic fixture should publish its intentional short-circuit warning'
+        'unreachable_code',
+        'Unreachable code',
+        'generic fixture should publish its canonical short-circuit reachability warning'
     );
-    assert(genericShortCircuitDiagnostic.severity === 2,
-        'generic short-circuit diagnostic should remain a warning');
+    assert(genericReachabilityDiagnostic.severity === 2,
+        'generic reachability diagnostic should remain a warning');
 
     const genericTypePosition = findPosition(genericText, 'Derived<Item, 2 + 2>', 0, 0);
     const genericDefinitionPosition = findPosition(genericText, 'class Derived<T, const N: int>', 0, 6);
