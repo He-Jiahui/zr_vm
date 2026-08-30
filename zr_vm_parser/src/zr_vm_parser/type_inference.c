@@ -3970,6 +3970,7 @@ static void type_inference_record_type_use_reference_fact(
 TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
     SZrInferredType namedType;
     TZrBool namedTypeInitialized = ZR_FALSE;
+    TZrBool resolvedQualifiedType = ZR_FALSE;
 
     if (cs == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -3986,6 +3987,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
 
     if (astType->subType != ZR_NULL) {
         if (ast_type_try_resolve_qualified_inferred_type(cs, astType, &namedType)) {
+            resolvedQualifiedType = ZR_TRUE;
             if (cs->semanticContext != ZR_NULL && namedType.typeName != ZR_NULL) {
                 ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
                                                        &namedType,
@@ -4069,6 +4071,13 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
         result->ownershipQualifier = astType->ownershipQualifier;
         result->referenceAccess = astType->referenceAccess;
         result->isReadonlyView = astType->isReadonlyView;
+        if (resolvedQualifiedType) {
+            type_inference_publish_explicit_type_display_alias(
+                    cs,
+                    result,
+                    extract_type_name_string(cs, (SZrType *)astType),
+                    astType);
+        }
         ZrParser_InferredType_Free(cs->state, &currentType);
         return ZR_TRUE;
     }
@@ -4078,6 +4087,13 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     result->ownershipQualifier = astType->ownershipQualifier;
     result->referenceAccess = astType->referenceAccess;
     result->isReadonlyView = astType->isReadonlyView;
+    if (resolvedQualifiedType) {
+        type_inference_publish_explicit_type_display_alias(
+                cs,
+                result,
+                extract_type_name_string(cs, (SZrType *)astType),
+                astType);
+    }
     if (namedTypeInitialized) {
         ZrParser_InferredType_Free(cs->state, &namedType);
     }

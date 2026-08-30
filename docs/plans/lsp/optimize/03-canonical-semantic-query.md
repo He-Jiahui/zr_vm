@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 03:38 +08:00。
-- 总体状态：进行中。Task 5.8 已补齐 ownership generic 临时关闭 semantic context造成的内层
+- 最近更新时间：2026-08-31 03:55 +08:00。
+- 总体状态：进行中。Task 5.9 已让structured qualified resolver在最终canonical inferred type
+  形成后发布whole name-chain use alias；`declaration.Patch`的canonical文本为
+  `zr.compile.declaration.Patch`，source alias只在exact whole-use range可用，wrapped-qualified
+  缺authoritative整体range时fail closed。Task 5.8 已补齐 ownership generic 临时关闭 semantic context造成的内层
   alias缺口：`Unique<i64>`的外层canonical文本为`Unique<int>`，内层primitive TypeId在exact
   `i64` range查询到source alias，outer/inner identity不混用。Task 5.7 已让显式 primitive type-use 在完成 canonical inference 后，
   以 exact type-name range 发布 source spelling alias；`i64` 的 canonical display 仍为 `int`，
@@ -170,13 +173,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
 - 固定 GCC/Clang 快照中的 display/call/query/relation/symbol/parity/source-contract 门禁分别为
-  `13/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
+  `14/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`、
   type inference `124/124`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display

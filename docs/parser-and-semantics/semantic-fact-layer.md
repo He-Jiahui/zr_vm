@@ -3786,3 +3786,17 @@ does not publish arbitrary nominal text or treat the outer owner TypeId as the
 inner use. Unique, Shared, and Weak use the same structured ownership-generic
 path. GcBridge wrappers and non-primitive aliases remain separate producer
 work.
+
+## Plan 03 Task 5.9 Qualified Type-Use Alias Producer
+
+Qualified source type uses publish one whole-use alias after the structured
+qualified resolver succeeds and the final canonical inferred type has been
+formed. A compile-tool binding such as `declaration.Patch` therefore retains
+that source presentation at its exact name-chain range while canonical type
+formatting emits `zr.compile.declaration.Patch`.
+
+The producer derives text from the parsed type structure, not from request-time
+source slicing. It publishes only when the name/subtype chain is the complete
+authoritative range. Array suffixes and ref, owner, or readonly wrappers do not
+have a whole `SZrType` range today, so those qualified forms fail closed rather
+than binding a wrapped TypeId to a partial name range.

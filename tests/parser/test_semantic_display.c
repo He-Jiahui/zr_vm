@@ -12,6 +12,7 @@
 #include "zr_vm_parser/semantic_display.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h"
 
 static SZrState *g_state;
 
@@ -435,6 +436,71 @@ static void test_owner_inner_type_use_publishes_source_display_alias(void) {
             &argumentNode->data.type.name->location);
     TEST_ASSERT_NOT_NULL(alias);
     TEST_ASSERT_EQUAL_STRING("i64", ZrCore_String_GetNativeString(alias));
+
+    ZrParser_InferredType_Free(g_state, &inferred);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_qualified_type_use_publishes_source_display_alias(void) {
+    const TZrChar *source = "var patch: declaration.Patch = null;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "qualified_alias_display.zr");
+    SZrString *bindingName = ZrCore_String_CreateFromNative(
+            g_state, "declaration");
+    const SZrParserCompileToolModuleDescriptor *provider =
+            ZrParser_CompileTool_FindModule("zr.compile.declaration");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrType *typeUse;
+    SZrType *terminalType;
+    SZrFileRange useRange;
+    SZrCompilerState cs;
+    SZrInferredType inferred;
+    TZrTypeId typeId;
+    SZrString *alias;
+    TZrChar buffer[96];
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(bindingName);
+    TEST_ASSERT_NOT_NULL(provider);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT(1U, ast->data.script.statements->count);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+    typeUse = declaration->data.variableDeclaration.typeInfo;
+    TEST_ASSERT_NOT_NULL(typeUse);
+    TEST_ASSERT_NOT_NULL(typeUse->name);
+    TEST_ASSERT_NOT_NULL(typeUse->subType);
+    TEST_ASSERT_NOT_NULL(typeUse->subType->name);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
+            &cs, bindingName, provider));
+    ZrParser_InferredType_Init(g_state, &inferred, ZR_VALUE_TYPE_UNKNOWN);
+    TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+            &cs, typeUse, &inferred));
+    typeId = ZrParser_CanonicalType_FromInferred(cs.semanticContext, &inferred);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, typeId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticDisplay_FormatType(
+            cs.semanticContext, typeId, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("zr.compile.declaration.Patch", buffer);
+
+    terminalType = typeUse;
+    while (terminalType->subType != ZR_NULL) {
+        terminalType = terminalType->subType;
+    }
+    useRange = typeUse->name->location;
+    useRange.end = terminalType->name->location.end;
+    alias = ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            cs.semanticContext, typeId, &useRange);
+    TEST_ASSERT_NOT_NULL(alias);
+    TEST_ASSERT_EQUAL_STRING(
+            "declaration.Patch", ZrCore_String_GetNativeString(alias));
 
     ZrParser_InferredType_Free(g_state, &inferred);
     ZrParser_CompilerState_Free(&cs);
@@ -898,6 +964,7 @@ int main(void) {
     RUN_TEST(test_semantic_type_display_alias_is_use_site_scoped);
     RUN_TEST(test_primitive_type_use_publishes_source_display_alias);
     RUN_TEST(test_owner_inner_type_use_publishes_source_display_alias);
+    RUN_TEST(test_qualified_type_use_publishes_source_display_alias);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);
     RUN_TEST(test_semantic_display_rejects_empty_nominal_identity);
