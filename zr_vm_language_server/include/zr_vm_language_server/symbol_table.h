@@ -153,7 +153,4 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Symbol_Free(SZrState *state, SZrSym
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Symbol_AddReference(SZrState *state, SZrSymbol *symbol, 
                                                     SZrFileRange location);
 
-// 获取符号的引用计数
-ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_Symbol_GetReferenceCount(SZrSymbol *symbol);
-
 #endif //ZR_VM_LANGUAGE_SERVER_SYMBOL_TABLE_H

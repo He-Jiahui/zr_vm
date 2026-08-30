@@ -1407,15 +1407,18 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
 static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(void) {
     char *tracker = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c");
+    char *symbolTable = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/symbol_table.c");
     char *analyzer = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
     char *querySource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_source.c");
 
-    if (tracker == NULL || analyzer == NULL || querySource == NULL) {
+    if (tracker == NULL || symbolTable == NULL || analyzer == NULL || querySource == NULL) {
         printf("FAIL: could not read reference identity sources\n");
         g_failures++;
         free(tracker);
+        free(symbolTable);
         free(analyzer);
         free(querySource);
         return;
@@ -1428,12 +1431,14 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
     assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_FindReferences");
     assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_GetReferenceCount");
     assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_GetReferenceLocations");
+    assert_text_contains_none(symbolTable, "ZrLanguageServer_Symbol_GetReferenceCount");
     assert_text_contains(
         analyzer,
         "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
     assert_text_contains(querySource, "analyzer->ast->location.source");
 
     free(tracker);
+    free(symbolTable);
     free(analyzer);
     free(querySource);
 }

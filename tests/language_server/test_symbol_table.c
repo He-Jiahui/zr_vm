@@ -217,15 +217,15 @@ static void test_symbol_table_scope_management(SZrState *state) {
 }
 
 // 测试符号引用计数
-static void test_symbol_reference_count(SZrState *state) {
+static void test_symbol_reference_storage(SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Symbol Reference Count");
+    TEST_START("Symbol Reference Storage");
     
-    TEST_INFO("Reference Count", "Testing symbol reference counting");
+    TEST_INFO("Reference Storage", "Testing the single retained symbol reference array");
     
     SZrSymbolTable *table = ZrLanguageServer_SymbolTable_New(state);
     if (table == ZR_NULL) {
-        TEST_FAIL(timer, "Symbol Reference Count", "Failed to create symbol table");
+        TEST_FAIL(timer, "Symbol Reference Storage", "Failed to create symbol table");
         return;
     }
     
@@ -242,7 +242,7 @@ static void test_symbol_reference_count(SZrState *state) {
     SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(table, name, ZR_NULL);
     if (symbol == ZR_NULL) {
         ZrLanguageServer_SymbolTable_Free(state, table);
-        TEST_FAIL(timer, "Symbol Reference Count", "Failed to lookup symbol");
+        TEST_FAIL(timer, "Symbol Reference Storage", "Failed to lookup symbol");
         return;
     }
     
@@ -255,15 +255,19 @@ static void test_symbol_reference_count(SZrState *state) {
     
     ZrLanguageServer_Symbol_AddReference(state, symbol, refLocation);
     
-    TZrSize refCount = ZrLanguageServer_Symbol_GetReferenceCount(symbol);
-    if (refCount != 1) {
+    SZrFileRange *storedReference = symbol->references.length == 1
+        ? (SZrFileRange *)ZrCore_Array_Get(&symbol->references, 0)
+        : ZR_NULL;
+    if (storedReference == ZR_NULL ||
+        storedReference->start.offset != refLocation.start.offset ||
+        storedReference->end.offset != refLocation.end.offset) {
         ZrLanguageServer_SymbolTable_Free(state, table);
-        TEST_FAIL(timer, "Symbol Reference Count", "Reference count mismatch");
+        TEST_FAIL(timer, "Symbol Reference Storage", "Stored reference range mismatch");
         return;
     }
     
     ZrLanguageServer_SymbolTable_Free(state, table);
-    TEST_PASS(timer, "Symbol Reference Count");
+    TEST_PASS(timer, "Symbol Reference Storage");
 }
 
 // 主测试函数
@@ -301,7 +305,7 @@ int main(void) {
     test_symbol_table_scope_management(state);
     TEST_DIVIDER();
     
-    test_symbol_reference_count(state);
+    test_symbol_reference_storage(state);
     TEST_DIVIDER();
     
     // 清理

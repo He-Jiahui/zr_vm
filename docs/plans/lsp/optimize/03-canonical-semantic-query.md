@@ -150,12 +150,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 14:58 +08:00。
-- 总体状态：进行中。Task 7.44 已删除无生产调用的 reference tracker relation query API、
-  SymbolId 哈希索引和只为该死路径存在的测试探针；固定快照中的 tracker 5/5 与
-  source-contract 全部通过，但完整 16-target matrix、三套 stdio smoke 和 Syntax05
-  imported declaration identity producer 尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN
-  或完成。
+- 最近更新时间：2026-08-30 15:06 +08:00。
+- 总体状态：进行中。Task 7.45 已删除无生产调用的 per-symbol reference count getter，
+  并将 focused test 收敛到唯一仍在使用的 reference range数组；固定快照中的 symbol table
+  4/4、tracker 5/5 与 source-contract 全部通过，但完整 16-target matrix、三套 stdio smoke
+  和 Syntax05 imported declaration identity producer 尚未完成，Task 7/Task 8 不声明
+  Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
   ownership return-escape canonical producer/query/LSP projection；Task 6.33
@@ -493,3 +493,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   local-reference case 均 PASS，整目标仍仅有计划已登记的 closed-generic 与 owner-generic
   两项 producer marker，真实 exit 1，不计本任务 GREEN，也未在 LSP 增加兼容。完整
   三工具链 16-target matrix、三套 stdio smoke 与 Syntax05 producer 仍未完成。
+
+- 补充完成时间：2026-08-30 15:06 +08:00。Task 7.45 删除全仓无生产调用的
+  `ZrLanguageServer_Symbol_GetReferenceCount` API，symbol-table focused test改为直接验证
+  唯一仍在使用的 `references` range数组。source-contract RED 精确失败 getter一项后
+  转 GREEN；最初拟删除 `referenceCount` 字段的草案在全仓审计中发现 Syntax05 exact-owned
+  `test_lsp_interface.c`仍读取该字段作为失败诊断，因此字段、初始化、递增与数组均保留，
+  未越权修改该测试。固定 `cdb214a + 4 code/test overlays` 快照完成 symbol-table、tracker、
+  source-contract 与 interface test目标重链，interface目标编译/链接 exit 0；前三个运行目标
+  分别4/4、5/5、全套PASS且真实 exit 0。完整三工具链16-target matrix、三套stdio smoke、
+  Syntax05 producer及per-symbol数组最终删除仍未完成。

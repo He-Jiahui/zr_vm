@@ -786,14 +786,6 @@ TZrBool ZrLanguageServer_Symbol_AddReference(SZrState *state, SZrSymbol *symbol,
     return ZR_TRUE;
 }
 
-// 获取符号的引用计数
-TZrSize ZrLanguageServer_Symbol_GetReferenceCount(SZrSymbol *symbol) {
-    if (symbol == ZR_NULL) {
-        return 0;
-    }
-    return symbol->referenceCount;
-}
-
 // 辅助函数：在作用域中查找符号
 static SZrSymbol *lookup_symbol_in_scope(SZrSymbolScope *scope, SZrString *name) {
     if (scope == ZR_NULL || name == ZR_NULL) {
