@@ -50,10 +50,13 @@ the umbrella promotion gate.
 
 Commit `f7a2920` adds the remaining direct evaluation-order regression:
 `weak.values[bump()]` and the equivalent nullable receiver both throw
-`NullReferenceError` before the computed index runs. The current MSVC runner
-reports `53 Tests / 0 Failures / 0 Ignored`, with the observable side-effect
-counter still zero. This result is not substituted for a clean GCC/Clang
-53-case replay or the pending registered graph.
+`NullReferenceError` before the computed index runs. An independent clean clone
+fixed at `581c535`, with every submodule verified clean and at its recorded
+commit, was configured as static Debug with GCC 11.4 and Clang 14. Both fresh
+binaries report `53 Tests / 0 Failures / 0 Ignored` and direct exit 0, matching
+the current MSVC 19.44 runner; the observable side-effect counter remains zero
+on all three toolchains. This closes the focused 53-case matrix but is not
+substituted for the pending stable integrated registered graph.
 
 `ctest -N` on the available MSVC build now enumerates 152 registered tests,
 including newly added benchmark targets; several executables are not present
