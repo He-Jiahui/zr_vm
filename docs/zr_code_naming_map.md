@@ -266,7 +266,6 @@
 | `ZrSemanticAnalyzerAnalyze` | `ZrLanguageServer_SemanticAnalyzer_Analyze` |
 | `ZrSemanticAnalyzerClearCache` | `ZrLanguageServer_SemanticAnalyzer_ClearCache` |
 | `ZrSemanticAnalyzerFree` | `ZrLanguageServer_SemanticAnalyzer_Free` |
-| `ZrSemanticAnalyzerGetCompletions` | `ZrLanguageServer_SemanticAnalyzer_GetCompletions` |
 | `ZrSemanticAnalyzerGetDiagnostics` | `ZrLanguageServer_SemanticAnalyzer_GetDiagnostics` |
 | `ZrSemanticAnalyzerGetHoverInfo` | `ZrLanguageServer_SemanticAnalyzer_GetHoverInfo` |
 | `ZrSemanticAnalyzerGetSymbolAt` | `ZrLanguageServer_SemanticAnalyzer_GetSymbolAt` |

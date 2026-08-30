@@ -150,12 +150,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 15:06 +08:00。
-- 总体状态：进行中。Task 7.45 已删除无生产调用的 per-symbol reference count getter，
-  并将 focused test 收敛到唯一仍在使用的 reference range数组；固定快照中的 symbol table
-  4/4、tracker 5/5 与 source-contract 全部通过，但完整 16-target matrix、三套 stdio smoke
-  和 Syntax05 imported declaration identity producer 尚未完成，Task 7/Task 8 不声明
-  Plan 03 GREEN或完成。
+- 最近更新时间：2026-08-30 15:47 +08:00。
+- 总体状态：进行中。Task 7.46 已删除无生产调用的 analyzer completion API、其完整
+  helper 闭包与只验证死路径的测试；固定 GCC/Clang 快照中的 source-contract 69/69、
+  semantic parity 15/15 全部通过，analyzer 保持同一 65 Pass/2 个既有 producer marker。
+  完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
+  尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
   ownership return-escape canonical producer/query/LSP projection；Task 6.33
@@ -503,3 +503,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   source-contract 与 interface test目标重链，interface目标编译/链接 exit 0；前三个运行目标
   分别4/4、5/5、全套PASS且真实 exit 0。完整三工具链16-target matrix、三套stdio smoke、
   Syntax05 producer及per-symbol数组最终删除仍未完成。
+
+- 补充完成时间：2026-08-30 15:47 +08:00。Task 7.46 删除全仓无生产调用的
+  `ZrLanguageServer_SemanticAnalyzer_GetCompletions` 声明/实现、其七个 completion helper
+  闭包、两个末端常量/helper及三项纯死路径测试；九项混合 analyzer 测试只移除 completion
+  分支，保留 hover、type、diagnostic 与 symbol-scope 断言。source-contract RED 在旧代码上
+  精确失败声明/实现两项后转 GREEN。固定 `eb77fae + 5 code/test overlays` 的 GCC/Clang
+  静态快照均完成 analyzer、source-contract、semantic parity 目标重链；source-contract
+  69/69、semantic parity 15/15 均真实 exit 0，analyzer 两套均为 65 Pass/2 个相同既有
+  closed-generic/owner-generic producer marker，真实 exit 1且不计本任务 GREEN。生产/测试
+  净删约1016行第二套 completion 语义；完整三工具链16-target matrix、三套stdio smoke、
+  Syntax05 producer及其余 symbol-table/analyzer consumers仍未完成。

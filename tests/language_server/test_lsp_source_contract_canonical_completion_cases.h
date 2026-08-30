@@ -6,12 +6,18 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_completion.c");
     char *consumer = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    char *analyzerHeader = read_repo_text_file_owned(
+        "zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h");
+    char *analyzerSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
 
-    if (projector == NULL || consumer == NULL) {
+    if (projector == NULL || consumer == NULL || analyzerHeader == NULL || analyzerSource == NULL) {
         printf("FAIL: could not read canonical completion sources\n");
         g_failures++;
         free(projector);
         free(consumer);
+        free(analyzerHeader);
+        free(analyzerSource);
         return;
     }
 
@@ -27,9 +33,17 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     assert_text_contains_none(
         consumer,
         "ZrLanguageServer_SemanticAnalyzer_GetCompletions");
+    assert_text_contains_none(
+        analyzerHeader,
+        "ZrLanguageServer_SemanticAnalyzer_GetCompletions");
+    assert_text_contains_none(
+        analyzerSource,
+        "ZrLanguageServer_SemanticAnalyzer_GetCompletions");
 
     free(projector);
     free(consumer);
+    free(analyzerHeader);
+    free(analyzerSource);
 }
 
 static void test_source_hover_uses_parser_symbol_query(void) {

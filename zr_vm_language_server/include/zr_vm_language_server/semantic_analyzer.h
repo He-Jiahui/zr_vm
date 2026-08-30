@@ -202,12 +202,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZ
                                                              SZrFileRange position,
                                                              SZrHoverInfo **result);
 
-// 获取代码补全
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
-                                                               SZrSemanticAnalyzer *analyzer,
-                                                               SZrFileRange position,
-                                                               SZrArray *result);
-
 // 诊断管理函数
 
 // 创建诊断

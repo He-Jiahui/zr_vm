@@ -193,14 +193,6 @@ static TZrBool has_diagnostic_code(SZrSemanticAnalyzer *analyzer, const char *co
     return ZR_FALSE;
 }
 
-static const char *completion_detail_string(SZrCompletionItem *item) {
-    if (item == ZR_NULL || item->detail == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return ZrCore_String_GetNativeString(item->detail);
-}
-
 static const char *hover_contents_string(SZrHoverInfo *info) {
     if (info == ZR_NULL || info->contents == ZR_NULL) {
         return ZR_NULL;
@@ -285,27 +277,6 @@ static TZrSize count_logical_facts_with_known_value(const SZrSemanticContext *co
     return count;
 }
 
-static TZrBool has_completion_label(SZrArray *completions, const char *label) {
-    TZrSize i;
-
-    if (completions == ZR_NULL || label == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (i = 0; i < completions->length; i++) {
-        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
-        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
-            continue;
-        }
-
-        if (strcmp(ZrCore_String_GetNativeString((*itemPtr)->label), label) == 0) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
 static TZrSize count_diagnostics_with_code(SZrSemanticAnalyzer *analyzer, const char *code) {
     TZrSize i;
     TZrSize count = 0;
@@ -385,56 +356,6 @@ static TZrBool ownership_fact_message_contains(const SZrSemanticOwnershipFact *f
     return fact != ZR_NULL && diagnostic_string_contains(fact->diagnosticMessage, fragment);
 }
 
-static TZrBool has_completion_detail_fragment(SZrArray *completions,
-                                              const char *label,
-                                              const char *detailFragment) {
-    TZrSize i;
-
-    if (completions == ZR_NULL || label == ZR_NULL || detailFragment == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (i = 0; i < completions->length; i++) {
-        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
-        const char *detail;
-        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
-            continue;
-        }
-
-        if (strcmp(ZrCore_String_GetNativeString((*itemPtr)->label), label) != 0) {
-            continue;
-        }
-
-        detail = completion_detail_string(*itemPtr);
-        if (detail != ZR_NULL && strstr(detail, detailFragment) != ZR_NULL) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
-static const char *completion_detail_for_label(SZrArray *completions, const char *label) {
-    TZrSize i;
-
-    if (completions == ZR_NULL || label == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (i = 0; i < completions->length; i++) {
-        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
-        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
-            continue;
-        }
-
-        if (strcmp(ZrCore_String_GetNativeString((*itemPtr)->label), label) == 0) {
-            return completion_detail_string(*itemPtr);
-        }
-    }
-
-    return ZR_NULL;
-}
-
 static void describe_symbol(char *buffer, size_t bufferSize, SZrSymbol *symbol) {
     const char *name = ZR_NULL;
 
@@ -472,52 +393,6 @@ static void describe_file_range(char *buffer, size_t bufferSize, SZrFileRange ra
              (size_t)range.end.offset,
              range.end.line,
              range.end.column);
-}
-
-static void describe_completion_labels(SZrArray *completions, char *buffer, size_t bufferSize) {
-    TZrSize offset = 0;
-
-    if (buffer == ZR_NULL || bufferSize == 0) {
-        return;
-    }
-
-    buffer[0] = '\0';
-    if (completions == ZR_NULL) {
-        return;
-    }
-
-    for (TZrSize i = 0; i < completions->length && offset + 1 < bufferSize; i++) {
-        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
-        const char *label;
-        int written;
-
-        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
-            continue;
-        }
-
-        label = ZrCore_String_GetNativeString((*itemPtr)->label);
-        if (label == ZR_NULL) {
-            continue;
-        }
-
-        written = snprintf(buffer + offset,
-                           bufferSize - offset,
-                           "%s%s",
-                           offset == 0 ? "" : ", ",
-                           label);
-        if (written < 0) {
-            break;
-        }
-        if ((size_t)written >= bufferSize - offset) {
-            offset = bufferSize - 1;
-            break;
-        }
-        offset += (size_t)written;
-    }
-
-    if (offset == 0 && bufferSize > 0) {
-        snprintf(buffer, bufferSize, "<none>");
-    }
 }
 
 // 测试语义分析器创建和释放
@@ -1199,13 +1074,13 @@ static void test_semantic_analyzer_accepts_all_path_return_chains(SZrState *stat
     TEST_PASS(timer, "Semantic Analyzer Accepts All Path Return Chains");
 }
 
-static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_and_completion_detail(
+static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover(
     SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail");
+    TEST_START("Semantic Analyzer Exact Type Failure Surfaces Explicit Hover");
 
-    TEST_INFO("Strong typed hover/completion failure surface",
-              "Symbols that fail exact inference must surface 'cannot infer exact type' in hover and completion detail instead of a weak object fallback");
+    TEST_INFO("Strong typed hover failure surface",
+              "Symbols that fail exact inference must surface 'cannot infer exact type' in hover instead of a weak object fallback");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -1216,16 +1091,13 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_an
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "exact_type_failure_detail_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange hoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *hoverText;
-        const char *detailText;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover",
                       "Failed to create semantic analyzer");
             return;
         }
@@ -1233,7 +1105,7 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_an
         if (ast == ZR_NULL) {
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover",
                       "Failed to parse test code");
             return;
         }
@@ -1242,7 +1114,7 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_an
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover",
                       "Failed to analyze AST");
             return;
         }
@@ -1251,35 +1123,18 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_an
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover",
                       "Expected initializer_requires_annotation for the untyped local symbol");
-            return;
-        }
-
-        completionPosition = file_range_for_nth_substring(testCode, "missing;", 1, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-        detailText = completion_detail_for_label(&completions, "missing");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "cannot infer exact type") == ZR_NULL ||
-            strstr(detailText, "object") != ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
-                      detailText != ZR_NULL ? detailText : "<null completion detail>");
             return;
         }
 
         hoverPosition = file_range_for_nth_substring(testCode, "missing;", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover",
                       "Failed to get hover info for the exact-type failure symbol");
             return;
         }
@@ -1288,21 +1143,19 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_an
         if (hoverText == ZR_NULL ||
             strstr(hoverText, "cannot infer exact type") == ZR_NULL ||
             strstr(hoverText, "object") != ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover",
                       hoverText != ZR_NULL ? hoverText : "<null hover>");
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
 
-    TEST_PASS(timer, "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail");
+    TEST_PASS(timer, "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover");
 }
 
 static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_signature_detail(SZrState *state) {
@@ -1310,7 +1163,7 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
     TEST_START("Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail");
 
     TEST_INFO("Exact return signature detail",
-              "Provable unannotated functions should expose their exact return type in hover and completion signatures instead of 'object'");
+              "Provable unannotated functions should expose their exact return type in hover instead of 'object'");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -1324,12 +1177,9 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
         SZrString *sourceName =
             ZrCore_String_Create(state, "exact_return_signature_detail_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange hoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *hoverText;
-        const char *detailText;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -1365,26 +1215,9 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
             return;
         }
 
-        completionPosition = file_range_for_nth_substring(testCode, "make(1)", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-        detailText = completion_detail_for_label(&completions, "make");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "make(seed: int): int") == ZR_NULL ||
-            strstr(detailText, "object") != ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
-                      detailText != ZR_NULL ? detailText : "<null completion detail>");
-            return;
-        }
-
         hoverPosition = file_range_for_nth_substring(testCode, "make(1)", 0, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -1397,7 +1230,6 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
         if (hoverText == ZR_NULL ||
             strstr(hoverText, "Signature: make(seed: int): int") == ZR_NULL ||
             strstr(hoverText, "object") != ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -1406,7 +1238,6 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
@@ -1898,119 +1729,6 @@ static void test_semantic_analyzer_get_diagnostics(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Get Diagnostics");
 }
 
-// 测试代码补全
-static void test_semantic_analyzer_get_completions(SZrState *state) {
-    SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Get Completions");
-    
-    TEST_INFO("Get Completions", "Getting code completion suggestions");
-    
-    SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-    if (analyzer == ZR_NULL) {
-        TEST_FAIL(timer, "Semantic Analyzer Get Completions", "Failed to create semantic analyzer");
-        return;
-    }
-    
-    // 创建测试代码并分析
-    const TZrChar *testCode = "var x = 10; var y = 20;";
-    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-    
-    if (ast != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
-    }
-    
-    // 获取补全
-    SZrFileRange position = ZrParser_FileRange_Create(
-        ZrParser_FilePosition_Create(0, 1, 0),
-        ZrParser_FilePosition_Create(0, 1, 0),
-        ZR_NULL
-    );
-    
-    SZrArray completions;
-    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 4);
-    ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, position, &completions);
-    
-    if (ast != ZR_NULL) {
-        ZrParser_Ast_Free(state, ast);
-    }
-    
-    // 补全可能为空（取决于实现），只要不崩溃就算成功
-    ZrCore_Array_Free(state, &completions);
-    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-    TEST_PASS(timer, "Semantic Analyzer Get Completions");
-}
-
-static void test_semantic_analyzer_get_completions_includes_local_scope_symbols(SZrState *state) {
-    SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Get Completions Includes Local Scope Symbols");
-
-    TEST_INFO("Local scope completions",
-              "Getting code completion suggestions inside a function body should include parameters and local variables");
-
-    {
-        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode =
-            "fn helper(seed: float) {\n"
-            "    var localValue = seed + 1.0;\n"
-            "    return localValue;\n"
-            "}\n";
-        SZrString *sourceName = ZrCore_String_Create(state, "local_completion_test.zr", 24);
-        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange position;
-        SZrArray completions;
-
-        if (analyzer == ZR_NULL) {
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
-                      "Failed to create semantic analyzer");
-            return;
-        }
-
-        if (ast == ZR_NULL) {
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
-                      "Failed to parse test code");
-            return;
-        }
-
-        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
-                      "Failed to analyze AST");
-            return;
-        }
-
-        position = ZrParser_FileRange_Create(
-            ZrParser_FilePosition_Create(0, 3, 5),
-            ZrParser_FilePosition_Create(0, 3, 5),
-            ZR_NULL
-        );
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, position, &completions);
-
-        if (!has_completion_label(&completions, "seed") ||
-            !has_completion_label(&completions, "localValue")) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
-                      "Expected parameter/local symbols in function-body completions");
-            return;
-        }
-
-        ZrCore_Array_Free(state, &completions);
-        ZrParser_Ast_Free(state, ast);
-        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-    }
-
-    TEST_PASS(timer, "Semantic Analyzer Get Completions Includes Local Scope Symbols");
-}
-
 static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Get Symbol At Resolves Local References");
@@ -2114,85 +1832,12 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
     TEST_PASS(timer, "Semantic Analyzer Get Symbol At Resolves Local References");
 }
 
-static void test_semantic_analyzer_get_completions_includes_native_hint_entries(SZrState *state) {
+static void test_semantic_analyzer_local_symbols_surface_rich_hover(SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Get Completions Includes Native Hint Entries");
+    TEST_START("Semantic Analyzer Local Symbols Surface Rich Hover");
 
-    TEST_INFO("Native hint completions",
-              "Getting code completion suggestions should surface lib_system/lib_math registered hint entries with detail text");
-
-    {
-        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode =
-            "let system = import(\"zr.system\");\n"
-            "let math = import(\"zr.math\");\n";
-        SZrString *sourceName = ZrCore_String_Create(state, "native_hint_completion_test.zr", 30);
-        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange position;
-        SZrArray completions;
-
-        if (analyzer == ZR_NULL) {
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
-                      "Failed to create semantic analyzer");
-            return;
-        }
-
-        if (ast == ZR_NULL) {
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
-                      "Failed to parse test code");
-            return;
-        }
-
-        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
-                      "Failed to analyze AST");
-            return;
-        }
-
-        position = ZrParser_FileRange_Create(
-            ZrParser_FilePosition_Create(62, 2, 29),
-            ZrParser_FilePosition_Create(62, 2, 29),
-            ZR_NULL
-        );
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 16);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, position, &completions);
-
-        if (!has_completion_label(&completions, "readText") ||
-            !has_completion_detail_fragment(&completions, "readText", "readText(") ||
-            !has_completion_label(&completions, "Matrix4x4") ||
-            !has_completion_detail_fragment(&completions, "Matrix4x4", "struct Matrix4x4") ||
-            !has_completion_label(&completions, "translation")) {
-            char labels[512];
-            describe_completion_labels(&completions, labels, sizeof(labels));
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
-                      labels);
-            return;
-        }
-
-        ZrCore_Array_Free(state, &completions);
-        ZrParser_Ast_Free(state, ast);
-        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-    }
-
-    TEST_PASS(timer, "Semantic Analyzer Get Completions Includes Native Hint Entries");
-}
-
-static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completion_detail(SZrState *state) {
-    SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail");
-
-    TEST_INFO("Local symbol hover/completion detail",
-              "Local parameters and variables should surface type and access detail in completion and hover results");
+    TEST_INFO("Local symbol hover detail",
+              "Local variables should surface type and access detail in hover results");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -2203,15 +1848,13 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completi
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "rich_hover_local_symbols_test.zr", 32);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange hoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *hoverText;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
-                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Semantic Analyzer Local Symbols Surface Rich Hover",
                       "Failed to create semantic analyzer");
             return;
         }
@@ -2219,7 +1862,7 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completi
         if (ast == ZR_NULL) {
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Semantic Analyzer Local Symbols Surface Rich Hover",
                       "Failed to parse test code");
             return;
         }
@@ -2228,45 +1871,18 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completi
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Semantic Analyzer Local Symbols Surface Rich Hover",
                       "Failed to analyze AST");
-            return;
-        }
-
-        completionPosition = file_range_for_nth_substring(testCode, "return", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-
-        if (!has_completion_detail_fragment(&completions, "seed", "float") ||
-            !has_completion_detail_fragment(&completions, "localValue", "float") ||
-            !has_completion_detail_fragment(&completions, "localValue", "private")) {
-            char details[512];
-            snprintf(details,
-                     sizeof(details),
-                     "seed=%s | localValue=%s",
-                     completion_detail_for_label(&completions, "seed") != ZR_NULL
-                        ? completion_detail_for_label(&completions, "seed")
-                        : "<null>",
-                     completion_detail_for_label(&completions, "localValue") != ZR_NULL
-                        ? completion_detail_for_label(&completions, "localValue")
-                        : "<null>");
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
-                      details);
             return;
         }
 
         hoverPosition = file_range_for_nth_substring(testCode, "localValue", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Semantic Analyzer Local Symbols Surface Rich Hover",
                       "Failed to get hover info for local variable reference");
             return;
         }
@@ -2276,29 +1892,27 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completi
             strstr(hoverText, "localValue") == ZR_NULL ||
             strstr(hoverText, "float") == ZR_NULL ||
             strstr(hoverText, "private") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Semantic Analyzer Local Symbols Surface Rich Hover",
                       hoverText != ZR_NULL ? hoverText : "<null hover>");
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
 
-    TEST_PASS(timer, "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail");
+    TEST_PASS(timer, "Semantic Analyzer Local Symbols Surface Rich Hover");
 }
 
 static void test_semantic_analyzer_generic_function_symbols_surface_signature_detail(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Generic Function Symbols Surface Signature Detail");
 
-    TEST_INFO("Generic hover/completion detail",
-              "Generic function symbols should expose explicit generic and passing-mode signature text in completion and hover");
+    TEST_INFO("Generic hover detail",
+              "Generic function symbols should expose explicit generic and passing-mode signature text in hover");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -2312,12 +1926,9 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "generic_signature_hover_test.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange hoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *hoverText;
-        const char *detailText;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -2369,28 +1980,9 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
             return;
         }
 
-        completionPosition = file_range_for_nth_substring(testCode, "swap<int>", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-
-        detailText = completion_detail_for_label(&completions, "swap");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "swap<T>(") == ZR_NULL ||
-            strstr(detailText, "value: ref T") == ZR_NULL ||
-            strstr(detailText, "): T") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
-                      detailText != ZR_NULL ? detailText : "<null detail>");
-            return;
-        }
-
         hoverPosition = file_range_for_nth_substring(testCode, "swap", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2404,7 +1996,6 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
             strstr(hoverText, "swap<T>(") == ZR_NULL ||
             strstr(hoverText, "value: ref T") == ZR_NULL ||
             strstr(hoverText, "Access: public") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2413,7 +2004,6 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
@@ -2510,8 +2100,8 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
 
-    TEST_INFO("Ownership-aware hover/completion detail",
-              "Function completion detail and hover should preserve AST ownership qualifiers on parameters and return types");
+    TEST_INFO("Ownership-aware hover detail",
+              "Function hover should preserve AST ownership qualifiers on parameters and return types");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -2528,11 +2118,8 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_signature_hover_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange hoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
-        const char *detailText;
         const char *hoverText;
         SZrString *takeName;
         SZrString *seedName;
@@ -2585,28 +2172,9 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
             return;
         }
 
-        completionPosition = file_range_for_nth_substring(testCode, "take(sharedSeed)", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-
-        detailText = completion_detail_for_label(&completions, "take");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "take(") == ZR_NULL ||
-            strstr(detailText, "seed: Shared<Hero>") == ZR_NULL ||
-            strstr(detailText, "): Unique<Hero>") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
-                      detailText != ZR_NULL ? detailText : "<null detail>");
-            return;
-        }
-
         hoverPosition = file_range_for_nth_substring(testCode, "take(sharedSeed)", 0, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2620,7 +2188,6 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
             strstr(hoverText, "Signature: take(") == ZR_NULL ||
             strstr(hoverText, "seed: Shared<Hero>") == ZR_NULL ||
             strstr(hoverText, "): Unique<Hero>") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2629,7 +2196,6 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
@@ -2643,7 +2209,7 @@ static void test_semantic_analyzer_signature_type_display_fails_closed_without_c
     TEST_START("Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact");
 
     TEST_INFO("Canonical declaration signature display",
-              "Hover and completion signatures must not render an unresolved AST type as an exact type");
+              "Hover signatures must not render an unresolved AST type as an exact type");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -2659,11 +2225,8 @@ static void test_semantic_analyzer_signature_type_display_fails_closed_without_c
                 "signature_type_display_fail_closed_test.zr",
                 strlen("signature_type_display_fail_closed_test.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange hoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
-        const TZrChar *detailText;
         const TZrChar *hoverText;
 
         if (analyzer == ZR_NULL) {
@@ -2687,26 +2250,9 @@ static void test_semantic_analyzer_signature_type_display_fails_closed_without_c
                       "Failed to analyze unresolved declaration type fixture");
             return;
         }
-        completionPosition = file_range_for_nth_substring(testCode, "redact(null)", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-        detailText = completion_detail_for_label(&completions, "redact");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "value: cannot infer exact type") == ZR_NULL ||
-            strstr(detailText, "): cannot infer exact type") == ZR_NULL ||
-            strstr(detailText, "MissingType") != ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
-                      detailText != ZR_NULL ? detailText : "<null completion detail>");
-            return;
-        }
-        hoverPosition = completionPosition;
+        hoverPosition = file_range_for_nth_substring(testCode, "redact(null)", 0, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2719,7 +2265,6 @@ static void test_semantic_analyzer_signature_type_display_fails_closed_without_c
             strstr(hoverText, "value: cannot infer exact type") == ZR_NULL ||
             strstr(hoverText, "): cannot infer exact type") == ZR_NULL ||
             strstr(hoverText, "MissingType") != ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2728,7 +2273,6 @@ static void test_semantic_analyzer_signature_type_display_fails_closed_without_c
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
@@ -2740,8 +2284,8 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Generic Type Symbols Surface Signature Detail");
 
-    TEST_INFO("Generic type hover/completion detail",
-              "Generic class and interface symbols should surface inheritance, const generics, variance, and where clauses in completion and hover");
+    TEST_INFO("Generic type hover detail",
+              "Generic class and interface symbols should surface inheritance, const generics, variance, and where clauses in hover");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -2761,12 +2305,9 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "generic_type_signature_hover_test.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange derivedHoverPosition;
         SZrFileRange producerHoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
-        const char *detailText;
         const char *hoverText;
 
         if (analyzer == ZR_NULL) {
@@ -2803,40 +2344,9 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
             return;
         }
 
-        completionPosition = file_range_for_nth_substring(testCode, "value;", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-
-        detailText = completion_detail_for_label(&completions, "Derived");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "class Derived<T, const N: int>") == ZR_NULL ||
-            strstr(detailText, ": Producer<T>") == ZR_NULL ||
-            strstr(detailText, "where T: class, new()") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
-                      detailText != ZR_NULL ? detailText : "<null detail>");
-            return;
-        }
-
-        detailText = completion_detail_for_label(&completions, "Producer");
-        if (detailText == ZR_NULL ||
-            strstr(detailText, "interface Producer<out T>") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
-                      detailText != ZR_NULL ? detailText : "<null detail>");
-            return;
-        }
-
         derivedHoverPosition = file_range_for_nth_substring(testCode, "Derived", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, derivedHoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2851,7 +2361,6 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
             strstr(hoverText, "Resolved Type: Derived<Item, 4>") == ZR_NULL ||
             strstr(hoverText, "where T: class, new()") == ZR_NULL ||
             strstr(hoverText, "Access: private") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2863,7 +2372,6 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
         producerHoverPosition = file_range_for_nth_substring(testCode, "Producer", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, producerHoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2875,7 +2383,6 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
         hoverText = hover_contents_string(hoverInfo);
         if (hoverText == ZR_NULL ||
             strstr(hoverText, "interface Producer<out T>") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -2884,7 +2391,6 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
             return;
         }
 
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
@@ -4552,12 +4058,12 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
     TEST_PASS(timer, "Semantic Analyzer Reports Invalid FFI Decorators");
 }
 
-static void test_semantic_analyzer_class_method_scope_surfaces_this_super_and_locals(SZrState *state) {
+static void test_semantic_analyzer_class_method_scope_surfaces_receiver_and_local_hover(SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Class Method Scope Surfaces This Super And Locals");
+    TEST_START("Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover");
 
     TEST_INFO("Class method scopes",
-              "Instance methods should expose this/super receivers, parameters, and locals to completion and hover");
+              "Instance methods should expose receiver and local symbols to hover");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -4580,16 +4086,14 @@ static void test_semantic_analyzer_class_method_scope_surfaces_this_super_and_lo
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "class_scope_receivers_test.zr", 28);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange completionPosition;
         SZrFileRange thisHoverPosition;
         SZrFileRange localHoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *hoverText;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       "Failed to create semantic analyzer");
             return;
         }
@@ -4597,7 +4101,7 @@ static void test_semantic_analyzer_class_method_scope_surfaces_this_super_and_lo
         if (ast == ZR_NULL) {
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       "Failed to parse class scope test code");
             return;
         }
@@ -4606,54 +4110,29 @@ static void test_semantic_analyzer_class_method_scope_surfaces_this_super_and_lo
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       "Failed to analyze class scope test code");
-            return;
-        }
-
-        completionPosition = file_range_for_nth_substring(testCode, "localResult;", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
-
-        if (!has_completion_label(&completions, "this") ||
-            !has_completion_label(&completions, "super") ||
-            !has_completion_label(&completions, "extra") ||
-            !has_completion_label(&completions, "localResult")) {
-            char labels[512];
-            char rangeDetail[128];
-            char reason[768];
-            describe_completion_labels(&completions, labels, sizeof(labels));
-            describe_file_range(rangeDetail, sizeof(rangeDetail), completionPosition);
-            snprintf(reason, sizeof(reason), "position=%s labels=%s", rangeDetail, labels);
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
-                      reason);
             return;
         }
 
         thisHoverPosition = file_range_for_nth_substring(testCode, "this.derivedValue", 0, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, thisHoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       "Failed to get hover info for this");
             return;
         }
 
         hoverText = hover_contents_string(hoverInfo);
         if (hoverText == ZR_NULL || strstr(hoverText, "this") == ZR_NULL || strstr(hoverText, "Derived") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       hoverText != ZR_NULL ? hoverText : "<null hover>");
             return;
         }
@@ -4663,34 +4142,31 @@ static void test_semantic_analyzer_class_method_scope_surfaces_this_super_and_lo
         localHoverPosition = file_range_for_nth_substring(testCode, "localResult", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, localHoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       "Failed to get hover info for localResult");
             return;
         }
 
         hoverText = hover_contents_string(hoverInfo);
         if (hoverText == ZR_NULL || strstr(hoverText, "localResult") == ZR_NULL || strstr(hoverText, "int") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Class Method Scope Surfaces This Super And Locals",
+                      "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover",
                       hoverText != ZR_NULL ? hoverText : "<null hover>");
             return;
         }
 
         ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
 
-    TEST_PASS(timer, "Semantic Analyzer Class Method Scope Surfaces This Super And Locals");
+    TEST_PASS(timer, "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover");
 }
 
 static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_symbols(SZrState *state) {
@@ -4716,11 +4192,8 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "compile_time_test_scope_symbols.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange testCompletionPosition;
-        SZrFileRange lambdaCompletionPosition;
         SZrFileRange compileTimeHoverPosition;
         SZrFileRange lambdaHoverPosition;
-        SZrArray completions;
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *hoverText;
 
@@ -4748,41 +4221,6 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
             return;
         }
 
-        testCompletionPosition = file_range_for_nth_substring(testCode, "return typed", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, testCompletionPosition, &completions);
-
-        if (!has_completion_label(&completions, "result") ||
-            !has_completion_label(&completions, "typed") ||
-            !has_completion_label(&completions, "addBias")) {
-            char labels[512];
-            describe_completion_labels(&completions, labels, sizeof(labels));
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols",
-                      labels);
-            return;
-        }
-        ZrCore_Array_Free(state, &completions);
-
-        lambdaCompletionPosition = file_range_for_nth_substring(testCode, "return value + result", 0, ZR_FALSE);
-        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
-        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, lambdaCompletionPosition, &completions);
-        if (!has_completion_label(&completions, "value") ||
-            !has_completion_label(&completions, "result")) {
-            char labels[512];
-            describe_completion_labels(&completions, labels, sizeof(labels));
-            ZrCore_Array_Free(state, &completions);
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols",
-                      labels);
-            return;
-        }
-
         compileTimeHoverPosition = file_range_for_nth_substring(testCode, "seed + MAX_SIZE", 0, ZR_FALSE);
         compileTimeHoverPosition.start.offset += 7;
         compileTimeHoverPosition.end.offset += 7;
@@ -4790,7 +4228,6 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
         compileTimeHoverPosition.end.column += 7;
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, compileTimeHoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -4814,7 +4251,6 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
                      hoverText != ZR_NULL ? hoverText : "<null hover>",
                      positionDetail,
                      symbolDetail);
-            ZrCore_Array_Free(state, &completions);
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -4829,7 +4265,6 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
         lambdaHoverPosition = file_range_for_nth_substring(testCode, "result", 1, ZR_FALSE);
         if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, lambdaHoverPosition, &hoverInfo) ||
             hoverInfo == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -4840,7 +4275,6 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
 
         hoverText = hover_contents_string(hoverInfo);
         if (hoverText == ZR_NULL || strstr(hoverText, "result") == ZR_NULL || strstr(hoverText, "int") == ZR_NULL) {
-            ZrCore_Array_Free(state, &completions);
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -4851,7 +4285,6 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
         }
 
         ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
-        ZrCore_Array_Free(state, &completions);
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
@@ -5030,7 +4463,7 @@ int main(void) {
     test_semantic_analyzer_accepts_all_path_return_chains(state);
     TEST_DIVIDER();
 
-    test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_and_completion_detail(state);
+    test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_unannotated_function_surfaces_exact_return_signature_detail(state);
@@ -5050,22 +4483,13 @@ int main(void) {
     test_semantic_analyzer_get_diagnostics(state);
     TEST_DIVIDER();
     
-    test_semantic_analyzer_get_completions(state);
-    TEST_DIVIDER();
-
-    test_semantic_analyzer_get_completions_includes_local_scope_symbols(state);
-    TEST_DIVIDER();
-
     test_semantic_analyzer_get_symbol_at_resolves_local_references(state);
     TEST_DIVIDER();
 
-    test_semantic_analyzer_get_completions_includes_native_hint_entries(state);
+    test_semantic_analyzer_local_symbols_surface_rich_hover(state);
     TEST_DIVIDER();
 
-    test_semantic_analyzer_local_symbols_surface_rich_hover_and_completion_detail(state);
-    TEST_DIVIDER();
-
-    test_semantic_analyzer_class_method_scope_surfaces_this_super_and_locals(state);
+    test_semantic_analyzer_class_method_scope_surfaces_receiver_and_local_hover(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_symbols(state);
