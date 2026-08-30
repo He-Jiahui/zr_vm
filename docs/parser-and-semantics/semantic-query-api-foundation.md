@@ -500,6 +500,10 @@ callable TypeId remains on `CallAt`, so a generic call does not overwrite every
 candidate with a call-site specialization. The candidate list deliberately
 does not claim overload viability, conversion score, argument-to-parameter
 mapping, or a text-derived alternative when the target is unresolved.
+The selected target and overload membership are atomic: if a referenced
+overload-set row omits the already-resolved target, the query clears its reusable
+output and fails closed instead of returning a candidate list with no selected
+row or inserting a same-name substitute.
 
 ### CallAt Metadata Projection
 

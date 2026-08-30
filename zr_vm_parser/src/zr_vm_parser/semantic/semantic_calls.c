@@ -678,6 +678,10 @@ TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
             }
         }
     }
+    if (!semantic_calls_has_candidate(outCandidates, call.targetSymbolId)) {
+        outCandidates->length = 0U;
+        return ZR_FALSE;
+    }
     semantic_calls_sort_candidates(outCandidates);
     return outCandidates->length > 0U;
 }

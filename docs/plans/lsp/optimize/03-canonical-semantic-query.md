@@ -150,14 +150,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 18:33 +08:00。
-- 总体状态：进行中。Task 3.16 已将 relation query 输出排序收敛为完整 structured identity；
-  line-only ranges 不再因零 offset 保留 fact append 顺序。固定 GCC/Clang 快照中的
-  relation/query/symbol/call/parity/source-contract 门禁分别为 `22/30/21/14/15/70`，均真实
+- 最近更新时间：2026-08-30 18:44 +08:00。
+- 总体状态：进行中。Task 4.13 已收紧 overload candidate projection；candidate set 若遗漏
+  已解析 target，会清空输出并 fail closed。固定 GCC/Clang 快照中的
+  call/query/relation/symbol/parity/source-contract 门禁分别为 `15/30/22/21/15/70`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 3.16 relation deterministic structured ordering；Task 3.15 relation
+- 本阶段完成项目：Task 4.13 overload selected-target atomic consistency；Task 3.16 relation
+  deterministic structured ordering；Task 3.15 relation
   node-scope exact source identity；Task 4.12 call-edge
   deterministic coordinate ordering；Task 4.11 call-edge
   line-only range identity；Task 4.10 call-edge exact
@@ -647,3 +648,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `semantic_relations_order.c`，主 orchestrator 降至约860行。两套 interface 仍为同一8个既有
   producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未运行 MSVC、
   完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-30 18:44 +08:00。Task 4.13 将 overload candidate projection 与
+  `CallAt` 的已解析 target 绑定为原子契约：若 structured overload-set row 未包含 selected
+  SymbolId，即使仍有其他有效 function candidates，query 也会清空复用数组并 fail closed，不返回
+  零个 `isSelected` 的不一致集合。RED 在真实重载调用 snapshot 中把 overload members 收敛为
+  未选中的另一候选，call-query `15 Tests / 1 Failure`、`Expected FALSE Was TRUE`；GREEN 后
+  GCC/Clang 均通过 `15/30/22/21/15/70` call/query/relation/symbol/parity/source-contract 门禁。
+  两套 interface 仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计
+  GREEN。本项未运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8
+  继续未完成。
