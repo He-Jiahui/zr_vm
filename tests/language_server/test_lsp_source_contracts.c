@@ -1488,6 +1488,105 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     free(projectNavigation);
 }
 
+static void test_imported_reference_consumers_require_canonical_identity(void) {
+    char *semanticQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    const char *resolveStart;
+    const char *resolveEnd;
+    const char *appendReferencesStart;
+    const char *appendReferencesEnd;
+    const char *appendHighlightsStart;
+    const char *appendHighlightsEnd;
+
+    if (semanticQuery == NULL) {
+        printf("FAIL: could not read imported reference consumer source\n");
+        g_failures++;
+        return;
+    }
+
+    resolveStart = strstr(
+        semanticQuery,
+        "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(");
+    resolveEnd = resolveStart != NULL
+                     ? strstr(resolveStart,
+                              "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(")
+                     : NULL;
+    appendReferencesStart = strstr(
+        semanticQuery,
+        "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReferences(");
+    appendReferencesEnd = appendReferencesStart != NULL
+                              ? strstr(appendReferencesStart,
+                                       "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(")
+                              : NULL;
+    appendHighlightsStart = appendReferencesEnd;
+    appendHighlightsEnd = appendHighlightsStart != NULL
+                              ? semanticQuery + strlen(semanticQuery)
+                              : NULL;
+
+    assert_text_section_contains(
+        "LspSemanticQuery_ResolveAtPosition imported canonical projection",
+        resolveStart,
+        resolveEnd,
+        "semantic_query_try_resolve_canonical_symbol");
+    assert_text_section_contains(
+        "LspSemanticQuery_ResolveAtPosition imported canonical projection",
+        resolveStart,
+        resolveEnd,
+        "semantic_query_file_range_is_known");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "query->hasCanonicalSymbol");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "semantic_query_imported_canonical_identity_is_available");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "semantic_query_append_project_imported_member_references");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "semantic_query_append_imported_member_locations_for_uri");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "AppendMatchingLocationsForUri");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendDocumentHighlights imported canonical projection",
+        appendHighlightsStart,
+        appendHighlightsEnd,
+        "query->hasCanonicalSymbol");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendDocumentHighlights imported canonical projection",
+        appendHighlightsStart,
+        appendHighlightsEnd,
+        "semantic_query_imported_canonical_identity_is_available");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendDocumentHighlights imported canonical projection",
+        appendHighlightsStart,
+        appendHighlightsEnd,
+        "ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_AppendDocumentHighlights imported canonical projection",
+        appendHighlightsStart,
+        appendHighlightsEnd,
+        "semantic_query_append_imported_member_highlights");
+
+    free(semanticQuery);
+}
+
 static void test_local_rename_consumers_require_canonical_symbol_identity(void) {
     char *interfaceSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -1851,6 +1950,7 @@ int main(void) {
     test_assignment_ownership_uses_parser_diagnostic_projection();
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
+    test_imported_reference_consumers_require_canonical_identity();
     test_local_rename_consumers_require_canonical_symbol_identity();
     test_local_definition_consumer_uses_snapshot_source();
     test_local_implementation_consumer_uses_parser_relations();

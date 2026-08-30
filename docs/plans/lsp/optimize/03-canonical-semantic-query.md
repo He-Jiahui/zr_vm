@@ -150,11 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 09:50 +08:00。
-- 总体状态：进行中。Task 7.38 已完成 local cross-project reference 的 fail-closed
-  consumer 收口并通过三工具链 source-contract；但最终 16-target 为 `10/16`，三套
-  stdio smoke 仍因 producer warning 缺失退出 1，Task 7/Task 8 尚未完成，不声明
-  Plan 03 GREEN 或完成。
+- 最近更新时间：2026-08-30 13:55 +08:00。
+- 总体状态：进行中。Task 7.42 已完成 imported-member references/highlights consumer
+  的 canonical identity 收口；当前 focused source-contract 与 GCC/Clang syntax checks
+  通过，但完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration
+  identity producer 尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN 或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
   Task 6.31 raw semantic-analyzer diagnostic escape-hatch removal；Task 6.32
   ownership return-escape canonical producer/query/LSP projection；Task 6.33
@@ -380,8 +380,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   source-local definition/references/highlights 与 project source-symbol fallback
   以及 source-local implementation 已完成，
   external metadata type-member references 已在 exact declaration 可用时 fail closed；
-  跨项目 imported function reference 的 module/member 聚合仍按名称实现，Task 7.25 RED 已证明
-  parser `SymbolAt` imported declaration range 为零，等待 Syntax05 producer 路径释放、
+  跨项目 imported function references/highlights consumer 已删除 module/member 名称聚合，
+  仅在 parser `SymbolAt` 提供有效 SymbolId，且 declaration URI/range 与 structured metadata
+  完全一致时消费 canonical relation；Task 7.25 RED 已证明当前 imported declaration range
+  仍可能为零，因此 identity 缺失时保持 fail-closed，并等待 Syntax05 producer 路径释放、
   closed-generic source type annotation 仍可能只发布 unresolved TYPE fact，等待同一 support-first
   producer 层收口；non-TYPE unresolved value/symbol query 已在 Task 7.28 fail closed；
   local navigation 已能在 canonical/raw id一致或raw pointer缺失时只消费copied SymbolId；extern/web
@@ -460,3 +462,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   source-contract executable 真实 exit 0，focused Ninja 因 CMake glob 校验 184 秒
   超时，尚无有效 interface runtime exit。外部 metadata chain producer、三工具链
   完整 16-target matrix 与三套 stdio smoke 仍未完成，Task 7/Task 8 不标记全局 GREEN。
+
+- 补充完成时间：2026-08-30 13:55 +08:00。Task 7.42 将 imported-member references
+  与 document highlights 的身份入口收紧为 parser `SymbolAt` 返回的有效 SymbolId 和
+  exact declaration range；该范围还必须与 structured metadata 的 declaration URI/range
+  完全一致。consumer 随后只调用 canonical `DeclarationOf/ReferencesOf` projector，已删除
+  module/member name aggregation helper；identity 缺失或不一致时 fail closed。WSL GCC/Clang
+  对 production source 的 `-fsyntax-only` 均真实 exit 0，重新编译运行的 source-contract
+  executable 真实 exit 0。Syntax05 imported declaration producer、完整三工具链 16-target
+  matrix 与三套 stdio smoke 仍未完成，Task 7/Task 8 不标记全局 GREEN。
