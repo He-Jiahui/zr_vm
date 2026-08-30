@@ -860,7 +860,7 @@ static void test_formatter_renders_every_current_canonical_type_shape(void) {
 #include "test_canonical_type_graph_union_cases.h"
 
 static void test_tuple_ast_projects_to_tuple_type_id(void) {
-    const TZrChar *source = "pair(): [int, bool] { return 0; }";
+    const TZrChar *source = "fn pair(): [int, bool] { return 0; }";
     SZrString *sourceName = ZrCore_String_Create(g_state, "tuple_type.zr", 13);
     SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     SZrCompilerState compiler;

@@ -168,7 +168,7 @@ M1 also does not remove `SZrInferredType`; doing so before Place/CFG and pre-exe
 
 ## Test Coverage
 
-`test_canonical_type_graph.c` contains 18 tests covering exact structural identity and distinction for every node family, normalized callable contracts, all current formatter shapes, inferred-type projection, type/const generic function symbol registration, tuple AST projection, parser-to-compiler union/generic-parameter binding, capability-based generic constructor substitution (including open const and projected-union patterns), invalid kind/arity/constraint publication boundaries, structured closed member returns, and lifecycle cleanup.
+`test_canonical_type_graph.c` contains 19 tests covering exact structural identity and distinction for every node family, normalized callable contracts, all current formatter shapes, inferred-type projection, type/const generic function symbol registration, tuple AST projection, parser-to-compiler union/generic-parameter binding, capability-based generic constructor substitution (including open const and projected-union patterns), invalid kind/arity/constraint publication boundaries, structured closed member returns, and lifecycle cleanup. The tuple AST fixture uses the current `fn pair(): [int, bool]` declaration contract; keywordless function syntax is not accepted or emulated by the canonical layer.
 
 Its stress case interns 100,000 unique generic-parameter types, re-interns sampled values without growing the graph, verifies an actual hash-bucket collision-chain lookup, and then builds and formats a 256-level array type. The pre-index implementation exceeds a five-second process gate; the indexed implementation completes the same test within that gate.
 
