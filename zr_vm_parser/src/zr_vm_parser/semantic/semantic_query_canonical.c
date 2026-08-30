@@ -101,6 +101,64 @@ static TZrSize canonical_query_call_reference_completeness(
     return completeness;
 }
 
+static TZrBool canonical_query_call_argument_parameter_type_matches(
+        const SZrSemanticContext *context,
+        const SZrCanonicalParameterContract *contract,
+        TZrTypeId parameterTypeId) {
+    const SZrCanonicalTypeNode *contractType;
+
+    if (context == ZR_NULL || contract == ZR_NULL ||
+        parameterTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (parameterTypeId == contract->typeId) {
+        return ZR_TRUE;
+    }
+    if (contract->passingForm == ZR_CANONICAL_PASSING_VALUE) {
+        return ZR_FALSE;
+    }
+    contractType = ZrParser_CanonicalType_Find(context, contract->typeId);
+    return (TZrBool)(contractType != ZR_NULL &&
+                     contractType->kind == ZR_CANONICAL_TYPE_REF &&
+                     contractType->data.refType.pointeeTypeId == parameterTypeId);
+}
+
+static TZrBool canonical_query_call_argument_passing_matches(
+        const SZrCanonicalParameterContract *contract,
+        EZrParameterPassingMode passingMode) {
+    if (contract == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (contract->passingForm) {
+        case ZR_CANONICAL_PASSING_VALUE:
+            return passingMode == ZR_PARAMETER_PASSING_MODE_VALUE;
+        case ZR_CANONICAL_PASSING_IN:
+            return passingMode == ZR_PARAMETER_PASSING_MODE_IN;
+        case ZR_CANONICAL_PASSING_REF:
+        case ZR_CANONICAL_PASSING_REF_READONLY:
+            return passingMode == ZR_PARAMETER_PASSING_MODE_REF;
+        case ZR_CANONICAL_PASSING_OUT:
+            return passingMode == ZR_PARAMETER_PASSING_MODE_OUT;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool canonical_query_call_argument_parameter_is_unique(
+        const SZrArray *mappings,
+        TZrSize mappingIndex,
+        TZrSize parameterIndex) {
+    for (TZrSize priorIndex = 0U; priorIndex < mappingIndex; priorIndex++) {
+        const SZrSemanticCallArgumentFact *prior =
+                (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+                        (SZrArray *)mappings, priorIndex);
+        if (prior == ZR_NULL || prior->parameterIndex == parameterIndex) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool canonical_query_call_argument_mappings_valid(
         const SZrSemanticContext *context,
         const SZrSemanticExpressionFact *expression,
@@ -125,12 +183,30 @@ static TZrBool canonical_query_call_argument_mappings_valid(
         const SZrSemanticCallArgumentFact *mapping =
                 (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
                         (SZrArray *)&reference->argumentMappings, index);
+        const SZrCanonicalParameterContract *parameterContract =
+                mapping != ZR_NULL &&
+                                mapping->parameterIndex <
+                                        callableType->data.function.parameterContracts.length
+                        ? (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+                                  (SZrArray *)&callableType->data.function.parameterContracts,
+                                  mapping->parameterIndex)
+                        : ZR_NULL;
         if (mapping == ZR_NULL || mapping->argumentIndex != index ||
-            mapping->parameterIndex >=
-                    callableType->data.function.parameterContracts.length ||
             mapping->argumentTypeId == ZR_SEMANTIC_ID_INVALID ||
             mapping->parameterTypeId == ZR_SEMANTIC_ID_INVALID ||
-            mapping->conversion == ZR_SEMANTIC_CALL_CONVERSION_UNKNOWN ||
+            (mapping->conversion != ZR_SEMANTIC_CALL_CONVERSION_EXACT &&
+             mapping->conversion != ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT) ||
+            !canonical_query_call_argument_parameter_is_unique(
+                    &reference->argumentMappings,
+                    index,
+                    mapping->parameterIndex) ||
+            ZrParser_CanonicalType_Find(context, mapping->argumentTypeId) == ZR_NULL ||
+            !canonical_query_call_argument_parameter_type_matches(
+                    context, parameterContract, mapping->parameterTypeId) ||
+            !canonical_query_call_argument_passing_matches(
+                    parameterContract, mapping->passingMode) ||
+            ((mapping->argumentTypeId == mapping->parameterTypeId) !=
+             (mapping->conversion == ZR_SEMANTIC_CALL_CONVERSION_EXACT)) ||
             !canonical_query_same_optional_source_exact(
                     expression->range.source, mapping->argumentRange.source) ||
             !canonical_query_contains(

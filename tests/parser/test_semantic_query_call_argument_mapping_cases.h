@@ -15,7 +15,13 @@ static void test_call_at_projects_source_argument_mapping_and_conversion(void) {
     SZrCompilerState cs;
     SZrParserSemanticCallQuery reorderCall;
     SZrParserSemanticCallQuery widenCall;
+    SZrSemanticCallArgumentFact *firstMapping;
+    SZrSemanticCallArgumentFact *secondMapping;
     const SZrSemanticCallArgumentFact *mapping;
+    TZrTypeId originalParameterTypeId;
+    TZrSize originalParameterIndex;
+    EZrParameterPassingMode originalPassingMode;
+    EZrSemanticCallConversion originalConversion;
     const TZrChar *argumentText;
 
     TEST_ASSERT_NOT_NULL(sourceName);
@@ -41,8 +47,9 @@ static void test_call_at_projects_source_argument_mapping_and_conversion(void) {
     TEST_ASSERT_TRUE(reorderCall.argumentMappings->isValid);
     TEST_ASSERT_EQUAL_UINT(2U, reorderCall.argumentMappings->length);
 
-    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+    firstMapping = (SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
             (SZrArray *)reorderCall.argumentMappings, 0U);
+    mapping = firstMapping;
     TEST_ASSERT_NOT_NULL(mapping);
     TEST_ASSERT_EQUAL_UINT(0U, mapping->argumentIndex);
     TEST_ASSERT_EQUAL_UINT(1U, mapping->parameterIndex);
@@ -59,8 +66,9 @@ static void test_call_at_projects_source_argument_mapping_and_conversion(void) {
                            mapping->argumentRange.end.offset);
     TEST_ASSERT_TRUE(mapping->argumentRange.source == sourceName);
 
-    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+    secondMapping = (SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
             (SZrArray *)reorderCall.argumentMappings, 1U);
+    mapping = secondMapping;
     TEST_ASSERT_NOT_NULL(mapping);
     TEST_ASSERT_EQUAL_UINT(1U, mapping->argumentIndex);
     TEST_ASSERT_EQUAL_UINT(0U, mapping->parameterIndex);
@@ -86,10 +94,9 @@ static void test_call_at_projects_source_argument_mapping_and_conversion(void) {
     TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, mapping->parameterTypeId);
     TEST_ASSERT_NOT_EQUAL(mapping->argumentTypeId, mapping->parameterTypeId);
 
-    mapping = (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
-            (SZrArray *)reorderCall.argumentMappings, 0U);
-    TEST_ASSERT_NOT_NULL(mapping);
-    ((SZrSemanticCallArgumentFact *)mapping)->parameterIndex = 2U;
+    TEST_ASSERT_NOT_NULL(firstMapping);
+    TEST_ASSERT_NOT_NULL(secondMapping);
+    firstMapping->parameterIndex = 2U;
     memset(&reorderCall, 0xA5, sizeof(reorderCall));
     TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
             cs.semanticContext,
@@ -99,6 +106,65 @@ static void test_call_at_projects_source_argument_mapping_and_conversion(void) {
     TEST_ASSERT_NULL(reorderCall.argumentMappings);
     TEST_ASSERT_NULL(reorderCall.expression);
     TEST_ASSERT_NULL(reorderCall.reference);
+    firstMapping->parameterIndex = 1U;
+
+    originalParameterTypeId = firstMapping->parameterTypeId;
+    firstMapping->parameterTypeId = secondMapping->parameterTypeId;
+    memset(&reorderCall, 0xA5, sizeof(reorderCall));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "reorder", 1U),
+            ZR_NULL,
+            &reorderCall));
+    TEST_ASSERT_NULL(reorderCall.argumentMappings);
+    TEST_ASSERT_NULL(reorderCall.expression);
+    TEST_ASSERT_NULL(reorderCall.reference);
+    firstMapping->parameterTypeId = originalParameterTypeId;
+
+    originalParameterIndex = secondMapping->parameterIndex;
+    originalParameterTypeId = secondMapping->parameterTypeId;
+    originalConversion = secondMapping->conversion;
+    secondMapping->parameterIndex = firstMapping->parameterIndex;
+    secondMapping->parameterTypeId = firstMapping->parameterTypeId;
+    secondMapping->conversion = ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT;
+    memset(&reorderCall, 0xA5, sizeof(reorderCall));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "reorder", 1U),
+            ZR_NULL,
+            &reorderCall));
+    TEST_ASSERT_NULL(reorderCall.argumentMappings);
+    TEST_ASSERT_NULL(reorderCall.expression);
+    TEST_ASSERT_NULL(reorderCall.reference);
+    secondMapping->parameterIndex = originalParameterIndex;
+    secondMapping->parameterTypeId = originalParameterTypeId;
+    secondMapping->conversion = originalConversion;
+
+    originalPassingMode = firstMapping->passingMode;
+    firstMapping->passingMode = ZR_PARAMETER_PASSING_MODE_REF;
+    memset(&reorderCall, 0xA5, sizeof(reorderCall));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "reorder", 1U),
+            ZR_NULL,
+            &reorderCall));
+    TEST_ASSERT_NULL(reorderCall.argumentMappings);
+    TEST_ASSERT_NULL(reorderCall.expression);
+    TEST_ASSERT_NULL(reorderCall.reference);
+    firstMapping->passingMode = originalPassingMode;
+
+    originalConversion = firstMapping->conversion;
+    firstMapping->conversion = ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT;
+    memset(&reorderCall, 0xA5, sizeof(reorderCall));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "reorder", 1U),
+            ZR_NULL,
+            &reorderCall));
+    TEST_ASSERT_NULL(reorderCall.argumentMappings);
+    TEST_ASSERT_NULL(reorderCall.expression);
+    TEST_ASSERT_NULL(reorderCall.reference);
+    firstMapping->conversion = originalConversion;
 
     call_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);

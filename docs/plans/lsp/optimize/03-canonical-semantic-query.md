@@ -150,18 +150,18 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 00:45 +08:00。
-- 总体状态：进行中。Task 4.22 已把 structured argument mapping 扩展到 source `super(...)`，
-  由resolved base-constructor signature发布implicit/exact rows；任一row无法证明时producer原子清空
-  可选mapping，保留基础call/signature contract且禁止consumer补推。
+- 最近更新时间：2026-08-31 01:13 +08:00。
+- 总体状态：进行中。Task 4.23 已把 non-empty structured argument mapping 从“字段非空”收紧为
+  selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
+  exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
   固定 GCC/Clang 快照中的 call/query/relation/symbol/parity/source-contract 门禁分别为
-  `25/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15` 和
-  独占串行 type-inference `124/124`，均真实
+  `25/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 4.22 source super-constructor argument mapping；Task 4.21 source
+- 本阶段完成项目：Task 4.23 argument mapping canonical-contract integrity；Task 4.22 source
+  super-constructor argument mapping；Task 4.21 source
   constructor argument mapping/conversion；Task 4.20
   source free-call argument mapping/conversion；Task 4.19
   call-expression exactness refinement；Task 4.18 call source
@@ -764,3 +764,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   signature interface case恢复PASS，两套interface仅余固定8个既有marker、delta 0且不计GREEN。
   receiver/member、`.zro`/native mapping parity、receiver `TypeId`、MSVC、完整16-target matrix与
   三套stdio smoke尚未完成。
+
+- 补充完成时间：2026-08-31 01:13 +08:00。Task 4.23 将 `CallAt` 对 non-empty
+  `argumentMappings` 的校验收紧到 selected callable parameter contract。RED 在合法named reorder
+  fact中依次注入另一个有效parameter `TypeId`、错误passing mode与和相等TypeId矛盾的IMPLICIT
+  conversion；旧query接受首个损坏row，calls真实exit 1、`25 Tests / 1 Failure`、
+  `Expected FALSE Was TRUE`。第二个RED把两条自洽row绑定到同一parameter，仍为`25/1`和同一
+  failure。GREEN 要求parameter binding唯一、parameter type匹配canonical contract（non-value可为
+  ref wrapper或其pointee）、passing mode匹配passing form、argument type存在且EXACT/IMPLICIT与
+  TypeId相等性一致。固定GCC/Clang快照均通过calls/query/relations/symbols/parity/source-contract/facts/
+  canonical `25/30/22/21/15/70/15/21`、真实exit 0；两套interface仍仅固定8个既有producer
+  marker，delta 0且不计GREEN。只读反向审计确认source `in/ref/out`调用当前尚未发布`hasCallInfo`
+  expression fact，未进入mapping query；该producer缺口、receiver/member、`.zro`/native parity、
+  receiver `TypeId`、MSVC、完整16-target matrix与三套stdio smoke继续未完成。

@@ -828,9 +828,14 @@ owned by the semantic snapshot. The reference-fact append path deep-copies the
 array, and snapshot reset frees it. A consumer that retains mappings beyond the
 snapshot lifetime must copy the scalar ids and ranges. The query fails closed
 when a non-empty mapping is not dense by argument index, disagrees with the
-call argument count, references a missing callable parameter, carries invalid
-type ids or unknown conversion, or has a range/source outside the selected
-call expression.
+call argument count, binds one parameter more than once, references a missing
+callable parameter, or carries a parameter `TypeId`/passing mode that disagrees
+with the selected callable's canonical parameter contract. For non-value
+passing, the row may identify the contract's canonical ref wrapper or its
+canonical pointee; arbitrary valid type ids are rejected. The query also rejects
+missing canonical argument types, conversion values other than exact/implicit,
+exact conversion with unequal type ids, implicit conversion with equal type ids,
+and ranges/sources outside the selected call expression.
 
 Constructor fact production runs after the constructor target and signature are
 resolved. When that path has not already published an exact argument expression
