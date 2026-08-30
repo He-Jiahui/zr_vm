@@ -378,6 +378,69 @@ static void test_primitive_type_use_publishes_source_display_alias(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_owner_inner_type_use_publishes_source_display_alias(void) {
+    const TZrChar *source = "var handle: Unique<i64> = null;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "owner_inner_alias_display.zr");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrGenericType *genericType;
+    SZrAstNode *argumentNode;
+    SZrCompilerState cs;
+    SZrInferredType inferred;
+    TZrTypeId intTypeId;
+    TZrTypeId ownerTypeId;
+    SZrString *alias;
+    TZrChar buffer[64];
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT(1U, ast->data.script.statements->count);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+    TEST_ASSERT_NOT_NULL(declaration->data.variableDeclaration.typeInfo);
+    TEST_ASSERT_NOT_NULL(declaration->data.variableDeclaration.typeInfo->name);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_GENERIC_TYPE,
+            declaration->data.variableDeclaration.typeInfo->name->type);
+    genericType = &declaration->data.variableDeclaration.typeInfo->name->data.genericType;
+    TEST_ASSERT_NOT_NULL(genericType->params);
+    TEST_ASSERT_EQUAL_UINT(1U, genericType->params->count);
+    argumentNode = genericType->params->nodes[0];
+    TEST_ASSERT_NOT_NULL(argumentNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, argumentNode->type);
+    TEST_ASSERT_NOT_NULL(argumentNode->data.type.name);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    ZrParser_InferredType_Init(g_state, &inferred, ZR_VALUE_TYPE_UNKNOWN);
+    TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+            &cs, declaration->data.variableDeclaration.typeInfo, &inferred));
+    ownerTypeId = ZrParser_CanonicalType_FromInferred(cs.semanticContext, &inferred);
+    intTypeId = ZrParser_CanonicalType_InternPrimitive(
+            cs.semanticContext, ZR_VALUE_TYPE_INT64);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, ownerTypeId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, intTypeId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticDisplay_FormatType(
+            cs.semanticContext, ownerTypeId, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("Unique<int>", buffer);
+
+    alias = ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            cs.semanticContext,
+            intTypeId,
+            &argumentNode->data.type.name->location);
+    TEST_ASSERT_NOT_NULL(alias);
+    TEST_ASSERT_EQUAL_STRING("i64", ZrCore_String_GetNativeString(alias));
+
+    ZrParser_InferredType_Free(g_state, &inferred);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_semantic_display_separates_const_parameter_alias_from_identity(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrCanonicalGenericArgument arguments[3];
@@ -834,6 +897,7 @@ int main(void) {
     RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);
     RUN_TEST(test_semantic_type_display_alias_is_use_site_scoped);
     RUN_TEST(test_primitive_type_use_publishes_source_display_alias);
+    RUN_TEST(test_owner_inner_type_use_publishes_source_display_alias);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);
     RUN_TEST(test_semantic_display_rejects_empty_nominal_identity);

@@ -3378,11 +3378,12 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
         }
 
-        result->ownershipQualifier = astType->ownershipQualifier;
         if (isPrimitiveAlias) {
-            type_inference_publish_explicit_type_display_alias(
-                    cs, result, typeName, astType->name);
-        } else if (cs->semanticContext != ZR_NULL) {
+            type_inference_publish_primitive_type_display_alias(
+                    cs, result, astType);
+        }
+        result->ownershipQualifier = astType->ownershipQualifier;
+        if (!isPrimitiveAlias && cs->semanticContext != ZR_NULL) {
             ZrParser_Semantic_RegisterNamedType(cs->semanticContext,
                                                 typeName,
                                                 ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
@@ -3422,6 +3423,8 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             }
             cs->semanticContext = savedSemanticContext;
 
+            type_inference_publish_primitive_type_display_alias(
+                    cs, result, ownershipGenericInnerType);
             result->ownershipQualifier = ownershipGenericQualifier;
             if (cs->semanticContext != ZR_NULL && result->typeName != ZR_NULL) {
                 registeredTypeId = ZrParser_Semantic_RegisterInferredType(

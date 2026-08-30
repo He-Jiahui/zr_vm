@@ -3771,3 +3771,18 @@ inference success, TypeId identity, compatibility, or diagnostics. The
 producer does not register the spelling as a named type, and consumers must
 not reconstruct a missing alias from source text. Generic, nominal, qualified,
 binary, and native alias producers remain separate migration steps.
+
+## Plan 03 Task 5.8 Ownership Wrapper Inner Alias Producer
+
+Ownership wrappers resolve their inner type while semantic publication is
+temporarily disabled, then restore the snapshot context before applying the
+owner qualifier. The restored phase now publishes an explicit primitive alias
+for the inner AST type use before canonicalizing the outer owner. Thus
+`Unique<i64>` formats canonically as `Unique<int>`, while an alias query for the
+inner primitive TypeId and exact `i64` range returns `i64`.
+
+The producer validates that the inner AST node is a primitive identifier; it
+does not publish arbitrary nominal text or treat the outer owner TypeId as the
+inner use. Unique, Shared, and Weak use the same structured ownership-generic
+path. GcBridge wrappers and non-primitive aliases remain separate producer
+work.
