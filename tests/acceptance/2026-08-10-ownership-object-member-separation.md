@@ -85,6 +85,13 @@ compiles and executes all five keys through normal `GET_MEMBER` dispatch and
 returns `31`. This is a source-contract correction and does not promote the
 umbrella status before the pending stable L8/debug full-graph replay.
 
+The post-commit MSVC replay of the same focused executable reports `50 Tests /
+0 Failures / 0 Ignored` with direct exit code zero, including the five
+object-literal member cases. GCC and Clang were not promoted from the earlier
+`49/49` fixed-snapshot table because the available WSL caches were stale or
+blocked on DrvFS I/O; their 50-case replay remains part of the pending stable
+full-graph gate.
+
 ## Accepted source contract
 
 | Requirement | Implementation evidence | Focused evidence |

@@ -1181,6 +1181,13 @@ regression evaluates `{ share: 1, degrade: 2, wake: 4, intoGc: 8, drop: 16 }`
 through ordinary `.` lookup and returns `31`; the umbrella acceptance status
 remains pending the stable external L8/debug full graph.
 
+The post-commit MSVC replay of the focused ownership executable reports
+`50 Tests / 0 Failures / 0 Ignored` with direct exit code zero. The earlier
+`49/49` GCC/Clang/MSVC counts remain tied to the `f00d4c5` fixed snapshot;
+GCC and Clang were not relabeled `50/50` because their available WSL caches
+were stale or blocked on DrvFS I/O. A fresh 50-case GCC/Clang replay is still
+required before the final integrated acceptance can be promoted.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
