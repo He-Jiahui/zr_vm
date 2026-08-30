@@ -1482,5 +1482,6 @@ int main(void) {
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
     RUN_TEST(test_relation_node_scope_fails_closed_for_missing_fact_source);
+    RUN_TEST(test_relation_queries_sort_line_only_ranges_independent_of_append_order);
     return UNITY_END();
 }

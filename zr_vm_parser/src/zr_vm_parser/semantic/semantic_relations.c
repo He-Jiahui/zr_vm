@@ -5,6 +5,7 @@
 #include "zr_vm_parser/canonical_type.h"
 
 #include "semantic_relations_identity.h"
+#include "semantic_relations_order.h"
 
 static TZrBool semantic_relations_same_source(
         SZrString *left,
@@ -123,59 +124,6 @@ static SZrString *semantic_relations_module_identity_for_type(
         typeId = node->data.genericInstance.definitionTypeId;
     }
     return ZR_NULL;
-}
-
-static TZrBool semantic_relations_query_precedes(
-        const SZrParserSemanticRelationQuery *left,
-        const SZrParserSemanticRelationQuery *right) {
-    if (left->kind != right->kind) {
-        return left->kind < right->kind;
-    }
-    if (left->sourceSymbolId != right->sourceSymbolId) {
-        return left->sourceSymbolId < right->sourceSymbolId;
-    }
-    if (left->targetSymbolId != right->targetSymbolId) {
-        return left->targetSymbolId < right->targetSymbolId;
-    }
-    if (left->sourceTypeId != right->sourceTypeId) {
-        return left->sourceTypeId < right->sourceTypeId;
-    }
-    if (left->targetTypeId != right->targetTypeId) {
-        return left->targetTypeId < right->targetTypeId;
-    }
-    if (left->sourceRange.start.offset != right->sourceRange.start.offset) {
-        return left->sourceRange.start.offset < right->sourceRange.start.offset;
-    }
-    return left->targetRange.start.offset <= right->targetRange.start.offset;
-}
-
-static void semantic_relations_sort(SZrArray *relations) {
-    TZrSize index;
-
-    if (relations == ZR_NULL) {
-        return;
-    }
-    for (index = 1U; index < relations->length; index++) {
-        TZrSize current = index;
-        while (current > 0U) {
-            SZrParserSemanticRelationQuery *before =
-                    (SZrParserSemanticRelationQuery *)ZrCore_Array_Get(
-                            relations, current - 1U);
-            SZrParserSemanticRelationQuery *after =
-                    (SZrParserSemanticRelationQuery *)ZrCore_Array_Get(
-                            relations, current);
-            SZrParserSemanticRelationQuery swap;
-
-            if (before == ZR_NULL || after == ZR_NULL ||
-                semantic_relations_query_precedes(before, after)) {
-                break;
-            }
-            swap = *before;
-            *before = *after;
-            *after = swap;
-            current--;
-        }
-    }
 }
 
 static void semantic_relations_append_query(
@@ -831,7 +779,7 @@ TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
             semantic_relations_append_query(context, outRelations, fact);
         }
     }
-    semantic_relations_sort(outRelations);
+    ZrParser_SemanticRelations_SortQueries(outRelations);
     return outRelations->length > 0U;
 }
 
@@ -859,7 +807,7 @@ TZrBool ZrParser_SemanticQuery_ImplementationsOf(
             semantic_relations_append_query(context, outRelations, fact);
         }
     }
-    semantic_relations_sort(outRelations);
+    ZrParser_SemanticRelations_SortQueries(outRelations);
     return outRelations->length > 0U;
 }
 
@@ -883,7 +831,7 @@ TZrBool ZrParser_SemanticQuery_BaseTypesOf(
             semantic_relations_append_query(context, outRelations, fact);
         }
     }
-    semantic_relations_sort(outRelations);
+    ZrParser_SemanticRelations_SortQueries(outRelations);
     return outRelations->length > 0U;
 }
 
@@ -907,6 +855,6 @@ TZrBool ZrParser_SemanticQuery_DerivedTypesOf(
             semantic_relations_append_query(context, outRelations, fact);
         }
     }
-    semantic_relations_sort(outRelations);
+    ZrParser_SemanticRelations_SortQueries(outRelations);
     return outRelations->length > 0U;
 }

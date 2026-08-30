@@ -150,14 +150,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 18:23 +08:00。
-- 总体状态：进行中。Task 3.15 已收紧 relation node-scope source identity；缺失 source 的
-  relation 不再因坐标重叠进入已知文档 scope。固定 GCC/Clang 快照中的
-  relation/query/symbol/call/parity focused 门禁与 source-contract `70/70` 均真实 exit 0，interface
-  保持同一8个既有producer marker，delta 0。
+- 最近更新时间：2026-08-30 18:33 +08:00。
+- 总体状态：进行中。Task 3.16 已将 relation query 输出排序收敛为完整 structured identity；
+  line-only ranges 不再因零 offset 保留 fact append 顺序。固定 GCC/Clang 快照中的
+  relation/query/symbol/call/parity/source-contract 门禁分别为 `22/30/21/14/15/70`，均真实
+  exit 0；interface 保持同一8个既有producer marker，delta 0。
   完整 16-target matrix、三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 3.15 relation node-scope exact source identity；Task 4.12 call-edge
+- 本阶段完成项目：Task 3.16 relation deterministic structured ordering；Task 3.15 relation
+  node-scope exact source identity；Task 4.12 call-edge
   deterministic coordinate ordering；Task 4.11 call-edge
   line-only range identity；Task 4.10 call-edge exact
   source identity；Task 4.9 call-edge refinement
@@ -636,3 +637,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `21/30/21/14/15/70` relation/query/symbol/call/parity/source-contract 门禁。两套 interface
   仍为同一8个既有producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项
   未运行 MSVC、完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-30 18:33 +08:00。Task 3.16 将 relation query 排序从
+  kind/id/offset 的不完整键收敛为 kind、source/target SymbolId/TypeId、module identity、
+  source/target 完整 range、external classification 与 URI 的 structured total order；line-only
+  range 使用完整 line/column 坐标，不再保留 append 顺序。RED 逆序发布第3行与第2行 facts，
+  relation-query `22 Tests / 1 Failure`、`Expected 2 Was 3`；GREEN 后 GCC/Clang 均通过
+  `22/30/21/14/15/70` relation/query/symbol/call/parity/source-contract 门禁。排序逻辑提取至
+  `semantic_relations_order.c`，主 orchestrator 降至约860行。两套 interface 仍为同一8个既有
+  producer marker，失败名称对 fixed parent 的 delta 0且不计 GREEN。本项未运行 MSVC、
+  完整16-target matrix或三套stdio smoke，Plan 03 Task 7/Task 8继续未完成。

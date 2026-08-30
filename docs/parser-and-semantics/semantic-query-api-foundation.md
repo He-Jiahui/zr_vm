@@ -8,6 +8,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations_order.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_relations.c
@@ -235,8 +236,14 @@ lives in the narrow internal `semantic_relations_identity.c` module so the
 relation publisher/query file remains the orchestration boundary.
 `RelationsOfSymbol`, `ImplementationsOf`, `BaseTypesOf`, and `DerivedTypesOf`
 are read-only projections: they clear reused output arrays, return copied values
-with borrowed URI fields, and order edges by relation kind, stable ids, and
-ranges. A node scope admits only an edge whose source or target range is within
+with borrowed URI fields, and order edges by relation kind, stable ids, module
+identities, complete source/target ranges, external classification, and external
+URIs. Range ordering uses source identity plus start/end offsets when either
+range has offsets; otherwise it uses the complete start/end line and column
+coordinates. The comparison protocol lives in the narrow internal
+`semantic_relations_order.c` module, so result order is independent of fact
+append order without growing the relation publisher/query orchestrator. A node
+scope admits only an edge whose source or target range is within
 the root. The query does not scan AST names or manufacture external origins.
 Node-scope containment also requires exact optional source identity: missing
 source matches only missing source, while non-null sources compare by string
