@@ -8,10 +8,30 @@
  * Semantic display is snapshot-scoped. It formats only registered canonical
  * TypeId/SymbolId/property-contract identities and never resolves a spelling.
  */
+typedef struct SZrSemanticTypeDisplayAliasFact {
+    TZrTypeId typeId;
+    SZrFileRange useRange;
+    SZrString *alias;
+} SZrSemanticTypeDisplayAliasFact;
+
 typedef struct SZrSemanticDocumentationFact {
     TZrSymbolId symbolId;
     SZrString *documentation;
 } SZrSemanticDocumentationFact;
+
+/*
+ * Type display aliases are copied into the semantic snapshot and keyed by the
+ * exact TypeId/use-site range. Canonical formatting remains TypeId-only.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
+        SZrSemanticContext *context,
+        TZrTypeId typeId,
+        const SZrFileRange *useRange,
+        SZrString *alias);
+ZR_PARSER_API SZrString *ZrParser_SemanticQuery_TypeDisplayAliasAt(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId,
+        const SZrFileRange *useRange);
 
 /*
  * Documentation is copied into the semantic snapshot. Queries return a

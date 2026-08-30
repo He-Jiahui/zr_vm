@@ -150,8 +150,9 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 02:54 +08:00。
-- 总体状态：进行中。Task 5.5 已让 nominal interner 与 formatter共同拒绝空 type name，避免
+- 最近更新时间：2026-08-31 03:07 +08:00。
+- 总体状态：进行中。Task 5.6 已发布 snapshot-scoped `(TypeId, exact use range) -> alias`
+  display fact，canonical identity文本与use-site alias不再共用formatter字段；Task 5.5 已让 nominal interner 与 formatter共同拒绝空 type name，避免
   分配有效 TypeId或成功输出空 canonical label；Task 5.4 已让 SymbolId callable signature 从同一 canonical function
   `TypeId` 投影 `async`、`generator` 与 `throws`，并以 value/in/ref/ref readonly/out 完整
   parameter contract 冻结 effect/passing display；Task 5.3 已让 generic parameter/instance、array 与 union formatter
@@ -165,12 +166,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   selected callable contract一致性门禁：parameter binding必须唯一，`TypeId`、passing mode与
   exact/implicit conversion必须彼此一致，损坏snapshot清空输出并fail closed。
 - 固定 GCC/Clang 快照中的 display/call/query/relation/symbol/parity/source-contract 门禁分别为
-  `10/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`，均真实
+  `11/26/30/22/21/15/70`，并补 canonical consumers `21/21`、semantic-facts `15/15`，均真实
   exit 0；interface 保持同一8个既有producer marker，delta 0。
   receiver/member 与 `.zro`/native mapping parity、receiver `TypeId`、完整 16-target matrix、
   三套 stdio smoke 和 Syntax05 imported declaration identity producer
   尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN或完成。
-- 本阶段完成项目：Task 5.5 nominal display identity integrity；Task 5.4 callable
+- 本阶段完成项目：Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+  display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
   identity；Task 5.1 canonical display

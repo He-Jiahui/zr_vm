@@ -66,6 +66,10 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
                 sizeof(SZrSemanticPropertyContract),
                 ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(context->state,
+                &context->typeDisplayAliasFacts,
+                sizeof(SZrSemanticTypeDisplayAliasFact),
+                ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(context->state,
                 &context->documentationFacts,
                 sizeof(SZrSemanticDocumentationFact),
                 ZR_PARSER_INITIAL_CAPACITY_TINY);
@@ -151,6 +155,7 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->queryDiagnostics);
     ZrParser_SemanticCalls_Free(context);
     ZrParser_SemanticFacts_Free(context);
+    ZrCore_Array_Free(context->state, &context->typeDisplayAliasFacts);
     ZrCore_Array_Free(context->state, &context->documentationFacts);
     ZrCore_Array_Free(context->state, &context->propertyContracts);
     ZrCore_Memory_RawFree(context->state->global, context, sizeof(SZrSemanticContext));
@@ -192,6 +197,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->cleanupPlan.length = 0;
     context->templateSegments.length = 0;
     context->propertyContracts.length = 0;
+    context->typeDisplayAliasFacts.length = 0;
     context->documentationFacts.length = 0;
     semantic_context_reset_query_diagnostics(context);
     ZrParser_SemanticCalls_Reset(context);

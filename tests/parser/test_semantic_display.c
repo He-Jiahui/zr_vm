@@ -267,6 +267,68 @@ static void test_semantic_documentation_projects_exact_symbol_fact(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_type_display_alias_is_use_site_scoped(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *source = ZrCore_String_CreateFromNative(g_state, "alias_scope.zr");
+    SZrString *equivalentSource = ZrCore_String_CreateFromNative(g_state, "alias_scope.zr");
+    SZrString *otherSource = ZrCore_String_CreateFromNative(g_state, "other_scope.zr");
+    SZrString *alias = ZrCore_String_CreateFromNative(g_state, "Index");
+    SZrString *conflictingAlias = ZrCore_String_CreateFromNative(g_state, "Count");
+    SZrString *emptyAlias = ZrCore_String_Create(g_state, "", 0U);
+    SZrFileRange range = display_range(30U);
+    SZrFileRange equivalentRange = display_range(30U);
+    SZrFileRange otherRange = display_range(30U);
+    SZrFileRange shiftedRange = display_range(31U);
+    TZrTypeId intType;
+    TZrTypeId boolType;
+    SZrString *queriedAlias;
+    TZrChar buffer[32];
+
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(equivalentSource);
+    TEST_ASSERT_NOT_NULL(otherSource);
+    TEST_ASSERT_NOT_NULL(alias);
+    TEST_ASSERT_NOT_NULL(conflictingAlias);
+    TEST_ASSERT_NOT_NULL(emptyAlias);
+    range.source = source;
+    equivalentRange.source = equivalentSource;
+    otherRange.source = otherSource;
+    shiftedRange.source = source;
+    intType = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_INT64);
+    boolType = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_BOOL);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, intType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, boolType);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticTypeDisplayAlias_Publish(
+            context, intType, &range, alias));
+    queriedAlias = ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            context, intType, &equivalentRange);
+    TEST_ASSERT_NOT_NULL(queriedAlias);
+    TEST_ASSERT_EQUAL_STRING("Index", ZrCore_String_GetNativeString(queriedAlias));
+    TEST_ASSERT_TRUE(ZrParser_SemanticDisplay_FormatType(
+            context, intType, buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL_STRING("int", buffer);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticTypeDisplayAlias_Publish(
+            context, intType, &equivalentRange, alias));
+    TEST_ASSERT_FALSE(ZrParser_SemanticTypeDisplayAlias_Publish(
+            context, intType, &range, conflictingAlias));
+    TEST_ASSERT_FALSE(ZrParser_SemanticTypeDisplayAlias_Publish(
+            context, intType, &range, emptyAlias));
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            context, boolType, &range));
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            context, intType, &otherRange));
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            context, intType, &shiftedRange));
+
+    ZrParser_SemanticContext_Reset(context);
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_TypeDisplayAliasAt(
+            context, intType, &range));
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_display_separates_const_parameter_alias_from_identity(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrCanonicalGenericArgument arguments[3];
@@ -721,6 +783,7 @@ int main(void) {
     RUN_TEST(test_semantic_display_fails_closed_for_missing_identity);
     RUN_TEST(test_semantic_display_uses_matching_declaration_signature_fact);
     RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);
+    RUN_TEST(test_semantic_type_display_alias_is_use_site_scoped);
     RUN_TEST(test_semantic_display_separates_const_parameter_alias_from_identity);
     RUN_TEST(test_semantic_display_rejects_malformed_composite_shapes);
     RUN_TEST(test_semantic_display_rejects_empty_nominal_identity);

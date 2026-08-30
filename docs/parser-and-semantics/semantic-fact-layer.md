@@ -3741,3 +3741,19 @@ presentation identity was cleared after interning: formatting fails and clears
 the output instead of returning success with an empty type label. LSP consumers
 must treat that result as unavailable and must not recover a name from source
 tokens or an alias table.
+
+## Plan 03 Task 5.6 Use-Site Type Display Alias Facts
+
+Type aliases now have a parser-owned, snapshot-scoped display fact separate
+from canonical TypeId formatting. `ZrParser_SemanticTypeDisplayAlias_Publish`
+copies an alias and source identity into the semantic context under an exact
+`(TypeId, FileRange)` key. The same canonical type may therefore have different
+aliases at different use sites without changing its structural identity or
+canonical text.
+
+`ZrParser_SemanticQuery_TypeDisplayAliasAt` requires the same TypeId, offsets,
+line/column coordinates, and source identity. Equivalent source strings match;
+another source, shifted range, another TypeId, a conflicting duplicate, or an
+empty alias fails closed. Reset clears the facts. The query returns a borrowed
+snapshot string and does not format a type, inspect AST spelling, or resolve a
+name. Source producers and LSP consumers remain separate migration steps.

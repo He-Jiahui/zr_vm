@@ -90,6 +90,94 @@ static TZrBool semantic_display_append(
     return ZR_TRUE;
 }
 
+static TZrBool semantic_display_ranges_equal(
+        const SZrFileRange *left,
+        const SZrFileRange *right) {
+    if (left == ZR_NULL || right == ZR_NULL ||
+        left->start.offset != right->start.offset ||
+        left->start.line != right->start.line ||
+        left->start.column != right->start.column ||
+        left->end.offset != right->end.offset ||
+        left->end.line != right->end.line ||
+        left->end.column != right->end.column) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(left->source == right->source ||
+                     (left->source != ZR_NULL && right->source != ZR_NULL &&
+                      ZrCore_String_Equal(left->source, right->source)));
+}
+
+TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
+        SZrSemanticContext *context,
+        TZrTypeId typeId,
+        const SZrFileRange *useRange,
+        SZrString *alias) {
+    SZrSemanticTypeDisplayAliasFact fact;
+    TZrNativeString aliasText;
+    TZrNativeString sourceText;
+    TZrSize index;
+
+    if (context == ZR_NULL || context->state == ZR_NULL ||
+        ZrParser_CanonicalType_Find(context, typeId) == ZR_NULL ||
+        useRange == ZR_NULL || useRange->source == ZR_NULL ||
+        useRange->end.offset <= useRange->start.offset || alias == ZR_NULL ||
+        ZrCore_String_GetByteLength(alias) == 0U) {
+        return ZR_FALSE;
+    }
+    aliasText = ZrCore_String_GetNativeString(alias);
+    sourceText = ZrCore_String_GetNativeString(useRange->source);
+    if (aliasText == ZR_NULL || sourceText == ZR_NULL ||
+        ZrCore_String_GetByteLength(useRange->source) == 0U) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->typeDisplayAliasFacts.length; ++index) {
+        const SZrSemanticTypeDisplayAliasFact *existing =
+                (const SZrSemanticTypeDisplayAliasFact *)ZrCore_Array_Get(
+                        &context->typeDisplayAliasFacts, index);
+        if (existing != ZR_NULL && existing->typeId == typeId &&
+            semantic_display_ranges_equal(&existing->useRange, useRange)) {
+            return ZrCore_String_Equal(existing->alias, alias);
+        }
+    }
+
+    fact.typeId = typeId;
+    fact.useRange = *useRange;
+    fact.useRange.source = ZrCore_String_Create(
+            context->state,
+            sourceText,
+            ZrCore_String_GetByteLength(useRange->source));
+    fact.alias = ZrCore_String_Create(
+            context->state, aliasText, ZrCore_String_GetByteLength(alias));
+    if (fact.useRange.source == ZR_NULL || fact.alias == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(context->state, &context->typeDisplayAliasFacts, &fact);
+    return ZR_TRUE;
+}
+
+SZrString *ZrParser_SemanticQuery_TypeDisplayAliasAt(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId,
+        const SZrFileRange *useRange) {
+    TZrSize index;
+
+    if (context == ZR_NULL ||
+        ZrParser_CanonicalType_Find(context, typeId) == ZR_NULL ||
+        useRange == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->typeDisplayAliasFacts.length; ++index) {
+        const SZrSemanticTypeDisplayAliasFact *fact =
+                (const SZrSemanticTypeDisplayAliasFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->typeDisplayAliasFacts, index);
+        if (fact != ZR_NULL && fact->typeId == typeId &&
+            semantic_display_ranges_equal(&fact->useRange, useRange)) {
+            return fact->alias;
+        }
+    }
+    return ZR_NULL;
+}
+
 static const SZrAstNodeArray *semantic_display_callable_parameters(
         const SZrAstNode *declaration) {
     if (declaration == ZR_NULL) {

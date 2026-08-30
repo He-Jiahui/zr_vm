@@ -233,6 +233,7 @@ typedef struct SZrSemanticContext {
     SZrArray propertyContracts; // SZrSemanticPropertyContract
     SZrArray relationFacts;     // SZrSemanticRelationFact
     SZrArray callEdgeFacts;     // SZrSemanticCallEdgeFact
+    SZrArray typeDisplayAliasFacts; // SZrSemanticTypeDisplayAliasFact
     SZrArray documentationFacts; // SZrSemanticDocumentationFact
 } SZrSemanticContext;
 
