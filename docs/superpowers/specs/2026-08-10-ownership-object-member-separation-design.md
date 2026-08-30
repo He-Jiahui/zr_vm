@@ -576,7 +576,8 @@ exits, and backend parity pass on GCC, Clang, and MSVC.
 
 - migrate all repository sources, tests, fixtures, examples, and documentation;
 - remove `ZrParser_OwnershipMemberNameToBuiltinKind` and every downstream
-  spelling-based branch;
+  spelling-based ownership inference, lowering, or dispatch branch; keep any
+  spelling lookup isolated to the fact-gated migration-diagnostic adapter;
 - remove old completion, hover, diagnostic, and lowering expectations.
 
 Gate: repository search finds no old ownership-member use except deliberate
