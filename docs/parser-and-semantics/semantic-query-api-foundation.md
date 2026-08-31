@@ -167,6 +167,12 @@ is absent cannot participate in a sourced AST merely because its offsets fit
 the statement range. Such a fact keeps its assignment state and reaching
 definition unavailable; dataflow never imports it into another snapshot.
 
+Ownership dataflow uses the same exact optional source identity for its
+range-based statement membership, region release, and weak receiver wake
+checks. Exact AST-node identity remains authoritative, but a different node at
+equal offsets cannot be associated through a one-sided missing source. This
+prevents move/release/wake observations from crossing snapshot boundaries.
+
 ## Query Functions
 
 `ZrParser_SemanticQuery_TypeAt` finds the narrowest exact expression fact at a position and copies its `SZrInferredType` into the caller-owned output value. Missing facts, `UNKNOWN` or `APPROXIMATE` facts, invalid context, invalid output, or an out-of-scope position return `ZR_FALSE`; consumers must not reconstruct a type from source text after that failure.

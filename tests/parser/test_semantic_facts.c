@@ -10,6 +10,10 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_statements.h"
+
 static SZrState *g_state;
 
 void setUp(void) {
@@ -924,6 +928,67 @@ static void test_cfg_dataflow_ignores_sourceless_facts_for_sourced_ast(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_ownership_dataflow_ignores_sourceless_fact_for_sourced_statement(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrFileRange sourcedRange = test_range(20, 25);
+    SZrAstNode targetNode;
+    SZrAstNode factNode;
+    SZrAstNode expressionStatement;
+    SZrAstNode dropNode;
+    SZrAstNode primaryNode;
+    SZrAstNode callNode;
+    SZrAstNode *memberNodes[1];
+    SZrAstNodeArray members;
+    SZrSemanticReferenceFact fact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    init_identifier_node_with_range(&targetNode, sourcedRange);
+    init_identifier_node_with_range(&factNode, sourcedRange);
+    factNode.location.source = ZR_NULL;
+    memset(&fact, 0, sizeof(fact));
+    fact.node = &factNode;
+    fact.range = factNode.location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_READ;
+    fact.symbolId = 107;
+    fact.isResolved = ZR_TRUE;
+
+    memset(&expressionStatement, 0, sizeof(expressionStatement));
+    expressionStatement.type = ZR_AST_EXPRESSION_STATEMENT;
+    expressionStatement.data.expressionStatement.expr = &targetNode;
+    TEST_ASSERT_FALSE(ZrParser_DataflowOwnership_FactInStatement(
+            &expressionStatement,
+            &fact));
+
+    memset(&dropNode, 0, sizeof(dropNode));
+    dropNode.type = ZR_AST_CONSTRUCT_EXPRESSION;
+    dropNode.data.constructExpression.builtinKind =
+            ZR_OWNERSHIP_BUILTIN_KIND_DROP;
+    dropNode.data.constructExpression.target = &targetNode;
+    expressionStatement.data.expressionStatement.expr = &dropNode;
+    TEST_ASSERT_FALSE(ZrParser_DataflowOwnership_StatementReleasesRead(
+            &expressionStatement,
+            &fact));
+
+    memset(&callNode, 0, sizeof(callNode));
+    callNode.type = ZR_AST_FUNCTION_CALL;
+    memberNodes[0] = &callNode;
+    memset(&members, 0, sizeof(members));
+    members.nodes = memberNodes;
+    members.count = 1;
+    members.capacity = 1;
+    memset(&primaryNode, 0, sizeof(primaryNode));
+    primaryNode.type = ZR_AST_PRIMARY_EXPRESSION;
+    primaryNode.data.primaryExpression.property = &targetNode;
+    primaryNode.data.primaryExpression.members = &members;
+    expressionStatement.data.expressionStatement.expr = &primaryNode;
+    TEST_ASSERT_FALSE(ZrParser_DataflowOwnership_StatementWeakReadRequiresWake(
+            context,
+            &expressionStatement,
+            &fact));
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_cfg_reaching_definitions_clears_finally_read_from_normal_and_return_paths(void) {
     const TZrChar *source =
             "fn choose(flag: bool): int {\n"
@@ -1043,6 +1108,7 @@ int main(void) {
     RUN_TEST(test_cfg_definite_assignment_joins_finally_read_from_normal_and_return_paths);
     RUN_TEST(test_cfg_definite_assignment_preserves_true_loop_break_write);
     RUN_TEST(test_cfg_dataflow_ignores_sourceless_facts_for_sourced_ast);
+    RUN_TEST(test_ownership_dataflow_ignores_sourceless_fact_for_sourced_statement);
     RUN_TEST(test_cfg_reaching_definitions_clears_finally_read_from_normal_and_return_paths);
     return UNITY_END();
 }

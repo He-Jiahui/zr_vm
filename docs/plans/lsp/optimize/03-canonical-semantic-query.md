@@ -150,8 +150,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 10:16 +08:00。
-- 总体状态：进行中。Task 1.3 将CFG-backed definite-assignment与reaching-definition
+- 最近更新时间：2026-08-31 10:28 +08:00。
+- 总体状态：进行中。Task 1.4 将ownership dataflow的statement归属、region release与
+  weak receiver wake range fallback收紧为exact optional source identity；不同AST节点即使
+  offset相同，也不能靠单边缺source跨snapshot产生move/release/wake observation。GCC/Clang
+  facts/query/parser diagnostic/compiler diagnostic/LSP diagnostic/parity/source-contract/
+  type-inference `17/30/13/64/19/15/70/124`均真实exit 0，interface保持fixed8、delta 0。
+  Task 1.3 将CFG-backed definite-assignment与reaching-definition
   的AST/fact source比较从one-sided `NULL`通配收紧为exact optional identity；sourceless
   reference fact不再凭相同offset进入sourced CFG并获得assignment state或definition range。
   GCC/Clang facts/query/parser diagnostic/compiler diagnostic/LSP diagnostic/parity/source-contract/

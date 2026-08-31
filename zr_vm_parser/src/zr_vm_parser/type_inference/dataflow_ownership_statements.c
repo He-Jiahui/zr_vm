@@ -1,10 +1,12 @@
 #include "dataflow_ownership_statements.h"
 
 static TZrBool ownership_statement_same_source(SZrString *left, SZrString *right) {
-    if (left == ZR_NULL || right == ZR_NULL || left == right) {
+    if (left == right) {
         return ZR_TRUE;
     }
-    return ZrCore_String_Equal(left, right);
+    return left != ZR_NULL &&
+           right != ZR_NULL &&
+           ZrCore_String_Equal(left, right);
 }
 
 static TZrBool ownership_statement_range_is_known(const SZrFileRange *range) {

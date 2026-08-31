@@ -16,7 +16,10 @@ static TZrBool ownership_move_has_offset(const SZrFilePosition *position) {
 }
 
 static TZrBool ownership_move_same_source(SZrString *left, SZrString *right) {
-    return left == ZR_NULL || right == ZR_NULL || left == right || ZrCore_String_Equal(left, right);
+    return left == right ||
+           (left != ZR_NULL &&
+            right != ZR_NULL &&
+            ZrCore_String_Equal(left, right));
 }
 
 static TZrBool ownership_move_range_contains(const SZrFileRange *outer,

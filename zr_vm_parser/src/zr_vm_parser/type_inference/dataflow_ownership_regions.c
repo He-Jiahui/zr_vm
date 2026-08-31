@@ -5,7 +5,10 @@
 #include "zr_vm_parser/semantic.h"
 
 static TZrBool ownership_region_same_source(SZrString *left, SZrString *right) {
-    return left == ZR_NULL || right == ZR_NULL || left == right || ZrCore_String_Equal(left, right);
+    return left == right ||
+           (left != ZR_NULL &&
+            right != ZR_NULL &&
+            ZrCore_String_Equal(left, right));
 }
 
 static TZrBool ownership_region_range_contains(const SZrFileRange *outer,
