@@ -69,6 +69,31 @@ static TZrBool canonical_query_ranges_equal(const SZrFileRange *left,
                      left->end.column == right->end.column);
 }
 
+static TZrBool canonical_query_optional_strings_equal(
+        SZrString *left,
+        SZrString *right) {
+    return (TZrBool)(left == right ||
+                     (left != ZR_NULL && right != ZR_NULL &&
+                      ZrCore_String_Equal(left, right)));
+}
+
+static TZrBool canonical_query_call_expressions_equal(
+        const SZrSemanticExpressionFact *left,
+        const SZrSemanticExpressionFact *right) {
+    return (TZrBool)(left != ZR_NULL && right != ZR_NULL &&
+                     left->kind == right->kind &&
+                     left->exactness == right->exactness &&
+                     canonical_query_ranges_equal(&left->range, &right->range) &&
+                     canonical_query_ranges_equal(
+                             &left->callTargetRange, &right->callTargetRange) &&
+                     canonical_query_optional_strings_equal(
+                             left->callTargetName, right->callTargetName) &&
+                     left->typeId == right->typeId &&
+                     left->argumentCount == right->argumentCount &&
+                     left->hasNamedArguments == right->hasNamedArguments &&
+                     left->isMemberCall == right->isMemberCall);
+}
+
 static TZrBool canonical_query_call_reference_has_resolved_target(
         const SZrSemanticReferenceFact *reference) {
     return (TZrBool)(reference->isResolved &&
@@ -309,6 +334,7 @@ TZrBool ZrParser_SemanticQuery_CallAt(
     const SZrSemanticReferenceFact *bestReference = ZR_NULL;
     TZrSize bestWidth = ZR_MAX_SIZE;
     TZrSize bestReferenceCompleteness = 0u;
+    TZrBool bestIsConflicting = ZR_FALSE;
     TZrSize index;
 
     if (outQuery != ZR_NULL) memset(outQuery, 0, sizeof(*outQuery));
@@ -321,6 +347,8 @@ TZrBool ZrParser_SemanticQuery_CallAt(
         const SZrSemanticExpressionFact *fact =
                 (const SZrSemanticExpressionFact *)ZrCore_Array_Get(
                         (SZrArray *)&context->expressionFacts, index);
+        TZrBool factIsExact;
+        TZrBool bestIsExact;
         TZrSize width;
         if (fact == ZR_NULL || !fact->hasCallInfo ||
             !canonical_query_same_optional_source_exact(
@@ -330,16 +358,22 @@ TZrBool ZrParser_SemanticQuery_CallAt(
             continue;
         }
         width = canonical_query_width(&fact->range);
+        factIsExact = ZrParser_SemanticQuery_ExactnessAllowsProjection(
+                fact->exactness);
+        bestIsExact = best != ZR_NULL &&
+                      ZrParser_SemanticQuery_ExactnessAllowsProjection(
+                              best->exactness);
         if (best == ZR_NULL || width < bestWidth ||
-            (width == bestWidth &&
-             ZrParser_SemanticQuery_ExactnessAllowsProjection(fact->exactness) &&
-             !ZrParser_SemanticQuery_ExactnessAllowsProjection(
-                     best->exactness))) {
+            (width == bestWidth && factIsExact && !bestIsExact)) {
             best = fact;
             bestWidth = width;
+            bestIsConflicting = ZR_FALSE;
+        } else if (width == bestWidth && factIsExact == bestIsExact &&
+                   !canonical_query_call_expressions_equal(best, fact)) {
+            bestIsConflicting = ZR_TRUE;
         }
     }
-    if (best == ZR_NULL) return ZR_FALSE;
+    if (best == ZR_NULL || bestIsConflicting) return ZR_FALSE;
     if (!canonical_query_same_optional_source_exact(
                 best->range.source, best->callTargetRange.source)) {
         return ZR_FALSE;

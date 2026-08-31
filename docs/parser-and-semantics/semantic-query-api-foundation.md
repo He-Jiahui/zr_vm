@@ -502,8 +502,12 @@ silently redefine containment for other semantic query APIs.
 Call-expression refinement is monotonic. `CallAt` first selects the narrowest
 containing call range; among equal-width facts, an `EXACT` expression outranks
 an approximate expression regardless of publication order. Equal-width facts
-with the same exactness retain the first stable publication. A later
-approximate producer therefore cannot downgrade an exact call and make
+at the same exactness priority may coexist only when their complete call-site
+range, target range, expression kind/exactness, optional target name, result
+TypeId, argument count, named-argument flag, and member-call flag agree. A
+conflict in any of those fields clears the query and fails closed instead of
+selecting by publication order. A later approximate producer therefore cannot
+downgrade an exact call and make
 `FormatCall` or `CallCandidatesAt` spuriously unavailable.
 
 `ZrParser_SemanticQuery_FormatCall` is also a value-only projection: its

@@ -901,6 +901,7 @@ int main(void) {
     RUN_TEST(test_call_candidates_fail_closed_when_overload_member_is_missing);
     RUN_TEST(test_call_at_prefers_resolved_reference_over_earlier_display_fact);
     RUN_TEST(test_call_at_fails_closed_for_conflicting_resolved_references);
+    RUN_TEST(test_call_at_fails_closed_for_conflicting_equal_call_expressions);
     RUN_TEST(test_call_at_keeps_distinct_nested_reference_ranges_separate);
     RUN_TEST(test_call_at_rejects_source_less_expression_for_sourced_request);
     RUN_TEST(test_call_at_rejects_source_less_reference_for_sourced_call);
