@@ -1794,44 +1794,6 @@ static void collect_switch_expression_symbols(SZrState *state,
     }
 }
 
-static void semantic_append_interface_const_field_diagnostics(
-        SZrState *state,
-        SZrSemanticAnalyzer *analyzer,
-        SZrAstNode *classNode) {
-    TZrSize violationIndex = 0U;
-    SZrInterfaceConstFieldViolation violation;
-
-    if (state == ZR_NULL || analyzer == ZR_NULL ||
-        analyzer->compilerState == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL || classNode == ZR_NULL) {
-        return;
-    }
-    while (ZrParser_InterfaceContract_ConstFieldViolationAt(
-            analyzer->compilerState,
-            classNode,
-            violationIndex,
-            &violation)) {
-        SZrStructuredDiagnostic diagnostic;
-        SZrSemanticDiagnosticFact fact;
-
-        ZrParser_StructuredDiagnostic_Init(&diagnostic);
-        if (!ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
-                    state, &violation, &diagnostic)) {
-            return;
-        }
-        memset(&fact, 0, sizeof(fact));
-        fact.node = violation.node;
-        fact.diagnostic = diagnostic;
-        if (!ZrParser_SemanticFacts_AppendDiagnostic(
-                    analyzer->semanticContext, &fact)) {
-            ZrParser_StructuredDiagnostic_Free(state, &diagnostic);
-            return;
-        }
-        ZrParser_StructuredDiagnostic_Free(state, &diagnostic);
-        violationIndex++;
-    }
-}
-
 void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
         return;
@@ -2179,8 +2141,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                           ZR_SEMANTIC_TYPE_KIND_REFERENCE);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
                 
-                semantic_append_interface_const_field_diagnostics(
-                        state, analyzer, node);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->semanticContext != ZR_NULL &&
+                    !ZrParser_InterfaceContract_PublishConstFieldDiagnostics(
+                            analyzer->compilerState, node)) {
+                    return;
+                }
             }
 
             if (classDecl->members != ZR_NULL) {

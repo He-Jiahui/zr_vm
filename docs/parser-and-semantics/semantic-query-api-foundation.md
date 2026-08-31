@@ -915,11 +915,11 @@ without changing the compiler's current error state. The publisher does not
 inspect interface or member spelling beyond the canonical prototype/member
 identity already retained by the compiler contract.
 
-This API intentionally establishes producer support before the LSP consumer
-migration. While the language-server symbols module remains externally owned,
-it still invokes the lower-level enumerator and append path. Once that exact
-path is released, the consumer must call the publisher and delete its local
-loop; no AST/name fallback is permitted during the transition.
+The language-server symbols module now invokes only this publisher. Its former
+violation enumeration, diagnostic-builder call, and semantic-fact append loop
+have been removed. LSP diagnostic materialization therefore consumes the same
+parser-owned persistent facts as compiler clients, with no AST/name fallback or
+LSP-owned diagnostic construction.
 
 Reference lookup at a source position requires an exact source identity before
 range comparison. `SZrReferenceTracker` accepts equal URI text from distinct

@@ -749,10 +749,13 @@ snapshot.
 code `const_interface_mismatch`, error severity, canonical cause and
 kind-specific suggestion, the required interface field related range, and the
 `requires_user_decision` no-fix disposition. The compiler consumes the first
-violation as a structured compilation failure. The LSP analyzer enumerates all
-violations, calls the same builder, and deep-copies each result into semantic
-diagnostic facts; it does not scan inheritance AST, query its symbol table, pair
-fields by name, or build diagnostic text directly.
+violation as a structured compilation failure.
+`ZrParser_InterfaceContract_PublishConstFieldDiagnostics` enumerates every
+violation, calls the same builder, and deep-copies each result into persistent
+semantic diagnostic facts without changing the current compiler error. The LSP
+analyzer invokes only this publisher and later projects the query result; it
+does not enumerate violations, call the builder, append facts, scan inheritance
+AST, query its symbol table, pair fields by name, or build diagnostic text.
 
 `SZrInterfaceFieldDeclaration.nameLocation` preserves the parser token range
 needed for exact related information. The contract never estimates that range

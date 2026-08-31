@@ -1342,11 +1342,14 @@ static void test_interface_const_field_diagnostics_use_parser_query_projection(v
 
     assert_text_contains(
         symbols,
+        "ZrParser_InterfaceContract_PublishConstFieldDiagnostics");
+    assert_text_contains_none(
+        symbols,
         "ZrParser_InterfaceContract_ConstFieldViolationAt");
-    assert_text_contains(
+    assert_text_contains_none(
         symbols,
         "ZrParser_InterfaceContract_BuildConstFieldDiagnostic");
-    assert_text_contains(
+    assert_text_contains_none(
         symbols,
         "ZrParser_SemanticFacts_AppendDiagnostic");
     assert_text_contains_none(

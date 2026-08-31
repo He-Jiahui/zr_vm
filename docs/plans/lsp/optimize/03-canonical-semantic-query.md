@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 10:45 +08:00。
-- 总体状态：进行中。Task 1.5 将`PropertyAt` reference/contract range匹配收紧为exact
+- 最近更新时间：2026-08-31 11:04 +08:00。
+- 总体状态：进行中。Task 6.41 删除interface const-field在LSP symbols analyzer中的
+  violation枚举、diagnostic builder与fact append循环，只调用parser-owned persistent-fact
+  publisher；GCC/Clang source-contract与LSP diagnostics `70/19`均真实exit 0，既有
+  interface const-field双诊断专项保持通过。Task 1.5 将`PropertyAt` reference/contract range匹配收紧为exact
   optional source identity，并修复property code-action consumer使其保留当前document URI；
   sourceless同offset请求不再命中sourced property，LSP不按名称恢复。GCC/Clang property/facts/
   query/contract/canonical/parity/source-contract `11/17/30/6/21/15/70`均真实exit 0，property
@@ -1084,3 +1087,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `13/64/19/15/70`、真实exit 0，interface保持同一fixed8、delta 0。未运行MSVC、完整
   16-target matrix或三套stdio smoke；其余analyzer producer迁移、compiler/LSP golden parity
   总门禁、Task 7 consumer与Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 11:04 +08:00。Task 6.41 删除LSP symbols analyzer中
+  interface const-field violation枚举、diagnostic builder与semantic-fact append循环，改为只调用
+  `ZrParser_InterfaceContract_PublishConstFieldDiagnostics`；descriptor 2014、exact primary/related
+  ranges与no-fix disposition均继续由parser persistent fact唯一生产。source-contract RED精确为
+  4项失败；GREEN后固定GCC/Clang snapshot均通过source-contract与LSP semantic diagnostics
+  `70/19`及parser publisher `1/1`、真实exit 0，GCC interface const-field双诊断专项保持通过；
+  interface保持同一fixed8、delta 0。semantic-analyzer完整目标仍有既有非本片失败，不计为
+  GREEN；未运行MSVC、完整16-target matrix或三套stdio smoke。其余
+  analyzer producer迁移、compiler/LSP golden parity总门禁、Task 7 consumer与Task 8继续未完成。
