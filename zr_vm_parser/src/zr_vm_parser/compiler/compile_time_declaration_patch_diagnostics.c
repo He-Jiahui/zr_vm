@@ -165,10 +165,11 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
     }
     *hasErrorDiagnostic = ZR_FALSE;
     array = ZR_CAST_OBJECT(cs->state, diagnosticsValue->value.object);
-    if (array == ZR_NULL) {
+    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(cs->state, array)) {
         return ZR_FALSE;
     }
-    diagnosticCount = array->nodeMap.elementCount;
+    diagnosticCount = ZrCore_Object_SuperArrayLength(array);
     if (diagnosticCount == 0U) {
         return ZR_TRUE;
     }

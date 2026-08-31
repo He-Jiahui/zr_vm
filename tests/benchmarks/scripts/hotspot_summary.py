@@ -39,6 +39,28 @@ def format_profile_entries(entries: list[dict], top_n: int) -> list[dict]:
     return ranked[:top_n]
 
 
+def profile_metric_map(profile: dict) -> dict[str, int]:
+    return {
+        str(item.get("name", "")): int(item.get("count", 0))
+        for item in profile.get("memory", [])
+        if item.get("name")
+    }
+
+
+def derived_profile_metrics(profile: dict) -> dict[str, float]:
+    metrics = profile_metric_map(profile)
+    allocation_count = metrics.get("allocation_count", 0)
+    mark_count = metrics.get("mark_object_count", 0)
+    return {
+        "allocation_bytes_per_allocation": (
+            metrics.get("allocation_bytes", 0) / allocation_count if allocation_count else 0.0
+        ),
+        "scan_bytes_per_marked_object": (
+            metrics.get("scan_bytes", 0) / mark_count if mark_count else 0.0
+        ),
+    }
+
+
 def parse_callgrind_annotate(path: Path, top_n: int) -> tuple[str, list[dict], dict | None]:
     total_ir = ""
     top_functions: list[dict] = []
@@ -129,6 +151,13 @@ def build_markdown(summary: dict) -> str:
     else:
         lines.append("  none recorded")
 
+    memory_rates = summary["profile"]["derived_memory_metrics"]
+    lines.append(
+        "- Memory rates: "
+        f"`{memory_rates['allocation_bytes_per_allocation']:.2f}` allocation bytes/allocation, "
+        f"`{memory_rates['scan_bytes_per_marked_object']:.2f}` scan bytes/marked object"
+    )
+
     if summary["callgrind"]["top_helper"] is not None:
         helper = summary["callgrind"]["top_helper"]
         lines.append(
@@ -166,6 +195,7 @@ def main() -> int:
             "top_instructions": format_profile_entries(profile.get("instructions", []), args.top_n),
             "top_helpers": format_profile_entries(profile.get("helpers", []), args.top_n),
             "top_slowpaths": format_profile_entries(profile.get("slowpaths", []), args.top_n),
+            "derived_memory_metrics": derived_profile_metrics(profile),
         },
     }
 

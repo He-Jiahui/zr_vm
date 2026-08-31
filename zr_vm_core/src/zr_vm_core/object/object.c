@@ -26,7 +26,59 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(ZR_PLATFORM_WIN)
+#include <windows.h>
+#endif
+
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
+
+static volatile TZrUInt64 gObjectPrototypeNextShapeId = 0u;
+
+static TZrUInt64 object_prototype_next_shape_id(void) {
+    TZrUInt64 shapeId;
+
+    do {
+#if defined(ZR_PLATFORM_WIN)
+        shapeId = (TZrUInt64)InterlockedIncrement64((volatile LONG64 *)&gObjectPrototypeNextShapeId);
+#else
+        shapeId = (TZrUInt64)__atomic_add_fetch(&gObjectPrototypeNextShapeId, 1u, __ATOMIC_RELAXED);
+#endif
+    } while (shapeId == 0u);
+    return shapeId;
+}
+
+static void object_bump_member_version(SZrObject *object) {
+    if (object == ZR_NULL) {
+        return;
+    }
+
+    object->memberVersion++;
+    if (object->memberVersion == 0u) {
+        object->memberVersion++;
+    }
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        SZrObjectPrototype *prototype = (SZrObjectPrototype *)object;
+        if (prototype->shapeId == 0u) {
+            prototype->shapeId = object_prototype_next_shape_id();
+        }
+        if (prototype->shapeGeneration == 0u) {
+            prototype->shapeGeneration = 1u;
+        } else {
+            prototype->shapeGeneration++;
+            if (prototype->shapeGeneration == 0u) {
+                prototype->shapeGeneration++;
+            }
+        }
+    }
+}
+
+void ZrCore_ObjectPrototype_MarkMutation(SZrObjectPrototype *prototype) {
+    if (prototype == ZR_NULL) {
+        return;
+    }
+
+    object_bump_member_version(&prototype->super);
+}
 
 enum {
     ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_GET_FLAGS =
@@ -276,7 +328,7 @@ static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_int_pair(SZrObject
     }
 
     ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
-    iteratorObject->memberVersion++;
+    object_bump_member_version(iteratorObject);
     iteratorObject->cachedStringLookupPair = pair;
     return ZR_TRUE;
 }
@@ -294,7 +346,7 @@ static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_current_null(SZrOb
     }
 
     ZrCore_Value_ResetAsNullNoProfile(&pair->value);
-    iteratorObject->memberVersion++;
+    object_bump_member_version(iteratorObject);
     iteratorObject->cachedStringLookupPair = pair;
     return ZR_TRUE;
 }
@@ -318,7 +370,7 @@ static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_current_value(SZrS
         return ZR_FALSE;
     }
 
-    iteratorObject->memberVersion++;
+    object_bump_member_version(iteratorObject);
     iteratorObject->cachedStringLookupPair = pair;
     return ZR_TRUE;
 }
@@ -340,6 +392,7 @@ static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_raw_int_array_iterato
 
     source = object_try_get_cached_iterator_source_object(state, iteratorObject);
     if (source == ZR_NULL || source->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        source->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL ||
         source->superArrayRawIntData == ZR_NULL ||
         source->superArrayRawIntLength > source->superArrayRawIntCapacity ||
         !object_try_get_cached_iterator_index(iteratorObject, &index) ||
@@ -355,6 +408,7 @@ static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_raw_int_array_iterato
         return ZR_TRUE;
     }
 
+    ZrCore_Profile_RecordMemoryCurrent(ZR_PROFILE_MEMORY_RAW_INT_HIT_COUNT, 1u);
     if (!object_try_set_cached_iterator_int_pair(iteratorObject,
                                                  iteratorObject->cachedIteratorCurrentPair,
                                                  source->superArrayRawIntData[(TZrSize)index]) ||
@@ -454,10 +508,14 @@ static ZR_FORCE_INLINE SZrProfileRuntime *object_profile_runtime(SZrState *state
 }
 
 static ZR_FORCE_INLINE void object_record_helper(SZrState *state, EZrProfileHelperKind kind) {
-    SZrProfileRuntime *runtime = object_profile_runtime(state);
+    if (kind == ZR_PROFILE_HELPER_VALUE_COPY) {
+        ZrCore_Profile_RecordValueCopyFromState(state, sizeof(SZrTypeValue));
+    } else {
+        SZrProfileRuntime *runtime = object_profile_runtime(state);
 
-    if (ZR_UNLIKELY(runtime != ZR_NULL && runtime->recordHelpers)) {
-        runtime->helperCounts[kind]++;
+        if (ZR_UNLIKELY(runtime != ZR_NULL && runtime->recordHelpers)) {
+            runtime->helperCounts[kind]++;
+        }
     }
 }
 
@@ -465,11 +523,14 @@ static ZR_FORCE_INLINE TZrBool object_disable_raw_int_storage_for_generic_array_
                                                                                       SZrObject *object) {
     if (object != ZR_NULL &&
         object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
-        object->superArrayRawIntData != ZR_NULL) {
+        object->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL) {
         if (!zr_super_array_raw_int_materialize_dirty(state, object)) {
             return ZR_FALSE;
         }
-        zr_super_array_raw_int_disable(state, object);
+        /* Materialization transfers ownership to the node map. Keep the mode
+         * explicit so a following generic write cannot re-enter raw storage. */
+        object->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL;
+        object->superArrayRawIntDirty = ZR_FALSE;
     }
     return ZR_TRUE;
 }
@@ -765,6 +826,12 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_get_own_pair_unchecked(SZrSta
     ZR_ASSERT(object != ZR_NULL);
     ZR_ASSERT(key != ZR_NULL);
 
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        object->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, object)) {
+        return ZR_NULL;
+    }
+
     if (!object_node_map_is_ready(object)) {
         return ZR_NULL;
     }
@@ -845,7 +912,7 @@ static ZR_FORCE_INLINE void object_set_existing_pair_value_and_bump_member_versi
     } else {
         ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
     }
-    object->memberVersion++;
+    object_bump_member_version(object);
 }
 
 static TZrBool object_can_use_direct_index_fallback(const SZrObject *object) {
@@ -1407,7 +1474,9 @@ static TZrBool object_get_index_length(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, result, (TZrInt64)object->nodeMap.elementCount);
+    ZrCore_Value_InitAsInt(state,
+                           result,
+                           (TZrInt64)ZrCore_Object_SuperArrayLength(object));
     return ZR_TRUE;
 }
 
@@ -1421,6 +1490,12 @@ SZrObject *ZrCore_Object_New(SZrState *state, SZrObjectPrototype *prototype) {
     object->prototype = prototype;
     object->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
     object->memberVersion = 0;
+    object->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
+    object->superArrayStorageGeneration = 0;
+    object->superArrayRawIntData = ZR_NULL;
+    object->superArrayRawIntLength = 0;
+    object->superArrayRawIntCapacity = 0;
+    object->superArrayRawIntDirty = ZR_FALSE;
     ZrCore_HashSet_Construct(&object->nodeMap);
     object_reset_hot_field_pair_cache(object);
     return object;
@@ -1442,6 +1517,12 @@ SZrObject *ZrCore_Object_NewCustomized(struct SZrState *state, TZrSize size, EZr
                                 : ZR_NULL;
     object->internalType = internalType;
     object->memberVersion = 0;
+    object->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
+    object->superArrayStorageGeneration = 0;
+    object->superArrayRawIntData = ZR_NULL;
+    object->superArrayRawIntLength = 0;
+    object->superArrayRawIntCapacity = 0;
+    object->superArrayRawIntDirty = ZR_FALSE;
     ZrCore_HashSet_Construct(&object->nodeMap);
     object_reset_hot_field_pair_cache(object);
     return object;
@@ -1472,6 +1553,14 @@ void ZrCore_Object_Deconstruct(SZrState *state, SZrObject *object) {
 
     if (state == ZR_NULL || object == ZR_NULL || (global = state->global) == ZR_NULL) {
         return;
+    }
+
+    /* Deconstruct is also used outside GC teardown; release the canonical raw
+     * array sidecar here so those paths cannot leak it. GC teardown has already
+     * cleared the sidecar and remains idempotent. */
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        object->superArrayRawIntData != ZR_NULL) {
+        zr_super_array_raw_int_release(global, object);
     }
 
     if (object->nodeMap.isValid) {
@@ -1709,6 +1798,12 @@ static void object_set_value_core(SZrState *state,
         }
     }
 
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        object->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_NONE) {
+        object->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL;
+        object->superArrayStorageGeneration++;
+    }
+
     skipWriteBarrier = (TZrBool)(skipWriteBarrier && object_can_skip_new_owner_write_barrier_for_object(object));
 
     if (!object_pin_raw_object_if_needed(
@@ -1743,7 +1838,7 @@ static void object_set_value_core(SZrState *state,
         } else {
             ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
         }
-        object->memberVersion++;
+        object_bump_member_version(object);
         ZrCore_GcDomain_MutationEnd(state, mutationLocked);
         object_unpin_value_object(state->global, value, valuePinned);
         object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
@@ -1772,7 +1867,7 @@ static void object_set_value_core(SZrState *state,
         ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->key);
         ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
     }
-    object->memberVersion++;
+    object_bump_member_version(object);
     object_refresh_cached_string_lookup_pair(object, storageKey, pair);
     object_refresh_hidden_items_object_cache(state, object, storageKey, pair);
     ZrCore_GcDomain_MutationEnd(state, mutationLocked);
@@ -1924,7 +2019,7 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
     }
 
     if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
-        object->superArrayRawIntData != ZR_NULL &&
+        object->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
         !zr_super_array_raw_int_materialize_dirty(state, object)) {
         return ZR_NULL;
     }
@@ -1964,6 +2059,8 @@ SZrObjectPrototype *ZrCore_ObjectPrototype_New(SZrState *state, SZrString *name,
     prototype->name = name;
     prototype->type = type;
     prototype->superPrototype = ZR_NULL;
+    prototype->shapeId = object_prototype_next_shape_id();
+    prototype->shapeGeneration = 1u;
     prototype->memberDescriptors = ZR_NULL;
     prototype->memberDescriptorCount = 0;
     prototype->memberDescriptorCapacity = 0;
@@ -2013,6 +2110,8 @@ SZrStructPrototype *ZrCore_StructPrototype_New(SZrState *state, SZrString *name)
     prototype->super.name = name;
     prototype->super.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     prototype->super.superPrototype = ZR_NULL;
+    prototype->super.shapeId = object_prototype_next_shape_id();
+    prototype->super.shapeGeneration = 1u;
     prototype->super.memberDescriptors = ZR_NULL;
     prototype->super.memberDescriptorCount = 0;
     prototype->super.memberDescriptorCapacity = 0;
@@ -2052,7 +2151,7 @@ void ZrCore_ObjectPrototype_SetSuper(SZrState *state, SZrObjectPrototype *protot
         return;
     }
     prototype->superPrototype = superPrototype;
-    prototype->super.memberVersion++;
+    ZrCore_ObjectPrototype_MarkMutation(prototype);
 }
 
 // 初始化元表
@@ -2062,6 +2161,7 @@ void ZrCore_ObjectPrototype_InitMetaTable(SZrState *state, SZrObjectPrototype *p
         return;
     }
     ZrCore_MetaTable_Construct(&prototype->metaTable);
+    ZrCore_ObjectPrototype_MarkMutation(prototype);
 }
 
 // 向 StructPrototype 添加字段
@@ -2088,6 +2188,7 @@ void ZrCore_StructPrototype_AddField(SZrState *state, SZrStructPrototype *protot
         }
     }
     ZrCore_Value_Copy(state, &pair->value, &value);
+    ZrCore_ObjectPrototype_MarkMutation(&prototype->super);
 }
 
 // 向 Prototype 添加元函数
@@ -2112,6 +2213,7 @@ void ZrCore_ObjectPrototype_AddMeta(SZrState *state, SZrObjectPrototype *prototy
     
     // 添加到 metaTable
     prototype->metaTable.metas[metaType] = meta;
+    ZrCore_ObjectPrototype_MarkMutation(prototype);
 }
 
 void ZrCore_ObjectPrototype_AddManagedField(SZrState *state,
@@ -2141,6 +2243,7 @@ void ZrCore_ObjectPrototype_AddManagedField(SZrState *state,
     fieldInfo->callsClose = callsClose;
     fieldInfo->callsDestructor = callsDestructor;
     fieldInfo->declarationOrder = declarationOrder;
+    ZrCore_ObjectPrototype_MarkMutation(prototype);
 }
 
 static void object_drop_managed_fields_for_prototype(SZrState *state,
@@ -2239,7 +2342,7 @@ TZrBool ZrCore_ObjectPrototype_AddMemberDescriptor(struct SZrState *state,
     }
 
     prototype->memberDescriptors[prototype->memberDescriptorCount++] = *descriptor;
-    prototype->super.memberVersion++;
+    ZrCore_ObjectPrototype_MarkMutation(prototype);
     return ZR_TRUE;
 }
 

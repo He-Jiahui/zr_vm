@@ -10,6 +10,7 @@ set(zr_vm_rust_binding_cli_support_sources
         ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
         ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_rust_binding/native.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_rust_binding/native_argument_view.c
 )
 
 function(zr_vm_rust_binding_configure_target target_name)

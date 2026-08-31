@@ -25,14 +25,14 @@
       "column": 21,
       "file": "tests/language_server/test_lsp_interface.c",
       "legacyForm": "percentUnique",
-      "line": 301,
+      "line": 302,
       "reason": "expectedRemovedOwnershipDiagnosticNegative"
     },
     {
       "column": 10,
       "file": "tests/language_server/test_lsp_project_features.c",
       "legacyForm": "percentImport",
-      "line": 6608,
+      "line": 6730,
       "reason": "expectedRemovedImportSemanticTokenNegative"
     },
     {
@@ -60,7 +60,7 @@
       "column": 42,
       "file": "tests/parser/test_percent_syntax_cutover.c",
       "legacyForm": "unrecognizedPercentDirective",
-      "line": 173,
+      "line": 197,
       "reason": "expectedUnknownPercentNegative"
     },
     {
@@ -484,6 +484,70 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/lsp/01-semantic-core/2026-07-24-canonical-property-consumer-parity.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-declaration-type-display.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-inlay-declaration-type.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-member-token-fail-closed.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-owner-type-token-identity.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-project-symbol-type.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-property-signature-type.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-receiver-member-type.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-10-canonical-symbol-documentation-type.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-11-canonical-native-construct-completion-expression-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-11-canonical-native-construct-receiver-expression-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-12-canonical-direct-call-signature-expression-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-12-canonical-generic-receiver-signature-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-12-canonical-native-construct-signature-expression-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-13-canonical-callable-value-signature-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/01-semantic-core/2026-08-13-canonical-closure-value-signature-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/lsp/01-semantic-inference-core.md",
       "reason": "historicalPlan"
     },
@@ -548,7 +612,35 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-05-block-close-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-05-catch-pattern-close-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/lsp/02-diagnostics/2026-08-05-declaration-body-close-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-05-declaration-body-open-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-05-statement-body-open-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-08-for-foreach-header-safe-fix-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/02-diagnostics/2026-08-08-switch-extern-close-safe-fix-convergence.md",
       "reason": "historicalPlan"
     },
     {
@@ -633,6 +725,54 @@
     },
     {
       "file": "docs/plans/lsp/03-robustness/2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-100-file-workspace-incremental-latency-budget.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-rapid-stdio-stale-response-churn.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-single-document-diagnostics-latency-budget.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-stdio-cancellation-lifecycle.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-stdio-content-modified-fence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-two-historical-text-snapshots.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-08-warm-request-latency-budget.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-09-semantic-cache-storage-accounting.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-09-two-historical-semantic-snapshots.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-10-l6-final-stdio-cli-matrix.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-10-stdio-process-peak-memory.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/03-robustness/2026-08-10-workspace-semantic-cache-lru.md",
       "reason": "historicalPlan"
     },
     {
@@ -1188,6 +1328,10 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/superpowers/specs/2026-04-14-steady-state-performance-convergence-design.md",
       "reason": "historicalPlan"
     },
@@ -1209,6 +1353,10 @@
     },
     {
       "file": "docs/superpowers/specs/2026-08-04-repl-closure-submission-design.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md",
       "reason": "historicalPlan"
     },
     {
@@ -1756,74 +1904,6 @@
       "reason": "expectedDiagnosticFixture"
     },
     {
-      "file": "tests/fixtures/scripts/basic_operations.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/classes.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/classes_full.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/closures.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/compile_time_errors.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/compile_time_execution.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/decorators.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/enums.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/intermediate.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/lambda.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/module_a.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/module_b.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/modules.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/named_args_and_compile_time.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/named_arguments.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/named_arguments_errors.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
-      "file": "tests/fixtures/scripts/test_declarations.zr",
-      "reason": "historicalLegacyParserFixture"
-    },
-    {
       "file": "tests/fixtures/syntax_migration_frontend/input/machine_forms.zr",
       "reason": "legacyOrMigrationFixture"
     },
@@ -1846,34 +1926,6 @@
     {
       "file": "tests/fixtures/syntax_migration_inventory/source/legacy_forms.zr",
       "reason": "inventorySelfFixture"
-    },
-    {
-      "file": "tests/golden/ast/basic_operations.zrs",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/ast/classes.zrs",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/ast/classes_full.zrs",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/binary/basic_operations.zro",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/intermediate/basic_operations.zri",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/intermediate/classes.zri",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/intermediate/classes_full.zri",
-      "reason": "binaryArtifact"
     },
     {
       "file": "tests/migration/test_percent_test_migration.c",
@@ -2131,11 +2183,11 @@
       "range": {
         "end": {
           "column": 23,
-          "line": 406
+          "line": 408
         },
         "start": {
           "column": 14,
-          "line": 406
+          "line": 408
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -2147,11 +2199,11 @@
       "range": {
         "end": {
           "column": 25,
-          "line": 431
+          "line": 433
         },
         "start": {
           "column": 14,
-          "line": 431
+          "line": 433
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5615,15 +5667,47 @@
       "syntaxForm": "legacyNewStruct"
     },
     {
+      "file": "tests/language_server/test_lsp_diagnostic_safe_fix_cases.h",
+      "range": {
+        "end": {
+          "column": 37,
+          "line": 2128
+        },
+        "start": {
+          "column": 34,
+          "line": 2128
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_diagnostic_safe_fix_cases.h",
+      "range": {
+        "end": {
+          "column": 37,
+          "line": 2135
+        },
+        "start": {
+          "column": 34,
+          "line": 2135
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
       "file": "tests/language_server/test_lsp_interface.c",
       "range": {
         "end": {
           "column": 25,
-          "line": 1023
+          "line": 1024
         },
         "start": {
           "column": 21,
-          "line": 1023
+          "line": 1024
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5635,11 +5719,11 @@
       "range": {
         "end": {
           "column": 29,
-          "line": 2952
+          "line": 2953
         },
         "start": {
           "column": 25,
-          "line": 2952
+          "line": 2953
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5651,11 +5735,11 @@
       "range": {
         "end": {
           "column": 26,
-          "line": 4325
+          "line": 4326
         },
         "start": {
           "column": 17,
-          "line": 4325
+          "line": 4326
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5667,11 +5751,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 4328
+          "line": 4329
         },
         "start": {
           "column": 24,
-          "line": 4328
+          "line": 4329
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5683,11 +5767,11 @@
       "range": {
         "end": {
           "column": 30,
-          "line": 4329
+          "line": 4330
         },
         "start": {
           "column": 21,
-          "line": 4329
+          "line": 4330
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5699,11 +5783,11 @@
       "range": {
         "end": {
           "column": 31,
-          "line": 4485
+          "line": 4486
         },
         "start": {
           "column": 23,
-          "line": 4485
+          "line": 4486
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5715,11 +5799,11 @@
       "range": {
         "end": {
           "column": 56,
-          "line": 6264
+          "line": 6265
         },
         "start": {
           "column": 41,
-          "line": 6264
+          "line": 6265
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5731,11 +5815,11 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 6659
+          "line": 6660
         },
         "start": {
           "column": 37,
-          "line": 6659
+          "line": 6660
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5747,27 +5831,139 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 6665
+          "line": 6666
         },
         "start": {
           "column": 37,
-          "line": 6665
+          "line": 6666
         }
       },
       "reason": "currentParserSemanticBindingValidated",
       "sourceKind": "embeddedZrFixture",
       "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_interface.c",
+      "range": {
+        "end": {
+          "column": 35,
+          "line": 7207
+        },
+        "start": {
+          "column": 31,
+          "line": 7207
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyNewStruct"
     },
     {
       "file": "tests/language_server/test_lsp_interface.c",
       "range": {
         "end": {
           "column": 38,
-          "line": 7169
+          "line": 7377
         },
         "start": {
           "column": 31,
-          "line": 7169
+          "line": 7377
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
+      "range": {
+        "end": {
+          "column": 38,
+          "line": 17
+        },
+        "start": {
+          "column": 31,
+          "line": 17
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
+      "range": {
+        "end": {
+          "column": 38,
+          "line": 22
+        },
+        "start": {
+          "column": 31,
+          "line": 22
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
+      "range": {
+        "end": {
+          "column": 38,
+          "line": 161
+        },
+        "start": {
+          "column": 31,
+          "line": 161
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
+      "range": {
+        "end": {
+          "column": 38,
+          "line": 251
+        },
+        "start": {
+          "column": 31,
+          "line": 251
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
+      "range": {
+        "end": {
+          "column": 38,
+          "line": 256
+        },
+        "start": {
+          "column": 31,
+          "line": 256
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
+      "range": {
+        "end": {
+          "column": 38,
+          "line": 358
+        },
+        "start": {
+          "column": 31,
+          "line": 358
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5811,11 +6007,11 @@
       "range": {
         "end": {
           "column": 20,
-          "line": 603
+          "line": 604
         },
         "start": {
           "column": 17,
-          "line": 603
+          "line": 604
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5827,11 +6023,11 @@
       "range": {
         "end": {
           "column": 34,
-          "line": 5092
+          "line": 5213
         },
         "start": {
           "column": 31,
-          "line": 5092
+          "line": 5213
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5843,11 +6039,11 @@
       "range": {
         "end": {
           "column": 38,
-          "line": 6799
+          "line": 6921
         },
         "start": {
           "column": 31,
-          "line": 6799
+          "line": 6921
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5859,11 +6055,11 @@
       "range": {
         "end": {
           "column": 38,
-          "line": 7643
+          "line": 7765
         },
         "start": {
           "column": 31,
-          "line": 7643
+          "line": 7765
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5939,11 +6135,11 @@
       "range": {
         "end": {
           "column": 31,
-          "line": 3983
+          "line": 4084
         },
         "start": {
           "column": 21,
-          "line": 3983
+          "line": 4084
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5955,11 +6151,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 3988
+          "line": 4089
         },
         "start": {
           "column": 27,
-          "line": 3988
+          "line": 4089
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -5971,11 +6167,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 3994
+          "line": 4095
         },
         "start": {
           "column": 21,
-          "line": 3994
+          "line": 4095
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -6866,12 +7062,12 @@
       "file": "tests/parser/test_canonical_consumers.c",
       "range": {
         "end": {
-          "column": 27,
-          "line": 700
+          "column": 30,
+          "line": 832
         },
         "start": {
-          "column": 18,
-          "line": 700
+          "column": 21,
+          "line": 832
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -6883,11 +7079,11 @@
       "range": {
         "end": {
           "column": 46,
-          "line": 702
+          "line": 834
         },
         "start": {
           "column": 37,
-          "line": 702
+          "line": 834
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -7539,11 +7735,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 4395
+          "line": 4369
         },
         "start": {
           "column": 19,
-          "line": 4395
+          "line": 4369
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -7555,11 +7751,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 5709
+          "line": 5681
         },
         "start": {
           "column": 29,
-          "line": 5709
+          "line": 5681
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -7645,6 +7841,166 @@
       "reason": "currentParserSemanticBindingValidated",
       "sourceKind": "embeddedZrFixture",
       "syntaxForm": "legacyNewStruct"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 794
+        },
+        "start": {
+          "column": 33,
+          "line": 794
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 46,
+          "line": 798
+        },
+        "start": {
+          "column": 39,
+          "line": 798
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 32,
+          "line": 845
+        },
+        "start": {
+          "column": 28,
+          "line": 845
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyNewStruct"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 945
+        },
+        "start": {
+          "column": 33,
+          "line": 945
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 978
+        },
+        "start": {
+          "column": 33,
+          "line": 978
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 1010
+        },
+        "start": {
+          "column": 33,
+          "line": 1010
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 1043
+        },
+        "start": {
+          "column": 33,
+          "line": 1043
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 41,
+          "line": 1051
+        },
+        "start": {
+          "column": 34,
+          "line": 1051
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 61,
+          "line": 1084
+        },
+        "start": {
+          "column": 56,
+          "line": 1084
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "range": {
+        "end": {
+          "column": 33,
+          "line": 1086
+        },
+        "start": {
+          "column": 29,
+          "line": 1086
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
     },
     {
       "file": "tests/parser/test_parser.c",
@@ -7794,12 +8150,28 @@
       "file": "tests/parser/test_percent_syntax_cutover.c",
       "range": {
         "end": {
+          "column": 44,
+          "line": 299
+        },
+        "start": {
+          "column": 30,
+          "line": 299
+        }
+      },
+      "reason": "currentParserSemanticBindingValidated",
+      "sourceKind": "embeddedZrFixture",
+      "syntaxForm": "legacyBareTypeCall"
+    },
+    {
+      "file": "tests/parser/test_percent_syntax_cutover.c",
+      "range": {
+        "end": {
           "column": 55,
-          "line": 277
+          "line": 319
         },
         "start": {
           "column": 40,
-          "line": 277
+          "line": 319
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8051,11 +8423,11 @@
       "range": {
         "end": {
           "column": 56,
-          "line": 481
+          "line": 484
         },
         "start": {
           "column": 50,
-          "line": 481
+          "line": 484
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8067,11 +8439,11 @@
       "range": {
         "end": {
           "column": 57,
-          "line": 483
+          "line": 486
         },
         "start": {
           "column": 51,
-          "line": 483
+          "line": 486
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8083,11 +8455,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 510
+          "line": 513
         },
         "start": {
           "column": 35,
-          "line": 510
+          "line": 513
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8099,11 +8471,11 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 511
+          "line": 514
         },
         "start": {
           "column": 36,
-          "line": 511
+          "line": 514
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8115,11 +8487,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 515
+          "line": 518
         },
         "start": {
           "column": 47,
-          "line": 515
+          "line": 518
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8131,11 +8503,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 540
+          "line": 543
         },
         "start": {
           "column": 35,
-          "line": 540
+          "line": 543
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8147,11 +8519,11 @@
       "range": {
         "end": {
           "column": 61,
-          "line": 546
+          "line": 549
         },
         "start": {
           "column": 55,
-          "line": 546
+          "line": 549
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8179,11 +8551,11 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 450
+          "line": 459
         },
         "start": {
           "column": 34,
-          "line": 450
+          "line": 459
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8195,11 +8567,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 497
+          "line": 506
         },
         "start": {
           "column": 38,
-          "line": 497
+          "line": 506
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8211,11 +8583,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 549
+          "line": 558
         },
         "start": {
           "column": 45,
-          "line": 549
+          "line": 558
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8227,11 +8599,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 606
+          "line": 615
         },
         "start": {
           "column": 46,
-          "line": 606
+          "line": 615
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8243,11 +8615,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 609
+          "line": 618
         },
         "start": {
           "column": 45,
-          "line": 609
+          "line": 618
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8259,11 +8631,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 671
+          "line": 680
         },
         "start": {
           "column": 45,
-          "line": 671
+          "line": 680
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8275,11 +8647,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 748
+          "line": 757
         },
         "start": {
           "column": 45,
-          "line": 748
+          "line": 757
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8291,11 +8663,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 821
+          "line": 830
         },
         "start": {
           "column": 46,
-          "line": 821
+          "line": 830
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8307,11 +8679,11 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 1053
+          "line": 1062
         },
         "start": {
           "column": 34,
-          "line": 1053
+          "line": 1062
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8323,11 +8695,11 @@
       "range": {
         "end": {
           "column": 317,
-          "line": 1129
+          "line": 1138
         },
         "start": {
           "column": 177,
-          "line": 1129
+          "line": 1138
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8371,11 +8743,11 @@
       "range": {
         "end": {
           "column": 41,
-          "line": 1888
+          "line": 1885
         },
         "start": {
           "column": 35,
-          "line": 1888
+          "line": 1885
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8387,11 +8759,11 @@
       "range": {
         "end": {
           "column": 41,
-          "line": 1959
+          "line": 1956
         },
         "start": {
           "column": 35,
-          "line": 1959
+          "line": 1956
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8403,11 +8775,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 1960
+          "line": 1957
         },
         "start": {
           "column": 25,
-          "line": 1960
+          "line": 1957
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8419,11 +8791,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 2023
+          "line": 2020
         },
         "start": {
           "column": 33,
-          "line": 2023
+          "line": 2020
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8435,11 +8807,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 2026
+          "line": 2023
         },
         "start": {
           "column": 25,
-          "line": 2026
+          "line": 2023
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -8451,11 +8823,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 2097
+          "line": 2096
         },
         "start": {
           "column": 33,
-          "line": 2097
+          "line": 2096
         }
       },
       "reason": "currentParserSemanticBindingValidated",
@@ -11533,6 +11905,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/cli-and-tooling/lsp-stdio-validation.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/cli-and-tooling/lsp-workspace-edit-snapshot-provenance.md",
       "sourceKind": "currentDocumentation"
     },
@@ -11757,11 +12133,23 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/parser-and-semantics/lsp-historical-semantic-snapshots.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/parser-and-semantics/lsp-native-descriptor-function-callable-contract.md",
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/parser-and-semantics/lsp-semantic-cache-storage.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/parser-and-semantics/lsp-semantic-resolution-and-native-imports.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/parser-and-semantics/lsp-workspace-semantic-cache-lru.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -13493,6 +13881,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/language_server/test_lsp_canonical_receiver_member_type_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/language_server/test_lsp_class_member_parser_diagnostics.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -13566,6 +13958,10 @@
     },
     {
       "file": "tests/language_server/test_lsp_logical_semantic_query.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/language_server/test_lsp_native_construct_receiver_fact_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -13718,6 +14114,10 @@
     },
     {
       "file": "tests/language_server/test_lsp_position_mapping.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/language_server/test_lsp_project_canonical_symbol_type_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -14397,6 +14797,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_aot_receiver_guard_shared_library.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_aot_static_direct_call_identity_source_contract_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
@@ -14789,6 +15193,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_ownership_intrinsic_member_separation.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_parser.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -15030,18 +15438,6 @@
     },
     {
       "file": "tests/rust_binding/test_rust_binding_api.c",
-      "sourceKind": "embeddedZrFixture"
-    },
-    {
-      "file": "tests/scripts/test_comprehensive.c",
-      "sourceKind": "embeddedZrFixture"
-    },
-    {
-      "file": "tests/scripts/test_utils.c",
-      "sourceKind": "embeddedZrFixture"
-    },
-    {
-      "file": "tests/scripts/test_utils.h",
       "sourceKind": "embeddedZrFixture"
     },
     {

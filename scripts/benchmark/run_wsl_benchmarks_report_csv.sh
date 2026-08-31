@@ -28,6 +28,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
 py_tool="${script_dir}/benchmark_reports_to_csv.py"
 aggregate_tool="${script_dir}/aggregate_benchmark_summary.py"
+capture_tool="${script_dir}/capture_benchmark_environment.sh"
+task4_tool="${script_dir}/benchmark_task4_contract.py"
+publisher_tool="${script_dir}/benchmark_report_publisher.py"
 
 zr_vm_resolve_cmake_build_dir() {
   local repo="$1"
@@ -86,11 +89,19 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "error: python3 not found in PATH" >&2
   exit 1
 fi
+if [[ ! -x "${capture_tool}" ]]; then
+  echo "error: benchmark capture wrapper is missing or not executable: ${capture_tool}" >&2
+  exit 1
+fi
 
 report_dir="${build_dir}/tests_generated/performance"
 tests_generated_root="${build_dir}/tests_generated"
 callgrind_archive_dir="${tests_generated_root}/performance_profile_callgrind"
 timing_tier="${ZR_VM_TEST_TIER:-core}"
+baseline_summary="${ZR_VM_BENCHMARK_BASELINE_SUMMARY:-}"
+destination_root="${ZR_VM_BENCHMARK_REPORT_DESTINATION:-}"
+run_id="${ZR_VM_BENCHMARK_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+timing_environment="${tests_generated_root}/environment_report.json"
 
 echo "Unit Test - WSL benchmark suite + CSV export"
 echo "Testing benchmark CSV export:
@@ -105,13 +116,19 @@ if [[ "${BENCHMARK_CSV_SKIP_CTEST:-0}" == "1" ]]; then
   ctest_rc=0
 elif [[ "${BENCHMARK_DUAL_CTEST:-1}" == "1" ]]; then
   echo "---- pass 1/2: profile tier + Callgrind instruction counting (ZR_VM_PERF_CALLGRIND_COUNTING=1)"
-  (
+  profile_environment="${tests_generated_root}/environment_report_profile.json"
+  if (
     cd "${build_dir}"
     export ZR_VM_TEST_TIER=profile
     export ZR_VM_PERF_CALLGRIND_COUNTING=1
-    ctest -R '^performance_report$' --output-on-failure
-  )
-  rc_a=$?
+    "${capture_tool}" --repo-root "${repo_root}" --build-dir "${build_dir}" \
+      --output "${profile_environment}" -- env ZR_VM_BENCHMARK_ENVIRONMENT_REPORT="${profile_environment}" \
+      ctest -R '^performance_report$' --output-on-failure
+  ); then
+    rc_a=0
+  else
+    rc_a=$?
+  fi
   if [[ "${rc_a}" -ne 0 ]]; then
     end_ts=$(date +%s)
     elapsed=$((end_ts - start_ts))
@@ -120,6 +137,8 @@ elif [[ "${BENCHMARK_DUAL_CTEST:-1}" == "1" ]]; then
     exit "${rc_a}"
   fi
   if [[ -d "${report_dir}" ]]; then
+    python3 "${task4_tool}" attach --report-dir "${report_dir}" --environment "${profile_environment}"
+    cp "${profile_environment}" "${report_dir}/environment_report.json"
     rm -rf "${callgrind_archive_dir}"
     mv "${report_dir}" "${callgrind_archive_dir}"
   else
@@ -128,19 +147,30 @@ elif [[ "${BENCHMARK_DUAL_CTEST:-1}" == "1" ]]; then
   fi
 
   echo "---- pass 2/2: timing pass (tier=${timing_tier}, callgrind counting off)"
-  (
+  if (
     cd "${build_dir}"
     export ZR_VM_TEST_TIER="${timing_tier}"
     unset ZR_VM_PERF_CALLGRIND_COUNTING
-    ctest -R '^performance_report$' --output-on-failure
-  )
-  ctest_rc=$?
+    "${capture_tool}" --repo-root "${repo_root}" --build-dir "${build_dir}" \
+      --output "${timing_environment}" -- env ZR_VM_BENCHMARK_ENVIRONMENT_REPORT="${timing_environment}" \
+      ctest -R '^performance_report$' --output-on-failure
+  ); then
+    ctest_rc=0
+  else
+    ctest_rc=$?
+  fi
 else
-  (
+  if (
     cd "${build_dir}"
-    ctest -R '^performance_report$' --output-on-failure
-  )
-  ctest_rc=$?
+    "${capture_tool}" --repo-root "${repo_root}" --build-dir "${build_dir}" \
+      --output "${timing_environment}" -- env ZR_VM_TEST_TIER="${timing_tier}" \
+      ZR_VM_BENCHMARK_ENVIRONMENT_REPORT="${timing_environment}" \
+      ctest -R '^performance_report$' --output-on-failure
+  ); then
+    ctest_rc=0
+  else
+    ctest_rc=$?
+  fi
 fi
 end_ts=$(date +%s)
 elapsed=$((end_ts - start_ts))
@@ -156,12 +186,25 @@ if [[ ! -f "${report_dir}/benchmark_report.json" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${timing_environment}" ]]; then
+  echo "error: missing finalized environment_report.json: ${timing_environment}" >&2
+  exit 1
+fi
+cp "${timing_environment}" "${report_dir}/environment_report.json"
+python3 "${task4_tool}" attach --report-dir "${report_dir}" --environment "${report_dir}/environment_report.json"
+
 python3 "${py_tool}" --report-dir "${report_dir}"
 
 if [[ -d "${tests_generated_root}" ]]; then
-  python3 "${aggregate_tool}" \
-    --tests-generated "${tests_generated_root}" \
+  aggregate_args=(
+    "${aggregate_tool}"
+    --tests-generated "${tests_generated_root}"
     --bundle-html "${tests_generated_root}/benchmark_compare_embedded.html"
+  )
+  if [[ -n "${baseline_summary}" ]]; then
+    aggregate_args+=(--baseline-summary "${baseline_summary}")
+  fi
+  python3 "${aggregate_args[@]}"
   if [[ "${BENCHMARK_DUAL_CTEST:-1}" == "1" && -d "${callgrind_archive_dir}" ]]; then
     python3 "${aggregate_tool}" \
       --tests-generated "${tests_generated_root}" \
@@ -171,6 +214,13 @@ if [[ -d "${tests_generated_root}" ]]; then
   fi
 fi
 
+if [[ -n "${destination_root}" ]]; then
+  python3 "${publisher_tool}" \
+    --source "${tests_generated_root}" \
+    --destination "${destination_root}" \
+    --run-id "${run_id}"
+fi
+
 echo "Pass - Cost Time:${elapsed}(s) - WSL benchmark CSV export
   timings (pass 2): ${report_dir}/benchmark_speed_timings.csv
   zr_interp vs langs: ${report_dir}/zr_interp_vs_languages.csv (if comparison_report.json present)
@@ -178,6 +228,9 @@ echo "Pass - Cost Time:${elapsed}(s) - WSL benchmark CSV export
   html viewer data: ${tests_generated_root}/benchmark_html_viewer.json
   html embedded (double-click): ${tests_generated_root}/benchmark_compare_embedded.html
   viewer template: ${script_dir}/benchmark_compare_viewer.html"
+if [[ -n "${destination_root}" ]]; then
+  echo "  published report bundle: ${destination_root}/${run_id}/"
+fi
 if [[ "${BENCHMARK_DUAL_CTEST:-1}" == "1" && -d "${callgrind_archive_dir}" ]]; then
   echo "  callgrind profile pass (pass 1): ${callgrind_archive_dir}/
   summary json (callgrind): ${tests_generated_root}/benchmark_suite_summary_callgrind.json"

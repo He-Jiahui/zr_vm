@@ -46,6 +46,44 @@ local function parse_scale(args)
     return TIER_SCALES[tier]
 end
 
+local function parse_invocation(args)
+    local server_mode = false
+    local requested_case = nil
+    local tier = "core"
+    local runner_args = {}
+    local index = 1
+
+    while index <= #args do
+        local value = args[index]
+        if value == "--benchmark-server" then
+            server_mode = true
+            index = index + 1
+        elseif value == "--case" then
+            if index + 1 > #args then
+                error("--case requires a benchmark name")
+            end
+            requested_case = args[index + 1]
+            index = index + 2
+        else
+            runner_args[#runner_args + 1] = value
+            if value == "--tier" or value == "--scale" then
+                if index + 1 > #args then
+                    error(value .. " requires a value")
+                end
+                runner_args[#runner_args + 1] = args[index + 1]
+                if value == "--tier" then
+                    tier = args[index + 1]
+                end
+                index = index + 2
+            else
+                index = index + 1
+            end
+        end
+    end
+
+    return server_mode, requested_case, tier, runner_args
+end
+
 local function numeric_loops(scale)
     local outer_limit = 24 * scale
     local inner_limit = 3000 * scale
@@ -436,11 +474,57 @@ local CASE_HANDLERS = {
 
 function M.run_main(case_name, args)
     local handler = CASE_HANDLERS[case_name]
+    local server_mode, requested_case, tier, runner_args
     if handler == nil then
         error("unknown benchmark case: " .. tostring(case_name))
     end
 
-    local scale = parse_scale(args or {})
+    server_mode, requested_case, tier, runner_args = parse_invocation(args or {})
+    if requested_case ~= nil and requested_case ~= case_name then
+        error("benchmark case mismatch: " .. tostring(requested_case))
+    end
+
+    local scale = parse_scale(runner_args)
+    if server_mode then
+        io.stdout:setvbuf("no")
+        print("READY benchmark-checksum-v1:" .. case_name .. ":" .. tier)
+        while true do
+            local line = io.read("*l")
+            if line == nil then
+                error("benchmark protocol input closed before STOP")
+            end
+            if line == "STOP" then
+                return
+            end
+
+            local kind, request_index, repetition_text = line:match("^(%u+) ([1-9]%d*) ([1-9]%d*)$")
+            local request_index_number = tonumber(request_index)
+            local repetitions = tonumber(repetition_text)
+            if (kind ~= "WARMUP" and kind ~= "RUN") or request_index == nil
+                or request_index_number == nil or request_index_number > 2147483647
+                or math.floor(request_index_number) ~= request_index_number
+                or repetitions == nil or repetitions > 1048576 or math.floor(repetitions) ~= repetitions then
+                print("ERROR 0 malformed-request")
+                error("malformed benchmark protocol request")
+            end
+
+            local checksum = nil
+            for _ = 1, repetitions do
+                local succeeded, repetition_checksum = pcall(handler[2], scale)
+                if not succeeded then
+                    print("ERROR " .. request_index .. " workload-exception")
+                    error(repetition_checksum, 0)
+                end
+                if checksum ~= nil and repetition_checksum ~= checksum then
+                    print("ERROR " .. request_index .. " repetition-checksum-mismatch")
+                    error("benchmark repetition checksum mismatch", 0)
+                end
+                checksum = repetition_checksum
+            end
+            print("DONE " .. request_index .. " " .. tostring(checksum))
+        end
+    end
+
     print(handler[1])
     print(handler[2](scale))
 end

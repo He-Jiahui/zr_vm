@@ -2117,4 +2117,117 @@ static void test_lsp_code_action_skips_placeholder_diagnostic_fix(
     }
 }
 
+static void test_lsp_code_action_migrates_removed_ownership_member_call(
+        SZrState *state,
+        int *failures) {
+    const TZrChar *summary =
+            "LSP code action migrates removed ownership member call";
+    const TZrChar *content =
+            "resource class Box {}\n"
+            "fn migrate(): int {\n"
+            "    var owner = own Box();\n"
+            "    owner.share();\n"
+            "    return 0;\n"
+            "}\n";
+    const TZrChar *fixedContent =
+            "resource class Box {}\n"
+            "fn migrate(): int {\n"
+            "    var owner = own Box();\n"
+            "    share(owner);\n"
+            "    return 0;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics = {0};
+    SZrArray actions = {0};
+    const SZrLspDiagnostic *diagnostic = ZR_NULL;
+    const SZrLspDiagnosticFix *fix = ZR_NULL;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state,
+            "file:///tmp/zr_lsp_removed_ownership_member_fix.zr",
+            content,
+            &uri);
+    ZrCore_Array_Init(
+            state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        diagnostic = diagnostic_safe_fix_find_code(
+                &diagnostics, "removed_ownership_member_syntax");
+        if (diagnostic != ZR_NULL && diagnostic->fixes.isValid &&
+            diagnostic->fixes.length == 1U) {
+            fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                    (SZrArray *)&diagnostic->fixes, 0U);
+        }
+        if (fix != ZR_NULL &&
+            diagnostic->range.start.line == 3 &&
+            diagnostic->range.start.character == 4 &&
+            diagnostic->range.end.line == 3 &&
+            diagnostic->range.end.character == 17 &&
+            fix->editRange.start.line == 3 &&
+            fix->editRange.start.character == 4 &&
+            fix->editRange.end.line == 3 &&
+            fix->editRange.end.character == 17 &&
+            fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
+            strcmp(test_string_text(fix->title),
+                   "Migrate ownership operation") == 0 &&
+            strcmp(test_string_text(fix->editText), "share(owner)") == 0 &&
+            ZrLanguageServer_Lsp_GetCodeActions(
+                    state,
+                    context,
+                    uri,
+                    diagnostic->range,
+                    &actions) &&
+            diagnostic_safe_fix_action_matches(
+                    &actions,
+                    "Migrate ownership operation",
+                    "share(owner)")) {
+            valid = ZR_TRUE;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    memset(&actions, 0, sizeof(actions));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    if (valid &&
+        ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                fixedContent,
+                strlen(fixedContent),
+                2)) {
+        ZrCore_Array_Init(
+                state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+        valid = ZrLanguageServer_Lsp_GetDiagnostics(
+                        state, context, uri, &diagnostics) &&
+                diagnostic_safe_fix_find_code(
+                        &diagnostics,
+                        "removed_ownership_member_syntax") == ZR_NULL;
+    } else {
+        valid = ZR_FALSE;
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "ownership member migration was not fact-owned, machine-applicable, or cleared after v2 rebind");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 #endif

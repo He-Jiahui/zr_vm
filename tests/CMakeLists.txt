@@ -41,6 +41,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_register_executable_suite.cmake
 set(ZR_VM_PROJECTS_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_projects_suite.cmake)
 set(ZR_VM_PERFORMANCE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_performance_suite.cmake)
 find_program(ZR_VM_NODE_EXECUTABLE node)
+find_program(ZR_VM_BENCHMARK_PYTHON_EXECUTABLE NAMES python3 python)
 
 function(zr_vm_apply_common_test_settings target_name)
     target_include_directories(${target_name} PRIVATE
@@ -96,7 +97,43 @@ add_test(
 add_executable(
         zr_vm_perf_runner
         ${CMAKE_SOURCE_DIR}/tests/performance/perf_runner.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_process.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/persistent_protocol.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_report.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_statistics.c
 )
+target_include_directories(zr_vm_perf_runner PRIVATE ${CMAKE_SOURCE_DIR}/tests/performance)
+target_compile_definitions(zr_vm_perf_runner PRIVATE _CRT_SECURE_NO_WARNINGS)
+
+add_executable(
+        zr_vm_perf_statistics_test
+        ${CMAKE_SOURCE_DIR}/tests/performance/test_perf_statistics.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_statistics.c
+)
+target_include_directories(zr_vm_perf_statistics_test PRIVATE ${CMAKE_SOURCE_DIR}/tests/performance)
+target_compile_definitions(zr_vm_perf_statistics_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+if (NOT WIN32)
+    target_link_libraries(zr_vm_perf_statistics_test PRIVATE m)
+endif ()
+
+add_executable(
+        zr_vm_perf_report_test
+        ${CMAKE_SOURCE_DIR}/tests/performance/test_perf_report.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_report.c
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_statistics.c
+)
+target_include_directories(zr_vm_perf_report_test PRIVATE ${CMAKE_SOURCE_DIR}/tests/performance)
+target_compile_definitions(zr_vm_perf_report_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+if (NOT WIN32)
+    target_link_libraries(zr_vm_perf_report_test PRIVATE m)
+endif ()
+
+add_executable(
+        zr_vm_perf_runner_persistent_protocol_test
+        ${CMAKE_SOURCE_DIR}/tests/performance/test_perf_runner_persistent_protocol.c
+)
+target_compile_definitions(zr_vm_perf_runner_persistent_protocol_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+add_dependencies(zr_vm_perf_runner_persistent_protocol_test zr_vm_perf_runner)
 
 add_executable(
         zr_vm_native_benchmark_runner
@@ -127,6 +164,12 @@ zr_vm_add_support_target(
         zr_vm_benchmark_registry_test
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/test_benchmark_registry.c
 )
+
+add_executable(
+        zr_vm_benchmark_support_test
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/test_benchmark_support.c
+)
+add_dependencies(zr_vm_benchmark_support_test zr_vm_perf_runner)
 
 if (WIN32)
     target_link_libraries(zr_vm_perf_runner PRIVATE Psapi)
@@ -173,6 +216,31 @@ function(zr_vm_link_parser_core_plus_library target_name)
         )
     endif ()
 endfunction()
+
+add_executable(
+        zr_vm_zr_benchmark_server
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/zr_runner/benchmark_server.c
+)
+target_include_directories(zr_vm_zr_benchmark_server PRIVATE
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+)
+target_compile_definitions(zr_vm_zr_benchmark_server PRIVATE _CRT_SECURE_NO_WARNINGS)
+if (BUILD_SHARED_LIB)
+    target_link_libraries(zr_vm_zr_benchmark_server PRIVATE
+            zr_vm_core_shared
+            zr_vm_library_shared
+            zr_vm_lib_system_shared
+    )
+else ()
+    target_link_libraries(zr_vm_zr_benchmark_server PRIVATE
+            zr_vm_core_static
+            zr_vm_library_static
+            zr_vm_lib_system_static
+    )
+endif ()
 
 function(zr_vm_add_execbc_aot_pipeline_test target_name source_path)
     zr_vm_add_unity_test_target(${target_name} ${source_path})
@@ -261,6 +329,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_string_layout.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_string_builder_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_string_builder.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_runtime_crash_recovery_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_runtime_crash_recovery.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
@@ -278,8 +350,16 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_type_layout_metadata_contracts.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_frame_slot_layout_lookup_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_frame_slot_layout_lookup.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_inline_struct_array_layout_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_inline_struct_array_layout.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_super_array_raw_int_canonical_storage_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_super_array_raw_int_canonical_storage.c
     )
     zr_vm_add_unity_test_target(
             zr_vm_aot_gc_root_frame_test
@@ -330,6 +410,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_execution_member_access_fast_paths.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_object_shape_transition_cache_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_object_shape_transition_cache.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_execution_dispatch_callable_metadata_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_execution_dispatch_callable_metadata.c
     )
@@ -351,6 +435,15 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_string_layout_test)
+    target_include_directories(zr_vm_string_builder_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_string_builder_test)
+    add_test(
+            NAME string_builder
+            COMMAND $<TARGET_FILE:zr_vm_string_builder_test>
+    )
     target_include_directories(zr_vm_runtime_crash_recovery_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -371,11 +464,29 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_type_layout_metadata_contracts_test)
+    target_include_directories(zr_vm_frame_slot_layout_lookup_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_frame_slot_layout_lookup_test)
+    add_test(
+            NAME frame_slot_layout_lookup
+            COMMAND $<TARGET_FILE:zr_vm_frame_slot_layout_lookup_test>
+    )
     target_include_directories(zr_vm_inline_struct_array_layout_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_inline_struct_array_layout_test)
+    add_test(
+            NAME inline_struct_array_layout
+            COMMAND $<TARGET_FILE:zr_vm_inline_struct_array_layout_test>
+    )
+    target_include_directories(zr_vm_super_array_raw_int_canonical_storage_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_super_array_raw_int_canonical_storage_test)
     target_include_directories(zr_vm_aot_gc_root_frame_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -437,6 +548,16 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
     )
     zr_vm_link_core(zr_vm_execution_member_access_fast_paths_test)
+    target_include_directories(zr_vm_object_shape_transition_cache_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
+    )
+    zr_vm_link_core(zr_vm_object_shape_transition_cache_test)
+    add_test(
+            NAME object_shape_transition_cache
+            COMMAND $<TARGET_FILE:zr_vm_object_shape_transition_cache_test>
+    )
     target_include_directories(zr_vm_execution_dispatch_callable_metadata_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -7731,6 +7852,20 @@ if (TARGET zr_vm_value_construction_profile_test)
     )
 endif ()
 
+if (TARGET zr_vm_super_array_raw_int_canonical_storage_test)
+    add_test(
+            NAME super_array_raw_int_canonical_storage
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=super_array_raw_int_canonical_storage"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_super_array_raw_int_canonical_storage_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_super_array_raw_int_canonical_storage_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_super_array_raw_int_canonical_storage_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_super_array_raw_int_canonical_storage_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_semir_static_c_types_test)
     add_test(
             NAME semir_static_c_types
@@ -8248,7 +8383,8 @@ if (TARGET zr_vm_cli_executable)
     )
 endif ()
 
-if (TARGET zr_vm_cli_executable AND TARGET zr_vm_perf_runner AND TARGET zr_vm_native_benchmark_runner)
+if (TARGET zr_vm_cli_executable AND TARGET zr_vm_perf_runner AND
+    TARGET zr_vm_native_benchmark_runner AND TARGET zr_vm_zr_benchmark_server)
     if (ZR_VM_REGISTER_PERFORMANCE_CTEST)
         add_test(
                 NAME performance_report
@@ -8256,6 +8392,7 @@ if (TARGET zr_vm_cli_executable AND TARGET zr_vm_perf_runner AND TARGET zr_vm_na
                 "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
                 "-DPERF_RUNNER_EXE=$<TARGET_FILE:zr_vm_perf_runner>"
                 "-DNATIVE_BENCHMARK_EXE=$<TARGET_FILE:zr_vm_native_benchmark_runner>"
+                "-DZR_BENCHMARK_SERVER_EXE=$<TARGET_FILE:zr_vm_zr_benchmark_server>"
                 "-DBENCHMARKS_DIR=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/benchmarks"
                 "-DGENERATED_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
                 "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
@@ -8273,6 +8410,7 @@ if (TARGET zr_vm_cli_executable AND TARGET zr_vm_perf_runner AND TARGET zr_vm_na
                     "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
                     "-DPERF_RUNNER_EXE=$<TARGET_FILE:zr_vm_perf_runner>"
                     "-DNATIVE_BENCHMARK_EXE=$<TARGET_FILE:zr_vm_native_benchmark_runner>"
+                    "-DZR_BENCHMARK_SERVER_EXE=$<TARGET_FILE:zr_vm_zr_benchmark_server>"
                     "-DBENCHMARKS_DIR=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/benchmarks"
                     "-DGENERATED_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
                     "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
@@ -8284,6 +8422,7 @@ if (TARGET zr_vm_cli_executable AND TARGET zr_vm_perf_runner AND TARGET zr_vm_na
             zr_vm_cli_executable
             zr_vm_perf_runner
             zr_vm_native_benchmark_runner
+            zr_vm_zr_benchmark_server
     )
 endif ()
 
@@ -8295,6 +8434,100 @@ if (TARGET zr_vm_benchmark_registry_test)
                     "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_benchmark_registry_test.cmake
     )
+endif ()
+
+add_test(
+        NAME benchmark_registry_contract
+        COMMAND ${CMAKE_COMMAND}
+                "-DREGISTRY_FILE=${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/registry.cmake"
+                "-DFIXTURE_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_registry_contract_fixture.cmake"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_benchmark_registry_contract_test.cmake
+)
+
+if (ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
+    add_test(
+            NAME benchmark_statistics_python
+            COMMAND "${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE}"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/test_benchmark_statistics.py
+    )
+    add_test(
+            NAME benchmark_execution_plan_python
+            COMMAND "${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE}"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/test_benchmark_execution_plan.py
+    )
+    add_test(
+            NAME benchmark_task3_report_consumers_python
+            COMMAND "${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE}"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/test_benchmark_task3_report_consumers.py
+    )
+    add_test(
+            NAME benchmark_task4_integration_python
+            COMMAND "${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE}"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/test_benchmark_task4_integration.py
+    )
+    add_test(
+            NAME benchmark_task3_suite_contract
+            COMMAND ${CMAKE_COMMAND}
+                    "-DTASK3_MODULE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_task3_suite.cmake"
+                    "-DEXECUTION_PLAN_SCRIPT=${CMAKE_SOURCE_DIR}/scripts/benchmark/benchmark_execution_plan.py"
+                    "-DPERFORMANCE_SUITE_SCRIPT=${ZR_VM_PERFORMANCE_RUNNER_SCRIPT}"
+                    "-DASSEMBLY_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_task3_case_assembly.cmake"
+                    "-DTESTS_CMAKE=${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
+                    "-DPYTHON_EXE=${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE}"
+                    "-DTEST_OUTPUT_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}/benchmark_task3_suite_contract"
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_benchmark_task3_suite_contract_test.cmake
+    )
+endif ()
+
+add_test(
+        NAME benchmark_task4_environment_contract
+        COMMAND ${CMAKE_COMMAND}
+                "-DTASK4_MODULE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_task4_environment.cmake"
+                "-DPERFORMANCE_SUITE_SCRIPT=${ZR_VM_PERFORMANCE_RUNNER_SCRIPT}"
+                "-DASSEMBLY_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_task3_case_assembly.cmake"
+                "-DTEST_OUTPUT_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}/benchmark_task4_environment_contract"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_benchmark_task4_environment_contract_test.cmake
+)
+
+if (TARGET zr_vm_benchmark_support_test AND TARGET zr_vm_perf_runner AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
+    add_test(
+            NAME benchmark_support
+            COMMAND ${CMAKE_COMMAND}
+                    "-DEXE=$<TARGET_FILE:zr_vm_benchmark_support_test>"
+                    "-DPERF_RUNNER_EXE=$<TARGET_FILE:zr_vm_perf_runner>"
+                    "-DPYTHON_EXE=${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE}"
+                    "-DMEASUREMENT_CONTRACT_MODULE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_measurement_contract.cmake"
+                    "-DPERFORMANCE_SUITE_SCRIPT=${ZR_VM_PERFORMANCE_RUNNER_SCRIPT}"
+                    "-DCSV_SCRIPT=${CMAKE_SOURCE_DIR}/scripts/benchmark/benchmark_reports_to_csv.py"
+                    "-DAGGREGATE_SCRIPT=${CMAKE_SOURCE_DIR}/scripts/benchmark/aggregate_benchmark_summary.py"
+                    "-DTEST_OUTPUT_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}/benchmark_support"
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_benchmark_support_test.cmake
+    )
+endif ()
+
+if (TARGET zr_vm_perf_runner_persistent_protocol_test AND TARGET zr_vm_perf_runner)
+    add_test(
+            NAME benchmark_persistent_protocol
+            COMMAND ${CMAKE_COMMAND}
+                    "-DPERF_RUNNER_EXE=$<TARGET_FILE:zr_vm_perf_runner>"
+                    "-DFIXTURE_EXE=$<TARGET_FILE:zr_vm_perf_runner_persistent_protocol_test>"
+                    "-DTEST_OUTPUT_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}/benchmark_persistent_protocol"
+                    "-DBENCHMARKS_DIR=${CMAKE_SOURCE_DIR}/tests/benchmarks"
+                    "-DPERSISTENT_COMMAND_MODULE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark_persistent_commands.cmake"
+                    $<$<TARGET_EXISTS:zr_vm_cli_executable>:-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>>
+                    $<$<TARGET_EXISTS:zr_vm_zr_benchmark_server>:-DZR_BENCHMARK_SERVER_EXE=$<TARGET_FILE:zr_vm_zr_benchmark_server>>
+                    "-DDOTNET_PROJECT=${CMAKE_SOURCE_DIR}/tests/benchmarks/dotnet_runner/BenchmarkRunner.csproj"
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_perf_runner_persistent_protocol_test.cmake
+    )
+    set_tests_properties(benchmark_persistent_protocol PROPERTIES TIMEOUT 120)
+endif ()
+
+if (TARGET zr_vm_perf_statistics_test)
+    add_test(NAME benchmark_perf_statistics COMMAND zr_vm_perf_statistics_test)
+endif ()
+
+if (TARGET zr_vm_perf_report_test)
+    add_test(NAME benchmark_perf_report COMMAND zr_vm_perf_report_test)
 endif ()
 
 # CTest parallel runs (-j N) share HOST_BINARY_DIR / tests_generated / CLI working dirs; without

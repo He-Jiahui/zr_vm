@@ -2,7 +2,7 @@ use std::ffi::c_char;
 
 use super::{
     TZrBool, TZrFloat64, TZrInt64, TZrPtr, TZrSize, TZrUInt16, TZrUInt32, TZrUInt64,
-    ZrRustBindingRuntime, ZrRustBindingStatus, ZrRustBindingValue,
+    ZrRustBindingRuntime, ZrRustBindingStatus, ZrRustBindingValue, ZrRustBindingValueKind,
 };
 
 #[repr(C)]
@@ -135,6 +135,11 @@ pub struct ZrRustBindingNativeCallContext {
 }
 
 #[repr(C)]
+pub struct ZrRustBindingNativeArgumentView {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
 pub struct ZrRustBindingNativeModuleBuilder {
     _private: [u8; 0],
 }
@@ -154,6 +159,21 @@ pub type FZrRustBindingNativeCallback = Option<
         context: *mut ZrRustBindingNativeCallContext,
         userData: TZrPtr,
         outResult: *mut *mut ZrRustBindingValue,
+    ) -> ZrRustBindingStatus,
+>;
+
+pub type FZrRustBindingNativeArgumentVisitor = Option<
+    unsafe extern "C" fn(
+        argument: *const ZrRustBindingNativeArgumentView,
+        userData: TZrPtr,
+    ) -> ZrRustBindingStatus,
+>;
+
+pub type FZrRustBindingNativeStringVisitor = Option<
+    unsafe extern "C" fn(
+        utf8: *const c_char,
+        utf8ByteLength: TZrSize,
+        userData: TZrPtr,
     ) -> ZrRustBindingStatus,
 >;
 
@@ -329,10 +349,41 @@ extern "C" {
         minArgumentCount: TZrSize,
         maxArgumentCount: TZrSize,
     ) -> ZrRustBindingStatus;
-    pub fn ZrRustBinding_NativeCallContext_GetArgument(
+    pub fn ZrRustBinding_NativeCallContext_WithArgument(
         context: *const ZrRustBindingNativeCallContext,
         index: TZrSize,
-        outArgumentValue: *mut *mut ZrRustBindingValue,
+        visitor: FZrRustBindingNativeArgumentVisitor,
+        userData: TZrPtr,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_GetKind(
+        argument: *const ZrRustBindingNativeArgumentView,
+        outKind: *mut ZrRustBindingValueKind,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_ReadBool(
+        argument: *const ZrRustBindingNativeArgumentView,
+        outBoolValue: *mut TZrBool,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_ReadInt(
+        argument: *const ZrRustBindingNativeArgumentView,
+        outIntValue: *mut TZrInt64,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_ReadFloat(
+        argument: *const ZrRustBindingNativeArgumentView,
+        outFloatValue: *mut TZrFloat64,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_ByteArrayLength(
+        argument: *const ZrRustBindingNativeArgumentView,
+        outLength: *mut TZrSize,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_ByteArrayGet(
+        argument: *const ZrRustBindingNativeArgumentView,
+        index: TZrSize,
+        outByteValue: *mut u8,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_NativeArgumentView_WithString(
+        argument: *const ZrRustBindingNativeArgumentView,
+        visitor: FZrRustBindingNativeStringVisitor,
+        userData: TZrPtr,
     ) -> ZrRustBindingStatus;
     pub fn ZrRustBinding_NativeCallContext_GetSelf(
         context: *const ZrRustBindingNativeCallContext,

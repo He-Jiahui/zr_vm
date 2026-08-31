@@ -655,7 +655,7 @@ static TZrUInt32 reflection_array_length(SZrObject *array) {
     if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return 0;
     }
-    return (TZrUInt32)array->nodeMap.elementCount;
+    return (TZrUInt32)ZrCore_Object_SuperArrayLength(array);
 }
 
 static const SZrTypeValue *reflection_array_get(SZrState *state, SZrObject *array, TZrUInt32 index) {

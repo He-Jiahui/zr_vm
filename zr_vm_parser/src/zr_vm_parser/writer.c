@@ -465,6 +465,9 @@ static void write_function_frame_layout(FILE *file, const SZrFunction *function)
     fwrite(&frameSlotLayoutLength, sizeof(TZrUInt64), 1, file);
     for (TZrUInt64 index = 0; index < frameSlotLayoutLength; index++) {
         const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        TZrUInt16 serializedFlags =
+                layout->reserved0 &
+                (TZrUInt16)~ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
         fwrite(&layout->stackSlot, sizeof(TZrUInt32), 1, file);
         fwrite(&layout->byteOffset, sizeof(TZrUInt32), 1, file);
         fwrite(&layout->byteSize, sizeof(TZrUInt32), 1, file);
@@ -472,7 +475,7 @@ static void write_function_frame_layout(FILE *file, const SZrFunction *function)
         fwrite(&layout->typeLayoutId, sizeof(TZrUInt32), 1, file);
         fwrite(&layout->slotKind, sizeof(TZrUInt8), 1, file);
         fwrite(&layout->isParameter, sizeof(TZrUInt8), 1, file);
-        fwrite(&layout->reserved0, sizeof(TZrUInt16), 1, file);
+        fwrite(&serializedFlags, sizeof(TZrUInt16), 1, file);
     }
 }
 
@@ -651,8 +654,11 @@ static TZrBool write_array_constant_payload(FILE *file, SZrState *state, const S
     }
 
     arrayObject = value->value.object != ZR_NULL ? ZR_CAST_OBJECT(state, value->value.object) : ZR_NULL;
-    if (arrayObject != ZR_NULL && arrayObject->nodeMap.isValid && arrayObject->nodeMap.buckets != ZR_NULL) {
-        elementCount = (TZrUInt64)arrayObject->nodeMap.elementCount;
+    if (arrayObject != ZR_NULL && arrayObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, arrayObject)) {
+            return ZR_FALSE;
+        }
+        elementCount = (TZrUInt64)ZrCore_Object_SuperArrayLength(arrayObject);
     }
 
     fwrite(&elementCount, sizeof(TZrUInt64), 1, file);

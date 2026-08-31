@@ -199,6 +199,7 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_super_array_dense_pair_at_assume_
 
 static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_is_active(const SZrObject *itemsObject) {
     return itemsObject != ZR_NULL &&
+           itemsObject->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
            itemsObject->superArrayRawIntData != ZR_NULL &&
            itemsObject->superArrayRawIntLength <= itemsObject->superArrayRawIntCapacity;
 }
@@ -225,6 +226,8 @@ static ZR_FORCE_INLINE void zr_super_array_raw_int_release(SZrGlobalState *globa
     itemsObject->superArrayRawIntData = ZR_NULL;
     itemsObject->superArrayRawIntLength = 0;
     itemsObject->superArrayRawIntCapacity = 0;
+    itemsObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
+    itemsObject->superArrayStorageGeneration++;
     itemsObject->superArrayRawIntDirty = ZR_FALSE;
 }
 
@@ -241,6 +244,14 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_ensure_capacity(SZrState *
     TZrInt64 *newData;
 
     ZR_ASSERT(itemsObject != ZR_NULL);
+
+    if (itemsObject->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL) {
+        return ZR_FALSE;
+    }
+    if (itemsObject->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_NONE &&
+        itemsObject->nodeMap.elementCount != 0) {
+        return ZR_FALSE;
+    }
 
     if (requiredCapacity == 0) {
         return ZR_TRUE;
@@ -289,6 +300,8 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_ensure_capacity(SZrState *
     }
     itemsObject->superArrayRawIntData = newData;
     itemsObject->superArrayRawIntCapacity = newCapacity;
+    itemsObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL;
+    itemsObject->superArrayStorageGeneration++;
     return ZR_TRUE;
 }
 
@@ -303,6 +316,10 @@ static ZR_FORCE_INLINE void zr_super_array_raw_int_append_range_optional(SZrStat
     if (itemsObject == ZR_NULL || count == 0 ||
         startIndex > ZR_MAX_SIZE - count ||
         itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return;
+    }
+
+    if (itemsObject->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL) {
         return;
     }
 
@@ -321,7 +338,9 @@ static ZR_FORCE_INLINE void zr_super_array_raw_int_append_range_optional(SZrStat
     for (index = startIndex; index < requiredLength; index++) {
         itemsObject->superArrayRawIntData[index] = value;
     }
+    itemsObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL;
     itemsObject->superArrayRawIntLength = requiredLength;
+    itemsObject->superArrayStorageGeneration++;
 }
 
 static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_try_load(const SZrObject *itemsObject,
@@ -336,6 +355,7 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_try_load(const SZrObject *
     }
 
     *outValue = itemsObject->superArrayRawIntData[(TZrSize)unsignedIndex];
+    ZrCore_Profile_RecordMemoryCurrent(ZR_PROFILE_MEMORY_RAW_INT_HIT_COUNT, 1u);
     return ZR_TRUE;
 }
 
@@ -350,11 +370,16 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_try_load_bound_items_assum
     ZR_ASSERT(itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
     ZR_ASSERT(outValue != ZR_NULL);
 
+    if (itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL) {
+        return ZR_FALSE;
+    }
+
     data = itemsObject->superArrayRawIntData;
     length = itemsObject->superArrayRawIntLength;
     if (ZR_LIKELY(data != ZR_NULL && unsignedIndex < (TZrUInt64)length)) {
         ZR_ASSERT(length <= itemsObject->superArrayRawIntCapacity);
         *outValue = data[(TZrSize)unsignedIndex];
+        ZrCore_Profile_RecordMemoryCurrent(ZR_PROFILE_MEMORY_RAW_INT_HIT_COUNT, 1u);
         return ZR_TRUE;
     }
 
@@ -383,7 +408,9 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_store_existing_dirty_optio
     }
 
     itemsObject->superArrayRawIntData[(TZrSize)indexValue] = value;
-    itemsObject->superArrayRawIntDirty = ZR_TRUE;
+    /* Compatibility marker remains clear; mode+generation own the state. */
+    itemsObject->superArrayRawIntDirty = ZR_FALSE;
+    itemsObject->superArrayStorageGeneration++;
     return ZR_TRUE;
 }
 
@@ -397,6 +424,10 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_store_existing_dirty_bound
     ZR_ASSERT(itemsObject != ZR_NULL);
     ZR_ASSERT(itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
 
+    if (itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL) {
+        return ZR_FALSE;
+    }
+
     data = itemsObject->superArrayRawIntData;
     length = itemsObject->superArrayRawIntLength;
     if (ZR_LIKELY(data != ZR_NULL &&
@@ -404,7 +435,8 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_store_existing_dirty_bound
                   (TZrUInt64)indexValue < (TZrUInt64)length)) {
         ZR_ASSERT(length <= itemsObject->superArrayRawIntCapacity);
         data[(TZrSize)indexValue] = value;
-        itemsObject->superArrayRawIntDirty = ZR_TRUE;
+        itemsObject->superArrayRawIntDirty = ZR_FALSE;
+        itemsObject->superArrayStorageGeneration++;
         return ZR_TRUE;
     }
 
@@ -414,31 +446,78 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_store_existing_dirty_bound
 static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_materialize_dirty(SZrState *state,
                                                                          SZrObject *itemsObject) {
     TZrSize index;
+    TZrSize rawLength;
+    TZrSize requiredCapacity;
+    TZrSize requiredPairPoolCapacity;
+    SZrHashSet *nodeMap;
 
-    if (!zr_super_array_raw_int_is_active(itemsObject) || !itemsObject->superArrayRawIntDirty) {
+    if (!zr_super_array_raw_int_is_active(itemsObject)) {
         return ZR_TRUE;
     }
-    if (!object_node_map_is_ready(itemsObject) ||
-        itemsObject->superArrayRawIntLength != itemsObject->nodeMap.elementCount) {
-        ZrCore_Debug_RunError(state, "Array raw int storage out of sync");
+
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_NODE_MAP_MATERIALIZATION_COUNT, 1u);
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_RAW_NODE_SYNC_COUNT, 1u);
+    if (state == ZR_NULL || itemsObject == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    for (index = 0; index < itemsObject->superArrayRawIntLength; index++) {
-        SZrHashKeyValuePair *pair = zr_super_array_dense_pair_at_assume_fast(itemsObject, (TZrInt64)index);
-        if (pair == ZR_NULL) {
-            ZrCore_Debug_RunError(state, "Array raw int storage missing dense pair");
-            return ZR_FALSE;
-        }
-        if (zr_super_array_value_is_normalized_plain(&pair->value)) {
-            zr_super_array_store_plain_int_assume_normalized(&pair->value,
-                                                             itemsObject->superArrayRawIntData[index]);
-        } else {
-            zr_super_array_store_plain_int_reuse(&pair->value, itemsObject->superArrayRawIntData[index]);
-        }
+    if (!object_node_map_is_ready(itemsObject)) {
+        ZrCore_Object_Init(state, itemsObject);
     }
+    nodeMap = &itemsObject->nodeMap;
+    rawLength = itemsObject->superArrayRawIntLength;
+    if (nodeMap->elementCount != 0) {
+        ZrCore_Debug_RunError(state, "Array raw int storage has unexpected node entries");
+        return ZR_FALSE;
+    }
+    if (rawLength == 0) {
+        zr_super_array_raw_int_release(state->global, itemsObject);
+        itemsObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL;
+        itemsObject->superArrayStorageGeneration++;
+        itemsObject->superArrayRawIntDirty = ZR_FALSE;
+        return ZR_TRUE;
+    }
+    if (nodeMap->pairPoolUsed > ZR_MAX_SIZE - rawLength) {
+        ZrCore_Debug_RunError(state, "Array raw int storage pair capacity overflow");
+        return ZR_FALSE;
+    }
+    requiredPairPoolCapacity = nodeMap->pairPoolUsed + rawLength;
+    requiredCapacity = ZrCore_HashSet_MinDenseSequentialIntKeyCapacity(rawLength);
+    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(
+                state, nodeMap, requiredCapacity) ||
+        !ZrCore_HashSet_EnsurePairPoolForElementCount(
+                state, nodeMap, requiredPairPoolCapacity) ||
+        nodeMap->pairPoolUsed > nodeMap->pairPoolCapacity ||
+        nodeMap->pairPoolCapacity - nodeMap->pairPoolUsed < rawLength) {
+        ZrCore_Debug_RunError(state, "Array raw int storage materialization failed");
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < rawLength; index++) {
+        SZrHashKeyValuePair *pair = ZrCore_HashSet_TakeReservedPairAssumeAvailable(nodeMap);
+        ZR_ASSERT(pair != ZR_NULL);
+        pair->next = ZR_NULL;
+        ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)index, ZR_VALUE_TYPE_INT64);
+        ZR_VALUE_FAST_SET(&pair->value,
+                          nativeInt64,
+                          itemsObject->superArrayRawIntData[index],
+                          ZR_VALUE_TYPE_INT64);
+        nodeMap->buckets[index] = pair;
+        nodeMap->elementCount++;
+    }
+    zr_super_array_raw_int_release(state->global, itemsObject);
+    itemsObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL;
+    itemsObject->superArrayStorageGeneration++;
     itemsObject->superArrayRawIntDirty = ZR_FALSE;
     return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool zr_super_array_materialize_generic(SZrState *state,
+                                                                   SZrObject *itemsObject) {
+    if (itemsObject == ZR_NULL || itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_FALSE;
+    }
+    return zr_super_array_raw_int_materialize_dirty(state, itemsObject);
 }
 
 static ZR_FORCE_INLINE TZrBool zr_super_array_resolve_items_cached_assume_fast(SZrState *state,

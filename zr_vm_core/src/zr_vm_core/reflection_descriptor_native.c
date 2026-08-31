@@ -210,6 +210,9 @@ static TZrBool descriptor_native_read_parameter_type_ids(
         return ZR_FALSE;
     }
     array = ZR_CAST_OBJECT(state, value->value.object);
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
+        return ZR_FALSE;
+    }
     if (array->nodeMap.elementCount >
         ZR_REFLECTION_DESCRIPTOR_MAX_PARAMETER_TYPES) {
         return ZR_FALSE;

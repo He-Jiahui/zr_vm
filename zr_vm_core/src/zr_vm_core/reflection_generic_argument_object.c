@@ -256,6 +256,10 @@ static TZrBool generic_argument_object_decode(
                     "children",
                     ZR_VALUE_TYPE_ARRAY,
                     ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+            if (childrenArray != ZR_NULL &&
+                !ZrCore_Object_SuperArrayMaterializeGeneric(decoder->state, childrenArray)) {
+                return ZR_FALSE;
+            }
             if (childrenArray == ZR_NULL ||
                 childrenArray->nodeMap.elementCount != (TZrSize)childCount ||
                 (childCount > 0u &&
@@ -321,7 +325,11 @@ static TZrBool generic_argument_object_decode_array(
     if (state == ZR_NULL || array == ZR_NULL || decoder == ZR_NULL ||
         outArguments == ZR_NULL || outCount == ZR_NULL ||
         array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
-        array->nodeMap.elementCount == 0u ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
+        return ZR_FALSE;
+    }
+
+    if (array->nodeMap.elementCount == 0u ||
         array->nodeMap.elementCount > ZR_REFLECTION_GENERIC_ARGUMENT_OBJECT_MAX_NODES) {
         return ZR_FALSE;
     }
@@ -402,7 +410,10 @@ SZrObject *ZrCore_Reflection_MakeGenericMethodFromObjects(
     if (runtimeValue == ZR_NULL || runtimeValue->type != ZR_VALUE_TYPE_NATIVE_POINTER ||
         runtimeValue->value.nativeObject.nativePointer != runtime ||
         genericArguments->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
-        genericArguments->nodeMap.elementCount != (TZrSize)declaredArgumentCount) {
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, genericArguments)) {
+        goto cleanup;
+    }
+    if (genericArguments->nodeMap.elementCount != (TZrSize)declaredArgumentCount) {
         goto cleanup;
     }
     countDecoder.state = state;

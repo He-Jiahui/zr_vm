@@ -578,6 +578,29 @@ TZrBool ZrCore_TypeLayout_CanRawCopy(const SZrTypeLayout *layout) {
                      layout->blittable);
 }
 
+TZrBool ZrCore_TypeLayout_CanSkipGcScan(const SZrTypeLayout *layout) {
+    if (layout == ZR_NULL || !ZrCore_TypeLayout_Validate(layout) ||
+        layout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT ||
+        layout->gcScanKind != (TZrUInt8)ZR_TYPE_LAYOUT_GC_SCAN_FREE ||
+        layout->gcFieldCount != 0u || layout->ownershipFieldCount != 0u ||
+        layout->refFieldCount != 0u) {
+        return ZR_FALSE;
+    }
+
+    /* A nested descriptor may carry references even when this descriptor has
+     * no direct GC map entries; retain the conservative visitor in that case. */
+    for (TZrUInt32 index = 0u; index < layout->fieldCount; index++) {
+        const SZrTypeLayoutField *field = &layout->fields[index];
+        if ((field->flags & (ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE |
+                             ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE |
+                             ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE |
+                             ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT)) != 0u) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool type_layout_copy_inline_with_registry(
         struct SZrState *state,
         const SZrTypeLayout *layout,

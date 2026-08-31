@@ -95,10 +95,11 @@ TZrBool ZrParser_CompileTime_PreparePatchInterfaceAdds(
     }
     ZrCore_Memory_RawSet(result, 0, sizeof(*result));
     array = ZR_CAST_OBJECT(cs->state, interfaceAddsValue->value.object);
-    if (array == ZR_NULL) {
+    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(cs->state, array)) {
         return ZR_FALSE;
     }
-    result->count = array->nodeMap.elementCount;
+    result->count = ZrCore_Object_SuperArrayLength(array);
     if (result->count == 0U) {
         return ZR_TRUE;
     }

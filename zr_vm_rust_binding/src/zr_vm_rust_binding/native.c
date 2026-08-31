@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "native_call_context_internal.h"
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -66,10 +67,6 @@ struct ZrRustBindingRuntimeNativeRegistry {
 
 struct ZrRustBindingRuntimeNativeModuleRegistration {
     ZrRustBindingRuntimeRegistrationEntry *entry;
-};
-
-struct ZrRustBindingNativeCallContext {
-    ZrLibCallContext *context;
 };
 
 static void zr_rust_binding_runtime_registration_entry_release(
@@ -815,26 +812,6 @@ ZrRustBindingStatus ZrRustBinding_NativeCallContext_CheckArity(
 
     zr_rust_binding_clear_error();
     return ZR_RUST_BINDING_STATUS_OK;
-}
-
-ZrRustBindingStatus ZrRustBinding_NativeCallContext_GetArgument(
-        const ZrRustBindingNativeCallContext *context,
-        TZrSize index,
-        ZrRustBindingValue **outArgumentValue) {
-    const SZrTypeValue *argumentValue;
-
-    if (context == ZR_NULL || context->context == ZR_NULL || outArgumentValue == ZR_NULL) {
-        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
-                                         "context or outArgumentValue is null");
-    }
-
-    argumentValue = ZrLib_CallContext_Argument(context->context, index);
-    if (argumentValue == ZR_NULL) {
-        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_NOT_FOUND,
-                                         "native callback argument index out of range");
-    }
-
-    return zr_rust_binding_native_call_context_get_value(context, argumentValue, outArgumentValue);
 }
 
 ZrRustBindingStatus ZrRustBinding_NativeCallContext_GetSelf(

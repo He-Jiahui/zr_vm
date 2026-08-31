@@ -3,6 +3,7 @@ using BenchmarkRunner;
 var argsList = Environment.GetCommandLineArgs().Skip(1).ToArray();
 string? caseName = null;
 var runnerArgs = new List<string>();
+var serverMode = false;
 
 for (var index = 0; index < argsList.Length; index++)
 {
@@ -16,6 +17,9 @@ for (var index = 0; index < argsList.Length; index++)
             }
 
             caseName = argsList[++index];
+            break;
+        case "--benchmark-server":
+            serverMode = true;
             break;
         case "--tier":
             if (index + 1 >= argsList.Length)
@@ -72,6 +76,75 @@ if (!cases.TryGetValue(caseName, out var descriptor))
 {
     Console.Error.WriteLine($"unknown benchmark case: {caseName}");
     return 1;
+}
+
+if (serverMode)
+{
+    var tier = "core";
+    var tierIndex = runnerArgs.IndexOf("--tier");
+    if (tierIndex >= 0 && tierIndex + 1 < runnerArgs.Count)
+    {
+        tier = runnerArgs[tierIndex + 1];
+    }
+    Console.WriteLine($"READY benchmark-checksum-v1:{caseName}:{tier}");
+    Console.Out.Flush();
+    while (true)
+    {
+        var request = Console.ReadLine();
+        if (request is null)
+        {
+            Console.Error.WriteLine("benchmark protocol input closed before STOP");
+            return 2;
+        }
+        if (request == "STOP")
+        {
+            return 0;
+        }
+        var requestMatch = System.Text.RegularExpressions.Regex.Match(
+            request,
+            "^(WARMUP|RUN) ([1-9][0-9]*) ([1-9][0-9]*)$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        if (!requestMatch.Success ||
+            !int.TryParse(
+                requestMatch.Groups[2].Value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var requestIndex) ||
+            !int.TryParse(
+                requestMatch.Groups[3].Value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var repetitions) || repetitions > 1048576)
+        {
+            Console.WriteLine("ERROR 0 malformed-request");
+            Console.Out.Flush();
+            return 3;
+        }
+        try
+        {
+            long? checksum = null;
+            for (var repetition = 0; repetition < repetitions; repetition++)
+            {
+                var repetitionChecksum = descriptor.Run(scale);
+                if (checksum.HasValue && repetitionChecksum != checksum.Value)
+                {
+                    Console.WriteLine($"ERROR {requestIndex} repetition-checksum-mismatch");
+                    Console.Out.Flush();
+                    return 5;
+                }
+                checksum = repetitionChecksum;
+            }
+            Console.WriteLine($"DONE {requestIndex} {checksum!.Value}");
+            Console.Out.Flush();
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"ERROR {requestIndex} workload-exception");
+            Console.Out.Flush();
+            Console.Error.WriteLine(exception);
+            return 4;
+        }
+    }
 }
 
 Console.WriteLine(descriptor.PassBanner);

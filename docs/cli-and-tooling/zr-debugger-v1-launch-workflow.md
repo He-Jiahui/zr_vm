@@ -66,6 +66,7 @@ plan_sources:
   - user: 2026-04-05 实现 ZR Debugger V1 Architecture，主路线为 launch-under-debug，先支持 interp + binary
   - user: 2026-06-20 参照 docs/plans/debug 分阶段优化 debug 调试能力
   - docs/plans/debug/01-core-hook-fixes.md
+  - docs/plans/benchmark/optimize/03-memory-object-gc.md
   - lua/src/ldblib.c
   - lua/cpython/Lib/bdb.py
   - lua/cpython/Lib/pdb.py
@@ -102,6 +103,7 @@ tests:
   - tests/acceptance/2026-06-22-debug-phase6-coverage.md
   - tests/acceptance/2026-06-22-debug-phase6-disassembly.md
   - tests/acceptance/2026-06-22-debug-phase6-heap-summary.md
+  - tests/acceptance/2026-08-30-super-array-canonical-storage.md
   - tests/CMakeLists.txt
 doc_type: module-detail
 ---
@@ -446,6 +448,10 @@ variables 目前是只读快照，不支持变量写回或带副作用求值。s
 
 - `zr`
 - `loadedModules`
+
+`loadedModules` 的计数通过公开的 super-array logical-length API 读取，不能直接观察
+底层 `nodeMap.elementCount`。因此 registry 采用 RAW_CANONICAL 存储时，调试快照仍报告
+真实模块数；只有通用访问触及 pair identity 时才由 runtime 执行 materialization。
 
 `variables` 响应中的每个 value preview 和 `evaluate` 响应都会带 `namedVariables` / `indexedVariables`。这两个字段是协议边界的子形状提示，方便 VS Code/DAP adapter 在不先展开 handle 的情况下判断 named/indexed children。普通 object 的 `namedVariables` 与实际展开计数一致：可见字段加上 `$prototype` 等 synthetic entry，隐藏 `__zr_` 字段不计入；直接 array 使用 `indexedVariables`。
 

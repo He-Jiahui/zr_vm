@@ -224,33 +224,6 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_empty_pair_for_hash_assum
     return pair;
 }
 
-static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_empty_pair_for_hash_assume_reserved(SZrState *state,
-                                                                                            SZrObject *object,
-                                                                                            TZrUInt64 hash) {
-    SZrHashSet *nodeMap;
-    SZrHashKeyValuePair *pair;
-    TZrSize bucketIndex;
-
-    ZR_ASSERT(state != ZR_NULL);
-    ZR_ASSERT(object != ZR_NULL);
-    ZR_ASSERT(object_node_map_is_ready(object));
-    ZR_UNUSED_PARAMETER(state);
-
-    nodeMap = &object->nodeMap;
-    ZR_ASSERT(nodeMap->elementCount + 1 <= nodeMap->resizeThreshold);
-
-    bucketIndex = ZR_HASH_MOD(hash, nodeMap->capacity);
-    pair = ZrCore_HashSet_TakeReservedPairAssumeAvailable(nodeMap);
-    if (pair == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    pair->next = nodeMap->buckets[bucketIndex];
-    nodeMap->buckets[bucketIndex] = pair;
-    nodeMap->elementCount++;
-    return pair;
-}
-
 static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_empty_pair_for_hash(SZrState *state,
                                                                            SZrObject *object,
                                                                            TZrUInt64 hash) {
@@ -321,29 +294,6 @@ static SZrHashKeyValuePair *object_find_or_add_int_key_pair(SZrState *state,
     return pair;
 }
 
-static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_int_int_pair_assuming_absent_ready(SZrState *state,
-                                                                                           SZrObject *object,
-                                                                                           TZrInt64 indexValue,
-                                                                                           TZrInt64 value) {
-    SZrHashKeyValuePair *pair;
-
-    ZR_ASSERT(state != ZR_NULL);
-    ZR_ASSERT(object != ZR_NULL);
-    ZR_ASSERT(object_node_map_is_ready(object));
-
-    pair = object_add_empty_pair_for_hash_assume_reserved(state, object, (TZrUInt64)indexValue);
-    if (pair == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZR_VALUE_FAST_SET(&pair->key, nativeInt64, indexValue, ZR_VALUE_TYPE_INT64);
-    ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
-    if (indexValue >= 0) {
-        zr_super_array_raw_int_append_range_optional(state, object, (TZrSize)indexValue, 1, value);
-    }
-    return pair;
-}
-
 static ZR_FORCE_INLINE SZrHashKeyValuePair *object_super_array_dense_pair_at(SZrObject *itemsObject,
                                                                               TZrInt64 indexValue) {
     SZrHashSet *nodeMap;
@@ -359,24 +309,6 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_super_array_dense_pair_at(SZr
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];
-    ZR_ASSERT(pair == ZR_NULL ||
-              (pair->next == ZR_NULL &&
-               ZR_VALUE_IS_TYPE_SIGNED_INT(pair->key.type) &&
-               pair->key.value.nativeObject.nativeInt64 == indexValue));
-    return pair;
-}
-
-static ZR_FORCE_INLINE SZrHashKeyValuePair *object_super_array_dense_pair_at_assume_fast(
-        SZrObject *itemsObject,
-        TZrInt64 indexValue) {
-    SZrHashKeyValuePair *pair;
-
-    ZR_ASSERT(itemsObject != ZR_NULL);
-    ZR_ASSERT(object_node_map_is_ready(itemsObject));
-    ZR_ASSERT(indexValue >= 0);
-    ZR_ASSERT((TZrUInt64)indexValue < (TZrUInt64)itemsObject->nodeMap.capacity);
-
-    pair = itemsObject->nodeMap.buckets[(TZrSize)indexValue];
     ZR_ASSERT(pair == ZR_NULL ||
               (pair->next == ZR_NULL &&
                ZR_VALUE_IS_TYPE_SIGNED_INT(pair->key.type) &&
@@ -1190,6 +1122,30 @@ static ZR_FORCE_INLINE TZrBool object_try_super_array_ensure_capacity_for_append
         return ZR_FALSE;
     }
 
+    /* A fresh integer array owns its payload in the raw buffer; do not reserve
+     * one hash pair per element merely to make append possible. */
+    if (itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL &&
+        itemsObject->nodeMap.elementCount == 0) {
+        TZrInt64 capacityValue;
+        if (!zr_super_array_raw_int_ensure_capacity(state, itemsObject, requiredLength)) {
+            return ZR_FALSE;
+        }
+        capacityValue = (TZrInt64)itemsObject->superArrayRawIntCapacity;
+        if (capacityValue <= 0) {
+            return ZR_FALSE;
+        }
+        if (receiverObject->cachedCapacityPair == ZR_NULL ||
+            object_super_array_pair_int_or_default(receiverObject->cachedCapacityPair, 0) < capacityValue) {
+            return object_try_super_array_set_cached_int_field_assume_fast(
+                    state,
+                    receiverObject,
+                    &receiverObject->cachedCapacityPair,
+                    ZR_SUPER_ARRAY_FIELD_CAPACITY,
+                    capacityValue);
+        }
+        return ZR_TRUE;
+    }
+
     capacityPair = receiverObject->cachedCapacityPair;
     if ((TZrUInt64)appendCount >
         (TZrUInt64)((TZrSize)-1) - (TZrUInt64)itemsObject->nodeMap.pairPoolUsed) {
@@ -1601,6 +1557,19 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
         return ZR_TRUE;
     }
 
+    if (plan->itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL &&
+        plan->itemsObject->nodeMap.elementCount == 0) {
+        zr_super_array_raw_int_append_range_optional(
+                state, plan->itemsObject, plan->length, appendCount, value);
+        if (!zr_super_array_raw_int_is_active(plan->itemsObject) ||
+            plan->itemsObject->superArrayRawIntLength != plan->requiredLength) {
+            return ZR_FALSE;
+        }
+        return object_super_array_update_cached_length_assume_fast(state,
+                                                                    plan->receiverObject,
+                                                                    plan->requiredLength);
+    }
+
     if (appendCount == 1) {
         pair = object_add_int_int_pair_assuming_absent_dense_ready_assume_fast(state,
                                                                                plan->itemsObject,
@@ -1727,6 +1696,19 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plans4_assume_fa
     appendCount1 = plans[1].requiredLength - plans[1].length;
     appendCount2 = plans[2].requiredLength - plans[2].length;
     appendCount3 = plans[3].requiredLength - plans[3].length;
+
+    if (plans[0].itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL ||
+        plans[1].itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL ||
+        plans[2].itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL ||
+        plans[3].itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL) {
+        if (!object_super_array_commit_append_plan_assume_fast(state, &plans[0], value) ||
+            !object_super_array_commit_append_plan_assume_fast(state, &plans[1], value) ||
+            !object_super_array_commit_append_plan_assume_fast(state, &plans[2], value) ||
+            !object_super_array_commit_append_plan_assume_fast(state, &plans[3], value)) {
+            return ZR_FALSE;
+        }
+        return ZR_TRUE;
+    }
     if (appendCount0 != appendCount1 || appendCount0 != appendCount2 || appendCount0 != appendCount3) {
         if (!object_super_array_commit_append_plan_assume_fast(state, &plans[0], value)) {
             return ZR_FALSE;
@@ -1840,6 +1822,7 @@ static TZrBool object_try_super_array_add_int_fast(SZrState *state,
     SZrObject *itemsObject = ZR_NULL;
     SZrHashKeyValuePair *pair;
     TZrSize length;
+    TZrInt64 capacityValue;
 
     if (outApplicable != ZR_NULL) {
         *outApplicable = ZR_FALSE;
@@ -1860,6 +1843,42 @@ static TZrBool object_try_super_array_add_int_fast(SZrState *state,
 
     ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(value->type));
     length = zr_super_array_raw_int_length_or_node_count(itemsObject);
+    if (length == ZR_MAX_SIZE) {
+        return ZR_FALSE;
+    }
+    if (itemsObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL &&
+        itemsObject->nodeMap.elementCount == 0) {
+        if (!zr_super_array_raw_int_ensure_capacity(state, itemsObject, length + 1)) {
+            return ZR_FALSE;
+        }
+        capacityValue = (TZrInt64)itemsObject->superArrayRawIntCapacity;
+        if (capacityValue <= 0 ||
+            (receiverObject->cachedCapacityPair != ZR_NULL &&
+             object_super_array_pair_int_or_default(receiverObject->cachedCapacityPair, 0) >= capacityValue)) {
+            if (capacityValue <= 0) {
+                return ZR_FALSE;
+            }
+        } else if (!object_try_super_array_set_cached_int_field(
+                           state,
+                           receiverObject,
+                           ZR_SUPER_ARRAY_FIELD_CAPACITY,
+                           capacityValue)) {
+            return ZR_FALSE;
+        }
+        itemsObject->superArrayRawIntData[length] = value->value.nativeObject.nativeInt64;
+        itemsObject->superArrayRawIntLength = length + 1;
+        itemsObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL;
+        itemsObject->superArrayStorageGeneration++;
+        if (state->threadStatus != ZR_THREAD_STATUS_FINE ||
+            !object_try_super_array_set_cached_int_field(state,
+                                                         receiverObject,
+                                                         ZR_SUPER_ARRAY_FIELD_LENGTH,
+                                                         (TZrInt64)(length + 1))) {
+            return ZR_FALSE;
+        }
+        ZrCore_Value_ResetAsNull(result);
+        return ZR_TRUE;
+    }
     if (!object_try_super_array_ensure_capacity_for_append(state,
                                                            receiverObject,
                                                            itemsObject,
@@ -1927,9 +1946,6 @@ TZrBool ZrCore_Object_SuperArrayTrySetIntFast(SZrState *state,
         if (!zr_super_array_raw_int_materialize_dirty(state, itemsObject)) {
             return ZR_FALSE;
         }
-        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
-            zr_super_array_raw_int_disable(state, itemsObject);
-        }
         pair = object_find_or_add_int_key_pair(state, itemsObject, indexValue);
         if (pair == ZR_NULL) {
             return ZR_FALSE;
@@ -1944,7 +1960,6 @@ TZrBool ZrCore_Object_SuperArrayTrySetIntFast(SZrState *state,
         if (!zr_super_array_raw_int_materialize_dirty(state, itemsObject)) {
             return ZR_FALSE;
         }
-        zr_super_array_raw_int_disable(state, itemsObject);
         pair = object_find_or_add_int_key_pair(state, itemsObject, indexValue);
         if (pair == ZR_NULL) {
             return ZR_FALSE;
@@ -1955,8 +1970,6 @@ TZrBool ZrCore_Object_SuperArrayTrySetIntFast(SZrState *state,
         zr_super_array_raw_int_store_existing_optional(itemsObject,
                                                        indexValue,
                                                        value->value.nativeObject.nativeInt64);
-    } else {
-        zr_super_array_raw_int_disable(state, itemsObject);
     }
     return ZR_TRUE;
 }
@@ -2102,6 +2115,23 @@ TZrBool ZrCore_Object_SuperArrayEnsureRawIntCapacity(SZrState *state,
     }
 
     return zr_super_array_raw_int_ensure_capacity(state, itemsObject, requiredCapacity);
+}
+
+TZrBool ZrCore_Object_SuperArrayMaterializeGeneric(SZrState *state,
+                                                   SZrObject *itemsObject) {
+    return zr_super_array_materialize_generic(state, itemsObject);
+}
+
+TZrSize ZrCore_Object_SuperArrayLength(const SZrObject *itemsObject) {
+    if (itemsObject == ZR_NULL || itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return 0u;
+    }
+    if (itemsObject->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
+        itemsObject->superArrayRawIntData != ZR_NULL &&
+        itemsObject->superArrayRawIntLength <= itemsObject->superArrayRawIntCapacity) {
+        return itemsObject->superArrayRawIntLength;
+    }
+    return itemsObject->nodeMap.elementCount;
 }
 
 TZrBool ZrCore_Object_SuperArrayGetInt(struct SZrState *state,

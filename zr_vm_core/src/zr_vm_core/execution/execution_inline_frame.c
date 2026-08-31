@@ -1,9 +1,11 @@
 #include <string.h>
 
 #include "execution_internal.h"
+#include "execution_inline_frame_copy_fast.h"
 
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_core/constant_reference.h"
+#include "zr_vm_core/global.h"
 #include "zr_vm_core/type_layout.h"
 
 #define ZR_EXECUTION_INLINE_FRAME_STACK_SLOT_NONE UINT32_MAX
@@ -96,6 +98,8 @@ SZrTypeValue *execution_inline_frame_get_value_slot(SZrState *state,
                                                     TZrUInt32 stackSlot) {
     const SZrFunctionFrameSlotLayout *slotLayout;
     SZrStackFramePlace place;
+    SZrProfileRuntime *profileRuntime;
+    SZrTypeValue *directValue;
 
     if (frameBase == ZR_NULL) {
         return ZR_NULL;
@@ -104,6 +108,28 @@ SZrTypeValue *execution_inline_frame_get_value_slot(SZrState *state,
         return &frameBase[stackSlot].value;
     }
 
+    profileRuntime = state != ZR_NULL && state->global != ZR_NULL
+                             ? state->global->profileRuntime
+                             : ZR_NULL;
+    slotLayout = stackSlot < function->frameSlotLayoutLength
+                         ? &function->frameSlotLayouts[stackSlot]
+                         : ZR_NULL;
+    directValue = ZrCore_Function_TryGetDirectFrameValueSlotLayout(
+            function, slotLayout, frameBase);
+    if (directValue != ZR_NULL) {
+        if (ZR_UNLIKELY(profileRuntime != ZR_NULL &&
+                        profileRuntime->recordHelpers)) {
+            profileRuntime->helperCounts[
+                    ZR_PROFILE_HELPER_FRAME_VALUE_SLOT_DIRECT]++;
+        }
+        return directValue;
+    }
+
+    if (ZR_UNLIKELY(profileRuntime != ZR_NULL &&
+                    profileRuntime->recordHelpers)) {
+        profileRuntime->helperCounts[
+                ZR_PROFILE_HELPER_FRAME_VALUE_SLOT_CHECKED]++;
+    }
     slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
     if (slotLayout == ZR_NULL ||
         slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
@@ -1717,10 +1743,16 @@ TZrBool execution_inline_frame_try_copy_stack_slot(SZrState *state,
     SZrTypeValue *sourceValue;
     SZrTypeValue materializedValue;
 
+    ZrCore_Profile_RecordHelperFromState(
+            state, ZR_PROFILE_HELPER_FRAME_VALUE_COPY_PROBE);
     if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL) {
         return ZR_FALSE;
     }
     if (destinationSlot == ZR_INSTRUCTION_USE_RET_FLAG || sourceSlot == ZR_INSTRUCTION_USE_RET_FLAG) {
+        return ZR_FALSE;
+    }
+    if (!execution_frame_value_slot_copy_requires_inline_probe(
+                function, destinationSlot, sourceSlot)) {
         return ZR_FALSE;
     }
     destinationLayout = ZrCore_Function_FindFrameSlotLayout(function, destinationSlot);
@@ -2098,9 +2130,14 @@ TZrBool execution_inline_frame_try_get_member_to_slot(SZrState *state,
                                                       TZrStackValuePointer frameBase,
                                                       TZrUInt32 receiverSlot,
                                                       TZrUInt16 cacheIndex,
-                                                      TZrUInt32 destinationSlot,
-                                                      SZrTypeValue *result) {
-    SZrString *memberName = execution_inline_frame_resolve_cached_member_name(
+                                                       TZrUInt32 destinationSlot,
+                                                       SZrTypeValue *result) {
+    SZrString *memberName;
+
+    if (ZrCore_Function_IsDirectFrameValueSlot(function, receiverSlot)) {
+        return ZR_FALSE;
+    }
+    memberName = execution_inline_frame_resolve_cached_member_name(
             function, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
 
     return execution_inline_frame_try_get_member_by_name_to_slot(
@@ -2129,7 +2166,12 @@ TZrBool execution_inline_frame_try_set_member_from_slot(SZrState *state,
                                                         TZrUInt16 cacheIndex,
                                                         TZrUInt32 sourceSlot,
                                                         const SZrTypeValue *assignedValue) {
-    SZrString *memberName = execution_inline_frame_resolve_cached_member_name(
+    SZrString *memberName;
+
+    if (ZrCore_Function_IsDirectFrameValueSlot(function, receiverSlot)) {
+        return ZR_FALSE;
+    }
+    memberName = execution_inline_frame_resolve_cached_member_name(
             function, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);
 
     return execution_inline_frame_try_set_member_by_name_from_slot(
@@ -2144,7 +2186,12 @@ TZrBool execution_inline_frame_try_initialize_member_from_slot(
         TZrUInt16 cacheIndex,
         TZrUInt32 sourceSlot,
         const SZrTypeValue *assignedValue) {
-    SZrString *memberName = execution_inline_frame_resolve_cached_member_name(
+    SZrString *memberName;
+
+    if (ZrCore_Function_IsDirectFrameValueSlot(function, receiverSlot)) {
+        return ZR_FALSE;
+    }
+    memberName = execution_inline_frame_resolve_cached_member_name(
             function, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);
 
     return execution_inline_frame_try_initialize_member_by_name_from_slot(

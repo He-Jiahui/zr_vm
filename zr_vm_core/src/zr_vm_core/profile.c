@@ -23,7 +23,18 @@ static const TZrChar *const CZrProfileHelperNames[ZR_PROFILE_HELPER_ENUM_MAX] = 
         "set_member",
         "get_by_index",
         "set_by_index",
-        "value_construct"
+        "value_construct",
+        "frame_value_slot_direct",
+        "frame_value_slot_checked",
+        "frame_value_parameter_copy_direct",
+        "frame_value_parameter_copy_checked",
+        "frame_value_parameter_copy_empty",
+        "frame_value_parameter_layout_visit",
+        "frame_value_drop_direct",
+        "frame_value_drop_checked",
+        "frame_value_initialization_direct",
+        "frame_value_initialization_checked",
+        "frame_value_copy_probe"
 };
 
 static const TZrChar *const CZrProfileSlowPathNames[ZR_PROFILE_SLOWPATH_ENUM_MAX] = {
@@ -39,6 +50,29 @@ static const TZrChar *const CZrProfileSlowPathNames[ZR_PROFILE_SLOWPATH_ENUM_MAX
 static const TZrChar *const CZrProfileQuickeningProbeNames[ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX] = {
         "get_stack_typed_arithmetic",
         "get_constant_typed_arithmetic"
+};
+
+static const TZrChar *const CZrProfileMemoryMetricNames[ZR_PROFILE_MEMORY_ENUM_MAX] = {
+        "allocation_count",
+        "allocation_bytes",
+        "value_copy_bytes",
+        "write_barrier_count",
+        "minor_collection_count",
+        "full_collection_count",
+        "mark_object_count",
+        "rewrite_object_count",
+        "promoted_bytes",
+        "raw_int_hit_count",
+        "node_map_materialization_count",
+        "raw_node_sync_count",
+        "member_cache_hit_count",
+        "member_cache_miss_count",
+        "member_cache_invalidation_count",
+        "scan_bytes",
+        "member_cache_monomorphic_hit_count",
+        "member_cache_polymorphic_hit_count",
+        "member_cache_megamorphic_hit_count",
+        "member_cache_meta_fallback_count"
 };
 
 #define ZR_PROFILE_INSTRUCTION_NAME_DECLARE(OPCODE) #OPCODE,
@@ -113,8 +147,29 @@ static const TZrChar *profile_quickening_probe_name_getter(TZrUInt32 index) {
     return ZrCore_Profile_QuickeningProbeKindName((EZrProfileQuickeningProbeKind)index);
 }
 
+static const TZrChar *profile_memory_metric_name_getter(TZrUInt32 index) {
+    return ZrCore_Profile_MemoryMetricKindName((EZrProfileMemoryMetricKind)index);
+}
+
 static const TZrChar *profile_instruction_name_getter(TZrUInt32 index) {
     return ZrCore_Profile_InstructionName((EZrInstructionCode)index);
+}
+
+static void profile_write_pause_samples(FILE *file, const SZrProfileRuntime *runtime) {
+    TZrUInt32 startIndex = runtime->pauseSampleCount == ZR_PROFILE_PAUSE_SAMPLE_CAPACITY
+                                   ? runtime->pauseSampleNext
+                                   : 0u;
+
+    fputs("  \"pause\": {\n", file);
+    fprintf(file, "    \"count\": %" PRIu64 ",\n", runtime->pauseCount);
+    fprintf(file, "    \"total_us\": %" PRIu64 ",\n", runtime->pauseTotalUs);
+    fprintf(file, "    \"max_us\": %" PRIu64 ",\n", runtime->pauseMaxUs);
+    fputs("    \"samples_us\": [", file);
+    for (TZrUInt32 index = 0u; index < runtime->pauseSampleCount; index++) {
+        TZrUInt32 sampleIndex = (startIndex + index) % ZR_PROFILE_PAUSE_SAMPLE_CAPACITY;
+        fprintf(file, "%s%" PRIu64, index == 0u ? "" : ", ", runtime->pauseSamples[sampleIndex]);
+    }
+    fputs("]\n  }", file);
 }
 
 static void profile_write_report(const SZrProfileRuntime *runtime) {
@@ -139,6 +194,7 @@ static void profile_write_report(const SZrProfileRuntime *runtime) {
     fprintf(file, "  \"record_instructions\": %s,\n", runtime->recordInstructions ? "true" : "false");
     fprintf(file, "  \"record_slowpaths\": %s,\n", runtime->recordSlowPaths ? "true" : "false");
     fprintf(file, "  \"record_helpers\": %s,\n", runtime->recordHelpers ? "true" : "false");
+    fprintf(file, "  \"record_memory\": %s,\n", runtime->recordMemory ? "true" : "false");
     profile_write_counts(file,
                          "instructions",
                          ZR_INSTRUCTION_ENUM(ENUM_MAX),
@@ -162,6 +218,14 @@ static void profile_write_report(const SZrProfileRuntime *runtime) {
                          ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX,
                          profile_quickening_probe_name_getter,
                          runtime->quickeningProbeCounts);
+    fputs(",\n", file);
+    profile_write_counts(file,
+                         "memory",
+                         ZR_PROFILE_MEMORY_ENUM_MAX,
+                         profile_memory_metric_name_getter,
+                         runtime->memoryMetricCounts);
+    fputs(",\n", file);
+    profile_write_pause_samples(file, runtime);
     fputs("\n}\n", file);
     fclose(file);
 }
@@ -171,6 +235,7 @@ void ZrCore_Profile_GlobalInit(SZrGlobalState *global) {
     const TZrChar *recordInstructions;
     const TZrChar *recordSlowPaths;
     const TZrChar *recordHelpers;
+    const TZrChar *recordMemory;
 
     if (global == ZR_NULL) {
         return;
@@ -180,9 +245,11 @@ void ZrCore_Profile_GlobalInit(SZrGlobalState *global) {
     recordInstructions = getenv("ZR_VM_PROFILE_INSTRUCTIONS");
     recordSlowPaths = getenv("ZR_VM_PROFILE_SLOWPATHS");
     recordHelpers = getenv("ZR_VM_PROFILE_HELPERS");
+    recordMemory = getenv("ZR_VM_PROFILE_MEMORY");
     if (!profile_env_enabled(recordInstructions) &&
         !profile_env_enabled(recordSlowPaths) &&
-        !profile_env_enabled(recordHelpers)) {
+        !profile_env_enabled(recordHelpers) &&
+        !profile_env_enabled(recordMemory)) {
         return;
     }
 
@@ -194,6 +261,7 @@ void ZrCore_Profile_GlobalInit(SZrGlobalState *global) {
     runtime->recordInstructions = profile_env_enabled(recordInstructions);
     runtime->recordSlowPaths = profile_env_enabled(recordSlowPaths);
     runtime->recordHelpers = profile_env_enabled(recordHelpers);
+    runtime->recordMemory = profile_env_enabled(recordMemory);
     runtime->outputPath = profile_dup_env("ZR_VM_PROFILE_OUT");
     runtime->caseName = profile_dup_env("ZR_VM_PROFILE_CASE");
     runtime->modeName = profile_dup_env("ZR_VM_PROFILE_MODE");
@@ -249,6 +317,10 @@ const TZrChar *ZrCore_Profile_SlowPathKindName(EZrProfileSlowPathKind kind) {
 const TZrChar *ZrCore_Profile_QuickeningProbeKindName(EZrProfileQuickeningProbeKind kind) {
     return (kind >= 0 && kind < ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX) ? CZrProfileQuickeningProbeNames[kind]
                                                                       : "unknown";
+}
+
+const TZrChar *ZrCore_Profile_MemoryMetricKindName(EZrProfileMemoryMetricKind kind) {
+    return (kind >= 0 && kind < ZR_PROFILE_MEMORY_ENUM_MAX) ? CZrProfileMemoryMetricNames[kind] : "unknown";
 }
 
 const TZrChar *ZrCore_Profile_InstructionName(EZrInstructionCode opcode) {

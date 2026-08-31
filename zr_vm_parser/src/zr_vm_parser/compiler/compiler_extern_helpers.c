@@ -210,7 +210,9 @@ TZrBool extern_compiler_push_array_value(SZrCompilerState *cs, SZrObject *array,
         valueRootActive = extern_compiler_temp_root_set_value(&valueRoot, value);
     }
 
-    ZrCore_Value_InitAsInt(cs->state, &key, (TZrInt64)array->nodeMap.elementCount);
+    ZrCore_Value_InitAsInt(cs->state,
+                           &key,
+                           (TZrInt64)ZrCore_Object_SuperArrayLength(array));
     ZrCore_Object_SetValue(cs->state, array, &key, value);
     if (valueRootActive) {
         extern_compiler_temp_root_end(&valueRoot);

@@ -75,7 +75,7 @@ static TZrBool decorator_identity_array_is_empty(
     }
     array = ZR_CAST_OBJECT(cs->state, value->value.object);
     return array != ZR_NULL &&
-           (!array->nodeMap.isValid || array->nodeMap.elementCount == 0U);
+           ZrCore_Object_SuperArrayLength(array) == 0U;
 }
 
 TZrBool ZrParser_CompileTime_EnsureDecoratorSnapshotSymbol(

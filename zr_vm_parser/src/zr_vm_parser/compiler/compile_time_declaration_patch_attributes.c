@@ -324,7 +324,9 @@ static TZrBool patch_attribute_prepare_entry(
     }
     fieldValuesObject = ZR_CAST_OBJECT(cs->state, fieldValuesValue->value.object);
     if (fieldValuesObject == ZR_NULL ||
-        fieldValuesObject->nodeMap.elementCount != entry->schema->fields.length) {
+        fieldValuesObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(cs->state, fieldValuesObject) ||
+        ZrCore_Object_SuperArrayLength(fieldValuesObject) != entry->schema->fields.length) {
         return patch_attribute_error(
                 cs,
                 "declaration_transform.attribute_add: fieldValues must match the attribute schema",
@@ -405,10 +407,11 @@ TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
     }
     ZrCore_Memory_RawSet(result, 0, sizeof(*result));
     array = ZR_CAST_OBJECT(cs->state, attributeAddsValue->value.object);
-    if (array == ZR_NULL) {
+    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(cs->state, array)) {
         return ZR_FALSE;
     }
-    result->count = array->nodeMap.elementCount;
+    result->count = ZrCore_Object_SuperArrayLength(array);
     if (result->count == 0U) {
         return ZR_TRUE;
     }

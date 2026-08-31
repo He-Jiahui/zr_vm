@@ -62,6 +62,79 @@ static void test_inline_array_visit_gc_value(
     visit->values[visit->count++] = value;
 }
 
+static void test_inline_struct_array_skips_verified_non_gc_layout(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function;
+    SZrTypeLayout layout;
+    SZrTypeLayout valueLayout;
+    SZrTypeLayout invalidLayout;
+    SZrTypeLayoutField nestedField;
+    SZrTypeLayout nestedLayout;
+    const SZrTypeLayout *layouts[1];
+    SZrAotCodeRegistration registration;
+    SZrObject *array;
+    TestInlineArrayGcVisit visit;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(&function, 0, sizeof(function));
+    memset(&registration, 0, sizeof(registration));
+    memset(&visit, 0, sizeof(visit));
+
+    ZrCore_TypeLayout_InitStruct(
+            &layout,
+            (TZrUInt32)sizeof(TZrUInt32),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            ZR_NULL,
+            0u);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_CanSkipGcScan(&layout));
+
+    ZrCore_TypeLayout_InitValue(&valueLayout);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&valueLayout));
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_CanSkipGcScan(&valueLayout));
+
+    invalidLayout = layout;
+    invalidLayout.layoutHash ^= UINT64_C(1);
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_CanSkipGcScan(&invalidLayout));
+
+    memset(&nestedField, 0, sizeof(nestedField));
+    nestedField.byteSize = (TZrUInt32)sizeof(TZrUInt32);
+    nestedField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT;
+    ZrCore_TypeLayout_InitStruct(
+            &nestedLayout,
+            (TZrUInt32)sizeof(TZrUInt32),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            &nestedField,
+            1u);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&nestedLayout));
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_CanSkipGcScan(&nestedLayout));
+
+    layouts[0] = &layout;
+    registration.typeLayouts = layouts;
+    registration.typeLayoutCount = ZR_ARRAY_COUNT(layouts);
+    function.metadataCodeRegistration = &registration;
+    function.metadataTypeLayoutCount = ZR_ARRAY_COUNT(layouts);
+
+    array = ZrCore_Object_NewInlineArray(state, &function, 0u, 1024u);
+    TEST_ASSERT_NOT_NULL(array);
+    {
+        TZrUInt32 length = array->inlineArrayLength;
+        array->inlineArrayLength = UINT32_MAX;
+        TEST_ASSERT_FALSE(ZrCore_Object_VisitInlineArrayGcValues(
+                state, array, test_inline_array_visit_gc_value, &visit));
+        array->inlineArrayLength = length;
+    }
+    TEST_ASSERT_TRUE(ZrCore_Object_VisitInlineArrayGcValues(
+            state, array, test_inline_array_visit_gc_value, &visit));
+    TEST_ASSERT_EQUAL_UINT32(0u, visit.count);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_external_storage_trace(
         SZrState *state,
         SZrRawObject *owner,
@@ -246,6 +319,7 @@ static void test_external_closed_storage_trace_survives_full_compaction(void) {
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_inline_struct_array_skips_verified_non_gc_layout);
     RUN_TEST(test_inline_struct_array_uses_registry_layout_for_gc_and_drop);
     RUN_TEST(test_external_closed_storage_trace_survives_full_compaction);
     return UNITY_END();

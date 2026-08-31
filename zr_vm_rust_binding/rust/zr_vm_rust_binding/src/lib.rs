@@ -8,8 +8,10 @@ use zr_vm_rust_binding_sys as sys;
 
 mod gc;
 mod native;
+mod native_argument_view;
 pub use gc::GcStepResult;
 pub use native::*;
+pub use native_argument_view::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionMode {

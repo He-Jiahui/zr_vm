@@ -256,7 +256,7 @@ TZrSize ZrContainerTests_GetArrayLength(SZrObject *array) {
         return 0;
     }
 
-    return array->nodeMap.elementCount;
+    return ZrCore_Object_SuperArrayLength(array);
 }
 
 SZrObject *ZrContainerTests_GetArrayEntryObject(SZrState *state, SZrObject *array, TZrSize index) {

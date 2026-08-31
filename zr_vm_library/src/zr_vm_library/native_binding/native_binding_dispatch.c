@@ -1398,7 +1398,7 @@ static TZrBool native_binding_array_try_push_dense_pair_pool_pinned(SZrState *st
 
     if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL ||
         array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
-        array->superArrayRawIntData != ZR_NULL) {
+        array->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL) {
         return ZR_FALSE;
     }
 
@@ -1426,6 +1426,8 @@ static TZrBool native_binding_array_try_push_dense_pair_pool_pinned(SZrState *st
     ZrCore_Value_Copy(state, &pair->value, value);
     nodeMap->buckets[index] = pair;
     nodeMap->elementCount++;
+    array->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL;
+    array->superArrayStorageGeneration++;
     if (ZrCore_Value_IsGarbageCollectable(&pair->value)) {
         ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array), &pair->value);
     }
@@ -1467,10 +1469,7 @@ TZrBool ZrLib_Array_PushValue(SZrState *state, SZrObject *array, const SZrTypeVa
 }
 
 TZrSize ZrLib_Array_Length(SZrObject *array) {
-    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return 0;
-    }
-    return array->nodeMap.elementCount;
+    return ZrCore_Object_SuperArrayLength(array);
 }
 
 const SZrTypeValue *ZrLib_Array_Get(SZrState *state, SZrObject *array, TZrSize index) {

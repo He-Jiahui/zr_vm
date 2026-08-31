@@ -1253,6 +1253,7 @@ void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void) {
     SZrFunction *function;
     TZrInstruction *instructions;
     const TZrInstruction *foldedAddInstruction;
+    TZrUInt32 cachedGeneratedFrameSlotCount;
 
     timer.startTime = clock();
     ZR_TEST_START("W2 Set Member Slot Null Does Not Kill Slot Zero Forwarding");
@@ -1281,6 +1282,19 @@ void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void) {
 
     TEST_ASSERT_TRUE_MESSAGE(compiler_quicken_execbc_function(state, function),
                              "Synthetic quickening stream should optimize successfully");
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(
+            0u,
+            function->generatedFrameSlotCountPlusOne,
+            "Quickening should republish the generated frame-slot summary");
+    cachedGeneratedFrameSlotCount =
+            function->generatedFrameSlotCountPlusOne - 1u;
+    function->generatedFrameSlotCountPlusOne = 0u;
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            cachedGeneratedFrameSlotCount,
+            ZrCore_Function_GetGeneratedFrameSlotCount(function),
+            "Quickening summary should match a fresh scan of the rewritten stream");
+    function->generatedFrameSlotCountPlusOne =
+            cachedGeneratedFrameSlotCount + 1u;
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(
             0u,
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_STACK)),

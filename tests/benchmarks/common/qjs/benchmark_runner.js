@@ -1,3 +1,5 @@
+import * as std from "std";
+
 const MOD = 1000000007;
 const TIER_SCALES = {
     smoke: 1,
@@ -53,6 +55,41 @@ function normalizeArgs(args) {
     }
 
     return args;
+}
+
+function parseInvocation(args) {
+    let serverMode = false;
+    let requestedCase = null;
+    let tier = "core";
+    const runnerArgs = [];
+
+    for (let index = 0; index < args.length; index += 1) {
+        const value = args[index];
+        if (value === "--benchmark-server") {
+            serverMode = true;
+            continue;
+        }
+        if (value === "--case") {
+            if (index + 1 >= args.length) {
+                throw new Error("--case requires a benchmark name");
+            }
+            requestedCase = args[index + 1];
+            index += 1;
+            continue;
+        }
+        runnerArgs.push(value);
+        if (value === "--tier" || value === "--scale") {
+            if (index + 1 >= args.length) {
+                throw new Error(`${value} requires a value`);
+            }
+            runnerArgs.push(args[index + 1]);
+            if (value === "--tier") {
+                tier = args[index + 1];
+            }
+            index += 1;
+        }
+    }
+    return { serverMode, requestedCase, tier, runnerArgs };
 }
 
 function numericLoops(scale) {
@@ -440,7 +477,52 @@ export function runMain(caseName, args) {
     }
 
     const [banner, handler] = CASE_HANDLERS[caseName];
-    const scale = parseScale(normalizeArgs(args || []));
+    const invocation = parseInvocation(normalizeArgs(args || []));
+    if (invocation.requestedCase !== null && invocation.requestedCase !== caseName) {
+        throw new Error(`benchmark case mismatch: ${invocation.requestedCase}`);
+    }
+    const scale = parseScale(invocation.runnerArgs);
+    if (invocation.serverMode) {
+        std.out.puts(`READY benchmark-checksum-v1:${caseName}:${invocation.tier}\n`);
+        std.out.flush();
+        while (true) {
+            const line = std.in.getline();
+            if (line === null) {
+                throw new Error("benchmark protocol input closed before STOP");
+            }
+            if (line === "STOP") {
+                return;
+            }
+            const match = /^(WARMUP|RUN) ([1-9][0-9]*) ([1-9][0-9]*)$/.exec(line);
+            const requestIndex = match === null ? 0 : Number(match[2]);
+            const repetitions = match === null ? 0 : Number(match[3]);
+            if (match === null || !Number.isSafeInteger(requestIndex) || requestIndex > 2147483647 ||
+                !Number.isSafeInteger(repetitions) || repetitions > 1048576) {
+                std.out.puts("ERROR 0 malformed-request\n");
+                std.out.flush();
+                throw new Error("malformed benchmark protocol request");
+            }
+            let checksum = null;
+            for (let repetition = 0; repetition < repetitions; repetition += 1) {
+                let repetitionChecksum;
+                try {
+                    repetitionChecksum = handler(scale);
+                } catch (error) {
+                    std.out.puts(`ERROR ${match[2]} workload-exception\n`);
+                    std.out.flush();
+                    throw error;
+                }
+                if (checksum !== null && repetitionChecksum !== checksum) {
+                    std.out.puts(`ERROR ${match[2]} repetition-checksum-mismatch\n`);
+                    std.out.flush();
+                    throw new Error("benchmark repetition checksum mismatch");
+                }
+                checksum = repetitionChecksum;
+            }
+            std.out.puts(`DONE ${match[2]} ${checksum}\n`);
+            std.out.flush();
+        }
+    }
     const checksum = handler(scale);
     print(banner);
     print(String(checksum));

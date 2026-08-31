@@ -115,7 +115,7 @@ static TZrBool exception_array_push_value(SZrState *state, SZrObject *array, con
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)array->nodeMap.elementCount);
+    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)ZrCore_Object_SuperArrayLength(array));
     ZrCore_Object_SetValue(state, array, &key, value);
     return ZR_TRUE;
 }
@@ -901,6 +901,10 @@ static TZrChar *exception_format_unhandled_text(struct SZrState *state, const SZ
 
     if (stacksValue != ZR_NULL && stacksValue->type == ZR_VALUE_TYPE_ARRAY && stacksValue->value.object != ZR_NULL) {
         SZrObject *frames = ZR_CAST_OBJECT(state, stacksValue->value.object);
+        if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, frames)) {
+            free(builder.buffer);
+            return ZR_NULL;
+        }
         TZrSize frameCount = frames->nodeMap.elementCount;
         for (TZrSize index = 0; index < frameCount; index++) {
             SZrTypeValue key;

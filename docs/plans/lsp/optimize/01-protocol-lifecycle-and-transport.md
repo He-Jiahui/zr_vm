@@ -1,0 +1,138 @@
+# LSP 协议生命周期与传输层实施计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `test-driven-development`, `systematic-debugging`, `using-vsdevcmd`, `evidence-driven-wsl-validation`, and `verification-before-completion` while executing this plan.
+
+**Goal:** 让 native stdio server 严格遵循 JSON-RPC/LSP 生命周期、frame、取消和错误语义，并能确定性停止 reader、释放 LSP/context/global 状态。
+
+**Architecture:** 将现在混在 `stdio_transport.c`、`stdio_requests.c` 与 `main` 中的 frame reader、JSON-RPC envelope、request registry、server lifecycle 和进程编排拆成五个窄模块。reader 只读取 frame 并入队；主线程验证 envelope 和 lifecycle；request context 持有自己的取消与依赖代际。
+
+**Tech Stack:** C11、cJSON、Win32 threads/pthreads、Node.js protocol tests、ASan/LSan、Valgrind。
+
+---
+
+## Task 1：建立严格生命周期状态机
+
+**Files:**
+- Create: `zr_vm_language_server/stdio/stdio_lifecycle.h`
+- Create: `zr_vm_language_server/stdio/stdio_lifecycle.c`
+- Modify: `zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h`
+- Modify: `zr_vm_language_server/stdio/zr_vm_language_server_stdio.c`
+- Modify: `zr_vm_language_server/stdio/stdio_requests.c`
+- Test: `tests/language_server/stdio_protocol_conformance.js`
+
+- [ ] RED：普通 request 在 initialize 前返回 `-32002 ServerNotInitialized`；exit 之外的 notification 在初始化前被忽略。
+- [ ] RED：第二次 initialize 返回 `-32600 InvalidRequest`；shutdown 前 exit 返回进程码 1；shutdown 后 exit 返回 0。
+- [ ] RED：shutdown 后的普通 request 返回 `-32600`，notification 仅允许 exit。
+- [ ] 实现明确状态：
+
+```c
+typedef enum EZrStdioLifecycleState {
+    ZR_STDIO_LIFECYCLE_NEW = 0,
+    ZR_STDIO_LIFECYCLE_INITIALIZING,
+    ZR_STDIO_LIFECYCLE_RUNNING,
+    ZR_STDIO_LIFECYCLE_SHUTDOWN,
+    ZR_STDIO_LIFECYCLE_EXITED,
+} EZrStdioLifecycleState;
+```
+
+- [ ] `initialized` notification 只允许把 INITIALIZING 转为 RUNNING；server 可以在 initialize response 后接受规范允许的请求，但必须记录 initialized 是否到达以便诊断客户端错误。
+- [ ] 删除仅有 `shutdownRequested` 的隐式状态判断。
+
+## Task 2：验证 JSON-RPC envelope 和 params
+
+**Files:**
+- Create: `zr_vm_language_server/stdio/stdio_json_rpc.h`
+- Create: `zr_vm_language_server/stdio/stdio_json_rpc.c`
+- Modify: `zr_vm_language_server/stdio/zr_vm_language_server_stdio.c`
+- Modify: `zr_vm_language_server/stdio/stdio_request_dispatch.c`
+- Test: `tests/language_server/stdio_protocol_conformance.js`
+
+- [ ] RED：拒绝数组/标量顶层消息、缺失或错误 jsonrpc、bool/object/array id、非 object/array params、request 缺失 id。
+- [ ] notification 的 malformed params 只能记录日志，不发送 response；request 必须返回精确 `-32602`。
+- [ ] 定义统一 envelope，而不是让每个 handler 用 `NULL`/空数组猜测错误：
+
+```c
+typedef struct SZrJsonRpcEnvelope {
+    const cJSON *id;
+    const TZrChar *method;
+    const cJSON *params;
+    TZrBool isRequest;
+    TZrBool isNotification;
+} SZrJsonRpcEnvelope;
+
+typedef enum EZrLspHandlerStatus {
+    ZR_LSP_HANDLER_OK = 0,
+    ZR_LSP_HANDLER_INVALID_PARAMS,
+    ZR_LSP_HANDLER_CANCELLED,
+    ZR_LSP_HANDLER_CONTENT_MODIFIED,
+    ZR_LSP_HANDLER_INTERNAL_ERROR,
+} EZrLspHandlerStatus;
+```
+
+- [ ] handler 返回 status + result；“没有语义结果”可返回合法 null/empty，“解析失败”只能是 InvalidParams。
+- [ ] `parse_size_value`、`parse_position`、`parse_range` 拒绝小数、NaN/Infinity、负数、超 `INT32_MAX`/`TZrSize` 和逆序 range。
+
+## Task 3：实现有界 frame reader
+
+**Files:**
+- Create: `zr_vm_language_server/stdio/stdio_frame_reader.h`
+- Create: `zr_vm_language_server/stdio/stdio_frame_reader.c`
+- Modify: `zr_vm_language_server/stdio/stdio_transport.c`
+- Modify: `zr_vm_language_server/include/zr_vm_language_server/conf.h`
+- Test: `tests/language_server/stdio_protocol_conformance.js`
+
+- [ ] 设定并集中定义 `ZR_LSP_MAX_HEADER_BYTES`、`ZR_LSP_MAX_HEADER_COUNT`、`ZR_LSP_MAX_MESSAGE_BYTES`；默认最大 payload 16 MiB，允许通过测试注入更小限制。
+- [ ] RED：过长 header、Content-Length 缺失/重复/负数/带垃圾后缀/溢出、payload 截断、错误换行、超过上限均不得分配或静默退出。
+- [ ] 用 `strtoull` + `errno` + end pointer + `SIZE_MAX - 1` 检查；分配前验证 `contentLength + 1`。
+- [ ] 区分 `EOF`、`MALFORMED_HEADER`、`PAYLOAD_TRUNCATED`、`TOO_LARGE`、`IO_ERROR`。只有干净 EOF 才关闭输入；可恢复的 JSON payload parse error 返回 `-32700`。
+- [ ] 接受规范允许的 Content-Type/charset，拒绝显式非 UTF-8 charset；未知扩展 header 可忽略但计入总大小。
+
+## Task 4：修复 request id、取消与 ContentModified
+
+**Files:**
+- Create: `zr_vm_language_server/stdio/stdio_request_registry.h`
+- Create: `zr_vm_language_server/stdio/stdio_request_registry.c`
+- Modify: `zr_vm_language_server/stdio/stdio_transport.c`
+- Modify: `zr_vm_language_server/stdio/stdio_requests.c`
+- Test: `tests/language_server/stdio_protocol_conformance.js`
+- Create: `tests/language_server/stdio_document_sync_conformance.js`
+
+- [ ] registry 以 JSON-RPC id 的类型和值为 key；数字 `1` 与字符串 `"1"` 不得冲突。
+- [ ] 重复活动 id 返回 InvalidRequest，不能复用同一个 cancellation node。
+- [ ] `$/cancelRequest` 只标记匹配 id；未知 id 是无响应 no-op。
+- [ ] 从 request context 删除全局 inputGeneration 比较。ContentModified 由计划 02 的 dependency fence 判断；在该计划完成前只保留精确 cancellation，不发布可能误报的 `-32801`。
+- [ ] 给 workspace diagnostics、workspace symbol、references、rename、hierarchy 等循环增加统一 cancellation callback，不只在 diagnostics bucket 循环里检查。
+- [ ] request context 解析 `workDoneToken` 与 `partialResultToken`；长查询通过统一 progress sink 发送 `$/progress`，并在每批结果之间检查 cancellation/content fence。
+- [ ] 处理 `$/setTrace` 并将协议 trace 写到 stderr/客户端 trace channel；任何 trace 都不得污染 stdout frame。
+- [ ] 明确串行执行模型的限制；若后续改线程池，core snapshot 必须先变为不可变且 thread-safe，本计划不提前并发 core。
+
+## Task 5：确定性 teardown
+
+**Files:**
+- Create: `zr_vm_language_server/stdio/stdio_server.h`
+- Create: `zr_vm_language_server/stdio/stdio_server.c`
+- Modify: `zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h`
+- Modify: `zr_vm_language_server/stdio/zr_vm_language_server_stdio.c`
+- Modify: `zr_vm_language_server/stdio/stdio_transport.c`
+- Create: `tests/language_server/test_stdio_server_lifecycle.c`
+
+- [ ] RED：在同一进程中连续 New/Start/Shutdown/Free 100 次；禁止依赖 process exit。
+- [ ] `SZrStdioRequestInputState` 保存 thread handle/id 与 stop flag；Free 顺序固定为 stop reader → join → drain messages/requests → destroy cond/mutex → free caches → free LSP context → free global state。
+- [ ] 调试现有 context/global teardown access violation，定位首个 invalid free/use-after-free；不得保留“让 OS 回收”的注释作为 workaround。
+- [ ] 对启动中途失败使用同一 teardown path，覆盖 global 创建后、context 创建后、input init 后、thread start 后的 fault injection。
+- [ ] Windows 与 pthread 两端都测试 join；不再 `CloseHandle`/`pthread_detach` 后遗失 reader 所有权。
+
+## Task 6：验证门禁
+
+- [ ] 运行 protocol conformance 全部负向用例，stderr 不得混入 stdout frame。
+- [ ] WSL GCC/Clang ASan+UBSan 通过 lifecycle loop 与 stdio smoke。
+- [ ] Valgrind `--leak-check=full --errors-for-leak-kinds=definite,indirect` 返回 0。
+- [ ] MSVC Debug + Application Verifier 或 ASan（可用时）通过同一 lifecycle 测试。
+
+```powershell
+wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /mnt/e/Git/zr_vm/.codex/build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"'
+wsl.exe bash -lc 'cmake --build /mnt/e/Git/zr_vm/.codex/build-lsp-protocol-asan --target zr_vm_language_server_stdio zr_vm_language_server_stdio_server_lifecycle_test --parallel 8'
+wsl.exe bash -lc 'ctest --test-dir /mnt/e/Git/zr_vm/.codex/build-lsp-protocol-asan --output-on-failure -R "language_server_stdio_(protocol|server_lifecycle|smoke)"'
+```
+
+- [ ] 完成后更新 module docs，记录 lifecycle 状态、frame limits、error mapping 和 teardown ownership。

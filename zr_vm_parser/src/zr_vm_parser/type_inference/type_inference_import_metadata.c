@@ -984,16 +984,22 @@ static TZrBool import_append_decorator_names_from_constant_array(SZrState *state
     if (decoratorArray == ZR_NULL || decoratorArray->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return ZR_FALSE;
     }
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, decoratorArray)) {
+        return ZR_FALSE;
+    }
 
     if (!decorators->isValid || decorators->elementSize == 0) {
         ZrCore_Array_Init(state,
                           decorators,
                           sizeof(SZrTypeDecoratorInfo),
-                          decoratorArray->nodeMap.elementCount > 0 ? decoratorArray->nodeMap.elementCount
-                                                                   : ZR_PARSER_INITIAL_CAPACITY_TINY);
+                          ZrCore_Object_SuperArrayLength(decoratorArray) > 0
+                              ? ZrCore_Object_SuperArrayLength(decoratorArray)
+                              : ZR_PARSER_INITIAL_CAPACITY_TINY);
     }
 
-    for (TZrSize decoratorIndex = 0; decoratorIndex < decoratorArray->nodeMap.elementCount; decoratorIndex++) {
+    for (TZrSize decoratorIndex = 0;
+         decoratorIndex < ZrCore_Object_SuperArrayLength(decoratorArray);
+         decoratorIndex++) {
         SZrTypeValue key;
         const SZrTypeValue *decoratorNameValue;
         SZrTypeDecoratorInfo decoratorInfo;

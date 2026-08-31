@@ -2224,6 +2224,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
     function->frameByteAlign = 0;
 
     if (function->stackSize == 0) {
+        ZrCore_Function_FinalizeDirectFrameValueSlots(function);
         return ZR_TRUE;
     }
 
@@ -2471,10 +2472,12 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         }
         function->frameByteAlign = frameAlign;
         function->frameByteSize = cursor + bitmapByteSize;
+        ZrCore_Function_FinalizeDirectFrameValueSlots(function);
         return ZR_TRUE;
     }
     function->frameByteAlign = frameAlign;
     function->frameByteSize = frame_layout_align_offset(cursor, frameAlign);
+    ZrCore_Function_FinalizeDirectFrameValueSlots(function);
     return ZR_TRUE;
 
 fail_attached:

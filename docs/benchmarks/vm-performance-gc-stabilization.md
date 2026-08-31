@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_core/src/zr_vm_core/hash_set.c
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/object/object_internal.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
@@ -11,6 +12,7 @@ related_code:
   - tests/cmake/run_performance_suite.cmake
   - scripts/benchmark/run_gc_overhead_stress.sh
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/hash_set.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - tests/CMakeLists.txt
@@ -20,6 +22,7 @@ plan_sources:
   - tests/acceptance/2026-04-20-w3-is-unreferenced-ignore-registry-gate.md
   - tests/acceptance/2026-04-21-w1-t7-t8-existing-pair-slow-lane.md
 tests:
+  - tests/core/test_super_array_raw_int_canonical_storage.c
   - tests/core/test_execution_member_access_fast_paths.c
   - tests/gc/gc_tests.c
   - tests/container/test_container_runtime.c
@@ -29,6 +32,27 @@ doc_type: workflow-detail
 ---
 
 # GC Stress Stabilization Evidence
+
+## Mixed Hash Pair-Pool Teardown (2026-08-30)
+
+Canonical raw-integer super-array append can promote an already populated
+node map into the dense pair-pool path. The map may therefore contain both
+individually allocated pairs from `ZrCore_HashSet_Add` and pooled pairs from
+`ZrCore_HashSet_TakeReservedPair*`. Teardown now walks every bucket, releases
+only pairs outside the pool block address ranges, and then releases each pool
+block once. This keeps pool-only maps unchanged while preventing the mixed
+state from leaking the earlier standalone pair.
+
+The regression is exercised by
+`tests/core/test_super_array_raw_int_canonical_storage.c` through the mixed
+raw/node four-lane append case. The pre-fix WSL Valgrind run reported one
+112-byte definite leak from the initial generic insertion. After the fix, the
+MSVC focused binary, GCC strict syntax check, and a WSL Valgrind rerun all
+pass; the post-fix rerun reports 3,609 allocations and frees, 0 bytes in use,
+and zero Memcheck errors. The WSL rerun used a temporary core shared library
+linked with the current `hash_set.c` object against the existing focused
+objects, so it is memory-safety evidence only and not a full rebuild or
+performance gate.
 
 本页记录 2026-05-02 到 2026-05-03 针对 `gc_fragment_stress` 的 GC/object-write 稳定工作。第一组 public `SetValue` no-pin existing-pair probe 未达性能门槛，已撤回；随后接受了更窄的 `ZrLib_Array_PushValue` dense pair-pool append probe，并继续接受 `container.Array.add` 的 dense pair-pool append probe。
 

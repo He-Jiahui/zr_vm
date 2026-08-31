@@ -127,6 +127,12 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `state-lifecycle.md`: state teardown for reusable call-info chains, compiled-function
   prototype pointer storage, module prototype scratch arrays, and allocator ownership
   boundaries validated by sanitizers and Valgrind.
+- `string-builder.md`: caller-owned native string assembly with explicit byte lengths,
+  geometric growth, immutable freeze/interning, and the current native-binding boundary.
+- `object-shape-member-cache.md`: stable prototype shape identity, generation-aware
+  member PIC validation, and bounded mono/poly/mega cache profiling.
+- `profile-memory-metrics.md`: allocation, copy, barrier, GC, materialization, and
+  member-cache counters with hotspot-derived rates and explicit scope limits.
 - `task-frame-runtime.md`: structured Task/frame state, synchronous no-allocation completion,
   suspension-only promotion, layout-declared GC/drop maps, result roots, non-Copy transfer,
   and typed frame pooling without a dynamic-object coroutine fallback.
@@ -151,6 +157,9 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `gc-domain-concurrent-major.md`: incremental/concurrent major snapshot-mark-remark lifecycle,
   concurrent write-barrier closure, budgeted compaction, full-collection cancellation and
   per-domain GC/transport telemetry.
+- `gc-layout-scan-fast-path.md`: fail-closed descriptor proof and inline-array fast path for
+  validated structures with no managed fields, including conservative treatment of value and
+  nested layouts.
 - `cross-domain-transfer-contracts.md`: artifact-reproducible cross-domain transfer kinds,
   layout/provider identity, ValueCopy and StructuredClone payloads, ResourceMove
   DropOnFailure, quotas, stale generation, shutdown, and release/acquire race contracts.
@@ -173,3 +182,12 @@ slots above the parameter prefix, before execution starts. Untyped legacy frames
 smaller parameter-prefix reset so their established transient-slot reuse remains unchanged.
 This distinction prevents stale bytes in a typed temporary slot from being interpreted as a
 managed reference when the collector walks `frameSlotLayouts`.
+
+Prepared calls into strict packed direct VALUE frames have a separate
+steady-state specialization. It applies only to exact call windows with
+existing stack capacity and a reusable call-info. The normal logical-frame and
+padding clears remain mandatory; the padding clear is also the initialization
+of the proven fixed-stride byte-mirror region, after which parameters copy
+directly from dense slots through the normal ownership-aware value copy. Every
+guard miss retains the original stack-growth, call-info allocation, debug, and
+checked-layout precall path.

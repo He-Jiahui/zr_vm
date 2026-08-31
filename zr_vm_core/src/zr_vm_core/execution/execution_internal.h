@@ -126,10 +126,20 @@ static ZR_FORCE_INLINE SZrString *execution_member_dispatch_refresh_forwarded_ca
 
 static ZR_FORCE_INLINE TZrBool execution_member_dispatch_cached_slot_versions_match(
         const SZrFunctionCallSitePicSlot *slot) {
-    return slot != ZR_NULL &&
-           slot->cachedReceiverPrototype != ZR_NULL &&
-           slot->cachedOwnerPrototype != ZR_NULL &&
-           slot->cachedReceiverPrototype->super.memberVersion == slot->cachedReceiverVersion &&
+    if (slot == ZR_NULL || slot->cachedReceiverPrototype == ZR_NULL || slot->cachedOwnerPrototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((slot->cachedReceiverShapeId != 0u &&
+         slot->cachedReceiverPrototype->shapeId != slot->cachedReceiverShapeId) ||
+        (slot->cachedOwnerShapeId != 0u &&
+         slot->cachedOwnerPrototype->shapeId != slot->cachedOwnerShapeId) ||
+        (slot->cachedReceiverShapeGeneration != 0u &&
+         slot->cachedReceiverPrototype->shapeGeneration != slot->cachedReceiverShapeGeneration) ||
+        (slot->cachedOwnerShapeGeneration != 0u &&
+         slot->cachedOwnerPrototype->shapeGeneration != slot->cachedOwnerShapeGeneration)) {
+        return ZR_FALSE;
+    }
+    return slot->cachedReceiverPrototype->super.memberVersion == slot->cachedReceiverVersion &&
            slot->cachedOwnerPrototype->super.memberVersion == slot->cachedOwnerVersion;
 }
 
@@ -182,9 +192,13 @@ static ZR_FORCE_INLINE void execution_member_dispatch_refresh_instance_field_pic
     slot->cachedReceiverPair = pair;
     if (slot->cachedReceiverPrototype != ZR_NULL) {
         slot->cachedReceiverVersion = slot->cachedReceiverPrototype->super.memberVersion;
+        slot->cachedReceiverShapeId = slot->cachedReceiverPrototype->shapeId;
+        slot->cachedReceiverShapeGeneration = slot->cachedReceiverPrototype->shapeGeneration;
     }
     if (slot->cachedOwnerPrototype != ZR_NULL) {
         slot->cachedOwnerVersion = slot->cachedOwnerPrototype->super.memberVersion;
+        slot->cachedOwnerShapeId = slot->cachedOwnerPrototype->shapeId;
+        slot->cachedOwnerShapeGeneration = slot->cachedOwnerPrototype->shapeGeneration;
     }
     if (state != ZR_NULL && function != ZR_NULL) {
         ZrCore_RawObject_Barrier(

@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "zr_vm_core/profile.h"
 #include "gc/gc_domain_internal.h"
 
 #include <stdio.h>
@@ -1904,6 +1905,8 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
         return 0;
     }
 
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_REWRITE_OBJECT_COUNT, 1u);
+
     switch (object->type) {
         case ZR_RAW_OBJECT_TYPE_OBJECT:
         case ZR_RAW_OBJECT_TYPE_ARRAY: {
@@ -2360,12 +2363,17 @@ static ZR_FORCE_INLINE void garbage_collector_clone_object_raw_int_storage(
 
     sourceCoreObject = ZR_CAST(SZrObject *, sourceObject);
     cloneCoreObject = ZR_CAST(SZrObject *, cloneObject);
+    cloneCoreObject->superArrayStorageMode = sourceCoreObject->superArrayStorageMode;
+    cloneCoreObject->superArrayStorageGeneration = sourceCoreObject->superArrayStorageGeneration;
     if (sourceCoreObject->superArrayRawIntData == ZR_NULL ||
+        sourceCoreObject->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL ||
         sourceCoreObject->superArrayRawIntCapacity == 0 ||
+        sourceCoreObject->superArrayRawIntLength > sourceCoreObject->superArrayRawIntCapacity ||
         sourceCoreObject->superArrayRawIntCapacity > (ZR_MAX_SIZE / sizeof(TZrInt64))) {
         cloneCoreObject->superArrayRawIntData = ZR_NULL;
         cloneCoreObject->superArrayRawIntLength = 0;
         cloneCoreObject->superArrayRawIntCapacity = 0;
+        cloneCoreObject->superArrayStorageMode = sourceCoreObject->superArrayStorageMode;
         cloneCoreObject->superArrayRawIntDirty = ZR_FALSE;
         return;
     }
@@ -2373,10 +2381,18 @@ static ZR_FORCE_INLINE void garbage_collector_clone_object_raw_int_storage(
     rawBytes = sourceCoreObject->superArrayRawIntCapacity * sizeof(TZrInt64);
     cloneData = (TZrInt64 *)ZrCore_Memory_RawMallocWithType(state->global, rawBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (cloneData == ZR_NULL) {
+        /* The preceding object copy aliases the source sidecar. Clear that
+         * alias and release the unlinked clone before unwinding. */
         cloneCoreObject->superArrayRawIntData = ZR_NULL;
-        cloneCoreObject->superArrayRawIntLength = 0;
-        cloneCoreObject->superArrayRawIntCapacity = 0;
+        cloneCoreObject->superArrayRawIntLength = 0u;
+        cloneCoreObject->superArrayRawIntCapacity = 0u;
+        cloneCoreObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
         cloneCoreObject->superArrayRawIntDirty = ZR_FALSE;
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      cloneObject,
+                                      objectSize,
+                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         return;
     }
 
@@ -2755,6 +2771,9 @@ static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
                                                                                                  survivalAge);
 
                     if (promotedObject != ZR_NULL) {
+                        ZrCore_Profile_RecordMemoryFromState(state,
+                                                             ZR_PROFILE_MEMORY_PROMOTED_BYTES,
+                                                             (TZrUInt64)objectSize);
                         garbage_collector_remember_promoted_minor_object(state, promotedObject);
                         work++;
                     }
@@ -2768,6 +2787,9 @@ static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
                                                             survivalAge,
                                                             objectSize);
                     garbage_collector_remember_promoted_minor_object(state, object);
+                    ZrCore_Profile_RecordMemoryFromState(state,
+                                                         ZR_PROFILE_MEMORY_PROMOTED_BYTES,
+                                                         (TZrUInt64)objectSize);
                     work++;
                 }
             } else {
@@ -2898,6 +2920,7 @@ TZrSize garbage_collector_finish_generational_major_collection(
         phaseDurationUs = 1u;
     }
     if (wasConcurrentMajor) {
+        ZrCore_Profile_RecordPauseFromState(state, phaseDurationUs);
         collector->statsSnapshot.concurrentMajorRemarkPauseCount++;
         collector->statsSnapshot.concurrentMajorRemarkPauseTotalUs +=
                 phaseDurationUs;
@@ -2965,6 +2988,7 @@ TZrSize garbage_collector_finish_generational_major_collection(
             if (collector->statsSnapshot.compactPauseMaxUs < phaseDurationUs) {
                 collector->statsSnapshot.compactPauseMaxUs = phaseDurationUs;
             }
+            ZrCore_Profile_RecordPauseFromState(state, phaseDurationUs);
             garbage_collector_check_sizes(state, global);
             didCompact = ZR_TRUE;
         }
@@ -3011,6 +3035,7 @@ static TZrSize garbage_collector_run_generational_major_collection(SZrState *sta
 }
 
 TZrSize garbage_collector_run_generational_full(SZrState *state) {
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_FULL_COLLECTION_COUNT, 1u);
     return garbage_collector_run_generational_major_collection(state, ZR_TRUE, ZR_NULL);
 }
 
@@ -3186,6 +3211,7 @@ TZrBool garbage_collector_is_generational_mode(SZrGlobalState *global) {
 }
 
 void garbage_collector_full_inc(SZrState *state, SZrGlobalState *global) {
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_FULL_COLLECTION_COUNT, 1u);
     garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
     garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION);
     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC;
@@ -3237,6 +3263,7 @@ void garbage_collector_run_generational_step(SZrState *state) {
     }
 
     if (forceFull) {
+        ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_FULL_COLLECTION_COUNT, 1u);
         work += garbage_collector_run_generational_major_collection(state, ZR_TRUE, &didCompact);
         collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
         collector->gcFlags &= ~ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST;
@@ -3254,6 +3281,7 @@ void garbage_collector_run_generational_step(SZrState *state) {
         return;
     }
 
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_MINOR_COLLECTION_COUNT, 1u);
     work += garbage_collector_restart_minor_collection(state);
     work += ZrGarbageCollectorPropagateAll(state);
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE;

@@ -1071,6 +1071,57 @@ static void test_semantic_token_text_scan_after_utf8_prefix_uses_utf16_columns(v
     ZrCore_GlobalState_Free(global);
 }
 
+static void test_semantic_tokens_classify_ownership_intrinsics_as_keywords(void) {
+    const TZrChar *content =
+        "share(owner); degrade(shared); wake(weak); intoGc(owner); drop(owner);\n";
+    SZrCallbackGlobal callbacks = {0};
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray tokens = {0};
+    TZrBool resolved;
+
+    global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
+        printf("FAIL: Ownership intrinsic semantic tokens could not create VM state\n");
+        g_failures++;
+        return;
+    }
+
+    state = global->mainThreadState;
+    ZrCore_GlobalState_InitRegistry(state, global);
+    context = test_open_document(
+            state, "file:///tmp/zr_lsp_ownership_intrinsic_tokens.zr", content, &uri);
+    if (context == ZR_NULL) {
+        printf("FAIL: Ownership intrinsic semantic tokens could not open document\n");
+        ZrCore_GlobalState_Free(global);
+        g_failures++;
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
+    resolved = ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens);
+    if (!resolved ||
+        !test_semantic_tokens_contain(&tokens, 0, 0, 5, "keyword") ||
+        !test_semantic_tokens_contain(&tokens, 0, 14, 7, "keyword") ||
+        !test_semantic_tokens_contain(&tokens, 0, 31, 4, "keyword") ||
+        !test_semantic_tokens_contain(&tokens, 0, 43, 6, "keyword") ||
+        !test_semantic_tokens_contain(&tokens, 0, 58, 4, "keyword")) {
+        printf("FAIL: Expected share/degrade/wake/intoGc/drop keyword tokens; "
+               "resolved=%d count=%llu\n",
+               (int)resolved,
+               (unsigned long long)tokens.length);
+        g_failures++;
+    } else {
+        printf("PASS: Ownership intrinsics use keyword semantic tokens\n");
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    ZrCore_GlobalState_Free(global);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Position Mapping Tests\n");
@@ -1098,6 +1149,7 @@ int main(void) {
     test_inlay_hint_after_utf8_prefix_uses_utf16_columns();
     test_semantic_token_symbol_after_utf8_prefix_uses_utf16_columns();
     test_semantic_token_text_scan_after_utf8_prefix_uses_utf16_columns();
+    test_semantic_tokens_classify_ownership_intrinsics_as_keywords();
 
     printf("\n==========\n");
     if (g_failures == 0) {

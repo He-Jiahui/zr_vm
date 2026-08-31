@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use zr_vm_rust_binding::{
-    CompileOptions, ExecutionMode, FunctionBuilder, ModuleBuilder, ProjectWorkspace, PrototypeType,
-    RunOptions, RuntimeBuilder, TypeBuilder, Value,
+    CompileOptions, ExecutionMode, FunctionBuilder, ModuleBuilder, NativeArgumentKind,
+    ProjectWorkspace, PrototypeType, RunOptions, RuntimeBuilder, TypeBuilder, Value,
 };
 use zr_vm_rust_binding_sys::ZrRustBindingStatus;
 
@@ -67,8 +67,8 @@ fn native_module_registration_roundtrip() -> Result<(), Box<dyn std::error::Erro
                 context.check_arity(2, 2)?;
                 assert!(context.self_value()?.is_none());
 
-                let left = context.argument(0)?.as_int()?;
-                let right = context.argument(1)?.as_int()?;
+                let left = context.with_argument(0, |argument| argument.read_int())?;
+                let right = context.with_argument(1, |argument| argument.read_int())?;
                 Value::new_int(left + right)
             })
             .parameter("left", "int", "left operand")
@@ -89,8 +89,8 @@ fn native_module_registration_roundtrip() -> Result<(), Box<dyn std::error::Erro
                         context.check_arity(2, 2)?;
                         assert!(context.self_value()?.is_none());
 
-                        let left = context.argument(0)?.as_int()?;
-                        let right = context.argument(1)?.as_int()?;
+                        let left = context.with_argument(0, |argument| argument.read_int())?;
+                        let right = context.with_argument(1, |argument| argument.read_int())?;
                         Value::new_int(left * right)
                     })
                     .parameter("left", "int", "left operand")
@@ -166,8 +166,8 @@ fn native_module_registration_drop_waits_for_live_result_handles(
         .add_function(
             FunctionBuilder::new("bump", 2, 2, move |context| {
                 let _probe = &function_drop_probe;
-                let left = context.argument(0)?.as_int()?;
-                let right = context.argument(1)?.as_int()?;
+                let left = context.with_argument(0, |argument| argument.read_int())?;
+                let right = context.with_argument(1, |argument| argument.read_int())?;
                 Value::new_int(left + right)
             })
             .parameter("left", "int", "left operand")
@@ -420,8 +420,8 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
         .add_function(
             FunctionBuilder::new("bump", 2, 2, move |context| {
                 callback_calls.fetch_add(1, Ordering::SeqCst);
-                let left = context.argument(0)?.as_int()?;
-                let right = context.argument(1)?.as_int()?;
+                let left = context.with_argument(0, |argument| argument.read_int())?;
+                let right = context.with_argument(1, |argument| argument.read_int())?;
                 Value::new_int(left + right)
             })
             .parameter("left", "int", "left operand")
@@ -545,6 +545,211 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
             || export_error.message.contains("RUNTIME_ERROR")
     );
     assert_eq!(call_count.load(Ordering::SeqCst), 5);
+    Ok(())
+}
+
+#[test]
+fn native_argument_views_borrow_string_and_read_scalars_without_owned_values(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = acquire_test_lock();
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("native_argument_view_project");
+    let workspace = ProjectWorkspace::scaffold(&root, "native_argument_view_project")?;
+    let main_source = workspace.project_root()?.join("src").join("main.zr");
+    fs::write(
+        &main_source,
+        concat!(
+            "let host = import(\"host_demo\");\n",
+            "return host.inspect(\"visitor\", 12);\n",
+        ),
+    )?;
+
+    let module = ModuleBuilder::new("host_demo")
+        .documentation("Borrowed native argument-view fixture.")
+        .module_version("1.0.0")
+        .add_function(
+            FunctionBuilder::new("inspect", 2, 2, |context| {
+                let string_length = context.with_argument(0, |argument| {
+                    assert_eq!(argument.kind()?, NativeArgumentKind::String);
+                    argument.with_str(|value| {
+                        assert_eq!(value, "visitor");
+                        Ok(value.len() as i64)
+                    })
+                })?;
+                let suffix = context.with_argument(1, |argument| {
+                    assert_eq!(argument.kind()?, NativeArgumentKind::Int);
+                    argument.read_int()
+                })?;
+                Value::new_int(string_length + suffix)
+            })
+            .parameter("name", "string", "borrowed string argument")
+            .parameter("suffix", "int", "direct scalar argument")
+            .return_type("int")
+            .documentation("Reads guest inputs through non-escaping views."),
+        )
+        .build()?;
+
+    let mut runtime = RuntimeBuilder::standard().build()?;
+    let _registration = runtime.register_native_module(module)?;
+    let compile = workspace.compile(
+        &mut runtime,
+        &CompileOptions {
+            emit_intermediate: false,
+            incremental: false,
+        },
+    )?;
+    assert!(compile.compiled > 0);
+
+    let interp = workspace.run(
+        &mut runtime,
+        &RunOptions {
+            execution_mode: ExecutionMode::Interp,
+            ..RunOptions::default()
+        },
+    )?;
+    assert_eq!(interp.as_int()?, 19);
+    drop(interp);
+
+    let binary = workspace.run(
+        &mut runtime,
+        &RunOptions {
+            execution_mode: ExecutionMode::Binary,
+            ..RunOptions::default()
+        },
+    )?;
+    assert_eq!(binary.as_int()?, 19);
+    Ok(())
+}
+
+#[test]
+fn native_argument_views_read_byte_arrays_by_length_and_checked_index(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = acquire_test_lock();
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("native_argument_byte_view_project");
+    let workspace = ProjectWorkspace::scaffold(&root, "native_argument_byte_view_project")?;
+    let main_source = workspace.project_root()?.join("src").join("main.zr");
+    fs::write(
+        &main_source,
+        concat!(
+            "let host = import(\"host_demo\");\n",
+            "var bytes: int[4] = [7, 0, 128, 255];\n",
+            "return host.checksum(bytes);\n",
+        ),
+    )?;
+
+    let module = ModuleBuilder::new("host_demo")
+        .documentation("Borrowed native byte-array fixture.")
+        .module_version("1.0.0")
+        .add_function(
+            FunctionBuilder::new("checksum", 1, 1, |context| {
+                let checksum = context.with_argument(0, |argument| {
+                    assert_eq!(argument.kind()?, NativeArgumentKind::Array);
+                    assert_eq!(argument.byte_len()?, 4);
+                    let mut total = 0i64;
+                    for index in 0..argument.byte_len()? {
+                        total += i64::from(argument.byte_at(index)?);
+                    }
+                    Ok(total)
+                })?;
+                Value::new_int(checksum)
+            })
+            .parameter(
+                "bytes",
+                "container.Array<uint>",
+                "borrowed byte-array argument",
+            )
+            .return_type("int")
+            .documentation("Reads byte arguments without materializing an owned vector."),
+        )
+        .build()?;
+
+    let mut runtime = RuntimeBuilder::standard().build()?;
+    let _registration = runtime.register_native_module(module)?;
+    let compile = workspace.compile(
+        &mut runtime,
+        &CompileOptions {
+            emit_intermediate: false,
+            incremental: false,
+        },
+    )?;
+    assert!(compile.compiled > 0);
+
+    let result = workspace.run(
+        &mut runtime,
+        &RunOptions {
+            execution_mode: ExecutionMode::Interp,
+            ..RunOptions::default()
+        },
+    )?;
+    assert_eq!(result.as_int()?, 390);
+    Ok(())
+}
+
+#[test]
+fn native_argument_string_visitor_panic_is_contained_and_cleanup_allows_a_second_read(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = acquire_test_lock();
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("native_argument_panic_project");
+    let workspace = ProjectWorkspace::scaffold(&root, "native_argument_panic_project")?;
+    let main_source = workspace.project_root()?.join("src").join("main.zr");
+    fs::write(
+        &main_source,
+        concat!(
+            "let host = import(\"host_demo\");\n",
+            "return host.recover_after_panic(\"still-rooted\");\n",
+        ),
+    )?;
+
+    let module = ModuleBuilder::new("host_demo")
+        .documentation("Native argument-view panic containment fixture.")
+        .module_version("1.0.0")
+        .add_function(
+            FunctionBuilder::new("recover_after_panic", 1, 1, |context| {
+                let panic_error = context
+                    .with_argument(0, |argument| {
+                        argument.with_str(|_value| -> Result<(), zr_vm_rust_binding::Error> {
+                            panic!("native string visitor panic must not cross the C boundary")
+                        })
+                    })
+                    .expect_err("visitor panic must become an internal binding error");
+                assert_eq!(
+                    panic_error.status,
+                    ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_INTERNAL_ERROR
+                );
+                assert!(panic_error.message.contains("visitor panicked"));
+
+                let length = context.with_argument(0, |argument| {
+                    argument.with_str(|value| Ok(value.len() as i64))
+                })?;
+                Value::new_int(length)
+            })
+            .parameter("value", "string", "string visited across a contained panic")
+            .return_type("int")
+            .documentation("Verifies native argument visitor cleanup after panic."),
+        )
+        .build()?;
+
+    let mut runtime = RuntimeBuilder::standard().build()?;
+    let _registration = runtime.register_native_module(module)?;
+    let compile = workspace.compile(
+        &mut runtime,
+        &CompileOptions {
+            emit_intermediate: false,
+            incremental: false,
+        },
+    )?;
+    assert!(compile.compiled > 0);
+
+    let result = workspace.run(
+        &mut runtime,
+        &RunOptions {
+            execution_mode: ExecutionMode::Interp,
+            ..RunOptions::default()
+        },
+    )?;
+    assert_eq!(result.as_int()?, "still-rooted".len() as i64);
     Ok(())
 }
 

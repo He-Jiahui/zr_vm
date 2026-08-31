@@ -198,6 +198,33 @@ static void test_debug_snapshot_variables_use_core_local_and_upvalue_apis(void) 
     free(sourceText);
 }
 
+static void test_debug_snapshot_loaded_module_count_uses_logical_array_length(void) {
+    static const char *const requiredSourceNeedles[] = {
+            "static TZrUInt32 zr_debug_loaded_module_count",
+            "ZrCore_Object_SuperArrayLength(",
+    };
+    static const char *const forbiddenSourceNeedles[] = {
+            "loadedModulesRegistry.value.object)->nodeMap.elementCount",
+    };
+    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c");
+    char *loadedModuleSection;
+
+    TEST_ASSERT_NOT_NULL(sourceText);
+    loadedModuleSection = copy_section_owned(sourceText,
+                                              "static TZrUInt32 zr_debug_loaded_module_count",
+                                              "static TZrBool zr_debug_expand_global_state");
+    TEST_ASSERT_NOT_NULL(loadedModuleSection);
+    assert_text_contains_all(loadedModuleSection,
+                             requiredSourceNeedles,
+                             ARRAY_COUNT(requiredSourceNeedles));
+    assert_text_contains_none(loadedModuleSection,
+                              forbiddenSourceNeedles,
+                              ARRAY_COUNT(forbiddenSourceNeedles));
+
+    free(loadedModuleSection);
+    free(sourceText);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -206,5 +233,6 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_debug_snapshot_stack_reads_use_core_introspection);
     RUN_TEST(test_debug_snapshot_variables_use_core_local_and_upvalue_apis);
+    RUN_TEST(test_debug_snapshot_loaded_module_count_uses_logical_array_length);
     return UNITY_END();
 }

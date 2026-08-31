@@ -303,6 +303,9 @@ static TZrBool query_array_push_object(SZrState *state,
         array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return ZR_FALSE;
     }
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
+        return ZR_FALSE;
+    }
     ZrCore_Value_InitAsInt(
             state, &key, (TZrInt64)array->nodeMap.elementCount);
     ZrCore_Value_InitAsRawObject(
@@ -479,6 +482,9 @@ static TZrBool query_append_declared_members(
     if (order == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, order)) {
+        return ZR_FALSE;
+    }
 
     for (TZrUInt32 nameIndex = 0u;
          nameIndex < (TZrUInt32)order->nodeMap.elementCount;
@@ -497,6 +503,9 @@ static TZrBool query_append_declared_members(
                 state, members, name, ZR_VALUE_TYPE_ARRAY);
         if (bucket == ZR_NULL) {
             continue;
+        }
+        if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, bucket)) {
+            return ZR_FALSE;
         }
         {
             TZrSize requiredElementCount =
@@ -720,6 +729,7 @@ static TZrBool query_parameter_types_match(
     parameters = query_get_object_field(
             state, member, "parameters", ZR_VALUE_TYPE_ARRAY);
     if (parameters == ZR_NULL ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, parameters) ||
         parameters->nodeMap.elementCount != parameterTypeCount) {
         return ZR_FALSE;
     }
@@ -789,6 +799,14 @@ TZrBool ZrCore_Reflection_GetMember(
                 state,
                 ZR_CAST_RAW_OBJECT_AS_SUPER(members),
                 &membersPinned)) {
+        query_set_status(outStatus, ZR_REFLECTION_QUERY_STATUS_INVALID_ARGUMENT);
+        return ZR_FALSE;
+    }
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, members)) {
+        if (membersPinned) {
+            ZrCore_GarbageCollector_UnignoreObject(
+                    state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(members));
+        }
         query_set_status(outStatus, ZR_REFLECTION_QUERY_STATUS_INVALID_ARGUMENT);
         return ZR_FALSE;
     }

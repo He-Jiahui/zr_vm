@@ -9,6 +9,16 @@ related_code:
   - tests/cmake/zr_vm_register_executable_suite.cmake
   - tests/cmake/run_executable_suite.cmake
   - tests/cmake/run_performance_suite.cmake
+  - tests/cmake/benchmark_task3_suite.cmake
+  - tests/cmake/benchmark_task4_environment.cmake
+  - scripts/benchmark/benchmark_task4_contract.py
+  - scripts/benchmark/benchmark_report_publisher.py
+  - scripts/benchmark/benchmark_environment_contract.py
+  - scripts/benchmark/aggregate_benchmark_summary.py
+  - scripts/benchmark/build_benchmark_release.sh
+  - scripts/benchmark/run_wsl_benchmarks_report_csv.sh
+  - scripts/benchmark/benchmark_execution_plan.py
+  - scripts/benchmark/benchmark_statistics.py
   - tests/performance/perf_runner.c
   - tests/test_runner.c
   - tests/TEST_EXECUTION_ORDER.md
@@ -27,7 +37,24 @@ implementation_files:
   - tests/cmake/zr_vm_register_executable_suite.cmake
   - tests/cmake/run_executable_suite.cmake
   - tests/cmake/run_performance_suite.cmake
+  - tests/cmake/benchmark_task3_suite.cmake
+  - tests/cmake/benchmark_task4_environment.cmake
+  - scripts/benchmark/benchmark_task4_contract.py
+  - scripts/benchmark/benchmark_report_publisher.py
+  - scripts/benchmark/benchmark_environment_contract.py
+  - scripts/benchmark/aggregate_benchmark_summary.py
+  - scripts/benchmark/build_benchmark_release.sh
+  - scripts/benchmark/run_wsl_benchmarks_report_csv.sh
+  - scripts/benchmark/benchmark_execution_plan.py
+  - scripts/benchmark/benchmark_statistics.py
   - tests/performance/perf_runner.c
+  - tests/cmake/run_benchmark_task3_suite_contract_test.cmake
+  - tests/benchmarks/test_benchmark_execution_plan.py
+  - tests/benchmarks/test_benchmark_statistics.py
+  - tests/benchmarks/test_benchmark_task3_report_consumers.py
+  - tests/benchmarks/test_benchmark_task4_integration.py
+  - tests/cmake/run_benchmark_task4_environment_contract_test.cmake
+  - tests/acceptance/2026-08-30-benchmark-task4-integration.md
   - tests/test_runner.c
   - tests/TEST_EXECUTION_ORDER.md
   - tests/parser/test_char_and_type_cast.c
@@ -48,6 +75,11 @@ tests:
   - tests/benchmarks/test_benchmark_registry.c
   - tests/benchmarks/registry.cmake
   - tests/cmake/run_performance_suite.cmake
+  - tests/cmake/benchmark_task3_suite.cmake
+  - tests/cmake/benchmark_task3_case_assembly.cmake
+  - tests/cmake/run_benchmark_task3_suite_contract_test.cmake
+  - tests/benchmarks/test_benchmark_task3_report_consumers.py
+  - tests/acceptance/2026-08-30-benchmark-calibration-sampling-randomization.md
   - tests/cmake/run_executable_suite.cmake
   - tests/acceptance/2026-08-10-ownership-object-member-separation.md
   - tests/performance/perf_runner.c
@@ -78,11 +110,23 @@ doc_type: category-index
   - 第一阶段新增的 4 个 fixture 及其期望结果
   - 现有三个测试入口如何消费这些资产
   - 为什么当前切片先落“外部证据清单 + 最小可运行基线”
-- `ctest-performance-reporting.md`
+  - `ctest-performance-reporting.md`
   - `tests/benchmarks` 如何作为 benchmark 的单一事实来源
   - `case x implementation` 报告结构、`relative_to_c` 规则与 `SKIP` 语义
+  - process 与 persistent runtime scope、严格 line protocol、session RSS 合同
+  - `performance/` 与 `performance_steady/` 的隔离及 steady 聚合命令
+- `benchmark-task4-environment-cache-publishing.md`
+  - post-capture 环境证据、baseline 比较、WSL cache identity 与原子发布
+  - Windows 诊断模式以及跨平台可比性边界
   - `ZR_VM_PERF_WARMUP` / `ZR_VM_PERF_ITERATIONS` 环境变量
   - Windows/MSVC 与 WSL 下的验证命令
+  - `benchmark-calibration-sampling-randomization.md`
+  - flat filtered execution plan、固定 seed 与版本化 shuffle 合同
+  - process/steady/profile 的校准、样本预算与覆盖规则
+  - schema 3 的 MAD、CV、bootstrap CI、稳定性与 fail-closed ratio 合同
+- `benchmark-task4-environment-cache-publishing.md`
+  - 完成环境指纹、单核隔离与 baseline fail-closed 比较
+  - WSL source/toolchain keyed cache 与报告-only 原子发布
 - `ctest-executable-suite-manifests.md`
   - 大型 executable suite 如何把 tier 列表移出 CTest 命令行
   - multi-config 与 single-config 如何生成配置专属 manifest
@@ -105,8 +149,10 @@ doc_type: category-index
 2. 再看 `core-semantics-reference-alignment.md`，了解 reference manifests、fixture 组织方式和本阶段覆盖边界。
 3. 聚合 executable suite 在 Windows 上启动失败时，查看 `ctest-executable-suite-manifests.md`，确认配置专属 manifest 和失败传播合同。
 4. 需要看性能报告链路时打开 `ctest-performance-reporting.md`，确认 benchmark suite、报告产物和环境变量覆盖。
-5. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及现有分层验证入口。
-6. 需要跟进 Syntax 07A fixture 时看 `syntax-reference-v1-fixture.md`，确认 feature slot 是否为 current、negative 或 design-pending。
-7. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
-8. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
-9. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。
+5. 需要判断 benchmark 是否可比较时，再看 `benchmark-calibration-sampling-randomization.md`，确认执行计划、校准、稳定性和 schema 3 合同。
+6. 需要判断环境、baseline 或发布是否可接受时，打开 `benchmark-task4-environment-cache-publishing.md`。
+7. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及现有分层验证入口。
+8. 需要跟进 Syntax 07A fixture 时看 `syntax-reference-v1-fixture.md`，确认 feature slot 是否为 current、negative 或 design-pending。
+9. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
+10. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
+10. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。

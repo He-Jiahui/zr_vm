@@ -162,6 +162,8 @@ static void test_tail_reuse_reinitializes_reused_callinfo_state(void) {
     callInfo = ZrCore_Function_PreCallKnownValue(state, callBase, currentCallableValue, 1, ZR_NULL);
     TEST_ASSERT_NOT_NULL(callInfo);
     TEST_ASSERT_EQUAL_PTR(callBase, callInfo->functionBase.valuePointer);
+    TEST_ASSERT_EQUAL_UINT32(currentFunction->stackSize + 1u,
+                             ZrCore_CallInfo_GetFrameStorageSlotCountPlusOne(callInfo));
 
     tailCallableSlot = callInfo->functionBase.valuePointer + 1;
     tailCallableValue = ZrCore_Stack_GetValue(tailCallableSlot);
@@ -182,6 +184,10 @@ static void test_tail_reuse_reinitializes_reused_callinfo_state(void) {
 
     TEST_ASSERT_EQUAL_PTR(callBase, callInfo->functionBase.valuePointer);
     TEST_ASSERT_EQUAL_PTR(callBase + 1 + nextFunction->stackSize, callInfo->functionTop.valuePointer);
+    TEST_ASSERT_EQUAL_UINT32(nextFunction->stackSize + 1u,
+                             ZrCore_CallInfo_GetFrameStorageSlotCountPlusOne(callInfo));
+    TEST_ASSERT_EQUAL_PTR(callInfo->functionTop.valuePointer,
+                          ZrCore_Function_GetCallInfoFrameStorageTop(state, callInfo));
     TEST_ASSERT_EQUAL_PTR(nextInstructions, callInfo->context.context.programCounter);
     TEST_ASSERT_EQUAL_INT(ZR_DEBUG_SIGNAL_NONE, callInfo->context.context.trap);
     TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->context.context.variableArgumentCount);

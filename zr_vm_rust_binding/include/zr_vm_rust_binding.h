@@ -193,6 +193,7 @@ typedef struct ZrRustBindingProjectSession ZrRustBindingProjectSession;
 typedef struct ZrRustBindingCompileResult ZrRustBindingCompileResult;
 typedef struct ZrRustBindingManifestSnapshot ZrRustBindingManifestSnapshot;
 typedef struct ZrRustBindingNativeCallContext ZrRustBindingNativeCallContext;
+typedef struct ZrRustBindingNativeArgumentView ZrRustBindingNativeArgumentView;
 typedef struct ZrRustBindingNativeModuleBuilder ZrRustBindingNativeModuleBuilder;
 typedef struct ZrRustBindingNativeModule ZrRustBindingNativeModule;
 typedef struct ZrRustBindingRuntimeNativeModuleRegistration ZrRustBindingRuntimeNativeModuleRegistration;
@@ -201,6 +202,13 @@ typedef struct ZrRustBindingValue ZrRustBindingValue;
 typedef ZrRustBindingStatus (*FZrRustBindingNativeCallback)(ZrRustBindingNativeCallContext *context,
                                                             TZrPtr userData,
                                                             ZrRustBindingValue **outResult);
+typedef ZrRustBindingStatus (*FZrRustBindingNativeArgumentVisitor)(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrPtr userData);
+typedef ZrRustBindingStatus (*FZrRustBindingNativeStringVisitor)(
+        const TZrChar *utf8,
+        TZrSize utf8ByteLength,
+        TZrPtr userData);
 typedef void (*FZrRustBindingDestroyCallback)(TZrPtr userData);
 
 typedef struct ZrRustBindingNativeFunctionDescriptor {
@@ -478,10 +486,34 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_CheckAri
         const ZrRustBindingNativeCallContext *context,
         TZrSize minArgumentCount,
         TZrSize maxArgumentCount);
-ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_GetArgument(
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_WithArgument(
         const ZrRustBindingNativeCallContext *context,
         TZrSize index,
-        ZrRustBindingValue **outArgumentValue);
+        FZrRustBindingNativeArgumentVisitor visitor,
+        TZrPtr userData);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_GetKind(
+        const ZrRustBindingNativeArgumentView *argument,
+        ZrRustBindingValueKind *outKind);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadBool(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrBool *outBoolValue);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadInt(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrInt64 *outIntValue);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadFloat(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrFloat64 *outFloatValue);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ByteArrayLength(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrSize *outLength);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ByteArrayGet(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrSize index,
+        TZrUInt8 *outByteValue);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_WithString(
+        const ZrRustBindingNativeArgumentView *argument,
+        FZrRustBindingNativeStringVisitor visitor,
+        TZrPtr userData);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_GetSelf(
         const ZrRustBindingNativeCallContext *context,
         ZrRustBindingValue **outSelfValue);

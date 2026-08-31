@@ -73,7 +73,7 @@ static inline TZrSize ZrTests_Fixture_GetArrayLength(SZrObject *array) {
         return 0;
     }
 
-    return array->nodeMap.elementCount;
+    return ZrCore_Object_SuperArrayLength(array);
 }
 
 static inline SZrObject *ZrTests_Fixture_GetArrayEntryObject(SZrState *state, SZrObject *array, TZrSize index) {

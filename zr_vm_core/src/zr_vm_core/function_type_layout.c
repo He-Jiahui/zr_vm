@@ -910,7 +910,10 @@ static TZrBool function_type_layout_count_union_payload_field_capacity(SZrState 
                 continue;
             }
 
-            payloadFieldCount = payloadFields->nodeMap.elementCount;
+            if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, payloadFields)) {
+                return ZR_FALSE;
+            }
+            payloadFieldCount = ZrCore_Object_SuperArrayLength(payloadFields);
             if (payloadFieldCount > (TZrSize)(UINT32_MAX - capacity)) {
                 return ZR_FALSE;
             }
@@ -1078,7 +1081,12 @@ static SZrObject *function_type_layout_union_variant_payload_fields(SZrState *st
     }
 
     metadata = function_type_layout_constant_object(state, function, member->decoratorMetadataConstantIndex);
-    return function_type_layout_object_array_field(state, metadata, "payloadFields");
+    metadata = function_type_layout_object_array_field(state, metadata, "payloadFields");
+    if (metadata == ZR_NULL ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, metadata)) {
+        return ZR_NULL;
+    }
+    return metadata;
 }
 
 static TZrBool function_type_layout_build_union_managed_fields(SZrState *state,
@@ -1110,9 +1118,14 @@ static TZrBool function_type_layout_build_union_managed_fields(SZrState *state,
         SZrObject *payloadFields = function_type_layout_union_variant_payload_fields(state, function, member);
 
         if (payloadFields == ZR_NULL) {
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
             continue;
         }
-        for (TZrUInt32 fieldIndex = 0u; fieldIndex < (TZrUInt32)payloadFields->nodeMap.elementCount; fieldIndex++) {
+        for (TZrUInt32 fieldIndex = 0u;
+             fieldIndex < (TZrUInt32)ZrCore_Object_SuperArrayLength(payloadFields);
+             fieldIndex++) {
             SZrObject *fieldMetadata = function_type_layout_array_object_at(state, payloadFields, fieldIndex);
             TZrBool isManaged = ZR_FALSE;
 
@@ -1146,9 +1159,14 @@ static TZrBool function_type_layout_build_union_managed_fields(SZrState *state,
         SZrObject *payloadFields = function_type_layout_union_variant_payload_fields(state, function, member);
 
         if (payloadFields == ZR_NULL) {
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
             continue;
         }
-        for (TZrUInt32 fieldIndex = 0u; fieldIndex < (TZrUInt32)payloadFields->nodeMap.elementCount; fieldIndex++) {
+        for (TZrUInt32 fieldIndex = 0u;
+             fieldIndex < (TZrUInt32)ZrCore_Object_SuperArrayLength(payloadFields);
+             fieldIndex++) {
             SZrObject *fieldMetadata = function_type_layout_array_object_at(state, payloadFields, fieldIndex);
             TZrBool isManaged = ZR_FALSE;
             SZrTypeLayoutField field;

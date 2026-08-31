@@ -9,13 +9,26 @@ fast). **Without that flag**, run the same suite via the build target
 `run_performance_suite` or invoke `cmake -P tests/cmake/run_performance_suite.cmake`
 with the same `-DCLI_EXE=...` arguments as in `tests/CMakeLists.txt`.
 
-**Light check:** `zr_vm_benchmark_registry_test` / CTest `benchmark_registry` remains in the default test set and validates `registry.cmake` layout only.
+**Light checks:** `zr_vm_benchmark_registry_test` / CTest `benchmark_registry`
+validates the registry layout. `zr_vm_benchmark_support_test` / CTest
+`benchmark_support` executes the real performance runner, validates its JSON
+with CMake `string(JSON)`, and checks CSV/aggregate contract preservation.
+Building only `zr_vm_benchmark_support_test` also builds its required
+`zr_vm_perf_runner` dependency. CTest registers `benchmark_support` only when a
+Python interpreter is available for the structured exporter checks.
+`benchmark_statistics_python`, `benchmark_execution_plan_python`,
+`benchmark_task3_suite_contract`, and
+`benchmark_task3_report_consumers_python` cover the Task 3 statistical and
+orchestration contracts without running the full cross-language matrix.
 
 ## Layout
 
 - `registry.cmake`
   Registers case metadata, tier membership, supported implementations, pass
   banners, tier scales, and per-tier checksum contracts.
+- `../cmake/benchmark_measurement_contract.cmake`
+  Owns implementation-to-scope mapping, contract validation, and the
+  same-nonempty-scope gate used for cross-runtime ratios.
 - `cases/<case>/zr/`
   ZR project fixture: `benchmark_<case>.zrp` plus `src/main.zr`.
 - `cases/<case>/python/`
@@ -96,6 +109,24 @@ Scale is fixed in `registry.cmake`:
 - `stress = 16`
 - `profile = registry controlled per case`
 
+## Sampling And Execution Order
+
+The suite creates a flat `{case, implementation}` execution plan after applying
+the optional case and implementation filters. It shuffles that filtered list
+with the versioned Fisher-Yates/SplitMix64 planner. `ZR_VM_PERF_SEED` selects an
+unsigned 64-bit seed and defaults to `0`; the exact plan is written to
+`execution_plan.json` and embedded in `benchmark_report.json`.
+
+Steady scope defaults to five warmups and ten initial samples. Process scope
+keeps its existing tier defaults. Non-profile rows calibrate repetitions using
+the registry's per-case `MIN_SAMPLE_MS`, may add at most ten samples while CV is
+above `0.05`, and never exceed twenty total samples. An initial override of 12
+therefore allows eight extras, 20 allows none, and values above 20 are rejected.
+
+Profile scope is forced to zero warmups, one sample, one repetition, no
+calibration minimum, no adaptive samples, and `--profile`. Profile and
+`UNSTABLE` rows remain diagnostic records but are never ratio or gate eligible.
+
 ## Callgrind (profile tier)
 
 Representative workloads run Callgrind after the ZR interp measurement. To use **instruction counting mode** (disable cache and branch simulation in Callgrind; faster than full simulation while keeping Ir / call-graph data):
@@ -156,16 +187,75 @@ The helper defaults to:
 
 ## Report Shape
 
+Every implementation record, including `PASS`, `SKIP`, and `FAIL`, contains:
+
+- `measurement_scope`: `process_end_to_end` for one-shot rows or `persistent_runtime`
+  for steady rows;
+- `prepare_scope`: the preparation boundary listed below;
+- `runtime_reused`, `compiler_reused`, and `jit_state_reused`: explicit booleans
+  describing the process/runtime boundary. Persistent rows include a
+  `persistent_session` object with one PID, checksum contract, exit code, and
+  session-only peak RSS; per-sample RSS is intentionally `null`.
+
+Current `prepare_scope` values are explicit:
+
+| implementation | prepare_scope | timed boundary |
+| --- | --- | --- |
+| C, Rust | `none` | native process startup and case execution |
+| ZR interp | `source_load_compile_in_measurement` | CLI startup, source/project load, compile, runtime setup, and execution |
+| ZR binary | `bytecode_compile_before_measurement` | bytecode compile happens once before timing; each sample includes CLI startup, bytecode load, runtime setup, and execution |
+| Python, Node.js, QuickJS, Lua | `script_load_in_measurement` | runtime process startup, script load, and execution |
+| .NET, Java | `runtime_start_jit_in_measurement` | managed runtime startup, load/JIT activity, and execution |
+
+With `ZR_VM_PERF_SCOPE=steady`, only numeric/dispatch loops have persistent
+servers. Lua and QuickJS load their script once, .NET starts one runtime (and
+reuses JIT state after warmup or calibration), and `ZR binary` uses the dedicated
+`zr_vm_zr_benchmark_server` after a fresh one-shot CLI compile. LuaJIT is never
+reported as the non-JIT Lua implementation. Unsupported cases are explicit
+`SKIP`; the suite fails closed when the ZR server target is missing. Steady mode
+is incompatible with profile/Callgrind mode and always performs one-shot
+correctness before timing.
+
+Process mode remains the default and measures a fresh child per iteration.
+Persistent mode uses the versioned line protocol and validates READY, ordered
+DONE checksums, clean STOP exit, timeouts, malformed input, and clean process-group/job
+cleanup. These fields are part of the report contract and must not be inferred
+from wall time alone.
+
+Case and implementation names must be strings whose `strip()` result is
+non-empty. Case names must also be unique within each benchmark/comparison
+report, and implementation names must be unique within a benchmark case.
+Missing, non-string, empty, whitespace-only, or duplicate identities make
+record lookup invalid or ambiguous: aggregate schema 2 marks the measurement
+contract invalid and reports the affected paths, while aggregate JSON and both
+CSV exports clear every ratio affected by that case. Validation never trims,
+normalizes, supplies, or otherwise rewrites the declared identity, and the
+tools do not silently select the first or last duplicate.
+
 `tests/cmake/run_performance_suite.cmake` emits:
 
+Process-mode raw reports are written under
+`<build>/tests_generated/performance/`, with generated fixtures and toolchain
+artifacts under `<build>/tests_generated/performance_suite/`. Steady-mode raw
+reports use the separate `<build>/tests_generated/performance_steady/` tree,
+with fixtures under `<build>/tests_generated/performance_suite_steady/`, so a
+steady run cannot overwrite the default process-mode products.
+
 - `benchmark_report.md/json`
-  `case | implementation | language | status | mean/median/min/max/stddev wall ms | mean/max peak MiB | relative_to_c`
+  Schema 3 adds the execution plan, measurement policy, case minimum duration,
+  sample/extra/repetition counts, calibration metadata, MAD, CV, deterministic
+  median bootstrap interval, stability/comparability/gate state, and all
+  measurement/prepare/reuse fields. Statistics come from runner JSON, not
+  display stdout.
 - `instruction_report.md/json`
   Per-case opcode execution counts, helper counts, slow-path hits, meta fallback hits, and call cache hit/miss data.
 - `hotspot_report.md/json`
   WSL callgrind summaries, top hot functions, helper hotspots, and dispatch hotspot sections.
 - `comparison_report.md/json`
   `ZR interp` relative-to-language ratios across `C`, `Lua`, `QuickJS`, `Node`, `Python`, `.NET`, `Java`, and `Rust`.
+  Every comparison case and its required `relative_to` field must be JSON objects.
+  A ratio is `null` unless both records have the same non-empty
+  `measurement_scope` and are stable, comparable, and gate eligible.
 - `gc_overhead_report.md/json`
   Paired `gc_fragment_baseline` vs `gc_fragment_stress` deltas per implementation:
   baseline/stress mean wall ms, stress-to-baseline ratio, wall-time delta,
@@ -173,13 +263,28 @@ The helper defaults to:
 
 Benchmark Release build (before CSV): `scripts/benchmark/build_benchmark_release.sh gcc|clang` writes to `build/benchmark-gcc-release` or `build/benchmark-clang-release`. On Windows, `pwsh ./scripts/benchmark/build_benchmark_release.ps1 -Toolchain gcc|clang|msvc` uses WSL for gcc/clang and `build/benchmark-msvc-release` for MSVC.
 
-CSV export (WSL): `scripts/benchmark/run_wsl_benchmarks_report_csv.sh` runs `ctest -R performance_report` and writes `benchmark_speed_timings.csv` / `zr_interp_vs_languages.csv` under `<build>/tests_generated/performance/`. The column `one_shot_compile_excluded_from_wall_ms` is `true` for ZR `binary`: wall ms come from the perf-runner phase only; the suite runs `zr_vm_cli --compile` in a separate prepare step (see `tests/cmake/run_performance_suite.cmake`). MSVC: `ctest --test-dir build/benchmark-msvc-release -C Release -R '^performance_report$'`, then `python3 scripts/benchmark/benchmark_reports_to_csv.py --report-dir build/benchmark-msvc-release/tests_generated/performance`.
+CSV export (WSL): `scripts/benchmark/run_wsl_benchmarks_report_csv.sh` runs `ctest -R performance_report` and writes `benchmark_speed_timings.csv` / `zr_interp_vs_languages.csv` under `<build>/tests_generated/performance/`. Timing CSV rows preserve the five measurement-contract fields; `speed_ratio_vs_c_baseline` is empty unless that implementation and the C baseline both have legal five-field contracts, `PASS` status, and the same non-empty scope. Comparison CSV rows include `measurement_scope`, but their ratios are independently checked against the ZR-interp and target records in `benchmark_report.json`; an empty or inconsistent comparison-case scope is also rejected. Existing ratio values may be cleared but are never recalculated. The compatibility column `one_shot_compile_excluded_from_wall_ms` remains `true` for ZR `binary`. MSVC: `ctest --test-dir build/benchmark-msvc-release -C Release -R '^performance_report$'`, then `python3 scripts/benchmark/benchmark_reports_to_csv.py --report-dir build/benchmark-msvc-release/tests_generated/performance`.
 
-**Consolidated JSON + HTML viewer:** `python3 scripts/benchmark/aggregate_benchmark_summary.py --tests-generated <build>/tests_generated` writes `<build>/tests_generated/benchmark_suite_summary.json` and a copy `<build>/tests_generated/benchmark_html_viewer.json` for the file picker in `benchmark_compare_viewer.html`. With `--bundle-html <path>`, writes a self-contained page (embedded base64). `run_wsl_benchmarks_report_csv.sh` runs aggregate with `--bundle-html <build>/tests_generated/benchmark_compare_embedded.html` so you can double-click the embedded HTML or open `benchmark_compare_viewer.html` and choose `benchmark_html_viewer.json`.
+**Consolidated JSON + HTML viewer:** `python3 scripts/benchmark/aggregate_benchmark_summary.py --tests-generated <build>/tests_generated` writes `<build>/tests_generated/benchmark_suite_summary.json` and a copy `<build>/tests_generated/benchmark_html_viewer.json` for the file picker in `benchmark_compare_viewer.html`. Aggregate schema version 2 adds `measurement_contract.valid`, `measurement_contract.issues`, and `measurement_contract.ratios_removed`. It validates every implementation record and identity, then gates both per-implementation `relative_to_c` and comparison-report ratios against the corresponding unique, legal, `PASS`, same-scope benchmark records. A comparison ratio additionally requires the comparison case's own `measurement_scope` to be a non-empty string equal to the ZR-interp scope. That input field is preserved verbatim: aggregation clears an incompatible ratio rather than overwriting or healing the declared scope. Every cleared field path is recorded in `ratios_removed`; existing values are never recalculated or reconstructed. With `--bundle-html <path>`, writes a self-contained page (embedded base64). `run_wsl_benchmarks_report_csv.sh` runs aggregate with `--bundle-html <build>/tests_generated/benchmark_compare_embedded.html` so you can double-click the embedded HTML or open `benchmark_compare_viewer.html` and choose `benchmark_html_viewer.json`.
+
+To aggregate steady-mode results, pass
+`--performance-subdir performance_steady`. The default output is then
+`<build>/tests_generated/benchmark_suite_summary__performance_steady.json`;
+the script deliberately does not rewrite the process-mode
+`benchmark_html_viewer.json` for a non-default performance subdirectory. Use
+an explicit `--bundle-html` path containing `steady` when a standalone steady
+viewer is required.
 
 **`run_wsl_benchmarks_report_csv.sh` (default):** runs `ctest` **twice**: (1) `ZR_VM_TEST_TIER=profile` with `ZR_VM_PERF_CALLGRIND_COUNTING=1`, then renames `tests_generated/performance/` to `tests_generated/performance_profile_callgrind/`; (2) timing pass with `ZR_VM_TEST_TIER` restored (default `core`) and Callgrind counting off, writing fresh `tests_generated/performance/`. CSV and `benchmark_suite_summary.json` use pass (2). Pass (1) is summarized as `benchmark_suite_summary_callgrind.json`. Set `BENCHMARK_DUAL_CTEST=0` for a single `ctest` using your current environment.
 
-**ZR binary (what the numbers mean):** The prepare step runs `zr_vm_cli --compile`, which emits `.zro` artifacts under the generated project tree. **Prepare is executed once by the suite via CMake (`execute_process`) and is not included in reported `mean_wall_ms` / `perf_runner` samples.** The timed command is only `zr_vm_cli ... --execution-mode binary`. Reported wall ms still include full **CLI process** startup, `.zro` loading, runtime setup, and program execution. CSV `one_shot_compile_excluded_from_wall_ms` is `true` for `binary` to document that split; see `benchmark_report.json` fields `reported_wall_ms_includes_prepare_compile` and `reported_wall_ms_scope`.
+**ZR binary (what the numbers mean):** The suite first runs `zr_vm_cli --compile` to
+refresh `.zro` artifacts under the generated project tree. Process mode then
+measures a fresh CLI process. Steady mode sends requests to the dedicated
+binary-only server, which loads the generated `.zro` entry once and executes it
+repeatedly without source recompilation. The boundaries are represented by
+`bytecode_compile_before_measurement` (process) or
+`bytecode_compile_and_load_before_measurement` (steady); compiler reuse remains
+`false` because the compiler is not resident in the server.
 
 Unavailable toolchains are reported as `SKIP`, not silently dropped.
 

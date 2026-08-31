@@ -2006,7 +2006,11 @@ static TZrSize ct_compile_time_array_count(SZrState *state, const SZrTypeValue *
         return 0U;
     }
     array = ZR_CAST_OBJECT(state, value->value.object);
-    return array != ZR_NULL ? array->nodeMap.elementCount : 0U;
+    if (array == ZR_NULL ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
+        return 0U;
+    }
+    return ZrCore_Object_SuperArrayLength(array);
 }
 
 static const SZrTypeValue *ct_compile_time_array_at(

@@ -82,6 +82,7 @@ static ZrVmLibContainerDebugHotMapLookupStats gZrContainerDebugHotMapLookupStats
 
 static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state);
 static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *state);
+static ZR_FORCE_INLINE TZrBool zr_container_array_raw_int_active(const SZrObject *array);
 static ZR_FORCE_INLINE SZrObject *zr_container_array_get_object_fast(SZrState *state,
                                                                      SZrObject *array,
                                                                      TZrSize index);
@@ -1523,6 +1524,11 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_array_get_value_fast(SZr
         return ZR_NULL;
     }
 
+    if (zr_container_array_raw_int_active(array) &&
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
+        return ZR_NULL;
+    }
+
     if (array->nodeMap.isValid && array->nodeMap.buckets != ZR_NULL && index < array->nodeMap.elementCount &&
         index < array->nodeMap.capacity) {
         pair = array->nodeMap.buckets[index];
@@ -1541,7 +1547,8 @@ static ZR_FORCE_INLINE TZrSize zr_container_array_length_fast(SZrObject *array) 
         return 0u;
     }
 
-    return (array->superArrayRawIntData != ZR_NULL &&
+    return (array->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
+            array->superArrayRawIntData != ZR_NULL &&
             array->superArrayRawIntLength <= array->superArrayRawIntCapacity)
                    ? array->superArrayRawIntLength
                    : array->nodeMap.elementCount;
@@ -1550,33 +1557,9 @@ static ZR_FORCE_INLINE TZrSize zr_container_array_length_fast(SZrObject *array) 
 static ZR_FORCE_INLINE TZrBool zr_container_array_raw_int_active(const SZrObject *array) {
     return array != ZR_NULL &&
            array->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+           array->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
            array->superArrayRawIntData != ZR_NULL &&
            array->superArrayRawIntLength <= array->superArrayRawIntCapacity;
-}
-
-static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_array_dense_int_pair_at(SZrObject *array, TZrSize index) {
-    SZrHashKeyValuePair *pair;
-
-    if (!zr_container_array_raw_int_active(array) ||
-        !array->nodeMap.isValid ||
-        array->nodeMap.buckets == ZR_NULL ||
-        index >= array->nodeMap.capacity) {
-        return ZR_NULL;
-    }
-
-    pair = array->nodeMap.buckets[index];
-    if (pair == ZR_NULL ||
-        pair->next != ZR_NULL ||
-        !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->key.type) ||
-        pair->key.value.nativeObject.nativeInt64 != (TZrInt64)index) {
-        return ZR_NULL;
-    }
-    return pair;
-}
-
-static ZR_FORCE_INLINE void zr_container_array_store_dense_int_pair_value(SZrHashKeyValuePair *pair, TZrInt64 value) {
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
 }
 
 static void zr_container_hash_set_clear_reuse_storage(SZrHashSet *set) {
@@ -1612,6 +1595,14 @@ static void zr_container_array_clear_items_reuse_storage(SZrObject *items) {
     items->cachedIteratorIndexPair = ZR_NULL;
     items->cachedIteratorNextNodePair = ZR_NULL;
     items->superArrayRawIntLength = 0;
+    if (items->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
+        items->superArrayRawIntData != ZR_NULL) {
+        /* Keep the raw buffer as the canonical empty-array storage. */
+        items->superArrayStorageGeneration++;
+    } else {
+        items->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
+        items->superArrayStorageGeneration++;
+    }
     items->superArrayRawIntDirty = ZR_FALSE;
     items->memberVersion++;
 }
@@ -1892,8 +1883,6 @@ static TZrUInt64 zr_container_value_hash(SZrState *state, const SZrTypeValue *va
     return ZrCore_Value_GetHash(state, value);
 }
 
-static TZrBool zr_container_storage_sync_raw_int_pairs_fast(SZrObject *array);
-
 static TZrBool zr_container_storage_set(SZrState *state, SZrObject *array, TZrSize index, const SZrTypeValue *value) {
     SZrTypeValue key;
 
@@ -1907,50 +1896,34 @@ static TZrBool zr_container_storage_set(SZrState *state, SZrObject *array, TZrSi
 }
 
 static TZrBool zr_container_storage_push_raw_int_fast(SZrState *state, SZrObject *array, TZrInt64 value) {
-    SZrHashSet *nodeMap;
-    SZrHashKeyValuePair *pair;
     TZrSize length;
-    TZrBool wasDirty = ZR_FALSE;
 
     if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return ZR_FALSE;
     }
 
+    if (array->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL) {
+        return ZR_FALSE;
+    }
     if (zr_container_array_raw_int_active(array)) {
         length = array->superArrayRawIntLength;
-        if (array->nodeMap.elementCount != length) {
-            return ZR_FALSE;
-        }
-        wasDirty = array->superArrayRawIntDirty;
     } else {
-        length = array->nodeMap.elementCount;
-        if (length != 0) {
+        length = 0;
+        if (array->nodeMap.elementCount != 0) {
             return ZR_FALSE;
         }
     }
 
-    nodeMap = &array->nodeMap;
     if (!ZrCore_Object_SuperArrayEnsureRawIntCapacity(state, array, length + 1) ||
-        !ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(state, nodeMap, length + 1) ||
-        !ZrCore_HashSet_EnsurePairPoolForElementCount(state, nodeMap, nodeMap->pairPoolUsed + 1) ||
-        length >= nodeMap->capacity ||
-        nodeMap->buckets[length] != ZR_NULL) {
+        array->superArrayRawIntData == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    pair = ZrCore_HashSet_TakeReservedPair(nodeMap);
-    if (pair == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    pair->next = ZR_NULL;
-    ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)length, ZR_VALUE_TYPE_INT64);
-    zr_container_array_store_dense_int_pair_value(pair, value);
-    nodeMap->buckets[length] = pair;
-    nodeMap->elementCount++;
     array->superArrayRawIntData[length] = value;
     array->superArrayRawIntLength = length + 1;
-    array->superArrayRawIntDirty = wasDirty;
+    array->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL;
+    array->superArrayStorageGeneration++;
+    array->superArrayRawIntDirty = ZR_FALSE;
     return ZR_TRUE;
 }
 
@@ -1963,7 +1936,7 @@ static TZrBool zr_container_storage_push_gc_value_dense_pair_pool_fast(SZrState 
 
     if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL ||
         array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
-        array->superArrayRawIntData != ZR_NULL ||
+        array->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL ||
         !ZrCore_Value_IsGarbageCollectable(value)) {
         return ZR_FALSE;
     }
@@ -1992,6 +1965,8 @@ static TZrBool zr_container_storage_push_gc_value_dense_pair_pool_fast(SZrState 
     ZrCore_Value_CopyNoProfile(state, &pair->value, value);
     nodeMap->buckets[index] = pair;
     nodeMap->elementCount++;
+    array->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL;
+    array->superArrayStorageGeneration++;
     ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array), &pair->value);
     array->memberVersion++;
     return ZR_TRUE;
@@ -2013,7 +1988,6 @@ static TZrBool zr_container_storage_push(SZrState *state, SZrObject *array, cons
 static TZrBool zr_container_storage_remove_last(SZrState *state, SZrObject *array) {
     SZrTypeValue key;
     TZrSize length;
-    SZrHashKeyValuePair *pair;
 
     if (state == ZR_NULL || array == ZR_NULL) {
         return ZR_FALSE;
@@ -2025,18 +1999,11 @@ static TZrBool zr_container_storage_remove_last(SZrState *state, SZrObject *arra
     }
 
     if (array->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
-        array->nodeMap.isValid &&
-        array->nodeMap.buckets != ZR_NULL &&
-        length - 1 < array->nodeMap.capacity) {
-        pair = array->nodeMap.buckets[length - 1];
-        if (pair != ZR_NULL &&
-            pair->next == ZR_NULL &&
-            ZR_VALUE_IS_TYPE_SIGNED_INT(pair->key.type) &&
-            pair->key.value.nativeObject.nativeInt64 == (TZrInt64)(length - 1)) {
-            array->nodeMap.buckets[length - 1] = ZR_NULL;
-            array->nodeMap.elementCount--;
-            return ZR_TRUE;
-        }
+        array->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL) {
+        array->superArrayRawIntLength = length - 1;
+        array->superArrayStorageGeneration++;
+        array->superArrayRawIntDirty = ZR_FALSE;
+        return ZR_TRUE;
     }
 
     ZrCore_Value_InitAsInt(state, &key, (TZrInt64)(length - 1));
@@ -2044,79 +2011,27 @@ static TZrBool zr_container_storage_remove_last(SZrState *state, SZrObject *arra
     return ZR_TRUE;
 }
 
-static TZrBool zr_container_storage_sync_raw_int_pairs_fast(SZrObject *array) {
-    TZrSize length;
-
-    if (!zr_container_array_raw_int_active(array)) {
-        return ZR_FALSE;
-    }
-
-    length = array->superArrayRawIntLength;
-    if (array->nodeMap.elementCount != length) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < length; index++) {
-        SZrHashKeyValuePair *pair = zr_container_array_dense_int_pair_at(array, index);
-
-        if (pair == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        zr_container_array_store_dense_int_pair_value(pair, array->superArrayRawIntData[index]);
-    }
-    array->superArrayRawIntDirty = ZR_FALSE;
-    return ZR_TRUE;
-}
-
 static TZrBool zr_container_storage_remove_at_raw_int_fast(SZrState *state, SZrObject *array, TZrSize index) {
-    SZrHashSet *nodeMap;
     TZrSize length;
-    TZrBool wasDirty;
 
     if (state == ZR_NULL || !zr_container_array_raw_int_active(array)) {
         return ZR_FALSE;
     }
 
     length = array->superArrayRawIntLength;
-    if (index >= length || array->nodeMap.elementCount != length) {
+    if (index >= length) {
         return ZR_FALSE;
     }
-
-    nodeMap = &array->nodeMap;
-    if (!nodeMap->isValid || nodeMap->buckets == ZR_NULL || length > nodeMap->capacity) {
-        return ZR_FALSE;
-    }
-    for (TZrSize cursor = index; cursor < length; cursor++) {
-        if (zr_container_array_dense_int_pair_at(array, cursor) == ZR_NULL) {
-            return ZR_FALSE;
-        }
-    }
-
-    wasDirty = array->superArrayRawIntDirty;
 
     if (index + 1 < length) {
         TZrSize movedCount = length - index - 1;
-
         memmove(array->superArrayRawIntData + index,
                 array->superArrayRawIntData + index + 1,
                 movedCount * sizeof(array->superArrayRawIntData[0]));
-        memmove(nodeMap->buckets + index,
-                nodeMap->buckets + index + 1,
-                movedCount * sizeof(nodeMap->buckets[0]));
-
-        for (TZrSize cursor = index; cursor + 1 < length; cursor++) {
-            SZrHashKeyValuePair *pair = nodeMap->buckets[cursor];
-
-            ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)cursor, ZR_VALUE_TYPE_INT64);
-            if (!wasDirty) {
-                zr_container_array_store_dense_int_pair_value(pair, array->superArrayRawIntData[cursor]);
-            }
-        }
     }
-    nodeMap->buckets[length - 1] = ZR_NULL;
-    nodeMap->elementCount--;
     array->superArrayRawIntLength = length - 1;
-    array->superArrayRawIntDirty = wasDirty;
+    array->superArrayStorageGeneration++;
+    array->superArrayRawIntDirty = ZR_FALSE;
     return ZR_TRUE;
 }
 
@@ -2124,71 +2039,29 @@ static TZrBool zr_container_storage_insert_raw_int_fast(SZrState *state,
                                                         SZrObject *array,
                                                         TZrSize index,
                                                         TZrInt64 value) {
-    SZrHashSet *nodeMap;
-    SZrHashKeyValuePair *newPair;
     TZrSize length;
-    TZrBool wasDirty;
 
     if (state == ZR_NULL || !zr_container_array_raw_int_active(array)) {
         return ZR_FALSE;
     }
 
     length = array->superArrayRawIntLength;
-    if (index > length || array->nodeMap.elementCount != length ||
+    if (index > length ||
         !ZrCore_Object_SuperArrayEnsureRawIntCapacity(state, array, length + 1)) {
         return ZR_FALSE;
     }
 
-    nodeMap = &array->nodeMap;
-    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(state, nodeMap, length + 1) ||
-        !ZrCore_HashSet_EnsurePairPoolForElementCount(state, nodeMap, nodeMap->pairPoolUsed + 1)) {
-        return ZR_FALSE;
-    }
-
-    if (length >= nodeMap->capacity || nodeMap->buckets[length] != ZR_NULL) {
-        return ZR_FALSE;
-    }
-    for (TZrSize cursor = index; cursor < length; cursor++) {
-        if (zr_container_array_dense_int_pair_at(array, cursor) == ZR_NULL) {
-            return ZR_FALSE;
-        }
-    }
-
-    wasDirty = array->superArrayRawIntDirty;
-
-    newPair = ZrCore_HashSet_TakeReservedPair(nodeMap);
-    if (newPair == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    nodeMap->elementCount++;
-
     if (index < length) {
         TZrSize movedCount = length - index;
-
         memmove(array->superArrayRawIntData + index + 1,
                 array->superArrayRawIntData + index,
                 movedCount * sizeof(array->superArrayRawIntData[0]));
-        memmove(nodeMap->buckets + index + 1,
-                nodeMap->buckets + index,
-                movedCount * sizeof(nodeMap->buckets[0]));
-
-        for (TZrSize cursor = index + 1; cursor <= length; cursor++) {
-            SZrHashKeyValuePair *pair = nodeMap->buckets[cursor];
-
-            ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)cursor, ZR_VALUE_TYPE_INT64);
-            if (!wasDirty) {
-                zr_container_array_store_dense_int_pair_value(pair, array->superArrayRawIntData[cursor]);
-            }
-        }
     }
-
-    newPair->next = ZR_NULL;
-    ZR_VALUE_FAST_SET(&newPair->key, nativeInt64, (TZrInt64)index, ZR_VALUE_TYPE_INT64);
-    zr_container_array_store_dense_int_pair_value(newPair, value);
-    nodeMap->buckets[index] = newPair;
     array->superArrayRawIntData[index] = value;
     array->superArrayRawIntLength = length + 1;
-    array->superArrayRawIntDirty = wasDirty;
+    array->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL;
+    array->superArrayStorageGeneration++;
+    array->superArrayRawIntDirty = ZR_FALSE;
     return ZR_TRUE;
 }
 
@@ -2209,7 +2082,7 @@ static TZrBool zr_container_storage_insert(SZrState *state, SZrObject *array, TZ
             zr_container_storage_insert_raw_int_fast(state, array, index, value->value.nativeObject.nativeInt64)) {
             return ZR_TRUE;
         }
-        if (array->superArrayRawIntDirty && !zr_container_storage_sync_raw_int_pairs_fast(array)) {
+        if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
             return ZR_FALSE;
         }
     }
@@ -2843,6 +2716,7 @@ static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state) {
     index = zr_container_iterator_index_fast(state, iterator, 0);
     if (source != ZR_NULL &&
         source->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        source->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
         source->superArrayRawIntData != ZR_NULL &&
         source->superArrayRawIntLength <= source->superArrayRawIntCapacity) {
         if (index < 0 || (TZrUInt64)index >= (TZrUInt64)source->superArrayRawIntLength) {
@@ -3386,7 +3260,8 @@ static TZrBool zr_container_array_set_item(ZrLibCallContext *context, SZrTypeVal
 
     if (zr_container_array_raw_int_active(items) && ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
         items->superArrayRawIntData[(TZrSize)indexValue] = value->value.nativeObject.nativeInt64;
-        items->superArrayRawIntDirty = ZR_TRUE;
+        items->superArrayStorageGeneration++;
+        items->superArrayRawIntDirty = ZR_FALSE;
         zr_container_result_set_int_fast(result, value->value.nativeObject.nativeInt64);
         return ZR_TRUE;
     }

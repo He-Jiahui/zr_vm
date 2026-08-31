@@ -85,6 +85,8 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrStackValuePointer returnDestination;
     TZrMemoryOffset returnDestinationReusableOffset;
     TZrBool hasReturnDestination;
+    /* count + 1 in legacy ABI padding; zero preserves the metadata-scan fallback. */
+    TZrUInt8 frameStorageSlotCountPlusOne[3];
 
     TZrStackPointer argumentSourceFrameBase;
     TZrMemoryOffset argumentSourceFrameBaseReusableOffset;
@@ -96,6 +98,17 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
 typedef struct SZrCallInfo SZrCallInfo;
 
 #define ZR_CALL_INFO_IS_VM(CALL_INFO) ((TZrBool) (!((CALL_INFO)->callStatus & ZR_CALL_STATUS_NATIVE_CALL)))
+
+ZR_FORCE_INLINE TZrUInt32 ZrCore_CallInfo_GetFrameStorageSlotCountPlusOne(
+        const SZrCallInfo *callInfo) {
+    if (callInfo == ZR_NULL) {
+        return 0u;
+    }
+
+    return (TZrUInt32)callInfo->frameStorageSlotCountPlusOne[0] |
+           ((TZrUInt32)callInfo->frameStorageSlotCountPlusOne[1] << 8u) |
+           ((TZrUInt32)callInfo->frameStorageSlotCountPlusOne[2] << 16u);
+}
 
 ZR_FORCE_INLINE TZrBool ZrCore_CallInfo_IsNative(SZrCallInfo *callInfo) {
     return (TZrBool) ((callInfo->callStatus & ZR_CALL_STATUS_NATIVE_CALL) > 0);

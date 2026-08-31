@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 14:41 +08:00。
-- 总体状态：进行中。Task 3.18 将source/target provider generation纳入relation fact与query
+- 最近更新时间：2026-08-31 15:04 +08:00。
+- 总体状态：进行中。Task 3.19 以characterization matrix冻结relation query的canonical
+  identity：同名跨module隔离、generic open/closed edge分离、alias逐跳保留、overload按SymbolId
+  隔离；现有production首轮即满足，GCC/Clang relations均28/28。Task 3.18 将source/target
+  provider generation纳入relation fact与query
   identity、去重和稳定排序；同module/type edge在同generation去重，不同generation保持独立，
   generation=0明确表示producer未提供，consumer不得按module name、URI或加载顺序推断。
   Task 7.58 让`SymbolAt`按稳定SymbolId投影declaration kind/AST，同时保留
@@ -1178,3 +1181,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   import-chain semantic tokens仍等待import metadata producer发布跨snapshot declaration identity。
   本项未运行MSVC、完整16-target matrix或三套stdio smoke；Task 3多定义/partial/extern/native/
   binary完整矩阵、Task 7剩余producer及Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 15:04 +08:00。Task 3.19 补齐relation identity
+  characterization matrix：相同`Node`/`Base`拼写在不同ModuleIdentity下不得串边；同一generic
+  definition的open/closed instance保留不同TypeId edge；alias chain保留每个SymbolId hop；同名
+  overload implementation只按exact target SymbolId返回。四项现有production首轮即GREEN，无生产
+  补丁；固定GCC/Clang snapshot均通过relations `28/28`、真实exit 0。未运行MSVC、完整
+  16-target matrix、interface或三套stdio smoke；actual multi-project provider reload、binary/native
+  无source definition producer仍未覆盖，因此Task 3最后一个checkbox与Plan 03整体继续保持未完成。

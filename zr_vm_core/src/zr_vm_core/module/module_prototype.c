@@ -345,7 +345,7 @@ static TZrBool module_prototype_add_property_accessor_descriptor(SZrState *state
         existing->contractRole = member->contractRole;
         existing->propertyIdentity = member->propertyIdentity;
         existing->accessorRole = 0u;
-        prototype->super.memberVersion++;
+        ZrCore_ObjectPrototype_MarkMutation(prototype);
         return ZR_TRUE;
     }
 

@@ -229,7 +229,7 @@ static SZrObject *zr_debug_exception_frames_object(ZrDebugAgent *agent) {
 
 TZrSize zr_debug_exception_frame_count(ZrDebugAgent *agent) {
     SZrObject *frames = zr_debug_exception_frames_object(agent);
-    return frames != ZR_NULL ? frames->nodeMap.elementCount : 0;
+    return ZrCore_Object_SuperArrayLength(frames);
 }
 
 TZrBool zr_debug_exception_read_frame(ZrDebugAgent *agent, TZrUInt32 frameId, ZrDebugFrameSnapshot *outFrame) {
@@ -853,7 +853,7 @@ TZrBool zr_debug_try_resolve_indexed_storage(SZrState *state,
             *outStorage = object;
         }
         if (outLength != ZR_NULL) {
-            *outLength = object->nodeMap.elementCount;
+            *outLength = ZrCore_Object_SuperArrayLength(object);
         }
         return ZR_TRUE;
     }
@@ -866,8 +866,9 @@ TZrBool zr_debug_try_resolve_indexed_storage(SZrState *state,
         if (outSyntheticName != ZR_NULL) {
             *outSyntheticName = "data";
         }
-        if (outLength != ZR_NULL && outStorage != ZR_NULL && *outStorage != ZR_NULL) {
-            *outLength = (*outStorage)->nodeMap.elementCount;
+        if (outLength != ZR_NULL && outStorage != ZR_NULL && *outStorage != ZR_NULL &&
+            (*outStorage)->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+            *outLength = ZrCore_Object_SuperArrayLength(*outStorage);
         }
         return outStorage == ZR_NULL || *outStorage != ZR_NULL;
     }
@@ -880,8 +881,9 @@ TZrBool zr_debug_try_resolve_indexed_storage(SZrState *state,
         if (outSyntheticName != ZR_NULL) {
             *outSyntheticName = "entries";
         }
-        if (outLength != ZR_NULL && outStorage != ZR_NULL && *outStorage != ZR_NULL) {
-            *outLength = (*outStorage)->nodeMap.elementCount;
+        if (outLength != ZR_NULL && outStorage != ZR_NULL && *outStorage != ZR_NULL &&
+            (*outStorage)->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+            *outLength = ZrCore_Object_SuperArrayLength(*outStorage);
         }
         return outStorage == ZR_NULL || *outStorage != ZR_NULL;
     }
@@ -1050,7 +1052,8 @@ static TZrUInt32 zr_debug_loaded_module_count(ZrDebugAgent *agent) {
         return 0;
     }
 
-    return (TZrUInt32)ZR_CAST_OBJECT(agent->state, agent->state->global->loadedModulesRegistry.value.object)->nodeMap.elementCount;
+    return (TZrUInt32)ZrCore_Object_SuperArrayLength(
+            ZR_CAST_OBJECT(agent->state, agent->state->global->loadedModulesRegistry.value.object));
 }
 
 static TZrBool zr_debug_expand_global_state(ZrDebugAgent *agent,

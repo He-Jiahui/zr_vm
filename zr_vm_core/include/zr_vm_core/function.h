@@ -88,6 +88,8 @@ typedef enum EZrFunctionFrameSlotKind {
 #define ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP ((TZrUInt16)4u)
 #define ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT ((TZrUInt16)8u)
 #define ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS ((TZrUInt16)16u)
+/* Derived only after validated layout finalization; never trust serialized input. */
+#define ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE ((TZrUInt16)32u)
 
 typedef struct SZrFunctionFrameIndirectAliasBinding {
     TZrUInt32 ownerStackSlot;
@@ -536,7 +538,7 @@ typedef struct SZrSemIrDeoptEntry {
     TZrUInt32 execInstructionIndex;
 } SZrSemIrDeoptEntry;
 
-#define ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY ((TZrUInt32)2)
+#define ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY ((TZrUInt32)4)
 
 typedef enum EZrFunctionCallSiteCacheKind {
     ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE = 0,
@@ -578,6 +580,10 @@ typedef struct SZrFunctionCallSitePicSlot {
     struct SZrString *cachedMemberName;
     TZrUInt32 cachedReceiverVersion;
     TZrUInt32 cachedOwnerVersion;
+    TZrUInt64 cachedReceiverShapeId;
+    TZrUInt64 cachedOwnerShapeId;
+    TZrUInt64 cachedReceiverShapeGeneration;
+    TZrUInt64 cachedOwnerShapeGeneration;
     TZrUInt32 cachedDescriptorIndex;
     TZrUInt8 cachedIsStatic;
     TZrUInt8 cachedAccessKind;
@@ -732,6 +738,13 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 moduleMetadataBindingCapacity;
     SZrNativeImportContract *nativeImportContracts;
     TZrUInt32 nativeImportContractLength;
+    /* Immutable derived summary; zero means checked parameter-layout fallback. */
+    TZrUInt32 directValueParameterCountPlusOne;
+    TZrUInt32 directValueParameterScanLength;
+    /* Immutable derived summary; zero means checked frame-drop fallback. */
+    TZrUInt32 directValueFrameSlotCountPlusOne;
+    /* Immutable derived summary; zero means scan the current instruction stream. */
+    TZrUInt32 generatedFrameSlotCountPlusOne;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -811,8 +824,60 @@ ZR_CORE_API TZrBool ZrCore_Function_GetClosureCaptureIdentity(
 ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);
 
 ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function);
+/*
+ * frameSlotLayouts must contain at most one entry for each stackSlot. This
+ * metadata contract also applies to hand-built SZrFunction values; compiler
+ * output stores the unique canonical entry at frameSlotLayouts[stackSlot].
+ */
 ZR_CORE_API const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayout(const SZrFunction *function,
-                                                                                  TZrUInt32 stackSlot);
+          TZrUInt32 stackSlot);
+ZR_CORE_API void ZrCore_Function_FinalizeDirectFrameValueSlots(
+        SZrFunction *function);
+static ZR_FORCE_INLINE TZrBool ZrCore_Function_IsDirectFrameValueSlotLayout(
+        const SZrFunction *function,
+        const SZrFunctionFrameSlotLayout *slotLayout) {
+    return (TZrBool)(function != ZR_NULL &&
+                     slotLayout != ZR_NULL &&
+                     function->frameSlotLayouts != ZR_NULL &&
+                     slotLayout->stackSlot < function->frameSlotLayoutLength &&
+                     &function->frameSlotLayouts[slotLayout->stackSlot] == slotLayout &&
+                     (slotLayout->reserved0 &
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE) != 0u);
+}
+static ZR_FORCE_INLINE TZrBool ZrCore_Function_IsDirectFrameValueSlot(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    if (function == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL ||
+        stackSlot >= function->frameSlotLayoutLength) {
+        return ZR_FALSE;
+    }
+    return ZrCore_Function_IsDirectFrameValueSlotLayout(
+            function, &function->frameSlotLayouts[stackSlot]);
+}
+static ZR_FORCE_INLINE TZrBool ZrCore_Function_HasDirectValueFrameSlotSummary(
+        const SZrFunction *function) {
+    return (TZrBool)(function != ZR_NULL &&
+                     function->frameSlotLayouts != ZR_NULL &&
+                     function->frameSlotLayoutLength < UINT32_MAX &&
+                     function->directValueFrameSlotCountPlusOne ==
+                             function->frameSlotLayoutLength + 1u);
+}
+static ZR_FORCE_INLINE SZrTypeValue *ZrCore_Function_TryGetDirectFrameValueSlotLayout(
+        const SZrFunction *function,
+        const SZrFunctionFrameSlotLayout *slotLayout,
+        TZrStackValuePointer frameBase) {
+    if (frameBase == ZR_NULL ||
+        !ZrCore_Function_IsDirectFrameValueSlotLayout(function, slotLayout)) {
+        return ZR_NULL;
+    }
+
+    return (SZrTypeValue *)((TZrByte *)frameBase + slotLayout->byteOffset);
+}
+ZR_CORE_API SZrTypeValue *ZrCore_Function_TryGetDirectFrameValueSlot(
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot);
 ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindMetadataTokenRecord(const SZrFunction *function,
                                                                                   TZrMetadataToken token);
 /* schedulerTypeId == 0 selects the first recorded scheduler source fact. */

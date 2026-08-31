@@ -251,6 +251,25 @@ TZrBool ZrCore_Object_VisitInlineArrayGcValues(
     if (layout == ZR_NULL || function == ZR_NULL) {
         return ZR_FALSE;
     }
+    {
+        TZrSize elementBytes;
+        TZrSize endOffset;
+
+        if (!object_inline_array_checked_multiply(
+                    (TZrSize)array->inlineArrayLength,
+                    (TZrSize)layout->byteSize,
+                    &elementBytes) ||
+            !object_inline_array_checked_add(
+                    (TZrSize)array->inlineArrayElementByteOffset,
+                    elementBytes,
+                    &endOffset) ||
+            endOffset > array->inlineArrayObjectByteSize) {
+            return ZR_FALSE;
+        }
+    }
+    if (ZrCore_TypeLayout_CanSkipGcScan(layout)) {
+        return ZR_TRUE;
+    }
     hasRegistry = ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
             function, &registry);
     for (TZrUInt32 index = 0u; index < array->inlineArrayLength; index++) {

@@ -15,6 +15,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/include/zr_vm_core/profile.h
+  - zr_vm_core/src/zr_vm_core/profile.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
@@ -25,7 +27,9 @@ related_code:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_frame_value_slot_fast.h
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame_copy_fast.h
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/include/zr_vm_core/raw_object.h
@@ -81,6 +85,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_type_layout_metadata_contracts.c
+  - tests/core/test_frame_slot_layout_lookup.c
   - tests/core/test_inline_struct_array_layout.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -108,6 +113,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/include/zr_vm_core/profile.h
+  - zr_vm_core/src/zr_vm_core/profile.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
@@ -175,6 +182,7 @@ plan_sources:
   - user: 2026-05-18 real GC/native entry wiring without claiming full ABI completion
   - user: 2026-06-04 align struct value execution with lua/hybridclr and lua/il2cpp architecture
   - user: 2026-08-04 retest and accept the strict Syntax cutover before commit
+  - user: 2026-08-29 audit and optimize VM performance against Lua and C#
   - docs/plans/aot/03-instruction-set-refactor.md
   - docs/plans/aot/04-semir-and-c-backend.md
   - docs/plans/aot/06-implementation-blueprint.md
@@ -182,6 +190,7 @@ plan_sources:
 tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_type_layout_metadata_contracts.c
+  - tests/core/test_frame_slot_layout_lookup.c
   - tests/core/test_inline_struct_array_layout.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -218,6 +227,7 @@ tests:
   - tests/parser/test_semir_dynamic_index_deopt.c
   - tests/parser/test_aot_c_typed_scalar.c
   - tests/acceptance/2026-05-16-inline-struct-byte-stack.md
+  - tests/acceptance/2026-08-29-frame-slot-layout-dense-lookup.md
   - tests/acceptance/2026-05-18-inline-frame-gc-native-entry.md
   - tests/acceptance/2026-06-20-aot-m1-semir-type-conflict-deopt.md
   - tests/acceptance/2026-06-20-aot-m1-semir-dynamic-index-deopt.md
@@ -244,10 +254,17 @@ tests:
   - tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
 doc_type: module-detail
-last_verified: 2026-08-04
+last_verified: 2026-08-30
 ---
 
 # Inline Type Layout And Byte Stack Copy
+
+## Frame-Slot Lookup Metadata Contract
+
+`SZrFunction.frameSlotLayouts` must contain at most one entry for each
+`stackSlot`. Compiler-built functions create the unique canonical entry at
+`frameSlotLayouts[stackSlot]`, and IO validation rejects duplicate slots.
+Hand-built `SZrFunction` values must satisfy the same uniqueness contract.
 
 This module is the first runtime layer for moving `struct` values toward inline, byte-sized stack storage. It does not replace the interpreter's existing fixed-slot frame ABI yet. It provides the typed layout and byte-offset stack primitives that later call-frame migration can use instead of directly assuming `functionBase + slot`.
 
@@ -440,6 +457,15 @@ This keeps array and object indexing in the same two-path model as member access
 
 `ZrCore_GlobalState_Free` releases the garbage collector before releasing the string table. Shutdown GC can still need to mark string-table major roots, so freeing the string table first leaves shutdown collection with dangling root metadata. The string table is therefore kept alive until after `ZrCore_GarbageCollector_Free` returns.
 
+`ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED` is a lifecycle state,
+not proof that the object's allocation has already been freed. It records that
+the finalizer path has completed and prevents the object from being remarked.
+When sweep or shutdown later unlinks that object, it must still release region
+accounting, ownership/registry state, type-specific metadata, and the raw object
+allocation. The free path skips only a repeated `scanMarkGcFunction` callback
+for an already-released object. The released embedded-child regression and the
+full 67-case GC suite pass under Clang ASan with leak detection enabled.
+
 AOT root frames support two root-location encodings. `ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET` keeps the existing
 `SZrTypeValue` stack-slot path and validates the computed address against the VM stack bounds before mark/rewrite.
 `ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS` treats `frameBase + frameByteOffset` as a registered `SZrRawObject **`
@@ -465,6 +491,106 @@ Frame byte offsets intentionally start after the legacy fixed-slot mirror, `stac
 
 Function declarations, lambdas, class members, meta functions, tests, and final assembled entry functions all call the builder after `stackSize` and typed local metadata are available. `ZrCore_Function_FindFrameSlotLayout` is the public lookup helper for callers that need a typed place without scanning the array themselves.
 
+Compiled frame layouts are dense and emitted in logical stack-slot order. The lookup helper first probes `frameSlotLayouts[stackSlot]` and accepts that O(1) path only when the entry's recorded `stackSlot` matches the request. Hand-built, sparse, reordered, and out-of-range layouts retain the original linear scan. This removes repeated metadata walks from interpreter operand access without changing the public function layout, `.zro` serialization, stack relocation, or inline-storage address validation.
+
+Validated complete VALUE slots now carry the append-only
+`ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE` bit in `reserved0`. Before function
+metadata is published, the compiler and binary loader finalize dense layouts
+and mark non-alias slots whose byte range, size, and alignment are valid for a
+direct address calculation. The derived bit is masked out of `.zro` output and
+recomputed after loader validation, so serialized input cannot assert trust.
+`execution_inline_frame_get_value_slot` probes the canonical indexed layout
+before invoking the generic lookup, then passes that record to an inline
+fail-closed helper which adds the current frame base to the cached byte offset
+without re-running stack bounds checks. A miss alone enters
+`ZrCore_Function_FindFrameSlotLayout` and the checked place path.
+Alias, inline-struct, malformed, externally constructed, and otherwise
+unvalidated layouts continue through `ZrCore_Function_MakeFrameSlotPlace`.
+The helper never caches a raw address, so a stack relocation only requires the
+caller to provide its refreshed frame base. Runtime frame initialization only
+reads the finalized metadata, avoiding a shared-function mutation between
+mutators. Append-only profile helpers `frame_value_slot_direct` and
+`frame_value_slot_checked` expose the boundary; the hot getter reads the active
+profile runtime from the current state instead of performing a TLS lookup per
+operand. The focused frame-slot test covers the direct offset contract,
+relocation, finalization, unsafe-layout rejection, initialization, stable helper
+names, and direct/checked counts.
+
+The interpreter dispatch loop has a narrower direct-slot helper for repeated
+operands. It receives the loop-cached profile runtime and helper-recording flag,
+checks the same canonical index, recorded slot number, and `DIRECT_VALUE` bit,
+then computes the address from the current frame base. Any missing or malformed
+metadata calls the public getter, preserving the complete checked fallback.
+This boundary avoids repeated `state->global->profileRuntime` discovery without
+duplicating the generic layout/place logic or storing relocation-sensitive raw
+addresses.
+
+Cached member get/set/initialize entry points use the same finalized bit as a
+negative inline-storage proof. When the receiver slot is a canonical direct
+VALUE, they return before resolving a member name or probing frame-place
+metadata because only inline struct/union slots can satisfy that path. Missing,
+untrusted, aliased, sparse, reordered, or inline layouts keep the original
+lookup and checked fallback.
+
+The same proof now covers non-dispatch frame consumers. The public
+`ZrCore_Function_MakeFrameSlotPlace` constructs a bounded place directly for a
+canonical `DIRECT_VALUE` record before using generic stack place resolution.
+Frame initialization, value-overlap checks, reverse frame-pointer mapping, and
+inline-frame drop similarly use the direct record when possible. Reverse mapping
+first converts a canonical logical stack pointer to its slot index in O(1), then
+falls back to the complete layout walk for inline, alias, sparse, reordered, or
+interior byte pointers. None of these paths stores a raw address across stack
+relocation.
+
+Each VM precall also records its allocated frame-storage slot count on the
+resulting `SZrCallInfo` as a three-byte `frameStorageSlotCountPlusOne` value in
+the legacy padding after `hasReturnDestination`. This preserves the existing
+structure size and all following field offsets on supported targets. The
+plus-one encoding reserves zero for native, legacy, externally initialized, or
+over-capacity call infos, which continue to resolve the metadata function and
+calculate the storage boundary.
+`ZrCore_Function_GetCallInfoFrameStorageTop` can therefore recover the common VM
+boundary without rescanning generated instruction temporaries. The cached value
+belongs to the call instance rather than shared `SZrFunction` metadata, so later
+metadata changes and concurrent callers cannot make the allocation boundary
+stale. Tail-call frame reuse updates the same field after calculating the new
+callee's storage count, preventing the reused call info from retaining the prior
+callee's boundary.
+
+The retained ext4 GCC 11.4 Release Callgrind run records `722,029,136 Ir`, down
+`12.04%` from the pre-change `820,818,823 Ir`. `ZrCore_Stack_MakeFramePlace`
+accounts for `14,352 Ir` (`0.00199%` exclusive) and the generic layout lookup for
+`5,424 Ir` (`0.00075%`), so the deterministic `<5%` frame-place gate is met.
+The paired process wall-time run is deliberately not accepted: all C, ZR interp,
+and ZR binary samples remained unstable (`15.27%` to `22.48%` CV), leaving the
+numeric `+10%` wall-time gate open.
+
+On `mixed_service_loop`, the direct frame consumers and per-call storage
+boundary first reduce the retained GCC 11.4 Release Callgrind total from
+`868,860,510 Ir` to `409,692,473 Ir`. The later VALUE-parameter summary slice
+uses an exact paired baseline in which both binaries include the member-cache
+null guard: `409,431,558 Ir` before and `396,430,578 Ir` after (`-3.18%`). The
+next exact pair adds the direct VALUE-only frame-drop summary and records
+`396,142,221 Ir` before and `378,649,763 Ir` after (`-4.42%`). Reusing that
+strict summary in frame initialization then records `378,637,009 Ir` before
+and `365,295,917 Ir` after (`-3.52%`). Later dispatch-getter, copy-probe,
+generated-slot-count, frame-drop preflight/no-owner, in-place direct VALUE
+  parameter-copy, dispatch copy-probe bypass, and packed direct-frame boundary
+  slices plus packed owner batching and prepared-precall fusion retain
+  `236,125,782 Ir`. The current cumulative reduction from the original baseline
+  is `72.824%`, at
+the unchanged checksum `408940136`.
+The deterministic instruction-count result is accepted; the wall-time gate
+remains open until the calibrated harness produces an eligible paired series.
+
+On `object_field_hot`, the dispatch helper first reduces the same-build scale-1
+Callgrind total from `205,647,828 Ir` to `159,970,049 Ir`; the direct VALUE
+member-probe guard then reduces it to `126,716,379 Ir` (`-38.38%` cumulative).
+Checksum `623146080` and direct/checked counts `1,686,066/1` are unchanged. The
+paired ZR interpreter timing remains ineligible because its final CV is
+`16.52%`; this deterministic result does not substitute for the plan's stable
+wall-time gate.
+
 The `.zro` binary function format now writes the frame byte header and slot layout array immediately after `stackSize`. `ZR_IO_SOURCE_PATCH_HAS_FUNCTION_FRAME_LAYOUT` gates reading so older binaries still load with empty frame layout metadata. Runtime IO copies the metadata into loaded `SZrFunction` instances, including child functions, so tooling and the next VM-stack migration layer can inspect the same byte-frame shape after a binary roundtrip.
 
 `ZrCore_Function_GetFrameStorageSlotCount` computes the number of legacy `SZrTypeValueOnStack` allocation units needed to hold the byte frame. It returns the greater of the old logical `stackSize` and the rounded-up `frameByteSize`. VM precall now uses that storage count for `functionTop` and stack growth, while still using `stackSize` for logical slot semantics. Padding storage slots beyond `stackSize` are reset to null during call setup so existing stack scanning and frame teardown do not observe stale `SZrTypeValue` contents.
@@ -474,6 +600,213 @@ VM resolved/prepared pre-call now takes the first real payload-movement step for
 Byte-backed VALUE parameters use the same frame-layout boundary. `ZrCore_Function_CopyValueFrameParametersFromFrame` resolves the source and destination VALUE slots through `SZrFunctionFrameSlotLayout`; if the source byte-backed slot is still null but the dense caller slot is materialized, the dense slot is used as the source. After copying into the callee byte span, the helper also mirrors the value into the callee dense slot. Generated AOT C still has mixed consumers during the byte-frame migration: field stores can read byte-backed VALUE storage, while typed arithmetic and branch lowering can read dense slots. Keeping both views synchronized at the call boundary prevents a staged direct call from entering a callee with only one half of the VALUE parameter initialized.
 
 Tail-call frame reuse also keeps byte-backed VALUE parameters synchronized. When a VM frame is reused for a callee without inline-struct parameter layouts, the runtime copies VALUE parameters from the caller's logical frame value slots into the reused byte-backed parameter spans and mirrors them to dense slots before reinitializing frame storage. Destination VALUE parameter slots release existing owned values before being overwritten, so owner payloads left by a previous frame do not leak or double-release.
+
+Finalized functions now also carry an immutable VALUE-parameter layout summary.
+`directValueParameterCountPlusOne` records the number of canonical direct VALUE
+parameters while reserving zero for checked fallback, and
+`directValueParameterScanLength` stops the copy walk after the last parameter
+layout instead of scanning trailing locals. The summary is produced only after
+every frame layout is canonical and every parameter has the validated
+`DIRECT_VALUE` bit. It is cleared before every finalization attempt, initialized
+and reset with the function lifecycle, and never serialized. The loader rejects
+an input `DIRECT_VALUE` flag, copies validated layout fields, and then rebuilds
+both the bit and summary locally.
+
+`ZrCore_Function_CopyValueFrameParameters` and its frame-source variant use the
+summary only while its bounds and last direct parameter still validate. A stale
+or hand-built summary therefore falls back to the original full scan and checked
+place construction. Zero arguments return before any layout visit. Direct
+destinations and sources still release overwritten ownership where required,
+copy the byte-backed value, and synchronize the dense mirror. Append-only helper
+counts distinguish direct, checked, empty, and layout-visit paths. The final
+scale-1 `mixed_service_loop` profile records `61,449` direct copies, `61,449`
+layout visits, two empty copies, and zero checked copies. In the exact paired
+Callgrind result, `ZrCore_Function_CopyValueFrameParameters` falls from
+`20,470,486` to `12,636,314` exclusive Ir (`-38.27%`) and from `34,929,366` to
+`21,688,474` inclusive Ir (`-37.91%`). Scale-1 `numeric_loops` changes by
+`-0.012%` and `object_field_hot` by `+0.005%`, both within the representative-set
+`1%` regression gate.
+
+The ordinary call-window path now specializes this same strict summary. It
+preflights the complete frame span once and then uses the finalized parameter
+offsets directly. When `argumentBase` is the callee frame base, the source is
+already the dense destination: the runtime copies it into the byte-backed
+mirror and leaves the unchanged dense source in place. Separate argument
+windows still copy both mirrors. `ZrCore_Value_Copy` remains responsible for
+normalizing stale control pointers and releasing overwritten owners; the
+frame-source and checked paths are unchanged. This changes the exact
+mixed-service pair from `296,648,172` to `282,552,302 Ir` (`-4.752%`) and the
+parameter-copy call edge from `21,688,474` to `7,372,972 Ir` inclusive. Numeric
+and object representatives change by only `+0.0012%` and `+0.0001%`.
+
+Finalized functions also carry a strict direct VALUE-only frame-drop summary.
+`directValueFrameSlotCountPlusOne` reserves zero for the original checked path
+and is published only when every frame layout is its canonical direct VALUE
+entry and `DIRECT_VALUE` is its only derived flag. Like the parameter summary,
+it is cleared before finalization, initialized and tombstoned with the function,
+never serialized, and rebuilt locally after loader validation. Mixed inline,
+alias, sparse, reordered, malformed, extra-flag, unfinalized, and hand-built
+layouts therefore retain registry lookup, complete inline-layout preflight, and
+checked VALUE place construction.
+
+The direct drop loop does not weaken address or lifecycle checks. It still uses
+the bounded direct-place helper for every slot, releases byte-backed and dense
+VALUE owners independently, and preserves the overlap guard. Strict publication
+also excludes constructor bitmap and inline receiver flags, so ordinary exit
+and unwind can share the loop while all inline lifecycle cases remain checked.
+The final scale-1 profile records `20,485` direct drops and one checked drop.
+`function_drop_inline_frame_values` falls from `37,282,153` to `19,658,273`
+exclusive Ir (`-47.27%`) and from `49,861,149` to `32,114,373` inclusive Ir
+(`-35.59%`). Exact-pair representatives change by `-0.021%` for
+`numeric_loops` and `-0.0009%` for `object_field_hot`.
+
+Frame initialization reuses the same strict summary; it does not publish a
+second trust bit. Proven direct-only frames walk their canonical layouts once,
+track parameter order linearly, preserve the first `preservedArgumentCount`
+parameters, and initialize every remaining slot through the bounded direct
+VALUE helper. Frames without the summary keep the original alias checks,
+parameter-index lookup, generic place construction, and inline-storage path.
+Append-only helper counts expose `frame_value_initialization_direct` and
+`frame_value_initialization_checked`; the final scale-1 profile records
+`20,486` direct initializations and one checked initialization.
+`ZrCore_Function_InitializeFrameLayoutStorage` falls from `21,691,743` to
+`8,061,782` exclusive Ir (`-62.83%`) and from `21,694,073` to `8,350,930`
+inclusive Ir (`-61.51%`). Exact-pair representatives improve by `-0.055%` for
+`numeric_loops` and `-0.005%` for `object_field_hot`.
+
+The interpreter dispatch loop also keeps the proven direct VALUE probe inside
+its hot translation unit. `FRAME_VALUE_SLOT` first calls the small inline probe
+with the loop-cached profile runtime and current frame base. A canonical indexed
+layout returns `frameBase + byteOffset`; every guard miss returns null and then
+calls the unchanged generic getter, which records the checked helper and retains
+layout lookup, place construction, bounds, and inline-layout behavior. The probe
+never caches a derived address, so stack relocation continues to supply the new
+frame base on the next operand access.
+
+The outer wrapper deliberately uses ordinary `inline`, not forced inline. GCC
+may outline cold/fallback call sites while keeping the dominant direct probes in
+`ZrCore_Execute`. In the retained GCC 11.4 Release artifact the direct/checked
+profile remains `1,890,775 / 30,725`; the wrapper itself accounts for only
+`430,710 Ir` on 20,510 outlined calls. Exact paired Callgrind results improve
+`mixed_service_loop` by `4.42%`, `numeric_loops` by `17.02%`, and
+`object_field_hot` by `12.21%`, with unchanged checksums. The tradeoff is a
+`90,112` byte (`3.51%`) increase in `libzr_vm_core.so` versus the preceding
+frame-initialization binary; this size and the measured large-dispatch compile
+cost are part of the acceptance record rather than hidden by the runtime gain.
+
+Direct VALUE-to-VALUE stack copies also skip the speculative inline-copy probe.
+After the null and return-slot guards, the probe now returns false immediately
+when both layouts carry the canonical `DIRECT_VALUE` proof. Such a pair cannot
+be an inline payload or alias, so the caller performs its existing ordinary
+`SZrTypeValue` copy without two layout lookups and two generic frame getters.
+If either side lacks the proof, the complete inline/union/constructor-carrier
+path remains unchanged. The small predicate lives in
+`execution_inline_frame_copy_fast.h`, separate from the dispatch helper, so an
+inline-frame-only edit does not invalidate the large dispatch translation unit.
+The exact mixed-service pair is `349,179,948 -> 325,175,994 Ir` (`-6.87%`),
+with checksum `408940136`; direct/checked getter counts become
+`1,582,901 / 30,725`. Numeric changes by `+0.037%` and object by `-0.002%`, both
+inside the `1%` representative regression gate. The core shared library and
+dispatch object sizes are unchanged from the accepted dispatch-getter binary.
+
+Dispatch now bypasses that remaining helper call entirely when the immutable
+strict direct VALUE-only frame summary proves both bounded slots belong to the
+canonical direct frame. If the summary is absent, the wrapper applies the same
+per-slot direct predicate before deciding whether to call the helper. The
+helper retains its own predicate and every inline struct, union,
+constructor-carrier, unfinalized, malformed, and out-of-range fallback. The
+appended `frame_value_copy_probe` profile helper records real fallback entries;
+the production callback is compile-time-known while the focused test injects a
+stub to verify the boundary. The first per-slot-only candidate was rejected at
+`-2.961%`. The strict-summary result is `282,552,302 -> 273,765,184 Ir`
+(`-3.110%`) for `mixed_service_loop`, with numeric/object changes of
+`-0.0060%/-0.0084%`; the final mixed profile contains no copy-probe helper
+entry. Full evidence is recorded in
+`tests/acceptance/2026-08-31-dispatch-direct-value-copy-probe-bypass.md`.
+
+The strict frame summary now proves a stronger packed shape before it is
+published. The layout table must contain exactly one canonical direct VALUE
+entry per logical stack slot, byte mirrors must begin immediately after the
+dense frame and advance at `SZrTypeValueOnStack` stride, every mirror must be
+exactly `sizeof(SZrTypeValue)`, and `isParameter` must describe the exact
+parameter prefix. Canonical direct slots in non-packed frames keep their
+per-slot `DIRECT_VALUE` proof, but the frame summary remains zero and they use
+the existing checked/per-layout paths.
+
+That proof removes several repeated layout operations without weakening frame
+storage or GC boundaries. Precall can prove that a packed frame has no inline
+parameters without scanning its layout table. Parameter copy derives the byte
+mirror base once and copies the parameter prefix, frame initialization starts
+after the preserved parameter prefix, and direct drop walks byte and dense
+mirrors by index. All three preserve the existing span preflight, value-copy,
+ownership release, dense synchronization, and checked fallback semantics.
+Postcall inline return, receiver-copyback, and constructor-copyback probes also
+decline immediately for a strict direct-only callee; caller inline object
+destinations still use their separate fallback.
+
+The prepared-precall fast guard remains unchanged. The target frame has byte
+storage beyond its logical stack and requires GC-safe clearing of the complete
+logical frame, so it must not use the existing fast path that requires
+`frameStorageSlotCount == stackSize` and exact argument-only entry clearing.
+The precall scan alone improved only `0.656%`, and packed loops before the
+return guards improved only `2.839%`; neither was independently accepted. The
+combined exact pair is `273,765,184 -> 255,021,394 Ir` (`-6.846667%`) at the
+same checksum. Numeric improves `0.012560%` and object regresses `0.010445%`,
+both inside the `1%` representative gate. Full evidence is recorded in
+`tests/acceptance/2026-08-31-packed-direct-value-frame-summary.md`.
+
+Packed direct teardown also avoids treating an internal dense-mirror read as a
+profiled logical stack access. The loop uses `ZrCore_Stack_GetValueNoProfile`
+and tests four slots at a time by combining the ownership kinds from four byte
+mirrors and four dense mirrors. An all-`NONE` group cannot release anything and
+is skipped with one branch. If any lane may own storage, each pair still runs
+the original releasable-ownership checks and releases both mirrors; the tail
+uses the same pair helper. The packed summary proves the two fixed-stride
+regions are disjoint, while every frame without that proof retains the old
+checked overlap and layout behavior.
+
+The no-profile access alone improved the target by `2.517827%` and was not
+independently accepted. With four-slot owner batching, the exact pair is
+`255,021,394 -> 245,339,382 Ir` (`-3.796549%`) at unchanged checksum.
+`function_drop_inline_frame_values` falls from `8,578,193` to `3,324,901 Ir`
+exclusive and `__tls_get_addr` from `5,985,228` to `2,175,828 Ir`. Numeric
+regresses `0.020328%` and object improves `0.015146%`, both inside the `1%`
+representative gate. Full evidence is recorded in
+`tests/acceptance/2026-08-31-packed-direct-value-drop-owner-batching.md`.
+
+Prepared VM calls now use a narrower steady-state path for that same strict
+packed frame. It requires inactive debug hooks, exact arguments, an exact call
+window, sufficient existing stack capacity, a bounded entry-clear range, byte
+storage beyond the logical stack, and an already reusable call-info. Any miss
+returns to the original exact-args probe and generic precall, so stack growth,
+first-call allocation, debug, mixed layouts, and inline/alias frames retain
+their complete behavior.
+
+The specialized path still clears the logical entry frame and every padding
+storage slot. Because the packed summary proves that byte mirrors occupy that
+entire fixed-stride padding region, this clear also initializes all byte VALUE
+slots and their stack metadata; a second layout initialization walk would only
+repeat the same reset. Exact parameters are copied from their unchanged dense
+sources to the byte mirrors with `ZrCore_Value_Copy`, preserving ownership and
+the existing direct/layout profile counts. The generic-copy plus layout-init
+candidate improved only `1.611%`, and padding/init fusion reached only `2.609%`.
+The retained exact-copy/private-helper result is
+`245,339,382 -> 236,125,782 Ir` (`-3.755451%`), with numeric/object changes of
+`-0.003641%/+0.013457%`. Full evidence is recorded in
+`tests/acceptance/2026-08-31-packed-direct-prepared-precall-fusion.md`.
+
+Finalized functions also publish the generated frame-slot count as immutable
+derived metadata. `generatedFrameSlotCountPlusOne` reserves zero for the
+original instruction-stream scan, so unfinalized and hand-built functions keep
+dynamic behavior. Finalization clears the field, scans the current stream, and
+publishes `count + 1`; the loader does this only after copying instructions, and
+quickening repeats it after all rewrites. The field is initialized and
+tombstoned with the function, never serialized, and appended at the public
+structure tail. In the exact scale-1 `mixed_service_loop` pair, removing the
+per-precall scan changes `325,175,994 -> 314,490,481 Ir` (`-3.286%`) with the
+same checksum. Numeric and object representatives improve by `0.023%` and
+`0.012%`. The once-per-function scan costs `17,347 Ir`, while the hot public
+getter falls from `10,624,761` to `163,904 Ir`.
 
 Single-result VM post-call now has the matching limited return hook for payloads that are already inline on both sides. `ZrCore_Function_TryCopyInlineFrameReturnValue` derives the callee result slot and caller return destination slot from their call-info frame bases, resolves both prototype layouts, checks that the two layouts are byte/lifecycle compatible, then copies the inline span before the callee frame is dropped. If either side is missing frame metadata, the destination is not a caller inline slot, or the two layouts cannot both be resolved, the helper declines and the old `SZrTypeValue` return path remains in force.
 
@@ -508,6 +841,18 @@ The frame byte layout is now used by real runtime entries when metadata is prese
 GC stack scanning keeps the callable slot on the legacy path, then treats `callInfo->functionBase.valuePointer + 1` as the frame byte base. Ordinary stack slots that intersect an inline struct span are skipped by raw slot scanning. `ZrCore_Function_VisitInlineFrameGcValues` then visits only the embedded `SZrTypeValue` fields declared by the resolved layout. Minor collection rewrite uses the same layout visitor, so forwarded embedded values are rewritten in place instead of leaving stale object pointers inside raw struct bytes.
 
 Frame teardown and tail-call reuse call `ZrCore_Function_DropInlineFrameValues` before old frame storage is overwritten or reused. For inline single-result returns, post-call captures the callee metadata first, copies the inline return payload to the caller destination, and then drops the captured callee frame layout so ordinary return movement cannot erase the metadata needed for cleanup. Tail reuse also checks `ZrCore_Function_FrameStackSlotIntersectsInlineStruct` while releasing old storage slots, so raw inline bytes are cleared as storage units rather than being interpreted as ordinary `SZrTypeValue` slots. The drop helper preflights all inline layouts before performing any field drop; if any layout cannot be resolved, it fails without partially dropping the frame.
+
+For a finalized frame proven to contain only canonical direct VALUE layouts,
+the immutable drop summary bypasses the irrelevant inline-layout preflight. All
+other frames keep the failure-atomic behavior above. The direct path validates
+the complete `frameByteSize` span against the current stack once before any
+drop, after which finalized per-slot offsets can be addressed without repeating
+the same bounds arithmetic. If both the byte-backed and dense mirrors carry
+`NONE` ownership, the slot cannot release an owner and skips the release plus
+overlap helpers. Every other ownership kind follows the original per-mirror
+release path. On the exact scale-1 mixed-service pair, these two changes reduce
+`314,490,481 -> 296,648,172 Ir` (`-5.673%`) with unchanged checksum; numeric and
+object representatives change by only `+0.0043%` and `+0.0058%`.
 
 Native dispatch now seeds `ZrLibCallContext` with the current VM frame's metadata function, callable base, local frame base, and inline argument start. `ZrLib_CallContext_InlineArgumentSpan` can be called from a real known-native callback and returns an address, byte size, alignment, and type id for inline struct arguments that already exist in the VM frame layout. Stack-root callbacks use the existing stack-layout anchor; stable-argument native lanes now also adopt a lightweight inline-frame anchor, so a callback that grows or relocates the stack before asking for the span receives the relocated frame payload address without converting stable argument copies back to old stack slots. The span API requires the resolved frame slot to be both inline and marked as a parameter, so inline locals cannot be exposed through an argument index. When an argument is an inline struct parameter, ordinary `ZrLib_CallContext_Argument` and the typed `Read*` helpers report it as unavailable instead of returning a stable `SZrTypeValue` copy, because the inline payload bytes are not a boxed value. Object known-native direct-binding fast paths also clear their local call-context copies before filling fields, so absent inline frame metadata remains explicit absence rather than uninitialized state. When the current call has no frame layout, the argument is not an inline parameter, or metadata resolution is unavailable, the span API reports unavailable and the existing boxed/native behavior remains unchanged.
 
@@ -562,6 +907,7 @@ The implemented boundary covers:
 - Stack-base-relative byte offset load/save/copy.
 - Typed stack frame places that resolve frame-relative byte offsets and copy layout-sized spans without exposing raw slot arithmetic to callers.
 - Function-level frame slot places and layout-kind-checked frame slot inline copy.
+- Constant-time frame-slot layout lookup for canonical dense compiled layouts, with the original linear fallback for sparse or reordered metadata.
 - Struct prototype metadata round-tripping of whole-value `layoutByteSize` and `layoutByteAlign`.
 - Function frame sidecar metadata for parameters, locals, generated stack slots, and `.zro` runtime loading.
 - VM precall reserves enough legacy stack allocation units to cover `frameByteSize`, including prepared-call fallback and tail-call frame reuse.
@@ -579,6 +925,8 @@ The implemented boundary covers:
 - Generated AOT `SZrTypeLayout` descriptors for struct owner fields now include static ownership-offset arrays when the field offsets are provable; union and unsupported offset cases keep null ownership-offset pointers.
 - Generated AOT code-stripping statistics report referenced inline type-layout payload bytes before and after reachability filtering via `code_stripping.typeLayoutPayloadBytesBefore/After/Removed`; the metric sums each distinct inline slot layout's `frameSlotLayout.byteSize` and is separate from emitted-C descriptor byte-span markers.
 - Frame post-call and tail-call reuse drop wiring for owned embedded inline values.
+- Immutable direct VALUE-only frame-drop summary with bounded per-slot address
+  validation and checked fallback for every mixed or inline lifecycle layout.
 - Native callback inline argument spans in the real dispatch context for already-inline VM frame payloads, including span refresh after native callback stack relocation in stack-root, stable fast/inline-pinned, and generic dispatcher lanes, with non-parameter inline slots rejected, ordinary boxed argument reads blocked for inline struct parameters, and missing/non-inline metadata preserving boxed argument reads.
 - Canonical native inline argument views that fail closed on absent or drifting
   metadata registries, plus external-layout GC tracing across full compaction

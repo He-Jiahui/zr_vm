@@ -2323,12 +2323,15 @@ static void test_member_get_cached_exact_receiver_pair_hit_records_helpers_from_
     fixture.cacheEntry.runtimeMissCount = 0;
     ZrCore_Value_ResetAsNull(&result);
     reset_profile_counters_from_state_only(state, &profileRuntime);
+    profileRuntime.recordMemory = ZR_TRUE;
 
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, &fixture.function, 0, &fixture.receiverValue, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
     TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]);
     TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+    TEST_ASSERT_EQUAL_UINT64(sizeof(SZrTypeValue),
+                             profileRuntime.memoryMetricCounts[ZR_PROFILE_MEMORY_VALUE_COPY_BYTES]);
 
     clear_profile_counters(state);
     ZrTests_Runtime_State_Destroy(state);
@@ -2352,11 +2355,14 @@ static void test_member_set_cached_exact_receiver_pair_hit_records_helpers_from_
     ZrCore_Value_InitAsInt(state, &assignedValue, 105);
     ZrCore_Value_ResetAsNull(&result);
     reset_profile_counters_from_state_only(state, &profileRuntime);
+    profileRuntime.recordMemory = ZR_TRUE;
 
     TEST_ASSERT_TRUE(execution_member_set_cached(
             state, ZR_NULL, &fixture.function, 0, &fixture.receiverValue, &assignedValue));
     TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]);
     TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+    TEST_ASSERT_EQUAL_UINT64(sizeof(SZrTypeValue),
+                             profileRuntime.memoryMetricCounts[ZR_PROFILE_MEMORY_VALUE_COPY_BYTES]);
 
     clear_profile_counters(state);
     TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
@@ -2568,10 +2574,16 @@ static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacit
     SZrFunction *runtimeFunction;
     SZrObjectPrototype *prototypeB;
     SZrObjectPrototype *prototypeC;
+    SZrObjectPrototype *prototypeD;
+    SZrObjectPrototype *prototypeE;
     SZrObject *instanceB;
     SZrObject *instanceC;
+    SZrObject *instanceD;
+    SZrObject *instanceE;
     SZrTypeValue receiverValueB;
     SZrTypeValue receiverValueC;
+    SZrTypeValue receiverValueD;
+    SZrTypeValue receiverValueE;
     SZrTypeValue assignedValue;
     SZrTypeValue result;
 
@@ -2581,6 +2593,10 @@ static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacit
             state, fixture.memberName, "HotPathMemberSetBoxB", 22, &prototypeB, &instanceB, &receiverValueB);
     init_shared_name_member_access_variant(
             state, fixture.memberName, "HotPathMemberSetBoxC", 33, &prototypeC, &instanceC, &receiverValueC);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberSetBoxD", 44, &prototypeD, &instanceD, &receiverValueD);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberSetBoxE", 55, &prototypeE, &instanceE, &receiverValueE);
     runtimeFunction = create_runtime_fixture_function(state, &fixture);
     fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
     fixture.cacheEntry.picSlotCount = 0;
@@ -2606,8 +2622,8 @@ static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacit
     TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &assignedValue));
     TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueB, fixture.memberName, &result));
     TEST_ASSERT_EQUAL_INT64(202, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
-    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.picNextInsertIndex);
     TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(instanceB->cachedStringLookupPair, fixture.cacheEntry.picSlots[1].cachedReceiverPair);
@@ -2617,13 +2633,33 @@ static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacit
     TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueC, &assignedValue));
     TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueC, fixture.memberName, &result));
     TEST_ASSERT_EQUAL_INT64(303, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[2].cachedReceiverPrototype);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 404);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueD, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueD, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(404, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeD, fixture.cacheEntry.picSlots[3].cachedReceiverPrototype);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 505);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueE, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueE, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(505, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
-    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
-    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(prototypeE, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceE, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
     TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(instanceB, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
-    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[2].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeD, fixture.cacheEntry.picSlots[3].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_UINT32(5u, fixture.cacheEntry.runtimeMissCount);
     TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
 
     ZrCore_Value_InitAsInt(state, &assignedValue, 204);
@@ -2631,10 +2667,10 @@ static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacit
     TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &assignedValue));
     TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueB, fixture.memberName, &result));
     TEST_ASSERT_EQUAL_INT64(204, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(5u, fixture.cacheEntry.runtimeMissCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
-    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeE, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
 
     ZrCore_Value_InitAsInt(state, &assignedValue, 105);
@@ -2643,11 +2679,11 @@ static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacit
             state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
     TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
     TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_UINT32(4u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(6u, fixture.cacheEntry.runtimeMissCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
-    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
-    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
-    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeE, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceE, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
     TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
     TEST_ASSERT_EQUAL_PTR(fixture.instance->cachedStringLookupPair, fixture.cacheEntry.picSlots[1].cachedReceiverPair);
@@ -4204,10 +4240,16 @@ static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacit
     SZrFunction *runtimeFunction;
     SZrObjectPrototype *prototypeB;
     SZrObjectPrototype *prototypeC;
+    SZrObjectPrototype *prototypeD;
+    SZrObjectPrototype *prototypeE;
     SZrObject *instanceB;
     SZrObject *instanceC;
+    SZrObject *instanceD;
+    SZrObject *instanceE;
     SZrTypeValue receiverValueB;
     SZrTypeValue receiverValueC;
+    SZrTypeValue receiverValueD;
+    SZrTypeValue receiverValueE;
     SZrTypeValue result;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -4216,6 +4258,10 @@ static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacit
             state, fixture.memberName, "HotPathMemberBoxB", 22, &prototypeB, &instanceB, &receiverValueB);
     init_shared_name_member_access_variant(
             state, fixture.memberName, "HotPathMemberBoxC", 33, &prototypeC, &instanceC, &receiverValueC);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberBoxD", 44, &prototypeD, &instanceD, &receiverValueD);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberBoxE", 55, &prototypeE, &instanceE, &receiverValueE);
     runtimeFunction = create_runtime_fixture_function(state, &fixture);
     fixture.cacheEntry.picSlotCount = 0;
     fixture.cacheEntry.picNextInsertIndex = 0;
@@ -4234,40 +4280,56 @@ static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacit
     ZrCore_Value_ResetAsNull(&result);
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &result));
     TEST_ASSERT_EQUAL_INT64(22, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
-    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.picNextInsertIndex);
     TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
 
     ZrCore_Value_ResetAsNull(&result);
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueC, &result));
     TEST_ASSERT_EQUAL_INT64(33, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[2].cachedReceiverPrototype);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueD, &result));
+    TEST_ASSERT_EQUAL_INT64(44, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeD, fixture.cacheEntry.picSlots[3].cachedReceiverPrototype);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueE, &result));
+    TEST_ASSERT_EQUAL_INT64(55, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
-    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
-    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(prototypeE, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceE, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
     TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(instanceB, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
-    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[2].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeD, fixture.cacheEntry.picSlots[3].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_UINT32(5u, fixture.cacheEntry.runtimeMissCount);
     TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
 
     ZrCore_Value_ResetAsNull(&result);
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &result));
     TEST_ASSERT_EQUAL_INT64(22, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(5u, fixture.cacheEntry.runtimeMissCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
-    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeE, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
 
     ZrCore_Value_ResetAsNull(&result);
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
     TEST_ASSERT_EQUAL_INT64(11, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_UINT32(4u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(6u, fixture.cacheEntry.runtimeMissCount);
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
-    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
-    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
-    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeE, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceE, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
     TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
     TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
 

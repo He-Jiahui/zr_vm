@@ -427,6 +427,10 @@ static void execution_meta_store_pic_slot(SZrState *state,
             slot->cachedFunction = function;
             slot->cachedReceiverVersion = receiverPrototype->super.memberVersion;
             slot->cachedOwnerVersion = ownerPrototype != ZR_NULL ? ownerPrototype->super.memberVersion : 0;
+            slot->cachedReceiverShapeId = receiverPrototype->shapeId;
+            slot->cachedOwnerShapeId = ownerPrototype != ZR_NULL ? ownerPrototype->shapeId : 0u;
+            slot->cachedReceiverShapeGeneration = receiverPrototype->shapeGeneration;
+            slot->cachedOwnerShapeGeneration = ownerPrototype != ZR_NULL ? ownerPrototype->shapeGeneration : 0u;
             slot->cachedDescriptorIndex = descriptorIndex;
             slot->cachedIsStatic = isStatic ? ZR_TRUE : ZR_FALSE;
             execution_meta_barrier_callsite_target(state,
@@ -483,6 +487,10 @@ static void execution_meta_store_pic_slot(SZrState *state,
     slot->cachedFunction = function;
     slot->cachedReceiverVersion = receiverPrototype->super.memberVersion;
     slot->cachedOwnerVersion = ownerPrototype != ZR_NULL ? ownerPrototype->super.memberVersion : 0;
+    slot->cachedReceiverShapeId = receiverPrototype->shapeId;
+    slot->cachedOwnerShapeId = ownerPrototype != ZR_NULL ? ownerPrototype->shapeId : 0u;
+    slot->cachedReceiverShapeGeneration = receiverPrototype->shapeGeneration;
+    slot->cachedOwnerShapeGeneration = ownerPrototype != ZR_NULL ? ownerPrototype->shapeGeneration : 0u;
     slot->cachedDescriptorIndex = descriptorIndex;
     slot->cachedIsStatic = isStatic ? ZR_TRUE : ZR_FALSE;
     execution_meta_barrier_callsite_target(state,
@@ -607,8 +615,7 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
             execution_meta_clear_cache_entry(function, cacheIndex, entry, "missing-owner-or-function");
             return ZR_FALSE;
         }
-        if (slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
-            slot->cachedOwnerPrototype->super.memberVersion != slot->cachedOwnerVersion) {
+        if (!execution_member_dispatch_cached_slot_versions_match(slot)) {
             execution_meta_clear_cache_entry(function, cacheIndex, entry, "version-mismatch");
             return ZR_FALSE;
         }
@@ -748,8 +755,7 @@ static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *stat
                 execution_meta_clear_cache_entry(function, cacheIndex, entry, "prepare-missing-owner-or-function");
                 return ZR_FALSE;
             }
-            if (slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
-                slot->cachedOwnerPrototype->super.memberVersion != slot->cachedOwnerVersion) {
+            if (!execution_member_dispatch_cached_slot_versions_match(slot)) {
                 execution_meta_clear_cache_entry(function, cacheIndex, entry, "prepare-version-mismatch");
                 return ZR_FALSE;
             }
@@ -938,6 +944,8 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
                                        expectedStatic)) {
         return ZR_TRUE;
     }
+    ZrCore_Profile_RecordMemoryFromState(
+            state, ZR_PROFILE_MEMORY_MEMBER_CACHE_META_FALLBACK_COUNT, 1u);
     if (sourceIsInlineStruct &&
         (state->hasCurrentException || state->callInfoList != savedCallInfo)) {
         return ZR_FALSE;
@@ -1196,6 +1204,8 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
         }
         return ZR_TRUE;
     }
+    ZrCore_Profile_RecordMemoryFromState(
+            state, ZR_PROFILE_MEMORY_MEMBER_CACHE_META_FALLBACK_COUNT, 1u);
     if (sourceIsInlineStruct &&
         (state->hasCurrentException || state->callInfoList != savedCallInfo)) {
         if (hasReceiverAnchor) {

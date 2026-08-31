@@ -106,7 +106,7 @@ static TZrBool patch_transaction_push_root_value(
         SZrObject *roots,
         const SZrTypeValue *value) {
     const TZrSize index = roots != ZR_NULL
-                                  ? roots->nodeMap.elementCount
+                                  ? ZrCore_Object_SuperArrayLength(roots)
                                   : 0U;
     SZrTypeValue key;
 
@@ -116,7 +116,7 @@ static TZrBool patch_transaction_push_root_value(
         return ZR_FALSE;
     }
     ZrCore_Value_InitAsInt(cs->state, &key, (TZrInt64)index);
-    return roots->nodeMap.elementCount == index + 1U &&
+    return ZrCore_Object_SuperArrayLength(roots) == index + 1U &&
            ZrCore_Object_GetValue(cs->state, roots, &key) != ZR_NULL;
 }
 

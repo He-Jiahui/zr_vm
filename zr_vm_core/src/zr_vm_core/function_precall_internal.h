@@ -5,6 +5,33 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 
+static ZR_FORCE_INLINE void function_set_call_info_frame_storage_slot_count(
+        SZrCallInfo *callInfo,
+        TZrSize frameStorageSlotCount) {
+    TZrUInt32 encodedCount = 0u;
+
+    ZR_ASSERT(callInfo != ZR_NULL);
+
+    if (frameStorageSlotCount < (TZrSize)0x00ffffffu) {
+        encodedCount = (TZrUInt32)frameStorageSlotCount + 1u;
+    }
+    callInfo->frameStorageSlotCountPlusOne[0] =
+            (TZrUInt8)(encodedCount & 0xffu);
+    callInfo->frameStorageSlotCountPlusOne[1] =
+            (TZrUInt8)((encodedCount >> 8u) & 0xffu);
+    callInfo->frameStorageSlotCountPlusOne[2] =
+            (TZrUInt8)((encodedCount >> 16u) & 0xffu);
+}
+
+static ZR_FORCE_INLINE void function_clear_call_info_frame_storage_slot_count(
+        SZrCallInfo *callInfo) {
+    ZR_ASSERT(callInfo != ZR_NULL);
+
+    callInfo->frameStorageSlotCountPlusOne[0] = 0u;
+    callInfo->frameStorageSlotCountPlusOne[1] = 0u;
+    callInfo->frameStorageSlotCountPlusOne[2] = 0u;
+}
+
 static ZR_FORCE_INLINE void function_init_vm_call_info_exact_args_steady_state_inline(
         SZrCallInfo *callInfo,
         SZrCallInfo *previous,
@@ -12,6 +39,7 @@ static ZR_FORCE_INLINE void function_init_vm_call_info_exact_args_steady_state_i
         TZrStackValuePointer topPointer,
         TZrSize resultCount,
         TZrStackValuePointer returnDestination,
+        TZrSize frameStorageSlotCount,
         const TZrInstruction *programCounter) {
     ZR_ASSERT(callInfo != ZR_NULL);
 
@@ -39,10 +67,15 @@ static ZR_FORCE_INLINE void function_init_vm_call_info_exact_args_steady_state_i
     callInfo->argumentSourceFrameBaseReusableOffset = 0;
     callInfo->argumentSourceStartSlot = 0;
     callInfo->hasArgumentSourceFrame = ZR_FALSE;
+    function_set_call_info_frame_storage_slot_count(
+            callInfo, frameStorageSlotCount);
 }
 
 static ZR_FORCE_INLINE TZrBool function_precall_has_inline_frame_parameters(const struct SZrFunction *function) {
     if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrCore_Function_HasDirectValueFrameSlotSummary(function)) {
         return ZR_FALSE;
     }
 
@@ -109,6 +142,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_e
                                                               stackPointer + 1 + stackSize,
                                                               resultCount,
                                                               returnDestination,
+                                                              stackSize,
                                                               function->instructionsList);
     callInfo->metadataFunction = function;
     state->callInfoList = callInfo;

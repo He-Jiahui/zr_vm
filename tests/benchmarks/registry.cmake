@@ -32,6 +32,7 @@ function(zr_vm_register_benchmark_case name)
             PASS_BANNER
             WORKLOAD_TAG
             PROFILE_SCALE
+            MIN_SAMPLE_MS
             CHECKSUM_SMOKE
             CHECKSUM_CORE
             CHECKSUM_PROFILE
@@ -64,6 +65,13 @@ function(zr_vm_register_benchmark_case name)
     if (NOT ARG_PROFILE_SCALE)
         set(ARG_PROFILE_SCALE 1)
     endif ()
+    if (NOT DEFINED ARG_MIN_SAMPLE_MS OR ARG_MIN_SAMPLE_MS STREQUAL "")
+        set(ARG_MIN_SAMPLE_MS 750)
+    endif ()
+    if (NOT ARG_MIN_SAMPLE_MS MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+                "zr_vm_register_benchmark_case(${name}) requires MIN_SAMPLE_MS to be a positive integer")
+    endif ()
     if (NOT ARG_CORE_IMPLEMENTATIONS)
         set(ARG_CORE_IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_CORE_IMPLEMENTATIONS}")
     endif ()
@@ -74,6 +82,7 @@ function(zr_vm_register_benchmark_case name)
     set("ZR_VM_BENCHMARK_PASS_BANNER_${name}" "${ARG_PASS_BANNER}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_WORKLOAD_TAG_${name}" "${ARG_WORKLOAD_TAG}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_PROFILE_SCALE_${name}" "${ARG_PROFILE_SCALE}" PARENT_SCOPE)
+    set("ZR_VM_BENCHMARK_MIN_SAMPLE_MS_${name}" "${ARG_MIN_SAMPLE_MS}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_TIERS_${name}" "${ARG_TIERS}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_IMPLEMENTATIONS_${name}" "${ARG_IMPLEMENTATIONS}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CORE_IMPLEMENTATIONS_${name}" "${ARG_CORE_IMPLEMENTATIONS}" PARENT_SCOPE)

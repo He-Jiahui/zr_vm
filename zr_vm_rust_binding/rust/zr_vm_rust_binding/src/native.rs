@@ -1,4 +1,5 @@
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::marker::PhantomData;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
@@ -6,7 +7,8 @@ use zr_vm_rust_binding_sys as sys;
 
 use crate::{check_status, read_string_with, string_to_cstring, Error, Runtime, Value};
 
-type NativeCallback = dyn Fn(&NativeCallContext) -> Result<Value, Error> + Send + Sync + 'static;
+type NativeCallback =
+    dyn for<'call> Fn(&NativeCallContext<'call>) -> Result<Value, Error> + Send + Sync + 'static;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstantValue {
@@ -289,7 +291,7 @@ pub struct FunctionBuilder {
 impl FunctionBuilder {
     pub fn new<F>(name: &str, min_argument_count: u16, max_argument_count: u16, callback: F) -> Self
     where
-        F: Fn(&NativeCallContext) -> Result<Value, Error> + Send + Sync + 'static,
+        F: for<'call> Fn(&NativeCallContext<'call>) -> Result<Value, Error> + Send + Sync + 'static,
     {
         Self {
             name: name.to_string(),
@@ -355,7 +357,7 @@ impl MetaMethodBuilder {
         callback: F,
     ) -> Self
     where
-        F: Fn(&NativeCallContext) -> Result<Value, Error> + Send + Sync + 'static,
+        F: for<'call> Fn(&NativeCallContext<'call>) -> Result<Value, Error> + Send + Sync + 'static,
     {
         Self {
             meta_type,
@@ -750,11 +752,12 @@ impl Drop for NativeModuleRegistration {
     }
 }
 
-pub struct NativeCallContext {
-    raw: *mut sys::ZrRustBindingNativeCallContext,
+pub struct NativeCallContext<'call> {
+    pub(super) raw: *mut sys::ZrRustBindingNativeCallContext,
+    _call: PhantomData<&'call ()>,
 }
 
-impl NativeCallContext {
+impl NativeCallContext<'_> {
     pub fn module_name(&self) -> Result<String, Error> {
         read_string_with(|buffer, len| unsafe {
             sys::ZrRustBinding_NativeCallContext_GetModuleName(self.raw, buffer, len)
@@ -793,14 +796,6 @@ impl NativeCallContext {
                 max_argument_count,
             )
         })
-    }
-
-    pub fn argument(&self, index: usize) -> Result<Value, Error> {
-        let mut raw = ptr::null_mut();
-        check_status(unsafe {
-            sys::ZrRustBinding_NativeCallContext_GetArgument(self.raw, index, &mut raw)
-        })?;
-        Ok(Value { raw })
     }
 
     pub fn self_value(&self) -> Result<Option<Value>, Error> {
@@ -1859,7 +1854,10 @@ unsafe extern "C" fn native_callback_trampoline(
 
     *out_result = ptr::null_mut();
     let callback = &*(user_data as *const CallbackUserData);
-    let context = NativeCallContext { raw: context };
+    let context = NativeCallContext {
+        raw: context,
+        _call: PhantomData,
+    };
     match catch_unwind(AssertUnwindSafe(|| (callback.callback)(&context))) {
         Ok(Ok(mut value)) => {
             *out_result = value.raw;

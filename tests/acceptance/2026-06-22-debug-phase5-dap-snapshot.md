@@ -20,6 +20,8 @@ The RED contract test was added before implementation and failed 2/2 because `de
 - `tests/debug/test_debug_snapshot_contracts.c`
   - verifies stack snapshot uses `ZrCore_Debug_GetStack` and `ZrCore_Debug_GetInfo`
   - verifies variables snapshot uses `ZrCore_Debug_GetLocal` and `ZrCore_Debug_GetUpvalue`
+  - verifies loaded-module counts use the super-array logical-length API rather
+    than the raw node-map element count, preserving RAW_CANONICAL arrays
   - guards against reintroducing raw `callInfoList`, raw frame slot, or closure value pointer traversal in the main DAP snapshot paths
 - `tests/debug/test_debug_agent.c`
 - `tests/debug/test_debug_agent_protocol.c`
@@ -37,6 +39,7 @@ The RED contract test was added before implementation and failed 2/2 because `de
 | 2026-06-22 00:11:45 +08:00 | WSL/GCC Debug | `debug_snapshot_contracts|debug_agent|debug_agent_protocol|debug_variable_child_shape|debug_metadata|debug_trace|debug_traceback|debug_library` | 8/8 PASS |
 | 2026-06-22 00:11:45 +08:00 | WSL/Clang Debug | same focused gate | 8/8 PASS |
 | 2026-06-22 00:11:45 +08:00 | Windows/MSVC Debug | CLI `hello_world.zrp` smoke | build passed; output `hello world` |
+| 2026-08-30 13:26:00 +08:00 | Windows/MSVC Debug | `debug_snapshot_contracts` executable / CTest | 3/3 PASS; 1/1 PASS |
 
 Known warnings:
 

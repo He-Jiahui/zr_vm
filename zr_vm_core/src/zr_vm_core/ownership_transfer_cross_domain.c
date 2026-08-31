@@ -43,7 +43,7 @@ struct SZrDomainTransferGraph {
     SZrDomainTransportValue root;
     SZrDomainTransportNode *nodes;
     const SZrObject **sourceObjects;
-    const SZrState *sourceState;
+    SZrState *sourceState;
     TZrUInt32 nodeCount;
     TZrUInt32 nodeCapacity;
     TZrUInt64 byteCount;
@@ -189,6 +189,17 @@ static TZrBool domain_transfer_graph_add_object(
     if (object->prototype != ZR_NULL ||
         (object->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT &&
          object->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY)) {
+        domain_transfer_diagnostic_set(
+                diagnostic,
+                ZR_DOMAIN_TRANSFER_STATUS_UNSUPPORTED_VALUE,
+                graph->nodeCount,
+                graph->byteCount,
+                depth);
+        return ZR_FALSE;
+    }
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        !ZrCore_Object_SuperArrayMaterializeGeneric(
+                graph->sourceState, (SZrObject *)object)) {
         domain_transfer_diagnostic_set(
                 diagnostic,
                 ZR_DOMAIN_TRANSFER_STATUS_UNSUPPORTED_VALUE,

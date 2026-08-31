@@ -80,6 +80,9 @@ static TZrBool generic_type_object_array_push(SZrState *state,
         array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return ZR_FALSE;
     }
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
+        return ZR_FALSE;
+    }
     ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
     value.type = ZR_VALUE_TYPE_OBJECT;
     if (!generic_type_object_pin_raw(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array), &arrayPinned) ||
@@ -88,7 +91,8 @@ static TZrBool generic_type_object_array_push(SZrState *state,
         generic_type_object_unpin_raw(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array), arrayPinned);
         return ZR_FALSE;
     }
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)array->nodeMap.elementCount);
+    ZrCore_Value_InitAsInt(
+            state, &key, (TZrInt64)ZrCore_Object_SuperArrayLength(array));
     ZrCore_Object_SetValue(state, array, &key, &value);
     generic_type_object_unpin_value(state->global, &value, objectPinned);
     generic_type_object_unpin_raw(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array), arrayPinned);

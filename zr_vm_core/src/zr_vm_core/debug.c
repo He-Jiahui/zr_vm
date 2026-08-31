@@ -1333,6 +1333,12 @@ ZR_CORE_API void ZrCore_Debug_PrintObject(struct SZrState *state, struct SZrObje
 
     fprintf(output, " {\n");
 
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, object)) {
+        fprintf(output, "  // (array storage unavailable)\n}\n");
+        return;
+    }
+
     // 输出字段值
     if (object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL && object->nodeMap.elementCount > 0) {
         fprintf(output, "  // Fields:\n");

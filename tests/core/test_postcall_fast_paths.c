@@ -51,6 +51,8 @@ static void test_postcall_prepared_single_result_fast_moves_return_to_explicit_d
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer windowBase;
     SZrCallInfo callInfo;
+    SZrFunctionFrameSlotLayout layout = {0};
+    SZrFunction function = {0};
     SZrTypeValue *destinationValue;
     SZrTypeValue *returnValue;
 
@@ -74,6 +76,10 @@ static void test_postcall_prepared_single_result_fast_moves_return_to_explicit_d
                          1u,
                          windowBase + 1,
                          ZR_TRUE);
+    function.frameSlotLayouts = &layout;
+    function.frameSlotLayoutLength = 1u;
+    function.directValueFrameSlotCountPlusOne = 2u;
+    callInfo.metadataFunction = &function;
     state->callInfoList = &callInfo;
     state->stackTop.valuePointer = windowBase + 7;
     state->debugHookSignal = 0u;

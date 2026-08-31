@@ -4,6 +4,7 @@
 
 #include "gc/gc_internal.h"
 #include "gc/gc_domain_internal.h"
+#include "zr_vm_core/profile.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -961,9 +962,7 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
     EZrGarbageCollectIncrementalObjectStatus oldStatus;
 
     oldStatus = object->garbageCollectMark.status;
-    if (oldStatus == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED) {
-        return;
-    }
+    /* RELEASED means the finalizer ran; the sweep still owns storage reclamation. */
 
     if (object->isGcBox) {
         ZrCore_Ownership_NotifyObjectReleased(state, object);
@@ -1009,6 +1008,7 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
     if ((object->type == ZR_RAW_OBJECT_TYPE_NATIVE_DATA ||
          object->type == ZR_RAW_OBJECT_TYPE_OBJECT ||
          object->type == ZR_RAW_OBJECT_TYPE_ARRAY) &&
+        oldStatus != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED &&
         object->scanMarkGcFunction != ZR_NULL) {
         object->scanMarkGcFunction(state, object);
     }
@@ -1029,6 +1029,8 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
             coreObject->superArrayRawIntData = ZR_NULL;
             coreObject->superArrayRawIntLength = 0;
             coreObject->superArrayRawIntCapacity = 0;
+            coreObject->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
+            coreObject->superArrayStorageGeneration++;
             coreObject->superArrayRawIntDirty = ZR_FALSE;
         }
         ZrCore_Object_Deconstruct(state, coreObject);
@@ -1107,6 +1109,8 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
                      (void *)object,
                      (void *)object->next,
                      (void *)global->garbageCollector->gcObjectList);
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_COUNT, 1u);
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_BYTES, (TZrUInt64)size);
     return object;
 }
 
@@ -1151,6 +1155,8 @@ SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
     }
     object->next = global->garbageCollector->gcObjectList;
     global->garbageCollector->gcObjectList = object;
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_COUNT, 1u);
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_BYTES, (TZrUInt64)size);
     return object;
 }
 

@@ -10870,6 +10870,7 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("constant_function_values",
                            compiler_quickening_quicken_constant_function_values(state, function));
     compiler_quickening_rebind_constant_function_values_to_children(function);
+    ZrCore_Function_FinalizeDirectFrameValueSlots(function);
 
     return ZR_TRUE;
 }

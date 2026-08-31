@@ -3,6 +3,8 @@
 //
 
 #include "execution/execution_internal.h"
+#include "execution/execution_frame_value_slot_fast.h"
+#include "execution/execution_inline_frame_copy_fast.h"
 #include "function_call_spread_internal.h"
 #include "function_precall_internal.h"
 #include "object/object_internal.h"
@@ -17,6 +19,53 @@
 #include <stdlib.h>
 
 #define ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET 256u
+
+static inline SZrTypeValue *execution_frame_value_slot_dispatch_fast_inline(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot,
+        SZrProfileRuntime *profileRuntime,
+        TZrBool recordHelpers) {
+    SZrTypeValue *directValue =
+            execution_frame_value_slot_dispatch_try_direct_inline(
+                    function,
+                    frameBase,
+                    stackSlot,
+                    profileRuntime,
+                    recordHelpers);
+
+    return directValue != ZR_NULL
+                   ? directValue
+                   : execution_inline_frame_get_value_slot(
+                             state, function, frameBase, stackSlot);
+}
+
+static inline SZrTypeValue *execution_frame_value_slot_signed_fast_inline(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot,
+        SZrProfileRuntime *profileRuntime,
+        TZrBool recordHelpers) {
+    SZrTypeValue *packedValue =
+            execution_frame_value_slot_dispatch_try_packed_direct_inline(
+                    function,
+                    frameBase,
+                    stackSlot,
+                    profileRuntime,
+                    recordHelpers);
+
+    return packedValue != ZR_NULL
+                   ? packedValue
+                   : execution_frame_value_slot_dispatch_fast_inline(
+                             state,
+                             function,
+                             frameBase,
+                             stackSlot,
+                             profileRuntime,
+                             recordHelpers);
+}
 
 static ZR_FORCE_INLINE SZrRawObject *execution_refresh_forwarded_raw_object(SZrRawObject *rawObject);
 static ZR_FORCE_INLINE SZrFunction *execution_refresh_forwarded_function(SZrFunction *function);
@@ -1308,8 +1357,7 @@ static ZR_FORCE_INLINE TZrBool execution_try_resolve_known_vm_member_exact_singl
     receiverObject = slot->cachedReceiverObject;
     if (receiverObject == ZR_NULL || receiverObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE ||
         receiverObject->prototype != slot->cachedReceiverPrototype ||
-        slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
-        slot->cachedOwnerPrototype->super.memberVersion != slot->cachedOwnerVersion ||
+        !execution_member_dispatch_cached_slot_versions_match(slot) ||
         slot->cachedFunction->closureValueLength != 0u) {
         return ZR_FALSE;
     }
@@ -2615,7 +2663,12 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define A2(INSTRUCTION) INSTRUCTION.instruction.operand.operand2[0]
 
 #define BASE(OFFSET) (base + (OFFSET))
-#define FRAME_VALUE_SLOT(OFFSET) execution_inline_frame_get_value_slot(state, currentFunction, base, (TZrUInt32)(OFFSET))
+#define FRAME_VALUE_SLOT(OFFSET)                                                                   \
+    execution_frame_value_slot_dispatch_fast_inline(                                               \
+            state, currentFunction, base, (TZrUInt32)(OFFSET), profileRuntime, recordHelpers)
+#define SIGNED_FRAME_VALUE_SLOT(OFFSET)                                                             \
+    execution_frame_value_slot_signed_fast_inline(                                                  \
+            state, currentFunction, base, (TZrUInt32)(OFFSET), profileRuntime, recordHelpers)
 #define CONST(OFFSET) (constants + (OFFSET))
 #define CLOSURE(OFFSET) (closure->closureValuesExtend[OFFSET])
 #define ZrCore_Value_Copy(STATE, DESTINATION, SOURCE)                                                                  \
@@ -2718,8 +2771,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrUInt16 destinationOffset__ = E(instruction);                                                                \
         SZrTypeValue *source = FRAME_VALUE_SLOT(A2(instruction));                                                      \
         if (destinationOffset__ != ZR_INSTRUCTION_USE_RET_FLAG &&                                                      \
-            execution_inline_frame_try_copy_stack_slot(                                                                \
-                    state, currentFunction, base, destinationOffset__, A2(instruction))) {                             \
+            execution_inline_frame_try_copy_stack_slot_dispatch(                                                       \
+                    state,                                                                                             \
+                    currentFunction,                                                                                   \
+                    base,                                                                                              \
+                    destinationOffset__,                                                                               \
+                    A2(instruction),                                                                                   \
+                    execution_inline_frame_try_copy_stack_slot)) {                                                     \
         } else if ((destination) == &ret) {                                                                            \
             *destination = *source;                                                                                    \
         } else {                                                                                                       \
@@ -2732,7 +2790,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *destinationValue__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         SZrTypeValue *srcValue = FRAME_VALUE_SLOT(A2(instruction));                                                    \
         execution_clear_registered_owner_mirror(state, destinationBase__, destinationValue__);                        \
-        if (!execution_inline_frame_try_copy_stack_slot(state, currentFunction, base, E(instruction), A2(instruction))) { \
+        if (!execution_inline_frame_try_copy_stack_slot_dispatch(                                                      \
+                    state,                                                                                             \
+                    currentFunction,                                                                                   \
+                    base,                                                                                              \
+                    E(instruction),                                                                                    \
+                    A2(instruction),                                                                                   \
+                    execution_inline_frame_try_copy_stack_slot)) {                                                     \
             execution_assign_stack_value_to_stack_fast_no_profile(state, destinationValue__, srcValue);               \
         }                                                                                                              \
         execution_refresh_registered_owner_mirror(state, destinationBase__, destinationValue__);                      \
@@ -4474,16 +4538,26 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             FAST_PREPARE_DESTINATION_FROM_OFFSET(destinationOffset__);                                                  \
             if (destinationOffset__ != ZR_INSTRUCTION_USE_RET_FLAG &&                                                  \
-                execution_inline_frame_try_copy_stack_slot(                                                            \
-                        state, currentFunction, base, destinationOffset__, A2(instruction))) {                         \
+                execution_inline_frame_try_copy_stack_slot_dispatch(                                                   \
+                        state,                                                                                         \
+                        currentFunction,                                                                               \
+                        base,                                                                                          \
+                        destinationOffset__,                                                                           \
+                        A2(instruction),                                                                               \
+                        execution_inline_frame_try_copy_stack_slot)) {                                                 \
             } else if ((destination) == &ret) {                                                                        \
                 *destination = *source;                                                                                \
             } else {                                                                                                   \
                 execution_copy_value_fast(state, destination, source, profileRuntime, ZR_TRUE);                        \
             }                                                                                                          \
         } else if (ZR_LIKELY(destinationOffset__ != ZR_INSTRUCTION_USE_RET_FLAG)) {                                   \
-            if (!execution_inline_frame_try_copy_stack_slot(                                                           \
-                        state, currentFunction, base, destinationOffset__, A2(instruction))) {                         \
+            if (!execution_inline_frame_try_copy_stack_slot_dispatch(                                                  \
+                        state,                                                                                         \
+                        currentFunction,                                                                               \
+                        base,                                                                                          \
+                        destinationOffset__,                                                                           \
+                        A2(instruction),                                                                               \
+                        execution_inline_frame_try_copy_stack_slot)) {                                                 \
                 execution_copy_stack_value_to_stack_fast_no_profile(                                                   \
                         state, FRAME_VALUE_SLOT(destinationOffset__), source);                                         \
             }                                                                                                          \
@@ -4500,7 +4574,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;                                              \
         }                                                                                                              \
-        if (!execution_inline_frame_try_copy_stack_slot(state, currentFunction, base, E(instruction), A2(instruction))) { \
+        if (!execution_inline_frame_try_copy_stack_slot_dispatch(                                                      \
+                    state,                                                                                             \
+                    currentFunction,                                                                                   \
+                    base,                                                                                              \
+                    E(instruction),                                                                                    \
+                    A2(instruction),                                                                                   \
+                    execution_inline_frame_try_copy_stack_slot)) {                                                     \
             execution_assign_stack_value_to_stack_fast_no_profile(state, stackDestination, srcValue);                 \
         }                                                                                                              \
         execution_refresh_registered_owner_mirror(state, destinationBase__, stackDestination);                        \

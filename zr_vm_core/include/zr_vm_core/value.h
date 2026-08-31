@@ -218,7 +218,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Value_TryCopyFastNoProfile(struct SZrState
 static ZR_FORCE_INLINE void ZrCore_Value_Copy(struct SZrState *state,
                                               SZrTypeValue *destination,
                                               const SZrTypeValue *source) {
-    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_COPY);
+    ZrCore_Profile_RecordValueCopyCurrent(sizeof(SZrTypeValue));
     ZrCore_Value_CopyNoProfile(state, destination, source);
 }
 
@@ -294,7 +294,7 @@ static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(s
 static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValue(struct SZrState *state,
                                                                       SZrTypeValue *destination,
                                                                       SZrTypeValue *source) {
-    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_COPY);
+    ZrCore_Profile_RecordValueCopyCurrent(sizeof(SZrTypeValue));
     ZrCore_Value_AssignMaterializedStackValueNoProfile(state, destination, source);
 }
 

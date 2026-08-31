@@ -1433,6 +1433,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         function->childFunctionLength = (TZrUInt32)source->closuresLength;
     }
 
+    ZrCore_Function_FinalizeDirectFrameValueSlots(function);
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
     ZrCore_Function_ClearChildOwnerLinks(function);
 

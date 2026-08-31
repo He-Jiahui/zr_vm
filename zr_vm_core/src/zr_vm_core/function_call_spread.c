@@ -134,7 +134,7 @@ ZR_CORE_API TZrBool ZrCore_Function_CallSpread_TryGetArgumentCount(
         return ZR_FALSE;
     }
 
-    *outArgumentCount = array->nodeMap.elementCount;
+    *outArgumentCount = ZrCore_Object_SuperArrayLength(array);
     return ZR_TRUE;
 }
 
@@ -166,6 +166,9 @@ ZR_CORE_API TZrBool ZrCore_Function_CallSpread_ExpandPrepared(
         ZrCore_Debug_RunError(
                 state,
                 "FUNCTION_CALL_SPREAD: spread operand must be an array");
+        return ZR_FALSE;
+    }
+    if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, array)) {
         return ZR_FALSE;
     }
     spreadArgumentCount = array->nodeMap.elementCount;

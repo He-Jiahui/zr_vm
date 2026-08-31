@@ -634,6 +634,9 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
             if (obj == ZR_NULL || obj->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
                 return ZrCore_String_CreateFromNative(state, "<invalid array>");
             }
+            if (!ZrCore_Object_SuperArrayMaterializeGeneric(state, obj)) {
+                return ZrCore_String_CreateFromNative(state, "<invalid array>");
+            }
 
             // 尝试从 nodeMap 中获取数组元素（假设数组元素通过 nodeMap 存储）
             // 注意：这可能不是数组的实际存储方式，需要根据实际实现调整

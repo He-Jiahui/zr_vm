@@ -1250,3 +1250,17 @@ target provider generations directly. Relation consumers borrow these values
 with the rest of the query snapshot. They must not infer a generation from a
 module name, URI, declaration text, or the order in which providers were
 loaded.
+
+## Plan 03 Task 3.19 Canonical Relation Identity Matrix
+
+Relation queries compare canonical TypeId and SymbolId values rather than
+display names. Types with the same spelling in different module identities
+remain distinct. Open and closed instances of one generic definition retain
+separate edges even though both project the definition's module identity.
+Overloaded declarations are isolated by SymbolId, and alias chains preserve
+each explicit hop instead of collapsing to the final displayed target.
+
+These are query characterization contracts. The existing implementation
+satisfied them without a production change. Actual multi-project provider
+reloads and binary/native declarations without source ranges still require
+producer-level parity coverage.

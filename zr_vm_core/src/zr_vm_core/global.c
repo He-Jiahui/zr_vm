@@ -520,6 +520,7 @@ static void global_state_init_basic_type_object_prototypes(SZrState *state, SZrG
         
         // 初始化 metaTable
         ZrCore_MetaTable_Construct(&prototype->metaTable);
+        ZrCore_ObjectPrototype_MarkMutation(prototype);
         
         // 将原型存储到全局数组中
         global->basicTypeObjectPrototype[i] = prototype;

@@ -214,6 +214,10 @@ ZR_CORE_API TZrBool ZrCore_TypeLayout_TryGetRefFieldOffset(const SZrTypeLayout *
 
 ZR_CORE_API TZrBool ZrCore_TypeLayout_CanRawCopy(const SZrTypeLayout *layout);
 
+/* Returns true only for validated structures with no GC, ownership, ref,
+ * or nested-layout fields, so a GC visitor may skip their storage entirely. */
+ZR_CORE_API TZrBool ZrCore_TypeLayout_CanSkipGcScan(const SZrTypeLayout *layout);
+
 ZR_CORE_API TZrBool ZrCore_TypeLayout_CopyInline(struct SZrState *state,
                                                  const SZrTypeLayout *layout,
                                                  TZrPtr destination,

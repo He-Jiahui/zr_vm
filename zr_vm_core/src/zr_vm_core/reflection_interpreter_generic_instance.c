@@ -244,6 +244,7 @@ static SZrObject *reflection_interpreter_generic_resolve_parameter_type_object(
     }
     argumentsObject = ZR_CAST_OBJECT(state, fieldValue->value.object);
     if (argumentsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        !ZrCore_Object_SuperArrayMaterializeGeneric(state, argumentsObject) ||
         argumentsObject->nodeMap.elementCount != argumentCount ||
         !reflection_interpreter_generic_pin(
                 state, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsObject), &argumentsPinned)) {

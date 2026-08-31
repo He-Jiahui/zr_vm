@@ -1457,6 +1457,7 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
 }
 
 #include "test_semantic_query_meta_override_cases.h"
+#include "test_semantic_query_relation_canonical_identity_matrix_cases.h"
 #include "test_semantic_query_relation_endpoint_identity_cases.h"
 #include "test_semantic_query_relation_provider_generation_cases.h"
 #include "test_semantic_query_relation_source_identity_cases.h"
@@ -1487,5 +1488,9 @@ int main(void) {
     RUN_TEST(test_relation_queries_sort_line_only_ranges_independent_of_append_order);
     RUN_TEST(test_relation_append_requires_identity_for_both_endpoints);
     RUN_TEST(test_external_relations_preserve_provider_generation_identity);
+    RUN_TEST(test_relation_queries_isolate_same_named_types_by_module_identity);
+    RUN_TEST(test_relation_queries_preserve_open_and_closed_generic_edges);
+    RUN_TEST(test_relation_queries_preserve_each_alias_chain_hop);
+    RUN_TEST(test_relation_queries_isolate_overloads_by_symbol_identity);
     return UNITY_END();
 }

@@ -125,6 +125,13 @@ enum EZrObjectInternalType {
 
 typedef enum EZrObjectInternalType EZrObjectInternalType;
 
+/* The array payload has one canonical owner at a time. */
+typedef enum EZrSuperArrayStorageMode {
+    ZR_SUPER_ARRAY_STORAGE_MODE_NONE = 0,
+    ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL = 1,
+    ZR_SUPER_ARRAY_STORAGE_MODE_NODE_CANONICAL = 2
+} EZrSuperArrayStorageMode;
+
 struct ZR_STRUCT_ALIGN SZrObject {
     SZrRawObject super;
 
@@ -147,6 +154,9 @@ struct ZR_STRUCT_ALIGN SZrObject {
     TZrInt64 *superArrayRawIntData;
     TZrSize superArrayRawIntLength;
     TZrSize superArrayRawIntCapacity;
+    EZrSuperArrayStorageMode superArrayStorageMode;
+    TZrUInt64 superArrayStorageGeneration;
+    /* Deprecated compatibility marker; it no longer denotes two-way sync. */
     TZrBool superArrayRawIntDirty;
     struct SZrFunction *inlineArrayLayoutFunction;
     TZrUInt64 inlineArrayElementLayoutHash;
@@ -200,6 +210,9 @@ struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     EZrObjectPrototypeType type;
     struct SZrMetaTable metaTable;
     struct SZrObjectPrototype *superPrototype;
+    /* Stable identity for PIC keys; generation changes on shape mutation. */
+    TZrUInt64 shapeId;
+    TZrUInt64 shapeGeneration;
     SZrMemberDescriptor *memberDescriptors;
     TZrUInt32 memberDescriptorCount;
     TZrUInt32 memberDescriptorCapacity;
@@ -452,6 +465,10 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayEnsureRawIntCapacity(struct SZrState
                                                                  SZrObject *itemsObject,
                                                                  TZrSize requiredCapacity);
 
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayMaterializeGeneric(struct SZrState *state,
+                                                                  SZrObject *itemsObject);
+ZR_CORE_API TZrSize ZrCore_Object_SuperArrayLength(const SZrObject *itemsObject);
+
 ZR_CORE_API TZrBool ZrCore_Object_IterInit(struct SZrState *state,
                                            SZrTypeValue *iterableValue,
                                            SZrTypeValue *result);
@@ -484,6 +501,8 @@ ZR_CORE_API TZrBool ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(stru
 ZR_CORE_API SZrObjectPrototype *ZrCore_ObjectPrototype_New(struct SZrState *state, SZrString *name, EZrObjectPrototypeType type);
 
 ZR_CORE_API SZrStructPrototype *ZrCore_StructPrototype_New(struct SZrState *state, SZrString *name);
+
+ZR_CORE_API void ZrCore_ObjectPrototype_MarkMutation(SZrObjectPrototype *prototype);
 
 ZR_CORE_API void ZrCore_ObjectPrototype_SetSuper(struct SZrState *state, SZrObjectPrototype *prototype, SZrObjectPrototype *superPrototype);
 

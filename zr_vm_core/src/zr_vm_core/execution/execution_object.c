@@ -574,6 +574,10 @@ TZrBool convert_to_struct(SZrState *state,
         if (sourceObject == ZR_NULL) {
             return ZR_FALSE;
         }
+        if (sourceObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+            !ZrCore_Object_SuperArrayMaterializeGeneric(state, sourceObject)) {
+            return ZR_FALSE;
+        }
         
         // 创建新的 struct 对象（值类型）
         SZrObject *structObject = ZrCore_Object_New(state, targetPrototype);
@@ -584,7 +588,7 @@ TZrBool convert_to_struct(SZrState *state,
         
         // 设置内部类型为 STRUCT
         structObject->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
-        
+
         // Preserve all own fields when crossing a typed struct boundary.
         if (sourceObject->nodeMap.isValid &&
             sourceObject->nodeMap.buckets != ZR_NULL &&
@@ -628,6 +632,10 @@ TZrBool convert_to_class(SZrState *state,
         if (sourceObject == ZR_NULL) {
             return ZR_FALSE;
         }
+        if (sourceObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+            !ZrCore_Object_SuperArrayMaterializeGeneric(state, sourceObject)) {
+            return ZR_FALSE;
+        }
         
         // 创建新的 class 对象（引用类型）
         SZrObject *classObject = ZrCore_Object_New(state, targetPrototype);
@@ -638,7 +646,7 @@ TZrBool convert_to_class(SZrState *state,
         
         // 设置内部类型为 OBJECT（class 是引用类型）
         classObject->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
-        
+
         if (sourceObject->nodeMap.isValid &&
             sourceObject->nodeMap.buckets != ZR_NULL &&
             sourceObject->nodeMap.elementCount > 0) {

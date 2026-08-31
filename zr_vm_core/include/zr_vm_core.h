@@ -39,6 +39,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/string_builder.h"
 #include "zr_vm_core/type.h"
 #include "zr_vm_core/value.h"
 

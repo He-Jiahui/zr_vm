@@ -19,6 +19,10 @@ if (NOT DEFINED GENERATED_DIR OR GENERATED_DIR STREQUAL "")
 endif ()
 
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/benchmark_measurement_contract.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/benchmark_persistent_commands.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/benchmark_task3_suite.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/benchmark_task4_environment.cmake")
 
 file(TO_CMAKE_PATH "${CLI_EXE}" CLI_EXE)
 file(TO_CMAKE_PATH "${PERF_RUNNER_EXE}" PERF_RUNNER_EXE)
@@ -70,25 +74,59 @@ else ()
     set(PERF_DEFAULT_ITERATIONS 1)
 endif ()
 
+set(PERF_SCOPE_MODE "process")
+if (DEFINED ENV{ZR_VM_PERF_SCOPE} AND NOT "$ENV{ZR_VM_PERF_SCOPE}" STREQUAL "")
+    string(TOLOWER "$ENV{ZR_VM_PERF_SCOPE}" PERF_SCOPE_MODE)
+endif ()
+if (NOT PERF_SCOPE_MODE STREQUAL "process" AND NOT PERF_SCOPE_MODE STREQUAL "steady")
+    message(FATAL_ERROR "Unsupported ZR_VM_PERF_SCOPE: ${PERF_SCOPE_MODE}; expected process or steady")
+endif ()
+if (PERF_SCOPE_MODE STREQUAL "steady" AND PERF_REQUESTED_TIER STREQUAL "profile")
+    message(FATAL_ERROR "ZR_VM_PERF_SCOPE=steady cannot be combined with profile/Callgrind mode")
+endif ()
+if (PERF_SCOPE_MODE STREQUAL "steady")
+    if (NOT DEFINED ZR_BENCHMARK_SERVER_EXE OR ZR_BENCHMARK_SERVER_EXE STREQUAL "")
+        message(FATAL_ERROR "ZR_VM_PERF_SCOPE=steady requires the built zr_vm_zr_benchmark_server target.")
+    endif ()
+    file(TO_CMAKE_PATH "${ZR_BENCHMARK_SERVER_EXE}" ZR_BENCHMARK_SERVER_EXE)
+    if (NOT EXISTS "${ZR_BENCHMARK_SERVER_EXE}")
+        message(FATAL_ERROR "ZR_VM_PERF_SCOPE=steady requires an existing ZR benchmark server: ${ZR_BENCHMARK_SERVER_EXE}")
+    endif ()
+endif ()
+
+set(PERF_REQUESTED_WARMUP "")
 if (DEFINED ENV{ZR_VM_PERF_WARMUP} AND NOT "$ENV{ZR_VM_PERF_WARMUP}" STREQUAL "")
-    set(PERF_WARMUP "$ENV{ZR_VM_PERF_WARMUP}")
-else ()
-    set(PERF_WARMUP "${PERF_DEFAULT_WARMUP}")
+    set(PERF_REQUESTED_WARMUP "$ENV{ZR_VM_PERF_WARMUP}")
 endif ()
 
+set(PERF_REQUESTED_ITERATIONS "")
 if (DEFINED ENV{ZR_VM_PERF_ITERATIONS} AND NOT "$ENV{ZR_VM_PERF_ITERATIONS}" STREQUAL "")
-    set(PERF_ITERATIONS "$ENV{ZR_VM_PERF_ITERATIONS}")
-else ()
-    set(PERF_ITERATIONS "${PERF_DEFAULT_ITERATIONS}")
+    set(PERF_REQUESTED_ITERATIONS "$ENV{ZR_VM_PERF_ITERATIONS}")
 endif ()
 
-if (NOT PERF_WARMUP MATCHES "^[0-9]+$" OR PERF_WARMUP LESS 0)
-    message(FATAL_ERROR "Invalid PERF_WARMUP: ${PERF_WARMUP}")
-endif ()
+zr_benchmark_task3_resolve_policy(
+        "${PERF_SCOPE_MODE}"
+        "${PERF_REQUESTED_TIER}"
+        "${PERF_DEFAULT_WARMUP}"
+        "${PERF_DEFAULT_ITERATIONS}"
+        "${PERF_REQUESTED_WARMUP}"
+        "${PERF_REQUESTED_ITERATIONS}"
+        PERF_WARMUP
+        PERF_ITERATIONS
+        PERF_MAX_EXTRA_SAMPLES
+        PERF_PROFILE_MODE
+        PERF_MINIMUM_SAMPLE_MODE)
 
-if (NOT PERF_ITERATIONS MATCHES "^[0-9]+$" OR PERF_ITERATIONS LESS 1)
-    message(FATAL_ERROR "Invalid PERF_ITERATIONS: ${PERF_ITERATIONS}")
+set(PERF_EXECUTION_SEED 0)
+if (DEFINED ENV{ZR_VM_PERF_SEED} AND NOT "$ENV{ZR_VM_PERF_SEED}" STREQUAL "")
+    set(PERF_EXECUTION_SEED "$ENV{ZR_VM_PERF_SEED}")
 endif ()
+zr_benchmark_task3_validate_seed("${PERF_EXECUTION_SEED}" PERF_EXECUTION_SEED_VALID)
+if (NOT PERF_EXECUTION_SEED_VALID)
+    message(FATAL_ERROR
+            "Invalid ZR_VM_PERF_SEED: ${PERF_EXECUTION_SEED}; expected an unsigned 64-bit decimal integer")
+endif ()
+set(PERF_BOOTSTRAP_SEED "${PERF_EXECUTION_SEED}")
 
 # Callgrind: optional instruction-counting mode (no cache / branch simulation), via Valgrind flags.
 # See: valgrind --tool=callgrind --help (simulation options).
@@ -131,8 +169,13 @@ if (PERF_ONLY_CASES_FILTER_ACTIVE)
     message("ZR_VM_PERF_ONLY_CASES filter active: ${PERF_ONLY_CASE_LIST}")
 endif ()
 
-set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite")
-set(PERF_REPORT_DIR "${GENERATED_DIR}/performance")
+if (PERF_SCOPE_MODE STREQUAL "steady")
+    set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite_steady")
+    set(PERF_REPORT_DIR "${GENERATED_DIR}/performance_steady")
+else ()
+    set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite")
+    set(PERF_REPORT_DIR "${GENERATED_DIR}/performance")
+endif ()
 set(PERF_TOOLCHAIN_DIR "${PERF_SUITE_ROOT}/toolchains")
 if (WIN32)
     set(PERF_HOST_EXE_SUFFIX ".exe")
@@ -143,6 +186,18 @@ file(REMOVE_RECURSE "${PERF_SUITE_ROOT}")
 file(MAKE_DIRECTORY "${PERF_SUITE_ROOT}")
 file(MAKE_DIRECTORY "${PERF_REPORT_DIR}")
 file(MAKE_DIRECTORY "${PERF_TOOLCHAIN_DIR}")
+
+set(PERF_TASK4_ENVIRONMENT_REPORT "$ENV{ZR_VM_BENCHMARK_ENVIRONMENT_REPORT}")
+zr_benchmark_task4_resolve_environment(
+        "${CMAKE_SYSTEM_NAME}"
+        "${PERF_TASK4_ENVIRONMENT_REPORT}"
+        PERF_TASK4_ENVIRONMENT_VALID
+        PERF_TASK4_PROVISIONAL_COMPARABLE
+        PERF_TASK4_ENVIRONMENT_JSON
+        PERF_TASK4_ENVIRONMENT_ISSUE)
+if (NOT PERF_TASK4_ENVIRONMENT_VALID AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(WARNING "Task4 environment evidence is unavailable: ${PERF_TASK4_ENVIRONMENT_ISSUE}")
+endif ()
 
 function(perf_normalize_output input_text out_var)
     string(REPLACE "\r\n" "\n" normalized "${input_text}")
@@ -184,20 +239,20 @@ function(perf_json_array_from_list out_var)
     set(${out_var} "${result}" PARENT_SCOPE)
 endfunction()
 
-function(perf_extract_metric text key out_var)
-    string(REGEX MATCH "${key}=([0-9]+(\\.[0-9]+)?)" perf_match "${text}")
-    if (perf_match STREQUAL "")
-        message(FATAL_ERROR "Failed to parse metric '${key}' from performance output:\n${text}")
-    endif ()
-    set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
-endfunction()
-
 function(perf_decimal_to_milli value out_var)
-    string(REGEX MATCH "^([0-9]+)\\.([0-9][0-9][0-9])$" matched "${value}")
+    string(REGEX MATCH "^([0-9]+)(\\.([0-9]+))?$" matched "${value}")
     if (matched STREQUAL "")
-        message(FATAL_ERROR "Expected decimal with three fractional digits, got: ${value}")
+        message(FATAL_ERROR "Expected a non-negative decimal, got: ${value}")
     endif ()
-    math(EXPR milli "${CMAKE_MATCH_1} * 1000 + ${CMAKE_MATCH_2}")
+    set(whole "${CMAKE_MATCH_1}")
+    set(fraction "${CMAKE_MATCH_3}")
+    string(APPEND fraction "0000")
+    string(SUBSTRING "${fraction}" 0 3 fraction_milli)
+    string(SUBSTRING "${fraction}" 3 1 round_digit)
+    math(EXPR milli "${whole} * 1000 + ${fraction_milli}")
+    if (round_digit GREATER_EQUAL 5)
+        math(EXPR milli "${milli} + 1")
+    endif ()
     set(${out_var} "${milli}" PARENT_SCOPE)
 endfunction()
 
@@ -212,6 +267,19 @@ function(perf_format_milli_decimal milli_value out_var)
         set(frac_text "${frac}")
     endif ()
     set(${out_var} "${whole}.${frac_text}" PARENT_SCOPE)
+endfunction()
+
+function(perf_bytes_to_mib byte_value out_var)
+    if (byte_value STREQUAL "")
+        set(${out_var} "-" PARENT_SCOPE)
+        return()
+    endif ()
+    if (NOT byte_value MATCHES "^[0-9]+$")
+        message(FATAL_ERROR "Expected byte count as an unsigned integer, got: ${byte_value}")
+    endif ()
+    math(EXPR mib_milli "((${byte_value} * 1000) + 524288) / 1048576")
+    perf_format_milli_decimal("${mib_milli}" mib_text)
+    set(${out_var} "${mib_text}" PARENT_SCOPE)
 endfunction()
 
 function(perf_relative_to_c value base out_var)
@@ -331,7 +399,7 @@ function(perf_prepare_zr_case case_name out_project_dir_var out_project_file_var
 
     file(WRITE
             "${destination_dir}/src/bench_config.zr"
-            "pub scale(): int {\n"
+            "pub fn scale(): int {\n"
             "    return ${case_scale};\n"
             "}\n")
 
@@ -432,6 +500,74 @@ perf_probe_program("${PERF_JAVA_EXE_CANDIDATE}" PERF_JAVA_EXE -version)
 perf_probe_program("${PERF_JAVAC_EXE_CANDIDATE}" PERF_JAVAC_EXE -version)
 perf_probe_program("${PERF_VALGRIND_EXE_CANDIDATE}" PERF_VALGRIND_EXE --version)
 perf_probe_program("${PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE}" PERF_CALLGRIND_ANNOTATE_EXE --version)
+
+set(PERF_LUA_IS_LUAJIT FALSE)
+if (PERF_LUA_EXE)
+    get_filename_component(perf_lua_executable_name "${PERF_LUA_EXE}" NAME)
+    string(TOLOWER "${perf_lua_executable_name}" perf_lua_executable_name)
+    if (perf_lua_executable_name MATCHES "luajit")
+        set(PERF_LUA_IS_LUAJIT TRUE)
+    endif ()
+endif ()
+
+if (NOT PERF_PYTHON_EXE)
+    message(FATAL_ERROR "The performance suite requires Python for deterministic execution planning.")
+endif ()
+set(PERF_EXECUTION_PLAN_SCRIPT
+        "${CMAKE_CURRENT_LIST_DIR}/../../scripts/benchmark/benchmark_execution_plan.py")
+file(TO_CMAKE_PATH "${PERF_EXECUTION_PLAN_SCRIPT}" PERF_EXECUTION_PLAN_SCRIPT)
+
+set(PERF_CANDIDATE_JOBS_JSON "[")
+set(PERF_CANDIDATE_JOB_NEEDS_COMMA FALSE)
+foreach (candidate_case IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
+    perf_case_matches_tier("${candidate_case}" candidate_case_enabled)
+    if (NOT candidate_case_enabled)
+        continue()
+    endif ()
+    foreach (candidate_implementation IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATIONS_${candidate_case})
+        perf_escape_json_string("${candidate_case}" candidate_case_json)
+        perf_escape_json_string("${candidate_implementation}" candidate_implementation_json)
+        if (PERF_CANDIDATE_JOB_NEEDS_COMMA)
+            string(APPEND PERF_CANDIDATE_JOBS_JSON ",")
+        endif ()
+        string(APPEND PERF_CANDIDATE_JOBS_JSON
+                "{\"case\":\"${candidate_case_json}\",\"implementation\":\"${candidate_implementation_json}\"}")
+        set(PERF_CANDIDATE_JOB_NEEDS_COMMA TRUE)
+    endforeach ()
+endforeach ()
+string(APPEND PERF_CANDIDATE_JOBS_JSON "]")
+
+set(PERF_CASE_FILTER_JSON null)
+if (PERF_ONLY_CASES_FILTER_ACTIVE)
+    perf_json_array_from_list(PERF_CASE_FILTER_JSON ${PERF_ONLY_CASE_LIST})
+endif ()
+set(PERF_IMPLEMENTATION_FILTER_JSON null)
+if (PERF_ONLY_FILTER_ACTIVE)
+    perf_json_array_from_list(PERF_IMPLEMENTATION_FILTER_JSON ${PERF_ONLY_IMPLEMENTATION_LIST})
+endif ()
+set(PERF_EXECUTION_PLAN_PATH "${PERF_REPORT_DIR}/execution_plan.json")
+zr_benchmark_task3_create_execution_plan(
+        "${PERF_PYTHON_EXE}"
+        "${PERF_EXECUTION_PLAN_SCRIPT}"
+        "${PERF_CANDIDATE_JOBS_JSON}"
+        "${PERF_EXECUTION_SEED}"
+        "${PERF_CASE_FILTER_JSON}"
+        "${PERF_IMPLEMENTATION_FILTER_JSON}"
+        "${PERF_EXECUTION_PLAN_PATH}"
+        PERF_EXECUTION_PLAN_JSON)
+string(JSON PERF_EXECUTION_JOB_COUNT GET "${PERF_EXECUTION_PLAN_JSON}" job_count)
+math(EXPR PERF_EXECUTION_LAST_JOB "${PERF_EXECUTION_JOB_COUNT} - 1")
+set(PERF_CASE_ORDER "")
+foreach (plan_index RANGE 0 ${PERF_EXECUTION_LAST_JOB})
+    string(JSON plan_case GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${plan_index} case)
+    string(JSON plan_implementation GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${plan_index} implementation)
+    list(FIND PERF_CASE_ORDER "${plan_case}" plan_case_index)
+    if (plan_case_index LESS 0)
+        list(APPEND PERF_CASE_ORDER "${plan_case}")
+    endif ()
+    list(APPEND "PERF_PLANNED_IMPLEMENTATIONS_${plan_case}" "${plan_implementation}")
+endforeach ()
+list(LENGTH PERF_CASE_ORDER PERF_CASE_COUNT)
 if (NOT PERF_VALGRIND_EXE AND PERF_VALGRIND_EXE_CANDIDATE)
     set(PERF_VALGRIND_EXE "${PERF_VALGRIND_EXE_CANDIDATE}")
 endif ()
@@ -523,7 +659,6 @@ message("Measured iterations: ${PERF_ITERATIONS}")
 message("Benchmarks root: ${BENCHMARKS_DIR}")
 message("==========")
 
-set(PERF_CASE_COUNT 0)
 set(PERF_MARKDOWN_ROWS "")
 set(PERF_JSON_CASES "")
 set(PERF_SKIP_NOTES "")
@@ -540,34 +675,18 @@ set(PERF_GC_STRESS_CASE "gc_fragment_stress")
 set(PERF_GC_OVERHEAD_MARKDOWN_ROWS "")
 set(PERF_GC_OVERHEAD_JSON_ROWS "")
 
-foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
-    if (PERF_ONLY_CASES_FILTER_ACTIVE)
-        list(FIND PERF_ONLY_CASE_LIST "${case_name}" PERF_ONLY_CASE_IX)
-        if (PERF_ONLY_CASE_IX LESS 0)
-            continue()
-        endif ()
+foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
+    string(JSON case_name GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${PERF_EXECUTION_INDEX} case)
+    string(JSON implementation_id GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${PERF_EXECUTION_INDEX} implementation)
+    set(case_project_dir_var "PERF_CASE_PROJECT_DIR_${case_name}")
+    set(case_project_file_var "PERF_CASE_PROJECT_FILE_${case_name}")
+    if (NOT DEFINED ${case_project_dir_var})
+        perf_prepare_zr_case("${case_name}" prepared_project_dir prepared_project_file)
+        set("${case_project_dir_var}" "${prepared_project_dir}")
+        set("${case_project_file_var}" "${prepared_project_file}")
     endif ()
-
-    perf_case_matches_tier("${case_name}" case_enabled)
-    if (NOT case_enabled)
-        continue()
-    endif ()
-
-    if (PERF_ONLY_FILTER_ACTIVE)
-        set(case_has_filtered_impl FALSE)
-        foreach (impl IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATIONS_${case_name})
-            list(FIND PERF_ONLY_IMPLEMENTATION_LIST "${impl}" PERF_ONLY_CASE_IX)
-            if (PERF_ONLY_CASE_IX GREATER_EQUAL 0)
-                set(case_has_filtered_impl TRUE)
-            endif ()
-        endforeach ()
-        if (NOT case_has_filtered_impl)
-            continue()
-        endif ()
-    endif ()
-
-    math(EXPR PERF_CASE_COUNT "${PERF_CASE_COUNT} + 1")
-    perf_prepare_zr_case("${case_name}" zr_project_dir zr_project_file)
+    set(zr_project_dir "${${case_project_dir_var}}")
+    set(zr_project_file "${${case_project_file_var}}")
     perf_case_scale("${case_name}" case_scale)
 
     set(case_description "${ZR_VM_BENCHMARK_DESCRIPTION_${case_name}}")
@@ -577,28 +696,19 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
         set(case_checksum "${ZR_VM_BENCHMARK_CHECKSUM_${case_name}_core}")
     endif ()
     set(case_expected_output "${case_banner}\n${case_checksum}")
-    set(case_impl_jsons "")
-    set(case_c_baseline_mean "")
-    set(case_interp_mean "")
-    set(case_python_mean "")
-    set(case_node_mean "")
-    set(case_qjs_mean "")
-    set(case_lua_mean "")
-    set(case_rust_mean "")
-    set(case_dotnet_mean "")
-    set(case_java_mean "")
+    if (PERF_PROFILE_MODE)
+        set(case_min_sample_ms 0)
+    else ()
+        set(case_min_sample_ms "${ZR_VM_BENCHMARK_MIN_SAMPLE_MS_${case_name}}")
+        if (NOT case_min_sample_ms MATCHES "^[1-9][0-9]*$")
+            message(FATAL_ERROR "Benchmark case '${case_name}' has invalid MIN_SAMPLE_MS: ${case_min_sample_ms}")
+        endif ()
+    endif ()
     set(case_profile_report_path "")
     set(case_interp_command_list "")
     set(case_interp_working_directory "")
     set(case_interp_ready FALSE)
 
-    foreach (implementation_id IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATIONS_${case_name})
-        if (PERF_ONLY_FILTER_ACTIVE)
-            list(FIND PERF_ONLY_IMPLEMENTATION_LIST "${implementation_id}" PERF_ONLY_IMPL_IX)
-            if (PERF_ONLY_IMPL_IX LESS 0)
-                continue()
-            endif ()
-        endif ()
         set(implementation_name "")
         set(language "")
         set(mode "")
@@ -610,14 +720,45 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
         set(prepare_command "")
         set(should_measure FALSE)
         set(json_object "")
+        set(perf_json_text "")
         set(relative_to_c "null")
         set(mean_wall_ms "")
         set(median_wall_ms "")
         set(min_wall_ms "")
         set(max_wall_ms "")
         set(stddev_wall_ms "")
+        set(mad_wall_ms "")
+        set(coefficient_of_variation "")
+        set(bootstrap_low "")
+        set(bootstrap_high "")
+        set(sample_count "")
+        set(extra_sample_count "")
+        set(repetitions "")
+        set(stability "")
+        set(comparable FALSE)
+        set(gate_eligible FALSE)
+        set(calibration_enabled FALSE)
+        set(calibration_aggregate_wall_ms "")
         set(mean_peak_mib "")
         set(max_peak_mib "")
+
+        zr_benchmark_measurement_contract_get(
+                "${implementation_id}"
+                measurement_scope
+                prepare_scope
+                runtime_reused
+                compiler_reused
+                jit_state_reused)
+        zr_benchmark_measurement_contract_validate(
+                "${measurement_scope}"
+                "${prepare_scope}"
+                "${runtime_reused}"
+                "${compiler_reused}"
+                "${jit_state_reused}"
+                measurement_contract_valid)
+        if (NOT measurement_contract_valid)
+            message(FATAL_ERROR "Invalid benchmark measurement contract for implementation '${implementation_id}'.")
+        endif ()
 
         if (implementation_id STREQUAL "c")
             set(implementation_name "C")
@@ -850,7 +991,71 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             endif ()
 
             if (NOT status STREQUAL "FAIL" AND NOT status STREQUAL "SKIP")
+                set(measurement_command_list ${command_list})
+                set(measurement_scope_for_runner "${measurement_scope}")
+                set(prepare_scope_for_runner "${prepare_scope}")
+                set(runtime_reused_for_runner "${runtime_reused}")
+                set(compiler_reused_for_runner "${compiler_reused}")
+                set(jit_state_reused_for_runner "${jit_state_reused}")
+                set(persistent_runner_args "")
+                if (PERF_SCOPE_MODE STREQUAL "steady")
+                    zr_benchmark_persistent_command_get(
+                            "${implementation_id}"
+                            "${case_name}"
+                            "${PERF_REQUESTED_TIER}"
+                            persistent_supported
+                            measurement_command_list
+                            persistent_prepare_scope
+                            persistent_runtime_reused
+                            persistent_compiler_reused
+                            persistent_jit_state_reused)
+                    if (persistent_supported)
+                        set(measurement_scope_for_runner "persistent_runtime")
+                        set(prepare_scope_for_runner "${persistent_prepare_scope}")
+                        set(runtime_reused_for_runner "${persistent_runtime_reused}")
+                        set(compiler_reused_for_runner "${persistent_compiler_reused}")
+                        set(jit_state_reused_for_runner "${persistent_jit_state_reused}")
+                        if (implementation_id STREQUAL "dotnet")
+                            set(dotnet_calibration_enabled FALSE)
+                            if (case_min_sample_ms GREATER 0)
+                                set(dotnet_calibration_enabled TRUE)
+                            endif ()
+                            zr_benchmark_task3_dotnet_jit_state_reused(
+                                    TRUE
+                                    "${PERF_WARMUP}"
+                                    "${dotnet_calibration_enabled}"
+                                    jit_state_reused_for_runner)
+                        endif ()
+                        set(persistent_runner_args
+                                --persistent
+                                --checksum-contract "benchmark-checksum-v1:${case_name}:${PERF_REQUESTED_TIER}"
+                                --expected-checksum "${case_checksum}"
+                                --ready-timeout-ms 5000
+                                --request-timeout-ms 60000
+                                --stop-timeout-ms 5000)
+                    else ()
+                        set(status "SKIP")
+                        set(note "steady scope unavailable for this implementation")
+                        perf_append_note("skip" "${case_name}" "${implementation_name}" "${note}")
+                    endif ()
+                endif ()
+                set(measurement_scope "${measurement_scope_for_runner}")
+                set(prepare_scope "${prepare_scope_for_runner}")
+                set(runtime_reused "${runtime_reused_for_runner}")
+                set(compiler_reused "${compiler_reused_for_runner}")
+                set(jit_state_reused "${jit_state_reused_for_runner}")
+            endif ()
+
+            if (NOT status STREQUAL "FAIL" AND NOT status STREQUAL "SKIP")
                 set(perf_json_path "${PERF_REPORT_DIR}/${case_name}__${implementation_id}.json")
+                set(measurement_policy_runner_args
+                        --max-extra-samples "${PERF_MAX_EXTRA_SAMPLES}"
+                        --bootstrap-seed "${PERF_BOOTSTRAP_SEED}")
+                if (PERF_PROFILE_MODE)
+                    list(APPEND measurement_policy_runner_args --profile)
+                else ()
+                    list(APPEND measurement_policy_runner_args --min-sample-ms "${case_min_sample_ms}")
+                endif ()
                 if (profile_report_path STREQUAL "")
                     execute_process(
                             COMMAND
@@ -860,8 +1065,15 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
                             "--warmup" "${PERF_WARMUP}"
                             "--json-out" "${perf_json_path}"
                             "--working-directory" "${working_directory}"
+                            "--measurement-scope" "${measurement_scope_for_runner}"
+                            "--prepare-scope" "${prepare_scope_for_runner}"
+                            "--runtime-reused" "${runtime_reused_for_runner}"
+                            "--compiler-reused" "${compiler_reused_for_runner}"
+                            "--jit-state-reused" "${jit_state_reused_for_runner}"
+                            ${measurement_policy_runner_args}
+                            ${persistent_runner_args}
                             "--"
-                            ${command_list}
+                            ${measurement_command_list}
                             RESULT_VARIABLE perf_runner_result
                             OUTPUT_VARIABLE perf_runner_stdout
                             ERROR_VARIABLE perf_runner_stderr
@@ -882,8 +1094,15 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
                             "--warmup" "${PERF_WARMUP}"
                             "--json-out" "${perf_json_path}"
                             "--working-directory" "${working_directory}"
+                            "--measurement-scope" "${measurement_scope_for_runner}"
+                            "--prepare-scope" "${prepare_scope_for_runner}"
+                            "--runtime-reused" "${runtime_reused_for_runner}"
+                            "--compiler-reused" "${compiler_reused_for_runner}"
+                            "--jit-state-reused" "${jit_state_reused_for_runner}"
+                            ${measurement_policy_runner_args}
+                            ${persistent_runner_args}
                             "--"
-                            ${command_list}
+                            ${measurement_command_list}
                             RESULT_VARIABLE perf_runner_result
                             OUTPUT_VARIABLE perf_runner_stdout
                             ERROR_VARIABLE perf_runner_stderr
@@ -908,33 +1127,36 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
                         set(PERF_HARD_FAILURE TRUE)
                     endif ()
                 else ()
+                    if (NOT EXISTS "${perf_json_path}")
+                        message(FATAL_ERROR
+                                "Performance runner succeeded without writing its JSON report: ${perf_json_path}")
+                    endif ()
                     set(status "PASS")
-                    perf_extract_metric("${perf_runner_output}" "mean_wall_ms" mean_wall_ms)
-                    perf_extract_metric("${perf_runner_output}" "median_wall_ms" median_wall_ms)
-                    perf_extract_metric("${perf_runner_output}" "min_wall_ms" min_wall_ms)
-                    perf_extract_metric("${perf_runner_output}" "max_wall_ms" max_wall_ms)
-                    perf_extract_metric("${perf_runner_output}" "stddev_wall_ms" stddev_wall_ms)
-                    perf_extract_metric("${perf_runner_output}" "mean_peak_mib" mean_peak_mib)
-                    perf_extract_metric("${perf_runner_output}" "max_peak_mib" max_peak_mib)
-                    if (implementation_id STREQUAL "c")
-                        set(case_c_baseline_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "zr_interp")
-                        set(case_interp_mean "${mean_wall_ms}")
-                        set(case_profile_report_path "${profile_report_path}")
-                    elseif (implementation_id STREQUAL "python")
-                        set(case_python_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "node")
-                        set(case_node_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "qjs")
-                        set(case_qjs_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "lua")
-                        set(case_lua_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "rust")
-                        set(case_rust_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "dotnet")
-                        set(case_dotnet_mean "${mean_wall_ms}")
-                    elseif (implementation_id STREQUAL "java")
-                        set(case_java_mean "${mean_wall_ms}")
+                    file(READ "${perf_json_path}" perf_json_text)
+                    zr_benchmark_task3_parse_runner_report("${perf_json_text}" run)
+                    set(mean_wall_ms "${run_mean_wall_ms}")
+                    set(median_wall_ms "${run_median_wall_ms}")
+                    set(min_wall_ms "${run_min_wall_ms}")
+                    set(max_wall_ms "${run_max_wall_ms}")
+                    set(stddev_wall_ms "${run_stddev_wall_ms}")
+                    set(mad_wall_ms "${run_mad_wall_ms}")
+                    set(coefficient_of_variation "${run_coefficient_of_variation}")
+                    set(bootstrap_low "${run_bootstrap_low}")
+                    set(bootstrap_high "${run_bootstrap_high}")
+                    set(sample_count "${run_sample_count}")
+                    set(extra_sample_count "${run_extra_sample_count}")
+                    set(repetitions "${run_repetitions}")
+                    set(stability "${run_stability}")
+                    set(comparable "${run_comparable}")
+                    set(gate_eligible "${run_gate_eligible}")
+                    set(calibration_enabled "${run_calibration_enabled}")
+                    set(calibration_aggregate_wall_ms "${run_calibration_aggregate_wall_ms}")
+                    if (measurement_scope STREQUAL "persistent_runtime")
+                        perf_bytes_to_mib("${run_persistent_peak_working_set_bytes}" max_peak_mib)
+                        set(mean_peak_mib "-")
+                    else ()
+                        perf_bytes_to_mib("${run_mean_peak_working_set_bytes}" mean_peak_mib)
+                        perf_bytes_to_mib("${run_max_peak_working_set_bytes}" max_peak_mib)
                     endif ()
                 endif ()
             endif ()
@@ -946,84 +1168,28 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             perf_append_note("skip" "${case_name}" "${implementation_name}" "${note}")
         endif ()
 
-        if (status STREQUAL "PASS")
-            if (implementation_id STREQUAL "c")
-                set(relative_to_c "1.000")
-            else ()
-                perf_relative_to_c("${mean_wall_ms}" "${case_c_baseline_mean}" relative_to_c)
-            endif ()
-        endif ()
-
-        if (status STREQUAL "PASS")
-            set(markdown_mean_wall "${mean_wall_ms}")
-            set(markdown_median_wall "${median_wall_ms}")
-            set(markdown_min_wall "${min_wall_ms}")
-            set(markdown_max_wall "${max_wall_ms}")
-            set(markdown_stddev_wall "${stddev_wall_ms}")
-            set(markdown_mean_peak "${mean_peak_mib}")
-            set(markdown_max_peak "${max_peak_mib}")
-            if (relative_to_c STREQUAL "null")
-                set(markdown_relative "-")
-            else ()
-                set(markdown_relative "${relative_to_c}")
-            endif ()
-
-            file(READ "${perf_json_path}" perf_json_text)
-            string(STRIP "${perf_json_text}" perf_json_text)
-            string(REGEX REPLACE "}[ \t\r\n]*$" "" perf_json_text "${perf_json_text}")
-            perf_escape_json_string("${language}" json_language)
-            perf_escape_json_string("${mode}" json_mode)
-            string(APPEND perf_json_text
-                    ",\n  \"language\": \"${json_language}\""
-                    ",\n  \"mode\": \"${json_mode}\""
-                    ",\n  \"status\": \"PASS\""
-                    ",\n  \"relative_to_c\": ${relative_to_c}\n}")
-            set(json_object "${perf_json_text}")
-        else ()
-            set(markdown_mean_wall "-")
-            set(markdown_median_wall "-")
-            set(markdown_min_wall "-")
-            set(markdown_max_wall "-")
-            set(markdown_stddev_wall "-")
-            set(markdown_mean_peak "-")
-            set(markdown_max_peak "-")
-            set(markdown_relative "-")
-            perf_escape_json_string("${implementation_name}" json_impl_name)
-            perf_escape_json_string("${language}" json_language)
-            perf_escape_json_string("${mode}" json_mode)
-            perf_escape_json_string("${working_directory}" json_workdir)
-            perf_escape_json_string("${note}" json_note)
-            perf_json_array_from_list(json_command ${command_list})
-            string(CONCAT json_object
-                    "{\n"
-                    "  \"name\": \"${json_impl_name}\",\n"
-                    "  \"language\": \"${json_language}\",\n"
-                    "  \"mode\": \"${json_mode}\",\n"
-                    "  \"status\": \"${status}\",\n"
-                    "  \"command\": ${json_command},\n"
-                    "  \"working_directory\": \"${json_workdir}\",\n"
-                    "  \"runs\": [],\n"
-                    "  \"summary\": null,\n"
-                    "  \"relative_to_c\": null,\n"
-                    "  \"note\": \"${json_note}\"\n"
-                    "}")
-        endif ()
-
-        string(APPEND PERF_MARKDOWN_ROWS
-                "| ${case_name} | ${implementation_name} | ${language} | ${status} | ${markdown_mean_wall} | ${markdown_median_wall} | ${markdown_min_wall} | ${markdown_max_wall} | ${markdown_stddev_wall} | ${markdown_mean_peak} | ${markdown_max_peak} | ${markdown_relative} |\n")
-
-        if (case_impl_jsons STREQUAL "")
-            set(case_impl_jsons "${json_object}")
-        else ()
-            set(case_impl_jsons "${case_impl_jsons},\n${json_object}")
-        endif ()
+        set(result_prefix "PERF_RESULT_${case_name}_${implementation_id}")
+        foreach (result_field IN ITEMS
+                implementation_name language mode status note working_directory
+                measurement_scope prepare_scope runtime_reused compiler_reused jit_state_reused
+                mean_wall_ms median_wall_ms min_wall_ms max_wall_ms stddev_wall_ms mad_wall_ms
+                coefficient_of_variation bootstrap_low bootstrap_high sample_count extra_sample_count
+                repetitions stability comparable gate_eligible calibration_enabled calibration_aggregate_wall_ms
+                mean_peak_mib max_peak_mib profile_report_path perf_json_text)
+            set("${result_prefix}_${result_field}" "${${result_field}}")
+        endforeach ()
+        set("${result_prefix}_command_list" "${command_list}")
+        set("${result_prefix}_interp_command_list" "${case_interp_command_list}")
+        set("${result_prefix}_interp_working_directory" "${case_interp_working_directory}")
+        set("${result_prefix}_interp_ready" "${case_interp_ready}")
 
         if (case_name STREQUAL PERF_GC_BASELINE_CASE OR case_name STREQUAL PERF_GC_STRESS_CASE)
             set("PERF_GC_IMPLEMENTATION_NAME_${implementation_id}" "${implementation_name}")
             set("PERF_GC_LANGUAGE_${implementation_id}" "${language}")
             set("PERF_GC_STATUS_${case_name}_${implementation_id}" "${status}")
             set("PERF_GC_NOTE_${case_name}_${implementation_id}" "${note}")
-            if (status STREQUAL "PASS")
+            if (status STREQUAL "PASS" AND comparable AND gate_eligible AND
+                stability STREQUAL "STABLE")
                 set("PERF_GC_MEAN_WALL_${case_name}_${implementation_id}" "${mean_wall_ms}")
                 set("PERF_GC_MEAN_PEAK_${case_name}_${implementation_id}" "${mean_peak_mib}")
             else ()
@@ -1033,240 +1199,7 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
         endif ()
     endforeach ()
 
-    perf_escape_json_string("${case_name}" json_case_name)
-    perf_escape_json_string("${case_description}" json_case_description)
-    perf_escape_json_string("${case_banner}" json_case_banner)
-    perf_escape_json_string("${ZR_VM_BENCHMARK_WORKLOAD_TAG_${case_name}}" json_case_workload_tag)
-
-    if (NOT case_interp_mean STREQUAL "")
-        perf_relative_to_c("${case_interp_mean}" "${case_c_baseline_mean}" ratio_to_c)
-        perf_relative_to_c("${case_interp_mean}" "${case_lua_mean}" ratio_to_lua)
-        perf_relative_to_c("${case_interp_mean}" "${case_qjs_mean}" ratio_to_qjs)
-        perf_relative_to_c("${case_interp_mean}" "${case_node_mean}" ratio_to_node)
-        perf_relative_to_c("${case_interp_mean}" "${case_python_mean}" ratio_to_python)
-        perf_relative_to_c("${case_interp_mean}" "${case_dotnet_mean}" ratio_to_dotnet)
-        perf_relative_to_c("${case_interp_mean}" "${case_java_mean}" ratio_to_java)
-        perf_relative_to_c("${case_interp_mean}" "${case_rust_mean}" ratio_to_rust)
-        foreach (ratio_var IN ITEMS ratio_to_c ratio_to_lua ratio_to_qjs ratio_to_node ratio_to_python ratio_to_dotnet ratio_to_java ratio_to_rust)
-            if (${ratio_var} STREQUAL "null")
-                set(${ratio_var} "-")
-            endif ()
-        endforeach ()
-
-        string(APPEND PERF_COMPARISON_MARKDOWN_ROWS
-                "| ${case_name} | ${ZR_VM_BENCHMARK_WORKLOAD_TAG_${case_name}} | ${ratio_to_c} | ${ratio_to_lua} | ${ratio_to_qjs} | ${ratio_to_node} | ${ratio_to_python} | ${ratio_to_dotnet} | ${ratio_to_java} | ${ratio_to_rust} |\n")
-        string(CONCAT comparison_case_json
-                "    {\n"
-                "      \"name\": \"${json_case_name}\",\n"
-                "      \"workload_tag\": \"${json_case_workload_tag}\",\n"
-                "      \"relative_to\": {\n"
-                "        \"c\": \"${ratio_to_c}\",\n"
-                "        \"lua\": \"${ratio_to_lua}\",\n"
-                "        \"qjs\": \"${ratio_to_qjs}\",\n"
-                "        \"node\": \"${ratio_to_node}\",\n"
-                "        \"python\": \"${ratio_to_python}\",\n"
-                "        \"dotnet\": \"${ratio_to_dotnet}\",\n"
-                "        \"java\": \"${ratio_to_java}\",\n"
-                "        \"rust\": \"${ratio_to_rust}\"\n"
-                "      }\n"
-                "    }")
-        if (PERF_COMPARISON_JSON_CASES STREQUAL "")
-            set(PERF_COMPARISON_JSON_CASES "${comparison_case_json}")
-        else ()
-            set(PERF_COMPARISON_JSON_CASES "${PERF_COMPARISON_JSON_CASES},\n${comparison_case_json}")
-        endif ()
-    endif ()
-
-    perf_case_is_hotspot_representative("${case_name}" case_hotspot_representative)
-
-    if (NOT case_profile_report_path STREQUAL "" AND EXISTS "${case_profile_report_path}")
-        string(APPEND PERF_INSTRUCTION_MARKDOWN_ROWS
-                "| ${case_name} | available | `${case_profile_report_path}` |\n")
-        file(READ "${case_profile_report_path}" case_profile_json_text)
-        string(STRIP "${case_profile_json_text}" case_profile_json_text)
-        if (PERF_INSTRUCTION_JSON_CASES STREQUAL "")
-            set(PERF_INSTRUCTION_JSON_CASES "${case_profile_json_text}")
-        else ()
-            set(PERF_INSTRUCTION_JSON_CASES "${PERF_INSTRUCTION_JSON_CASES},\n${case_profile_json_text}")
-        endif ()
-        if (case_hotspot_representative AND
-                PERF_VALGRIND_EXE AND
-                PERF_CALLGRIND_ANNOTATE_EXE AND
-                PERF_PYTHON_EXE AND
-                case_interp_ready AND
-                NOT case_interp_working_directory STREQUAL "")
-            set(case_callgrind_out_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.callgrind.out")
-            set(case_callgrind_annotate_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.callgrind.annotate.txt")
-            set(case_hotspot_summary_json_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.hotspot.json")
-            set(case_hotspot_summary_md_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.hotspot.md")
-            set(_perf_callgrind_cmd
-                    "${PERF_VALGRIND_EXE}"
-                    "--tool=callgrind"
-                    "--trace-children=no"
-                    "--callgrind-out-file=${case_callgrind_out_path}")
-            if (PERF_CALLGRIND_COUNTING_MODE)
-                list(APPEND _perf_callgrind_cmd "--cache-sim=no" "--branch-sim=no")
-            endif ()
-            list(APPEND _perf_callgrind_cmd ${case_interp_command_list})
-            execute_process(
-                    COMMAND ${_perf_callgrind_cmd}
-                    WORKING_DIRECTORY "${case_interp_working_directory}"
-                    RESULT_VARIABLE case_callgrind_result
-                    OUTPUT_VARIABLE case_callgrind_stdout
-                    ERROR_VARIABLE case_callgrind_stderr
-                    TIMEOUT 3600)
-            if (NOT case_callgrind_result EQUAL 0 OR NOT EXISTS "${case_callgrind_out_path}")
-                string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
-                        "### ${case_name}\n"
-                        "- Instruction profile: `${case_profile_report_path}`\n"
-                        "- Callgrind: failed during representative workload capture\n\n")
-                string(CONCAT hotspot_case_json
-                        "    {\n"
-                        "      \"name\": \"${json_case_name}\",\n"
-                        "      \"status\": \"callgrind_failed\",\n"
-                        "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
-                        "      \"callgrind\": null\n"
-                        "    }")
-                perf_append_note("failure"
-                        "${case_name}"
-                        "ZR interp hotspot"
-                        "callgrind capture failed.\n${case_callgrind_stdout}${case_callgrind_stderr}")
-                set(PERF_HARD_FAILURE TRUE)
-            else ()
-                execute_process(
-                        COMMAND
-                        "${PERF_CALLGRIND_ANNOTATE_EXE}"
-                        "--auto=no"
-                        "--threshold=99"
-                        "${case_callgrind_out_path}"
-                        RESULT_VARIABLE case_annotate_result
-                        OUTPUT_VARIABLE case_annotate_stdout
-                        ERROR_VARIABLE case_annotate_stderr
-                        TIMEOUT 600)
-                if (NOT case_annotate_result EQUAL 0)
-                    string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
-                            "### ${case_name}\n"
-                            "- Instruction profile: `${case_profile_report_path}`\n"
-                            "- Callgrind: annotate step failed\n\n")
-                    string(CONCAT hotspot_case_json
-                            "    {\n"
-                            "      \"name\": \"${json_case_name}\",\n"
-                            "      \"status\": \"callgrind_annotate_failed\",\n"
-                            "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
-                            "      \"callgrind\": null\n"
-                            "    }")
-                    perf_append_note("failure"
-                            "${case_name}"
-                            "ZR interp hotspot"
-                            "callgrind annotate failed.\n${case_annotate_stdout}${case_annotate_stderr}")
-                    set(PERF_HARD_FAILURE TRUE)
-                else ()
-                    file(WRITE "${case_callgrind_annotate_path}" "${case_annotate_stdout}${case_annotate_stderr}")
-                    execute_process(
-                            COMMAND
-                            "${PERF_PYTHON_EXE}"
-                            "${PERF_HOTSPOT_SUMMARY_SCRIPT}"
-                            "--case" "${case_name}"
-                            "--instruction-profile" "${case_profile_report_path}"
-                            "--callgrind-out" "${case_callgrind_out_path}"
-                            "--callgrind-annotate" "${case_callgrind_annotate_path}"
-                            "--json-out" "${case_hotspot_summary_json_path}"
-                            "--markdown-out" "${case_hotspot_summary_md_path}"
-                            RESULT_VARIABLE case_hotspot_summary_result
-                            OUTPUT_VARIABLE case_hotspot_summary_stdout
-                            ERROR_VARIABLE case_hotspot_summary_stderr
-                            TIMEOUT 120)
-                    if (NOT case_hotspot_summary_result EQUAL 0 OR
-                            NOT EXISTS "${case_hotspot_summary_json_path}" OR
-                            NOT EXISTS "${case_hotspot_summary_md_path}")
-                        string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
-                                "### ${case_name}\n"
-                                "- Instruction profile: `${case_profile_report_path}`\n"
-                                "- Callgrind: summary generation failed\n\n")
-                        string(CONCAT hotspot_case_json
-                                "    {\n"
-                                "      \"name\": \"${json_case_name}\",\n"
-                                "      \"status\": \"hotspot_summary_failed\",\n"
-                                "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
-                                "      \"callgrind\": null\n"
-                                "    }")
-                        perf_append_note("failure"
-                                "${case_name}"
-                                "ZR interp hotspot"
-                                "hotspot summary generation failed.\n${case_hotspot_summary_stdout}${case_hotspot_summary_stderr}")
-                        set(PERF_HARD_FAILURE TRUE)
-                    else ()
-                        file(READ "${case_hotspot_summary_md_path}" case_hotspot_markdown_text)
-                        file(READ "${case_hotspot_summary_json_path}" hotspot_case_json)
-                        string(STRIP "${case_hotspot_markdown_text}" case_hotspot_markdown_text)
-                        string(APPEND PERF_HOTSPOT_MARKDOWN_CASES "${case_hotspot_markdown_text}\n\n")
-                    endif ()
-                endif ()
-            endif ()
-        elseif (case_hotspot_representative)
-            string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
-                    "### ${case_name}\n"
-                    "- Instruction profile: `${case_profile_report_path}`\n"
-                    "- Callgrind: unavailable (missing valgrind, callgrind_annotate, python, or interp command)\n\n")
-            string(CONCAT hotspot_case_json
-                    "    {\n"
-                    "      \"name\": \"${json_case_name}\",\n"
-                    "      \"status\": \"instruction_profile_available\",\n"
-                    "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
-                    "      \"callgrind\": null\n"
-                    "    }")
-        else ()
-            string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
-                    "### ${case_name}\n"
-                    "- Instruction profile: `${case_profile_report_path}`\n"
-                    "- Callgrind: not captured in this tier (representative profile cases only)\n\n")
-            string(CONCAT hotspot_case_json
-                    "    {\n"
-                    "      \"name\": \"${json_case_name}\",\n"
-                    "      \"status\": \"instruction_profile_available\",\n"
-                    "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
-                    "      \"callgrind\": null\n"
-                    "    }")
-        endif ()
-    else ()
-        string(APPEND PERF_INSTRUCTION_MARKDOWN_ROWS
-                "| ${case_name} | missing | - |\n")
-        string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
-                "### ${case_name}\n"
-                "- Instruction profile: unavailable\n"
-                "- Callgrind: unavailable in this run\n\n")
-        string(CONCAT hotspot_case_json
-                "    {\n"
-                "      \"name\": \"${json_case_name}\",\n"
-                "      \"status\": \"unavailable\",\n"
-                "      \"instruction_profile\": null,\n"
-                "      \"callgrind\": null\n"
-                "    }")
-    endif ()
-    if (PERF_HOTSPOT_JSON_CASES STREQUAL "")
-        set(PERF_HOTSPOT_JSON_CASES "${hotspot_case_json}")
-    else ()
-        set(PERF_HOTSPOT_JSON_CASES "${PERF_HOTSPOT_JSON_CASES},\n${hotspot_case_json}")
-    endif ()
-
-    string(CONCAT case_json
-            "    {\n"
-            "      \"name\": \"${json_case_name}\",\n"
-            "      \"description\": \"${json_case_description}\",\n"
-            "      \"workload_tag\": \"${json_case_workload_tag}\",\n"
-            "      \"pass_banner\": \"${json_case_banner}\",\n"
-            "      \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
-            "      \"scale\": ${case_scale},\n"
-            "      \"expected_checksum\": ${case_checksum},\n"
-            "      \"implementations\": [\n${case_impl_jsons}\n      ]\n"
-            "    }")
-
-    if (PERF_JSON_CASES STREQUAL "")
-        set(PERF_JSON_CASES "${case_json}")
-    else ()
-        set(PERF_JSON_CASES "${PERF_JSON_CASES},\n${case_json}")
-    endif ()
-endforeach ()
+include("${CMAKE_CURRENT_LIST_DIR}/benchmark_task3_case_assembly.cmake")
 
 if (PERF_CASE_COUNT EQUAL 0)
     message(FATAL_ERROR "performance_report selected zero benchmark cases for tier '${PERF_REQUESTED_TIER}'.")
@@ -1403,19 +1336,40 @@ file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/hotspot_report.json" PERF_HOTSPOT_JSON_PA
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/gc_overhead_report.md" PERF_GC_OVERHEAD_MARKDOWN_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/gc_overhead_report.json" PERF_GC_OVERHEAD_JSON_PATH_NORMALIZED)
 
+if (PERF_SCOPE_MODE STREQUAL "steady")
+    set(PERF_SCOPE_REPORT_LINE
+            "- **Measurement scope:** Supported numeric/dispatch rows use `persistent_runtime`; one process serves all warmup and measured requests. Per-sample RSS is unavailable, and the final memory column is the session peak.\n")
+    set(PERF_ZR_PREP_REPORT_LINE
+            "- **ZR binary prepare:** A fresh untimed `zr_vm_cli --compile ...` precedes correctness and measurement; the persistent server then loads generated bytecode once. Compiler state is not reused.\n")
+    set(PERF_MEAN_PEAK_COLUMN "per-sample peak MiB")
+    set(PERF_MAX_PEAK_COLUMN "session peak MiB")
+else ()
+    set(PERF_SCOPE_REPORT_LINE
+            "- **Measurement scope:** Rows use `process_end_to_end`; each warmup or sample starts a fresh child and all reuse flags are false.\n")
+    set(PERF_ZR_PREP_REPORT_LINE
+            "- **ZR binary prepare:** The suite runs a separate untimed one-shot `zr_vm_cli --compile ...`; samples include child CLI startup, bytecode load, runtime setup, and execution.\n")
+    set(PERF_MEAN_PEAK_COLUMN "mean peak MiB")
+    set(PERF_MAX_PEAK_COLUMN "max peak MiB")
+endif ()
+
 string(CONCAT PERF_MARKDOWN_REPORT
         "# ZR VM Performance Report\n\n"
         "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
         "- Tier: ${PERF_REQUESTED_TIER}\n"
         "- Scale Policy: registry tier scale (profile uses per-case profile scale)\n"
         "- Warmup Iterations Per Implementation: ${PERF_WARMUP}\n"
-        "- Measured Iterations Per Implementation: ${PERF_ITERATIONS}\n"
+        "- Initial Measured Samples Per Implementation: ${PERF_ITERATIONS}\n"
+        "- Maximum Extra Samples: ${PERF_MAX_EXTRA_SAMPLES}\n"
+        "- Execution Seed: ${PERF_EXECUTION_SEED} (`fisher_yates_splitmix64` v1)\n"
+        "- Minimum Sample Policy: ${PERF_MINIMUM_SAMPLE_MODE}\n"
+        "- Profile Wall-Time Comparable: false\n"
         "${PERF_CALLGRIND_DOC_LINE}"
-        "- **Wall ms scope:** For **ZR binary**, the suite runs a **separate untimed** one-shot `zr_vm_cli --compile ...` before `perf_runner`. **Prepare time is not included** in the table; reported wall ms are **run-only** (`perf_runner` child process for `zr_vm_cli ... --execution-mode binary`). CSV column `one_shot_compile_excluded_from_wall_ms` flags this mode.\n"
+        "${PERF_SCOPE_REPORT_LINE}"
+        "${PERF_ZR_PREP_REPORT_LINE}"
         "- Benchmarks Root: `${BENCHMARKS_DIR}`\n"
         "- Cases: ${PERF_CASE_COUNT}\n\n"
-        "| case | implementation | language | status | mean wall ms | median wall ms | min wall ms | max wall ms | stddev wall ms | mean peak MiB | max peak MiB | relative_to_c |\n"
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+        "| case | implementation | language | status | measurement scope | prepare scope | runtime reused | compiler reused | JIT state reused | mean wall ms | median wall ms | min wall ms | max wall ms | stddev wall ms | MAD ms | CV | bootstrap median 95% CI | samples (+extra) x reps | calibrated:aggregate ms | stability | comparable | gate eligible | ${PERF_MEAN_PEAK_COLUMN} | ${PERF_MAX_PEAK_COLUMN} | relative_to_c |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |\n"
         "${PERF_MARKDOWN_ROWS}\n")
 
 if (NOT PERF_SKIP_NOTES STREQUAL "")
@@ -1439,12 +1393,27 @@ file(WRITE "${PERF_REPORT_DIR}/benchmark_report.md" "${PERF_MARKDOWN_REPORT}")
 file(WRITE
         "${PERF_REPORT_DIR}/benchmark_report.json"
         "{\n"
+        "  \"schema_version\": 3,\n"
         "  \"suite\": \"performance_report\",\n"
         "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
         "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
+        "  \"scope_mode\": \"${PERF_SCOPE_MODE}\",\n"
+        "  \"environment\": ${PERF_TASK4_ENVIRONMENT_JSON},\n"
         "  \"scale_policy\": \"tier_default_or_case_profile\",\n"
         "  \"warmup\": ${PERF_WARMUP},\n"
         "  \"iterations\": ${PERF_ITERATIONS},\n"
+        "  \"execution_plan\": ${PERF_EXECUTION_PLAN_JSON},\n"
+        "  \"measurement_policy\": {\n"
+        "    \"profile\": ${PERF_PROFILE_MODE},\n"
+        "    \"warmup\": ${PERF_WARMUP},\n"
+        "    \"initial_sample_count\": ${PERF_ITERATIONS},\n"
+        "    \"max_extra_sample_count\": ${PERF_MAX_EXTRA_SAMPLES},\n"
+        "    \"minimum_sample_ms_source\": \"${PERF_MINIMUM_SAMPLE_MODE}\",\n"
+        "    \"calibration_strategy\": \"power_of_two_repetition_doubling\",\n"
+        "    \"stability\": {\"metric\": \"coefficient_of_variation\", \"maximum\": 0.05},\n"
+        "    \"bootstrap\": {\"statistic\": \"median\", \"confidence\": 0.95, \"seed\": \"${PERF_BOOTSTRAP_SEED}\"},\n"
+        "    \"profile_comparable\": false\n"
+        "  },\n"
         "  \"callgrind_counting_mode\": ${PERF_CALLGRIND_JSON_BOOL},\n"
         "  \"reported_wall_ms_includes_prepare_compile\": false,\n"
         "  \"reported_wall_ms_scope\": \"perf_runner_iterations_only_excludes_cmake_prepare_zr_vm_cli_compile\",\n"
@@ -1461,7 +1430,8 @@ file(WRITE
         "${PERF_REPORT_DIR}/comparison_report.md"
         "# ZR VM Comparison Report\n\n"
         "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
-        "- Tier: ${PERF_REQUESTED_TIER}\n\n"
+        "- Tier: ${PERF_REQUESTED_TIER}\n"
+        "- Ratios are emitted only when both records have the same non-empty measurement scope.\n\n"
         "| case | workload | vs C | vs Lua | vs QuickJS | vs Node.js | vs Python | vs .NET | vs Java | vs Rust |\n"
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
         "${PERF_COMPARISON_MARKDOWN_ROWS}")

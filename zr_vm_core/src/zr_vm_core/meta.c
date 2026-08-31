@@ -987,6 +987,7 @@ static void meta_register_meta_method(SZrState *state, EZrValueType valueType, E
 
     // 注册到原型
     prototype->metaTable.metas[metaType] = meta;
+    ZrCore_ObjectPrototype_MarkMutation(prototype);
 
     // 标记为永久对象（避免被 GC 回收）
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));

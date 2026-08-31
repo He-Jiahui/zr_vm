@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "zr_vm_core/profile.h"
 #include "gc/gc_domain_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
@@ -1042,6 +1043,7 @@ void ZrCore_Gc_SafePoint(SZrState *state) {
 }
 
 void ZrCore_Gc_WriteBarrier(SZrState *state, SZrRawObject *ownerObject, SZrTypeValue *value) {
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_WRITE_BARRIER_COUNT, 1u);
     ZrCore_Value_Barrier(state, ownerObject, value);
 }
 

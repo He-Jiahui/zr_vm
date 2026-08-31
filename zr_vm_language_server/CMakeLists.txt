@@ -193,21 +193,22 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/src/*.c
         )
 
+        file(GLOB_RECURSE zr_vm_lib_iteration_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/src/*.c
+        )
+
         file(GLOB_RECURSE zr_vm_lib_ffi_src
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/src/*.c
         )
         
-        # 排除测试文件
+        # Exclude test-only dependency sources. Parser test-contract sources are production code.
         list(FILTER zr_vm_core_src EXCLUDE REGEX ".*test.*")
-        list(FILTER zr_vm_parser_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_library_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_system_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_math_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_container_src EXCLUDE REGEX ".*test.*")
+        list(FILTER zr_vm_lib_iteration_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_ffi_src EXCLUDE REGEX ".*test.*")
-        list(APPEND zr_vm_parser_src
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c
-        )
         
         # 创建 WASM 可执行文件（包含所有依赖的源文件）
         add_executable(${zr_curr_module_name}_wasm 
@@ -219,6 +220,7 @@ if(BUILD_WASM)
             ${zr_vm_lib_system_src}
             ${zr_vm_lib_math_src}
             ${zr_vm_lib_container_src}
+            ${zr_vm_lib_iteration_src}
             ${zr_vm_lib_ffi_src}
         )
         
@@ -237,6 +239,7 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include

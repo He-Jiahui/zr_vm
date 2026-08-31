@@ -196,7 +196,7 @@ static TZrSize native_module_info_array_length(SZrObject *array) {
     if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return 0;
     }
-    return array->nodeMap.elementCount;
+    return ZrCore_Object_SuperArrayLength(array);
 }
 
 static SZrObject *native_module_info_array_get_object(SZrState *state, SZrObject *array, TZrSize index) {

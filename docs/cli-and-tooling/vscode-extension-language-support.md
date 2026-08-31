@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_language_server/CMakeLists.txt
   - zr_vm_language_server_extension/package.json
   - zr_vm_language_server_extension/syntaxes/zr.tmLanguage.json
   - zr_vm_language_server_extension/scripts/build-native-server.js
@@ -13,6 +14,7 @@ related_code:
   - zr_vm_language_server_extension/src/debug/dapSession.ts
   - zr_vm_language_server_extension/src/debug/cliLauncher.ts
 implementation_files:
+  - zr_vm_language_server/CMakeLists.txt
   - zr_vm_language_server_extension/package.json
   - zr_vm_language_server_extension/syntaxes/zr.tmLanguage.json
   - zr_vm_language_server_extension/scripts/build-native-server.js
@@ -23,10 +25,12 @@ implementation_files:
   - zr_vm_language_server_extension/src/debug/dapSession.ts
   - zr_vm_language_server_extension/src/debug/cliLauncher.ts
 plan_sources:
+  - user: 2026-08-05 compile the VS Code extension
   - user: 2026-06-20 完善 union 后构建 VSIX plugin，并确认 union 高亮、成员解析、debug 功能状态
   - docs/plans/using/04-union-types.md
   - docs/plans/using/06-syntax-and-semantic-checks.md
 tests:
+  - tests/acceptance/2026-08-05-vscode-extension-wasm-package-build.md
   - zr_vm_language_server_extension/test/syntaxGrammar.test.js
   - zr_vm_language_server_extension/test/extensionContributions.test.js
   - zr_vm_language_server_extension/test/dapSessionBreakpoints.test.js
@@ -78,6 +82,8 @@ The VSIX does not implement this logic in TypeScript. It is provided by the bund
 ## Native And VSIX Packaging
 
 `scripts/build-native-server.js` builds and verifies native assets for the extension. Before invoking CMake/MSVC it removes the extension `node_modules/.bin` directory from `PATH`; otherwise the npm `rc` package can shadow the Windows resource compiler `rc.exe` and make native packaging fail during resource compilation.
+
+`zr_vm_language_server/CMakeLists.txt` owns the source aggregation for the web/WASM language server. Because this target compiles built-in modules directly instead of consuming their native shared-library targets, its source and include lists must mirror the runtime dependency graph. In particular, `zr.container` requires the `zr.iteration` sources and public headers, and parser production sources such as `compiler_test.c` and `test_contract.c` must not be removed by filename-based test filtering.
 
 The VSIX payload includes:
 

@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "zr_vm_core/profile.h"
 #include "gc/gc_domain_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
@@ -923,6 +924,8 @@ void ZrGarbageCollectorReallyMarkObject(SZrState *state, SZrRawObject *object) {
         return;
     }
 
+    ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_MARK_OBJECT_COUNT, 1u);
+
     switch (object->type) {
         case ZR_RAW_OBJECT_TYPE_STRING:
             ZR_GC_SET_REFERENCED(object);
@@ -1002,6 +1005,11 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
     if (state == ZR_NULL || object == ZR_NULL) {
         return 0;
     }
+
+    ZrCore_Profile_RecordMemoryFromState(
+            state,
+            ZR_PROFILE_MEMORY_SCAN_BYTES,
+            (TZrUInt64)garbage_collector_get_object_base_size_fast(object));
 
     switch (object->type) {
         case ZR_RAW_OBJECT_TYPE_OBJECT:
