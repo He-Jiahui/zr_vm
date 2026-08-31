@@ -152,6 +152,8 @@ static void semantic_relations_append_query(
             context, fact->sourceTypeId);
     query.targetModuleIdentity = semantic_relations_module_identity_for_type(
             context, fact->targetTypeId);
+    query.sourceProviderGeneration = fact->sourceProviderGeneration;
+    query.targetProviderGeneration = fact->targetProviderGeneration;
     query.sourceRange = fact->sourceRange;
     query.targetRange = fact->targetRange;
     query.externalOriginUri = fact->externalOriginUri;

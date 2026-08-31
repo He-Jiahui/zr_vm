@@ -112,6 +112,9 @@ typedef struct SZrParserSemanticRelationQuery {
     TZrTypeId targetTypeId;
     SZrString *sourceModuleIdentity;
     SZrString *targetModuleIdentity;
+    /* Zero means unavailable; nonzero values participate in edge identity. */
+    TZrUInt64 sourceProviderGeneration;
+    TZrUInt64 targetProviderGeneration;
     SZrFileRange sourceRange;
     SZrFileRange targetRange;
     SZrString *externalOriginUri;

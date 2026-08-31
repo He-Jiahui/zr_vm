@@ -1235,3 +1235,18 @@ The query therefore preserves the reference TypeId while projecting symbol
 kind and declaration node from the record with the exact same SymbolId. A
 resolved call regression fixes this contract with one declaration TypeId and a
 different specialized use TypeId. Unresolved references still fail closed.
+
+## Plan 03 Task 3.18 Relation Provider Generation Identity
+
+External relation identity consists of both canonical endpoint module identity
+and provider generation. A generation of zero means that the producer could
+not publish one; every nonzero generation participates in relation equality,
+stable ordering, and query projection. Two otherwise identical relation edges
+from the same provider generation deduplicate, while edges from different
+provider generations remain distinct snapshot facts.
+
+`SZrSemanticRelationFact` and `SZrParserSemanticRelationQuery` carry source and
+target provider generations directly. Relation consumers borrow these values
+with the rest of the query snapshot. They must not infer a generation from a
+module name, URI, declaration text, or the order in which providers were
+loaded.

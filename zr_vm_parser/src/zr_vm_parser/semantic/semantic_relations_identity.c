@@ -37,6 +37,8 @@ TZrBool ZrParser_SemanticRelations_FactsEqual(
         left->targetSymbolId != right->targetSymbolId ||
         left->sourceTypeId != right->sourceTypeId ||
         left->targetTypeId != right->targetTypeId ||
+        left->sourceProviderGeneration != right->sourceProviderGeneration ||
+        left->targetProviderGeneration != right->targetProviderGeneration ||
         left->hasSourceRange != right->hasSourceRange ||
         left->hasTargetRange != right->hasTargetRange ||
         left->isExternal != right->isExternal ||

@@ -82,6 +82,12 @@ static TZrBool semantic_relations_query_precedes(
     if (order != 0) {
         return order < 0;
     }
+    if (left->sourceProviderGeneration != right->sourceProviderGeneration) {
+        return left->sourceProviderGeneration < right->sourceProviderGeneration;
+    }
+    if (left->targetProviderGeneration != right->targetProviderGeneration) {
+        return left->targetProviderGeneration < right->targetProviderGeneration;
+    }
     if (left->hasSourceRange != right->hasSourceRange) {
         return left->hasSourceRange < right->hasSourceRange;
     }
