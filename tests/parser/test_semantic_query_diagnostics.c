@@ -79,6 +79,33 @@ static void test_no_fix_reason_survives_fact_and_query_materialization(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_node_scope_rejects_diagnostic_with_one_sided_source_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticDiagnosticFact fact;
+    SZrAstNode scopeRoot;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&fact, 0, sizeof(fact));
+    build_diagnostic(&fact.diagnostic);
+    TEST_ASSERT_TRUE(ZrParser_StructuredDiagnostic_SetNoFixReason(
+            &fact.diagnostic,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendDiagnostic(context, &fact));
+    ZrParser_StructuredDiagnostic_Free(g_state, &fact.diagnostic);
+
+    memset(&scopeRoot, 0, sizeof(scopeRoot));
+    scopeRoot.location.start.offset = 1U;
+    scopeRoot.location.end.offset = 20U;
+    ZrParser_SemanticQueryScope_Node(&scope, &scopeRoot);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)diagnostics.count);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_fix_and_no_fix_reason_are_mutually_exclusive(void) {
     SZrStructuredDiagnostic noFixDiagnostic;
     SZrStructuredDiagnostic fixDiagnostic;
@@ -461,6 +488,7 @@ static void test_external_callable_payload_is_not_an_unresolved_reference(void) 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_no_fix_reason_survives_fact_and_query_materialization);
+    RUN_TEST(test_node_scope_rejects_diagnostic_with_one_sided_source_identity);
     RUN_TEST(test_fix_and_no_fix_reason_are_mutually_exclusive);
     RUN_TEST(test_syntax_no_fix_builders_publish_explicit_reasons);
     RUN_TEST(test_syntax_recovery_builders_publish_explicit_no_fix_reasons);

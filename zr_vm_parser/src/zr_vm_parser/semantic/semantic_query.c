@@ -12,7 +12,7 @@ static TZrBool semantic_query_has_offset(const SZrFilePosition *position) {
 
 static TZrBool semantic_query_same_source(SZrString *left, SZrString *right) {
     if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_TRUE;
+        return left == right;
     }
     if (left == right) {
         return ZR_TRUE;
