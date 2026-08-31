@@ -77,8 +77,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Modify: `zr_vm_parser/include/zr_vm_parser/semantic_query.h`
 - Create: `tests/parser/test_semantic_query_relations.c`
 
-- [ ] relation graph 使用 snapshot-scoped stable ids：declaration↔definition、override/implementation、type base/interface、constructor、property accessor、alias target、import export origin。
-- [ ] 新增 `RelationsOfSymbol`、`ImplementationsOf`、`BaseTypesOf`、`DerivedTypesOf`；返回 relation kind + source/target SymbolId/TypeId + exact range。
+- [x] relation graph 使用 snapshot-scoped stable ids：declaration↔definition、override/implementation、type base/interface、constructor、property accessor、alias target、import export origin。
+- [x] 新增 `RelationsOfSymbol`、`ImplementationsOf`、`BaseTypesOf`、`DerivedTypesOf`；返回 relation kind + source/target SymbolId/TypeId + exact range。
 - [ ] 处理多定义、partial/extern/native/binary 无 source definition 情形；没有 source range 时返回明确 external origin 和 virtual declaration URI，由 metadata projection 提供，不由 LSP 编造。
 - [ ] 测试同名不同模块、重载、generic open/closed type、receiver method、alias chain、base/interface、多项目 provider generation。
 
@@ -150,8 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 08:09 +08:00。
-- 总体状态：进行中。Task 2.3 已把`SymbolAt`/`VisibleSymbols` API与compiler-owned scope审计
+- 最近更新时间：2026-08-31 08:19 +08:00。
+- 总体状态：进行中。Task 3.17 收紧relation append结构门禁，source/target endpoint各自必须
+  提供有效SymbolId或TypeId；GCC/Clang relation/query/symbol/call/parity/source-contract
+  `23/30/21/28/15/70`全部真实exit 0，并据实勾选relation graph与四查询API两项。Task 2.3 已把`SymbolAt`/`VisibleSymbols` API与compiler-owned scope审计
   checkbox对齐；当前GCC/Clang parser symbols `21/21`、semantic parity `15/15`、LSP source
   contracts `70/70`真实exit 0，lexical completion不再调用analyzer/symbol-table scope扫描。Task 1.1 已把主计划Task1的四个stale checkbox与既有完成record对齐；
   当前GCC/Clang query contract `4/4`、source/binary/native parity `15/15`真实exit 0，borrowed
@@ -227,7 +229,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 3.17 relation endpoint identity integrity；Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -972,3 +974,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   LSP source contracts `70/70`，真实exit 0，因此勾选Task2剩余两个stale checkbox。历史MSVC
   evidence保留在Task2原records，本项未重跑MSVC、完整16-target matrix或三套stdio smoke；
   relation external producer、call receiver/binary-native、其余Task7 consumer与Task8仍未完成。
+
+- 补充完成时间：2026-08-31 08:19 +08:00。Task 3.17 为公共relation append新增
+  endpoint identity integrity：source与target各自必须至少有一个有效SymbolId或TypeId；
+  symbol→type alias/import与type→type base edge继续合法，单边edge在写snapshot前fail closed。
+  RED中既有22项全通过、新case唯一失败，relations `23 Tests / 1 Failure`；GREEN后固定GCC/Clang
+  snapshot均通过relations/query/symbols/calls/parity/source-contract
+  `23/30/21/28/15/70`、真实exit 0。据此勾选Task3 relation graph与四查询API两项。未运行
+  MSVC、完整16-target matrix或三套stdio smoke；external/virtual metadata producer、跨provider
+  generation矩阵、Task4 receiver/binary-native、其余Task7 consumer与Task8继续未完成。

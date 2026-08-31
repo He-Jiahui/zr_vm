@@ -60,6 +60,13 @@ static TZrBool semantic_relations_range_is_known(const SZrFileRange *range) {
                        range->start.column > 0 || range->end.column > 0));
 }
 
+static TZrBool semantic_relations_endpoint_has_identity(
+        TZrSymbolId symbolId,
+        TZrTypeId typeId) {
+    return (TZrBool)(symbolId != ZR_SEMANTIC_ID_INVALID ||
+                     typeId != ZR_SEMANTIC_ID_INVALID);
+}
+
 static TZrBool semantic_relations_scope_allows(
         const SZrParserSemanticQueryScope *scope,
         const SZrSemanticRelationFact *fact) {
@@ -187,10 +194,10 @@ TZrBool ZrParser_SemanticRelations_Append(
 
     if (context == ZR_NULL || fact == ZR_NULL || !context->relationFacts.isValid ||
         fact->kind == ZR_SEMANTIC_RELATION_UNKNOWN ||
-        (fact->sourceSymbolId == ZR_SEMANTIC_ID_INVALID &&
-         fact->targetSymbolId == ZR_SEMANTIC_ID_INVALID &&
-         fact->sourceTypeId == ZR_SEMANTIC_ID_INVALID &&
-         fact->targetTypeId == ZR_SEMANTIC_ID_INVALID) ||
+        !semantic_relations_endpoint_has_identity(
+                fact->sourceSymbolId, fact->sourceTypeId) ||
+        !semantic_relations_endpoint_has_identity(
+                fact->targetSymbolId, fact->targetTypeId) ||
         (fact->isExternal && !fact->hasSourceRange &&
          (fact->externalOriginUri == ZR_NULL ||
           fact->virtualDeclarationUri == ZR_NULL))) {

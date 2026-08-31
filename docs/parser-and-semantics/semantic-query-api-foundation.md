@@ -224,6 +224,13 @@ uses independently stable source/target SymbolId and TypeId values, exact
 endpoint ranges when available, and explicit external-origin and virtual-
 declaration URIs when the relation has no source range.
 
+`ZrParser_SemanticRelations_Append` requires both endpoints to have structured
+identity: each side must provide at least one valid SymbolId or TypeId. A
+symbol-to-type alias/import edge and a type-to-type base edge remain valid, but
+a source-only or target-only row fails before mutating the snapshot. Consumers
+therefore never receive a relation whose opposite endpoint could only be
+reconstructed from a name, range, or URI.
+
 `ZrParser_SemanticRelations_Append` retains both URIs in the semantic snapshot.
 An external fact without a source range is rejected unless its metadata
 projection supplies both values. A source import relation still has the local
