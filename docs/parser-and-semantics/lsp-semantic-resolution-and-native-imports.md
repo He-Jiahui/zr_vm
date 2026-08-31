@@ -881,3 +881,23 @@ guarded only after both local and external canonical paths have been attempted.
 If a resolved source call loses its canonical call payload, signature help
 returns unavailable instead of re-entering overload, callee-name, or AST
 signature reconstruction.
+
+## Canonical Semantic Token Identity
+
+Source semantic-token classification first consumes `SymbolAt` for the exact
+token range. Declaration kind comes from the stable SymbolId, while the query
+may retain a specialized use-site TypeId. A resolved member therefore keeps its
+method/property classification even when its closed callable TypeId differs
+from the declaration record's open TypeId.
+
+Type tokens without a symbol use only `CanonicalTypeAt`. The result is accepted
+only when its resolved type-reference fact has the same canonical TypeId and
+the same source plus byte range as the scanned token; only a canonical owner
+type maps to a class token. Missing or unresolved facts remain unavailable.
+The consumer does not invoke request-time type inference or recover from token
+text, member names, or AST pairing.
+
+Canonical classification is isolated in `lsp_semantic_token_canonical.c`.
+UTF-16 range conversion, duplicate preference, overlap filtering, sorting, and
+delta encoding are isolated in `lsp_semantic_token_entries.c`; the scanner
+retains only source traversal and protocol projection.

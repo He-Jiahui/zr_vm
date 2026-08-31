@@ -743,6 +743,8 @@ static void test_semantic_tokens_source_scan_uses_content_snapshot(void) {
 static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c");
+    char *canonicalSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_token_canonical.c");
     char *stdioSource = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_semantic_tokens_json.c");
     const char *declarationsStart;
@@ -752,15 +754,18 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     const char *scanStart;
     const char *scanEnd;
 
-    if (source == NULL) {
+    if (source == NULL || canonicalSource == NULL) {
         printf("FAIL: could not read lsp_semantic_tokens.c\n");
         g_failures++;
+        free(source);
+        free(canonicalSource);
         return;
     }
     if (stdioSource == NULL) {
         printf("FAIL: could not read stdio_semantic_tokens_json.c\n");
         g_failures++;
         free(source);
+        free(canonicalSource);
         return;
     }
 
@@ -777,15 +782,23 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
                                       declarationsEnd,
                                       "analyzer->symbolTable");
 
-    canonicalStart = find_next_text(
-        source, "static TZrInt32 semantic_token_resolve_canonical_symbol(");
+    canonicalStart = strstr(
+        canonicalSource, "TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(");
     canonicalEnd = canonicalStart != NULL
-                       ? strstr(canonicalStart, "static TZrInt32 semantic_token_resolve_metadata_chain_member(")
+                       ? canonicalSource + strlen(canonicalSource)
                        : NULL;
-    assert_text_section_contains("semantic_token_resolve_canonical_symbol",
+    assert_text_section_contains("ZrLanguageServer_LspSemanticToken_ResolveCanonical",
                                  canonicalStart,
                                  canonicalEnd,
                                  "ZrParser_SemanticQuery_SymbolAt");
+    assert_text_section_contains("ZrLanguageServer_LspSemanticToken_ResolveCanonical",
+                                 canonicalStart,
+                                 canonicalEnd,
+                                 "ZrParser_SemanticQuery_CanonicalTypeAt");
+    assert_text_section_contains_none("ZrLanguageServer_LspSemanticToken_ResolveCanonical",
+                                      canonicalStart,
+                                      canonicalEnd,
+                                      "SemanticAnalyzer_ResolveTypeAtPosition");
 
     scanStart = strstr(source, "static void semantic_token_scan_source(");
     scanEnd = scanStart != NULL
@@ -794,7 +807,7 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     assert_text_section_contains("semantic_token_scan_source",
                                  scanStart,
                                  scanEnd,
-                                 "semantic_token_resolve_canonical_symbol");
+                                 "ZrLanguageServer_LspSemanticToken_ResolveCanonical");
     assert_text_section_contains_none("semantic_token_scan_source",
                                       scanStart,
                                       scanEnd,
@@ -806,6 +819,7 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     assert_text_contains(stdioSource, "cJSON_CreateString(\"declaration\")");
 
     free(source);
+    free(canonicalSource);
     free(stdioSource);
 }
 

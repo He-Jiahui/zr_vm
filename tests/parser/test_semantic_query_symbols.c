@@ -2169,6 +2169,7 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
 }
 
 #include "test_semantic_query_declared_symbol_cases.h"
+#include "test_semantic_query_symbol_specialization_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -2194,5 +2195,6 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_type_members);
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);
     RUN_TEST(test_declared_symbols_projects_exact_snapshot_declarations);
+    RUN_TEST(test_symbol_at_preserves_declaration_identity_for_specialized_type);
     return UNITY_END();
 }

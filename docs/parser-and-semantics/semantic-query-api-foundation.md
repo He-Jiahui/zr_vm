@@ -1222,3 +1222,16 @@ Super-constructor call facts are recorded only after receiver and parameter
 bindings have entered the callable scope. Constructor-call tokens continue to
 resolve to constructor identity; class navigation is tested through a type
 reference rather than reinterpreting `new Type(...)` as a type-symbol use.
+
+## Plan 03 Task 7.58 Specialized Symbol Query Identity
+
+`SymbolAt` treats a resolved reference's stable SymbolId as the authority for
+declaration kind and declaration AST identity. The reference's TypeId remains
+the use-site type and may be a closed or otherwise specialized canonical type
+that differs from the declaration symbol record's open TypeId. That difference
+does not make the declaration unknown and does not authorize name lookup.
+
+The query therefore preserves the reference TypeId while projecting symbol
+kind and declaration node from the record with the exact same SymbolId. A
+resolved call regression fixes this contract with one declaration TypeId and a
+different specialized use TypeId. Unresolved references still fail closed.

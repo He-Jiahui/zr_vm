@@ -7411,6 +7411,7 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
     const SZrCanonicalTypeNode *ownershipType;
     SZrInferredType resolvedOwnershipType;
     SZrArray tokens;
+    const TZrChar *failure = ZR_NULL;
 
     TEST_START("LSP Semantic Tokens Use Canonical Ownership Type Identity");
     TEST_INFO("Canonical ownership type token",
@@ -7490,33 +7491,40 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
     }
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
-    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
-        !semantic_tokens_contain(&tokens,
-                                  ownershipTypePosition.line,
-                                  ownershipTypePosition.character,
-                                  6,
-                                  "class") ||
-        !semantic_tokens_contain(&tokens,
-                                  localPosition.line,
-                                  localPosition.character,
-                                  6,
-                                  "variable") ||
-        !semantic_tokens_contain_modifier(&tokens,
-                                          declarationPosition.line,
-                                          declarationPosition.character,
-                                          6,
-                                          "class",
-                                          1U) ||
-        semantic_tokens_contain(&tokens,
-                                 localPosition.line,
-                                 localPosition.character,
-                                 6,
-                                 "class")) {
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens)) {
+        failure = "Semantic token collection must succeed";
+    } else if (!semantic_tokens_contain(&tokens,
+                                         ownershipTypePosition.line,
+                                         ownershipTypePosition.character,
+                                         6,
+                                         "class")) {
+        failure = "The canonical owner TypeId must project to a class token";
+    } else if (!semantic_tokens_contain(&tokens,
+                                         localPosition.line,
+                                         localPosition.character,
+                                         6,
+                                         "variable")) {
+        failure = "The same-spelled local binding must remain a variable token";
+    } else if (!semantic_tokens_contain_modifier(&tokens,
+                                                  declarationPosition.line,
+                                                  declarationPosition.character,
+                                                  6,
+                                                  "class",
+                                                  1U)) {
+        failure = "The resource declaration must retain its canonical declaration modifier";
+    } else if (semantic_tokens_contain(&tokens,
+                                        localPosition.line,
+                                        localPosition.character,
+                                        6,
+                                        "class")) {
+        failure = "The local binding must not inherit owner spelling classification";
+    }
+    if (failure != ZR_NULL) {
         ZrCore_Array_Free(state, &tokens);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Tokens Use Canonical Ownership Type Identity",
-                  "Ownership tokens must come from canonical type identity, not the Unique spelling");
+                  failure);
         return;
     }
 
@@ -7540,7 +7548,15 @@ static void test_lsp_semantic_tokens_do_not_guess_unresolved_members(SZrState *s
             "}\n";
     SZrLspPosition resolvedPosition;
     SZrLspPosition unresolvedPosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFilePosition resolvedFilePosition;
+    SZrFileRange resolvedRange;
+    SZrParserSemanticSymbolQuery resolvedSymbol;
+    SZrFilePosition unresolvedFilePosition;
+    SZrFileRange unresolvedRange;
+    SZrParserSemanticSymbolQuery unresolvedSymbol;
     SZrArray tokens;
+    const TZrChar *failure = ZR_NULL;
 
     TEST_START("LSP Semantic Tokens Do Not Guess Unresolved Members");
     TEST_INFO("Unresolved member token", "Member punctuation must not synthesize a semantic token kind");
@@ -7567,33 +7583,88 @@ static void test_lsp_semantic_tokens_do_not_guess_unresolved_members(SZrState *s
         return;
     }
 
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    resolvedFilePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, resolvedPosition);
+    resolvedRange = ZrParser_FileRange_Create(
+            resolvedFilePosition,
+            ZrParser_FilePosition_Create(
+                    resolvedFilePosition.offset + strlen("resolved"),
+                    resolvedFilePosition.line,
+                    resolvedFilePosition.column + (TZrUInt32)strlen("resolved")),
+            uri);
+    unresolvedFilePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, unresolvedPosition);
+    unresolvedRange = ZrParser_FileRange_Create(
+            unresolvedFilePosition,
+            ZrParser_FilePosition_Create(
+                    unresolvedFilePosition.offset + strlen("unresolved"),
+                    unresolvedFilePosition.line,
+                    unresolvedFilePosition.column + (TZrUInt32)strlen("unresolved")),
+            uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext, resolvedRange, ZR_NULL, &resolvedSymbol) ||
+        resolvedSymbol.symbolId == ZR_SEMANTIC_ID_INVALID) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Do Not Guess Unresolved Members",
+                  "The resolved member must publish a canonical SymbolAt result before token projection");
+        return;
+    }
+    if (resolvedSymbol.kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+        resolvedSymbol.declarationNode == ZR_NULL ||
+        resolvedSymbol.declarationNode->type != ZR_AST_CLASS_METHOD) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Do Not Guess Unresolved Members",
+                  "The resolved member SymbolAt result must retain its class-method declaration identity");
+        return;
+    }
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext, unresolvedRange, ZR_NULL, &unresolvedSymbol)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Do Not Guess Unresolved Members",
+                  "The unresolved member must not publish a resolved canonical SymbolAt result");
+        return;
+    }
+
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 16);
-    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
-        !semantic_tokens_contain(&tokens,
-                                 resolvedPosition.line,
-                                 resolvedPosition.character,
-                                 (TZrInt32)strlen("resolved"),
-                                 "method") ||
-        semantic_tokens_contain(&tokens,
-                                 unresolvedPosition.line,
-                                 unresolvedPosition.character,
-                                 (TZrInt32)strlen("unresolved"),
-                                 "namespace") ||
-        semantic_tokens_contain(&tokens,
-                                 unresolvedPosition.line,
-                                 unresolvedPosition.character,
-                                 (TZrInt32)strlen("unresolved"),
-                                 "method") ||
-        semantic_tokens_contain(&tokens,
-                                 unresolvedPosition.line,
-                                 unresolvedPosition.character,
-                                 (TZrInt32)strlen("unresolved"),
-                                 "property")) {
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens)) {
+        failure = "Semantic token collection must succeed";
+    } else if (!semantic_tokens_contain(&tokens,
+                                         resolvedPosition.line,
+                                         resolvedPosition.character,
+                                         (TZrInt32)strlen("resolved"),
+                                         "method")) {
+        failure = "The resolved member must project its canonical method identity";
+    } else if (semantic_tokens_contain(&tokens,
+                                        unresolvedPosition.line,
+                                        unresolvedPosition.character,
+                                        (TZrInt32)strlen("unresolved"),
+                                        "namespace")) {
+        failure = "The unresolved member must not project a namespace token";
+    } else if (semantic_tokens_contain(&tokens,
+                                        unresolvedPosition.line,
+                                        unresolvedPosition.character,
+                                        (TZrInt32)strlen("unresolved"),
+                                        "method")) {
+        failure = "The unresolved member must not project a method token";
+    } else if (semantic_tokens_contain(&tokens,
+                                        unresolvedPosition.line,
+                                        unresolvedPosition.character,
+                                        (TZrInt32)strlen("unresolved"),
+                                        "property")) {
+        failure = "The unresolved member must not project a property token";
+    }
+    if (failure != ZR_NULL) {
         ZrCore_Array_Free(state, &tokens);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Tokens Do Not Guess Unresolved Members",
-                  "An unresolved member must remain unclassified without a canonical query result");
+                  failure);
         return;
     }
 

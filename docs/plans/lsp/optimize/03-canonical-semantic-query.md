@@ -150,8 +150,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 13:35 +08:00。
-- 总体状态：进行中。Task 7.57 让独立LSP typecheck callable scope复用symbol collection
+- 最近更新时间：2026-08-31 14:17 +08:00。
+- 总体状态：进行中。Task 7.58 让`SymbolAt`按稳定SymbolId投影declaration kind/AST，同时保留
+  use-site specialized TypeId；semantic tokens仅消费exact `SymbolAt`，或同source/byte range的
+  resolved `CanonicalTypeAt` owner fact，不再为owner/member调用request-time type inference或名称
+  猜测。token classification与entry编码分别拆入独立模块，主scanner降至890行；GCC/Clang
+  interface中owner与unresolved两项转PASS，失败集合从fixed5精确降为fixed3。Task 7.57 让独立LSP typecheck callable scope复用symbol collection
   已发布的canonical `this/super` SymbolId/TypeId/range，并把super-constructor fact延后到参数
   binding注册完成后；class member fixture三条虚假diagnostic归零，navigation/completion用例转PASS，
   GCC/Clang interface失败集合从fixed6精确降为fixed5。Task 7.56 让extern source callable从parser type environment到
@@ -1151,3 +1155,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   exit 0；两套interface均真实exit 1，class case转PASS且fixed6降为fixed5。广义semantic-analyzer
   executable仍含既有fact/ownership/generic失败，不计GREEN；MSVC、完整16-target matrix与三套
   stdio smoke未运行，其余五个producer marker与Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 14:17 +08:00。Task 7.58 修复semantic-token canonical
+  identity边界：`SymbolAt`以resolved reference的SymbolId关联declaration record并保留use-site
+  specialized TypeId，不再因open/closed TypeId不同丢失method kind；owner token仅接受同source与
+  exact byte range的resolved type-reference `CanonicalTypeAt`，unresolved member保持fail closed。
+  token canonical resolver与entry range/dedupe/sort/delta encoding拆为独立126/288行模块，主scanner
+  从1265行降至890行。固定GCC/Clang snapshot均通过symbols/source-contract/LSP diagnostics/parity/
+  property `23/70/19/15/11`、真实exit 0；两套interface均真实exit 1，owner/unresolved cases转PASS且
+  fixed5降为fixed3，剩余project references、module-link references与import-chain semantic token。
+  本项未运行MSVC、完整16-target matrix或三套stdio smoke；import metadata producer路径由
+  Syntax05持有，本子里程碑未修改，Task 7/Task 8继续未完成。

@@ -348,7 +348,7 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     {
         const SZrSemanticSymbolRecord *record =
                 ZrParser_Semantic_FindSymbolById(context, reference->symbolId);
-        if (record != ZR_NULL && record->typeId == reference->typeId) {
+        if (record != ZR_NULL && record->id == reference->symbolId) {
             outSymbol->kind = record->kind;
             outSymbol->declarationNode = record->astNode;
         }
