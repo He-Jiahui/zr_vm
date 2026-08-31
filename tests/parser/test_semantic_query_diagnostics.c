@@ -460,6 +460,40 @@ static void test_resolved_reference_shadows_same_range_unresolved_fact(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_resolved_reference_does_not_shadow_one_sided_source_fact(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticReferenceFact fact;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&fact, 0, sizeof(fact));
+    fact.range = diagnostic_range(128U, 135U);
+    fact.declarationRange = fact.range;
+    fact.kind = ZR_SEMANTIC_REFERENCE_READ;
+    fact.name = ZrCore_String_Create(g_state, "missing", strlen("missing"));
+    fact.isResolved = ZR_FALSE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    fact.range.source = ZR_NULL;
+    fact.declarationRange.source = ZR_NULL;
+    fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
+    fact.symbolId = ZR_SEMANTIC_ID_FIRST;
+    fact.typeId = ZR_SEMANTIC_ID_FIRST;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    TEST_ASSERT_EQUAL_STRING(
+            "unresolved_reference",
+            ZrCore_String_GetNativeString(diagnostics.items[0].code));
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_external_callable_payload_is_not_an_unresolved_reference(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrSemanticReferenceFact fact;
@@ -498,6 +532,7 @@ int main(void) {
     RUN_TEST(test_conditional_migration_builders_publish_complete_disposition);
     RUN_TEST(test_unresolved_reference_facts_materialize_registered_diagnostics);
     RUN_TEST(test_resolved_reference_shadows_same_range_unresolved_fact);
+    RUN_TEST(test_resolved_reference_does_not_shadow_one_sided_source_fact);
     RUN_TEST(test_external_callable_payload_is_not_an_unresolved_reference);
     return UNITY_END();
 }

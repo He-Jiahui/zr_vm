@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 09:48 +08:00。
-- 总体状态：进行中。Task 2.4 将`VisibleSymbols` lexical scope selection的source比较从
+- 最近更新时间：2026-08-31 09:55 +08:00。
+- 总体状态：进行中。Task 6.40 将resolved reference抑制unresolved diagnostic的duplicate key
+  收紧为exact source/range/name identity；单边缺source不再跨snapshot隐藏诊断，GCC/Clang
+  parser/compiler/LSP diagnostics与parity/source-contract `13/64/19/15/70`均真实exit 0，
+  interface保持fixed8、delta 0。Task 2.4 将`VisibleSymbols` lexical scope selection的source比较从
   one-sided `NULL`通配收紧为exact optional identity；sourceless position不再按相同offset进入
   sourced scope，GCC/Clang symbols/parity/source-contract `22/15/70`均真实exit 0，interface
   保持fixed8、delta 0。Task 1.2 将底层semantic fact lookup与canonical position query的
@@ -252,10 +255,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 2.4 fixed GCC/Clang semantic query symbols `22/22`、parity `15/15`与source-contract
   `70/70`，均真实exit 0；interface保持同一fixed8，delta 0。未运行MSVC、完整16-target
   matrix或三套stdio smoke。
+- Task 6.40 fixed GCC/Clang parser/compiler/LSP semantic-query diagnostics `13/64/19`、
+  parity `15/15`与source-contract `70/70`，均真实exit 0；interface保持同一fixed8，delta 0。
+  未运行MSVC、完整16-target matrix或三套stdio smoke。
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 2.4 visible-symbol source identity；Task 1.2 semantic fact source identity；Task 4.27 ambiguous call expression fail-closed；Task 6.39 query-scope source identity；Task 4.26 ambiguous caller identity fail-closed；Task 3.17 relation endpoint identity integrity；Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 6.40 unresolved diagnostic source identity；Task 2.4 visible-symbol source identity；Task 1.2 semantic fact source identity；Task 4.27 ambiguous call expression fail-closed；Task 6.39 query-scope source identity；Task 4.26 ambiguous caller identity fail-closed；Task 3.17 relation endpoint identity integrity；Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -1055,3 +1061,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   symbols/parity/source-contract `22/15/70`、真实exit 0，interface保持同一fixed8、delta 0。
   未运行MSVC、完整16-target matrix或三套stdio smoke；binary/native scope producer、Task 7
   consumer迁移和Task 8总门禁继续未完成。
+
+- 补充完成时间：2026-08-31 09:55 +08:00。Task 6.40 将resolved reference抑制
+  unresolved diagnostic的duplicate key收紧为exact optional source identity；同name/range只有在
+  source也匹配时才可视为同一事实，单边缺source时保留unresolved diagnostic。RED中原12项全过，
+  新case唯一失败为`13 Tests / 1 Failure`，具体为`Expected 1 Was 0`；GREEN后固定GCC/Clang
+  snapshot均通过parser/compiler/LSP diagnostics、parity与source-contract
+  `13/64/19/15/70`、真实exit 0，interface保持同一fixed8、delta 0。未运行MSVC、完整
+  16-target matrix或三套stdio smoke；其余analyzer producer迁移、compiler/LSP golden parity
+  总门禁、Task 7 consumer与Task 8继续未完成。

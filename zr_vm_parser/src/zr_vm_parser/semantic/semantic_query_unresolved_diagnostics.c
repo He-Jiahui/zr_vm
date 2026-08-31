@@ -7,7 +7,7 @@
 static TZrBool semantic_query_unresolved_same_source(SZrString *left,
                                                       SZrString *right) {
     if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_TRUE;
+        return left == right;
     }
     return left == right || ZrCore_String_Equal(left, right);
 }
