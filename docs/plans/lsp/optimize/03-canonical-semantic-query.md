@@ -31,7 +31,7 @@
 - Modify: `zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c`
 - Create: `tests/parser/test_semantic_query_symbols.c`
 
-- [ ] 新增契约：
+- [x] 新增契约：
 
 ```c
 typedef struct SZrParserSemanticSymbolQuery {
@@ -67,7 +67,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 - [x] VisibleSymbols 处理 lexical scope、shadowing、receiver members、imports/aliases、generic parameters、overload sets、visibility 和 static/instance 上下文。
 - [x] 返回稳定排序 key：scope distance、declaration order、SymbolId；completion 不再遍历 LSP symbol table 后按名称拼接。
-- [ ] Lua/QuickJS reference check：变量身份必须由 compiler scope state 决定；不得在 LSP token scanner 中复制 `searchvar`/scope walk。
+- [x] Lua/QuickJS reference check：变量身份必须由 compiler scope state 决定；不得在 LSP token scanner 中复制 `searchvar`/scope walk。
 
 ## Task 3：补齐 declaration/definition/implementation relations
 
@@ -150,8 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 08:03 +08:00。
-- 总体状态：进行中。Task 1.1 已把主计划Task1的四个stale checkbox与既有完成record对齐；
+- 最近更新时间：2026-08-31 08:09 +08:00。
+- 总体状态：进行中。Task 2.3 已把`SymbolAt`/`VisibleSymbols` API与compiler-owned scope审计
+  checkbox对齐；当前GCC/Clang parser symbols `21/21`、semantic parity `15/15`、LSP source
+  contracts `70/70`真实exit 0，lexical completion不再调用analyzer/symbol-table scope扫描。Task 1.1 已把主计划Task1的四个stale checkbox与既有完成record对齐；
   当前GCC/Clang query contract `4/4`、source/binary/native parity `15/15`真实exit 0，borrowed
   snapshot、query purity、repeat stability与exactness fail-closed合同未改变。Task 4.25 已冻结unresolved call edge reason矩阵：有效target缺声明坐标时
   保留SymbolId并返回`TARGET_DECLARATION_UNAVAILABLE`，resolved id指向非函数时清零target并返回
@@ -225,7 +227,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -961,3 +963,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   UNKNOWN/APPROXIMATE fail-closed及source/binary/native parity继续由既有测试冻结。历史MSVC证据仅
   引用Task1原record，本项没有重跑MSVC、完整16-target matrix或三套stdio smoke；Plan 03整体仍因
   Task4 receiver/binary-native producer、Task7 consumer迁移与Task8总门禁未完成而保持进行中。
+
+- 补充完成时间：2026-08-31 08:09 +08:00。Task 2.3 对账确认
+  `SymbolAt`、`VisibleSymbols`、snapshot-borrowed display与稳定scope-distance/declaration-order/
+  SymbolId排序已由既有Task2 records和当前API/tests冻结；canonical lexical completion只消费
+  parser `VisibleSymbols`，source-contract禁止恢复analyzer completion及symbol-table visible/range
+  scope扫描。固定GCC/Clang snapshot均通过parser symbols `21/21`、semantic parity `15/15`、
+  LSP source contracts `70/70`，真实exit 0，因此勾选Task2剩余两个stale checkbox。历史MSVC
+  evidence保留在Task2原records，本项未重跑MSVC、完整16-target matrix或三套stdio smoke；
+  relation external producer、call receiver/binary-native、其余Task7 consumer与Task8仍未完成。
