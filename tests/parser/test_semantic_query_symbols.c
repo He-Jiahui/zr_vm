@@ -412,6 +412,65 @@ static const SZrSemanticVisibleSymbolFact *symbol_find_visible_fact(
     return ZR_NULL;
 }
 
+static void test_visible_symbols_rejects_one_sided_source_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    TZrSemanticScopeId moduleScope;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrFileRange sourcelessPosition;
+
+    TEST_ASSERT_NOT_NULL(context);
+    moduleScope = symbol_publish_scope(
+            context,
+            ZR_SEMANTIC_ID_INVALID,
+            0U,
+            100U,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_FALSE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, moduleScope);
+    symbol_register(
+            context,
+            820U,
+            "visible",
+            ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+            92U,
+            ZR_SEMANTIC_ID_INVALID,
+            4U,
+            11U);
+    symbol_publish_visible(
+            context,
+            moduleScope,
+            820U,
+            ZR_SEMANTIC_ID_INVALID,
+            1U,
+            4U,
+            11U,
+            ZR_TRUE,
+            ZR_TRUE,
+            ZR_FALSE,
+            ZR_FALSE,
+            ZR_FALSE,
+            ZR_FALSE,
+            ZR_FALSE,
+            ZR_NULL);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            context, symbol_range(40U, 40U), ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbols.length);
+
+    memset(&sourcelessPosition, 0, sizeof(sourcelessPosition));
+    sourcelessPosition.start.offset = 40U;
+    sourcelessPosition.end.offset = 40U;
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_VisibleSymbols(
+            context, sourcelessPosition, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbols.length);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_visible_symbols_uses_scope_facts_for_shadowing_and_options(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     TZrSemanticScopeId moduleScope;
@@ -2115,6 +2174,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
     RUN_TEST(test_symbol_at_fails_closed_for_unresolved_reference);
+    RUN_TEST(test_visible_symbols_rejects_one_sided_source_identity);
     RUN_TEST(test_visible_symbols_uses_scope_facts_for_shadowing_and_options);
     RUN_TEST(test_visible_symbols_excludes_instance_members_from_static_scope);
     RUN_TEST(test_visible_symbols_project_compiled_source_scope_facts);

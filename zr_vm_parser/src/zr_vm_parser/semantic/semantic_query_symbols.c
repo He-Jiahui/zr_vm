@@ -13,7 +13,9 @@ typedef struct SZrSemanticVisibleSymbolCandidate {
 static TZrBool semantic_query_symbols_same_source(
         SZrString *left,
         SZrString *right) {
-    return left == ZR_NULL || right == ZR_NULL || ZrCore_String_Equal(left, right);
+    return (TZrBool)(left == right ||
+                     (left != ZR_NULL && right != ZR_NULL &&
+                      ZrCore_String_Equal(left, right)));
 }
 
 static TZrBool semantic_query_symbols_range_contains(
