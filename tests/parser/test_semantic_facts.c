@@ -826,6 +826,104 @@ static void test_cfg_definite_assignment_preserves_true_loop_break_write(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_cfg_dataflow_ignores_sourceless_facts_for_sourced_ast(void) {
+    const TZrChar *source =
+            "fn choose(): int {\n"
+            "    var seed: int;\n"
+            "    seed = 1;\n"
+            "    return seed;\n"
+            "}\n";
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange declarationRange;
+    SZrFileRange writeRange;
+    SZrFileRange readRange;
+    SZrAstNode declarationNode;
+    SZrAstNode writeNode;
+    SZrAstNode readNode;
+    const SZrSemanticReferenceFact *readFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "facts_cfg_source_identity_test.zr",
+            strlen("facts_cfg_source_identity_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    TEST_ASSERT_TRUE(find_source_range(
+            source,
+            ZR_NULL,
+            "seed: int",
+            0,
+            0,
+            strlen("seed"),
+            &declarationRange));
+    TEST_ASSERT_TRUE(find_source_range(
+            source,
+            ZR_NULL,
+            "seed = 1",
+            0,
+            0,
+            strlen("seed"),
+            &writeRange));
+    TEST_ASSERT_TRUE(find_source_range(
+            source,
+            ZR_NULL,
+            "return seed",
+            0,
+            strlen("return "),
+            strlen("seed"),
+            &readRange));
+
+    init_identifier_node_with_range(&declarationNode, declarationRange);
+    init_identifier_node_with_range(&writeNode, writeRange);
+    init_identifier_node_with_range(&readNode, readRange);
+    append_reference_fact(
+            context,
+            &declarationNode,
+            ZR_SEMANTIC_REFERENCE_DECLARATION,
+            106,
+            declarationRange);
+    append_reference_fact(
+            context,
+            &writeNode,
+            ZR_SEMANTIC_REFERENCE_WRITE,
+            106,
+            declarationRange);
+    append_reference_fact(
+            context,
+            &readNode,
+            ZR_SEMANTIC_REFERENCE_READ,
+            106,
+            declarationRange);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
+            context,
+            ast));
+    readFact = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            context,
+            readRange,
+            ZR_SEMANTIC_REFERENCE_READ);
+    TEST_ASSERT_NOT_NULL(readFact);
+    TEST_ASSERT_FALSE(readFact->hasDefiniteAssignmentState);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(
+            context,
+            ast));
+    readFact = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            context,
+            readRange,
+            ZR_SEMANTIC_REFERENCE_READ);
+    TEST_ASSERT_NOT_NULL(readFact);
+    TEST_ASSERT_FALSE(readFact->hasDefinitionRange);
+
+    ZrParser_Ast_Free(g_state, ast);
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_cfg_reaching_definitions_clears_finally_read_from_normal_and_return_paths(void) {
     const TZrChar *source =
             "fn choose(flag: bool): int {\n"
@@ -944,6 +1042,7 @@ int main(void) {
     RUN_TEST(test_cfg_definite_assignment_marks_self_initializer_read_uninit);
     RUN_TEST(test_cfg_definite_assignment_joins_finally_read_from_normal_and_return_paths);
     RUN_TEST(test_cfg_definite_assignment_preserves_true_loop_break_write);
+    RUN_TEST(test_cfg_dataflow_ignores_sourceless_facts_for_sourced_ast);
     RUN_TEST(test_cfg_reaching_definitions_clears_finally_read_from_normal_and_return_paths);
     return UNITY_END();
 }

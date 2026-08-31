@@ -21,13 +21,12 @@ typedef struct SZrSemanticDaAnalysis {
 } SZrSemanticDaAnalysis;
 
 static TZrBool semantic_da_same_source(SZrString *left, SZrString *right) {
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_TRUE;
-    }
     if (left == right) {
         return ZR_TRUE;
     }
-    return ZrCore_String_Equal(left, right);
+    return left != ZR_NULL &&
+           right != ZR_NULL &&
+           ZrCore_String_Equal(left, right);
 }
 
 static TZrBool semantic_da_has_offset(const SZrFilePosition *position) {

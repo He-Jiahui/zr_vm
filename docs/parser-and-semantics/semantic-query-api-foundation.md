@@ -161,6 +161,12 @@ against that same identity rule. Callers of reaching-definition and related
 fact queries must retain the source returned by their snapshot position
 converter; clearing it is not a supported way to make a range portable.
 
+CFG-backed definite-assignment and reaching-definition analysis applies the
+same rule when it maps reference facts to AST statements. A fact whose source
+is absent cannot participate in a sourced AST merely because its offsets fit
+the statement range. Such a fact keeps its assignment state and reaching
+definition unavailable; dataflow never imports it into another snapshot.
+
 ## Query Functions
 
 `ZrParser_SemanticQuery_TypeAt` finds the narrowest exact expression fact at a position and copies its `SZrInferredType` into the caller-owned output value. Missing facts, `UNKNOWN` or `APPROXIMATE` facts, invalid context, invalid output, or an out-of-scope position return `ZR_FALSE`; consumers must not reconstruct a type from source text after that failure.
