@@ -1073,7 +1073,7 @@ static const TZrChar *g_classes_full_fixture =
     "\n"
     "#zr.testing.test#\n"
     "fn classesFullProjectShape(): int {\n"
-    "    var boss = new BossHero(30);\n"
+    "    var boss: BossHero = new BossHero(30);\n"
     "    boss.hp = boss.hp + 7;\n"
     "    ScoreBoard.bonus = boss.heal(5);\n"
     "    return boss.total() + ScoreBoard.bonus;\n"
@@ -2663,7 +2663,12 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
     SZrLspPosition bossMemberCompletion;
     SZrLspPosition scoreBoardCompletion;
     SZrLspPosition bossHeroDefinition;
-    SZrLspPosition bossHeroNewReference;
+    SZrFileRange bossHeroDefinitionRange;
+    SZrFileRange bossHeroUsageRange;
+    SZrParserSemanticSymbolQuery bossHeroDeclarationQuery;
+    SZrParserSemanticSymbolQuery bossHeroUsageQuery;
+    SZrSemanticAnalyzer *analyzer;
+    TZrChar identityReason[256];
 
     TEST_START("LSP Class Member Navigation And Completion");
     TEST_INFO("Class Members", "Checking definition, references, document symbols, and get/set completions");
@@ -2702,13 +2707,52 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
     }
     ZrCore_Array_Free(state, &diagnostics);
 
-    if (!lsp_find_position_for_substring(g_classes_full_fixture, "BossHero(30)", 0, 0, &bossUsage) ||
+    if (!lsp_find_position_for_substring(g_classes_full_fixture, "boss: BossHero", 0, 6, &bossUsage) ||
         !lsp_find_position_for_substring(g_classes_full_fixture, "BossHero: BaseHero", 0, 0, &bossHeroDefinition) ||
-        !lsp_find_position_for_substring(g_classes_full_fixture, "BossHero(30)", 0, 0, &bossHeroNewReference) ||
         !lsp_find_position_for_substring(g_classes_full_fixture, "boss.hp =", 0, 5, &bossMemberCompletion) ||
         !lsp_find_position_for_substring(g_classes_full_fixture, "ScoreBoard.bonus =", 0, 11, &scoreBoardCompletion)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Class Member Navigation And Completion", "Failed to compute fixture positions");
+        return;
+    }
+
+    analyzer = find_test_analyzer(state, context, uri);
+    memset(&bossHeroDeclarationQuery, 0, sizeof(bossHeroDeclarationQuery));
+    memset(&bossHeroUsageQuery, 0, sizeof(bossHeroUsageQuery));
+    bossHeroDefinitionRange.start = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, bossHeroDefinition);
+    bossHeroDefinitionRange.end = bossHeroDefinitionRange.start;
+    bossHeroDefinitionRange.source = uri;
+    bossHeroUsageRange.start = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, bossUsage);
+    bossHeroUsageRange.end = bossHeroUsageRange.start;
+    bossHeroUsageRange.source = uri;
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext,
+                bossHeroDefinitionRange,
+                ZR_NULL,
+                &bossHeroDeclarationQuery) ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext,
+                bossHeroUsageRange,
+                ZR_NULL,
+                &bossHeroUsageQuery) ||
+        bossHeroDeclarationQuery.symbolId != bossHeroUsageQuery.symbolId ||
+        bossHeroDeclarationQuery.typeId != bossHeroUsageQuery.typeId) {
+        snprintf(identityReason,
+                 sizeof(identityReason),
+                 "BossHero declaration/use canonical identity mismatch: declaration=%u/%u role=%d usage=%u/%u role=%d",
+                 bossHeroDeclarationQuery.symbolId,
+                 bossHeroDeclarationQuery.typeId,
+                 (int)bossHeroDeclarationQuery.role,
+                 bossHeroUsageQuery.symbolId,
+                 bossHeroUsageQuery.typeId,
+                 (int)bossHeroUsageQuery.role);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Class Member Navigation And Completion",
+                  identityReason);
         return;
     }
 
@@ -2737,14 +2781,14 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
                                        bossHeroDefinition.line,
                                        bossHeroDefinition.character + 8) ||
         !location_array_contains_range(&references,
-                                       bossHeroNewReference.line,
-                                       bossHeroNewReference.character,
-                                       bossHeroNewReference.line,
-                                       bossHeroNewReference.character + 8)) {
+                                       bossUsage.line,
+                                       bossUsage.character,
+                                       bossUsage.line,
+                                       bossUsage.character + 8)) {
         dump_analyzer_state(state, context, uri);
         ZrCore_Array_Free(state, &references);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Class Member Navigation And Completion", "BossHero references should include both declaration and constructor usage");
+        TEST_FAIL(timer, "LSP Class Member Navigation And Completion", "BossHero references should include both declaration and explicit type usage");
         return;
     }
     ZrCore_Array_Free(state, &references);

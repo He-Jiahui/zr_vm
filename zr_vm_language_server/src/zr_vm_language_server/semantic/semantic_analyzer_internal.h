@@ -126,6 +126,11 @@ void ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
         SZrSemanticAnalyzer *analyzer,
         SZrFileRange location);
 
+void ZrLanguageServer_SemanticAnalyzer_RegisterTypecheckReceiverBindings(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *functionNode);
+
 TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *state,
                                                                    SZrSemanticAnalyzer *analyzer,
                                                                    SZrAstNode *node,

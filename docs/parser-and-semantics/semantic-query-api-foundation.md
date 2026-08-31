@@ -1207,3 +1207,18 @@ Extern callable environment registration is isolated in
 projects the returned canonical identity into the LSP symbol. This keeps
 callable binding construction separate from AST traversal and prevents the
 already-large symbol collector from absorbing another semantic producer.
+
+## Plan 03 Task 7.57 Canonical Typecheck Receiver Bindings
+
+The LSP typecheck pass owns a fresh callable type environment, but that scope
+must not invent new identities for implicit receivers. For non-static class
+and struct callables it resolves the `this` symbol already published by symbol
+collection and registers the same SymbolId, TypeId, and declaration range.
+Class callables likewise reuse the canonical `super` symbol with the current
+prototype's structured `extendsTypeName`. If either canonical symbol is absent,
+typecheck remains unavailable instead of creating an ordinary replacement.
+
+Super-constructor call facts are recorded only after receiver and parameter
+bindings have entered the callable scope. Constructor-call tokens continue to
+resolve to constructor identity; class navigation is tested through a type
+reference rather than reinterpreting `new Type(...)` as a type-symbol use.

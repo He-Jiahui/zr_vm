@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 13:10 +08:00。
-- 总体状态：进行中。Task 7.56 让extern source callable从parser type environment到
+- 最近更新时间：2026-08-31 13:35 +08:00。
+- 总体状态：进行中。Task 7.57 让独立LSP typecheck callable scope复用symbol collection
+  已发布的canonical `this/super` SymbolId/TypeId/range，并把super-constructor fact延后到参数
+  binding注册完成后；class member fixture三条虚假diagnostic归零，navigation/completion用例转PASS，
+  GCC/Clang interface失败集合从fixed6精确降为fixed5。Task 7.56 让extern source callable从parser type environment到
   compile-time environment、LSP symbol、call reference始终复用同一SymbolId/TypeId与exact
   declaration range；同一declaration在child env预声明时不再生成第二身份，GCC/Clang interface
   中extern navigation/signature转PASS，失败集合从fixed7精确降为fixed6。Task 7.55 让LSP symbols analyzer在已有canonical declaration
@@ -1135,3 +1138,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `7/17/30/22/23/30/6/21/64/124/19/15/11/70`、真实exit 0；两套interface均真实exit 1，
   extern case转PASS且失败集合从fixed7精确降为fixed6。本项未运行MSVC、完整16-target matrix或
   三套stdio smoke；其余六个producer marker、source/binary/native parity与Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 13:35 +08:00。Task 7.57 修复LSP symbol collection与
+  typecheck pass之间的receiver scope断层。新增`semantic_analyzer_typecheck_bindings.c`，仅对
+  非static class/struct method/meta function从symbol table取回canonical `this/super`并用原
+  SymbolId/TypeId/range注册到fresh type environment；缺失identity时fail closed，不创建普通
+  replacement。super-constructor facts改在receiver和parameter binding之后发布。首个RED为
+  `cannot_infer_exact_type`、`int/object` mismatch与inherited `member_not_found`三条diagnostic；
+  GREEN后fixture diagnostics=0。随后测试暴露`new BossHero(...)`是constructor call identity而非
+  class type identity，按Task 7.21改由显式`boss: BossHero`验证class definition/references。
+  GCC/Clang semantic-query diagnostics/parity/property/source-contract均通过`19/15/11/70`、真实
+  exit 0；两套interface均真实exit 1，class case转PASS且fixed6降为fixed5。广义semantic-analyzer
+  executable仍含既有fact/ownership/generic失败，不计GREEN；MSVC、完整16-target matrix与三套
+  stdio smoke未运行，其余五个producer marker与Task 8继续未完成。

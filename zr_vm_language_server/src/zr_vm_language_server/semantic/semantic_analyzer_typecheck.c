@@ -578,6 +578,10 @@ static void semantic_typecheck_callable_body(SZrState *state,
     SZrTypeEnvironment *savedTypeEnv;
 
     semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, functionNode, &contextSnapshot);
+    savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+    ZrLanguageServer_SemanticAnalyzer_RegisterTypecheckReceiverBindings(
+            state, analyzer, functionNode);
+    semantic_typecheck_register_parameter_bindings(state, analyzer, params);
     if (functionNode != ZR_NULL &&
         functionNode->type == ZR_AST_CLASS_META_FUNCTION &&
         analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL &&
@@ -586,8 +590,6 @@ static void semantic_typecheck_callable_body(SZrState *state,
                 analyzer->compilerState,
                 functionNode);
     }
-    savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
-    semantic_typecheck_register_parameter_bindings(state, analyzer, params);
 
     if (params != ZR_NULL && params->nodes != ZR_NULL) {
         for (TZrSize i = 0; i < params->count; i++) {
