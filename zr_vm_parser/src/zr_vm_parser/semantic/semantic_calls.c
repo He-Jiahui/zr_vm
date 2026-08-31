@@ -70,6 +70,7 @@ static TZrSymbolId semantic_calls_find_caller(
         const SZrFileRange *callSiteRange) {
     const SZrSemanticScopeFact *bestScope = ZR_NULL;
     TZrSize bestWidth = ZR_MAX_SIZE;
+    TZrBool isAmbiguous = ZR_FALSE;
     TZrSize index;
 
     if (context == ZR_NULL || callSiteRange == ZR_NULL ||
@@ -90,9 +91,13 @@ static TZrSymbolId semantic_calls_find_caller(
         if (bestScope == ZR_NULL || width < bestWidth) {
             bestScope = scope;
             bestWidth = width;
+            isAmbiguous = ZR_FALSE;
+        } else if (width == bestWidth &&
+                   bestScope->ownerSymbolId != scope->ownerSymbolId) {
+            isAmbiguous = ZR_TRUE;
         }
     }
-    if (bestScope != ZR_NULL &&
+    if (!isAmbiguous && bestScope != ZR_NULL &&
         bestScope->ownerSymbolId != ZR_SEMANTIC_ID_INVALID) {
         const SZrSemanticSymbolRecord *owner = ZrParser_Semantic_FindSymbolById(
                 context, bestScope->ownerSymbolId);

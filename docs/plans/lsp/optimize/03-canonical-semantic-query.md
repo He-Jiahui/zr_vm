@@ -91,7 +91,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Create: `tests/parser/test_semantic_query_calls.c`
 
 - [ ] CallAt 返回 selected target、overload candidate set、receiver TypeId、closed callable TypeId、argument-to-parameter mapping、conversion/exactness 和 call-site range。
-- [ ] semantic context 构建 caller SymbolId → call edges 索引；incoming/outgoing query 不扫描源文本。
+- [x] semantic context 构建 caller SymbolId → call edges 索引；incoming/outgoing query 不扫描源文本。
 - [x] 动态/无法解析调用返回 unresolved edge 与 reason，不把第一个同名函数当目标。
 - [ ] source、`.zro`、native descriptor external callable 共用同一 callable contract；当前 L8 overlay 的 `isExternalCallable`/signatureDisplay 必须在 parser 层封闭，不再由 hover/signature 各自拼装。
 
@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 08:19 +08:00。
-- 总体状态：进行中。Task 3.17 收紧relation append结构门禁，source/target endpoint各自必须
+- 最近更新时间：2026-08-31 08:30 +08:00。
+- 总体状态：进行中。Task 4.26 让等宽、同callsite但owner SymbolId不同的function scopes
+  fail closed为`CALLER_UNAVAILABLE`，不再按scope append order归属call edge；GCC/Clang
+  relations/query/symbols/calls/parity/source-contract `23/30/21/29/15/70`全部真实exit 0，
+  caller index/incoming/outgoing项已勾选。Task 3.17 收紧relation append结构门禁，source/target endpoint各自必须
   提供有效SymbolId或TypeId；GCC/Clang relation/query/symbol/call/parity/source-contract
   `23/30/21/28/15/70`全部真实exit 0，并据实勾选relation graph与四查询API两项。Task 2.3 已把`SymbolAt`/`VisibleSymbols` API与compiler-owned scope审计
   checkbox对齐；当前GCC/Clang parser symbols `21/21`、semantic parity `15/15`、LSP source
@@ -229,7 +232,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 3.17 relation endpoint identity integrity；Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 4.26 ambiguous caller identity fail-closed；Task 3.17 relation endpoint identity integrity；Task 2.3 symbol-query state reconciliation；Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -983,3 +986,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `23/30/21/28/15/70`、真实exit 0。据此勾选Task3 relation graph与四查询API两项。未运行
   MSVC、完整16-target matrix或三套stdio smoke；external/virtual metadata producer、跨provider
   generation矩阵、Task4 receiver/binary-native、其余Task7 consumer与Task8继续未完成。
+
+- 补充完成时间：2026-08-31 08:30 +08:00。Task 4.26 冻结caller scope identity：
+  最窄function scope正常获胜，同owner等宽重复fact保持有效；同callsite存在两个等宽但owner
+  SymbolId不同的function scopes时，caller归属冲突并返回`CALLER_UNAVAILABLE`，resolved target
+  仍可进入incoming query，两个候选owner的outgoing query均为空。RED中原28项全通过、新case
+  唯一失败，calls `29 Tests / 1 Failure`；GREEN后固定GCC/Clang snapshot均通过relations/query/
+  symbols/calls/parity/source-contract `23/30/21/29/15/70`、真实exit 0。据此勾选Task4
+  caller index/incoming/outgoing项。未运行MSVC、完整16-target matrix或三套stdio smoke；CallAt
+  receiver TypeId/member mapping、binary/native callable parity、其余Task7 consumer与Task8未完成。

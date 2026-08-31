@@ -412,6 +412,14 @@ uses the resolved call reference's SymbolId, closed callable TypeId, and
 declaration range for the target. It does not traverse a name, choose an
 overload by spelling, or retain an AST pointer in the edge.
 
+Caller selection also fails closed on contradictory scope identity. The
+narrowest containing function scope wins, but two equal-width scopes with
+different owner SymbolIds make the caller unavailable instead of selecting the
+first published fact. Duplicate equal-width facts for the same owner remain
+valid, and a strictly narrower function scope still supersedes its enclosing
+scope. Incoming queries may retain an exact target for an ambiguous caller,
+while neither conflicting owner receives an outgoing edge.
+
 `CallEdgesAt`, `OutgoingCalls`, and `IncomingCalls` project copied values from
 that carrier and sort by call-site range then stable ids. An edge whose source
 scope has no function owner is published with `CALLER_UNAVAILABLE`; an edge
