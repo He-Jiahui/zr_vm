@@ -1166,3 +1166,21 @@ If the canonical call payload is removed, the source call remains unavailable.
 The consumer does not recover a signature from local overloads, callee names,
 or declaration AST text. Callable-value and lambda fixtures that lack producer
 facts remain producer gaps rather than permission to re-enable reconstruction.
+
+## Plan 03 Task 7.55 Canonical LSP Local Bindings
+
+When the LSP symbols analyzer has already registered a source declaration as a
+canonical semantic symbol, the matching type-environment binding reuses that
+SymbolId, TypeId, and exact declaration range through
+`ZrParser_TypeEnvironment_RegisterCanonicalVariable`. It must not call the
+ordinary variable registration path and allocate a second identity for the
+same declaration.
+
+This rule applies to source variables, parameters, foreach bindings, implicit
+runtime symbols, and canonical property setter/init parameters. Temporary
+callable-return inference scopes that do not yet have a declared symbol may
+still use ordinary bindings. A local reference published from a canonical
+binding must therefore resolve to the same declaration identity regardless of
+whether its source is a file URI or another document URI scheme. Consumers do
+not rank conflicting names, reconstruct declarations from text, or special
+case URI schemes.

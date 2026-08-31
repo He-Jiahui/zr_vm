@@ -3,6 +3,7 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_property_contract.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 #include "zr_vm_parser/interface_contract.h"
@@ -232,7 +233,8 @@ static SZrFileRange semantic_parameter_diagnostic_location(
 static void register_variable_type_binding_in_env(SZrState *state,
                                                   SZrTypeEnvironment *typeEnv,
                                                   SZrString *name,
-                                                  SZrInferredType *typeInfo);
+                                                  SZrInferredType *typeInfo,
+                                                  SZrSymbol *symbol);
 
 static SZrTypeEnvironment *push_runtime_type_binding_scope(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer);
@@ -411,7 +413,8 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
                                                       ? analyzer->compilerState->typeEnv
                                                       : ZR_NULL,
                                                   parameter->name->name,
-                                                  paramTypeInfo);
+                                                  paramTypeInfo,
+                                                  ZR_NULL);
             ZrParser_InferredType_Free(state, paramTypeInfo);
             ZrCore_Memory_RawFree(state->global, paramTypeInfo, sizeof(SZrInferredType));
         }
@@ -861,7 +864,8 @@ static void collect_function_parameters(SZrState *state,
                                               analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv
                                                                                  : ZR_NULL,
                                               name,
-                                              typeInfo);
+                                              typeInfo,
+                                              symbol);
         semantic_free_type_info(state, typeInfo);
     }
 }
@@ -869,8 +873,27 @@ static void collect_function_parameters(SZrState *state,
 static void register_variable_type_binding_in_env(SZrState *state,
                                                   SZrTypeEnvironment *typeEnv,
                                                   SZrString *name,
-                                                  SZrInferredType *typeInfo) {
+                                                  SZrInferredType *typeInfo,
+                                                  SZrSymbol *symbol) {
+    SZrFileRange declarationRange;
+
     if (state == ZR_NULL || typeEnv == ZR_NULL || name == ZR_NULL || typeInfo == ZR_NULL) {
+        return;
+    }
+
+    if (symbol != ZR_NULL &&
+        symbol->semanticId != ZR_SEMANTIC_ID_INVALID &&
+        symbol->semanticTypeId != ZR_SEMANTIC_ID_INVALID) {
+        declarationRange = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
+        if (declarationRange.source != ZR_NULL) {
+            (void)ZrParser_TypeEnvironment_RegisterCanonicalVariable(state,
+                                                                    typeEnv,
+                                                                    name,
+                                                                    typeInfo,
+                                                                    symbol->semanticId,
+                                                                    symbol->semanticTypeId,
+                                                                    declarationRange);
+        }
         return;
     }
 
@@ -1313,7 +1336,8 @@ static void register_implicit_runtime_symbol(SZrState *state,
     register_variable_type_binding_in_env(state,
                                           analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
                                           name,
-                                          typeInfo);
+                                          typeInfo,
+                                          symbol);
     semantic_free_type_info(state, typeInfo);
 }
 
@@ -1380,20 +1404,8 @@ static void collect_single_parameter_symbol(SZrState *state,
     register_variable_type_binding_in_env(state,
                                           analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
                                           name,
-                                          typeInfo);
-    if (canonicalSymbolId != ZR_SEMANTIC_ID_INVALID &&
-        canonicalTypeId != ZR_SEMANTIC_ID_INVALID &&
-        analyzer->compilerState != ZR_NULL &&
-        analyzer->compilerState->typeEnv != ZR_NULL) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrParser_TypeEnvironment_FindVariableBinding(
-                analyzer->compilerState->typeEnv,
-                name);
-
-        if (binding != ZR_NULL) {
-            binding->symbolId = canonicalSymbolId;
-            binding->typeId = canonicalTypeId;
-        }
-    }
+                                          typeInfo,
+                                          symbol);
     semantic_free_type_info(state, typeInfo);
 }
 
@@ -1517,7 +1529,8 @@ static void collect_foreach_scope(SZrState *state,
                                                   ? analyzer->compilerState->typeEnv
                                                   : ZR_NULL,
                                               name,
-                                              typeInfo);
+                                              typeInfo,
+                                              symbol);
     }
 
     if (foreachLoop->block != ZR_NULL) {
@@ -1870,7 +1883,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                           ? analyzer->compilerState->typeEnv
                                                           : ZR_NULL,
                                                       name,
-                                                      typeInfo);
+                                                      typeInfo,
+                                                      symbol);
                 if (varDecl->value != ZR_NULL && analyzer->compilerState != ZR_NULL) {
                     ZrParser_Compiler_RegisterCallableValueBinding(analyzer->compilerState,
                                                                     name,
@@ -1982,13 +1996,15 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                           ? analyzer->compilerState->typeEnv
                                                           : ZR_NULL,
                                                       name,
-                                                      typeInfo);
+                                                      typeInfo,
+                                                      ZR_NULL);
                 register_variable_type_binding_in_env(state,
                                                       analyzer->compilerState != ZR_NULL
                                                           ? analyzer->compilerState->compileTimeTypeEnv
                                                           : ZR_NULL,
                                                       name,
-                                                      typeInfo);
+                                                      typeInfo,
+                                                      ZR_NULL);
                 if (typeInfo != ZR_NULL) {
                     ZrParser_InferredType_Free(state, typeInfo);
                     ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));

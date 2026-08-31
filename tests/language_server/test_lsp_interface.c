@@ -5506,6 +5506,12 @@ static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
     const TZrChar *content = "var x = 10; var y = x;\n";
     SZrLspPosition definitionPosition;
     SZrLspPosition declarationPosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileRange queryRange;
+    SZrFilePosition declarationFilePosition;
+    SZrParserSemanticSymbolQuery canonicalSymbol;
+    TZrSize resolvedReadCount = 0U;
+    TZrSize conflictingReadCount = 0U;
     SZrArray definitions;
     SZrArray references;
     SZrArray highlights;
@@ -5533,6 +5539,51 @@ static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
         TEST_FAIL(timer,
                   "LSP Web URI Local Symbol Navigation",
                   "Failed to prepare the web-uri local symbol fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    memset(&canonicalSymbol, 0, sizeof(canonicalSymbol));
+    queryRange.start = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, definitionPosition);
+    queryRange.end = queryRange.start;
+    queryRange.source = uri;
+    declarationFilePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, declarationPosition);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext, queryRange, ZR_NULL, &canonicalSymbol)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "The web-uri usage must resolve one canonical local symbol identity");
+        return;
+    }
+    for (TZrSize index = 0U;
+         index < analyzer->semanticContext->referenceFacts.length;
+         index++) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->referenceFacts, index);
+
+        if (fact == ZR_NULL || !fact->isResolved ||
+            fact->kind != ZR_SEMANTIC_REFERENCE_READ ||
+            fact->range.start.offset != queryRange.start.offset ||
+            fact->range.end.offset != queryRange.start.offset + 1U) {
+            continue;
+        }
+        resolvedReadCount++;
+        if (fact->symbolId != canonicalSymbol.symbolId) {
+            conflictingReadCount++;
+        }
+    }
+    if (resolvedReadCount == 0U || conflictingReadCount != 0U ||
+        canonicalSymbol.declarationRange.start.offset !=
+                declarationFilePosition.offset) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "The web-uri usage must not publish a competing resolved local identity");
         return;
     }
 
