@@ -18,10 +18,10 @@
 - Create: `tests/language_server/test_lsp_semantic_query_parity.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] 为现有 TypeAt、CanonicalTypeAt、CallAt、DefinitionOf、DeclarationOf、ReferencesOf、Diagnostics、PropertyAt 建立 source/binary/native 三路同构测试。
-- [ ] 每个 query 明确 ownership：返回 borrowed view 的有效期绑定 semantic snapshot；需要跨 snapshot 保存的结果必须复制 stable ids/ranges，不保存 AST/raw pointer。
-- [ ] 查询不得修改 compiler/analyzer 状态；重复调用结果顺序稳定。
-- [ ] exactness 为 UNKNOWN/APPROXIMATE 时上层必须 fail closed 或明确标记，不得回退到 LSP type text reconstruction。
+- [x] 为现有 TypeAt、CanonicalTypeAt、CallAt、DefinitionOf、DeclarationOf、ReferencesOf、Diagnostics、PropertyAt 建立 source/binary/native 三路同构测试。
+- [x] 每个 query 明确 ownership：返回 borrowed view 的有效期绑定 semantic snapshot；需要跨 snapshot 保存的结果必须复制 stable ids/ranges，不保存 AST/raw pointer。
+- [x] 查询不得修改 compiler/analyzer 状态；重复调用结果顺序稳定。
+- [x] exactness 为 UNKNOWN/APPROXIMATE 时上层必须 fail closed 或明确标记，不得回退到 LSP type text reconstruction。
 
 ## Task 2：补齐 symbol-at-position 与 visible symbols
 
@@ -150,8 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 07:55 +08:00。
-- 总体状态：进行中。Task 4.25 已冻结unresolved call edge reason矩阵：有效target缺声明坐标时
+- 最近更新时间：2026-08-31 08:03 +08:00。
+- 总体状态：进行中。Task 1.1 已把主计划Task1的四个stale checkbox与既有完成record对齐；
+  当前GCC/Clang query contract `4/4`、source/binary/native parity `15/15`真实exit 0，borrowed
+  snapshot、query purity、repeat stability与exactness fail-closed合同未改变。Task 4.25 已冻结unresolved call edge reason矩阵：有效target缺声明坐标时
   保留SymbolId并返回`TARGET_DECLARATION_UNAVAILABLE`，resolved id指向非函数时清零target并返回
   `TARGET_UNRESOLVED`，同名function不能替代canonical id。Task 4.24 已让source `ref/out` call mapping消费parser保存的structured
   marker range，返回完整`ref value`/`out value` argument range；`in`保持expression range，
@@ -223,7 +225,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Task 5.17 fixed GCC/Clang canonical graph `19/19`，parser/display分别`74/74`与
   `22/22`，均真实exit 0；仅修正测试fixture，未重跑interface、MSVC、完整16-target matrix或
   三套stdio smoke。
-- 本阶段完成项目：Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
+- 本阶段完成项目：Task 1.1 query-contract state reconciliation；Task 4.25 unresolved call reason matrix；Task 4.24 source argument passing ranges；Task 5.17 canonical tuple fixture contract；Task 6.38 canonical diagnostic multiplicity collapse；Task 6.37 diagnostic source identity fail-closed；Task 6.36 canonical diagnostic duplicate replacement；Task 5.16 owner variant display acceptance；Task 5.15 reference/readonly type-value alias producer；Task 5.14 GcBridge type-value alias producer；Task 5.13 wrapped type-value alias producer；Task 5.12 type-value alias producer；Task 5.11 const-generic expression alias；Task 5.10 generic type-use alias range；Task 5.9 qualified type-use alias producer；Task 5.8 ownership wrapper inner primitive alias producer；Task 5.7 primitive type-use alias producer；Task 5.6 use-site type display alias fact foundation；Task 5.5 nominal
   display identity integrity；Task 5.4 callable
   effect/passing display integrity；Task 5.3 composite
   display integrity；Task 5.2 const generic display
@@ -950,3 +952,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   interface均真实exit 1且精确保持fixed parent同一8个producer marker，delta 0、不计GREEN。
   本项未运行MSVC、完整16-target matrix或三套stdio smoke；receiver/member、receiver `TypeId`、
   binary/native mapping parity、Syntax05 imported identity producer及Plan 03 Task 7/Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 08:03 +08:00。Task 1.1 对账发现
+  `2026-08-24-plan03-task01-query-purity.md`已记录Task1三工具链完成，但主计划四个checkbox仍未勾选。
+  本项不改生产代码或测试语义，只按既有记录和当前重放证据修复状态：GCC/Clang
+  `zr_vm_semantic_query_contract_test`均`4/4`，`zr_vm_language_server_semantic_query_parity_test`
+  均`15/15`，真实exit 0。borrowed snapshot view、diagnostics query purity、重复调用稳定、
+  UNKNOWN/APPROXIMATE fail-closed及source/binary/native parity继续由既有测试冻结。历史MSVC证据仅
+  引用Task1原record，本项没有重跑MSVC、完整16-target matrix或三套stdio smoke；Plan 03整体仍因
+  Task4 receiver/binary-native producer、Task7 consumer迁移与Task8总门禁未完成而保持进行中。
