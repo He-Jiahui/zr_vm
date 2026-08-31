@@ -429,6 +429,17 @@ static void test_property_query_roundtrips_compiler_property_identity(void) {
             atQuery.propertyTypeId,
             usageQuery.propertyTypeId);
 
+    usageRange.source = ZR_NULL;
+    memset(&idQuery, 0x5a, sizeof(idQuery));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_PropertyAt(
+            cs.semanticContext,
+            usageRange,
+            ZR_NULL,
+            &idQuery));
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID,
+            idQuery.propertySymbolId);
+
     usageText = strstr(source, "Meter.shared");
     TEST_ASSERT_NOT_NULL(usageText);
     usageOffset = (TZrSize)(usageText - source) + strlen("Meter.");

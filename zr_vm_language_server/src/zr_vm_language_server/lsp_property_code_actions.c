@@ -462,7 +462,7 @@ TZrBool ZrLanguageServer_LspPropertyCodeActions_Append(
             context,
             uri,
             requestedRange.start);
-    positionRange = ZrParser_FileRange_Create(position, position, ZR_NULL);
+    positionRange = ZrParser_FileRange_Create(position, position, uri);
     if (!ZrParser_SemanticQuery_PropertyAt(
                 analyzer->semanticContext,
                 positionRange,

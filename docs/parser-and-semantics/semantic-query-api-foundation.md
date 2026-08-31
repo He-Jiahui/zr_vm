@@ -173,6 +173,12 @@ checks. Exact AST-node identity remains authoritative, but a different node at
 equal offsets cannot be associated through a one-sided missing source. This
 prevents move/release/wake observations from crossing snapshot boundaries.
 
+`PropertyAt` also requires that exact source identity for reference and
+declaration-range lookup. A sourced property cannot be selected by a
+sourceless request at the same offset. LSP consumers must attach the current
+document URI when converting protocol positions; `PropertyBySymbolId` remains
+the source-independent lookup after canonical identity has already resolved.
+
 ## Query Functions
 
 `ZrParser_SemanticQuery_TypeAt` finds the narrowest exact expression fact at a position and copies its `SZrInferredType` into the caller-owned output value. Missing facts, `UNKNOWN` or `APPROXIMATE` facts, invalid context, invalid output, or an out-of-scope position return `ZR_FALSE`; consumers must not reconstruct a type from source text after that failure.

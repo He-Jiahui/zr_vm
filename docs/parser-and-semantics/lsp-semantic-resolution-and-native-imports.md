@@ -743,6 +743,8 @@ structured parser diagnostic containing an exact machine-applicable replacement.
 set/init and explicit-field proxy actions query an unambiguous canonical requirement; reference,
 binary-only, stale, invalid, or ambiguous cases publish no action. Snapshot validation runs before
 serialization, so an edit is never paired with a newer document version than the ranges it captured.
+The code-action request converts its protocol position to a file range carrying the current document
+URI before calling `PropertyAt`; a sourceless equal-offset request is not a valid property identity.
 
 Incremental coverage uses a 64-property document. A body-only edit preserves the edited and
 unrelated PropertySymbolId/TypeId values; changing one property contract changes only that TypeId

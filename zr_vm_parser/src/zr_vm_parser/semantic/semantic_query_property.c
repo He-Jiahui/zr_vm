@@ -5,8 +5,11 @@
 static TZrBool semantic_property_same_source(
         SZrString *left,
         SZrString *right) {
-    return (TZrBool)(left == ZR_NULL || right == ZR_NULL || left == right ||
-                     ZrCore_String_Equal(left, right));
+    return (TZrBool)(
+            left == right ||
+            (left != ZR_NULL &&
+             right != ZR_NULL &&
+             ZrCore_String_Equal(left, right)));
 }
 
 static TZrBool semantic_property_range_contains(

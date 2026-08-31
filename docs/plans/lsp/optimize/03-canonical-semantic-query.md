@@ -150,8 +150,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 10:28 +08:00。
-- 总体状态：进行中。Task 1.4 将ownership dataflow的statement归属、region release与
+- 最近更新时间：2026-08-31 10:45 +08:00。
+- 总体状态：进行中。Task 1.5 将`PropertyAt` reference/contract range匹配收紧为exact
+  optional source identity，并修复property code-action consumer使其保留当前document URI；
+  sourceless同offset请求不再命中sourced property，LSP不按名称恢复。GCC/Clang property/facts/
+  query/contract/canonical/parity/source-contract `11/17/30/6/21/15/70`均真实exit 0，property
+  refactor恢复PASS，interface保持fixed8、delta 0。Task 1.4 将ownership dataflow的statement归属、region release与
   weak receiver wake range fallback收紧为exact optional source identity；不同AST节点即使
   offset相同，也不能靠单边缺source跨snapshot产生move/release/wake observation。GCC/Clang
   facts/query/parser diagnostic/compiler diagnostic/LSP diagnostic/parity/source-contract/
