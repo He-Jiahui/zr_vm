@@ -4431,12 +4431,25 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     SZrLspPosition secondCallPosition;
     SZrLspPosition signaturePosition;
     SZrLspPosition completionPosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileRange firstCallQueryRange;
+    SZrFileRange secondCallQueryRange;
+    SZrParserSemanticSymbolQuery firstCallSymbol;
+    SZrParserSemanticSymbolQuery secondCallSymbol;
+    SZrString *externName;
+    SZrFunctionTypeInfo *runtimeFunction = ZR_NULL;
+    SZrFunctionTypeInfo *compileTimeFunction = ZR_NULL;
+    SZrSymbol *externSymbol;
     SZrArray diagnostics;
     SZrArray definitions;
     SZrArray references;
     SZrArray highlights;
     SZrArray completions;
     SZrLspSignatureHelp *help = ZR_NULL;
+    TZrBool referencesResolved;
+    TZrBool hasDeclarationReference;
+    TZrBool hasFirstCallReference;
+    TZrBool hasSecondCallReference;
     TZrChar reason[256];
 
     TEST_START("LSP Extern Function Navigation And Signature Help");
@@ -4477,6 +4490,109 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
         return;
     }
     ZrCore_Array_Free(state, &diagnostics);
+
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    externName = ZrCore_String_Create(state, "NativeAdd", strlen("NativeAdd"));
+    externSymbol = analyzer != ZR_NULL && analyzer->symbolTable != ZR_NULL
+                           ? ZrLanguageServer_SymbolTable_Lookup(
+                                   analyzer->symbolTable, externName, ZR_NULL)
+                           : ZR_NULL;
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        !ZrParser_TypeEnvironment_LookupFunction(
+                analyzer->compilerState->typeEnv, externName, &runtimeFunction) ||
+        !ZrParser_TypeEnvironment_LookupFunction(
+                analyzer->compilerState->compileTimeTypeEnv,
+                externName,
+                &compileTimeFunction) ||
+        runtimeFunction == ZR_NULL || compileTimeFunction == ZR_NULL ||
+        externSymbol == ZR_NULL ||
+        runtimeFunction->symbolId != compileTimeFunction->symbolId ||
+        runtimeFunction->typeId != compileTimeFunction->typeId ||
+        externSymbol->semanticId != runtimeFunction->symbolId ||
+        externSymbol->semanticTypeId != runtimeFunction->typeId) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Extern declaration identities diverged: runtime=%u/%u compile=%u/%u lsp=%u/%u",
+                 runtimeFunction != ZR_NULL ? runtimeFunction->symbolId : 0U,
+                 runtimeFunction != ZR_NULL ? runtimeFunction->typeId : 0U,
+                 compileTimeFunction != ZR_NULL ? compileTimeFunction->symbolId : 0U,
+                 compileTimeFunction != ZR_NULL ? compileTimeFunction->typeId : 0U,
+                 externSymbol != ZR_NULL ? externSymbol->semanticId : 0U,
+                 externSymbol != ZR_NULL ? externSymbol->semanticTypeId : 0U);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  reason);
+        return;
+    }
+    memset(&firstCallSymbol, 0, sizeof(firstCallSymbol));
+    memset(&secondCallSymbol, 0, sizeof(secondCallSymbol));
+    firstCallQueryRange.start = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, firstCallPosition);
+    firstCallQueryRange.end = firstCallQueryRange.start;
+    firstCallQueryRange.source = uri;
+    secondCallQueryRange.start = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, secondCallPosition);
+    secondCallQueryRange.end = secondCallQueryRange.start;
+    secondCallQueryRange.source = uri;
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext,
+                firstCallQueryRange,
+                ZR_NULL,
+                &firstCallSymbol) ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext,
+                secondCallQueryRange,
+                ZR_NULL,
+                &secondCallSymbol) ||
+        firstCallSymbol.symbolId != secondCallSymbol.symbolId ||
+        firstCallSymbol.typeId != secondCallSymbol.typeId) {
+        const SZrSemanticSymbolRecord *firstRecord =
+                analyzer != ZR_NULL && analyzer->semanticContext != ZR_NULL
+                        ? ZrParser_Semantic_FindSymbolById(
+                                analyzer->semanticContext, firstCallSymbol.symbolId)
+                        : ZR_NULL;
+        const SZrSemanticSymbolRecord *secondRecord =
+                analyzer != ZR_NULL && analyzer->semanticContext != ZR_NULL
+                        ? ZrParser_Semantic_FindSymbolById(
+                                analyzer->semanticContext, secondCallSymbol.symbolId)
+                        : ZR_NULL;
+        snprintf(reason,
+                 sizeof(reason),
+                 "Extern calls must share one canonical identity: first=%u/%u/%d/%s/%s@%zu[%d] second=%u/%u/%d/%s/%s@%zu[%d]",
+                 firstCallSymbol.symbolId,
+                 firstCallSymbol.typeId,
+                 (int)firstCallSymbol.role,
+                 firstCallSymbol.displayName != ZR_NULL
+                         ? test_string_ptr(firstCallSymbol.displayName)
+                         : "<null>",
+                 firstRecord != ZR_NULL && firstRecord->name != ZR_NULL
+                         ? test_string_ptr(firstRecord->name)
+                         : "<null>",
+                 firstRecord != ZR_NULL ? (size_t)firstRecord->location.start.offset : 0U,
+                 firstRecord != ZR_NULL && firstRecord->astNode != ZR_NULL
+                         ? (int)firstRecord->astNode->type
+                         : -1,
+                 secondCallSymbol.symbolId,
+                 secondCallSymbol.typeId,
+                 (int)secondCallSymbol.role,
+                 secondCallSymbol.displayName != ZR_NULL
+                         ? test_string_ptr(secondCallSymbol.displayName)
+                         : "<null>",
+                 secondRecord != ZR_NULL && secondRecord->name != ZR_NULL
+                         ? test_string_ptr(secondRecord->name)
+                         : "<null>",
+                 secondRecord != ZR_NULL ? (size_t)secondRecord->location.start.offset : 0U,
+                 secondRecord != ZR_NULL && secondRecord->astNode != ZR_NULL
+                         ? (int)secondRecord->astNode->type
+                         : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  reason);
+        return;
+    }
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, firstCallPosition, &definitions) ||
@@ -4520,15 +4636,29 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
-    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, firstCallPosition, ZR_TRUE, &references) ||
-        !location_array_contains_position(&references, definitionPosition.line, definitionPosition.character) ||
-        !location_array_contains_position(&references, firstCallPosition.line, firstCallPosition.character) ||
-        !location_array_contains_position(&references, secondCallPosition.line, secondCallPosition.character)) {
+    referencesResolved = ZrLanguageServer_Lsp_FindReferences(
+            state, context, uri, firstCallPosition, ZR_TRUE, &references);
+    hasDeclarationReference = location_array_contains_position(
+            &references, definitionPosition.line, definitionPosition.character);
+    hasFirstCallReference = location_array_contains_position(
+            &references, firstCallPosition.line, firstCallPosition.character);
+    hasSecondCallReference = location_array_contains_position(
+            &references, secondCallPosition.line, secondCallPosition.character);
+    if (!referencesResolved || !hasDeclarationReference ||
+        !hasFirstCallReference || !hasSecondCallReference) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "resolved=%d count=%zu declaration=%d first=%d second=%d",
+                 referencesResolved,
+                 (size_t)references.length,
+                 hasDeclarationReference,
+                 hasFirstCallReference,
+                 hasSecondCallReference);
         ZrCore_Array_Free(state, &references);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Extern Function Navigation And Signature Help",
-                  "Extern function references should include the declaration and every call usage");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &references);

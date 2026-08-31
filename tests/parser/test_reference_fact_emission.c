@@ -623,6 +623,156 @@ static void test_resolved_function_call_records_call_reference_fact(void) {
     destroy_compiler_state(cs);
 }
 
+static void test_resolved_extern_function_call_reuses_declaration_identity(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *externBlock;
+    SZrAstNode *externDeclaration;
+    SZrAstNode *callExpr;
+    SZrAstNode *callTarget;
+    SZrInferredType intType;
+    SZrArray parameterTypes;
+    SZrArray parameterPassingModes;
+    SZrInferredType result;
+    SZrFunctionTypeInfo *runtimeFunction = ZR_NULL;
+    SZrFunctionTypeInfo *compileTimeFunction = ZR_NULL;
+    SZrTypeEnvironment *rootTypeEnv;
+    SZrTypeEnvironment *childTypeEnv;
+    SZrFileRange declarationRange;
+    const SZrSemanticReferenceFact *callFact;
+    const SZrSemanticReferenceFact *declarationFact;
+    const char *declarationName = "NativeAdd";
+    const char *source =
+            "native extern(\"fixture\") {\n"
+            "    fn NativeAdd(lhs: i32, rhs: i32): i32;\n"
+            "}\n"
+            "NativeAdd(1, 2);";
+    const char *declarationStart = strstr(source, declarationName);
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "reference_fact_extern_call_test.zr",
+            strlen("reference_fact_extern_call_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    externBlock = script_statement_at(ast, 0);
+    callExpr = expression_statement_expression_at(ast, 1);
+
+    TEST_ASSERT_NOT_NULL(externBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_BLOCK, externBlock->type);
+    TEST_ASSERT_NOT_NULL(externBlock->data.externBlock.declarations);
+    TEST_ASSERT_EQUAL_UINT64(1, externBlock->data.externBlock.declarations->count);
+    externDeclaration = externBlock->data.externBlock.declarations->nodes[0];
+    TEST_ASSERT_NOT_NULL(externDeclaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_FUNCTION_DECLARATION, externDeclaration->type);
+    TEST_ASSERT_NOT_NULL(declarationStart);
+
+    TEST_ASSERT_NOT_NULL(callExpr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, callExpr->type);
+    TEST_ASSERT_NOT_NULL(callExpr->data.primaryExpression.property);
+    callTarget = callExpr->data.primaryExpression.property;
+
+    ZrParser_InferredType_Init(g_state, &intType, ZR_VALUE_TYPE_INT64);
+    ZrCore_Array_Init(g_state, &parameterTypes, sizeof(SZrInferredType), 2);
+    ZrCore_Array_Init(
+            g_state,
+            &parameterPassingModes,
+            sizeof(EZrParameterPassingMode),
+            2);
+    ZrCore_Array_Push(g_state, &parameterTypes, &intType);
+    ZrCore_Array_Push(g_state, &parameterTypes, &intType);
+    {
+        EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+        ZrCore_Array_Push(g_state, &parameterPassingModes, &passingMode);
+        ZrCore_Array_Push(g_state, &parameterPassingModes, &passingMode);
+    }
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunctionEx(
+            g_state,
+            cs->typeEnv,
+            externDeclaration->data.externFunctionDeclaration.name->name,
+            &intType,
+            &parameterTypes,
+            ZR_NULL,
+            &parameterPassingModes,
+            externDeclaration));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupFunction(
+            cs->typeEnv,
+            externDeclaration->data.externFunctionDeclaration.name->name,
+            &runtimeFunction));
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    TEST_ASSERT_TRUE(runtimeFunction->hasDeclarationRange);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterCanonicalFunction(
+            g_state,
+            cs->compileTimeTypeEnv,
+            runtimeFunction->name,
+            &runtimeFunction->returnType,
+            &runtimeFunction->paramTypes,
+            &runtimeFunction->parameterPassingModes,
+            runtimeFunction->symbolId,
+            runtimeFunction->typeId,
+            runtimeFunction->declarationRange));
+
+    rootTypeEnv = cs->typeEnv;
+    childTypeEnv = ZrParser_TypeEnvironment_New(g_state);
+    TEST_ASSERT_NOT_NULL(childTypeEnv);
+    childTypeEnv->parent = rootTypeEnv;
+    childTypeEnv->semanticContext = cs->semanticContext;
+    cs->typeEnv = childTypeEnv;
+    ZrParser_Compiler_PredeclareExternBindings(cs, ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT64(0, childTypeEnv->functionReturnTypes.length);
+    cs->typeEnv = rootTypeEnv;
+    childTypeEnv->parent = ZR_NULL;
+    ZrParser_TypeEnvironment_Free(g_state, childTypeEnv);
+    TEST_ASSERT_EQUAL_UINT64(1, cs->typeEnv->functionReturnTypes.length);
+    TEST_ASSERT_EQUAL_UINT64(1, cs->compileTimeTypeEnv->functionReturnTypes.length);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupFunction(
+            cs->compileTimeTypeEnv,
+            externDeclaration->data.externFunctionDeclaration.name->name,
+            &compileTimeFunction));
+    TEST_ASSERT_NOT_NULL(compileTimeFunction);
+    TEST_ASSERT_EQUAL_UINT32(runtimeFunction->symbolId, compileTimeFunction->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(runtimeFunction->typeId, compileTimeFunction->typeId);
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, callExpr, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+    declarationRange = externDeclaration->location;
+    declarationRange.start.offset -= strlen(declarationName) + 1U;
+    declarationRange.start.column -= (TZrInt32)(strlen(declarationName) + 1U);
+    declarationRange.end = declarationRange.start;
+    declarationRange.end.offset += strlen(declarationName);
+    declarationRange.end.column += (TZrInt32)strlen(declarationName);
+    TEST_ASSERT_EQUAL_UINT64((TZrSize)(declarationStart - source),
+                             declarationRange.start.offset);
+    callFact = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            cs->semanticContext, callTarget->location);
+    declarationFact = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            cs->semanticContext, declarationRange);
+
+    TEST_ASSERT_NOT_NULL(callFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_CALL, callFact->kind);
+    TEST_ASSERT_TRUE(callFact->isResolved);
+    TEST_ASSERT_EQUAL_UINT64(declarationRange.start.offset,
+                             callFact->declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(declarationRange.end.offset,
+                             callFact->declarationRange.end.offset);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, callFact->symbolId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, callFact->typeId);
+
+    TEST_ASSERT_NOT_NULL(declarationFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_DECLARATION, declarationFact->kind);
+    TEST_ASSERT_EQUAL_UINT32(callFact->symbolId, declarationFact->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(callFact->typeId, declarationFact->typeId);
+
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrCore_Array_Free(g_state, &parameterPassingModes);
+    ZrCore_Array_Free(g_state, &parameterTypes);
+    ZrParser_InferredType_Free(g_state, &intType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_assignment_identifier_records_write_reference_fact);
@@ -631,5 +781,6 @@ int main(void) {
     RUN_TEST(test_computed_member_access_records_member_reference_without_hiding_index_read);
     RUN_TEST(test_assignment_member_targets_record_member_write_reference_facts);
     RUN_TEST(test_resolved_function_call_records_call_reference_fact);
+    RUN_TEST(test_resolved_extern_function_call_reuses_declaration_identity);
     return UNITY_END();
 }

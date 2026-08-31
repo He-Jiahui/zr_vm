@@ -99,6 +99,13 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
         const SZrType *typeNode,
         SZrInferredType *outType);
 
+SZrFunctionTypeInfo *
+ZrLanguageServer_SemanticAnalyzer_RegisterCanonicalExternFunctionBindings(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *declarationNode,
+        SZrExternFunctionDeclaration *funcDecl);
+
 TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAnalyzer *analyzer,
                                                                   SZrSymbol *symbol,
                                                                   EZrSemanticSymbolKind semanticKind,

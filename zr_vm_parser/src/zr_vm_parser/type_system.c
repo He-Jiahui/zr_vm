@@ -1613,6 +1613,105 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnviro
                                                        ZR_NULL);
 }
 
+static TZrBool type_environment_callable_declaration_range(
+        const SZrAstNode *declarationNode,
+        const SZrString *name,
+        SZrFileRange *declarationRange) {
+    const TZrChar *nameText;
+    TZrSize nameLength;
+
+    if (declarationNode == ZR_NULL || name == ZR_NULL || declarationRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (declarationNode->type == ZR_AST_FUNCTION_DECLARATION) {
+        *declarationRange = declarationNode->data.functionDeclaration.nameLocation;
+    } else if (declarationNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+        nameText = ZrCore_String_GetNativeString((SZrString *)name);
+        nameLength = nameText != ZR_NULL ? strlen(nameText) : 0U;
+        if (nameLength == 0U ||
+            declarationNode->location.start.offset < nameLength + 1U ||
+            declarationNode->location.start.column < (TZrInt32)(nameLength + 1U)) {
+            return ZR_FALSE;
+        }
+
+        *declarationRange = declarationNode->location;
+        declarationRange->start.offset -= nameLength + 1U;
+        declarationRange->start.column -= (TZrInt32)(nameLength + 1U);
+        declarationRange->end = declarationRange->start;
+        declarationRange->end.offset += nameLength;
+        declarationRange->end.column += (TZrInt32)nameLength;
+    } else {
+        return ZR_FALSE;
+    }
+
+    return declarationRange->source != ZR_NULL ||
+           declarationRange->start.line != 0 ||
+           declarationRange->start.column != 0 ||
+           declarationRange->end.line != 0 ||
+           declarationRange->end.column != 0 ||
+           declarationRange->start.offset != declarationRange->end.offset;
+}
+
+static TZrBool type_environment_declaration_ranges_equal(
+        const SZrFileRange *left,
+        const SZrFileRange *right) {
+    TZrBool sameSource;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    sameSource = left->source == right->source ||
+                 (left->source != ZR_NULL && right->source != ZR_NULL &&
+                  ZrCore_String_Equal(left->source, right->source));
+    return sameSource &&
+           left->start.line == right->start.line &&
+           left->start.column == right->start.column &&
+           left->start.offset == right->start.offset &&
+           left->end.line == right->end.line &&
+           left->end.column == right->end.column &&
+           left->end.offset == right->end.offset;
+}
+
+static TZrBool type_environment_has_callable_declaration(
+        const SZrTypeEnvironment *env,
+        const SZrString *name,
+        const SZrAstNode *declarationNode,
+        const SZrFileRange *declarationRange,
+        TZrBool hasDeclarationRange,
+        TZrBool isCallableValueBinding) {
+    const SZrTypeEnvironment *currentEnv;
+
+    for (currentEnv = env; currentEnv != ZR_NULL; currentEnv = currentEnv->parent) {
+        for (TZrSize index = 0U;
+             index < currentEnv->functionReturnTypes.length;
+             index++) {
+            SZrFunctionTypeInfo *const *candidate =
+                    (SZrFunctionTypeInfo *const *)ZrCore_Array_Get(
+                            (SZrArray *)&currentEnv->functionReturnTypes, index);
+
+            if (candidate == ZR_NULL || *candidate == ZR_NULL ||
+                (*candidate)->name == ZR_NULL ||
+                !ZrCore_String_Equal((*candidate)->name, (SZrString *)name) ||
+                (*candidate)->isCallableValueBinding != isCallableValueBinding) {
+                continue;
+            }
+            if (declarationNode != ZR_NULL &&
+                (*candidate)->declarationNode == declarationNode) {
+                return ZR_TRUE;
+            }
+            if (hasDeclarationRange && (*candidate)->hasDeclarationRange &&
+                type_environment_declaration_ranges_equal(
+                        &(*candidate)->declarationRange, declarationRange)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool type_environment_register_function_ex(
         SZrState *state,
         SZrTypeEnvironment *env,
@@ -1634,29 +1733,42 @@ static TZrBool type_environment_register_function_ex(
         return ZR_FALSE;
     }
 
-    if (declarationNode != ZR_NULL &&
-        declarationNode->type == ZR_AST_FUNCTION_DECLARATION &&
-        (declarationNode->data.functionDeclaration.nameLocation.source != ZR_NULL ||
-         declarationNode->data.functionDeclaration.nameLocation.start.line != 0 ||
-         declarationNode->data.functionDeclaration.nameLocation.start.column != 0 ||
-         declarationNode->data.functionDeclaration.nameLocation.end.line != 0 ||
-         declarationNode->data.functionDeclaration.nameLocation.end.column != 0 ||
-         declarationNode->data.functionDeclaration.nameLocation.start.offset !=
-                 declarationNode->data.functionDeclaration.nameLocation.end.offset)) {
-        declarationRange = declarationNode->data.functionDeclaration.nameLocation;
+    if (type_environment_callable_declaration_range(
+                declarationNode, name, &declarationRange)) {
         hasDeclarationRange = ZR_TRUE;
         location = declarationRange;
+    }
+    if (type_environment_has_callable_declaration(
+                env,
+                name,
+                declarationNode,
+                &declarationRange,
+                hasDeclarationRange,
+                isCallableValueBinding)) {
+        return ZR_FALSE;
     }
     
     // 允许同名重载，但拒绝完全相同的签名重复注册。
     for (TZrSize i = 0; i < env->functionReturnTypes.length; i++) {
         SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrCore_Array_Get(&env->functionReturnTypes, i);
-        if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL && 
-            (*funcInfo)->name != ZR_NULL && ZrCore_String_Equal((*funcInfo)->name, name) &&
-            (*funcInfo)->isCallableValueBinding == isCallableValueBinding &&
-            (*funcInfo)->genericParameters.length == (genericParameters != ZR_NULL ? genericParameters->length : 0) &&
-            function_type_info_matches_signature(*funcInfo, returnType, paramTypes)) {
-            return ZR_FALSE;
+        if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL &&
+            (*funcInfo)->name != ZR_NULL &&
+            ZrCore_String_Equal((*funcInfo)->name, name) &&
+            (*funcInfo)->isCallableValueBinding == isCallableValueBinding) {
+            if (declarationNode != ZR_NULL &&
+                (*funcInfo)->declarationNode == declarationNode) {
+                return ZR_FALSE;
+            }
+            if (hasDeclarationRange && (*funcInfo)->hasDeclarationRange &&
+                type_environment_declaration_ranges_equal(
+                        &(*funcInfo)->declarationRange, &declarationRange)) {
+                return ZR_FALSE;
+            }
+            if ((*funcInfo)->genericParameters.length ==
+                        (genericParameters != ZR_NULL ? genericParameters->length : 0) &&
+                function_type_info_matches_signature(*funcInfo, returnType, paramTypes)) {
+                return ZR_FALSE;
+            }
         }
     }
     

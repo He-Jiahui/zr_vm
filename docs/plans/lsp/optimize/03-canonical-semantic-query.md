@@ -150,8 +150,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 11:37 +08:00。
-- 总体状态：进行中。Task 7.55 让LSP symbols analyzer在已有canonical declaration
+- 最近更新时间：2026-08-31 13:10 +08:00。
+- 总体状态：进行中。Task 7.56 让extern source callable从parser type environment到
+  compile-time environment、LSP symbol、call reference始终复用同一SymbolId/TypeId与exact
+  declaration range；同一declaration在child env预声明时不再生成第二身份，GCC/Clang interface
+  中extern navigation/signature转PASS，失败集合从fixed7精确降为fixed6。Task 7.55 让LSP symbols analyzer在已有canonical declaration
   SymbolId/TypeId/range时，通过`RegisterCanonicalVariable`注册type binding；Web URI local
   use不再同时发布一个无声明的竞争SymbolId，GCC/Clang interface由fixed8精确降为fixed7。
   Task 6.41 删除interface const-field在LSP symbols analyzer中的
@@ -1118,3 +1121,17 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `22/15/19/11/70`、真实exit 0；两套interface均真实exit 1，Web URI case转PASS且失败集合
   从fixed8精确降为fixed7。本项未运行MSVC、完整16-target matrix或三套stdio smoke；其余
   七个producer marker、source/binary/native parity与Task 8继续未完成。
+
+- 补充完成时间：2026-08-31 13:10 +08:00。Task 7.56 修复source extern callable的
+  identity分叉。parser `RegisterFunctionEx`为extern名称计算exact declaration range并发布
+  declaration fact；同一AST或同一source-aware declaration range在当前/parent type environment
+  已存在时拒绝重复注册，因此函数体child env中的延迟extern预声明直接继承父binding。LSP将
+  runtime callable的SymbolId、TypeId、overload set与range注入compile-time binding和symbol table，
+  不再调用通用symbol注册分配第三身份；extern binding构造提取到独立
+  `semantic_analyzer_extern_bindings.c`，主symbols collector仅消费canonical结果。RED依次固定缺失declaration range、compile-time重复binding
+  与两个call site命中`6/2`和`1/2`不同身份；GREEN后definition/references/highlights/signature/
+  completion全部通过。固定GCC/Clang snapshot均通过reference/facts/query/symbols/relations/calls/
+  contract/canonical/compiler diagnostics/type-inference/LSP diagnostics/parity/property/source-contract
+  `7/17/30/22/23/30/6/21/64/124/19/15/11/70`、真实exit 0；两套interface均真实exit 1，
+  extern case转PASS且失败集合从fixed7精确降为fixed6。本项未运行MSVC、完整16-target matrix或
+  三套stdio smoke；其余六个producer marker、source/binary/native parity与Task 8继续未完成。

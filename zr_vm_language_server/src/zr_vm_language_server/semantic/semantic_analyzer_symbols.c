@@ -573,111 +573,6 @@ static void register_function_type_binding_in_env(SZrState *state,
     }
 }
 
-static void register_extern_function_type_binding_in_env(SZrState *state,
-                                                         SZrSemanticAnalyzer *analyzer,
-                                                         SZrTypeEnvironment *typeEnv,
-                                                         SZrAstNode *declarationNode,
-                                                         SZrExternFunctionDeclaration *funcDecl) {
-    SZrCompilerState *compilerState;
-    SZrInferredType returnType;
-    SZrArray paramTypes;
-    SZrArray parameterPassingModes;
-
-    if (state == ZR_NULL || analyzer == ZR_NULL || declarationNode == ZR_NULL || funcDecl == ZR_NULL) {
-        return;
-    }
-
-    compilerState = analyzer->compilerState;
-    if (compilerState == ZR_NULL ||
-        typeEnv == ZR_NULL ||
-        funcDecl->name == ZR_NULL ||
-        funcDecl->name->name == ZR_NULL) {
-        return;
-    }
-
-    if (funcDecl->returnType != ZR_NULL) {
-        ZrParser_InferredType_Init(state, &returnType, ZR_VALUE_TYPE_OBJECT);
-        if (!ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
-                                                                             ZR_NULL,
-                                                                             declarationNode,
-                                                                             funcDecl->returnType,
-                                                                             &returnType)) {
-            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state,
-                                                            analyzer,
-                                                            funcDecl->returnType->name != ZR_NULL
-                                                                ? funcDecl->returnType->name->location
-                                                                : declarationNode->location);
-            ZrParser_InferredType_Free(state, &returnType);
-            return;
-        }
-    }
-
-    if (funcDecl->returnType == ZR_NULL) {
-        ZrParser_InferredType_Init(state, &returnType, ZR_VALUE_TYPE_NULL);
-    }
-
-    ZrCore_Array_Init(state,
-                      &paramTypes,
-                      sizeof(SZrInferredType),
-                      funcDecl->params != ZR_NULL ? funcDecl->params->count : 0);
-    ZrCore_Array_Init(state,
-                      &parameterPassingModes,
-                      sizeof(EZrParameterPassingMode),
-                      funcDecl->params != ZR_NULL ? funcDecl->params->count : 0);
-    if (funcDecl->params != ZR_NULL) {
-        for (TZrSize index = 0; index < funcDecl->params->count; index++) {
-            SZrAstNode *paramNode = funcDecl->params->nodes[index];
-            SZrInferredType paramType;
-            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
-
-            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
-                continue;
-            }
-
-            ZrParser_InferredType_Init(state, &paramType, ZR_VALUE_TYPE_OBJECT);
-            if (paramNode->data.parameter.typeInfo != ZR_NULL) {
-                if (!ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
-                            analyzer,
-                            ZR_NULL,
-                            declarationNode,
-                            paramNode->data.parameter.typeInfo,
-                            &paramType)) {
-                    ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
-                            state,
-                            analyzer,
-                            semantic_parameter_diagnostic_location(paramNode));
-                    ZrParser_InferredType_Free(state, &paramType);
-                    continue;
-                }
-            } else {
-                ZrParser_InferredType_Init(state, &paramType, ZR_VALUE_TYPE_OBJECT);
-            }
-
-            passingMode = paramNode->data.parameter.passingMode;
-            ZrCore_Array_Push(state, &paramTypes, &paramType);
-            ZrCore_Array_Push(state, &parameterPassingModes, &passingMode);
-        }
-    }
-
-    ZrParser_TypeEnvironment_RegisterFunctionEx(state,
-                                                typeEnv,
-                                                funcDecl->name->name,
-                                                &returnType,
-                                                &paramTypes,
-                                                ZR_NULL,
-                                                &parameterPassingModes,
-                                                declarationNode);
-
-    ZrParser_InferredType_Free(state, &returnType);
-    for (TZrSize index = 0; index < paramTypes.length; index++) {
-        SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, index);
-        if (paramType != ZR_NULL) {
-            ZrParser_InferredType_Free(state, paramType);
-        }
-    }
-    ZrCore_Array_Free(state, &paramTypes);
-    ZrCore_Array_Free(state, &parameterPassingModes);
-}
 
 static void register_function_type_binding(SZrState *state,
                                            SZrSemanticAnalyzer *analyzer,
@@ -2032,6 +1927,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrSymbol *symbol = ZR_NULL;
             SZrSemanticCompilerContextSnapshot contextSnapshot;
             SZrInferredType *returnType;
+            SZrFunctionTypeInfo *canonicalFunction;
+            const SZrSemanticSymbolRecord *canonicalSymbol;
 
             if (name == ZR_NULL) {
                 return;
@@ -2039,20 +1936,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
 
             semantic_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
             returnType = create_type_info_from_type_node(state, analyzer, funcDecl->returnType);
-            register_extern_function_type_binding_in_env(state,
-                                                         analyzer,
-                                                         analyzer->compilerState != ZR_NULL
-                                                             ? analyzer->compilerState->typeEnv
-                                                             : ZR_NULL,
-                                                         node,
-                                                         funcDecl);
-            register_extern_function_type_binding_in_env(state,
-                                                         analyzer,
-                                                         analyzer->compilerState != ZR_NULL
-                                                             ? analyzer->compilerState->compileTimeTypeEnv
-                                                             : ZR_NULL,
-                                                         node,
-                                                         funcDecl);
+            canonicalFunction =
+                    ZrLanguageServer_SemanticAnalyzer_RegisterCanonicalExternFunctionBindings(
+                            state, analyzer, node, funcDecl);
             ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                                                      analyzer->symbolTable,
                                                      ZR_SYMBOL_FUNCTION,
@@ -2063,13 +1949,31 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                      node,
                                                      &symbol);
             if (symbol != ZR_NULL) {
-                symbol->selectionRange = compute_extern_callable_name_range(node, name);
+                symbol->selectionRange = canonicalFunction != ZR_NULL &&
+                                                 canonicalFunction->hasDeclarationRange
+                                         ? canonicalFunction->declarationRange
+                                         : compute_extern_callable_name_range(node, name);
             }
-            ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
-                                                                      symbol,
-                                                                      ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
-                                                                      returnType,
-                                                                      ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+            canonicalSymbol = canonicalFunction != ZR_NULL &&
+                                      analyzer->semanticContext != ZR_NULL
+                              ? ZrParser_Semantic_FindSymbolById(
+                                      analyzer->semanticContext,
+                                      canonicalFunction->symbolId)
+                              : ZR_NULL;
+            if (symbol != ZR_NULL && canonicalFunction != ZR_NULL &&
+                canonicalSymbol != ZR_NULL &&
+                canonicalFunction->typeId != ZR_SEMANTIC_ID_INVALID) {
+                symbol->semanticId = canonicalFunction->symbolId;
+                symbol->semanticTypeId = canonicalFunction->typeId;
+                symbol->overloadSetId = canonicalSymbol->overloadSetId;
+            } else {
+                ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(
+                        analyzer,
+                        symbol,
+                        ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                        returnType,
+                        ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+            }
             ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
 
             collect_function_like_scope(state,

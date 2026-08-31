@@ -1184,3 +1184,26 @@ binding must therefore resolve to the same declaration identity regardless of
 whether its source is a file URI or another document URI scheme. Consumers do
 not rank conflicting names, reconstruct declarations from text, or special
 case URI schemes.
+
+## Plan 03 Task 7.56 Canonical Extern Callable Identity
+
+Source extern functions use the runtime type-environment callable as their
+canonical declaration identity. Parser registration derives the exact extern
+name range from the declaration AST and publishes the declaration reference
+fact with the callable SymbolId and TypeId. The compile-time environment and
+LSP symbol then reuse those IDs, range, and overload set instead of allocating
+parallel semantic symbols.
+
+Callable registration treats an exact declaration AST identity or exact
+source-aware declaration range as unique across the current type environment
+and its parents. A delayed extern predeclaration inside a function-body child
+environment therefore inherits the module binding; differences between LSP
+and compiler inferred-type payloads cannot turn the same declaration into an
+overload. Calls, definitions, references, highlights, and signatures consume
+the resulting facts without name-based reconciliation or query tie-breaking.
+
+Extern callable environment registration is isolated in
+`semantic_analyzer_extern_bindings.c`; the general symbol collector only
+projects the returned canonical identity into the LSP symbol. This keeps
+callable binding construction separate from AST traversal and prevents the
+already-large symbol collector from absorbing another semantic producer.
