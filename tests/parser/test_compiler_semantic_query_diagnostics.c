@@ -692,9 +692,6 @@ static void test_compile_script_publishes_reaching_definition_for_definition_que
                                                  0,
                                                  strlen("return "),
                                                  &readPosition));
-    writePosition.source = ZR_NULL;
-    readPosition.source = ZR_NULL;
-
     definition = ZrParser_SemanticQuery_DefinitionOf(cs.semanticContext, readPosition, ZR_NULL);
     TEST_ASSERT_NOT_NULL(definition);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_WRITE, definition->kind);
@@ -749,15 +746,12 @@ static void test_compile_script_cfg_reaching_definitions_rejects_divergent_branc
                                                  0,
                                                  strlen("return "),
                                                  &readPosition));
-    readPosition.source = ZR_NULL;
     TEST_ASSERT_TRUE(find_position_for_substring(source,
                                                  sourceName,
                                                  "seed = 2",
                                                  0,
                                                  0,
                                                  &elseWritePosition));
-    elseWritePosition.source = ZR_NULL;
-
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(cs.semanticContext));
     readReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
             cs.semanticContext,
@@ -843,10 +837,6 @@ static void test_compile_script_cfg_reaching_definitions_rejects_loop_carried_wr
                                                  0,
                                                  strlen("return "),
                                                  &finalReadPosition));
-    bodyReadPosition.source = ZR_NULL;
-    loopWritePosition.source = ZR_NULL;
-    finalReadPosition.source = ZR_NULL;
-
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(cs.semanticContext));
     finalReadReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
             cs.semanticContext,
@@ -930,9 +920,6 @@ static void test_compile_script_cfg_reaching_definitions_preserves_true_loop_bre
                                                  0,
                                                  strlen("return "),
                                                  &finalReadPosition));
-    loopWritePosition.source = ZR_NULL;
-    finalReadPosition.source = ZR_NULL;
-
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(cs.semanticContext));
     finalReadReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
             cs.semanticContext,
@@ -1517,7 +1504,7 @@ static void assert_compiler_ownership_diagnostic(
     const SZrSemanticOwnershipFact *ownershipFact;
 
     sourceName = ZrCore_String_Create(
-            g_state, sourceNameText, strlen(sourceNameText));
+            g_state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);

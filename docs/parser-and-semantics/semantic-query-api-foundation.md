@@ -152,6 +152,15 @@ missing sources compare equal, two non-null sources compare by string value,
 and a missing source never matches a non-null source. Equal offsets alone do
 not authorize a query to cross a document or snapshot boundary.
 
+This rule also applies below the public query facade. Semantic fact position
+lookups and exact-range comparisons reject one-sided source identity, so
+`FactsAt` cannot select a sourced expression, reference, numeric,
+reachability, logical, or ownership fact for a sourceless request.
+`CanonicalTypeAt` validates both the request position and a node-scope root
+against that same identity rule. Callers of reaching-definition and related
+fact queries must retain the source returned by their snapshot position
+converter; clearing it is not a supported way to make a range portable.
+
 ## Query Functions
 
 `ZrParser_SemanticQuery_TypeAt` finds the narrowest exact expression fact at a position and copies its `SZrInferredType` into the caller-owned output value. Missing facts, `UNKNOWN` or `APPROXIMATE` facts, invalid context, invalid output, or an out-of-scope position return `ZR_FALSE`; consumers must not reconstruct a type from source text after that failure.

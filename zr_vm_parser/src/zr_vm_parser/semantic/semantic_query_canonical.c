@@ -6,18 +6,15 @@
 #include "zr_vm_parser/canonical_type.h"
 
 static TZrBool canonical_query_same_source(SZrString *left, SZrString *right) {
-    return (TZrBool)(left == ZR_NULL || right == ZR_NULL || left == right ||
-                     ZrCore_String_Equal(left, right));
+    return (TZrBool)(left == right ||
+                     (left != ZR_NULL && right != ZR_NULL &&
+                      ZrCore_String_Equal(left, right)));
 }
 
 static TZrBool canonical_query_same_optional_source_exact(
         SZrString *left,
         SZrString *right) {
-    if ((left == ZR_NULL) != (right == ZR_NULL)) {
-        return ZR_FALSE;
-    }
-    return (TZrBool)(left == ZR_NULL || left == right ||
-                     ZrCore_String_Equal(left, right));
+    return canonical_query_same_source(left, right);
 }
 
 static TZrBool canonical_query_contains(const SZrFileRange *range,

@@ -39,6 +39,21 @@ static SZrFileRange contract_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+static SZrFileRange contract_range_without_source(
+        TZrSize startOffset,
+        TZrSize endOffset) {
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    range.start.offset = startOffset;
+    range.start.line = 1;
+    range.start.column = (TZrInt32)startOffset + 1;
+    range.end.offset = endOffset;
+    range.end.line = 1;
+    range.end.column = (TZrInt32)endOffset + 1;
+    return range;
+}
+
 static void contract_init_node(SZrAstNode *node,
                                TZrSize startOffset,
                                TZrSize endOffset) {
@@ -140,6 +155,49 @@ static void test_facts_at_returns_repeatable_borrowed_fact_view(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_facts_at_rejects_one_sided_source_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode node;
+    SZrParserSemanticQueryFacts facts;
+
+    TEST_ASSERT_NOT_NULL(context);
+    contract_init_node(&node, 20U, 22U);
+    contract_append_expression(context, &node, ZR_SEMANTIC_FACT_EXACT);
+
+    memset(&facts, 0xA5, sizeof(facts));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_FactsAt(
+            context,
+            contract_range_without_source(21U, 21U),
+            ZR_NULL,
+            &facts));
+    TEST_ASSERT_NULL(facts.expression);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_canonical_type_at_rejects_one_sided_node_scope_source(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode node;
+    SZrAstNode scopeRoot;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticTypeQuery query;
+
+    TEST_ASSERT_NOT_NULL(context);
+    contract_init_node(&node, 24U, 26U);
+    contract_append_expression(context, &node, ZR_SEMANTIC_FACT_EXACT);
+    memset(&scopeRoot, 0, sizeof(scopeRoot));
+    scopeRoot.location = contract_range_without_source(23U, 27U);
+    ZrParser_SemanticQueryScope_Node(&scope, &scopeRoot);
+
+    memset(&query, 0xA5, sizeof(query));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            context, contract_range(25U, 25U), &scope, &query));
+    TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.typeId);
+    TEST_ASSERT_NULL(query.expression);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_diagnostics_query_does_not_materialize_context_state(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserSemanticQueryScope scope;
@@ -170,6 +228,8 @@ int main(void) {
     RUN_TEST(test_type_at_fails_closed_for_approximate_expression_fact);
     RUN_TEST(test_canonical_type_at_fails_closed_for_approximate_expression_fact);
     RUN_TEST(test_facts_at_returns_repeatable_borrowed_fact_view);
+    RUN_TEST(test_facts_at_rejects_one_sided_source_identity);
+    RUN_TEST(test_canonical_type_at_rejects_one_sided_node_scope_source);
     RUN_TEST(test_diagnostics_query_does_not_materialize_context_state);
     return UNITY_END();
 }
