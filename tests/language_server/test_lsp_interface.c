@@ -5934,10 +5934,23 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     ZrLanguageServer_LspSemanticQuery_Init(&query);
     if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, firstPrintLinePosition, &query) ||
         query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER ||
+        !query.hasCanonicalSymbol ||
+        !query.canonicalSymbol.hasExternalTarget ||
+        query.canonicalSymbol.externalTargetKind != ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE ||
         query.moduleName == ZR_NULL ||
         query.memberName == ZR_NULL ||
         strcmp(test_string_ptr(query.moduleName), "zr.system.console") != 0 ||
-        strcmp(test_string_ptr(query.memberName), "printLine") != 0) {
+        strcmp(test_string_ptr(query.memberName), "printLine") != 0 ||
+        query.resolvedMember.typeMemberInfo == ZR_NULL ||
+        !ZrLanguageServer_Lsp_StringsEqual(
+                query.canonicalSymbol.externalOwnerIdentity,
+                query.resolvedMember.typeMemberInfo->ownerTypeName) ||
+        query.canonicalSymbol.externalMetadataToken !=
+                query.resolvedMember.typeMemberInfo->metadataToken ||
+        query.canonicalSymbol.externalSignatureToken !=
+                query.resolvedMember.typeMemberInfo->signatureToken ||
+        query.canonicalSymbol.externalSignatureHash !=
+                query.resolvedMember.typeMemberInfo->signatureHash) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -5967,6 +5980,25 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         return;
     }
     ZrCore_Array_Free(state, &definitions);
+
+    {
+        SZrLspSemanticQuery mismatchedQuery = query;
+
+        mismatchedQuery.canonicalSymbol.externalSignatureHash ^= 1U;
+        ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+        if (ZrLanguageServer_LspSemanticQuery_AppendReferences(
+                    state, context, &mismatchedQuery, ZR_TRUE, &references) ||
+            references.length != 0U) {
+            ZrCore_Array_Free(state, &references);
+            ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer,
+                      "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                      "Imported references must fail closed when canonical external signature identity differs from the metadata row");
+            return;
+        }
+        ZrCore_Array_Free(state, &references);
+    }
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_LspSemanticQuery_AppendReferences(state, context, &query, ZR_TRUE, &references) ||
@@ -7344,6 +7376,8 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
         "}\n";
     SZrLspPosition consolePosition;
     SZrLspPosition printLinePosition;
+    SZrLspSemanticQuery consoleQuery;
+    SZrLspSemanticQuery printLineQuery;
     SZrArray tokens;
 
     TEST_START("LSP Semantic Tokens Cover Import Chain Members");
@@ -7369,6 +7403,31 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
                   "Failed to prepare semantic token import-chain fixture");
         return;
     }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&consoleQuery);
+    ZrLanguageServer_LspSemanticQuery_Init(&printLineQuery);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, consolePosition, &consoleQuery) ||
+        !consoleQuery.hasCanonicalSymbol ||
+        !consoleQuery.canonicalSymbol.hasExternalTarget ||
+        consoleQuery.canonicalSymbol.externalTargetKind !=
+                ZR_SEMANTIC_EXTERNAL_TARGET_MODULE ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, printLinePosition, &printLineQuery) ||
+        !printLineQuery.hasCanonicalSymbol ||
+        !printLineQuery.canonicalSymbol.hasExternalTarget ||
+        printLineQuery.canonicalSymbol.externalTargetKind !=
+                ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &consoleQuery);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &printLineQuery);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Cover Import Chain Members",
+                  "Import-chain token segments must expose canonical external module and callable identities");
+        return;
+    }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &consoleQuery);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &printLineQuery);
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||

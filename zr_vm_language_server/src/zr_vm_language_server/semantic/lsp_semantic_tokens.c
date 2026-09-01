@@ -1,9 +1,6 @@
 #include "project/lsp_project_internal.h"
-#include "module/lsp_module_metadata.h"
 #include "semantic/lsp_semantic_token_canonical.h"
 #include "semantic/lsp_semantic_token_entries.h"
-#include "semantic/lsp_semantic_query.h"
-#include "semantic/lsp_semantic_import_chain.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -28,17 +25,6 @@ static void semantic_token_get_string_view(SZrString *value, TZrNativeString *te
 static TZrBool semantic_token_string_equals_native(SZrString *value, const TZrChar *text, TZrSize length);
 static TZrBool semantic_token_is_identifier_start(TZrChar value);
 static TZrBool semantic_token_is_identifier_char(TZrChar value);
-static TZrInt32 semantic_token_type_from_symbol(EZrSymbolType type);
-static TZrInt32 semantic_token_type_from_value_kind(EZrLspResolvedValueKind kind);
-static TZrInt32 semantic_token_type_from_metadata_member(const SZrLspResolvedMetadataMember *member);
-static TZrInt32 semantic_token_resolve_metadata_chain_member(SZrState *state,
-                                                             SZrLspContext *context,
-                                                             SZrSemanticAnalyzer *analyzer,
-                                                             SZrLspProjectIndex *projectIndex,
-                                                             SZrString *moduleName,
-                                                             const TZrChar *text,
-                                                             TZrSize length,
-                                                             SZrString **outNextModuleName);
 static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              SZrArray *entries,
                                              const TZrChar *content,
@@ -67,13 +53,11 @@ static void semantic_token_add_symbol_tokens(SZrState *state,
                                              SZrString *uri,
                                              SZrArray *entries);
 static void semantic_token_scan_source(SZrState *state,
-                                       SZrLspContext *context,
                                        SZrString *uri,
                                        const TZrChar *content,
                                        TZrSize contentLength,
                                        SZrSemanticAnalyzer *analyzer,
                                        SZrArray *bindings,
-                                       SZrLspProjectIndex *projectIndex,
                                        SZrArray *entries);
 
 static void semantic_token_get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
@@ -114,139 +98,6 @@ static TZrBool semantic_token_is_identifier_start(TZrChar value) {
 
 static TZrBool semantic_token_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
-}
-
-static TZrInt32 semantic_token_type_from_symbol(EZrSymbolType type) {
-    switch (type) {
-        case ZR_SYMBOL_MODULE: return ZR_LSP_SEMANTIC_TOKEN_NAMESPACE;
-        case ZR_SYMBOL_CLASS: return ZR_LSP_SEMANTIC_TOKEN_CLASS;
-        case ZR_SYMBOL_STRUCT: return ZR_LSP_SEMANTIC_TOKEN_STRUCT;
-        case ZR_SYMBOL_INTERFACE: return ZR_LSP_SEMANTIC_TOKEN_INTERFACE;
-        case ZR_SYMBOL_ENUM:
-        case ZR_SYMBOL_ENUM_MEMBER: return ZR_LSP_SEMANTIC_TOKEN_ENUM;
-        case ZR_SYMBOL_FUNCTION: return ZR_LSP_SEMANTIC_TOKEN_FUNCTION;
-        case ZR_SYMBOL_METHOD: return ZR_LSP_SEMANTIC_TOKEN_METHOD;
-        case ZR_SYMBOL_PROPERTY:
-        case ZR_SYMBOL_FIELD: return ZR_LSP_SEMANTIC_TOKEN_PROPERTY;
-        case ZR_SYMBOL_PARAMETER: return ZR_LSP_SEMANTIC_TOKEN_PARAMETER;
-        default: return ZR_LSP_SEMANTIC_TOKEN_VARIABLE;
-    }
-}
-
-static TZrInt32 semantic_token_type_from_value_kind(EZrLspResolvedValueKind kind) {
-    switch (kind) {
-        case ZR_LSP_RESOLVED_VALUE_KIND_MODULE:
-            return ZR_LSP_SEMANTIC_TOKEN_NAMESPACE;
-        case ZR_LSP_RESOLVED_VALUE_KIND_CALLABLE:
-            return ZR_LSP_SEMANTIC_TOKEN_METHOD;
-        default:
-            return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-    }
-}
-
-static TZrInt32 semantic_token_type_from_metadata_member(const SZrLspResolvedMetadataMember *member) {
-    if (member == ZR_NULL) {
-        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-    }
-
-    switch (member->memberKind) {
-        case ZR_LSP_METADATA_MEMBER_MODULE:
-            return ZR_LSP_SEMANTIC_TOKEN_NAMESPACE;
-        case ZR_LSP_METADATA_MEMBER_CONSTANT:
-        case ZR_LSP_METADATA_MEMBER_FIELD:
-        case ZR_LSP_METADATA_MEMBER_PROPERTY:
-            return ZR_LSP_SEMANTIC_TOKEN_PROPERTY;
-        case ZR_LSP_METADATA_MEMBER_FUNCTION:
-        case ZR_LSP_METADATA_MEMBER_METHOD:
-            return ZR_LSP_SEMANTIC_TOKEN_METHOD;
-        case ZR_LSP_METADATA_MEMBER_TYPE:
-            if (member->typeDescriptor != ZR_NULL &&
-                member->typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
-                return ZR_LSP_SEMANTIC_TOKEN_CLASS;
-            }
-            if (member->typeDescriptor != ZR_NULL) {
-                return ZR_LSP_SEMANTIC_TOKEN_STRUCT;
-            }
-            if (member->declarationSymbol != ZR_NULL) {
-                return semantic_token_type_from_symbol(member->declarationSymbol->type);
-            }
-            return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-        default:
-            return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-    }
-}
-
-static TZrInt32 semantic_token_resolve_metadata_chain_member(SZrState *state,
-                                                             SZrLspContext *context,
-                                                             SZrSemanticAnalyzer *analyzer,
-                                                             SZrLspProjectIndex *projectIndex,
-                                                             SZrString *moduleName,
-                                                             const TZrChar *text,
-                                                             TZrSize length,
-                                                             SZrString **outNextModuleName) {
-    SZrLspResolvedMetadataMember resolvedMember;
-    SZrString *memberName;
-    TZrInt32 tokenType;
-
-    if (outNextModuleName != ZR_NULL) {
-        *outNextModuleName = ZR_NULL;
-    }
-    if (state == ZR_NULL || context == ZR_NULL || moduleName == ZR_NULL || text == ZR_NULL || length == 0) {
-        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-    }
-
-    memberName = ZrCore_String_Create(state, (TZrNativeString)text, length);
-    if (memberName == ZR_NULL) {
-        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-    }
-
-    if (!ZrLanguageServer_LspSemanticImportChain_ResolveLinkedMember(state,
-                                                                     context,
-                                                                     analyzer,
-                                                                     projectIndex,
-                                                                     moduleName,
-                                                                     memberName,
-                                                                     &resolvedMember,
-                                                                     outNextModuleName)) {
-        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-    }
-
-    tokenType = semantic_token_type_from_metadata_member(&resolvedMember);
-    if (tokenType == ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
-        tokenType = semantic_token_type_from_value_kind(
-            resolvedMember.memberKind == ZR_LSP_METADATA_MEMBER_MODULE
-                ? ZR_LSP_RESOLVED_VALUE_KIND_MODULE
-                : resolvedMember.memberKind == ZR_LSP_METADATA_MEMBER_FUNCTION ||
-                          resolvedMember.memberKind == ZR_LSP_METADATA_MEMBER_METHOD
-                      ? ZR_LSP_RESOLVED_VALUE_KIND_CALLABLE
-                      : ZR_LSP_RESOLVED_VALUE_KIND_UNKNOWN);
-    }
-
-    return tokenType;
-}
-
-static TZrBool semantic_token_is_member_like(TZrInt32 tokenType) {
-    return tokenType == ZR_LSP_SEMANTIC_TOKEN_FUNCTION || tokenType == ZR_LSP_SEMANTIC_TOKEN_METHOD ||
-           tokenType == ZR_LSP_SEMANTIC_TOKEN_PROPERTY;
-}
-
-static TZrBool semantic_token_should_prefer_chain_fallback(TZrInt32 tokenType, TZrInt32 fallbackTokenType) {
-    if (fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
-        return ZR_FALSE;
-    }
-    if (tokenType == ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
-        return ZR_TRUE;
-    }
-    if (tokenType != fallbackTokenType &&
-        (fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_NAMESPACE ||
-         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_CLASS ||
-         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_STRUCT ||
-         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_INTERFACE ||
-         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_ENUM)) {
-        return ZR_TRUE;
-    }
-
-    return semantic_token_is_member_like(fallbackTokenType) && !semantic_token_is_member_like(tokenType);
 }
 
 static TZrBool semantic_token_add_utf16_span(SZrState *state,
@@ -464,13 +315,11 @@ static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize lengt
 }
 
 static void semantic_token_scan_source(SZrState *state,
-                                       SZrLspContext *context,
                                        SZrString *uri,
                                        const TZrChar *content,
                                        TZrSize contentLength,
                                        SZrSemanticAnalyzer *analyzer,
                                        SZrArray *bindings,
-                                       SZrLspProjectIndex *projectIndex,
                                        SZrArray *entries) {
     TZrSize offset = 0;
     TZrUInt32 line = 0;
@@ -726,7 +575,6 @@ static void semantic_token_scan_source(SZrState *state,
                                           ZR_LSP_SEMANTIC_TOKEN_NAMESPACE);
 
             {
-                SZrString *currentModuleName = binding->moduleName;
                 TZrSize chainOffset = offset;
                 TZrUInt32 chainCharacter = character;
 
@@ -737,8 +585,6 @@ static void semantic_token_scan_source(SZrState *state,
                     TZrSize segmentLength;
                     TZrInt32 tokenType;
                     TZrUInt32 tokenModifiers = 0U;
-                    TZrInt32 fallbackTokenType = ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
-                    SZrString *nextModuleName = ZR_NULL;
 
                     while (chainOffset < contentLength &&
                            isspace((unsigned char)content[chainOffset]) &&
@@ -788,20 +634,6 @@ static void semantic_token_scan_source(SZrState *state,
                         segmentLine,
                         segmentCharacter,
                         &tokenModifiers);
-                    fallbackTokenType = semantic_token_resolve_metadata_chain_member(state,
-                                                                                     context,
-                                                                                     analyzer,
-                                                                                     projectIndex,
-                                                                                     currentModuleName,
-                                                                                     content + segmentStart,
-                                                                                     segmentLength,
-                                                                                     &nextModuleName);
-                    if (nextModuleName != ZR_NULL) {
-                        currentModuleName = nextModuleName;
-                    }
-                    if (semantic_token_should_prefer_chain_fallback(tokenType, fallbackTokenType)) {
-                        tokenType = fallbackTokenType;
-                    }
                     if (tokenType >= 0) {
                         semantic_token_add_utf16_span_with_modifiers(state,
                                                                      entries,
@@ -828,7 +660,6 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     SZrFileVersion *fileVersion;
     SZrFileVersionContentSnapshot snapshot = {0};
     SZrSemanticAnalyzer *analyzer;
-    SZrLspProjectIndex *projectIndex;
     SZrArray entries;
     SZrArray bindings;
 
@@ -836,7 +667,6 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
         return ZR_FALSE;
     }
 
-    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
@@ -865,13 +695,11 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     }
 
     semantic_token_scan_source(state,
-                               context,
                                uri,
                                snapshot.content,
                                snapshot.contentLength,
                                analyzer,
                                &bindings,
-                               projectIndex,
                                &entries);
     ZrLanguageServer_LspSemanticTokenEntries_AppendEncoded(state, &entries, result);
 

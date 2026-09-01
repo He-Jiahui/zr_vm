@@ -4404,6 +4404,33 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             memberNode,
                             memberInfo,
                             ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+                    if (memberInfo->declarationNode == ZR_NULL &&
+                        type_name_is_module_prototype_inference(
+                                cs, currentType.typeName)) {
+                        EZrSemanticExternalTargetKind externalTargetKind =
+                                ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN;
+
+                        if (nextType.typeName != ZR_NULL &&
+                            type_name_is_module_prototype_inference(
+                                    cs, nextType.typeName)) {
+                            externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_MODULE;
+                        } else if (memberExpr->property->type == ZR_AST_TYPE ||
+                                   nextIsPrototypeReference) {
+                            externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_TYPE;
+                        } else if (memberInfo->memberType ==
+                                   ZR_AST_PROPERTY_DECLARATION) {
+                            externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_PROPERTY;
+                        } else if (memberInfo->memberType == ZR_AST_CLASS_FIELD ||
+                                   memberInfo->memberType == ZR_AST_STRUCT_FIELD) {
+                            externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_VALUE;
+                        }
+                        type_inference_record_external_member_reference_fact(
+                                cs,
+                                memberNode,
+                                memberInfo,
+                                &nextType,
+                                externalTargetKind);
+                    }
                     if (currentIsPrototypeReference &&
                         (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
                          memberInfo->memberType == ZR_AST_CLASS_METHOD ||

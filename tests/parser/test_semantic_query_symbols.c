@@ -68,6 +68,45 @@ static const ZrLibModuleDescriptor kSymbolGenericEchoModule = {
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
 };
 
+static const ZrLibFunctionDescriptor kSymbolExternalIdentityFunctions[] = {
+        {
+                .name = "ping",
+                .minArgumentCount = 0U,
+                .maxArgumentCount = 0U,
+                .callback = ZR_NULL,
+                .returnTypeName = "null",
+                .documentation = "External identity fixture callable.",
+        },
+};
+
+static const ZrLibModuleDescriptor kSymbolExternalIdentityLeafModule = {
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "semantic.external_identity.leaf",
+        .functions = kSymbolExternalIdentityFunctions,
+        .functionCount = ZR_ARRAY_COUNT(kSymbolExternalIdentityFunctions),
+        .documentation = "External identity fixture leaf module.",
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+};
+
+static const ZrLibModuleLinkDescriptor kSymbolExternalIdentityModuleLinks[] = {
+        {
+                .name = "console",
+                .moduleName = "semantic.external_identity.leaf",
+                .documentation = "External identity fixture module link.",
+        },
+};
+
+static const ZrLibModuleDescriptor kSymbolExternalIdentityRootModule = {
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "semantic.external_identity.root",
+        .documentation = "External identity fixture root module.",
+        .moduleLinks = kSymbolExternalIdentityModuleLinks,
+        .moduleLinkCount = ZR_ARRAY_COUNT(kSymbolExternalIdentityModuleLinks),
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+};
+
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
@@ -1741,6 +1780,114 @@ static void test_symbol_at_projects_native_module_function_identity(void) {
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, symbolAt.kind);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbolAt.declarationRange.start.offset);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbolAt.declarationRange.end.offset);
+    TEST_ASSERT_TRUE(symbolAt.hasExternalTarget);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE,
+            symbolAt.externalTargetKind);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math",
+            ZrCore_String_GetNativeString(symbolAt.externalOwnerIdentity));
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, symbolAt.externalMetadataToken);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, symbolAt.externalSignatureToken);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, symbolAt.externalSignatureHash);
+    TEST_ASSERT_EQUAL_UINT64(0U, symbolAt.externalProviderGeneration);
+
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_symbol_at_projects_native_module_chain_external_identity(void) {
+    const TZrChar *source =
+            "var api = import(\"semantic.external_identity.root\");\n"
+            "var first = api.console.ping();\n"
+            "var second = api.console.ping();\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticSymbolQuery firstModule;
+    SZrParserSemanticSymbolQuery secondModule;
+    SZrParserSemanticSymbolQuery firstCallable;
+    SZrParserSemanticSymbolQuery secondCallable;
+
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "symbol_at_native_module_chain_external_identity.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_RegisterModule(
+            g_state->global, &kSymbolExternalIdentityLeafModule));
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_RegisterModule(
+            g_state->global, &kSymbolExternalIdentityRootModule));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    memset(&firstModule, 0, sizeof(firstModule));
+    memset(&secondModule, 0, sizeof(secondModule));
+    memset(&firstCallable, 0, sizeof(firstCallable));
+    memset(&secondCallable, 0, sizeof(secondCallable));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "console", 0U),
+            ZR_NULL,
+            &firstModule));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "console", 1U),
+            ZR_NULL,
+            &secondModule));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "ping", 0U),
+            ZR_NULL,
+            &firstCallable));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "ping", 1U),
+            ZR_NULL,
+            &secondCallable));
+
+    TEST_ASSERT_TRUE(firstModule.hasExternalTarget);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_EXTERNAL_TARGET_MODULE, firstModule.externalTargetKind);
+    TEST_ASSERT_EQUAL_STRING(
+            "semantic.external_identity.root",
+            ZrCore_String_GetNativeString(firstModule.externalOwnerIdentity));
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, firstModule.externalMetadataToken);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, firstModule.externalSignatureToken);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, firstModule.externalSignatureHash);
+    TEST_ASSERT_EQUAL_UINT64(0U, firstModule.externalProviderGeneration);
+    TEST_ASSERT_EQUAL_UINT32(firstModule.symbolId, secondModule.symbolId);
+    TEST_ASSERT_EQUAL_UINT32(
+            firstModule.externalMetadataToken, secondModule.externalMetadataToken);
+    TEST_ASSERT_EQUAL_UINT64(
+            firstModule.externalSignatureHash, secondModule.externalSignatureHash);
+
+    TEST_ASSERT_TRUE(firstCallable.hasExternalTarget);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE, firstCallable.externalTargetKind);
+    TEST_ASSERT_EQUAL_STRING(
+            "semantic.external_identity.leaf",
+            ZrCore_String_GetNativeString(firstCallable.externalOwnerIdentity));
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, firstCallable.externalMetadataToken);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, firstCallable.externalSignatureToken);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, firstCallable.externalSignatureHash);
+    TEST_ASSERT_EQUAL_UINT64(0U, firstCallable.externalProviderGeneration);
+    TEST_ASSERT_EQUAL_UINT32(firstCallable.symbolId, secondCallable.symbolId);
+    TEST_ASSERT_EQUAL_UINT32(
+            firstCallable.externalMetadataToken,
+            secondCallable.externalMetadataToken);
+    TEST_ASSERT_EQUAL_UINT64(
+            firstCallable.externalSignatureHash,
+            secondCallable.externalSignatureHash);
+    TEST_ASSERT_NOT_EQUAL_UINT32(firstModule.symbolId, firstCallable.symbolId);
 
     symbol_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -2190,6 +2337,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_interface_method_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_direct_import_alias);
     RUN_TEST(test_symbol_at_projects_native_module_function_identity);
+    RUN_TEST(test_symbol_at_projects_native_module_chain_external_identity);
     RUN_TEST(test_symbol_at_projects_native_generic_receiver_declaration_identity);
     RUN_TEST(test_visible_symbols_projects_destructured_import_and_type_value_aliases);
     RUN_TEST(test_visible_symbols_projects_source_type_members);

@@ -53,6 +53,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_semantic_query.c
@@ -112,6 +114,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
 plan_sources:
   - user: 2026-06-20 参照 docs/plans/lsp 优化语义推断能力
@@ -191,7 +195,11 @@ the source-independent lookup after canonical identity has already resolved.
 
 `ZrParser_SemanticQuery_FactsAt` aggregates facts available at a position into `SZrParserSemanticQueryFacts`: expression, reference, numeric, reachability, logical, and ownership. Numeric facts are found by position because the lower-level fact API only exposed by-node lookup.
 
-`ZrParser_SemanticQuery_SymbolAt` is the resolved-reference projection for position-based symbol consumers. It reads the existing `FactsAt` result and succeeds only when the selected reference fact is resolved and has a valid `symbolId`. The query copies the fact's `symbolId`, `typeId`, role, declaration range, and direct or resolved definition range, then returns borrowed display and signature strings from that same fact. It clears the caller output and returns `ZR_FALSE` for a missing or unresolved reference. The current fact schema has no owner identity, so `ownerSymbolId` remains `ZR_SEMANTIC_ID_INVALID`; consumers must not infer an owner, target, or display name from source text.
+`ZrParser_SemanticQuery_SymbolAt` is the resolved-reference projection for position-based symbol consumers. It reads the existing `FactsAt` result and succeeds only when the selected reference fact is resolved and has a valid `symbolId`. The query copies the fact's `symbolId`, `typeId`, role, declaration range, and direct or resolved definition range, then returns borrowed display and signature strings from that same fact. It clears the caller output and returns `ZR_FALSE` for a missing or unresolved reference. `ownerSymbolId` remains unavailable unless the producer has a canonical symbol owner; consumers must not infer it from source text.
+
+An imported member without a source declaration range can instead carry a complete external target identity. `SymbolAt` projects the snapshot-borrowed owner identity, provider generation, metadata token, signature token, signature hash, target kind, and `hasExternalTarget` flag from the selected reference fact. Generation zero means that the producer did not publish a provider generation; consumers preserve that value and never derive one from load order, URI, or module spelling. `hasExternalTarget` is true only when the producer also supplied a valid stable SymbolId and nonzero metadata/signature tokens and hash. The owner string and all returned display strings remain borrowed from the semantic snapshot.
+
+Source declaration identity remains authoritative when its exact URI and range are available. For a sourceless imported member, `lsp_external_target_identity.c` accepts a metadata row only when owner identity, metadata token, signature token, signature hash, and target kind all agree with the parser query. A changed hash, incomplete identity, or mismatched row fails closed. The LSP metadata provider may locate candidate rows while loading an imported module, but it cannot authorize a semantic target by member name alone. Semantic token classification consumes the external target kind from `SymbolAt`; the token scanner no longer performs an import-chain metadata lookup or reconstructs kind from a displayed member.
 
 `ZrParser_SemanticQuery_VisibleSymbols` is the corresponding scoped collection projection. It reads parser-owned `SZrSemanticScopeFact` parentage and `SZrSemanticVisibleSymbolFact` candidates, finds the narrowest containing scope, then walks only that parent chain. Candidates carry the already-resolved `SymbolId`, owner identity, access flags, declaration order and ranges; the global symbol registry is used only to materialize a selected fact's stable record, never to discover visibility by name. The query filters pre-declaration symbols unless they are explicitly hoisted, preserves one overload set, keeps type and value namespaces separate for shadowing, excludes instance receiver members in static context, and filters receiver members, imports/aliases, and inaccessible candidates through explicit options. Its output ordering is scope distance, declaration order, then `SymbolId`. `displayName` and `signatureDisplay` are borrowed snapshot views. Scope selection and declaration availability require exact optional source identity; a sourceless position cannot enter a sourced lexical scope merely because its offset overlaps. An empty result, a missing scope fact, a one-sided source identity, or an out-of-scope position fails closed and clears a correctly typed reused output array. LSP consumers must not recreate this walk from tokens, AST nodes, member spelling, or a language-server symbol table.
 

@@ -81,6 +81,16 @@ typedef enum EZrSemanticReferenceKind {
     ZR_SEMANTIC_REFERENCE_TYPE
 } EZrSemanticReferenceKind;
 
+typedef enum EZrSemanticExternalTargetKind {
+    ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN = 0,
+    ZR_SEMANTIC_EXTERNAL_TARGET_MODULE,
+    ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE,
+    ZR_SEMANTIC_EXTERNAL_TARGET_TYPE,
+    ZR_SEMANTIC_EXTERNAL_TARGET_VALUE,
+    ZR_SEMANTIC_EXTERNAL_TARGET_FIELD,
+    ZR_SEMANTIC_EXTERNAL_TARGET_PROPERTY
+} EZrSemanticExternalTargetKind;
+
 typedef enum EZrSemanticDefiniteAssignmentState {
     ZR_SEMANTIC_DEFINITE_ASSIGNMENT_UNKNOWN = 0,
     ZR_SEMANTIC_DEFINITE_ASSIGNMENT_UNINIT,
@@ -194,6 +204,13 @@ typedef struct SZrSemanticReferenceFact {
     EZrOwnershipQualifier ownershipQualifier;
     SZrString *name;
     SZrString *signatureDisplay;
+    SZrString *externalOwnerIdentity;
+    TZrUInt64 externalProviderGeneration;
+    TZrUInt32 externalMetadataToken;
+    TZrUInt32 externalSignatureToken;
+    TZrUInt64 externalSignatureHash;
+    EZrSemanticExternalTargetKind externalTargetKind;
+    TZrBool hasExternalTarget;
     EZrSemanticDefiniteAssignmentState definiteAssignmentState;
     TZrBool hasDefiniteAssignmentState;
     TZrBool isResolved;

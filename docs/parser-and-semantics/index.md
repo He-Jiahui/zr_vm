@@ -223,6 +223,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 
 ## 当前主题
 
+- `semantic-query-api-foundation.md`
+  - imported members without source ranges retain parser-owned external target identity
+  - LSP navigation and semantic tokens require exact metadata token/hash/kind agreement
+  - provider generation zero remains explicitly unavailable and is never inferred
 - `external-callable-value-canonical-facts.md`
   - canonical TypeId/signature facts for binary and provider callable values
   - unresolved source identity and exact fact-owned LSP fail-closed behavior

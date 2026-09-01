@@ -96,6 +96,14 @@ typedef struct SZrParserSemanticSymbolQuery {
     const SZrAstNode *declarationNode;
     SZrString *displayName;
     SZrString *signatureDisplay;
+    /* Snapshot-borrowed external identity; generation 0 means unavailable. */
+    SZrString *externalOwnerIdentity;
+    TZrUInt64 externalProviderGeneration;
+    TZrUInt32 externalMetadataToken;
+    TZrUInt32 externalSignatureToken;
+    TZrUInt64 externalSignatureHash;
+    EZrSemanticExternalTargetKind externalTargetKind;
+    TZrBool hasExternalTarget;
 } SZrParserSemanticSymbolQuery;
 
 typedef struct SZrParserSemanticVisibleSymbolOptions {

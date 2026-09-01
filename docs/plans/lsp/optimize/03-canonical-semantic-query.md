@@ -150,8 +150,17 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-31 15:04 +08:00。
-- 总体状态：进行中。Task 3.19 以characterization matrix冻结relation query的canonical
+- 最近更新时间：2026-09-01 12:44 +08:00。
+- 总体状态：进行中。Task 3.20 为无source declaration range的import-chain member发布
+  snapshot-scoped external target identity：稳定SymbolId、owner identity、provider generation、
+  metadata/signature token、signature hash与target kind由parser fact原样进入`SymbolAt`；source
+  declaration range仍优先，缺range时LSP只接受与metadata exact row完全一致的identity，不按member
+  name、signature text或AST重建。semantic token scanner已删除172行metadata/name fallback，只消费
+  canonical `SymbolAt`；GCC/Clang symbols/query/calls/relations/contract/canonical/facts/type-inference
+  `24/30/30/28/6/21/17/124`与parity/source-contract均真实exit 0，interface中module-link navigation
+  与import-chain tokens转PASS，fixed3降为fixed1。剩余project imported-function references需要后续
+  cross-snapshot project index identity，Task 3 virtual URI、多项目非零generation及Task 8总门禁仍未完成。
+  Task 3.19 以characterization matrix冻结relation query的canonical
   identity：同名跨module隔离、generic open/closed edge分离、alias逐跳保留、overload按SymbolId
   隔离；现有production首轮即满足，GCC/Clang relations均28/28。Task 3.18 将source/target
   provider generation纳入relation fact与query

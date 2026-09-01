@@ -605,6 +605,8 @@ TZrBool ZrParser_SemanticFacts_AppendReference(SZrSemanticContext *context,
 
     copy = *fact;
     copy.signatureDisplay = semantic_facts_clone_string(context, fact->signatureDisplay);
+    copy.externalOwnerIdentity =
+            semantic_facts_clone_string(context, fact->externalOwnerIdentity);
     if (!semantic_facts_reference_copy_definition_ranges(context, &copy, fact)) {
         return ZR_FALSE;
     }

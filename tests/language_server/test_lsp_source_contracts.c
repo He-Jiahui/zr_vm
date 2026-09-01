@@ -815,6 +815,14 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     assert_text_section_contains_none("semantic_token_scan_source",
                                       scanStart,
                                       scanEnd,
+                                      "semantic_token_resolve_metadata_chain_member");
+    assert_text_section_contains_none("semantic_token_scan_source",
+                                      scanStart,
+                                      scanEnd,
+                                      "ZrLanguageServer_LspSemanticImportChain_ResolveLinkedMember");
+    assert_text_section_contains_none("semantic_token_scan_source",
+                                      scanStart,
+                                      scanEnd,
                                       "ZrLanguageServer_SymbolTable_LookupAtPosition");
     assert_text_contains(stdioSource, "cJSON_CreateString(\"declaration\")");
 
@@ -1599,7 +1607,7 @@ static void test_imported_reference_consumers_require_canonical_identity(void) {
         "LspSemanticQuery_ResolveAtPosition imported canonical projection",
         resolveStart,
         resolveEnd,
-        "semantic_query_file_range_is_known");
+        "ZrLanguageServer_LspExternalTargetIdentity_MatchesMember");
     assert_text_section_contains(
         "LspSemanticQuery_AppendReferences imported canonical projection",
         appendReferencesStart,

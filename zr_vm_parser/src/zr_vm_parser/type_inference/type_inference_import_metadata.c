@@ -817,6 +817,9 @@ static void import_add_field_member_with_metadata(SZrState *state,
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
     memberInfo.isStatic = isStatic;
     memberInfo.fieldTypeName = fieldTypeName;
+    memberInfo.ownerTypeName = info->name;
+    memberInfo.baseDefinitionOwnerTypeName = info->name;
+    memberInfo.baseDefinitionName = memberName;
     memberInfo.moduleExportKind = exportKind;
     memberInfo.moduleExportReadiness = readiness;
     memberInfo.metadataToken = metadataToken;
@@ -875,6 +878,9 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     memberInfo.isStatic = ZR_TRUE;
     memberInfo.parameterCount = symbol->parameterCount;
     memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &symbol->valueType);
+    memberInfo.ownerTypeName = modulePrototype->name;
+    memberInfo.baseDefinitionOwnerTypeName = modulePrototype->name;
+    memberInfo.baseDefinitionName = symbol->name;
     memberInfo.moduleExportKind = (EZrModuleExportKind)symbol->exportKind;
     memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)symbol->readiness;
     memberInfo.metadataToken = symbol->metadataToken;
@@ -928,6 +934,9 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     memberInfo.isStatic = ZR_TRUE;
     memberInfo.parameterCount = (TZrUInt32)symbol->parameterCount;
     memberInfo.returnTypeName = io_typed_type_ref_to_type_name(cs, &symbol->valueType);
+    memberInfo.ownerTypeName = modulePrototype->name;
+    memberInfo.baseDefinitionOwnerTypeName = modulePrototype->name;
+    memberInfo.baseDefinitionName = symbol->name;
     memberInfo.moduleExportKind = (EZrModuleExportKind)symbol->exportKind;
     memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)symbol->readiness;
     memberInfo.metadataToken = symbol->metadataToken;
@@ -1872,6 +1881,9 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
             memberInfo.isStatic = ZR_TRUE;
             memberInfo.parameterCount = exportInfo->parameterCount;
             memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &exportInfo->valueType);
+            memberInfo.ownerTypeName = modulePrototype.name;
+            memberInfo.baseDefinitionOwnerTypeName = modulePrototype.name;
+            memberInfo.baseDefinitionName = exportInfo->name;
             memberInfo.moduleExportKind = (EZrModuleExportKind)exportInfo->exportKind;
             memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)exportInfo->readiness;
             memberInfo.metadataToken = exportInfo->metadataToken;

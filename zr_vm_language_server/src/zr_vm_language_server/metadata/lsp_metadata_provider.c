@@ -1023,16 +1023,27 @@ static void metadata_provider_resolve_module_prototype_member(SZrState *state,
         return;
     }
 
-    outResolved->memberKind = strcmp(kindText, "function") == 0
-                                      ? ZR_LSP_METADATA_MEMBER_FUNCTION
-                                      : (strcmp(kindText, "property") == 0
-                                                 ? ZR_LSP_METADATA_MEMBER_PROPERTY
-                                                 : ZR_LSP_METADATA_MEMBER_CONSTANT);
-    metadata_provider_set_type_text(state,
-                                    outResolved,
-                                    strcmp(kindText, "function") == 0
-                                        ? metadata_provider_string_text(member->returnTypeName)
-                                        : metadata_provider_string_text(member->fieldTypeName));
+    outResolved->typeMemberInfo = member;
+    if (strcmp(kindText, "module") == 0) {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_MODULE;
+    } else if (strcmp(kindText, "function") == 0) {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_FUNCTION;
+    } else if (strcmp(kindText, "property") == 0) {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_PROPERTY;
+    } else if (strcmp(kindText, "class") == 0 || strcmp(kindText, "struct") == 0 ||
+               strcmp(kindText, "interface") == 0 || strcmp(kindText, "enum") == 0 ||
+               strcmp(kindText, "union") == 0) {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_TYPE;
+    } else {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_CONSTANT;
+    }
+    if (outResolved->resolvedTypeText == ZR_NULL) {
+        metadata_provider_set_type_text(state,
+                                        outResolved,
+                                        strcmp(kindText, "function") == 0
+                                            ? metadata_provider_string_text(member->returnTypeName)
+                                            : metadata_provider_string_text(member->fieldTypeName));
+    }
 }
 
 static void metadata_provider_append_project_symbol_completion(
@@ -1745,6 +1756,14 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
         return ZR_FALSE;
     }
 
+    if (outResolved->module.modulePrototype != ZR_NULL) {
+        metadata_provider_resolve_module_prototype_member(provider->state,
+                                                          analyzer,
+                                                          outResolved->module.modulePrototype,
+                                                          memberName,
+                                                          outResolved);
+    }
+
     if (outResolved->module.nativeDescriptor != ZR_NULL) {
         metadata_provider_find_native_member(provider->state,
                                              outResolved->module.nativeDescriptor,
@@ -1781,14 +1800,6 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
                                                                     &binarySource) &&
         binarySource != ZR_NULL) {
         metadata_provider_resolve_binary_member(provider->state, binarySource, memberName, outResolved);
-    }
-
-    if (outResolved->resolvedTypeText == ZR_NULL && outResolved->module.modulePrototype != ZR_NULL) {
-        metadata_provider_resolve_module_prototype_member(provider->state,
-                                                          analyzer,
-                                                          outResolved->module.modulePrototype,
-                                                          memberName,
-                                                          outResolved);
     }
 
     if (binarySource != ZR_NULL) {

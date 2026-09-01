@@ -1,4 +1,5 @@
 #include "semantic/lsp_semantic_query.h"
+#include "semantic/lsp_external_target_identity.h"
 #include "semantic/lsp_semantic_definition_query.h"
 #include "semantic/lsp_canonical_completion.h"
 #include "semantic/lsp_canonical_hover.h"
@@ -625,24 +626,34 @@ static TZrBool semantic_query_canonical_identity_is_available(
         const SZrLspSemanticQuery *query) {
     return query != ZR_NULL && query->hasCanonicalSymbol &&
            query->canonicalSymbol.symbolId != ZR_SEMANTIC_ID_INVALID &&
-           semantic_query_file_range_is_known(query->canonicalSymbol.declarationRange);
+           (semantic_query_file_range_is_known(query->canonicalSymbol.declarationRange) ||
+            ZrLanguageServer_LspExternalTargetIdentity_IsAvailable(
+                    &query->canonicalSymbol));
 }
 
 static TZrBool semantic_query_imported_canonical_identity_is_available(
         const SZrLspSemanticQuery *query) {
-    return semantic_query_canonical_identity_is_available(query) &&
-           query->resolvedMember.hasDeclaration &&
-           query->resolvedMember.declarationUri != ZR_NULL &&
-           semantic_query_file_range_is_known(query->resolvedMember.declarationRange) &&
-           (ZrLanguageServer_Lsp_StringsEqual(
-                    query->canonicalSymbol.declarationRange.source,
-                    query->resolvedMember.declarationUri) ||
-            ZrLanguageServer_Lsp_UrisResolveToSameNativePath(
-                    query->canonicalSymbol.declarationRange.source,
-                    query->resolvedMember.declarationUri)) &&
-           semantic_query_file_range_coordinates_equal(
-                   query->canonicalSymbol.declarationRange,
-                   query->resolvedMember.declarationRange);
+    if (!semantic_query_canonical_identity_is_available(query)) {
+        return ZR_FALSE;
+    }
+    if (semantic_query_file_range_is_known(
+                query->canonicalSymbol.declarationRange)) {
+        return query->resolvedMember.hasDeclaration &&
+               query->resolvedMember.declarationUri != ZR_NULL &&
+               semantic_query_file_range_is_known(
+                       query->resolvedMember.declarationRange) &&
+               (ZrLanguageServer_Lsp_StringsEqual(
+                        query->canonicalSymbol.declarationRange.source,
+                        query->resolvedMember.declarationUri) ||
+                ZrLanguageServer_Lsp_UrisResolveToSameNativePath(
+                        query->canonicalSymbol.declarationRange.source,
+                        query->resolvedMember.declarationUri)) &&
+               semantic_query_file_range_coordinates_equal(
+                       query->canonicalSymbol.declarationRange,
+                       query->resolvedMember.declarationRange);
+    }
+    return ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
+            &query->canonicalSymbol, &query->resolvedMember);
 }
 
 static TZrBool semantic_query_try_resolve_canonical_symbol(
@@ -671,7 +682,9 @@ static TZrBool semantic_query_try_resolve_canonical_symbol(
                 ZR_NULL,
                 &canonicalSymbol) ||
         (requireDeclarationIdentity &&
-         !semantic_query_file_range_is_known(canonicalSymbol.declarationRange))) {
+         !semantic_query_file_range_is_known(canonicalSymbol.declarationRange) &&
+         !ZrLanguageServer_LspExternalTargetIdentity_IsAvailable(
+                 &canonicalSymbol))) {
         return ZR_FALSE;
     }
 
@@ -2306,11 +2319,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         }
 
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
-        query->hasCanonicalSymbol =
-                semantic_query_try_resolve_canonical_symbol(
-                        state, analyzer, query, ZR_TRUE) &&
-                semantic_query_file_range_is_known(
-                        query->canonicalSymbol.declarationRange);
+        query->hasCanonicalSymbol = semantic_query_try_resolve_canonical_symbol(
+                state, analyzer, query, ZR_TRUE);
         if (ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(state,
                                                                    context,
                                                                    projectIndex,
@@ -2349,10 +2359,20 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                 query->resolvedMember.declarationRange = moduleEntry.declarationRange;
                 query->resolvedMember.hasDeclaration = moduleEntry.hasDeclaration;
             } else {
+                query->resolvedMember = importChainHit.resolvedMember;
+                if (!query->hasCanonicalSymbol ||
+                    !semantic_query_imported_canonical_identity_is_available(query) ||
+                    (!semantic_query_file_range_is_known(
+                             query->canonicalSymbol.declarationRange) &&
+                     !ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
+                             &query->canonicalSymbol,
+                             &query->resolvedMember))) {
+                    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+                    return ZR_FALSE;
+                }
                 query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER;
                 query->moduleName = importChainHit.moduleName;
                 query->memberName = importChainHit.memberName;
-                query->resolvedMember = importChainHit.resolvedMember;
                 query->sourceKind = query->resolvedMember.module.sourceKind;
                 query->resolvedModule = query->resolvedMember.module;
                 query->resolvedTypeInfo.origin = query->sourceKind;

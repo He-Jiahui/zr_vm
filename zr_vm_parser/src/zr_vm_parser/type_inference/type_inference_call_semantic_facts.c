@@ -405,10 +405,11 @@ static TZrTypeId type_inference_resolved_member_call_type_id(
             cs->semanticContext, memberInfo->declarationNode, resolvedTypeId);
 }
 
-TZrSymbolId type_inference_member_symbol_id(
+static TZrSymbolId type_inference_member_symbol_id_with_kind(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *memberInfo,
-        TZrTypeId callTypeId) {
+        TZrTypeId callTypeId,
+        EZrSemanticSymbolKind symbolKind) {
     TZrSize index;
     TZrTypeId declarationTypeId;
 
@@ -423,8 +424,7 @@ TZrSymbolId type_inference_member_symbol_id(
         const SZrSemanticSymbolRecord *symbol =
                 (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
                         &cs->semanticContext->symbols, index);
-        if (symbol != ZR_NULL &&
-            symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+        if (symbol != ZR_NULL && symbol->kind == symbolKind &&
             memberInfo->declarationNode != ZR_NULL &&
             symbol->astNode == memberInfo->declarationNode) {
             memberInfo->symbolId = symbol->id;
@@ -439,7 +439,7 @@ TZrSymbolId type_inference_member_symbol_id(
     memberInfo->symbolId = ZrParser_Semantic_RegisterSymbol(
             cs->semanticContext,
             memberInfo->name,
-            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            symbolKind,
             declarationTypeId,
             ZR_SEMANTIC_ID_INVALID,
             memberInfo->declarationNode,
@@ -447,6 +447,40 @@ TZrSymbolId type_inference_member_symbol_id(
                     ? memberInfo->declarationNode->location
                     : (SZrFileRange){0});
     return memberInfo->symbolId;
+}
+
+TZrSymbolId type_inference_member_symbol_id(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo,
+        TZrTypeId callTypeId) {
+    return type_inference_member_symbol_id_with_kind(
+            cs,
+            memberInfo,
+            callTypeId,
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION);
+}
+
+static TZrBool type_inference_reference_set_external_target(
+        SZrSemanticReferenceFact *fact,
+        const SZrTypeMemberInfo *memberInfo,
+        EZrSemanticExternalTargetKind targetKind) {
+    if (fact == ZR_NULL || memberInfo == ZR_NULL ||
+        memberInfo->ownerTypeName == ZR_NULL ||
+        ZrCore_String_GetByteLength(memberInfo->ownerTypeName) == 0U ||
+        memberInfo->metadataToken == 0U || memberInfo->signatureToken == 0U ||
+        memberInfo->signatureHash == 0U ||
+        targetKind == ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN) {
+        return ZR_FALSE;
+    }
+
+    fact->externalOwnerIdentity = memberInfo->ownerTypeName;
+    fact->externalProviderGeneration = 0U;
+    fact->externalMetadataToken = memberInfo->metadataToken;
+    fact->externalSignatureToken = memberInfo->signatureToken;
+    fact->externalSignatureHash = memberInfo->signatureHash;
+    fact->externalTargetKind = targetKind;
+    fact->hasExternalTarget = ZR_TRUE;
+    return ZR_TRUE;
 }
 
 void type_inference_publish_member_declaration_fact(
@@ -614,11 +648,12 @@ void type_inference_record_unbound_member_reference_fact(
 void type_inference_record_external_callable_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
-        const SZrTypeMemberInfo *memberInfo,
+        SZrTypeMemberInfo *memberInfo,
         const SZrInferredType *returnType) {
     SZrSemanticReferenceFact fact;
     SZrAstNode *target;
     TZrTypeId typeId;
+    TZrSymbolId symbolId;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || cs->typeEnv == ZR_NULL ||
         memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
@@ -674,7 +709,59 @@ void type_inference_record_external_callable_member_reference_fact(
                 fact.signatureDisplay)) {
         return;
     }
-    fact.isResolved = ZR_FALSE;
+    symbolId = type_inference_member_symbol_id(cs, memberInfo, typeId);
+    fact.symbolId = symbolId;
+    fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID &&
+                      type_inference_reference_set_external_target(
+                              &fact,
+                              memberInfo,
+                              ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+}
+
+void type_inference_record_external_member_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        SZrTypeMemberInfo *memberInfo,
+        const SZrInferredType *memberType,
+        EZrSemanticExternalTargetKind targetKind) {
+    SZrSemanticReferenceFact fact;
+    SZrAstNode *target;
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+    EZrSemanticSymbolKind symbolKind;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberInfo == ZR_NULL ||
+        memberInfo->name == ZR_NULL || memberType == ZR_NULL ||
+        targetKind == ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN) {
+        return;
+    }
+    typeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, memberType);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+    symbolKind = targetKind == ZR_SEMANTIC_EXTERNAL_TARGET_MODULE
+                         ? ZR_SEMANTIC_SYMBOL_KIND_TYPE
+                         : targetKind == ZR_SEMANTIC_EXTERNAL_TARGET_TYPE
+                                   ? ZR_SEMANTIC_SYMBOL_KIND_TYPE
+                                   : targetKind == ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE
+                                             ? ZR_SEMANTIC_SYMBOL_KIND_FUNCTION
+                                             : ZR_SEMANTIC_SYMBOL_KIND_FIELD;
+    symbolId = type_inference_member_symbol_id_with_kind(
+            cs, memberInfo, typeId, symbolKind);
+
+    target = memberNode->data.memberExpression.property;
+    memset(&fact, 0, sizeof(fact));
+    fact.node = target != ZR_NULL ? target : memberNode;
+    fact.range = fact.node->location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS;
+    fact.symbolId = symbolId;
+    fact.typeId = typeId;
+    fact.name = memberInfo->name;
+    fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID &&
+                      type_inference_reference_set_external_target(
+                              &fact, memberInfo, targetKind);
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
@@ -723,8 +810,16 @@ void type_inference_record_member_call_reference_fact(
     if (memberInfo->parameterNames.isValid && fact.signatureDisplay == ZR_NULL) {
         return;
     }
-    fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID ||
-                      memberInfo->contractRole != ZR_MEMBER_CONTRACT_ROLE_NONE;
+    if (memberInfo->declarationNode == ZR_NULL) {
+        fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID &&
+                          type_inference_reference_set_external_target(
+                                  &fact,
+                                  memberInfo,
+                                  ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
+    } else {
+        fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID ||
+                          memberInfo->contractRole != ZR_MEMBER_CONTRACT_ROLE_NONE;
+    }
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 

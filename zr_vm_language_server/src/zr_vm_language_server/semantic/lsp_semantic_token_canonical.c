@@ -22,6 +22,27 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_TypeFromCanonicalSymbol(
         return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
     }
 
+    if (symbol->hasExternalTarget && symbol->externalOwnerIdentity != ZR_NULL &&
+        symbol->externalMetadataToken != 0U &&
+        symbol->externalSignatureToken != 0U &&
+        symbol->externalSignatureHash != 0U) {
+        switch (symbol->externalTargetKind) {
+            case ZR_SEMANTIC_EXTERNAL_TARGET_MODULE:
+                return ZR_LSP_SEMANTIC_TOKEN_NAMESPACE;
+            case ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE:
+                return ZR_LSP_SEMANTIC_TOKEN_METHOD;
+            case ZR_SEMANTIC_EXTERNAL_TARGET_TYPE:
+                return ZR_LSP_SEMANTIC_TOKEN_CLASS;
+            case ZR_SEMANTIC_EXTERNAL_TARGET_FIELD:
+            case ZR_SEMANTIC_EXTERNAL_TARGET_PROPERTY:
+                return ZR_LSP_SEMANTIC_TOKEN_PROPERTY;
+            case ZR_SEMANTIC_EXTERNAL_TARGET_VALUE:
+                return ZR_LSP_SEMANTIC_TOKEN_VARIABLE;
+            default:
+                return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+        }
+    }
+
     if (symbol->declarationNode != ZR_NULL) {
         switch (symbol->declarationNode->type) {
             case ZR_AST_CLASS_DECLARATION:

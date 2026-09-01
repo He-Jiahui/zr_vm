@@ -345,6 +345,13 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     outSymbol->declarationRange = reference->declarationRange;
     outSymbol->displayName = reference->name;
     outSymbol->signatureDisplay = reference->signatureDisplay;
+    outSymbol->externalOwnerIdentity = reference->externalOwnerIdentity;
+    outSymbol->externalProviderGeneration = reference->externalProviderGeneration;
+    outSymbol->externalMetadataToken = reference->externalMetadataToken;
+    outSymbol->externalSignatureToken = reference->externalSignatureToken;
+    outSymbol->externalSignatureHash = reference->externalSignatureHash;
+    outSymbol->externalTargetKind = reference->externalTargetKind;
+    outSymbol->hasExternalTarget = reference->hasExternalTarget;
     {
         const SZrSemanticSymbolRecord *record =
                 ZrParser_Semantic_FindSymbolById(context, reference->symbolId);
