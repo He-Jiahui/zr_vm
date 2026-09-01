@@ -150,16 +150,24 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 12:44 +08:00。
-- 总体状态：进行中。Task 3.20 为无source declaration range的import-chain member发布
+- 最近更新时间：2026-09-01 14:00 +08:00。
+- 总体状态：进行中。Task 3.21 新增只读`ExternalReferences`查询，稳定返回完整external
+  owner identity、provider generation、metadata/signature token、signature hash、target kind、
+  SymbolId/TypeId与reference range；缺任一identity字段的fact不会进入结果。typed export/import
+  metadata现保留exact declaration coordinates，LSP resolver只接受唯一exact metadata row并映射到
+  project source declaration；source declaration或任一importer发起references都通过同一identity聚合
+  多个semantic snapshots，不按member name、signature text或AST pairing重建。双importer RED精确证明
+  旧路径只能返回declaration与当前文件use；GREEN后GCC/Clang symbols/query/calls/relations/contract/
+  canonical/facts/type-inference `24/30/30/28/6/21/17/124`及parity/source-contract均真实exit 0，
+  两套完整interface由fixed1降为0并真实exit 0。Task 3仍需virtual declaration URI、真实多provider
+  非零generation与binary/native无source definition矩阵，Task 8总门禁仍未完成。Task 3.20 为无source declaration range的import-chain member发布
   snapshot-scoped external target identity：稳定SymbolId、owner identity、provider generation、
   metadata/signature token、signature hash与target kind由parser fact原样进入`SymbolAt`；source
   declaration range仍优先，缺range时LSP只接受与metadata exact row完全一致的identity，不按member
   name、signature text或AST重建。semantic token scanner已删除172行metadata/name fallback，只消费
   canonical `SymbolAt`；GCC/Clang symbols/query/calls/relations/contract/canonical/facts/type-inference
   `24/30/30/28/6/21/17/124`与parity/source-contract均真实exit 0，interface中module-link navigation
-  与import-chain tokens转PASS，fixed3降为fixed1。剩余project imported-function references需要后续
-  cross-snapshot project index identity，Task 3 virtual URI、多项目非零generation及Task 8总门禁仍未完成。
+  与import-chain tokens转PASS，fixed3降为fixed1。
   Task 3.19 以characterization matrix冻结relation query的canonical
   identity：同名跨module隔离、generic open/closed edge分离、alias逐跳保留、overload按SymbolId
   隔离；现有production首轮即满足，GCC/Clang relations均28/28。Task 3.18 将source/target
@@ -1198,3 +1206,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   补丁；固定GCC/Clang snapshot均通过relations `28/28`、真实exit 0。未运行MSVC、完整
   16-target matrix、interface或三套stdio smoke；actual multi-project provider reload、binary/native
   无source definition producer仍未覆盖，因此Task 3最后一个checkbox与Plan 03整体继续保持未完成。
+
+- 补充完成时间：2026-09-01 14:00 +08:00。Task 3.21 完成cross-snapshot project
+  references。parser新增稳定排序的`ZrParser_SemanticQuery_ExternalReferences`值查询，只投影完整
+  external tuple；typed export/import member rows保留exact declaration line/column。LSP将metadata
+  identity resolver与cross-snapshot aggregator拆为独立模块：resolver要求owner、target kind、
+  metadata/signature token与hash唯一匹配，并将非零provider generation纳入当前snapshot校验；
+  aggregator逐个获取project source analyzer、查询external references并只在resolved declaration URI/
+  range等于起点declaration时追加。双importer RED中source发起已可见三处，但imported use发起仅有两处；
+  GREEN后两个方向均返回source declaration与两个importer uses，且复用取消检查和location dedupe。
+  固定GCC/Clang snapshot均通过symbols/query/calls/relations/contract/canonical/facts/type-inference
+  `24/30/30/28/6/21/17/124`、parity、source-contract和完整interface，全部真实exit 0；interface
+  fixed1降为0。本项未运行MSVC、完整target matrix或stdio smoke；virtual declaration URI、真实
+  multi-provider nonzero generation、binary/native sourceless relation matrix及Task 8继续未完成。

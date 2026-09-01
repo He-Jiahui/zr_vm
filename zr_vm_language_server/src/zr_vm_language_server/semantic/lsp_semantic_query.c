@@ -1,5 +1,6 @@
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/lsp_external_target_identity.h"
+#include "semantic/lsp_cross_snapshot_references.h"
 #include "semantic/lsp_semantic_definition_query.h"
 #include "semantic/lsp_canonical_completion.h"
 #include "semantic/lsp_canonical_hover.h"
@@ -456,10 +457,11 @@ static TZrBool semantic_query_uri_is_native_plugin_metadata_uri(SZrString *uri) 
     return semantic_query_path_has_extension(nativePath, semantic_query_dynamic_library_extension());
 }
 
-static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
-                                                       SZrLspContext *context,
-                                                       SZrString *uri,
-                                                       SZrSemanticAnalyzer **outAnalyzer) {
+TZrBool ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        SZrSemanticAnalyzer **outAnalyzer) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
     SZrFileVersionContentSnapshot snapshot = {0};
@@ -1761,7 +1763,8 @@ static TZrBool semantic_query_append_external_type_member_locations_for_uri(SZrS
         return ZR_FALSE;
     }
 
-    if (!semantic_query_try_get_analyzer_for_uri(state, context, uri, &analyzer) ||
+    if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                state, context, uri, &analyzer) ||
         analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -2305,7 +2308,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     query->projectIndex = projectIndex;
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    if (!semantic_query_try_get_analyzer_for_uri(state, context, uri, &analyzer) ||
+    if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                state, context, uri, &analyzer) ||
         analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
         ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
         return ZR_FALSE;
@@ -2870,6 +2874,16 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                 &canonicalQuery,
                 ZR_FALSE,
                 result);
+        if (query->resolvedMember.hasDeclaration &&
+            query->resolvedMember.declarationUri != ZR_NULL) {
+            canonicalQuery.canonicalSymbol.declarationRange =
+                    query->resolvedMember.declarationRange;
+            canonicalQuery.canonicalSymbol.declarationRange.source =
+                    query->resolvedMember.declarationUri;
+            appended = ZrLanguageServer_LspCrossSnapshotReferences_Append(
+                               state, context, &canonicalQuery, result) ||
+                       appended;
+        }
         return appended || result->length > 0;
     }
 
@@ -2928,12 +2942,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        return ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
-                state,
-                context,
-                query,
-                includeDeclaration,
-                result);
+        TZrBool localAppended =
+                ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
+                        state,
+                        context,
+                        query,
+                        includeDeclaration,
+                        result);
+        TZrBool projectAppended =
+                ZrLanguageServer_LspCrossSnapshotReferences_Append(
+                        state, context, query, result);
+        return localAppended || projectAppended || result->length > 0U;
     }
 
     return ZR_FALSE;

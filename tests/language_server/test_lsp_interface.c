@@ -2266,18 +2266,25 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
     SZrLspContext *context = ZR_NULL;
     SZrString *projectUri = ZR_NULL;
     SZrString *mainUri = ZR_NULL;
+    SZrString *secondaryUri = ZR_NULL;
     SZrString *greetUri = ZR_NULL;
     SZrLspPosition definitionPosition;
     SZrLspPosition usagePosition;
+    SZrLspPosition secondaryUsagePosition;
+    SZrLspSemanticQuery definitionQuery;
+    SZrLspSemanticQuery usageQuery;
     SZrArray references;
     TZrChar projectPath[1024];
     TZrChar mainPath[1024];
+    TZrChar secondaryPath[1024];
     TZrChar greetPath[1024];
     TZrChar *projectContent = ZR_NULL;
     TZrChar *mainContent = ZR_NULL;
+    TZrChar *secondaryContent = ZR_NULL;
     TZrChar *greetContent = ZR_NULL;
     TZrSize projectLength = 0;
     TZrSize mainLength = 0;
+    TZrSize secondaryLength = 0;
     TZrSize greetLength = 0;
 
     TEST_START("LSP Project References Include Imported Function Usage");
@@ -2289,6 +2296,9 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
         !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/main.zr",
                                    mainPath,
                                    sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/secondary.zr",
+                                   secondaryPath,
+                                   sizeof(secondaryPath)) ||
         !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/greet.zr",
                                    greetPath,
                                    sizeof(greetPath))) {
@@ -2298,10 +2308,13 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
 
     projectContent = read_fixture_text_file(projectPath, &projectLength);
     mainContent = read_fixture_text_file(mainPath, &mainLength);
+    secondaryContent = read_fixture_text_file(secondaryPath, &secondaryLength);
     greetContent = read_fixture_text_file(greetPath, &greetLength);
-    if (projectContent == ZR_NULL || mainContent == ZR_NULL || greetContent == ZR_NULL) {
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL ||
+        secondaryContent == ZR_NULL || greetContent == ZR_NULL) {
         free(projectContent);
         free(mainContent);
+        free(secondaryContent);
         free(greetContent);
         TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to read project fixture content");
         return;
@@ -2311,6 +2324,7 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
     if (context == ZR_NULL) {
         free(projectContent);
         free(mainContent);
+        free(secondaryContent);
         free(greetContent);
         TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to create LSP context");
         return;
@@ -2318,10 +2332,13 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
 
     projectUri = create_file_uri_from_native_path(state, projectPath);
     mainUri = create_file_uri_from_native_path(state, mainPath);
+    secondaryUri = create_file_uri_from_native_path(state, secondaryPath);
     greetUri = create_file_uri_from_native_path(state, greetPath);
-    if (projectUri == ZR_NULL || mainUri == ZR_NULL || greetUri == ZR_NULL) {
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL ||
+        secondaryUri == ZR_NULL || greetUri == ZR_NULL) {
         free(projectContent);
         free(mainContent);
+        free(secondaryContent);
         free(greetContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to create fixture URIs");
@@ -2329,9 +2346,16 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
     }
 
     if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
-        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             secondaryUri,
+                                             secondaryContent,
+                                             secondaryLength,
+                                             1)) {
         free(projectContent);
         free(mainContent);
+        free(secondaryContent);
         free(greetContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to open project fixture documents");
@@ -2339,18 +2363,51 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
     }
 
     if (!lsp_find_position_for_substring(greetContent, "greet()", 0, 0, &definitionPosition) ||
-        !lsp_find_position_for_substring(mainContent, "greet();", 0, 0, &usagePosition)) {
+        !lsp_find_position_for_substring(mainContent, "greet();", 0, 0, &usagePosition) ||
+        !lsp_find_position_for_substring(
+                secondaryContent, "greet();", 0, 0, &secondaryUsagePosition)) {
         free(projectContent);
         free(mainContent);
+        free(secondaryContent);
         free(greetContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to compute fixture positions");
         return;
     }
 
+    ZrLanguageServer_LspSemanticQuery_Init(&definitionQuery);
+    ZrLanguageServer_LspSemanticQuery_Init(&usageQuery);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, greetUri, definitionPosition, &definitionQuery) ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, mainUri, usagePosition, &usageQuery) ||
+        !definitionQuery.hasCanonicalSymbol || !usageQuery.hasCanonicalSymbol ||
+        definitionQuery.canonicalSymbol.declarationRange.source == ZR_NULL ||
+        !usageQuery.canonicalSymbol.hasExternalTarget ||
+        usageQuery.canonicalSymbol.externalOwnerIdentity == ZR_NULL ||
+        usageQuery.canonicalSymbol.externalMetadataToken == 0U ||
+        usageQuery.canonicalSymbol.externalSignatureToken == 0U ||
+        usageQuery.canonicalSymbol.externalSignatureHash == 0U ||
+        usageQuery.canonicalSymbol.externalTargetKind !=
+                ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &definitionQuery);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &usageQuery);
+        free(projectContent);
+        free(mainContent);
+        free(secondaryContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project References Include Imported Function Usage",
+                  "Source declaration and imported use must expose complementary exact canonical identities");
+        return;
+    }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &definitionQuery);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &usageQuery);
+
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_FindReferences(state, context, greetUri, definitionPosition, ZR_TRUE, &references) ||
-        references.length < 2 ||
+        references.length < 3 ||
         !location_array_contains_uri_and_range(&references,
                                                test_string_ptr(greetUri),
                                                definitionPosition.line,
@@ -2362,10 +2419,17 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
                                                usagePosition.line,
                                                usagePosition.character,
                                                usagePosition.line,
-                                               usagePosition.character + 5)) {
+                                               usagePosition.character + 5) ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(secondaryUri),
+                                               secondaryUsagePosition.line,
+                                               secondaryUsagePosition.character,
+                                               secondaryUsagePosition.line,
+                                               secondaryUsagePosition.character + 5)) {
         ZrCore_Array_Free(state, &references);
         free(projectContent);
         free(mainContent);
+        free(secondaryContent);
         free(greetContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Expected project references to include both greet definition and imported usage");
@@ -2373,8 +2437,43 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
     }
 
     ZrCore_Array_Free(state, &references);
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, mainUri, usagePosition, ZR_TRUE, &references) ||
+        references.length < 3 ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(greetUri),
+                                               definitionPosition.line,
+                                               definitionPosition.character,
+                                               definitionPosition.line,
+                                               definitionPosition.character + 5) ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(mainUri),
+                                               usagePosition.line,
+                                               usagePosition.character,
+                                               usagePosition.line,
+                                               usagePosition.character + 5) ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(secondaryUri),
+                                               secondaryUsagePosition.line,
+                                               secondaryUsagePosition.character,
+                                               secondaryUsagePosition.line,
+                                               secondaryUsagePosition.character + 5)) {
+        ZrCore_Array_Free(state, &references);
+        free(projectContent);
+        free(mainContent);
+        free(secondaryContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project References Include Imported Function Usage",
+                  "Imported usage references should resolve the exact source declaration and all project usages");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &references);
     free(projectContent);
     free(mainContent);
+    free(secondaryContent);
     free(greetContent);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Project References Include Imported Function Usage");

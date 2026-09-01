@@ -438,6 +438,8 @@ typedef struct SZrTypeMemberInfo {
     SZrTypeValue decoratorMetadataValue;  // 成员级 compile-time decorator metadata 常量值
     TZrUInt32 contractRole;               // 稳定成员契约角色（EZrMemberContractRole）
     SZrAstNode *declarationNode;          // 声明节点（可选）
+    SZrFileRange declarationRange;        // imported export declaration coordinates
+    TZrBool hasDeclarationRange;
     EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）

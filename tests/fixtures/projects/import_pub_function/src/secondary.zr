@@ -1,0 +1,3 @@
+let greetModule = import("greet");
+
+return greetModule.greet();

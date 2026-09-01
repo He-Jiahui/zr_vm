@@ -1563,6 +1563,36 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     free(semanticQuery);
 }
 
+static void test_cross_snapshot_references_use_external_identity_queries(void) {
+    char *crossSnapshot = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c");
+    char *externalMetadata = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_external_metadata_identity.c");
+
+    if (crossSnapshot == NULL || externalMetadata == NULL) {
+        printf("FAIL: could not read cross-snapshot reference sources\n");
+        g_failures++;
+        free(crossSnapshot);
+        free(externalMetadata);
+        return;
+    }
+
+    assert_text_contains(
+        crossSnapshot, "ZrParser_SemanticQuery_ExternalReferences");
+    assert_text_contains(
+        crossSnapshot,
+        "ZrLanguageServer_LspExternalMetadataIdentity_ResolveDeclaration");
+    assert_text_contains_none(crossSnapshot, "CollectImportBindings");
+    assert_text_contains_none(crossSnapshot, "memberName");
+    assert_text_contains_none(crossSnapshot, "strstr");
+    assert_text_contains_none(externalMetadata, "declarationNode");
+    assert_text_contains_none(externalMetadata, "strcmp");
+    assert_text_contains_none(externalMetadata, "memberName");
+
+    free(crossSnapshot);
+    free(externalMetadata);
+}
+
 static void test_imported_reference_consumers_require_canonical_identity(void) {
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -2082,6 +2112,7 @@ int main(void) {
     test_assignment_ownership_uses_parser_diagnostic_projection();
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
+    test_cross_snapshot_references_use_external_identity_queries();
     test_imported_reference_consumers_require_canonical_identity();
     test_dead_project_semantic_fallbacks_are_removed();
     test_local_rename_consumers_require_canonical_symbol_identity();

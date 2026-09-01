@@ -36,29 +36,29 @@ static TZrBool semantic_reference_query_has_location(
     return ZR_FALSE;
 }
 
-static TZrBool semantic_reference_query_append_location(
+TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
         SZrState *state,
         SZrLspContext *context,
         const SZrSemanticAnalyzer *analyzer,
         SZrArray *result,
-        const SZrSemanticReferenceFact *fact) {
+        SZrFileRange range) {
     SZrLspLocation *location;
     SZrFileRange factRange;
-    SZrLspRange range;
+    SZrLspRange lspRange;
 
     if (state == ZR_NULL || context == ZR_NULL || result == ZR_NULL ||
-        analyzer == ZR_NULL || fact == ZR_NULL) {
+        analyzer == ZR_NULL) {
         return ZR_FALSE;
     }
     factRange = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
-            analyzer, fact->range);
+            analyzer, range);
     if (factRange.source == ZR_NULL) {
         return ZR_FALSE;
     }
-    range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+    lspRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
             context, factRange.source, factRange);
     if (semantic_reference_query_has_location(
-                result, factRange.source, range)) {
+                result, factRange.source, lspRange)) {
         return ZR_TRUE;
     }
     if (!result->isValid) {
@@ -74,9 +74,20 @@ static TZrBool semantic_reference_query_append_location(
         return ZR_FALSE;
     }
     location->uri = factRange.source;
-    location->range = range;
+    location->range = lspRange;
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
+}
+
+static TZrBool semantic_reference_query_append_location(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrSemanticAnalyzer *analyzer,
+        SZrArray *result,
+        const SZrSemanticReferenceFact *fact) {
+    return fact != ZR_NULL &&
+           ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
+                   state, context, analyzer, result, fact->range);
 }
 
 static TZrInt32 semantic_reference_query_highlight_kind(

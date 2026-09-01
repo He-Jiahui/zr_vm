@@ -1809,6 +1809,11 @@ static void test_symbol_at_projects_native_module_chain_external_identity(void) 
     SZrParserSemanticSymbolQuery secondModule;
     SZrParserSemanticSymbolQuery firstCallable;
     SZrParserSemanticSymbolQuery secondCallable;
+    SZrArray externalReferences;
+    SZrArray repeatedReferences;
+    SZrSemanticReferenceFact incompleteReference;
+    TZrSize callableCount = 0U;
+    TZrSize moduleCount = 0U;
 
     sourceName = ZrCore_String_CreateFromNative(
             g_state, "symbol_at_native_module_chain_external_identity.zr");
@@ -1888,6 +1893,77 @@ static void test_symbol_at_projects_native_module_chain_external_identity(void) 
             firstCallable.externalSignatureHash,
             secondCallable.externalSignatureHash);
     TEST_ASSERT_NOT_EQUAL_UINT32(firstModule.symbolId, firstCallable.symbolId);
+
+    memset(&incompleteReference, 0, sizeof(incompleteReference));
+    incompleteReference.range =
+            symbol_source_position(source, sourceName, "ping", 0U);
+    incompleteReference.kind = ZR_SEMANTIC_REFERENCE_CALL;
+    incompleteReference.symbolId = firstCallable.symbolId;
+    incompleteReference.typeId = firstCallable.typeId;
+    incompleteReference.isResolved = ZR_TRUE;
+    incompleteReference.hasExternalTarget = ZR_TRUE;
+    incompleteReference.externalOwnerIdentity =
+            firstCallable.externalOwnerIdentity;
+    incompleteReference.externalSignatureToken =
+            firstCallable.externalSignatureToken;
+    incompleteReference.externalSignatureHash =
+            firstCallable.externalSignatureHash;
+    incompleteReference.externalTargetKind =
+            firstCallable.externalTargetKind;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
+            cs.semanticContext, &incompleteReference));
+
+    ZrCore_Array_Construct(&externalReferences);
+    ZrCore_Array_Construct(&repeatedReferences);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ExternalReferences(
+            cs.semanticContext, ZR_NULL, &externalReferences));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ExternalReferences(
+            cs.semanticContext, ZR_NULL, &repeatedReferences));
+    TEST_ASSERT_EQUAL_UINT32(
+            (TZrUInt32)externalReferences.length,
+            (TZrUInt32)repeatedReferences.length);
+    for (TZrSize index = 0U; index < externalReferences.length; index++) {
+        const SZrParserSemanticExternalReferenceQuery *reference =
+                (const SZrParserSemanticExternalReferenceQuery *)ZrCore_Array_Get(
+                        &externalReferences, index);
+        const SZrParserSemanticExternalReferenceQuery *repeated =
+                (const SZrParserSemanticExternalReferenceQuery *)ZrCore_Array_Get(
+                        &repeatedReferences, index);
+
+        TEST_ASSERT_NOT_NULL(reference);
+        TEST_ASSERT_NOT_NULL(repeated);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, reference->symbolId);
+        TEST_ASSERT_NOT_NULL(reference->externalOwnerIdentity);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0U, reference->externalMetadataToken);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0U, reference->externalSignatureToken);
+        TEST_ASSERT_NOT_EQUAL_UINT64(0U, reference->externalSignatureHash);
+        TEST_ASSERT_EQUAL_UINT32(
+                (TZrUInt32)reference->referenceRange.start.offset,
+                (TZrUInt32)repeated->referenceRange.start.offset);
+        TEST_ASSERT_EQUAL_UINT32(
+                reference->externalMetadataToken,
+                repeated->externalMetadataToken);
+        TEST_ASSERT_EQUAL_UINT64(
+                reference->externalSignatureHash,
+                repeated->externalSignatureHash);
+        if (index > 0U) {
+            const SZrParserSemanticExternalReferenceQuery *previous =
+                    (const SZrParserSemanticExternalReferenceQuery *)ZrCore_Array_Get(
+                            &externalReferences, index - 1U);
+            TEST_ASSERT_NOT_NULL(previous);
+            TEST_ASSERT_TRUE(previous->referenceRange.start.offset <=
+                             reference->referenceRange.start.offset);
+        }
+        if (reference->externalTargetKind == ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE) {
+            callableCount++;
+        } else if (reference->externalTargetKind == ZR_SEMANTIC_EXTERNAL_TARGET_MODULE) {
+            moduleCount++;
+        }
+    }
+    TEST_ASSERT_TRUE(callableCount >= 2U);
+    TEST_ASSERT_TRUE(moduleCount >= 2U);
+    ZrCore_Array_Free(g_state, &externalReferences);
+    ZrCore_Array_Free(g_state, &repeatedReferences);
 
     symbol_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);

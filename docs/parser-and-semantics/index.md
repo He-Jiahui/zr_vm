@@ -227,6 +227,8 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - imported members without source ranges retain parser-owned external target identity
   - LSP navigation and semantic tokens require exact metadata token/hash/kind agreement
   - provider generation zero remains explicitly unavailable and is never inferred
+  - `ExternalReferences` exposes stable complete external tuples and omits incomplete facts
+  - project references resolve exact metadata rows across snapshots in both declaration-to-use and use-to-use directions
 - `external-callable-value-canonical-facts.md`
   - canonical TypeId/signature facts for binary and provider callable values
   - unresolved source identity and exact fact-owned LSP fail-closed behavior

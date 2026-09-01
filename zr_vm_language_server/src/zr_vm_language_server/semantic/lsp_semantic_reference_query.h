@@ -9,6 +9,12 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
         SZrLspSemanticQuery *query,
         TZrBool includeDeclaration,
         SZrArray *result);
+TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrSemanticAnalyzer *analyzer,
+        SZrArray *result,
+        SZrFileRange range);
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights(
         SZrState *state,
         SZrLspContext *context,

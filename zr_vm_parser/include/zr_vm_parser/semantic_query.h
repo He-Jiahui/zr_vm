@@ -106,6 +106,20 @@ typedef struct SZrParserSemanticSymbolQuery {
     TZrBool hasExternalTarget;
 } SZrParserSemanticSymbolQuery;
 
+typedef struct SZrParserSemanticExternalReferenceQuery {
+    SZrFileRange referenceRange;
+    TZrSymbolId symbolId;
+    TZrTypeId typeId;
+    EZrSemanticReferenceKind role;
+    /* Snapshot-borrowed owner identity; all token fields are exact. */
+    SZrString *externalOwnerIdentity;
+    TZrUInt64 externalProviderGeneration;
+    TZrUInt32 externalMetadataToken;
+    TZrUInt32 externalSignatureToken;
+    TZrUInt64 externalSignatureHash;
+    EZrSemanticExternalTargetKind externalTargetKind;
+} SZrParserSemanticExternalReferenceQuery;
+
 typedef struct SZrParserSemanticVisibleSymbolOptions {
     TZrBool includeReceiverMembers;
     TZrBool includeImports;
@@ -228,6 +242,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,
         SZrArray *outSymbols);
+/*
+ * Projects resolved external references in stable source order. Incomplete
+ * owner/token/hash identities are omitted instead of being reconstructed.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_ExternalReferences(
+        const SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outReferences);
 /*
  * outSymbols contains SZrParserSemanticSymbolQuery values, not fact pointers.
  * displayName and signatureDisplay within each value remain borrowed from the

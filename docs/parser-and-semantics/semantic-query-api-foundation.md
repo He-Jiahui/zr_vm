@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
   - zr_vm_parser/include/zr_vm_parser/semantic_calls.h
   - zr_vm_parser/include/zr_vm_parser/semantic_display.h
@@ -31,6 +32,14 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_external_metadata_identity.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_external_metadata_identity.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_export_generics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c
@@ -63,6 +72,9 @@ related_code:
   - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
   - tests/parser/test_semantic_display.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
+  - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_source_contracts.c
+  - tests/fixtures/projects/import_pub_function/src/secondary.zr
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_reaching_definition_navigation.c
   - tests/CMakeLists.txt
@@ -1272,3 +1284,31 @@ These are query characterization contracts. The existing implementation
 satisfied them without a production change. Actual multi-project provider
 reloads and binary/native declarations without source ranges still require
 producer-level parity coverage.
+
+## Plan 03 Task 3.21 Cross-Snapshot External References
+
+`ZrParser_SemanticQuery_ExternalReferences` is a read-only value query over
+resolved reference facts with complete external target identity. Each result
+contains the reference range, SymbolId, TypeId, role, canonical owner identity,
+provider generation, metadata token, signature token, signature hash, and
+target kind. A fact missing any owner, token, hash, or target kind is omitted;
+the query never completes an identity from a display name. Results are sorted
+by source/range, identity tokens, and SymbolId so repeated calls in one
+semantic snapshot are stable. The result array is caller-owned, while owner
+strings remain borrowed from the semantic snapshot.
+
+Typed source exports and imported prototype members preserve exact declaration
+line and column coordinates. The LSP external metadata resolver combines those
+coordinates with the complete parser tuple and accepts exactly one matching
+metadata row. A nonzero provider generation must match the current provider;
+zero remains explicitly unavailable and is not inferred from load order. An
+absent row, ambiguous duplicate, incomplete tuple, stale nonzero generation,
+or missing project source declaration fails closed.
+
+Project references iterate project source records through the snapshot-aware
+analyzer cache and call the parser query in each snapshot. A use is appended
+only when its exact tuple resolves to the same declaration URI and range as the
+starting symbol. The same aggregation runs when references begin at a source
+declaration or an imported use; cancellation and location deduplication use the
+existing reference-query helpers. The consumer does not scan import bindings,
+pair AST nodes, compare member names, or reconstruct signatures.

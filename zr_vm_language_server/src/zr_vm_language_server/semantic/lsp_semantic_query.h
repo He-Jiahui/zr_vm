@@ -55,6 +55,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     SZrString *uri,
     SZrLspPosition position,
     SZrLspSemanticQuery *query);
+TZrBool ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        SZrSemanticAnalyzer **outAnalyzer);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrState *state,
                                                                             SZrLspContext *context,
                                                                             SZrLspSemanticQuery *query,

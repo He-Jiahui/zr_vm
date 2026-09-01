@@ -314,6 +314,85 @@ static void semantic_query_symbols_sort_declarations(SZrArray *symbols) {
     }
 }
 
+static TZrBool semantic_query_external_reference_is_complete(
+        const SZrSemanticReferenceFact *reference) {
+    return reference != ZR_NULL && reference->isResolved &&
+           reference->symbolId != ZR_SEMANTIC_ID_INVALID &&
+           reference->hasExternalTarget &&
+           reference->externalTargetKind != ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN &&
+           reference->externalOwnerIdentity != ZR_NULL &&
+           ZrCore_String_GetByteLength(reference->externalOwnerIdentity) > 0U &&
+           reference->externalMetadataToken != 0U &&
+           reference->externalSignatureToken != 0U &&
+           reference->externalSignatureHash != 0U;
+}
+
+static TZrBool semantic_query_external_reference_precedes(
+        const SZrParserSemanticExternalReferenceQuery *left,
+        const SZrParserSemanticExternalReferenceQuery *right) {
+    const TZrChar *leftSource;
+    const TZrChar *rightSource;
+    TZrInt32 sourceOrder;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return left != ZR_NULL;
+    }
+    leftSource = left->referenceRange.source != ZR_NULL
+            ? ZrCore_String_GetNativeString(left->referenceRange.source)
+            : ZR_NULL;
+    rightSource = right->referenceRange.source != ZR_NULL
+            ? ZrCore_String_GetNativeString(right->referenceRange.source)
+            : ZR_NULL;
+    if (leftSource != ZR_NULL || rightSource != ZR_NULL) {
+        if (leftSource == ZR_NULL || rightSource == ZR_NULL) {
+            return leftSource != ZR_NULL;
+        }
+        sourceOrder = strcmp(leftSource, rightSource);
+        if (sourceOrder != 0) {
+            return sourceOrder < 0;
+        }
+    }
+    if (left->referenceRange.start.offset != right->referenceRange.start.offset) {
+        return left->referenceRange.start.offset < right->referenceRange.start.offset;
+    }
+    if (left->referenceRange.end.offset != right->referenceRange.end.offset) {
+        return left->referenceRange.end.offset < right->referenceRange.end.offset;
+    }
+    if (left->externalMetadataToken != right->externalMetadataToken) {
+        return left->externalMetadataToken < right->externalMetadataToken;
+    }
+    return left->symbolId <= right->symbolId;
+}
+
+static void semantic_query_external_references_sort(SZrArray *references) {
+    TZrSize index;
+
+    if (references == ZR_NULL) {
+        return;
+    }
+    for (index = 1U; index < references->length; index++) {
+        TZrSize current = index;
+        while (current > 0U) {
+            SZrParserSemanticExternalReferenceQuery *before =
+                    (SZrParserSemanticExternalReferenceQuery *)ZrCore_Array_Get(
+                            references, current - 1U);
+            SZrParserSemanticExternalReferenceQuery *after =
+                    (SZrParserSemanticExternalReferenceQuery *)ZrCore_Array_Get(
+                            references, current);
+            SZrParserSemanticExternalReferenceQuery swap;
+
+            if (before == ZR_NULL || after == ZR_NULL ||
+                semantic_query_external_reference_precedes(before, after)) {
+                break;
+            }
+            swap = *before;
+            *before = *after;
+            *after = swap;
+            current--;
+        }
+    }
+}
+
 TZrBool ZrParser_SemanticQuery_SymbolAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -427,6 +506,59 @@ TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
 
     semantic_query_symbols_sort_declarations(outSymbols);
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticQuery_ExternalReferences(
+        const SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outReferences) {
+    TZrSize index;
+
+    if (context == ZR_NULL || outReferences == ZR_NULL ||
+        !context->referenceFacts.isValid) {
+        return ZR_FALSE;
+    }
+    if (outReferences->isValid) {
+        if (outReferences->elementSize !=
+            sizeof(SZrParserSemanticExternalReferenceQuery)) {
+            return ZR_FALSE;
+        }
+        outReferences->length = 0U;
+    } else {
+        ZrCore_Array_Init(
+                context->state,
+                outReferences,
+                sizeof(SZrParserSemanticExternalReferenceQuery),
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    }
+
+    for (index = 0U; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *reference =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->referenceFacts, index);
+        SZrParserSemanticExternalReferenceQuery projected;
+
+        if (!semantic_query_external_reference_is_complete(reference) ||
+            !semantic_query_symbols_scope_allows_declaration(scope, reference)) {
+            continue;
+        }
+        memset(&projected, 0, sizeof(projected));
+        projected.referenceRange = reference->range;
+        projected.symbolId = reference->symbolId;
+        projected.typeId = reference->typeId;
+        projected.role = reference->kind;
+        projected.externalOwnerIdentity = reference->externalOwnerIdentity;
+        projected.externalProviderGeneration =
+                reference->externalProviderGeneration;
+        projected.externalMetadataToken = reference->externalMetadataToken;
+        projected.externalSignatureToken = reference->externalSignatureToken;
+        projected.externalSignatureHash = reference->externalSignatureHash;
+        projected.externalTargetKind = reference->externalTargetKind;
+        ZrCore_Array_Push(context->state, outReferences, &projected);
+    }
+
+    semantic_query_external_references_sort(outReferences);
+    return outReferences->length > 0U;
 }
 
 TZrBool ZrParser_SemanticQuery_VisibleSymbols(

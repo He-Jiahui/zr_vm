@@ -888,6 +888,14 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     memberInfo.signatureBlobOffset = symbol->signatureBlobOffset;
     memberInfo.signatureBlobLength = symbol->signatureBlobLength;
     memberInfo.signatureHash = symbol->signatureHash;
+    memberInfo.declarationRange.start.line = (TZrInt32)symbol->lineInSourceStart;
+    memberInfo.declarationRange.start.column = (TZrInt32)symbol->columnInSourceStart;
+    memberInfo.declarationRange.end.line = (TZrInt32)symbol->lineInSourceEnd;
+    memberInfo.declarationRange.end.column = (TZrInt32)symbol->columnInSourceEnd;
+    memberInfo.hasDeclarationRange =
+            symbol->lineInSourceEnd > symbol->lineInSourceStart ||
+            (symbol->lineInSourceEnd == symbol->lineInSourceStart &&
+             symbol->columnInSourceEnd > symbol->columnInSourceStart);
     if (symbol->parameterCount > 0 && symbol->parameterTypes != ZR_NULL) {
         ZrCore_Array_Init(cs->state, &memberInfo.parameterTypes, sizeof(SZrInferredType), symbol->parameterCount);
         for (TZrUInt32 paramIndex = 0; paramIndex < symbol->parameterCount; paramIndex++) {
@@ -944,6 +952,14 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     memberInfo.signatureBlobOffset = symbol->signatureBlobOffset;
     memberInfo.signatureBlobLength = symbol->signatureBlobLength;
     memberInfo.signatureHash = symbol->signatureHash;
+    memberInfo.declarationRange.start.line = (TZrInt32)symbol->lineInSourceStart;
+    memberInfo.declarationRange.start.column = (TZrInt32)symbol->columnInSourceStart;
+    memberInfo.declarationRange.end.line = (TZrInt32)symbol->lineInSourceEnd;
+    memberInfo.declarationRange.end.column = (TZrInt32)symbol->columnInSourceEnd;
+    memberInfo.hasDeclarationRange =
+            symbol->lineInSourceEnd > symbol->lineInSourceStart ||
+            (symbol->lineInSourceEnd == symbol->lineInSourceStart &&
+             symbol->columnInSourceEnd > symbol->columnInSourceStart);
     if (symbol->parameterCount > 0 && symbol->parameterTypes != ZR_NULL) {
         ZrCore_Array_Init(cs->state, &memberInfo.parameterTypes, sizeof(SZrInferredType), symbol->parameterCount);
         for (TZrSize paramIndex = 0; paramIndex < symbol->parameterCount; paramIndex++) {
@@ -1889,6 +1905,18 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
             memberInfo.metadataToken = exportInfo->metadataToken;
             memberInfo.signatureToken = exportInfo->signatureToken;
             memberInfo.signatureHash = exportInfo->signatureHash;
+            memberInfo.declarationRange.start.line =
+                    (TZrInt32)exportInfo->lineInSourceStart;
+            memberInfo.declarationRange.start.column =
+                    (TZrInt32)exportInfo->columnInSourceStart;
+            memberInfo.declarationRange.end.line =
+                    (TZrInt32)exportInfo->lineInSourceEnd;
+            memberInfo.declarationRange.end.column =
+                    (TZrInt32)exportInfo->columnInSourceEnd;
+            memberInfo.hasDeclarationRange =
+                    exportInfo->lineInSourceEnd > exportInfo->lineInSourceStart ||
+                    (exportInfo->lineInSourceEnd == exportInfo->lineInSourceStart &&
+                     exportInfo->columnInSourceEnd > exportInfo->columnInSourceStart);
             if (exportInfo->parameterCount > 0 && exportInfo->parameterTypes != ZR_NULL) {
                 ZrCore_Array_Init(cs->state,
                                   &memberInfo.parameterTypes,
