@@ -211,6 +211,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
                 analyzer->semanticContext, ast)) {
         return ZR_FALSE;
     }
+    if (!ZrParser_SemanticRelations_PublishImportOrigins(
+                analyzer->semanticContext)) {
+        return ZR_FALSE;
+    }
     ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(state, analyzer);
 
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {

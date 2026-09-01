@@ -1679,8 +1679,11 @@ static void test_visible_symbols_projects_direct_import_alias(void) {
     SZrArray symbols;
     SZrParserSemanticVisibleSymbolOptions options;
     const SZrSemanticSymbolRecord *importSymbol;
-    const SZrSemanticVisibleSymbolFact *importFact;
+    SZrSemanticVisibleSymbolFact *importFact;
     const SZrParserSemanticSymbolQuery *visibleImport;
+    const SZrParserSemanticSymbolQuery *declaredImport;
+    SZrParserSemanticSymbolQuery importQuery;
+    SZrString *savedImportOrigin;
     SZrFileRange position;
 
     sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_import_alias.zr");
@@ -1707,7 +1710,8 @@ static void test_visible_symbols_projects_direct_import_alias(void) {
     importSymbol = symbol_find_registered_node(cs.semanticContext, importDeclaration);
     TEST_ASSERT_NOT_NULL(importSymbol);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, importSymbol->kind);
-    importFact = symbol_find_visible_fact(cs.semanticContext, importSymbol->id);
+    importFact = (SZrSemanticVisibleSymbolFact *)symbol_find_visible_fact(
+            cs.semanticContext, importSymbol->id);
     TEST_ASSERT_NOT_NULL(importFact);
     TEST_ASSERT_TRUE(importFact->isImport);
     TEST_ASSERT_TRUE(importFact->isAlias);
@@ -1726,6 +1730,57 @@ static void test_visible_symbols_projects_direct_import_alias(void) {
     visibleImport = symbol_find_visible_name(&symbols, "math");
     TEST_ASSERT_NOT_NULL(visibleImport);
     TEST_ASSERT_EQUAL_UINT32(importSymbol->id, visibleImport->symbolId);
+    TEST_ASSERT_TRUE(visibleImport->isImport);
+    TEST_ASSERT_NOT_NULL(visibleImport->externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math",
+            ZrCore_String_GetNativeString(visibleImport->externalOriginUri));
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_DeclaredSymbols(
+            cs.semanticContext, ZR_NULL, &symbols));
+    declaredImport = symbol_find_visible_name(&symbols, "math");
+    TEST_ASSERT_NOT_NULL(declaredImport);
+    TEST_ASSERT_EQUAL_UINT32(importSymbol->id, declaredImport->symbolId);
+    TEST_ASSERT_TRUE(declaredImport->isImport);
+    TEST_ASSERT_NOT_NULL(declaredImport->externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math",
+            ZrCore_String_GetNativeString(declaredImport->externalOriginUri));
+
+    memset(&importQuery, 0, sizeof(importQuery));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "math", 0U),
+            ZR_NULL,
+            &importQuery));
+    TEST_ASSERT_EQUAL_UINT32(importSymbol->id, importQuery.symbolId);
+    TEST_ASSERT_TRUE(importQuery.isImport);
+    TEST_ASSERT_NOT_NULL(importQuery.externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math", ZrCore_String_GetNativeString(importQuery.externalOriginUri));
+
+    savedImportOrigin = importFact->externalOriginUri;
+    importFact->externalOriginUri = ZR_NULL;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "math", 0U),
+            ZR_NULL,
+            &importQuery));
+    TEST_ASSERT_TRUE(importQuery.isImport);
+    TEST_ASSERT_NULL(importQuery.externalOriginUri);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_DeclaredSymbols(
+            cs.semanticContext, ZR_NULL, &symbols));
+    declaredImport = symbol_find_visible_name(&symbols, "math");
+    TEST_ASSERT_NOT_NULL(declaredImport);
+    TEST_ASSERT_TRUE(declaredImport->isImport);
+    TEST_ASSERT_NULL(declaredImport->externalOriginUri);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    visibleImport = symbol_find_visible_name(&symbols, "math");
+    TEST_ASSERT_NOT_NULL(visibleImport);
+    TEST_ASSERT_TRUE(visibleImport->isImport);
+    TEST_ASSERT_NULL(visibleImport->externalOriginUri);
+    importFact->externalOriginUri = savedImportOrigin;
 
     ZrCore_Array_Free(g_state, &symbols);
     symbol_release_compiler_function(&cs);

@@ -22,6 +22,7 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "zr_vm_parser/semantic_relations.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h"
@@ -6499,6 +6500,200 @@ static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrSt
     TEST_PASS(timer, "LSP Native Import Definition Uses Virtual Declaration URI");
 }
 
+static TZrBool lsp_semantic_query_rejects_position(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        SZrLspPosition position) {
+    SZrLspSemanticQuery query;
+    TZrBool rejected;
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    rejected = !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+            state, context, uri, position, &query);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    return rejected;
+}
+
+static void test_lsp_native_import_alias_definition_uses_canonical_origin_without_ast(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var container = import(\"zr.container\");\n"
+        "fn run() {\n"
+        "    return container;\n"
+        "}\n";
+    SZrLspPosition aliasUsePosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrAstNode *savedAst;
+    SZrLspSemanticQuery query;
+    SZrSemanticRelationFact ambiguousOrigin;
+    SZrSemanticRelationFact *originFact = ZR_NULL;
+    SZrSemanticVisibleSymbolFact *visibleImportFact = ZR_NULL;
+    SZrString *missingOrigin;
+    SZrString *mismatchedVirtualUri;
+    SZrString *savedRelationOrigin;
+    SZrString *savedVisibleOrigin;
+    SZrString *savedVirtualUri;
+    TZrSize savedRelationCount;
+    SZrArray definitions;
+    TZrBool resolved;
+    TZrBool missingSymbolOriginRejected;
+    TZrBool missingRelationRejected;
+    TZrBool missingMetadataRejected;
+    TZrBool mismatchedVirtualRejected;
+    TZrBool ambiguousRejected;
+
+    TEST_START("LSP Native Import Alias Definition Uses Canonical Origin Without AST");
+    TEST_INFO("Canonical import-origin definition",
+              "A native import alias must navigate through its parser relation and metadata-projected virtual URI even when request-time AST import bindings are unavailable.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Native Import Alias Definition Uses Canonical Origin Without AST",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                              "file:///native_import_alias_canonical_origin.zr",
+                              strlen("file:///native_import_alias_canonical_origin.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "return container", 0, 7, &aliasUsePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Import Alias Definition Uses Canonical Origin Without AST",
+                  "Failed to prepare canonical import-origin fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || analyzer->ast == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Import Alias Definition Uses Canonical Origin Without AST",
+                  "Expected an analyzed source snapshot before removing the request-time AST");
+        return;
+    }
+
+    savedAst = analyzer->ast;
+    analyzer->ast = ZR_NULL;
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    resolved = ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                       state, context, uri, aliasUsePosition, &query) &&
+               query.kind == ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION &&
+               query.hasCanonicalSymbol &&
+               ZrLanguageServer_LspSemanticQuery_AppendDefinitions(
+                       state, context, &query, &definitions) &&
+               location_array_contains_uri_text(
+                       &definitions, "zr-decompiled:/zr.container.zr");
+    analyzer->ast = savedAst;
+
+    for (TZrSize index = 0U;
+         index < analyzer->semanticContext->relationFacts.length;
+         index++) {
+        SZrSemanticRelationFact *candidate =
+                (SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->relationFacts, index);
+        if (candidate != ZR_NULL &&
+            candidate->kind == ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN &&
+            candidate->sourceSymbolId == query.canonicalSymbol.symbolId) {
+            originFact = candidate;
+            break;
+        }
+    }
+    for (TZrSize index = 0U;
+         index < analyzer->semanticContext->visibleSymbolFacts.length;
+         index++) {
+        SZrSemanticVisibleSymbolFact *candidate =
+                (SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->visibleSymbolFacts, index);
+        if (candidate != ZR_NULL && candidate->isImport &&
+            candidate->symbolId == query.canonicalSymbol.symbolId) {
+            visibleImportFact = candidate;
+            break;
+        }
+    }
+
+    missingSymbolOriginRejected = visibleImportFact != ZR_NULL;
+    if (missingSymbolOriginRejected) {
+        savedVisibleOrigin = visibleImportFact->externalOriginUri;
+        visibleImportFact->externalOriginUri = ZR_NULL;
+        missingSymbolOriginRejected = lsp_semantic_query_rejects_position(
+                state, context, uri, aliasUsePosition);
+        visibleImportFact->externalOriginUri = savedVisibleOrigin;
+    }
+
+    savedRelationCount = analyzer->semanticContext->relationFacts.length;
+    analyzer->semanticContext->relationFacts.length = 0U;
+    missingRelationRejected = lsp_semantic_query_rejects_position(
+            state, context, uri, aliasUsePosition);
+    analyzer->semanticContext->relationFacts.length = savedRelationCount;
+
+    missingOrigin = ZrCore_String_CreateFromNative(
+            state, "semantic.missing.import.origin");
+    missingMetadataRejected = originFact != ZR_NULL &&
+                              visibleImportFact != ZR_NULL &&
+                              missingOrigin != ZR_NULL;
+    if (missingMetadataRejected) {
+        savedRelationOrigin = originFact->externalOriginUri;
+        savedVisibleOrigin = visibleImportFact->externalOriginUri;
+        originFact->externalOriginUri = missingOrigin;
+        visibleImportFact->externalOriginUri = missingOrigin;
+        missingMetadataRejected = lsp_semantic_query_rejects_position(
+                state, context, uri, aliasUsePosition);
+        originFact->externalOriginUri = savedRelationOrigin;
+        visibleImportFact->externalOriginUri = savedVisibleOrigin;
+    }
+
+    mismatchedVirtualUri = ZrCore_String_CreateFromNative(
+            state, "zr-decompiled:/wrong-provider.zr");
+    mismatchedVirtualRejected = originFact != ZR_NULL &&
+                                mismatchedVirtualUri != ZR_NULL;
+    if (mismatchedVirtualRejected) {
+        savedVirtualUri = originFact->virtualDeclarationUri;
+        originFact->virtualDeclarationUri = mismatchedVirtualUri;
+        mismatchedVirtualRejected = lsp_semantic_query_rejects_position(
+                state, context, uri, aliasUsePosition);
+        originFact->virtualDeclarationUri = savedVirtualUri;
+    }
+
+    memset(&ambiguousOrigin, 0, sizeof(ambiguousOrigin));
+    ambiguousOrigin.kind = ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN;
+    ambiguousOrigin.sourceSymbolId = query.canonicalSymbol.symbolId;
+    ambiguousOrigin.sourceTypeId = query.canonicalSymbol.typeId;
+    ambiguousOrigin.targetTypeId = query.canonicalSymbol.typeId;
+    ambiguousOrigin.sourceRange = query.canonicalSymbol.declarationRange;
+    ambiguousOrigin.externalOriginUri =
+            ZrCore_String_CreateFromNative(state, "zr.math");
+    ambiguousOrigin.hasSourceRange = ZR_TRUE;
+    ambiguousOrigin.isExternal = ZR_TRUE;
+    ambiguousRejected = ambiguousOrigin.externalOriginUri != ZR_NULL &&
+                        ZrParser_SemanticRelations_Append(
+                                analyzer->semanticContext, &ambiguousOrigin) &&
+                        lsp_semantic_query_rejects_position(
+                                state, context, uri, aliasUsePosition);
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    if (!resolved || !missingSymbolOriginRejected || !missingRelationRejected ||
+        !missingMetadataRejected ||
+        !mismatchedVirtualRejected || !ambiguousRejected) {
+        TEST_FAIL(timer,
+                  "LSP Native Import Alias Definition Uses Canonical Origin Without AST",
+                  "Expected canonical success without AST and fail-closed results for missing symbol origin, missing relation, missing metadata, mismatched virtual URI, and ambiguous origins");
+        return;
+    }
+
+    TEST_PASS(timer, "LSP Native Import Alias Definition Uses Canonical Origin Without AST");
+}
+
 static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_import_targets_uri(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8732,6 +8927,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_native_import_definition_uses_virtual_declaration_uri(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_import_alias_definition_uses_canonical_origin_without_ast(state);
     TEST_DIVIDER();
 
     test_lsp_auto_registers_linked_native_libraries_for_import_metadata(state);

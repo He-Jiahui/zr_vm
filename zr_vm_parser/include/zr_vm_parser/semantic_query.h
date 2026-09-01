@@ -104,6 +104,9 @@ typedef struct SZrParserSemanticSymbolQuery {
     TZrUInt64 externalSignatureHash;
     EZrSemanticExternalTargetKind externalTargetKind;
     TZrBool hasExternalTarget;
+    /* Borrowed import classification from the snapshot's visible-symbol fact. */
+    SZrString *externalOriginUri;
+    TZrBool isImport;
 } SZrParserSemanticSymbolQuery;
 
 typedef struct SZrParserSemanticExternalReferenceQuery {

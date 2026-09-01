@@ -1593,6 +1593,54 @@ static void test_cross_snapshot_references_use_external_identity_queries(void) {
     free(externalMetadata);
 }
 
+static void test_import_origin_definition_consumer_uses_parser_relations(void) {
+    char *relationQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c");
+    char *semanticQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    char *analyzerAnalysis = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c");
+
+    if (relationQuery == NULL || semanticQuery == NULL || analyzerAnalysis == NULL) {
+        printf("FAIL: could not read canonical import-origin definition sources\n");
+        g_failures++;
+        free(relationQuery);
+        free(semanticQuery);
+        free(analyzerAnalysis);
+        return;
+    }
+
+    assert_text_contains(
+        relationQuery, "ZrParser_SemanticQuery_RelationsOfSymbol");
+    assert_text_contains(
+        relationQuery,
+        "ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry");
+    assert_text_contains(relationQuery, "virtualDeclarationUri");
+    assert_text_contains(relationQuery, "symbol->isImport");
+    assert_text_contains(relationQuery, "symbol->externalOriginUri");
+    assert_text_contains(
+        relationQuery, "ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID");
+    assert_text_contains_none(relationQuery, "CollectImportBindings");
+    assert_text_contains_none(relationQuery, "FindImportBindingByAlias");
+    assert_text_contains_none(relationQuery, "aliasName");
+    assert_text_contains_none(relationQuery, "strcmp");
+    assert_text_contains_none(relationQuery, "strstr");
+    assert_text_contains(
+        semanticQuery,
+        "ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin");
+    assert_text_contains(
+        semanticQuery,
+        "importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID");
+    assert_text_contains(
+        analyzerAnalysis, "ZrParser_SemanticCalls_PublishSource");
+    assert_text_contains(
+        analyzerAnalysis, "ZrParser_SemanticRelations_PublishImportOrigins");
+
+    free(relationQuery);
+    free(semanticQuery);
+    free(analyzerAnalysis);
+}
+
 static void test_imported_reference_consumers_require_canonical_identity(void) {
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -2113,6 +2161,7 @@ int main(void) {
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
     test_cross_snapshot_references_use_external_identity_queries();
+    test_import_origin_definition_consumer_uses_parser_relations();
     test_imported_reference_consumers_require_canonical_identity();
     test_dead_project_semantic_fallbacks_are_removed();
     test_local_rename_consumers_require_canonical_symbol_identity();

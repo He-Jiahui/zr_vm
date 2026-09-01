@@ -69,6 +69,9 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_constant_condition.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expression_query.c
@@ -136,7 +139,11 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_constant_condition.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expression_query.c
@@ -229,6 +236,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - provider generation zero remains explicitly unavailable and is never inferred
   - `ExternalReferences` exposes stable complete external tuples and omits incomplete facts
   - project references resolve exact metadata rows across snapshots in both declaration-to-use and use-to-use directions
+  - import alias definitions consume exact import-origin relations and metadata-projected virtual URIs without request-time AST bindings
 - `external-callable-value-canonical-facts.md`
   - canonical TypeId/signature facts for binary and provider callable values
   - unresolved source identity and exact fact-owned LSP fail-closed behavior
@@ -417,6 +425,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - LSP definition 已通过 `lsp_semantic_definition_query.c` 消费直线和首版 CFG-backed reaching-defs，使本地 read after write 能跳到到达的 write token，并在 divergent branch writes 后回退到 declaration
   - `Diagnostics` 已把 scope 内不可达 reachability facts 映射为结构化 `unreachable_code` warning，也能把带 definite-assignment 状态的 read fact 映射为 `uninitialized_read` / `possibly_uninitialized_read`，并覆盖直线 resolver 与 CFG-backed resolver 产出的 read 状态
   - LSP semantic analyzer 已在常规语义检查后消费 semantic query diagnostics，作为未被旧 analyzer 诊断覆盖位置的补充诊断源发布到 `GetDiagnostics`
+  - LSP snapshot 在 source facts 后发布 import-origin relations；alias definition 只消费 exact SymbolId/TypeId relation 与 metadata URI projection，歧义 origin fail closed
   - compiler frontend 已在 `compile_script` 成功完成语句编译和 typed metadata 后发布 semantic query diagnostics 到 `SZrSemanticContext.queryDiagnostics` cache，warning 级 query diagnostics 不会置位编译错误状态，并已覆盖 CFG-backed 分支汇合 `possibly_uninitialized_read`；外部/二进制诊断序列化仍待后续切片
   - module/node scope 过滤边界，以及后续局部重算和更完整诊断来源
 - `lsp-semantic-resolution-and-native-imports.md`

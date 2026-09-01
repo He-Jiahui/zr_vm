@@ -129,6 +129,9 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
 plan_sources:
   - user: 2026-06-20 参照 docs/plans/lsp 优化语义推断能力
   - docs/plans/lsp/01-semantic-inference-core.md
@@ -144,6 +147,8 @@ tests:
   - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
   - tests/parser/test_semantic_display.c
   - tests/parser/test_type_inference.c
+  - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
 doc_type: module-detail
@@ -1312,3 +1317,29 @@ starting symbol. The same aggregation runs when references begin at a source
 declaration or an imported use; cancellation and location deduplication use the
 existing reference-query helpers. The consumer does not scan import bindings,
 pair AST nodes, compare member names, or reconstruct signatures.
+
+## Plan 03 Task 3.22 Canonical Import-Origin Definitions
+
+The language-server analyzer publishes import-origin relations only after
+`PublishSource` has populated visible import facts. This is part of snapshot
+construction, not request handling. Definition requests therefore read a
+complete, immutable relation graph even when the request-time AST is absent.
+
+`SymbolAt`, `VisibleSymbols`, and `DeclaredSymbols` project `isImport` plus the
+borrowed external origin identity from the same visible-symbol fact. The
+import-origin adapter then queries `RelationsOfSymbol` with the exact canonical
+SymbolId and TypeId. Exactly one `IMPORT_EXPORT_ORIGIN` relation must identify
+the source symbol and type. The adapter passes that borrowed external origin
+identity to the metadata provider, which selects the source, binary, or native
+module declaration URI. If the relation already carries a virtual declaration
+URI, it must equal the metadata projection. A classified import with no
+projected origin identity, no origin relation, missing metadata, duplicate
+origin relations, or a URI mismatch is an invalid import resolution and blocks
+every AST/import-binding fallback. Only a symbol explicitly classified as
+non-import is not applicable to this adapter.
+
+The relation adapter is isolated in `lsp_semantic_relation_query.c`. It does
+not collect import bindings, inspect alias names, scan source text, or generate
+the `zr-decompiled` URI. Import literal and chained-member consumers still have
+separate migration work; this contract currently closes canonical import-alias
+definition navigation.

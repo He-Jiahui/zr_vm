@@ -393,6 +393,40 @@ static void semantic_query_external_references_sort(SZrArray *references) {
     }
 }
 
+static TZrBool semantic_query_symbols_apply_import_identity(
+        const SZrSemanticContext *context,
+        SZrParserSemanticSymbolQuery *symbol) {
+    TZrSize index;
+
+    if (context == ZR_NULL || symbol == ZR_NULL ||
+        symbol->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !context->visibleSymbolFacts.isValid) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index < context->visibleSymbolFacts.length; index++) {
+        const SZrSemanticVisibleSymbolFact *fact =
+                (const SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->visibleSymbolFacts, index);
+
+        if (fact == ZR_NULL || fact->symbolId != symbol->symbolId ||
+            !fact->isImport) {
+            continue;
+        }
+        if (symbol->isImport) {
+            if ((symbol->externalOriginUri == ZR_NULL) !=
+                    (fact->externalOriginUri == ZR_NULL) ||
+                (symbol->externalOriginUri != ZR_NULL &&
+                 !ZrCore_String_Equal(symbol->externalOriginUri,
+                                      fact->externalOriginUri))) {
+                return ZR_FALSE;
+            }
+        }
+        symbol->isImport = ZR_TRUE;
+        symbol->externalOriginUri = fact->externalOriginUri;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_SemanticQuery_SymbolAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -431,6 +465,10 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     outSymbol->externalSignatureHash = reference->externalSignatureHash;
     outSymbol->externalTargetKind = reference->externalTargetKind;
     outSymbol->hasExternalTarget = reference->hasExternalTarget;
+    if (!semantic_query_symbols_apply_import_identity(context, outSymbol)) {
+        memset(outSymbol, 0, sizeof(*outSymbol));
+        return ZR_FALSE;
+    }
     {
         const SZrSemanticSymbolRecord *record =
                 ZrParser_Semantic_FindSymbolById(context, reference->symbolId);
@@ -501,6 +539,9 @@ TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
         symbol.declarationNode = declaration->node;
         symbol.displayName = record->name;
         symbol.signatureDisplay = declaration->signatureDisplay;
+        if (!semantic_query_symbols_apply_import_identity(context, &symbol)) {
+            continue;
+        }
         ZrCore_Array_Push(context->state, outSymbols, &symbol);
     }
 
@@ -618,6 +659,10 @@ TZrBool ZrParser_SemanticQuery_VisibleSymbols(
                     : fact->declarationRange;
             candidate.symbol.displayName = record->name;
             candidate.symbol.signatureDisplay = fact->signatureDisplay;
+            if (!semantic_query_symbols_apply_import_identity(
+                        context, &candidate.symbol)) {
+                continue;
+            }
             candidate.symbol.declarationNode = record->astNode;
             candidate.record = record;
             candidate.scopeDistance = distance;

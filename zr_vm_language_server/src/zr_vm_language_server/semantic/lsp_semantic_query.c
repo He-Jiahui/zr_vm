@@ -5,6 +5,7 @@
 #include "semantic/lsp_canonical_completion.h"
 #include "semantic/lsp_canonical_hover.h"
 #include "semantic/lsp_semantic_import_chain.h"
+#include "semantic/lsp_semantic_relation_query.h"
 #include "semantic/lsp_semantic_reference_query.h"
 #include "semantic/semantic_analyzer_internal.h"
 #include "interface/lsp_semantic_cache_lru.h"
@@ -716,6 +717,45 @@ static TZrBool semantic_query_try_resolve_canonical_symbol(
         }
     }
     return ZR_TRUE;
+}
+
+static EZrLspSemanticImportOriginResolution
+semantic_query_resolve_canonical_import_origin_target(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrSemanticAnalyzer *analyzer,
+        SZrLspSemanticQuery *query) {
+    SZrLspSemanticImportOriginTarget target;
+    EZrLspSemanticImportOriginResolution resolution;
+
+    if (query == ZR_NULL || !query->hasCanonicalSymbol) {
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE;
+    }
+    resolution = ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
+            state,
+            context,
+            projectIndex,
+            analyzer,
+            &query->canonicalSymbol,
+            &target);
+    if (resolution != ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED) {
+        return resolution;
+    }
+
+    query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION;
+    query->moduleName = target.originIdentity;
+    query->memberName = ZR_NULL;
+    query->sourceKind = target.module.sourceKind;
+    query->resolvedModule = target.module;
+    query->resolvedTypeInfo.origin = query->sourceKind;
+    query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_MODULE;
+    query->resolvedMember.module = target.module;
+    query->resolvedMember.memberKind = ZR_LSP_METADATA_MEMBER_MODULE;
+    query->resolvedMember.declarationUri = target.declaration.declarationUri;
+    query->resolvedMember.declarationRange = target.declaration.declarationRange;
+    query->resolvedMember.hasDeclaration = target.declaration.hasDeclaration;
+    return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
 }
 
 static TZrBool semantic_query_find_import_binding_hit(SZrArray *bindings,
@@ -2284,6 +2324,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     SZrLspSemanticImportChainHit importChainHit;
     SZrLspMetadataProvider provider;
     SZrLspResolvedImportedModuleEntry moduleEntry;
+    EZrLspSemanticImportOriginResolution importOriginResolution;
     TZrBool resolved;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || query == ZR_NULL) {
@@ -2325,6 +2366,16 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
         query->hasCanonicalSymbol = semantic_query_try_resolve_canonical_symbol(
                 state, analyzer, query, ZR_TRUE);
+        importOriginResolution = semantic_query_resolve_canonical_import_origin_target(
+                state, context, projectIndex, analyzer, query);
+        if (importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED) {
+            ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+            return semantic_query_capture_document_version(state, context, query);
+        }
+        if (importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID) {
+            ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+            return ZR_FALSE;
+        }
         if (ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(state,
                                                                    context,
                                                                    projectIndex,
@@ -2398,6 +2449,19 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
 
+    if (!query->hasCanonicalSymbol) {
+        query->hasCanonicalSymbol = semantic_query_try_resolve_canonical_symbol(
+                state, analyzer, query, ZR_FALSE);
+    }
+    importOriginResolution = semantic_query_resolve_canonical_import_origin_target(
+            state, context, projectIndex, analyzer, query);
+    if (importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED) {
+        return semantic_query_capture_document_version(state, context, query);
+    }
+    if (importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID) {
+        return ZR_FALSE;
+    }
+
     if (analyzer->ast != ZR_NULL) {
         if (semantic_query_resolve_import_alias_token_target(state, context, projectIndex, analyzer, uri, query)) {
             return semantic_query_capture_document_version(state, context, query);
@@ -2412,7 +2476,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         return semantic_query_capture_document_version(state, context, query);
     }
 
-    if (semantic_query_try_resolve_canonical_symbol(
+    if (query->hasCanonicalSymbol ||
+        semantic_query_try_resolve_canonical_symbol(
                 state, analyzer, query, ZR_FALSE)) {
         query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;
         query->resolvedTypeInfo.origin = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;

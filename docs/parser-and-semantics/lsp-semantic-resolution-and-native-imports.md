@@ -26,6 +26,9 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
@@ -52,6 +55,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
   - tests/language_server/test_lsp_language_feature_matrix.c
   - tests/parser/test_compiler_regressions.c
@@ -97,6 +102,9 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
@@ -122,6 +130,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
 plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
@@ -132,6 +142,7 @@ plan_sources:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
+  - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
   - tests/language_server/test_lsp_language_feature_matrix.c
@@ -157,6 +168,7 @@ tests:
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
   - tests/parser/test_canonical_consumers.c
+  - tests/parser/test_semantic_query_symbols.c
   - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
 doc_type: module-detail
 ---
@@ -901,3 +913,26 @@ Canonical classification is isolated in `lsp_semantic_token_canonical.c`.
 UTF-16 range conversion, duplicate preference, overlap filtering, sorting, and
 delta encoding are isolated in `lsp_semantic_token_entries.c`; the scanner
 retains only source traversal and protocol projection.
+
+## Canonical Import-Origin Definition Boundary
+
+Source analysis first publishes lexical source/call facts and then derives
+`IMPORT_EXPORT_ORIGIN` relations from those facts. Definition requests never
+publish or repair relations. An import alias remains navigable from its
+canonical semantic snapshot when `analyzer->ast` is unavailable.
+
+The parser `SymbolAt`, `VisibleSymbols`, and `DeclaredSymbols` queries classify
+the alias as an import and project its borrowed external origin identity from
+the same snapshot fact. `lsp_semantic_relation_query.c` accepts that exact
+SymbolId and TypeId, requires one matching external origin relation, and asks
+the metadata provider for the module entry. Native modules consequently land on
+the provider-created `zr-decompiled` URI; the relation consumer does not format
+that URI. A relation-provided virtual URI must match the metadata result exactly.
+
+Resolution is explicitly three-state. A non-import symbol is not handled by
+this adapter. One complete relation and one metadata entry resolves. A symbol
+classified as import with no projected origin, no relation, multiple origins,
+missing metadata, or a mismatched virtual URI is invalid and stops legacy
+AST/import-binding fallback.
+Import literals and member chains retain their existing consumers until their
+own canonical relation migrations are implemented.

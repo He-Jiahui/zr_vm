@@ -150,8 +150,18 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 14:00 +08:00。
-- 总体状态：进行中。Task 3.21 新增只读`ExternalReferences`查询，稳定返回完整external
+- 最近更新时间：2026-09-01 15:46 +08:00。
+- 总体状态：进行中。Task 3.22 将import alias definition迁移到canonical import-origin
+  relation consumer。LSP analyzer在source facts完成后发布`IMPORT_EXPORT_ORIGIN`，请求期adapter
+  消费parser symbol query投影的`isImport`/external origin，只以exact SymbolId/TypeId调用
+  `RelationsOfSymbol`并交给metadata provider解析source/binary/native
+  module entry；无AST时native alias仍跳转到`zr-decompiled` virtual URI。adapter以三态区分
+  not-applicable/resolved/invalid；已分类import缺projected origin/relation、多origin、metadata缺失或relation virtual
+  URI与projection不一致时直接阻断AST/import-binding fallback。GCC/Clang
+  symbols/query/calls/relations/contract/canonical/
+  facts/type-inference `24/30/30/28/6/21/17/124`、parity、source-contract与完整interface均真实
+  exit 0。Task 3仍需import literal/chain relation consumer、parser-owned无source virtual URI producer、
+  真实multi-provider nonzero generation与binary/native sourceless矩阵；Task 8总门禁未完成。Task 3.21 新增只读`ExternalReferences`查询，稳定返回完整external
   owner identity、provider generation、metadata/signature token、signature hash、target kind、
   SymbolId/TypeId与reference range；缺任一identity字段的fact不会进入结果。typed export/import
   metadata现保留exact declaration coordinates，LSP resolver只接受唯一exact metadata row并映射到
@@ -1219,3 +1229,20 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `24/30/30/28/6/21/17/124`、parity、source-contract和完整interface，全部真实exit 0；interface
   fixed1降为0。本项未运行MSVC、完整target matrix或stdio smoke；virtual declaration URI、真实
   multi-provider nonzero generation、binary/native sourceless relation matrix及Task 8继续未完成。
+
+- 补充完成时间：2026-09-01 15:46 +08:00。Task 3.22 完成canonical import-origin
+  definition consumer。LSP snapshot producer在`PublishSource`之后发布import-origin relations；独立
+  parser symbol queries从visible fact投影`isImport`与external origin；relation adapter以canonical
+  SymbolId/TypeId查询唯一`IMPORT_EXPORT_ORIGIN`并将其external origin
+  identity交给metadata provider，native alias无需request-time AST即可落到`zr-decompiled` URI。
+  adapter不生成virtual URI、不收集import bindings、不读取alias name/source text；若relation已携URI，
+  必须与metadata projection一致。三态结果确保已分类import缺projected origin/relation、多origin、缺metadata或URI
+  mismatch不会落入旧AST fallback。RED中source-contract缺adapter且interface仅新增无AST case失败；
+  GREEN后该case及missing symbol origin/relation/metadata、URI mismatch、第二origin的fail-closed矩阵通过。固定
+  GCC/Clang snapshot均通过symbols/query/calls/relations/contract/
+  canonical/facts/type-inference `24/30/30/28/6/21/17/124`、parity、source-contract和完整interface，
+  全部真实exit 0。GCC/Clang type-inference并发轮因共享binary-import临时件各失败1项并明确作废，随后
+  全局串行重跑均为124/124、真实exit 0。本项未运行MSVC、完整target matrix或stdio smoke；
+  import literal/chain、parser-owned
+  无source virtual URI producer、真实multi-provider generation、binary/native sourceless matrix与
+  Task 8继续未完成。
