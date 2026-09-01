@@ -252,6 +252,27 @@ static SZrFileRange file_range_for_nth_substring_offset(const char *content,
     return range;
 }
 
+static SZrFileRange file_range_for_nth_substring_in_source(const char *content,
+                                                           const char *needle,
+                                                           TZrSize occurrence,
+                                                           TZrBool useEnd,
+                                                           SZrString *source) {
+    SZrFileRange range = file_range_for_nth_substring(content, needle, occurrence, useEnd);
+    range.source = source;
+    return range;
+}
+
+static SZrFileRange file_range_for_nth_substring_offset_in_source(const char *content,
+                                                                  const char *needle,
+                                                                  TZrSize occurrence,
+                                                                  TZrSize extraOffset,
+                                                                  SZrString *source) {
+    SZrFileRange range =
+        file_range_for_nth_substring_offset(content, needle, occurrence, extraOffset);
+    range.source = source;
+    return range;
+}
+
 static TZrSize count_logical_facts_with_known_value(const SZrSemanticContext *context,
                                                     EZrSemanticLogicalFactKind kind,
                                                     TZrBool knownValue) {
@@ -1340,8 +1361,10 @@ static void test_semantic_analyzer_records_reference_facts_with_precise_ranges(S
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "reference_fact_test.zr", 22);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrFileRange declarationRange = file_range_for_nth_substring(source, "value", 0, ZR_FALSE);
-        SZrFileRange useRange = file_range_for_nth_substring(source, "value", 1, ZR_FALSE);
+        SZrFileRange declarationRange =
+            file_range_for_nth_substring_in_source(source, "value", 0, ZR_FALSE, sourceName);
+        SZrFileRange useRange =
+            file_range_for_nth_substring_in_source(source, "value", 1, ZR_FALSE, sourceName);
         const SZrSemanticReferenceFact *declarationFact;
         const SZrSemanticReferenceFact *fact;
 
@@ -2790,9 +2813,11 @@ static void test_semantic_analyzer_records_reachability_facts_for_unreachable_st
         SZrString *sourceName = ZrCore_String_Create(state, "reachability_fact_test.zr", 25);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrFileRange deadAfterReturnRange =
-            file_range_for_nth_substring(testCode, "deadAfterReturn", 0, ZR_FALSE);
+            file_range_for_nth_substring_in_source(
+                testCode, "deadAfterReturn", 0, ZR_FALSE, sourceName);
         SZrFileRange deadAfterThrowRange =
-            file_range_for_nth_substring(testCode, "deadAfterThrow", 0, ZR_FALSE);
+            file_range_for_nth_substring_in_source(
+                testCode, "deadAfterThrow", 0, ZR_FALSE, sourceName);
         const SZrSemanticReachabilityFact *returnFact;
         const SZrSemanticReachabilityFact *throwFact;
 
@@ -2868,8 +2893,12 @@ static void test_semantic_analyzer_records_short_circuit_logical_facts(SZrState 
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "logical_fact_test.zr", 20);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrFileRange skippedOrRange = file_range_for_nth_substring(testCode, "false;", 0, ZR_FALSE);
-        SZrFileRange skippedAndRange = file_range_for_nth_substring(testCode, "true;", 0, ZR_FALSE);
+        SZrFileRange skippedOrRange =
+            file_range_for_nth_substring_in_source(
+                testCode, "false;", 0, ZR_FALSE, sourceName);
+        SZrFileRange skippedAndRange =
+            file_range_for_nth_substring_in_source(
+                testCode, "true;", 0, ZR_FALSE, sourceName);
         const SZrSemanticReachabilityFact *orReachability;
         const SZrSemanticReachabilityFact *andReachability;
 
@@ -3204,7 +3233,8 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "borrowed", 1, ZR_FALSE));
+                file_range_for_nth_substring_in_source(
+                    testCode, "borrowed", 1, ZR_FALSE, sourceName));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
@@ -3261,8 +3291,8 @@ static void test_semantic_analyzer_reports_assignment_ownership_mismatch(SZrStat
         return;
     }
 
-    sourceRange = file_range_for_nth_substring(
-            testCode, "source;", 0U, ZR_FALSE);
+    sourceRange = file_range_for_nth_substring_in_source(
+            testCode, "source;", 0U, ZR_FALSE, sourceName);
     diagnostic = find_diagnostic_by_code_and_line(
             analyzer, "ownership_mismatch", sourceRange.start.line);
     fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
@@ -3366,10 +3396,12 @@ static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZr
         }
         uniqueFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "owner;", 0, ZR_FALSE));
+                file_range_for_nth_substring_in_source(
+                    testCode, "owner;", 0, ZR_FALSE, sourceName));
         sharedFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "sharedOwner;", 0, ZR_FALSE));
+                file_range_for_nth_substring_in_source(
+                    testCode, "sharedOwner;", 0, ZR_FALSE, sourceName));
         if (uniqueFact == ZR_NULL || sharedFact == ZR_NULL ||
             uniqueFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             sharedFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
@@ -3456,7 +3488,8 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "resource", 2, ZR_FALSE));
+                file_range_for_nth_substring_in_source(
+                    testCode, "resource", 2, ZR_FALSE, sourceName));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
@@ -3541,7 +3574,8 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "resource;", 0, ZR_FALSE));
+                file_range_for_nth_substring_in_source(
+                    testCode, "resource;", 0, ZR_FALSE, sourceName));
         if (fact == ZR_NULL) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -3633,7 +3667,12 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring_offset(testCode, "consume(resource);", 0, strlen("consume(")));
+                file_range_for_nth_substring_offset_in_source(
+                    testCode,
+                    "consume(resource);",
+                    0,
+                    strlen("consume("),
+                    sourceName));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
@@ -3723,7 +3762,12 @@ static void test_semantic_analyzer_reports_weak_argument_requires_wake(SZrState 
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring_offset(testCode, "observe(ref watcher);", 0, strlen("observe(ref ")));
+                file_range_for_nth_substring_offset_in_source(
+                    testCode,
+                    "observe(ref watcher);",
+                    0,
+                    strlen("observe(ref "),
+                    sourceName));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_WEAK ||
@@ -3804,7 +3848,12 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring_offset(testCode, "box.consume(resource);", 0, strlen("box.consume(")));
+                file_range_for_nth_substring_offset_in_source(
+                    testCode,
+                    "box.consume(resource);",
+                    0,
+                    strlen("box.consume("),
+                    sourceName));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
@@ -3860,8 +3909,8 @@ static void test_semantic_analyzer_projects_unresolved_member_query_diagnostic(
         return;
     }
 
-    memberRange = file_range_for_nth_substring(
-            testCode, "missingField", 0U, ZR_FALSE);
+    memberRange = file_range_for_nth_substring_in_source(
+            testCode, "missingField", 0U, ZR_FALSE, sourceName);
     fact = ZrParser_SemanticFacts_FindReferenceAtPosition(
             analyzer->semanticContext, memberRange);
     diagnostic = find_diagnostic_by_code_and_line(

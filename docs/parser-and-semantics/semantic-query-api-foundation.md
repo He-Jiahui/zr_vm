@@ -1409,3 +1409,11 @@ formatting. Ordinary function parameter annotations and const-generic bounds the
 same primitive TypeId from
 `ZrParser_SemanticQuery_CanonicalTypeAt`; `ZrParser_CanonicalType_Format` supplies display text.
 Consumers must not reconstruct a primitive from source spelling when the fact is absent.
+
+## Plan 03 Task 7.60 Source-aware fact-query fixtures
+
+Direct semantic fact queries are source-identity queries, not offset-only lookups. Analyzer tests
+that parse a fixture with a named `SZrString` now attach that same `sourceName` to every reference,
+reachability, logical, and ownership range passed to `Find*AtPosition`. This keeps the test contract
+aligned with fail-closed behavior: a sourceless range must not match a fact from a different source
+snapshot. The change is test-only; it does not weaken producer matching or add a LSP fallback.

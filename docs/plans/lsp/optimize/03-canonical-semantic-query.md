@@ -1340,3 +1340,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   generic失败，但本次unannotated-function signature与generic-type signature两项均转PASS。
   Task 7总迁移、source/binary/native/stale/unresolved完整consumer矩阵、Task 8的16-target与三套
   stdio/CLI smoke继续未完成。
+
+- 补充完成时间：2026-09-02 01:46 +08:00。Task 7.60 校正 semantic analyzer 直接 fact 查询的
+  测试夹具：所有需要查询具名 source snapshot 的 reference、reachability、logical 与 ownership
+  ranges 现在显式携带同一个 `sourceName`，遵守 source identity 的 fail-closed 合同。MSVC
+  隔离快照中这 12 个历史失败全部转为 PASS；剩余两个 generic producer 失败未被测试夹具修正
+  掩盖，继续作为下一片生产 support。Task 7总迁移、source/binary/native/stale/unresolved
+  完整 consumer 矩阵、Task 8的16-target与三套 stdio/CLI smoke继续未完成。
