@@ -118,10 +118,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Create: `tests/parser/test_semantic_query_diagnostics.c`
 - Create: `tests/language_server/test_lsp_diagnostic_projection.c`
 
-- [ ] parser/compiler 负责 const assignment context、call compatibility、field existence、ownership/loan/region/effect、unresolved reference 等规则。
-- [ ] diagnostic 包含 stable code、severity、primary range、related ranges、typed machine fix 或明确 no-fix reason。
-- [ ] LSP 仅做 severity/range/code/relatedInformation/codeDescription/data 投影；删除 LSP analyzer 中已知不完整的重复检查。
-- [ ] compiler diagnostic 与 LSP diagnostic 做 golden parity；不得通过调整 LSP message 掩盖 compiler 漏报。
+- [x] parser/compiler 负责 const assignment context、call compatibility、field existence、ownership/loan/region/effect、unresolved reference 等规则。
+- [x] diagnostic 包含 stable code、severity、primary range、related ranges、typed machine fix 或明确 no-fix reason。
+- [x] LSP 仅做 severity/range/code/relatedInformation/codeDescription/data 投影；删除 LSP analyzer 中已知不完整的重复检查。
+- [x] compiler diagnostic 与 LSP diagnostic 做 golden parity；不得通过调整 LSP message 掩盖 compiler 漏报。
 
 ## Task 7：迁移 LSP consumers 并删除第二套语义
 
@@ -150,7 +150,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 20:24 +08:00。
+- 最近更新时间：2026-09-01 21:26 +08:00。
 - 总体状态：进行中。Task 3.23 为direct/destructured import visible facts发布exact
   module-literal range，并新增只读三态`ImportOriginAt`。查询在literal位置校验同一origin下
   每个import binding都有且只有一个匹配SymbolId/TypeId的`IMPORT_EXPORT_ORIGIN` relation，
@@ -1310,3 +1310,17 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   GCC/Clang/MSVC 独立快照的 source-contract 与 interface 均真实 exit 0；MSVC 使用静态
   Debug 配置，且规范化隔离 checkout 的 LF 仅用于多行 source-contract 读取。Task 6/7/8 与
   完整16-target、三套stdio/CLI smoke仍未完成。
+
+- 补充完成时间：2026-09-01 21:26 +08:00。Task 6 在既有 6.1-6.41 producer/query
+  迁移基础上完成结构化语义诊断关闭审计。新增目录级 source contract 枚举 10 个
+  semantic analyzer rule 源文件，禁止直接调用 raw LSP diagnostic constructor、parser
+  diagnostic builder 或 semantic diagnostic fact append；query bridge 必须消费
+  `MaterializeDiagnostics`/`Diagnostics` 并调用唯一 `Diagnostic_FromStructured` projector，
+  projector 继续完整复制 related information、typed fixes 与 no-fix disposition。
+  GCC/Clang/MSVC 同一 focused closure matrix 的 compiler semantic-query、parser diagnostic
+  disposition、LSP semantic-query diagnostics 与 LSP source-contract 分别为
+  `64/64`、`13/13`、`19/19` 和真实 exit 0，三套 semantic-query parity 也真实 exit 0；
+  完整 semantic analyzer 中所有 compiler↔LSP golden parity cases 均通过。完整 analyzer 与
+  ownership targets 仍重现既有 type display/reference/reachability/ownership fact 历史失败，
+  不计入本片 GREEN，也未通过调整 LSP message 掩盖。Task 7 consumer 总迁移、Task 8 的完整
+  16-target 与三套 stdio/CLI smoke继续未完成。

@@ -2380,6 +2380,7 @@ int main(void) {
     test_return_type_inference_uses_parser_diagnostic_projection();
     test_cannot_infer_exact_type_uses_parser_diagnostic_projection();
     test_semantic_analyzer_has_no_unstructured_diagnostic_escape_hatch();
+    test_semantic_analyzer_rules_only_publish_structured_query_diagnostics();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -2452,6 +2453,7 @@ int main(void) {
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");
     printf("PASS: Semantic analyzer has no unstructured diagnostic escape hatch\n");
+    printf("PASS: Semantic analyzer rules only publish structured query diagnostics\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

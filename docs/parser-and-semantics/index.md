@@ -228,6 +228,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 
 诊断应包含 stable code、具体原因和建议动作。parser 仍保留 legacy error callback，但当 LSP 或工具可消费结构化诊断时，优先使用 structured diagnostic，再通过标准 LSP message 展示 cause 和 suggestion。
 
+语义诊断的生产边界已经收敛到 parser/compiler persistent facts：LSP semantic analyzer
+只能触发 parser/compiler producer、物化 `SemanticQuery_Diagnostics` 并调用统一 structured
+projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 parser diagnostic builder，
+也不得自行追加 semantic diagnostic fact；source contract 会阻止这些入口重新出现。
+
 ## 当前主题
 
 - `semantic-query-api-foundation.md`
