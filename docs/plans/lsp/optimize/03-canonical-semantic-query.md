@@ -1266,3 +1266,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   query/parity/source-contract/interface均真实exit 0，Task 3与Task 8仍因virtual URI、多
   provider generation、binary/native sourceless matrix、MSVC、完整16-target与stdio smoke
   未完成。
+
+- 补充完成时间：2026-09-01 18:02 +08:00。Task 3.25 将module-link chain中间hop消费已有
+  parser `EXTERNAL_TARGET_MODULE` identity：对应module prototype与metadata row必须按owner、
+  target kind、metadata/signature token及signature hash唯一匹配，请求期无AST时仍可解析
+  `system.console`，identity篡改或row冲突时fail closed。native imported member、terminal
+  callable与semantic token回归保持通过。completion cursor没有同等canonical member range，
+  因此仍未迁移；GCC focused semantic query/parity/source-contract/interface真实exit 0，
+  Task 3与Task 8仍因virtual URI、多provider generation、binary/native sourceless matrix、
+  MSVC、完整16-target与stdio smoke未完成。

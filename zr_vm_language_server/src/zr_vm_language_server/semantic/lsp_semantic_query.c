@@ -680,9 +680,7 @@ semantic_query_resolve_canonical_external_member_target(
     if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
         query == ZR_NULL || !query->hasCanonicalSymbol ||
         !ZrLanguageServer_LspExternalTargetIdentity_IsAvailable(
-                &query->canonicalSymbol) ||
-        query->canonicalSymbol.externalTargetKind ==
-                ZR_SEMANTIC_EXTERNAL_TARGET_MODULE) {
+                &query->canonicalSymbol)) {
         return ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_NOT_APPLICABLE;
     }
 

@@ -1625,6 +1625,9 @@ static void test_import_chain_terminal_member_uses_external_identity(void) {
         resolverStart,
         resolverEnd,
         "ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember");
+    assert_text_contains(
+        externalMetadata,
+        "ZR_SEMANTIC_EXTERNAL_TARGET_MODULE");
     assert_text_section_contains_none(
         "semantic_query_resolve_canonical_external_member_target",
         resolverStart,

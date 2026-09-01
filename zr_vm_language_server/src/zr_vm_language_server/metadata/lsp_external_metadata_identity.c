@@ -17,6 +17,9 @@ static TZrBool external_metadata_identity_kind_matches(
                     ZrCore_String_GetNativeString(candidate->fieldTypeName))
             : ZR_NULL;
     switch (targetKind) {
+        case ZR_SEMANTIC_EXTERNAL_TARGET_MODULE:
+            return projectedType != ZR_NULL &&
+                   projectedType->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
         case ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE:
             return candidate->moduleExportKind == ZR_MODULE_EXPORT_KIND_FUNCTION ||
                    candidate->memberType == ZR_AST_CLASS_METHOD ||
@@ -70,7 +73,6 @@ TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
     if (provider == ZR_NULL || identity == ZR_NULL || outResolved == ZR_NULL ||
         identity->externalOwnerIdentity == ZR_NULL ||
         identity->externalTargetKind == ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN ||
-        identity->externalTargetKind == ZR_SEMANTIC_EXTERNAL_TARGET_MODULE ||
         identity->externalMetadataToken == 0U ||
         identity->externalSignatureToken == 0U ||
         identity->externalSignatureHash == 0U ||

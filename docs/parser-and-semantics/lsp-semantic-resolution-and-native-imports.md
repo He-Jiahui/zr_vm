@@ -959,6 +959,22 @@ chain branch explicitly rejects module-literal hits with no member name, so it
 cannot rebuild a module target from the literal text. Import-chain member
 identity remains the next migration boundary.
 
+## Canonical Import-Chain Module Hop
+
+The intermediate `system.console` segment now has an AST-independent query
+path when its parser reference fact publishes `EXTERNAL_TARGET_MODULE`. The
+shared external identity adapter validates the module owner and finds one
+module-typed metadata row using owner identity, target kind, metadata token,
+signature token, and signature hash. The semantic query invokes this path
+before AST/import-chain processing and projects the provider's structured module
+payload.
+
+The query fails closed for incomplete, stale, conflicting, or tampered
+identity. Native imported members and terminal callable members retain their
+separate exact consumers. Completion and module-hop cursor reconstruction are
+not included until the producer publishes an exact canonical range for that
+request shape.
+
 ## Canonical Import-Chain Terminal Member Boundary
 
 Terminal members such as `system.console.printLine` now have an AST-independent

@@ -6209,6 +6209,133 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     TEST_PASS(timer, "LSP Semantic Query Resolves Module-Link Chain Member Navigation");
 }
 
+static void test_lsp_semantic_query_resolves_module_link_hop_without_ast(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var system = import(\"zr.system\");\n"
+        "fn run() {\n"
+        "    return system.console.printLine(\"one\");\n"
+        "}\n";
+    SZrLspPosition consolePosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrAstNode *savedAst;
+    SZrSemanticReferenceFact *externalReferenceFact = ZR_NULL;
+    TZrUInt64 savedSignatureHash = 0U;
+    SZrLspSemanticQuery query;
+    SZrLspSemanticQuery invalidQuery;
+    TZrBool resolvedWithoutAst;
+    TZrBool mismatchedIdentityRejected;
+
+    TEST_START("LSP Semantic Query Resolves Module-Link Hop Without AST");
+    TEST_INFO("Canonical module-hop identity",
+              "An intermediate module-link segment must resolve through its parser external identity without request-time AST recursion");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Hop Without AST",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_query_module_link_hop.zr",
+            strlen("file:///semantic_query_module_link_hop.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_utf16_position_for_substring(
+                content, "console.printLine", 0, 0, &consolePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Hop Without AST",
+                  "Failed to prepare module-link hop fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        analyzer->ast == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Hop Without AST",
+                  "Expected an analyzed module-link snapshot");
+        return;
+    }
+
+    savedAst = analyzer->ast;
+    analyzer->ast = ZR_NULL;
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    resolvedWithoutAst = ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+            state, context, uri, consolePosition, &query);
+    analyzer->ast = savedAst;
+    if (!resolvedWithoutAst ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER ||
+        !query.hasCanonicalSymbol ||
+        query.canonicalSymbol.externalTargetKind !=
+                ZR_SEMANTIC_EXTERNAL_TARGET_MODULE ||
+        query.resolvedMember.memberKind != ZR_LSP_METADATA_MEMBER_MODULE ||
+        query.resolvedMember.moduleLinkDescriptor == ZR_NULL ||
+        query.resolvedMember.moduleLinkDescriptor->moduleName == ZR_NULL ||
+        strcmp(query.resolvedMember.moduleLinkDescriptor->moduleName,
+               "zr.system.console") != 0) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Hop Without AST",
+                  "Canonical module-hop query should resolve the exact linked module row without AST");
+        return;
+    }
+
+    for (TZrSize index = 0U;
+         index < analyzer->semanticContext->referenceFacts.length;
+         index++) {
+        SZrSemanticReferenceFact *candidate =
+                (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->referenceFacts, index);
+
+        if (candidate != ZR_NULL && candidate->isResolved &&
+            candidate->hasExternalTarget &&
+            candidate->externalTargetKind ==
+                    ZR_SEMANTIC_EXTERNAL_TARGET_MODULE &&
+            candidate->symbolId == query.canonicalSymbol.symbolId &&
+            candidate->range.start.offset ==
+                    query.canonicalReferenceRange.start.offset &&
+            candidate->range.end.offset ==
+                    query.canonicalReferenceRange.end.offset) {
+            externalReferenceFact = candidate;
+            break;
+        }
+    }
+    mismatchedIdentityRejected = externalReferenceFact != ZR_NULL;
+    if (mismatchedIdentityRejected) {
+        savedSignatureHash = externalReferenceFact->externalSignatureHash;
+        externalReferenceFact->externalSignatureHash ^= 1U;
+        analyzer->ast = ZR_NULL;
+        ZrLanguageServer_LspSemanticQuery_Init(&invalidQuery);
+        mismatchedIdentityRejected =
+                !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                        state, context, uri, consolePosition, &invalidQuery);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &invalidQuery);
+        analyzer->ast = savedAst;
+        externalReferenceFact->externalSignatureHash = savedSignatureHash;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    if (!mismatchedIdentityRejected) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Hop Without AST",
+                  "A module-hop identity mismatch must fail closed without AST fallback");
+        return;
+    }
+    TEST_PASS(timer, "LSP Semantic Query Resolves Module-Link Hop Without AST");
+}
+
 static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -9028,6 +9155,7 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_query_resolves_module_link_chain_member_navigation(state);
+    test_lsp_semantic_query_resolves_module_link_hop_without_ast(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_unifies_import_target_navigation(state);
