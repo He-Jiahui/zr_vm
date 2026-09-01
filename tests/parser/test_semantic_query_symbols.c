@@ -1856,7 +1856,9 @@ static void test_symbol_at_projects_native_module_chain_external_identity(void) 
     const TZrChar *source =
             "var api = import(\"semantic.external_identity.root\");\n"
             "var first = api.console.ping();\n"
-            "var second = api.console.ping();\n";
+            "var second = api.console.ping();\n"
+            "var callable = api.console.ping;\n"
+            "var third = callable();\n";
     SZrCompilerState cs;
     SZrString *sourceName;
     SZrAstNode *ast;
@@ -1864,9 +1866,11 @@ static void test_symbol_at_projects_native_module_chain_external_identity(void) 
     SZrParserSemanticSymbolQuery secondModule;
     SZrParserSemanticSymbolQuery firstCallable;
     SZrParserSemanticSymbolQuery secondCallable;
+    SZrParserSemanticCallQuery callableCall;
     SZrArray externalReferences;
     SZrArray repeatedReferences;
     SZrSemanticReferenceFact incompleteReference;
+    TZrChar callableDisplay[128];
     TZrSize callableCount = 0U;
     TZrSize moduleCount = 0U;
 
@@ -1948,6 +1952,30 @@ static void test_symbol_at_projects_native_module_chain_external_identity(void) 
             firstCallable.externalSignatureHash,
             secondCallable.externalSignatureHash);
     TEST_ASSERT_NOT_EQUAL_UINT32(firstModule.symbolId, firstCallable.symbolId);
+
+    memset(&callableCall, 0, sizeof(callableCall));
+    memset(callableDisplay, 0, sizeof(callableDisplay));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "callable", 1U),
+            ZR_NULL,
+            &callableCall));
+    TEST_ASSERT_NOT_NULL(callableCall.expression);
+    TEST_ASSERT_NOT_NULL(callableCall.reference);
+    TEST_ASSERT_FALSE(callableCall.isMemberCall);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID, callableCall.receiverTypeId);
+    TEST_ASSERT_FALSE(callableCall.reference->isResolved);
+    TEST_ASSERT_FALSE(callableCall.hasResolvedTarget);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID, callableCall.targetSymbolId);
+    TEST_ASSERT_NULL(callableCall.targetDeclarationRange.source);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext,
+            &callableCall,
+            callableDisplay,
+            sizeof(callableDisplay)));
+    TEST_ASSERT_EQUAL_STRING("ping(): null", callableDisplay);
 
     memset(&incompleteReference, 0, sizeof(incompleteReference));
     incompleteReference.range =

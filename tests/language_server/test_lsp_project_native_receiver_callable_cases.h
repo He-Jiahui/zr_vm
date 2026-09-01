@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_PROJECT_NATIVE_RECEIVER_CALLABLE_CASES_H
 #define ZR_VM_TEST_LSP_PROJECT_NATIVE_RECEIVER_CALLABLE_CASES_H
 
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_query.h"
 
 static void test_lsp_native_receiver_callable_query_hover_and_signature_share_closed_contract(
@@ -16,14 +17,20 @@ static void test_lsp_native_receiver_callable_query_hover_and_signature_share_cl
             "LSP Native Receiver Callable Query Hover And Signature Share Closed Contract";
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
     SZrString *uri = ZR_NULL;
     SZrLspPosition memberPosition;
     SZrLspPosition signaturePosition;
     SZrLspSemanticQuery query;
+    SZrParserSemanticCallQuery parserQuery;
+    SZrFilePosition memberFilePosition;
+    SZrFileRange memberFileRange;
     SZrLspSignatureHelp *help = ZR_NULL;
     SZrLspHover *hover = ZR_NULL;
     const TZrChar *label = ZR_NULL;
     const TZrChar *parameterLabel = ZR_NULL;
+    TZrChar parserLabel[256];
+    TZrChar receiverLabel[256];
     TZrChar reason[768];
     TZrBool success = ZR_FALSE;
 
@@ -33,6 +40,9 @@ static void test_lsp_native_receiver_callable_query_hover_and_signature_share_cl
             "The exact native method query should merge descriptor identity with the parser canonical closed callable TypeId for hover and signature help");
 
     ZrLanguageServer_LspSemanticQuery_Init(&query);
+    memset(&parserQuery, 0, sizeof(parserQuery));
+    memset(parserLabel, 0, sizeof(parserLabel));
+    memset(receiverLabel, 0, sizeof(receiverLabel));
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(
             state,
@@ -77,6 +87,41 @@ static void test_lsp_native_receiver_callable_query_hover_and_signature_share_cl
                 query.resolvedMember.ownerTypeName != ZR_NULL
                         ? test_string_ptr(query.resolvedMember.ownerTypeName)
                         : "<null>");
+        TEST_FAIL(timer, summary, reason);
+        goto cleanup;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    memberFilePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, memberPosition);
+    memberFileRange = ZrParser_FileRange_Create(
+            memberFilePosition, memberFilePosition, uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_CallAt(
+                analyzer->semanticContext,
+                memberFileRange,
+                ZR_NULL,
+                &parserQuery) ||
+        !parserQuery.isMemberCall ||
+        parserQuery.receiverTypeId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_CanonicalType_Format(
+                analyzer->semanticContext,
+                parserQuery.receiverTypeId,
+                receiverLabel,
+                sizeof(receiverLabel)) ||
+        strcmp(receiverLabel, "LinkedList<int>") != 0 ||
+        !ZrParser_SemanticQuery_FormatCall(
+                analyzer->semanticContext,
+                &parserQuery,
+                parserLabel,
+                sizeof(parserLabel)) ||
+        strcmp(parserLabel, expectedLabel) != 0) {
+        snprintf(
+                reason,
+                sizeof(reason),
+                "Native parser receiver call contract unavailable (receiver=%s label=%s)",
+                receiverLabel[0] != '\0' ? receiverLabel : "<unavailable>",
+                parserLabel[0] != '\0' ? parserLabel : "<unavailable>");
         TEST_FAIL(timer, summary, reason);
         goto cleanup;
     }
@@ -173,6 +218,7 @@ static void test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generat
     const TZrChar *genericParameterLabel = ZR_NULL;
     TZrChar reason[768];
     TZrChar parserGenericLabel[256];
+    TZrChar parserReceiverTypeLabel[256];
     TZrBool success = ZR_FALSE;
 
     TEST_START(summary);
@@ -185,6 +231,7 @@ static void test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generat
     ZrLanguageServer_LspSemanticQuery_Init(&constrainedQuery);
     memset(&parserGenericQuery, 0, sizeof(parserGenericQuery));
     memset(parserGenericLabel, 0, sizeof(parserGenericLabel));
+    memset(parserReceiverTypeLabel, 0, sizeof(parserReceiverTypeLabel));
     if (!prepare_generated_descriptor_plugin_fixture(
                 "project_features_native_receiver_callable",
                 ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH,
@@ -245,6 +292,14 @@ static void test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generat
                 genericFileRange,
                 ZR_NULL,
                 &parserGenericQuery) ||
+        !parserGenericQuery.isMemberCall ||
+        parserGenericQuery.receiverTypeId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_CanonicalType_Format(
+                analyzer->semanticContext,
+                parserGenericQuery.receiverTypeId,
+                parserReceiverTypeLabel,
+                sizeof(parserReceiverTypeLabel)) ||
+        strcmp(parserReceiverTypeLabel, "ProbePoint") != 0 ||
         !ZrParser_SemanticQuery_FormatCall(
                 analyzer->semanticContext,
                 &parserGenericQuery,
@@ -254,7 +309,10 @@ static void test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generat
         snprintf(
                 reason,
                 sizeof(reason),
-                "Parser generic receiver call contract unavailable (label=%s)",
+                "Parser generic receiver call contract unavailable (receiverType=%s label=%s)",
+                parserReceiverTypeLabel[0] != '\0'
+                        ? parserReceiverTypeLabel
+                        : "<unavailable>",
                 parserGenericLabel[0] != '\0' ? parserGenericLabel
                                                 : "<unavailable>");
         TEST_FAIL(timer, summary, reason);

@@ -438,6 +438,20 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
     }
 }
 
+static TZrBool compiler_reference_is_external_callable_contract(
+        const SZrSemanticReferenceFact *reference) {
+    return reference != ZR_NULL && reference->isResolved &&
+           reference->symbolId != ZR_SEMANTIC_ID_INVALID &&
+           reference->hasExternalTarget &&
+           reference->externalTargetKind ==
+                   ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE &&
+           reference->externalOwnerIdentity != ZR_NULL &&
+           ZrCore_String_GetByteLength(reference->externalOwnerIdentity) > 0U &&
+           reference->externalMetadataToken != 0U &&
+           reference->externalSignatureToken != 0U &&
+           reference->externalSignatureHash != 0U;
+}
+
 static void compiler_register_external_member_callable_binding(
         SZrCompilerState *cs,
         SZrString *name,
@@ -465,8 +479,7 @@ static void compiler_register_external_member_callable_binding(
             cs->semanticContext,
             property != ZR_NULL ? property : memberNode,
             ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
-    if (reference == ZR_NULL || reference->isResolved ||
-        reference->symbolId != ZR_SEMANTIC_ID_INVALID ||
+    if (!compiler_reference_is_external_callable_contract(reference) ||
         reference->typeId == ZR_SEMANTIC_ID_INVALID ||
         reference->signatureDisplay == ZR_NULL ||
         reference->declarationRange.source != ZR_NULL ||

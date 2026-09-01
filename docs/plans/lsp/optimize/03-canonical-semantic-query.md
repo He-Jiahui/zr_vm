@@ -93,7 +93,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - [x] CallAt 返回 selected target、overload candidate set、receiver TypeId、closed callable TypeId、argument-to-parameter mapping、conversion/exactness 和 call-site range。
 - [x] semantic context 构建 caller SymbolId → call edges 索引；incoming/outgoing query 不扫描源文本。
 - [x] 动态/无法解析调用返回 unresolved edge 与 reason，不把第一个同名函数当目标。
-- [ ] source、`.zro`、native descriptor external callable 共用同一 callable contract；当前 L8 overlay 的 `isExternalCallable`/signatureDisplay 必须在 parser 层封闭，不再由 hover/signature 各自拼装。
+- [x] source、`.zro`、native descriptor external callable 共用同一 callable contract；当前 L8 overlay 的 `isExternalCallable`/signatureDisplay 必须在 parser 层封闭，不再由 hover/signature 各自拼装。
 
 ## Task 5：补齐 formatter/display 与 documentation facts
 
@@ -150,7 +150,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 16:33 +08:00。
+- 最近更新时间：2026-09-01 19:20 +08:00。
 - 总体状态：进行中。Task 3.23 为direct/destructured import visible facts发布exact
   module-literal range，并新增只读三态`ImportOriginAt`。查询在literal位置校验同一origin下
   每个import binding都有且只有一个匹配SymbolId/TypeId的`IMPORT_EXPORT_ORIGIN` relation，
@@ -1284,3 +1284,18 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   canonical/facts/query/calls/contract/diagnostics/relations/symbols/type-inference
   `21/17/30/31/6/13/29/24/124`，LSP parity、source-contract与完整interface全部通过。据此勾选
   Task4首项；source/`.zro`/native callable parity、MSVC、完整矩阵、stdio smoke与Task8仍未完成。
+
+- 补充完成时间：2026-09-01 19:20 +08:00。Task 4.29 完成 source、`.zro` 与 native
+  descriptor external callable 的 parser-owned contract reconciliation。external callable alias
+  仅接受完整的 resolved external identity、callable metadata/signature token/hash 与 canonical
+  TypeId，随后复用同一 `CallAt`/`FormatCall` fact；local alias call 保持 free-call、invalid
+  receiver、unresolved target、invalid SymbolId 和空 declaration range。native receiver query
+  保留 resolved receiver TypeId，native external receiver hover 在 `hasExternalTarget` 时交给
+  structured metadata provider，避免简化 receiver helper覆盖 provider contract。所有分支均
+  禁止按 member/local name、显示文本或 AST fallback。
+  RED 先由 parser symbols 的 `CallAt` contract 失败固定，再由项目 runner 的四个 callable
+  cases 在 GCC/Clang 失败；GREEN 后 parser symbols 为 `24/24`，GCC/Clang 同一12-target
+  focused matrix 的 canonical/facts/query/calls/contract/diagnostics/relations/symbols/
+  type-inference 为 `21/17/30/31/6/13/29/24/124`，parity/source-contract/interface均真实
+  exit 0。两套 fresh project runner 的四个目标 case 均通过；其余14个历史project marker与
+  MSVC、完整16-target矩阵、三套stdio/CLI smoke仍未在本基线重跑，Task 8继续未完成。

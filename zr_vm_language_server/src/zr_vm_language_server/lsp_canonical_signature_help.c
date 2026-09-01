@@ -246,7 +246,7 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveReceiverHover(
         !ZrParser_SemanticQuery_CallAt(
                 analyzer->semanticContext, position, ZR_NULL, &query) ||
         !query.hasResolvedTarget || query.reference == ZR_NULL ||
-        !query.reference->isResolved ||
+        !query.reference->isResolved || query.reference->hasExternalTarget ||
         position.start.offset < query.reference->range.start.offset ||
         position.start.offset > query.reference->range.end.offset ||
         !ZrParser_SemanticQuery_FormatCall(

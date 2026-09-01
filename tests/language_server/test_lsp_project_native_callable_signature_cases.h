@@ -354,6 +354,8 @@ static void test_lsp_descriptor_plugin_callable_value_requires_canonical_identit
         !ZrParser_SemanticQuery_CallAt(
                 analyzer->semanticContext, fileRange, ZR_NULL, &callQuery) ||
         callQuery.expression == ZR_NULL || callQuery.reference == ZR_NULL ||
+        callQuery.isMemberCall ||
+        callQuery.receiverTypeId != ZR_SEMANTIC_ID_INVALID ||
         callQuery.reference->isResolved || callQuery.hasResolvedTarget ||
         callQuery.targetSymbolId != ZR_SEMANTIC_ID_INVALID ||
         callQuery.targetDeclarationRange.source != ZR_NULL ||
@@ -366,9 +368,11 @@ static void test_lsp_descriptor_plugin_callable_value_requires_canonical_identit
         snprintf(
                 formattedCall,
                 sizeof(formattedCall),
-                "Provider callable value canonical fact unavailable (expression=%p reference=%p resolved=%d target=%d symbol=%u declarationSource=%p)",
+                "Provider callable value canonical fact unavailable (expression=%p reference=%p member=%d receiverType=%u resolved=%d target=%d symbol=%u declarationSource=%p)",
                 (const void *)callQuery.expression,
                 (const void *)callQuery.reference,
+                (int)callQuery.isMemberCall,
+                (unsigned int)callQuery.receiverTypeId,
                 callQuery.reference != ZR_NULL
                         ? (int)callQuery.reference->isResolved
                         : 0,

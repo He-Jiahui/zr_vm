@@ -44,6 +44,7 @@ This module boundary publishes the callable once in parser-owned semantic state.
 An external callable value retains:
 
 - a canonical function `TypeId`;
+- the resolved receiver `TypeId` when the call is a member call; free calls keep it invalid;
 - structured parameter/return types and passing modes;
 - the provider-derived canonical signature display;
 - the exact local call target range.
@@ -72,6 +73,12 @@ imported module member metadata
 
 The dedicated external table owns one deep-copied callable contract. Registering a local alias copies that contract into the normal callable lookup array while preserving `isExternalCallable`. The call reference therefore remains unresolved even though overload resolution has a complete callable type.
 
+The alias registration gate is parser-owned: a reference must carry the complete external owner,
+metadata token, signature token, and signature hash before it can register a callable contract. A
+member-call fact additionally carries the canonical receiver `TypeId`; a free or constructor call
+must leave that field invalid. `CallAt` and `FormatCall` consume this same fact for source,
+`.zro`, and native descriptor callables.
+
 ## Fail-Closed Rules
 
 The LSP does not search by descriptor name, local variable name, inferred display type, or initializer AST. A direct external callable alias first resolves through canonical `CallAt/FormatCall`. If the expression call payload is unavailable, signature help rejects the legacy callable-environment fallback by locating only the exact fact-owned call target range.
@@ -79,6 +86,10 @@ The LSP does not search by descriptor name, local variable name, inferred displa
 This guard is intentionally narrower than a general function-type check. Native member calls and provider metadata paths that are not owned by this exact call fact continue through their existing structured adapters.
 
 Receiver projection follows the same boundary. A construct or chained receiver with no exact expression fact cannot be re-inferred from its AST. A binary property chain may proceed only when `PropertyAt` has already published the exact property identity and type; property/accessor names do not authorize recovery.
+
+For native external receiver calls, the generic receiver hover projection declines facts marked
+`hasExternalTarget`; the structured metadata provider then owns the hover and signature contract.
+This routing is identity-based and does not recover a target from a member name or display text.
 
 ## Lifetime And Memory
 
@@ -100,6 +111,12 @@ Project tests cover both a generated binary metadata module and a reloadable des
 `test_canonical_consumers.c` remains the lower canonical-query regression gate. The project runner must be checked for Unity `Fail -` markers because its process currently returns zero even when an individual project case fails.
 
 All three supported toolchains completed this coverage on 2026-08-22: canonical consumers `19/19`, semantic facts `14/14`, semantic query `29/29`, local hover, interface, project, and stdio/CLI all had zero Unity failure markers. Peak stdio working sets were `33.08 MiB` (GCC), `32.32 MiB` (Clang), and `39.13 MiB` (MSVC), below the `512 MiB` budget.
+
+The 2026-09-01 callable-parity slice was revalidated in fresh GCC and Clang snapshots. Parser
+semantic-query symbols passed `24/24`; the focused parser/query/LSP matrix passed with real exit 0,
+and both project runners passed all four new callable-value/receiver cases. The runners still
+reported 14 unrelated historical markers, so this slice does not claim a full project or stdio
+matrix. MSVC and the complete Task 8 acceptance remain pending.
 
 ## Open Work
 
