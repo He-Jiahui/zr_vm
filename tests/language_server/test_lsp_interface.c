@@ -6156,6 +6156,10 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     SZrLspPosition importLiteralPosition;
     SZrLspPosition importBindingPosition;
     SZrLspPosition importUsePosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrAstNode *savedAst;
+    SZrFileRange expectedImportLiteralRange;
+    TZrSize savedRelationCount;
     SZrLspSemanticQuery query;
     SZrArray definitions;
     SZrArray references;
@@ -6202,6 +6206,53 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
                   "Structured semantic query should resolve import literals as imported module targets with the native builtin source kind");
         return;
     }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Expected a complete semantic snapshot before removing the request-time AST");
+        return;
+    }
+    savedAst = analyzer->ast;
+    expectedImportLiteralRange = savedAst->data.script.statements->nodes[0]
+            ->data.variableDeclaration.value->data.importExpression.modulePath->location;
+    analyzer->ast = ZR_NULL;
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, importLiteralPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION ||
+        query.moduleName == ZR_NULL ||
+        strcmp(test_string_ptr(query.moduleName), "zr.system") != 0 ||
+        query.queryRange.start.offset != expectedImportLiteralRange.start.offset ||
+        query.queryRange.end.offset != expectedImportLiteralRange.end.offset) {
+        analyzer->ast = savedAst;
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Import literal navigation should consume canonical parser origin facts without a request-time AST");
+        return;
+    }
+    analyzer->ast = savedAst;
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+
+    savedRelationCount = analyzer->semanticContext->relationFacts.length;
+    analyzer->semanticContext->relationFacts.length = 0U;
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, importLiteralPosition, &query)) {
+        analyzer->semanticContext->relationFacts.length = savedRelationCount;
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Import literal navigation must fail closed when canonical origin relations are unavailable instead of rebuilding the module target from the AST");
+        return;
+    }
+    analyzer->semanticContext->relationFacts.length = savedRelationCount;
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
 
     if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, importLiteralPosition, &hover) ||

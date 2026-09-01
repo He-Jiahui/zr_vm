@@ -1598,20 +1598,32 @@ static void test_import_origin_definition_consumer_uses_parser_relations(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c");
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    char *parserImportQuery = read_repo_text_file_owned(
+        "zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_imports.c");
     char *analyzerAnalysis = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c");
+    const char *resolveStart;
+    const char *resolveEnd;
+    const char *literalResolver;
+    const char *astGate;
+    const char *moduleLiteralBranch;
+    const char *memberBranch;
 
-    if (relationQuery == NULL || semanticQuery == NULL || analyzerAnalysis == NULL) {
+    if (relationQuery == NULL || semanticQuery == NULL ||
+        parserImportQuery == NULL || analyzerAnalysis == NULL) {
         printf("FAIL: could not read canonical import-origin definition sources\n");
         g_failures++;
         free(relationQuery);
         free(semanticQuery);
+        free(parserImportQuery);
         free(analyzerAnalysis);
         return;
     }
 
     assert_text_contains(
         relationQuery, "ZrParser_SemanticQuery_RelationsOfSymbol");
+    assert_text_contains(
+        relationQuery, "ZrParser_SemanticQuery_ImportOriginAt");
     assert_text_contains(
         relationQuery,
         "ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry");
@@ -1630,14 +1642,56 @@ static void test_import_origin_definition_consumer_uses_parser_relations(void) {
         "ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin");
     assert_text_contains(
         semanticQuery,
+        "ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOriginAt");
+    assert_text_contains(
+        semanticQuery,
         "importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID");
     assert_text_contains(
         analyzerAnalysis, "ZrParser_SemanticCalls_PublishSource");
     assert_text_contains(
         analyzerAnalysis, "ZrParser_SemanticRelations_PublishImportOrigins");
+    assert_text_contains(
+        parserImportQuery, "ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN");
+    assert_text_contains(
+        parserImportQuery, "visible->externalOriginRange");
+    assert_text_contains_none(parserImportQuery, "strcmp");
+    assert_text_contains_none(parserImportQuery, "strstr");
+
+    resolveStart = strstr(
+        semanticQuery,
+        "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(");
+    resolveEnd = resolveStart != NULL
+                     ? strstr(resolveStart,
+                              "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(")
+                     : NULL;
+    literalResolver = resolveStart != NULL
+                          ? strstr(resolveStart,
+                                   "semantic_query_resolve_canonical_import_literal_target(")
+                          : NULL;
+    astGate = resolveStart != NULL
+                  ? strstr(resolveStart, "if (analyzer->ast != ZR_NULL) {")
+                  : NULL;
+    if (literalResolver == NULL || astGate == NULL || literalResolver >= astGate ||
+        (resolveEnd != NULL && literalResolver >= resolveEnd)) {
+        printf("Canonical import literal query must run before AST import fallback\n");
+        g_failures++;
+    }
+    moduleLiteralBranch = resolveStart != NULL
+                              ? strstr(resolveStart,
+                                       "if (importChainHit.memberName == ZR_NULL) {")
+                              : NULL;
+    memberBranch = moduleLiteralBranch != NULL
+                       ? strstr(moduleLiteralBranch, "} else {")
+                       : NULL;
+    assert_text_section_contains(
+        "canonical import module literal fail-closed branch",
+        moduleLiteralBranch,
+        memberBranch,
+        "return ZR_FALSE;");
 
     free(relationQuery);
     free(semanticQuery);
+    free(parserImportQuery);
     free(analyzerAnalysis);
 }
 

@@ -7,6 +7,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_imports.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations_order.c
@@ -69,6 +70,7 @@ related_code:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_symbols.c
   - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_query_relations.c
   - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
   - tests/parser/test_semantic_display.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
@@ -88,6 +90,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_imports.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
@@ -1340,6 +1343,32 @@ non-import is not applicable to this adapter.
 
 The relation adapter is isolated in `lsp_semantic_relation_query.c`. It does
 not collect import bindings, inspect alias names, scan source text, or generate
-the `zr-decompiled` URI. Import literal and chained-member consumers still have
-separate migration work; this contract currently closes canonical import-alias
+the `zr-decompiled` URI. Import literals and chained-member consumers have
+separate position contracts; this adapter closes canonical import-alias
 definition navigation.
+
+## Plan 03 Task 3.23 Canonical Import Literal Definitions
+
+`SZrSemanticVisibleSymbolFact` stores the exact module string-literal range next
+to its borrowed external origin. Direct and object-destructured bindings from
+the same import expression share that exact range, but retain their independent
+SymbolIds and TypeIds. The producer does not create a synthetic module symbol.
+
+`ZrParser_SemanticQuery_ImportOriginAt` is the position query for this surface.
+It returns not-applicable outside an import literal, resolved for one consistent
+origin, or invalid for malformed canonical state. Every visible import fact at
+the selected literal must resolve to exactly one `IMPORT_EXPORT_ORIGIN`
+relation whose source SymbolId, source/target TypeIds, declaration range, origin
+identity, and optional virtual declaration URI agree. Any missing, duplicate,
+or conflicting value clears the output and fails closed. The returned strings
+are borrowed from the semantic snapshot; the copied literal range is the only
+request highlight identity.
+
+The LSP relation adapter calls this query before request-time AST processing,
+then delegates source, binary, or native module-entry selection to the metadata
+provider. A resolved target replaces the request point with the exact parser
+literal range. An invalid result blocks the old import-chain path even when the
+AST is available. The legacy chain resolver may continue to resolve canonical
+member segments, but a `memberName == NULL` module-literal hit can no longer
+construct a target from module spelling. Canonical import-chain member
+migration remains pending.

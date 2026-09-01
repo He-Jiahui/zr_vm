@@ -242,6 +242,32 @@ static SZrString *semantic_scope_facts_import_origin_uri(
             : ZR_NULL;
 }
 
+static TZrBool semantic_scope_facts_import_origin_range(
+        const SZrAstNode *node,
+        SZrFileRange *outRange) {
+    const SZrVariableDeclaration *declaration;
+    const SZrAstNode *modulePath;
+
+    if (outRange != ZR_NULL) {
+        memset(outRange, 0, sizeof(*outRange));
+    }
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION ||
+        outRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    declaration = &node->data.variableDeclaration;
+    if (declaration->value == ZR_NULL ||
+        declaration->value->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    modulePath = declaration->value->data.importExpression.modulePath;
+    if (modulePath == ZR_NULL || modulePath->type != ZR_AST_STRING_LITERAL) {
+        return ZR_FALSE;
+    }
+    *outRange = modulePath->location;
+    return ZR_TRUE;
+}
+
 static TZrBool semantic_scope_facts_publish_reference_declaration(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId scopeId,
@@ -250,7 +276,9 @@ static TZrBool semantic_scope_facts_publish_reference_declaration(
         TZrBool isHoisted,
         TZrBool isImport,
         TZrBool isAlias,
-        SZrString *externalOriginUri) {
+        SZrString *externalOriginUri,
+        SZrFileRange externalOriginRange,
+        TZrBool hasExternalOriginRange) {
     const SZrSemanticReferenceFact *reference;
     const SZrSemanticSymbolRecord *symbol;
     SZrSemanticVisibleSymbolFact fact;
@@ -284,6 +312,8 @@ static TZrBool semantic_scope_facts_publish_reference_declaration(
                 builder->context, symbol->id);
     }
     fact.externalOriginUri = externalOriginUri;
+    fact.externalOriginRange = externalOriginRange;
+    fact.hasExternalOriginRange = hasExternalOriginRange;
     fact.isHoisted = isHoisted;
     fact.isAccessible = ZR_TRUE;
     fact.isImport = isImport;
@@ -298,6 +328,13 @@ static TZrBool semantic_scope_facts_publish_declaration(
         TZrSymbolId ownerSymbolId,
         TZrBool isHoisted) {
     TZrBool isImport = semantic_scope_facts_is_direct_import_alias(node);
+    SZrFileRange externalOriginRange;
+    TZrBool hasExternalOriginRange = isImport &&
+            semantic_scope_facts_import_origin_range(node, &externalOriginRange);
+
+    if (!hasExternalOriginRange) {
+        memset(&externalOriginRange, 0, sizeof(externalOriginRange));
+    }
 
     return semantic_scope_facts_publish_reference_declaration(
             builder,
@@ -307,7 +344,9 @@ static TZrBool semantic_scope_facts_publish_declaration(
             isHoisted,
             isImport,
             (TZrBool)(isImport || semantic_scope_facts_is_type_value_alias(node)),
-            isImport ? semantic_scope_facts_import_origin_uri(node) : ZR_NULL);
+            isImport ? semantic_scope_facts_import_origin_uri(node) : ZR_NULL,
+            externalOriginRange,
+            hasExternalOriginRange);
 }
 
 static SZrAstNode *semantic_scope_facts_destructuring_binding_node(
@@ -335,6 +374,8 @@ static TZrBool semantic_scope_facts_publish_variable_declaration(
     SZrVariableDeclaration *declaration;
     TZrBool isImport;
     SZrString *externalOriginUri;
+    SZrFileRange externalOriginRange;
+    TZrBool hasExternalOriginRange;
     TZrSize index;
 
     if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
@@ -349,6 +390,11 @@ static TZrBool semantic_scope_facts_publish_variable_declaration(
     isImport = (TZrBool)(declaration->value != ZR_NULL &&
                           declaration->value->type == ZR_AST_IMPORT_EXPRESSION);
     externalOriginUri = isImport ? semantic_scope_facts_import_origin_uri(node) : ZR_NULL;
+    hasExternalOriginRange = isImport &&
+            semantic_scope_facts_import_origin_range(node, &externalOriginRange);
+    if (!hasExternalOriginRange) {
+        memset(&externalOriginRange, 0, sizeof(externalOriginRange));
+    }
     if (declaration->pattern->data.destructuringObject.keys == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -365,7 +411,9 @@ static TZrBool semantic_scope_facts_publish_variable_declaration(
                     ZR_FALSE,
                     isImport,
                     isImport,
-                    externalOriginUri)) {
+                    externalOriginUri,
+                    externalOriginRange,
+                    hasExternalOriginRange)) {
             return ZR_FALSE;
         }
     }

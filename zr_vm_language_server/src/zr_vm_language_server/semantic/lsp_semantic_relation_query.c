@@ -15,6 +15,45 @@ static TZrBool semantic_relation_query_is_import_origin(
            relation->targetTypeId == symbol->typeId;
 }
 
+static EZrLspSemanticImportOriginResolution
+semantic_relation_query_resolve_metadata_target(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *originIdentity,
+        SZrString *virtualDeclarationUri,
+        SZrFileRange referenceRange,
+        SZrLspSemanticImportOriginTarget *outTarget) {
+    SZrLspMetadataProvider provider;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
+        originIdentity == ZR_NULL || outTarget == ZR_NULL) {
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+    }
+    outTarget->originIdentity = originIdentity;
+    outTarget->virtualDeclarationUri = virtualDeclarationUri;
+    outTarget->referenceRange = referenceRange;
+    ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+    if (!ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(
+                &provider,
+                analyzer,
+                projectIndex,
+                outTarget->originIdentity,
+                &outTarget->declaration) ||
+        !outTarget->declaration.hasDeclaration ||
+        outTarget->declaration.declarationUri == ZR_NULL ||
+        (outTarget->virtualDeclarationUri != ZR_NULL &&
+         !ZrCore_String_Equal(outTarget->virtualDeclarationUri,
+                             outTarget->declaration.declarationUri))) {
+        memset(outTarget, 0, sizeof(*outTarget));
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+    }
+
+    outTarget->module = outTarget->declaration.module;
+    return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
+}
+
 EZrLspSemanticImportOriginResolution
 ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
         SZrState *state,
@@ -25,7 +64,7 @@ ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
         SZrLspSemanticImportOriginTarget *outTarget) {
     SZrArray relations = {0};
     const SZrParserSemanticRelationQuery *origin = ZR_NULL;
-    SZrLspMetadataProvider provider;
+    EZrLspSemanticImportOriginResolution resolution;
     TZrSize index;
 
     if (outTarget != ZR_NULL) {
@@ -79,26 +118,52 @@ ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
         return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
     }
 
-    outTarget->originIdentity = origin->externalOriginUri;
-    outTarget->virtualDeclarationUri = origin->virtualDeclarationUri;
-    ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
-    if (!ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(
-                &provider,
-                analyzer,
-                projectIndex,
-                outTarget->originIdentity,
-                &outTarget->declaration) ||
-        !outTarget->declaration.hasDeclaration ||
-        outTarget->declaration.declarationUri == ZR_NULL ||
-        (outTarget->virtualDeclarationUri != ZR_NULL &&
-         !ZrCore_String_Equal(outTarget->virtualDeclarationUri,
-                             outTarget->declaration.declarationUri))) {
+    resolution = semantic_relation_query_resolve_metadata_target(
+            state,
+            context,
+            projectIndex,
+            analyzer,
+            origin->externalOriginUri,
+            origin->virtualDeclarationUri,
+            symbol->referenceRange,
+            outTarget);
+    ZrCore_Array_Free(state, &relations);
+    return resolution;
+}
+
+EZrLspSemanticImportOriginResolution
+ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOriginAt(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange position,
+        SZrLspSemanticImportOriginTarget *outTarget) {
+    SZrParserSemanticImportOriginQuery importOrigin;
+    EZrParserSemanticImportOriginResolution resolution;
+
+    if (outTarget != ZR_NULL) {
         memset(outTarget, 0, sizeof(*outTarget));
-        ZrCore_Array_Free(state, &relations);
+    }
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL || outTarget == ZR_NULL) {
         return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
     }
-
-    outTarget->module = outTarget->declaration.module;
-    ZrCore_Array_Free(state, &relations);
-    return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
+    resolution = ZrParser_SemanticQuery_ImportOriginAt(
+            analyzer->semanticContext, position, ZR_NULL, &importOrigin);
+    if (resolution == ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE) {
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE;
+    }
+    if (resolution != ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_RESOLVED) {
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+    }
+    return semantic_relation_query_resolve_metadata_target(
+            state,
+            context,
+            projectIndex,
+            analyzer,
+            importOrigin.externalOriginUri,
+            importOrigin.virtualDeclarationUri,
+            importOrigin.referenceRange,
+            outTarget);
 }

@@ -1456,6 +1456,126 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_import_origin_at_projects_literal_relations_and_rejects_conflicts(void) {
+    const TZrChar *source =
+            "var {Vec3: Vector3, Matrix: MatrixType} = import(\"zr.math\");\n"
+            "return 0;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_query_import_origin_at.zr");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrAstNode *modulePath;
+    SZrParserSemanticQueryScope scope;
+    SZrCompilerState cs;
+    SZrParserSemanticImportOriginQuery query;
+    SZrSemanticRelationFact *origin = ZR_NULL;
+    SZrString *savedOrigin;
+    SZrString *conflictingOrigin;
+    EZrParserSemanticImportOriginResolution resolution;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+    TEST_ASSERT_NOT_NULL(declaration->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_IMPORT_EXPRESSION,
+            declaration->data.variableDeclaration.value->type);
+    modulePath = declaration->data.variableDeclaration.value->data
+            .importExpression.modulePath;
+    TEST_ASSERT_NOT_NULL(modulePath);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRING_LITERAL, modulePath->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    resolution = ZrParser_SemanticQuery_ImportOriginAt(
+            cs.semanticContext, modulePath->location, ZR_NULL, &query);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_RESOLVED, resolution);
+    TEST_ASSERT_EQUAL_UINT(
+            modulePath->location.start.offset, query.referenceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(
+            modulePath->location.end.offset, query.referenceRange.end.offset);
+    TEST_ASSERT_NOT_NULL(query.externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math", ZrCore_String_GetNativeString(query.externalOriginUri));
+    TEST_ASSERT_NULL(query.virtualDeclarationUri);
+
+    ZrParser_SemanticQueryScope_Node(&scope, ast);
+    resolution = ZrParser_SemanticQuery_ImportOriginAt(
+            cs.semanticContext, modulePath->location, &scope, &query);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_RESOLVED, resolution);
+    TEST_ASSERT_NOT_NULL(query.externalOriginUri);
+
+    ZrParser_SemanticQueryScope_Node(
+            &scope, ast->data.script.statements->nodes[1]);
+    memset(&query, 0xA5, sizeof(query));
+    resolution = ZrParser_SemanticQuery_ImportOriginAt(
+            cs.semanticContext, modulePath->location, &scope, &query);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE, resolution);
+    TEST_ASSERT_NULL(query.externalOriginUri);
+    TEST_ASSERT_EQUAL_UINT(0U, query.referenceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(0U, query.referenceRange.end.offset);
+
+    memset(&query, 0xA5, sizeof(query));
+    resolution = ZrParser_SemanticQuery_ImportOriginAt(
+            cs.semanticContext,
+            declaration->data.variableDeclaration.pattern->location,
+            ZR_NULL,
+            &query);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE, resolution);
+    TEST_ASSERT_NULL(query.externalOriginUri);
+    TEST_ASSERT_NULL(query.virtualDeclarationUri);
+    TEST_ASSERT_EQUAL_UINT(0U, query.referenceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(0U, query.referenceRange.end.offset);
+
+    for (TZrSize index = 0U;
+         index < cs.semanticContext->relationFacts.length;
+         index++) {
+        SZrSemanticRelationFact *candidate =
+                (SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        &cs.semanticContext->relationFacts, index);
+        if (candidate != ZR_NULL &&
+            candidate->kind == ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN) {
+            origin = candidate;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(origin);
+    savedOrigin = origin->externalOriginUri;
+    conflictingOrigin = ZrCore_String_CreateFromNative(
+            g_state, "zr.conflicting");
+    TEST_ASSERT_NOT_NULL(conflictingOrigin);
+    origin->externalOriginUri = conflictingOrigin;
+    resolution = ZrParser_SemanticQuery_ImportOriginAt(
+            cs.semanticContext, modulePath->location, ZR_NULL, &query);
+    origin->externalOriginUri = savedOrigin;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_INVALID, resolution);
+    TEST_ASSERT_NULL(query.externalOriginUri);
+    TEST_ASSERT_NULL(query.virtualDeclarationUri);
+    TEST_ASSERT_EQUAL_UINT(0U, query.referenceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(0U, query.referenceRange.end.offset);
+
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 #include "test_semantic_query_meta_override_cases.h"
 #include "test_semantic_query_relation_canonical_identity_matrix_cases.h"
 #include "test_semantic_query_relation_endpoint_identity_cases.h"
@@ -1484,6 +1604,7 @@ int main(void) {
     RUN_TEST(test_compiled_type_value_alias_publishes_canonical_target_relation);
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
+    RUN_TEST(test_import_origin_at_projects_literal_relations_and_rejects_conflicts);
     RUN_TEST(test_relation_node_scope_fails_closed_for_missing_fact_source);
     RUN_TEST(test_relation_queries_sort_line_only_ranges_independent_of_append_order);
     RUN_TEST(test_relation_append_requires_identity_for_both_endpoints);

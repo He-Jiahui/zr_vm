@@ -56,6 +56,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_imports.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
   - tests/language_server/test_lsp_language_feature_matrix.c
@@ -78,6 +80,7 @@ related_code:
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
   - tests/parser/test_canonical_consumers.c
+  - tests/parser/test_semantic_query_relations.c
   - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
   - tests/acceptance/2026-08-13-lsp-l8-canonical-closure-value-signature-fact.md
 implementation_files:
@@ -934,5 +937,24 @@ this adapter. One complete relation and one metadata entry resolves. A symbol
 classified as import with no projected origin, no relation, multiple origins,
 missing metadata, or a mismatched virtual URI is invalid and stops legacy
 AST/import-binding fallback.
-Import literals and member chains retain their existing consumers until their
-own canonical relation migrations are implemented.
+Import aliases use this SymbolId query. Import literals use the separate
+position query below; member chains retain their existing consumer until their
+own canonical relation migration is implemented.
+
+## Canonical Import Literal Definition Boundary
+
+The parser scope-fact producer records the exact module string-literal range on
+each direct or destructured import binding. `ImportOriginAt` selects that range
+and validates every corresponding SymbolId/TypeId against exactly one
+`IMPORT_EXPORT_ORIGIN` relation. Origin identity, relation source range, and an
+optional virtual declaration URI must agree across all bindings. The result is
+tri-state: unrelated positions are not applicable, consistent canonical facts
+are resolved, and missing or conflicting facts are invalid.
+
+`ResolveAtPosition` runs this parser query before checking `analyzer->ast`.
+Resolved identities are projected by `LspMetadataProvider`; native literals can
+therefore reach the same `zr-decompiled` module entry with no request-time AST.
+Invalid canonical state blocks all AST/import-binding fallbacks. The old import
+chain branch explicitly rejects module-literal hits with no member name, so it
+cannot rebuild a module target from the literal text. Import-chain member
+identity remains the next migration boundary.

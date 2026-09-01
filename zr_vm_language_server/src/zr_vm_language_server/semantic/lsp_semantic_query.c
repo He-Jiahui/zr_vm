@@ -758,6 +758,47 @@ semantic_query_resolve_canonical_import_origin_target(
     return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
 }
 
+static EZrLspSemanticImportOriginResolution
+semantic_query_resolve_canonical_import_literal_target(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrSemanticAnalyzer *analyzer,
+        SZrLspSemanticQuery *query) {
+    SZrLspSemanticImportOriginTarget target;
+    EZrLspSemanticImportOriginResolution resolution;
+
+    if (query == ZR_NULL) {
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+    }
+    resolution =
+            ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOriginAt(
+                    state,
+                    context,
+                    projectIndex,
+                    analyzer,
+                    query->queryRange,
+                    &target);
+    if (resolution != ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED) {
+        return resolution;
+    }
+
+    query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION;
+    query->moduleName = target.originIdentity;
+    query->memberName = ZR_NULL;
+    query->queryRange = target.referenceRange;
+    query->sourceKind = target.module.sourceKind;
+    query->resolvedModule = target.module;
+    query->resolvedTypeInfo.origin = query->sourceKind;
+    query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_MODULE;
+    query->resolvedMember.module = target.module;
+    query->resolvedMember.memberKind = ZR_LSP_METADATA_MEMBER_MODULE;
+    query->resolvedMember.declarationUri = target.declaration.declarationUri;
+    query->resolvedMember.declarationRange = target.declaration.declarationRange;
+    query->resolvedMember.hasDeclaration = target.declaration.hasDeclaration;
+    return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
+}
+
 static TZrBool semantic_query_find_import_binding_hit(SZrArray *bindings,
                                                       SZrFileRange queryRange,
                                                       SZrLspImportBinding **outBinding,
@@ -2322,8 +2363,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     SZrFilePosition filePosition;
     SZrArray bindings;
     SZrLspSemanticImportChainHit importChainHit;
-    SZrLspMetadataProvider provider;
-    SZrLspResolvedImportedModuleEntry moduleEntry;
     EZrLspSemanticImportOriginResolution importOriginResolution;
     TZrBool resolved;
 
@@ -2357,6 +2396,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
     query->analyzer = analyzer;
 
+    importOriginResolution = semantic_query_resolve_canonical_import_literal_target(
+            state, context, projectIndex, analyzer, query);
+    if (importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return semantic_query_capture_document_version(state, context, query);
+    }
+    if (importOriginResolution == ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_FALSE;
+    }
+
     if (analyzer->ast != ZR_NULL) {
         if (semantic_query_resolve_receiver_type_member_target(state, context, uri, analyzer, query)) {
             ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
@@ -2384,35 +2434,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                                                                    query->queryRange,
                                                                    &importChainHit)) {
             if (importChainHit.memberName == ZR_NULL) {
-                ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
-                memset(&moduleEntry, 0, sizeof(moduleEntry));
-                if (!ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(&provider,
-                                                                                analyzer,
-                                                                                projectIndex,
-                                                                                importChainHit.moduleName,
-                                                                                &query->resolvedModule)) {
-                    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
-                    return ZR_FALSE;
-                }
-
-                ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(&provider,
-                                                                                analyzer,
-                                                                                projectIndex,
-                                                                                importChainHit.moduleName,
-                                                                                &moduleEntry);
-
-                query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION;
-                query->moduleName = importChainHit.moduleName;
-                query->memberName = ZR_NULL;
-                query->queryRange = importChainHit.location;
-                query->sourceKind = query->resolvedModule.sourceKind;
-                query->resolvedTypeInfo.origin = query->sourceKind;
-                query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_MODULE;
-                query->resolvedMember.module = query->resolvedModule;
-                query->resolvedMember.memberKind = ZR_LSP_METADATA_MEMBER_MODULE;
-                query->resolvedMember.declarationUri = moduleEntry.declarationUri;
-                query->resolvedMember.declarationRange = moduleEntry.declarationRange;
-                query->resolvedMember.hasDeclaration = moduleEntry.hasDeclaration;
+                ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+                return ZR_FALSE;
             } else {
                 query->resolvedMember = importChainHit.resolvedMember;
                 if (!query->hasCanonicalSymbol ||

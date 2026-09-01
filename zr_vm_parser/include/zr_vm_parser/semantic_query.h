@@ -149,6 +149,19 @@ typedef struct SZrParserSemanticRelationQuery {
     TZrBool isExternal;
 } SZrParserSemanticRelationQuery;
 
+typedef enum EZrParserSemanticImportOriginResolution {
+    ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE = 0,
+    ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_RESOLVED,
+    ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_INVALID
+} EZrParserSemanticImportOriginResolution;
+
+typedef struct SZrParserSemanticImportOriginQuery {
+    SZrFileRange referenceRange;
+    /* Borrowed from one consistent set of snapshot facts and relations. */
+    SZrString *externalOriginUri;
+    SZrString *virtualDeclarationUri;
+} SZrParserSemanticImportOriginQuery;
+
 typedef struct SZrParserSemanticPublicContractQuery {
     TZrUInt64 hash;
     TZrSize exportCount;
@@ -236,6 +249,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_SymbolAt(
         SZrFileRange position,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticSymbolQuery *outSymbol);
+/*
+ * Resolves an import literal from exact visible-symbol origin ranges and
+ * canonical import-origin relations. It never selects an alias by spelling.
+ */
+ZR_PARSER_API EZrParserSemanticImportOriginResolution
+ZrParser_SemanticQuery_ImportOriginAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrParserSemanticImportOriginQuery *outImport);
 /*
  * Projects exact resolved declarations in stable source-order. outSymbols
  * contains SZrParserSemanticSymbolQuery values and is cleared before reuse.

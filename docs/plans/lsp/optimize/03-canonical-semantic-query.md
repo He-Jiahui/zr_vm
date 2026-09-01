@@ -150,8 +150,18 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 15:46 +08:00。
-- 总体状态：进行中。Task 3.22 将import alias definition迁移到canonical import-origin
+- 最近更新时间：2026-09-01 16:33 +08:00。
+- 总体状态：进行中。Task 3.23 为direct/destructured import visible facts发布exact
+  module-literal range，并新增只读三态`ImportOriginAt`。查询在literal位置校验同一origin下
+  每个import binding都有且只有一个匹配SymbolId/TypeId的`IMPORT_EXPORT_ORIGIN` relation，
+  origin、range或virtual URI冲突即清空输出并返回invalid。LSP在任何AST/import-chain处理前
+  消费该query并交给metadata provider解析module entry；完整AST存在但relation缺失时也
+  fail closed，不再从module path文本重建目标。GCC/Clang
+  symbols/query/calls/relations/contract/canonical/facts/type-inference
+  `24/30/30/29/6/21/17/124`、parity、source-contract与完整interface均真实exit 0。
+  Task 3仍需import chain relation consumer、parser-owned无source virtual URI producer、真实
+  multi-provider nonzero generation与binary/native sourceless矩阵；Task 8总门禁未完成。
+  Task 3.22 将import alias definition迁移到canonical import-origin
   relation consumer。LSP analyzer在source facts完成后发布`IMPORT_EXPORT_ORIGIN`，请求期adapter
   消费parser symbol query投影的`isImport`/external origin，只以exact SymbolId/TypeId调用
   `RelationsOfSymbol`并交给metadata provider解析source/binary/native

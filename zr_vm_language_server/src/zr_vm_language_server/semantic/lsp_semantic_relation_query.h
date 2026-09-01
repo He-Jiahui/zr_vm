@@ -6,6 +6,7 @@
 typedef struct SZrLspSemanticImportOriginTarget {
     SZrString *originIdentity;
     SZrString *virtualDeclarationUri;
+    SZrFileRange referenceRange;
     SZrLspResolvedImportedModule module;
     SZrLspResolvedImportedModuleEntry declaration;
 } SZrLspSemanticImportOriginTarget;
@@ -23,6 +24,14 @@ ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
         SZrLspProjectIndex *projectIndex,
         SZrSemanticAnalyzer *analyzer,
         const SZrParserSemanticSymbolQuery *symbol,
+        SZrLspSemanticImportOriginTarget *outTarget);
+EZrLspSemanticImportOriginResolution
+ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOriginAt(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange position,
         SZrLspSemanticImportOriginTarget *outTarget);
 
 #endif
