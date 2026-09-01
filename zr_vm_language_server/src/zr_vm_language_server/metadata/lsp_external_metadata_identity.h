@@ -15,5 +15,11 @@ TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveDeclaration(
         SZrLspProjectIndex *projectIndex,
         const SZrParserSemanticExternalReferenceQuery *identity,
         SZrLspExternalMetadataIdentityDeclaration *outDeclaration);
+TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
+        SZrLspMetadataProvider *provider,
+        SZrSemanticAnalyzer *analyzer,
+        SZrLspProjectIndex *projectIndex,
+        const SZrParserSemanticExternalReferenceQuery *identity,
+        SZrLspResolvedMetadataMember *outResolved);
 
 #endif

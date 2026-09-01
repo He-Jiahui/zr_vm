@@ -1593,6 +1593,82 @@ static void test_cross_snapshot_references_use_external_identity_queries(void) {
     free(externalMetadata);
 }
 
+static void test_import_chain_terminal_member_uses_external_identity(void) {
+    char *semanticQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    char *externalMetadata = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_external_metadata_identity.c");
+    const char *resolverStart;
+    const char *resolverEnd;
+    const char *resolveAtPosition;
+    const char *canonicalExternalCall;
+    const char *astGate;
+    const char *identitySelection;
+    const char *memberHydration;
+
+    if (semanticQuery == NULL || externalMetadata == NULL) {
+        printf("FAIL: could not read import-chain external identity sources\n");
+        g_failures++;
+        free(semanticQuery);
+        free(externalMetadata);
+        return;
+    }
+
+    resolverStart = strstr(
+        semanticQuery,
+        "semantic_query_resolve_canonical_external_member_target(");
+    resolverEnd = resolverStart != NULL
+        ? strstr(resolverStart, "static TZrBool semantic_query_try_resolve_canonical_symbol(")
+        : NULL;
+    assert_text_section_contains(
+        "semantic_query_resolve_canonical_external_member_target",
+        resolverStart,
+        resolverEnd,
+        "ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember");
+    assert_text_section_contains_none(
+        "semantic_query_resolve_canonical_external_member_target",
+        resolverStart,
+        resolverEnd,
+        "ZrLanguageServer_LspSemanticImportChain_ResolveAtRange");
+    assert_text_section_contains_none(
+        "semantic_query_resolve_canonical_external_member_target",
+        resolverStart,
+        resolverEnd,
+        "analyzer->ast");
+
+    resolveAtPosition = strstr(
+        semanticQuery,
+        "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(");
+    canonicalExternalCall = resolveAtPosition != NULL
+        ? strstr(resolveAtPosition,
+                 "semantic_query_resolve_canonical_external_member_target(")
+        : NULL;
+    astGate = resolveAtPosition != NULL
+        ? strstr(resolveAtPosition, "if (analyzer->ast != ZR_NULL)")
+        : NULL;
+    if (canonicalExternalCall == NULL || astGate == NULL ||
+        canonicalExternalCall >= astGate) {
+        printf("FAIL: canonical external member consumer must run before the AST import-chain gate\n");
+        g_failures++;
+    }
+
+    identitySelection = strstr(
+        externalMetadata,
+        "if (!external_metadata_identity_matches(analyzer, identity, candidate))");
+    memberHydration = strstr(
+        externalMetadata,
+        "ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(");
+    if (identitySelection == NULL || memberHydration == NULL ||
+        identitySelection >= memberHydration) {
+        printf("FAIL: external member metadata must be selected by exact identity before hydration\n");
+        g_failures++;
+    }
+    assert_text_contains_none(externalMetadata, "strcmp");
+
+    free(semanticQuery);
+    free(externalMetadata);
+}
+
 static void test_import_origin_definition_consumer_uses_parser_relations(void) {
     char *relationQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c");
@@ -2215,6 +2291,7 @@ int main(void) {
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
     test_cross_snapshot_references_use_external_identity_queries();
+    test_import_chain_terminal_member_uses_external_identity();
     test_import_origin_definition_consumer_uses_parser_relations();
     test_imported_reference_consumers_require_canonical_identity();
     test_dead_project_semantic_fallbacks_are_removed();

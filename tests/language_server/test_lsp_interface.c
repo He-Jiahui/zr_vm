@@ -6002,7 +6002,14 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         "}\n";
     SZrLspPosition firstPrintLinePosition;
     SZrLspPosition secondPrintLinePosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrAstNode *savedAst;
+    SZrSemanticReferenceFact *externalReferenceFact = ZR_NULL;
+    TZrUInt64 savedSignatureHash = 0U;
+    TZrBool resolvedWithoutAst;
+    TZrBool mismatchedIdentityRejected;
     SZrLspSemanticQuery query;
+    SZrLspSemanticQuery invalidQuery;
     SZrArray definitions;
     SZrArray references;
     SZrArray highlights;
@@ -6031,8 +6038,22 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         return;
     }
 
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || analyzer->ast == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Expected an analyzed module-link snapshot before removing the request-time AST");
+        return;
+    }
+
+    savedAst = analyzer->ast;
+    analyzer->ast = ZR_NULL;
     ZrLanguageServer_LspSemanticQuery_Init(&query);
-    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, firstPrintLinePosition, &query) ||
+    resolvedWithoutAst = ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+            state, context, uri, firstPrintLinePosition, &query);
+    analyzer->ast = savedAst;
+    if (!resolvedWithoutAst ||
         query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER ||
         !query.hasCanonicalSymbol ||
         !query.canonicalSymbol.hasExternalTarget ||
@@ -6056,6 +6077,50 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         TEST_FAIL(timer,
                   "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
                   "Structured semantic query should resolve system.console.printLine to the linked console module member");
+        return;
+    }
+
+    for (TZrSize index = 0U;
+         index < analyzer->semanticContext->referenceFacts.length;
+         index++) {
+        SZrSemanticReferenceFact *candidate =
+                (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->referenceFacts, index);
+
+        if (candidate != ZR_NULL && candidate->isResolved &&
+            candidate->hasExternalTarget &&
+            candidate->symbolId == query.canonicalSymbol.symbolId &&
+            candidate->range.start.offset ==
+                    query.canonicalReferenceRange.start.offset &&
+            candidate->range.end.offset ==
+                    query.canonicalReferenceRange.end.offset) {
+            externalReferenceFact = candidate;
+            break;
+        }
+    }
+    mismatchedIdentityRejected = externalReferenceFact != ZR_NULL;
+    if (mismatchedIdentityRejected) {
+        savedSignatureHash = externalReferenceFact->externalSignatureHash;
+        externalReferenceFact->externalSignatureHash ^= 1U;
+        analyzer->ast = ZR_NULL;
+        ZrLanguageServer_LspSemanticQuery_Init(&invalidQuery);
+        mismatchedIdentityRejected =
+                !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                        state,
+                        context,
+                        uri,
+                        firstPrintLinePosition,
+                        &invalidQuery);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &invalidQuery);
+        analyzer->ast = savedAst;
+        externalReferenceFact->externalSignatureHash = savedSignatureHash;
+    }
+    if (!mismatchedIdentityRejected) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "A terminal module-link member must fail closed when its canonical external identity differs from metadata");
         return;
     }
     consoleModuleUri = query.resolvedMember.declarationUri;

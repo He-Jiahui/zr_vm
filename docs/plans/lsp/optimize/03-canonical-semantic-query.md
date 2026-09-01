@@ -1256,3 +1256,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   import literal/chain、parser-owned
   无source virtual URI producer、真实multi-provider generation、binary/native sourceless matrix与
   Task 8继续未完成。
+
+- 补充完成时间：2026-09-01 17:28 +08:00。Task 3.24 将module-link chain终端成员的
+  semantic query入口迁移到已有parser `SymbolAt` external identity：consumer先要求
+  owner identity、target kind、metadata/signature token与signature hash完整，再由metadata
+  provider在对应module prototype中唯一选取exact row；请求期无AST时仍可解析终端成员，identity
+  被篡改或row不唯一时fail closed。中间module hop与completion没有稳定canonical member fact，
+  继续保留给后续slice，未按名称、文本或AST补造目标。GCC/Clang focused semantic
+  query/parity/source-contract/interface均真实exit 0，Task 3与Task 8仍因virtual URI、多
+  provider generation、binary/native sourceless matrix、MSVC、完整16-target与stdio smoke
+  未完成。

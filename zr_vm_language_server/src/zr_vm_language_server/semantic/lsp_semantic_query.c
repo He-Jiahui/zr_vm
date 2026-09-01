@@ -1,4 +1,5 @@
 #include "semantic/lsp_semantic_query.h"
+#include "metadata/lsp_external_metadata_identity.h"
 #include "semantic/lsp_external_target_identity.h"
 #include "semantic/lsp_cross_snapshot_references.h"
 #include "semantic/lsp_semantic_definition_query.h"
@@ -657,6 +658,84 @@ static TZrBool semantic_query_imported_canonical_identity_is_available(
     }
     return ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
             &query->canonicalSymbol, &query->resolvedMember);
+}
+
+typedef enum EZrLspSemanticExternalMemberResolution {
+    ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_NOT_APPLICABLE = 0,
+    ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_RESOLVED = 1,
+    ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_INVALID = 2
+} EZrLspSemanticExternalMemberResolution;
+
+static EZrLspSemanticExternalMemberResolution
+semantic_query_resolve_canonical_external_member_target(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrSemanticAnalyzer *analyzer,
+        SZrLspSemanticQuery *query) {
+    SZrLspMetadataProvider provider;
+    SZrLspResolvedImportedModule ownerModule;
+    SZrParserSemanticExternalReferenceQuery identity;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
+        query == ZR_NULL || !query->hasCanonicalSymbol ||
+        !ZrLanguageServer_LspExternalTargetIdentity_IsAvailable(
+                &query->canonicalSymbol) ||
+        query->canonicalSymbol.externalTargetKind ==
+                ZR_SEMANTIC_EXTERNAL_TARGET_MODULE) {
+        return ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_NOT_APPLICABLE;
+    }
+
+    ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+    if (!ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(
+                &provider,
+                analyzer,
+                projectIndex,
+                query->canonicalSymbol.externalOwnerIdentity,
+                &ownerModule) ||
+        ownerModule.modulePrototype == ZR_NULL ||
+        ownerModule.modulePrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+        return ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_NOT_APPLICABLE;
+    }
+
+    memset(&identity, 0, sizeof(identity));
+    identity.referenceRange = query->canonicalReferenceRange;
+    identity.symbolId = query->canonicalSymbol.symbolId;
+    identity.typeId = query->canonicalSymbol.typeId;
+    identity.role = query->canonicalSymbol.role;
+    identity.externalOwnerIdentity =
+            query->canonicalSymbol.externalOwnerIdentity;
+    identity.externalProviderGeneration =
+            query->canonicalSymbol.externalProviderGeneration;
+    identity.externalMetadataToken =
+            query->canonicalSymbol.externalMetadataToken;
+    identity.externalSignatureToken =
+            query->canonicalSymbol.externalSignatureToken;
+    identity.externalSignatureHash =
+            query->canonicalSymbol.externalSignatureHash;
+    identity.externalTargetKind =
+            query->canonicalSymbol.externalTargetKind;
+
+    if (!ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
+                &provider,
+                analyzer,
+                projectIndex,
+                &identity,
+                &query->resolvedMember) ||
+        !ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
+                &query->canonicalSymbol, &query->resolvedMember)) {
+        return ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_INVALID;
+    }
+
+    query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER;
+    query->moduleName = query->resolvedMember.module.moduleName;
+    query->memberName = query->resolvedMember.memberName;
+    query->resolvedModule = query->resolvedMember.module;
+    query->sourceKind = query->resolvedMember.module.sourceKind;
+    query->resolvedTypeInfo.origin = query->sourceKind;
+    semantic_query_copy_resolved_member_type(
+            state, &query->resolvedMember, &query->resolvedTypeInfo);
+    return ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_RESOLVED;
 }
 
 static TZrBool semantic_query_try_resolve_canonical_symbol(
@@ -2364,6 +2443,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     SZrArray bindings;
     SZrLspSemanticImportChainHit importChainHit;
     EZrLspSemanticImportOriginResolution importOriginResolution;
+    EZrLspSemanticExternalMemberResolution externalMemberResolution;
     TZrBool resolved;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || query == ZR_NULL) {
@@ -2395,6 +2475,20 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         return ZR_FALSE;
     }
     query->analyzer = analyzer;
+
+    query->hasCanonicalSymbol = semantic_query_try_resolve_canonical_symbol(
+            state, analyzer, query, ZR_TRUE);
+    externalMemberResolution =
+            semantic_query_resolve_canonical_external_member_target(
+                    state, context, projectIndex, analyzer, query);
+    if (externalMemberResolution == ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_RESOLVED) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return semantic_query_capture_document_version(state, context, query);
+    }
+    if (externalMemberResolution == ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_INVALID) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_FALSE;
+    }
 
     importOriginResolution = semantic_query_resolve_canonical_import_literal_target(
             state, context, projectIndex, analyzer, query);

@@ -958,3 +958,20 @@ Invalid canonical state blocks all AST/import-binding fallbacks. The old import
 chain branch explicitly rejects module-literal hits with no member name, so it
 cannot rebuild a module target from the literal text. Import-chain member
 identity remains the next migration boundary.
+
+## Canonical Import-Chain Terminal Member Boundary
+
+Terminal members such as `system.console.printLine` now have an AST-independent
+semantic-query path when their parser reference fact publishes a complete
+external identity. `lsp_semantic_query.c` calls the identity adapter before the
+request-time AST/import-chain gate. The adapter validates the canonical module
+owner and finds exactly one metadata row matching owner identity, target kind,
+metadata token, signature token, and signature hash. It then returns the same
+structured metadata member used by definition, references, highlights, and
+hover consumers.
+
+The path is fail-closed for missing or conflicting identity and for a changed
+signature hash. The member spelling is used only after an exact row has already
+been selected to hydrate the provider's existing structured payload; it cannot
+authorize a target. Module hops without a canonical member fact and completion
+remain outside this slice and do not receive a name or source-text fallback.
