@@ -69,6 +69,7 @@ static SZrString *semantic_extract_generic_argument_name_string(SZrSemanticAnaly
 }
 
 static void semantic_collect_generic_parameter_info(SZrSemanticAnalyzer *analyzer,
+                                                    SZrAstNode *functionNode,
                                                     SZrArray *genericParameters,
                                                     SZrGenericDeclaration *genericDeclaration) {
     SZrCompilerState *compilerState;
@@ -106,6 +107,20 @@ static void semantic_collect_generic_parameter_info(SZrSemanticAnalyzer *analyze
         genericInfo.requiresClass = parameter->genericRequiresClass;
         genericInfo.requiresStruct = parameter->genericRequiresStruct;
         genericInfo.requiresNew = parameter->genericRequiresNew;
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT &&
+            parameter->typeInfo != ZR_NULL) {
+            SZrInferredType declaredType;
+
+            ZrParser_InferredType_Init(
+                    compilerState->state, &declaredType, ZR_VALUE_TYPE_OBJECT);
+            (void)ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+                    analyzer,
+                    ZR_NULL,
+                    functionNode,
+                    parameter->typeInfo,
+                    &declaredType);
+            ZrParser_InferredType_Free(compilerState->state, &declaredType);
+        }
         ZrCore_Array_Init(compilerState->state,
                           &genericInfo.constraintTypeNames,
                           sizeof(SZrString *),
@@ -466,11 +481,12 @@ static void register_function_type_binding_in_env(SZrState *state,
         return;
     }
 
+    declarationNode = compilerState->currentFunctionNode;
     ZrCore_Array_Construct(&genericParameters);
     ZrCore_Array_Construct(&parameterPassingModes);
-    semantic_collect_generic_parameter_info(analyzer, &genericParameters, funcDecl->generic);
+    semantic_collect_generic_parameter_info(
+            analyzer, declarationNode, &genericParameters, funcDecl->generic);
     semantic_collect_parameter_passing_modes(state, &parameterPassingModes, funcDecl->params);
-    declarationNode = compilerState->currentFunctionNode;
     resolvedReturnTypeInfo =
         create_type_info_for_callable_return(state,
                                              analyzer,

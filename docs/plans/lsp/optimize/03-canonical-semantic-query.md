@@ -150,7 +150,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 21:26 +08:00。
+- 最近更新时间：2026-09-01 22:00 +08:00。
 - 总体状态：进行中。Task 3.23 为direct/destructured import visible facts发布exact
   module-literal range，并新增只读三态`ImportOriginAt`。查询在literal位置校验同一origin下
   每个import binding都有且只有一个匹配SymbolId/TypeId的`IMPORT_EXPORT_ORIGIN` relation，
@@ -1324,3 +1324,19 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   ownership targets 仍重现既有 type display/reference/reachability/ownership fact 历史失败，
   不计入本片 GREEN，也未通过调整 LSP message 掩盖。Task 7 consumer 总迁移、Task 8 的完整
   16-target 与三套 stdio/CLI smoke继续未完成。
+
+- 补充完成时间：2026-09-01 22:00 +08:00。Task 7.59 修复Task 5删除primitive
+  name-to-type mapper后暴露的declared primitive identity缺口。parser
+  `ZrParser_AstTypeToInferredType_Convert`已返回结构化primitive inferred type，但LSP
+  declared-type publisher错误要求非空stored `typeName`，导致函数参数`int`没有canonical
+  type-reference fact；type prototype generic collector又未主动发布`const N: int`的bound
+  type fact。GREEN移除该stored-name门禁，并让class/struct/interface/union及其method generic
+  collector与free-function symbol collector携带owner/callable context，对结构化const generic
+  bound调用同一declared-type builder。新增parity case在请求期hover之前直接断言函数参数、
+  class const bound与free-function const bound均为resolved
+  `ZR_SEMANTIC_REFERENCE_TYPE`、共享同一有效TypeId且canonical formatter输出`int`，未恢复任何
+  name mapper或text fallback。GCC/Clang/MSVC的semantic-query parity、完整interface与
+  source-contract均真实exit 0；三套完整semantic analyzer仍各有14个既有Task7 fact/ownership/
+  generic失败，但本次unannotated-function signature与generic-type signature两项均转PASS。
+  Task 7总迁移、source/binary/native/stale/unresolved完整consumer矩阵、Task 8的16-target与三套
+  stdio/CLI smoke继续未完成。

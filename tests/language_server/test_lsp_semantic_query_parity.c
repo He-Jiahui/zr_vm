@@ -1534,6 +1534,7 @@ cleanup:
 
 #include "test_lsp_semantic_call_hierarchy_cases.h"
 #include "test_lsp_canonical_completion_cases.h"
+#include "test_lsp_declared_primitive_type_identity_cases.h"
 #include "test_lsp_external_member_reference_identity_cases.h"
 
 int main(void) {
@@ -1559,6 +1560,7 @@ int main(void) {
     test_local_lambda_call_hierarchy_uses_canonical_edges(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
+    test_declared_primitive_types_publish_canonical_identity(state);
     test_canonical_visible_symbol_completion_survives_symbol_table_detachment(state);
     test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(state);
     test_external_member_references_reject_mismatched_declaration_identity(state);

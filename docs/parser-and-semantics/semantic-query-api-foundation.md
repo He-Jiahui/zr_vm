@@ -61,6 +61,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.h
@@ -74,6 +76,8 @@ related_code:
   - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
   - tests/parser/test_semantic_display.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
+  - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/test_lsp_declared_primitive_type_identity_cases.h
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/fixtures/projects/import_pub_function/src/secondary.zr
@@ -153,6 +157,8 @@ tests:
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
+  - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/test_lsp_declared_primitive_type_identity_cases.h
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
 doc_type: module-detail
 ---
@@ -1388,3 +1394,18 @@ AST is available. The legacy chain resolver may continue to resolve canonical
 member segments, but a `memberName == NULL` module-literal hit can no longer
 construct a target from module spelling. Canonical import-chain member
 migration remains pending.
+
+## Plan 03 Task 7.59 Declared Primitive Type Identity
+
+Declared source types are registered from parser-converted `SZrInferredType` structure. Primitive
+types are valid canonical inputs even when the inferred value has no stored `typeName`; that field is
+presentation metadata and is not a prerequisite for `ZrParser_Semantic_RegisterInferredType`.
+The exact type-use AST node and range remain on the resolved `ZR_SEMANTIC_REFERENCE_TYPE` fact.
+
+Type-prototype and free-function generic collection publish const-parameter bound types while
+constructing the semantic snapshot. They carry the owning type and callable context into the common
+declared-type builder, so `const N: int` has a canonical reference fact before hover/signature
+formatting. Ordinary function parameter annotations and const-generic bounds therefore return the
+same primitive TypeId from
+`ZrParser_SemanticQuery_CanonicalTypeAt`; `ZrParser_CanonicalType_Format` supplies display text.
+Consumers must not reconstruct a primitive from source spelling when the fact is absent.

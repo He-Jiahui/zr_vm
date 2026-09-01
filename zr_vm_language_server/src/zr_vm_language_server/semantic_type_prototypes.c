@@ -980,6 +980,8 @@ static SZrString *semantic_type_prototypes_extract_constraint_name(SZrSemanticAn
 }
 
 static void semantic_type_prototypes_collect_generic_parameters(SZrSemanticAnalyzer *analyzer,
+                                                                SZrAstNode *ownerTypeNode,
+                                                                SZrAstNode *functionNode,
                                                                 SZrArray *genericParameters,
                                                                 SZrGenericDeclaration *genericDeclaration) {
     SZrCompilerState *compilerState;
@@ -1015,6 +1017,20 @@ static void semantic_type_prototypes_collect_generic_parameters(SZrSemanticAnaly
         genericInfo.requiresClass = parameter->genericRequiresClass;
         genericInfo.requiresStruct = parameter->genericRequiresStruct;
         genericInfo.requiresNew = parameter->genericRequiresNew;
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT &&
+            parameter->typeInfo != ZR_NULL) {
+            SZrInferredType declaredType;
+
+            ZrParser_InferredType_Init(
+                    compilerState->state, &declaredType, ZR_VALUE_TYPE_OBJECT);
+            (void)ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+                    analyzer,
+                    ownerTypeNode,
+                    functionNode,
+                    parameter->typeInfo,
+                    &declaredType);
+            ZrParser_InferredType_Free(compilerState->state, &declaredType);
+        }
         ZrCore_Array_Init(compilerState->state,
                           &genericInfo.constraintTypeNames,
                           sizeof(SZrString *),
@@ -1218,6 +1234,8 @@ static void semantic_type_prototypes_append_class_member(SZrState *state,
                                                                   memberNode,
                                                                   method->returnType);
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                ownerTypeNode,
+                                                                memberNode,
                                                                 &memberInfo.genericParameters,
                                                                 method->generic);
             semantic_type_prototypes_collect_parameter_signature(analyzer,
@@ -1385,6 +1403,8 @@ static void semantic_type_prototypes_append_struct_member(SZrState *state,
                                                                   memberNode,
                                                                   method->returnType);
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                ownerTypeNode,
+                                                                memberNode,
                                                                 &memberInfo.genericParameters,
                                                                 method->generic);
             semantic_type_prototypes_collect_parameter_signature(analyzer,
@@ -1465,6 +1485,8 @@ static void semantic_type_prototypes_append_interface_member(SZrState *state,
                                                                   memberNode,
                                                                   method->returnType);
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                ownerTypeNode,
+                                                                memberNode,
                                                                 &memberInfo.genericParameters,
                                                                 method->generic);
             semantic_type_prototypes_collect_parameter_signature(analyzer,
@@ -1706,17 +1728,23 @@ static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
     switch (node->type) {
         case ZR_AST_CLASS_DECLARATION:
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                node,
+                                                                ZR_NULL,
                                                                 &prototypeInfo.genericParameters,
                                                                 node->data.classDeclaration.generic);
             prototypeInfo.modifierFlags = node->data.classDeclaration.modifierFlags;
             break;
         case ZR_AST_STRUCT_DECLARATION:
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                node,
+                                                                ZR_NULL,
                                                                 &prototypeInfo.genericParameters,
                                                                 node->data.structDeclaration.generic);
             break;
         case ZR_AST_INTERFACE_DECLARATION:
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                node,
+                                                                ZR_NULL,
                                                                 &prototypeInfo.genericParameters,
                                                                 node->data.interfaceDeclaration.generic);
             prototypeInfo.modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT;
@@ -1725,6 +1753,8 @@ static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
             break;
         case ZR_AST_UNION_DECLARATION:
             semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                node,
+                                                                ZR_NULL,
                                                                 &prototypeInfo.genericParameters,
                                                                 node->data.unionDeclaration.generic);
             break;
@@ -1978,7 +2008,7 @@ static void semantic_type_prototypes_publish_declared_type_reference(
     TZrTypeId typeId;
 
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || typeNode == ZR_NULL ||
-        typeNode->name == ZR_NULL || inferredType == ZR_NULL || inferredType->typeName == ZR_NULL ||
+        typeNode->name == ZR_NULL || inferredType == ZR_NULL ||
         ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
                 analyzer->semanticContext,
                 typeNode->name,
