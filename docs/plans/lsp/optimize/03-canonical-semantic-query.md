@@ -90,7 +90,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - Modify: `zr_vm_parser/include/zr_vm_parser/semantic_query.h`
 - Create: `tests/parser/test_semantic_query_calls.c`
 
-- [ ] CallAt 返回 selected target、overload candidate set、receiver TypeId、closed callable TypeId、argument-to-parameter mapping、conversion/exactness 和 call-site range。
+- [x] CallAt 返回 selected target、overload candidate set、receiver TypeId、closed callable TypeId、argument-to-parameter mapping、conversion/exactness 和 call-site range。
 - [x] semantic context 构建 caller SymbolId → call edges 索引；incoming/outgoing query 不扫描源文本。
 - [x] 动态/无法解析调用返回 unresolved edge 与 reason，不把第一个同名函数当目标。
 - [ ] source、`.zro`、native descriptor external callable 共用同一 callable contract；当前 L8 overlay 的 `isExternalCallable`/signatureDisplay 必须在 parser 层封闭，不再由 hover/signature 各自拼装。
@@ -1275,3 +1275,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   因此仍未迁移；GCC focused semantic query/parity/source-contract/interface真实exit 0，
   Task 3与Task 8仍因virtual URI、多provider generation、binary/native sourceless matrix、
   MSVC、完整16-target与stdio smoke未完成。
+
+- 补充完成时间：2026-09-01 18:22 +08:00。Task 4.28 为member-call reference fact和
+  `SZrParserSemanticCallQuery`发布canonical `receiverTypeId`：producer直接驻留已解析receiver的
+  `SZrInferredType`，free/constructor call保持invalid；query要求member/free call形态与receiver
+  字段严格一致，并拒绝同一resolved target的冲突receiver identity。RED由缺失public field的
+  GCC真实编译失败固定；GREEN后GCC/Clang同一12-target focused矩阵均真实exit 0，parser计数为
+  canonical/facts/query/calls/contract/diagnostics/relations/symbols/type-inference
+  `21/17/30/31/6/13/29/24/124`，LSP parity、source-contract与完整interface全部通过。据此勾选
+  Task4首项；source/`.zro`/native callable parity、MSVC、完整矩阵、stdio smoke与Task8仍未完成。

@@ -768,22 +768,30 @@ void type_inference_record_external_member_reference_fact(
 void type_inference_record_member_call_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
+        const SZrInferredType *receiverType,
         SZrTypeMemberInfo *memberInfo,
         const SZrResolvedCallSignature *resolvedSignature) {
     SZrSemanticReferenceFact fact;
     SZrAstNode *target;
     TZrTypeId callTypeId;
+    TZrTypeId receiverTypeId;
     TZrSymbolId symbolId;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
         memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberInfo == ZR_NULL ||
-        memberInfo->name == ZR_NULL || resolvedSignature == ZR_NULL) {
+        receiverType == ZR_NULL || memberInfo->name == ZR_NULL ||
+        resolvedSignature == ZR_NULL) {
         return;
     }
     target = memberNode->data.memberExpression.property;
     callTypeId = type_inference_resolved_member_call_type_id(
             cs, memberInfo, resolvedSignature);
     if (callTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+    receiverTypeId = ZrParser_CanonicalType_FromInferred(
+            cs->semanticContext, receiverType);
+    if (receiverTypeId == ZR_SEMANTIC_ID_INVALID) {
         return;
     }
     symbolId = type_inference_member_symbol_id(cs, memberInfo, callTypeId);
@@ -797,6 +805,7 @@ void type_inference_record_member_call_reference_fact(
     fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
     fact.symbolId = symbolId;
     fact.typeId = callTypeId;
+    fact.receiverTypeId = receiverTypeId;
     fact.contractRole = memberInfo->contractRole;
     fact.name = memberInfo->name;
     fact.signatureDisplay = type_inference_callable_signature_display(

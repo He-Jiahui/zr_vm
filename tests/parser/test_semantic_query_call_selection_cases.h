@@ -358,4 +358,83 @@ static void test_call_at_keeps_distinct_nested_reference_ranges_separate(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_call_at_requires_receiver_type_shape_to_match_member_call(void) {
+    const TZrChar *source = "receiver.invoke()";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_call_receiver_type.zr");
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticExpressionFact expression;
+    SZrSemanticReferenceFact reference;
+    SZrSemanticExpressionFact *storedExpression;
+    SZrSemanticReferenceFact *storedReference;
+    SZrParserSemanticCallQuery call;
+    TZrTypeId returnTypeId;
+    TZrTypeId callableTypeId;
+    TZrTypeId receiverTypeId;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(context);
+    returnTypeId = ZrParser_CanonicalType_InternPrimitive(
+            context, ZR_VALUE_TYPE_INT64);
+    callableTypeId = ZrParser_CanonicalType_InternFunction(
+            context,
+            ZR_NULL,
+            0U,
+            returnTypeId,
+            ZR_CANONICAL_RECEIVER_MUTABLE,
+            0U);
+    receiverTypeId = ZrParser_CanonicalType_InternNominal(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "app"),
+            ZrCore_String_CreateFromNative(g_state, "Receiver"),
+            1U);
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, callableTypeId);
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, receiverTypeId);
+
+    memset(&expression, 0, sizeof(expression));
+    expression.kind = ZR_SEMANTIC_EXPRESSION_FACT_CALL;
+    expression.exactness = ZR_SEMANTIC_FACT_EXACT;
+    expression.range = call_source_position(
+            source, sourceName, "receiver", 0U);
+    expression.range.end.offset = strlen(source);
+    expression.callTargetRange = call_source_position(
+            source, sourceName, "invoke", 0U);
+    expression.typeId = returnTypeId;
+    expression.hasCallInfo = ZR_TRUE;
+    expression.isMemberCall = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendExpression(
+            context, &expression));
+
+    memset(&reference, 0, sizeof(reference));
+    reference.kind = ZR_SEMANTIC_REFERENCE_CALL;
+    reference.range = expression.callTargetRange;
+    reference.typeId = callableTypeId;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
+            context, &reference));
+
+    memset(&call, 0xA5, sizeof(call));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+            context, expression.callTargetRange, ZR_NULL, &call));
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, call.receiverTypeId);
+
+    storedReference = (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+            &context->referenceFacts, 0U);
+    TEST_ASSERT_NOT_NULL(storedReference);
+    storedReference->receiverTypeId = receiverTypeId;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            context, expression.callTargetRange, ZR_NULL, &call));
+    TEST_ASSERT_EQUAL_UINT(receiverTypeId, call.receiverTypeId);
+
+    storedExpression = (SZrSemanticExpressionFact *)ZrCore_Array_Get(
+            &context->expressionFacts, 0U);
+    TEST_ASSERT_NOT_NULL(storedExpression);
+    storedExpression->isMemberCall = ZR_FALSE;
+    memset(&call, 0xA5, sizeof(call));
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+            context, expression.callTargetRange, ZR_NULL, &call));
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, call.receiverTypeId);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 #endif

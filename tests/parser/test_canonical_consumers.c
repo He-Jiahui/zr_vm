@@ -618,6 +618,8 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
                               (TZrSize)(call - source + strlen("identity(")));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
             cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID, query.receiverTypeId);
     TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
             cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
     TEST_ASSERT_EQUAL_STRING("fn(int) -> int", typeLabel);
@@ -1091,6 +1093,7 @@ static void test_resolved_generic_member_call_preserves_declaration_generic_clau
     SZrAstNode *ast;
     SZrFileRange position;
     SZrParserSemanticCallQuery query;
+    TZrChar receiverTypeLabel[128];
     TZrChar callLabel[256];
 
     TEST_ASSERT_NOT_NULL(call);
@@ -1116,6 +1119,14 @@ static void test_resolved_generic_member_call_preserves_declaration_generic_clau
             cs.semanticContext, position, ZR_NULL, &query));
     TEST_ASSERT_TRUE(query.hasResolvedTarget);
     TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID, query.receiverTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext,
+            query.receiverTypeId,
+            receiverTypeLabel,
+            sizeof(receiverTypeLabel)));
+    TEST_ASSERT_EQUAL_STRING("Box<int>", receiverTypeLabel);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
             cs.semanticContext, &query, callLabel, sizeof(callLabel)));
     TEST_ASSERT_EQUAL_STRING(
@@ -1278,6 +1289,7 @@ static void test_receiver_call_publishes_resolved_target_identity(void) {
     SZrAstNode *mutableMethodNode;
     SZrFileRange position;
     SZrParserSemanticCallQuery query;
+    TZrChar receiverTypeLabel[128];
     TZrChar typeLabel[128];
     TZrChar callLabel[128];
 
@@ -1324,6 +1336,14 @@ static void test_receiver_call_publishes_resolved_target_identity(void) {
     TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.reference->symbolId);
     TEST_ASSERT_TRUE(query.hasResolvedTarget);
     TEST_ASSERT_EQUAL_UINT32(query.reference->symbolId, query.targetSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID, query.receiverTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext,
+            query.receiverTypeId,
+            receiverTypeLabel,
+            sizeof(receiverTypeLabel)));
+    TEST_ASSERT_EQUAL_STRING("readonly Counter", receiverTypeLabel);
     TEST_ASSERT_EQUAL_UINT64(
             (TZrUInt64)methodNode->location.start.offset,
             (TZrUInt64)query.reference->declarationRange.start.offset);
@@ -1351,6 +1371,14 @@ static void test_receiver_call_publishes_resolved_target_identity(void) {
     TEST_ASSERT_EQUAL_STRING("fn write(next: int): int", callLabel);
     TEST_ASSERT_TRUE(query.hasResolvedTarget);
     TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(
+            ZR_SEMANTIC_ID_INVALID, query.receiverTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext,
+            query.receiverTypeId,
+            receiverTypeLabel,
+            sizeof(receiverTypeLabel)));
+    TEST_ASSERT_EQUAL_STRING("Counter", receiverTypeLabel);
     TEST_ASSERT_EQUAL_UINT64(
             (TZrUInt64)mutableMethodNode->location.start.offset,
             (TZrUInt64)query.targetDeclarationRange.start.offset);

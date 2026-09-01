@@ -120,6 +120,9 @@ static TZrSize canonical_query_call_reference_completeness(
     if (reference->signatureDisplay != ZR_NULL) {
         completeness += 2u;
     }
+    if (reference->receiverTypeId != ZR_SEMANTIC_ID_INVALID) {
+        completeness += 1u;
+    }
     return completeness;
 }
 
@@ -393,6 +396,12 @@ TZrBool ZrParser_SemanticQuery_CallAt(
         }
     }
     if (bestReference == ZR_NULL) return ZR_FALSE;
+    if ((best->isMemberCall &&
+         bestReference->receiverTypeId == ZR_SEMANTIC_ID_INVALID) ||
+        (!best->isMemberCall &&
+         bestReference->receiverTypeId != ZR_SEMANTIC_ID_INVALID)) {
+        return ZR_FALSE;
+    }
     if (canonical_query_call_reference_has_resolved_target(bestReference)) {
         for (index = 0u; index < context->referenceFacts.length; ++index) {
             const SZrSemanticReferenceFact *reference =
@@ -410,6 +419,11 @@ TZrBool ZrParser_SemanticQuery_CallAt(
             if (bestReference->symbolId != reference->symbolId) {
                 return ZR_FALSE;
             }
+            if (bestReference->receiverTypeId != ZR_SEMANTIC_ID_INVALID &&
+                reference->receiverTypeId != ZR_SEMANTIC_ID_INVALID &&
+                bestReference->receiverTypeId != reference->receiverTypeId) {
+                return ZR_FALSE;
+            }
         }
     }
     if (!canonical_query_call_argument_mappings_valid(
@@ -417,6 +431,7 @@ TZrBool ZrParser_SemanticQuery_CallAt(
         return ZR_FALSE;
     }
     outQuery->callableTypeId = bestReference->typeId;
+    outQuery->receiverTypeId = bestReference->receiverTypeId;
     outQuery->expression = best;
     outQuery->reference = bestReference;
     outQuery->callSiteRange = best->range;

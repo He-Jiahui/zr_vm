@@ -53,6 +53,7 @@ typedef struct SZrParserSemanticTypeQuery {
 
 typedef struct SZrParserSemanticCallQuery {
     TZrTypeId callableTypeId;
+    TZrTypeId receiverTypeId;
     const SZrSemanticExpressionFact *expression;
     const SZrSemanticReferenceFact *reference;
     SZrFileRange callSiteRange;

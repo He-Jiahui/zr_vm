@@ -92,6 +92,11 @@ symbol fact 与 compiler fact 时，优先选择带 compiler signature display �
 - 为真时，`targetSymbolId` 和 `targetDeclarationRange` 来自同一个 resolved call fact；
 - 为假时，query 在入口清零这些字段，消费者不得按 member name 搜索或猜测声明。
 
+同一query还直接投影member receiver的canonical `receiverTypeId`。该TypeId由call producer从
+已经解析的receiver inferred type驻留，不由consumer按变量名、owner type文本或member声明反推。
+member call缺receiver TypeId、free/constructor call携带receiver TypeId，或同一resolved target的
+候选facts携带冲突receiver identity时，`CallAt`统一fail closed并清零输出。
+
 source free call 与 receiver member call 都发布该身份。member SymbolId 按精确 declaration
 AST node 注册/复用，declaration range 覆盖完整方法声明；imported/native member 没有 source
 declaration 时仍可提供 callable TypeId，但不会伪造 resolved source target。

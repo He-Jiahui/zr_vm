@@ -606,12 +606,13 @@ Relation queries clear reusable relation arrays before rejecting invalid symbol
 or type identities, so implementation and type-hierarchy consumers cannot
 reuse a previous graph result after a failed lookup.
 
-This first Task 4 slice covers source function callers and resolved overload
-declaration membership only. Lambda scopes, argument-to-parameter mappings,
-compatibility scores, conversions, receiver TypeIds, and binary/native
-call-edge producers remain unavailable until their canonical producers can
-supply complete identity. LSP hierarchy consumers must continue to fail closed
-for those cases.
+The initial Task 4 slices established source function callers and resolved
+overload declaration membership. Later slices added lambda scopes and
+argument-to-parameter mappings with exact or implicit conversion facts. A
+member-call reference now also carries the canonical TypeId interned directly
+from its already-resolved receiver type. Binary/native call-edge parity remains
+unavailable until those canonical producers can supply complete identity. LSP
+hierarchy consumers must continue to fail closed for that remaining boundary.
 
 `CallCandidatesAt` adds the declaration-membership portion of overload facts.
 It first requires `CallAt` to expose a resolved target, then projects only the
@@ -639,11 +640,15 @@ the query never returns a silently truncated overload set.
 the value fields `callSiteRange`, `callTargetRange`, `argumentCount`,
 `hasNamedArguments`, and `isMemberCall`. The query never recomputes the
 arguments, resolves a receiver, scans source text, or substitutes a name when
-the selected call fact is incomplete. The copied ranges remain valid after a
-caller discards its borrowed expression/reference views, while their identity
-continues to be scoped to the same semantic snapshot. Argument-to-parameter
-mapping, conversion/exactness, receiver TypeId, and external-call metadata
-remain unavailable until their canonical producers publish complete facts.
+the selected call fact is incomplete. `receiverTypeId` comes from the same
+selected member-call reference fact: member calls require a valid canonical
+receiver TypeId, while free and constructor calls require it to remain invalid.
+Conflicting resolved facts with different receiver TypeIds fail closed. The
+copied ranges and TypeIds remain valid after a caller discards its borrowed
+expression/reference views, while their identity continues to be scoped to the
+same semantic snapshot. Argument-to-parameter mapping and conversion values
+are borrowed from the selected reference fact; external-call metadata remains
+unavailable until its canonical producers publish complete facts.
 
 ### Lambda Caller Scope Facts
 
