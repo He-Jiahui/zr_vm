@@ -105,7 +105,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 - [x] 为 canonical type、symbol signature、call signature、property contract 提供结构化 display API；输出由 TypeId/SymbolId 生成。
 - [x] primitive、union、nullable、ref/owner/readonly、generic const/type args、tuple、function effects/passing modes 全覆盖。
-- [ ] 删除 LSP `semantic_type_prototypes.c` 中把 `int/i64`、`string/str` 等名称映射回类型的职责；展示 alias 与 canonical identity 分开返回。
+- [x] 删除 LSP `semantic_type_prototypes.c` 中把 `int/i64`、`string/str` 等名称映射回类型的职责；展示 alias 与 canonical identity 分开返回。
 - [x] documentation 作为 symbol metadata fact 进入 query；completion/hover/signature 不再彼此提取文本。
 
 ## Task 6：让结构化诊断成为唯一语义诊断
@@ -150,7 +150,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 19:20 +08:00。
+- 最近更新时间：2026-09-01 20:24 +08:00。
 - 总体状态：进行中。Task 3.23 为direct/destructured import visible facts发布exact
   module-literal range，并新增只读三态`ImportOriginAt`。查询在literal位置校验同一origin下
   每个import binding都有且只有一个匹配SymbolId/TypeId的`IMPORT_EXPORT_ORIGIN` relation，
@@ -1299,3 +1299,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   type-inference 为 `21/17/30/31/6/13/29/24/124`，parity/source-contract/interface均真实
   exit 0。两套 fresh project runner 的四个目标 case 均通过；其余14个历史project marker与
   MSVC、完整16-target矩阵、三套stdio/CLI smoke仍未在本基线重跑，Task 8继续未完成。
+
+- 补充完成时间：2026-09-01 20:24 +08:00。Task 5 完成 LSP type display identity 收口：删除
+  `semantic_type_prototypes.c` 中按 `int/i64`、`string/str` 等名称反向映射基础类型的
+  `semantic_type_prototypes_base_type_from_name`；显式 type-use 现在通过 parser
+  `ZrParser_AstTypeToInferredType_Convert` 获得 canonical inferred identity，展示 alias 与
+  identity 分离，并在无 stored `typeName` 时通过 `ZrParser_TypeNameString_Get` 格式化展示。
+  parser conversion 在 LSP probe 中隔离 semantic context 与失败诊断状态，不发布重复 semantic
+  fact，也不按名称、文本或 AST fallback 猜测类型。Task5 source-contract 新增生产源码约束，
+  GCC/Clang/MSVC 独立快照的 source-contract 与 interface 均真实 exit 0；MSVC 使用静态
+  Debug 配置，且规范化隔离 checkout 的 LF 仅用于多行 source-contract 读取。Task 6/7/8 与
+  完整16-target、三套stdio/CLI smoke仍未完成。

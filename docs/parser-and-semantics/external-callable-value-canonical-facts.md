@@ -116,7 +116,13 @@ The 2026-09-01 callable-parity slice was revalidated in fresh GCC and Clang snap
 semantic-query symbols passed `24/24`; the focused parser/query/LSP matrix passed with real exit 0,
 and both project runners passed all four new callable-value/receiver cases. The runners still
 reported 14 unrelated historical markers, so this slice does not claim a full project or stdio
-matrix. MSVC and the complete Task 8 acceptance remain pending.
+matrix. The subsequent Task 5 display-identity slice removed the LSP primitive name-to-type map.
+Declared type probes now consume `ZrParser_AstTypeToInferredType_Convert`; display-only source
+spelling uses `ZrParser_TypeNameString_Get` when the inferred identity has no stored display name.
+Fresh GCC, Clang, and MSVC static Debug source-contract and interface targets exited 0. MSVC used
+an LF-normalized isolated checkout because the source-contract assertions inspect multiline source
+fragments. Full project historical markers, the complete Task 8 acceptance, and the three stdio/CLI
+smokes remain outside this slice.
 
 ## Open Work
 

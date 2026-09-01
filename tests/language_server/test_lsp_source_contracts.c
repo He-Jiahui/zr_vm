@@ -2221,6 +2221,65 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
     free(typecheck);
 }
 
+static void test_declared_type_builder_uses_parser_type_identity(void) {
+    char *source = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c");
+    const char *probeStart;
+    const char *probeEnd;
+    const char *builderStart;
+    const char *builderEnd;
+    const char *typeNameStart;
+    const char *typeNameEnd;
+
+    if (source == NULL) {
+        printf("FAIL: could not read semantic_type_prototypes.c\n");
+        g_failures++;
+        return;
+    }
+
+    probeStart = strstr(
+        source,
+        "static TZrBool semantic_type_prototypes_try_parser_conversion(");
+    probeEnd = probeStart != NULL
+                   ? strstr(probeStart,
+                            "static void semantic_type_prototypes_apply_primitive_numeric_range(")
+                   : NULL;
+    assert_text_section_contains(
+        "semantic_type_prototypes_try_parser_conversion",
+        probeStart,
+        probeEnd,
+        "ZrParser_AstTypeToInferredType_Convert");
+
+    builderStart = strstr(
+        source,
+        "static TZrBool semantic_type_prototypes_build_inferred_type(");
+    builderEnd = builderStart != NULL
+                     ? strstr(builderStart,
+                              "static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(")
+                     : NULL;
+    assert_text_section_contains(
+        "semantic_type_prototypes_build_inferred_type",
+        builderStart,
+        builderEnd,
+        "semantic_type_prototypes_try_parser_conversion");
+    typeNameStart = strstr(
+            source,
+            "static SZrString *semantic_type_prototypes_type_name_from_type_node(");
+    typeNameEnd = typeNameStart != NULL
+                      ? strstr(typeNameStart,
+                               "static void semantic_type_prototypes_collect_parameter_signature(")
+                      : NULL;
+    assert_text_section_contains(
+        "semantic_type_prototypes_type_name_from_type_node",
+        typeNameStart,
+        typeNameEnd,
+        "ZrParser_TypeNameString_Get");
+    assert_text_contains_none(
+        source, "semantic_type_prototypes_base_type_from_name");
+
+    free(source);
+}
+
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
 #include "test_lsp_source_contract_extern_enum_decorator_cases.h"
 #include "test_lsp_source_contract_extern_struct_decorator_cases.h"
@@ -2311,6 +2370,7 @@ int main(void) {
     test_code_lens_uses_canonical_declaration_and_reference_queries();
     test_source_hover_uses_parser_symbol_query();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
+    test_declared_type_builder_uses_parser_type_identity();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
     test_ffi_wrapper_decorators_use_parser_diagnostic_projection();

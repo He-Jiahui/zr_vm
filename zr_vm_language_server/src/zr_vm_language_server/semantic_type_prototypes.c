@@ -489,31 +489,55 @@ static SZrString *semantic_type_prototypes_render_generic_argument(SZrSemanticAn
     return ZR_NULL;
 }
 
-static EZrValueType semantic_type_prototypes_base_type_from_name(SZrString *typeName,
-                                                                 const SZrType *typeNode) {
-    const TZrChar *typeNameText = semantic_string_native(typeName);
+static TZrBool semantic_type_prototypes_try_parser_conversion(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrType *typeNode,
+        SZrInferredType *outType) {
+    SZrCompilerState *compilerState;
+    SZrSemanticContext *savedSemanticContext;
+    TZrBool savedHasError;
+    TZrBool savedHadRecoverableError;
+    const TZrChar *savedErrorMessage;
+    SZrFileRange savedErrorLocation;
+    TZrBool savedHasStructuredError;
+    SZrStructuredDiagnostic savedStructuredError;
+    TZrBool savedHasFatalError;
+    TZrBool savedHasCompileTimeError;
+    TZrBool converted;
 
-    if (typeNode != ZR_NULL && typeNode->dimensions > 0) {
-        return ZR_VALUE_TYPE_ARRAY;
-    }
-    if (typeNameText == ZR_NULL) {
-        return ZR_VALUE_TYPE_OBJECT;
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeNode == ZR_NULL ||
+        outType == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    if (strcmp(typeNameText, "int") == 0 || strcmp(typeNameText, "i64") == 0) return ZR_VALUE_TYPE_INT64;
-    if (strcmp(typeNameText, "uint") == 0 || strcmp(typeNameText, "u64") == 0) return ZR_VALUE_TYPE_UINT64;
-    if (strcmp(typeNameText, "float") == 0 || strcmp(typeNameText, "f64") == 0) return ZR_VALUE_TYPE_DOUBLE;
-    if (strcmp(typeNameText, "f32") == 0) return ZR_VALUE_TYPE_FLOAT;
-    if (strcmp(typeNameText, "bool") == 0) return ZR_VALUE_TYPE_BOOL;
-    if (strcmp(typeNameText, "string") == 0 || strcmp(typeNameText, "str") == 0) return ZR_VALUE_TYPE_STRING;
-    if (strcmp(typeNameText, "null") == 0 || strcmp(typeNameText, "void") == 0) return ZR_VALUE_TYPE_NULL;
-    if (strcmp(typeNameText, "i8") == 0) return ZR_VALUE_TYPE_INT8;
-    if (strcmp(typeNameText, "u8") == 0) return ZR_VALUE_TYPE_UINT8;
-    if (strcmp(typeNameText, "i16") == 0) return ZR_VALUE_TYPE_INT16;
-    if (strcmp(typeNameText, "u16") == 0) return ZR_VALUE_TYPE_UINT16;
-    if (strcmp(typeNameText, "i32") == 0) return ZR_VALUE_TYPE_INT32;
-    if (strcmp(typeNameText, "u32") == 0) return ZR_VALUE_TYPE_UINT32;
-    return ZR_VALUE_TYPE_OBJECT;
+    compilerState = analyzer->compilerState;
+    savedSemanticContext = compilerState->semanticContext;
+    savedHasError = compilerState->hasError;
+    savedHadRecoverableError = compilerState->hadRecoverableError;
+    savedErrorMessage = compilerState->errorMessage;
+    savedErrorLocation = compilerState->errorLocation;
+    savedHasStructuredError = compilerState->hasStructuredError;
+    savedStructuredError = compilerState->structuredError;
+    savedHasFatalError = compilerState->hasFatalError;
+    savedHasCompileTimeError = compilerState->hasCompileTimeError;
+
+    /* Probe the parser converter without publishing a duplicate LSP fact. */
+    compilerState->semanticContext = ZR_NULL;
+    converted = ZrParser_AstTypeToInferredType_Convert(compilerState, typeNode, outType);
+    compilerState->semanticContext = savedSemanticContext;
+
+    if (!converted) {
+        compilerState->hasError = savedHasError;
+        compilerState->hadRecoverableError = savedHadRecoverableError;
+        compilerState->errorMessage = savedErrorMessage;
+        compilerState->errorLocation = savedErrorLocation;
+        compilerState->hasStructuredError = savedHasStructuredError;
+        compilerState->structuredError = savedStructuredError;
+        compilerState->hasFatalError = savedHasFatalError;
+        compilerState->hasCompileTimeError = savedHasCompileTimeError;
+    }
+
+    return converted;
 }
 
 static void semantic_type_prototypes_apply_primitive_numeric_range(SZrInferredType *type) {
@@ -754,6 +778,21 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
         return ZR_TRUE;
     }
 
+    if (typeNode->dimensions == 0 && typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrInferredType parserType;
+
+        ZrParser_InferredType_Init(state, &parserType, ZR_VALUE_TYPE_OBJECT);
+        if (semantic_type_prototypes_try_parser_conversion(analyzer, typeNode, &parserType)) {
+            ZrParser_InferredType_Free(state, outType);
+            ZrParser_InferredType_Init(state, outType, ZR_VALUE_TYPE_OBJECT);
+            ZrParser_InferredType_Copy(state, outType, &parserType);
+            ZrParser_InferredType_Free(state, &parserType);
+            semantic_type_prototypes_pop_context(analyzer, &snapshot);
+            return ZR_TRUE;
+        }
+        ZrParser_InferredType_Free(state, &parserType);
+    }
+
     renderedTypeName = semantic_type_prototypes_render_type(analyzer, typeNode);
     if (renderedTypeName == ZR_NULL) {
         semantic_type_prototypes_pop_context(analyzer, &snapshot);
@@ -817,7 +856,7 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
     ZrParser_InferredType_Free(analyzer->compilerState->state, outType);
     ZrParser_InferredType_InitFull(analyzer->compilerState->state,
                                    outType,
-                                   semantic_type_prototypes_base_type_from_name(renderedTypeName, typeNode),
+                                   ZR_VALUE_TYPE_OBJECT,
                                    ZR_FALSE,
                                    renderedTypeName);
     outType->ownershipQualifier = typeNode->ownershipQualifier;
@@ -1001,12 +1040,14 @@ static void semantic_type_prototypes_collect_generic_parameters(SZrSemanticAnaly
 }
 
 static SZrString *semantic_type_prototypes_type_name_from_type_node(SZrSemanticAnalyzer *analyzer,
-                                                                    SZrAstNode *ownerTypeNode,
-                                                                    SZrAstNode *functionNode,
-                                                                    const SZrType *typeNode) {
+                                                                     SZrAstNode *ownerTypeNode,
+                                                                     SZrAstNode *functionNode,
+                                                                     const SZrType *typeNode) {
     SZrCompilerState *compilerState;
     SZrInferredType inferredType;
     SZrString *typeName = ZR_NULL;
+    TZrChar formattedTypeName[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    const TZrChar *formattedTypeNameText;
 
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeNode == ZR_NULL) {
         return ZR_NULL;
@@ -1014,9 +1055,21 @@ static SZrString *semantic_type_prototypes_type_name_from_type_node(SZrSemanticA
 
     compilerState = analyzer->compilerState;
     ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    if (semantic_type_prototypes_build_inferred_type(analyzer, ownerTypeNode, functionNode, typeNode, &inferredType) &&
-        inferredType.typeName != ZR_NULL) {
-        typeName = inferredType.typeName;
+    if (semantic_type_prototypes_build_inferred_type(analyzer, ownerTypeNode, functionNode, typeNode, &inferredType)) {
+        if (inferredType.typeName != ZR_NULL) {
+            typeName = inferredType.typeName;
+        } else {
+            formattedTypeNameText = ZrParser_TypeNameString_Get(
+                    compilerState->state,
+                    &inferredType,
+                    formattedTypeName,
+                    sizeof(formattedTypeName));
+            if (formattedTypeNameText != ZR_NULL && formattedTypeNameText[0] != '\0') {
+                typeName = ZrCore_String_CreateFromNative(
+                        compilerState->state,
+                        formattedTypeNameText);
+            }
+        }
     }
     ZrParser_InferredType_Free(compilerState->state, &inferredType);
     return typeName;
@@ -1827,7 +1880,6 @@ static TZrBool semantic_type_prototypes_declared_type_is_resolved(
     EZrOwnershipQualifier ownershipQualifier;
     const SZrType *innerTypeNode;
     SZrString *rootTypeName;
-    EZrValueType baseType;
 
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
         typeNode == ZR_NULL || typeNode->name == ZR_NULL) {
@@ -1873,9 +1925,24 @@ static TZrBool semantic_type_prototypes_declared_type_is_resolved(
         return ZR_FALSE;
     }
 
-    baseType = semantic_type_prototypes_base_type_from_name(rootTypeName, typeNode);
-    if (baseType != ZR_VALUE_TYPE_OBJECT ||
-        semantic_type_prototypes_is_type_generic_parameter_reference(
+    if (typeNode->dimensions == 0 && typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrInferredType parserType;
+        SZrSemanticPrototypeContextSnapshot snapshot;
+        TZrBool resolved;
+
+        ZrParser_InferredType_Init(analyzer->compilerState->state,
+                                   &parserType,
+                                   ZR_VALUE_TYPE_OBJECT);
+        semantic_type_prototypes_push_context(
+                analyzer, ownerTypeNode, functionNode, &snapshot);
+        resolved = semantic_type_prototypes_try_parser_conversion(
+                analyzer, typeNode, &parserType);
+        semantic_type_prototypes_pop_context(analyzer, &snapshot);
+        ZrParser_InferredType_Free(analyzer->compilerState->state, &parserType);
+        return resolved;
+    }
+
+    if (semantic_type_prototypes_is_type_generic_parameter_reference(
                 ownerTypeNode, functionNode, rootTypeName)) {
         return ZR_TRUE;
     }
