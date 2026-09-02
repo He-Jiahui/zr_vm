@@ -123,6 +123,39 @@ static const SZrSemanticOverloadSetRecord *find_overload_set_record(SZrSemanticC
     return ZR_NULL;
 }
 
+static const SZrTypeMemberInfo *find_type_prototype_member(const SZrSemanticAnalyzer *analyzer,
+                                                           const char *ownerName,
+                                                           const char *memberName) {
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || ownerName == ZR_NULL ||
+        memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize prototypeIndex = 0;
+         prototypeIndex < analyzer->compilerState->typePrototypes.length;
+         prototypeIndex++) {
+        const SZrTypePrototypeInfo *prototype =
+            (const SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                    &analyzer->compilerState->typePrototypes,
+                    prototypeIndex);
+        if (prototype == ZR_NULL || prototype->name == ZR_NULL ||
+            strcmp(ZrCore_String_GetNativeString(prototype->name), ownerName) != 0) {
+            continue;
+        }
+
+        for (TZrSize memberIndex = 0; memberIndex < prototype->members.length; memberIndex++) {
+            const SZrTypeMemberInfo *member =
+                (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, memberIndex);
+            if (member != ZR_NULL && member->name != ZR_NULL &&
+                strcmp(ZrCore_String_GetNativeString(member->name), memberName) == 0) {
+                return member;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
                                           TZrSymbolId symbolId) {
     TZrSize i;
@@ -2446,6 +2479,8 @@ static void test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_t
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrFileRange hoverPosition;
         SZrHoverInfo *hoverInfo = ZR_NULL;
+        const SZrTypeMemberInfo *shapeMember;
+        const SZrInferredType *constArgument;
         const TZrChar *hoverText;
 
         if (analyzer == ZR_NULL) {
@@ -2495,6 +2530,25 @@ static void test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_t
             TEST_FAIL(timer,
                       "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
                       message);
+            return;
+        }
+
+        shapeMember = find_type_prototype_member(analyzer, "Box", "shape");
+        constArgument = shapeMember != ZR_NULL && shapeMember->hasStructuredReturnType &&
+                                shapeMember->structuredReturnType.elementTypes.length == 2
+                            ? (const SZrInferredType *)ZrCore_Array_Get(
+                                      (SZrArray *)&shapeMember->structuredReturnType.elementTypes,
+                                      1)
+                            : ZR_NULL;
+        if (constArgument == ZR_NULL ||
+            constArgument->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER ||
+            constArgument->typeName == ZR_NULL ||
+            strcmp(ZrCore_String_GetNativeString(constArgument->typeName), "N") != 0) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      "Expected Box.shape to retain a structured Matrix<T, const N> return contract");
             return;
         }
 

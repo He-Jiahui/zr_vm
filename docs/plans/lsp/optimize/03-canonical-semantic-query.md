@@ -150,7 +150,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-09-01 22:00 +08:00。
+- 最近更新时间：2026-09-02 20:47 +08:00。
 - 总体状态：进行中。Task 3.23 为direct/destructured import visible facts发布exact
   module-literal range，并新增只读三态`ImportOriginAt`。查询在literal位置校验同一origin下
   每个import binding都有且只有一个匹配SymbolId/TypeId的`IMPORT_EXPORT_ORIGIN` relation，
@@ -1347,3 +1347,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   隔离快照中这 12 个历史失败全部转为 PASS；剩余两个 generic producer 失败未被测试夹具修正
   掩盖，继续作为下一片生产 support。Task 7总迁移、source/binary/native/stale/unresolved
   完整 consumer 矩阵、Task 8的16-target与三套 stdio/CLI smoke继续未完成。
+
+- 补充完成时间：2026-09-02 20:47 +08:00。Task 7.61 修复 source generic member return 的
+  canonical producer。LSP type-prototype bootstrap 现在在 class、struct 与 interface method 的声明
+  generic context 中构造 `SZrTypeMemberInfo.structuredReturnType`，并仅在结构化转换成功时发布
+  `hasStructuredReturnType`；closed receiver call 直接由 parser generic substitution 消费该 fact，
+  不再把 `Matrix<T, N>` 的 method const parameter `N` 当作 caller type argument，也不按
+  return type name、display text 或 request-time AST 重建。新增 analyzer 断言在 call 前直接验证
+  `Box.shape` 的结构化 return 保存 const-parameter kind/name。GCC、Clang、MSVC 的完整 semantic
+  analyzer均真实exit 0；同一production基线下三套semantic-query parity `16/16`、source-contract
+  与完整interface也均真实exit 0。Task 7 consumer总迁移、source/binary/native/stale/unresolved
+  完整consumer矩阵，以及Task 8的16-target与三套stdio/CLI smoke继续未完成。

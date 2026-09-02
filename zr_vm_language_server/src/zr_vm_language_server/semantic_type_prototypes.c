@@ -1091,6 +1091,32 @@ static SZrString *semantic_type_prototypes_type_name_from_type_node(SZrSemanticA
     return typeName;
 }
 
+static void semantic_type_prototypes_capture_structured_return_type(SZrSemanticAnalyzer *analyzer,
+                                                                     SZrAstNode *ownerTypeNode,
+                                                                     SZrAstNode *functionNode,
+                                                                     const SZrType *returnType,
+                                                                     SZrTypeMemberInfo *memberInfo) {
+    SZrCompilerState *compilerState;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || returnType == ZR_NULL ||
+        memberInfo == ZR_NULL) {
+        return;
+    }
+
+    compilerState = analyzer->compilerState;
+    ZrParser_InferredType_Init(compilerState->state, &memberInfo->structuredReturnType, ZR_VALUE_TYPE_OBJECT);
+    if (!semantic_type_prototypes_build_inferred_type(analyzer,
+                                                       ownerTypeNode,
+                                                       functionNode,
+                                                       returnType,
+                                                       &memberInfo->structuredReturnType)) {
+        ZrParser_InferredType_Free(compilerState->state, &memberInfo->structuredReturnType);
+        return;
+    }
+
+    memberInfo->hasStructuredReturnType = ZR_TRUE;
+}
+
 static void semantic_type_prototypes_collect_parameter_signature(SZrSemanticAnalyzer *analyzer,
                                                                  SZrAstNode *ownerTypeNode,
                                                                  SZrAstNode *functionNode,
@@ -1233,6 +1259,11 @@ static void semantic_type_prototypes_append_class_member(SZrState *state,
                                                                   ownerTypeNode,
                                                                   memberNode,
                                                                   method->returnType);
+            semantic_type_prototypes_capture_structured_return_type(analyzer,
+                                                                     ownerTypeNode,
+                                                                     memberNode,
+                                                                     method->returnType,
+                                                                     &memberInfo);
             semantic_type_prototypes_collect_generic_parameters(analyzer,
                                                                 ownerTypeNode,
                                                                 memberNode,
@@ -1402,6 +1433,11 @@ static void semantic_type_prototypes_append_struct_member(SZrState *state,
                                                                   ownerTypeNode,
                                                                   memberNode,
                                                                   method->returnType);
+            semantic_type_prototypes_capture_structured_return_type(analyzer,
+                                                                     ownerTypeNode,
+                                                                     memberNode,
+                                                                     method->returnType,
+                                                                     &memberInfo);
             semantic_type_prototypes_collect_generic_parameters(analyzer,
                                                                 ownerTypeNode,
                                                                 memberNode,
@@ -1484,6 +1520,11 @@ static void semantic_type_prototypes_append_interface_member(SZrState *state,
                                                                   ownerTypeNode,
                                                                   memberNode,
                                                                   method->returnType);
+            semantic_type_prototypes_capture_structured_return_type(analyzer,
+                                                                     ownerTypeNode,
+                                                                     memberNode,
+                                                                     method->returnType,
+                                                                     &memberInfo);
             semantic_type_prototypes_collect_generic_parameters(analyzer,
                                                                 ownerTypeNode,
                                                                 memberNode,

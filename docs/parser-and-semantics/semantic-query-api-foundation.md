@@ -1417,3 +1417,15 @@ that parse a fixture with a named `SZrString` now attach that same `sourceName` 
 reachability, logical, and ownership range passed to `Find*AtPosition`. This keeps the test contract
 aligned with fail-closed behavior: a sourceless range must not match a fact from a different source
 snapshot. The change is test-only; it does not weaken producer matching or add a LSP fallback.
+
+## Plan 03 Task 7.61 Structured Generic Member Return Facts
+
+Source type-prototype construction records a method return as `SZrTypeMemberInfo.structuredReturnType`
+inside the declaring type and method generic context. `hasStructuredReturnType` is set only after the
+whole inferred-type tree has been constructed successfully. Class, struct, and interface methods share
+this producer contract.
+
+Generic call resolution substitutes the structured return tree together with the member parameters.
+For example, `fn shape<const N: int>(...): Matrix<T, N>` retains `T` as a type parameter and `N` as a
+const parameter until the receiver and method arguments are closed. Consumers must not parse
+`returnTypeName`, compare display text, or revisit request-time AST to recover generic argument kinds.
