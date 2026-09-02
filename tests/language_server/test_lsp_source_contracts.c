@@ -2289,6 +2289,7 @@ static void test_declared_type_builder_uses_parser_type_identity(void) {
 #include "test_lsp_source_contract_return_type_cases.h"
 #include "test_lsp_source_contract_exact_type_diagnostic_cases.h"
 #include "test_lsp_source_contract_no_local_diagnostic_api_cases.h"
+#include "test_lsp_source_contract_no_local_reference_collection_cases.h"
 #include "test_lsp_source_contract_inlay_declaration_cases.h"
 #include "test_lsp_source_contract_completion_snapshot_cases.h"
 #include "test_lsp_source_contract_canonical_completion_cases.h"
@@ -2381,6 +2382,7 @@ int main(void) {
     test_cannot_infer_exact_type_uses_parser_diagnostic_projection();
     test_semantic_analyzer_has_no_unstructured_diagnostic_escape_hatch();
     test_semantic_analyzer_rules_only_publish_structured_query_diagnostics();
+    test_semantic_analyzer_uses_canonical_symbol_query_for_references();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -2454,6 +2456,7 @@ int main(void) {
     printf("PASS: Return type inference uses parser diagnostic projection\n");
     printf("PASS: Semantic analyzer has no unstructured diagnostic escape hatch\n");
     printf("PASS: Semantic analyzer rules only publish structured query diagnostics\n");
+    printf("PASS: Semantic analyzer resolves references through canonical SymbolAt\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

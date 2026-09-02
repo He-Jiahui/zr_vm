@@ -1803,6 +1803,7 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
         SZrString *sourceName = ZrCore_String_Create(state, "local_reference_resolution_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrFileRange position;
+        SZrParserSemanticSymbolQuery canonicalSymbol;
         SZrSymbol *symbol;
 
         if (analyzer == ZR_NULL) {
@@ -1829,12 +1830,27 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
             return;
         }
 
-        position = file_range_for_nth_substring(testCode, "seed", 2, ZR_FALSE);
+        position = file_range_for_nth_substring_in_source(
+                testCode, "seed", 2, ZR_FALSE, sourceName);
+        memset(&canonicalSymbol, 0, sizeof(canonicalSymbol));
+        if (!ZrParser_SemanticQuery_SymbolAt(
+                    analyzer->semanticContext,
+                    position,
+                    ZR_NULL,
+                    &canonicalSymbol)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      "Expected parser SymbolAt identity for parameter use");
+            return;
+        }
         symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
         if (symbol == ZR_NULL ||
             symbol->name == ZR_NULL ||
             strcmp(ZrCore_String_GetNativeString(symbol->name), "seed") != 0 ||
-            symbol->type != ZR_SYMBOL_PARAMETER) {
+            symbol->type != ZR_SYMBOL_PARAMETER ||
+            symbol->semanticId != canonicalSymbol.symbolId) {
             SZrString *lookupName = ZrCore_String_Create(state, "seed", 4);
             SZrSymbol *lookupSymbol =
                 ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
@@ -1867,12 +1883,27 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
             return;
         }
 
-        position = file_range_for_nth_substring(testCode, "localValue", 1, ZR_FALSE);
+        position = file_range_for_nth_substring_in_source(
+                testCode, "localValue", 1, ZR_FALSE, sourceName);
+        memset(&canonicalSymbol, 0, sizeof(canonicalSymbol));
+        if (!ZrParser_SemanticQuery_SymbolAt(
+                    analyzer->semanticContext,
+                    position,
+                    ZR_NULL,
+                    &canonicalSymbol)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      "Expected parser SymbolAt identity for local use");
+            return;
+        }
         symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
         if (symbol == ZR_NULL ||
             symbol->name == ZR_NULL ||
             strcmp(ZrCore_String_GetNativeString(symbol->name), "localValue") != 0 ||
-            symbol->type != ZR_SYMBOL_VARIABLE) {
+            symbol->type != ZR_SYMBOL_VARIABLE ||
+            symbol->semanticId != canonicalSymbol.symbolId) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,

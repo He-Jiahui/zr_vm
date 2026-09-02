@@ -53,7 +53,6 @@ static void test_semantic_analyzer_rules_only_publish_structured_query_diagnosti
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_constant_condition.c",
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_extern_bindings.c",
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_references.c",
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c",
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c",

@@ -110,6 +110,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *
 ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, 
                                                                 SZrFileRange position);
 
+// 按 parser semantic snapshot 的稳定 SymbolId 查找已投影的 LSP 符号
+ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_FindBySemanticId(
+        SZrSymbolTable *table,
+        TZrSymbolId semanticId);
+
 // 作用域管理函数
 
 // 进入作用域

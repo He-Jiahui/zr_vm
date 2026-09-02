@@ -188,10 +188,6 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         (void)ZrParser_SemanticRelations_PublishCompilerContracts(
                 analyzer->compilerState);
     }
-    ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(
-            state,
-            analyzer,
-            scopeRoot);
     if (analyzer->compilerState != ZR_NULL) {
         if (!ZrParser_Compiler_ValidateReferenceEscapes(
                     analyzer->compilerState,

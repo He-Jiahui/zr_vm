@@ -1358,3 +1358,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   analyzer均真实exit 0；同一production基线下三套semantic-query parity `16/16`、source-contract
   与完整interface也均真实exit 0。Task 7 consumer总迁移、source/binary/native/stale/unresolved
   完整consumer矩阵，以及Task 8的16-target与三套stdio/CLI smoke继续未完成。
+
+- 完成时间：2026-09-02。Task 7.62 删除 LSP AST use-site reference collector，删除 analysis
+  调用和内部声明；`SemanticAnalyzer_GetSymbolAt` 现在只消费 parser canonical `SymbolAt`，
+  再按 stable `SymbolId` 查找已投影 LSP symbol。local parameter/local variable 测试补充
+  source identity 与 canonical identity 断言，source-contract 锁定旧 collector 和
+  `ReferenceTracker_FindReferenceAt` 位置回退不得恢复。definition/property bookkeeping、
+  `ReferenceTracker_AddReference`、`SZrSymbol.references` 与 `referenceCount` 仍保留。
+  本子里程碑 focused 完成，但 Task 7/Task 8 仍进行中；上层 allScopes/range fallback、
+  source/binary/native sourceless relation、virtual declaration URI、真实 multi-provider
+  generation、完整 16-target 与 stdio/CLI smoke 尚未完成。

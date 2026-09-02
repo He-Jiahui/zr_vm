@@ -1168,6 +1168,34 @@ SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, SZ
     return bestSymbol;
 }
 
+SZrSymbol *ZrLanguageServer_SymbolTable_FindBySemanticId(SZrSymbolTable *table,
+                                                         TZrSymbolId semanticId) {
+    if (table == ZR_NULL || semanticId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr =
+                (SZrSymbolScope **)ZrCore_Array_Get(&table->allScopes, scopeIndex);
+        SZrSymbolScope *scope = scopePtr != ZR_NULL ? *scopePtr : ZR_NULL;
+
+        if (scope == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize symbolIndex = 0; symbolIndex < scope->symbols.length; symbolIndex++) {
+            SZrSymbol **symbolPtr =
+                    (SZrSymbol **)ZrCore_Array_Get(&scope->symbols, symbolIndex);
+            if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL &&
+                (*symbolPtr)->semanticId == semanticId) {
+                return *symbolPtr;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
 // 进入作用域
 void ZrLanguageServer_SymbolTable_EnterScope(SZrState *state, SZrSymbolTable *table, 
                               SZrFileRange range, TZrBool isFunctionScope,

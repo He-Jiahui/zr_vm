@@ -1938,9 +1938,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,
 // 获取位置的符号
 SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *analyzer,
                                          SZrFileRange position) {
-    SZrReference *reference;
-    const SZrType *hoverTypeInfo;
-    SZrSymbol *symbol;
+    SZrParserSemanticSymbolQuery canonicalSymbol;
 
     if (analyzer == ZR_NULL) {
         return ZR_NULL;
@@ -1949,27 +1947,20 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
     position = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
             analyzer, position);
 
-    hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
-    if (hoverTypeInfo != ZR_NULL) {
-        symbol = semantic_lookup_type_symbol_at_position(analyzer->state, analyzer, hoverTypeInfo, position);
-        if (symbol != ZR_NULL) {
-            return symbol;
-        }
+    memset(&canonicalSymbol, 0, sizeof(canonicalSymbol));
+    if (analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext,
+                position,
+                ZR_NULL,
+                &canonicalSymbol) ||
+        canonicalSymbol.symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
     }
 
-    if (analyzer->referenceTracker != ZR_NULL) {
-        reference = ZrLanguageServer_ReferenceTracker_FindReferenceAt(analyzer->referenceTracker, position);
-        if (reference != ZR_NULL) {
-            return reference->symbol;
-        }
-    }
-
-    symbol = ZrLanguageServer_SymbolTable_FindDefinition(analyzer->symbolTable, position);
-    if (symbol != ZR_NULL) {
-        return symbol;
-    }
-
-    return ZR_NULL;
+    return ZrLanguageServer_SymbolTable_FindBySemanticId(
+            analyzer->symbolTable,
+            canonicalSymbol.symbolId);
 }
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
