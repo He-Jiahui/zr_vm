@@ -48,6 +48,7 @@ node tests/language_server/stdio_file_operation_capabilities_smoke.js E:/Git/zr_
 node tests/language_server/stdio_client_commands_smoke.js E:/Git/zr_vm/.codex/lsp-optimize-validation/msvc/bin/zr_vm_language_server_stdio.exe
 node --check tests/language_server/stdio_protocol_conformance.js
 ctest.exe --test-dir E:/Git/zr_vm/.codex/lsp-optimize-validation/msvc --output-on-failure -R "^language_server_(wasm_capability_inventory|stdio_protocol_inventory|stdio_protocol_conformance|stdio_save_capabilities_smoke|stdio_workspace_folders_smoke)$"
+ctest.exe --test-dir E:/Git/zr_vm/.codex/lsp-optimize-validation/msvc --output-on-failure -R "^language_server_stdio_(server_lifecycle|document_sync_conformance)$"
 git diff --check -- docs/plans/lsp/optimize/2026-09-06-plan00-task03-sub03-protocol-replay.md
 ```
 
@@ -56,7 +57,8 @@ cancellation leaf. The MSVC binary is the current isolated Debug static build;
 its CMake cache records `D:/Tools/development/cmake/bin/ctest.exe` and the
 Visual Studio compiler. All direct runners exit zero and protocol stdout stays
 free of trace or diagnostic text. The native Windows CTest replay passes all five
-selected tests, including both inventory runners.
+selected tests, including both inventory runners; the lifecycle and document-sync
+replay adds another 2/2 passing tests.
 
 ## Acceptance Boundary
 
