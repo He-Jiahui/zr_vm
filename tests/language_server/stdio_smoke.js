@@ -1145,14 +1145,13 @@ async function main() {
     'completionProvider must advertise all commit characters');
     assert(initializeResult.capabilities.workspace &&
         initializeResult.capabilities.workspace.fileOperations &&
-        initializeResult.capabilities.workspace.fileOperations.willCreate &&
+        !Object.prototype.hasOwnProperty.call(initializeResult.capabilities.workspace.fileOperations, 'willCreate') &&
         initializeResult.capabilities.workspace.fileOperations.didCreate &&
         initializeResult.capabilities.workspace.fileOperations.willRename &&
         initializeResult.capabilities.workspace.fileOperations.didRename &&
-        initializeResult.capabilities.workspace.fileOperations.willDelete &&
-        initializeResult.capabilities.workspace.fileOperations.didDelete &&
-        initializeResult.capabilities.workspace.fileOperations.didRename,
-    'workspace.fileOperations must advertise create/delete/rename requests and notifications');
+        !Object.prototype.hasOwnProperty.call(initializeResult.capabilities.workspace.fileOperations, 'willDelete') &&
+        initializeResult.capabilities.workspace.fileOperations.didDelete,
+    'workspace.fileOperations must advertise didCreate/didDelete/didRename and the implemented willRename request');
 
     client.notify('initialized', {});
     client.notify('textDocument/didOpen', {
@@ -3739,12 +3738,14 @@ async function main() {
     assert(Array.isArray(watchedDeletedSymbols) && watchedDeletedSymbols.length === 0,
         'workspace/didChangeWatchedFiles delete must clear the final project index');
 
-    const willCreateFiles = await client.request('workspace/willCreateFiles', {
+    const willCreateFiles = await awaitLspRequestOutcome(client.request('workspace/willCreateFiles', {
         files: [
             { uri: fileOperationsFixture.projectUri },
         ],
-    });
-    assert(willCreateFiles === null, 'workspace/willCreateFiles must return null when no edits are needed');
+    }));
+    assert(willCreateFiles.error && willCreateFiles.error.code === -32601 &&
+        willCreateFiles.error.message === 'Method not found',
+    'workspace/willCreateFiles must reject requests with MethodNotFound');
     client.notify('workspace/didCreateFiles', {
         files: [
             { uri: fileOperationsFixture.projectUri },
@@ -3887,12 +3888,14 @@ async function main() {
         ],
     });
     assert(willRenameFiles === null, 'workspace/willRenameFiles must return null when no edits are needed');
-    const willDeleteFiles = await client.request('workspace/willDeleteFiles', {
+    const willDeleteFiles = await awaitLspRequestOutcome(client.request('workspace/willDeleteFiles', {
         files: [
             { uri: fileOperationsFixture.projectUri },
         ],
-    });
-    assert(willDeleteFiles === null, 'workspace/willDeleteFiles must return null when no edits are needed');
+    }));
+    assert(willDeleteFiles.error && willDeleteFiles.error.code === -32601 &&
+        willDeleteFiles.error.message === 'Method not found',
+    'workspace/willDeleteFiles must reject requests with MethodNotFound');
     fs.unlinkSync(fileOperationsFixture.projectPath);
     client.notify('workspace/didDeleteFiles', {
         files: [

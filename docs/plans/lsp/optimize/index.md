@@ -31,6 +31,8 @@ resolve 支持。专项通过 GCC/Clang/MSVC 与实际 Web worker callback 回�
 Task 4 Sub02 完成[definition alias 撤销](2026-09-05-plan00-task04-sub02-navigation-aliases.md)，
 并验证保留的 local implementation 准确目标与范围；完整 definition/reaching-write
 语义及跨 provider 矩阵仍未验收。
+Task 4 Sub03 完成[空文件操作请求撤销](2026-09-05-plan00-task04-sub03-file-operations.md)，
+保留操作的实际索引变化、准确版本化编辑和 stale disk 拒绝通过三工具链各 8/8。
 下文为 2026-08-22 历史审查证据，不能直接当作当前实现状态。
 
 Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read

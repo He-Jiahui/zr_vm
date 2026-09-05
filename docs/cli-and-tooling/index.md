@@ -115,6 +115,8 @@ doc_type: category-index
 - [lsp-navigation-capability-boundary.md](lsp-navigation-capability-boundary.md)
   - declaration/typeDefinition alias 撤销与四类查询的语义边界
   - canonical implementation 准确目标集合、范围与未完成 provider 门槛
+- [lsp-workspace-file-operation-contract.md](lsp-workspace-file-operation-contract.md)
+  - file operation 注册、版本化重命名编辑和过期磁盘快照拒绝
 - `lsp-pull-push-diagnostics.md`
   - native/WASM 共享的 structured diagnostic resultId 与 dependency identity
   - workspace indexed-source coverage、invalid params 和 push/pull coexistence

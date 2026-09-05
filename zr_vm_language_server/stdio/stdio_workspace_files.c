@@ -58,11 +58,9 @@ void add_workspace_file_operation_capabilities(cJSON *workspace) {
         return;
     }
 
-    cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_WILL_CREATE, create_file_operation_registration());
     cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_DID_CREATE, create_file_operation_registration());
     cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_WILL_RENAME, create_file_operation_registration());
     cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_DID_RENAME, create_file_operation_registration());
-    cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_WILL_DELETE, create_file_operation_registration());
     cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_DID_DELETE, create_file_operation_registration());
     cJSON_AddItemToObject(workspace, ZR_LSP_FIELD_FILE_OPERATIONS, fileOperations);
 }
@@ -263,20 +261,8 @@ int handle_did_create_files(SZrStdioServer *server, const cJSON *params) {
     return handle_file_operation_list(server, params, 1, ZR_LSP_FIELD_URI);
 }
 
-cJSON *handle_will_create_files_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    ZR_UNUSED_PARAMETER(params);
-    return cJSON_CreateNull();
-}
-
 int handle_did_delete_files(SZrStdioServer *server, const cJSON *params) {
     return handle_file_operation_list(server, params, 3, ZR_LSP_FIELD_URI);
-}
-
-cJSON *handle_will_delete_files_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    ZR_UNUSED_PARAMETER(params);
-    return cJSON_CreateNull();
 }
 
 int handle_did_rename_files(SZrStdioServer *server, const cJSON *params) {

@@ -85,12 +85,8 @@ int dispatch_request_method(SZrStdioServer *server,
         *outResult = handle_workspace_symbols_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_EXECUTE_COMMAND) == 0) {
         *outResult = handle_execute_command_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_WILL_CREATE_FILES) == 0) {
-        *outResult = handle_will_create_files_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_WILL_RENAME_FILES) == 0) {
         *outResult = handle_will_rename_files_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_WILL_DELETE_FILES) == 0) {
-        *outResult = handle_will_delete_files_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT) == 0) {
         *outResult = handle_document_highlights_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL) == 0) {
