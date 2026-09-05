@@ -4836,6 +4836,17 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
     )
     zr_vm_link_language_server(zr_vm_language_server_lsp_capability_registry_test)
+    zr_vm_add_support_target(
+            zr_vm_language_server_lsp_capability_inventory_probe
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_capability_inventory_probe.c
+    )
+    target_include_directories(zr_vm_language_server_lsp_capability_inventory_probe PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+    )
+    zr_vm_link_language_server(zr_vm_language_server_lsp_capability_inventory_probe)
+    zr_link_third_party_for_target(zr_vm_language_server_lsp_capability_inventory_probe "zr_c_json")
     add_test(
             NAME language_server_lsp_capability_registry
             COMMAND $<TARGET_FILE:zr_vm_language_server_lsp_capability_registry_test>
@@ -6981,6 +6992,7 @@ if (ZR_VM_NODE_EXECUTABLE)
 endif ()
 
 if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
+    find_program(ZR_VM_CTEST_EXECUTABLE NAMES ctest REQUIRED)
     if (TARGET zr_vm_cli_executable)
         add_test(
                 NAME language_server_stdio_smoke
@@ -7026,7 +7038,10 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_protocol_inventory.js
                     $<TARGET_FILE:zr_vm_language_server_stdio>
-                    ${CMAKE_SOURCE_DIR}
+                    $<TARGET_FILE:zr_vm_language_server_lsp_capability_inventory_probe>
+                    ${CMAKE_BINARY_DIR}
+                    ${ZR_VM_CTEST_EXECUTABLE}
+                    $<CONFIG>
     )
     add_test(
             NAME language_server_stdio_protocol_conformance

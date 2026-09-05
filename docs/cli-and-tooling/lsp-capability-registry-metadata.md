@@ -4,14 +4,19 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/protocol/lsp_capability_registry.c
   - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
   - zr_vm_language_server/wasm/wasm_exports.cpp
+  - tests/language_server/lsp_capability_inventory_probe.c
+  - tests/language_server/lsp_native_inventory_contract.js
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/protocol/lsp_capability_registry.c
+  - tests/CMakeLists.txt
 plan_sources:
   - docs/plans/lsp/optimize/00-baseline-and-contract.md
   - docs/plans/lsp/optimize/05-native-web-capability-parity.md
 tests:
   - tests/language_server/test_lsp_capability_registry.c
   - tests/language_server/stdio_protocol_inventory.js
+  - tests/language_server/lsp_native_inventory_contract.js
+  - tests/language_server/lsp_native_inventory_mutations.js
   - tests/language_server/stdio_color_capability_smoke.js
 doc_type: module-detail
 ---
@@ -83,11 +88,26 @@ registration of the withdrawn color scanner. The color protocol regression
 checks both client profiles, exact error envelopes, string/identifier hover
 payloads and definition targets, and the absence of comment references.
 
-Plan 00 Task 5 must connect the compiled registry to initialize JSON, dispatch,
-WASM exports and protocol tests with a machine-checked inventory. Plan 05 must
-replace hand-maintained runtime declarations with the shared contract and
-validate actual native/Web behavior. A registered broad smoke test can still
-fail before reaching a provider; its ID is provenance, not proof of coverage.
+Plan 00 Task 2 Sub02 now connects the compiled registry to native initialize JSON,
+production dispatch and CTest registration with a machine-checked inventory.
+The probe reports 30 descriptors, 43 native routes and zero native orphan or
+overclaim for four negotiated profiles. It also compares the compiled 13-entry
+semantic-token legend and rejects malformed boolean capability shapes through
+deliberate mutations. The three control descriptors are labeled metadata-only;
+their notification behavior is not inferred from names.
+
+The inventory passes GCC/Clang/MSVC focused 14/14. Its CTest runner receives an
+absolute executable discovered by `find_program`, so it does not rely on the
+interactive test process's `PATH`. The native result is recorded in
+[Plan 00 Task 2 Sub02](../plans/lsp/optimize/2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)
+and the [acceptance record](../../tests/acceptance/2026-09-05-lsp-native-capability-inventory.md).
+
+This does not prove that a named WASM export is linked into a current asset or
+that the worker registers matching handlers. Plan 05 must replace hand-maintained
+runtime declarations with the shared contract and validate actual native/Web
+behavior. A registered broad smoke test can still fail before reaching a
+provider; its ID is provenance, not proof of coverage.
 
 Implementation and verification evidence is recorded in
-[Plan 00 Task 2 Sub01](../plans/lsp/optimize/2026-09-05-plan00-task02-sub01-registry-metadata.md).
+[Plan 00 Task 2 Sub01](../plans/lsp/optimize/2026-09-05-plan00-task02-sub01-registry-metadata.md)
+and [Task 2 Sub02](../plans/lsp/optimize/2026-09-05-plan00-task02-sub02-compiled-native-inventory.md).

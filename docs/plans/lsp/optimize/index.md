@@ -33,7 +33,11 @@ Task 1 Sub03 修复 project features 测试的 exit-zero 伪成功，三工具�
 
 Task 2 Sub01 完成[能力登记表实际实现元数据](2026-09-05-plan00-task02-sub01-registry-metadata.md)：
 明确 core/native adapter 归属及 runtime 字段约束，修正入口、导出、测试 ID 和
-3.18 标记；GCC/Clang/MSVC 专项各 9/9，完整 runtime inventory 仍待验收。
+3.18 标记；GCC/Clang/MSVC 专项各 9/9。随后 Task 2 Sub02 完成[编译期 native
+inventory](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)：实际
+registry 30 条、native route 43 条、metadata-only control 3 个、orphan 0，
+四个协商 profile 和三工具链 focused 各 14/14。WASM export/worker 映射、
+control notification 行为和完整语义 acceptance 仍未闭合。
 
 Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回
@@ -70,6 +74,8 @@ stdio 用例在已提交基线和本次修复后均失败。Task 3 Sub01 已修�
 [取消 fixture 准备期限](2026-09-05-plan00-task03-sub01-cancellation-setup.md)，
 三工具链各 30/30；该结果不代表活动查询 50 ms 取消预算已验收。
 现有符号投影/类型查询会话的提交尚待接续，阶段 01-06 本轮晋级门槛未通过。
+本轮 native inventory 的验收边界、已知失败责任和下一步 WASM owner 见
+[acceptance record](../../../../tests/acceptance/2026-09-05-lsp-native-capability-inventory.md)。
 
 ## 2. 审查证据
 

@@ -1,348 +1,109 @@
-const assertStrict = require('assert').strict;
+const assert = require('assert').strict;
 const fs = require('fs');
-const path = require('path');
+const { spawnSync } = require('child_process');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
+const { validateNativeInventory } = require('./lsp_native_inventory_contract');
+const { checkInventoryMutations } = require('./lsp_native_inventory_mutations');
 
 const REQUEST_TIMEOUT_MS = 10000;
 
-const CAPABILITY_PROFILES = {
-    textDocumentSync: {
-        nativeMarker: 'ZR_LSP_FIELD_TEXT_DOCUMENT_SYNC',
-        wasmMarker: 'connection.onDidOpen',
-        state: 'implemented',
-        owner: 'optimize/01-protocol-lifecycle-and-transport',
-    },
-    positionEncoding: {
-        nativeMarker: 'position_encoding_name',
-        wasmMarker: 'connection.onInitialize',
-        state: 'implemented',
-        owner: 'optimize/01-protocol-lifecycle-and-transport',
-    },
-    completionProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_COMPLETION_PROVIDER',
-        wasmMarker: 'connection.onCompletion',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    hoverProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_HOVER_PROVIDER',
-        wasmMarker: 'connection.onHover',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    signatureHelpProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_SIGNATURE_HELP_PROVIDER',
-        wasmMarker: 'connection.onSignatureHelp',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    definitionProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DEFINITION_PROVIDER',
-        wasmMarker: 'connection.onDefinition',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    referencesProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_REFERENCES_PROVIDER',
-        wasmMarker: 'connection.onReferences',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    renameProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_RENAME_PROVIDER',
-        wasmMarker: 'connection.onRenameRequest',
-        state: 'implemented',
-        owner: 'optimize/02-snapshots-workspaces-and-diagnostics',
-    },
-    documentSymbolProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_SYMBOL_PROVIDER',
-        wasmMarker: 'connection.onDocumentSymbol',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    workspaceSymbolProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER',
-        wasmMarker: 'connection.onWorkspaceSymbol',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    documentHighlightProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_HIGHLIGHT_PROVIDER',
-        wasmMarker: 'connection.onDocumentHighlight',
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    inlayHintProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_INLAY_HINT_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/inlayHint'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    semanticTokensProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_SEMANTIC_TOKENS_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/semanticTokens/full'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    codeActionProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_CODE_ACTION_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/codeAction'",
-        state: 'implemented',
-        owner: 'optimize/02-snapshots-workspaces-and-diagnostics',
-    },
-    documentFormattingProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_FORMATTING_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/formatting'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    documentRangeFormattingProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_RANGE_FORMATTING_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/rangeFormatting'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    documentOnTypeFormattingProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_ON_TYPE_FORMATTING_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/onTypeFormatting'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    foldingRangeProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_FOLDING_RANGE_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/foldingRange'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    selectionRangeProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_SELECTION_RANGE_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/selectionRange'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    linkedEditingRangeProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_LINKED_EDITING_RANGE_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/linkedEditingRange'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    monikerProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_MONIKER_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/moniker'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    inlineValueProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_INLINE_VALUE_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/inlineValue'",
-        state: 'semantic-payload-gap',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    inlineCompletionProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_INLINE_COMPLETION_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/inlineCompletion'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    implementationProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_IMPLEMENTATION_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/implementation'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    callHierarchyProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_CALL_HIERARCHY_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/prepareCallHierarchy'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    typeHierarchyProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_TYPE_HIERARCHY_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/prepareTypeHierarchy'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
-    documentLinkProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_LINK_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/documentLink'",
-        state: 'implemented',
-        owner: 'optimize/00-baseline-and-contract',
-    },
-    codeLensProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_CODE_LENS_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/codeLens'",
-        state: 'implemented',
-        owner: 'optimize/00-baseline-and-contract',
-    },
-    diagnosticProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DIAGNOSTIC_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/diagnostic'",
-        state: 'implemented',
-        owner: 'optimize/02-snapshots-workspaces-and-diagnostics',
-    },
-    workspace: {
-        nativeMarker: 'ZR_LSP_FIELD_WORKSPACE',
-        wasmMarker: 'connection.onInitialize',
-        state: 'workspace-contract-pending',
-        owner: 'optimize/02-snapshots-workspaces-and-diagnostics',
-    },
-};
-
-const RISKY_CONTRACTS = [
-    ['workspaceSymbolProvider.resolveProvider', 'identity-only resolve is unsupported'],
-    ['inlayHintProvider.resolveProvider', 'identity-only resolve is unsupported'],
-    ['documentLinkProvider.resolveProvider', 'identity-only resolve is unsupported'],
-    ['codeLensProvider.resolveProvider', 'identity-only resolve is unsupported'],
-    ['workspace.workspaceFolders.changeNotifications', 'workspace folder notifications require a handler'],
-];
-
-const COMPLETE_INITIAL_RESPONSE_PROVIDERS = [
-    'workspaceSymbolProvider',
-    'inlayHintProvider',
-    'documentLinkProvider',
-    'codeLensProvider',
-];
-
-function assert(condition, message) {
-    if (!condition) {
-        throw new Error(message);
-    }
+function runJson(command, args) {
+    const result = spawnSync(command, args, {
+        encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, command + ' failed: ' + result.stderr);
+    return JSON.parse(result.stdout);
 }
 
-function nestedValue(object, dottedPath) {
-    return dottedPath.split('.').reduce((current, key) => {
-        if (current === null || typeof current !== 'object') {
-            return undefined;
-        }
-        return current[key];
-    }, object);
-}
-
-function readSource(sourceRoot, relativePath) {
-    const sourcePath = path.join(sourceRoot, relativePath);
-    assert(fs.existsSync(sourcePath), `missing source for inventory: ${relativePath}`);
-    return fs.readFileSync(sourcePath, 'utf8');
-}
-
-async function main() {
-    const [serverPath, sourceRoot] = process.argv.slice(2);
-    assert(serverPath !== undefined && sourceRoot !== undefined,
-           'usage: node stdio_protocol_inventory.js <stdio-server> <source-root>');
-    assert(fs.existsSync(serverPath), `stdio server does not exist: ${serverPath}`);
-
-    const initializeSource = readSource(sourceRoot, 'zr_vm_language_server/stdio/stdio_initialize.c');
-    const capabilitySource = readSource(sourceRoot, 'zr_vm_language_server/stdio/stdio_initialize_capabilities.c');
-    const dispatchSource = readSource(sourceRoot, 'zr_vm_language_server/stdio/stdio_request_dispatch.c');
-    const workerSource = readSource(sourceRoot, 'zr_vm_language_server_extension/src/browser/worker/server-worker.ts');
-    const nativeSources = `${initializeSource}\n${capabilitySource}\n${dispatchSource}`;
+async function inspectProfile(serverPath, profile, inventory, registeredTests) {
     const client = new StdioProtocolClient(serverPath);
-
+    let cleanExit = false;
     try {
-        const result = await client.requestWithId('initialize', {
-            processId: null,
-            rootUri: null,
+        const initialized = await client.request('initialize', {
             capabilities: {
                 workspace: { workspaceFolders: true },
-                textDocument: { semanticTokens: {}, inlayHint: {}, inlineValue: {} },
+                textDocument: Object.assign({},
+                    profile.inlineCompletion ? { inlineCompletion: {} } : {},
+                    profile.rangesFormatting ? { rangeFormatting: { rangesSupport: true } } : {}),
             },
-        }, REQUEST_TIMEOUT_MS).promise;
-        assert(result !== null && typeof result === 'object', 'initialize must return an object');
-        assert(result.capabilities !== null && typeof result.capabilities === 'object',
-               'initialize must return a capabilities object');
-
-        const capabilities = result.capabilities;
-        assert(!Object.prototype.hasOwnProperty.call(capabilities.textDocumentSync, 'willSave'),
-               'unhandled willSave notifications must not be advertised');
-        assert(!Object.prototype.hasOwnProperty.call(capabilities, 'colorProvider'),
-               'untyped colorProvider must not be advertised');
-        assert(capabilities.inlineCompletionProvider === undefined,
-               '3.17 clients must not receive an unnegotiated inline completion provider');
-        assert(capabilities.documentRangeFormattingProvider === true,
-               '3.17 clients must retain ordinary range formatting without rangesSupport');
-        for (const name of ['declarationProvider', 'typeDefinitionProvider']) {
-            assert(capabilities[name] === undefined,
-                   `${name} must not advertise a definition alias`);
-        }
-        assert(capabilities.definitionProvider === true && capabilities.implementationProvider === true,
-               'definition and canonical implementation navigation must remain advertised');
-        const identityResolveOverclaims = COMPLETE_INITIAL_RESPONSE_PROVIDERS.filter((name) =>
-            nestedValue(capabilities, `${name}.resolveProvider`) === true);
-        assert(identityResolveOverclaims.length === 0,
-               `identity-only resolve must not be advertised: ${identityResolveOverclaims.join(', ')}`);
-        for (const name of COMPLETE_INITIAL_RESPONSE_PROVIDERS) {
-            const provider = capabilities[name];
-            assert(provider === true || (provider !== null && typeof provider === 'object'),
-                   `${name} must remain available with complete initial responses`);
-        }
-        assert(capabilities.codeActionProvider && capabilities.codeActionProvider.resolveProvider === true,
-               'native code action resolve must retain snapshot revalidation');
+        }, 'initialize', REQUEST_TIMEOUT_MS);
+        assert.equal(initialized.jsonrpc, '2.0');
+        assert.equal(initialized.id, 'initialize');
+        assert.equal(initialized.error, undefined);
+        assert.ok(initialized.result && initialized.result.capabilities);
+        const capabilities = initialized.result.capabilities;
+        const report = validateNativeInventory(inventory, capabilities, registeredTests, profile);
+        const mutations = checkInventoryMutations(inventory, capabilities, registeredTests, profile);
         client.notify('initialized', {});
         for (const method of [
-            'workspaceSymbol/resolve', 'inlayHint/resolve',
-            'documentLink/resolve', 'codeLens/resolve',
+            'workspaceSymbol/resolve', 'inlayHint/resolve', 'documentLink/resolve', 'codeLens/resolve',
             'textDocument/declaration', 'textDocument/typeDefinition',
             'textDocument/documentColor', 'textDocument/colorPresentation',
         ]) {
-            const id = `withdrawn-${method}`;
-            const response = await client.request(method, {}, id, REQUEST_TIMEOUT_MS);
-            assertStrict.deepEqual(response, {
-                jsonrpc: '2.0',
-                id,
-                error: { code: -32601, message: 'Method not found' },
-            }, `${method} must reject unsupported requests with MethodNotFound`);
+            const id = 'withdrawn-' + method;
+            assert.deepEqual(await client.request(method, {}, id, REQUEST_TIMEOUT_MS), {
+                jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' },
+            }, method + ' must remain unsupported');
         }
-        const declared = Object.keys(capabilities).sort();
-        const unclassified = declared.filter((name) => CAPABILITY_PROFILES[name] === undefined);
-        const inventory = declared.map((name) => {
-            const profile = CAPABILITY_PROFILES[name];
-            return {
-                capability: name,
-                state: profile.state,
-                owner: profile.owner,
-                nativeMarker: profile.nativeMarker,
-                nativeMarkerFound: nativeSources.includes(profile.nativeMarker),
-                wasmMarker: profile.wasmMarker,
-                wasmMarkerFound: workerSource.includes(profile.wasmMarker),
-            };
+        for (const command of ['zr.runCurrentProject', 'zr.showReferences', 'zr.unknown']) {
+            const id = 'client-command-' + command;
+            assert.deepEqual(await client.request('workspace/executeCommand', {
+                command, arguments: ['file:///inventory.zr'],
+            }, id, REQUEST_TIMEOUT_MS), {
+                jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' },
+            }, 'client-owned command must not receive a server no-op acknowledgement');
+        }
+        assert.deepEqual(await client.request('shutdown', undefined, 'shutdown', REQUEST_TIMEOUT_MS), {
+            jsonrpc: '2.0', id: 'shutdown', result: null,
         });
-        const missingNativeMarkers = inventory.filter((entry) => !entry.nativeMarkerFound)
-            .map((entry) => entry.capability);
-        const wasmGaps = inventory.filter((entry) => !entry.wasmMarkerFound)
-            .map((entry) => entry.capability);
-        const riskyContracts = RISKY_CONTRACTS.map(([contractPath, reason]) => ({
-            contractPath,
-            advertised: nestedValue(capabilities, contractPath) === true,
-            reason,
-            owner: 'optimize/00-baseline-and-contract Task 4',
-        }));
-
-        assert(unclassified.length === 0,
-               `declared capabilities without an inventory profile: ${unclassified.join(', ')}`);
-        assert(missingNativeMarkers.length === 0,
-               `declared capabilities without a native source marker: ${missingNativeMarkers.join(', ')}`);
-        assert(workerSource.includes('connection.onInitialize') && workerSource.includes('new ZrWasmBridge'),
-               'WASM worker must expose its initialization and bridge boundary');
-
-        console.log(JSON.stringify({
-            declared,
-            inventory,
-            riskyContracts,
-            wasmGaps,
-            status: 'baseline-recorded',
-        }, null, 2));
+        client.notify('exit');
+        client.endInput();
+        assert.equal(await client.waitForExit(REQUEST_TIMEOUT_MS), 0);
+        assert.equal(client.stderr().trim(), '');
+        cleanExit = true;
+        return Object.assign({ profile: profile.name, rejectedMutations: mutations }, report);
     } finally {
-        try {
-            await client.requestWithId('shutdown', undefined, REQUEST_TIMEOUT_MS).promise;
-            client.notify('exit', undefined);
-            client.endInput();
-            await client.waitForExit(REQUEST_TIMEOUT_MS);
-        } finally {
-            await client.terminate();
-        }
+        if (!cleanExit) await client.terminate();
     }
 }
 
-main().catch((error) => {
-    console.error(`stdio protocol inventory failed: ${error.stack || error.message}`);
+async function main() {
+    const [serverPath, probePath, buildDirectory, ctestPath, configuration] = process.argv.slice(2);
+    assert.ok(serverPath && probePath && buildDirectory && ctestPath,
+              'usage: node stdio_protocol_inventory.js <stdio-server> <inventory-probe> <build-dir> <ctest> [configuration]');
+    assert.ok([serverPath, probePath, ctestPath].every(file => fs.existsSync(file)), 'inventory executables must exist');
+    const inventory = runJson(probePath, []);
+    const ctest = runJson(ctestPath, ['--test-dir', buildDirectory, '--show-only=json-v1'].concat(
+        configuration ? ['-C', configuration] : []));
+    assert.ok(Array.isArray(ctest.tests) && ctest.tests.length > 0, 'configured CTest inventory must be nonempty');
+    const registeredTests = new Set(ctest.tests.filter(test =>
+        Array.isArray(test.command) && test.command.length > 0).map(test => test.name));
+    const profiles = [
+        { name: '3.17', inlineCompletion: false, rangesFormatting: false },
+        { name: 'inline-only', inlineCompletion: true, rangesFormatting: false },
+        { name: 'ranges-only', inlineCompletion: false, rangesFormatting: true },
+        { name: 'both-3.18', inlineCompletion: true, rangesFormatting: true },
+    ];
+    const reports = [];
+    const failures = [];
+    for (const profile of profiles) {
+        try {
+            reports.push(await inspectProfile(serverPath, profile, inventory, registeredTests));
+        } catch (error) {
+            failures.push({ profile: profile.name, error: error.stack || String(error) });
+        }
+    }
+    console.log(JSON.stringify({
+        status: failures.length ? 'native-contract-failed' : 'native-contract-mapped',
+        reports, failures,
+        remaining: ['native control and notification routing', 'WASM export and worker mapping',
+                    'complete behavioral and integrated semantic acceptance'],
+    }, null, 2));
+    assert.equal(failures.length, 0, 'compiled native inventory profile failures');
+}
+
+main().catch(error => {
+    console.error(error.stack || String(error));
     process.exitCode = 1;
 });
