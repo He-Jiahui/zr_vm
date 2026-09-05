@@ -973,6 +973,8 @@ static const TZrChar *backend_aot_llvm_binary_value_helper_name(TZrUInt32 opcode
 static const TZrChar *backend_aot_llvm_unary_value_helper_name(TZrUInt32 opcode) {
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(NEG):
+        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
             return "ZrLibrary_AotRuntime_Neg";
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
             return "ZrLibrary_AotRuntime_LogicalNot";
@@ -1020,6 +1022,8 @@ TZrBool backend_aot_llvm_lower_arithmetic_value_family(const SZrAotLlvmLoweringC
             return backend_aot_llvm_lower_add_unsigned_const_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(ADD):
             return backend_aot_llvm_lower_add_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
+            return backend_aot_llvm_lower_logical_equal_signed_const_instruction(context, instruction);
         default:
             break;
     }

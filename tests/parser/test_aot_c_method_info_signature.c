@@ -265,6 +265,7 @@ static void test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi(void
 
 #include "test_aot_c_method_info_return_projection_cases.h"
 #include "test_aot_c_direct_inline_return_layout_projection_cases.h"
+#include "aot_c_ownership_call_result_projection_cases.h"
 
 static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -583,6 +584,7 @@ int main(void) {
 #endif
     RUN_TEST(test_aot_c_method_info_uses_projected_callable_return_type);
     RUN_TEST(test_aot_c_unknown_callable_return_uses_scalar_inference);
+    RUN_TEST(test_aot_c_never_scalarizes_owned_call_result_copy);
     RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_noncanonical_callable_return_flag);
     RUN_TEST(test_aot_exec_ir_direct_inline_return_layout_accessor_isolates_raw_metadata);
 #if defined(ZR_PLATFORM_UNIX)

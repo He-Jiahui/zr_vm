@@ -477,6 +477,7 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
 #include "test_ownership_pending_control_cases.h"
 #include "test_ownership_drop_failure_cases.h"
 #include "test_ownership_aot_pending_cases.h"
+#include "aot_c_ownership_member_result_cases.h"
 #include "test_ownership_member_cache_null_cases.h"
 #include "test_ownership_nested_finally_pending_cases.h"
 #include "test_ownership_suspended_roots_cases.h"
@@ -510,7 +511,15 @@ int main(void) {
     RUN_TEST(test_aot_catch_refreshes_frame_after_pending_drop);
     RUN_TEST(test_aot_end_finally_refreshes_frame_after_discarded_pending_drop);
     RUN_TEST(test_aot_throw_normalizes_payload_before_pending_drop);
+    RUN_TEST(test_aot_direct_shared_return_materializes_generated_slot);
+    RUN_TEST(test_aot_direct_weak_return_materializes_generated_slot);
+    RUN_TEST(test_aot_direct_shared_return_preserves_aliased_destination);
+    RUN_TEST(test_aot_direct_weak_return_preserves_aliased_destination);
+    RUN_TEST(test_aot_value_slot_copy_consumes_shared_and_weak_temporaries);
     RUN_TEST(test_aot_return_refreshes_frame_after_discarded_finally_drop);
+    RUN_TEST(test_aot_member_result_outlives_registered_receiver);
+    RUN_TEST(test_aot_registered_shared_owner_closes_all_matching_storage);
+    RUN_TEST(test_aot_registered_shared_owner_drops_immediately);
     RUN_TEST(test_member_cache_cold_read_write_and_receiver_change);
     RUN_TEST(test_suspended_return_survives_inner_finally_break);
     RUN_TEST(test_suspended_return_survives_inner_finally_continue);

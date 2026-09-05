@@ -141,6 +141,150 @@ static void test_aot_throw_normalizes_payload_before_pending_drop(void) {
     TEST_ASSERT_EQUAL_UINT32(frame.function->catchClauseList[0].targetInstructionOffset, resumeIndex);
 }
 
+static void aot_assert_owned_return_reaches_generated_slot(TZrBool returnWeak, TZrBool aliasResult) {
+    ZrAotGeneratedFrame frame;
+    ZrAotGeneratedDirectCall directCall;
+    SZrCallInfo calleeCallInfo;
+    SZrFunction *callerFunction;
+    SZrFunction *calleeFunction;
+    SZrFunctionFrameSlotLayout *layout;
+    SZrStackFramePlace physicalPlace;
+    SZrTypeValue shared;
+    SZrTypeValue weak;
+    SZrTypeValue *result;
+    SZrTypeValue *source;
+    aot_pending_prepare_frame(&frame);
+    callerFunction = ZrCore_Function_New(g_state);
+    calleeFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+    TEST_ASSERT_NOT_NULL(calleeFunction);
+    layout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            g_state->global, sizeof(*layout), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layout);
+    memset(layout, 0, sizeof(*layout));
+    layout->stackSlot = 2u;
+    layout->byteOffset = 8u * sizeof(*frame.slotBase);
+    layout->byteSize = sizeof(SZrTypeValue);
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    callerFunction->frameSlotLayouts = layout;
+    callerFunction->frameSlotLayoutLength = 1u;
+    callerFunction->frameByteSize = layout->byteOffset + layout->byteSize;
+    callerFunction->frameByteAlign = layout->byteAlign;
+    callerFunction->stackSize = frame.generatedFrameSlotCount;
+    frame.function = callerFunction;
+    frame.callInfo->metadataFunction = callerFunction;
+    ZrCore_Value_InitAsRawObject(g_state,
+            ZrCore_Stack_GetValue(frame.callInfo->functionBase.valuePointer),
+            ZR_CAST_RAW_OBJECT_AS_SUPER(callerFunction));
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            g_state, callerFunction, frame.slotBase, 2u, &physicalPlace));
+    result = ZrCore_Stack_GetValue(frame.slotBase + 2u);
+    TEST_ASSERT_NOT_EQUAL((TZrNativePtr)result, (TZrNativePtr)physicalPlace.address);
+    ZrCore_Value_ResetAsNull((SZrTypeValue *)physicalPlace.address);
+
+    memset(&calleeCallInfo, 0, sizeof(calleeCallInfo));
+    calleeCallInfo.previous = frame.callInfo;
+    calleeCallInfo.metadataFunction = calleeFunction;
+    calleeCallInfo.functionBase.valuePointer = frame.slotBase + 32u;
+    calleeCallInfo.functionTop.valuePointer = frame.slotBase + 34u;
+    calleeCallInfo.returnDestination = frame.slotBase + 2u;
+    calleeCallInfo.hasReturnDestination = ZR_TRUE;
+    calleeCallInfo.expectedReturnCount = 1u;
+    memset(&directCall, 0, sizeof(directCall));
+    directCall.callerCallInfo = frame.callInfo;
+    directCall.calleeCallInfo = &calleeCallInfo;
+    directCall.prepared = ZR_TRUE;
+    pending_create_shared(&shared);
+    ZrCore_Value_ResetAsNull(&weak);
+    if (returnWeak) {
+        TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(g_state, &weak, &shared));
+    }
+    source = aliasResult ? result : ZrCore_Stack_GetValue(calleeCallInfo.functionBase.valuePointer);
+    ZrCore_Value_Copy(g_state, source, returnWeak ? &weak : &shared);
+    g_state->callInfoList = &calleeCallInfo;
+    g_state->stackTop.valuePointer = aliasResult
+            ? calleeCallInfo.returnDestination + 1u : calleeCallInfo.functionBase.valuePointer + 1u;
+
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_FinishDirectCall(g_state, &frame, &directCall, 1u));
+    TEST_ASSERT_EQUAL_PTR(returnWeak ? weak.value.object : shared.value.object, result->value.object);
+    TEST_ASSERT_EQUAL_PTR(shared.ownershipControl, result->ownershipControl);
+    TEST_ASSERT_EQUAL_UINT8(returnWeak ? ZR_OWNERSHIP_VALUE_KIND_WEAK : ZR_OWNERSHIP_VALUE_KIND_SHARED,
+                            result->ownershipKind);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(((SZrTypeValue *)physicalPlace.address)->type));
+    if (!aliasResult) {
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(source->type));
+    }
+    TEST_ASSERT_EQUAL_UINT32(returnWeak ? 3u : 2u,
+            returnWeak ? shared.ownershipControl->weakRefCount : shared.ownershipControl->strongRefCount);
+    ZrCore_Ownership_ReleaseValue(g_state, result);
+    TEST_ASSERT_EQUAL_UINT32(returnWeak ? 2u : 1u,
+            returnWeak ? shared.ownershipControl->weakRefCount : shared.ownershipControl->strongRefCount);
+    ZrCore_Ownership_ReleaseValue(g_state, &weak);
+    ZrCore_Ownership_ReleaseValue(g_state, &shared);
+}
+
+static void test_aot_direct_shared_return_materializes_generated_slot(void) {
+    aot_assert_owned_return_reaches_generated_slot(ZR_FALSE, ZR_FALSE);
+}
+
+static void test_aot_direct_weak_return_materializes_generated_slot(void) {
+    aot_assert_owned_return_reaches_generated_slot(ZR_TRUE, ZR_FALSE);
+}
+
+static void test_aot_direct_shared_return_preserves_aliased_destination(void) {
+    aot_assert_owned_return_reaches_generated_slot(ZR_FALSE, ZR_TRUE);
+}
+
+static void test_aot_direct_weak_return_preserves_aliased_destination(void) {
+    aot_assert_owned_return_reaches_generated_slot(ZR_TRUE, ZR_TRUE);
+}
+
+static void test_aot_value_slot_copy_consumes_shared_and_weak_temporaries(void) {
+    ZrAotGeneratedFrame frame;
+    SZrFunction *function;
+    SZrFunctionFrameSlotLayout *layout;
+    aot_pending_prepare_frame(&frame);
+    function = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(function);
+    layout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            g_state->global, sizeof(*layout), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layout);
+    memset(layout, 0, sizeof(*layout));
+    layout->stackSlot = 2u;
+    layout->byteSize = sizeof(SZrTypeValue);
+    layout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function->frameSlotLayouts = layout;
+    function->frameSlotLayoutLength = 1u;
+    frame.function = function;
+    for (TZrUInt32 useWeak = 0u; useWeak < 2u; ++useWeak) {
+        SZrTypeValue shared;
+        SZrTypeValue weak;
+        SZrTypeValue *source = ZrCore_Stack_GetValue(frame.slotBase + 5u);
+        SZrTypeValue *destination = ZrCore_Stack_GetValue(frame.slotBase + 2u);
+        pending_create_shared(&shared);
+        ZrCore_Value_ResetAsNull(&weak);
+        if (useWeak) {
+            TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(g_state, &weak, &shared));
+        }
+        ZrCore_Value_Copy(g_state, source, useWeak ? &weak : &shared);
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_CopyStack(g_state, &frame, 2u, 5u));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(source->type));
+        TEST_ASSERT_EQUAL_PTR(shared.ownershipControl, destination->ownershipControl);
+        TEST_ASSERT_EQUAL_UINT8(useWeak ? ZR_OWNERSHIP_VALUE_KIND_WEAK : ZR_OWNERSHIP_VALUE_KIND_SHARED,
+                                destination->ownershipKind);
+        TEST_ASSERT_EQUAL_UINT32(useWeak ? 3u : 2u,
+                useWeak ? shared.ownershipControl->weakRefCount : shared.ownershipControl->strongRefCount);
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_CopyStack(g_state, &frame, 2u, 2u));
+        TEST_ASSERT_EQUAL_PTR(shared.ownershipControl, destination->ownershipControl);
+        ZrCore_Ownership_ReleaseValue(g_state, destination);
+        TEST_ASSERT_EQUAL_UINT32(useWeak ? 2u : 1u,
+                useWeak ? shared.ownershipControl->weakRefCount : shared.ownershipControl->strongRefCount);
+        ZrCore_Ownership_ReleaseValue(g_state, &weak);
+        ZrCore_Ownership_ReleaseValue(g_state, &shared);
+    }
+}
+
 static void test_aot_return_refreshes_frame_after_discarded_finally_drop(void) {
     ZrAotGeneratedFrame frame;
     SZrVmExceptionHandlerState *handler;

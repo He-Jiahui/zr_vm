@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_scalar_call_result.h"
 #include "backend_aot_c_scalar_stack_copy.h"
 #include "backend_aot_internal.h"
 
@@ -752,6 +753,23 @@ static const SZrFunction *backend_aot_c_scalar_locals_resolve_callable_slot_func
         }
 
         switch ((EZrInstructionCode)instruction->instruction.operationCode) {
+            case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+            case ZR_INSTRUCTION_ENUM(GETUPVAL): {
+                TZrUInt32 closureIndex = instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GETUPVAL)
+                        ? instruction->instruction.operand.operand1[0]
+                        : (TZrUInt32)instruction->instruction.operand.operand2[0];
+                const SZrFunction *owner = function;
+                while (owner->ownerFunction != ZR_NULL && owner->closureValueList != ZR_NULL &&
+                       closureIndex < owner->closureValueLength) {
+                    const SZrFunctionClosureVariable *capture = &owner->closureValueList[closureIndex];
+                    owner = owner->ownerFunction;
+                    if (capture->inStack) {
+                        return backend_aot_c_scalar_locals_child_function_for_stack_slot(owner, capture->index);
+                    }
+                    closureIndex = capture->index;
+                }
+                return ZR_NULL;
+            }
             case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
                 return backend_aot_c_scalar_locals_child_function_for_constant(
                         function, instruction->instruction.operand.operand2[0]);
@@ -2246,6 +2264,14 @@ static void backend_aot_c_scalar_locals_record_call_result_destinations(EZrAotSc
         }
 
         destinationSlot = instruction->instruction.operandExtra;
+        if (backend_aot_c_scalar_call_result_has_nonprimitive_type(
+                    function,
+                    backend_aot_c_scalar_locals_resolve_callable_slot_function_before_instruction(
+                            function, instructionIndex, instruction->instruction.operand.operand1[0], 0u),
+                    instructionIndex,
+                    destinationSlot)) {
+            continue;
+        }
         calleeKind = backend_aot_c_scalar_locals_kind_from_call_result_callee(
                 function, instructionIndex);
         if (calleeKind != ZR_AOT_SCALAR_LOCAL_KIND_NONE) {
@@ -2999,6 +3025,16 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScal
 
     if (backend_aot_c_scalar_locals_instruction_is_call_result_write(opcode)) {
         TZrUInt32 destinationSlot = instruction->instruction.operandExtra;
+        if (backend_aot_c_scalar_call_result_has_nonprimitive_type(
+                    function,
+                    backend_aot_c_scalar_locals_resolve_callable_slot_function_before_instruction(
+                            function, execInstructionIndex, instruction->instruction.operand.operand1[0], 0u),
+                    execInstructionIndex,
+                    destinationSlot)) {
+            backend_aot_c_scalar_locals_set_slot(
+                    slotKinds, slotCount, destinationSlot, ZR_AOT_SCALAR_LOCAL_KIND_NONE);
+            return;
+        }
         kind = backend_aot_c_scalar_locals_kind_from_call_result_callee(
                 function, execInstructionIndex);
         if (kind == ZR_AOT_SCALAR_LOCAL_KIND_NONE) {

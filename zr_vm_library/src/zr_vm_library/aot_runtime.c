@@ -31,6 +31,7 @@
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
+#include "aot_runtime/aot_runtime_cleanup_registration.h"
 #include "aot_runtime/aot_runtime_internal.h"
 
 #if defined(ZR_PLATFORM_WIN)
@@ -2058,22 +2059,11 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
         const SZrFunctionFrameSlotLayout *slotLayout =
                 ZrCore_Function_FindFrameSlotLayout(callerFunction, logicalSlot);
         const SZrTypeValue *sourceValue = ZrCore_Stack_GetValue(callerFrameBase + logicalSlot);
-        SZrStackFramePlace sourcePlace;
         SZrTypeValue *stagedValue = ZrCore_Stack_GetValue(callBase + offset);
 
         if (slotLayout != ZR_NULL &&
             slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
             continue;
-        }
-        if (slotLayout != ZR_NULL &&
-            slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
-            slotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
-            ZrCore_Function_MakeFrameSlotPlace(
-                    state, callerFunction, callerFrameBase, logicalSlot, &sourcePlace)) {
-            const SZrTypeValue *layoutValue = (const SZrTypeValue *)sourcePlace.address;
-            if (layoutValue != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(layoutValue->type)) {
-                sourceValue = layoutValue;
-            }
         }
         aot_runtime_copy_direct_call_staging_value(state, stagedValue, sourceValue);
         callBase = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor);
@@ -3579,8 +3569,10 @@ TZrBool ZrLibrary_AotRuntime_BeginGeneratedFunction(SZrState *state,
     }
     frameTop = slotBase + frameSlotCount;
 
-    for (TZrUInt32 slot = (TZrUInt32)argumentCount; slot < (TZrUInt32)frameSlotCount; slot++) {
-        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slotBase + slot));
+    if (ZrCore_CallInfo_IsNative(callInfo)) {
+        for (TZrUInt32 slot = (TZrUInt32)argumentCount; slot < (TZrUInt32)frameSlotCount; slot++) {
+            ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slotBase + slot));
+        }
     }
 
     if (callInfo->functionTop.valuePointer < frameTop) {
@@ -4331,12 +4323,28 @@ static TZrBool aot_runtime_own_value(SZrState *state,
                                      TZrUInt32 destinationSlot,
                                      TZrUInt32 sourceSlot,
                                      TZrBool (*operation)(SZrState *, SZrTypeValue *, SZrTypeValue *)) {
-    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
-    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer destinationPointer;
+    TZrStackValuePointer sourcePointer;
+    SZrCallInfo *callInfo;
     SZrTypeValue *destinationValue;
     SZrTypeValue *sourceValue;
+    TZrBool succeeded;
 
-    if (state == ZR_NULL || destinationPointer == ZR_NULL || sourcePointer == ZR_NULL || operation == ZR_NULL) {
+    if (state == ZR_NULL || frame == ZR_NULL || operation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    callInfo = frame->callInfo;
+    aot_runtime_cleanup_registration_clear(state, frame, destinationSlot);
+    if (sourceSlot != destinationSlot) {
+        aot_runtime_cleanup_registration_clear(state, frame, sourceSlot);
+    }
+    if (callInfo != ZR_NULL && !aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+        return ZR_FALSE;
+    }
+    destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    if (destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -4346,8 +4354,20 @@ static TZrBool aot_runtime_own_value(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!operation(state, destinationValue, sourceValue)) {
-        ZrCore_Value_ResetAsNull(destinationValue);
+    succeeded = operation(state, destinationValue, sourceValue);
+    if (callInfo != ZR_NULL && !aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+        return ZR_FALSE;
+    }
+    destinationValue = ZrCore_Stack_GetValue(aot_runtime_frame_slot(frame, destinationSlot));
+    if (destinationValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!succeeded) {
+        ZrCore_Value_ResetAsNullNoProfile(destinationValue);
+    }
+    aot_runtime_cleanup_registration_refresh(state, frame, destinationSlot);
+    if (sourceSlot != destinationSlot) {
+        aot_runtime_cleanup_registration_refresh(state, frame, sourceSlot);
     }
     return ZR_TRUE;
 }
@@ -4449,12 +4469,27 @@ TZrBool ZrLibrary_AotRuntime_OwnDrop(SZrState *state,
                                         ZrAotGeneratedFrame *frame,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 sourceSlot) {
-    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
-    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer destinationPointer;
+    TZrStackValuePointer sourcePointer;
+    SZrCallInfo *callInfo;
     SZrTypeValue *destinationValue;
     SZrTypeValue *sourceValue;
 
-    if (state == ZR_NULL || destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
+    if (state == ZR_NULL || frame == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    callInfo = frame->callInfo;
+    aot_runtime_cleanup_registration_clear(state, frame, destinationSlot);
+    if (sourceSlot != destinationSlot) {
+        aot_runtime_cleanup_registration_clear(state, frame, sourceSlot);
+    }
+    if (callInfo != ZR_NULL && !aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+        return ZR_FALSE;
+    }
+    destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    if (destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -4465,7 +4500,18 @@ TZrBool ZrLibrary_AotRuntime_OwnDrop(SZrState *state,
     }
 
     ZrCore_Ownership_ReleaseValue(state, sourceValue);
-    ZrCore_Value_ResetAsNull(destinationValue);
+    if (callInfo != ZR_NULL && !aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+        return ZR_FALSE;
+    }
+    destinationValue = ZrCore_Stack_GetValue(aot_runtime_frame_slot(frame, destinationSlot));
+    if (destinationValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_ResetAsNullNoProfile(destinationValue);
+    aot_runtime_cleanup_registration_refresh(state, frame, destinationSlot);
+    if (sourceSlot != destinationSlot) {
+        aot_runtime_cleanup_registration_refresh(state, frame, sourceSlot);
+    }
     return ZR_TRUE;
 }
 
@@ -8148,17 +8194,19 @@ TZrBool ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(
         return ZR_TRUE;
     }
 
-    aot_runtime_fail(
-            state,
-            runtimeState,
-            "generated AOT prepared direct call did not finish or resume "
-            "(invoked=%u current=%p caller=%p callee=%p status=%u exception=%u)",
-            (unsigned)invocationSucceeded,
-            state != ZR_NULL ? (void *)state->callInfoList : ZR_NULL,
-            (void *)directCall->callerCallInfo,
-            (void *)directCall->calleeCallInfo,
-            state != ZR_NULL ? (unsigned)state->threadStatus : 0u,
-            state != ZR_NULL ? (unsigned)state->hasCurrentException : 0u);
+    if (runtimeState == ZR_NULL || runtimeState->lastError[0] == '\0') {
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "generated AOT prepared direct call did not finish or resume "
+                "(invoked=%u current=%p caller=%p callee=%p status=%u exception=%u)",
+                (unsigned)invocationSucceeded,
+                state != ZR_NULL ? (void *)state->callInfoList : ZR_NULL,
+                (void *)directCall->callerCallInfo,
+                (void *)directCall->calleeCallInfo,
+                state != ZR_NULL ? (unsigned)state->threadStatus : 0u,
+                state != ZR_NULL ? (unsigned)state->hasCurrentException : 0u);
+    }
     return ZR_FALSE;
 }
 
@@ -8325,6 +8373,10 @@ TZrBool ZrLibrary_AotRuntime_FinishDirectCall(SZrState *state,
                                               TZrUInt32 resultCount) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo;
+    TZrUInt32 resultSlot = 0u;
+    TZrBool hasGeneratedResultSlot = ZR_FALSE;
+    TZrMemoryOffset stagedReturnOffset = 0;
+    TZrBool hasCountedStagedReturn = ZR_FALSE;
 
     runtimeState =
             state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
@@ -8336,8 +8388,29 @@ TZrBool ZrLibrary_AotRuntime_FinishDirectCall(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (resultCount > 0u && callInfo->expectedReturnCount == 1u && callInfo->hasReturnDestination) {
+        TZrStackValuePointer callerBase = directCall->callerCallInfo->functionBase.valuePointer + 1;
+        if (callInfo->returnDestination >= callerBase &&
+            callInfo->returnDestination < callerBase + frame->generatedFrameSlotCount) {
+            resultSlot = (TZrUInt32)(callInfo->returnDestination - callerBase);
+            hasGeneratedResultSlot = ZR_TRUE;
+        }
+    }
+    if (resultCount > 0u) {
+        TZrStackValuePointer source = state->stackTop.valuePointer - resultCount;
+        TZrStackValuePointer destination = callInfo->hasReturnDestination
+                ? callInfo->returnDestination : callInfo->functionBase.valuePointer;
+        SZrTypeValue *value = ZrCore_Stack_GetValue(source);
+        if (source != destination &&
+            (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+             value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK)) {
+            stagedReturnOffset = ZrCore_Stack_SavePointerAsOffset(state, source);
+            hasCountedStagedReturn = ZR_TRUE;
+        }
+    }
+
     if (state->threadStatus == ZR_THREAD_STATUS_FINE && callInfo->functionBase.valuePointer != ZR_NULL) {
-        TZrStackValuePointer returnTop = state->stackTop.valuePointer;
+        TZrMemoryOffset returnTop = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
         if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
             state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
         }
@@ -8347,7 +8420,7 @@ TZrBool ZrLibrary_AotRuntime_FinishDirectCall(SZrState *state,
                                     callInfo->functionBase.valuePointer + 1,
                                     ZR_THREAD_STATUS_INVALID,
                                     ZR_FALSE);
-        state->stackTop.valuePointer = returnTop;
+        state->stackTop.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, returnTop);
     }
 
     ZrCore_Function_PostCall(state, callInfo, resultCount);
@@ -8359,6 +8432,30 @@ TZrBool ZrLibrary_AotRuntime_FinishDirectCall(SZrState *state,
     frame->callInfo = state->callInfoList;
     frame->slotBase = state->callInfoList->functionBase.valuePointer + 1;
     state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;
+    if (hasGeneratedResultSlot) {
+        const SZrFunctionFrameSlotLayout *layout =
+                ZrCore_Function_FindFrameSlotLayout(frame->function, resultSlot);
+        SZrStackFramePlace place;
+        if (layout != ZR_NULL && layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+            layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
+            ZrCore_Function_MakeFrameSlotPlace(state, frame->function, frame->slotBase, resultSlot, &place)) {
+            SZrTypeValue *physicalValue = (SZrTypeValue *)place.address;
+            SZrTypeValue *generatedValue = ZrCore_Stack_GetValue(frame->slotBase + resultSlot);
+            if (physicalValue != generatedValue &&
+                ZrCore_Value_ShouldTransferMaterializedStackOwnership(physicalValue)) {
+                /* PostCall consumes the dense owner; generated code consumes the dense slot.
+                 * Snapshot first because physical and dense value storage may overlap. */
+                SZrTypeValue returnedValue = *physicalValue;
+                ZrCore_Value_ResetAsNull(physicalValue);
+                *generatedValue = returnedValue;
+            }
+        }
+    }
+    if (hasCountedStagedReturn) {
+        ZrCore_Ownership_ReleaseValue(state, ZrCore_Stack_GetValue(
+                ZrCore_Stack_LoadOffsetToPointer(state, stagedReturnOffset)));
+        aot_runtime_refresh_frame_from_callinfo(state, frame, state->callInfoList);
+    }
     memset(directCall, 0, sizeof(*directCall));
     return ZR_TRUE;
 }
@@ -8853,6 +8950,7 @@ TZrBool ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(SZrState *state,
 TZrBool ZrLibrary_AotRuntime_MarkToBeClosed(SZrState *state, ZrAotGeneratedFrame *frame, TZrUInt32 slotIndex) {
     SZrLibraryAotRuntimeState *runtimeState;
     TZrStackValuePointer slotPointer = aot_runtime_frame_slot(frame, slotIndex);
+    TZrStackValuePointer registrationPointer = ZR_NULL;
 
     runtimeState =
             state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
@@ -8861,7 +8959,12 @@ TZrBool ZrLibrary_AotRuntime_MarkToBeClosed(SZrState *state, ZrAotGeneratedFrame
         return ZR_FALSE;
     }
 
-    ZrCore_Closure_ToBeClosedValueClosureNew(state, slotPointer);
+    if (!aot_runtime_cleanup_registration_prepare(state, frame, slotIndex, &registrationPointer) ||
+        registrationPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "MARK_TO_BE_CLOSED: invalid physical value slot");
+        return ZR_FALSE;
+    }
+    ZrCore_Closure_ToBeClosedValueClosureNew(state, registrationPointer);
     return ZR_TRUE;
 }
 

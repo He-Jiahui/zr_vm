@@ -110,7 +110,7 @@ static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state
     return base + stackSlot;
 }
 
-static SZrTypeValue *closure_registered_physical_frame_value(
+static SZrTypeValue *closure_registered_mirror_frame_value(
         SZrState *state,
         TZrStackValuePointer registeredPointer) {
     SZrCallInfo *callInfo;
@@ -134,7 +134,20 @@ static SZrTypeValue *closure_registered_physical_frame_value(
         }
         frameBase = callInfo->functionBase.valuePointer + 1;
         if (registeredPointer < frameBase ||
-            registeredPointer >= frameBase + function->stackSize) {
+            registeredPointer >= callInfo->functionTop.valuePointer) {
+            continue;
+        }
+
+        /* Generated frames register their separate physical owner storage. */
+        if (registeredPointer >= frameBase + function->stackSize) {
+            for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; ++index) {
+                const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+                if (layout->stackSlot < function->stackSize &&
+                    closure_value_pointer_for_frame_slot(
+                            state, function, frameBase, layout->stackSlot) == registeredPointer) {
+                    return ZrCore_Stack_GetValueNoProfile(frameBase + layout->stackSlot);
+                }
+            }
             continue;
         }
 
@@ -441,7 +454,7 @@ static void closure_value_call_close_meta(SZrState *state,
     TZrMemoryOffset valueOffset = ZrCore_Stack_SavePointerAsOffset(
             state, stackPointer.valuePointer);
     SZrTypeValue *registeredValue = &stackPointer.valuePointer->value;
-    SZrTypeValue *physicalValue = closure_registered_physical_frame_value(
+    SZrTypeValue *physicalValue = closure_registered_mirror_frame_value(
             state, stackPointer.valuePointer);
     TZrBool hasDistinctPhysicalValue =
             (TZrBool)(physicalValue != ZR_NULL &&

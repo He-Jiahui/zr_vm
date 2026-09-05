@@ -87,7 +87,7 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
     if (destinationLayout != ZR_NULL &&
         destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
         destinationLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {
-        ZrCore_Value_Copy(state, destinationValue, sourceValue);
+        ZrCore_Value_AssignMaterializedStackValue(state, destinationValue, sourceValue);
         return ZR_TRUE;
     }
 

@@ -16,6 +16,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+#include "test_ownership_abrupt_parity_cases.h"
 #endif
 
 #ifndef ZR_VM_TESTS_C_COMPILER
@@ -567,6 +568,34 @@ static void test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch(v
 #endif
 }
 
+static void test_aot_c_ownership_abrupt_cleanup_matches_vm(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT abrupt-cleanup shared-library smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(ownership_abrupt_parity_source(),
+                           ZR_TEST_OWNERSHIP_ABRUPT_PARITY_EXPECTED,
+                           ZR_AOT_BACKEND_KIND_C,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                           "aot_c_ownership_abrupt_cleanup",
+                           "aot_c");
+#endif
+}
+
+static void test_aot_llvm_ownership_abrupt_cleanup_matches_vm(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT abrupt-cleanup shared-library smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(ownership_abrupt_parity_source(),
+                           ZR_TEST_OWNERSHIP_ABRUPT_PARITY_EXPECTED,
+                           ZR_AOT_BACKEND_KIND_LLVM,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                           "aot_llvm_ownership_abrupt_cleanup",
+                           "aot_llvm");
+#endif
+}
+
 static void test_aot_c_scalar_stack_copy_honors_nonprimitive_overwrite(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT scalar stack-copy smoke validates the Unix toolchain path");
@@ -625,6 +654,8 @@ int main(void) {
     RUN_TEST(test_aot_llvm_ownership_intrinsics_execute_all_operations);
     RUN_TEST(test_aot_c_optional_intrinsic_named_members_use_normal_dispatch);
     RUN_TEST(test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch);
+    RUN_TEST(test_aot_c_ownership_abrupt_cleanup_matches_vm);
+    RUN_TEST(test_aot_llvm_ownership_abrupt_cleanup_matches_vm);
     RUN_TEST(test_aot_c_scalar_stack_copy_honors_nonprimitive_overwrite);
     RUN_TEST(test_aot_llvm_scalar_stack_copy_honors_nonprimitive_overwrite);
     return UNITY_END();

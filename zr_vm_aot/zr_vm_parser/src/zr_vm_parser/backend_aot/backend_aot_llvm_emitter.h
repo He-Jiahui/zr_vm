@@ -246,6 +246,9 @@ static ZR_FORCE_INLINE void backend_aot_llvm_emit_fast_set_null(FILE *file,
 
 TZrBool backend_aot_llvm_lower_constant_value_family(const SZrAotLlvmLoweringContext *context,
                                                      const SZrAotLlvmInstructionContext *instruction);
+TZrBool backend_aot_llvm_lower_logical_equal_signed_const_instruction(
+        const SZrAotLlvmLoweringContext *context,
+        const SZrAotLlvmInstructionContext *instruction);
 TZrBool backend_aot_llvm_lower_closure_value_subfamily(const SZrAotLlvmLoweringContext *context,
                                                        const SZrAotLlvmInstructionContext *instruction);
 TZrBool backend_aot_llvm_lower_stack_slot_value_subfamily(const SZrAotLlvmLoweringContext *context,
