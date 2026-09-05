@@ -93,6 +93,19 @@ test('browser worker does not register withdrawn identity resolve handlers', () 
     }
 });
 
+test('browser navigation aliases are neither advertised nor registered', async () => {
+    const worker = loadWorker();
+    const result = await worker.handlers.get('onInitialize')({ capabilities: {} });
+    for (const name of ['declarationProvider', 'typeDefinitionProvider']) {
+        assert.equal(result.capabilities[name], undefined, name);
+    }
+    for (const method of ['textDocument/declaration', 'textDocument/typeDefinition']) {
+        assert.equal(worker.requests.has(method), false, method);
+    }
+    assert.equal(result.capabilities.definitionProvider, true);
+    assert.equal(worker.handlers.has('onDefinition'), true);
+});
+
 test('browser base requests return complete initial payloads without resolve', async () => {
     const uri = 'file:///workspace/main.zr';
     const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } };

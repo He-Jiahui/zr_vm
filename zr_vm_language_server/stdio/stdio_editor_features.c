@@ -132,14 +132,6 @@ cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params)
     return result;
 }
 
-cJSON *handle_declaration_request(SZrStdioServer *server, const cJSON *params) {
-    return handle_location_request(server, params, ZrLanguageServer_Lsp_GetDeclaration);
-}
-
-cJSON *handle_type_definition_request(SZrStdioServer *server, const cJSON *params) {
-    return handle_location_request(server, params, ZrLanguageServer_Lsp_GetTypeDefinition);
-}
-
 cJSON *handle_implementation_request(SZrStdioServer *server, const cJSON *params) {
     return handle_location_request(server, params, ZrLanguageServer_Lsp_GetImplementation);
 }

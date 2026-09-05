@@ -150,23 +150,11 @@ const CAPABILITY_PROFILES = {
         state: 'implemented',
         owner: 'optimize/04-editor-feature-correctness',
     },
-    declarationProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_DECLARATION_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/declaration'",
-        state: 'overclaim-candidate',
-        owner: 'optimize/00-baseline-and-contract',
-    },
-    typeDefinitionProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_TYPE_DEFINITION_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/typeDefinition'",
-        state: 'overclaim-candidate',
-        owner: 'optimize/00-baseline-and-contract',
-    },
     implementationProvider: {
         nativeMarker: 'ZR_LSP_FIELD_IMPLEMENTATION_PROVIDER',
         wasmMarker: "connection.onRequest('textDocument/implementation'",
-        state: 'overclaim-candidate',
-        owner: 'optimize/00-baseline-and-contract',
+        state: 'implemented',
+        owner: 'optimize/04-editor-feature-correctness',
     },
     callHierarchyProvider: {
         nativeMarker: 'ZR_LSP_FIELD_CALL_HIERARCHY_PROVIDER',
@@ -269,6 +257,12 @@ async function main() {
                'initialize must return a capabilities object');
 
         const capabilities = result.capabilities;
+        for (const name of ['declarationProvider', 'typeDefinitionProvider']) {
+            assert(capabilities[name] === undefined,
+                   `${name} must not advertise a definition alias`);
+        }
+        assert(capabilities.definitionProvider === true && capabilities.implementationProvider === true,
+               'definition and canonical implementation navigation must remain advertised');
         const identityResolveOverclaims = COMPLETE_INITIAL_RESPONSE_PROVIDERS.filter((name) =>
             nestedValue(capabilities, `${name}.resolveProvider`) === true);
         assert(identityResolveOverclaims.length === 0,
@@ -284,6 +278,7 @@ async function main() {
         for (const method of [
             'workspaceSymbol/resolve', 'inlayHint/resolve',
             'documentLink/resolve', 'codeLens/resolve',
+            'textDocument/declaration', 'textDocument/typeDefinition',
         ]) {
             const id = `withdrawn-${method}`;
             const response = await client.request(method, {}, id, REQUEST_TIMEOUT_MS);
@@ -291,7 +286,7 @@ async function main() {
                 jsonrpc: '2.0',
                 id,
                 error: { code: -32601, message: 'Method not found' },
-            }, `${method} must reject unsupported resolve with MethodNotFound`);
+            }, `${method} must reject unsupported requests with MethodNotFound`);
         }
         const declared = Object.keys(capabilities).sort();
         const unclassified = declared.filter((name) => CAPABILITY_PROFILES[name] === undefined);

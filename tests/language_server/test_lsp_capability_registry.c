@@ -19,7 +19,7 @@ static void expect_true(TZrBool condition, const TZrChar *message) {
 static void test_registry_descriptors_are_complete(void) {
     TZrSize index;
 
-    expect_true(ZrLanguageServer_LspCapabilityRegistry_Count() == 33U,
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Count() == 31U,
                 "capability registry must cover every currently declared initialize capability");
     for (index = 0; index < ZrLanguageServer_LspCapabilityRegistry_Count(); index++) {
         const SZrLspCapabilityDescriptor *descriptor =
@@ -50,6 +50,14 @@ static void test_registry_descriptors_are_complete(void) {
 
     expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("hoverProvider") != ZR_NULL,
                 "hover provider must be discoverable by capability key");
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("definitionProvider") != ZR_NULL,
+                "definition provider must retain its registered contract");
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("implementationProvider") != ZR_NULL,
+                "implementation provider must retain its canonical relation contract");
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("declarationProvider") == ZR_NULL,
+                "withdrawn declaration alias must not be registered as an available capability");
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("typeDefinitionProvider") == ZR_NULL,
+                "withdrawn type definition alias must not be registered as an available capability");
     expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("missingProvider") == ZR_NULL,
                 "unknown capability keys must fail closed");
 }

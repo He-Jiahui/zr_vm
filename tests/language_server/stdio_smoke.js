@@ -1114,10 +1114,10 @@ async function main() {
     assert(initializeResult.capabilities.documentLinkProvider &&
         initializeResult.capabilities.documentLinkProvider.resolveProvider !== true,
         'documentLinkProvider must be available without identity resolve');
-    assert(initializeResult.capabilities.declarationProvider === true,
-        'declarationProvider must be enabled');
-    assert(initializeResult.capabilities.typeDefinitionProvider === true,
-        'typeDefinitionProvider must be enabled');
+    assert(initializeResult.capabilities.declarationProvider === undefined,
+        'declarationProvider must not advertise the definition alias');
+    assert(initializeResult.capabilities.typeDefinitionProvider === undefined,
+        'typeDefinitionProvider must not advertise the definition alias');
     assert(initializeResult.capabilities.implementationProvider === true,
         'implementationProvider must be enabled');
     assert(initializeResult.capabilities.codeLensProvider &&
@@ -3044,13 +3044,6 @@ async function main() {
     assert(Array.isArray(sourceOnlyActions) &&
         !sourceOnlyActions.some((action) => action && action.kind === 'quickfix'),
     'textDocument/codeAction must honor context.only filters');
-
-    const declaration = await client.request('textDocument/declaration', {
-        textDocument: { uri: genericUri },
-        position: genericDefinitionPosition,
-    });
-    assert(Array.isArray(declaration),
-        'textDocument/declaration must return an array');
 
     const callHierarchyItems = await client.request('textDocument/prepareCallHierarchy', {
         textDocument: { uri: genericUri },

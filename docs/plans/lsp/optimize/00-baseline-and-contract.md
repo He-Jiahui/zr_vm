@@ -93,7 +93,7 @@ typedef struct SZrLspCapabilityDescriptor {
 
 - [x] Sub01 RED/GREEN：撤销 documentLink/codeLens/inlayHint/workspaceSymbol 的 identity resolve 声明、handler 和 method 常量；初始响应保留完整数据，显式请求返回精确 MethodNotFound。见[完成记录](2026-09-05-plan00-task04-sub01-identity-resolve.md)。
 - [x] Sub01：native `codeAction/resolve` 实际复验 snapshot，保留；Web identity resolver 撤销。registry 分别记录 base runtime mask 与 resolve runtime mask。
-- [ ] Sub02：撤销仍然转发 definition 的 declarationProvider/typeDefinitionProvider；为已实现的 implementation relation 和 workspace folder 更新能力补准确协议验收。
+- [x] Sub02：撤销仍然转发 definition 的 declarationProvider/typeDefinitionProvider；验证 Device 定义的准确 token 范围、Device/Sensor implementation 完整目标集合和 workspace folder 实际更新。见[完成记录](2026-09-05-plan00-task04-sub02-navigation-aliases.md)。跨 provider 和 reaching-write 缺陷仍未完成。
 - [ ] `willCreateFiles`/`willDeleteFiles` 若始终返回 null，则只保留 did* 通知注册；`willRenameFiles` 因真实生成 edit 可保留。
 - [ ] 不把撤销 capability 视为功能回归；这是使协议声明与实现一致的 P0 修复。
 

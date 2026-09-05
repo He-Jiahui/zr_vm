@@ -25,10 +25,6 @@ int dispatch_request_method(SZrStdioServer *server,
         *outResult = handle_inlay_hint_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
         *outResult = handle_definition_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DECLARATION) == 0) {
-        *outResult = handle_declaration_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_TYPE_DEFINITION) == 0) {
-        *outResult = handle_type_definition_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_IMPLEMENTATION) == 0) {
         *outResult = handle_implementation_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0) {

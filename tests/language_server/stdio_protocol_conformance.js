@@ -4,14 +4,14 @@ const RESPONSE_TIMEOUT_MS = 3000;
 const NO_RESPONSE_TIMEOUT_MS = 150;
 const EXPECTED_CAPABILITY_KEYS = [
     'callHierarchyProvider', 'codeActionProvider', 'codeLensProvider', 'colorProvider',
-    'completionProvider', 'declarationProvider', 'definitionProvider', 'diagnosticProvider',
+    'completionProvider', 'definitionProvider', 'diagnosticProvider',
     'documentFormattingProvider', 'documentHighlightProvider', 'documentLinkProvider',
     'documentOnTypeFormattingProvider', 'documentRangeFormattingProvider',
     'documentSymbolProvider', 'foldingRangeProvider', 'hoverProvider', 'implementationProvider',
     'inlayHintProvider', 'inlineCompletionProvider', 'inlineValueProvider',
     'linkedEditingRangeProvider', 'monikerProvider', 'positionEncoding', 'referencesProvider',
     'renameProvider', 'selectionRangeProvider', 'semanticTokensProvider', 'signatureHelpProvider',
-    'textDocumentSync', 'typeDefinitionProvider', 'typeHierarchyProvider', 'workspace',
+    'textDocumentSync', 'typeHierarchyProvider', 'workspace',
     'workspaceSymbolProvider',
 ].sort();
 

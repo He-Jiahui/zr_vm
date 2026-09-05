@@ -363,8 +363,6 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
 cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_declaration_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_type_definition_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_implementation_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_code_lens_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_execute_command_request(SZrStdioServer *server, const cJSON *params);
