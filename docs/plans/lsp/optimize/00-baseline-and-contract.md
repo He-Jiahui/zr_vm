@@ -52,7 +52,7 @@ Pop-Location
 
 - [x] Sub01：完成实际 core/native/WASM 名称、CTest ID、implementation ownership 和 runtime 字段约束的修复；[记录](2026-09-05-plan00-task02-sub01-registry-metadata.md)。三工具链 focused 各 9/9，最终 registry 单项各 1/1，独立审查通过；下方完整清单与运行时映射门槛仍未验收。
 - [x] Sub02：完成编译期 native registry/initialize/dispatch inventory；[记录](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)。实际清单含 30 个 descriptor、43 条 native route、3 个 metadata-only control、0 个 orphan，四个协商 profile 和 GCC/Clang/MSVC focused 各 14/14；WASM export/worker 映射与通知行为仍待验收。
-- [x] Sub03：完成 WASM CMake export、C++ 定义/声明、bridge `ccall` 和 worker handler 的静态 inventory，并修正 Web semantic-token legend；[记录](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。30 个 runtime export、28 个 bridge 调用、22 条 worker route、13 个 token type 均通过；真实链接资产因隔离 overlay 缺少其他会话的未提交 `semantic_scope_facts.h` 仍待验收。
+- [x] Sub03：完成 WASM CMake export、C++ 定义/声明、bridge `ccall` 和 worker handler 的静态 inventory，并修正 Web semantic-token legend；[记录](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。30 个 runtime export、28 个 bridge 调用、22 条 worker route、13 个 token type 均通过；真实链接资产的隔离 Emscripten 构建在私有 overlay 补齐该未提交头文件后仍因系统内存压力被 `Killed`，未生成资产，仍待验收。
 - [ ] 先写失败测试：每项能力必须声明协议版本、client capability path、core entry point、native adapter、WASM export、resolve 行为与 test id。
 - [ ] 建立不含 cJSON/TypeScript 的核心描述：
 

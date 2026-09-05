@@ -41,7 +41,8 @@ control notification 行为和完整语义 acceptance 仍未闭合。
 Task 2 Sub03 完成 [WASM 静态 capability inventory](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)：
 检查 CMake 导出列表、C++ 定义/声明、bridge `ccall`、worker 路由和 13 项
 semantic-token legend，并修正 Web legend。真实 `.wasm` 链接表仍因隔离 overlay
-缺少其他会话未提交的 `semantic_scope_facts.h` 而待验收。
+的真实构建在补齐另一会话未提交的 `semantic_scope_facts.h` 后仍因系统内存
+压力在 `execution_dispatch.c` 处被 `Killed`，未生成链接资产，故仍待验收。
 
 Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回

@@ -69,11 +69,13 @@ doc_type: milestone-record
 - `node --check tests/language_server/wasm_capability_inventory.js`：通过。
 - `git diff --check`：通过（提交前对本子项路径执行）。
 
-尝试从同一隔离源码构建真实 WASM 时，Emscripten 在 415/610 个对象处报错：
-overlay 中找不到另一活动会话新增的
-`zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.h`。工作树中该
-文件存在但未提交，且不属于本子项；因此没有把它复制或暂存，也没有宣称
-链接资产已验收。
+尝试从同一隔离源码构建真实 WASM 时，第一次并行构建在 415/610 个对象处
+暴露出隔离 overlay 缺少另一活动会话新增的
+`zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.h`。该头文件只为
+私有验证临时复制到 overlay 后，构建继续进入 `execution_dispatch.c`；随后串行
+构建仍被系统以 `Killed` 终止，属于当前验证环境的内存压力，未生成可加载的
+`.wasm`/生成 JS 资产。该文件未复制回工作树、未暂存，也没有宣称链接资产已
+验收。
 
 ## Scope Boundary
 
