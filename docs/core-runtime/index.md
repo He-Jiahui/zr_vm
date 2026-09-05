@@ -131,6 +131,8 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
   geometric growth, immutable freeze/interning, and the current native-binding boundary.
 - `object-shape-member-cache.md`: stable prototype shape identity, generation-aware
   member PIC validation, and bounded mono/poly/mega cache profiling.
+- `ownership-member-cache-null-safety.md`: null guards for cold cached receivers
+  before member-address conversion, with read/write and receiver-change coverage.
 - `profile-memory-metrics.md`: allocation, copy, barrier, GC, materialization, and
   member-cache counters with hotspot-derived rates and explicit scope limits.
 - `task-frame-runtime.md`: structured Task/frame state, synchronous no-allocation completion,

@@ -231,7 +231,8 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     }
 
     slot = &entry->picSlots[0];
-    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+    if (slot->cachedReceiverObject == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
         receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
         slot->cachedReceiverPair == ZR_NULL) {
         return ZR_FALSE;
@@ -280,7 +281,8 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     }
 
     slot = &entry->picSlots[0];
-    if (receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
+    if (slot->cachedReceiverObject == ZR_NULL ||
+        receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
         slot->cachedReceiverPair == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -412,7 +414,8 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     }
 
     slot = &entry->picSlots[0];
-    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+    if (slot->cachedReceiverObject == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
         receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
         slot->cachedReceiverPair == ZR_NULL) {
         return ZR_FALSE;
@@ -569,7 +572,8 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     }
 
     slot = &entry->picSlots[0];
-    if (receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
+    if (slot->cachedReceiverObject == ZR_NULL ||
+        receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
         slot->cachedReceiverPair == ZR_NULL) {
         return ZR_FALSE;
     }

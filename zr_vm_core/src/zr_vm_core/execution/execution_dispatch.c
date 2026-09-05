@@ -1710,7 +1710,8 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     ZR_ASSERT(result != ZR_NULL);
 
     slot = &entry->picSlots[0];
-    if (receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
+    if (slot->cachedReceiverObject == ZR_NULL ||
+        receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
         slot->cachedReceiverPair == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1866,7 +1867,8 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     ZR_ASSERT(assignedValue != ZR_NULL);
 
     slot = &entry->picSlots[0];
-    if (receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
+    if (slot->cachedReceiverObject == ZR_NULL ||
+        receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
         slot->cachedReceiverPair == ZR_NULL) {
         return ZR_FALSE;
     }

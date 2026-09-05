@@ -477,6 +477,7 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
 #include "test_ownership_pending_control_cases.h"
 #include "test_ownership_drop_failure_cases.h"
 #include "test_ownership_aot_pending_cases.h"
+#include "test_ownership_member_cache_null_cases.h"
 #include "test_ownership_receiver_guard_contract_cases.h"
 #include "test_ownership_release_domain_cases.h"
 
@@ -506,6 +507,7 @@ int main(void) {
     RUN_TEST(test_aot_catch_refreshes_frame_after_pending_drop);
     RUN_TEST(test_aot_end_finally_refreshes_frame_after_discarded_pending_drop);
     RUN_TEST(test_aot_throw_normalizes_payload_before_pending_drop);
+    RUN_TEST(test_member_cache_cold_read_write_and_receiver_change);
     RUN_TEST(test_shared_call_result_is_not_retained_after_explicit_drop);
     RUN_TEST(test_pending_shared_return_through_nested_finally);
     RUN_TEST(test_pending_return_preserves_value_before_finally_assignment);
