@@ -21,6 +21,10 @@
 
 ## 当前执行状态（2026-09-05）
 
+已建立[旧计划与全部 leaf 对照](2026-09-05-plan00-task01-sub01-execution-crosswalk.md)，
+逐项记录 completed/pending/superseded、历史证据与后续责任；文档对照完成不代表
+当前集成运行基线或父任务已验收。
+
 Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
 撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述
 resolve 支持。专项通过 GCC/Clang/MSVC 与实际 Web worker callback 回归。

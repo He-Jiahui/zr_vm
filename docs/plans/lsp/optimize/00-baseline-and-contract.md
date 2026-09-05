@@ -19,7 +19,7 @@
 
 - [ ] 记录 `git rev-parse HEAD`、`git status --short`、编译器版本、Node/npm/emsdk 版本；不得把未提交 L8 overlay 描述成 commit 内能力。
 - [ ] 先读取 `.codex/sessions` 的活动所有权；等待 L8 external-callable 路径 exact commit 或明确 release 后再建立全量基线。
-- [ ] 为 `docs/plans/lsp/00-current-state.md`、01-05 主计划与所有 active leaf 建立 completed/pending/superseded crosswalk；本目录不得让旧计划在没有链接和证据迁移的情况下静默失效。
+- [x] 为 `docs/plans/lsp/00-current-state.md`、01-05 主计划与所有 active leaf 建立 [completed/pending/superseded crosswalk](2026-09-05-plan00-task01-sub01-execution-crosswalk.md)：331 个日期记录逐项保留来源、证据边界与后续责任，Task 1 其余基线门槛仍进行中。
 - [ ] 使用全新且互不共享的构建目录，避免旧 build cache 与并发 CMake regeneration：
 
 ```powershell
