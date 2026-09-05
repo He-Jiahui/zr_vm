@@ -56,8 +56,10 @@ const semanticTokenLegend: SemanticTokensLegend = {
         'variable',
         'parameter',
         'keyword',
+        'decorator',
+        'metaMethod',
     ],
-    tokenModifiers: [],
+    tokenModifiers: ['declaration'],
 };
 
 let shutdownRequested = false;

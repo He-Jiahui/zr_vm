@@ -108,6 +108,13 @@ runtime declarations with the shared contract and validate actual native/Web
 behavior. A registered broad smoke test can still fail before reaching a
 provider; its ID is provenance, not proof of coverage.
 
+The independent `wasm_capability_inventory.js` now checks the CMake export list,
+WASM declarations/definitions, bridge `ccall` names, worker handlers and the
+13-type semantic-token legend. It reports 30 exports, 28 bridge calls and 22
+worker routes. With generated `.js` and `.wasm` paths it additionally checks the
+actual `WebAssembly.Module.exports` table; no linked asset is claimed until that
+mode runs successfully.
+
 Implementation and verification evidence is recorded in
 [Plan 00 Task 2 Sub01](../plans/lsp/optimize/2026-09-05-plan00-task02-sub01-registry-metadata.md)
 and [Task 2 Sub02](../plans/lsp/optimize/2026-09-05-plan00-task02-sub02-compiled-native-inventory.md).

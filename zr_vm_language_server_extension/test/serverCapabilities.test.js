@@ -106,6 +106,23 @@ test('browser navigation aliases are neither advertised nor registered', async (
     assert.equal(worker.handlers.has('onDefinition'), true);
 });
 
+test('browser semantic-token legend matches the native registry', async () => {
+    const worker = loadWorker();
+    const result = await worker.handlers.get('onInitialize')({ capabilities: {} });
+    const provider = result.capabilities.semanticTokensProvider;
+    assert.deepEqual(Array.from(provider.legend.tokenTypes), [
+        'namespace', 'class', 'struct', 'interface', 'enum', 'function',
+        'method', 'property', 'variable', 'parameter', 'keyword',
+        'decorator', 'metaMethod',
+    ]);
+    assert.deepEqual(Array.from(provider.legend.tokenModifiers), ['declaration']);
+    assert.equal(provider.full, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(provider, 'range'), false);
+    assert.equal(worker.requests.has('textDocument/semanticTokens/full'), true);
+    assert.equal(worker.requests.has('textDocument/semanticTokens/full/delta'), false);
+    assert.equal(worker.requests.has('textDocument/semanticTokens/range'), false);
+});
+
 test('browser color scanning is neither advertised nor registered', async () => {
     for (const capabilities of [{}, { textDocument: { colorProvider: { dynamicRegistration: false } } }]) {
         const worker = loadWorker();

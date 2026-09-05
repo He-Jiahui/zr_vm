@@ -89,6 +89,13 @@ The native inventory does not promote Plan 00, Plan 05 or any later phase. It
 only closes the compiled native subitem and supplies the machine-readable
 boundary for the next WASM and semantic work.
 
+The follow-up Web static inventory is recorded in
+[Plan 00 Task 2 Sub03](../../docs/plans/lsp/optimize/2026-09-06-plan00-task02-sub03-wasm-static-inventory.md).
+It reports 30 CMake runtime exports, 28 bridge calls and 22 worker routes, and
+the Web legend now matches the 13 native token types plus `declaration`. Its
+optional linked-asset mode remains pending because the isolated Emscripten
+overlay lacks another session's uncommitted `semantic_scope_facts.h`.
+
 ## Acceptance Decision
 
 Accepted for Plan 00 Task 2 Sub02's native inventory scope. Plan 00 remains

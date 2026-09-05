@@ -7044,6 +7044,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                     $<CONFIG>
     )
     add_test(
+            NAME language_server_wasm_capability_inventory
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/wasm_capability_inventory.js
+                    ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
             NAME language_server_stdio_protocol_conformance
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_protocol_conformance.js

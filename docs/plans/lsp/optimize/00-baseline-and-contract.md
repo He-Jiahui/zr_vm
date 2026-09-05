@@ -52,6 +52,7 @@ Pop-Location
 
 - [x] Sub01：完成实际 core/native/WASM 名称、CTest ID、implementation ownership 和 runtime 字段约束的修复；[记录](2026-09-05-plan00-task02-sub01-registry-metadata.md)。三工具链 focused 各 9/9，最终 registry 单项各 1/1，独立审查通过；下方完整清单与运行时映射门槛仍未验收。
 - [x] Sub02：完成编译期 native registry/initialize/dispatch inventory；[记录](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)。实际清单含 30 个 descriptor、43 条 native route、3 个 metadata-only control、0 个 orphan，四个协商 profile 和 GCC/Clang/MSVC focused 各 14/14；WASM export/worker 映射与通知行为仍待验收。
+- [x] Sub03：完成 WASM CMake export、C++ 定义/声明、bridge `ccall` 和 worker handler 的静态 inventory，并修正 Web semantic-token legend；[记录](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。30 个 runtime export、28 个 bridge 调用、22 条 worker route、13 个 token type 均通过；真实链接资产因隔离 overlay 缺少其他会话的未提交 `semantic_scope_facts.h` 仍待验收。
 - [ ] 先写失败测试：每项能力必须声明协议版本、client capability path、core entry point、native adapter、WASM export、resolve 行为与 test id。
 - [ ] 建立不含 cJSON/TypeScript 的核心描述：
 
@@ -115,6 +116,7 @@ changeNotifications 的依据已被后续实现取代。当前 implementation �
 ## Task 5：验收与提交边界
 
 - [x] Native 子项：`stdio_protocol_inventory.js` 已连接编译 registry、initialize JSON、production dispatch 和 CTest 注册，四个 profile 输出 0 个 native orphan/overclaim；完成记录见[compiled native inventory](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)。
+- [x] Web 静态子项：`wasm_capability_inventory.js` 已检查 CMake export、WASM C++ 定义/声明、bridge 调用、worker 路由及 semantic-token legend；完成记录见[WASM static inventory](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。真实 `.wasm` export 表和 worker 资产加载仍待验证。
 - [ ] `stdio_protocol_inventory.js` 对 registry、initialize JSON、dispatch 和 WASM exports 做一一映射，输出 0 个 orphan/overclaim。
 - [ ] 所有当前失败在 acceptance 文档中有 owner 和后续计划链接。
 - [ ] `git diff --check`、GCC focused build、extension unit/noEmit 通过。
