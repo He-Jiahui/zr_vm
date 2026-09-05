@@ -8,7 +8,7 @@ const EXPECTED_CAPABILITY_KEYS = [
     'documentFormattingProvider', 'documentHighlightProvider', 'documentLinkProvider',
     'documentOnTypeFormattingProvider', 'documentRangeFormattingProvider',
     'documentSymbolProvider', 'foldingRangeProvider', 'hoverProvider', 'implementationProvider',
-    'inlayHintProvider', 'inlineCompletionProvider', 'inlineValueProvider',
+    'inlayHintProvider', 'inlineValueProvider',
     'linkedEditingRangeProvider', 'monikerProvider', 'positionEncoding', 'referencesProvider',
     'renameProvider', 'selectionRangeProvider', 'semanticTokensProvider', 'signatureHelpProvider',
     'textDocumentSync', 'typeHierarchyProvider', 'workspace',

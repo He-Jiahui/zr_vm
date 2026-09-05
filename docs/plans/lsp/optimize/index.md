@@ -35,6 +35,11 @@ Task 2 Sub01 完成[能力登记表实际实现元数据](2026-09-05-plan00-task
 明确 core/native adapter 归属及 runtime 字段约束，修正入口、导出、测试 ID 和
 3.18 标记；GCC/Clang/MSVC 专项各 9/9，完整 runtime inventory 仍待验收。
 
+Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
+inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回
+精确 `-32601`，并覆盖 cJSON 分配故障；三工具链各 11/11。完整协议生命周期和
+Phase 00 inventory 尚未闭合。
+
 Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
 撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述
 resolve 支持。专项通过 GCC/Clang/MSVC 与实际 Web worker callback 回归。

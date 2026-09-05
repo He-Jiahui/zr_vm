@@ -132,6 +132,8 @@ typedef struct SZrStdioServer {
     const cJSON *activeRequestId;
     SZrStdioRequestProgress requestProgress;
     EZrStdioPositionEncoding positionEncoding;
+    TZrBool supportsInlineCompletion;
+    TZrBool supportsRangesFormatting;
     EZrStdioTraceLevel traceLevel;
     EZrStdioServerFaultPoint faultPoint;
     SZrStdioLifecycle lifecycle;
@@ -318,7 +320,9 @@ void handle_request_message(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params);
 cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params);
-void add_advanced_editor_capabilities(cJSON *capabilities);
+void add_advanced_editor_capabilities(SZrStdioServer *server,
+                                      const cJSON *params,
+                                      cJSON *capabilities);
 void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON *params);
 int dispatch_request_method(SZrStdioServer *server,
                             const char *method,

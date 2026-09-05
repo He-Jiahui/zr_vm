@@ -1,7 +1,33 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "zr_vm_language_server/lsp_capability_registry.h"
 
-void add_advanced_editor_capabilities(cJSON *capabilities) {
+static const char ZR_STDIO_FIELD_RANGES_SUPPORT[] = "rangesSupport";
+
+static TZrBool optional_editor_capability_is_valid(const cJSON *capability) {
+    const cJSON *dynamicRegistration = get_object_item(capability, "dynamicRegistration");
+
+    return cJSON_IsObject(capability) &&
+                   (dynamicRegistration == ZR_NULL || cJSON_IsBool(dynamicRegistration))
+                   ? ZR_TRUE : ZR_FALSE;
+}
+
+static void negotiate_optional_editor_capabilities(SZrStdioServer *server,
+                                                    const cJSON *params) {
+    const cJSON *clientCapabilities = get_object_item(params, ZR_LSP_FIELD_CAPABILITIES);
+    const cJSON *textDocument = get_object_item(clientCapabilities, ZR_LSP_FIELD_TEXT_DOCUMENT);
+    const cJSON *inlineCompletion = get_object_item(textDocument, "inlineCompletion");
+    const cJSON *rangeFormatting = get_object_item(textDocument, "rangeFormatting");
+
+    server->supportsInlineCompletion = optional_editor_capability_is_valid(inlineCompletion);
+    server->supportsRangesFormatting =
+            optional_editor_capability_is_valid(rangeFormatting) &&
+            cJSON_IsTrue(get_object_item(rangeFormatting, ZR_STDIO_FIELD_RANGES_SUPPORT))
+                    ? ZR_TRUE : ZR_FALSE;
+}
+
+void add_advanced_editor_capabilities(SZrStdioServer *server,
+                                      const cJSON *params,
+                                      cJSON *capabilities) {
     cJSON *codeActionProvider;
     cJSON *codeActionKinds;
     cJSON *onTypeFormattingProvider;
@@ -10,9 +36,10 @@ void add_advanced_editor_capabilities(cJSON *capabilities) {
     cJSON *codeLensProvider;
     cJSON *diagnosticProvider;
 
-    if (capabilities == NULL) {
+    if (server == ZR_NULL || capabilities == NULL) {
         return;
     }
+    negotiate_optional_editor_capabilities(server, params);
 
     codeActionProvider = cJSON_CreateObject();
     codeActionKinds = cJSON_CreateArray();
@@ -31,7 +58,20 @@ void add_advanced_editor_capabilities(cJSON *capabilities) {
     }
 
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_FORMATTING_PROVIDER, 1);
-    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_RANGE_FORMATTING_PROVIDER, 1);
+    if (server->supportsRangesFormatting) {
+        cJSON *rangeFormattingProvider = cJSON_CreateObject();
+        if (rangeFormattingProvider == NULL ||
+            cJSON_AddBoolToObject(rangeFormattingProvider, ZR_STDIO_FIELD_RANGES_SUPPORT, 1) == NULL ||
+            !cJSON_AddItemToObject(capabilities,
+                                   ZR_LSP_FIELD_DOCUMENT_RANGE_FORMATTING_PROVIDER,
+                                   rangeFormattingProvider)) {
+            cJSON_Delete(rangeFormattingProvider);
+            server->supportsRangesFormatting = ZR_FALSE;
+        }
+    }
+    if (!server->supportsRangesFormatting) {
+        cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_RANGE_FORMATTING_PROVIDER, 1);
+    }
     onTypeFormattingProvider = cJSON_CreateObject();
     onTypeMoreTriggers = cJSON_CreateArray();
     if (onTypeFormattingProvider != NULL && onTypeMoreTriggers != NULL) {
@@ -53,7 +93,10 @@ void add_advanced_editor_capabilities(cJSON *capabilities) {
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_LINKED_EDITING_RANGE_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_MONIKER_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_INLINE_VALUE_PROVIDER, 1);
-    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_INLINE_COMPLETION_PROVIDER, 1);
+    if (server->supportsInlineCompletion &&
+        cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_INLINE_COMPLETION_PROVIDER, 1) == NULL) {
+        server->supportsInlineCompletion = ZR_FALSE;
+    }
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_COLOR_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_IMPLEMENTATION_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_CALL_HIERARCHY_PROVIDER, 1);

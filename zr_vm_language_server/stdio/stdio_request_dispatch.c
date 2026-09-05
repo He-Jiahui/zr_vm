@@ -34,6 +34,9 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RANGE_FORMATTING) == 0) {
         *outResult = handle_range_formatting_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RANGES_FORMATTING) == 0) {
+        if (!server->supportsRangesFormatting) {
+            return 0;
+        }
         *outResult = handle_ranges_formatting_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_ON_TYPE_FORMATTING) == 0) {
         *outResult = handle_on_type_formatting_request(server, params);
@@ -54,6 +57,9 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLINE_VALUE) == 0) {
         *outResult = handle_inline_value_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLINE_COMPLETION) == 0) {
+        if (!server->supportsInlineCompletion) {
+            return 0;
+        }
         *outResult = handle_inline_completion_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_COLOR) == 0) {
         *outResult = handle_document_color_request(server, params);

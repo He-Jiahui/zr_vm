@@ -114,6 +114,8 @@ doc_type: category-index
   - identity-only resolve 撤销、MethodNotFound 与 code-action snapshot 复验
 - [lsp-capability-registry-metadata.md](lsp-capability-registry-metadata.md)
   - core/native adapter 实现归属、runtime 字段与静态元数据的验证边界
+- [lsp-optional-capability-negotiation.md](lsp-optional-capability-negotiation.md)
+  - 3.17 基线与 inline completion/ranges formatting 的独立协商、错误和生命周期
 - [lsp-navigation-capability-boundary.md](lsp-navigation-capability-boundary.md)
   - declaration/typeDefinition alias 撤销与四类查询的语义边界
   - canonical implementation 准确目标集合、范围与未完成 provider 门槛

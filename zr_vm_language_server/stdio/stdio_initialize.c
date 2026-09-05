@@ -284,7 +284,7 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     cJSON_AddItemToObject(parts.capabilities,
                           ZR_LSP_FIELD_SEMANTIC_TOKENS_PROVIDER,
                           parts.semanticTokensProvider);
-    add_advanced_editor_capabilities(parts.capabilities);
+    add_advanced_editor_capabilities(server, params, parts.capabilities);
 
     cJSON_AddBoolToObject(parts.workspaceFolders, ZR_LSP_FIELD_SUPPORTED, 1);
     cJSON_AddBoolToObject(parts.workspaceFolders,

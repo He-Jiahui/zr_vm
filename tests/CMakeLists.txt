@@ -4841,6 +4841,23 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             COMMAND $<TARGET_FILE:zr_vm_language_server_lsp_capability_registry_test>
     )
     zr_vm_add_support_target(
+            zr_vm_language_server_stdio_optional_capability_allocations_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_stdio_optional_capability_allocations.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_initialize_capabilities.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_lsp_parse.c
+    )
+    target_include_directories(zr_vm_language_server_stdio_optional_capability_allocations_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+    )
+    zr_vm_link_language_server(zr_vm_language_server_stdio_optional_capability_allocations_test)
+    zr_link_third_party_for_target(zr_vm_language_server_stdio_optional_capability_allocations_test "zr_c_json")
+    add_test(
+            NAME language_server_stdio_optional_capability_allocations
+            COMMAND $<TARGET_FILE:zr_vm_language_server_stdio_optional_capability_allocations_test>
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_lsp_semantic_snapshot_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_semantic_snapshot.c
     )
@@ -7021,6 +7038,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
             NAME language_server_stdio_resolve_capabilities_smoke
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_resolve_capabilities_smoke.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+    add_test(
+            NAME language_server_stdio_optional_capabilities_smoke
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_optional_capabilities_smoke.js
                     $<TARGET_FILE:zr_vm_language_server_stdio>
     )
     add_test(

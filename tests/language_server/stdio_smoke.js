@@ -1027,7 +1027,12 @@ async function main() {
             { uri: pathToFileURL(fileOperationsFixture.rootPath).toString(), name: 'file-operations' },
             { uri: pathToFileURL(moduleIdentityRenameFixture.rootPath).toString(), name: 'module-rename' },
         ],
-        capabilities: {},
+        capabilities: {
+            textDocument: {
+                inlineCompletion: {},
+                rangeFormatting: { rangesSupport: true },
+            },
+        },
         clientInfo: {
             name: 'stdio-smoke',
             version: '0.0.1',
@@ -1089,7 +1094,8 @@ async function main() {
         'codeActionProvider must advertise remove-unused source actions');
     assert(initializeResult.capabilities.documentFormattingProvider === true,
         'documentFormattingProvider must be enabled');
-    assert(initializeResult.capabilities.documentRangeFormattingProvider === true,
+    assert(initializeResult.capabilities.documentRangeFormattingProvider &&
+        initializeResult.capabilities.documentRangeFormattingProvider.rangesSupport === true,
         'documentRangeFormattingProvider must be enabled');
     assert(initializeResult.capabilities.textDocumentSync &&
         initializeResult.capabilities.textDocumentSync.willSaveWaitUntil === true,

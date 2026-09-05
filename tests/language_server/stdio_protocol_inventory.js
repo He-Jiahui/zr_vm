@@ -257,6 +257,10 @@ async function main() {
                'initialize must return a capabilities object');
 
         const capabilities = result.capabilities;
+        assert(capabilities.inlineCompletionProvider === undefined,
+               '3.17 clients must not receive an unnegotiated inline completion provider');
+        assert(capabilities.documentRangeFormattingProvider === true,
+               '3.17 clients must retain ordinary range formatting without rangesSupport');
         for (const name of ['declarationProvider', 'typeDefinitionProvider']) {
             assert(capabilities[name] === undefined,
                    `${name} must not advertise a definition alias`);
