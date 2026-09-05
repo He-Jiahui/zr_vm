@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "zr_vm_language_server/lsp_capability_registry.h"
 
 #include "project/lsp_workspace.h"
 
@@ -239,7 +240,9 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
                          cJSON_CreateString(ZR_LSP_COMPLETION_TRIGGER_CHARACTER_MEMBER_ACCESS));
     cJSON_AddItemToArray(parts.triggerCharacters,
                          cJSON_CreateString(ZR_LSP_COMPLETION_TRIGGER_CHARACTER_NAMESPACE_ACCESS));
-    cJSON_AddBoolToObject(parts.completionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
+    cJSON_AddBoolToObject(parts.completionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER,
+                          ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+                                  ZR_LSP_FIELD_COMPLETION_PROVIDER, ZR_LSP_RUNTIME_NATIVE));
     cJSON_AddItemToObject(parts.completionProvider, ZR_LSP_FIELD_TRIGGER_CHARACTERS, parts.triggerCharacters);
     cJSON_AddItemToObject(parts.completionProvider,
                           ZR_LSP_FIELD_ALL_COMMIT_CHARACTERS,
@@ -254,8 +257,12 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
                           parts.signatureTriggerCharacters);
 
     cJSON_AddBoolToObject(parts.renameProvider, ZR_LSP_FIELD_PREPARE_PROVIDER, 1);
-    cJSON_AddBoolToObject(parts.workspaceSymbolProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
-    cJSON_AddBoolToObject(parts.inlayHintProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
+    cJSON_AddBoolToObject(parts.workspaceSymbolProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER,
+                          ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+                                  ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER, ZR_LSP_RUNTIME_NATIVE));
+    cJSON_AddBoolToObject(parts.inlayHintProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER,
+                          ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+                                  ZR_LSP_FIELD_INLAY_HINT_PROVIDER, ZR_LSP_RUNTIME_NATIVE));
 
     cJSON_AddItemToObject(parts.capabilities, ZR_LSP_FIELD_TEXT_DOCUMENT_SYNC, parts.textDocumentSync);
     negotiate_position_encoding(server, params);

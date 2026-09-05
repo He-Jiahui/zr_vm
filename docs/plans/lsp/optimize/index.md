@@ -19,6 +19,17 @@
 
 本目录将整改拆为七个有严格依赖的计划。不得跳过前置里程碑去继续堆叠上层 provider。
 
+## 当前执行状态（2026-09-05）
+
+Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
+撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述
+resolve 支持。专项通过 GCC/Clang/MSVC 与实际 Web worker callback 回归。
+下文为 2026-08-22 历史审查证据，不能直接当作当前实现状态。
+
+Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read
+stdio 用例在已提交基线和本次修复后均失败，Clang 取消用例有一次并发验证超时。
+现有符号投影/类型查询会话的提交尚待接续，阶段 01-06 本轮晋级门槛未通过。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

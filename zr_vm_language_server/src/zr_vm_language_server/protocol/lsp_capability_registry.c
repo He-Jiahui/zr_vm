@@ -9,10 +9,14 @@
 #define ZR_LSP_CAPABILITY_RUNTIME_ALL \
     (ZR_LSP_RUNTIME_NATIVE | ZR_LSP_RUNTIME_WASM)
 
-#define ZR_LSP_CAPABILITY(key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, resolve) \
+#define ZR_LSP_CAPABILITY_WITH_RESOLVE_RUNTIMES(key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, resolve, resolveRuntimes) \
     { key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, \
       ZR_LSP_CAPABILITY_RUNTIME_ALL, 3U, 17U, \
-      (resolve) != ZR_LSP_CAPABILITY_RESOLVE_NONE, ZR_FALSE, resolve }
+      (resolve) != ZR_LSP_CAPABILITY_RESOLVE_NONE, ZR_FALSE, resolve, resolveRuntimes }
+
+#define ZR_LSP_CAPABILITY(key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, resolve) \
+    ZR_LSP_CAPABILITY_WITH_RESOLVE_RUNTIMES(key, methodName, clientPath, coreEntry, nativeEntry, \
+                                            wasmEntry, testName, resolve, 0U)
 
 static const SZrLspCapabilityDescriptor g_capabilities[] = {
         ZR_LSP_CAPABILITY("textDocumentSync",
@@ -31,14 +35,15 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
                           "connection.onInitialize",
                           "language_server_stdio_position_encoding_smoke",
                           ZR_LSP_CAPABILITY_RESOLVE_NONE),
-        ZR_LSP_CAPABILITY("completionProvider",
+        ZR_LSP_CAPABILITY_WITH_RESOLVE_RUNTIMES("completionProvider",
                           "textDocument/completion",
                           "textDocument.completion",
                           "ZrLanguageServer_Lsp_GetCompletions",
                           "stdio_handle_completion",
                           "connection.onCompletion",
                           "language_server_stdio_smoke",
-                          ZR_LSP_CAPABILITY_RESOLVE_MATERIAL),
+                          ZR_LSP_CAPABILITY_RESOLVE_MATERIAL,
+                          ZR_LSP_RUNTIME_NATIVE),
         ZR_LSP_CAPABILITY("hoverProvider",
                           "textDocument/hover",
                           "textDocument.hover",
@@ -94,7 +99,7 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
                           "stdio_handle_workspace_symbol",
                           "connection.onWorkspaceSymbol",
                           "language_server_stdio_smoke",
-                          ZR_LSP_CAPABILITY_RESOLVE_IDENTITY),
+                          ZR_LSP_CAPABILITY_RESOLVE_NONE),
         ZR_LSP_CAPABILITY("documentHighlightProvider",
                           "textDocument/documentHighlight",
                           "textDocument.documentHighlight",
@@ -110,7 +115,7 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
                           "stdio_handle_inlay_hint",
                           "connection.onRequest('textDocument/inlayHint'",
                           "language_server_lsp_advanced_editor_features_test",
-                          ZR_LSP_CAPABILITY_RESOLVE_IDENTITY),
+                          ZR_LSP_CAPABILITY_RESOLVE_NONE),
         ZR_LSP_CAPABILITY("semanticTokensProvider",
                           "textDocument/semanticTokens/full",
                           "textDocument.semanticTokens",
@@ -119,14 +124,15 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
                           "connection.onRequest('textDocument/semanticTokens/full'",
                           "language_server_stdio_smoke",
                           ZR_LSP_CAPABILITY_RESOLVE_NONE),
-        ZR_LSP_CAPABILITY("codeActionProvider",
+        ZR_LSP_CAPABILITY_WITH_RESOLVE_RUNTIMES("codeActionProvider",
                           "textDocument/codeAction",
                           "textDocument.codeAction",
                           "ZrLanguageServer_Lsp_GetCodeActions",
                           "stdio_handle_code_action",
                           "connection.onRequest('textDocument/codeAction'",
                           "language_server_stdio_diagnostic_fix_smoke",
-                          ZR_LSP_CAPABILITY_RESOLVE_IDENTITY),
+                          ZR_LSP_CAPABILITY_RESOLVE_MATERIAL,
+                          ZR_LSP_RUNTIME_NATIVE),
         ZR_LSP_CAPABILITY("documentFormattingProvider",
                           "textDocument/formatting",
                           "textDocument.formatting",
@@ -254,7 +260,7 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
                           "stdio_handle_document_link",
                           "connection.onRequest('textDocument/documentLink'",
                           "language_server_lsp_advanced_editor_features_test",
-                          ZR_LSP_CAPABILITY_RESOLVE_IDENTITY),
+                          ZR_LSP_CAPABILITY_RESOLVE_NONE),
         ZR_LSP_CAPABILITY("codeLensProvider",
                           "textDocument/codeLens",
                           "textDocument.codeLens",
@@ -262,7 +268,7 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
                           "stdio_handle_code_lens",
                           "connection.onRequest('textDocument/codeLens'",
                           "language_server_lsp_advanced_editor_features_test",
-                          ZR_LSP_CAPABILITY_RESOLVE_IDENTITY),
+                          ZR_LSP_CAPABILITY_RESOLVE_NONE),
         ZR_LSP_CAPABILITY("diagnosticProvider",
                           "textDocument/diagnostic",
                           "textDocument.diagnostic",
@@ -282,6 +288,7 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
 };
 
 #undef ZR_LSP_CAPABILITY
+#undef ZR_LSP_CAPABILITY_WITH_RESOLVE_RUNTIMES
 
 static TZrBool string_is_present(const TZrChar *value) {
     return value != ZR_NULL && value[0] != '\0';
@@ -326,6 +333,7 @@ TZrBool ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(
         !string_is_present(descriptor->testId) ||
         descriptor->runtimeMask == 0U ||
         (descriptor->runtimeMask & ~validRuntimeMask) != 0U ||
+        (descriptor->resolveRuntimeMask & ~descriptor->runtimeMask) != 0U ||
         descriptor->minimumMajor == 0U) {
         return ZR_FALSE;
     }
@@ -334,9 +342,11 @@ TZrBool ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(
         return ZR_FALSE;
     }
     if (descriptor->hasResolve) {
-        return descriptor->resolveBehavior != ZR_LSP_CAPABILITY_RESOLVE_NONE;
+        return descriptor->resolveRuntimeMask != 0U &&
+               descriptor->resolveBehavior != ZR_LSP_CAPABILITY_RESOLVE_NONE;
     }
-    return descriptor->resolveBehavior == ZR_LSP_CAPABILITY_RESOLVE_NONE;
+    return descriptor->resolveRuntimeMask == 0U &&
+           descriptor->resolveBehavior == ZR_LSP_CAPABILITY_RESOLVE_NONE;
 }
 
 TZrBool ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(
@@ -344,7 +354,8 @@ TZrBool ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(
     if (!ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(descriptor)) {
         return ZR_FALSE;
     }
-    if (descriptor->resolveBehavior == ZR_LSP_CAPABILITY_RESOLVE_IDENTITY) {
+    if (descriptor->hasResolve &&
+        descriptor->resolveBehavior != ZR_LSP_CAPABILITY_RESOLVE_MATERIAL) {
         return ZR_FALSE;
     }
     if ((descriptor->minimumMajor > 3U ||
@@ -353,4 +364,16 @@ TZrBool ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(
         return ZR_FALSE;
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+        const TZrChar *capabilityKey, EZrLspRuntimeMask runtime) {
+    const SZrLspCapabilityDescriptor *descriptor;
+
+    if (runtime != ZR_LSP_RUNTIME_NATIVE && runtime != ZR_LSP_RUNTIME_WASM) {
+        return ZR_FALSE;
+    }
+    descriptor = ZrLanguageServer_LspCapabilityRegistry_Find(capabilityKey);
+    return ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(descriptor) &&
+           descriptor->hasResolve && (descriptor->resolveRuntimeMask & (TZrUInt32)runtime) != 0U;
 }

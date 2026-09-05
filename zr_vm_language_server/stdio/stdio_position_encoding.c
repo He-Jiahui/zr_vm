@@ -677,11 +677,7 @@ static void apply_encoding_to_json_node(SZrStdioServer *server, cJSON *json, con
 
 static TZrBool result_method_uses_client_owned_positions(const char *method) {
     return method != NULL &&
-           (strcmp(method, ZR_LSP_METHOD_INLAY_HINT_RESOLVE) == 0 ||
-            strcmp(method, ZR_LSP_METHOD_CODE_ACTION_RESOLVE) == 0 ||
-            strcmp(method, ZR_LSP_METHOD_DOCUMENT_LINK_RESOLVE) == 0 ||
-            strcmp(method, ZR_LSP_METHOD_CODE_LENS_RESOLVE) == 0 ||
-            strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL_RESOLVE) == 0);
+           strcmp(method, ZR_LSP_METHOD_CODE_ACTION_RESOLVE) == 0;
 }
 
 void apply_position_encoding_to_response(SZrStdioServer *server,

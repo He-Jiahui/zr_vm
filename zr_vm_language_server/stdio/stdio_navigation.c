@@ -88,11 +88,6 @@ cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params) {
     return result;
 }
 
-cJSON *handle_inlay_hint_resolve_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
-}
-
 cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
@@ -233,11 +228,6 @@ cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *par
     result = serialize_symbols_array(&symbols);
     free_symbols_array(server->state, &symbols);
     return result;
-}
-
-cJSON *handle_workspace_symbol_resolve_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
 }
 
 cJSON *handle_document_highlights_request(SZrStdioServer *server, const cJSON *params) {

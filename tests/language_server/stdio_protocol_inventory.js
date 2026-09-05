@@ -1,6 +1,7 @@
-const { spawn } = require('child_process');
+const assertStrict = require('assert').strict;
 const fs = require('fs');
 const path = require('path');
+const { StdioProtocolClient } = require('./stdio_protocol_client');
 
 const REQUEST_TIMEOUT_MS = 10000;
 
@@ -62,7 +63,7 @@ const CAPABILITY_PROFILES = {
     workspaceSymbolProvider: {
         nativeMarker: 'ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER',
         wasmMarker: 'connection.onWorkspaceSymbol',
-        state: 'resolve-contract-pending',
+        state: 'implemented',
         owner: 'optimize/04-editor-feature-correctness',
     },
     documentHighlightProvider: {
@@ -74,7 +75,7 @@ const CAPABILITY_PROFILES = {
     inlayHintProvider: {
         nativeMarker: 'ZR_LSP_FIELD_INLAY_HINT_PROVIDER',
         wasmMarker: "connection.onRequest('textDocument/inlayHint'",
-        state: 'resolve-contract-pending',
+        state: 'implemented',
         owner: 'optimize/04-editor-feature-correctness',
     },
     semanticTokensProvider: {
@@ -86,7 +87,7 @@ const CAPABILITY_PROFILES = {
     codeActionProvider: {
         nativeMarker: 'ZR_LSP_FIELD_CODE_ACTION_PROVIDER',
         wasmMarker: "connection.onRequest('textDocument/codeAction'",
-        state: 'resolve-contract-pending',
+        state: 'implemented',
         owner: 'optimize/02-snapshots-workspaces-and-diagnostics',
     },
     documentFormattingProvider: {
@@ -182,13 +183,13 @@ const CAPABILITY_PROFILES = {
     documentLinkProvider: {
         nativeMarker: 'ZR_LSP_FIELD_DOCUMENT_LINK_PROVIDER',
         wasmMarker: "connection.onRequest('textDocument/documentLink'",
-        state: 'resolve-contract-pending',
+        state: 'implemented',
         owner: 'optimize/00-baseline-and-contract',
     },
     codeLensProvider: {
         nativeMarker: 'ZR_LSP_FIELD_CODE_LENS_PROVIDER',
         wasmMarker: "connection.onRequest('textDocument/codeLens'",
-        state: 'resolve-contract-pending',
+        state: 'implemented',
         owner: 'optimize/00-baseline-and-contract',
     },
     diagnosticProvider: {
@@ -206,119 +207,23 @@ const CAPABILITY_PROFILES = {
 };
 
 const RISKY_CONTRACTS = [
-    ['workspaceSymbolProvider.resolveProvider', 'identity resolve must be withdrawn or made material'],
-    ['inlayHintProvider.resolveProvider', 'identity resolve must be withdrawn or made material'],
-    ['documentLinkProvider.resolveProvider', 'identity resolve must be withdrawn or made material'],
-    ['codeLensProvider.resolveProvider', 'identity resolve must be withdrawn or made material'],
+    ['workspaceSymbolProvider.resolveProvider', 'identity-only resolve is unsupported'],
+    ['inlayHintProvider.resolveProvider', 'identity-only resolve is unsupported'],
+    ['documentLinkProvider.resolveProvider', 'identity-only resolve is unsupported'],
+    ['codeLensProvider.resolveProvider', 'identity-only resolve is unsupported'],
     ['workspace.workspaceFolders.changeNotifications', 'workspace folder notifications require a handler'],
+];
+
+const COMPLETE_INITIAL_RESPONSE_PROVIDERS = [
+    'workspaceSymbolProvider',
+    'inlayHintProvider',
+    'documentLinkProvider',
+    'codeLensProvider',
 ];
 
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
-    }
-}
-
-class JsonRpcClient {
-    constructor(serverPath) {
-        this.child = spawn(serverPath, [], { stdio: ['pipe', 'pipe', 'pipe'] });
-        this.nextId = 1;
-        this.buffer = Buffer.alloc(0);
-        this.pending = new Map();
-        this.stderr = '';
-
-        this.child.on('error', (error) => this.failPending(error));
-        this.child.on('close', (code, signal) => {
-            if (this.pending.size > 0) {
-                this.failPending(new Error(`stdio server closed before a response (code=${code}, signal=${signal})`));
-            }
-        });
-        this.child.stdout.on('data', (chunk) => this.onData(chunk));
-        this.child.stderr.on('data', (chunk) => {
-            this.stderr += chunk.toString('utf8');
-        });
-    }
-
-    onData(chunk) {
-        this.buffer = Buffer.concat([this.buffer, chunk]);
-        for (;;) {
-            const headerEnd = this.buffer.indexOf('\r\n\r\n');
-            if (headerEnd < 0) {
-                return;
-            }
-            const header = this.buffer.subarray(0, headerEnd).toString('ascii');
-            const match = /^Content-Length:\s*(\d+)\s*$/im.exec(header);
-            if (match === null) {
-                this.failPending(new Error(`invalid LSP frame header: ${header}`));
-                return;
-            }
-            const contentLength = Number(match[1]);
-            const messageStart = headerEnd + 4;
-            const messageEnd = messageStart + contentLength;
-            if (this.buffer.length < messageEnd) {
-                return;
-            }
-            const payload = this.buffer.subarray(messageStart, messageEnd).toString('utf8');
-            this.buffer = this.buffer.subarray(messageEnd);
-            let message;
-            try {
-                message = JSON.parse(payload);
-            } catch (error) {
-                this.failPending(new Error(`invalid LSP JSON payload: ${error.message}`));
-                return;
-            }
-            if (!Object.prototype.hasOwnProperty.call(message, 'id')) {
-                continue;
-            }
-            const pending = this.pending.get(message.id);
-            if (pending === undefined) {
-                continue;
-            }
-            this.pending.delete(message.id);
-            clearTimeout(pending.timeout);
-            if (message.error !== undefined) {
-                pending.reject(new Error(`LSP request ${pending.method} failed: ${JSON.stringify(message.error)}`));
-            } else {
-                pending.resolve(message.result);
-            }
-        }
-    }
-
-    request(method, params) {
-        const id = this.nextId++;
-        const payload = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, method, params }), 'utf8');
-        const frame = Buffer.concat([Buffer.from(`Content-Length: ${payload.length}\r\n\r\n`, 'ascii'), payload]);
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.pending.delete(id);
-                reject(new Error(`timed out waiting for ${method}; stderr=${this.stderr}`));
-            }, REQUEST_TIMEOUT_MS);
-            this.pending.set(id, { method, resolve, reject, timeout });
-            this.child.stdin.write(frame);
-        });
-    }
-
-    notify(method, params) {
-        const payload = Buffer.from(JSON.stringify({ jsonrpc: '2.0', method, params }), 'utf8');
-        this.child.stdin.write(Buffer.concat([Buffer.from(`Content-Length: ${payload.length}\r\n\r\n`, 'ascii'), payload]));
-    }
-
-    failPending(error) {
-        for (const pending of this.pending.values()) {
-            clearTimeout(pending.timeout);
-            pending.reject(error);
-        }
-        this.pending.clear();
-    }
-
-    async close() {
-        try {
-            await this.request('shutdown', undefined);
-            this.notify('exit', undefined);
-            this.child.stdin.end();
-        } catch (_) {
-            this.child.kill('SIGKILL');
-        }
     }
 }
 
@@ -348,22 +253,46 @@ async function main() {
     const dispatchSource = readSource(sourceRoot, 'zr_vm_language_server/stdio/stdio_request_dispatch.c');
     const workerSource = readSource(sourceRoot, 'zr_vm_language_server_extension/src/browser/worker/server-worker.ts');
     const nativeSources = `${initializeSource}\n${capabilitySource}\n${dispatchSource}`;
-    const client = new JsonRpcClient(serverPath);
+    const client = new StdioProtocolClient(serverPath);
 
     try {
-        const result = await client.request('initialize', {
+        const result = await client.requestWithId('initialize', {
             processId: null,
             rootUri: null,
             capabilities: {
                 workspace: { workspaceFolders: true },
                 textDocument: { semanticTokens: {}, inlayHint: {}, inlineValue: {} },
             },
-        });
+        }, REQUEST_TIMEOUT_MS).promise;
         assert(result !== null && typeof result === 'object', 'initialize must return an object');
         assert(result.capabilities !== null && typeof result.capabilities === 'object',
                'initialize must return a capabilities object');
 
         const capabilities = result.capabilities;
+        const identityResolveOverclaims = COMPLETE_INITIAL_RESPONSE_PROVIDERS.filter((name) =>
+            nestedValue(capabilities, `${name}.resolveProvider`) === true);
+        assert(identityResolveOverclaims.length === 0,
+               `identity-only resolve must not be advertised: ${identityResolveOverclaims.join(', ')}`);
+        for (const name of COMPLETE_INITIAL_RESPONSE_PROVIDERS) {
+            const provider = capabilities[name];
+            assert(provider === true || (provider !== null && typeof provider === 'object'),
+                   `${name} must remain available with complete initial responses`);
+        }
+        assert(capabilities.codeActionProvider && capabilities.codeActionProvider.resolveProvider === true,
+               'native code action resolve must retain snapshot revalidation');
+        client.notify('initialized', {});
+        for (const method of [
+            'workspaceSymbol/resolve', 'inlayHint/resolve',
+            'documentLink/resolve', 'codeLens/resolve',
+        ]) {
+            const id = `withdrawn-${method}`;
+            const response = await client.request(method, {}, id, REQUEST_TIMEOUT_MS);
+            assertStrict.deepEqual(response, {
+                jsonrpc: '2.0',
+                id,
+                error: { code: -32601, message: 'Method not found' },
+            }, `${method} must reject unsupported resolve with MethodNotFound`);
+        }
         const declared = Object.keys(capabilities).sort();
         const unclassified = declared.filter((name) => CAPABILITY_PROFILES[name] === undefined);
         const inventory = declared.map((name) => {
@@ -404,7 +333,14 @@ async function main() {
             status: 'baseline-recorded',
         }, null, 2));
     } finally {
-        await client.close();
+        try {
+            await client.requestWithId('shutdown', undefined, REQUEST_TIMEOUT_MS).promise;
+            client.notify('exit', undefined);
+            client.endInput();
+            await client.waitForExit(REQUEST_TIMEOUT_MS);
+        } finally {
+            await client.terminate();
+        }
     }
 }
 

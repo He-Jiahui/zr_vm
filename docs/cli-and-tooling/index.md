@@ -109,6 +109,9 @@ doc_type: category-index
   - stdio server child process 的 OS peak working-set budget 与跨平台采集
   - request/cancel/change/close 的 reader-thread 线性化和精确 snapshot 验证
   - server-owned reader stop/join、ordered teardown 与启动故障注入
+- [lsp-capability-resolve-contract.md](lsp-capability-resolve-contract.md)
+  - native/WASM resolve runtime masks 与初始响应完整性
+  - identity-only resolve 撤销、MethodNotFound 与 code-action snapshot 复验
 - `lsp-pull-push-diagnostics.md`
   - native/WASM 共享的 structured diagnostic resultId 与 dependency identity
   - workspace indexed-source coverage、invalid params 和 push/pull coexistence

@@ -28,6 +28,7 @@ plan_sources:
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_resolve_capabilities_smoke.js
   - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/test_stdio_server_lifecycle.c
@@ -35,6 +36,17 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Resolve Capability Validation
+
+`stdio_resolve_capabilities_smoke.js` uses the shared protocol client to check
+complete initial document links, code lenses, inlay hints and workspace symbols.
+It rejects identity-only resolve advertisements and requires the complete
+`-32601 Method not found` envelope for each withdrawn method. Native code-action
+resolve is tested against current, stale and refreshed document snapshots,
+including client version zero. See the
+[resolve contract](lsp-capability-resolve-contract.md) for runtime masks and
+the Web worker's validation boundary.
 
 ## Process Peak Budget
 

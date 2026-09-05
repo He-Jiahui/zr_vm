@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "zr_vm_language_server/lsp_capability_registry.h"
 
 void add_advanced_editor_capabilities(cJSON *capabilities) {
     cJSON *codeActionProvider;
@@ -20,7 +21,9 @@ void add_advanced_editor_capabilities(cJSON *capabilities) {
         cJSON_AddItemToArray(codeActionKinds, cJSON_CreateString(ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS));
         cJSON_AddItemToArray(codeActionKinds, cJSON_CreateString(ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED));
         cJSON_AddItemToObject(codeActionProvider, ZR_LSP_FIELD_CODE_ACTION_KINDS, codeActionKinds);
-        cJSON_AddBoolToObject(codeActionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
+        cJSON_AddBoolToObject(codeActionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER,
+                              ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+                                      ZR_LSP_FIELD_CODE_ACTION_PROVIDER, ZR_LSP_RUNTIME_NATIVE));
         cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_CODE_ACTION_PROVIDER, codeActionProvider);
     } else {
         cJSON_Delete(codeActionProvider);
@@ -60,13 +63,17 @@ void add_advanced_editor_capabilities(cJSON *capabilities) {
 
     documentLinkProvider = cJSON_CreateObject();
     if (documentLinkProvider != NULL) {
-        cJSON_AddBoolToObject(documentLinkProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
+        cJSON_AddBoolToObject(documentLinkProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER,
+                              ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+                                      ZR_LSP_FIELD_DOCUMENT_LINK_PROVIDER, ZR_LSP_RUNTIME_NATIVE));
         cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_LINK_PROVIDER, documentLinkProvider);
     }
 
     codeLensProvider = cJSON_CreateObject();
     if (codeLensProvider != NULL) {
-        cJSON_AddBoolToObject(codeLensProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
+        cJSON_AddBoolToObject(codeLensProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER,
+                              ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+                                      ZR_LSP_FIELD_CODE_LENS_PROVIDER, ZR_LSP_RUNTIME_NATIVE));
         cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_CODE_LENS_PROVIDER, codeLensProvider);
     }
 

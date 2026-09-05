@@ -100,15 +100,15 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
             documentRangeFormattingProvider: true,
             codeActionProvider: {
                 codeActionKinds: ['quickfix', 'source.organizeImports', 'source.removeUnused'],
-                resolveProvider: true,
+                resolveProvider: false,
             },
             foldingRangeProvider: true,
             selectionRangeProvider: true,
             documentLinkProvider: {
-                resolveProvider: true,
+                resolveProvider: false,
             },
             codeLensProvider: {
-                resolveProvider: true,
+                resolveProvider: false,
             },
             diagnosticProvider: {
                 interFileDependencies: true,
@@ -322,8 +322,6 @@ connection.onRequest('textDocument/codeAction', async ({
     return filterCodeActions(responseData<unknown[]>(response, []), context?.only);
 });
 
-connection.onRequest('codeAction/resolve', async (action: unknown) => action);
-
 connection.onRequest('textDocument/foldingRange', async ({ textDocument }: { textDocument: { uri: string } }) => {
     const response = await bridge.getFoldingRanges(textDocument.uri);
     return responseData<unknown[]>(response, []);
@@ -350,14 +348,10 @@ connection.onRequest('textDocument/documentLink', async ({ textDocument }: { tex
     return responseData<unknown[]>(response, []);
 });
 
-connection.onRequest('documentLink/resolve', async (link: unknown) => link);
-
 connection.onRequest('textDocument/codeLens', async ({ textDocument }: { textDocument: { uri: string } }) => {
     const response = await bridge.getCodeLens(textDocument.uri);
     return responseData<unknown[]>(response, []);
 });
-
-connection.onRequest('codeLens/resolve', async (lens: unknown) => lens);
 
 connection.onRequest('textDocument/diagnostic', async ({
     textDocument,

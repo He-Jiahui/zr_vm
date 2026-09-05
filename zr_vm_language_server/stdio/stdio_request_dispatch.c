@@ -23,8 +23,6 @@ int dispatch_request_method(SZrStdioServer *server,
         *outResult = handle_signature_help_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT) == 0) {
         *outResult = handle_inlay_hint_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_INLAY_HINT_RESOLVE) == 0) {
-        *outResult = handle_inlay_hint_resolve_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
         *outResult = handle_definition_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DECLARATION) == 0) {
@@ -67,12 +65,8 @@ int dispatch_request_method(SZrStdioServer *server,
         *outResult = handle_color_presentation_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_LINK) == 0) {
         *outResult = handle_document_link_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_DOCUMENT_LINK_RESOLVE) == 0) {
-        *outResult = handle_document_link_resolve_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_CODE_LENS) == 0) {
         *outResult = handle_code_lens_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_CODE_LENS_RESOLVE) == 0) {
-        *outResult = handle_code_lens_resolve_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY) == 0) {
         *outResult = handle_prepare_call_hierarchy_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_INCOMING_CALLS) == 0) {
@@ -93,8 +87,6 @@ int dispatch_request_method(SZrStdioServer *server,
         *outResult = handle_document_symbols_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0) {
         *outResult = handle_workspace_symbols_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL_RESOLVE) == 0) {
-        *outResult = handle_workspace_symbol_resolve_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_EXECUTE_COMMAND) == 0) {
         *outResult = handle_execute_command_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_WILL_CREATE_FILES) == 0) {

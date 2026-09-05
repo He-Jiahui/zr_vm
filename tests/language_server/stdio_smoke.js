@@ -1053,8 +1053,8 @@ async function main() {
     assert(initializeResult.capabilities.documentSymbolProvider === true,
         'documentSymbolProvider must be enabled');
     assert(initializeResult.capabilities.workspaceSymbolProvider &&
-        initializeResult.capabilities.workspaceSymbolProvider.resolveProvider === true,
-        'workspaceSymbolProvider resolveProvider must be enabled');
+        initializeResult.capabilities.workspaceSymbolProvider.resolveProvider !== true,
+        'workspaceSymbolProvider must be available without identity resolve');
     assert(initializeResult.capabilities.semanticTokensProvider &&
         initializeResult.capabilities.semanticTokensProvider.full &&
         initializeResult.capabilities.semanticTokensProvider.full.delta === true,
@@ -1075,8 +1075,8 @@ async function main() {
         !semanticTokenModifiers.includes('deprecated'),
         'semantic token legend must not retain removed syntax modifiers');
     assert(initializeResult.capabilities.inlayHintProvider &&
-        initializeResult.capabilities.inlayHintProvider.resolveProvider === true,
-        'inlayHintProvider resolveProvider must be enabled');
+        initializeResult.capabilities.inlayHintProvider.resolveProvider !== true,
+        'inlayHintProvider must be available without identity resolve');
     assert(initializeResult.capabilities.codeActionProvider &&
         Array.isArray(initializeResult.capabilities.codeActionProvider.codeActionKinds) &&
         initializeResult.capabilities.codeActionProvider.codeActionKinds.includes('source.organizeImports'),
@@ -1112,8 +1112,8 @@ async function main() {
     assert(initializeResult.capabilities.inlineCompletionProvider === true,
         'inlineCompletionProvider must be enabled');
     assert(initializeResult.capabilities.documentLinkProvider &&
-        initializeResult.capabilities.documentLinkProvider.resolveProvider === true,
-        'documentLinkProvider resolveProvider must be enabled');
+        initializeResult.capabilities.documentLinkProvider.resolveProvider !== true,
+        'documentLinkProvider must be available without identity resolve');
     assert(initializeResult.capabilities.declarationProvider === true,
         'declarationProvider must be enabled');
     assert(initializeResult.capabilities.typeDefinitionProvider === true,
@@ -1121,8 +1121,8 @@ async function main() {
     assert(initializeResult.capabilities.implementationProvider === true,
         'implementationProvider must be enabled');
     assert(initializeResult.capabilities.codeLensProvider &&
-        initializeResult.capabilities.codeLensProvider.resolveProvider === true,
-        'codeLensProvider resolveProvider must be enabled');
+        initializeResult.capabilities.codeLensProvider.resolveProvider !== true,
+        'codeLensProvider must be available without identity resolve');
     assert(!initializeResult.capabilities.executeCommandProvider ||
         !Array.isArray(initializeResult.capabilities.executeCommandProvider.commands) ||
         (!initializeResult.capabilities.executeCommandProvider.commands.includes('zr.runCurrentProject') &&
@@ -1645,12 +1645,15 @@ async function main() {
     });
     assert(Array.isArray(workspaceSymbols) && workspaceSymbols.length > 0,
         'workspace/symbol must return at least one symbol');
-    const resolvedWorkspaceSymbol = await client.request('workspaceSymbol/resolve', workspaceSymbols[0]);
-    assert(resolvedWorkspaceSymbol &&
-        resolvedWorkspaceSymbol.name === workspaceSymbols[0].name &&
-        resolvedWorkspaceSymbol.location &&
-        resolvedWorkspaceSymbol.location.uri === workspaceSymbols[0].location.uri,
-    'workspaceSymbol/resolve must preserve resolved workspace symbols');
+    assert(workspaceSymbols.every((symbol) =>
+        typeof symbol.name === 'string' && symbol.name.length > 0 &&
+        symbol.location && typeof symbol.location.uri === 'string' &&
+        symbol.location.range && symbol.location.range.start && symbol.location.range.end &&
+        Number.isInteger(symbol.location.range.start.line) &&
+        Number.isInteger(symbol.location.range.start.character) &&
+        Number.isInteger(symbol.location.range.end.line) &&
+        Number.isInteger(symbol.location.range.end.character)),
+    'workspace/symbol must return complete locations without resolve');
 
     const highlights = await client.request('textDocument/documentHighlight', {
         textDocument: { uri: documentUri },
@@ -1887,20 +1890,19 @@ async function main() {
     const runTestCodeLens = Array.isArray(testCodeLenses) ? testCodeLenses.find((lens) =>
         lens &&
         lens.command &&
-        lens.command.command === 'zr.runCurrentProject' &&
-        lens.data &&
-        lens.data.command === lens.command.command &&
-        lens.data.range) : undefined;
+        lens.command.command === 'zr.runCurrentProject') : undefined;
     assert(runTestCodeLens,
-        `textDocument/codeLens must expose a run command with resolve data for test attributes: ${JSON.stringify(testCodeLenses)}`);
-    const resolvedTestCodeLens = await client.request('codeLens/resolve', runTestCodeLens);
-    assert(resolvedTestCodeLens &&
-        resolvedTestCodeLens.command &&
-        resolvedTestCodeLens.command.command === runTestCodeLens.command.command &&
-        resolvedTestCodeLens.range &&
-        resolvedTestCodeLens.range.start &&
-        resolvedTestCodeLens.range.start.line === runTestCodeLens.range.start.line,
-    'codeLens/resolve must preserve resolved command lenses');
+        `textDocument/codeLens must expose a run command for test attributes: ${JSON.stringify(testCodeLenses)}`);
+    assert(typeof runTestCodeLens.command.title === 'string' &&
+        runTestCodeLens.command.title.length > 0 &&
+        Array.isArray(runTestCodeLens.command.arguments) &&
+        runTestCodeLens.command.arguments[0] === testCodeLensUri &&
+        runTestCodeLens.range && runTestCodeLens.range.start && runTestCodeLens.range.end &&
+        Number.isInteger(runTestCodeLens.range.start.line) &&
+        Number.isInteger(runTestCodeLens.range.start.character) &&
+        Number.isInteger(runTestCodeLens.range.end.line) &&
+        Number.isInteger(runTestCodeLens.range.end.character),
+    'textDocument/codeLens must return an executable command and declaration range without resolve');
     const runCommandResult = await client.request('workspace/executeCommand', {
         command: 'zr.runCurrentProject',
         arguments: [testCodeLensUri],
@@ -2421,12 +2423,11 @@ async function main() {
     assert(genericInlayHints.some((hint) => hint && hint.label === ': int'),
         'inlay hints should include the exact inferred return type for inferNumber');
     const boxInlayHint = genericInlayHints.find((hint) => hint && hint.label === ': Box<int>');
-    const resolvedBoxInlayHint = await client.request('inlayHint/resolve', boxInlayHint);
-    assert(resolvedBoxInlayHint &&
-        resolvedBoxInlayHint.label === boxInlayHint.label &&
-        resolvedBoxInlayHint.position &&
-        resolvedBoxInlayHint.position.line === boxInlayHint.position.line,
-    'inlayHint/resolve must preserve resolved hints');
+    assert(boxInlayHint.position &&
+        Number.isInteger(boxInlayHint.position.line) &&
+        Number.isInteger(boxInlayHint.position.character) &&
+        boxInlayHint.kind === 1,
+    'textDocument/inlayHint must return the type label and position without resolve');
 
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -2590,13 +2591,14 @@ async function main() {
         zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/deps')) &&
         zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/local_modules')),
     'textDocument/documentLink must expose all zrp project path fields');
-    const resolvedZrpLink = await client.request('documentLink/resolve', zrpLinks[0]);
-    assert(resolvedZrpLink &&
-        resolvedZrpLink.target === zrpLinks[0].target &&
-        resolvedZrpLink.range &&
-        resolvedZrpLink.range.start &&
-        resolvedZrpLink.range.start.line === zrpLinks[0].range.start.line,
-    'documentLink/resolve must preserve resolved target links');
+    assert(zrpLinks.every((link) =>
+        typeof link.target === 'string' && link.target.length > 0 &&
+        link.range && link.range.start && link.range.end &&
+        Number.isInteger(link.range.start.line) &&
+        Number.isInteger(link.range.start.character) &&
+        Number.isInteger(link.range.end.line) &&
+        Number.isInteger(link.range.end.character)),
+    'textDocument/documentLink must return target URIs and source ranges without resolve');
 
     const virtualNetworkUri = 'zr-decompiled:/zr.network.zr';
     const virtualNetworkText = await client.request('zr/nativeDeclarationDocument', {

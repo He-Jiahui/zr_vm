@@ -32,6 +32,8 @@ typedef struct SZrLspCapabilityDescriptor {
     TZrBool hasResolve;
     TZrBool isExperimental;
     EZrLspCapabilityResolveBehavior resolveBehavior;
+    /* Resolve support is independent of the base provider runtime mask. */
+    TZrUInt32 resolveRuntimeMask;
 } SZrLspCapabilityDescriptor;
 
 ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_LspCapabilityRegistry_Count(void);
@@ -45,5 +47,8 @@ ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(
 ZR_LANGUAGE_SERVER_API TZrBool
 ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(
         const SZrLspCapabilityDescriptor *descriptor);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
+        const TZrChar *capabilityKey, EZrLspRuntimeMask runtime);
 
 #endif

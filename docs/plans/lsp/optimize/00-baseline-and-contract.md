@@ -91,11 +91,17 @@ typedef struct SZrLspCapabilityDescriptor {
 - Modify: `tests/language_server/stdio_smoke.js`
 - Create: `zr_vm_language_server_extension/test/serverCapabilities.test.js`
 
-- [ ] RED：测试确认 identity-only resolve、definition alias 和未处理 workspace folder 不得被声明。
-- [ ] 在真实实现进入计划 04/05 前关闭：declarationProvider、typeDefinitionProvider、implementationProvider、workspaceFolders changeNotifications，以及 documentLink/codeLens/inlayHint/workspaceSymbol 的 identity resolveProvider。
-- [ ] `codeAction/resolve` 只有在 resolve 阶段实际补充或重新验证 edit 时才保留；否则把 edit 放在初始 action 并关闭 resolve。
+- [x] Sub01 RED/GREEN：撤销 documentLink/codeLens/inlayHint/workspaceSymbol 的 identity resolve 声明、handler 和 method 常量；初始响应保留完整数据，显式请求返回精确 MethodNotFound。见[完成记录](2026-09-05-plan00-task04-sub01-identity-resolve.md)。
+- [x] Sub01：native `codeAction/resolve` 实际复验 snapshot，保留；Web identity resolver 撤销。registry 分别记录 base runtime mask 与 resolve runtime mask。
+- [ ] Sub02：撤销仍然转发 definition 的 declarationProvider/typeDefinitionProvider；为已实现的 implementation relation 和 workspace folder 更新能力补准确协议验收。
 - [ ] `willCreateFiles`/`willDeleteFiles` 若始终返回 null，则只保留 did* 通知注册；`willRenameFiles` 因真实生成 edit 可保留。
 - [ ] 不把撤销 capability 视为功能回归；这是使协议声明与实现一致的 P0 修复。
+
+2026-09-05 条款核对：原先要求关闭 implementationProvider 和 workspaceFolders
+changeNotifications 的依据已被后续实现取代。当前 implementation 消费
+`ImplementationsOf(SymbolId)`，native folder 通知更新实际 workspace；保留能力并
+重验实际目标/状态。declaration/typeDefinition 仍是 definition alias。此调整不代表
+跨 provider implementation 或 Web workspace 已验收，也不改变 syntax 语义规则。
 
 ## Task 5：验收与提交边界
 

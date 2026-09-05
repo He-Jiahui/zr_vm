@@ -132,11 +132,6 @@ cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params)
     return result;
 }
 
-cJSON *handle_document_link_resolve_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
-}
-
 cJSON *handle_declaration_request(SZrStdioServer *server, const cJSON *params) {
     return handle_location_request(server, params, ZrLanguageServer_Lsp_GetDeclaration);
 }
@@ -169,9 +164,4 @@ cJSON *handle_code_lens_request(SZrStdioServer *server, const cJSON *params) {
     result = serialize_code_lens_array(&lenses);
     ZrLanguageServer_Lsp_FreeCodeLens(server->state, &lenses);
     return result;
-}
-
-cJSON *handle_code_lens_resolve_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
 }

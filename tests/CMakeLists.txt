@@ -7010,6 +7010,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                     $<TARGET_FILE:zr_vm_language_server_stdio>
     )
     add_test(
+            NAME language_server_stdio_resolve_capabilities_smoke
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_resolve_capabilities_smoke.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+    add_test(
             NAME language_server_stdio_document_sync_conformance
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_document_sync_conformance.js
