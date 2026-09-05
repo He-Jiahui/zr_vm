@@ -3,6 +3,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_core/src/zr_vm_core/io_source_free.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
@@ -18,6 +19,7 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_core/src/zr_vm_core/io_source_free.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
@@ -34,6 +36,8 @@ plan_sources:
   - .codex/plans/M6 强类型推断完整闭环计划.md
   - .codex/plans/zr_vm阶段化总计划.md
 tests:
+  - tests/artifact/test_manifest_roundtrip.c
+  - tests/artifact/test_io_source_lifetime_cases.h
   - tests/parser/test_type_inference.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_instruction_execution.c
@@ -52,6 +56,9 @@ doc_type: category-index
 
 ## 当前主题
 
+- `io-source-lifetime.md`
+  - decoded source graph ownership and recursive native-storage release
+  - independent runtime storage and GC-managed shared values
 - `typed-module-metadata.md`
   - `SZrFunction` / `SZrIoFunction` 的统一 typed metadata 载体
   - native / source / binary import 的编译期归一化装载

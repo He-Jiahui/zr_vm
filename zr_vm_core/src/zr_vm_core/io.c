@@ -2097,7 +2097,7 @@ static void io_read_enums(SZrIo *io, SZrIoEnum *enums, TZrSize count) {
         enum_->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, enum_->valueType, EZrValueType);
         ZR_IO_READ_NATIVE_TYPE(io, enum_->fieldsLength, TZrSize);
-        enum_->fields = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoField) * enum_->fieldsLength);
+        enum_->fields = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(*enum_->fields) * enum_->fieldsLength);
         io_read_enum_fields(io, enum_->fields, enum_->fieldsLength, enum_->valueType);
     }
 }
@@ -2254,12 +2254,6 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
         return ZR_NULL;
     }
     return source;
-}
-
-void ZrCore_Io_ReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source) {
-    ZR_UNUSED_PARAMETER(global);
-    ZR_UNUSED_PARAMETER(source);
-    // todo: after convert it to vm object, release it.
 }
 
 SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeString sourceName, TZrNativeString md5) {

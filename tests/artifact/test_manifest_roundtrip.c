@@ -157,8 +157,12 @@ static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+#include "test_io_source_lifetime_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_test_manifest_roundtrips_through_binary_and_runtime_loader);
+    RUN_TEST(test_io_source_free_releases_unloaded_graph);
+    RUN_TEST(test_io_source_free_preserves_loaded_function);
     return UNITY_END();
 }
