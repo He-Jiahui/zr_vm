@@ -24,7 +24,7 @@ doc_type: milestone-record
 
 | 开始时间 | 实际完成时间 | 状态 | 完成项目 | 验证结果 |
 | --- | --- | --- | --- | --- |
-| 2026-09-06 01:00 +08:00 | 2026-09-06 04:12 +08:00 | completed (static inventory subitem; linked asset pending) | 对 CMake 导出列表、WASM C++ 定义/声明、bridge `ccall`、worker handler 和 semantic-token legend 建立可重复检查，并修复 Web legend 漂移。 | `wasm-static-contract-mapped`；30 个 runtime export、28 个 bridge call、22 条 worker route、13 个 token type 和 `declaration` modifier 均通过；extension unit 41/41。 |
+| 2026-09-06 01:00 +08:00 | 2026-09-06 05:41 +08:00 | completed (static inventory subitem; linked asset pending) | 对 CMake 导出列表、WASM C++ 定义/声明、bridge `ccall`、worker handler 和 semantic-token legend 建立可重复检查，并修复 Web legend 漂移。 | `wasm-static-contract-mapped`；30 个 runtime export、28 个 bridge call、22 条 worker route、13 个 token type 和 `declaration` modifier 均通过；extension unit 41/41。 |
 
 ## RED 与修复
 
@@ -76,6 +76,11 @@ doc_type: milestone-record
 构建仍被系统以 `Killed` 终止，属于当前验证环境的内存压力，未生成可加载的
 `.wasm`/生成 JS 资产。该文件未复制回工作树、未暂存，也没有宣称链接资产已
 验收。
+
+随后以 `-O0` 配置重试，构建推进到 143/610；由于 WASM target 自身追加的
+`-O2`，又在私有生成命令中把 `execution_dispatch.c` 单独降为 `-O0`。该
+编译过程最高占用约 6.6 GiB，仍未生成对象，已停止以避免影响并发会话。两次
+重试都没有编译错误或链接产物，真实 export table 继续保持未验收。
 
 ## Scope Boundary
 
