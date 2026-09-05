@@ -442,7 +442,10 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
         const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
         const SZrFunctionTypedLocalBinding *parameterBinding = ZR_NULL;
         const SZrTypeLayout *typeLayout = ZR_NULL;
-        const TZrUInt16 flags = layout->reserved0;
+        /* DIRECT_VALUE is derived runtime metadata and is not part of the AOT ABI. */
+        const TZrUInt16 flags =
+                layout->reserved0 &
+                (TZrUInt16)~ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
         TZrUInt32 storageSize = layout->byteSize;
         TZrUInt32 storageAlign = layout->byteAlign;
 
@@ -787,7 +790,9 @@ TZrBool backend_aot_exec_ir_build_frame_layout(
             destinationLayout->typeLayoutId = sourceLayout->typeLayoutId;
             destinationLayout->slotKind = sourceLayout->slotKind;
             destinationLayout->isParameter = sourceLayout->isParameter;
-            destinationLayout->reserved0 = sourceLayout->reserved0;
+            destinationLayout->reserved0 =
+                    sourceLayout->reserved0 &
+                    (TZrUInt16)~ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
         }
     }
 
