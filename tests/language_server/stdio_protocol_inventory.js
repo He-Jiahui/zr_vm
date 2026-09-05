@@ -144,12 +144,6 @@ const CAPABILITY_PROFILES = {
         state: 'implemented',
         owner: 'optimize/04-editor-feature-correctness',
     },
-    colorProvider: {
-        nativeMarker: 'ZR_LSP_FIELD_COLOR_PROVIDER',
-        wasmMarker: "connection.onRequest('textDocument/documentColor'",
-        state: 'implemented',
-        owner: 'optimize/04-editor-feature-correctness',
-    },
     implementationProvider: {
         nativeMarker: 'ZR_LSP_FIELD_IMPLEMENTATION_PROVIDER',
         wasmMarker: "connection.onRequest('textDocument/implementation'",
@@ -257,6 +251,8 @@ async function main() {
                'initialize must return a capabilities object');
 
         const capabilities = result.capabilities;
+        assert(!Object.prototype.hasOwnProperty.call(capabilities, 'colorProvider'),
+               'untyped colorProvider must not be advertised');
         assert(capabilities.inlineCompletionProvider === undefined,
                '3.17 clients must not receive an unnegotiated inline completion provider');
         assert(capabilities.documentRangeFormattingProvider === true,
@@ -283,6 +279,7 @@ async function main() {
             'workspaceSymbol/resolve', 'inlayHint/resolve',
             'documentLink/resolve', 'codeLens/resolve',
             'textDocument/declaration', 'textDocument/typeDefinition',
+            'textDocument/documentColor', 'textDocument/colorPresentation',
         ]) {
             const id = `withdrawn-${method}`;
             const response = await client.request(method, {}, id, REQUEST_TIMEOUT_MS);

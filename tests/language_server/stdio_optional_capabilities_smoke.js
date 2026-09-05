@@ -55,7 +55,6 @@ function expectedCapabilities(inlineCompletion, rangesFormatting) {
         linkedEditingRangeProvider: true,
         monikerProvider: true,
         inlineValueProvider: true,
-        colorProvider: true,
         implementationProvider: true,
         callHierarchyProvider: true,
         typeHierarchyProvider: true,

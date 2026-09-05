@@ -793,7 +793,6 @@ async function main() {
     const unresolvedSemanticTokenUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-unresolved-semantic-token.zr';
     const semanticDeltaUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-semantic-delta.zr';
-    const colorUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-colors.zr';
     const inlineCompletionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-completion.zr';
     const inlineReturnUri =
@@ -809,12 +808,6 @@ async function main() {
     const initialText = 'var x = 10; var y = x; var flag = true || false;';
     const parserDiagnosticText = 'var x = ;\n';
     const missingConditionText = 'if () { return 1; }\n';
-    const colorText = [
-        'var accent = "#336699";',
-        '// "#112233" is only a comment color',
-        '/* "#445566" is only a block comment color */',
-        '',
-    ].join('\n');
     const inlineCompletionText = [
         'fn main(): int {',
         '    ret',
@@ -1113,8 +1106,8 @@ async function main() {
         'monikerProvider must be enabled');
     assert(initializeResult.capabilities.inlineValueProvider === true,
         'inlineValueProvider must be enabled');
-    assert(initializeResult.capabilities.colorProvider === true,
-        'colorProvider must be enabled');
+    assert(!Object.prototype.hasOwnProperty.call(initializeResult.capabilities, 'colorProvider'),
+        'untyped colorProvider must not be advertised');
     assert(initializeResult.capabilities.inlineCompletionProvider === true,
         'inlineCompletionProvider must be enabled');
     assert(initializeResult.capabilities.documentLinkProvider &&
@@ -1412,60 +1405,6 @@ async function main() {
             value.range.end.line === 2 &&
             value.range.end.character === 17),
     'textDocument/inlineValue must expose semantic logical facts for expression statements');
-    client.notify('textDocument/didOpen', {
-        textDocument: {
-            uri: colorUri,
-            languageId: 'zr',
-            version: 1,
-            text: colorText,
-        },
-    });
-    const colorDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(colorDiagnostics.uri === colorUri, 'color didOpen diagnostics uri mismatch');
-    const documentColors = await client.request('textDocument/documentColor', {
-        textDocument: { uri: colorUri },
-    });
-    assert(Array.isArray(documentColors) &&
-        documentColors.some((entry) =>
-            entry &&
-            entry.range &&
-            entry.range.start.line === 0 &&
-            entry.range.start.character === 14 &&
-            Math.abs(entry.color.red - 0.2) < 0.001 &&
-            Math.abs(entry.color.green - 0.4) < 0.001 &&
-            Math.abs(entry.color.blue - 0.6) < 0.001 &&
-            entry.color.alpha === 1),
-    'textDocument/documentColor must expose hex color literals');
-    assert(!documentColors.some((entry) =>
-        entry &&
-        entry.range &&
-        (entry.range.start.line === 1 || entry.range.start.line === 2)),
-    'textDocument/documentColor must ignore hex colors inside comments');
-    const colorPresentation = await client.request('textDocument/colorPresentation', {
-        textDocument: { uri: colorUri },
-        color: { red: 0.2, green: 0.4, blue: 0.6, alpha: 1 },
-        range: {
-            start: { line: 0, character: 14 },
-            end: { line: 0, character: 21 },
-        },
-    });
-    assert(Array.isArray(colorPresentation) &&
-        colorPresentation.some((presentation) =>
-            presentation &&
-            presentation.label === '#336699' &&
-            presentation.textEdit &&
-            presentation.textEdit.newText === '#336699'),
-    'textDocument/colorPresentation must format the selected color as a hex edit');
-    const commentColorPresentation = await client.request('textDocument/colorPresentation', {
-        textDocument: { uri: colorUri },
-        color: { red: 0x11 / 255, green: 0x22 / 255, blue: 0x33 / 255, alpha: 1 },
-        range: {
-            start: { line: 1, character: 4 },
-            end: { line: 1, character: 11 },
-        },
-    });
-    assert(Array.isArray(commentColorPresentation) && commentColorPresentation.length === 0,
-        'textDocument/colorPresentation must ignore comment-only hex colors');
     client.notify('textDocument/didOpen', {
         textDocument: {
             uri: inlineCompletionUri,
@@ -4183,12 +4122,6 @@ async function main() {
 
     client.notify('textDocument/didClose', {
         textDocument: {
-            uri: colorUri,
-        },
-    });
-
-    client.notify('textDocument/didClose', {
-        textDocument: {
             uri: inlineCompletionUri,
         },
     });
@@ -4212,7 +4145,6 @@ async function main() {
         canonicalDisplayUri,
         testCodeLensUri,
         propertyContractUri,
-        colorUri,
         inlineCompletionUri,
         importDiagnosticsFixture.mainUri,
         parserDiagnosticUri,

@@ -362,8 +362,6 @@ cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *
 cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_implementation_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_code_lens_request(SZrStdioServer *server, const cJSON *params);

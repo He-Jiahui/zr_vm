@@ -97,7 +97,6 @@ void add_advanced_editor_capabilities(SZrStdioServer *server,
         cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_INLINE_COMPLETION_PROVIDER, 1) == NULL) {
         server->supportsInlineCompletion = ZR_FALSE;
     }
-    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_COLOR_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_IMPLEMENTATION_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_CALL_HIERARCHY_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_TYPE_HIERARCHY_PROVIDER, 1);

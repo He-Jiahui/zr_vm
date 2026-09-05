@@ -91,7 +91,6 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_rename.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_hierarchy.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_linked_editing.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_color.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_completion.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value_scan.c

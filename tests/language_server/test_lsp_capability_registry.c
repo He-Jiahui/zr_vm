@@ -84,7 +84,6 @@ static void test_registry_metadata_matches_current_implementations(void) {
              "language_server_stdio_inline_value_semantic_smoke"},
             {"inlineCompletionProvider", ZR_NULL, "handle_inline_completion_request", ZR_NULL,
              "language_server_stdio_smoke"},
-            {"colorProvider", ZR_NULL, "handle_document_color_request", ZR_NULL, "language_server_stdio_smoke"},
             {"implementationProvider", "ZrLanguageServer_Lsp_GetImplementation", "handle_implementation_request",
              ZR_NULL, "language_server_stdio_navigation_capabilities_smoke"},
             {"callHierarchyProvider", "ZrLanguageServer_Lsp_PrepareCallHierarchy",
@@ -149,23 +148,15 @@ static void test_registry_inline_completion_requires_experimental_318(void) {
                 "inline completion must be marked experimental in the LSP 3.17 baseline");
 }
 
-static void test_registry_color_client_capability_path(void) {
-    const SZrLspCapabilityDescriptor *descriptor =
-            ZrLanguageServer_LspCapabilityRegistry_Find("colorProvider");
-
-    expect_true(descriptor != ZR_NULL, "color provider metadata must be addressable");
-    if (descriptor != ZR_NULL) {
-        expect_metadata_string(descriptor->clientCapabilityPath, "textDocument.colorProvider",
-                               descriptor->capabilityKey, "client capability path");
-        expect_metadata_string(descriptor->method, "textDocument/documentColor",
-                               descriptor->capabilityKey, "protocol method");
-    }
+static void test_registry_excludes_untyped_color_provider(void) {
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("colorProvider") == ZR_NULL,
+                "untyped color scanning must not be registered as a language capability");
 }
 
 static void test_registry_descriptors_are_complete(void) {
     TZrSize index;
 
-    expect_true(ZrLanguageServer_LspCapabilityRegistry_Count() == 31U,
+    expect_true(ZrLanguageServer_LspCapabilityRegistry_Count() == 30U,
                 "capability registry must cover every currently declared initialize capability");
     for (index = 0; index < ZrLanguageServer_LspCapabilityRegistry_Count(); index++) {
         const SZrLspCapabilityDescriptor *descriptor =
@@ -480,7 +471,7 @@ static void test_registry_rejects_invalid_resolve_runtime_contracts(void) {
 int main(void) {
     test_registry_metadata_matches_current_implementations();
     test_registry_inline_completion_requires_experimental_318();
-    test_registry_color_client_capability_path();
+    test_registry_excludes_untyped_color_provider();
     test_registry_descriptors_are_complete();
     test_registry_rejects_invalid_contracts();
     test_registry_metadata_requirements_follow_runtime();

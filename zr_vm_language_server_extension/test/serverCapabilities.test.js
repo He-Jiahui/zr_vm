@@ -106,6 +106,20 @@ test('browser navigation aliases are neither advertised nor registered', async (
     assert.equal(worker.handlers.has('onDefinition'), true);
 });
 
+test('browser color scanning is neither advertised nor registered', async () => {
+    for (const capabilities of [{}, { textDocument: { colorProvider: { dynamicRegistration: false } } }]) {
+        const worker = loadWorker();
+        const result = await worker.handlers.get('onInitialize')({ capabilities });
+        assert.equal(Object.prototype.hasOwnProperty.call(result.capabilities, 'colorProvider'), false);
+        assert.equal(worker.requests.has('textDocument/documentColor'), false);
+        assert.equal(worker.requests.has('textDocument/colorPresentation'), false);
+        assert.equal(result.capabilities.hoverProvider, true);
+        assert.equal(worker.handlers.has('onHover'), true);
+        assert.equal(result.capabilities.definitionProvider, true);
+        assert.equal(worker.handlers.has('onDefinition'), true);
+    }
+});
+
 test('browser base requests return complete initial payloads without resolve', async () => {
     const uri = 'file:///workspace/main.zr';
     const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } };

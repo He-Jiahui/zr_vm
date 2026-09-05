@@ -12,6 +12,7 @@ plan_sources:
 tests:
   - tests/language_server/test_lsp_capability_registry.c
   - tests/language_server/stdio_protocol_inventory.js
+  - tests/language_server/stdio_color_capability_smoke.js
 doc_type: module-detail
 ---
 
@@ -31,8 +32,8 @@ such as position negotiation and workspace folder notifications. That ownership
 requires native-only coverage and an explicitly null core entry point. It does
 not authorize an adapter to infer semantic facts.
 
-The September 5 metadata baseline has 31 descriptors: 19 shared native/WASM
-providers and 12 native-only entries. Eight entries are adapter-owned. These
+The September 5 metadata baseline has 30 descriptors: 19 shared native/WASM
+providers and 11 native-only entries. Seven entries are adapter-owned. These
 counts describe the existing surfaces and are not full behavioral acceptance.
 
 ## Runtime And Version Invariants
@@ -47,8 +48,10 @@ Resolve coverage is separate from base-provider coverage, as described in
 [LSP Resolve Capability Contract](lsp-capability-resolve-contract.md). Only
 material resolution can be publishable. Inline completion carries minimum
 version 3.18 and experimental metadata against the stable 3.17 baseline.
-The color request is `textDocument/documentColor`, while its client capability
-path is `textDocument.colorProvider`; method spelling is not a client path.
+`colorProvider` is absent. No compiler-owned color type or expression facts
+justify treating arbitrary hex strings as editable color values. Both
+`textDocument/documentColor` and `textDocument/colorPresentation` are unsupported
+and return MethodNotFound, including for clients that request color support.
 
 `HasRequiredMetadata` validates structure and relationships.
 `IsDescriptorPublishable` additionally rejects identity-only resolution and
@@ -75,8 +78,10 @@ remain obligations of the compiler/query and adapter contracts.
 The C unit suite compares the current registry with audited implementation
 names and runtime coverage, exercises native-only and WASM-only descriptors,
 and rejects conflicting ownership, missing or extraneous runtime fields,
-invalid resolve masks and unsupported version claims. Targeted assertions keep
-the color client path distinct from the method name.
+invalid resolve masks and unsupported version claims. Targeted assertions reject
+registration of the withdrawn color scanner. The color protocol regression
+checks both client profiles, exact error envelopes, string/identifier hover
+payloads and definition targets, and the absence of comment references.
 
 Plan 00 Task 5 must connect the compiled registry to initialize JSON, dispatch,
 WASM exports and protocol tests with a machine-checked inventory. Plan 05 must

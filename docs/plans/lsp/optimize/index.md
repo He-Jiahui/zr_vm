@@ -50,6 +50,11 @@ Task 4 Sub03 完成[空文件操作请求撤销](2026-09-05-plan00-task04-sub03-
 保留操作的实际索引变化、准确版本化编辑和 stale disk 拒绝通过三工具链各 8/8。
 下文为 2026-08-22 历史审查证据，不能直接当作当前实现状态。
 
+Task 4 Sub04 完成[无类型事实的颜色能力撤销](2026-09-05-plan00-task04-sub04-untyped-color.md)：
+移除 colorProvider、两个颜色方法和旧字符串扫描器；普通字符串/标识符保留准确
+hover 与 definition。GCC/Clang/MSVC 各 12/12，扩展 unit 40/40/noEmit 通过。
+源码契约仍是已归档的两项 constructor 失败，Plan 00 整体及后续阶段未晋级。
+
 Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read
 stdio 用例在已提交基线和本次修复后均失败。Task 3 Sub01 已修正
 [取消 fixture 准备期限](2026-09-05-plan00-task03-sub01-cancellation-setup.md)，

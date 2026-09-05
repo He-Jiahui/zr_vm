@@ -3,7 +3,7 @@ const { StdioProtocolClient, encodeFrame } = require('./stdio_protocol_client');
 const RESPONSE_TIMEOUT_MS = 3000;
 const NO_RESPONSE_TIMEOUT_MS = 150;
 const EXPECTED_CAPABILITY_KEYS = [
-    'callHierarchyProvider', 'codeActionProvider', 'codeLensProvider', 'colorProvider',
+    'callHierarchyProvider', 'codeActionProvider', 'codeLensProvider',
     'completionProvider', 'definitionProvider', 'diagnosticProvider',
     'documentFormattingProvider', 'documentHighlightProvider', 'documentLinkProvider',
     'documentOnTypeFormattingProvider', 'documentRangeFormattingProvider',

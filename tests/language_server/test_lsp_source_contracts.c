@@ -998,22 +998,6 @@ static void test_hierarchy_uses_content_snapshot(void) {
     free(typeHierarchy);
 }
 
-static void test_stdio_document_color_uses_content_snapshot(void) {
-    char *source = read_repo_text_file_owned(
-        "zr_vm_language_server/stdio/stdio_document_color.c");
-
-    if (source == NULL) {
-        printf("FAIL: could not read stdio_document_color.c\n");
-        g_failures++;
-        return;
-    }
-
-    assert_text_contains(source, "ZrLanguageServer_FileVersionContentSnapshot_Acquire");
-    assert_text_contains_none(source, "fileVersion->content");
-
-    free(source);
-}
-
 static void test_stdio_completion_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_completion.c");
@@ -2333,7 +2317,6 @@ int main(void) {
     test_super_navigation_uses_content_snapshot();
     test_code_actions_use_content_snapshot();
     test_hierarchy_uses_content_snapshot();
-    test_stdio_document_color_uses_content_snapshot();
     test_stdio_completion_uses_content_snapshot();
     test_stdio_moniker_uses_content_snapshot();
     test_stdio_inline_completion_uses_content_snapshot();
@@ -2420,7 +2403,6 @@ int main(void) {
     printf("PASS: Super navigation uses content snapshot\n");
     printf("PASS: Code actions use content snapshot\n");
     printf("PASS: Hierarchy uses content snapshot\n");
-    printf("PASS: stdio document color uses content snapshot\n");
     printf("PASS: stdio completion uses content snapshot\n");
     printf("PASS: stdio moniker uses content snapshot\n");
     printf("PASS: stdio inline completion uses content snapshot\n");

@@ -61,10 +61,6 @@ int dispatch_request_method(SZrStdioServer *server,
             return 0;
         }
         *outResult = handle_inline_completion_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_COLOR) == 0) {
-        *outResult = handle_document_color_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_COLOR_PRESENTATION) == 0) {
-        *outResult = handle_color_presentation_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_LINK) == 0) {
         *outResult = handle_document_link_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_CODE_LENS) == 0) {
