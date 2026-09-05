@@ -474,6 +474,7 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
 }
 
 #include "test_ownership_receiver_guard_contract_cases.h"
+#include "test_ownership_release_domain_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -482,6 +483,8 @@ int main(void) {
     RUN_TEST(test_shared_clone_and_repeated_wake_account_strong_refs);
     RUN_TEST(test_many_weak_handles_survive_final_strong_and_wake_to_none);
     RUN_TEST(test_shared_and_weak_reject_a_different_isolation_domain);
+    RUN_TEST(test_shared_foreign_release_preserves_owner);
+    RUN_TEST(test_weak_foreign_release_preserves_live_and_expired_handle);
     RUN_TEST(test_resource_shared_surface_runs_clone_wake_and_last_strong_drop);
     RUN_TEST(test_resource_shared_cleanup_runs_on_throw);
     RUN_TEST(test_shared_value_parameter_releases_its_copy);

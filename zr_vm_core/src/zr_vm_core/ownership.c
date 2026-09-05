@@ -669,6 +669,12 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
         return;
     }
 
+    if ((value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK) &&
+        !ZrCore_OwnershipShared_IsInIsolationDomain(state, value->ownershipControl)) {
+        return;
+    }
+
     if (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK) {
         control = value->ownershipControl;
         ownership_reset_value_storage(value);
