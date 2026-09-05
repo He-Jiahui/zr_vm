@@ -4337,9 +4337,17 @@ static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacit
     ZrTests_Runtime_State_Destroy(state);
 }
 
+#include "test_execution_member_access_ownership_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
 
+    RUN_TEST(test_member_get_cached_alias_shared_miss_transfers_temporary);
+    RUN_TEST(test_member_get_cached_alias_shared_exact_pair_transfers_temporary);
+    RUN_TEST(test_member_get_cached_alias_shared_multi_slot_transfers_temporary);
+    RUN_TEST(test_member_get_cached_alias_weak_miss_transfers_temporary);
+    RUN_TEST(test_member_get_cached_alias_weak_exact_pair_transfers_temporary);
+    RUN_TEST(test_member_get_cached_alias_weak_multi_slot_transfers_temporary);
     RUN_TEST(test_member_get_by_name_fast_path_skips_extra_stable_result_copy);
     RUN_TEST(test_member_get_cached_fast_path_skips_extra_stable_result_copy);
     RUN_TEST(test_member_get_cached_instance_field_pair_hit_plain_heap_object_reuses_original_object);

@@ -2420,6 +2420,24 @@ TZrBool execution_member_set_by_name(SZrState *state,
     return resolved;
 }
 
+static ZR_FORCE_INLINE void execution_member_assign_aliased_result(SZrState *state,
+                                                                  SZrTypeValue *result,
+                                                                  SZrTypeValue *temporary) {
+    SZrTypeValue previous;
+
+    if (!ZrCore_Value_ShouldTransferMaterializedStackOwnership(temporary)) {
+        ZrCore_Value_Copy(state, result, temporary);
+        return;
+    }
+
+    ZrCore_Profile_RecordValueCopyCurrent(sizeof(SZrTypeValue));
+    previous = *result;
+    *result = *temporary;
+    ZrCore_Value_ResetAsNullNoProfile(temporary);
+    /* Receiver cleanup can reenter and relocate the stack after installation. */
+    ZrCore_Ownership_ReleaseValue(state, &previous);
+}
+
 static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
                                                                  const TZrInstruction *programCounter,
                                                                  SZrFunction *function,
@@ -2465,7 +2483,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
         ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_MEMBER_CACHE_HIT_COUNT, 1u);
         execution_member_record_cache_hit(state, entry);
         if (receiverResultAliased) {
-            ZrCore_Value_Copy(state, result, effectiveResult);
+            execution_member_assign_aliased_result(state, result, effectiveResult);
         }
         return ZR_TRUE;
     }
@@ -2481,7 +2499,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
         ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_MEMBER_CACHE_HIT_COUNT, 1u);
         execution_member_record_cache_hit(state, entry);
         if (receiverResultAliased) {
-            ZrCore_Value_Copy(state, result, effectiveResult);
+            execution_member_assign_aliased_result(state, result, effectiveResult);
         }
         return ZR_TRUE;
     }
@@ -2497,11 +2515,12 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
     if (!execution_member_get_by_name(state, programCounter, effectiveReceiver, memberName, effectiveResult)) {
         return ZR_FALSE;
     }
-    if (receiverResultAliased) {
-        ZrCore_Value_Copy(state, result, effectiveResult);
-    }
 
+    /* Cache refresh still borrows the original receiver until result installation. */
     execution_member_refresh_cache(state, function, cacheIndex, entry, refreshReceiver, memberName);
+    if (receiverResultAliased) {
+        execution_member_assign_aliased_result(state, result, effectiveResult);
+    }
     return ZR_TRUE;
 }
 
