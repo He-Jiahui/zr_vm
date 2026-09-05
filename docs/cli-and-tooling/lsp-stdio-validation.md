@@ -1,6 +1,7 @@
 ---
 related_code:
   - tests/language_server/collect_lsp_baseline.js
+  - tests/language_server/test_lsp_project_features.c
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
@@ -58,6 +59,13 @@ The collector is a validation artifact. It owns only its output logs/JSON and
 child processes, uses serial native executions and does not mutate LSP facts or
 snapshots. The current baseline and per-layer responsibility ledger are in
 [the acceptance record](../../tests/acceptance/2026-09-05-lsp-optimize-current-baseline.md).
+
+The project-feature executable also owns a file-local failure counter. Every
+`TEST_FAIL` increments it and `main` returns nonzero after any failure, so the
+standard CTest aggregate detects the same failures without depending on output
+parsing. The counter is confined to the serial test process; it does not alter
+semantic fixtures, snapshot lifetime or compiler state. The original 14-failure
+exit-zero baseline remains archived as historical evidence.
 
 ## Resolve Capability Validation
 

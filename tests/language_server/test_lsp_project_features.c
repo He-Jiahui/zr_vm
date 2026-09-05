@@ -36,6 +36,8 @@ typedef struct SZrTestTimer {
     clock_t endTime;
 } SZrTestTimer;
 
+static int test_failures = 0;
+
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -57,6 +59,7 @@ typedef struct SZrTestTimer {
 
 #define TEST_FAIL(timer, summary, reason) do { \
     timer.endTime = clock(); \
+    test_failures++; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", \
            ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0, \
            summary, \
@@ -8108,8 +8111,8 @@ int main(void) {
     ZrCore_GlobalState_Free(global);
 
     printf("\n==========\n");
-    printf("All Project Feature Tests Completed\n");
+    printf("Project feature tests completed with %d failure(s)\n", test_failures);
     printf("==========\n");
-    return 0;
+    return test_failures == 0 ? 0 : 1;
 }
 
