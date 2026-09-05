@@ -1,5 +1,6 @@
 ---
 related_code:
+  - tests/language_server/collect_lsp_baseline.js
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
@@ -25,8 +26,10 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_language_server/stdio/stdio_server.c
 plan_sources:
+  - docs/plans/lsp/optimize/00-baseline-and-contract.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/collect_lsp_baseline_test.js
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_resolve_capabilities_smoke.js
   - tests/language_server/stdio_document_sync_conformance.js
@@ -36,6 +39,25 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Complete Baseline Collection
+
+`tests/language_server/collect_lsp_baseline.js` reads the configured CTest
+`language_server` aggregate through `--show-only=json-v1`. It executes all
+members even after a failure and records exit/signal/errors, durations and exact
+test failure blocks. A printed failure with exit zero remains a failure. Output
+directories with completed summaries are rejected to retain historical evidence.
+The required source-commit argument is caller provenance; the acceptance record
+must also establish that the build came from that exported source.
+Multi-config builds use `--config=Debug` (or the selected configuration); the
+collector passes it to CTest/CMake and includes the matching `lib/<config>`
+directory in native library lookup. Timeout/spawn errors fail collection even
+when a child catches termination and exits zero.
+
+The collector is a validation artifact. It owns only its output logs/JSON and
+child processes, uses serial native executions and does not mutate LSP facts or
+snapshots. The current baseline and per-layer responsibility ledger are in
+[the acceptance record](../../tests/acceptance/2026-09-05-lsp-optimize-current-baseline.md).
 
 ## Resolve Capability Validation
 

@@ -6955,6 +6955,14 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
     )
 endif ()
 
+if (ZR_VM_NODE_EXECUTABLE)
+    add_test(
+            NAME language_server_baseline_collector
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/collect_lsp_baseline_test.js
+    )
+endif ()
+
 if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
     if (TARGET zr_vm_cli_executable)
         add_test(

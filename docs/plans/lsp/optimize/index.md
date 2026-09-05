@@ -24,6 +24,9 @@
 已建立[旧计划与全部 leaf 对照](2026-09-05-plan00-task01-sub01-execution-crosswalk.md)，
 逐项记录 completed/pending/superseded、历史证据与后续责任；文档对照完成不代表
 当前集成运行基线或父任务已验收。
+Task 1 Sub02 已归档[冻结 GCC 失败基线](2026-09-05-plan00-task01-sub02-gcc-baseline.md)：
+83 个 aggregate 成员中 73 pass、10 fail，收集器额外捕获 exit 0 的伪成功，
+精确失败和责任层均保留；等待活动语义提交后的集成重验。
 
 Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
 撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述

@@ -1,0 +1,833 @@
+{
+  "capturedAt": "2026-09-05T09:26:52.387Z",
+  "sourceCommit": "670e3cd0bba9b2cae2a88fa6ea1f5e6be0e7160f",
+  "build": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc",
+  "suite": "language_server",
+  "passed": 73,
+  "failed": 10,
+  "results": [
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_symbol_table_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 15.757469,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_symbol_table_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_reference_tracker_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 10.212759,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_reference_tracker_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_semantic_analyzer_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 117.364122,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:1.437ms - Semantic Analyzer Projects All Const Assignment Target Kinds:\n Expected canonical diagnostics for const parameter, local, and static field assignments",
+        "Fail - Cost Time:0.261ms - Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail:\n **expression**\n\nType: int",
+        "Fail - Cost Time:0.131ms - Semantic Analyzer Records Using Cleanup And Template Segments:\n Semantic context did not record cleanup steps or template segments",
+        "Fail - Cost Time:0.298ms - Semantic Analyzer Get Symbol At Resolves Local References:\n symbol=<null> lookup=symbol=seed type=7 refHit=symbol=<null> allRefs=4 query=[62:3:22-62:3:22]",
+        "Fail - Cost Time:0.169ms - Semantic Analyzer Local Symbols Surface Rich Hover:\n **expression**\n\nType: float",
+        "Fail - Cost Time:1.535ms - Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover:\n **expression**\n\nType: int",
+        "Fail - Cost Time:0.590ms - Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols:\n **expression**\n\nType: cannot infer exact type | position=[80:3:19-80:3:19] symbol=<null>",
+        "Fail - Cost Time:0.417ms - Semantic Analyzer Generic Function Symbols Surface Signature Detail:\n **expression**\n\nType: int",
+        "Fail - Cost Time:1.244ms - Semantic Analyzer Function Signatures Preserve Ownership Qualifiers:\n **expression**\n\nType: Unique<Hero>",
+        "Fail - Cost Time:0.406ms - Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact:\n **expression**\n\nType: MissingType",
+        "Fail - Cost Time:9.832ms - Semantic Analyzer Generic Type Symbols Surface Signature Detail:\n **expression**\n\nType: Derived<Item, 4>",
+        "Fail - Cost Time:2.131ms - Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata:\n **expression**\n\nType: Matrix<int, 4>"
+      ],
+      "log": "zr_vm_language_server_semantic_analyzer_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_ownership_diagnostics_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 93.165778,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:1.902ms - Semantic Analyzer Reports Loaned Return Escape:\n Expected loan escape ownership fact to cover the ownership builtin",
+        "Fail - Cost Time:1.533ms - Semantic Analyzer Reports Use After Unique Move:\n Expected linked MOVE and ERROR ownership facts for the unique symbol",
+        "Fail - Cost Time:1.394ms - Semantic Analyzer Records Borrow And Loan Regions:\n Expected linked alias/owner lifetime regions on borrow and loan facts",
+        "Fail - Cost Time:1.041ms - Semantic Analyzer Reports Borrow After Owner Release:\n Expected borrow_escape with one owner-release related location",
+        "Fail - Cost Time:1.295ms - LSP Reports Possible-Path Borrow After Owner Release:\n Expected possible-path borrow_escape at the post-join read",
+        "Fail - Cost Time:1.089ms - Semantic Analyzer Releases Using Owner At Scope Exit:\n Using owner did not publish the expected post-scope RELEASE flow",
+        "Fail - Cost Time:1.004ms - Semantic Analyzer Releases Using Borrow At Scope Exit:\n Using borrow did not end the alias at scope exit",
+        "Fail - Cost Time:1.260ms - Semantic Analyzer Links Weak Use To Possible Owner Release:\n Weak borrowed use did not merge owner-release evidence",
+        "Fail - Cost Time:1.155ms - Semantic Analyzer Rebinds Borrowed Alias Owner:\n Borrowed assignment did not replace the owner-region binding",
+        "Fail - Cost Time:1.077ms - Semantic Analyzer Rebinds Loaned Alias Owner:\n Loaned assignment did not replace the owner-region binding",
+        "Fail - Cost Time:8.274ms - Semantic Analyzer Rebinds Weak Alias Owner:\n Weak assignment did not replace the owner-region binding",
+        "Fail - Cost Time:2.820ms - Semantic Analyzer Joins Borrowed Alias Owner Set:\n Expected the branch owner-set release location",
+        "Fail - Cost Time:1.195ms - Semantic Analyzer Joins Loaned Alias Owner Set:\n Expected the branch owner-set release location",
+        "Fail - Cost Time:1.426ms - Semantic Analyzer Joins Weak Alias Owner Set:\n Expected the branch owner-set release location",
+        "Fail - Cost Time:1.117ms - Semantic Analyzer Tracks Borrow Rebind In Using Body:\n Using-body rebind retained the pre-body owner",
+        "Fail - Cost Time:8.992ms - Semantic Analyzer Guards Direct Weak Receiver After Owner Release:\n Direct weak receiver access did not retain its receiver guards",
+        "Fail - Cost Time:2.148ms - Semantic Analyzer Guards Rebound Direct Weak Receiver:\n Rebound direct weak receiver did not retain its guard contract"
+      ],
+      "log": "zr_vm_language_server_ownership_diagnostics_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_union_pattern_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 21.69552,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_union_pattern_diagnostics_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_local_semantic_query_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 122.74103,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:0.253ms - LSP Local Reference Query Returns Write Fact:\n Expected write reference fact; status=1 reference=0x63b02267e560 kind=2 resolved=1 range=(39,3,5)-(46,3,12) declaration=(4,1,5)-(11,1,12)",
+        "Fail - Cost Time:0.349ms - LSP Local Reference Query Returns Member Write Fact:\n Expected member write reference fact; status=1 reference=0x63b022677f00 kind=5 resolved=0 name=value range=(53,3,10)-(58,3,15)",
+        "Fail - Cost Time:0.787ms - Resolved Function Value Dependency Invalidates Directly:\n Resolved function-value counters total=1 preserve=0 direct=0 conservative=1"
+      ],
+      "log": "zr_vm_language_server_local_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_logical_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 31.08613,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_logical_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_inlay_semantic_facts_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 49.603929,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_inlay_semantic_facts_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_local_semantic_hover_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 39.825462,
+      "passed": false,
+      "failures": [
+        "FAIL: expected assignment target hover to surface write reference fact; status=1 reference=0x5f5af07d7240 kind=2 hover=(nil) text=<null> rich=(nil)",
+        "FAIL: LSP Local Expression Hover Surfaces Assignment Write Reference Fact",
+        "FAIL: expected member assignment hover to surface member write reference fact; status=1 reference=0x5f5af07d1660 kind=5 resolved=0 hover=(nil) text=<null> rich=(nil)",
+        "FAIL: LSP Local Expression Hover Surfaces Member Write Reference Fact"
+      ],
+      "log": "zr_vm_language_server_local_semantic_hover_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_computed_member_hover_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 24.571153,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_computed_member_hover_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_expression_fact_hover_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 51.969388,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_expression_fact_hover_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_reachability_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 37.431336,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_reachability_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 23.003078,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_branch_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 28.887416,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_branch_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_branch_assignment_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 48.510287,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_branch_assignment_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 85.730651,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 72.419942,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 56.29374,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 46.985283,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 95.421623,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 51.315317,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 102.04387,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 45.914079,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 55.981301,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 48.23735,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_for_header_assignment_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 32.283161,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_for_header_assignment_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 33.30095,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 16.282146,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_call_member_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 25.773519,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_call_member_semantic_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_incremental_parser_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 31.778043,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_incremental_parser_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_parser_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 71.278116,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_parser_diagnostics_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_declaration_parser_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 50.928052,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_declaration_parser_diagnostics_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_statement_parser_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 49.58837,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_statement_parser_diagnostics_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_position_mapping_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 176.786197,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_position_mapping_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_position_fuzz_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 9.339325,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_position_fuzz_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_decorator_utf16_ranges_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 18.482248,
+      "passed": false,
+      "failures": [
+        "FAIL: Decorator hover expected UTF-16 parser range 2:14-3:16 but got 2:12-2:19\n\nFAILED: 1 decorator UTF-16 range test(s) failed"
+      ],
+      "log": "zr_vm_language_server_lsp_decorator_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_code_lens_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 85.485984,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_code_lens_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_super_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 28.209697,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_super_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_token_metadata_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 33.311352,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_source_contracts_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 48.942327,
+      "passed": false,
+      "failures": [
+        "FAIL: canonical constructor signature resolution must precede the legacy resolver",
+        "FAIL: super constructor signature must be canonical before compiler state and have no legacy resolver"
+      ],
+      "log": "zr_vm_language_server_lsp_source_contracts_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_interface_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 1035.923243,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:2.985ms - LSP Class Member Navigation And Completion:\n Expected classes fixture diagnostics to be empty",
+        "Fail - Cost Time:1.749ms - LSP Closed Generic Type Display And Definition:\n Hover should include the normalized closed generic type",
+        "Fail - Cost Time:0.728ms - LSP Hover And Completion Surface Explicit Exact Type Failures:\n Hover should surface explicit exact-type failure text without a weak object fallback",
+        "Fail - Cost Time:0.975ms - LSP Extern Type Symbols Surface Hover And Definition:\n Hover on an extern delegate type usage should describe the delegate and surface the ffi source origin",
+        "Fail - Cost Time:1.325ms - LSP Extern Layout Hover Surfaces FFI Metadata:\n Hover on an extern struct type usage should surface pack/align metadata",
+        "Fail - Cost Time:0.460ms - LSP Semantic Query Unifies Local Symbol Navigation And Hover:\n Structured semantic query should resolve the local symbol and its inferred int type",
+        "Fail - Cost Time:0.544ms - LSP Hover Includes Local Reference Fact Payload:\n Hover should include symbol type plus shared reference fact payload, actual=**variable**: result\n\nResolved Type: int\n\nExpression: identifier exact\n\nReference: read\n\nSymbol: result\n\nDeclared at: 3:12",
+        "Fail - Cost Time:145.517ms - LSP Container Matrix Project Infers Bucket And Foreach Types:\n Hover inside the oddLo foreach loop should bind item to the concrete int element type"
+      ],
+      "log": "zr_vm_language_server_lsp_interface_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_project_features_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 1699.030474,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:17.327ms - LSP Auto Discovers Project From Source File:\n Imported member definition should resolve without explicitly opening the project file",
+        "Fail - Cost Time:94.735ms - LSP Imported Constructor And Meta Call Infer Through Module Type:\n Imported Record construction and r() meta-call should analyze without diagnostics (count=3 first=Member 'payload' could not be resolved\nCause: Canonical member binding found no field, property, or method for this reference.\nSuggestion: Declare the member",
+        "Fail - Cost Time:12.300ms - LSP Relative And Alias Import Literal Navigation And Hover:\n Definition on import(\".helper.math\") should resolve to the relative project source module entry",
+        "Fail - Cost Time:112.087ms - LSP Network Native Members Semantic Tokens Cover Chain And Receivers:\n Semantic tokens should classify network.tcp as namespace, native methods as methods, and UdpPacket fields as properties",
+        "Fail - Cost Time:31.136ms - LSP Binary Import Metadata Surfaces Hover And Completion:\n count=0 first=<none>",
+        "Fail - Cost Time:15.398ms - LSP Binary Import References Surface Metadata And Usages:\n count=0 first=<none>",
+        "Fail - Cost Time:5.549ms - LSP Binary Import Document Highlights Cover All Local Usages:\n Document highlights on binary imported members should include every same-document usage",
+        "Fail - Cost Time:27.515ms - LSP Source Module Refresh Reanalyzes Open Documents:\n Refreshing a source module should invalidate stale importer analyzers so local inferred types reflect updated imported member types",
+        "Fail - Cost Time:15.399ms - LSP Source Module Identity Change Refreshes Old And New Importers:\n The added ModuleIdentity edge retained stale semantic facts",
+        "Fail - Cost Time:28.462ms - LSP Watched Binary Metadata Refresh Reanalyzes Open Documents:\n Watched binary metadata refresh should reanalyze importer locals inferred from binary metadata members",
+        "Fail - Cost Time:22.732ms - LSP Watched Descriptor Plugin Refresh Reanalyzes Open Documents:\n Watched descriptor plugin refresh should reanalyze importer locals inferred from plugin member returns",
+        "Fail - Cost Time:15.413ms - LSP Semantic Tokens Cover External Metadata Members:\n Expected semantic token coverage for descriptor-plugin module members, linked submodules, imported types, and receiver members",
+        "Fail - Cost Time:17.547ms - LSP Semantic Tokens Cover Native Value Constructor Members:\n Expected semantic token coverage for init module.Type(...) constructors and their resolved native fields",
+        "Fail - Cost Time:13.828ms - LSP Pooling Hover Completion And Projection Expose Guard Contract:\n Pooling LSP facts did not expose the capability-driven guard workflow"
+      ],
+      "log": "zr_vm_language_server_lsp_project_features_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_project_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 49.123533,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_project_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_advanced_editor_features_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 371.337884,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:11.042ms - LSP code action skips placeholder diagnostic fix:\n placeholder diagnostic fix was missing or was incorrectly promoted to a safe code action"
+      ],
+      "log": "zr_vm_language_server_lsp_advanced_editor_features_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_semantic_query_parity_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 156.076968,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:14.498ms - LSP Semantic Query Source Snapshot Parity:\n Source query results were unavailable or changed across read-only calls",
+        "Fail - Cost Time:10.505ms - LSP Local Reference Consumers Use Canonical Facts:\n initial resolution",
+        "Fail - Cost Time:0.449ms - LSP Local Query Rejects Missing Canonical Reference:\n Could not prepare the unresolved canonical reference fixture",
+        "Fail - Cost Time:0.351ms - LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State:\n Source hover did not consume the parser SymbolAt fact after analyzer state was detached"
+      ],
+      "log": "zr_vm_language_server_semantic_query_parity_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bitwise_zero_wrapper_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 140.857495,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_wrapper_range_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_language_server_lsp_uri_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 9.788291,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_uri_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 141.068881,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 158.721418,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 34.911764,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 214.39985,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_all_ones_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 38.222373,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_all_ones_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_unary_zm_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 33.149923,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_unary_zm_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_not_zm_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 29.033639,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_not_zm_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_double_zm_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 48.485753,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_double_zm_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_neg_not_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 38.542397,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_neg_not_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_not_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 46.144864,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_not_unary_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_zm_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 39.698764,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_zm_unary_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_double_not_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 94.599338,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_double_not_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_double_neg_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 41.489915,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_double_neg_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_count_wrap_not_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 104.074999,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_count_wrap_not_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_bzms_private_not_mask_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 699.902229,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_private_not_mask_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 150.680434,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 88.607606,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 399.802339,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 138.09988,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 110.956838,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 128.57047,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 113.336464,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_product_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 250.025225,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_product_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_add_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 265.202176,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_add_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 45.998981,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 28.319514,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 68.488534,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 41.830918,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 42.287484,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 29.452488,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_product_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 348.242019,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_product_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 353.949389,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 88.892137,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 116.146809,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 45.041556,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test.log"
+    },
+    {
+      "executable": "/home/hejiahui/.codex-builds/lsp-optimize-20260905-root/gcc/bin/zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 27.578225,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test.log"
+    }
+  ]
+}
