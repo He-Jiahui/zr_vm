@@ -20,6 +20,9 @@ TZrBool ZrCore_OwnershipResource_ReturnLoan(struct SZrState *state,
                                             SZrTypeValue *source);
 void ZrCore_OwnershipResource_CopyUnique(SZrTypeValue *destination,
                                          const SZrTypeValue *source);
+/* Completes Drop and preserves its native failure for rethrow after control cleanup. */
+EZrThreadStatus ZrCore_OwnershipResource_DropProtected(
+        struct SZrState *state, SZrRawObject *object);
 void ZrCore_OwnershipResource_Drop(struct SZrState *state, SZrRawObject *object);
 
 #endif

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "zr_vm_core/execution_control.h"
+#include "zr_vm_common/zr_aot_abi.h"
 
 #define ZR_EXCEPTION_HANDLER_STACK_INITIAL_CAPACITY 8U
 #define ZR_EXCEPTION_HANDLER_STACK_GROWTH_FACTOR 2U
@@ -421,29 +422,90 @@ TZrBool execution_jump_to_instruction_offset(SZrState *state,
 }
 
 static void execution_set_pending_exception(SZrState *state, SZrCallInfo *callInfo) {
-    if (state == ZR_NULL) {
-        return;
-    }
+    execution_set_pending_control(state, ZR_VM_PENDING_CONTROL_EXCEPTION,
+                                  callInfo, 0u, 0u, ZR_NULL);
+}
 
-    state->pendingControl.kind = ZR_VM_PENDING_CONTROL_EXCEPTION;
-    state->pendingControl.callInfo = callInfo;
-    state->pendingControl.targetInstructionOffset = 0;
-    state->pendingControl.valueSlot = 0;
-    ZrCore_Value_ResetAsNull(&state->pendingControl.value);
-    state->pendingControl.hasValue = ZR_FALSE;
+static void execution_release_pending_value(SZrState *state, TZrPtr value) {
+    ZrCore_Ownership_ReleaseValue(state, (SZrTypeValue *)value);
+}
+
+static void execution_clear_pending_body(SZrState *state, TZrPtr argument) {
+    ZR_UNUSED_PARAMETER(argument);
+    execution_clear_pending_control(state);
+}
+
+typedef struct SZrPendingValueCopy {
+    SZrTypeValue source;
+    SZrTypeValue destination;
+} SZrPendingValueCopy;
+
+static void execution_copy_pending_value(SZrState *state, TZrPtr argument) {
+    SZrPendingValueCopy *copy = (SZrPendingValueCopy *)argument;
+    ZrCore_Value_Copy(state, &copy->destination, &copy->source);
+}
+
+static const SZrAotGcRootSlot execution_pending_roots[] = {
+    {0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u},
+    {0u, (TZrUInt32)sizeof(SZrRawObject *), 0u, 0u,
+     ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u}
+};
+static const SZrAotGcRootMap execution_pending_root_map = {
+    2u, execution_pending_roots
+};
+
+static SZrRawObject *execution_pending_root(const SZrTypeValue *value) {
+    return ZrCore_Value_IsGarbageCollectable(value)
+                   ? ZrCore_Value_GetRawObject(value) : ZR_NULL;
 }
 
 void execution_clear_pending_control(SZrState *state) {
+    SZrTypeValue previous;
+    SZrTypeValue savedException;
+    SZrRawObject *roots[2] = {ZR_NULL, ZR_NULL};
+    SZrAotGcRootFrame rootFrame;
+    EZrThreadStatus savedExceptionStatus;
+    EZrThreadStatus savedThreadStatus;
+    EZrThreadStatus releaseStatus;
+    TZrBool hadException;
+
     if (state == ZR_NULL) {
         return;
     }
 
+    /* Detach before release: a final owner can reenter through resource Drop. */
+    previous = state->pendingControl.value;
+    savedException = state->currentException;
+    savedExceptionStatus = state->currentExceptionStatus;
+    savedThreadStatus = state->threadStatus;
+    hadException = state->hasCurrentException;
+    roots[0] = hadException ? execution_pending_root(&savedException) : ZR_NULL;
+    if (!ZrCore_Gc_AotRootFramePush(state, &rootFrame,
+                (TZrStackValuePointer)roots, &execution_pending_root_map)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+    }
     state->pendingControl.kind = ZR_VM_PENDING_CONTROL_NONE;
     state->pendingControl.callInfo = ZR_NULL;
     state->pendingControl.targetInstructionOffset = 0;
     state->pendingControl.valueSlot = 0;
     ZrCore_Value_ResetAsNull(&state->pendingControl.value);
     state->pendingControl.hasValue = ZR_FALSE;
+    ZrCore_Exception_ClearCurrent(state);
+    state->threadStatus = ZR_THREAD_STATUS_FINE;
+    releaseStatus = ZrCore_Exception_TryRun(state, execution_release_pending_value, &previous);
+    if (releaseStatus == ZR_THREAD_STATUS_FINE) {
+        state->currentException = savedException;
+        if (roots[0] != ZR_NULL) {
+            state->currentException.value.object = roots[0];
+        }
+        state->currentExceptionStatus = savedExceptionStatus;
+        state->hasCurrentException = hadException;
+        state->threadStatus = savedThreadStatus;
+    }
+    (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+    if (releaseStatus != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, releaseStatus);
+    }
 }
 
 void execution_set_pending_control(SZrState *state,
@@ -452,21 +514,74 @@ void execution_set_pending_control(SZrState *state,
                                    TZrMemoryOffset targetInstructionOffset,
                                    TZrUInt32 valueSlot,
                                    const SZrTypeValue *value) {
+    SZrTypeValue replacement;
+    SZrPendingValueCopy copy;
+    SZrRawObject *roots[2] = {ZR_NULL, ZR_NULL};
+    SZrAotGcRootFrame rootFrame;
+    EZrThreadStatus releaseStatus;
+
     if (state == ZR_NULL) {
         return;
     }
 
+    /* Stack-local roots avoid allocating while protecting a release callback. */
+    if (!ZrCore_Gc_AotRootFramePush(state, &rootFrame,
+                (TZrStackValuePointer)roots, &execution_pending_root_map)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+    }
+    /* Retain before clearing, including when value aliases pending storage. */
+    ZrCore_Value_ResetAsNull(&replacement);
+    if (value != ZR_NULL) {
+        TZrBool addedPin;
+        copy.source = *value;
+        ZrCore_Value_ResetAsNull(&copy.destination);
+        roots[0] = execution_pending_root(&copy.source);
+        addedPin = roots[0] != ZR_NULL &&
+                   (roots[0]->garbageCollectMark.pinFlags &
+                    ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) == 0u;
+        if (addedPin) {
+            ZrCore_GarbageCollector_PinObject(
+                    state, roots[0], ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+        }
+        releaseStatus = ZrCore_Exception_TryRun(state, execution_copy_pending_value, &copy);
+        if (addedPin) {
+            roots[0]->garbageCollectMark.pinFlags &=
+                    (TZrUInt32)~((TZrUInt32)ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+        }
+        if (releaseStatus != ZR_THREAD_STATUS_FINE) {
+            (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+            ZrCore_Exception_Throw(state, releaseStatus);
+        }
+        replacement = copy.destination;
+    }
+    roots[0] = execution_pending_root(&replacement);
+    releaseStatus = ZrCore_Exception_TryRun(state, execution_clear_pending_body, ZR_NULL);
+    if (roots[0] != ZR_NULL) {
+        replacement.value.object = roots[0];
+    }
+    if (releaseStatus != ZR_THREAD_STATUS_FINE) {
+        SZrTypeValue failure = state->currentException;
+        TZrBool hadFailure = state->hasCurrentException;
+        EZrThreadStatus failureStatus = state->currentExceptionStatus;
+        roots[1] = hadFailure ? execution_pending_root(&failure) : ZR_NULL;
+        (void)ZrCore_Exception_TryRun(state, execution_release_pending_value, &replacement);
+        state->currentException = failure;
+        if (roots[1] != ZR_NULL) {
+            state->currentException.value.object = roots[1];
+        }
+        state->currentExceptionStatus = failureStatus;
+        state->hasCurrentException = hadFailure;
+        state->threadStatus = releaseStatus;
+        (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+        ZrCore_Exception_Throw(state, releaseStatus);
+    }
     state->pendingControl.kind = kind;
     state->pendingControl.callInfo = callInfo;
     state->pendingControl.targetInstructionOffset = targetInstructionOffset;
     state->pendingControl.valueSlot = valueSlot;
-    if (value != ZR_NULL) {
-        ZrCore_Value_Copy(state, &state->pendingControl.value, (SZrTypeValue *)value);
-        state->pendingControl.hasValue = ZR_TRUE;
-    } else {
-        ZrCore_Value_ResetAsNull(&state->pendingControl.value);
-        state->pendingControl.hasValue = ZR_FALSE;
-    }
+    state->pendingControl.value = replacement;
+    state->pendingControl.hasValue = (TZrBool)(value != ZR_NULL);
+    (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
 }
 
 TZrBool execution_resume_pending_via_outer_finally(SZrState *state, SZrCallInfo **ioCallInfo) {
@@ -487,6 +602,13 @@ TZrBool execution_resume_pending_via_outer_finally(SZrState *state, SZrCallInfo 
         }
 
         handlerInfo = execution_lookup_exception_handler_info(state, handlerState, &function);
+        if (handlerInfo != ZR_NULL &&
+            (state->pendingControl.kind == ZR_VM_PENDING_CONTROL_BREAK ||
+             state->pendingControl.kind == ZR_VM_PENDING_CONTROL_CONTINUE) &&
+            state->pendingControl.targetInstructionOffset >= handlerInfo->protectedStartInstructionOffset &&
+            state->pendingControl.targetInstructionOffset < handlerInfo->afterFinallyInstructionOffset) {
+            return ZR_FALSE;
+        }
         if (handlerInfo == ZR_NULL || !handlerInfo->hasFinally ||
             handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY) {
             continue;

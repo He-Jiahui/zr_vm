@@ -5149,6 +5149,11 @@ static ZR_FORCE_INLINE void function_move_returns(SZrState *state,
                     }
                     if (!frameOverlapsStack) {
                         ZrCore_Stack_CopyValue(state, stackPointer, returnSourceValue);
+                        if (!copiedObjectInline && destinationFrameValue != ZR_NULL &&
+                            destinationFrameValue != stackDestinationValue &&
+                            ZrCore_Value_ShouldTransferMaterializedStackOwnership(stackDestinationValue)) {
+                            ZrCore_Ownership_ReleaseValue(state, stackDestinationValue);
+                        }
                     }
                 }
             }
@@ -5260,7 +5265,7 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
         if (destinationFrameValue != ZR_NULL &&
             destinationFrameValue != stackDestinationValue &&
             !frameOverlapsStack) {
-            function_copy_value_slot_allowing_overlap_no_profile(
+            ZrCore_Value_AssignMaterializedStackValueNoProfile(
                     state, destinationFrameValue, stackDestinationValue);
         }
     }

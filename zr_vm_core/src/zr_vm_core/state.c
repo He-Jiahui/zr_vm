@@ -8,6 +8,7 @@
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/callback.h"
+#include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/gc.h"
 #include "gc/gc_domain_internal.h"
 #include "zr_vm_core/global.h"
@@ -264,7 +265,17 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     ZrCore_Memory_Allocate(global, state, sizeof(SZrState), 0, ZR_MEMORY_NATIVE_TYPE_STATE);
 }
 
+static void state_clear_pending_control(SZrState *state, TZrPtr argument) {
+    ZR_UNUSED_PARAMETER(argument);
+    execution_clear_pending_control(state);
+}
+
 TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
+    EZrThreadStatus pendingStatus = ZrCore_Exception_TryRun(
+            state, state_clear_pending_control, ZR_NULL);
+    if (pendingStatus != ZR_THREAD_STATUS_FINE) {
+        status = pendingStatus;
+    }
     // 重置线程状态
     // 调用栈回到创建时基础调用栈
     SZrCallInfo *callInfo = state->callInfoList = &state->baseCallInfo;
@@ -284,12 +295,6 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     state->exceptionHandlerStackLength = 0;
     state->aotGcRootFrameStack = ZR_NULL;
     state->aotGcRootFrameDepth = 0u;
-    state->pendingControl.kind = ZR_VM_PENDING_CONTROL_NONE;
-    state->pendingControl.callInfo = ZR_NULL;
-    state->pendingControl.targetInstructionOffset = 0;
-    state->pendingControl.valueSlot = 0;
-    ZrCore_Value_ResetAsNull(&state->pendingControl.value);
-    state->pendingControl.hasValue = ZR_FALSE;
     status = ZrCore_Exception_TryStop(state, 1, status);
     if (status != ZR_THREAD_STATUS_FINE) {
         /* MarkError leaves stackTop one slot before its destination. Collapse the

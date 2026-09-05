@@ -470,7 +470,7 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
         }
     } else if (!copiedInlineReturn) {
         if (destinationFrameValue != ZR_NULL && destinationFrameValue != destinationValue && !frameOverlapsStack) {
-            execution_copy_stack_value_allowing_overlap_no_profile(
+            ZrCore_Value_AssignMaterializedStackValueNoProfile(
                     state,
                     destinationFrameValue,
                     destinationValue);
@@ -2086,7 +2086,6 @@ static TZrBool execution_raise_vm_runtime_error(SZrState *state,
     }
 
     callInfo = *ioCallInfo;
-    execution_clear_pending_control(state);
     ZrCore_Value_InitAsRawObject(state, &payload, ZR_CAST_RAW_OBJECT_AS_SUPER(errorString));
     payload.type = ZR_VALUE_TYPE_STRING;
     payload.isGarbageCollectable = ZR_TRUE;
@@ -2100,6 +2099,7 @@ static TZrBool execution_raise_vm_runtime_error(SZrState *state,
         ZR_ABORT();
     }
 
+    execution_clear_pending_control(state);
     if (execution_unwind_exception_to_handler(state, ioCallInfo)) {
         return ZR_TRUE;
     }
@@ -9621,7 +9621,6 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 SZrTypeValue payload;
 
                 SAVE_PC(state, callInfo);
-                execution_clear_pending_control(state);
                 payload = *FRAME_VALUE_SLOT(E(instruction));
                 if (!ZrCore_Exception_NormalizeThrownValue(state,
                                                           &payload,
@@ -9633,6 +9632,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                     ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
                 }
 
+                execution_clear_pending_control(state);
                 if (execution_unwind_exception_to_handler(state, &callInfo)) {
                     goto LZrReturning;
                 }
@@ -9648,6 +9648,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                     ZrCore_Value_ResetAsNull(destination);
                 }
                 execution_clear_pending_control(state);
+                RESUME_AFTER_NATIVE_CALL(state, callInfo);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(END_FINALLY) {
@@ -9707,6 +9708,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                         break;
                     default:
                         execution_clear_pending_control(state);
+                        RESUME_AFTER_NATIVE_CALL(state, callInfo);
                         break;
                 }
             }

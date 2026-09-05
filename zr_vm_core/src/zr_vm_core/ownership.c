@@ -708,14 +708,18 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
         control->strongRefCount > 0) {
         SZrRawObject *finalObject = ZR_NULL;
         if (ownership_release_strong_ref(state, control, &finalObject)) {
+            EZrThreadStatus dropStatus = ZR_THREAD_STATUS_FINE;
             if (ZrCore_OwnershipResource_IsObject(finalObject)) {
-                ZrCore_OwnershipResource_Drop(state, finalObject);
+                dropStatus = ZrCore_OwnershipResource_DropProtected(state, finalObject);
                 control->ownsGcIgnore = ZR_FALSE;
             } else {
                 ownership_return_object_to_gc(state, control, finalObject);
             }
             ZrCore_OwnershipShared_FinishFinalStrong(
                     state, control, finalObject);
+            if (dropStatus != ZR_THREAD_STATUS_FINE) {
+                ZrCore_Exception_Throw(state, dropStatus);
+            }
         }
     }
 }

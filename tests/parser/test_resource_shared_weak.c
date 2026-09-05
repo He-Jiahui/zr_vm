@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
@@ -473,6 +474,9 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
                     ZR_STRUCTURED_DIAGNOSTIC_WARNING));
 }
 
+#include "test_ownership_pending_control_cases.h"
+#include "test_ownership_drop_failure_cases.h"
+#include "test_ownership_aot_pending_cases.h"
 #include "test_ownership_receiver_guard_contract_cases.h"
 #include "test_ownership_release_domain_cases.h"
 
@@ -485,6 +489,28 @@ int main(void) {
     RUN_TEST(test_shared_and_weak_reject_a_different_isolation_domain);
     RUN_TEST(test_shared_foreign_release_preserves_owner);
     RUN_TEST(test_weak_foreign_release_preserves_live_and_expired_handle);
+    RUN_TEST(test_pending_shared_clear_releases_retention_once);
+    RUN_TEST(test_pending_weak_clear_releases_retention_once);
+    RUN_TEST(test_pending_valueless_transfer_releases_retention);
+    RUN_TEST(test_pending_thread_reset_releases_retention);
+    RUN_TEST(test_pending_thread_reset_reports_drop_failure_after_cleanup);
+    RUN_TEST(test_pending_self_alias_and_replacement_preserve_value);
+    RUN_TEST(test_pending_clear_detaches_before_reentrant_drop);
+    RUN_TEST(test_pending_replacement_survives_reentrant_drop);
+    RUN_TEST(test_pending_exception_survives_drop_nested_catch);
+    RUN_TEST(test_pending_gc_result_survives_reentrant_collection);
+    RUN_TEST(test_pending_throwing_drop_finishes_release_and_discards_replacement);
+    RUN_TEST(test_drop_failure_releases_callback_pending_return);
+    RUN_TEST(test_drop_success_preserves_caller_pending_return);
+    RUN_TEST(test_drop_failure_preserves_caller_pending_return);
+    RUN_TEST(test_aot_catch_refreshes_frame_after_pending_drop);
+    RUN_TEST(test_aot_end_finally_refreshes_frame_after_discarded_pending_drop);
+    RUN_TEST(test_aot_throw_normalizes_payload_before_pending_drop);
+    RUN_TEST(test_shared_call_result_is_not_retained_after_explicit_drop);
+    RUN_TEST(test_pending_shared_return_through_nested_finally);
+    RUN_TEST(test_pending_return_preserves_value_before_finally_assignment);
+    RUN_TEST(test_pending_weak_return_through_nested_finally);
+    RUN_TEST(test_pending_return_replaced_by_finally_exception);
     RUN_TEST(test_resource_shared_surface_runs_clone_wake_and_last_strong_drop);
     RUN_TEST(test_resource_shared_cleanup_runs_on_throw);
     RUN_TEST(test_shared_value_parameter_releases_its_copy);

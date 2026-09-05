@@ -8447,7 +8447,6 @@ TZrBool ZrLibrary_AotRuntime_Throw(SZrState *state,
         return ZR_FALSE;
     }
 
-    execution_clear_pending_control(state);
     payload = *ZrCore_Stack_GetValue(sourcePointer);
     if (!ZrCore_Exception_NormalizeThrownValue(state, &payload, callInfo, ZR_THREAD_STATUS_RUNTIME_ERROR)) {
         if (!ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_EXCEPTION_ERROR)) {
@@ -8455,6 +8454,7 @@ TZrBool ZrLibrary_AotRuntime_Throw(SZrState *state,
             return ZR_FALSE;
         }
     }
+    execution_clear_pending_control(state);
 
     if (!execution_unwind_exception_to_handler(state, &callInfo)) {
         ZrCore_Exception_Throw(state, state->currentExceptionStatus);
@@ -8561,7 +8561,8 @@ TZrBool ZrLibrary_AotRuntime_Catch(SZrState *state, ZrAotGeneratedFrame *frame, 
         ZrCore_Value_ResetAsNull(destination);
     }
     execution_clear_pending_control(state);
-    return ZR_TRUE;
+    return aot_runtime_refresh_frame_from_callinfo(state, frame,
+            frame->callInfo != ZR_NULL ? frame->callInfo : state->callInfoList);
 }
 
 TZrBool ZrLibrary_AotRuntime_EndFinally(SZrState *state,
@@ -8622,7 +8623,7 @@ TZrBool ZrLibrary_AotRuntime_EndFinally(SZrState *state,
             return ZR_FALSE;
         default:
             execution_clear_pending_control(state);
-            return ZR_TRUE;
+            return aot_runtime_refresh_frame_from_callinfo(state, frame, frame->callInfo);
     }
 }
 
