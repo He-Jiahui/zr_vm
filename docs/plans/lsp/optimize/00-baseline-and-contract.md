@@ -81,6 +81,7 @@ typedef struct SZrLspCapabilityDescriptor {
 - [ ] 从 `stdio_smoke.js` 抽取 frame 编解码、request id、超时与 stderr 捕获，禁止继续复制第五套 client harness。
 - [ ] RED 用例至少包括：初始化前 request、重复 initialize、shutdown 后 request、缺少/错误 jsonrpc、非法 id、非法 params、未知 method、notification 不得收到 response、畸形 frame、超大 Content-Length、重复 request id、取消未知 id。
 - [ ] 每个断言检查完整 JSON-RPC envelope 与精确 error code，而不是仅检查返回数组类型。
+- [x] Sub01：修正 known-id cancellation fixture 的准备计时，保留精确 URI/version 与 `-32800` envelope；GCC/Clang/MSVC 各 30/30，[完成记录](2026-09-05-plan00-task03-sub01-cancellation-setup.md)。活动查询 50 ms 预算仍由 Plan 01 单独验收。
 - [ ] 为 3.17 capability matrix 添加 snapshot；3.18 可选能力用单独 client capability fixture。
 
 ## Task 4：立即撤销已知过度声明

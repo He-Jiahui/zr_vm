@@ -85,6 +85,14 @@ platforms fail instead of silently reporting an approximation.
 
 ## Lifecycle Races
 
+The known-id protocol conformance case queues its request and cancellation
+behind a 2048-class `didOpen`. It waits separately for exact URI/version
+diagnostics (10000 ms preparation deadline) before consuming the shared client's
+response backlog (unchanged 3000 ms response deadline). Early success responses
+remain in the backlog and fail the exact cancellation envelope assertion.
+This fixture proves queued cancellation delivery; it does not measure active
+query interruption or replace the separate frozen 50 ms cancellation gate.
+
 The stdio reader thread may linearize a `workspace/diagnostic` request before
 the immediately following cancel, change, or close notification. The churn
 test accepts only a lifecycle error when the later input was observed first,
@@ -140,10 +148,14 @@ AddressSanitizer passes the lifecycle executable.
 
 The protocol lifecycle and transport tasks were revalidated on 2026-08-23
 after deterministic teardown became the runtime path. The protocol driver has
-29 cases: it covers lifecycle ordering, JSON-RPC envelope and numeric bounds,
+29 cases at that historical acceptance: it covers lifecycle ordering, JSON-RPC envelope and numeric bounds,
 typed duplicate and cancellation ids, stdout-isolated trace output, progress,
 partial results, and classified malformed frames. It explicitly cancels a
 known active workspace-symbol request and requires `-32800`.
+
+The current driver has 30 cases. Its known-id fixture exercises a queued request;
+the [2026-09-05 setup-deadline repair](../plans/lsp/optimize/2026-09-05-plan00-task03-sub01-cancellation-setup.md)
+records three-toolchain 30/30 results without claiming active-query latency.
 
 `stdio_document_sync_conformance.js` is a separate request/response test. It
 opens document version 1, replaces it through `didChange` version 2, confirms

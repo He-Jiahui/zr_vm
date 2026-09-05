@@ -354,6 +354,8 @@ async function testCancelUnknownIdHasNoResponse(serverPath) {
 async function testCancelKnownRequestId(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///cancel-known-request.zr';
+        const version = 1;
+        const documentSetupTimeoutMs = 10000;
         const symbols = Array.from(
             { length: 2048 },
             (_, index) => `class CancellationSymbol${index} { }`).join('\n');
@@ -363,18 +365,30 @@ async function testCancelKnownRequestId(serverPath) {
             textDocument: {
                 uri,
                 languageId: 'zr',
-                version: 1,
+                version,
                 text: symbols,
             },
         });
 
-        const responsePromise = client.request('workspace/symbol', {
-            query: 'CancellationSymbol',
-            partialResultToken: 'cancel-known-progress',
-        }, 'cancel-known-request', RESPONSE_TIMEOUT_MS);
+        // Keep the request and cancellation queued behind the expensive didOpen setup.
+        client.sendPayload({
+            jsonrpc: '2.0',
+            id: 'cancel-known-request',
+            method: 'workspace/symbol',
+            params: {
+                query: 'CancellationSymbol',
+                partialResultToken: 'cancel-known-progress',
+            },
+        });
         client.notify('$/cancelRequest', { id: 'cancel-known-request' });
 
-        const response = await responsePromise;
+        const diagnostics = await client.waitForNotification(
+            'textDocument/publishDiagnostics', documentSetupTimeoutMs);
+        assert(diagnostics && diagnostics.uri === uri && diagnostics.version === version,
+               `cancel known request setup must publish the exact document/version, actual=${JSON.stringify(diagnostics)}`);
+
+        // This response deadline excludes setup; active-query cancellation latency is a separate gate.
+        const response = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         assertErrorEnvelope(response, 'cancel-known-request', -32800, 'cancel known request id');
     });
 }

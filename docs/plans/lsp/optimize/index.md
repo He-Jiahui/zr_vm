@@ -39,7 +39,9 @@ Task 4 Sub03 完成[空文件操作请求撤销](2026-09-05-plan00-task04-sub03-
 下文为 2026-08-22 历史审查证据，不能直接当作当前实现状态。
 
 Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read
-stdio 用例在已提交基线和本次修复后均失败，Clang 取消用例有一次并发验证超时。
+stdio 用例在已提交基线和本次修复后均失败。Task 3 Sub01 已修正
+[取消 fixture 准备期限](2026-09-05-plan00-task03-sub01-cancellation-setup.md)，
+三工具链各 30/30；该结果不代表活动查询 50 ms 取消预算已验收。
 现有符号投影/类型查询会话的提交尚待接续，阶段 01-06 本轮晋级门槛未通过。
 
 ## 2. 审查证据
