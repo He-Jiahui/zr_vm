@@ -48,6 +48,10 @@ Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回
 精确 `-32601`，并覆盖 cJSON 分配故障；三工具链各 11/11。完整协议生命周期和
 Phase 00 inventory 尚未闭合。
+Task 3 Sub03 完成当前提交后的[协议 conformance 重放](2026-09-06-plan00-task03-sub03-protocol-replay.md)：
+GCC/Clang/MSVC 的 30 个协议案例均通过，并重放 MSVC workspace folder、save、
+optional、resolve、file-operation 与 client-command smoke；父 Task 3 和集成
+semantic baseline 仍未晋级。
 
 Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
 撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述

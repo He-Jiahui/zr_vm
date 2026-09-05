@@ -88,6 +88,7 @@ typedef struct SZrLspCapabilityDescriptor {
 - [x] Sub01：修正 known-id cancellation fixture 的准备计时，保留精确 URI/version 与 `-32800` envelope；GCC/Clang/MSVC 各 30/30，[完成记录](2026-09-05-plan00-task03-sub01-cancellation-setup.md)。活动查询 50 ms 预算仍由 Plan 01 单独验收。
 - [ ] 为 3.17 capability matrix 添加 snapshot；3.18 可选能力用单独 client capability fixture。
 - [x] Sub02：完成 3.17/3.18 optional capability 协商、精确 MethodNotFound、完整 capability snapshot 和 cJSON allocation failure 回归；[记录](2026-09-05-plan00-task03-sub02-optional-capabilities.md)。GCC/Clang/MSVC 各 11/11，父 Task 3 的取消、frame 和其余负向门槛仍未验收。
+- [x] Sub03：在当前提交后的 GCC/Clang/MSVC 二进制重放协议负向、workspace folder、save、resolve、file-operation 和 client-command smoke；[记录](2026-09-06-plan00-task03-sub03-protocol-replay.md)。protocol conformance 各 30/30，MSVC workspace folders 12/12、save 6/6、optional 25/25；父 Task 3 的 integrated capability/version audit、sanitizer 和 active-query latency 仍未验收。
 
 ## Task 4：立即撤销已知过度声明
 
