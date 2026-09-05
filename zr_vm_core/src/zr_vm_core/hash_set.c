@@ -54,35 +54,6 @@ static void zr_hash_pair_pool_release(SZrGlobalState *global, SZrHashSet *set) {
     set->pairPoolUsed = 0;
 }
 
-static TZrBool zr_hash_pair_pool_contains(const SZrHashSet *set,
-                                          const SZrHashKeyValuePair *pair) {
-    const SZrHashPairPoolBlock *block;
-    TZrUInt64 pairAddress;
-
-    if (set == ZR_NULL || pair == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    pairAddress = (TZrUInt64)(TZrPtr)pair;
-    for (block = set->pairPoolHead; block != ZR_NULL; block = block->next) {
-        TZrUInt64 firstPairAddress;
-        TZrUInt64 onePastLastPairAddress;
-
-        if (block->capacity == 0u) {
-            continue;
-        }
-
-        firstPairAddress = (TZrUInt64)(TZrPtr)&block->pairs[0];
-        onePastLastPairAddress = firstPairAddress +
-                                 block->capacity * sizeof(SZrHashKeyValuePair);
-        if (pairAddress >= firstPairAddress && pairAddress < onePastLastPairAddress) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
 void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     SZrGlobalState *global = state->global;
     const TZrSize elementSize = sizeof(TZrPtr);

@@ -56,6 +56,35 @@ struct SZrHashSet {
 
 typedef struct SZrHashSet SZrHashSet;
 
+ZR_FORCE_INLINE TZrBool zr_hash_pair_pool_contains(const SZrHashSet *set,
+                                                  const SZrHashKeyValuePair *pair) {
+    const SZrHashPairPoolBlock *block;
+    TZrUInt64 pairAddress;
+
+    if (set == ZR_NULL || pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pairAddress = (TZrUInt64)(TZrPtr)pair;
+    for (block = set->pairPoolHead; block != ZR_NULL; block = block->next) {
+        TZrUInt64 firstPairAddress;
+        TZrUInt64 onePastLastPairAddress;
+
+        if (block->capacity == 0u) {
+            continue;
+        }
+
+        firstPairAddress = (TZrUInt64)(TZrPtr)&block->pairs[0];
+        onePastLastPairAddress = firstPairAddress +
+                                 block->capacity * sizeof(SZrHashKeyValuePair);
+        if (pairAddress >= firstPairAddress && pairAddress < onePastLastPairAddress) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 ZR_FORCE_INLINE void ZrCore_HashSet_Construct(SZrHashSet *set) {
     set->buckets = ZR_NULL;
     set->bucketSize = 0;
@@ -491,8 +520,10 @@ ZR_FORCE_INLINE SZrTypeValue ZrCore_HashSet_Remove(struct SZrState *state, SZrHa
             }
             set->elementCount--;
             SZrTypeValue result = object->key;
-            ZrCore_Memory_RawFreeWithType(state->global, object, sizeof(SZrHashKeyValuePair),
-                                    ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+            if (!zr_hash_pair_pool_contains(set, object)) {
+                ZrCore_Memory_RawFreeWithType(state->global, object, sizeof(SZrHashKeyValuePair),
+                                            ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+            }
             return result;
         }
         prev = object;
