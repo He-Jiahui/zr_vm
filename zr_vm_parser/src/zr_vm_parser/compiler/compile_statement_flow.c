@@ -277,6 +277,18 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
         }
+        for (TZrSize i = 0; i < cs->pendingAbsolutePatches.length; i++) {
+            SZrPendingAbsolutePatch *pendingPatch =
+                    (SZrPendingAbsolutePatch *)ZrCore_Array_Get(&cs->pendingAbsolutePatches, i);
+            if (pendingPatch != ZR_NULL && pendingPatch->labelId == loopStartLabelId &&
+                pendingPatch->instructionIndex < cs->instructions.length) {
+                TZrInstruction *instruction =
+                        (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, pendingPatch->instructionIndex);
+                if (instruction != ZR_NULL) {
+                    instruction->instruction.operand.operand2[0] = (TZrInt32)loopStartInstructionIndex;
+                }
+            }
+        }
     }
     
     // 解析循环结束标签
@@ -989,6 +1001,9 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     targetLabelId = stmt->isBreak ? loopLabel->breakLabelId : loopLabel->continueLabelId;
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
+    if (hasFinallyContext && loopLabel->targetScopeStackDepth > finallyContext.scopeStackDepth) {
+        hasFinallyContext = ZR_FALSE;
+    }
 
     if (stmt->expr != ZR_NULL) {
         ZrParser_Compiler_Error(cs,
@@ -1142,6 +1157,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
         SZrCompilerTryContext tryContext;
         tryContext.handlerIndex = handlerIndex;
         tryContext.finallyLabelId = finallyLabelId;
+        tryContext.scopeStackDepth = cs->scopeStack.length;
         ZrCore_Array_Push(cs->state, &cs->tryContextStack, &tryContext);
         pushedTryContext = ZR_TRUE;
     }

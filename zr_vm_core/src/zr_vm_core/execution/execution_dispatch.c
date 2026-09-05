@@ -4490,6 +4490,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         if (ZR_UNLIKELY(state->exceptionHandlerStackLength > 0u)) {                                                    \
             execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);                                  \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
         }                                                                                                              \
                                                                                                                        \
         if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {                                      \
@@ -9612,7 +9613,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
 
                 if (handlerState != ZR_NULL) {
                     if (handlerInfo != ZR_NULL && handlerInfo->hasFinally) {
-                        handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
+                        execution_enter_finally(state, handlerState);
                     } else {
                         execution_pop_exception_handler(state, handlerState);
                     }
@@ -9659,7 +9660,8 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 TZrStackValuePointer targetSlot;
 
                 if (handlerState != ZR_NULL) {
-                    execution_pop_exception_handler(state, handlerState);
+                    execution_finish_finally(state, handlerState);
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 }
 
                 switch (state->pendingControl.kind) {

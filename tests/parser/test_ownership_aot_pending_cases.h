@@ -43,9 +43,8 @@ static TZrInt64 aot_pending_relocating_drop(SZrState *state) {
     return 0;
 }
 
-static void aot_pending_prepare_frame(ZrAotGeneratedFrame *frame) {
-    SZrFunction *function = compile_source(
-            "try { return 0; } catch (error) { return 1; }\n");
+static void aot_pending_prepare_source_frame(ZrAotGeneratedFrame *frame, const char *source) {
+    SZrFunction *function = compile_source(source);
     SZrCallInfo *callInfo = g_state->callInfoList;
     TZrStackValuePointer functionBase;
     TEST_ASSERT_NOT_NULL(function);
@@ -68,6 +67,10 @@ static void aot_pending_prepare_frame(ZrAotGeneratedFrame *frame) {
     frame->slotBase = functionBase + 1;
     frame->generatedFrameSlotCount = 64u;
     g_aot_pending_caller = callInfo;
+}
+
+static void aot_pending_prepare_frame(ZrAotGeneratedFrame *frame) {
+    aot_pending_prepare_source_frame(frame, "try { return 0; } catch (error) { return 1; }\n");
 }
 
 static void aot_pending_prepare_owner(void) {
@@ -136,6 +139,24 @@ static void test_aot_throw_normalizes_payload_before_pending_drop(void) {
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(payload->type));
     TEST_ASSERT_EQUAL_INT64(73, payload->value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_UINT32(frame.function->catchClauseList[0].targetInstructionOffset, resumeIndex);
+}
+
+static void test_aot_return_refreshes_frame_after_discarded_finally_drop(void) {
+    ZrAotGeneratedFrame frame;
+    SZrVmExceptionHandlerState *handler;
+    aot_pending_prepare_frame(&frame);
+    aot_pending_prepare_owner();
+    ZrCore_Value_InitAsInt(g_state, ZrCore_Stack_GetValue(frame.slotBase), 73);
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_Try(g_state, &frame, 0u));
+    handler = execution_find_handler_state(g_state, frame.callInfo, 0u);
+    TEST_ASSERT_NOT_NULL(handler);
+    execution_enter_finally(g_state, handler);
+    TEST_ASSERT_EQUAL_INT64(1, ZrLibrary_AotRuntime_Return(g_state, &frame, 0u, ZR_FALSE));
+    TEST_ASSERT_EQUAL_UINT32(1u, g_aot_pending_drop_count);
+    TEST_ASSERT_TRUE(g_aot_pending_stack_relocated);
+    TEST_ASSERT_EQUAL_PTR(frame.callInfo->functionBase.valuePointer + 1u, frame.slotBase);
+    TEST_ASSERT_EQUAL_INT64(73, ZrCore_Stack_GetValue(
+            frame.callInfo->functionBase.valuePointer)->value.nativeObject.nativeInt64);
 }
 
 #endif

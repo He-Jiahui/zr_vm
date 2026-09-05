@@ -492,8 +492,12 @@ static void test_reflection_constructor_throw_reports_boundary_and_clears_result
             "pub class Throwing {\n"
             "  pub var value: object;\n"
             "  pub @constructor() {\n"
-            "    this.value = new Payload();\n"
-            "    throw \"reflection boom\";\n"
+            "    try {\n"
+            "      this.value = new Payload();\n"
+            "      throw \"reflection boom\";\n"
+            "    } finally {\n"
+            "      this.value = new Payload();\n"
+            "    }\n"
             "  }\n"
             "}\n";
     SZrFunction *function = ZR_NULL;
@@ -505,11 +509,15 @@ static void test_reflection_constructor_throw_reports_boundary_and_clears_result
     SZrObject *descriptor;
     SZrTypeValue result;
     EZrReflectionConstructionStatus status;
+    TZrUInt32 savedHandlerDepth;
+    TZrUInt32 savedRootDepth;
 
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NOT_NULL(module);
     descriptor = type_descriptor(module_prototype(module, "Throwing"));
     TEST_ASSERT_NOT_NULL(descriptor);
+    savedHandlerDepth = g_state->exceptionHandlerStackLength;
+    savedRootDepth = g_state->aotGcRootFrameDepth;
     ZrCore_Value_InitAsInt(g_state, &result, 99);
     TEST_ASSERT_FALSE(ZrCore_Reflection_CreateInstance(
             g_state,
@@ -522,6 +530,8 @@ static void test_reflection_constructor_throw_reports_boundary_and_clears_result
             ZR_REFLECTION_CONSTRUCTION_STATUS_CONSTRUCTOR_THREW,
             status);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, result.type);
+    TEST_ASSERT_EQUAL_UINT32(savedHandlerDepth, g_state->exceptionHandlerStackLength);
+    TEST_ASSERT_EQUAL_UINT32(savedRootDepth, g_state->aotGcRootFrameDepth);
     ZrCore_Function_Free(g_state, function);
 }
 

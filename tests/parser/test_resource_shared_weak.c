@@ -478,6 +478,11 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
 #include "test_ownership_drop_failure_cases.h"
 #include "test_ownership_aot_pending_cases.h"
 #include "test_ownership_member_cache_null_cases.h"
+#include "test_ownership_nested_finally_pending_cases.h"
+#include "test_ownership_suspended_roots_cases.h"
+#include "test_ownership_task_callback_cases.h"
+#include "test_ownership_abrupt_roundtrip_cases.h"
+#include "test_ownership_loop_finally_cases.h"
 #include "test_ownership_receiver_guard_contract_cases.h"
 #include "test_ownership_release_domain_cases.h"
 
@@ -488,8 +493,6 @@ int main(void) {
     RUN_TEST(test_shared_clone_and_repeated_wake_account_strong_refs);
     RUN_TEST(test_many_weak_handles_survive_final_strong_and_wake_to_none);
     RUN_TEST(test_shared_and_weak_reject_a_different_isolation_domain);
-    RUN_TEST(test_shared_foreign_release_preserves_owner);
-    RUN_TEST(test_weak_foreign_release_preserves_live_and_expired_handle);
     RUN_TEST(test_pending_shared_clear_releases_retention_once);
     RUN_TEST(test_pending_weak_clear_releases_retention_once);
     RUN_TEST(test_pending_valueless_transfer_releases_retention);
@@ -507,8 +510,32 @@ int main(void) {
     RUN_TEST(test_aot_catch_refreshes_frame_after_pending_drop);
     RUN_TEST(test_aot_end_finally_refreshes_frame_after_discarded_pending_drop);
     RUN_TEST(test_aot_throw_normalizes_payload_before_pending_drop);
+    RUN_TEST(test_aot_return_refreshes_frame_after_discarded_finally_drop);
     RUN_TEST(test_member_cache_cold_read_write_and_receiver_change);
+    RUN_TEST(test_suspended_return_survives_inner_finally_break);
+    RUN_TEST(test_suspended_return_survives_inner_finally_continue);
+    RUN_TEST(test_suspended_return_runs_remaining_outer_finally);
+    RUN_TEST(test_suspended_return_survives_caught_inner_exception);
+    RUN_TEST(test_suspended_exception_survives_caught_inner_exception);
+    RUN_TEST(test_suspended_shared_return_survives_inner_finally_break);
+    RUN_TEST(test_suspended_shared_return_override_releases_original);
+    RUN_TEST(test_pending_break_discards_exited_catch_handler);
+    RUN_TEST(test_suspended_shared_and_weak_reset_release_retention);
+    RUN_TEST(test_suspended_return_and_exception_are_gc_roots);
+    RUN_TEST(test_suspended_roots_relocate_only_in_their_own_domain);
+    RUN_TEST(test_suspended_drop_survives_handler_array_relocation);
+    RUN_TEST(test_suspended_cleanup_keeps_original_exception_through_gc_and_multiple_drops);
+    RUN_TEST(test_suspended_cleanup_keeps_first_drop_exception_through_gc);
+    RUN_TEST(test_task_result_survives_suspended_owner_cleanup_gc);
+    RUN_TEST(test_task_failure_unlinks_abandoned_callback_roots_before_drop);
+    RUN_TEST(test_suspended_weak_return_survives_inner_finally_break);
+    RUN_TEST(test_suspended_shared_return_throw_override_releases_original);
+    RUN_TEST(test_suspended_handler_cleanup_preserves_original_host_failure);
+    RUN_TEST(test_suspended_unwind_keeps_original_exception_when_drop_throws);
+    RUN_TEST(test_ownership_abrupt_vm_and_binary_roundtrip);
     RUN_TEST(test_shared_call_result_is_not_retained_after_explicit_drop);
+    RUN_TEST(test_shared_foreign_release_preserves_owner);
+    RUN_TEST(test_weak_foreign_release_preserves_live_and_expired_handle);
     RUN_TEST(test_pending_shared_return_through_nested_finally);
     RUN_TEST(test_pending_return_preserves_value_before_finally_assignment);
     RUN_TEST(test_pending_weak_return_through_nested_finally);
@@ -529,5 +556,13 @@ int main(void) {
     RUN_TEST(test_mixed_weak_guards_preserve_shared_result);
     RUN_TEST(test_mixed_weak_optional_chain_boundaries);
     RUN_TEST(test_repeated_weak_live_expire_wake_transitions);
+    RUN_TEST(test_pending_loop_local_transfers_do_not_exit_enclosing_try);
+    RUN_TEST(test_loop_local_transfers_lower_without_pending_finally_exit);
+    RUN_TEST(test_pending_nested_finally_break_keeps_outer_try_active);
+    RUN_TEST(test_pending_nested_finally_continue_keeps_outer_try_active);
+    RUN_TEST(test_pending_catch_local_transfers_do_not_exit_finally);
+    RUN_TEST(test_pending_return_target_survives_instruction_compaction);
+    RUN_TEST(test_pending_for_continue_resolves_existing_loop_label);
+    RUN_TEST(test_pending_foreach_continue_resolves_existing_loop_label);
     return UNITY_END();
 }

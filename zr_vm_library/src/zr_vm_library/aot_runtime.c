@@ -8410,7 +8410,7 @@ TZrBool ZrLibrary_AotRuntime_EndTry(SZrState *state, ZrAotGeneratedFrame *frame,
     handlerInfo = &function->exceptionHandlerList[handlerIndex];
     if (handlerState != ZR_NULL) {
         if (handlerInfo->hasFinally) {
-            handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
+            execution_enter_finally(state, handlerState);
         } else {
             execution_pop_exception_handler(state, handlerState);
         }
@@ -8586,7 +8586,10 @@ TZrBool ZrLibrary_AotRuntime_EndFinally(SZrState *state,
 
     handlerState = execution_find_handler_state(state, frame->callInfo, handlerIndex);
     if (handlerState != ZR_NULL) {
-        execution_pop_exception_handler(state, handlerState);
+        execution_finish_finally(state, handlerState);
+        if (!aot_runtime_refresh_frame_from_callinfo(state, frame, frame->callInfo)) {
+            return ZR_FALSE;
+        }
     }
 
     switch (state->pendingControl.kind) {
@@ -10212,6 +10215,8 @@ TZrInt64 ZrLibrary_AotRuntime_Return(SZrState *state,
     }
 
     execution_discard_exception_handlers_for_callinfo(state, callInfo);
+    aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo);
+    resultValue = ZrCore_Stack_GetValue(aot_runtime_frame_slot(frame, sourceSlot));
     if (callInfo->functionTop.valuePointer != ZR_NULL &&
         (state->stackTop.valuePointer == ZR_NULL || state->stackTop.valuePointer < callInfo->functionTop.valuePointer)) {
         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
@@ -10222,6 +10227,9 @@ TZrInt64 ZrLibrary_AotRuntime_Return(SZrState *state,
                                 ZR_THREAD_STATUS_INVALID,
                                 ZR_FALSE);
 
+    aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo);
+    resultValue = ZrCore_Stack_GetValue(aot_runtime_frame_slot(frame, sourceSlot));
+    callerResultValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
     ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
     if (metadataFunction->functionName == ZR_NULL ||
         ZrCore_NativeString_Compare(ZrCore_String_GetNativeString(metadataFunction->functionName), "constructor") != 0) {

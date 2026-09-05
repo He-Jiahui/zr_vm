@@ -327,6 +327,7 @@ typedef struct SZrCompilerExceptionHandlerInfo {
 typedef struct SZrCompilerTryContext {
     TZrUInt32 handlerIndex;
     TZrSize finallyLabelId;
+    TZrSize scopeStackDepth;
 } SZrCompilerTryContext;
 
 // 导出变量信息（用于模块导出）

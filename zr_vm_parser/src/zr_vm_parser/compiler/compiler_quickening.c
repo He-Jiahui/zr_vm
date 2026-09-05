@@ -3025,6 +3025,17 @@ static TZrBool compiler_quickening_build_block_starts(const SZrFunction *functio
         const TZrInstruction *instruction = &function->instructionsList[index];
         EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
 
+        if (opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN) ||
+            opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK) ||
+            opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_CONTINUE)) {
+            compiler_quickening_mark_jump_target(blockStarts, function->instructionsLength,
+                                                 instruction->instruction.operand.operand2[0]);
+            if (index + 1 < function->instructionsLength) {
+                blockStarts[index + 1] = ZR_TRUE;
+            }
+            continue;
+        }
+
         if (opcode == ZR_INSTRUCTION_ENUM(JUMP) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE)) {
@@ -4271,6 +4282,18 @@ static TZrBool compiler_quickening_rewrite_compacted_branches(TZrInstruction *in
         newIndex = oldToNew[oldIndex];
         instruction = &instructions[newIndex];
         opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+        if (opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN) ||
+            opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK) ||
+            opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_CONTINUE)) {
+            targetIndex = instruction->instruction.operand.operand2[0];
+            if (targetIndex < 0 || (TZrUInt64)targetIndex > oldLength) {
+                return ZR_FALSE;
+            }
+            instruction->instruction.operand.operand2[0] = (TZrInt32)
+                    compiler_quickening_remap_instruction_index(oldToNew, oldLength, newLength,
+                                                                 (TZrMemoryOffset)targetIndex);
+            continue;
+        }
         if (opcode != ZR_INSTRUCTION_ENUM(JUMP) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) &&
@@ -4386,6 +4409,18 @@ static TZrBool compiler_quickening_rewrite_inserted_super_array_items_cache_bran
         newIndex = oldToNewOriginal[oldIndex];
         instruction = &instructions[newIndex];
         opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+        if (opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN) ||
+            opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK) ||
+            opcode == ZR_INSTRUCTION_ENUM(SET_PENDING_CONTINUE)) {
+            targetIndex = instruction->instruction.operand.operand2[0];
+            if (targetIndex < 0 || (TZrUInt64)targetIndex > oldLength) {
+                return ZR_FALSE;
+            }
+            instruction->instruction.operand.operand2[0] = (TZrInt32)
+                    compiler_quickening_remap_instruction_index(oldToNewEntry, oldLength, newLength,
+                                                                 (TZrMemoryOffset)targetIndex);
+            continue;
+        }
         if (opcode != ZR_INSTRUCTION_ENUM(JUMP) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) &&

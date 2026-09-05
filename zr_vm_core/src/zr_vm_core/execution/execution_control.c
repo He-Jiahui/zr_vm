@@ -15,6 +15,8 @@
 
 static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
 static SZrFunction *execution_call_info_function(SZrState *state, SZrCallInfo *callInfo);
+static void execution_release_detached_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState);
+static void execution_clear_pending_body(SZrState *state, TZrPtr argument);
 static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePointer savedStackTop,
                                                                 TZrStackValuePointer requestedScratchBase,
                                                                 const SZrCallInfo *savedCallInfo);
@@ -22,14 +24,14 @@ static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePoi
 static void execution_close_exception_scope_registrations(
         SZrState *state,
         const SZrVmExceptionHandlerState *handlerState) {
-    TZrStackValuePointer boundary;
+    TZrMemoryOffset boundaryOffset;
 
     if (state == ZR_NULL || handlerState == ZR_NULL) {
         return;
     }
-    boundary = ZrCore_Stack_LoadOffsetToPointer(
-            state, handlerState->toBeClosedBoundaryOffset);
-    while (state->toBeClosedValueList.valuePointer > boundary) {
+    boundaryOffset = handlerState->toBeClosedBoundaryOffset;
+    while (state->toBeClosedValueList.valuePointer >
+           ZrCore_Stack_LoadOffsetToPointer(state, boundaryOffset)) {
         TZrStackPointer toBeClosed = state->toBeClosedValueList;
         ZrCore_Closure_CloseStackValue(state, toBeClosed.valuePointer);
         if (ZrCore_Closure_CloseRegisteredValues(
@@ -301,6 +303,7 @@ TZrBool execution_push_exception_handler(SZrState *state, SZrCallInfo *callInfo,
     }
 
     handlerState = &state->exceptionHandlerStack[state->exceptionHandlerStackLength++];
+    memset(handlerState, 0, sizeof(*handlerState));
     handlerState->callInfo = callInfo;
     handlerState->handlerIndex = handlerIndex;
     handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_TRY;
@@ -348,6 +351,7 @@ static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrSt
 
 void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState) {
     TZrUInt32 index;
+    SZrVmExceptionHandlerState detached;
 
     if (state == ZR_NULL || handlerState == ZR_NULL || state->exceptionHandlerStackLength == 0) {
         return;
@@ -358,10 +362,23 @@ void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState
         return;
     }
 
+    /* Remove before Drop: callbacks can grow or otherwise relocate the handler array. */
+    detached = *handlerState;
     memmove(&state->exceptionHandlerStack[index],
             &state->exceptionHandlerStack[index + 1],
             (state->exceptionHandlerStackLength - index - 1) * sizeof(SZrVmExceptionHandlerState));
     state->exceptionHandlerStackLength--;
+    if (detached.restoreSuspendedControl && state->pendingControl.kind == ZR_VM_PENDING_CONTROL_NONE &&
+        !state->pendingControl.hasValue) {
+        state->pendingControl = detached.suspendedControl;
+        if (detached.hasSuspendedException) {
+            state->currentException = detached.suspendedException;
+            state->currentExceptionStatus = detached.suspendedExceptionStatus;
+            state->hasCurrentException = ZR_TRUE;
+        }
+        return;
+    }
+    execution_release_detached_handler(state, &detached);
 }
 
 void execution_discard_exception_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
@@ -369,7 +386,16 @@ void execution_discard_exception_handlers_for_callinfo(SZrState *state, SZrCallI
         return;
     }
 
-    execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);
+    TZrUInt32 depth = state->exceptionHandlerStackLength;
+    EZrThreadStatus status;
+    while (depth > 0u && state->exceptionHandlerStack[depth - 1u].callInfo == callInfo) {
+        --depth;
+    }
+    status = execution_discard_exception_handlers_to_depth(state, depth);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, state->threadStatus != ZR_THREAD_STATUS_FINE
+                ? state->threadStatus : status);
+    }
 }
 
 const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(
@@ -459,6 +485,34 @@ static SZrRawObject *execution_pending_root(const SZrTypeValue *value) {
                    ? ZrCore_Value_GetRawObject(value) : ZR_NULL;
 }
 
+static void execution_release_detached_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState) {
+    SZrVmPendingControl ambientPending;
+    SZrRawObject *roots[2] = {ZR_NULL, ZR_NULL};
+    SZrAotGcRootFrame rootFrame;
+    EZrThreadStatus status;
+
+    if (!handlerState->suspendedControl.hasValue) {
+        return;
+    }
+    ambientPending = state->pendingControl;
+    roots[0] = ambientPending.hasValue ? execution_pending_root(&ambientPending.value) : ZR_NULL;
+    if (!ZrCore_Gc_AotRootFramePush(state, &rootFrame,
+                (TZrStackValuePointer)roots, &execution_pending_root_map)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+    }
+    state->pendingControl = handlerState->suspendedControl;
+    roots[1] = execution_pending_root(&state->pendingControl.value);
+    status = ZrCore_Exception_TryRun(state, execution_clear_pending_body, ZR_NULL);
+    state->pendingControl = ambientPending;
+    if (roots[0] != ZR_NULL) {
+        state->pendingControl.value.value.object = roots[0];
+    }
+    (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+    }
+}
+
 void execution_clear_pending_control(SZrState *state) {
     SZrTypeValue previous;
     SZrTypeValue savedException;
@@ -480,6 +534,7 @@ void execution_clear_pending_control(SZrState *state) {
     savedThreadStatus = state->threadStatus;
     hadException = state->hasCurrentException;
     roots[0] = hadException ? execution_pending_root(&savedException) : ZR_NULL;
+    roots[1] = execution_pending_root(&previous);
     if (!ZrCore_Gc_AotRootFramePush(state, &rootFrame,
                 (TZrStackValuePointer)roots, &execution_pending_root_map)) {
         ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
@@ -611,10 +666,11 @@ TZrBool execution_resume_pending_via_outer_finally(SZrState *state, SZrCallInfo 
         }
         if (handlerInfo == ZR_NULL || !handlerInfo->hasFinally ||
             handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY) {
+            execution_pop_exception_handler(state, handlerState);
             continue;
         }
 
-        handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
+        execution_enter_finally(state, handlerState);
         return execution_jump_to_instruction_offset(state,
                                                     ioCallInfo,
                                                     callInfo,
@@ -645,21 +701,28 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
             SZrVmExceptionHandlerState *handlerState = execution_find_top_handler_for_callinfo(state, callInfo);
             SZrFunction *function = ZR_NULL;
             const SZrFunctionExceptionHandlerInfo *handlerInfo;
+            TZrUInt32 handlerIndex;
 
             if (handlerState == ZR_NULL) {
                 break;
             }
+            handlerIndex = handlerState->handlerIndex;
 
             handlerInfo = execution_lookup_exception_handler_info(state, handlerState, &function);
             if (handlerInfo == ZR_NULL) {
-                execution_pop_exception_handler(state, handlerState);
+                (void)execution_discard_exception_handlers_to_depth(state,
+                        (TZrUInt32)(handlerState - state->exceptionHandlerStack));
                 continue;
             }
 
             if (handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY) {
                 execution_close_exception_scope_registrations(
                         state, handlerState);
-                execution_pop_exception_handler(state, handlerState);
+                handlerState = execution_find_handler_state(state, callInfo, handlerIndex);
+                if (handlerState != ZR_NULL) {
+                    (void)execution_discard_exception_handlers_to_depth(state,
+                            (TZrUInt32)(handlerState - state->exceptionHandlerStack));
+                }
                 continue;
             }
 
@@ -668,33 +731,51 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
                     SZrFunctionCatchClauseInfo *catchInfo =
                             &function->catchClauseList[handlerInfo->catchClauseStartIndex + catchIndex];
                     if (ZrCore_Exception_CatchMatchesTypeName(state, &state->currentException, catchInfo->typeName)) {
+                        TZrMemoryOffset catchTarget = catchInfo->targetInstructionOffset;
                         execution_close_exception_scope_registrations(
                                 state, handlerState);
+                        handlerState = execution_find_handler_state(state, callInfo, handlerIndex);
+                        if (handlerState == ZR_NULL) {
+                            break;
+                        }
                         handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_CATCH;
                         state->threadStatus = ZR_THREAD_STATUS_FINE;
                         return execution_jump_to_instruction_offset(state,
                                                                     ioCallInfo,
                                                                     callInfo,
-                                                                    catchInfo->targetInstructionOffset);
+                                                                    catchTarget);
                     }
                 }
             }
 
+            if (handlerState == ZR_NULL) {
+                continue;
+            }
+
             if (handlerInfo->hasFinally) {
+                TZrMemoryOffset finallyTarget = handlerInfo->finallyTargetInstructionOffset;
                 execution_close_exception_scope_registrations(
                         state, handlerState);
-                handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
                 execution_set_pending_exception(state, callInfo);
+                handlerState = execution_find_handler_state(state, callInfo, handlerIndex);
+                if (handlerState == ZR_NULL) {
+                    continue;
+                }
+                execution_enter_finally(state, handlerState);
                 state->threadStatus = ZR_THREAD_STATUS_FINE;
                 return execution_jump_to_instruction_offset(state,
                                                             ioCallInfo,
                                                             callInfo,
-                                                            handlerInfo->finallyTargetInstructionOffset);
+                                                            finallyTarget);
             }
 
             execution_close_exception_scope_registrations(
                     state, handlerState);
-            execution_pop_exception_handler(state, handlerState);
+            handlerState = execution_find_handler_state(state, callInfo, handlerIndex);
+            if (handlerState != ZR_NULL) {
+                (void)execution_discard_exception_handlers_to_depth(state,
+                        (TZrUInt32)(handlerState - state->exceptionHandlerStack));
+            }
         }
 
         execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);

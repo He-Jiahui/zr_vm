@@ -3,6 +3,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/object.h"
@@ -692,6 +693,8 @@ TZrBool ZrCore_Reflection_CreateInstance(
     TZrBool hasSavedCallInfoTop = ZR_FALSE;
     TZrBool hasSavedCallInfoReturn = ZR_FALSE;
     TZrUInt32 savedExceptionHandlerStackLength;
+    SZrAotGcRootFrame *savedRootFrame;
+    TZrUInt32 savedRootDepth;
     EZrThreadStatus invokeStatus;
 
     if (result != ZR_NULL) {
@@ -749,6 +752,8 @@ TZrBool ZrCore_Reflection_CreateInstance(
     request.invoked = ZR_FALSE;
     savedCallInfo = state->callInfoList;
     savedExceptionHandlerStackLength = state->exceptionHandlerStackLength;
+    savedRootFrame = state->aotGcRootFrameStack;
+    savedRootDepth = state->aotGcRootFrameDepth;
     ZrCore_Function_StackAnchorInit(
             state, state->stackTop.valuePointer, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL &&
@@ -777,6 +782,17 @@ TZrBool ZrCore_Reflection_CreateInstance(
     }
     invokeStatus = ZrCore_Exception_TryRun(
             state, construction_invoke_body, &request);
+    state->aotGcRootFrameStack = savedRootFrame;
+    state->aotGcRootFrameDepth = savedRootDepth;
+    {
+        EZrThreadStatus handlerStatus = execution_discard_exception_handlers_to_depth(
+                state, savedExceptionHandlerStackLength);
+        if (invokeStatus == ZR_THREAD_STATUS_FINE) {
+            invokeStatus = handlerStatus;
+        }
+    }
+    state->aotGcRootFrameStack = savedRootFrame;
+    state->aotGcRootFrameDepth = savedRootDepth;
     state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(
             state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL) {
@@ -797,7 +813,6 @@ TZrBool ZrCore_Reflection_CreateInstance(
                             state, &savedCallInfoReturnAnchor);
         }
     }
-    state->exceptionHandlerStackLength = savedExceptionHandlerStackLength;
     if (invokeStatus != ZR_THREAD_STATUS_FINE || !request.invoked ||
         state->threadStatus != ZR_THREAD_STATUS_FINE) {
         construction_clear_caught_exception(state);

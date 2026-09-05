@@ -1179,15 +1179,7 @@ TZrBool execution_invoke_meta_call_to_destination(SZrState *state,
 static ZR_FORCE_INLINE void execution_discard_exception_handlers_for_callinfo_fast(
         SZrState *state,
         const SZrCallInfo *callInfo) {
-    TZrUInt32 handlerStackLength;
-
-    handlerStackLength = state->exceptionHandlerStackLength;
-    while (handlerStackLength > 0u &&
-           state->exceptionHandlerStack[handlerStackLength - 1u].callInfo == callInfo) {
-        handlerStackLength--;
-    }
-
-    state->exceptionHandlerStackLength = handlerStackLength;
+    execution_discard_exception_handlers_for_callinfo(state, (SZrCallInfo *)callInfo);
 }
 
 TZrBool execution_has_exception_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);

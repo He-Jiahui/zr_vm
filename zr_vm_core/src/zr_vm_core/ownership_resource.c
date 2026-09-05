@@ -256,6 +256,16 @@ static EZrThreadStatus ownership_resource_run_callback(
                  ZrCore_Stack_LoadOffsetToPointer(state, cleanupBoundary));
     }
 
+    {
+        EZrThreadStatus handlerStatus =
+                execution_discard_exception_handlers_to_depth(state, savedHandlerCount);
+        if (handlerStatus != ZR_THREAD_STATUS_FINE) {
+            ownership_resource_capture_failure(state, failure, handlerStatus);
+            if (status == ZR_THREAD_STATUS_FINE) {
+                status = handlerStatus;
+            }
+        }
+    }
     while (state->pendingControl.kind != ZR_VM_PENDING_CONTROL_NONE ||
            state->pendingControl.hasValue) {
         EZrThreadStatus clearStatus;
@@ -275,7 +285,6 @@ static EZrThreadStatus ownership_resource_run_callback(
 
     state->callInfoList = savedCallInfo;
     state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &stackTop);
-    state->exceptionHandlerStackLength = savedHandlerCount;
     state->nestedNativeCallYieldFlag = savedYieldCount;
     if (hasBase) {
         savedCallInfo->functionBase.valuePointer =

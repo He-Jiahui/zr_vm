@@ -1898,6 +1898,22 @@ static void garbage_collector_rewrite_external_value(
     }
 }
 
+static TZrSize garbage_collector_rewrite_suspended_control(SZrState *threadState) {
+    TZrSize work = 0u;
+    for (TZrUInt32 index = 0u; index < threadState->exceptionHandlerStackLength; ++index) {
+        SZrVmExceptionHandlerState *handler = &threadState->exceptionHandlerStack[index];
+        if (handler->suspendedControl.hasValue &&
+            garbage_collector_rewrite_value_if_forwarded(&handler->suspendedControl.value)) {
+            work++;
+        }
+        if (handler->hasSuspendedException &&
+            garbage_collector_rewrite_value_if_forwarded(&handler->suspendedException)) {
+            work++;
+        }
+    }
+    return work;
+}
+
 static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObject *object) {
     TZrSize work = 0;
 
@@ -1992,6 +2008,7 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
             work += garbage_collector_rewrite_thread_frame_slots(threadState);
             work += garbage_collector_rewrite_aot_root_frames(threadState);
             work += garbage_collector_rewrite_call_info_functions(state, threadState);
+            work += garbage_collector_rewrite_suspended_control(threadState);
 
             if (threadState->hasCurrentException &&
                 garbage_collector_rewrite_value_if_forwarded(&threadState->currentException)) {
@@ -2036,6 +2053,7 @@ static TZrSize garbage_collector_rewrite_domain_mutator_frames(
         work += garbage_collector_rewrite_thread_frame_slots(threadState);
         work += garbage_collector_rewrite_aot_root_frames(threadState);
         work += garbage_collector_rewrite_call_info_functions(state, threadState);
+        work += garbage_collector_rewrite_suspended_control(threadState);
         if (threadState->hasCurrentException &&
             garbage_collector_rewrite_value_if_forwarded(
                     &threadState->currentException)) {

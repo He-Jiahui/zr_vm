@@ -271,9 +271,12 @@ static void state_clear_pending_control(SZrState *state, TZrPtr argument) {
 }
 
 TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
+    EZrThreadStatus handlerStatus = execution_discard_exception_handlers_to_depth(state, 0u);
     EZrThreadStatus pendingStatus = ZrCore_Exception_TryRun(
             state, state_clear_pending_control, ZR_NULL);
-    if (pendingStatus != ZR_THREAD_STATUS_FINE) {
+    if (handlerStatus != ZR_THREAD_STATUS_FINE) {
+        status = handlerStatus;
+    } else if (pendingStatus != ZR_THREAD_STATUS_FINE) {
         status = pendingStatus;
     }
     // 重置线程状态
@@ -292,7 +295,6 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     ZrCore_Value_ResetAsNull(&state->currentException);
     state->currentExceptionStatus = ZR_THREAD_STATUS_FINE;
     state->hasCurrentException = ZR_FALSE;
-    state->exceptionHandlerStackLength = 0;
     state->aotGcRootFrameStack = ZR_NULL;
     state->aotGcRootFrameDepth = 0u;
     status = ZrCore_Exception_TryStop(state, 1, status);

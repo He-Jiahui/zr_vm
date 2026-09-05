@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/execution_control.h
+  - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/function.c
@@ -7,6 +11,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/ownership_resource.c
   - zr_vm_core/src/zr_vm_core/ownership_resource_internal.h
   - zr_vm_core/src/zr_vm_core/state.c
+  - zr_vm_core/src/zr_vm_core/reflection_construction.c
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
@@ -28,6 +34,10 @@ plan_sources:
   - docs/plans/astra/syntax/ownership-object-member-separation.md
   - docs/plans/astra/using/review.md
 tests:
+  - tests/parser/test_reflection_type_stress.c
+  - tests/parser/test_ownership_task_callback_cases.h
+  - tests/parser/test_ownership_nested_finally_pending_cases.h
+  - tests/parser/test_ownership_suspended_roots_cases.h
   - tests/parser/test_resource_shared_weak.c
   - tests/parser/test_ownership_pending_control_cases.h
   - tests/parser/test_ownership_drop_failure_cases.h
@@ -73,6 +83,30 @@ the outer exception. Stack-local GC root frames protect saved exceptions and
 replacement values without allocating a pin-registry entry. A top-level source
 object is temporarily pinned during copying because value-copy code may hold
 its raw C pointer across allocation.
+
+## Nested Finally Storage
+
+Entering a finally handler transfers the visible pending control into that
+handler's suspended record. The finally body gets an empty pending slot so its
+own loops and caught exceptions cannot consume the outer return or exception.
+Normal completion restores the suspended record; a replacement abrupt transfer
+releases it. Both suspended values and exceptions participate in GC marking
+and relocation, including threads in isolated domains.
+
+Handlers are removed before releasing their suspended owners because Drop can
+reenter and relocate the handler array. Thread reset and abandoned native
+callbacks drain handlers through the same protected cleanup path. Cleanup runs
+to the requested depth even when more than one Drop fails. An incoming failure
+keeps its exception identity and status; without one, the first cleanup failure
+is preserved. The function returns the first cleanup failure independently of
+the preserved ambient status. Temporary root frames protect the preserved
+exception while later cleanup invokes GC.
+
+Task and reflection-construction callback boundaries unlink abandoned AOT
+root frames before draining handlers and restore the caller root boundary
+afterwards. A nonlocal native throw must not leave a C-local frame in the root
+chain while subsequent Drop callbacks run GC. Task cleanup roots include both
+the task handle and its unpublished result at distinct frame byte offsets.
 
 ## Resource Callback Boundary
 

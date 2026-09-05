@@ -30,13 +30,6 @@ typedef enum EZrVmPendingControlKind {
     ZR_VM_PENDING_CONTROL_CONTINUE
 } EZrVmPendingControlKind;
 
-typedef struct SZrVmExceptionHandlerState {
-    SZrCallInfo *callInfo;
-    TZrUInt32 handlerIndex;
-    EZrVmExceptionHandlerPhase phase;
-    TZrMemoryOffset toBeClosedBoundaryOffset;
-} SZrVmExceptionHandlerState;
-
 typedef struct SZrVmPendingControl {
     EZrVmPendingControlKind kind;
     SZrCallInfo *callInfo;
@@ -45,6 +38,18 @@ typedef struct SZrVmPendingControl {
     SZrTypeValue value;
     TZrBool hasValue;
 } SZrVmPendingControl;
+
+typedef struct SZrVmExceptionHandlerState {
+    SZrCallInfo *callInfo;
+    TZrUInt32 handlerIndex;
+    EZrVmExceptionHandlerPhase phase;
+    TZrMemoryOffset toBeClosedBoundaryOffset;
+    SZrVmPendingControl suspendedControl;
+    SZrTypeValue suspendedException;
+    EZrThreadStatus suspendedExceptionStatus;
+    TZrBool hasSuspendedException;
+    TZrBool restoreSuspendedControl;
+} SZrVmExceptionHandlerState;
 
 typedef struct SZrAotGcRootFrame {
     const struct SZrAotGcRootMap *rootMap;

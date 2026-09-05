@@ -471,6 +471,18 @@ void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, 
         return;
     }
 
+    if (labelId < cs->labels.length && instructionIndex < cs->instructions.length) {
+        SZrLabel *label = (SZrLabel *)ZrCore_Array_Get(&cs->labels, labelId);
+        if (label != ZR_NULL && label->isResolved) {
+            TZrInstruction *instruction =
+                    (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, instructionIndex);
+            if (instruction != ZR_NULL) {
+                instruction->instruction.operand.operand2[0] = (TZrInt32)label->instructionIndex;
+            }
+            return;
+        }
+    }
+
     pendingPatch.instructionIndex = instructionIndex;
     pendingPatch.labelId = labelId;
     ZrCore_Array_Push(cs->state, &cs->pendingAbsolutePatches, &pendingPatch);

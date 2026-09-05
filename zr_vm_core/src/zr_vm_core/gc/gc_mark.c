@@ -1319,6 +1319,20 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 garbage_collector_mark_value(state, &threadState->pendingControl.value);
                 work++;
             }
+            for (TZrUInt32 handlerIndex = 0u;
+                 handlerIndex < threadState->exceptionHandlerStackLength;
+                 ++handlerIndex) {
+                SZrVmExceptionHandlerState *handler =
+                        &threadState->exceptionHandlerStack[handlerIndex];
+                if (handler->suspendedControl.hasValue) {
+                    garbage_collector_mark_value(state, &handler->suspendedControl.value);
+                    work++;
+                }
+                if (handler->hasSuspendedException) {
+                    garbage_collector_mark_value(state, &handler->suspendedException);
+                    work++;
+                }
+            }
 
             callInfo = threadState->callInfoList;
             {

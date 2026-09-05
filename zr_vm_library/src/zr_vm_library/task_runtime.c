@@ -470,6 +470,8 @@ static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
     TZrBool hasSavedCallInfoTop = ZR_FALSE;
     TZrBool hasSavedCallInfoReturn = ZR_FALSE;
     TZrUInt32 savedExceptionHandlerStackLength;
+    SZrAotGcRootFrame *savedRootFrame;
+    TZrUInt32 savedRootDepth;
 
     if (state == ZR_NULL || handle == ZR_NULL) {
         return ZR_FALSE;
@@ -487,6 +489,8 @@ static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
     request.completed = ZR_FALSE;
     savedCallInfo = state->callInfoList;
     savedExceptionHandlerStackLength = state->exceptionHandlerStackLength;
+    savedRootFrame = state->aotGcRootFrameStack;
+    savedRootDepth = state->aotGcRootFrameDepth;
     ZrCore_Function_StackAnchorInit(state, state->stackTop.valuePointer, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionBase.valuePointer != ZR_NULL) {
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &savedCallInfoBaseAnchor);
@@ -502,6 +506,37 @@ static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
     }
 
     status = ZrCore_Exception_TryRun(state, task_runtime_execute_callable_body, &request);
+    {
+        static const SZrAotGcRootSlot slots[] = {
+            {0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u},
+            {0u, (TZrUInt32)sizeof(SZrRawObject *), 0u, 0u,
+             ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u}
+        };
+        static const SZrAotGcRootMap map = {2u, slots};
+        SZrRawObject *roots[] = {
+            ZR_CAST_RAW_OBJECT_AS_SUPER(handle),
+            ZrCore_Value_IsGarbageCollectable(&request.result)
+                    ? ZrCore_Value_GetRawObject(&request.result) : ZR_NULL
+        };
+        SZrAotGcRootFrame rootFrame;
+        EZrThreadStatus handlerStatus = ZR_THREAD_STATUS_MEMORY_ERROR;
+        state->aotGcRootFrameStack = savedRootFrame;
+        state->aotGcRootFrameDepth = savedRootDepth;
+        if (ZrCore_Gc_AotRootFramePush(state, &rootFrame, (TZrStackValuePointer)roots, &map)) {
+            handlerStatus = execution_discard_exception_handlers_to_depth(
+                    state, savedExceptionHandlerStackLength);
+            handle = (SZrObject *)roots[0];
+            if (roots[1] != ZR_NULL) {
+                request.result.value.object = roots[1];
+            }
+            (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+        }
+        state->aotGcRootFrameStack = savedRootFrame;
+        state->aotGcRootFrameDepth = savedRootDepth;
+        if (status == ZR_THREAD_STATUS_FINE) {
+            status = handlerStatus;
+        }
+    }
     state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL) {
         state->callInfoList = savedCallInfo;
@@ -515,7 +550,6 @@ static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
             savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &savedCallInfoReturnAnchor);
         }
     }
-    state->exceptionHandlerStackLength = savedExceptionHandlerStackLength;
     if (status == ZR_THREAD_STATUS_FINE && request.completed && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         task_runtime_set_value_field(state, handle, kTaskResultField, &request.result);
         task_runtime_set_null_field(state, handle, kTaskErrorField);
