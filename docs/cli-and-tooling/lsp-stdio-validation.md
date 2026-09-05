@@ -22,6 +22,7 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
   - zr_vm_language_server/stdio/stdio_initialize.c
+  - zr_vm_language_server/stdio/stdio_request_dispatch.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_document_content.c
   - zr_vm_language_server/stdio/stdio_documents.c
@@ -37,6 +38,7 @@ tests:
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_resolve_capabilities_smoke.js
   - tests/language_server/stdio_save_capabilities_smoke.js
+  - tests/language_server/stdio_client_commands_smoke.js
   - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/test_stdio_server_lifecycle.c
@@ -44,6 +46,26 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Client Command Ownership
+
+`workspace/executeCommand` has no native server implementation or capability
+registration. Requests for client-owned `zr.runCurrentProject`,
+`zr.showReferences`, or unknown commands therefore return the full JSON-RPC
+MethodNotFound envelope (`-32601`). A successful `null` response must not
+acknowledge work the server never performed. The unused handler, dispatch
+branch, build source and protocol constants have been removed.
+
+Code lenses still carry client command IDs and arguments. The extension owns
+their execution; the server neither runs a project nor displays editor UI.
+`stdio_client_commands_smoke.js` checks empty and command-aware clients,
+absence of a server command provider, all three exact error responses, and
+clean shutdown. `stdio_resolve_capabilities_smoke.js` independently verifies
+the retained real test CodeLens payload. This routing change introduces no
+semantic identity, snapshot, borrowed lifetime or edit ownership contract.
+
+The repair and evidence are recorded in
+[Plan 00 Task 4 Sub06](../plans/lsp/optimize/2026-09-05-plan00-task04-sub06-client-commands.md).
 
 ## Complete Baseline Collection
 

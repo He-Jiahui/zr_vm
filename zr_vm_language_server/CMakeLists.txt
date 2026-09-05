@@ -100,7 +100,6 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_files.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_commands.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_request_dispatch.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_requests.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lifecycle.c

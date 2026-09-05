@@ -60,6 +60,12 @@ Task 4 Sub05 完成[无处理器的 willSave 声明撤销](2026-09-05-plan00-tas
 被忽略时会失败。完整编译后能力清单与集成语义基线仍待验收。
 
 Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read
+stdio 用例仍为既有缺口。Task 4 Sub06 完成
+[客户端空命令路由移除](2026-09-05-plan00-task04-sub06-client-commands.md)：
+三工具链专项各 14/14，命令 fixture 各 10/10；综合 smoke 通过更新后的命令拒绝断言，
+随后仍出现原有泛型 completion detail 失败。完整 compiled inventory 仍待单独验收。
+
+Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read
 stdio 用例在已提交基线和本次修复后均失败。Task 3 Sub01 已修正
 [取消 fixture 准备期限](2026-09-05-plan00-task03-sub01-cancellation-setup.md)，
 三工具链各 30/30；该结果不代表活动查询 50 ms 取消预算已验收。

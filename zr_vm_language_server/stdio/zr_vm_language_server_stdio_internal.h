@@ -365,7 +365,6 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
 cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_implementation_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_code_lens_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_execute_command_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_prepare_call_hierarchy_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_call_hierarchy_incoming_calls_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_call_hierarchy_outgoing_calls_request(SZrStdioServer *server, const cJSON *params);

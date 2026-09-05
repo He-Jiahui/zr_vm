@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
+const assertStrict = require('assert').strict;
 
 const DEFAULT_STDIO_PEAK_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024;
 
@@ -1847,12 +1848,14 @@ async function main() {
         Number.isInteger(runTestCodeLens.range.end.line) &&
         Number.isInteger(runTestCodeLens.range.end.character),
     'textDocument/codeLens must return an executable command and declaration range without resolve');
-    const runCommandResult = await client.request('workspace/executeCommand', {
+    const runCommandResult = await StdioProtocolClient.prototype.request.call(client, 'workspace/executeCommand', {
         command: 'zr.runCurrentProject',
         arguments: [testCodeLensUri],
-    });
-    assert(runCommandResult === null,
-        'workspace/executeCommand must acknowledge legacy run command requests');
+    }, 'client-owned-run-command', 10000);
+    assertStrict.deepEqual(runCommandResult, {
+        jsonrpc: '2.0', id: 'client-owned-run-command',
+        error: { code: -32601, message: 'Method not found' },
+    }, 'workspace/executeCommand must reject client-owned commands');
 
     const importDiagnosticsText = fs.readFileSync(importDiagnosticsFixture.mainPath, 'utf8');
     client.notify('textDocument/didOpen', {
