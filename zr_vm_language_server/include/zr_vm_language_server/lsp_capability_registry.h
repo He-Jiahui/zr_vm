@@ -18,6 +18,11 @@ typedef enum EZrLspCapabilityResolveBehavior {
     ZR_LSP_CAPABILITY_RESOLVE_IDENTITY,
 } EZrLspCapabilityResolveBehavior;
 
+typedef enum EZrLspCapabilityImplementationLayer {
+    ZR_LSP_CAPABILITY_IMPLEMENTATION_CORE = 1,
+    ZR_LSP_CAPABILITY_IMPLEMENTATION_NATIVE_ADAPTER,
+} EZrLspCapabilityImplementationLayer;
+
 typedef struct SZrLspCapabilityDescriptor {
     const TZrChar *capabilityKey;
     const TZrChar *method;
@@ -34,6 +39,8 @@ typedef struct SZrLspCapabilityDescriptor {
     EZrLspCapabilityResolveBehavior resolveBehavior;
     /* Resolve support is independent of the base provider runtime mask. */
     TZrUInt32 resolveRuntimeMask;
+    /* Native adapter ownership requires a null core entry and native-only runtime. */
+    EZrLspCapabilityImplementationLayer implementationLayer;
 } SZrLspCapabilityDescriptor;
 
 ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_LspCapabilityRegistry_Count(void);

@@ -112,6 +112,8 @@ doc_type: category-index
 - [lsp-capability-resolve-contract.md](lsp-capability-resolve-contract.md)
   - native/WASM resolve runtime masks 与初始响应完整性
   - identity-only resolve 撤销、MethodNotFound 与 code-action snapshot 复验
+- [lsp-capability-registry-metadata.md](lsp-capability-registry-metadata.md)
+  - core/native adapter 实现归属、runtime 字段与静态元数据的验证边界
 - [lsp-navigation-capability-boundary.md](lsp-navigation-capability-boundary.md)
   - declaration/typeDefinition alias 撤销与四类查询的语义边界
   - canonical implementation 准确目标集合、范围与未完成 provider 门槛

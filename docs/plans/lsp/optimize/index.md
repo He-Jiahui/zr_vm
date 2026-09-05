@@ -31,6 +31,10 @@ Task 1 Sub03 修复 project features 测试的 exit-zero 伪成功，三工具�
 14 个失败并返回 1；[harness 记录](2026-09-05-plan00-task01-sub03-project-test-exit.md)
 不提升语义验收状态。
 
+Task 2 Sub01 完成[能力登记表实际实现元数据](2026-09-05-plan00-task02-sub01-registry-metadata.md)：
+明确 core/native adapter 归属及 runtime 字段约束，修正入口、导出、测试 ID 和
+3.18 标记；GCC/Clang/MSVC 专项各 9/9，完整 runtime inventory 仍待验收。
+
 Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
 撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述
 resolve 支持。专项通过 GCC/Clang/MSVC 与实际 Web worker callback 回归。

@@ -50,6 +50,7 @@ Pop-Location
 - Modify: `zr_vm_language_server/CMakeLists.txt`
 - Modify: `tests/CMakeLists.txt`
 
+- [x] Sub01：完成实际 core/native/WASM 名称、CTest ID、implementation ownership 和 runtime 字段约束的修复；[记录](2026-09-05-plan00-task02-sub01-registry-metadata.md)。三工具链 focused 各 9/9，最终 registry 单项各 1/1，独立审查通过；下方完整清单与运行时映射门槛仍未验收。
 - [ ] 先写失败测试：每项能力必须声明协议版本、client capability path、core entry point、native adapter、WASM export、resolve 行为与 test id。
 - [ ] 建立不含 cJSON/TypeScript 的核心描述：
 
