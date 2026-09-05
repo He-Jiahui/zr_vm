@@ -101,6 +101,7 @@ typedef struct SZrLspCapabilityDescriptor {
 - [x] Sub02：撤销仍然转发 definition 的 declarationProvider/typeDefinitionProvider；验证 Device 定义的准确 token 范围、Device/Sensor implementation 完整目标集合和 workspace folder 实际更新。见[完成记录](2026-09-05-plan00-task04-sub02-navigation-aliases.md)。跨 provider 和 reaching-write 缺陷仍未完成。
 - [x] Sub03：撤销始终返回 null 的 `willCreateFiles`/`willDeleteFiles` 注册和 handler，保留并精确验证 did* 通知、`willRenameFiles` 版本化编辑与 stale disk 拒绝；[完成记录](2026-09-05-plan00-task04-sub03-file-operations.md)，三工具链各 8/8。
 - [x] Sub04：撤销缺失 compiler typed color facts 的 colorProvider 与两个颜色方法，删除原字符串扫描器；[完成记录](2026-09-05-plan00-task04-sub04-untyped-color.md)。三工具链各 12/12，专用 fixture 各 30/30，扩展 unit 40/40/noEmit 通过；源码契约保留原有两项 constructor 失败，未晋级后续阶段。
+- [x] Sub05：撤销无 notification handler 的 willSave 声明，保留准确的 save-time formatting 和可观察的磁盘 didSave 刷新；[完成记录](2026-09-05-plan00-task04-sub05-save-notification.md)。三工具链各 13/13，最终保存 fixture 各 6/6；忽略第二次 didSave 的 mutation 恰好 2/6 失败，独立复审通过。
 - [x] Sub01-03 均以真实初始结果、目标集合和索引变化验证保留能力；撤销空实现使声明与实现一致，不视为功能回归。最终 core/export/runtime 清单仍由 Task 2/5 验收。
 
 2026-09-05 条款核对：原先要求关闭 implementationProvider 和 workspaceFolders

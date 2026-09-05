@@ -231,7 +231,6 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
 
     cJSON_AddBoolToObject(parts.textDocumentSync, ZR_LSP_FIELD_OPEN_CLOSE, 1);
     cJSON_AddNumberToObject(parts.textDocumentSync, ZR_LSP_FIELD_CHANGE, ZR_LSP_TEXT_DOCUMENT_SYNC_KIND_INCREMENTAL);
-    cJSON_AddBoolToObject(parts.textDocumentSync, ZR_LSP_FIELD_WILL_SAVE, 1);
     cJSON_AddBoolToObject(parts.textDocumentSync, ZR_LSP_FIELD_WILL_SAVE_WAIT_UNTIL, 1);
     cJSON_AddBoolToObject(parts.saveOptions, ZR_LSP_FIELD_INCLUDE_TEXT, 0);
     cJSON_AddItemToObject(parts.textDocumentSync, ZR_LSP_FIELD_SAVE, parts.saveOptions);

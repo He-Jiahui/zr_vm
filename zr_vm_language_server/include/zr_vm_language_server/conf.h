@@ -144,7 +144,6 @@
 #define ZR_LSP_FIELD_OPEN_CLOSE "openClose"
 #define ZR_LSP_FIELD_CHANGE "change"
 #define ZR_LSP_FIELD_SAVE "save"
-#define ZR_LSP_FIELD_WILL_SAVE "willSave"
 #define ZR_LSP_FIELD_WILL_SAVE_WAIT_UNTIL "willSaveWaitUntil"
 #define ZR_LSP_FIELD_INCLUDE_TEXT "includeText"
 #define ZR_LSP_FIELD_RESOLVE_PROVIDER "resolveProvider"

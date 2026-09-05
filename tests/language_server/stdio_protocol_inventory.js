@@ -251,6 +251,8 @@ async function main() {
                'initialize must return a capabilities object');
 
         const capabilities = result.capabilities;
+        assert(!Object.prototype.hasOwnProperty.call(capabilities.textDocumentSync, 'willSave'),
+               'unhandled willSave notifications must not be advertised');
         assert(!Object.prototype.hasOwnProperty.call(capabilities, 'colorProvider'),
                'untyped colorProvider must not be advertised');
         assert(capabilities.inlineCompletionProvider === undefined,

@@ -55,6 +55,10 @@ Task 4 Sub04 完成[无类型事实的颜色能力撤销](2026-09-05-plan00-task
 hover 与 definition。GCC/Clang/MSVC 各 12/12，扩展 unit 40/40/noEmit 通过。
 源码契约仍是已归档的两项 constructor 失败，Plan 00 整体及后续阶段未晋级。
 
+Task 4 Sub05 完成[无处理器的 willSave 声明撤销](2026-09-05-plan00-task04-sub05-save-notification.md)：
+三工具链各 13/13，最终保存 fixture 各 6/6，磁盘刷新 mutation 证明 didSave
+被忽略时会失败。完整编译后能力清单与集成语义基线仍待验收。
+
 Plan 00 整体验收仍进行中；泛型 completion detail 与 possibly_uninitialized_read
 stdio 用例在已提交基线和本次修复后均失败。Task 3 Sub01 已修正
 [取消 fixture 准备期限](2026-09-05-plan00-task03-sub01-cancellation-setup.md)，

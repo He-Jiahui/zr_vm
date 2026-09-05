@@ -11,6 +11,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_document_content.c
   - zr_vm_language_server/stdio/stdio_documents.c
+  - zr_vm_language_server/stdio/stdio_initialize.c
+  - zr_vm_language_server/stdio/stdio_request_dispatch.c
   - zr_vm_language_server/stdio/stdio_lsp_parse.c
   - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/stdio/stdio_requests.c
@@ -19,6 +21,7 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/stdio/stdio_initialize.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_document_content.c
   - zr_vm_language_server/stdio/stdio_documents.c
@@ -33,6 +36,7 @@ tests:
   - tests/language_server/collect_lsp_baseline_test.js
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_resolve_capabilities_smoke.js
+  - tests/language_server/stdio_save_capabilities_smoke.js
   - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/test_stdio_server_lifecycle.c
@@ -218,6 +222,31 @@ invalid UTF-8, UTF-8 `rangeLength`, close-to-disk restoration, save refresh,
 and invalid request positions. The GCC Task 4 run also executes the adjacent
 snapshot, interface, lifecycle, protocol, position-encoding, diagnostic, and
 workspace smoke gates.
+
+## Save Capability Contract
+
+Native `textDocumentSync` publishes `openClose`, incremental `change`,
+`willSaveWaitUntil`, and `save: {includeText: false}`. It does not publish
+`willSave`: no pre-save notification handler consumes that event. The unused
+field constant was removed with the declaration in Plan 00 Task 4 Sub05.
+Unsupported notifications follow the protocol's ordinary ignore path.
+
+`willSaveWaitUntil` uses the existing formatting request handler and returns
+text edits for the current document content. `didSave` without text confirms
+the open overlay or refreshes indexed disk state through the existing document
+lifecycle. These are distinct from the withdrawn notification declaration.
+The adapter adds no saved-document snapshot, borrowed query result or semantic
+identity. Returned JSON and edits follow their existing request ownership;
+the client applies edits with a newer document version before sending didSave.
+
+The focused save fixture checks an empty client and a save-aware client,
+the complete textDocumentSync object, exact formatting text/range, diagnostics
+at versions 1 and 2, an empty edit after formatting, definition coordinates and
+clean shutdown. A disk fixture changes a cached class declaration, requires
+didSave to publish diagnostics with the next generation, and checks the new
+definition range. General formatter correctness and versioned edit acceptance
+remain separate Plan 02/04 obligations. Evidence is in
+[Plan 00 Task 4 Sub05](../plans/lsp/optimize/2026-09-05-plan00-task04-sub05-save-notification.md).
 
 ## Matrix
 

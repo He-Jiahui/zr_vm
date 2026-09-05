@@ -20,7 +20,7 @@ function expectedCapabilities(inlineCompletion, rangesFormatting) {
     const fileOperation = { filters: [{ pattern: { glob: '**/*.{zr,zrp,zro,dll,so,dylib}' } }] };
     const capabilities = {
         textDocumentSync: {
-            openClose: true, change: 2, willSave: true, willSaveWaitUntil: true,
+            openClose: true, change: 2, willSaveWaitUntil: true,
             save: { includeText: false },
         },
         positionEncoding: 'utf-16',
