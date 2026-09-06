@@ -52,9 +52,9 @@ Pop-Location
 
 - [x] Sub01：完成实际 core/native/WASM 名称、CTest ID、implementation ownership 和 runtime 字段约束的修复；[记录](2026-09-05-plan00-task02-sub01-registry-metadata.md)。三工具链 focused 各 9/9，最终 registry 单项各 1/1，独立审查通过；下方完整清单与运行时映射门槛仍未验收。
 - [x] Sub02：完成编译期 native registry/initialize/dispatch inventory；[记录](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)。实际清单含 30 个 descriptor、43 条 native route、3 个 metadata-only control、0 个 orphan，四个协商 profile 和 GCC/Clang/MSVC focused 各 14/14；WASM export/worker 映射与通知行为仍待验收。
-- [x] Sub03：完成 WASM CMake export、C++ 定义/声明、bridge `ccall` 和 worker handler 的静态 inventory，并修正 Web semantic-token legend；[记录](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。30 个 runtime export、28 个 bridge 调用、22 条 worker route、13 个 token type 均通过；真实链接资产的隔离 Emscripten 构建在私有 overlay 补齐该未提交头文件后仍因系统内存压力被 `Killed`，未生成资产，仍待验收。
-- [ ] 先写失败测试：每项能力必须声明协议版本、client capability path、core entry point、native adapter、WASM export、resolve 行为与 test id。
-- [ ] 建立不含 cJSON/TypeScript 的核心描述：
+- [x] Sub03：完成 WASM CMake export、C++ 定义/声明、bridge `ccall` 和 worker handler 的 source-level inventory，并修正 Web semantic-token legend；[记录](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。初始静态记录的 30 个 runtime export、28 个 bridge 调用、22 条 worker route、13 个 token type 均通过；Task 5 随后以生产 worker/bridge probe 补上 `textDocument/inlayHint`，当前观察到 23 条 route。真实链接资产的隔离 Emscripten 构建在私有 overlay 补齐该未提交头文件后仍因系统内存压力被 `Killed`，未生成资产，仍待验收。
+- [x] 先写失败测试：每项能力必须声明协议版本、client capability path、core entry point、native adapter、WASM export、resolve 行为与 test id；registry C 单测、native inventory mutation 和 WASM source mutation 均先建立失败再通过，见[registry metadata](2026-09-05-plan00-task02-sub01-registry-metadata.md)、[compiled native inventory](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)和[WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。
+- [x] 建立不含 cJSON/TypeScript 的核心描述：
 
 ```c
 typedef enum EZrLspRuntimeMask {
@@ -72,7 +72,7 @@ typedef struct SZrLspCapabilityDescriptor {
 } SZrLspCapabilityDescriptor;
 ```
 
-- [ ] registry 测试拒绝以下不一致：声明 resolve 但 handler 仅 identity；声明 method 但 runtime 无导出；声明 3.18 method 但未标 experimental；公开 capability 没有协议测试。
+- [x] registry 测试拒绝以下不一致：声明 resolve 但 handler 仅 identity；声明 method 但 runtime 无导出；声明 3.18 method 但未标 experimental；公开 capability 没有协议测试；C registry assertions 与 inventory mutation contract 均覆盖这些负向条件。
 - [ ] 将 `stdio_initialize.c`、WASM worker 的硬编码能力迁移留给计划 05；本任务先提供清单与 failing assertions。
 
 ## Task 3：建立协议负向测试驱动器
@@ -119,7 +119,7 @@ changeNotifications 的依据已被后续实现取代。当前 implementation �
 - [x] Native 子项：`stdio_protocol_inventory.js` 已连接编译 registry、initialize JSON、production dispatch 和 CTest 注册，四个 profile 输出 0 个 native orphan/overclaim；完成记录见[compiled native inventory](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)。
 - [x] Web 静态子项：`wasm_capability_inventory.js` 已检查 CMake export、WASM C++ 定义/声明、bridge 调用、worker 路由及 semantic-token legend；完成记录见[WASM static inventory](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。真实 `.wasm` export 表和 worker 资产加载仍待验证。
 - [x] `stdio_protocol_inventory.js` 对 registry、initialize JSON、dispatch 和 WASM source-level worker/bridge wiring 做一一映射，输出 `integrated-contract-mapped`、0 个 native orphan/overclaim 和 schema 2 WASM 子报告；真实 linked asset 仍待验证，完成记录见[集成 inventory](2026-09-06-plan00-task05-integrated-inventory.md)。
-- [x] 所有当前失败在 acceptance 文档中有 owner 和后续计划链接；见[优化 baseline owner ledger](../../../acceptance/lsp/optimize-baseline.md)、[GCC failure baseline](2026-09-05-plan00-task01-sub02-gcc-baseline.md)和[native inventory open gates](../../../../tests/acceptance/2026-09-05-lsp-native-capability-inventory.md)。
+- [x] 所有当前失败在 acceptance 文档中有 owner 和后续计划链接；见[优化 baseline owner ledger](../../../acceptance/lsp/optimize-baseline.md)、[GCC failure baseline](2026-09-05-plan00-task01-sub02-gcc-baseline.md)、[native inventory open gates](../../../../tests/acceptance/2026-09-05-lsp-native-capability-inventory.md)和[WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。
 - [x] `git diff --check`、GCC focused build、extension unit/noEmit 通过；当前独立构建完成 `841/841`，extension unit `41/41`，TypeScript `noEmit` 退出 0。
 - [x] 只提交基线/契约相关路径，不夹带活动 L8 overlay；本轮提交为 `dfe80e8c`、`35a9be1e`，并保留活动工作树的其他修改未暂存。
 
