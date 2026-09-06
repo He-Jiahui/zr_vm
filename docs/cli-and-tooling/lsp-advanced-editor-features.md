@@ -363,6 +363,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 
 - formatting 仍是保守文本缩进器，不是 AST pretty-printer；它不会重排表达式、参数列表或注释。旧语法改写由 migration code action/CLI 独占，formatter 对这类文档不生成 edit。
 - code action 稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix。缺失 import仍使用owned snapshot做alias/insert-offset/code-span检查；缺失分号已收敛到parser structured diagnostic fix，支持EOF和line-comment前精确插入并跳过placeholder/maybe fix。delimiter及其他diagnostic fix仍需按同一fact-first边界接入。
+- `textDocument/codeAction` 要求 canonical `range`；缺失、`null`、标量、数组或逆序 range 返回 `-32602 InvalidParams`，合法 action 继续使用请求 range 与 snapshot。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。
 - `textDocument/references` 要求 object `context` 和 boolean `includeDeclaration`；缺失或畸形字段返回 `-32602 InvalidParams`，合法 references/partial-result 语义不变。

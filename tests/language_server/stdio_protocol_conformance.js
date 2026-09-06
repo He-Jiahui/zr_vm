@@ -368,6 +368,43 @@ async function testInvalidEditingParams(serverPath) {
     });
 }
 
+async function testInvalidCodeActionRange(serverPath) {
+    const uri = 'file:///invalid-code-action-range.zr';
+    const cases = [
+        ['null range', null],
+        ['scalar range', 'not-a-range'],
+        ['array range', []],
+        ['reverse range', {
+            start: { line: 1, character: 0 },
+            end: { line: 0, character: 0 },
+        }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-code-action-range-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: 'var answer = 1;\n',
+            },
+        });
+        await client.waitForNotification('textDocument/publishDiagnostics');
+        for (const [label, range] of cases) {
+            const params = {
+                textDocument: { uri },
+                range,
+                context: { diagnostics: [] },
+            };
+            const id = `invalid-code-action-range-${label}`;
+            const response = await client.request('textDocument/codeAction', params, id,
+                                                  RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testInvalidCompletionResolveParams(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'invalid-completion-resolve-initialize');
@@ -1155,6 +1192,7 @@ function protocolCases() {
         ['invalid hierarchy params', testInvalidHierarchyParams],
         ['invalid editor feature params', testInvalidEditorFeatureParams],
         ['invalid editing params', testInvalidEditingParams],
+        ['invalid code action range', testInvalidCodeActionRange],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],
         ['invalid semantic token params', testInvalidSemanticTokenParams],

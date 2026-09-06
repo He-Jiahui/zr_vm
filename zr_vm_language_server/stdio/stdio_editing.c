@@ -291,7 +291,9 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
                 &documentSnapshot)) {
         return cJSON_CreateArray();
     }
-    parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range);
+    if (!parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
+        return NULL;
+    }
 
     ZrCore_Array_Init(server->state, &actions, sizeof(SZrLspCodeAction *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetCodeActions(server->state, server->context, uri, range, &actions)) {

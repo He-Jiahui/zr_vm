@@ -232,6 +232,13 @@ keyword-prefix requests retain their existing completion items and code-span fil
 GCC and Clang ASan/UBSan both pass 47/47, and the lifecycle/protocol CTest pair passes
 2/2 on each build. See [Plan 01 Task 2 Sub17](../plans/lsp/optimize/2026-09-07-plan01-task02-sub17-inline-completion-params.md).
 
+The code-action range regression extends the current replay to 48 cases.
+`textDocument/codeAction` now rejects null, scalar, array and reverse `range` values
+with `-32602 Invalid params` before capturing provider results; valid code actions keep
+their requested range and snapshot behavior. GCC and Clang ASan/UBSan both pass 48/48,
+and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
+Sub18](../plans/lsp/optimize/2026-09-07-plan01-task02-sub18-code-action-range.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as
