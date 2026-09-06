@@ -121,6 +121,9 @@ It reports 30 exports, 28 bridge calls and 23 observed worker routes. With gener
 table; no linked asset is claimed until that mode runs successfully. The mocked
 execution is explicit in the report (`schemaVersion: 2`, `mockedWasm: true`,
 `workerAssetLoaded: false`).
+The source probe requires Node 18 or newer because it loads the extension's
+TypeScript 5.9 compiler; CTest must pass that runtime through
+`ZR_VM_NODE_EXECUTABLE`.
 
 `stdio_protocol_inventory.js` now invokes that WASM checker after its four native
 negotiation profiles and embeds the result under `wasm` in one machine-readable
@@ -131,6 +134,9 @@ treating source execution as proof that a generated WASM asset loaded;
 `linkedAssetChecked` remains explicit. `wasm_capability_inventory_test.js` keeps
 the checker honest with nine production/mutation fixtures, including inlay route,
 provider/export, duplicate/orphan route and token legend drift.
+
+The cross-toolchain evidence is recorded in
+[WASM worker wiring acceptance](../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md).
 
 Implementation and verification evidence is recorded in
 [Plan 00 Task 2 Sub01](../plans/lsp/optimize/2026-09-05-plan00-task02-sub01-registry-metadata.md)

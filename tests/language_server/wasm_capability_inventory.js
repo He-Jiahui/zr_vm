@@ -1,37 +1,7 @@
 const assert = require('assert').strict;
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { probeWorker } = require('./lsp_wasm_worker_probe');
-
-function windowsPath(filePath) {
-    if (process.platform !== 'linux' || !path.isAbsolute(filePath)) return filePath;
-    const result = spawnSync('wslpath', ['-w', filePath], { encoding: 'utf8' });
-    assert.ifError(result.error);
-    assert.equal(result.status, 0, 'wslpath failed for ' + filePath + ': ' + result.stderr);
-    return result.stdout.trim();
-}
-
-function useCompatibleNode(args) {
-    const major = Number(process.versions.node.split('.')[0]);
-    if (major >= 14 || process.env.ZR_WASM_INVENTORY_COMPAT_NODE === '1') return false;
-    const candidates = [
-        '/mnt/c/nvm4w/nodejs/node.exe',
-        '/mnt/c/Program Files/nodejs/node.exe',
-    ];
-    const nodePath = candidates.find(candidate => fs.existsSync(candidate));
-    assert.ok(nodePath,
-        'WASM worker wiring probe requires Node 14+; no Windows Node executable was found for the WSL runner');
-    const child = spawnSync(nodePath, [windowsPath(__filename)].concat(args.map(windowsPath)), {
-        encoding: 'utf8', timeout: 60000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
-        env: Object.assign({}, process.env, { ZR_WASM_INVENTORY_COMPAT_NODE: '1' }),
-    });
-    assert.ifError(child.error);
-    if (child.stdout) process.stdout.write(child.stdout);
-    if (child.stderr) process.stderr.write(child.stderr);
-    process.exitCode = child.status === null ? 1 : child.status;
-    return true;
-}
 
 function read(filePath) {
     assert.ok(fs.existsSync(filePath), `missing inventory input: ${filePath}`);
@@ -44,9 +14,9 @@ function assertSetEqual(actual, expected, label) {
 }
 
 async function main() {
-    const args = process.argv.slice(2);
-    if (useCompatibleNode(args)) return;
-    const [repositoryRootArg, wasmJavaScriptArg, wasmBinaryArg] = args;
+    assert.ok(Number(process.versions.node.split('.')[0]) >= 18,
+        'WASM worker wiring probe requires Node 18+; configure ZR_VM_NODE_EXECUTABLE with a compatible runtime');
+    const [repositoryRootArg, wasmJavaScriptArg, wasmBinaryArg] = process.argv.slice(2);
     const root = path.resolve(repositoryRootArg || path.join(__dirname, '..', '..'));
     const cmake = read(path.join(root, 'zr_vm_language_server', 'CMakeLists.txt'));
     const exportsSource = read(path.join(root, 'zr_vm_language_server', 'wasm', 'wasm_exports.cpp'));

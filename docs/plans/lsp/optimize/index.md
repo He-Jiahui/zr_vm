@@ -49,7 +49,8 @@ Plan 00 Task 5 的 [integrated capability inventory](2026-09-06-plan00-task05-in
 machine-readable runner；GCC、Clang、MSVC 的两个 inventory CTest 均为 1/1，
 WASM source mutation regression 为 9/9。该记录只关闭 source-level integrated
 inventory 子项，linked asset、三种运行方式的完整 control/notification parity 和
-完整语义验收仍保持 pending。
+完整语义验收仍保持 pending。运行器要求 Node 18+；完整命令与边界见
+[WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。
 当前失败责任也已在 baseline/crosswalk 与 native inventory acceptance 中逐项链接
 owner 和后续计划；GCC focused build、extension unit/noEmit 及 linked asset 仍是
 独立门槛。

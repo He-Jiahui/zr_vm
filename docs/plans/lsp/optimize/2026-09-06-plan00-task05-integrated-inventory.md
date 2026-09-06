@@ -40,9 +40,9 @@ worker/bridge 路由及 semantic-token legend 结果嵌入同一 JSON 输出：
 
 worker wiring probe 只替换浏览器 connection 和 WASM ABI；它执行 initialize、
 document open/change/save/close、所有 23 个 worker request route、shutdown/exit，
-并记录每条 route 实际调用的 `wasm_ZrLsp*` export。WSL 上的系统 Node 12
-会自动转交给已安装的 Windows Node 22，以保持同一 source-level probe；这不改变
-CTest 的静态/动态报告边界。
+并记录每条 route 实际调用的 `wasm_ZrLsp*` export。由于扩展依赖 TypeScript
+5.9，inventory runner 要求 Node 18+；CTest 通过 `ZR_VM_NODE_EXECUTABLE`
+显式配置兼容解释器，WSL 系统 Node 12 会被直接拒绝而不会降级为静态检查。
 
 `status` 只有在 native profile 和 WASM 映射均通过时才为
 `integrated-contract-mapped`；任一 native profile 失败时为
@@ -53,6 +53,7 @@ CTest 的静态/动态报告边界。
 
 ```text
 node --check tests/language_server/stdio_protocol_inventory.js
+node --check tests/language_server/wasm_capability_inventory.js
 node tests/language_server/wasm_capability_inventory_test.js
 node tests/language_server/stdio_protocol_inventory.js \
   <stdio-server> <inventory-probe> <build-directory> <absolute-ctest> Debug
@@ -60,13 +61,15 @@ ctest --test-dir <build-directory> --output-on-failure \
   -R "language_server_(stdio_protocol_inventory|wasm_capability_inventory)"
 ```
 
-当前 GCC Debug 构建的直接 runner 报告四个 profile 的 mutation rejection
+当前 GCC、Clang ASan/UBSan 和 MSVC Debug 构建的直接 runner 均报告四个 profile 的 mutation rejection
 为 31/31/32/32，native registry 30 条、native routes 43 条、metadata-only
 control 3 个、orphan 0；WASM 子报告为 30 runtime exports、28 bridge calls、
 23 observed worker routes 和 13 token types。独立 source mutation regression
 覆盖 swapped provider/export、缺失 inlay route、重复/孤立 route、legend 顺序或
 额外 token、无 provider capability 共 9/9。GCC、Clang、MSVC 的 integrated
-inventory CTest 各 1/1，三个构建的独立 WASM inventory CTest 也各 1/1。
+inventory CTest 各 1/1；Clang 当前构建在配置 Node 22 后运行 inventory、集成
+inventory 和 9-case regression CTest 为 3/3。完整命令和输出见
+[WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。
 
 ## 范围边界
 
