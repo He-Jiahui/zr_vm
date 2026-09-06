@@ -57,6 +57,14 @@ function initializePayload(id) {
     };
 }
 
+function encodeRawJsonFrame(payload) {
+    const body = Buffer.from(payload, 'utf8');
+    return Buffer.concat([
+        Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
+        body,
+    ]);
+}
+
 async function initialize(client, id = 'initialize') {
     const response = await client.requestEnvelope(initializePayload(id), RESPONSE_TIMEOUT_MS);
     assertSuccessEnvelope(response, id, 'initialize');
@@ -360,6 +368,35 @@ async function testDistinctTypedRequestIds(serverPath) {
             assertSuccessEnvelope(response, id, `distinct ${typeof id} request id`);
             assert(Array.isArray(response.result) && response.result.length === 0,
                    `typed workspace symbol request must have no symbols, actual=${JSON.stringify(response)}`);
+        }
+    });
+}
+
+async function testNumericRequestIdPrecision(serverPath) {
+    const safeIdText = '9007199254740991';
+    const safeId = Number(safeIdText);
+    const negativeSafeIdText = '-9007199254740991';
+    const initializeParams = JSON.stringify(initializePayload(safeId).params);
+
+    await withClient(serverPath, async (client) => {
+        client.sendRawFrame(encodeRawJsonFrame(
+            `{"jsonrpc":"2.0","id":${safeIdText},"method":"initialize","params":${initializeParams}}`));
+        const response = await client.nextMessage(RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(response, safeId, 'safe numeric request id');
+
+        client.sendRawFrame(encodeRawJsonFrame(
+            `{"jsonrpc":"2.0","id":${negativeSafeIdText},"method":"workspace/symbol","params":{"query":""}}`));
+        const negativeResponse = await client.nextMessage(RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(negativeResponse, Number(negativeSafeIdText),
+                              'negative safe numeric request id');
+    });
+
+    await withClient(serverPath, async (client) => {
+        for (const unsafeIdText of ['9007199254740992', '-9007199254740992']) {
+            client.sendRawFrame(encodeRawJsonFrame(
+                `{"jsonrpc":"2.0","id":${unsafeIdText},"method":"initialize","params":${initializeParams}}`));
+            const response = await client.nextMessage(RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, null, -32600, `unsafe numeric request id ${unsafeIdText}`);
         }
     });
 }
@@ -769,6 +806,7 @@ function protocolCases() {
         ['malformed JSON payload', testMalformedJson],
         ['duplicate request id', testDuplicateRequestId],
         ['distinct typed request ids', testDistinctTypedRequestIds],
+        ['numeric request id precision', testNumericRequestIdPrecision],
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
         ['cancel known request id', testCancelKnownRequestId],
         ['set trace writes only stderr', testSetTraceWritesOnlyStderr],

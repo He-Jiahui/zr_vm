@@ -1,8 +1,17 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
 static cJSON *duplicate_id(const cJSON *id) {
+    char number[64];
+    int length;
+
     if (id == NULL) {
         return cJSON_CreateNull();
+    }
+    if (cJSON_IsNumber((cJSON *)id)) {
+        length = snprintf(number, sizeof(number), "%.17g", id->valuedouble);
+        if (length > 0 && (size_t)length < sizeof(number)) {
+            return cJSON_CreateRaw(number);
+        }
     }
     return cJSON_Duplicate(id, 1);
 }

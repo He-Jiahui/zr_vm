@@ -99,6 +99,7 @@ typedef enum EZrLspHandlerStatus {
 - Create: `tests/language_server/stdio_document_sync_conformance.js`
 
 - [ ] registry 以 JSON-RPC id 的类型和值为 key；数字 `1` 与字符串 `"1"` 不得冲突。
+- [x] Sub02：数字 request id 限定在 `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX`，安全边界精确回显，字符串和数字类型继续分离；[记录](2026-09-07-plan01-task04-sub02-safe-numeric-request-ids.md)。
 - [ ] 重复活动 id 返回 InvalidRequest，不能复用同一个 cancellation node。
 - [ ] `$/cancelRequest` 只标记匹配 id；未知 id 是无响应 no-op。
 - [ ] 从 request context 删除全局 inputGeneration 比较。ContentModified 由计划 02 的 dependency fence 判断；在该计划完成前只保留精确 cancellation，不发布可能误报的 `-32801`。

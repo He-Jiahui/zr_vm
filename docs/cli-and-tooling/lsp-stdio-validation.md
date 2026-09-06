@@ -116,6 +116,14 @@ empty workspace-symbol result. Numeric `1` and string `"1"` each retain their
 own valid success envelope. Trace, work-done and partial-result cases apply the
 same checks before inspecting method-specific results.
 
+Numeric JSON-RPC request IDs are accepted only when their finite value is within
+`+/-ZR_LSP_JSON_SAFE_INTEGER_MAX` (`9007199254740991`). This keeps the numeric
+identity in the JSON-safe range used by the request registry. Response transport
+serializes numeric IDs with a 17-digit round-trip representation, so the upper
+safe boundary is echoed as `9007199254740991`; `9007199254740992` is rejected as
+`-32600 Invalid Request` with a null error ID. Numeric and string IDs remain
+separate registry keys.
+
 `stdio_protocol_envelope_mutations.js` imports the production conformance case
 list without starting its CLI. Six unchanged cases must pass first. It then
 runs 11 cases with one decoded response mutation each, covering missing/wrong
@@ -272,7 +280,7 @@ typed duplicate and cancellation ids, stdout-isolated trace output, progress,
 partial results, and classified malformed frames. It explicitly cancels a
 known active workspace-symbol request and requires `-32800`.
 
-The current driver has 30 cases. Its known-id fixture exercises a queued request;
+The current driver has 31 cases. Its known-id fixture exercises a queued request;
 the [2026-09-05 setup-deadline repair](../plans/lsp/optimize/2026-09-05-plan00-task03-sub01-cancellation-setup.md)
 records three-toolchain 30/30 results without claiming active-query latency.
 

@@ -2,10 +2,21 @@
 
 #include <string.h>
 
+static TZrBool json_rpc_number_id_is_valid(const cJSON *id) {
+    double value;
+
+    if (!cJSON_IsNumber((cJSON *)id)) {
+        return ZR_FALSE;
+    }
+    value = id->valuedouble;
+    return value >= -ZR_LSP_JSON_SAFE_INTEGER_MAX &&
+           value <= ZR_LSP_JSON_SAFE_INTEGER_MAX;
+}
+
 static TZrBool json_rpc_id_is_valid(const cJSON *id) {
     return id == ZR_NULL ||
            cJSON_IsString((cJSON *)id) ||
-           cJSON_IsNumber((cJSON *)id) ||
+           json_rpc_number_id_is_valid(id) ||
            cJSON_IsNull((cJSON *)id);
 }
 

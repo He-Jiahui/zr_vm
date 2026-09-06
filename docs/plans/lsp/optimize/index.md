@@ -142,6 +142,12 @@ reader 在 C 字符串处理前拒绝 header NUL，并检查所有显式 `charse
 值；协议 30-case conformance 在 GCC、Clang ASan/UBSan 与 MSVC 均通过。Task 3 的完整限制、
 失败分类、transport 与生命周期父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 4 Sub02 数字 request ID 精度](2026-09-07-plan01-task04-sub02-safe-numeric-request-ids.md)：
+数字 ID 限定在 `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX`，安全上界保持精确回显，超界值返回
+`-32600 Invalid Request`；字符串和数字 ID 继续按类型区分。GCC、Clang ASan/UBSan 与
+MSVC 的 31-case protocol conformance 均通过。Task 4 的重复活动 ID、取消、进度和
+ContentModified 父门禁仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期
