@@ -269,6 +269,12 @@ conformance 均为 47/47，lifecycle/protocol CTest 均为 2/2。统一 handler 
 与 Clang ASan/UBSan protocol conformance 均为 48/48，lifecycle/protocol CTest 均为 2/2。
 统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub19 code action resolve params](2026-09-07-plan01-task02-sub19-code-action-resolve-params.md)：
+`codeAction/resolve` 现在要求完整 snapshot data 的 object item，缺失或畸形输入返回
+`-32602`；合法 current snapshot 正常 resolve，stale snapshot 继续返回 disabled action。
+当前 GCC 与 Clang ASan/UBSan protocol conformance 均为 49/49，lifecycle/protocol CTest
+均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
