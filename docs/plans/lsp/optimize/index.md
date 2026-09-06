@@ -170,6 +170,11 @@ envelope 现在拒绝 fractional numeric request id，仍保留 JSON-safe 上下
 隔离；GCC 与 Clang ASan/UBSan 的 34-case protocol conformance 均通过。Task 2 的
 统一 handler status/result 与父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub04 JSON-RPC envelope API](2026-09-07-plan01-task02-sub04-envelope-api.md)：
+直接 C 回归覆盖顶层消息、jsonrpc 版本、typed id、params 形状、缺失 id notification
+和显式 null id request 分类；GCC 与 Clang ASan/UBSan lifecycle CTest 均通过。Task 2
+的统一 handler status/result 与父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
@@ -196,6 +201,13 @@ registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 p
 只写 stderr，stdout 仍只包含 JSON-RPC frame；初始化前和 shutdown 后的 control
 notification 无副作用。GCC、Clang ASan/UBSan focused、MSVC 协议回归通过，Task 4
 的 registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 pending。
+
+2026-09-07 已完成 [Plan 03 Task 7.63 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
+公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
+reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；
+缺失 semantic context 和 identity mismatch 均 fail closed。GCC 与 Clang ASan/UBSan
+parity 中新增两项均通过，整套 parity 保留基线四项失败和 Clang 既有 LSan 泄漏；Task 7
+其余 consumer、完整矩阵和 Task 8 仍保持 pending。
 
 ## 2. 审查证据
 

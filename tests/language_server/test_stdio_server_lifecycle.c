@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "stdio_frame_reader.h"
+#include "stdio_json_rpc.h"
 #include "stdio_lifecycle.h"
 #include "stdio_request_registry.h"
 #include "stdio_server.h"
@@ -251,6 +252,109 @@ static void test_frame_reader_status_and_limits(void) {
                 "clean empty input must be classified as EOF");
 }
 
+static void test_json_rpc_envelope_validation(void) {
+    static const char *invalidTopLevelMessages[] = {
+            "[]",
+            "17",
+    };
+    static const char *invalidIdMessages[] = {
+            "{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"test\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":{},\"method\":\"test\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":[],\"method\":\"test\"}",
+    };
+    cJSON *message;
+    SZrJsonRpcEnvelope envelope;
+    const cJSON *errorId;
+    size_t index;
+
+    for (index = 0; index < sizeof(invalidTopLevelMessages) / sizeof(invalidTopLevelMessages[0]); index++) {
+        message = cJSON_Parse(invalidTopLevelMessages[index]);
+        errorId = (const cJSON *)1;
+        expect_true(message != NULL &&
+                            ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                    ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST,
+                    "non-object top-level message must be invalid request");
+        expect_true(errorId == NULL, "invalid top-level message must not expose an error id");
+        cJSON_Delete(message);
+    }
+
+    message = cJSON_Parse("{\"id\":\"missing-version\",\"method\":\"test\"}");
+    errorId = NULL;
+    expect_true(message != NULL &&
+                        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST,
+                "missing jsonrpc version must be invalid request");
+    expect_true(errorId != NULL && cJSON_IsString((cJSON *)errorId),
+                "missing jsonrpc version must preserve a valid request id");
+    cJSON_Delete(message);
+
+    message = cJSON_Parse("{\"jsonrpc\":\"1.0\",\"id\":\"wrong-version\",\"method\":\"test\"}");
+    errorId = NULL;
+    expect_true(message != NULL &&
+                        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST,
+                "wrong jsonrpc version must be invalid request");
+    expect_true(errorId != NULL && cJSON_IsString((cJSON *)errorId),
+                "wrong jsonrpc version must preserve a valid request id");
+    cJSON_Delete(message);
+
+    for (index = 0; index < sizeof(invalidIdMessages) / sizeof(invalidIdMessages[0]); index++) {
+        message = cJSON_Parse(invalidIdMessages[index]);
+        errorId = (const cJSON *)1;
+        expect_true(message != NULL &&
+                            ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                    ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST,
+                    "boolean or structured request id must be invalid request");
+        expect_true(errorId == NULL, "invalid request id must map to a null error id");
+        cJSON_Delete(message);
+    }
+
+    message = cJSON_Parse("{\"jsonrpc\":\"2.0\",\"id\":\"bad-params\",\"method\":\"test\",\"params\":false}");
+    errorId = NULL;
+    expect_true(message != NULL &&
+                        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS,
+                "scalar params must be invalid params");
+    expect_true(errorId != NULL && cJSON_IsString((cJSON *)errorId),
+                "invalid params must preserve a valid request id");
+    cJSON_Delete(message);
+
+    message = cJSON_Parse("{\"jsonrpc\":\"2.0\",\"id\":\"request\",\"method\":\"test\",\"params\":{}}");
+    errorId = NULL;
+    expect_true(message != NULL &&
+                        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                ZR_JSON_RPC_ENVELOPE_OK,
+                "object params must produce a valid request envelope");
+    expect_true(envelope.isRequest && !envelope.isNotification && envelope.params != NULL &&
+                        cJSON_IsObject((cJSON *)envelope.params) &&
+                        strcmp(envelope.method, "test") == 0 && errorId == envelope.id,
+                "valid request envelope must preserve method, params and id");
+    cJSON_Delete(message);
+
+    message = cJSON_Parse("{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"params\":[]}");
+    errorId = (const cJSON *)1;
+    expect_true(message != NULL &&
+                        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                ZR_JSON_RPC_ENVELOPE_OK,
+                "missing id must produce a valid notification envelope");
+    expect_true(!envelope.isRequest && envelope.isNotification && envelope.id == NULL &&
+                        envelope.params != NULL && cJSON_IsArray((cJSON *)envelope.params) &&
+                        errorId == NULL,
+                "notification envelope must have no request id");
+    cJSON_Delete(message);
+
+    message = cJSON_Parse("{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"test\"}");
+    errorId = NULL;
+    expect_true(message != NULL &&
+                        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
+                                ZR_JSON_RPC_ENVELOPE_OK,
+                "explicit null id must remain a valid JSON-RPC request");
+    expect_true(envelope.isRequest && !envelope.isNotification && envelope.id != NULL &&
+                        cJSON_IsNull((cJSON *)envelope.id) && errorId == envelope.id,
+                "explicit null id must not be mistaken for a notification");
+    cJSON_Delete(message);
+}
+
 static void test_repeated_server_lifecycle(void) {
     int iteration;
 
@@ -353,6 +457,7 @@ int main(void) {
     test_lifecycle_state_transitions();
     test_request_registry_identity_and_cancellation();
     test_frame_reader_status_and_limits();
+    test_json_rpc_envelope_validation();
     test_repeated_server_lifecycle();
     test_exit_notification_stops_the_reader();
     test_startup_failure_uses_the_same_teardown_path();

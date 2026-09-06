@@ -130,6 +130,12 @@ The protocol driver includes `id: 1.5` as a malformed request-id case and requir
 the `-32600` error envelope with `id: null`. See [Plan 01 Task 2 Sub03](../plans/lsp/optimize/2026-09-07-plan01-task02-sub03-integer-request-ids.md)
 for the RED/GREEN replay.
 
+The lifecycle target also calls `ZrLanguageServer_StdioJsonRpc_ParseEnvelope`
+directly. Its regression checks invalid top-level objects and protocol versions,
+typed id rejection, scalar params, valid object/array params, missing-id
+notifications and explicit `null` request IDs. See [Plan 01 Task 2 Sub04](../plans/lsp/optimize/2026-09-07-plan01-task02-sub04-envelope-api.md)
+for the focused CTest evidence.
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as
