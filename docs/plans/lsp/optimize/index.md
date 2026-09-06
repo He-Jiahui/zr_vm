@@ -48,6 +48,9 @@ Plan 00 Task 5 的 [integrated capability inventory](2026-09-06-plan00-task05-in
 已将 native 四 profile 与 WASM 静态映射合并到同一个 machine-readable runner；
 GCC、Clang、MSVC 的两个 inventory CTest 均为 1/1。该记录只关闭静态集成子项，
 linked asset、control/notification 行为和完整语义 parity 仍保持 pending。
+当前失败责任也已在 baseline/crosswalk 与 native inventory acceptance 中逐项链接
+owner 和后续计划；GCC focused build、extension unit/noEmit 及 linked asset 仍是
+独立门槛。
 
 Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回
