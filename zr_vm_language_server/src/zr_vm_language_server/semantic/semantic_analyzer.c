@@ -173,87 +173,6 @@ static const SZrType *semantic_find_type_info_at_position(const SZrType *typeInf
     return semantic_file_range_contains_position(typeInfo->name->location, position) ? typeInfo : ZR_NULL;
 }
 
-static TZrBool semantic_symbol_is_type_position_candidate(SZrSymbol *symbol) {
-    if (symbol == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    switch (symbol->type) {
-        case ZR_SYMBOL_CLASS:
-        case ZR_SYMBOL_STRUCT:
-        case ZR_SYMBOL_INTERFACE:
-        case ZR_SYMBOL_ENUM:
-        case ZR_SYMBOL_PARAMETER:
-            return ZR_TRUE;
-        case ZR_SYMBOL_FUNCTION:
-            return symbol->astNode != ZR_NULL &&
-                   symbol->astNode->type == ZR_AST_EXTERN_DELEGATE_DECLARATION;
-        default:
-            return ZR_FALSE;
-    }
-}
-
-static SZrString *semantic_extract_type_symbol_name(const SZrType *typeInfo) {
-    if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
-        return typeInfo->name->data.identifier.name;
-    }
-
-    if (typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
-        SZrGenericType *genericType = (SZrGenericType *)&typeInfo->name->data.genericType;
-        if (genericType->name != ZR_NULL) {
-            return genericType->name->name;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static SZrSymbol *semantic_lookup_type_symbol_at_position(SZrState *state,
-                                                          SZrSemanticAnalyzer *analyzer,
-                                                          const SZrType *typeInfo,
-                                                          SZrFileRange position) {
-    SZrString *typeName;
-    SZrSymbol *symbol;
-    SZrArray candidates;
-
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    typeName = semantic_extract_type_symbol_name(typeInfo);
-    if (typeName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, typeName, position);
-    if (symbol != ZR_NULL && semantic_symbol_is_type_position_candidate(symbol)) {
-        return symbol;
-    }
-
-    ZrCore_Array_Construct(&candidates);
-    if (state != ZR_NULL &&
-        ZrLanguageServer_SymbolTable_LookupAll(state, analyzer->symbolTable, typeName, ZR_NULL, &candidates)) {
-        for (TZrSize index = 0; index < candidates.length; index++) {
-            SZrSymbol **candidatePtr = (SZrSymbol **)ZrCore_Array_Get(&candidates, index);
-            if (candidatePtr != ZR_NULL &&
-                *candidatePtr != ZR_NULL &&
-                semantic_symbol_is_type_position_candidate(*candidatePtr)) {
-                symbol = *candidatePtr;
-                break;
-            }
-        }
-    }
-    if (candidates.isValid) {
-        ZrCore_Array_Free(state, &candidates);
-    }
-
-    return symbol;
-}
-
 static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrFileRange position) {
     if (node == ZR_NULL) {
         return ZR_NULL;
@@ -1967,48 +1886,47 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
                                                                 SZrSemanticAnalyzer *analyzer,
                                                                 SZrFileRange position,
                                                                 SZrInferredType *outType) {
-    const SZrType *typeInfo;
-    const SZrSemanticExpressionFact *expressionFact;
-    SZrAstNode *expressionNode;
-    SZrSymbol *symbol;
+    const SZrSemanticContext *semanticContext;
+    const SZrSemanticTypeRecord *typeRecord;
+    SZrParserSemanticTypeQuery typeQuery;
 
-    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL ||
-        analyzer->compilerState == ZR_NULL || outType == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        outType == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    typeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
-    if (typeInfo == ZR_NULL) {
-        expressionFact =
-            ZrLanguageServer_SemanticAnalyzer_FindExpressionFactAtPosition(analyzer, position);
-        if (expressionFact != ZR_NULL &&
-            expressionFact->exactness == ZR_SEMANTIC_FACT_EXACT &&
-            ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(&expressionFact->inferredType)) {
-            ZrParser_InferredType_Copy(state, outType, &expressionFact->inferredType);
-            return ZR_TRUE;
-        }
-
-        expressionNode = ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(analyzer->ast, position);
-        if (expressionNode != ZR_NULL &&
-            ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state, analyzer, expressionNode, outType)) {
-            return ZR_TRUE;
-        }
-
-        symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
-        if (symbol != ZR_NULL &&
-            symbol->typeInfo != ZR_NULL &&
-            ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
-            ZrParser_InferredType_Copy(state, outType, symbol->typeInfo);
-            return ZR_TRUE;
-        }
+    semanticContext = analyzer->semanticContext;
+    if (!ZrParser_SemanticQuery_CanonicalTypeAt(
+                semanticContext, position, ZR_NULL, &typeQuery) ||
+        typeQuery.typeId == ZR_SEMANTIC_ID_INVALID ||
+        ZrParser_CanonicalType_Find(semanticContext, typeQuery.typeId) == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
-                                                                           ZR_NULL,
-                                                                           ZR_NULL,
-                                                                           typeInfo,
-                                                                           outType);
+    if (typeQuery.expression != ZR_NULL &&
+        typeQuery.expression->typeId == typeQuery.typeId &&
+        typeQuery.expression->exactness == ZR_SEMANTIC_FACT_EXACT &&
+        ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
+                &typeQuery.expression->inferredType)) {
+        ZrParser_InferredType_Copy(state, outType, &typeQuery.expression->inferredType);
+        return ZR_TRUE;
+    }
+
+    if (typeQuery.reference == ZR_NULL ||
+        typeQuery.reference->kind != ZR_SEMANTIC_REFERENCE_TYPE ||
+        !typeQuery.reference->isResolved) {
+        return ZR_FALSE;
+    }
+
+    typeRecord = semantic_find_type_record_by_id(semanticContext, typeQuery.typeId);
+    if (typeRecord == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
+                &typeRecord->inferredType)) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Copy(state, outType, &typeRecord->inferredType);
+    return ZR_TRUE;
 }
 
 // 获取悬停信息

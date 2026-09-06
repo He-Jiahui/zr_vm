@@ -2264,6 +2264,70 @@ static void test_declared_type_builder_uses_parser_type_identity(void) {
     free(source);
 }
 
+static void test_semantic_analyzer_type_resolution_uses_canonical_query(void) {
+    char *source = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
+    const char *resolveStart;
+    const char *resolveEnd;
+
+    if (source == NULL) {
+        printf("FAIL: could not read semantic_analyzer.c type query source\n");
+        g_failures++;
+        return;
+    }
+
+    resolveStart = strstr(
+        source,
+        "TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(");
+    resolveEnd = resolveStart != NULL
+                     ? strstr(
+                           resolveStart + 1,
+                           "// 获取悬停信息")
+                     : NULL;
+    assert_text_section_contains(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "ZrParser_SemanticQuery_CanonicalTypeAt");
+    assert_text_section_contains(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "ZrParser_CanonicalType_Find");
+    assert_text_section_contains(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "semantic_find_type_record_by_id");
+    assert_text_section_contains_none(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "semantic_find_type_node_at_position");
+    assert_text_section_contains_none(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "FindExpressionNodeAtPosition");
+    assert_text_section_contains_none(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "InferExactExpressionType");
+    assert_text_section_contains_none(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "SemanticAnalyzer_GetSymbolAt");
+    assert_text_section_contains_none(
+        "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
+        resolveStart,
+        resolveEnd,
+        "BuildDeclaredTypeInferredType");
+
+    free(source);
+}
+
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
 #include "test_lsp_source_contract_extern_enum_decorator_cases.h"
 #include "test_lsp_source_contract_extern_struct_decorator_cases.h"
@@ -2355,6 +2419,7 @@ int main(void) {
     test_source_hover_uses_parser_symbol_query();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_declared_type_builder_uses_parser_type_identity();
+    test_semantic_analyzer_type_resolution_uses_canonical_query();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
     test_ffi_wrapper_decorators_use_parser_diagnostic_projection();
@@ -2434,6 +2499,7 @@ int main(void) {
     printf("PASS: CodeLens uses canonical declaration and reference queries\n");
     printf("PASS: Source hover uses parser symbol query\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
+    printf("PASS: SemanticAnalyzer ResolveTypeAtPosition uses canonical parser query\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");
     printf("PASS: Semantic analyzer has no unstructured diagnostic escape hatch\n");

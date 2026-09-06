@@ -4585,6 +4585,9 @@ int main(void) {
     test_semantic_analyzer_expression_metadata_records_exact_types(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_type_resolution_rejects_approximate_expression_fact(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_unannotated_function_records_exact_return_type(state);
     TEST_DIVIDER();
 

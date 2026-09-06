@@ -1379,3 +1379,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   仍保留基线已登记的四个失败及 Clang 既有 LSan 泄漏，因此不扩大为 Task 7/8 全局通过。
   详见 [Astra projection record](2026-09-07-plan03-task07-canonical-symbol-projection.md)；
   `Task 7.63 ResolveTypeAtPosition` 仍由独立的 type-query slice 负责。
+
+- 补充完成时间：2026-09-07。Plan 03 Task 7.63 收紧
+  `SemanticAnalyzer_ResolveTypeAtPosition`：请求期只调用 parser
+  `CanonicalTypeAt`，精确 expression fact 直接复制，已解析 type reference 通过同一
+  `TypeId` 的 semantic type record 复制；canonical graph 缺失、approximate/unknown
+  exactness、未解析 reference 或 snapshot identity 不一致均 fail closed。删除 AST
+  type-node traversal、`ExpressionType_Infer`、symbol lookup 与 declared-type builder
+  fallback；新增 semantic analyzer RED/GREEN 和 LSP source-contract。GCC 与 Clang
+  ASan/UBSan focused targets 的新增用例通过，完整 analyzer/interface 的既有 baseline
+  failures 保持登记。详见 [canonical type query record](2026-09-07-plan03-task07-canonical-type-query.md)
+  与 [type query module boundary](../../../cli-and-tooling/lsp-type-query-capability-boundary.md)；
+  Plan 03 Task 7 其余 consumer、Task 3/8 仍待完成。

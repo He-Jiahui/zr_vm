@@ -99,4 +99,102 @@ static void test_semantic_analyzer_expression_metadata_records_exact_types(
     TEST_PASS(timer, summary);
 }
 
+static void test_semantic_analyzer_type_resolution_rejects_approximate_expression_fact(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Semantic Analyzer Type Resolution Rejects Approximate Expression Fact";
+    const TZrChar *testCode =
+            "fn compute() {\n"
+            "    return 1 + 2;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrAstNode *ast = ZR_NULL;
+    SZrFileRange operatorRange;
+    SZrSemanticExpressionFact *fact = ZR_NULL;
+    SZrSemanticContext *savedSemanticContext = ZR_NULL;
+    SZrInferredType resolvedType;
+    EZrSemanticFactExactness savedExactness = ZR_SEMANTIC_FACT_UNKNOWN;
+    TZrBool semanticContextDetached = ZR_FALSE;
+    const TZrChar *failure = ZR_NULL;
+
+    TEST_START(summary);
+    TEST_INFO("Canonical expression type exactness",
+              "An approximate parser fact must not be replaced by request-time AST inference");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "type_resolution_approximate_fact_test.zr",
+            strlen("type_resolution_approximate_fact_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (analyzer == ZR_NULL || ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        failure = "Failed to prepare canonical expression-type fixture";
+        goto cleanup;
+    }
+
+    operatorRange = file_range_for_nth_substring_in_source(
+            testCode, "+", 0, ZR_FALSE, sourceName);
+    fact = (SZrSemanticExpressionFact *)
+            ZrParser_SemanticFacts_FindExpressionAtPosition(
+                    analyzer->semanticContext, operatorRange);
+    if (fact == ZR_NULL || fact->exactness != ZR_SEMANTIC_FACT_EXACT) {
+        failure = "The baseline must publish an exact expression fact";
+        goto cleanup;
+    }
+
+    ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_SemanticQuery_TypeAt(
+                analyzer->semanticContext, operatorRange, ZR_NULL, &resolvedType) ||
+        !ZR_VALUE_IS_TYPE_INT(resolvedType.baseType)) {
+        ZrParser_InferredType_Free(state, &resolvedType);
+        failure = "The baseline parser TypeAt query must resolve exact int";
+        goto cleanup;
+    }
+    ZrParser_InferredType_Free(state, &resolvedType);
+
+    savedExactness = fact->exactness;
+    fact->exactness = ZR_SEMANTIC_FACT_APPROXIMATE;
+    ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_SemanticQuery_TypeAt(
+                analyzer->semanticContext, operatorRange, ZR_NULL, &resolvedType)) {
+        failure = "Parser TypeAt accepted an approximate expression fact";
+    } else if (ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(
+                       state, analyzer, operatorRange, &resolvedType)) {
+        failure = "LSP type resolver revived an approximate fact through AST inference";
+    }
+    ZrParser_InferredType_Free(state, &resolvedType);
+
+    savedSemanticContext = analyzer->semanticContext;
+    analyzer->semanticContext = ZR_NULL;
+    semanticContextDetached = ZR_TRUE;
+    ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(
+                state, analyzer, operatorRange, &resolvedType)) {
+        failure = "LSP type resolver revived unavailable canonical type through AST inference";
+    }
+    ZrParser_InferredType_Free(state, &resolvedType);
+
+cleanup:
+    if (semanticContextDetached && analyzer != ZR_NULL) {
+        analyzer->semanticContext = savedSemanticContext;
+    }
+    if (savedExactness != ZR_SEMANTIC_FACT_UNKNOWN && fact != ZR_NULL) {
+        fact->exactness = savedExactness;
+    }
+    if (ast != ZR_NULL) {
+        ZrParser_Ast_Free(state, ast);
+    }
+    if (analyzer != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+    if (failure == ZR_NULL) {
+        TEST_PASS(timer, summary);
+    } else {
+        TEST_FAIL(timer, summary, failure);
+    }
+}
+
 #endif // ZR_VM_TEST_SEMANTIC_ANALYZER_EXACT_TYPE_CASES_H

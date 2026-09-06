@@ -233,6 +233,15 @@ reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable 
 parity 中新增两项均通过，整套 parity 保留基线四项失败和 Clang 既有 LSan 泄漏；Task 7
 其余 consumer、`Task 7.63 ResolveTypeAtPosition`、完整矩阵和 Task 8 仍保持 pending。
 
+2026-09-07 已完成 [Plan 03 Task 7.63 canonical type query](2026-09-07-plan03-task07-canonical-type-query.md)：
+`ResolveTypeAtPosition` 现在只消费 parser `CanonicalTypeAt`、canonical graph 和已发布
+`TypeId` semantic record；精确 expression fact 与已解析 type reference 均按 snapshot
+事实复制，AST/type-inference/symbol/builder request-time fallback 全部移除。approximate
+事实与断开 semantic context 的 RED fixture、GCC/Clang source-contract 均通过；完整
+semantic analyzer/interface 的既有 baseline failures 保持登记。相关模块边界见
+[LSP Type Query Capability Boundary](../../../cli-and-tooling/lsp-type-query-capability-boundary.md)。
+Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期
