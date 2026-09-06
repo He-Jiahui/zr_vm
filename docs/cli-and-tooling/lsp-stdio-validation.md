@@ -136,6 +136,13 @@ typed id rejection, scalar params, valid object/array params, missing-id
 notifications and explicit `null` request IDs. See [Plan 01 Task 2 Sub04](../plans/lsp/optimize/2026-09-07-plan01-task02-sub04-envelope-api.md)
 for the focused CTest evidence.
 
+The current stdio protocol replay runs all 34 cases on GCC and Clang
+ASan/UBSan. It covers pre-initialize and post-shutdown request gates, repeated
+initialize, exit ordering, malformed notification suppression, top-level and
+request-id rejection, invalid initialize params, and the classified frame
+failures. Both servers pass 34/34 with no Clang sanitizer diagnostic. See [Tasks
+1-2 protocol negative replay](../plans/lsp/optimize/2026-09-07-plan01-task01-task02-protocol-negative-replay.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

@@ -20,9 +20,9 @@
 - Modify: `zr_vm_language_server/stdio/stdio_requests.c`
 - Test: `tests/language_server/stdio_protocol_conformance.js`
 
-- [ ] RED：普通 request 在 initialize 前返回 `-32002 ServerNotInitialized`；exit 之外的 notification 在初始化前被忽略。
-- [ ] RED：第二次 initialize 返回 `-32600 InvalidRequest`；shutdown 前 exit 返回进程码 1；shutdown 后 exit 返回 0。
-- [ ] RED：shutdown 后的普通 request 返回 `-32600`，notification 仅允许 exit。
+- [x] RED：普通 request 在 initialize 前返回 `-32002 ServerNotInitialized`；exit 之外的 notification 在初始化前被忽略；[当前协议回放](2026-09-07-plan01-task01-task02-protocol-negative-replay.md)。
+- [x] RED：第二次 initialize 返回 `-32600 InvalidRequest`；shutdown 前 exit 返回进程码 1；shutdown 后 exit 返回 0；[当前协议回放](2026-09-07-plan01-task01-task02-protocol-negative-replay.md)。
+- [x] RED：shutdown 后的普通 request 返回 `-32600`，notification 仅允许 exit；[当前协议回放](2026-09-07-plan01-task01-task02-protocol-negative-replay.md)。
 - [ ] 实现明确状态：
 
 ```c
@@ -49,7 +49,7 @@ typedef enum EZrStdioLifecycleState {
 - Test: `tests/language_server/stdio_protocol_conformance.js`
 
 - [ ] RED：拒绝数组/标量顶层消息、缺失或错误 jsonrpc、bool/object/array id、非 object/array params、request 缺失 id。
-- [ ] notification 的 malformed params 只能记录日志，不发送 response；request 必须返回精确 `-32602`。
+- [x] notification 的 malformed params 只能记录日志，不发送 response；request 必须返回精确 `-32602`；[当前协议回放](2026-09-07-plan01-task01-task02-protocol-negative-replay.md)。
 - [ ] 定义统一 envelope，而不是让每个 handler 用 `NULL`/空数组猜测错误：
 
 ```c
@@ -103,10 +103,10 @@ typedef enum EZrLspHandlerStatus {
 - Test: `tests/language_server/stdio_protocol_conformance.js`
 - Create: `tests/language_server/stdio_document_sync_conformance.js`
 
-- [ ] registry 以 JSON-RPC id 的类型和值为 key；数字 `1` 与字符串 `"1"` 不得冲突。
+- [x] registry 以 JSON-RPC id 的类型和值为 key；数字 `1` 与字符串 `"1"` 不得冲突；[Task 4 Sub04 回归](2026-09-07-plan01-task04-sub04-request-registry-identity.md)。
 - [x] Sub02：数字 request id 限定在 `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX`，安全边界精确回显，字符串和数字类型继续分离；[记录](2026-09-07-plan01-task04-sub02-safe-numeric-request-ids.md)。
-- [ ] 重复活动 id 返回 InvalidRequest，不能复用同一个 cancellation node。
-- [ ] `$/cancelRequest` 只标记匹配 id；未知 id 是无响应 no-op。
+- [x] 重复活动 id 返回 InvalidRequest，不能复用同一个 cancellation node；[Task 4 Sub04 回归](2026-09-07-plan01-task04-sub04-request-registry-identity.md)。
+- [x] `$/cancelRequest` 只标记匹配 id；未知 id 是无响应 no-op；[Task 4 Sub04 回归](2026-09-07-plan01-task04-sub04-request-registry-identity.md)。
 - [x] Sub04：registry 直接按 JSON-RPC ID 类型和值区分活动请求，重复同类型 ID、精确取消、未知取消和完成后复用均有回归；[记录](2026-09-07-plan01-task04-sub04-request-registry-identity.md)。
 - [ ] 从 request context 删除全局 inputGeneration 比较。ContentModified 由计划 02 的 dependency fence 判断；在该计划完成前只保留精确 cancellation，不发布可能误报的 `-32801`。
 - [ ] 给 workspace diagnostics、workspace symbol、references、rename、hierarchy 等循环增加统一 cancellation callback，不只在 diagnostics bucket 循环里检查。

@@ -175,6 +175,12 @@ envelope 现在拒绝 fractional numeric request id，仍保留 JSON-safe 上下
 和显式 null id request 分类；GCC 与 Clang ASan/UBSan lifecycle CTest 均通过。Task 2
 的统一 handler status/result 与父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Tasks 1-2 protocol negative replay](2026-09-07-plan01-task01-task02-protocol-negative-replay.md)：
+当前 `2f94ce94` 的 GCC 与 Clang ASan/UBSan stdio protocol conformance 均为 34/34，
+覆盖初始化前/重复初始化/shutdown/exit 顺序、malformed notification 无 response、
+顶层/envelope/request-id/params 负向和 frame 分类。Task 2 的统一 handler status/result
+与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
