@@ -2419,6 +2419,7 @@ int main(void) {
     test_code_lens_uses_canonical_declaration_and_reference_queries();
     test_source_hover_uses_parser_symbol_query();
     test_public_hover_consumer_does_not_use_analyzer_hover();
+    test_metadata_hover_consumer_does_not_use_analyzer_hover();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_declared_type_builder_uses_parser_type_identity();
     test_semantic_analyzer_type_resolution_uses_canonical_query();
@@ -2502,6 +2503,7 @@ int main(void) {
     printf("PASS: CodeLens uses canonical declaration and reference queries\n");
     printf("PASS: Source hover uses parser symbol query\n");
     printf("PASS: Public hover consumer avoids analyzer hover fallback\n");
+    printf("PASS: Metadata hover consumer avoids analyzer hover fallback\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: SemanticAnalyzer ResolveTypeAtPosition uses canonical parser query\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");

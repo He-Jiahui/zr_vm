@@ -218,6 +218,12 @@ semantic tokens full、full/delta 和 range 的缺失或畸形 URI/position/rang
 conformance 均为 40/40，lifecycle/protocol CTest 均为 2/2。统一 handler status/result
 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub11 workspace symbol invalid params](2026-09-07-plan01-task02-sub11-workspace-symbol-invalid-params.md)：
+`workspace/symbol` 现在要求字符串 `query`，缺失或非字符串参数返回 `-32602`，合法
+空字符串 query 仍可执行；当前 GCC 与 Clang ASan/UBSan protocol conformance 均为
+41/41，lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01
+父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
@@ -280,6 +286,14 @@ hover/signature/local query 与当前 snapshot 的 symbol markdown 投影。GCC 
 canonical native receiver/call hover 与 native construct completion/signature 回归保持 PASS；
 metadata provider 的独立 external hover 路径、Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持
 pending。相关边界见 [LSP Hover Capability Boundary](../../../cli-and-tooling/lsp-hover-capability-boundary.md)。
+
+2026-09-07 已完成 [Plan 03 Task 7.66 metadata hover no analyzer fallback](2026-09-07-plan03-task07-metadata-hover-no-analyzer-fallback.md)：
+`CreateImportedMemberHover` 删除 `SemanticAnalyzer_GetHoverInfo` 请求期 fallback，external
+imported-member hover 继续使用 resolved declaration symbol、owned content snapshot 与
+markdown/FFI/leading-comment/source-label projection，并保留 descriptor formatting fallback。
+GCC source-contract 通过；完整 metadata refresh/generation、Task 7 其余 consumer、Task 3/8
+和完整跨工具链矩阵仍保持 pending。相关边界见
+[LSP Metadata Hover Capability Boundary](../../../cli-and-tooling/lsp-metadata-hover-capability-boundary.md)。
 
 ## 2. 审查证据
 

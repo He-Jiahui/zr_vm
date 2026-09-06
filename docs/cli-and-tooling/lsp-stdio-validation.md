@@ -182,6 +182,12 @@ responses remain successful. GCC and Clang ASan/UBSan both pass 40/40, and the
 lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
 Sub10](../plans/lsp/optimize/2026-09-07-plan01-task02-sub10-semantic-token-invalid-params.md).
 
+The workspace-symbol parameter regression extends the current replay to 41 cases.
+`workspace/symbol` now requires a string `query`; missing or non-string values return
+`-32602 Invalid params`, while a valid empty query remains executable. GCC and Clang
+ASan/UBSan both pass 41/41, and the lifecycle/protocol CTest pair passes 2/2 on each
+build. See [Plan 01 Task 2 Sub11](../plans/lsp/optimize/2026-09-07-plan01-task02-sub11-workspace-symbol-invalid-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

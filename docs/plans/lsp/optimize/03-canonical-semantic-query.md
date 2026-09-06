@@ -1413,3 +1413,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   与 [LSP Hover Capability Boundary](../../../cli-and-tooling/lsp-hover-capability-boundary.md)。
   metadata provider 的独立 external hover fallback、Task 7 其余 consumer、Task 3/8
   与完整跨工具链矩阵仍待完成。
+
+- 补充完成时间：2026-09-07。Plan 03 Task 7.66 删除 metadata provider
+  `CreateImportedMemberHover` 对 `SemanticAnalyzer_GetHoverInfo` 的 external
+  declaration fallback。binary/native imported-member hover 继续消费 resolved
+  declaration symbol、owned content snapshot、markdown/FFI/leading-comment 与
+  source-label projection；snapshot markdown 为空时保留 descriptor formatting
+  fallback。新增 bounded source-contract，GCC source-contract 真实 exit 0；完整
+  metadata refresh/generation、其余 consumer 矩阵与 Task 8 仍待完成。详见
+  [Task 7.66 record](2026-09-07-plan03-task07-metadata-hover-no-analyzer-fallback.md)
+  与 [LSP Metadata Hover Capability Boundary](../../../cli-and-tooling/lsp-metadata-hover-capability-boundary.md)。

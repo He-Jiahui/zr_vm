@@ -412,6 +412,16 @@ async function testInvalidSemanticTokenParams(serverPath) {
     });
 }
 
+async function testInvalidWorkspaceSymbolParams(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-workspace-symbol-initialize');
+        const response = await client.request('workspace/symbol', {},
+                                              'invalid-workspace-symbol', RESPONSE_TIMEOUT_MS);
+        assertErrorEnvelope(response, 'invalid-workspace-symbol', -32602,
+                            'workspace symbol query');
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1006,6 +1016,7 @@ function protocolCases() {
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],
         ['invalid semantic token params', testInvalidSemanticTokenParams],
+        ['invalid workspace symbol params', testInvalidWorkspaceSymbolParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

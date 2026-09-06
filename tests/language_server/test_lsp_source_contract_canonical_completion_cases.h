@@ -181,4 +181,37 @@ static void test_public_hover_consumer_does_not_use_analyzer_hover(void) {
     free(interfaceSource);
 }
 
+static void test_metadata_hover_consumer_does_not_use_analyzer_hover(void) {
+    char *metadataSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c");
+    const char *hoverStart;
+    const char *hoverEnd;
+
+    if (metadataSource == NULL) {
+        printf("FAIL: could not read metadata hover consumer source\n");
+        g_failures++;
+        return;
+    }
+
+    hoverStart = strstr(
+        metadataSource,
+        "TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(");
+    hoverEnd = hoverStart != NULL
+                   ? strstr(hoverStart,
+                            "TZrBool ZrLanguageServer_LspMetadataProvider_AppendImportedModuleCompletions(")
+                   : NULL;
+    assert_text_section_contains(
+        "metadata imported-member hover canonical projection",
+        hoverStart,
+        hoverEnd,
+        "ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation");
+    assert_text_section_contains_none(
+        "metadata imported-member hover canonical projection",
+        hoverStart,
+        hoverEnd,
+        "ZrLanguageServer_SemanticAnalyzer_GetHoverInfo");
+
+    free(metadataSource);
+}
+
 #endif

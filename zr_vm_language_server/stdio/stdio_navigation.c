@@ -204,16 +204,17 @@ cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *par
     SZrString *query;
     cJSON *result;
 
-    if (server == ZR_NULL || params == NULL) {
+    if (server == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
         return NULL;
     }
 
     queryJson = get_object_item(params, ZR_LSP_FIELD_QUERY);
-    if (cJSON_IsString((cJSON *)queryJson)) {
-        const char *text = cJSON_GetStringValue((cJSON *)queryJson);
-        if (text != NULL) {
-            queryText = text;
-        }
+    if (!cJSON_IsString((cJSON *)queryJson)) {
+        return NULL;
+    }
+    queryText = cJSON_GetStringValue((cJSON *)queryJson);
+    if (queryText == NULL) {
+        return NULL;
     }
 
     query = ZrCore_String_Create(server->state, (TZrNativeString)queryText, (TZrSize)strlen(queryText));

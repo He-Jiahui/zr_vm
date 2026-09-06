@@ -1874,10 +1874,8 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     SZrFileVersion *fileVersion = ZR_NULL;
     SZrFileVersionContentSnapshot snapshot = {0};
     TZrChar sourceBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
-    SZrHoverInfo *hoverInfo = ZR_NULL;
-    TZrBool contentHasSource = ZR_FALSE;
     TZrBool hasSnapshot = ZR_FALSE;
-    TZrBool useAnalyzerSymbolHover;
+    TZrBool useExternalSourceHover;
     SZrSemanticAnalyzer *targetAnalyzer = analyzer;
 
     if (provider == ZR_NULL || resolvedMember == ZR_NULL || result == ZR_NULL) {
@@ -1888,7 +1886,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     sourceKind = ZrLanguageServer_LspMetadataProvider_SourceKindLabel(resolvedMember->module.sourceKind);
     hoverSourceText = metadata_provider_hover_source_text(resolvedMember,
                                                            sourceKind != ZR_NULL ? sourceKind : "project source");
-    useAnalyzerSymbolHover =
+    useExternalSourceHover =
             resolvedMember->module.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
     if (resolvedMember->declarationUri != ZR_NULL) {
         hoverUri = resolvedMember->declarationUri;
@@ -1900,7 +1898,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     } else if (hoverUri != ZR_NULL && provider->context != ZR_NULL) {
         metadata_provider_try_get_analyzer_for_uri(provider->state, provider->context, hoverUri, &targetAnalyzer);
     }
-    if (useAnalyzerSymbolHover && resolvedMember->declarationSymbol != ZR_NULL &&
+    if (useExternalSourceHover && resolvedMember->declarationSymbol != ZR_NULL &&
         hoverUri != ZR_NULL &&
         provider->context != ZR_NULL) {
         fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, hoverUri);
@@ -1914,38 +1912,22 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
         }
 
         if (hasSnapshot) {
-            if (targetAnalyzer != ZR_NULL &&
-                ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(
-                    provider->state,
-                    targetAnalyzer,
-                    ZrLanguageServer_Lsp_GetSymbolLookupRange(resolvedMember->declarationSymbol),
-                    &hoverInfo) &&
-                hoverInfo != ZR_NULL &&
-                hoverInfo->contents != ZR_NULL) {
-                content = hoverInfo->contents;
-                contentHasSource = ZR_TRUE;
-            }
-
-            if (content == ZR_NULL) {
-                content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(provider->state,
-                                                                                targetAnalyzer,
-                                                                                resolvedMember->declarationSymbol,
-                                                                                snapshot.content,
-                                                                                snapshot.contentLength);
-            }
+            content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(provider->state,
+                                                                            targetAnalyzer,
+                                                                            resolvedMember->declarationSymbol,
+                                                                            snapshot.content,
+                                                                            snapshot.contentLength);
 
             content = ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(provider->state,
                                                                            content,
                                                                            resolvedMember->declarationSymbol);
 
-            if (!contentHasSource) {
-                snprintf(sourceBuffer,
-                         sizeof(sourceBuffer),
-                         "Source: %s",
-                         hoverSourceText != ZR_NULL ? hoverSourceText : "project source");
-                sourceSection = metadata_provider_create_markdown_text(provider->state, sourceBuffer);
-                content = metadata_provider_append_markdown_section(provider->state, content, sourceSection);
-            }
+            snprintf(sourceBuffer,
+                     sizeof(sourceBuffer),
+                     "Source: %s",
+                     hoverSourceText != ZR_NULL ? hoverSourceText : "project source");
+            sourceSection = metadata_provider_create_markdown_text(provider->state, sourceBuffer);
+            content = metadata_provider_append_markdown_section(provider->state, content, sourceSection);
             content = metadata_provider_append_markdown_section(provider->state,
                                                                 content,
                                                                 ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(
@@ -1954,9 +1936,6 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                                                                     snapshot.content,
                                                                     snapshot.contentLength));
         }
-    }
-    if (hoverInfo != ZR_NULL) {
-        ZrLanguageServer_HoverInfo_Free(provider->state, hoverInfo);
     }
     if (hasSnapshot) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(provider->state, &snapshot);
