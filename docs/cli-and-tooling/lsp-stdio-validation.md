@@ -19,6 +19,8 @@ related_code:
   - zr_vm_language_server/stdio/stdio_initialize.c
   - zr_vm_language_server/stdio/stdio_request_dispatch.c
   - zr_vm_language_server/stdio/stdio_lsp_parse.c
+  - zr_vm_language_server/stdio/stdio_frame_reader.h
+  - zr_vm_language_server/stdio/stdio_frame_reader.c
   - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_language_server/stdio/stdio_server.c
@@ -35,6 +37,7 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_document_content.c
   - zr_vm_language_server/stdio/stdio_documents.c
   - zr_vm_language_server/stdio/stdio_lsp_parse.c
+  - zr_vm_language_server/stdio/stdio_frame_reader.c
   - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_language_server/stdio/stdio_server.c
@@ -75,6 +78,27 @@ objects, missing fields and reversed ranges. The test is registered through
 `tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake` so the numeric contract can be
 run independently of the larger protocol suite. See [Plan 01 Task 2 Sub01](../plans/lsp/optimize/2026-09-07-plan01-task02-sub01-strict-numeric-parsing.md)
 for the RED/GREEN and three-toolchain evidence.
+
+## Frame Header Exactness
+
+`stdio_frame_reader.c` owns byte-level header framing and validates a complete
+header block before allocating the payload. It accepts CRLF lines, requires one
+unsigned decimal `Content-Length`, applies the centralized byte/count/payload
+limits, and classifies clean EOF, malformed headers, truncated payloads, size
+violations and I/O failures separately. Unknown headers remain allowed but count
+toward the limits.
+
+The reader rejects a NUL byte while reading headers, before the line is treated
+as a C string. Every explicit `charset` parameter is examined; `utf-8` and
+`utf8` are accepted (including quoted values), while any other explicit charset
+or conflicting value is malformed. JSON payload parsing remains the later
+JSON-RPC concern and is not confused with a framing failure.
+
+The protocol driver covers the NUL and duplicate/conflicting charset cases
+alongside the existing missing, duplicate, suffixed, overflowing, truncated,
+newline, oversize and excessive-header cases. See [Plan 01 Task 3 Sub01](../plans/lsp/optimize/2026-09-07-plan01-task03-sub01-header-exactness.md)
+for the RED/GREEN evidence. The parent Task 3 still owns the complete limit,
+transport and lifecycle gate.
 
 ## Response Envelope Validation
 

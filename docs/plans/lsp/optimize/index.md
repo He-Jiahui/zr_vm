@@ -136,6 +136,11 @@ WASM linked asset 仍未生成。
 GCC、Clang ASan/UBSan 与 MSVC 专项均通过；Task 2 的 envelope、handler status
 与完整协议父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 3 Sub01 帧头精确性](2026-09-07-plan01-task03-sub01-header-exactness.md)：
+reader 在 C 字符串处理前拒绝 header NUL，并检查所有显式 `charset` 参数，拒绝冲突或非 UTF-8
+值；协议 30-case conformance 在 GCC、Clang ASan/UBSan 与 MSVC 均通过。Task 3 的完整限制、
+失败分类、transport 与生命周期父门禁仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

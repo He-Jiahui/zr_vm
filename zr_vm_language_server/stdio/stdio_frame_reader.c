@@ -34,43 +34,48 @@ static void frame_reader_trim_spaces(char *text) {
 }
 
 static TZrBool frame_reader_content_type_is_utf8(char *value) {
-    char *parameter = value;
+    char *parameter = strchr(value, ';');
 
-    while ((parameter = strchr(parameter, ';')) != ZR_NULL) {
-        char *name;
-        char *charset;
+    while (parameter != ZR_NULL) {
+        char *part;
+        char *next;
+        char *separator;
 
         parameter++;
-        parameter = frame_reader_skip_spaces(parameter);
-        name = parameter;
-        while (*parameter != '\0' && *parameter != '=' && *parameter != ';') {
-            parameter++;
+        part = frame_reader_skip_spaces(parameter);
+        next = strchr(part, ';');
+        if (next != ZR_NULL) {
+            *next = '\0';
         }
-        if (*parameter != '=') {
-            continue;
-        }
-        *parameter++ = '\0';
-        frame_reader_trim_spaces(name);
-        if (!frame_reader_ascii_equals(name, "charset")) {
-            continue;
-        }
+        frame_reader_trim_spaces(part);
+        separator = strchr(part, '=');
+        if (separator != ZR_NULL) {
+            char *name = part;
+            char *charset;
 
-        charset = frame_reader_skip_spaces(parameter);
-        parameter = strchr(charset, ';');
-        if (parameter != ZR_NULL) {
-            *parameter++ = '\0';
-        }
-        frame_reader_trim_spaces(charset);
-        if (charset[0] == '"') {
-            size_t length = strlen(charset);
-            if (length < 2 || charset[length - 1] != '"') {
-                return ZR_FALSE;
+            *separator++ = '\0';
+            frame_reader_trim_spaces(name);
+            if (frame_reader_ascii_equals(name, "charset")) {
+                charset = frame_reader_skip_spaces(separator);
+                frame_reader_trim_spaces(charset);
+                if (charset[0] == '"') {
+                    size_t length = strlen(charset);
+                    if (length < 2 || charset[length - 1] != '"') {
+                        return ZR_FALSE;
+                    }
+                    charset[length - 1] = '\0';
+                    charset++;
+                }
+                if (!frame_reader_ascii_equals(charset, "utf-8") &&
+                    !frame_reader_ascii_equals(charset, "utf8")) {
+                    return ZR_FALSE;
+                }
             }
-            charset[length - 1] = '\0';
-            charset++;
         }
-        return frame_reader_ascii_equals(charset, "utf-8") ||
-               frame_reader_ascii_equals(charset, "utf8");
+        if (next == ZR_NULL) {
+            break;
+        }
+        parameter = next;
     }
 
     return ZR_TRUE;
@@ -165,6 +170,9 @@ EZrStdioFrameReadStatus ZrLanguageServer_StdioFrameReader_Read(
             }
             return headerBytes == 0 ? ZR_STDIO_FRAME_READ_EOF
                                     : ZR_STDIO_FRAME_READ_MALFORMED_HEADER;
+        }
+        if (character == '\0') {
+            return ZR_STDIO_FRAME_READ_MALFORMED_HEADER;
         }
         if (headerBytes >= effectiveLimits.maxHeaderBytes ||
             lineLength >= effectiveLimits.maxHeaderBytes) {

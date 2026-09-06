@@ -86,6 +86,7 @@ typedef enum EZrLspHandlerStatus {
 - [ ] 用 `strtoull` + `errno` + end pointer + `SIZE_MAX - 1` 检查；分配前验证 `contentLength + 1`。
 - [ ] 区分 `EOF`、`MALFORMED_HEADER`、`PAYLOAD_TRUNCATED`、`TOO_LARGE`、`IO_ERROR`。只有干净 EOF 才关闭输入；可恢复的 JSON payload parse error 返回 `-32700`。
 - [ ] 接受规范允许的 Content-Type/charset，拒绝显式非 UTF-8 charset；未知扩展 header 可忽略但计入总大小。
+- [x] Sub01：帧头读取在 C 字符串处理前拒绝 NUL，并检查全部显式 `charset` 参数，拒绝冲突或非 UTF-8 值；[记录](2026-09-07-plan01-task03-sub01-header-exactness.md)。
 
 ## Task 4：修复 request id、取消与 ContentModified
 
