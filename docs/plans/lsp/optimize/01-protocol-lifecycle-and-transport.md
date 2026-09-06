@@ -72,6 +72,7 @@ typedef enum EZrLspHandlerStatus {
 
 - [ ] handler 返回 status + result；“没有语义结果”可返回合法 null/empty，“解析失败”只能是 InvalidParams。
 - [x] Sub02：`initialize` 的 params 缺失、`null`、标量或数组时返回 `-32602 InvalidParams`，且不进入初始化生命周期；[记录](2026-09-07-plan01-task02-sub02-initialize-params.md)。
+- [x] Sub03：numeric request id 只接受有限、整数且处于 JSON-safe 范围的值，fractional id 返回 `-32600 Invalid Request`；[记录](2026-09-07-plan01-task02-sub03-integer-request-ids.md)。
 - [x] `parse_size_value`、`parse_position`、`parse_range` 拒绝小数、NaN/Infinity、负数、超 `INT32_MAX`/`TZrSize` 和逆序 range；[Plan 01 Task 2 Sub01 record](2026-09-07-plan01-task02-sub01-strict-numeric-parsing.md)。
 
 ## Task 3：实现有界 frame reader

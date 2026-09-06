@@ -1,5 +1,6 @@
 #include "stdio_json_rpc.h"
 
+#include <math.h>
 #include <string.h>
 
 static TZrBool json_rpc_number_id_is_valid(const cJSON *id) {
@@ -9,8 +10,11 @@ static TZrBool json_rpc_number_id_is_valid(const cJSON *id) {
         return ZR_FALSE;
     }
     value = id->valuedouble;
-    return value >= -ZR_LSP_JSON_SAFE_INTEGER_MAX &&
-           value <= ZR_LSP_JSON_SAFE_INTEGER_MAX;
+    if (!isfinite(value) || value < -ZR_LSP_JSON_SAFE_INTEGER_MAX ||
+        value > ZR_LSP_JSON_SAFE_INTEGER_MAX) {
+        return ZR_FALSE;
+    }
+    return value == (double)(long long)value;
 }
 
 static TZrBool json_rpc_id_is_valid(const cJSON *id) {

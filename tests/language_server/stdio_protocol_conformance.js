@@ -242,6 +242,17 @@ async function testInvalidStructuredIds(serverPath) {
     }
 }
 
+async function testInvalidFractionalRequestId(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await expectInvalidRequest(client, {
+            jsonrpc: '2.0',
+            id: 1.5,
+            method: 'initialize',
+            params: initializePayload('ignored').params,
+        }, null, 'fractional request id');
+    });
+}
+
 async function testInvalidTopLevelMessages(serverPath) {
     await withClient(serverPath, async (client) => {
         await expectInvalidRequest(client, [], null, 'array top-level message');
@@ -885,6 +896,7 @@ function protocolCases() {
         ['wrong jsonrpc', testWrongJsonRpc],
         ['boolean request id', testInvalidBooleanId],
         ['structured request ids', testInvalidStructuredIds],
+        ['fractional request id', testInvalidFractionalRequestId],
         ['invalid top-level messages', testInvalidTopLevelMessages],
         ['invalid params', testInvalidParams],
         ['invalid position and range numbers', testInvalidPositionAndRangeNumbers],

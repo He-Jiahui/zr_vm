@@ -117,13 +117,18 @@ empty workspace-symbol result. Numeric `1` and string `"1"` each retain their
 own valid success envelope. Trace, work-done and partial-result cases apply the
 same checks before inspecting method-specific results.
 
-Numeric JSON-RPC request IDs are accepted only when their finite value is within
-`+/-ZR_LSP_JSON_SAFE_INTEGER_MAX` (`9007199254740991`). This keeps the numeric
-identity in the JSON-safe range used by the request registry. Response transport
+Numeric JSON-RPC request IDs are accepted only when their finite value is an
+integer within `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX` (`9007199254740991`). Fractional,
+non-finite and out-of-range values are rejected before request reservation. This
+keeps the numeric identity in the JSON-safe range used by the request registry. Response transport
 serializes numeric IDs with a 17-digit round-trip representation, so the upper
 safe boundary is echoed as `9007199254740991`; `9007199254740992` is rejected as
 `-32600 Invalid Request` with a null error ID. Numeric and string IDs remain
 separate registry keys.
+
+The protocol driver includes `id: 1.5` as a malformed request-id case and requires
+the `-32600` error envelope with `id: null`. See [Plan 01 Task 2 Sub03](../plans/lsp/optimize/2026-09-07-plan01-task02-sub03-integer-request-ids.md)
+for the RED/GREEN replay.
 
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints

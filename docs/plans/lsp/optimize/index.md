@@ -165,6 +165,11 @@ ContentModified 父门禁仍保持 pending。
 该修复只关闭 initialize 的方法级参数边界，Task 2 的统一 envelope、handler status
 及 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub03 integer request IDs](2026-09-07-plan01-task02-sub03-integer-request-ids.md)：
+envelope 现在拒绝 fractional numeric request id，仍保留 JSON-safe 上下界和 typed ID
+隔离；GCC 与 Clang ASan/UBSan 的 34-case protocol conformance 均通过。Task 2 的
+统一 handler status/result 与父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
