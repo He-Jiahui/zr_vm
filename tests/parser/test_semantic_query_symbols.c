@@ -2476,9 +2476,16 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
 
 #include "test_semantic_query_declared_symbol_cases.h"
 #include "test_semantic_query_symbol_specialization_cases.h"
+#include "test_semantic_scope_symbol_lifetime_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_scope_facts_preserve_generic_class_owner_after_symbol_growth);
+    RUN_TEST(test_scope_facts_preserve_generic_struct_owner_after_symbol_growth);
+    RUN_TEST(test_scope_facts_preserve_generic_interface_owner_after_symbol_growth);
+    RUN_TEST(test_scope_facts_preserve_generic_class_method_owner_after_symbol_growth);
+    RUN_TEST(test_scope_facts_preserve_generic_struct_method_owner_after_symbol_growth);
+    RUN_TEST(test_scope_facts_preserve_generic_interface_method_owner_after_symbol_growth);
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
     RUN_TEST(test_symbol_at_fails_closed_for_unresolved_reference);
     RUN_TEST(test_visible_symbols_rejects_one_sided_source_identity);

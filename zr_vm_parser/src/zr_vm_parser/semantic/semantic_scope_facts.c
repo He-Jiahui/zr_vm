@@ -691,6 +691,7 @@ static TZrBool semantic_scope_facts_visit_method(
     SZrAstNodeArray *params;
     SZrAstNode *body;
     TZrSemanticScopeId scopeId;
+    TZrSymbolId ownerSymbolId;
     TZrBool isStatic = ZR_FALSE;
     TZrSize index;
 
@@ -723,16 +724,18 @@ static TZrBool semantic_scope_facts_visit_method(
         symbol->id == ZR_SEMANTIC_ID_INVALID) {
         return ZR_TRUE;
     }
+    /* Publishing generic parameters can relocate the symbol array. */
+    ownerSymbolId = symbol->id;
     scopeId = semantic_scope_facts_publish_scope(
             builder,
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_FUNCTION,
             node->location,
-            symbol->id,
+            ownerSymbolId,
             isStatic);
     if (scopeId == ZR_SEMANTIC_ID_INVALID ||
         !semantic_scope_facts_publish_generic_parameters(
-                builder, scopeId, symbol->id, generic)) {
+                builder, scopeId, ownerSymbolId, generic)) {
         return ZR_FALSE;
     }
     if (params != ZR_NULL) {
@@ -741,14 +744,14 @@ static TZrBool semantic_scope_facts_visit_method(
                         builder,
                         scopeId,
                         params->nodes[index],
-                        symbol->id,
+                        ownerSymbolId,
                         ZR_FALSE)) {
                 return ZR_FALSE;
             }
         }
     }
     return body == ZR_NULL ||
-           semantic_scope_facts_visit_node(builder, body, scopeId, symbol->id);
+           semantic_scope_facts_visit_node(builder, body, scopeId, ownerSymbolId);
 }
 
 static TZrBool semantic_scope_facts_visit_type(
@@ -759,6 +762,7 @@ static TZrBool semantic_scope_facts_visit_type(
     SZrGenericDeclaration *generic = ZR_NULL;
     SZrAstNodeArray *members = ZR_NULL;
     TZrSemanticScopeId scopeId;
+    TZrSymbolId ownerSymbolId;
 
     if (!semantic_scope_facts_publish_type_declaration(builder, parentScopeId, node)) {
         return ZR_FALSE;
@@ -767,12 +771,14 @@ static TZrBool semantic_scope_facts_visit_type(
     if (symbol == ZR_NULL) {
         return ZR_TRUE;
     }
+    /* Child publication may grow context->symbols and invalidate symbol. */
+    ownerSymbolId = symbol->id;
     scopeId = semantic_scope_facts_publish_scope(
             builder,
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_TYPE,
             node->location,
-            symbol->id,
+            ownerSymbolId,
             ZR_FALSE);
     switch (node->type) {
         case ZR_AST_STRUCT_DECLARATION:
@@ -795,8 +801,8 @@ static TZrBool semantic_scope_facts_visit_type(
     }
     return scopeId != ZR_SEMANTIC_ID_INVALID &&
            semantic_scope_facts_publish_generic_parameters(
-                   builder, scopeId, symbol->id, generic) &&
-           semantic_scope_facts_visit_nodes(builder, members, scopeId, symbol->id);
+                   builder, scopeId, ownerSymbolId, generic) &&
+           semantic_scope_facts_visit_nodes(builder, members, scopeId, ownerSymbolId);
 }
 
 static TZrBool semantic_scope_facts_visit_extern_block(

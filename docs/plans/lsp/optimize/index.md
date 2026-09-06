@@ -337,6 +337,14 @@ ASan focused 回归通过；完整 runner 仍有已登记的失败。class/impor
 identity、其它 receiver consumer、Task 3/8 与完整矩阵仍保持 pending。
 相关边界见 [LSP Receiver Completion Capability Boundary](../../../cli-and-tooling/lsp-receiver-completion-capability-boundary.md)。
 
+2026-09-07 已完成 [Plan 03 Task 7.68 scope symbol owner lifetime](2026-09-07-plan03-task07-scope-symbol-owner-lifetime.md)：
+parser type/method scope visitor 在 generic parameter 发布扩容 symbol array 前保存
+canonical owner ID。六项强制搬迁回归通过；GCC/Clang ASan/UBSan/MSVC 的 symbols、
+facts、calls 分别为 30/30、17/17、31/31，完整 interface 已越过原 signature UAF。
+三套对齐 native 模块后的功能失败名单均保持原有八项；Clang 仍有 18,528 字节泄漏，
+Task 3/7/8 与完整 sanitizer 门禁继续 pending。契约见
+[Source Scope Fact Ownership](../../../parser-and-semantics/semantic-scope-fact-ownership.md)。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

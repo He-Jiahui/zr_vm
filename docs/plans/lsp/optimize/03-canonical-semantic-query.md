@@ -1436,3 +1436,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   剩余迁移、Task 3/8 和完整跨工具链验收继续 pending。详见
   [Task 7.67 record](2026-09-07-plan03-task07-receiver-completion-no-ast-reinference.md)
   与 [LSP Receiver Completion Capability Boundary](../../../cli-and-tooling/lsp-receiver-completion-capability-boundary.md)。
+
+- 补充完成时间：2026-09-07 07:18 +08:00。Plan 03 Task 7.68 修复 parser source
+  scope producer 的借用 symbol record 生命周期：type/method visitor 在 generic
+  parameter 发布可能扩容 symbol array 前保存 owner SymbolId，后续 field/parameter/body
+  均使用该值。六项强制搬迁回归先 RED 后 GREEN；GCC/Clang ASan/UBSan/MSVC 的
+  symbols、facts、calls 分别为 30/30、17/17、31/31。完整 interface 越过原 signature
+  heap-use-after-free，三套对齐 native 模块后的功能失败均为冻结名单的八项；Clang
+  仍报告 18,528 字节泄漏，完整 sanitizer 与 Task 3/7/8 门禁继续 pending。详见
+  [Task 7.68 record](2026-09-07-plan03-task07-scope-symbol-owner-lifetime.md)
+  与 [Source Scope Fact Ownership](../../../parser-and-semantics/semantic-scope-fact-ownership.md)。
