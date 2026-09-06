@@ -147,6 +147,12 @@ reader 在 C 字符串处理前拒绝 header NUL，并检查所有显式 `charse
 GCC、Clang ASan/UBSan 的 33-case protocol conformance 与 lifecycle 专项通过。
 Task 3 的完整限制、transport 和父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 3 Sub03 frame limits and failure classification](2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md)：
+集中 limits 使用 8 KiB header、32 个 header、16 MiB payload 默认值，`Content-Length`
+在分配前经 `strtoull`/`errno`/end pointer/`SIZE_MAX - 1` 校验；oversize、malformed
+header、截断 payload 和干净 EOF 分别映射到明确状态。GCC/MSVC 完整 33-case protocol
+conformance 与 Clang ASan/UBSan frame focused 2/2 通过；Task 3 的上层生命周期父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 4 Sub02 数字 request ID 精度](2026-09-07-plan01-task04-sub02-safe-numeric-request-ids.md)：
 数字 ID 限定在 `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX`，安全上界保持精确回显，超界值返回
 `-32600 Invalid Request`；字符串和数字 ID 继续按类型区分。GCC、Clang ASan/UBSan 与

@@ -83,11 +83,11 @@ typedef enum EZrLspHandlerStatus {
 - Modify: `zr_vm_language_server/include/zr_vm_language_server/conf.h`
 - Test: `tests/language_server/stdio_protocol_conformance.js`
 
-- [ ] 设定并集中定义 `ZR_LSP_MAX_HEADER_BYTES`、`ZR_LSP_MAX_HEADER_COUNT`、`ZR_LSP_MAX_MESSAGE_BYTES`；默认最大 payload 16 MiB，允许通过测试注入更小限制。
-- [ ] RED：过长 header、Content-Length 缺失/重复/负数/带垃圾后缀/溢出、payload 截断、错误换行、超过上限均不得分配或静默退出。
-- [ ] 用 `strtoull` + `errno` + end pointer + `SIZE_MAX - 1` 检查；分配前验证 `contentLength + 1`。
-- [ ] 区分 `EOF`、`MALFORMED_HEADER`、`PAYLOAD_TRUNCATED`、`TOO_LARGE`、`IO_ERROR`。只有干净 EOF 才关闭输入；可恢复的 JSON payload parse error 返回 `-32700`。
-- [ ] 接受规范允许的 Content-Type/charset，拒绝显式非 UTF-8 charset；未知扩展 header 可忽略但计入总大小。
+- [x] 设定并集中定义 `ZR_LSP_MAX_HEADER_BYTES`、`ZR_LSP_MAX_HEADER_COUNT`、`ZR_LSP_MAX_MESSAGE_BYTES`；默认最大 payload 16 MiB，允许通过测试注入更小限制；[记录](2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md)。
+- [x] RED：过长 header、Content-Length 缺失/重复/负数/带垃圾后缀/溢出、payload 截断、错误换行、超过上限均不得分配或静默退出；[记录](2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md)。
+- [x] 用 `strtoull` + `errno` + end pointer + `SIZE_MAX - 1` 检查；分配前验证 `contentLength + 1`；[记录](2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md)。
+- [x] 区分 `EOF`、`MALFORMED_HEADER`、`PAYLOAD_TRUNCATED`、`TOO_LARGE`、`IO_ERROR`。只有干净 EOF 才关闭输入；可恢复的 JSON payload parse error 返回 `-32700`；[记录](2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md)。
+- [x] 接受规范允许的 Content-Type/charset，拒绝显式非 UTF-8 charset；未知扩展 header 可忽略但计入总大小；[记录](2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md)。
 - [x] Sub01：帧头读取在 C 字符串处理前拒绝 NUL，并检查全部显式 `charset` 参数，拒绝冲突或非 UTF-8 值；[记录](2026-09-07-plan01-task03-sub01-header-exactness.md)。
 - [x] Sub02：显式但无值的 `charset` 参数返回 `MALFORMED_HEADER`，未知扩展参数继续保持可忽略；[记录](2026-09-07-plan01-task03-sub02-charset-parameter-syntax.md)。
 

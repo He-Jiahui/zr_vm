@@ -97,8 +97,9 @@ JSON-RPC concern and is not confused with a framing failure.
 The protocol driver covers the NUL and duplicate/conflicting charset cases
 alongside the existing missing, duplicate, suffixed, overflowing, truncated,
 newline, oversize and excessive-header cases. See [Plan 01 Task 3 Sub01](../plans/lsp/optimize/2026-09-07-plan01-task03-sub01-header-exactness.md)
-for the RED/GREEN evidence. The parent Task 3 still owns the complete limit,
-transport and lifecycle gate.
+for the RED/GREEN evidence. The current replay of the complete frame boundary is
+recorded in [Plan 01 Task 3 Sub03](../plans/lsp/optimize/2026-09-07-plan01-task03-sub03-frame-limits-and-classification.md);
+the broader Plan 01 lifecycle and teardown gates remain separate.
 
 ## Response Envelope Validation
 
