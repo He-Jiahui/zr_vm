@@ -47,8 +47,8 @@ export validation.
   requests, shutdown and exit, records exact export calls, checks response
   pointer release, and checks the published capability and token legend.
 - `wasm_capability_inventory_test.js` runs the real inventory CLI against the
-  production fixture and the eight drift fixtures. Production plus all eight
-  rejection cases pass (`9/9`).
+  production fixture and the nine drift fixtures. Production plus all nine
+  rejection cases pass (`10/10`), including removal of the JSON-RPC error code.
 - `lsp_native_inventory_contract.js` maps the 19 WASM-covered registry entries
   to the observed route/export report and rejects mismatched resolve flags,
   missing routes, missing exports, capability drift and token ordering drift.
@@ -70,7 +70,7 @@ Commands and key outputs:
 node --check tests/language_server/lsp_wasm_worker_probe.js
 node --check tests/language_server/wasm_capability_inventory.js
 node tests/language_server/wasm_capability_inventory_test.js
-  WASM inventory regression: 9/9
+  WASM inventory regression: 10/10
 
 <Node 22> tests/language_server/stdio_protocol_inventory.js <GCC paths>
   integrated-contract-mapped ... 31,31,32,32 ... 23
@@ -120,7 +120,13 @@ The final report is schema version 2 with 30 runtime exports, 28 bridge calls,
 runner reports 19 registry entries covered by the WASM route/export mapping and
 zero native orphan/overclaim across all four negotiated profiles. Response
 pointers are released for every probed route, and exit closes the mocked worker
-host. The source mutation suite rejects all eight previously accepted drifts.
+host. The source mutation suite rejects all eight previously accepted wiring
+drifts and the missing JSON-RPC error-code serializer (`10/10` total cases).
+
+The browser worker unit suite also covers failed WASM envelopes for
+InvalidParams (`-32602`), RequestCancelled (`-32800`), ContentModified
+(`-32801`) and InternalError (`-32603`). Each is surfaced as a `ResponseError`
+with its original message and structured data.
 
 ## Acceptance Decision
 

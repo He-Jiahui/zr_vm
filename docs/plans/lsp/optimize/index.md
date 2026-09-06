@@ -66,6 +66,12 @@ inventory 子项，linked asset、三种运行方式的完整 control/notificati
 owner 和后续计划；GCC focused build、extension unit/noEmit 及 linked asset 仍是
 独立门槛。
 
+Plan 05 Task 2 已完成 Web error-contract 子项：WASM export payload 保留 JSON-RPC
+error code，bridge 对空指针使用 InternalError，worker 将失败响应抛出
+`ResponseError` 并保留结构化 data，不再把错误伪装为空数组或 `null`。完整 core
+status、versioned workspace edit 和 native/WASM golden parity 仍未完成，见
+[error-contract record](2026-09-06-plan05-task02-error-contract.md)。
+
 Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回
 精确 `-32601`，并覆盖 cJSON 分配故障；三工具链各 11/11。完整协议生命周期和

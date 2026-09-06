@@ -125,6 +125,8 @@ doc_type: category-index
   - native/WASM 共享的 structured diagnostic resultId 与 dependency identity
   - workspace indexed-source coverage、invalid params 和 push/pull coexistence
   - browser worker 只消费 WASM bridge，不维护 TypeScript diagnostics hash
+- [lsp-wasm-error-contract.md](lsp-wasm-error-contract.md)
+  - WASM JSON-RPC error codes and browser `ResponseError` propagation
 - `lsp-uri-native-path-boundary.md`
   - LSP `file:` URI 和 native path 的唯一双向转换、URI equivalence 与 platform normalization
   - project/navigation direct consumer 与 stdio native-I/O fail-closed boundary

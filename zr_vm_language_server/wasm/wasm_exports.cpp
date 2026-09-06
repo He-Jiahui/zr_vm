@@ -874,11 +874,25 @@ static void remove_document_state(SZrLspContext *context, SZrString *uri) {
     ZrCore_HashSet_Remove(g_wasm_state, &context->uriToAnalyzerMap, &key);
 }
 
+static int error_code_for_message(const char *message) {
+    if (message != ZR_NULL && strcmp(message, "Invalid parameters") == 0) {
+        return ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE;
+    }
+    if (message != ZR_NULL && strcmp(message, "Request cancelled") == 0) {
+        return ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE;
+    }
+    if (message != ZR_NULL && strcmp(message, "Content modified") == 0) {
+        return ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE;
+    }
+    return ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE;
+}
+
 // 创建错误响应 JSON
 static const char* create_error_response(const char *message) {
     cJSON *json = cJSON_CreateObject();
     if (json != ZR_NULL) {
         cJSON_AddBoolToObject(json, "success", cJSON_False);
+        cJSON_AddNumberToObject(json, "code", error_code_for_message(message));
         if (message != ZR_NULL) {
             cJSON_AddStringToObject(json, "error", message);
         }

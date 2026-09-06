@@ -23,6 +23,9 @@ async function main() {
     const exportsHeader = read(path.join(root, 'zr_vm_language_server', 'wasm', 'wasm_exports.h'));
     const bridge = read(path.join(root, 'zr_vm_language_server_extension', 'src', 'browser', 'worker', 'wasm-bridge.ts'));
     const worker = read(path.join(root, 'zr_vm_language_server_extension', 'src', 'browser', 'worker', 'server-worker.ts'));
+    assert.match(exportsSource,
+        /cJSON_AddNumberToObject\(json,\s*"code",\s*error_code_for_message\(message\)\)/,
+        'WASM error responses must retain a JSON-RPC error code');
     const exportListMatch = cmake.match(/set\(EXPORTED_FUNCTIONS_JSON\s+"(\[[^\n]+\])"\)/);
     assert.ok(exportListMatch, 'CMake export list is missing');
     const exportedFunctions = JSON.parse(exportListMatch[1].replace(/\\"/g, '"'))

@@ -103,6 +103,16 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
     const bridge = execute(bridgeSource, 'wasm-bridge.ts', name => assert.fail('unexpected bridge import ' + name));
     execute(workerSource, 'server-worker.ts', name => {
         if (name === './wasm-bridge') return bridge;
+        if (name === 'vscode-jsonrpc') {
+            class ProbeResponseError extends Error {
+                constructor(code, message, data) {
+                    super(message);
+                    this.code = code;
+                    this.data = data;
+                }
+            }
+            return { ResponseError: ProbeResponseError, ErrorCodes: { InternalError: -32603 } };
+        }
         assert.equal(name, 'vscode-languageserver/browser', 'unexpected worker import');
         return {
             BrowserMessageReader: class {}, BrowserMessageWriter: class {},

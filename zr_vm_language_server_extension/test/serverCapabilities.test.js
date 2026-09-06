@@ -39,8 +39,19 @@ function loadWorker(bridgeResponses = {}) {
     for (const [method, data] of Object.entries(bridgeResponses)) {
         TestBridge.prototype[method] = async (...args) => {
             bridgeCalls.push([method, ...args]);
+            if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'success')) {
+                return data;
+            }
             return { success: true, data };
         };
+    }
+
+    class TestResponseError extends Error {
+        constructor(code, message, data) {
+            super(message);
+            this.code = code;
+            this.data = data;
+        }
     }
 
     vm.runInNewContext(workerJavaScript, {
@@ -54,6 +65,12 @@ function loadWorker(bridgeResponses = {}) {
                     TextDocumentSyncKind: { Incremental: 2 },
                 };
             }
+            if (name === 'vscode-jsonrpc') {
+                return {
+                    ResponseError: TestResponseError,
+                    ErrorCodes: { InternalError: -32603 },
+                };
+            }
             assert.equal(name, './wasm-bridge');
             return { ZrWasmBridge: TestBridge };
         },
@@ -62,6 +79,60 @@ function loadWorker(bridgeResponses = {}) {
     }, { filename: workerPath });
     return { handlers, requests, bridgeCalls };
 }
+
+test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError', async () => {
+    const uri = 'file:///workspace/main.zr';
+    const position = { line: 0, character: 0 };
+    const cases = [
+        {
+            handler: 'onCompletion',
+            bridgeMethod: 'getCompletion',
+            params: { textDocument: { uri }, position },
+            code: -32602,
+            message: 'Invalid parameters',
+        },
+        {
+            handler: 'onHover',
+            bridgeMethod: 'getHover',
+            params: { textDocument: { uri }, position },
+            code: -32800,
+            message: 'Request cancelled',
+        },
+        {
+            handler: 'onDefinition',
+            bridgeMethod: 'getDefinition',
+            params: { textDocument: { uri }, position },
+            code: -32801,
+            message: 'Content modified',
+        },
+        {
+            handler: 'onWorkspaceSymbol',
+            bridgeMethod: 'getWorkspaceSymbols',
+            params: { query: 'main' },
+            code: -32603,
+            message: 'Internal failure',
+        },
+    ];
+
+    for (const fixture of cases) {
+        const data = {
+            success: false,
+            code: fixture.code,
+            error: fixture.message,
+            data: { reason: fixture.message },
+        };
+        const worker = loadWorker({ [fixture.bridgeMethod]: data });
+        await assert.rejects(
+            worker.handlers.get(fixture.handler)(fixture.params),
+            (error) => {
+                assert.equal(error.code, fixture.code);
+                assert.equal(error.message, fixture.message);
+                assert.deepEqual(error.data, { reason: fixture.message });
+                return true;
+            },
+        );
+    }
+});
 
 for (const name of [
     'workspaceSymbolProvider',

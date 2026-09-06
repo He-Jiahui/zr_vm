@@ -21,6 +21,7 @@ import {
     type TextDocumentContentChangeEvent,
     type WorkspaceEdit,
 } from 'vscode-languageserver/browser';
+import { ErrorCodes, ResponseError } from 'vscode-jsonrpc';
 import { ZrWasmBridge } from './wasm-bridge';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -34,6 +35,7 @@ type WasmPayload<T> = {
     success: boolean;
     data?: T;
     error?: string;
+    code?: number;
 };
 
 const connection = createConnection(
@@ -405,11 +407,9 @@ connection.listen();
 
 function responseData<T>(response: WasmPayload<T>, fallback: T): T {
     if (!response.success) {
-        if (response.error) {
-            console.error('[zr-web-worker] wasm request failed:', response.error);
-            connection.console.warn(response.error);
-        }
-        return fallback;
+        const code = Number.isInteger(response.code) ? response.code : ErrorCodes.InternalError;
+        const message = response.error || 'WASM language server request failed.';
+        throw new ResponseError(code, message, response.data);
     }
 
     return (response.data as T | undefined) ?? fallback;

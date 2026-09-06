@@ -4,6 +4,7 @@ type WasmResponse<T> = {
     success: boolean;
     data?: T;
     error?: string;
+    code?: number;
 };
 
 type EmscriptenModule = {
@@ -362,6 +363,7 @@ export class ZrWasmBridge {
         if (!pointer) {
             return {
                 success: false,
+                code: -32603,
                 error: `${name} returned a null response pointer.`,
             };
         }

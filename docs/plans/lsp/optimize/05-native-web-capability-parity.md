@@ -38,8 +38,8 @@
 - Modify: `zr_vm_language_server_extension/src/browser/worker/server-worker.ts`
 
 - [ ] core result 使用计划 01 的 status + structured error data；WASM payload 保留 JSON-RPC error code，不只有 `success/error string`。
-- [ ] worker 的 `responseData(response, [])` fallback 不得把 InternalError、InvalidParams、Cancelled、ContentModified 转成“无结果”；使用 `ResponseError` 返回客户端。
-- [ ] “合法无结果”仅对应成功 null/empty；bridge parse failure、null pointer、stale snapshot 和 OOM 均为错误。
+- [x] worker 的 `responseData(response, [])` fallback 不得把 InternalError、InvalidParams、Cancelled、ContentModified 转成“无结果”；使用 `ResponseError` 返回客户端。完成记录见 [Plan 05 Task 2 error contract](2026-09-06-plan05-task02-error-contract.md)。
+- [x] “合法无结果”仅对应成功 null/empty；bridge parse failure、null pointer、stale snapshot 和 OOM 均为错误。当前 bridge 对缺少错误码的旧 payload 使用 InternalError，native WASM export 为每个错误 payload 写入 JSON-RPC code。
 - [ ] rename/code action/workspace edit 从 core 返回 versioned edit plan；删除 Web `buildWorkspaceEdit(Location[])` 的无快照重建。
 - [ ] native 和 WASM 对同一 request fixture 输出忽略字段顺序后相同的 JSON result/error。
 
