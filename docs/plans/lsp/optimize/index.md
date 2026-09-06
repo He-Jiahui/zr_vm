@@ -164,6 +164,12 @@ ContentModified 父门禁仍保持 pending。
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
 control notification 的状态边界，Task 1 其他状态记录和 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 1 Sub02 lifecycle 状态转移](2026-09-07-plan01-task01-sub02-state-transitions.md)：
+独立 C 回归覆盖 `NEW`、`INITIALIZING`、`RUNNING`、`SHUTDOWN`、`EXITED`，并验证
+`initializedNotificationReceived`、非法重初始化、重复 `initialized` 及 shutdown 前后
+的精确退出码；GCC 与 Clang ASan/UBSan lifecycle 专项均通过。Task 1 的完整协议负向矩阵、
+隐式状态清理审计和 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 4 Sub03 progress token identity](2026-09-07-plan01-task04-sub03-progress-token-identity.md)：
 progress numeric token 使用 round-trip raw JSON 保留正负安全边界，超界 token 返回
 `-32602` 且不发送通知；当前 GCC protocol conformance 33/33。Task 4 的完整

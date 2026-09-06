@@ -274,6 +274,14 @@ New/Start/Shutdown/Free cycles, an `exit` frame case, and injected failures
 after global, context, input initialization, and reader start. This test exists
 to catch teardown faults that a one-shot executable process would hide.
 
+The same executable directly exercises `SZrStdioLifecycle`: initialization starts
+in `NEW`, only `INITIALIZING` can consume `initialized`, and that notification is
+recorded when the state enters `RUNNING`. Repeated or early `initialized` events
+are ignored, ordinary requests are rejected in `NEW`/`SHUTDOWN`/`EXITED`, and
+`Exit` returns zero only after a successful shutdown. Current GCC and Clang
+ASan/UBSan runs include these assertions; the focused result is recorded in
+[Plan 01 Task 1 Sub02](../plans/lsp/optimize/2026-09-07-plan01-task01-sub02-state-transitions.md).
+
 ## Teardown Acceptance
 
 The deterministic teardown gate was accepted on 2026-08-23. Clang and GCC
