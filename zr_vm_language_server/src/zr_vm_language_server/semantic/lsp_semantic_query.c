@@ -2760,7 +2760,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     SZrString *hoveredSymbolName = ZR_NULL;
     SZrString *resolvedTypeText = ZR_NULL;
     SZrSemanticAnalyzer *metadataAnalyzer;
-    SZrSemanticAnalyzer *fallbackAnalyzer = ZR_NULL;
     SZrLspSemanticQuery semanticQuery;
     SZrLspMetadataProvider provider;
     SZrFileVersionContentSnapshot snapshot = {0};
@@ -2885,52 +2884,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                         analyzer->semanticContext,
                         fileRange,
                         &completions);
-    }
-
-    if (completions.length == 0 && !receiverCompletionFailClosed &&
-        fileVersion != ZR_NULL &&
-        hasSnapshot &&
-        fileVersion->ast != ZR_NULL) {
-        SZrAstNode *analysisRoot =
-            ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
-                fileVersion->ast,
-                fileRange);
-        fallbackAnalyzer =
-            ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
-                state,
-                analyzer);
-        if (fallbackAnalyzer != ZR_NULL &&
-            (analysisRoot != ZR_NULL
-                 ? ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
-                       state,
-                       fallbackAnalyzer,
-                       fileVersion->ast,
-                       analysisRoot)
-                 : ZrLanguageServer_SemanticAnalyzer_Analyze(
-                       state,
-                       fallbackAnalyzer,
-                       fileVersion->ast))) {
-            metadataAnalyzer = fallbackAnalyzer;
-            hasStructuredCompletions = ZrLanguageServer_Lsp_TryCollectReceiverCompletions(state,
-                                                                                          context,
-                                                                                          ZR_NULL,
-                                                                                          fallbackAnalyzer,
-                                                                                          uri,
-                                                                                          fileVersion->ast,
-                                                                                          snapshot.content,
-                                                                                           snapshot.contentLength,
-                                                                                           filePos.offset,
-                                                                                           &completions,
-                                                                                           &receiverCompletionFailClosed);
-            if (!hasStructuredCompletions && !receiverCompletionFailClosed) {
-                hasStructuredCompletions =
-                        ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
-                                state,
-                                fallbackAnalyzer->semanticContext,
-                                fileRange,
-                                &completions);
-            }
-        }
     }
 
     for (TZrSize index = 0; index < completions.length; index++) {

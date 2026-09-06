@@ -1391,3 +1391,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   failures 保持登记。详见 [canonical type query record](2026-09-07-plan03-task07-canonical-type-query.md)
   与 [type query module boundary](../../../cli-and-tooling/lsp-type-query-capability-boundary.md)；
   Plan 03 Task 7 其余 consumer、Task 3/8 仍待完成。
+
+- 补充完成时间：2026-09-07。Plan 03 Task 7.64 删除 completion consumer
+  在 canonical visible-symbol、receiver 与 metadata 路径均无结果时创建 scoped
+  analyzer 并重新执行 `Analyze`/`AnalyzeScope` 的 request-time fallback。completion
+  现在只投影当前 semantic snapshot 已发布的事实；缺失、stale 或 approximate receiver
+  fact 保持 fail closed，不通过 AST 重分析物化新事实。新增 source-contract 精确禁止
+  scoped analyzer、analysis root 与 fallback 分支；GCC source-contract 真实 exit 0，
+  native construct completion/signature fail-closed cases 保持 PASS。详见
+  [Task 7.64 record](2026-09-07-plan03-task07-canonical-completion-no-reanalysis.md)
+  与 [LSP Completion Capability Boundary](../../../cli-and-tooling/lsp-completion-capability-boundary.md)。
+  Task 7 其余 consumer、Task 3/8 与完整跨工具链矩阵仍待完成。

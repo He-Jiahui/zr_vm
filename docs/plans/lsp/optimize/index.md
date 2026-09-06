@@ -255,6 +255,13 @@ semantic analyzer/interface 的既有 baseline failures 保持登记。相关模
 [LSP Type Query Capability Boundary](../../../cli-and-tooling/lsp-type-query-capability-boundary.md)。
 Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持 pending。
 
+2026-09-07 已完成 [Plan 03 Task 7.64 completion consumer no reanalysis](2026-09-07-plan03-task07-canonical-completion-no-reanalysis.md)：
+`CollectCompletionItems` 删除 canonical completion 为空时的 scoped analyzer 创建、分析根定位和
+`Analyze`/`AnalyzeScope` request-time fallback；缺失或 stale receiver fact 保持 fail closed，
+不在请求期物化新的 semantic facts。GCC source-contract 通过，native construct completion/signature
+fail-closed regression 保持 PASS。Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持 pending；相关
+边界见 [LSP Completion Capability Boundary](../../../cli-and-tooling/lsp-completion-capability-boundary.md)。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

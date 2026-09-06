@@ -67,6 +67,60 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     free(symbolTableSource);
 }
 
+static void test_completion_consumer_does_not_materialize_scoped_analyzer(void) {
+    char *consumer = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    const char *completionStart;
+    const char *completionEnd;
+
+    if (consumer == NULL) {
+        printf("FAIL: could not read completion consumer source\n");
+        g_failures++;
+        return;
+    }
+
+    completionStart = strstr(
+        consumer,
+        "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompletionItems(");
+    completionEnd = completionStart != NULL
+                        ? strstr(
+                              completionStart,
+                              "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitions(")
+                        : NULL;
+    assert_text_section_contains(
+        "LspSemanticQuery_CollectCompletionItems canonical projection",
+        completionStart,
+        completionEnd,
+        "ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_CollectCompletionItems canonical projection",
+        completionStart,
+        completionEnd,
+        "GetOrCreateScopedQueryAnalyzer");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_CollectCompletionItems canonical projection",
+        completionStart,
+        completionEnd,
+        "SemanticAnalyzer_AnalyzeScope");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_CollectCompletionItems canonical projection",
+        completionStart,
+        completionEnd,
+        "SemanticAnalyzer_Analyze(");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_CollectCompletionItems canonical projection",
+        completionStart,
+        completionEnd,
+        "fallbackAnalyzer");
+    assert_text_section_contains_none(
+        "LspSemanticQuery_CollectCompletionItems canonical projection",
+        completionStart,
+        completionEnd,
+        "FindAnalysisRootAtPosition");
+
+    free(consumer);
+}
+
 static void test_source_hover_uses_parser_symbol_query(void) {
     char *projector = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_hover.c");
