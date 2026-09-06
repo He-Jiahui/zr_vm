@@ -193,6 +193,13 @@ params 现在返回 `-32602`，provider 无结果的合法空数组保持不变�
 ASan/UBSan protocol conformance 均为 36/36，lifecycle/protocol CTest 均为 2/2。
 统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub07 editing invalid params](2026-09-07-plan01-task02-sub07-editing-invalid-params.md)：
+formatting、onTypeFormatting 和 codeAction 的缺失 `textDocument` 参数现在返回
+`-32602`，provider 无结果的合法空数组保持不变；当前 GCC 与 Clang ASan/UBSan
+protocol conformance 均为 37/37，lifecycle/protocol CTest 均为 2/2。未声明能力的
+`rangesFormatting` 仍由 capability gate 维持 `Method not found`，不纳入本子项。
+统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭

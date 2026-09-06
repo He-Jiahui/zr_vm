@@ -155,7 +155,7 @@ cJSON *handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
@@ -254,7 +254,7 @@ cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *pa
         (strcmp(chJson->valuestring, "}") != 0 && strcmp(chJson->valuestring, ";") != 0) ||
         !get_uri_from_text_document(server, params, &uriText, &uri) ||
         !parse_position_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_POSITION), &position)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZR_UNUSED_PARAMETER(uriText);
@@ -282,7 +282,7 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
                 server->state,

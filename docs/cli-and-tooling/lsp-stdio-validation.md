@@ -136,12 +136,12 @@ typed id rejection, scalar params, valid object/array params, missing-id
 notifications and explicit `null` request IDs. See [Plan 01 Task 2 Sub04](../plans/lsp/optimize/2026-09-07-plan01-task02-sub04-envelope-api.md)
 for the focused CTest evidence.
 
-The current stdio protocol replay runs all 34 cases on GCC and Clang
-ASan/UBSan. It covers pre-initialize and post-shutdown request gates, repeated
+The baseline stdio protocol replay recorded in [Tasks 1-2 protocol negative replay](../plans/lsp/optimize/2026-09-07-plan01-task01-task02-protocol-negative-replay.md)
+runs 34 cases on GCC and Clang ASan/UBSan. It covers pre-initialize and
+post-shutdown request gates, repeated
 initialize, exit ordering, malformed notification suppression, top-level and
 request-id rejection, invalid initialize params, and the classified frame
-failures. Both servers pass 34/34 with no Clang sanitizer diagnostic. See [Tasks
-1-2 protocol negative replay](../plans/lsp/optimize/2026-09-07-plan01-task01-task02-protocol-negative-replay.md).
+failures. Both servers passed 34/34 with no Clang sanitizer diagnostic.
 
 The hierarchy parameter regression extends that replay to 35 cases. Missing or
 malformed params for call/type hierarchy prepare and item requests now return
@@ -154,6 +154,13 @@ Missing or malformed params for implementation, foldingRange, selectionRange,
 documentLink and codeLens now return `-32602 Invalid params`; genuine empty provider
 results remain successful empty arrays. GCC and Clang ASan/UBSan both pass 36/36.
 See [Plan 01 Task 2 Sub06](../plans/lsp/optimize/2026-09-07-plan01-task02-sub06-editor-feature-invalid-params.md).
+
+The editing-provider parameter regression extends the current replay to 37 cases.
+Missing `textDocument` params for formatting, onTypeFormatting and codeAction now
+return `-32602 Invalid params`; genuine empty provider results remain successful
+empty arrays. GCC and Clang ASan/UBSan both pass 37/37, and the lifecycle/protocol
+CTest pair passes 2/2 on each build. The optional `rangesFormatting` method remains
+gated off by the current capability matrix. See [Plan 01 Task 2 Sub07](../plans/lsp/optimize/2026-09-07-plan01-task02-sub07-editing-invalid-params.md).
 
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints

@@ -351,6 +351,23 @@ async function testInvalidEditorFeatureParams(serverPath) {
     });
 }
 
+async function testInvalidEditingParams(serverPath) {
+    const cases = [
+        ['formatting', 'textDocument/formatting'],
+        ['on type formatting', 'textDocument/onTypeFormatting'],
+        ['code action', 'textDocument/codeAction'],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-editing-initialize');
+        for (const [label, method] of cases) {
+            const id = `invalid-editing-${label}`;
+            const response = await client.request(method, {}, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -941,6 +958,7 @@ function protocolCases() {
         ['invalid position and range numbers', testInvalidPositionAndRangeNumbers],
         ['invalid hierarchy params', testInvalidHierarchyParams],
         ['invalid editor feature params', testInvalidEditorFeatureParams],
+        ['invalid editing params', testInvalidEditingParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],
