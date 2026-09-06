@@ -135,6 +135,12 @@ validation: missing, JSON `null`, scalar and array `params` return
 does not imply that every other handler has been migrated to the planned shared
 status/result contract.
 
+Control notifications are lifecycle-gated. `initialized` only promotes
+`INITIALIZING` to `RUNNING`, while `$/setTrace` is ignored before initialization
+and after `shutdown`; `exit` remains the only notification that is handled in
+every state. A successful `shutdown` followed by `exit` returns process code 0,
+whereas an exit without a successful shutdown returns 1.
+
 `stdio_protocol_envelope_mutations.js` imports the production conformance case
 list without starting its CLI. Six unchanged cases must pass first. It then
 runs 11 cases with one decoded response mutation each, covering missing/wrong

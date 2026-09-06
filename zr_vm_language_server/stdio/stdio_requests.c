@@ -73,6 +73,24 @@ static TZrBool stdio_request_progress_token_is_valid(const cJSON *token) {
            number == (double)(long long)number;
 }
 
+static cJSON *stdio_request_progress_token_duplicate(const cJSON *token) {
+    char number[32];
+    int length;
+
+    if (token == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (!cJSON_IsNumber((cJSON *)token)) {
+        return cJSON_Duplicate((cJSON *)token, 1);
+    }
+
+    length = snprintf(number, sizeof(number), "%.17g", token->valuedouble);
+    if (length < 0 || (size_t)length >= sizeof(number)) {
+        return ZR_NULL;
+    }
+    return cJSON_CreateRaw(number);
+}
+
 static TZrBool stdio_request_method_supports_progress(const char *method) {
     return method != ZR_NULL &&
            (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0 ||
@@ -133,6 +151,7 @@ static TZrBool stdio_request_progress_send(SZrStdioServer *server,
                                            const char *title) {
     cJSON *params;
     cJSON *value;
+    cJSON *token;
 
     if (server == ZR_NULL || server->requestProgress.workDoneToken == ZR_NULL) {
         return ZR_TRUE;
@@ -140,13 +159,15 @@ static TZrBool stdio_request_progress_send(SZrStdioServer *server,
 
     params = cJSON_CreateObject();
     value = cJSON_CreateObject();
-    if (params == ZR_NULL || value == ZR_NULL) {
+    token = stdio_request_progress_token_duplicate(server->requestProgress.workDoneToken);
+    if (params == ZR_NULL || value == ZR_NULL || token == ZR_NULL) {
         cJSON_Delete(params);
         cJSON_Delete(value);
+        cJSON_Delete(token);
         return ZR_FALSE;
     }
 
-    cJSON_AddItemReferenceToObject(params, ZR_LSP_FIELD_TOKEN, (cJSON *)server->requestProgress.workDoneToken);
+    cJSON_AddItemToObject(params, ZR_LSP_FIELD_TOKEN, token);
     cJSON_AddStringToObject(value, ZR_LSP_FIELD_KIND, kind);
     if (title != ZR_NULL) {
         cJSON_AddStringToObject(value, ZR_LSP_FIELD_TITLE, title);
@@ -222,9 +243,16 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
             cJSON_AddItemToArray(batch, copy);
         }
 
-        cJSON_AddItemReferenceToObject(params,
-                                       ZR_LSP_FIELD_TOKEN,
-                                       (cJSON *)server->requestProgress.partialResultToken);
+        {
+            cJSON *token = stdio_request_progress_token_duplicate(
+                    server->requestProgress.partialResultToken);
+            if (token == ZR_NULL) {
+                cJSON_Delete(params);
+                cJSON_Delete(batch);
+                return ZR_FALSE;
+            }
+            cJSON_AddItemToObject(params, ZR_LSP_FIELD_TOKEN, token);
+        }
         value = batch;
         if (itemsField != ZR_NULL) {
             value = cJSON_CreateObject();
@@ -487,6 +515,9 @@ void handle_notification_message(SZrStdioServer *server,
     }
 
     if (strcmp(method, ZR_LSP_METHOD_SET_TRACE) == 0) {
+        if (!ZrLanguageServer_StdioLifecycle_CanProcessRequest(&server->lifecycle)) {
+            return;
+        }
         ZrLanguageServer_StdioTrace_Set(server, params);
         return;
     }

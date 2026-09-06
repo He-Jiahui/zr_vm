@@ -148,6 +148,27 @@ async function testExitBeforeShutdown(serverPath) {
     });
 }
 
+async function testShutdownExitOrdering(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const beforeInitialize = await client.request('shutdown', undefined,
+                                                       'shutdown-before-initialize');
+        assertErrorEnvelope(beforeInitialize, 'shutdown-before-initialize', -32002,
+                            'shutdown before initialize');
+        client.notify('exit', {});
+        const exitCode = await client.waitForExit(RESPONSE_TIMEOUT_MS);
+        assert(exitCode === 1, `exit before successful shutdown must exit 1, actual=${exitCode}`);
+    });
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'shutdown-exit-initialize');
+        const shutdown = await client.request('shutdown', undefined, 'shutdown-exit-shutdown');
+        assertSuccessEnvelope(shutdown, 'shutdown-exit-shutdown', 'shutdown before exit');
+        client.notify('exit', {});
+        const exitCode = await client.waitForExit(RESPONSE_TIMEOUT_MS);
+        assert(exitCode === 0, `exit after successful shutdown must exit 0, actual=${exitCode}`);
+    });
+}
+
 async function testRequestAfterShutdown(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'shutdown-initialize');
@@ -482,6 +503,29 @@ async function testSetTraceWritesOnlyStderr(serverPath) {
         assertSuccessEnvelope(offResponse, 'trace-off-request', 'trace off request');
         assert(client.stderr() === stderrBeforeOffRequest,
                `off trace must not add stderr records, stderr=${client.stderr()}`);
+    });
+}
+
+async function testControlNotificationsOutsideLifecycleAreIgnored(serverPath) {
+    await withClient(serverPath, async (client) => {
+        client.notify('$/setTrace', { value: 'messages' });
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+        await initialize(client, 'trace-before-initialize');
+
+        const response = await client.request('workspace/symbol', { query: '' },
+                                               'trace-before-initialize-request');
+        assertSuccessEnvelope(response, 'trace-before-initialize-request',
+                              'request after pre-initialize setTrace');
+        assert(!client.stderr().includes('LSP trace inbound request workspace/symbol'),
+               `setTrace before initialize must be ignored, stderr=${client.stderr()}`);
+
+        const shutdown = await client.request('shutdown', undefined, 'trace-shutdown');
+        assertSuccessEnvelope(shutdown, 'trace-shutdown', 'trace lifecycle shutdown');
+        client.notify('$/setTrace', { value: 'verbose' });
+        client.notify('workspace/notReal', {});
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+        assert(!client.stderr().includes('LSP trace inbound notification workspace/notReal'),
+               `setTrace after shutdown must be ignored, stderr=${client.stderr()}`);
     });
 }
 
@@ -833,6 +877,7 @@ function protocolCases() {
         ['notification before initialize is ignored', testNotificationBeforeInitializeIsIgnored],
         ['repeated initialize', testRepeatedInitialize],
         ['exit before shutdown', testExitBeforeShutdown],
+        ['shutdown and exit ordering', testShutdownExitOrdering],
         ['request after shutdown', testRequestAfterShutdown],
         ['missing jsonrpc', testMissingJsonRpc],
         ['wrong jsonrpc', testWrongJsonRpc],
@@ -851,6 +896,7 @@ function protocolCases() {
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
         ['cancel known request id', testCancelKnownRequestId],
         ['set trace writes only stderr', testSetTraceWritesOnlyStderr],
+        ['control notifications outside lifecycle are ignored', testControlNotificationsOutsideLifecycleAreIgnored],
         ['request work-done progress', testRequestWorkDoneProgress],
         ['workspace symbol partial results', testWorkspaceSymbolPartialResults],
         ['references partial results', testReferencesPartialResults],

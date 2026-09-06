@@ -154,6 +154,16 @@ ContentModified 父门禁仍保持 pending。
 该修复只关闭 initialize 的方法级参数边界，Task 2 的统一 envelope、handler status
 及 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
+`$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
+1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
+control notification 的状态边界，Task 1 其他状态记录和 Plan 01 父级门禁仍保持 pending。
+
+2026-09-07 已完成 [Plan 01 Task 4 Sub03 progress token identity](2026-09-07-plan01-task04-sub03-progress-token-identity.md)：
+progress numeric token 使用 round-trip raw JSON 保留正负安全边界，超界 token 返回
+`-32602` 且不发送通知；当前 GCC protocol conformance 33/33。Task 4 的完整
+registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

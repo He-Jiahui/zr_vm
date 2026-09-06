@@ -35,6 +35,7 @@ typedef enum EZrStdioLifecycleState {
 } EZrStdioLifecycleState;
 ```
 
+- [x] Sub01：除 `exit` 外的 control notification 只在 `INITIALIZING` 或 `RUNNING` 状态生效；`$/setTrace` 在初始化前和 shutdown 后被忽略，且 shutdown/exit 顺序返回精确退出码；[记录](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)。
 - [ ] `initialized` notification 只允许把 INITIALIZING 转为 RUNNING；server 可以在 initialize response 后接受规范允许的请求，但必须记录 initialized 是否到达以便诊断客户端错误。
 - [ ] 删除仅有 `shutdownRequested` 的隐式状态判断。
 
@@ -106,6 +107,7 @@ typedef enum EZrLspHandlerStatus {
 - [ ] 从 request context 删除全局 inputGeneration 比较。ContentModified 由计划 02 的 dependency fence 判断；在该计划完成前只保留精确 cancellation，不发布可能误报的 `-32801`。
 - [ ] 给 workspace diagnostics、workspace symbol、references、rename、hierarchy 等循环增加统一 cancellation callback，不只在 diagnostics bucket 循环里检查。
 - [ ] request context 解析 `workDoneToken` 与 `partialResultToken`；长查询通过统一 progress sink 发送 `$/progress`，并在每批结果之间检查 cancellation/content fence。
+- [x] Sub03：字符串和安全范围内的数字 `workDoneToken`/`partialResultToken` 在 progress notification 中保持原始 JSON identity，超界值在发送通知前返回 `-32602`；[记录](2026-09-07-plan01-task04-sub03-progress-token-identity.md)。
 - [ ] 处理 `$/setTrace` 并将协议 trace 写到 stderr/客户端 trace channel；任何 trace 都不得污染 stdout frame。
 - [ ] 明确串行执行模型的限制；若后续改线程池，core snapshot 必须先变为不可变且 thread-safe，本计划不提前并发 core。
 
