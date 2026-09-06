@@ -1722,7 +1722,6 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     SZrFileVersionContentSnapshot contentSnapshot = {0};
     SZrSymbol *symbol;
     SZrString *content;
-    SZrHoverInfo *hoverInfo = ZR_NULL;
     SZrLspHover *lspHover;
     SZrLspSignatureHelp *signatureHelp = ZR_NULL;
     const TZrChar *signatureLabel = ZR_NULL;
@@ -1928,11 +1927,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         return ZR_TRUE;
     }
 
-    if (ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, fileRange, &hoverInfo) &&
-        hoverInfo != ZR_NULL &&
-        hoverInfo->contents != ZR_NULL) {
-        content = hoverInfo->contents;
-    } else if (symbol != ZR_NULL &&
+    if (symbol != ZR_NULL &&
                ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &contentSnapshot)) {
         hasContentSnapshot = ZR_TRUE;
         content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
@@ -1969,9 +1964,6 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     // 转换为 LSP 悬停
     lspHover = (SZrLspHover *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspHover));
     if (lspHover == ZR_NULL) {
-        if (hoverInfo != ZR_NULL) {
-            ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
-        }
         ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
         return ZR_FALSE;
     }
@@ -1982,7 +1974,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         context,
         uri,
         symbol != ZR_NULL ? ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol)
-                          : (hoverInfo != ZR_NULL ? hoverInfo->range : fileRange));
+                          : fileRange);
     
     *result = lspHover;
     hasLocalQuery = lsp_refresh_local_hover_query(state, context, uri, position, &localQuery);

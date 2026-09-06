@@ -268,6 +268,13 @@ Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持 pending。
 fail-closed regression 保持 PASS。Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持 pending；相关
 边界见 [LSP Completion Capability Boundary](../../../cli-and-tooling/lsp-completion-capability-boundary.md)。
 
+2026-09-07 已完成 [Plan 03 Task 7.65 public hover no analyzer fallback](2026-09-07-plan03-task07-canonical-hover-no-analyzer-fallback.md)：
+`Lsp_GetHover` 删除 `SemanticAnalyzer_GetHoverInfo` 请求期 fallback，只保留 structured
+hover/signature/local query 与当前 snapshot 的 symbol markdown 投影。GCC source-contract 通过，
+canonical native receiver/call hover 与 native construct completion/signature 回归保持 PASS；
+metadata provider 的独立 external hover 路径、Task 7 其余 consumer、Task 3/8 和完整矩阵仍保持
+pending。相关边界见 [LSP Hover Capability Boundary](../../../cli-and-tooling/lsp-hover-capability-boundary.md)。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

@@ -1402,3 +1402,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   [Task 7.64 record](2026-09-07-plan03-task07-canonical-completion-no-reanalysis.md)
   与 [LSP Completion Capability Boundary](../../../cli-and-tooling/lsp-completion-capability-boundary.md)。
   Task 7 其余 consumer、Task 3/8 与完整跨工具链矩阵仍待完成。
+
+- 补充完成时间：2026-09-07。Plan 03 Task 7.65 删除公开 `Lsp_GetHover` 在
+  canonical semantic/local query 均无结果时调用 `SemanticAnalyzer_GetHoverInfo` 的
+  request-time fallback。公开入口现在只保留 structured hover、signature/local query 和
+  当前 snapshot 的 symbol markdown 投影；不再由 AST/type-inference builder 重建请求期
+  语义。新增 bounded source-contract，GCC source-contract 真实 exit 0；native receiver
+  hover、construct completion/signature 与 canonical call hover 回归保持 PASS。详见
+  [Task 7.65 record](2026-09-07-plan03-task07-canonical-hover-no-analyzer-fallback.md)
+  与 [LSP Hover Capability Boundary](../../../cli-and-tooling/lsp-hover-capability-boundary.md)。
+  metadata provider 的独立 external hover fallback、Task 7 其余 consumer、Task 3/8
+  与完整跨工具链矩阵仍待完成。

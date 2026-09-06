@@ -149,4 +149,36 @@ static void test_source_hover_uses_parser_symbol_query(void) {
     free(consumer);
 }
 
+static void test_public_hover_consumer_does_not_use_analyzer_hover(void) {
+    char *interfaceSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
+    const char *hoverStart;
+    const char *hoverEnd;
+
+    if (interfaceSource == NULL) {
+        printf("FAIL: could not read public hover consumer source\n");
+        g_failures++;
+        return;
+    }
+
+    hoverStart = strstr(
+        interfaceSource,
+        "TZrBool ZrLanguageServer_Lsp_GetHover(");
+    hoverEnd = hoverStart != NULL
+                   ? strstr(hoverStart, "TZrBool ZrLanguageServer_Lsp_GetRichHover(")
+                   : NULL;
+    assert_text_section_contains(
+        "Lsp_GetHover canonical projection",
+        hoverStart,
+        hoverEnd,
+        "ZrLanguageServer_LspSemanticQuery_BuildHover");
+    assert_text_section_contains_none(
+        "Lsp_GetHover canonical projection",
+        hoverStart,
+        hoverEnd,
+        "ZrLanguageServer_SemanticAnalyzer_GetHoverInfo");
+
+    free(interfaceSource);
+}
+
 #endif
