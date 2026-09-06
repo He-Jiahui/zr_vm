@@ -3,8 +3,10 @@
 //
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "stdio_frame_reader.h"
 #include "stdio_lifecycle.h"
 #include "stdio_request_registry.h"
 #include "stdio_server.h"
@@ -137,6 +139,118 @@ static void test_request_registry_identity_and_cancellation(void) {
     cJSON_Delete(booleanId);
 }
 
+static EZrStdioFrameReadStatus read_frame_from_memory(const void *bytes,
+                                                       size_t length,
+                                                       const SZrStdioFrameReaderLimits *limits,
+                                                       char **outPayload,
+                                                       TZrSize *outLength) {
+    FILE *input = tmpfile();
+    EZrStdioFrameReadStatus status;
+
+    if (input == NULL) {
+        if (outPayload != NULL) {
+            *outPayload = NULL;
+        }
+        if (outLength != NULL) {
+            *outLength = 0;
+        }
+        return ZR_STDIO_FRAME_READ_IO_ERROR;
+    }
+    if (length > 0) {
+        fwrite(bytes, 1, length, input);
+    }
+    rewind(input);
+    status = ZrLanguageServer_StdioFrameReader_Read(input, limits, outPayload, outLength);
+    fclose(input);
+    return status;
+}
+
+static void test_frame_reader_status_and_limits(void) {
+    static const char validFrame[] = "Content-Length: 2\r\n\r\n{}";
+    static const char missingLengthFrame[] =
+            "Content-Type: application/vscode-jsonrpc\r\n\r\n";
+    static const char truncatedFrame[] = "Content-Length: 4\r\n\r\n{}";
+    static const char wrongNewlineFrame[] = "Content-Length: 2\n\n{}";
+    static const char nulFrame[] = "Content-Length: 2\0junk\r\n\r\n{}";
+    static const char limitedMessageFrame[] = "Content-Length: 3\r\n\r\nabc";
+    static const char limitedHeaderFrame[] =
+            "X-Test: value\r\nContent-Length: 2\r\n\r\n{}";
+    SZrStdioFrameReaderLimits limits;
+    char *payload = NULL;
+    TZrSize length = 0;
+
+    expect_true(read_frame_from_memory(validFrame,
+                                       strlen(validFrame),
+                                       NULL,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_OK,
+                "valid frame must be accepted by the reader");
+    expect_true(length == 2 && payload != NULL && memcmp(payload, "{}", 2) == 0,
+                "valid frame payload must be returned exactly");
+    free(payload);
+
+    payload = NULL;
+    length = 0;
+    expect_true(read_frame_from_memory(missingLengthFrame,
+                                       strlen(missingLengthFrame),
+                                       NULL,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_MALFORMED_HEADER,
+                "missing content length must be malformed");
+    expect_true(payload == NULL && length == 0,
+                "malformed frame must not return a payload");
+
+    expect_true(read_frame_from_memory(truncatedFrame,
+                                       strlen(truncatedFrame),
+                                       NULL,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_PAYLOAD_TRUNCATED,
+                "short payload must be classified as truncated");
+    expect_true(payload == NULL && length == 0,
+                "truncated frame must not return a payload");
+
+    expect_true(read_frame_from_memory(wrongNewlineFrame,
+                                       strlen(wrongNewlineFrame),
+                                       NULL,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_MALFORMED_HEADER,
+                "LF-only framing must be malformed");
+
+    expect_true(read_frame_from_memory(nulFrame,
+                                       sizeof(nulFrame) - 1U,
+                                       NULL,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_MALFORMED_HEADER,
+                "NUL in a header must be malformed");
+
+    memset(&limits, 0, sizeof(limits));
+    limits.maxMessageBytes = 2;
+    expect_true(read_frame_from_memory(limitedMessageFrame,
+                                       strlen(limitedMessageFrame),
+                                       &limits,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_TOO_LARGE,
+                "injected message limit must classify an oversized frame");
+    expect_true(payload == NULL && length == 0,
+                "oversized frame must not allocate a payload");
+
+    memset(&limits, 0, sizeof(limits));
+    limits.maxHeaderCount = 1;
+    expect_true(read_frame_from_memory(limitedHeaderFrame,
+                                       strlen(limitedHeaderFrame),
+                                       &limits,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_TOO_LARGE,
+                "injected header count limit must be enforced");
+
+    expect_true(read_frame_from_memory(NULL,
+                                       0,
+                                       NULL,
+                                       &payload,
+                                       &length) == ZR_STDIO_FRAME_READ_EOF,
+                "clean empty input must be classified as EOF");
+}
+
 static void test_repeated_server_lifecycle(void) {
     int iteration;
 
@@ -238,6 +352,7 @@ static void test_startup_failure_uses_the_same_teardown_path(void) {
 int main(void) {
     test_lifecycle_state_transitions();
     test_request_registry_identity_and_cancellation();
+    test_frame_reader_status_and_limits();
     test_repeated_server_lifecycle();
     test_exit_notification_stops_the_reader();
     test_startup_failure_uses_the_same_teardown_path();
