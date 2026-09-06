@@ -130,9 +130,16 @@ typedef enum EZrLspHandlerStatus {
 - [ ] MSVC Debug + Application Verifier 或 ASan（可用时）通过同一 lifecycle 测试。
 
 ```powershell
-wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /mnt/e/Git/zr_vm/.codex/build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"'
-wsl.exe bash -lc 'cmake --build /mnt/e/Git/zr_vm/.codex/build-lsp-protocol-asan --target zr_vm_language_server_stdio zr_vm_language_server_stdio_server_lifecycle_test --parallel 8'
-wsl.exe bash -lc 'ctest --test-dir /mnt/e/Git/zr_vm/.codex/build-lsp-protocol-asan --output-on-failure -R "language_server_stdio_(protocol|server_lifecycle|smoke)"'
+wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /tmp/zr_vm-build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -no-pie"'
+wsl.exe bash -lc 'cmake --build /tmp/zr_vm-build-lsp-protocol-asan --target zr_vm_language_server_stdio zr_vm_language_server_stdio_server_lifecycle_test --parallel 8'
+wsl.exe bash -lc 'ctest --test-dir /tmp/zr_vm-build-lsp-protocol-asan --output-on-failure -R "language_server_stdio_(protocol|server_lifecycle|smoke)"'
 ```
+
+在当前 WSL2 Clang 14 runtime 中，ASan 的 PIE allocator 保留区会与随机
+可执行文件布局发生启动期冲突；验证构建需保留 `-no-pie` 以得到稳定的
+sanitizer 入口。源码位于 Windows 挂载盘时，建议把构建目录放在 WSL ext4
+（例如 `/tmp/zr_vm-build-lsp-protocol-asan`），否则动态库加载延迟可能触发
+协议测试 3 秒响应期限的偶发超时；这不应被当作协议通过。上述选项不关闭
+ASan/UBSan/LeakSanitizer，也不改变协议断言。
 
 - [ ] 完成后更新 module docs，记录 lifecycle 状态、frame limits、error mapping 和 teardown ownership。

@@ -86,6 +86,12 @@ stdio 用例在已提交基线和本次修复后均失败。Task 3 Sub01 已修�
 本轮 native inventory 的验收边界、已知失败责任和下一步 WASM owner 见
 [acceptance record](../../../../tests/acceptance/2026-09-05-lsp-native-capability-inventory.md)。
 
+2026-09-06 已记录 [Plan 01 Task 6 当前 sanitizer replay](2026-09-06-plan01-task06-sanitizer-replay.md)：
+WSL ext4 上 Clang ASan/UBSan lifecycle、document sync 与 30-case protocol 连续
+回放稳定通过，GCC Valgrind 生命周期和 MSVC stdio smoke 也有当前证据；Windows
+挂载路径的 3 秒响应超时边界已保留，Plan 01 父级门禁仍等待完整跨工具链汇总，
+WASM linked asset 仍未生成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期
