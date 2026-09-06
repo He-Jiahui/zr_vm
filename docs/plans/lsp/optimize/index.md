@@ -251,6 +251,12 @@ ASan/UBSan protocol conformance 均为 44/44，lifecycle/protocol CTest 均为 2
 与 Clang ASan/UBSan protocol conformance 均为 45/45，lifecycle/protocol CTest 均为 2/2。
 统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub16 references context](2026-09-07-plan01-task02-sub16-references-context.md)：
+`textDocument/references` 现在要求 object `context` 以及 boolean `includeDeclaration`，
+缺失或畸形输入返回 `-32602`；合法 references/partial-result 语义继续保持。当前 GCC
+与 Clang ASan/UBSan protocol conformance 均为 46/46，lifecycle/protocol CTest 均为 2/2。
+统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭

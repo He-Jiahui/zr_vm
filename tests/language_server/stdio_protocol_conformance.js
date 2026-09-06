@@ -512,6 +512,32 @@ async function testInvalidSemanticTokenDeltaResultId(serverPath) {
     });
 }
 
+async function testInvalidReferencesContext(serverPath) {
+    const cases = [
+        ['missing context', undefined],
+        ['null context', null],
+        ['scalar context', 'not-an-object'],
+        ['empty context', {}],
+        ['numeric include declaration', { includeDeclaration: 1 }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-references-context-initialize');
+        for (const [label, context] of cases) {
+            const params = {
+                textDocument: { uri: 'file:///invalid-references-context.zr' },
+                position: { line: 0, character: 0 },
+            };
+            if (context !== undefined) {
+                params.context = context;
+            }
+            const id = `invalid-references-context-${label}`;
+            const response = await client.request('textDocument/references', params, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1111,6 +1137,7 @@ function protocolCases() {
         ['invalid workspace will rename params', testInvalidWorkspaceWillRenameParams],
         ['invalid diagnostic optional params', testInvalidDiagnosticOptionalParams],
         ['invalid semantic token delta result id', testInvalidSemanticTokenDeltaResultId],
+        ['invalid references context', testInvalidReferencesContext],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

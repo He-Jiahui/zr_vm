@@ -365,6 +365,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 - code action 稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix。缺失 import仍使用owned snapshot做alias/insert-offset/code-span检查；缺失分号已收敛到parser structured diagnostic fix，支持EOF和line-comment前精确插入并跳过placeholder/maybe fix。delimiter及其他diagnostic fix仍需按同一fact-first边界接入。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。
+- `textDocument/references` 要求 object `context` 和 boolean `includeDeclaration`；缺失或畸形字段返回 `-32602 InvalidParams`，合法 references/partial-result 语义不变。
 - linked editing 仍优先依赖语义 references；fallback 是文档级 token 扫描，只用于语义 references 不足时的保守体验，不声明声明解析或跨文件 rename。
 - moniker 目前只提供文档内稳定 identity，不声明跨文档解析或 workspace symbol 绑定；comment/string 过滤来自 stdio 层轻量 scanner，不替代 parser token stream。
 - CodeLens 的 run command 由 parser AST 上绑定的 `ZR_PARSER_ATTRIBUTE_ROLE_TEST` 驱动；它不把未绑定 attribute 或 comment/string 文本提升为测试入口。

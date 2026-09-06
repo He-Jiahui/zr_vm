@@ -158,10 +158,14 @@ cJSON *handle_references_request(SZrStdioServer *server, const cJSON *params) {
     }
 
     contextJson = get_object_item(params, ZR_LSP_FIELD_CONTEXT);
-    includeDeclarationJson = get_object_item(contextJson, ZR_LSP_FIELD_INCLUDE_DECLARATION);
-    if (cJSON_IsBool((cJSON *)includeDeclarationJson)) {
-        includeDeclaration = cJSON_IsTrue((cJSON *)includeDeclarationJson) ? ZR_TRUE : ZR_FALSE;
+    if (!cJSON_IsObject((cJSON *)contextJson)) {
+        return NULL;
     }
+    includeDeclarationJson = get_object_item(contextJson, ZR_LSP_FIELD_INCLUDE_DECLARATION);
+    if (!cJSON_IsBool((cJSON *)includeDeclarationJson)) {
+        return NULL;
+    }
+    includeDeclaration = cJSON_IsTrue((cJSON *)includeDeclarationJson) ? ZR_TRUE : ZR_FALSE;
 
     if (!ZrLanguageServer_Lsp_FindReferences(
             server->state,

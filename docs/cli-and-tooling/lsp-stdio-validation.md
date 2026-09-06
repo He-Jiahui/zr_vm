@@ -217,6 +217,14 @@ result ids retain unchanged and minimal delta responses. GCC and Clang ASan/UBSa
 45/45, and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
 Sub15](../plans/lsp/optimize/2026-09-07-plan01-task02-sub15-semantic-token-delta-result-id.md).
 
+The references-context regression extends the current replay to 46 cases.
+`textDocument/references` now requires an object `context` with boolean
+`includeDeclaration`; missing, null, scalar, empty and numeric forms return
+`-32602 Invalid params` before provider work. Valid contexts retain reference
+locations and partial-result behavior. GCC and Clang ASan/UBSan both pass 46/46,
+and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
+Sub16](../plans/lsp/optimize/2026-09-07-plan01-task02-sub16-references-context.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as
