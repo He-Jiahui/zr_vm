@@ -8897,6 +8897,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_property_refactor_cases.h"
 #include "test_lsp_compile_tool_projection_cases.h"
 #include "test_lsp_native_construct_receiver_fact_cases.h"
+#include "test_lsp_receiver_completion_projection_cases.h"
 
 // 主测试函数
 int main(void) {
@@ -9189,6 +9190,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_query_collects_receiver_completion_items(state);
+    TEST_DIVIDER();
+
+    test_lsp_receiver_completion_does_not_reinfer_initializer(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_collects_import_module_completion_items(state);

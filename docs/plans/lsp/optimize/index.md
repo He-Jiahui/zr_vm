@@ -245,6 +245,12 @@ lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01 �
 ASan/UBSan protocol conformance 均为 44/44，lifecycle/protocol CTest 均为 2/2。
 统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub15 semantic token delta result id](2026-09-07-plan01-task02-sub15-semantic-token-delta-result-id.md)：
+`semanticTokens/full/delta` 现在要求字符串 `previousResultId`，缺失或 `null`、数字、
+数组值返回 `-32602`，合法 result id 的 unchanged/minimal delta 继续保持。当前 GCC
+与 Clang ASan/UBSan protocol conformance 均为 45/45，lifecycle/protocol CTest 均为 2/2。
+统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
@@ -320,8 +326,9 @@ GCC source-contract 通过；完整 metadata refresh/generation、Task 7 其余 
 `TryCollectReceiverCompletions` 删除 completion-local recursive receiver prototype
 scan 与 `ExpressionType_Infer` AST reinference，继续消费 canonical reference type
 facts、symbol/type-environment、explicit binding、imported metadata 与 class/import
-projection。bounded source-contract 与 GCC source-contract 通过，structured receiver
-completion case 保持 PASS；其它 receiver consumer、Task 3/8 与完整矩阵仍保持 pending。
+projection。三工具链 source-contract 通过，GCC/MSVC 正向/缺失类型回归和 Clang GDB 下的
+ASan focused 回归通过；完整 runner 仍有已登记的失败。class/import/name/type-env
+identity、其它 receiver consumer、Task 3/8 与完整矩阵仍保持 pending。
 相关边界见 [LSP Receiver Completion Capability Boundary](../../../cli-and-tooling/lsp-receiver-completion-capability-boundary.md)。
 
 ## 2. 审查证据

@@ -214,4 +214,47 @@ static void test_metadata_hover_consumer_does_not_use_analyzer_hover(void) {
     free(metadataSource);
 }
 
+static void test_receiver_completion_does_not_reinfer_ast_type(void) {
+    char *supportSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c");
+    const char *completionStart;
+    const char *completionEnd;
+
+    if (supportSource == NULL) {
+        printf("FAIL: could not read receiver completion source\n");
+        g_failures++;
+        return;
+    }
+
+    completionStart = strstr(
+        supportSource,
+        "TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(");
+    completionEnd = completionStart != NULL
+                       ? strstr(completionStart,
+                                "SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(")
+                       : NULL;
+    assert_text_section_contains(
+        "receiver completion canonical type projection",
+        completionStart,
+        completionEnd,
+        "copy_type_text_from_reference_fact");
+    assert_text_section_contains_none(
+        "receiver completion canonical type projection",
+        completionStart,
+        completionEnd,
+        "try_infer_receiver_type_text_from_ast");
+    assert_text_section_contains_none(
+        "receiver completion canonical type projection",
+        completionStart,
+        completionEnd,
+        "find_receiver_variable_prototype_recursive");
+    assert_text_section_contains_none(
+        "receiver completion canonical type projection",
+        completionStart,
+        completionEnd,
+        "ZrParser_ExpressionType_Infer");
+
+    free(supportSource);
+}
+
 #endif

@@ -1423,3 +1423,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   metadata refresh/generation、其余 consumer 矩阵与 Task 8 仍待完成。详见
   [Task 7.66 record](2026-09-07-plan03-task07-metadata-hover-no-analyzer-fallback.md)
   与 [LSP Metadata Hover Capability Boundary](../../../cli-and-tooling/lsp-metadata-hover-capability-boundary.md)。
+
+- 补充完成时间：2026-09-07。Plan 03 Task 7.67 收紧
+  `TryCollectReceiverCompletions`：普通 receiver 继续先消费 canonical
+  reference type fact，再使用已有 symbol/type-environment、explicit binding、
+  imported metadata 与 class/import projection；删除该 completion consumer 内的
+  recursive receiver prototype scan 和 `ExpressionType_Infer` AST reinference。
+  reference fact 的 native/type-symbol 投影保留；新增回归通过 exported completion
+  query 验证 native local 类型信息缺失时返回空结果。三工具链 source-contract 真实
+  exit 0，GCC/MSVC 正向及缺失类型回归、Clang GDB 下 ASan focused 回归通过；完整 runner
+  的既有失败仍登记。class/import/name/type-env identity 与其它 receiver consumer 的
+  剩余迁移、Task 3/8 和完整跨工具链验收继续 pending。详见
+  [Task 7.67 record](2026-09-07-plan03-task07-receiver-completion-no-ast-reinference.md)
+  与 [LSP Receiver Completion Capability Boundary](../../../cli-and-tooling/lsp-receiver-completion-capability-boundary.md)。

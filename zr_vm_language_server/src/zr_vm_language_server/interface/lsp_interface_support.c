@@ -4849,7 +4849,6 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     SZrSymbol *classSymbol = ZR_NULL;
     const SZrTypePrototypeInfo *receiverPrototype = ZR_NULL;
     TZrChar receiverTypeName[ZR_LSP_TEXT_BUFFER_LENGTH];
-    TZrSize bestOffset = 0;
 
     if (outFailClosed != ZR_NULL) {
         *outFailClosed = ZR_FALSE;
@@ -5011,87 +5010,12 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                     return ZR_TRUE;
                 }
             }
-        }
-        find_receiver_variable_prototype_recursive(state,
-                                                   analyzer,
-                                                   ast,
-                                                   content + receiverStart,
-                                                  receiverLength,
-                                                  cursorOffset,
-                                                  &receiverPrototype,
-                                                   receiverTypeName,
-                                                   sizeof(receiverTypeName),
-                                                   &bestOffset);
-        if (receiverTypeName[0] != '\0') {
-            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
-        }
-        if (receiverTypeName[0] != '\0' &&
-            (receiverPrototype == ZR_NULL || receiverPrototype->isImportedNative) &&
-            append_receiver_native_type_completions(state,
-                                                    projectIndex,
-                                                    analyzer,
-                                                    ast,
-                                                    receiverTypeName,
-                                                    ZR_FALSE,
-                                                    result)) {
-            return ZR_TRUE;
-        }
-        if (receiverPrototype != ZR_NULL) {
-            append_type_prototype_member_completions(state,
-                                                     analyzer,
-                                                     receiverPrototype,
-                                                     ZR_FALSE,
-                                                     0,
-                                                     result);
-            if (result->length > 0) {
-                return ZR_TRUE;
-            }
-        }
-        if (receiverTypeName[0] != '\0' &&
-            append_type_symbol_member_completions_by_name(state,
-                                                          analyzer,
-                                                          receiverTypeName,
-                                                          ZR_FALSE,
-                                                          result)) {
-            return ZR_TRUE;
-        }
-        if (receiverTypeName[0] != '\0' &&
-            append_receiver_native_type_completions(state,
-                                                    projectIndex,
-                                                    analyzer,
-                                                    ast,
-                                                    receiverTypeName,
-                                                    ZR_FALSE,
-                                                    result)) {
-            return ZR_TRUE;
-        }
-        if (try_infer_receiver_type_text_from_ast(state,
-                                                  analyzer,
-                                                  ast,
-                                                  cursorOffset,
-                                                  receiverTypeName,
-                                                  sizeof(receiverTypeName))) {
-            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
-            if (receiverPrototype != ZR_NULL) {
-                append_type_prototype_member_completions(state,
-                                                         analyzer,
-                                                         receiverPrototype,
-                                                         ZR_FALSE,
-                                                         0,
-                                                         result);
-                if (result->length > 0) {
-                    return ZR_TRUE;
-                }
-            }
-            if (receiverTypeName[0] != '\0' &&
-                append_type_symbol_member_completions_by_name(state,
+            if (append_type_symbol_member_completions_by_name(state,
                                                               analyzer,
                                                               receiverTypeName,
                                                               ZR_FALSE,
-                                                              result)) {
-                return ZR_TRUE;
-            }
-            if (append_receiver_native_type_completions(state,
+                                                              result) ||
+                append_receiver_native_type_completions(state,
                                                         projectIndex,
                                                         analyzer,
                                                         ast,
@@ -5111,107 +5035,20 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                 wantStatic,
                                                 result)) {
         return ZR_TRUE;
-    } else if (append_receiver_name_type_env_completions(state,
-                                                         projectIndex,
-                                                         analyzer,
-                                                         ast,
-                                                         receiverName,
-                                                         wantStatic,
-                                                         result)) {
+    }
+    if (append_receiver_name_type_env_completions(state,
+                                                 projectIndex,
+                                                 analyzer,
+                                                 ast,
+                                                 receiverName,
+                                                 wantStatic,
+                                                 result)) {
         return ZR_TRUE;
-    } else {
-        find_receiver_variable_prototype_recursive(state,
-                                                  analyzer,
-                                                  ast,
-                                                  content + receiverStart,
-                                                  receiverLength,
-                                                  cursorOffset,
-                                                  &receiverPrototype,
-                                                  receiverTypeName,
-                                                  sizeof(receiverTypeName),
-                                                  &bestOffset);
-        if (receiverTypeName[0] != '\0') {
-            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
-        }
-        if (receiverTypeName[0] != '\0' &&
-            (receiverPrototype == ZR_NULL || receiverPrototype->isImportedNative) &&
-            append_receiver_native_type_completions(state,
-                                                    projectIndex,
-                                                    analyzer,
-                                                    ast,
-                                                    receiverTypeName,
-                                                    ZR_FALSE,
-                                                    result)) {
-            return ZR_TRUE;
-        }
-        if (receiverPrototype != ZR_NULL) {
-            append_type_prototype_member_completions(state,
-                                                     analyzer,
-                                                     receiverPrototype,
-                                                     ZR_FALSE,
-                                                     0,
-                                                     result);
-            return result->length > 0;
-        }
-        if (receiverTypeName[0] != '\0' &&
-            append_type_symbol_member_completions_by_name(state,
-                                                          analyzer,
-                                                          receiverTypeName,
-                                                          ZR_FALSE,
-                                                          result)) {
-            return ZR_TRUE;
-        }
-        if (receiverTypeName[0] != '\0' &&
-            append_receiver_native_type_completions(state,
-                                                    projectIndex,
-                                                    analyzer,
-                                                    ast,
-                                                    receiverTypeName,
-                                                    ZR_FALSE,
-                                                    result)) {
-            return ZR_TRUE;
-        }
-        if (try_infer_receiver_type_text_from_ast(state,
-                                                  analyzer,
-                                                  ast,
-                                                  cursorOffset,
-                                                  receiverTypeName,
-                                                  sizeof(receiverTypeName))) {
-            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
-            if (receiverPrototype != ZR_NULL) {
-                append_type_prototype_member_completions(state,
-                                                         analyzer,
-                                                         receiverPrototype,
-                                                         ZR_FALSE,
-                                                         0,
-                                                         result);
-                if (result->length > 0) {
-                    return ZR_TRUE;
-                }
-            }
-            if (receiverTypeName[0] != '\0' &&
-                append_type_symbol_member_completions_by_name(state,
-                                                              analyzer,
-                                                              receiverTypeName,
-                                                              ZR_FALSE,
-                                                              result)) {
-                return ZR_TRUE;
-            }
-            if (append_receiver_native_type_completions(state,
-                                                        projectIndex,
-                                                        analyzer,
-                                                        ast,
-                                                        receiverTypeName,
-                                                        ZR_FALSE,
-                                                        result)) {
-                return ZR_TRUE;
-            }
-        }
     }
 
     {
         SZrSymbol *resolvedClassSymbol = classSymbol;
-        TZrSize resolvedBestOffset = bestOffset;
+        TZrSize resolvedBestOffset = 0;
 
         if (resolvedClassSymbol == ZR_NULL) {
             if (append_imported_type_receiver_completions(state,
