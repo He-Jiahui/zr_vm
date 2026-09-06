@@ -81,6 +81,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub12：`workspace/diagnostic` 缺失、`null`、标量或数组 params 返回 `-32602 InvalidParams`，合法 object params 继续保留 report/progress 语义；[记录](2026-09-07-plan01-task02-sub12-workspace-diagnostic-invalid-params.md)。
 - [x] Sub13：`workspace/willRenameFiles` 缺失或畸形 params、files 或文件 URI 返回 `-32602 InvalidParams`，合法无编辑路径继续返回 `null`；[记录](2026-09-07-plan01-task02-sub13-workspace-will-rename-invalid-params.md)。
 - [x] Sub14：diagnostic 的 `previousResultId`、`identifier` 和 `previousResultIds` 可选字段严格校验字符串/数组及条目结构，畸形值返回 `-32602 InvalidParams`；[记录](2026-09-07-plan01-task02-sub14-diagnostic-optional-fields.md)。
+- [x] Sub15：`semanticTokens/full/delta` 的 `previousResultId` 严格要求字符串，缺失或畸形值返回 `-32602 InvalidParams`，合法 delta identity 继续保留；[记录](2026-09-07-plan01-task02-sub15-semantic-token-delta-result-id.md)。
 - [x] Sub02：`initialize` 的 params 缺失、`null`、标量或数组时返回 `-32602 InvalidParams`，且不进入初始化生命周期；[记录](2026-09-07-plan01-task02-sub02-initialize-params.md)。
 - [x] Sub03：numeric request id 只接受有限、整数且处于 JSON-safe 范围的值，fractional id 返回 `-32600 Invalid Request`；[记录](2026-09-07-plan01-task02-sub03-integer-request-ids.md)。
 - [x] Sub04：直接回归验证 envelope 对顶层消息、jsonrpc 版本、typed id、params 形状和 request/notification 分类；[记录](2026-09-07-plan01-task02-sub04-envelope-api.md)。

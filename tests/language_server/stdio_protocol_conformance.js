@@ -489,6 +489,29 @@ async function testInvalidDiagnosticOptionalParams(serverPath) {
     });
 }
 
+async function testInvalidSemanticTokenDeltaResultId(serverPath) {
+    const cases = [
+        ['missing result id', undefined],
+        ['null result id', null],
+        ['numeric result id', 1],
+        ['array result id', []],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-semantic-delta-result-id-initialize');
+        for (const [label, previousResultId] of cases) {
+            const params = { textDocument: { uri: 'file:///invalid-semantic-delta-result-id.zr' } };
+            if (previousResultId !== undefined) {
+                params.previousResultId = previousResultId;
+            }
+            const id = `invalid-semantic-delta-result-id-${label}`;
+            const response = await client.request(
+                'textDocument/semanticTokens/full/delta', params, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1087,6 +1110,7 @@ function protocolCases() {
         ['invalid workspace diagnostic params', testInvalidWorkspaceDiagnosticParams],
         ['invalid workspace will rename params', testInvalidWorkspaceWillRenameParams],
         ['invalid diagnostic optional params', testInvalidDiagnosticOptionalParams],
+        ['invalid semantic token delta result id', testInvalidSemanticTokenDeltaResultId],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

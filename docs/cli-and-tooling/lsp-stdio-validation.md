@@ -210,6 +210,13 @@ before provider work, while omitted fields and valid empty arrays retain existin
 GCC and Clang ASan/UBSan both pass 44/44, and the lifecycle/protocol CTest pair passes 2/2
 on each build. See [Plan 01 Task 2 Sub14](../plans/lsp/optimize/2026-09-07-plan01-task02-sub14-diagnostic-optional-fields.md).
 
+The semantic-token delta identity regression extends the current replay to 45 cases.
+`textDocument/semanticTokens/full/delta` now requires a string `previousResultId`; missing,
+null, numeric and array values return `-32602 Invalid params` before token computation. Valid
+result ids retain unchanged and minimal delta responses. GCC and Clang ASan/UBSan both pass
+45/45, and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
+Sub15](../plans/lsp/optimize/2026-09-07-plan01-task02-sub15-semantic-token-delta-result-id.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

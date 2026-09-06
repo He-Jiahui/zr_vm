@@ -63,15 +63,18 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
         return NULL;
     }
 
+    previousResultIdJson = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
+    if (!cJSON_IsString((cJSON *)previousResultIdJson) ||
+        cJSON_GetStringValue((cJSON *)previousResultIdJson) == NULL) {
+        return NULL;
+    }
+
     snapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(server->context);
     if (snapshot == ZR_NULL) {
         snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(server->state, server->context, uri);
         ownsSnapshot = ZR_TRUE;
     }
-    previousResultIdJson = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
-    if (cJSON_IsString((cJSON *)previousResultIdJson)) {
-        previousResultIdText = cJSON_GetStringValue((cJSON *)previousResultIdJson);
-    }
+    previousResultIdText = cJSON_GetStringValue((cJSON *)previousResultIdJson);
     previousLength = semantic_tokens_previous_result_length(params);
     ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(server->state, server->context, uri, &tokens)) {

@@ -219,6 +219,7 @@ doc_type: module-detail
 - stdio 的 `completionItem/resolve` 在 item、label、resolve data URI 或 position 解析失败时返回 `-32602 InvalidParams`；合法但未匹配的 item 仍保持成功回传。
 - stdio 的 `inlineValue`、`moniker` 和 `linkedEditingRange` 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；provider 无结果时仍分别保持空数组或 `null`。
 - stdio 的 semantic tokens full、full/delta 和 range 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；合法请求仍按既有 full/delta/range 响应结构返回。
+- stdio 的 `semanticTokens/full/delta` 还要求字符串 `previousResultId`；缺失、`null`、数字或数组值返回 `-32602 InvalidParams`，合法 result id 继续支持 unchanged/minimal delta。
 - stdio 的 `workspace/symbol` 要求字符串 `query`；缺失或非字符串值返回 `-32602 InvalidParams`，合法空字符串仍保留查询语义。
 - stdio 的 `workspace/diagnostic` 要求 object params；缺失、`null`、标量或数组参数返回 `-32602 InvalidParams`，合法空对象及 `previousResultIds` / progress 字段仍保留既有 workspace report 行为。
 - stdio 的 `workspace/willRenameFiles` 要求 object params、数组 `files` 以及每个文件项的字符串 `oldUri` / `newUri`；缺失或畸形参数返回 `-32602 InvalidParams`，合法空 files 或无编辑 rename 仍返回成功 `null`。
