@@ -34,6 +34,7 @@ extern "C" {
 #endif
 
 #include "cJSON/cJSON.h"
+#include "wasm_response.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -874,50 +875,6 @@ static void remove_document_state(SZrLspContext *context, SZrString *uri) {
     ZrCore_HashSet_Remove(g_wasm_state, &context->uriToAnalyzerMap, &key);
 }
 
-static int error_code_for_message(const char *message) {
-    if (message != ZR_NULL && strcmp(message, "Invalid parameters") == 0) {
-        return ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE;
-    }
-    if (message != ZR_NULL && strcmp(message, "Request cancelled") == 0) {
-        return ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE;
-    }
-    if (message != ZR_NULL && strcmp(message, "Content modified") == 0) {
-        return ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE;
-    }
-    return ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE;
-}
-
-// 创建错误响应 JSON
-static const char* create_error_response(const char *message) {
-    cJSON *json = cJSON_CreateObject();
-    if (json != ZR_NULL) {
-        cJSON_AddBoolToObject(json, "success", cJSON_False);
-        cJSON_AddNumberToObject(json, "code", error_code_for_message(message));
-        if (message != ZR_NULL) {
-            cJSON_AddStringToObject(json, "error", message);
-        }
-        char *result = cJSON_Print(json);
-        cJSON_Delete(json);
-        return result;
-    }
-    return ZR_NULL;
-}
-
-// 创建成功响应 JSON
-static const char* create_success_response(cJSON *data) {
-    cJSON *json = cJSON_CreateObject();
-    if (json != ZR_NULL) {
-        cJSON_AddBoolToObject(json, "success", cJSON_True);
-        if (data != ZR_NULL) {
-            cJSON_AddItemToObject(json, "data", data);
-        }
-        char *result = cJSON_Print(json);
-        cJSON_Delete(json);
-        return result;
-    }
-    return ZR_NULL;
-}
-
 // WASM 导出函数实现（使用 extern "C" 包装以保持 C 兼容性）
 
 extern "C" {
@@ -972,12 +929,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen, 
                                 const char* content, int contentLen, int version) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     
     TZrBool result = ZrLanguageServer_Lsp_UpdateDocument(g_wasm_state, (SZrLspContext*)context, 
@@ -986,9 +943,9 @@ const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen,
     if (result) {
         cJSON *json = cJSON_CreateObject();
         cJSON_AddBoolToObject(json, "updated", cJSON_True);
-        return create_success_response(json);
+        return ZrLanguageServer_Wasm_SuccessResponse(json);
     } else {
-        return create_error_response("Failed to update document");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to update document");
     }
 }
 
@@ -997,19 +954,19 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     remove_document_state((SZrLspContext*)context, uriStr);
 
     cJSON *json = cJSON_CreateObject();
     cJSON_AddBoolToObject(json, "closed", cJSON_True);
-    return create_success_response(json);
+    return ZrLanguageServer_Wasm_SuccessResponse(json);
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1017,12 +974,12 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     
     SZrArray diagnostics;
@@ -1035,13 +992,13 @@ const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen)
                 g_wasm_state,
                 &diagnostics,
                 uriStr);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
         
         return jsonStr;
     } else {
         ZrCore_Array_Free(g_wasm_state, &diagnostics);
-        return create_error_response("Failed to get diagnostics");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get diagnostics");
     }
 }
 
@@ -1051,12 +1008,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
                                int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     
     SZrLspPosition position;
@@ -1071,7 +1028,7 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
     
     if (result) {
         cJSON *data = serialize_completions(g_wasm_state, &completions);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         
         // 清理
         for (TZrSize i = 0; i < completions.length; i++) {
@@ -1085,7 +1042,7 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
         return jsonStr;
     } else {
         ZrCore_Array_Free(g_wasm_state, &completions);
-        return create_error_response("Failed to get completion");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get completion");
     }
 }
 
@@ -1095,12 +1052,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
                           int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     
     SZrLspPosition position;
@@ -1113,7 +1070,7 @@ const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
     
     if (result && hover != ZR_NULL) {
         cJSON *data = serialize_hover(g_wasm_state, hover);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         
         // 清理
         ZrCore_Array_Free(g_wasm_state, &hover->contents);
@@ -1121,7 +1078,8 @@ const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
         
         return jsonStr;
     } else {
-        return create_error_response("Failed to get hover");
+        /* The legacy boolean API uses false for no match, as in stdio_navigation.c. */
+        return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateNull());
     }
 }
 
@@ -1131,12 +1089,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
                                int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     
     SZrLspPosition position;
@@ -1151,7 +1109,7 @@ const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
     
     if (result) {
         cJSON *data = serialize_locations(g_wasm_state, &locations);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         
         // 清理
         for (TZrSize i = 0; i < locations.length; i++) {
@@ -1165,7 +1123,7 @@ const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
         return jsonStr;
     } else {
         ZrCore_Array_Free(g_wasm_state, &locations);
-        return create_error_response("Failed to get definition");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get definition");
     }
 }
 
@@ -1175,12 +1133,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
                                int line, int character, int includeDeclaration) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     
     SZrLspPosition position;
@@ -1195,7 +1153,7 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
     
     if (result) {
         cJSON *data = serialize_locations(g_wasm_state, &locations);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         
         // 清理
         for (TZrSize i = 0; i < locations.length; i++) {
@@ -1209,7 +1167,7 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
         return jsonStr;
     } else {
         ZrCore_Array_Free(g_wasm_state, &locations);
-        return create_error_response("Failed to find references");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to find references");
     }
 }
 
@@ -1219,14 +1177,14 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
                         int line, int character, const char* newName, int newNameLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || newName == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     SZrString *newNameStr = cstr_to_string(g_wasm_state, newName, newNameLen);
     
     if (uriStr == ZR_NULL || newNameStr == ZR_NULL) {
-        return create_error_response("Failed to create string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create string");
     }
     
     SZrLspPosition position;
@@ -1241,7 +1199,7 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
     
     if (result) {
         cJSON *data = serialize_locations(g_wasm_state, &locations);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         
         // 清理
         for (TZrSize i = 0; i < locations.length; i++) {
@@ -1255,7 +1213,7 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
         return jsonStr;
     } else {
         ZrCore_Array_Free(g_wasm_state, &locations);
-        return create_error_response("Failed to rename");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to rename");
     }
 }
 
@@ -1264,12 +1222,12 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     SZrArray symbols;
@@ -1277,7 +1235,7 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
 
     if (ZrLanguageServer_Lsp_GetDocumentSymbols(g_wasm_state, (SZrLspContext*)context, uriStr, &symbols)) {
         cJSON *data = serialize_symbol_array(g_wasm_state, &symbols);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
 
         for (TZrSize i = 0; i < symbols.length; i++) {
             SZrLspSymbolInformation **symbolPtr =
@@ -1291,7 +1249,7 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
     }
 
     ZrCore_Array_Free(g_wasm_state, &symbols);
-    return create_error_response("Failed to get document symbols");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get document symbols");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1304,11 +1262,11 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
     cJSON *report;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
     ZrCore_Array_Init(g_wasm_state, &diagnostics, sizeof(SZrLspDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state,
@@ -1323,7 +1281,7 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
                 resultId,
                 sizeof(resultId))) {
         free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
-        return create_error_response("Failed to get diagnostic report");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get diagnostic report");
     }
     report = cJSON_CreateObject();
     if (report != ZR_NULL) {
@@ -1337,7 +1295,7 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
                         uriStr));
     }
     free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
-    return report != ZR_NULL ? create_success_response(report) : create_error_response("Out of memory");
+    return report != ZR_NULL ? ZrLanguageServer_Wasm_SuccessResponse(report) : ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Out of memory");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1348,7 +1306,7 @@ const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
     cJSON *result;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     ZrCore_Array_Init(g_wasm_state, &uris, sizeof(SZrString *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
@@ -1356,13 +1314,13 @@ const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
                                                                     (SZrLspContext *)context,
                                                                     &uris)) {
         ZrCore_Array_Free(g_wasm_state, &uris);
-        return create_error_response("Failed to enumerate workspace diagnostics");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to enumerate workspace diagnostics");
     }
 
     result = cJSON_CreateArray();
     if (result == ZR_NULL) {
         ZrCore_Array_Free(g_wasm_state, &uris);
-        return create_error_response("Out of memory");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Out of memory");
     }
 
     for (TZrSize index = 0U; index < uris.length; index++) {
@@ -1372,9 +1330,15 @@ const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
         char resultId[ZR_LSP_DIAGNOSTIC_RESULT_ID_MAX];
         const char *uriText;
         cJSON *report;
+        cJSON *items;
+        TZrBool serialized;
 
         if (uri == ZR_NULL || *uri == ZR_NULL) {
-            continue;
+            ZrCore_Array_Free(g_wasm_state, &uris);
+            cJSON_Delete(result);
+            return ZrLanguageServer_Wasm_ErrorResponse(
+                    ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
+                    "Workspace diagnostic URI is unavailable");
         }
         ZrCore_Array_Init(g_wasm_state,
                           &diagnostics,
@@ -1391,35 +1355,46 @@ const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
                                                                 resultId,
                                                                 sizeof(resultId))) {
             free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
-            continue;
+            ZrCore_Array_Free(g_wasm_state, &uris);
+            cJSON_Delete(result);
+            return ZrLanguageServer_Wasm_ErrorResponse(
+                    ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
+                    "Failed to build workspace diagnostic report");
         }
 
         report = cJSON_CreateObject();
         uriText = string_to_cstr(g_wasm_state, *uri);
         fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion((SZrLspContext *)context, *uri);
-        if (report != ZR_NULL) {
-            cJSON_AddStringToObject(report, "uri", uriText != ZR_NULL ? uriText : "");
-            if (fileVersion != ZR_NULL && fileVersion->isOpenDocument) {
-                cJSON_AddNumberToObject(report, "version", fileVersion->version);
-            } else {
-                cJSON_AddNullToObject(report, "version");
-            }
-            cJSON_AddStringToObject(report, "resultId", resultId);
-            cJSON_AddItemToObject(
-                    report,
-                    "items",
-                    ZrLanguageServer_Wasm_SerializeDiagnostics(
-                            g_wasm_state,
-                            &diagnostics,
-                            *uri));
-            cJSON_AddItemToArray(result, report);
+        items = ZrLanguageServer_Wasm_SerializeDiagnostics(g_wasm_state, &diagnostics, *uri);
+        serialized = report != ZR_NULL && uriText != ZR_NULL && items != ZR_NULL &&
+                     cJSON_AddStringToObject(report, "uri", uriText) != ZR_NULL &&
+                     (fileVersion != ZR_NULL && fileVersion->isOpenDocument
+                          ? cJSON_AddNumberToObject(report, "version", fileVersion->version)
+                          : cJSON_AddNullToObject(report, "version")) != ZR_NULL &&
+                     cJSON_AddStringToObject(report, "resultId", resultId) != ZR_NULL;
+        if (serialized && cJSON_AddItemToObject(report, "items", items)) {
+            items = ZR_NULL;
+            serialized = cJSON_AddItemToArray(result, report);
+        } else {
+            serialized = ZR_FALSE;
+        }
+        if (!serialized) {
+            cJSON_Delete(items);
+            cJSON_Delete(report);
+            free_cstr(g_wasm_state, uriText);
+            free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+            ZrCore_Array_Free(g_wasm_state, &uris);
+            cJSON_Delete(result);
+            return ZrLanguageServer_Wasm_ErrorResponse(
+                    ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
+                    "Failed to serialize workspace diagnostic report");
         }
         free_cstr(g_wasm_state, uriText);
         free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
     }
 
     ZrCore_Array_Free(g_wasm_state, &uris);
-    return create_success_response(result);
+    return ZrLanguageServer_Wasm_SuccessResponse(result);
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1437,12 +1412,12 @@ const char* wasm_ZrLspGetInlayHints(void* context,
     SZrArray hints;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     range.start.line = startLine;
@@ -1457,13 +1432,13 @@ const char* wasm_ZrLspGetInlayHints(void* context,
                                            range,
                                            &hints)) {
         cJSON *data = serialize_inlay_hints(g_wasm_state, &hints);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeInlayHints(g_wasm_state, &hints);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeInlayHints(g_wasm_state, &hints);
-    return create_error_response("Failed to get inlay hints");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get inlay hints");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1471,12 +1446,12 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int queryLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || query == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *queryStr = cstr_to_string(g_wasm_state, query, queryLen);
     if (queryStr == ZR_NULL) {
-        return create_error_response("Failed to create query string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create query string");
     }
 
     SZrArray symbols;
@@ -1484,7 +1459,7 @@ const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int 
 
     if (ZrLanguageServer_Lsp_GetWorkspaceSymbols(g_wasm_state, (SZrLspContext*)context, queryStr, &symbols)) {
         cJSON *data = serialize_symbol_array(g_wasm_state, &symbols);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
 
         for (TZrSize i = 0; i < symbols.length; i++) {
             SZrLspSymbolInformation **symbolPtr =
@@ -1498,7 +1473,7 @@ const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int 
     }
 
     ZrCore_Array_Free(g_wasm_state, &symbols);
-    return create_error_response("Failed to get workspace symbols");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get workspace symbols");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1510,12 +1485,12 @@ const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* ur
     const char *text = ZR_NULL;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(g_wasm_state,
@@ -1523,17 +1498,17 @@ const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* ur
                                                            uriStr,
                                                            &documentText) ||
         documentText == ZR_NULL) {
-        return create_error_response("Failed to get native declaration document");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get native declaration document");
     }
 
     text = string_to_cstr(g_wasm_state, documentText);
     if (text == ZR_NULL) {
-        return create_error_response("Failed to serialize native declaration document");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to serialize native declaration document");
     }
 
     {
         cJSON *data = cJSON_CreateString(text);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         free_cstr(g_wasm_state, text);
         return jsonStr;
     }
@@ -1545,12 +1520,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspGetRichHover(void* context, const char* uri, int uriLen,
                               int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     SZrLspPosition position;
@@ -1565,12 +1540,12 @@ const char* wasm_ZrLspGetRichHover(void* context, const char* uri, int uriLen,
                                           &hover) &&
         hover != ZR_NULL) {
         cJSON *data = serialize_rich_hover(g_wasm_state, hover);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeRichHover(g_wasm_state, hover);
         return jsonStr;
     }
 
-    return create_success_response(cJSON_CreateNull());
+    return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateNull());
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1581,12 +1556,12 @@ const char* wasm_ZrLspGetProjectModules(void* context, const char* projectUri, i
     SZrArray modules;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || projectUri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     projectUriStr = cstr_to_string(g_wasm_state, projectUri, projectUriLen);
     if (projectUriStr == ZR_NULL) {
-        return create_error_response("Failed to create project URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create project URI string");
     }
 
     ZrCore_Array_Init(g_wasm_state, &modules, sizeof(SZrLspProjectModuleSummary*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
@@ -1595,13 +1570,13 @@ const char* wasm_ZrLspGetProjectModules(void* context, const char* projectUri, i
                                                projectUriStr,
                                                &modules)) {
         cJSON *data = serialize_project_modules(g_wasm_state, &modules);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeProjectModules(g_wasm_state, &modules);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeProjectModules(g_wasm_state, &modules);
-    return create_error_response("Failed to get project modules");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get project modules");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1610,12 +1585,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int uriLen,
                                       int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     SZrLspPosition position;
@@ -1632,7 +1607,7 @@ const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int 
             position,
             &highlights)) {
         cJSON *data = serialize_highlights(&highlights);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
 
         for (TZrSize i = 0; i < highlights.length; i++) {
             SZrLspDocumentHighlight **highlightPtr =
@@ -1646,7 +1621,7 @@ const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int 
     }
 
     ZrCore_Array_Free(g_wasm_state, &highlights);
-    return create_error_response("Failed to get document highlights");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get document highlights");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1654,12 +1629,12 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     SZrArray tokens;
@@ -1667,13 +1642,13 @@ const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriL
 
     if (ZrLanguageServer_Lsp_GetSemanticTokens(g_wasm_state, (SZrLspContext*)context, uriStr, &tokens)) {
         cJSON *data = serialize_semantic_tokens(&tokens);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrCore_Array_Free(g_wasm_state, &tokens);
         return jsonStr;
     }
 
     ZrCore_Array_Free(g_wasm_state, &tokens);
-    return create_error_response("Failed to get semantic tokens");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get semantic tokens");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1682,12 +1657,12 @@ EMSCRIPTEN_KEEPALIVE
 const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
                                int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     SZrLspPosition position;
@@ -1711,10 +1686,10 @@ const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
         if (placeholderStr != ZR_NULL) {
             free_cstr(g_wasm_state, placeholderStr);
         }
-        return create_success_response(data);
+        return ZrLanguageServer_Wasm_SuccessResponse(data);
     }
 
-    return create_success_response(cJSON_CreateNull());
+    return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateNull());
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1725,24 +1700,24 @@ const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen) 
     SZrArray edits;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     ZrCore_Array_Init(g_wasm_state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (ZrLanguageServer_Lsp_GetFormatting(g_wasm_state, (SZrLspContext*)context, uriStr, &edits)) {
         cJSON *data = serialize_text_edits(g_wasm_state, &edits);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
-    return create_error_response("Failed to get formatting edits");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get formatting edits");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1760,12 +1735,12 @@ const char* wasm_ZrLspGetRangeFormatting(void* context,
     SZrArray edits;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     range.start.line = startLine;
@@ -1780,13 +1755,13 @@ const char* wasm_ZrLspGetRangeFormatting(void* context,
                                                 range,
                                                 &edits)) {
         cJSON *data = serialize_text_edits(g_wasm_state, &edits);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
-    return create_error_response("Failed to get range formatting edits");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get range formatting edits");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1804,12 +1779,12 @@ const char* wasm_ZrLspGetCodeActions(void* context,
     SZrArray actions;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     range.start.line = startLine;
@@ -1824,13 +1799,13 @@ const char* wasm_ZrLspGetCodeActions(void* context,
                                             range,
                                             &actions)) {
         cJSON *data = serialize_code_actions(g_wasm_state, uri, &actions);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeCodeActions(g_wasm_state, &actions);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeCodeActions(g_wasm_state, &actions);
-    return create_error_response("Failed to get code actions");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get code actions");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1841,24 +1816,24 @@ const char* wasm_ZrLspGetFoldingRanges(void* context, const char* uri, int uriLe
     SZrArray ranges;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     ZrCore_Array_Init(g_wasm_state, &ranges, sizeof(SZrLspFoldingRange *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (ZrLanguageServer_Lsp_GetFoldingRanges(g_wasm_state, (SZrLspContext*)context, uriStr, &ranges)) {
         cJSON *data = serialize_folding_ranges(g_wasm_state, &ranges);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeFoldingRanges(g_wasm_state, &ranges);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeFoldingRanges(g_wasm_state, &ranges);
-    return create_error_response("Failed to get folding ranges");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get folding ranges");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1874,12 +1849,12 @@ const char* wasm_ZrLspGetSelectionRange(void* context,
     SZrArray ranges;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     position.line = line;
@@ -1893,13 +1868,13 @@ const char* wasm_ZrLspGetSelectionRange(void* context,
                                                 1,
                                                 &ranges)) {
         cJSON *data = serialize_selection_ranges(&ranges);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeSelectionRanges(g_wasm_state, &ranges);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeSelectionRanges(g_wasm_state, &ranges);
-    return create_error_response("Failed to get selection ranges");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get selection ranges");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1910,24 +1885,24 @@ const char* wasm_ZrLspGetDocumentLinks(void* context, const char* uri, int uriLe
     SZrArray links;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     ZrCore_Array_Init(g_wasm_state, &links, sizeof(SZrLspDocumentLink *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (ZrLanguageServer_Lsp_GetDocumentLinks(g_wasm_state, (SZrLspContext*)context, uriStr, &links)) {
         cJSON *data = serialize_document_links(g_wasm_state, &links);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeDocumentLinks(g_wasm_state, &links);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeDocumentLinks(g_wasm_state, &links);
-    return create_error_response("Failed to get document links");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get document links");
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1938,24 +1913,24 @@ const char* wasm_ZrLspGetCodeLens(void* context, const char* uri, int uriLen) {
     SZrArray lenses;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
-        return create_error_response("Invalid parameters");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
     }
 
     uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
     if (uriStr == ZR_NULL) {
-        return create_error_response("Failed to create URI string");
+        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
     ZrCore_Array_Init(g_wasm_state, &lenses, sizeof(SZrLspCodeLens *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (ZrLanguageServer_Lsp_GetCodeLens(g_wasm_state, (SZrLspContext*)context, uriStr, &lenses)) {
         cJSON *data = serialize_code_lenses(g_wasm_state, &lenses);
-        const char *jsonStr = create_success_response(data);
+        const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeCodeLens(g_wasm_state, &lenses);
         return jsonStr;
     }
 
     ZrLanguageServer_Lsp_FreeCodeLens(g_wasm_state, &lenses);
-    return create_error_response("Failed to get code lens");
+    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get code lens");
 }
 
 } // extern "C"

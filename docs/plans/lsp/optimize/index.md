@@ -72,11 +72,12 @@ Plan 02 Task 1 的 [decoded-control Sub01](2026-09-06-plan02-task01-sub01-decode
 17/17、19/19；该修复只关闭 Task 1 的一个边界子项，URI 全量矩阵、工作区和
 文档快照父门禁仍保持 pending。
 
-Plan 05 Task 2 已完成 Web error-contract 子项：WASM export payload 保留 JSON-RPC
-error code，bridge 对空指针使用 InternalError，worker 将失败响应抛出
-`ResponseError` 并保留结构化 data，不再把错误伪装为空数组或 `null`。完整 core
-status、versioned workspace edit 和 native/WASM golden parity 仍未完成，见
-[error-contract record](2026-09-06-plan05-task02-error-contract.md)。
+Plan 00 Task 2 Sub04 已完成 [WASM response contract correction](2026-09-07-plan00-task02-sub04-wasm-response-contract.md)：
+WASM export payload 显式携带 JSON-RPC error code，bridge 在空指针、UTF-8 decode
+或 JSON parse 后以 InternalError 失败并释放响应指针，worker 仅接受带 `data` 的成功
+envelope。该修复取代了 [Plan 05 的初步记录](2026-09-06-plan05-task02-error-contract.md)，
+但 Plan 05 Task 2 的 core status、versioned workspace edit 和 native/WASM golden
+parity 仍未完成。
 
 Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回

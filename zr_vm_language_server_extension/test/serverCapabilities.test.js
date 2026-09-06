@@ -63,6 +63,8 @@ function loadWorker(bridgeResponses = {}) {
                     BrowserMessageWriter: class {},
                     createConnection: () => connection,
                     TextDocumentSyncKind: { Incremental: 2 },
+                    ResponseError: TestResponseError,
+                    ErrorCodes: { InternalError: -32603 },
                 };
             }
             if (name === 'vscode-jsonrpc') {

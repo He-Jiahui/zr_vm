@@ -47,12 +47,15 @@ const TOKEN_TYPES = ['namespace', 'class', 'struct', 'interface', 'enum', 'funct
 async function probeWorker(workerSource, bridgeSource, runtimeExports) {
     // Execute production adapters; only the browser connection and WASM ABI are test doubles.
     const ts = require(path.join(__dirname, '..', '..', 'zr_vm_language_server_extension', 'node_modules', 'typescript'));
+    const { ResponseError, ErrorCodes } = require(path.join(__dirname, '..', '..',
+        'zr_vm_language_server_extension', 'node_modules', 'vscode-languageserver', 'browser'));
     const handlers = new Map();
     const calls = [];
     const responses = new Map();
     const logs = [];
     let nextPointer = 1;
     let closed = false;
+    let responseFixture;
     const register = (method, handler) => {
         assert.equal(typeof method, 'string', 'worker route must have a protocol method');
         assert.equal(handlers.has(method), false, 'duplicate worker route ' + method);
@@ -69,13 +72,15 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
             calls.push(name);
             if (name === 'wasm_ZrLspContextNew') return 1;
             if (name === 'wasm_ZrLspContextFree') return 0;
+            if (responseFixture && responseFixture.nullPointer) return 0;
             const data = name === 'wasm_ZrLspGetDiagnosticReport' ? { resultId: 'probe', items: [] } : [];
             const pointer = ++nextPointer;
-            responses.set(pointer, JSON.stringify({ success: true, data }));
+            responses.set(pointer, responseFixture ? responseFixture.raw : JSON.stringify({ success: true, data }));
             return pointer;
         },
         UTF8ToString(pointer) {
             assert.ok(responses.has(pointer), 'bridge reads an unknown response pointer');
+            if (responseFixture && responseFixture.decodeFailure) throw new Error('injected decode failure');
             return responses.get(pointer);
         },
         _free(pointer) {
@@ -100,23 +105,20 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
         }, { filename, timeout: 5000 });
         return exports;
     }
-    const bridge = execute(bridgeSource, 'wasm-bridge.ts', name => assert.fail('unexpected bridge import ' + name));
+    const bridge = execute(bridgeSource, 'wasm-bridge.ts', name => {
+        assert.equal(name, 'vscode-languageserver/browser', 'unexpected bridge import');
+        return { ResponseError, ErrorCodes };
+    });
     execute(workerSource, 'server-worker.ts', name => {
         if (name === './wasm-bridge') return bridge;
         if (name === 'vscode-jsonrpc') {
-            class ProbeResponseError extends Error {
-                constructor(code, message, data) {
-                    super(message);
-                    this.code = code;
-                    this.data = data;
-                }
-            }
-            return { ResponseError: ProbeResponseError, ErrorCodes: { InternalError: -32603 } };
+            return { ResponseError, ErrorCodes };
         }
         assert.equal(name, 'vscode-languageserver/browser', 'unexpected worker import');
         return {
             BrowserMessageReader: class {}, BrowserMessageWriter: class {},
             createConnection: () => connection, TextDocumentSyncKind: { Incremental: 2 },
+            ResponseError, ErrorCodes,
         };
     });
     assert.deepEqual([...handlers.keys()].sort(),
@@ -164,6 +166,33 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
         const { route } = await invoke(method, params, [exportName]);
         featureRoutes.push(Object.assign({ capabilityKey }, route));
     }
+    const errorFixtures = [-32602, -32603, -32800, -32801].map(code => ({
+        label: 'structured error ' + code, code, message: 'same message for every code',
+        data: { reason: 'fixture', generation: 7 },
+        raw: JSON.stringify({ success: false, code, error: 'same message for every code',
+            data: { reason: 'fixture', generation: 7 } }),
+    })).concat([
+        { label: 'success without data', raw: '{"success":true}' },
+        { label: 'non-boolean success', raw: '{"success":"true","data":[]}' },
+        { label: 'success with error', raw: '{"success":true,"data":[],"error":"failure"}' },
+        { label: 'invalid JSON', raw: '{' },
+        { label: 'null pointer', nullPointer: true },
+        { label: 'decode exception', raw: '', decodeFailure: true },
+    ]);
+    for (const fixture of errorFixtures) {
+        responseFixture = fixture;
+        for (const [method] of REQUESTS) {
+            await assert.rejects(handlers.get(method)(params), error => {
+                assert.ok(error instanceof ResponseError, method + ': must use the connection ResponseError class');
+                assert.equal(error.code, fixture.code || ErrorCodes.InternalError, method + ': ' + fixture.label);
+                if (fixture.message) assert.equal(error.message, fixture.message);
+                if (fixture.data) assert.deepEqual(JSON.parse(JSON.stringify(error.data)), fixture.data);
+                return true;
+            }, method + ': ' + fixture.label + ' must not become a success result');
+            assert.equal(responses.size, 0, method + ': release response even when decoding fails');
+        }
+    }
+    responseFixture = undefined;
     documentRoutes.push((await invoke('textDocument/didSave', { textDocument: { uri }, text: textDocument.text }, updateExports)).route);
     documentRoutes.push((await invoke('textDocument/didClose', { textDocument: { uri } }, ['wasm_ZrLspCloseDocument'])).route);
     const shutdown = await invoke('shutdown', undefined, ['wasm_ZrLspContextFree']);

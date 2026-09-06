@@ -4853,6 +4853,8 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     )
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_parse_tests.cmake)
 
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_wasm_response_tests.cmake)
+
     zr_vm_add_support_target(
             zr_vm_language_server_stdio_optional_capability_allocations_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_stdio_optional_capability_allocations.c

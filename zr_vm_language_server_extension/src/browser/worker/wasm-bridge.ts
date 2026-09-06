@@ -1,11 +1,18 @@
 /// <reference lib="webworker" />
 
-type WasmResponse<T> = {
-    success: boolean;
-    data?: T;
-    error?: string;
-    code?: number;
-};
+import { ErrorCodes, ResponseError } from 'vscode-languageserver/browser';
+import type {
+    CodeAction, CodeLens, CompletionItem, Diagnostic, DocumentHighlight,
+    DocumentLink, FoldingRange, Hover, InlayHint, Location, PrepareRenameResult,
+    SelectionRange, SemanticTokens, SymbolInformation, TextEdit,
+} from 'vscode-languageserver/browser';
+
+export type WasmResponse<T> =
+    | { success: true; data: T }
+    | { success: false; code: number; error: string; data?: unknown };
+
+type DiagnosticReport = { resultId: string; items: Diagnostic[] };
+type WorkspaceDiagnosticReport = DiagnosticReport & { uri: string; version: number | null };
 
 type EmscriptenModule = {
     ccall: (
@@ -89,40 +96,40 @@ export class ZrWasmBridge {
         );
     }
 
-    async getDiagnostics(uri: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getDiagnostics(uri: string): Promise<WasmResponse<Diagnostic[]>> {
+        return this.invoke<Diagnostic[]>(
             'wasm_ZrLspGetDiagnostics',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
         );
     }
 
-    async getCompletion(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getCompletion(uri: string, line: number, character: number): Promise<WasmResponse<CompletionItem[]>> {
+        return this.invoke<CompletionItem[]>(
             'wasm_ZrLspGetCompletion',
             ['number', 'string', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character],
         );
     }
 
-    async getHover(uri: string, line: number, character: number): Promise<WasmResponse<unknown>> {
-        return this.invoke<unknown>(
+    async getHover(uri: string, line: number, character: number): Promise<WasmResponse<Hover | null>> {
+        return this.invoke<Hover | null>(
             'wasm_ZrLspGetHover',
             ['number', 'string', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character],
         );
     }
 
-    async getDiagnosticReport(uri: string): Promise<WasmResponse<{ resultId: string; items: unknown[] }>> {
-        return this.invoke<{ resultId: string; items: unknown[] }>(
+    async getDiagnosticReport(uri: string): Promise<WasmResponse<DiagnosticReport>> {
+        return this.invoke<DiagnosticReport>(
             'wasm_ZrLspGetDiagnosticReport',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
         );
     }
 
-    async getWorkspaceDiagnosticReports(): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getWorkspaceDiagnosticReports(): Promise<WasmResponse<WorkspaceDiagnosticReport[]>> {
+        return this.invoke<WorkspaceDiagnosticReport[]>(
             'wasm_ZrLspGetWorkspaceDiagnosticReports',
             ['number'],
             [await this.context()],
@@ -137,8 +144,8 @@ export class ZrWasmBridge {
         );
     }
 
-    async getDefinition(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getDefinition(uri: string, line: number, character: number): Promise<WasmResponse<Location[]>> {
+        return this.invoke<Location[]>(
             'wasm_ZrLspGetDefinition',
             ['number', 'string', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character],
@@ -150,8 +157,8 @@ export class ZrWasmBridge {
         line: number,
         character: number,
         includeDeclaration: boolean,
-    ): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    ): Promise<WasmResponse<Location[]>> {
+        return this.invoke<Location[]>(
             'wasm_ZrLspFindReferences',
             ['number', 'string', 'number', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character, includeDeclaration ? 1 : 0],
@@ -163,8 +170,8 @@ export class ZrWasmBridge {
         line: number,
         character: number,
         newName: string,
-    ): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    ): Promise<WasmResponse<Location[]>> {
+        return this.invoke<Location[]>(
             'wasm_ZrLspRename',
             ['number', 'string', 'number', 'number', 'number', 'string', 'number'],
             [
@@ -179,8 +186,8 @@ export class ZrWasmBridge {
         );
     }
 
-    async getDocumentSymbols(uri: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getDocumentSymbols(uri: string): Promise<WasmResponse<SymbolInformation[]>> {
+        return this.invoke<SymbolInformation[]>(
             'wasm_ZrLspGetDocumentSymbols',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
@@ -193,16 +200,16 @@ export class ZrWasmBridge {
         startCharacter: number,
         endLine: number,
         endCharacter: number,
-    ): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    ): Promise<WasmResponse<InlayHint[]>> {
+        return this.invoke<InlayHint[]>(
             'wasm_ZrLspGetInlayHints',
             ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
         );
     }
 
-    async getWorkspaceSymbols(query: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getWorkspaceSymbols(query: string): Promise<WasmResponse<SymbolInformation[]>> {
+        return this.invoke<SymbolInformation[]>(
             'wasm_ZrLspGetWorkspaceSymbols',
             ['number', 'string', 'number'],
             [await this.context(), query, byteLength(query)],
@@ -225,32 +232,32 @@ export class ZrWasmBridge {
         );
     }
 
-    async getDocumentHighlights(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getDocumentHighlights(uri: string, line: number, character: number): Promise<WasmResponse<DocumentHighlight[]>> {
+        return this.invoke<DocumentHighlight[]>(
             'wasm_ZrLspGetDocumentHighlights',
             ['number', 'string', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character],
         );
     }
 
-    async getSemanticTokens(uri: string): Promise<WasmResponse<unknown>> {
-        return this.invoke<unknown>(
+    async getSemanticTokens(uri: string): Promise<WasmResponse<SemanticTokens | null>> {
+        return this.invoke<SemanticTokens | null>(
             'wasm_ZrLspGetSemanticTokens',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
         );
     }
 
-    async prepareRename(uri: string, line: number, character: number): Promise<WasmResponse<unknown>> {
-        return this.invoke<unknown>(
+    async prepareRename(uri: string, line: number, character: number): Promise<WasmResponse<PrepareRenameResult | null>> {
+        return this.invoke<PrepareRenameResult | null>(
             'wasm_ZrLspPrepareRename',
             ['number', 'string', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character],
         );
     }
 
-    async getFormatting(uri: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getFormatting(uri: string): Promise<WasmResponse<TextEdit[]>> {
+        return this.invoke<TextEdit[]>(
             'wasm_ZrLspGetFormatting',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
@@ -263,8 +270,8 @@ export class ZrWasmBridge {
         startCharacter: number,
         endLine: number,
         endCharacter: number,
-    ): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    ): Promise<WasmResponse<TextEdit[]>> {
+        return this.invoke<TextEdit[]>(
             'wasm_ZrLspGetRangeFormatting',
             ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
@@ -277,40 +284,40 @@ export class ZrWasmBridge {
         startCharacter: number,
         endLine: number,
         endCharacter: number,
-    ): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    ): Promise<WasmResponse<CodeAction[]>> {
+        return this.invoke<CodeAction[]>(
             'wasm_ZrLspGetCodeActions',
             ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
         );
     }
 
-    async getFoldingRanges(uri: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getFoldingRanges(uri: string): Promise<WasmResponse<FoldingRange[]>> {
+        return this.invoke<FoldingRange[]>(
             'wasm_ZrLspGetFoldingRanges',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
         );
     }
 
-    async getSelectionRange(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getSelectionRange(uri: string, line: number, character: number): Promise<WasmResponse<SelectionRange[]>> {
+        return this.invoke<SelectionRange[]>(
             'wasm_ZrLspGetSelectionRange',
             ['number', 'string', 'number', 'number', 'number'],
             [await this.context(), uri, byteLength(uri), line, character],
         );
     }
 
-    async getDocumentLinks(uri: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getDocumentLinks(uri: string): Promise<WasmResponse<DocumentLink[]>> {
+        return this.invoke<DocumentLink[]>(
             'wasm_ZrLspGetDocumentLinks',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
         );
     }
 
-    async getCodeLens(uri: string): Promise<WasmResponse<unknown[]>> {
-        return this.invoke<unknown[]>(
+    async getCodeLens(uri: string): Promise<WasmResponse<CodeLens[]>> {
+        return this.invoke<CodeLens[]>(
             'wasm_ZrLspGetCodeLens',
             ['number', 'string', 'number'],
             [await this.context(), uri, byteLength(uri)],
@@ -359,17 +366,22 @@ export class ZrWasmBridge {
             throw new Error(`WASM module is not initialized for ${name}.`);
         }
 
-        const pointer = this.module.ccall(name, 'number', argTypes, args);
-        if (!pointer) {
-            return {
-                success: false,
-                code: -32603,
-                error: `${name} returned a null response pointer.`,
-            };
+        let pointer = 0;
+        try {
+            pointer = this.module.ccall(name, 'number', argTypes, args);
+            if (!pointer) {
+                throw new ResponseError(ErrorCodes.InternalError, `${name} returned a null response pointer.`);
+            }
+            return JSON.parse(this.module.UTF8ToString(pointer)) as WasmResponse<T>;
+        } catch (error) {
+            if (error instanceof ResponseError) {
+                throw error;
+            }
+            throw new ResponseError(ErrorCodes.InternalError, `${name} response decoding failed: ${String(error)}`);
+        } finally {
+            if (pointer) {
+                this.module._free(pointer);
+            }
         }
-
-        const rawResponse = this.module.UTF8ToString(pointer);
-        this.module._free(pointer);
-        return JSON.parse(rawResponse) as WasmResponse<T>;
     }
 }

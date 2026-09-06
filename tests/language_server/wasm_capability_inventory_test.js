@@ -22,8 +22,8 @@ function swap(source, first, second) {
 
 const cases = [
     ['accepts the production adapter wiring', null, null],
-    ['rejects missing JSON-RPC error code', 'zr_vm_language_server/wasm/wasm_exports.cpp', source =>
-        source.replace(/\s*cJSON_AddNumberToObject\(json, "code", error_code_for_message\(message\)\);/, '')],
+    ['rejects errors converted to empty success', worker, source =>
+        source.replace('throw new ResponseError(code, message, response.data);', 'return fallback;')],
     ['rejects swapped worker providers', worker, source =>
         swap(source, 'bridge.getCompletion(', 'bridge.getHover(')],
     ['rejects swapped bridge exports', bridge, source =>

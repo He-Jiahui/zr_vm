@@ -27,8 +27,11 @@ parameters retain `-32602`; cancellation and content-modified conditions
 retain their LSP-specific codes; allocation, serialization, and other
 unexpected failures use `-32603`.
 
-`ZrWasmBridge` preserves the envelope and assigns `-32603` when Emscripten
-returns a null response pointer. JSON parsing failures remain thrown errors.
+`ZrWasmBridge` frees every response pointer in a `finally` block and turns null
+pointers, UTF-8 decoding failures, and malformed JSON into `ResponseError` with
+`-32603`. The worker validates the discriminated envelope: a successful result
+must own a `data` field and cannot also carry `code` or `error`; failures retain
+the explicit numeric code and optional structured data.
 The browser worker's shared `responseData` helper returns a fallback only after
 `success` is true. On failure it throws `ResponseError(code, message, data)` so
 the browser language client receives a JSON-RPC error instead of a fabricated
@@ -36,7 +39,8 @@ empty result. This makes `null` and empty arrays valid only when the core
 operation explicitly succeeded with that result.
 
 The worker wiring probe executes the production worker and bridge with only the
-browser connection, JSON-RPC error class, and WASM ABI replaced. It verifies
-that error codes and structured data survive each request handler, while the
-WASM inventory mutation suite rejects a response serializer that drops the
-numeric code.
+browser connection and WASM ABI replaced. It verifies four distinct codes,
+malformed envelopes, pointer release, and structured data on all 23 request
+routes. `test_wasm_response.c` and the real-export harness cover cJSON ownership
+and workspace report failure propagation. Core status objects, versioned edits,
+and linked `.wasm` asset parity remain pending gates.

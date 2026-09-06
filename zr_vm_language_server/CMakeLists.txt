@@ -212,6 +212,7 @@ if(BUILD_WASM)
         add_executable(${zr_curr_module_name}_wasm 
             ${zr_vm_common_src} 
             ${zr_module_src}
+            ${CMAKE_CURRENT_SOURCE_DIR}/wasm/wasm_response.c
             ${zr_vm_core_src}
             ${zr_vm_parser_src}
             ${zr_vm_library_src}

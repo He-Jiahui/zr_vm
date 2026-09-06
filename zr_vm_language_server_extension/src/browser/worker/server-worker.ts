@@ -4,6 +4,8 @@ import {
     BrowserMessageReader,
     BrowserMessageWriter,
     createConnection,
+    ErrorCodes,
+    ResponseError,
     TextDocumentSyncKind,
     type CompletionItem,
     type Diagnostic,
@@ -15,27 +17,21 @@ import {
     type InitializeResult,
     type Location,
     type Position,
+    type PrepareRenameResult,
     type Range,
     type SemanticTokens,
     type SemanticTokensLegend,
+    type SymbolInformation,
     type TextDocumentContentChangeEvent,
     type WorkspaceEdit,
 } from 'vscode-languageserver/browser';
-import { ErrorCodes, ResponseError } from 'vscode-jsonrpc';
-import { ZrWasmBridge } from './wasm-bridge';
+import { ZrWasmBridge, type WasmResponse } from './wasm-bridge';
 
 declare const self: DedicatedWorkerGlobalScope;
 
 type ManagedDocument = {
     text: string;
     version: number;
-};
-
-type WasmPayload<T> = {
-    success: boolean;
-    data?: T;
-    error?: string;
-    code?: number;
 };
 
 const connection = createConnection(
@@ -231,7 +227,7 @@ connection.onReferences(async ({ textDocument, position, context }) => {
 
 connection.onDocumentSymbol(async ({ textDocument }) => {
     const response = await bridge.getDocumentSymbols(textDocument.uri);
-    return responseData<unknown[]>(response, []);
+    return responseData<SymbolInformation[]>(response, []);
 });
 
 connection.onRequest('textDocument/inlayHint', async ({ textDocument, range }) => {
@@ -247,7 +243,7 @@ connection.onRequest('textDocument/inlayHint', async ({ textDocument, range }) =
 
 connection.onWorkspaceSymbol(async ({ query }) => {
     const response = await bridge.getWorkspaceSymbols(query);
-    return responseData<unknown[]>(response, []);
+    return responseData<SymbolInformation[]>(response, []);
 });
 
 connection.onRequest('zr/nativeDeclarationDocument', async ({ uri }: { uri: string }) => {
@@ -272,7 +268,7 @@ connection.onRequest('textDocument/semanticTokens/full', async ({ textDocument }
 
 connection.onPrepareRename(async ({ textDocument, position }) => {
     const response = await bridge.prepareRename(textDocument.uri, position.line, position.character);
-    return responseData<unknown>(response, null);
+    return responseData<PrepareRenameResult | null>(response, null);
 });
 
 connection.onRenameRequest(async ({ textDocument, position, newName }) => {
@@ -405,14 +401,22 @@ connection.onRequest('workspace/diagnostic', async ({
 
 connection.listen();
 
-function responseData<T>(response: WasmPayload<T>, fallback: T): T {
-    if (!response.success) {
-        const code = Number.isInteger(response.code) ? response.code : ErrorCodes.InternalError;
-        const message = response.error || 'WASM language server request failed.';
+function responseData<T>(response: WasmResponse<T>, fallback: T): T {
+    if (typeof response !== 'object' || response === null || typeof response.success !== 'boolean') {
+        throw new ResponseError(ErrorCodes.InternalError, 'Malformed WASM response envelope.');
+    }
+    if (response.success === false) {
+        const code = typeof response.code === 'number' && Number.isInteger(response.code)
+            ? response.code : ErrorCodes.InternalError;
+        const message = typeof response.error === 'string' && response.error.length > 0
+            ? response.error : 'Malformed WASM error response.';
         throw new ResponseError(code, message, response.data);
     }
-
-    return (response.data as T | undefined) ?? fallback;
+    if (!Object.prototype.hasOwnProperty.call(response, 'data') || response.data === undefined ||
+        'error' in response || 'code' in response) {
+        throw new ResponseError(ErrorCodes.InternalError, 'Malformed WASM success response.');
+    }
+    return response.data ?? fallback;
 }
 
 async function publishDiagnostics(uri: string, version: number | undefined): Promise<void> {
@@ -511,7 +515,7 @@ function applyContentChanges(text: string, contentChanges: TextDocumentContentCh
     let currentText = text;
 
     for (const change of contentChanges) {
-        if (change.range === undefined) {
+        if (!('range' in change)) {
             currentText = change.text;
             continue;
         }
