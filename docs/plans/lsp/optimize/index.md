@@ -231,6 +231,13 @@ report 语义；当前 GCC 与 Clang ASan/UBSan protocol conformance 均为 42/4
 lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍
 保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub13 workspace willRenameFiles invalid params](2026-09-07-plan01-task02-sub13-workspace-will-rename-invalid-params.md)：
+`workspace/willRenameFiles` 现在要求 object params、数组 `files` 以及每个文件项的
+字符串 `oldUri` / `newUri`，缺失或畸形输入返回 `-32602`；合法空 files 与无编辑 rename
+继续返回成功 `null`。当前 GCC 与 Clang ASan/UBSan protocol conformance 均为 43/43，
+lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍
+保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
@@ -301,6 +308,14 @@ markdown/FFI/leading-comment/source-label projection，并保留 descriptor form
 GCC source-contract 通过；完整 metadata refresh/generation、Task 7 其余 consumer、Task 3/8
 和完整跨工具链矩阵仍保持 pending。相关边界见
 [LSP Metadata Hover Capability Boundary](../../../cli-and-tooling/lsp-metadata-hover-capability-boundary.md)。
+
+2026-09-07 已完成 [Plan 03 Task 7.67 receiver completion no AST reinference](2026-09-07-plan03-task07-receiver-completion-no-ast-reinference.md)：
+`TryCollectReceiverCompletions` 删除 completion-local recursive receiver prototype
+scan 与 `ExpressionType_Infer` AST reinference，继续消费 canonical reference type
+facts、symbol/type-environment、explicit binding、imported metadata 与 class/import
+projection。bounded source-contract 与 GCC source-contract 通过，structured receiver
+completion case 保持 PASS；其它 receiver consumer、Task 3/8 与完整矩阵仍保持 pending。
+相关边界见 [LSP Receiver Completion Capability Boundary](../../../cli-and-tooling/lsp-receiver-completion-capability-boundary.md)。
 
 ## 2. 审查证据
 

@@ -195,6 +195,13 @@ fields retain the existing workspace report behavior. GCC and Clang ASan/UBSan b
 42/42, and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
 Sub12](../plans/lsp/optimize/2026-09-07-plan01-task02-sub12-workspace-diagnostic-invalid-params.md).
 
+The workspace file-operation parameter regression extends the current replay to 43 cases.
+`workspace/willRenameFiles` now requires object params with an array `files` field, and each
+file item must provide string `oldUri` and `newUri`; malformed values return `-32602 Invalid
+params`. An empty files array and valid no-edit rename continue to return a successful JSON
+`null`. GCC and Clang ASan/UBSan both pass 43/43, and the lifecycle/protocol CTest pair
+passes 2/2 on each build. See [Plan 01 Task 2 Sub13](../plans/lsp/optimize/2026-09-07-plan01-task02-sub13-workspace-will-rename-invalid-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

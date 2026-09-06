@@ -440,6 +440,28 @@ async function testInvalidWorkspaceDiagnosticParams(serverPath) {
     }
 }
 
+async function testInvalidWorkspaceWillRenameParams(serverPath) {
+    const cases = [
+        ['missing params', undefined],
+        ['null params', null],
+        ['scalar params', 'not-an-object'],
+        ['array params', []],
+        ['missing files', {}],
+        ['null files', { files: null }],
+        ['scalar files', { files: 'not-an-array' }],
+        ['malformed file item', { files: [{}] }],
+    ];
+
+    for (const [label, params] of cases) {
+        await withClient(serverPath, async (client) => {
+            await initialize(client, `invalid-workspace-will-rename-${label}-initialize`);
+            const id = `invalid-workspace-will-rename-${label}`;
+            const response = await client.request('workspace/willRenameFiles', params, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        });
+    }
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1036,6 +1058,7 @@ function protocolCases() {
         ['invalid semantic token params', testInvalidSemanticTokenParams],
         ['invalid workspace symbol params', testInvalidWorkspaceSymbolParams],
         ['invalid workspace diagnostic params', testInvalidWorkspaceDiagnosticParams],
+        ['invalid workspace will rename params', testInvalidWorkspaceWillRenameParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

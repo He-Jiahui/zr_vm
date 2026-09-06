@@ -307,24 +307,40 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
     const cJSON *files;
     cJSON *workspaceEdit = NULL;
 
-    if (server == ZR_NULL || params == NULL) {
-        return cJSON_CreateNull();
+    if (server == ZR_NULL || params == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
+        return ZR_NULL;
     }
 
     files = get_object_item(params, ZR_LSP_FIELD_FILES);
     if (!cJSON_IsArray((cJSON *)files)) {
-        return cJSON_CreateNull();
+        return ZR_NULL;
     }
 
     for (int index = 0; index < cJSON_GetArraySize((cJSON *)files); index++) {
         const cJSON *file = cJSON_GetArrayItem((cJSON *)files, index);
-        SZrString *oldUri = workspace_file_operation_uri(
-                server, get_object_item(file, ZR_LSP_FIELD_OLD_URI));
-        SZrString *newUri = workspace_file_operation_uri(
-                server, get_object_item(file, ZR_LSP_FIELD_NEW_URI));
+        const cJSON *oldUriJson;
+        const cJSON *newUriJson;
+        SZrString *oldUri;
+        SZrString *newUri;
         SZrString *newModuleName = ZR_NULL;
         SZrArray locations = {0};
         SZrArray documentSnapshots = {0};
+
+        if (!cJSON_IsObject((cJSON *)file)) {
+            cJSON_Delete(workspaceEdit);
+            return ZR_NULL;
+        }
+        oldUriJson = get_object_item(file, ZR_LSP_FIELD_OLD_URI);
+        newUriJson = get_object_item(file, ZR_LSP_FIELD_NEW_URI);
+        if (!cJSON_IsString((cJSON *)oldUriJson) ||
+            !cJSON_IsString((cJSON *)newUriJson) ||
+            cJSON_GetStringValue((cJSON *)oldUriJson) == NULL ||
+            cJSON_GetStringValue((cJSON *)newUriJson) == NULL) {
+            cJSON_Delete(workspaceEdit);
+            return ZR_NULL;
+        }
+        oldUri = workspace_file_operation_uri(server, oldUriJson);
+        newUri = workspace_file_operation_uri(server, newUriJson);
 
         if (!workspace_file_event_is_allowed(server, oldUri) ||
             !workspace_file_event_is_allowed(server, newUri) ||

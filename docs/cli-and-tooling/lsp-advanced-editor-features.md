@@ -221,6 +221,7 @@ doc_type: module-detail
 - stdio 的 semantic tokens full、full/delta 和 range 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；合法请求仍按既有 full/delta/range 响应结构返回。
 - stdio 的 `workspace/symbol` 要求字符串 `query`；缺失或非字符串值返回 `-32602 InvalidParams`，合法空字符串仍保留查询语义。
 - stdio 的 `workspace/diagnostic` 要求 object params；缺失、`null`、标量或数组参数返回 `-32602 InvalidParams`，合法空对象及 `previousResultIds` / progress 字段仍保留既有 workspace report 行为。
+- stdio 的 `workspace/willRenameFiles` 要求 object params、数组 `files` 以及每个文件项的字符串 `oldUri` / `newUri`；缺失或畸形参数返回 `-32602 InvalidParams`，合法空 files 或无编辑 rename 仍返回成功 `null`。
 - code action 使用 `SZrLspCodeAction`，提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`。缺失分号动作只消费`ZrLanguageServer_Lsp_GetDiagnostics`返回的`ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE` structured fix；title、edit range和edit text来自parser fact，LSP不再按`var`/`return`等源码前缀重建。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。
 - folding / selection range 从当前文档文本结构生成轻量结构范围，包含 block、连续 import/comment region，以及 word -> line -> block selection chain。
 - document link 扫描 `import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。

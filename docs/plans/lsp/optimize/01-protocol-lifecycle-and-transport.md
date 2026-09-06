@@ -79,6 +79,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub10：semantic tokens full、full/delta 和 range 的 URI/position/range 参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍保留合法响应；[记录](2026-09-07-plan01-task02-sub10-semantic-token-invalid-params.md)。
 - [x] Sub11：`workspace/symbol` 缺失或非字符串 `query` 参数返回 `-32602 InvalidParams`，合法空字符串 query 仍可执行；[记录](2026-09-07-plan01-task02-sub11-workspace-symbol-invalid-params.md)。
 - [x] Sub12：`workspace/diagnostic` 缺失、`null`、标量或数组 params 返回 `-32602 InvalidParams`，合法 object params 继续保留 report/progress 语义；[记录](2026-09-07-plan01-task02-sub12-workspace-diagnostic-invalid-params.md)。
+- [x] Sub13：`workspace/willRenameFiles` 缺失或畸形 params、files 或文件 URI 返回 `-32602 InvalidParams`，合法无编辑路径继续返回 `null`；[记录](2026-09-07-plan01-task02-sub13-workspace-will-rename-invalid-params.md)。
 - [x] Sub02：`initialize` 的 params 缺失、`null`、标量或数组时返回 `-32602 InvalidParams`，且不进入初始化生命周期；[记录](2026-09-07-plan01-task02-sub02-initialize-params.md)。
 - [x] Sub03：numeric request id 只接受有限、整数且处于 JSON-safe 范围的值，fractional id 返回 `-32600 Invalid Request`；[记录](2026-09-07-plan01-task02-sub03-integer-request-ids.md)。
 - [x] Sub04：直接回归验证 envelope 对顶层消息、jsonrpc 版本、typed id、params 形状和 request/notification 分类；[记录](2026-09-07-plan01-task02-sub04-envelope-api.md)。
