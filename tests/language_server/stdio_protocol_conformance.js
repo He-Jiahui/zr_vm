@@ -851,6 +851,8 @@ async function testMalformedFramesCloseWithFailure(serverPath) {
         ['wrong newline', 'MALFORMED_HEADER', 'Content-Length: 2\n\n{}'],
         ['non utf8 charset', 'MALFORMED_HEADER',
          'Content-Length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-16\r\n\r\n{}'],
+        ['charset without value', 'MALFORMED_HEADER',
+         'Content-Length: 2\r\nContent-Type: application/vscode-jsonrpc; charset\r\n\r\n{}'],
         ['conflicting charset parameters', 'MALFORMED_HEADER',
          'Content-Length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8; charset=utf-16\r\n\r\n{}'],
         ['truncated payload', 'PAYLOAD_TRUNCATED', 'Content-Length: 4\r\n\r\n{}'],

@@ -71,6 +71,8 @@ static TZrBool frame_reader_content_type_is_utf8(char *value) {
                     return ZR_FALSE;
                 }
             }
+        } else if (frame_reader_ascii_equals(part, "charset")) {
+            return ZR_FALSE;
         }
         if (next == ZR_NULL) {
             break;

@@ -91,7 +91,7 @@ toward the limits.
 The reader rejects a NUL byte while reading headers, before the line is treated
 as a C string. Every explicit `charset` parameter is examined; `utf-8` and
 `utf8` are accepted (including quoted values), while any other explicit charset
-or conflicting value is malformed. JSON payload parsing remains the later
+or conflicting value, including a missing value, is malformed. JSON payload parsing remains the later
 JSON-RPC concern and is not confused with a framing failure.
 
 The protocol driver covers the NUL and duplicate/conflicting charset cases

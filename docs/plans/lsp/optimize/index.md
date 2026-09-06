@@ -142,6 +142,11 @@ reader 在 C 字符串处理前拒绝 header NUL，并检查所有显式 `charse
 值；协议 30-case conformance 在 GCC、Clang ASan/UBSan 与 MSVC 均通过。Task 3 的完整限制、
 失败分类、transport 与生命周期父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 3 Sub02 charset 参数语法](2026-09-07-plan01-task03-sub02-charset-parameter-syntax.md)：
+显式但无值的 `charset` 参数现在分类为 `MALFORMED_HEADER`，未知扩展参数仍可忽略；
+GCC、Clang ASan/UBSan 的 33-case protocol conformance 与 lifecycle 专项通过。
+Task 3 的完整限制、transport 和父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 4 Sub02 数字 request ID 精度](2026-09-07-plan01-task04-sub02-safe-numeric-request-ids.md)：
 数字 ID 限定在 `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX`，安全上界保持精确回显，超界值返回
 `-32600 Invalid Request`；字符串和数字 ID 继续按类型区分。GCC、Clang ASan/UBSan 与
