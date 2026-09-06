@@ -378,6 +378,23 @@ async function testInvalidCompletionResolveParams(serverPath) {
     });
 }
 
+async function testInvalidAdditionalEditorParams(serverPath) {
+    const cases = [
+        ['inline value', 'textDocument/inlineValue'],
+        ['moniker', 'textDocument/moniker'],
+        ['linked editing range', 'textDocument/linkedEditingRange'],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-additional-editor-initialize');
+        for (const [label, method] of cases) {
+            const id = `invalid-additional-editor-${label}`;
+            const response = await client.request(method, {}, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -970,6 +987,7 @@ function protocolCases() {
         ['invalid editor feature params', testInvalidEditorFeatureParams],
         ['invalid editing params', testInvalidEditingParams],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
+        ['invalid additional editor params', testInvalidAdditionalEditorParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

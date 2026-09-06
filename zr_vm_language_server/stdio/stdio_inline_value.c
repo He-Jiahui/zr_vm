@@ -811,7 +811,7 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
         !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &requestRange)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     ZR_UNUSED_PARAMETER(uriText);
 

@@ -280,7 +280,7 @@ cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *
     TZrBool hasSemanticReferences;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return cJSON_CreateNull();
+        return NULL;
     }
 
     hasSemanticReferences =

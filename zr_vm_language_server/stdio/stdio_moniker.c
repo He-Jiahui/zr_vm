@@ -171,7 +171,7 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *moniker;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     fileVersion = get_file_version_for_uri(server, uri);
