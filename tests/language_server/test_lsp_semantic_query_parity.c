@@ -1536,6 +1536,7 @@ cleanup:
 #include "test_lsp_canonical_completion_cases.h"
 #include "test_lsp_declared_primitive_type_identity_cases.h"
 #include "test_lsp_external_member_reference_identity_cases.h"
+#include "test_lsp_symbol_projection_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1553,6 +1554,8 @@ int main(void) {
     test_source_semantic_query_snapshot_parity(state);
     test_local_reference_consumers_use_canonical_facts(state);
     test_local_query_rejects_missing_canonical_reference(state);
+    test_symbol_projection_rejects_unavailable_canonical_identity(state, ZR_TRUE);
+    test_symbol_projection_rejects_unavailable_canonical_identity(state, ZR_FALSE);
     test_local_implementation_consumer_uses_canonical_relations(state);
     test_local_type_hierarchy_uses_canonical_relations(state);
     test_local_call_hierarchy_uses_canonical_edges(state);

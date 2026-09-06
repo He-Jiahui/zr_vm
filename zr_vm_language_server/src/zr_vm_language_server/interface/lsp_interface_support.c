@@ -5246,37 +5246,10 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     }
 }
 
-static TZrBool file_position_is_in_range(SZrFileRange position, SZrFileRange targetRange) {
-    if (!ZrLanguageServer_Lsp_StringsEqual(position.source, targetRange.source) &&
-        position.source != ZR_NULL && targetRange.source != ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (targetRange.start.offset > 0 && targetRange.end.offset > 0 &&
-        position.start.offset > 0 && position.end.offset > 0) {
-        return targetRange.start.offset <= position.start.offset &&
-               position.end.offset <= targetRange.end.offset;
-    }
-
-    {
-        TZrBool startMatch = (targetRange.start.line < position.start.line) ||
-                             (targetRange.start.line == position.start.line &&
-                              targetRange.start.column <= position.start.column);
-        TZrBool endMatch = (position.end.line < targetRange.end.line) ||
-                           (position.end.line == targetRange.end.line &&
-                            position.end.column <= targetRange.end.column);
-        return startMatch && endMatch;
-    }
-}
-
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer, SZrFileRange position) {
-    SZrSymbolTable *symbolTable;
-    TZrSize scopeIndex;
-
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+    if (analyzer == ZR_NULL) {
         return ZR_NULL;
     }
-    symbolTable = analyzer->symbolTable;
 
     {
         SZrSymbol *property = ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(
@@ -5293,42 +5266,6 @@ SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyze
             return definition;
         }
     }
-
-    for (scopeIndex = 0; scopeIndex < symbolTable->allScopes.length; scopeIndex++) {
-        SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrCore_Array_Get(&symbolTable->allScopes, scopeIndex);
-        SZrSymbolScope *scope = scopePtr != ZR_NULL ? *scopePtr : ZR_NULL;
-        TZrSize symbolIndex;
-
-        if (scope == ZR_NULL) {
-            continue;
-        }
-
-        for (symbolIndex = 0; symbolIndex < scope->symbols.length; symbolIndex++) {
-            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&scope->symbols, symbolIndex);
-            TZrSize referenceIndex;
-
-            if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
-                continue;
-            }
-
-            {
-                SZrSymbol *symbol = *symbolPtr;
-
-                if (file_position_is_in_range(position, ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol))) {
-                    return symbol;
-                }
-
-                for (referenceIndex = 0; referenceIndex < symbol->references.length; referenceIndex++) {
-                    SZrFileRange *referenceRange =
-                        (SZrFileRange *)ZrCore_Array_Get(&symbol->references, referenceIndex);
-                    if (referenceRange != ZR_NULL && file_position_is_in_range(position, *referenceRange)) {
-                        return symbol;
-                    }
-                }
-            }
-        }
-    }
-
     return ZR_NULL;
 }
 

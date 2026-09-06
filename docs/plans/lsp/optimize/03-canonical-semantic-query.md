@@ -1368,3 +1368,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   本子里程碑 focused 完成，但 Task 7/Task 8 仍进行中；上层 allScopes/range fallback、
   source/binary/native sourceless relation、virtual declaration URI、真实 multi-provider
   generation、完整 16-target 与 stdio/CLI smoke 尚未完成。
+
+- 补充完成时间：2026-09-07 04:50 +08:00。Task 7.63 收紧公开
+  `Lsp_FindSymbolAtUsageOrDefinition` 投影边界：属性先消费 exact property contract，普通
+  symbol 只调用 `SemanticAnalyzer_GetSymbolAt` 的 parser canonical `SymbolAt` 与 stable
+  `SymbolId` bridge；删除遍历 `allScopes`、声明 range 和 retained reference ranges 的
+  request-time fallback。新增缺失 semantic context 与 canonical identity mismatch 的
+  fail-closed 回归，证明 canonical lookup 失败后不会重新提升同一位置的 LSP symbol。
+  GCC 与 Clang ASan/UBSan parity target 均完成重编译，新增两项均真实 PASS；整套 parity
+  仍保留基线已登记的四个失败及 Clang 既有 LSan 泄漏，因此不扩大为 Task 7/8 全局通过。
+  详见 [Task 7.63 record](2026-09-07-plan03-task07-canonical-symbol-projection.md)。

@@ -53,6 +53,19 @@ tests also detach the analyzer symbol table while querying implementations.
 These tests cover local canonical implementation, not all external/binary/native
 provider origins or definition-flow cases.
 
+## Canonical Symbol Projection
+
+The public position-symbol bridge keeps the exact property contract as its first
+provider and delegates ordinary symbols to parser `SymbolAt`. A failed canonical
+lookup, missing semantic context, or invalid `SymbolId` returns no symbol. The
+bridge does not walk the LSP symbol table's scopes or retained declaration/reference
+ranges to reconstruct identity. The returned symbol is a presentation projection
+looked up by stable `SymbolId` and is borrowed only for the synchronous request.
+
+`test_lsp_symbol_projection_cases.h` covers both missing semantic context and a
+mismatched projected identity. The focused record is
+[Plan 03 Task 7.63](../plans/lsp/optimize/2026-09-07-plan03-task07-canonical-symbol-projection.md).
+
 ## Existing Workspace Contract
 
 Native `workspace/didChangeWorkspaceFolders` updates the actual workspace root
