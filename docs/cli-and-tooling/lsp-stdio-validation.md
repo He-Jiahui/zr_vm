@@ -1,5 +1,7 @@
 ---
 related_code:
+  - tests/language_server/test_stdio_lsp_parse.c
+  - tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake
   - tests/language_server/collect_lsp_baseline.js
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/stdio_smoke.js
@@ -24,6 +26,7 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake
   - tests/language_server/stdio_protocol_conformance.js
   - tests/language_server/stdio_protocol_envelope_mutations.js
   - zr_vm_language_server/stdio/stdio_initialize.c
@@ -37,8 +40,10 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_server.c
 plan_sources:
   - docs/plans/lsp/optimize/00-baseline-and-contract.md
+  - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_lsp_parse.c
   - tests/language_server/collect_lsp_baseline_test.js
   - tests/language_server/stdio_protocol_conformance.js
   - tests/language_server/stdio_protocol_envelope_mutations.js
@@ -53,6 +58,23 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Strict Numeric Parsing
+
+`stdio_lsp_parse.c` is the single validation boundary for LSP sizes, positions
+and ranges. `parse_size_value_strict` accepts only finite, non-negative,
+integral JSON numbers representable by `TZrSize`; its exclusive upper bound is
+computed as the exact `2^N` value instead of converting `SIZE_MAX` to `double`,
+which rounds up on 64-bit hosts. Position components use the corresponding
+finite `INT32_MAX` bound, and ranges require an ordered start/end pair.
+
+The focused `language_server_stdio_lsp_parse` test covers zero, signed zero,
+the largest representable position and size values, fractions, negative and
+non-finite values, the rounded `2^N` size boundary, wrong JSON types, malformed
+objects, missing fields and reversed ranges. The test is registered through
+`tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake` so the numeric contract can be
+run independently of the larger protocol suite. See [Plan 01 Task 2 Sub01](../plans/lsp/optimize/2026-09-07-plan01-task02-sub01-strict-numeric-parsing.md)
+for the RED/GREEN and three-toolchain evidence.
 
 ## Response Envelope Validation
 

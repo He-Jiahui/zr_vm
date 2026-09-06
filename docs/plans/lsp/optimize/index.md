@@ -130,6 +130,12 @@ WSL ext4 上 Clang ASan/UBSan lifecycle、document sync 与 30-case protocol 连
 挂载路径的 3 秒响应超时边界已保留，Plan 01 父级门禁仍等待完整跨工具链汇总，
 WASM linked asset 仍未生成。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub01 严格数值解析](2026-09-07-plan01-task02-sub01-strict-numeric-parsing.md)：
+`parse_size_value`、`parse_position` 与 `parse_range` 现在有独立的边界回归矩阵，
+并修复 64 位 `SIZE_MAX` 转换为 `double` 后舍入到 `2^64` 导致的 UBSan 未定义行为。
+GCC、Clang ASan/UBSan 与 MSVC 专项均通过；Task 2 的 envelope、handler status
+与完整协议父门禁仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

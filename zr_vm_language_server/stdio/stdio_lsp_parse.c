@@ -11,6 +11,8 @@ const cJSON *get_object_item(const cJSON *json, const char *key) {
 }
 
 TZrBool parse_size_value_strict(const cJSON *json, TZrSize *outValue) {
+    /* SIZE_MAX rounds up in double on 64-bit hosts. Use the exact 2^N bound. */
+    const double sizeLimit = (double)(ZR_MAX_SIZE / 2 + 1) * 2.0;
     double value;
     TZrSize parsed;
 
@@ -19,7 +21,7 @@ TZrBool parse_size_value_strict(const cJSON *json, TZrSize *outValue) {
     }
 
     value = json->valuedouble;
-    if (!isfinite(value) || value < 0 || value > (double)ZR_MAX_SIZE) {
+    if (!isfinite(value) || value < 0 || value >= sizeLimit) {
         return ZR_FALSE;
     }
 
