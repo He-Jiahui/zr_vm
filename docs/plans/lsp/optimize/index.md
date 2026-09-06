@@ -202,12 +202,12 @@ registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 p
 notification 无副作用。GCC、Clang ASan/UBSan focused、MSVC 协议回归通过，Task 4
 的 registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 pending。
 
-2026-09-07 已完成 [Plan 03 Task 7.63 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
+2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；
 缺失 semantic context 和 identity mismatch 均 fail closed。GCC 与 Clang ASan/UBSan
 parity 中新增两项均通过，整套 parity 保留基线四项失败和 Clang 既有 LSan 泄漏；Task 7
-其余 consumer、完整矩阵和 Task 8 仍保持 pending。
+其余 consumer、`Task 7.63 ResolveTypeAtPosition`、完整矩阵和 Task 8 仍保持 pending。
 
 ## 2. 审查证据
 

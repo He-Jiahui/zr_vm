@@ -14,7 +14,7 @@ tests:
 doc_type: milestone-record
 ---
 
-# Plan 03 Task 7.63: Canonical Symbol Projection Fail-Closed
+# Plan 03 Task 7 Astra P1: Canonical Symbol Projection Fail-Closed
 
 ## Goal
 
@@ -61,7 +61,8 @@ table 的范围或 retained reference ranges 猜测出语义身份。
 ## 状态与产出记录
 
 - 完成时间：2026-09-07 04:50 +08:00。
-- 状态：Task 7.63 focused 子里程碑完成；Plan 03 Task 7 与 Task 8 仍进行中。
+- 状态：Plan 03 Task 7 Astra P1 focused 子里程碑完成；`Task 7.63 ResolveTypeAtPosition`
+  与 Plan 03 Task 7/8 其余门禁仍进行中。
 - 完成项目：删除公开 symbol position lookup 的 LSP scope/range fallback；加入
   canonical identity 缺失与不一致的 fail-closed 回归；保留 property exact contract。
 - 未完成项目：其余 consumer 迁移、source/binary/native sourceless relation、virtual

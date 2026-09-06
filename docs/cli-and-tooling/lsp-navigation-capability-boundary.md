@@ -64,7 +64,7 @@ looked up by stable `SymbolId` and is borrowed only for the synchronous request.
 
 `test_lsp_symbol_projection_cases.h` covers both missing semantic context and a
 mismatched projected identity. The focused record is
-[Plan 03 Task 7.63](../plans/lsp/optimize/2026-09-07-plan03-task07-canonical-symbol-projection.md).
+[Plan 03 Task 7 Astra P1](../plans/lsp/optimize/2026-09-07-plan03-task07-canonical-symbol-projection.md).
 
 ## Existing Workspace Contract
 
