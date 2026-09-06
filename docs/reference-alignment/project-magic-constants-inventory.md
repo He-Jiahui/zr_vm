@@ -351,6 +351,7 @@ doc_type: inventory
 | `EZrLspSymbolKind` | `zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c` | symbol information `kind` 字段使用的 LSP 协议编号枚举 | `zr_vm_language_server/include/zr_vm_language_server/conf.h` | 否 |
 | `ZR_LSP_JSON_RPC_PARSE_ERROR_CODE` / `ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE` | `zr_vm_language_server/stdio/zr_vm_language_server_stdio.c` | stdio JSON-RPC 协议错误码 | `zr_vm_language_server/include/zr_vm_language_server/conf.h` | 否 |
 | `ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE` / `ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE` | `zr_vm_language_server/stdio/stdio_requests.c` | request dispatch 的 `Method not found` / `Invalid params` 错误码 | `zr_vm_language_server/include/zr_vm_language_server/conf.h` | 否 |
+| `ZR_LSP_JSON_SAFE_INTEGER_MAX` | `zr_vm_language_server/stdio/stdio_json_rpc.c`, `stdio_requests.c`, `stdio_transport.c` | JSON-RPC 数字 request id 与 work-done/partial-result token 共同使用的可精确表示整数边界 | `zr_vm_language_server/include/zr_vm_language_server/conf.h` | 否 |
 
 ## 兼容 alias
 

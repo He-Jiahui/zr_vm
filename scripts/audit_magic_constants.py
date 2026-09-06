@@ -939,6 +939,14 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         meaning="stdio request dispatch must not hard-code JSON-RPC method-not-found and invalid-params error codes.",
     ),
     AuditRule(
+        name="lsp stdio progress-token safe integer literal",
+        path="zr_vm_language_server/stdio/stdio_requests.c",
+        pattern=r"-9007199254740991\.0|9007199254740991\.0",
+        target="ZR_LSP_JSON_SAFE_INTEGER_MAX",
+        layer="module",
+        meaning="stdio progress-token validation must reuse the shared JSON-safe integer boundary.",
+    ),
+    AuditRule(
         name="lsp stdio initialize sync-kind and trigger literals",
         path="zr_vm_language_server/stdio/stdio_requests.c",
         pattern=r"ZR_LSP_FIELD_CHANGE,\s*2\b|cJSON_CreateString\(\"\\.\"\)|cJSON_CreateString\(\":\"\)|"
