@@ -7061,6 +7061,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                     $<TARGET_FILE:zr_vm_language_server_stdio>
     )
     add_test(
+            NAME language_server_stdio_protocol_envelope_mutations
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_protocol_envelope_mutations.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+    add_test(
             NAME language_server_stdio_resolve_capabilities_smoke
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_resolve_capabilities_smoke.js

@@ -21,14 +21,27 @@ function assert(condition, message) {
     }
 }
 
-function assertErrorEnvelope(response, id, code, label) {
-    assert(response && response.jsonrpc === '2.0', `${label}: response must have jsonrpc=2.0`);
+function assertResponseEnvelope(response, id, member, label) {
+    assert(response && typeof response === 'object' && !Array.isArray(response),
+           `${label}: response envelope must be an object`);
+    assert(response.jsonrpc === '2.0', `${label}: response must have jsonrpc=2.0`);
     assert(Object.prototype.hasOwnProperty.call(response, 'id') && response.id === id,
-           `${label}: response id must exactly match ${String(id)}`);
-    assert(response.error && response.error.code === code,
+           `${label}: response envelope id must exactly match ${String(id)}`);
+    assert(JSON.stringify(Object.keys(response).sort()) ===
+           JSON.stringify(['id', 'jsonrpc', member].sort()),
+           `${label}: response envelope must contain only jsonrpc, id and ${member}`);
+}
+
+function assertSuccessEnvelope(response, id, label) {
+    assertResponseEnvelope(response, id, 'result', label);
+}
+
+function assertErrorEnvelope(response, id, code, label) {
+    assertResponseEnvelope(response, id, 'error', label);
+    assert(response.error && typeof response.error === 'object' && !Array.isArray(response.error) &&
+           response.error.code === code,
            `${label}: expected error ${code}, actual=${JSON.stringify(response)}`);
-    assert(!Object.prototype.hasOwnProperty.call(response, 'result'),
-           `${label}: error envelope must not also contain result`);
+    assert(typeof response.error.message === 'string', `${label}: error message must be a string`);
 }
 
 function initializePayload(id) {
@@ -46,6 +59,7 @@ function initializePayload(id) {
 
 async function initialize(client, id = 'initialize') {
     const response = await client.requestEnvelope(initializePayload(id), RESPONSE_TIMEOUT_MS);
+    assertSuccessEnvelope(response, id, 'initialize');
     assert(response && response.jsonrpc === '2.0' && response.id === id && response.result,
            `initialize must return a JSON-RPC success envelope, actual=${JSON.stringify(response)}`);
     return response.result;
@@ -103,6 +117,7 @@ async function testNotificationBeforeInitializeIsIgnored(serverPath) {
         const response = await client.request('workspace/symbol', {
             query: 'IgnoredBeforeInitialize',
         }, 'ignored-before-initialize', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(response, 'ignored-before-initialize', 'ignored notification');
         assert(response && Array.isArray(response.result) && response.result.length === 0,
                `notification before initialize must be ignored, actual=${JSON.stringify(response)}`);
     });
@@ -129,6 +144,7 @@ async function testRequestAfterShutdown(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'shutdown-initialize');
         const shutdown = await client.request('shutdown', undefined, 'shutdown', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(shutdown, 'shutdown', 'shutdown');
         assert(shutdown && shutdown.result === null,
                `shutdown must return a null result envelope, actual=${JSON.stringify(shutdown)}`);
         client.notify('textDocument/didOpen', {
@@ -308,12 +324,16 @@ async function testDuplicateRequestId(serverPath) {
         const first = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const second = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const responses = [first, second];
-        assert(responses.some((response) => response && response.id === 'duplicate-request' &&
-                response.error && response.error.code === -32600),
-               `duplicate request ids must produce -32600, actual=${JSON.stringify(responses)}`);
-        assert(responses.filter((response) => response && response.id === 'duplicate-request' &&
-                !response.error).length === 1,
-               `duplicate request ids must dispatch only once, actual=${JSON.stringify(responses)}`);
+        const errors = responses.filter((response) =>
+            response && Object.prototype.hasOwnProperty.call(response, 'error'));
+        const successes = responses.filter((response) =>
+            response && !Object.prototype.hasOwnProperty.call(response, 'error'));
+        assert(errors.length === 1 && successes.length === 1,
+               `duplicate request ids require one error and one success envelope, actual=${JSON.stringify(responses)}`);
+        assertErrorEnvelope(errors[0], 'duplicate-request', -32600, 'duplicate request id');
+        assertSuccessEnvelope(successes[0], 'duplicate-request', 'original request id');
+        assert(Array.isArray(successes[0].result) && successes[0].result.length === 0,
+               `original workspace symbol request must have no symbols, actual=${JSON.stringify(successes[0])}`);
     });
 }
 
@@ -335,11 +355,12 @@ async function testDistinctTypedRequestIds(serverPath) {
         const first = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const second = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const responses = [first, second];
-
-        assert(responses.some((response) => response && response.id === 1 && !response.error),
-               `numeric request id must not conflict with string id, actual=${JSON.stringify(responses)}`);
-        assert(responses.some((response) => response && response.id === '1' && !response.error),
-               `string request id must not conflict with numeric id, actual=${JSON.stringify(responses)}`);
+        for (const id of [1, '1']) {
+            const response = responses.find((item) => item && item.id === id);
+            assertSuccessEnvelope(response, id, `distinct ${typeof id} request id`);
+            assert(Array.isArray(response.result) && response.result.length === 0,
+                   `typed workspace symbol request must have no symbols, actual=${JSON.stringify(response)}`);
+        }
     });
 }
 
@@ -400,6 +421,7 @@ async function testSetTraceWritesOnlyStderr(serverPath) {
         await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
 
         const tracedResponse = await client.request('workspace/symbol', { query: '' }, 'trace-request');
+        assertSuccessEnvelope(tracedResponse, 'trace-request', 'traced request');
         assert(tracedResponse && Array.isArray(tracedResponse.result),
                `traced request must retain its framed result, actual=${JSON.stringify(tracedResponse)}`);
         assert(client.stderr().includes('LSP trace inbound request workspace/symbol'),
@@ -417,7 +439,8 @@ async function testSetTraceWritesOnlyStderr(serverPath) {
         client.notify('$/setTrace', { value: 'off' });
         await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
         const stderrBeforeOffRequest = client.stderr();
-        await client.request('workspace/symbol', { query: '' }, 'trace-off-request');
+        const offResponse = await client.request('workspace/symbol', { query: '' }, 'trace-off-request');
+        assertSuccessEnvelope(offResponse, 'trace-off-request', 'trace off request');
         assert(client.stderr() === stderrBeforeOffRequest,
                `off trace must not add stderr records, stderr=${client.stderr()}`);
     });
@@ -433,6 +456,7 @@ async function testRequestWorkDoneProgress(serverPath) {
         const stringBegin = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const stringEnd = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const stringResult = await stringResponse;
+        assertSuccessEnvelope(stringResult, 'work-done-string', 'string work-done result');
 
         assert(stringBegin && stringBegin.token === 'workspace-symbol-work' &&
                stringBegin.value && stringBegin.value.kind === 'begin',
@@ -450,6 +474,7 @@ async function testRequestWorkDoneProgress(serverPath) {
         const numberBegin = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const numberEnd = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const numberResult = await numberResponse;
+        assertSuccessEnvelope(numberResult, 'work-done-number', 'numeric work-done result');
 
         assert(numberBegin && numberBegin.token === 9 && numberBegin.value && numberBegin.value.kind === 'begin',
                `numeric work-done begin must preserve token, actual=${JSON.stringify(numberBegin)}`);
@@ -491,6 +516,7 @@ async function testWorkspaceSymbolPartialResults(serverPath) {
         const firstPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const secondPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const response = await responsePromise;
+        assertSuccessEnvelope(response, 'workspace-symbol-partial', 'workspace symbol partial result');
 
         assert(firstPartial && firstPartial.token === 17 &&
                Array.isArray(firstPartial.value) && firstPartial.value.length === 64 &&
@@ -533,6 +559,7 @@ async function testReferencesPartialResults(serverPath) {
         }, 'references-partial', RESPONSE_TIMEOUT_MS);
         const partial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const response = await responsePromise;
+        assertSuccessEnvelope(response, 'references-partial', 'references partial result');
 
         assert(partial && partial.token === 'references-partial' && Array.isArray(partial.value) &&
                partial.value.length >= 3 && partial.value.every((location) => location && location.uri === uri),
@@ -566,6 +593,7 @@ async function testCallHierarchyPartialResults(serverPath) {
             textDocument: { uri },
             position: { line: 0, character: 3 },
         }, 'prepare-call-hierarchy-partial', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(prepared, 'prepare-call-hierarchy-partial', 'prepare call hierarchy');
         assert(prepared && Array.isArray(prepared.result) && prepared.result.length > 0,
                `prepare call hierarchy must yield the callee item, actual=${JSON.stringify(prepared)}`);
 
@@ -575,6 +603,7 @@ async function testCallHierarchyPartialResults(serverPath) {
         }, 'call-hierarchy-partial', RESPONSE_TIMEOUT_MS);
         const partial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const response = await responsePromise;
+        assertSuccessEnvelope(response, 'call-hierarchy-partial', 'call hierarchy partial result');
 
         assert(partial && partial.token === 'call-hierarchy-partial' && Array.isArray(partial.value) &&
                partial.value.some((call) => call && call.from && call.from.name === 'partialCaller'),
@@ -606,6 +635,7 @@ async function testTypeHierarchyPartialResults(serverPath) {
             textDocument: { uri },
             position: { line: 2, character: 7 },
         }, 'prepare-type-hierarchy-derived', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(derived, 'prepare-type-hierarchy-derived', 'prepare derived type hierarchy');
         assert(derived && Array.isArray(derived.result) && derived.result.length > 0,
                `prepare type hierarchy must yield PartialDerived, actual=${JSON.stringify(derived)}`);
 
@@ -615,6 +645,7 @@ async function testTypeHierarchyPartialResults(serverPath) {
         }, 'type-hierarchy-supertypes-partial', RESPONSE_TIMEOUT_MS);
         const supertypesPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const supertypes = await supertypesPromise;
+        assertSuccessEnvelope(supertypes, 'type-hierarchy-supertypes-partial', 'supertypes partial result');
         assert(supertypesPartial && supertypesPartial.token === 'type-hierarchy-supertypes-partial' &&
                Array.isArray(supertypesPartial.value) &&
                supertypesPartial.value.some((item) => item && item.name === 'PartialBase'),
@@ -626,6 +657,7 @@ async function testTypeHierarchyPartialResults(serverPath) {
             textDocument: { uri },
             position: { line: 0, character: 7 },
         }, 'prepare-type-hierarchy-base', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(base, 'prepare-type-hierarchy-base', 'prepare base type hierarchy');
         assert(base && Array.isArray(base.result) && base.result.length > 0,
                `prepare type hierarchy must yield PartialBase, actual=${JSON.stringify(base)}`);
 
@@ -635,6 +667,7 @@ async function testTypeHierarchyPartialResults(serverPath) {
         }, 'type-hierarchy-subtypes-partial', RESPONSE_TIMEOUT_MS);
         const subtypesPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const subtypes = await subtypesPromise;
+        assertSuccessEnvelope(subtypes, 'type-hierarchy-subtypes-partial', 'subtypes partial result');
         assert(subtypesPartial && subtypesPartial.token === 'type-hierarchy-subtypes-partial' &&
                Array.isArray(subtypesPartial.value) &&
                subtypesPartial.value.some((item) => item && item.name === 'PartialDerived'),
@@ -662,6 +695,7 @@ async function testWorkspaceDiagnosticPartialResults(serverPath) {
         }, 'workspace-diagnostic-partial', RESPONSE_TIMEOUT_MS);
         const partial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const response = await responsePromise;
+        assertSuccessEnvelope(response, 'workspace-diagnostic-partial', 'workspace diagnostic partial result');
 
         assert(partial && partial.token === 'workspace-diagnostic-partial' &&
                partial.value && Array.isArray(partial.value.items) &&
@@ -711,9 +745,8 @@ async function testMalformedFramesCloseWithFailure(serverPath) {
     }
 }
 
-async function main() {
-    const serverPath = process.argv[2];
-    const cases = [
+function protocolCases() {
+    return [
         ['LSP 3.17 capability matrix', testCapabilityMatrix],
         ['request before initialize', testRequestBeforeInitialize],
         ['notification before initialize is ignored', testNotificationBeforeInitializeIsIgnored],
@@ -745,6 +778,11 @@ async function main() {
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];
+}
+
+async function main() {
+    const serverPath = process.argv[2];
+    const cases = protocolCases();
     let failures = 0;
 
     assert(serverPath, 'usage: node stdio_protocol_conformance.js <stdio-server>');
@@ -763,7 +801,11 @@ async function main() {
     }
 }
 
-main().catch((error) => {
-    console.error(`stdio protocol conformance failed: ${error.stack || error.message}`);
-    process.exitCode = 1;
-});
+module.exports = { protocolCases };
+
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(`stdio protocol conformance failed: ${error.stack || error.message}`);
+        process.exitCode = 1;
+    });
+}

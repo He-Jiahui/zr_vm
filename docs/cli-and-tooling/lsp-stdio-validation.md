@@ -3,6 +3,9 @@ related_code:
   - tests/language_server/collect_lsp_baseline.js
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_protocol_client.js
+  - tests/language_server/stdio_protocol_conformance.js
+  - tests/language_server/stdio_protocol_envelope_mutations.js
   - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/test_stdio_server_lifecycle.c
@@ -21,6 +24,8 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - tests/language_server/stdio_protocol_conformance.js
+  - tests/language_server/stdio_protocol_envelope_mutations.js
   - zr_vm_language_server/stdio/stdio_initialize.c
   - zr_vm_language_server/stdio/stdio_request_dispatch.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
@@ -35,6 +40,8 @@ plan_sources:
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
   - tests/language_server/collect_lsp_baseline_test.js
+  - tests/language_server/stdio_protocol_conformance.js
+  - tests/language_server/stdio_protocol_envelope_mutations.js
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_resolve_capabilities_smoke.js
   - tests/language_server/stdio_save_capabilities_smoke.js
@@ -46,6 +53,38 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Response Envelope Validation
+
+`stdio_protocol_conformance.js` uses `StdioProtocolClient` for framing, typed
+request IDs, deadlines, response/notification backlogs and stderr capture. The
+smoke driver extends the same client. Every conformance response first checks
+an object with `jsonrpc: "2.0"`, the exact typed ID and exactly one of `result`
+or `error`. Errors also require the case's exact numeric code and a string
+message. Null results remain valid, while an added `error: null`, missing
+result or mixed error/result response fails. The fixed server response shape
+allows only the three envelope keys; the error payload may retain optional data.
+
+The duplicate-ID case requires exactly one `-32600` error and one successful
+empty workspace-symbol result. Numeric `1` and string `"1"` each retain their
+own valid success envelope. Trace, work-done and partial-result cases apply the
+same checks before inspecting method-specific results.
+
+`stdio_protocol_envelope_mutations.js` imports the production conformance case
+list without starting its CLI. Six unchanged cases must pass first. It then
+runs 11 cases with one decoded response mutation each, covering missing/wrong
+protocol versions, mixed result/error fields, missing results and malformed
+error messages. Each case must observe exactly one injected response and fail
+on an envelope assertion; a timeout or unrelated failure cannot satisfy the
+test. This verifies the actual case wiring, not a separate copy of the rules.
+
+The runner executes serially and restores the client's dispatch prototype in
+`finally`. Each case owns and terminates its child process; mutations affect
+only the local decoded JSON, with no server source, semantic facts or provider
+state changes. CTest registers it as
+`language_server_stdio_protocol_envelope_mutations`. See
+[Plan 00 Task 3 Sub04](../plans/lsp/optimize/2026-09-06-plan00-task03-sub04-response-envelopes.md)
+for RED/GREEN results and the filesystem-specific timeout boundary.
 
 ## Client Command Ownership
 

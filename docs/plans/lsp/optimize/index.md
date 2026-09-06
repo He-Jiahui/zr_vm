@@ -74,6 +74,10 @@ Task 3 Sub03 完成当前提交后的[协议 conformance 重放](2026-09-06-plan
 GCC/Clang/MSVC 的 30 个协议案例均通过，并重放 MSVC workspace folder、save、
 optional、resolve、file-operation 与 client-command smoke；父 Task 3 和集成
 semantic baseline 仍未晋级。
+Task 3 Sub04 完成[response envelope 验证](2026-09-06-plan00-task03-sub04-response-envelopes.md)：
+三工具链的 30-case driver 均通过，11 个此前逃逸的响应反例均被原用例拒绝；
+覆盖 typed ID、协议版本、result/error 互斥和错误消息。当前 `/mnt/e` CTest
+仍观察到初始化超时，GCC 接受证据来自内容相同的 ext4 运行目录。
 
 Plan 00 Task 4 Sub01 已完成[identity resolve 契约修复](2026-09-05-plan00-task04-sub01-identity-resolve.md)：
 撤销四类 identity resolver，保留 native code-action snapshot 复验，按 runtime 描述

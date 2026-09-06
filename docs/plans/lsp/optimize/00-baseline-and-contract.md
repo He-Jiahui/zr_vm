@@ -94,13 +94,14 @@ typedef struct SZrLspCapabilityDescriptor {
 - Create: `tests/language_server/stdio_protocol_client.js`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] 从 `stdio_smoke.js` 抽取 frame 编解码、request id、超时与 stderr 捕获，禁止继续复制第五套 client harness。
-- [ ] RED 用例至少包括：初始化前 request、重复 initialize、shutdown 后 request、缺少/错误 jsonrpc、非法 id、非法 params、未知 method、notification 不得收到 response、畸形 frame、超大 Content-Length、重复 request id、取消未知 id。
-- [ ] 每个断言检查完整 JSON-RPC envelope 与精确 error code，而不是仅检查返回数组类型。
+- [x] 从 `stdio_smoke.js` 抽取 frame 编解码、request id、超时与 stderr 捕获，禁止继续复制第五套 client harness；smoke 与 conformance 均复用 `StdioProtocolClient`。
+- [x] RED 用例至少包括：初始化前 request、重复 initialize、shutdown 后 request、缺少/错误 jsonrpc、非法 id、非法 params、未知 method、notification 不得收到 response、畸形 frame、超大 Content-Length、重复 request id、取消未知 id；当前 30-case driver 覆盖这些输入，三工具链重放通过。
+- [x] 每个响应断言检查完整 JSON-RPC envelope 与精确 error code；Sub04 为成功、重复 ID、progress/partial result 补齐字段与 typed ID 检查，11 个 decoded-response mutation 均先 RED 后 GREEN。
 - [x] Sub01：修正 known-id cancellation fixture 的准备计时，保留精确 URI/version 与 `-32800` envelope；GCC/Clang/MSVC 各 30/30，[完成记录](2026-09-05-plan00-task03-sub01-cancellation-setup.md)。活动查询 50 ms 预算仍由 Plan 01 单独验收。
-- [ ] 为 3.17 capability matrix 添加 snapshot；3.18 可选能力用单独 client capability fixture。
+- [x] 为 3.17 capability matrix 添加 snapshot；3.18 可选能力用单独 client capability fixture；`stdio_capability_snapshot.js` 与 Sub02 的 25 个 optional fixture 覆盖完整对象和独立协商组合。
 - [x] Sub02：完成 3.17/3.18 optional capability 协商、精确 MethodNotFound、完整 capability snapshot 和 cJSON allocation failure 回归；[记录](2026-09-05-plan00-task03-sub02-optional-capabilities.md)。GCC/Clang/MSVC 各 11/11，父 Task 3 的取消、frame 和其余负向门槛仍未验收。
 - [x] Sub03：在当前提交后的 GCC/Clang/MSVC 二进制重放协议负向、workspace folder、save、resolve、file-operation 和 client-command smoke；[记录](2026-09-06-plan00-task03-sub03-protocol-replay.md)。protocol conformance 各 30/30，MSVC workspace folders 12/12、save 6/6、optional 25/25；父 Task 3 的 integrated capability/version audit、sanitizer 和 active-query latency 仍未验收。
+- [x] Sub04：补齐 response envelope 断言并验证实际 conformance case 的 11 个反例；GCC/Clang/MSVC 各 30/30，mutation 各 11/11，见[完成记录](2026-09-06-plan00-task03-sub04-response-envelopes.md)。本项关闭驱动器缺口，Plan 01 的 active-query latency/sanitizer 与 Plan 00 整体验收仍独立保持 pending。
 
 ## Task 4：立即撤销已知过度声明
 
