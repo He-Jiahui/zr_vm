@@ -37,7 +37,7 @@ typedef enum EZrStdioLifecycleState {
 
 - [x] Sub01：除 `exit` 外的 control notification 只在 `INITIALIZING` 或 `RUNNING` 状态生效；`$/setTrace` 在初始化前和 shutdown 后被忽略，且 shutdown/exit 顺序返回精确退出码；[记录](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)。
 - [x] `initialized` notification 只允许把 INITIALIZING 转为 RUNNING；server 可以在 initialize response 后接受规范允许的请求，但必须记录 initialized 是否到达以便诊断客户端错误；[记录](2026-09-07-plan01-task01-sub02-state-transitions.md)。
-- [ ] 删除仅有 `shutdownRequested` 的隐式状态判断。
+- [x] 删除仅有 `shutdownRequested` 的隐式状态判断；生命周期状态和 `initializedNotificationReceived` 由 `SZrStdioLifecycle` 统一保存；[记录](2026-09-07-plan01-task01-sub02-state-transitions.md)。
 
 ## Task 2：验证 JSON-RPC envelope 和 params
 
