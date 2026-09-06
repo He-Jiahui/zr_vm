@@ -84,9 +84,10 @@ ctest --test-dir .codex/lsp-optimize-validation/clang-asan-current
   100% tests passed, 3 tests passed
 ```
 
-GCC and MSVC configured inventory selections also pass their two existing
-inventory tests (`2/2` each). The Clang current-source build additionally
-registers and passes the nine-case regression test (`3/3`).
+The current-root GCC and Clang builds each pass the integrated inventory,
+standalone inventory and nine-case regression selection (`3/3`). The MSVC
+configured build passes its two existing inventory tests (`2/2`), and the
+Windows direct regression run passes `9/9`.
 
 The new independent GCC build configured from the current checkout compiled
 all requested targets (`841/841`). The three compiled semantic executables were

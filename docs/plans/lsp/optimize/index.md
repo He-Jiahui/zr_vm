@@ -46,8 +46,9 @@ semantic-token legend，并修正 Web legend。真实 `.wasm` 链接表仍因隔
 
 Plan 00 Task 5 的 [integrated capability inventory](2026-09-06-plan00-task05-integrated-inventory.md)
 已将 native 四 profile 与 WASM source-level worker/bridge wiring 映射合并到同一个
-machine-readable runner；GCC、Clang、MSVC 的两个 inventory CTest 均为 1/1，
-WASM source mutation regression 为 9/9。该记录只关闭 source-level integrated
+machine-readable runner；当前 GCC、Clang 构建的 inventory/集成/regression CTest
+为 3/3，MSVC 的两个 inventory CTest 为 2/2，WASM source mutation regression
+为 9/9。该记录只关闭 source-level integrated
 inventory 子项，linked asset、三种运行方式的完整 control/notification parity 和
 完整语义验收仍保持 pending。运行器要求 Node 18+；完整命令与边界见
 [WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。

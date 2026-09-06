@@ -14,7 +14,7 @@ doc_type: acceptance-record
 
 | 开始时间 | 实际完成时间 | 状态 | 完成项目 | 验证结果 |
 | --- | --- | --- | --- | --- |
-| 2026-09-06 09:05 +08:00 | 2026-09-06 10:05 +08:00 | completed (integrated source wiring; linked asset pending) | `stdio_protocol_inventory.js` 现在在 native registry/initialize/dispatch/CTest 映射后，同一进程调用 WASM capability inventory，并输出统一的 machine-readable 子报告。WASM inventory 同时执行静态导出清单和带 mock WASM ABI 的生产 worker/bridge wiring probe。 | GCC、Clang、MSVC 的 `language_server_stdio_protocol_inventory` 和 `language_server_wasm_capability_inventory` 均为 1/1；独立 runner 输出 `integrated-contract-mapped`，四个 native 协商 profile 均无 orphan/overclaim，WASM 报告为 30/28/23/13（runtime exports/bridge calls/observed worker routes/token types）；source mutation regression 为 9/9；`linkedAssetChecked: false`。 |
+| 2026-09-06 09:05 +08:00 | 2026-09-06 10:05 +08:00 | completed (integrated source wiring; linked asset pending) | `stdio_protocol_inventory.js` 现在在 native registry/initialize/dispatch/CTest 映射后，同一进程调用 WASM capability inventory，并输出统一的 machine-readable 子报告。WASM inventory 同时执行静态导出清单和带 mock WASM ABI 的生产 worker/bridge wiring probe。 | 当前 GCC、Clang 构建的三项 inventory CTest（集成、静态、9-case regression）均为 3/3；MSVC 配置构建的两个 inventory CTest 为 2/2，Windows 直接 regression 为 9/9。独立 runner 输出 `integrated-contract-mapped`，四个 native 协商 profile 均无 orphan/overclaim，WASM 报告为 30/28/23/13（runtime exports/bridge calls/observed worker routes/token types）；`linkedAssetChecked: false`。 |
 
 ## 集成契约
 
@@ -67,8 +67,9 @@ control 3 个、orphan 0；WASM 子报告为 30 runtime exports、28 bridge call
 23 observed worker routes 和 13 token types。独立 source mutation regression
 覆盖 swapped provider/export、缺失 inlay route、重复/孤立 route、legend 顺序或
 额外 token、无 provider capability 共 9/9。GCC、Clang、MSVC 的 integrated
-inventory CTest 各 1/1；Clang 当前构建在配置 Node 22 后运行 inventory、集成
-inventory 和 9-case regression CTest 为 3/3。完整命令和输出见
+当前 GCC、Clang 构建在配置 Node 22 后运行 inventory、集成 inventory 和
+9-case regression CTest 为 3/3；MSVC 配置构建的两个 inventory CTest 为 2/2。
+完整命令和输出见
 [WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。
 
 ## 范围边界
