@@ -175,7 +175,7 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     cJSON *result;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     ZR_UNUSED_PARAMETER(uriText);
 

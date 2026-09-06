@@ -538,6 +538,32 @@ async function testInvalidReferencesContext(serverPath) {
     });
 }
 
+async function testInvalidInlineCompletionParams(serverPath) {
+    const cases = [
+        ['missing params', undefined],
+        ['null params', null],
+        ['scalar params', 'not-an-object'],
+        ['array params', []],
+        ['missing text document', {}],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        const payload = initializePayload('invalid-inline-completion-initialize');
+        payload.params.capabilities = {
+            textDocument: { inlineCompletion: {} },
+        };
+        const initializeResponse = await client.requestEnvelope(payload, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(initializeResponse, 'invalid-inline-completion-initialize',
+                              'inline completion initialize');
+        for (const [label, params] of cases) {
+            const id = `invalid-inline-completion-${label}`;
+            const response = await client.request('textDocument/inlineCompletion', params, id,
+                                                  RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1138,6 +1164,7 @@ function protocolCases() {
         ['invalid diagnostic optional params', testInvalidDiagnosticOptionalParams],
         ['invalid semantic token delta result id', testInvalidSemanticTokenDeltaResultId],
         ['invalid references context', testInvalidReferencesContext],
+        ['invalid inline completion params', testInvalidInlineCompletionParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],
