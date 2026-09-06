@@ -218,6 +218,7 @@ doc_type: module-detail
 - stdio 的 formatting、onTypeFormatting 和 codeAction handler 在缺失或畸形 `textDocument` 时返回 `-32602 InvalidParams`；provider 没有结果时仍返回合法空数组。`textDocument/rangesFormatting` 只有在 capability matrix 声明后才进入 handler，未声明时由能力门禁返回 `-32601 Method not found`。
 - stdio 的 `completionItem/resolve` 在 item、label、resolve data URI 或 position 解析失败时返回 `-32602 InvalidParams`；合法但未匹配的 item 仍保持成功回传。
 - stdio 的 `inlineValue`、`moniker` 和 `linkedEditingRange` 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；provider 无结果时仍分别保持空数组或 `null`。
+- stdio 的 semantic tokens full、full/delta 和 range 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；合法请求仍按既有 full/delta/range 响应结构返回。
 - code action 使用 `SZrLspCodeAction`，提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`。缺失分号动作只消费`ZrLanguageServer_Lsp_GetDiagnostics`返回的`ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE` structured fix；title、edit range和edit text来自parser fact，LSP不再按`var`/`return`等源码前缀重建。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。
 - folding / selection range 从当前文档文本结构生成轻量结构范围，包含 block、连续 import/comment region，以及 word -> line -> block selection chain。
 - document link 扫描 `import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。

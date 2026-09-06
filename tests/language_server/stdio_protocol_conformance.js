@@ -395,6 +395,23 @@ async function testInvalidAdditionalEditorParams(serverPath) {
     });
 }
 
+async function testInvalidSemanticTokenParams(serverPath) {
+    const cases = [
+        ['semantic tokens full', 'textDocument/semanticTokens/full'],
+        ['semantic tokens full delta', 'textDocument/semanticTokens/full/delta'],
+        ['semantic tokens range', 'textDocument/semanticTokens/range'],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-semantic-token-initialize');
+        for (const [label, method] of cases) {
+            const id = `invalid-semantic-token-${label}`;
+            const response = await client.request(method, {}, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -988,6 +1005,7 @@ function protocolCases() {
         ['invalid editing params', testInvalidEditingParams],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],
+        ['invalid semantic token params', testInvalidSemanticTokenParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],
