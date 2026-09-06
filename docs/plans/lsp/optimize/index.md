@@ -19,7 +19,7 @@
 
 本目录将整改拆为七个有严格依赖的计划。不得跳过前置里程碑去继续堆叠上层 provider。
 
-## 当前执行状态（2026-09-05）
+## 当前执行状态（2026-09-06）
 
 已建立[旧计划与全部 leaf 对照](2026-09-05-plan00-task01-sub01-execution-crosswalk.md)，
 逐项记录 completed/pending/superseded、历史证据与后续责任；文档对照完成不代表
@@ -65,6 +65,12 @@ inventory 子项，linked asset、三种运行方式的完整 control/notificati
 当前失败责任也已在 baseline/crosswalk 与 native inventory acceptance 中逐项链接
 owner 和后续计划；GCC focused build、extension unit/noEmit 及 linked asset 仍是
 独立门槛。
+
+Plan 02 Task 1 的 [decoded-control Sub01](2026-09-06-plan02-task01-sub01-decoded-control-bytes.md)
+补齐了 percent decode 后的 ASCII control-byte 拒绝边界，并验证失败时清空
+ native path。GCC、Clang ASan+UBSan 与 MSVC 的 focused URI 矩阵分别通过 17/17、
+17/17、19/19；该修复只关闭 Task 1 的一个边界子项，URI 全量矩阵、工作区和
+文档快照父门禁仍保持 pending。
 
 Plan 05 Task 2 已完成 Web error-contract 子项：WASM export payload 保留 JSON-RPC
 error code，bridge 对空指针使用 InternalError，worker 将失败响应抛出

@@ -70,6 +70,9 @@ at the I/O boundary and cannot be interpreted as local filenames.
 - A non-local authority is rejected on Unix and maps to a UNC path on Windows.
 - `%2F` and `%5C` are rejected before decoding to preserve one native segment
   representation and avoid path-boundary ambiguity.
+- Percent encoding does not bypass the control-byte boundary: decoded bytes
+  below `0x20` and `0x7F` are rejected and the output buffer is cleared, just
+  like their raw forms. Printable encoded filename bytes remain valid.
 - URI fragment and query syntax is not part of a native file path. Encoded
   `#` and `?` remain valid filename bytes after exactly one decode.
 
@@ -79,6 +82,7 @@ at the I/O boundary and cannot be interpreted as local filenames.
 spaces, `#`, `%`, UTF-8 bytes, manually encoded input, scheme/authority case,
 dot segments, virtual URIs, malformed escapes, raw query/fragment syntax,
 encoded separators, and destination overflow.
+The decoded-control regression also covers `%00`, `%01` and `%7F`.
 
 The focused target and stdio server were rebuilt on GCC, Clang, and MSVC. Each
 toolchain passed the URI matrix and the serial JSON-RPC protocol and document

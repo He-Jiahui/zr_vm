@@ -35,6 +35,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspUri_Equivalent(
 
 - [ ] FromNativePath 按 URI 规则百分号编码 UTF-8 bytes；FileToNativePath 只接受 `file:` scheme，不把 web/virtual URI 传给 fopen。
 - [ ] 删除项目、导航和 stdio 的本地转换副本；ModuleIdentity 只保存 canonical URI/native path，不混入原始字符串比较。
+- [x] 2026-09-06 Sub01：补齐 percent-decoded ASCII control-byte 边界（`%00`、`%01`、`%7F`），失败时清空 native path；GCC 17/17、Clang ASan+UBSan 17/17、MSVC 19/19。详见 [Sub01 record](2026-09-06-plan02-task01-sub01-decoded-control-bytes.md)。
 
 ## Task 2：建立工作区 folder 与项目集合
 

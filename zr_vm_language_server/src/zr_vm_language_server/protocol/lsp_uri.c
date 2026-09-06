@@ -112,7 +112,7 @@ static TZrBool lsp_uri_decode_path(const TZrChar *text,
             }
             value = (TZrChar)((high << 4) | low);
             index += 2;
-            if (value == '\0' || value == '/' || value == '\\') {
+            if ((unsigned char)value < 0x20 || value == 0x7F || value == '/' || value == '\\') {
                 return ZR_FALSE;
             }
         }

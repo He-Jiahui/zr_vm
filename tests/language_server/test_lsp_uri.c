@@ -73,6 +73,9 @@ static void test_file_uri_rejections(SZrState *state) {
     SZrString *virtualUri = test_string(state, "vscode-test-web:/workspace/file.zr");
     SZrString *decompiledUri = test_string(state, "zr-decompiled:/module.zr");
     SZrString *badEscape = test_string(state, "file:///tmp/bad%Q0.zr");
+    SZrString *encodedNul = test_string(state, "file:///tmp/bad%00.zr");
+    SZrString *encodedControl = test_string(state, "file:///tmp/bad%01.zr");
+    SZrString *encodedDelete = test_string(state, "file:///tmp/bad%7F.zr");
     SZrString *encodedSeparator = test_string(state, "file:///tmp/not%2Fa-path.zr");
     SZrString *rawFragment = test_string(state, "file:///tmp/not-a-uri#fragment.zr");
     SZrString *rawQuery = test_string(state, "file:///tmp/not-a-uri?query=z");
@@ -84,6 +87,15 @@ static void test_file_uri_rejections(SZrState *state) {
           "decompiled URI is never sent to native file access");
     check(!ZrLanguageServer_LspUri_FileToNativePath(badEscape, nativePath, sizeof(nativePath)),
           "invalid percent escape is rejected");
+    check(!ZrLanguageServer_LspUri_FileToNativePath(encodedNul, nativePath, sizeof(nativePath)) &&
+                  nativePath[0] == '\0',
+          "percent-encoded NUL is rejected and clears the native path");
+    check(!ZrLanguageServer_LspUri_FileToNativePath(encodedControl, nativePath, sizeof(nativePath)) &&
+                  nativePath[0] == '\0',
+          "percent-encoded control byte is rejected and clears the native path");
+    check(!ZrLanguageServer_LspUri_FileToNativePath(encodedDelete, nativePath, sizeof(nativePath)) &&
+                  nativePath[0] == '\0',
+          "percent-encoded DEL is rejected and clears the native path");
     check(!ZrLanguageServer_LspUri_FileToNativePath(encodedSeparator, nativePath, sizeof(nativePath)),
           "encoded path separators are rejected at the native boundary");
     check(!ZrLanguageServer_LspUri_FileToNativePath(rawFragment, nativePath, sizeof(nativePath)) &&
