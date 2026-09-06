@@ -202,6 +202,14 @@ params`. An empty files array and valid no-edit rename continue to return a succ
 `null`. GCC and Clang ASan/UBSan both pass 43/43, and the lifecycle/protocol CTest pair
 passes 2/2 on each build. See [Plan 01 Task 2 Sub13](../plans/lsp/optimize/2026-09-07-plan01-task02-sub13-workspace-will-rename-invalid-params.md).
 
+The diagnostic optional-field regression extends the current replay to 44 cases.
+`textDocument/diagnostic.previousResultId` and `workspace/diagnostic.identifier` now require
+strings when present; `workspace/diagnostic.previousResultIds` must be an array of objects
+with string `uri` and `value` fields. Malformed optional fields return `-32602 Invalid params`
+before provider work, while omitted fields and valid empty arrays retain existing reports.
+GCC and Clang ASan/UBSan both pass 44/44, and the lifecycle/protocol CTest pair passes 2/2
+on each build. See [Plan 01 Task 2 Sub14](../plans/lsp/optimize/2026-09-07-plan01-task02-sub14-diagnostic-optional-fields.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

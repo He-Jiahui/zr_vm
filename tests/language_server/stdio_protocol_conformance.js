@@ -462,6 +462,33 @@ async function testInvalidWorkspaceWillRenameParams(serverPath) {
     }
 }
 
+async function testInvalidDiagnosticOptionalParams(serverPath) {
+    const cases = [
+        ['text document previous result id', 'textDocument/diagnostic', {
+            textDocument: { uri: 'file:///invalid-diagnostic-previous-result-id.zr' },
+            previousResultId: 1,
+        }],
+        ['text document null previous result id', 'textDocument/diagnostic', {
+            textDocument: { uri: 'file:///invalid-diagnostic-null-previous-result-id.zr' },
+            previousResultId: null,
+        }],
+        ['workspace diagnostic identifier', 'workspace/diagnostic', { identifier: 1 }],
+        ['workspace diagnostic previous result ids', 'workspace/diagnostic', { previousResultIds: {} }],
+        ['workspace diagnostic previous result id entry', 'workspace/diagnostic', {
+            previousResultIds: [{ uri: 'file:///invalid-diagnostic-entry.zr', value: 1 }],
+        }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-diagnostic-optional-initialize');
+        for (const [label, method, params] of cases) {
+            const id = `invalid-diagnostic-optional-${label}`;
+            const response = await client.request(method, params, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1059,6 +1086,7 @@ function protocolCases() {
         ['invalid workspace symbol params', testInvalidWorkspaceSymbolParams],
         ['invalid workspace diagnostic params', testInvalidWorkspaceDiagnosticParams],
         ['invalid workspace will rename params', testInvalidWorkspaceWillRenameParams],
+        ['invalid diagnostic optional params', testInvalidDiagnosticOptionalParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

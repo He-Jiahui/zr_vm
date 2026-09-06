@@ -238,6 +238,13 @@ lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01 �
 lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍
 保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub14 diagnostic optional fields](2026-09-07-plan01-task02-sub14-diagnostic-optional-fields.md)：
+`textDocument/diagnostic.previousResultId`、`workspace/diagnostic.identifier` 及
+`previousResultIds` 的可选值现在严格校验字符串、数组和 `{uri,value}` 条目结构，畸形
+字段返回 `-32602`，省略字段与合法空数组保持既有 report 语义。当前 GCC 与 Clang
+ASan/UBSan protocol conformance 均为 44/44，lifecycle/protocol CTest 均为 2/2。
+统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭

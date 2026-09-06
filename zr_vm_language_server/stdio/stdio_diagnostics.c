@@ -194,6 +194,44 @@ static TZrBool workspace_previous_result_id_matches(const cJSON *previousResultI
     return ZR_FALSE;
 }
 
+static TZrBool optional_string_field_is_valid(const cJSON *params, const char *field) {
+    const cJSON *value = get_object_item(params, field);
+
+    return value == ZR_NULL ||
+           (cJSON_IsString((cJSON *)value) &&
+            cJSON_GetStringValue((cJSON *)value) != ZR_NULL);
+}
+
+static TZrBool workspace_previous_result_ids_are_valid(const cJSON *previousResultIds) {
+    const cJSON *entry;
+
+    if (previousResultIds == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!cJSON_IsArray((cJSON *)previousResultIds)) {
+        return ZR_FALSE;
+    }
+
+    cJSON_ArrayForEach(entry, previousResultIds) {
+        const cJSON *entryUri;
+        const cJSON *entryValue;
+
+        if (!cJSON_IsObject((cJSON *)entry)) {
+            return ZR_FALSE;
+        }
+        entryUri = get_object_item(entry, ZR_LSP_FIELD_URI);
+        entryValue = get_object_item(entry, ZR_LSP_FIELD_VALUE);
+        if (!cJSON_IsString((cJSON *)entryUri) ||
+            !cJSON_IsString((cJSON *)entryValue) ||
+            cJSON_GetStringValue((cJSON *)entryUri) == ZR_NULL ||
+            cJSON_GetStringValue((cJSON *)entryValue) == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 cJSON *handle_text_document_diagnostic_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray diagnostics = {0};
     const char *uriText;
@@ -203,6 +241,10 @@ cJSON *handle_text_document_diagnostic_request(SZrStdioServer *server, const cJS
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return ZR_NULL;
+    }
+    previousResultIdJson = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
+    if (!optional_string_field_is_valid(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID)) {
         return ZR_NULL;
     }
 
@@ -216,7 +258,6 @@ cJSON *handle_text_document_diagnostic_request(SZrStdioServer *server, const cJS
         free_diagnostics_array(server->state, &diagnostics);
         return ZR_NULL;
     }
-    previousResultIdJson = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
     if (cJSON_IsString((cJSON *)previousResultIdJson) &&
         strcmp(previousResultIdJson->valuestring, resultId) == 0) {
         free_diagnostics_array(server->state, &diagnostics);
@@ -303,6 +344,10 @@ cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *
     }
 
     previousResultIds = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_IDS);
+    if (!optional_string_field_is_valid(params, ZR_LSP_FIELD_IDENTIFIER) ||
+        !workspace_previous_result_ids_are_valid(previousResultIds)) {
+        return ZR_NULL;
+    }
 
     result = cJSON_CreateObject();
     items = cJSON_CreateArray();
