@@ -75,14 +75,19 @@ ctest --test-dir .codex/build-lsp-opt-gcc --output-on-failure
     -R ^language_server_stdio_protocol_conformance$
   1/1 passed
 
-ctest --test-dir .codex/lsp-optimize-validation/clang-asan-current
-    --output-on-failure -R ^language_server_stdio_protocol_conformance$
-  1/1 passed; no ASan/UBSan diagnostics
+LD_LIBRARY_PATH=/tmp/zr-lsp-clang-safe-20260907-0305
+  WSL ext4 copy of the Clang ASan/UBSan binary plus nine shared libraries
+  node tests/language_server/stdio_protocol_conformance.js <binary>
+  31/31 passed; no ASan/UBSan diagnostics
 ```
 
 The MSVC overlay was rebuilt after copying the two C implementation files and
 the current protocol driver. The GCC and Clang binaries were rebuilt from the
-current source tree before their direct/CTest runs.
+current source tree before their direct runs. The mounted-path Clang CTest was
+also retried serially; it timed out in different pre-existing lifecycle cases
+(`type hierarchy` and `exit`) while the numeric-ID case passed. Those unstable
+`/mnt/e` runs are retained as an environment boundary and are not counted as
+the stable sanitizer evidence above.
 
 ## 接受决定
 
