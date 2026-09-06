@@ -92,7 +92,35 @@ function validateMetadata(descriptor, registeredTests) {
     }
 }
 
-function validateNativeInventory(inventory, capabilities, registeredTests, negotiation) {
+function validateWasmRegistryMapping(descriptors, inventory, wasm) {
+    assert.ok(wasm && wasm.schemaVersion === 2, 'WASM adapter evidence is required');
+    const worker = wasm.worker;
+    assert.ok(worker && worker.mockedWasm === true && worker.workerAssetLoaded === false,
+              'WASM adapter evidence must identify its mocked execution boundary');
+    const routes = uniqueMap(worker.featureRoutes.concat(worker.documentRoutes), 'method', 'WASM worker routes');
+    const expectedKeys = [];
+    for (const descriptor of descriptors.values()) {
+        if (!(descriptor.runtimeMask & WASM)) continue;
+        expectedKeys.push(descriptor.capabilityKey);
+        const route = routes.get(descriptor.method);
+        assert.ok(route, 'missing WASM worker route for ' + descriptor.method);
+        assert.ok(wasm.runtimeExportNames.includes(descriptor.wasmExport),
+                  'registry names missing WASM export ' + descriptor.wasmExport);
+        assert.ok(route.exportNames.includes(descriptor.wasmExport),
+                  'registry WASM export disagrees with worker for ' + descriptor.method);
+        const provider = worker.capabilities[descriptor.capabilityKey];
+        assert.ok(provider !== undefined, 'missing WASM initialize capability ' + descriptor.capabilityKey);
+        assert.equal(provider.resolveProvider === true, Boolean(descriptor.resolveRuntimeMask & WASM),
+                     'WASM resolve publication disagrees with registry ' + descriptor.capabilityKey);
+    }
+    assert.deepEqual(Object.keys(worker.capabilities).sort(), expectedKeys.sort(),
+                     'WASM capabilities disagree with registry runtime coverage');
+    assert.deepEqual(worker.capabilities.semanticTokensProvider.legend.tokenTypes, inventory.semanticTokenTypes,
+                     'worker token ordering disagrees with compiled core legend');
+    return expectedKeys.length;
+}
+
+function validateNativeInventory(inventory, capabilities, registeredTests, negotiation, wasm) {
     assert.equal(inventory.schemaVersion, 1, 'unsupported compiled inventory schema');
     const descriptors = uniqueMap(inventory.capabilities, 'capabilityKey', 'registry');
     const routes = uniqueMap(inventory.nativeFeatureRoutes, 'method', 'native routes');
@@ -166,8 +194,10 @@ function validateNativeInventory(inventory, capabilities, registeredTests, negot
                      'initialize token modifiers disagree with the native token encoder');
     assert.deepEqual(capabilities, expectedCapabilities(negotiation.inlineCompletion, negotiation.rangesFormatting),
                      'initialize capability snapshot disagrees with the negotiated contract');
+    const wasmRegistryEntries = validateWasmRegistryMapping(descriptors, inventory, wasm);
     return {
         registryEntries: descriptors.size,
+        wasmRegistryEntries,
         declared,
         featureRoutes: routes.size,
         controlDescriptorMetadataOnly: CONTROL_METHODS.size,

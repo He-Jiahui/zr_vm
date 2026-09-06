@@ -1,7 +1,7 @@
 const assert = require('assert').strict;
 const { validateNativeInventory } = require('./lsp_native_inventory_contract');
 
-function checkInventoryMutations(inventory, capabilities, registeredTests, negotiation) {
+function checkInventoryMutations(inventory, capabilities, registeredTests, negotiation, wasm) {
     const cases = [
         ['missing primary handler', data => data.inventory.nativeFeatureRoutes.splice(0, 1), /missing native feature route/],
         ['orphan handler', data => data.inventory.nativeFeatureRoutes.push({
@@ -30,6 +30,23 @@ function checkInventoryMutations(inventory, capabilities, registeredTests, negot
         ['unregistered test', data => { data.inventory.capabilities[0].testId = 'missing_test'; }, /unregistered test ID/],
         ['duplicate descriptor', data => data.inventory.capabilities.push(data.inventory.capabilities[0]), /has duplicate/],
         ['missing WASM export metadata', data => { data.inventory.capabilities[0].wasmExport = null; }, /inconsistent wasmExport/],
+        ['wrong WASM export metadata', data => {
+            data.inventory.capabilities.find(row => row.capabilityKey === 'hoverProvider').wasmExport = 'wasm_ZrLspGetCompletion';
+        }, /WASM export disagrees with worker/],
+        ['nonexistent WASM export metadata', data => {
+            data.inventory.capabilities.find(row => row.capabilityKey === 'hoverProvider').wasmExport = 'wasm_missing';
+        }, /registry names missing WASM export/],
+        ['missing WASM runtime coverage', data => {
+            const descriptor = data.inventory.capabilities.find(row => row.capabilityKey === 'hoverProvider');
+            descriptor.runtimeMask = 1;
+            descriptor.wasmExport = null;
+        }, /WASM capabilities disagree with registry/],
+        ['missing worker observation', data => {
+            data.wasm.worker.featureRoutes = data.wasm.worker.featureRoutes.filter(row => row.method !== 'textDocument/inlayHint');
+        }, /missing WASM worker route/],
+        ['mismatched worker legend', data => {
+            data.wasm.worker.capabilities.semanticTokensProvider.legend.tokenTypes.reverse();
+        }, /worker token ordering/],
         ['unknown runtime', data => { data.inventory.capabilities[0].runtimeMask = 4; }, /invalid runtime coverage/],
         ['missing core entry', data => { data.inventory.capabilities[0].coreEntryPoint = null; }, /missing its core entry point/],
         ['identity resolve', data => {
@@ -45,9 +62,9 @@ function checkInventoryMutations(inventory, capabilities, registeredTests, negot
         'object ranges flag', data => { data.capabilities.documentRangeFormattingProvider.rangesSupport = {}; }, /capability option/,
     ]);
     for (const [name, mutate, error] of cases) {
-        const data = JSON.parse(JSON.stringify({ inventory, capabilities }));
+        const data = JSON.parse(JSON.stringify({ inventory, capabilities, wasm }));
         mutate(data);
-        assert.throws(() => validateNativeInventory(data.inventory, data.capabilities, registeredTests, negotiation),
+        assert.throws(() => validateNativeInventory(data.inventory, data.capabilities, registeredTests, negotiation, data.wasm),
                       error, 'inventory must reject ' + name);
     }
     return cases.length;

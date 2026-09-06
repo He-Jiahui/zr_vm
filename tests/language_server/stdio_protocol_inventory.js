@@ -17,7 +17,7 @@ function runJson(command, args) {
     return JSON.parse(result.stdout);
 }
 
-async function inspectProfile(serverPath, profile, inventory, registeredTests) {
+async function inspectProfile(serverPath, profile, inventory, registeredTests, wasmInventory) {
     const client = new StdioProtocolClient(serverPath);
     let cleanExit = false;
     try {
@@ -34,8 +34,8 @@ async function inspectProfile(serverPath, profile, inventory, registeredTests) {
         assert.equal(initialized.error, undefined);
         assert.ok(initialized.result && initialized.result.capabilities);
         const capabilities = initialized.result.capabilities;
-        const report = validateNativeInventory(inventory, capabilities, registeredTests, profile);
-        const mutations = checkInventoryMutations(inventory, capabilities, registeredTests, profile);
+        const report = validateNativeInventory(inventory, capabilities, registeredTests, profile, wasmInventory);
+        const mutations = checkInventoryMutations(inventory, capabilities, registeredTests, profile, wasmInventory);
         client.notify('initialized', {});
         for (const method of [
             'workspaceSymbol/resolve', 'inlayHint/resolve', 'documentLink/resolve', 'codeLens/resolve',
@@ -79,7 +79,7 @@ async function main() {
     const wasmInventory = runJson(process.execPath, [
         path.join(__dirname, 'wasm_capability_inventory.js'), repositoryRoot,
     ]);
-    assert.equal(wasmInventory.schemaVersion, 1, 'unsupported WASM inventory schema');
+    assert.equal(wasmInventory.schemaVersion, 2, 'unsupported WASM inventory schema');
     assert.ok(['wasm-static-contract-mapped', 'wasm-linked-contract-mapped'].includes(wasmInventory.status),
               'WASM capability inventory did not produce a mapped contract');
     const ctest = runJson(ctestPath, ['--test-dir', buildDirectory, '--show-only=json-v1'].concat(
@@ -97,7 +97,7 @@ async function main() {
     const failures = [];
     for (const profile of profiles) {
         try {
-            reports.push(await inspectProfile(serverPath, profile, inventory, registeredTests));
+            reports.push(await inspectProfile(serverPath, profile, inventory, registeredTests, wasmInventory));
         } catch (error) {
             failures.push({ profile: profile.name, error: error.stack || String(error) });
         }

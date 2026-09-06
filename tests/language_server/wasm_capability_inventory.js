@@ -1,122 +1,98 @@
 const assert = require('assert').strict;
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const { probeWorker } = require('./lsp_wasm_worker_probe');
 
-const [repositoryRootArg, wasmJavaScriptArg, wasmBinaryArg] = process.argv.slice(2);
-const repositoryRoot = path.resolve(repositoryRootArg || path.join(__dirname, '..', '..'));
-const cmakePath = path.join(repositoryRoot, 'zr_vm_language_server', 'CMakeLists.txt');
-const exportsSourcePath = path.join(repositoryRoot, 'zr_vm_language_server', 'wasm', 'wasm_exports.cpp');
-const exportsHeaderPath = path.join(repositoryRoot, 'zr_vm_language_server', 'wasm', 'wasm_exports.h');
-const bridgePath = path.join(repositoryRoot, 'zr_vm_language_server_extension', 'src', 'browser', 'worker', 'wasm-bridge.ts');
-const workerPath = path.join(repositoryRoot, 'zr_vm_language_server_extension', 'src', 'browser', 'worker', 'server-worker.ts');
+function windowsPath(filePath) {
+    if (process.platform !== 'linux' || !path.isAbsolute(filePath)) return filePath;
+    const result = spawnSync('wslpath', ['-w', filePath], { encoding: 'utf8' });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, 'wslpath failed for ' + filePath + ': ' + result.stderr);
+    return result.stdout.trim();
+}
+
+function useCompatibleNode(args) {
+    const major = Number(process.versions.node.split('.')[0]);
+    if (major >= 14 || process.env.ZR_WASM_INVENTORY_COMPAT_NODE === '1') return false;
+    const candidates = [
+        '/mnt/c/nvm4w/nodejs/node.exe',
+        '/mnt/c/Program Files/nodejs/node.exe',
+    ];
+    const nodePath = candidates.find(candidate => fs.existsSync(candidate));
+    assert.ok(nodePath,
+        'WASM worker wiring probe requires Node 14+; no Windows Node executable was found for the WSL runner');
+    const child = spawnSync(nodePath, [windowsPath(__filename)].concat(args.map(windowsPath)), {
+        encoding: 'utf8', timeout: 60000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
+        env: Object.assign({}, process.env, { ZR_WASM_INVENTORY_COMPAT_NODE: '1' }),
+    });
+    assert.ifError(child.error);
+    if (child.stdout) process.stdout.write(child.stdout);
+    if (child.stderr) process.stderr.write(child.stderr);
+    process.exitCode = child.status === null ? 1 : child.status;
+    return true;
+}
 
 function read(filePath) {
     assert.ok(fs.existsSync(filePath), `missing inventory input: ${filePath}`);
     return fs.readFileSync(filePath, 'utf8');
 }
 
-function sorted(values) {
-    return [...new Set(values)].sort();
-}
-
 function assertSetEqual(actual, expected, label) {
-    assert.deepEqual(sorted(actual), sorted(expected), `${label} mismatch`);
+    assert.equal(new Set(actual).size, actual.length, `${label} has duplicates`);
+    assert.deepEqual([...actual].sort(), [...expected].sort(), `${label} mismatch`);
 }
 
-const cmake = read(cmakePath);
-const exportsSource = read(exportsSourcePath);
-const exportsHeader = read(exportsHeaderPath);
-const bridge = read(bridgePath);
-const worker = read(workerPath);
+async function main() {
+    const args = process.argv.slice(2);
+    if (useCompatibleNode(args)) return;
+    const [repositoryRootArg, wasmJavaScriptArg, wasmBinaryArg] = args;
+    const root = path.resolve(repositoryRootArg || path.join(__dirname, '..', '..'));
+    const cmake = read(path.join(root, 'zr_vm_language_server', 'CMakeLists.txt'));
+    const exportsSource = read(path.join(root, 'zr_vm_language_server', 'wasm', 'wasm_exports.cpp'));
+    const exportsHeader = read(path.join(root, 'zr_vm_language_server', 'wasm', 'wasm_exports.h'));
+    const bridge = read(path.join(root, 'zr_vm_language_server_extension', 'src', 'browser', 'worker', 'wasm-bridge.ts'));
+    const worker = read(path.join(root, 'zr_vm_language_server_extension', 'src', 'browser', 'worker', 'server-worker.ts'));
+    const exportListMatch = cmake.match(/set\(EXPORTED_FUNCTIONS_JSON\s+"(\[[^\n]+\])"\)/);
+    assert.ok(exportListMatch, 'CMake export list is missing');
+    const exportedFunctions = JSON.parse(exportListMatch[1].replace(/\\"/g, '"'))
+        .map(name => name.replace(/^_/, ''));
+    const runtimeExports = exportedFunctions.filter(name => name.startsWith('wasm_'));
+    const definitions = [...exportsSource.matchAll(/(?:const\s+char\s*\*|void\s*\*|void|int)\s+(wasm_[A-Za-z0-9_]+)\s*\(/g)]
+        .map(match => match[1]);
+    const declarations = [...exportsHeader.matchAll(/(?:const\s+char\s*\*|void\s*\*|void|int)\s+(wasm_[A-Za-z0-9_]+)\s*\(/g)]
+        .map(match => match[1]);
+    const bridgeCalls = [...bridge.matchAll(/['"](wasm_[A-Za-z0-9_]+)['"]/g)].map(match => match[1]);
+    assertSetEqual(definitions, runtimeExports, 'C++ definitions and CMake exports');
+    assertSetEqual(declarations, runtimeExports, 'C++ declarations and CMake exports');
+    assertSetEqual(bridgeCalls, runtimeExports.filter(name => !['wasm_malloc', 'wasm_free'].includes(name)),
+        'bridge ccall names and runtime exports');
+    const workerReport = await probeWorker(worker, bridge, runtimeExports);
 
-const exportListMatch = cmake.match(/set\(EXPORTED_FUNCTIONS_JSON\s+"(\[[^\n]+\])"\)/);
-assert.ok(exportListMatch, 'CMake export list is missing');
-const exportedFunctions = JSON.parse(exportListMatch[1].replace(/\\"/g, '"'))
-    .map((name) => name.replace(/^_/, ''));
-const wasmDefinitions = [...exportsSource.matchAll(/(?:const\s+char\s*\*|void\s*\*|void|int)\s+(wasm_[A-Za-z0-9_]+)\s*\(/g)]
-    .map((match) => match[1]);
-const wasmDeclarations = [...exportsHeader.matchAll(/(?:const\s+char\s*\*|void\s*\*|void|int)\s+(wasm_[A-Za-z0-9_]+)\s*\(/g)]
-    .map((match) => match[1]);
-const bridgeCalls = [...bridge.matchAll(/['"](wasm_[A-Za-z0-9_]+)['"]/g)]
-    .map((match) => match[1]);
-const bridgeMethods = [...bridge.matchAll(/^\s*(?:async\s+)?([A-Za-z0-9_]+)\s*\(/gm)]
-    .map((match) => match[1]);
-const workerBridgeCalls = [...worker.matchAll(/bridge\.([A-Za-z0-9_]+)\s*\(/g)]
-    .map((match) => match[1]);
-
-const runtimeExports = exportedFunctions.filter((name) => name.startsWith('wasm_'));
-assertSetEqual(wasmDefinitions, runtimeExports, 'C++ definitions and CMake exports');
-assertSetEqual(wasmDeclarations, runtimeExports, 'C++ declarations and CMake exports');
-assertSetEqual(bridgeCalls, runtimeExports.filter((name) => !['wasm_malloc', 'wasm_free'].includes(name)),
-    'bridge ccall names and runtime exports');
-for (const method of sorted(workerBridgeCalls)) {
-    assert.ok(bridgeMethods.includes(method), `worker calls missing bridge method ${method}`);
+    let linkedAssetChecked = false;
+    if (wasmJavaScriptArg || wasmBinaryArg) {
+        assert.ok(wasmJavaScriptArg && wasmBinaryArg, 'WASM asset check requires both JS and binary paths');
+        assert.ok(fs.existsSync(wasmJavaScriptArg), `missing generated WASM JavaScript: ${wasmJavaScriptArg}`);
+        const module = new WebAssembly.Module(fs.readFileSync(wasmBinaryArg));
+        const linkedExports = WebAssembly.Module.exports(module).map(entry => entry.name.replace(/^_/, ''));
+        assertSetEqual(linkedExports.filter(name => name.startsWith('wasm_')), runtimeExports,
+            'linked WASM exports and CMake exports');
+        linkedAssetChecked = true;
+    }
+    console.log(JSON.stringify({
+        schemaVersion: 2,
+        status: linkedAssetChecked ? 'wasm-linked-contract-mapped' : 'wasm-static-contract-mapped',
+        runtimeExports: runtimeExports.length,
+        runtimeExportNames: runtimeExports,
+        bridgeCalls: bridgeCalls.length,
+        workerRoutes: workerReport.featureRoutes.length,
+        semanticTokenTypes: workerReport.capabilities.semanticTokensProvider.legend.tokenTypes.length,
+        semanticTokenModifiers: workerReport.capabilities.semanticTokensProvider.legend.tokenModifiers,
+        linkedAssetChecked, worker: workerReport,
+    }, null, 2));
 }
 
-const requiredWorkerRoutes = [
-    ['connection.onCompletion(', 'getCompletion', 'wasm_ZrLspGetCompletion'],
-    ['connection.onHover(', 'getHover', 'wasm_ZrLspGetHover'],
-    ['connection.onDefinition(', 'getDefinition', 'wasm_ZrLspGetDefinition'],
-    ['connection.onReferences(', 'findReferences', 'wasm_ZrLspFindReferences'],
-    ['connection.onDocumentSymbol(', 'getDocumentSymbols', 'wasm_ZrLspGetDocumentSymbols'],
-    ['connection.onWorkspaceSymbol(', 'getWorkspaceSymbols', 'wasm_ZrLspGetWorkspaceSymbols'],
-    ['connection.onDocumentHighlight(', 'getDocumentHighlights', 'wasm_ZrLspGetDocumentHighlights'],
-    ["connection.onRequest('textDocument/semanticTokens/full'", 'getSemanticTokens', 'wasm_ZrLspGetSemanticTokens'],
-    ['connection.onPrepareRename(', 'prepareRename', 'wasm_ZrLspPrepareRename'],
-    ['connection.onRenameRequest(', 'rename', 'wasm_ZrLspRename'],
-    ["connection.onRequest('textDocument/formatting'", 'getFormatting', 'wasm_ZrLspGetFormatting'],
-    ["connection.onRequest('textDocument/rangeFormatting'", 'getRangeFormatting', 'wasm_ZrLspGetRangeFormatting'],
-    ["connection.onRequest('textDocument/codeAction'", 'getCodeActions', 'wasm_ZrLspGetCodeActions'],
-    ["connection.onRequest('textDocument/foldingRange'", 'getFoldingRanges', 'wasm_ZrLspGetFoldingRanges'],
-    ["connection.onRequest('textDocument/selectionRange'", 'getSelectionRange', 'wasm_ZrLspGetSelectionRange'],
-    ["connection.onRequest('textDocument/documentLink'", 'getDocumentLinks', 'wasm_ZrLspGetDocumentLinks'],
-    ["connection.onRequest('textDocument/codeLens'", 'getCodeLens', 'wasm_ZrLspGetCodeLens'],
-    ["connection.onRequest('zr/richHover'", 'getRichHover', 'wasm_ZrLspGetRichHover'],
-    ["connection.onRequest('zr/nativeDeclarationDocument'", 'getNativeDeclarationDocument', 'wasm_ZrLspGetNativeDeclarationDocument'],
-    ["connection.onRequest('zr/projectModules'", 'getProjectModules', 'wasm_ZrLspGetProjectModules'],
-    ["connection.onRequest('textDocument/diagnostic'", 'getDiagnosticReport', 'wasm_ZrLspGetDiagnosticReport'],
-    ["connection.onRequest('workspace/diagnostic'", 'getWorkspaceDiagnosticReports', 'wasm_ZrLspGetWorkspaceDiagnosticReports'],
-];
-for (const [route, bridgeMethod, exportName] of requiredWorkerRoutes) {
-    assert.ok(worker.includes(route), `worker route missing ${route}`);
-    assert.ok(worker.includes(`bridge.${bridgeMethod}(`), `${route} does not call bridge.${bridgeMethod}`);
-    assert.ok(runtimeExports.includes(exportName), `${route} points to unexported ${exportName}`);
-}
-
-const legend = worker.match(/const semanticTokenLegend[\s\S]*?tokenTypes:\s*\[([\s\S]*?)\][\s\S]*?tokenModifiers:\s*\[([\s\S]*?)\]/);
-assert.ok(legend, 'worker semantic-token legend is missing');
-for (const tokenType of ['namespace', 'class', 'struct', 'interface', 'enum', 'function', 'method',
-    'property', 'variable', 'parameter', 'keyword', 'decorator', 'metaMethod']) {
-    assert.match(legend[1], new RegExp(`['"]${tokenType}['"]`), `worker legend omits ${tokenType}`);
-}
-assert.match(legend[2], /['"]declaration['"]/, 'worker legend omits declaration modifier');
-assert.match(worker, /semanticTokensProvider:\s*\{[\s\S]*?full:\s*true/, 'worker semantic full capability missing');
-assert.doesNotMatch(worker, /semanticTokensProvider:\s*\{[\s\S]*?delta:\s*true/, 'worker overclaims semantic delta');
-assert.doesNotMatch(worker, /semanticTokensProvider:\s*\{[\s\S]*?range:\s*true/, 'worker overclaims semantic range');
-
-const assetReport = { linkedAssetChecked: false };
-if (wasmJavaScriptArg || wasmBinaryArg) {
-    assert.ok(wasmJavaScriptArg && wasmBinaryArg, 'WASM asset check requires both JS and binary paths');
-    const wasmJavaScriptPath = path.resolve(wasmJavaScriptArg);
-    const wasmBinaryPath = path.resolve(wasmBinaryArg);
-    assert.ok(fs.existsSync(wasmJavaScriptPath), `missing generated WASM JavaScript: ${wasmJavaScriptPath}`);
-    assert.ok(fs.existsSync(wasmBinaryPath), `missing generated WASM binary: ${wasmBinaryPath}`);
-    const module = new WebAssembly.Module(fs.readFileSync(wasmBinaryPath));
-    const linkedExports = WebAssembly.Module.exports(module).map((entry) => entry.name.replace(/^_/, ''));
-    assertSetEqual(linkedExports.filter((name) => name.startsWith('wasm_')), runtimeExports,
-        'linked WASM exports and CMake exports');
-    assetReport.linkedAssetChecked = true;
-    assetReport.wasmJavaScript = wasmJavaScriptPath;
-    assetReport.wasmBinary = wasmBinaryPath;
-}
-
-console.log(JSON.stringify({
-    schemaVersion: 1,
-    status: assetReport.linkedAssetChecked ? 'wasm-linked-contract-mapped' : 'wasm-static-contract-mapped',
-    runtimeExports: runtimeExports.length,
-    bridgeCalls: bridgeCalls.length,
-    workerRoutes: requiredWorkerRoutes.length,
-    semanticTokenTypes: 13,
-    semanticTokenModifiers: ['declaration'],
-    linkedAssetChecked: assetReport.linkedAssetChecked,
-}, null, 2));
+main().catch(error => {
+    console.error(error.stack || String(error));
+    process.exitCode = 1;
+});

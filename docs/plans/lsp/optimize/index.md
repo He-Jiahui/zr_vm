@@ -45,9 +45,11 @@ semantic-token legend，并修正 Web legend。真实 `.wasm` 链接表仍因隔
 压力在 `execution_dispatch.c` 处被 `Killed`，未生成链接资产，故仍待验收。
 
 Plan 00 Task 5 的 [integrated capability inventory](2026-09-06-plan00-task05-integrated-inventory.md)
-已将 native 四 profile 与 WASM 静态映射合并到同一个 machine-readable runner；
-GCC、Clang、MSVC 的两个 inventory CTest 均为 1/1。该记录只关闭静态集成子项，
-linked asset、control/notification 行为和完整语义 parity 仍保持 pending。
+已将 native 四 profile 与 WASM source-level worker/bridge wiring 映射合并到同一个
+machine-readable runner；GCC、Clang、MSVC 的两个 inventory CTest 均为 1/1，
+WASM source mutation regression 为 9/9。该记录只关闭 source-level integrated
+inventory 子项，linked asset、三种运行方式的完整 control/notification parity 和
+完整语义验收仍保持 pending。
 当前失败责任也已在 baseline/crosswalk 与 native inventory acceptance 中逐项链接
 owner 和后续计划；GCC focused build、extension unit/noEmit 及 linked asset 仍是
 独立门槛。

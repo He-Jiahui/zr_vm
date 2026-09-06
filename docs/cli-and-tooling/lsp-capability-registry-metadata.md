@@ -18,6 +18,8 @@ tests:
   - tests/language_server/stdio_protocol_inventory.js
   - tests/language_server/lsp_native_inventory_contract.js
   - tests/language_server/lsp_native_inventory_mutations.js
+  - tests/language_server/lsp_wasm_worker_probe.js
+  - tests/language_server/wasm_capability_inventory_test.js
   - tests/language_server/stdio_color_capability_smoke.js
 doc_type: module-detail
 ---
@@ -109,20 +111,26 @@ runtime declarations with the shared contract and validate actual native/Web
 behavior. A registered broad smoke test can still fail before reaching a
 provider; its ID is provenance, not proof of coverage.
 
-The independent `wasm_capability_inventory.js` now checks the CMake export list,
-WASM declarations/definitions, bridge `ccall` names, worker handlers and the
-13-type semantic-token legend. It reports 30 exports, 28 bridge calls and 22
-worker routes. With generated `.js` and `.wasm` paths it additionally checks the
-actual `WebAssembly.Module.exports` table; no linked asset is claimed until that
-mode runs successfully.
+The independent `wasm_capability_inventory.js` checks the CMake export list,
+WASM declarations/definitions, bridge `ccall` names, and a source-level execution
+of the production worker and bridge against a mock connection/WASM ABI. The probe
+executes initialize, document lifecycle, all 23 worker request routes, shutdown
+and exit, then records each observed export and the 13-type semantic-token legend.
+It reports 30 exports, 28 bridge calls and 23 observed worker routes. With generated
+`.js` and `.wasm` paths it additionally checks the actual `WebAssembly.Module.exports`
+table; no linked asset is claimed until that mode runs successfully. The mocked
+execution is explicit in the report (`schemaVersion: 2`, `mockedWasm: true`,
+`workerAssetLoaded: false`).
 
-`stdio_protocol_inventory.js` now invokes that static WASM checker after its four
-native negotiation profiles and embeds the result under `wasm` in one
-machine-readable report. The combined status is `integrated-contract-mapped` only
-when every native profile and the WASM static mapping pass. GCC, Clang and MSVC
-CTest runs cover both inventory targets. This joins the registry/initialize/
-dispatch/CTest audit without treating source declarations as proof that a
-generated WASM asset loaded; `linkedAssetChecked` remains explicit.
+`stdio_protocol_inventory.js` now invokes that WASM checker after its four native
+negotiation profiles and embeds the result under `wasm` in one machine-readable
+report. The combined status is `integrated-contract-mapped` only when every native
+profile and the WASM source mapping pass. GCC, Clang and MSVC CTest runs cover both
+inventory targets. This joins the registry/initialize/dispatch/CTest audit without
+treating source execution as proof that a generated WASM asset loaded;
+`linkedAssetChecked` remains explicit. `wasm_capability_inventory_test.js` keeps
+the checker honest with nine production/mutation fixtures, including inlay route,
+provider/export, duplicate/orphan route and token legend drift.
 
 Implementation and verification evidence is recorded in
 [Plan 00 Task 2 Sub01](../plans/lsp/optimize/2026-09-05-plan00-task02-sub01-registry-metadata.md)
