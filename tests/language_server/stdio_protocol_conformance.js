@@ -405,6 +405,28 @@ async function testInvalidCodeActionRange(serverPath) {
     });
 }
 
+async function testInvalidCodeActionResolveParams(serverPath) {
+    const cases = [
+        ['missing params', undefined],
+        ['null params', null],
+        ['scalar params', 'not-a-code-action'],
+        ['array params', []],
+        ['empty item', {}],
+        ['empty data', { data: {} }],
+        ['null data', { data: null }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-code-action-resolve-initialize');
+        for (const [label, params] of cases) {
+            const id = `invalid-code-action-resolve-${label}`;
+            const response = await client.request('codeAction/resolve', params, id,
+                                                  RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testInvalidCompletionResolveParams(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'invalid-completion-resolve-initialize');
@@ -1193,6 +1215,7 @@ function protocolCases() {
         ['invalid editor feature params', testInvalidEditorFeatureParams],
         ['invalid editing params', testInvalidEditingParams],
         ['invalid code action range', testInvalidCodeActionRange],
+        ['invalid code action resolve params', testInvalidCodeActionResolveParams],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],
         ['invalid semantic token params', testInvalidSemanticTokenParams],

@@ -239,6 +239,13 @@ their requested range and snapshot behavior. GCC and Clang ASan/UBSan both pass 
 and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2
 Sub18](../plans/lsp/optimize/2026-09-07-plan01-task02-sub18-code-action-range.md).
 
+The code-action resolve parameter regression extends the current replay to 49 cases.
+`codeAction/resolve` now rejects missing, null, scalar, array, empty and malformed-data
+items with `-32602 Invalid params`; well-formed current snapshots still resolve normally,
+while stale snapshots retain their disabled-action behavior. GCC and Clang ASan/UBSan both
+pass 49/49, and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01
+Task 2 Sub19](../plans/lsp/optimize/2026-09-07-plan01-task02-sub19-code-action-resolve-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

@@ -317,15 +317,16 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
 cJSON *handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
 
-    if (!parse_code_action_document_snapshot(
-                server, params, &documentSnapshot) ||
-        !ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+    if (server == ZR_NULL || !cJSON_IsObject((cJSON *)params) ||
+        !parse_code_action_document_snapshot(
+                server, params, &documentSnapshot)) {
+        return NULL;
+    }
+    if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
                 server->state,
                 server->context,
                 &documentSnapshot)) {
         return disable_stale_code_action(params);
     }
-    return params != NULL
-               ? cJSON_Duplicate((cJSON *)params, 1)
-               : cJSON_CreateObject();
+    return cJSON_Duplicate((cJSON *)params, 1);
 }
