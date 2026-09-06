@@ -48,6 +48,11 @@ noEmit；aggregate `language_server` 在缺失的
 三个已构建 semantic executable 仍有 8/14/1 个失败。精确命令、输出和责任边界见
 [current GCC replay](2026-09-06-plan00-task01-current-gcc-replay.md)。
 
+- [x] Sub04：补齐当前 GCC 目录的全部 83 个 aggregate 目标并逐个收集，
+  `375/375` 构建成功，结果为 74 pass / 9 fail / 64 failure blocks，所有失败
+  退出 1，没有缺失程序或超时；[完成记录](2026-09-06-plan00-task01-sub04-current-gcc-aggregate.md)
+  保留工作树 overlay 的证据边界。Task 1 的冻结源码和全部 LSP 门槛仍 pending。
+
 ## Task 2：创建能力清单
 
 **Files:**

@@ -1,0 +1,830 @@
+{
+  "capturedAt": "2026-09-06T03:03:03.271Z",
+  "sourceCommit": "6a17a075c3f9f5664a63db5b480e9797d072006b",
+  "build": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc",
+  "suite": "language_server",
+  "passed": 74,
+  "failed": 9,
+  "results": [
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_symbol_table_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 87.478105,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_symbol_table_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_reference_tracker_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 91.830124,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_reference_tracker_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_semantic_analyzer_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 439.492027,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:7.157ms - Semantic Analyzer Projects All Const Assignment Target Kinds:\n Expected canonical diagnostics for const parameter, local, and static field assignments",
+        "Fail - Cost Time:0.250ms - Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail:\n **expression**\n\nType: int",
+        "Fail - Cost Time:0.121ms - Semantic Analyzer Records Using Cleanup And Template Segments:\n Semantic context did not record cleanup steps or template segments",
+        "Fail - Cost Time:0.353ms - Semantic Analyzer Get Symbol At Resolves Local References:\n symbol=<null> lookup=symbol=seed type=7 refHit=symbol=<null> allRefs=4 query=[62:3:22-62:3:22]",
+        "Fail - Cost Time:0.147ms - Semantic Analyzer Local Symbols Surface Rich Hover:\n **expression**\n\nType: float",
+        "Fail - Cost Time:8.293ms - Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover:\n **expression**\n\nType: int",
+        "Fail - Cost Time:0.510ms - Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols:\n **expression**\n\nType: cannot infer exact type | position=[80:3:19-80:3:19] symbol=<null>",
+        "Fail - Cost Time:0.433ms - Semantic Analyzer Generic Function Symbols Surface Signature Detail:\n **expression**\n\nType: int",
+        "Fail - Cost Time:7.494ms - Semantic Analyzer Function Signatures Preserve Ownership Qualifiers:\n **expression**\n\nType: Unique<Hero>",
+        "Fail - Cost Time:0.316ms - Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact:\n **expression**\n\nType: MissingType",
+        "Fail - Cost Time:7.568ms - Semantic Analyzer Generic Type Symbols Surface Signature Detail:\n **expression**\n\nType: Derived<Item, 4>",
+        "Fail - Cost Time:7.682ms - Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata:\n **expression**\n\nType: Matrix<int, 4>"
+      ],
+      "log": "zr_vm_language_server_semantic_analyzer_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_ownership_diagnostics_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 311.443062,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:13.094ms - Semantic Analyzer Reports Loaned Return Escape:\n Expected loan escape ownership fact to cover the ownership builtin",
+        "Fail - Cost Time:7.023ms - Semantic Analyzer Reports Use After Unique Move:\n Expected linked MOVE and ERROR ownership facts for the unique symbol",
+        "Fail - Cost Time:6.553ms - Semantic Analyzer Records Borrow And Loan Regions:\n Expected linked alias/owner lifetime regions on borrow and loan facts",
+        "Fail - Cost Time:6.752ms - Semantic Analyzer Reports Borrow After Owner Release:\n Expected borrow_escape with one owner-release related location",
+        "Fail - Cost Time:6.804ms - LSP Reports Possible-Path Borrow After Owner Release:\n Expected possible-path borrow_escape at the post-join read",
+        "Fail - Cost Time:6.910ms - Semantic Analyzer Releases Using Owner At Scope Exit:\n Using owner did not publish the expected post-scope RELEASE flow",
+        "Fail - Cost Time:6.576ms - Semantic Analyzer Releases Using Borrow At Scope Exit:\n Using borrow did not end the alias at scope exit",
+        "Fail - Cost Time:6.904ms - Semantic Analyzer Links Weak Use To Possible Owner Release:\n Weak borrowed use did not merge owner-release evidence",
+        "Fail - Cost Time:6.841ms - Semantic Analyzer Rebinds Borrowed Alias Owner:\n Borrowed assignment did not replace the owner-region binding",
+        "Fail - Cost Time:6.686ms - Semantic Analyzer Rebinds Loaned Alias Owner:\n Loaned assignment did not replace the owner-region binding",
+        "Fail - Cost Time:7.463ms - Semantic Analyzer Rebinds Weak Alias Owner:\n Weak assignment did not replace the owner-region binding",
+        "Fail - Cost Time:6.735ms - Semantic Analyzer Joins Borrowed Alias Owner Set:\n Expected the branch owner-set release location",
+        "Fail - Cost Time:6.825ms - Semantic Analyzer Joins Loaned Alias Owner Set:\n Expected the branch owner-set release location",
+        "Fail - Cost Time:7.645ms - Semantic Analyzer Joins Weak Alias Owner Set:\n Expected the branch owner-set release location",
+        "Fail - Cost Time:6.759ms - Semantic Analyzer Tracks Borrow Rebind In Using Body:\n Using-body rebind retained the pre-body owner",
+        "Fail - Cost Time:7.317ms - Semantic Analyzer Guards Direct Weak Receiver After Owner Release:\n Direct weak receiver access did not retain its receiver guards",
+        "Fail - Cost Time:6.716ms - Semantic Analyzer Guards Rebound Direct Weak Receiver:\n Rebound direct weak receiver did not retain its guard contract"
+      ],
+      "log": "zr_vm_language_server_ownership_diagnostics_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_union_pattern_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 132.826015,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_union_pattern_diagnostics_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_local_semantic_query_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 248.570551,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:0.208ms - LSP Local Reference Query Returns Write Fact:\n Expected write reference fact; status=1 reference=0x560fbc1c63d0 kind=2 resolved=1 range=(39,3,5)-(46,3,12) declaration=(4,1,5)-(11,1,12)",
+        "Fail - Cost Time:0.216ms - LSP Local Reference Query Returns Member Write Fact:\n Expected member write reference fact; status=1 reference=0x560fbc1d3960 kind=5 resolved=0 name=value range=(53,3,10)-(58,3,15)",
+        "Fail - Cost Time:0.588ms - Resolved Function Value Dependency Invalidates Directly:\n Resolved function-value counters total=1 preserve=0 direct=0 conservative=1"
+      ],
+      "log": "zr_vm_language_server_local_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_logical_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 142.423589,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_logical_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_inlay_semantic_facts_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 179.953695,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_inlay_semantic_facts_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_local_semantic_hover_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 163.403946,
+      "passed": false,
+      "failures": [
+        "FAIL: expected assignment target hover to surface write reference fact; status=1 reference=0x561cf1710e90 kind=2 hover=(nil) text=<null> rich=(nil)",
+        "FAIL: LSP Local Expression Hover Surfaces Assignment Write Reference Fact",
+        "FAIL: expected member assignment hover to surface member write reference fact; status=1 reference=0x561cf170b290 kind=5 resolved=0 hover=(nil) text=<null> rich=(nil)",
+        "FAIL: LSP Local Expression Hover Surfaces Member Write Reference Fact"
+      ],
+      "log": "zr_vm_language_server_local_semantic_hover_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_computed_member_hover_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 148.976814,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_computed_member_hover_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_expression_fact_hover_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 173.820547,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_expression_fact_hover_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_reachability_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 157.195617,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_reachability_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 142.003868,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_branch_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 149.998391,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_branch_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_branch_assignment_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 145.412069,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_branch_assignment_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 139.269138,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 143.31193,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 147.33782,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 147.650914,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 164.495413,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 149.191242,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 164.922067,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 145.854475,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 158.161909,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 158.951253,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_for_header_assignment_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 144.098953,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_for_header_assignment_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 149.601644,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 144.315375,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_call_member_semantic_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 156.623123,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_call_member_semantic_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_incremental_parser_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 132.459205,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_incremental_parser_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_parser_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 175.42752,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_parser_diagnostics_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_declaration_parser_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 159.049488,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_declaration_parser_diagnostics_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_statement_parser_diagnostics_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 138.768022,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_statement_parser_diagnostics_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_position_mapping_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 254.136555,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_position_mapping_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_position_fuzz_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 81.4688,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_position_fuzz_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_decorator_utf16_ranges_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 142.28986,
+      "passed": false,
+      "failures": [
+        "FAIL: Decorator hover expected UTF-16 parser range 2:14-3:16 but got 2:12-2:19\n\nFAILED: 1 decorator UTF-16 range test(s) failed"
+      ],
+      "log": "zr_vm_language_server_lsp_decorator_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_code_lens_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 135.904861,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_code_lens_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_super_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 151.774585,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_super_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_token_metadata_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 150.599756,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_source_contracts_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 820.435081,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_source_contracts_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_interface_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 4004.683559,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:8.172ms - LSP Class Member Navigation And Completion:\n Expected classes fixture diagnostics to be empty",
+        "Fail - Cost Time:11.031ms - LSP Closed Generic Type Display And Definition:\n Hover should include the normalized closed generic type",
+        "Fail - Cost Time:0.853ms - LSP Hover And Completion Surface Explicit Exact Type Failures:\n Hover should surface explicit exact-type failure text without a weak object fallback",
+        "Fail - Cost Time:0.658ms - LSP Extern Type Symbols Surface Hover And Definition:\n Hover on an extern delegate type usage should describe the delegate and surface the ffi source origin",
+        "Fail - Cost Time:0.599ms - LSP Extern Layout Hover Surfaces FFI Metadata:\n Hover on an extern struct type usage should surface pack/align metadata",
+        "Fail - Cost Time:0.252ms - LSP Semantic Query Unifies Local Symbol Navigation And Hover:\n Structured semantic query should resolve the local symbol and its inferred int type",
+        "Fail - Cost Time:0.327ms - LSP Hover Includes Local Reference Fact Payload:\n Hover should include symbol type plus shared reference fact payload, actual=**variable**: result\n\nResolved Type: int\n\nExpression: identifier exact\n\nReference: read\n\nSymbol: result\n\nDeclared at: 3:12",
+        "Fail - Cost Time:174.387ms - LSP Container Matrix Project Infers Bucket And Foreach Types:\n Hover inside the oddLo foreach loop should bind item to the concrete int element type"
+      ],
+      "log": "zr_vm_language_server_lsp_interface_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_project_features_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 14483.582092,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:28.447ms - LSP Auto Discovers Project From Source File:\n Imported member definition should resolve without explicitly opening the project file",
+        "Fail - Cost Time:113.845ms - LSP Imported Constructor And Meta Call Infer Through Module Type:\n Imported Record construction and r() meta-call should analyze without diagnostics (count=3 first=Member 'payload' could not be resolved\nCause: Canonical member binding found no field, property, or method for this reference.\nSuggestion: Declare the member",
+        "Fail - Cost Time:55.284ms - LSP Relative And Alias Import Literal Navigation And Hover:\n Definition on import(\".helper.math\") should resolve to the relative project source module entry",
+        "Fail - Cost Time:133.060ms - LSP Network Native Members Semantic Tokens Cover Chain And Receivers:\n Semantic tokens should classify network.tcp as namespace, native methods as methods, and UdpPacket fields as properties",
+        "Fail - Cost Time:64.917ms - LSP Binary Import Metadata Surfaces Hover And Completion:\n count=0 first=<none>",
+        "Fail - Cost Time:25.407ms - LSP Binary Import References Surface Metadata And Usages:\n count=0 first=<none>",
+        "Fail - Cost Time:26.881ms - LSP Binary Import Document Highlights Cover All Local Usages:\n Document highlights on binary imported members should include every same-document usage",
+        "Fail - Cost Time:19.259ms - LSP Source Module Refresh Reanalyzes Open Documents:\n Refreshing a source module should invalidate stale importer analyzers so local inferred types reflect updated imported member types",
+        "Fail - Cost Time:27.862ms - LSP Source Module Identity Change Refreshes Old And New Importers:\n The added ModuleIdentity edge retained stale semantic facts",
+        "Fail - Cost Time:56.395ms - LSP Watched Binary Metadata Refresh Reanalyzes Open Documents:\n Watched binary metadata refresh should reanalyze importer locals inferred from binary metadata members",
+        "Fail - Cost Time:44.723ms - LSP Watched Descriptor Plugin Refresh Reanalyzes Open Documents:\n Watched descriptor plugin refresh should reanalyze importer locals inferred from plugin member returns",
+        "Fail - Cost Time:19.012ms - LSP Semantic Tokens Cover External Metadata Members:\n Expected semantic token coverage for descriptor-plugin module members, linked submodules, imported types, and receiver members",
+        "Fail - Cost Time:91.086ms - LSP Semantic Tokens Cover Native Value Constructor Members:\n Expected semantic token coverage for init module.Type(...) constructors and their resolved native fields",
+        "Fail - Cost Time:20.503ms - LSP Pooling Hover Completion And Projection Expose Guard Contract:\n Pooling LSP facts did not expose the capability-driven guard workflow"
+      ],
+      "log": "zr_vm_language_server_lsp_project_features_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_project_utf16_ranges_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 390.906335,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_project_utf16_ranges_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_advanced_editor_features_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 988.39599,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:0.255ms - LSP code action skips placeholder diagnostic fix:\n placeholder diagnostic fix was missing or was incorrectly promoted to a safe code action"
+      ],
+      "log": "zr_vm_language_server_lsp_advanced_editor_features_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_semantic_query_parity_test",
+      "exitCode": 1,
+      "signal": null,
+      "elapsedMs": 399.79393,
+      "passed": false,
+      "failures": [
+        "Fail - Cost Time:23.048ms - LSP Semantic Query Source Snapshot Parity:\n Source query results were unavailable or changed across read-only calls",
+        "Fail - Cost Time:0.998ms - LSP Local Reference Consumers Use Canonical Facts:\n initial resolution",
+        "Fail - Cost Time:0.195ms - LSP Local Query Rejects Missing Canonical Reference:\n Could not prepare the unresolved canonical reference fixture",
+        "Fail - Cost Time:0.286ms - LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State:\n Source hover did not consume the parser SymbolAt fact after analyzer state was detached"
+      ],
+      "log": "zr_vm_language_server_semantic_query_parity_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bitwise_zero_wrapper_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 156.750304,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_wrapper_range_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_language_server_lsp_uri_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 86.468075,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_language_server_lsp_uri_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 163.820921,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 152.298758,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 132.308123,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 181.138669,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_all_ones_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 133.528191,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_all_ones_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_unary_zm_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 133.952166,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_unary_zm_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_not_zm_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 128.017943,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_not_zm_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_double_zm_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 130.409092,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_double_zm_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_neg_not_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 127.800627,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_neg_not_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_not_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 131.459999,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_not_unary_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_zm_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 132.661299,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_zm_unary_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_double_not_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 136.240816,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_double_not_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_double_neg_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 135.371726,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_double_neg_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_count_wrap_not_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 145.505443,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_count_wrap_not_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_bzms_private_not_mask_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 239.355402,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_bzms_private_not_mask_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 138.238681,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 143.434853,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 260.04028,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 162.942063,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 152.071847,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 157.108908,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 152.464401,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_product_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 198.915152,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_product_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_add_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 199.18727,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_add_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 139.447886,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 134.98203,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 137.491163,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 133.828412,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 126.394131,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 128.393342,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_product_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 222.805829,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_product_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 222.533466,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 137.264236,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 145.072537,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 142.45655,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test.log"
+    },
+    {
+      "executable": "/mnt/e/Git/zr_vm/.codex/build-lsp-opt-gcc/bin/zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test",
+      "exitCode": 0,
+      "signal": null,
+      "elapsedMs": 132.546886,
+      "passed": true,
+      "failures": [],
+      "log": "zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test.log"
+    }
+  ]
+}

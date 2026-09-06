@@ -88,3 +88,8 @@ The focused compiler build, protocol replay, inventory CTest, extension unit and
 noEmit gates are accepted as current evidence. The Plan 00 Task 1 full-build and
 aggregate LSP gate remains open because the aggregate suite lacks the first
 required executable, and the semantic focused failures remain unresolved.
+
+The subsequent [Sub04 aggregate collection](2026-09-06-plan00-task01-sub04-current-gcc-aggregate.md)
+built all 83 members and supersedes the missing-executable boundary above.
+It records 74 passes, nine failures and 64 exact failure blocks from the dirty
+current checkout. The semantic and frozen-source acceptance gates remain open.

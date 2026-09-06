@@ -36,6 +36,10 @@ Task 1 Sub03 修复 project features 测试的 exit-zero 伪成功，三工具�
 inventory `3/3`、extension unit `41/41` 和 noEmit；aggregate suite 仍在缺少
 `zr_vm_language_server_symbol_table_test` 处停止，三个 semantic focused executable
 保留 8/14/1 个失败，因此 Task 1 全量门禁继续 pending。
+随后 [Task 1 Sub04](2026-09-06-plan00-task01-sub04-current-gcc-aggregate.md)
+补齐全部 83 个 aggregate 目标，完成 `375/375` 构建并收集到 74 pass / 9 fail /
+64 failure blocks；缺失产物问题已排除，source-contract executable 通过。
+该结果来自包含活动 overlay 的工作树，不能视作冻结提交的完整验收。
 
 Task 2 Sub01 完成[能力登记表实际实现元数据](2026-09-05-plan00-task02-sub01-registry-metadata.md)：
 明确 core/native adapter 归属及 runtime 字段约束，修正入口、导出、测试 ID 和
