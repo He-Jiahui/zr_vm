@@ -422,6 +422,24 @@ async function testInvalidWorkspaceSymbolParams(serverPath) {
     });
 }
 
+async function testInvalidWorkspaceDiagnosticParams(serverPath) {
+    const cases = [
+        ['missing params', undefined],
+        ['null params', null],
+        ['scalar params', 'not-an-object'],
+        ['array params', []],
+    ];
+
+    for (const [label, params] of cases) {
+        await withClient(serverPath, async (client) => {
+            await initialize(client, `invalid-workspace-diagnostic-${label}-initialize`);
+            const id = `invalid-workspace-diagnostic-${label}`;
+            const response = await client.request('workspace/diagnostic', params, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        });
+    }
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -1017,6 +1035,7 @@ function protocolCases() {
         ['invalid additional editor params', testInvalidAdditionalEditorParams],
         ['invalid semantic token params', testInvalidSemanticTokenParams],
         ['invalid workspace symbol params', testInvalidWorkspaceSymbolParams],
+        ['invalid workspace diagnostic params', testInvalidWorkspaceDiagnosticParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

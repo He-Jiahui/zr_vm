@@ -296,7 +296,13 @@ cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *
     cJSON *result;
     cJSON *items;
     SZrArray uris = {0};
-    const cJSON *previousResultIds = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_IDS);
+    const cJSON *previousResultIds;
+
+    if (server == ZR_NULL || params == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
+        return ZR_NULL;
+    }
+
+    previousResultIds = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_IDS);
 
     result = cJSON_CreateObject();
     items = cJSON_CreateArray();
