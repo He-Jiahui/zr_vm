@@ -44,6 +44,11 @@ semantic-token legend，并修正 Web legend。真实 `.wasm` 链接表仍因隔
 的真实构建在补齐另一会话未提交的 `semantic_scope_facts.h` 后仍因系统内存
 压力在 `execution_dispatch.c` 处被 `Killed`，未生成链接资产，故仍待验收。
 
+Plan 00 Task 5 的 [integrated capability inventory](2026-09-06-plan00-task05-integrated-inventory.md)
+已将 native 四 profile 与 WASM 静态映射合并到同一个 machine-readable runner；
+GCC、Clang、MSVC 的两个 inventory CTest 均为 1/1。该记录只关闭静态集成子项，
+linked asset、control/notification 行为和完整语义 parity 仍保持 pending。
+
 Task 3 Sub02 完成[3.17/3.18 optional capability 协商](2026-09-05-plan00-task03-sub02-optional-capabilities.md)：
 inline completion 与 multi-range formatting 仅在客户端协商后发布，未协商请求返回
 精确 `-32601`，并覆盖 cJSON 分配故障；三工具链各 11/11。完整协议生命周期和

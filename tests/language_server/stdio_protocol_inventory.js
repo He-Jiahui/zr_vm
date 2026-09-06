@@ -1,5 +1,6 @@
 const assert = require('assert').strict;
 const fs = require('fs');
+const path = require('path');
 const { spawnSync } = require('child_process');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
 const { validateNativeInventory } = require('./lsp_native_inventory_contract');
@@ -74,6 +75,13 @@ async function main() {
               'usage: node stdio_protocol_inventory.js <stdio-server> <inventory-probe> <build-dir> <ctest> [configuration]');
     assert.ok([serverPath, probePath, ctestPath].every(file => fs.existsSync(file)), 'inventory executables must exist');
     const inventory = runJson(probePath, []);
+    const repositoryRoot = path.resolve(__dirname, '..', '..');
+    const wasmInventory = runJson(process.execPath, [
+        path.join(__dirname, 'wasm_capability_inventory.js'), repositoryRoot,
+    ]);
+    assert.equal(wasmInventory.schemaVersion, 1, 'unsupported WASM inventory schema');
+    assert.ok(['wasm-static-contract-mapped', 'wasm-linked-contract-mapped'].includes(wasmInventory.status),
+              'WASM capability inventory did not produce a mapped contract');
     const ctest = runJson(ctestPath, ['--test-dir', buildDirectory, '--show-only=json-v1'].concat(
         configuration ? ['-C', configuration] : []));
     assert.ok(Array.isArray(ctest.tests) && ctest.tests.length > 0, 'configured CTest inventory must be nonempty');
@@ -94,11 +102,15 @@ async function main() {
             failures.push({ profile: profile.name, error: error.stack || String(error) });
         }
     }
+    const remaining = ['native control and notification routing'];
+    if (!wasmInventory.linkedAssetChecked) {
+        remaining.push('WASM linked export table and worker asset loading');
+    }
+    remaining.push('complete behavioral and integrated semantic acceptance');
     console.log(JSON.stringify({
-        status: failures.length ? 'native-contract-failed' : 'native-contract-mapped',
-        reports, failures,
-        remaining: ['native control and notification routing', 'WASM export and worker mapping',
-                    'complete behavioral and integrated semantic acceptance'],
+        status: failures.length ? 'integrated-contract-failed' : 'integrated-contract-mapped',
+        reports, wasm: wasmInventory, failures,
+        remaining,
     }, null, 2));
     assert.equal(failures.length, 0, 'compiled native inventory profile failures');
 }

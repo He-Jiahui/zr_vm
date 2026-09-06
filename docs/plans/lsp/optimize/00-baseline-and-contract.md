@@ -118,7 +118,7 @@ changeNotifications 的依据已被后续实现取代。当前 implementation �
 
 - [x] Native 子项：`stdio_protocol_inventory.js` 已连接编译 registry、initialize JSON、production dispatch 和 CTest 注册，四个 profile 输出 0 个 native orphan/overclaim；完成记录见[compiled native inventory](2026-09-05-plan00-task02-sub02-compiled-native-inventory.md)。
 - [x] Web 静态子项：`wasm_capability_inventory.js` 已检查 CMake export、WASM C++ 定义/声明、bridge 调用、worker 路由及 semantic-token legend；完成记录见[WASM static inventory](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。真实 `.wasm` export 表和 worker 资产加载仍待验证。
-- [ ] `stdio_protocol_inventory.js` 对 registry、initialize JSON、dispatch 和 WASM exports 做一一映射，输出 0 个 orphan/overclaim。
+- [x] `stdio_protocol_inventory.js` 对 registry、initialize JSON、dispatch 和 WASM 静态 exports 做一一映射，输出 `integrated-contract-mapped`、0 个 native orphan/overclaim 和 WASM 静态子报告；真实 linked asset 仍待验证，完成记录见[集成 inventory](2026-09-06-plan00-task05-integrated-inventory.md)。
 - [ ] 所有当前失败在 acceptance 文档中有 owner 和后续计划链接。
 - [ ] `git diff --check`、GCC focused build、extension unit/noEmit 通过。
 - [ ] 只提交基线/契约相关路径，不夹带活动 L8 overlay。

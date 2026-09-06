@@ -5,6 +5,7 @@ related_code:
   - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
   - zr_vm_language_server/wasm/wasm_exports.cpp
   - tests/language_server/lsp_capability_inventory_probe.c
+  - tests/language_server/wasm_capability_inventory.js
   - tests/language_server/lsp_native_inventory_contract.js
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/protocol/lsp_capability_registry.c
@@ -114,6 +115,14 @@ WASM declarations/definitions, bridge `ccall` names, worker handlers and the
 worker routes. With generated `.js` and `.wasm` paths it additionally checks the
 actual `WebAssembly.Module.exports` table; no linked asset is claimed until that
 mode runs successfully.
+
+`stdio_protocol_inventory.js` now invokes that static WASM checker after its four
+native negotiation profiles and embeds the result under `wasm` in one
+machine-readable report. The combined status is `integrated-contract-mapped` only
+when every native profile and the WASM static mapping pass. GCC, Clang and MSVC
+CTest runs cover both inventory targets. This joins the registry/initialize/
+dispatch/CTest audit without treating source declarations as proof that a
+generated WASM asset loaded; `linkedAssetChecked` remains explicit.
 
 Implementation and verification evidence is recorded in
 [Plan 00 Task 2 Sub01](../plans/lsp/optimize/2026-09-05-plan00-task02-sub01-registry-metadata.md)
