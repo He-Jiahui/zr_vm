@@ -68,8 +68,8 @@ static TZrBool stdio_request_progress_token_is_valid(const cJSON *token) {
     }
 
     number = token->valuedouble;
-    return number >= -9007199254740991.0 &&
-           number <= 9007199254740991.0 &&
+    return number >= -ZR_LSP_JSON_SAFE_INTEGER_MAX &&
+           number <= ZR_LSP_JSON_SAFE_INTEGER_MAX &&
            number == (double)(long long)number;
 }
 
@@ -334,6 +334,10 @@ void handle_request_message(SZrStdioServer *server,
     }
 
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
+        if (!cJSON_IsObject((cJSON *)params)) {
+            send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid params");
+            return;
+        }
         if (!ZrLanguageServer_StdioLifecycle_BeginInitialize(&server->lifecycle)) {
             send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
             return;
@@ -343,7 +347,11 @@ void handle_request_message(SZrStdioServer *server,
             cJSON_Delete(result);
             return;
         }
-        send_result_response(id, result != NULL ? result : cJSON_CreateNull());
+        if (result == ZR_NULL) {
+            send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");
+            return;
+        }
+        send_result_response(id, result);
         return;
     }
 

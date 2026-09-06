@@ -124,6 +124,17 @@ safe boundary is echoed as `9007199254740991`; `9007199254740992` is rejected as
 `-32600 Invalid Request` with a null error ID. Numeric and string IDs remain
 separate registry keys.
 
+`workDoneToken` and `partialResultToken` use the same finite, integral safe
+integer boundary for numeric tokens. Both positive and negative safe endpoints
+are preserved in `$/progress`; values outside the boundary are rejected as
+`-32602 Invalid params` before any progress notification is sent.
+
+The `initialize` handler applies its method-level parameter shape after envelope
+validation: missing, JSON `null`, scalar and array `params` return
+`-32602 InvalidParams` before the lifecycle enters `INITIALIZING`. This boundary
+does not imply that every other handler has been migrated to the planned shared
+status/result contract.
+
 `stdio_protocol_envelope_mutations.js` imports the production conformance case
 list without starting its CLI. Six unchanged cases must pass first. It then
 runs 11 cases with one decoded response mutation each, covering missing/wrong

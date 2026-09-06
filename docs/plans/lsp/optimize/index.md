@@ -148,6 +148,12 @@ reader 在 C 字符串处理前拒绝 header NUL，并检查所有显式 `charse
 MSVC 的 31-case protocol conformance 均通过。Task 4 的重复活动 ID、取消、进度和
 ContentModified 父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub02 initialize 参数形状](2026-09-07-plan01-task02-sub02-initialize-params.md)：
+`initialize` 缺失、`null`、标量或数组 `params` 在生命周期转换前返回精确
+`-32602 InvalidParams`；GCC protocol conformance 现为 31/31，生命周期专项通过。
+该修复只关闭 initialize 的方法级参数边界，Task 2 的统一 envelope、handler status
+及 Plan 01 父级门禁仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

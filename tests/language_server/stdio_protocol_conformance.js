@@ -230,8 +230,10 @@ async function testInvalidTopLevelMessages(serverPath) {
 
 async function testInvalidParams(serverPath) {
     const invalidParams = [
+        ['missing params', undefined],
         ['scalar params', 'not-an-object'],
         ['null params', null],
+        ['array params', []],
     ];
 
     for (const [label, params] of invalidParams) {
@@ -520,6 +522,25 @@ async function testRequestWorkDoneProgress(serverPath) {
         assert(numberResult && numberResult.id === 'work-done-number' && Array.isArray(numberResult.result),
                `numeric work-done request must retain its ordinary response, actual=${JSON.stringify(numberResult)}`);
 
+        for (const [label, token] of [
+            ['positive-boundary', 9007199254740991],
+            ['negative-boundary', -9007199254740991],
+        ]) {
+            const requestId = `work-done-${label}`;
+            const responsePromise = client.request('workspace/symbol', {
+                query: '',
+                workDoneToken: token,
+            }, requestId, RESPONSE_TIMEOUT_MS);
+            const begin = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+            const end = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+            const response = await responsePromise;
+            assertSuccessEnvelope(response, requestId, `${label} work-done result`);
+            assert(begin && begin.token === token && begin.value && begin.value.kind === 'begin',
+                   `${label} work-done begin must preserve token, actual=${JSON.stringify(begin)}`);
+            assert(end && end.token === token && end.value && end.value.kind === 'end',
+                   `${label} work-done end must preserve token, actual=${JSON.stringify(end)}`);
+        }
+
         const invalidPartial = await client.request('workspace/symbol', {
             query: '',
             partialResultToken: false,
@@ -528,6 +549,26 @@ async function testRequestWorkDoneProgress(serverPath) {
                             'work-done-invalid-partial',
                             -32602,
                             'invalid partial result token');
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+
+        const invalidWorkDoneBoundary = await client.request('workspace/symbol', {
+            query: '',
+            workDoneToken: 9007199254740992,
+        }, 'work-done-invalid-work-boundary', RESPONSE_TIMEOUT_MS);
+        assertErrorEnvelope(invalidWorkDoneBoundary,
+                            'work-done-invalid-work-boundary',
+                            -32602,
+                            'invalid work-done token boundary');
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+
+        const invalidPartialBoundary = await client.request('workspace/symbol', {
+            query: '',
+            partialResultToken: -9007199254740992,
+        }, 'work-done-invalid-partial-boundary', RESPONSE_TIMEOUT_MS);
+        assertErrorEnvelope(invalidPartialBoundary,
+                            'work-done-invalid-partial-boundary',
+                            -32602,
+                            'invalid partial-result token boundary');
         await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
     });
 }
