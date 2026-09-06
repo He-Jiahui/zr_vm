@@ -276,6 +276,14 @@ This preserves a joinable reader without introducing an unsafe cancellation
 point during teardown. The caller owns the supplied `FILE *`; the server does
 not close it.
 
+The request registry keys active work by JSON-RPC ID kind and value. Numeric `1`
+and string `"1"` reserve independently; a repeated same-typed ID is rejected,
+`$/cancelRequest` marks only the matching entry, and completion removes the entry
+so a later request starts with a fresh cancellation flag. The lifecycle executable
+contains the direct registry regression in addition to its server teardown loop.
+See [Plan 01 Task 4 Sub04](../plans/lsp/optimize/2026-09-07-plan01-task04-sub04-request-registry-identity.md)
+for the focused evidence.
+
 `test_stdio_server_lifecycle.c` runs 100 same-process
 New/Start/Shutdown/Free cycles, an `exit` frame case, and injected failures
 after global, context, input initialization, and reader start. This test exists

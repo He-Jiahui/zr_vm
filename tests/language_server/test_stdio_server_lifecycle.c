@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "stdio_lifecycle.h"
+#include "stdio_request_registry.h"
 #include "stdio_server.h"
 
 static int g_failures = 0;
@@ -72,6 +73,68 @@ static void test_lifecycle_state_transitions(void) {
                 "exit before shutdown must return failure code");
     expect_true(lifecycle.state == ZR_STDIO_LIFECYCLE_EXITED,
                 "failed exit must still enter EXITED");
+}
+
+static void test_request_registry_identity_and_cancellation(void) {
+    SZrStdioRequestRegistry *registry =
+            ZrLanguageServer_StdioRequestRegistry_New();
+    cJSON *numericId = cJSON_CreateNumber(1.0);
+    cJSON *stringId = cJSON_CreateString("1");
+    cJSON *unknownId = cJSON_CreateString("unknown");
+    cJSON *booleanId = cJSON_CreateBool(1);
+
+    expect_true(registry != NULL, "request registry must construct");
+    if (registry == NULL) {
+        cJSON_Delete(numericId);
+        cJSON_Delete(stringId);
+        cJSON_Delete(unknownId);
+        cJSON_Delete(booleanId);
+        return;
+    }
+
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Reserve(registry, numericId) ==
+                        ZR_STDIO_REQUEST_RESERVATION_ACCEPTED,
+                "numeric request id must reserve");
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Reserve(registry, numericId) ==
+                        ZR_STDIO_REQUEST_RESERVATION_DUPLICATE,
+                "active numeric request id must be rejected as duplicate");
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Reserve(registry, stringId) ==
+                        ZR_STDIO_REQUEST_RESERVATION_ACCEPTED,
+                "string request id must not collide with numeric id");
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Reserve(registry, stringId) ==
+                        ZR_STDIO_REQUEST_RESERVATION_DUPLICATE,
+                "active string request id must be rejected as duplicate");
+    expect_true(!ZrLanguageServer_StdioRequestRegistry_IsCancelled(registry, numericId),
+                "new numeric request must not be cancelled");
+    expect_true(!ZrLanguageServer_StdioRequestRegistry_IsCancelled(registry, stringId),
+                "new string request must not be cancelled");
+
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Cancel(registry, numericId),
+                "known numeric request id must be cancellable");
+    expect_true(ZrLanguageServer_StdioRequestRegistry_IsCancelled(registry, numericId),
+                "cancellation must be retained for the matching numeric id");
+    expect_true(!ZrLanguageServer_StdioRequestRegistry_IsCancelled(registry, stringId),
+                "cancellation must not cross numeric/string id types");
+    expect_true(!ZrLanguageServer_StdioRequestRegistry_Cancel(registry, unknownId),
+                "unknown request cancellation must be a no-op");
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Reserve(registry, booleanId) ==
+                        ZR_STDIO_REQUEST_RESERVATION_FAILED,
+                "structured request id must not enter the registry");
+
+    ZrLanguageServer_StdioRequestRegistry_Complete(registry, numericId);
+    expect_true(ZrLanguageServer_StdioRequestRegistry_Reserve(registry, numericId) ==
+                        ZR_STDIO_REQUEST_RESERVATION_ACCEPTED,
+                "completed request id must be reusable");
+    expect_true(!ZrLanguageServer_StdioRequestRegistry_IsCancelled(registry, numericId),
+                "reused request id must start with a fresh cancellation state");
+
+    ZrLanguageServer_StdioRequestRegistry_Complete(registry, numericId);
+    ZrLanguageServer_StdioRequestRegistry_Complete(registry, stringId);
+    ZrLanguageServer_StdioRequestRegistry_Free(registry);
+    cJSON_Delete(numericId);
+    cJSON_Delete(stringId);
+    cJSON_Delete(unknownId);
+    cJSON_Delete(booleanId);
 }
 
 static void test_repeated_server_lifecycle(void) {
@@ -174,6 +237,7 @@ static void test_startup_failure_uses_the_same_teardown_path(void) {
 
 int main(void) {
     test_lifecycle_state_transitions();
+    test_request_registry_identity_and_cancellation();
     test_repeated_server_lifecycle();
     test_exit_notification_stops_the_reader();
     test_startup_failure_uses_the_same_teardown_path();
