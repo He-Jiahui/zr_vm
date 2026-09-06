@@ -36,7 +36,7 @@ typedef enum EZrStdioLifecycleState {
 ```
 
 - [x] Sub01：除 `exit` 外的 control notification 只在 `INITIALIZING` 或 `RUNNING` 状态生效；`$/setTrace` 在初始化前和 shutdown 后被忽略，且 shutdown/exit 顺序返回精确退出码；[记录](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)。
-- [ ] `initialized` notification 只允许把 INITIALIZING 转为 RUNNING；server 可以在 initialize response 后接受规范允许的请求，但必须记录 initialized 是否到达以便诊断客户端错误。
+- [x] `initialized` notification 只允许把 INITIALIZING 转为 RUNNING；server 可以在 initialize response 后接受规范允许的请求，但必须记录 initialized 是否到达以便诊断客户端错误；[记录](2026-09-07-plan01-task01-sub02-state-transitions.md)。
 - [ ] 删除仅有 `shutdownRequested` 的隐式状态判断。
 
 ## Task 2：验证 JSON-RPC envelope 和 params
@@ -105,6 +105,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub02：数字 request id 限定在 `+/-ZR_LSP_JSON_SAFE_INTEGER_MAX`，安全边界精确回显，字符串和数字类型继续分离；[记录](2026-09-07-plan01-task04-sub02-safe-numeric-request-ids.md)。
 - [ ] 重复活动 id 返回 InvalidRequest，不能复用同一个 cancellation node。
 - [ ] `$/cancelRequest` 只标记匹配 id；未知 id 是无响应 no-op。
+- [x] Sub04：registry 直接按 JSON-RPC ID 类型和值区分活动请求，重复同类型 ID、精确取消、未知取消和完成后复用均有回归；[记录](2026-09-07-plan01-task04-sub04-request-registry-identity.md)。
 - [ ] 从 request context 删除全局 inputGeneration 比较。ContentModified 由计划 02 的 dependency fence 判断；在该计划完成前只保留精确 cancellation，不发布可能误报的 `-32801`。
 - [ ] 给 workspace diagnostics、workspace symbol、references、rename、hierarchy 等循环增加统一 cancellation callback，不只在 diagnostics bucket 循环里检查。
 - [ ] request context 解析 `workDoneToken` 与 `partialResultToken`；长查询通过统一 progress sink 发送 `$/progress`，并在每批结果之间检查 cancellation/content fence。
