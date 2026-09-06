@@ -84,7 +84,7 @@ static cJSON *handle_prepare_hierarchy_request(SZrStdioServer *server,
     TZrBool success;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZR_UNUSED_PARAMETER(uriText);
@@ -120,7 +120,7 @@ cJSON *handle_call_hierarchy_incoming_calls_request(SZrStdioServer *server, cons
     cJSON *result;
 
     if (!parse_hierarchy_item(server, params, &item)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     ZrCore_Array_Init(server->state, &calls, sizeof(SZrLspHierarchyCall *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(server->state, server->context, &item, &calls)) {
@@ -138,7 +138,7 @@ cJSON *handle_call_hierarchy_outgoing_calls_request(SZrStdioServer *server, cons
     cJSON *result;
 
     if (!parse_hierarchy_item(server, params, &item)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     ZrCore_Array_Init(server->state, &calls, sizeof(SZrLspHierarchyCall *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(server->state, server->context, &item, &calls)) {
@@ -160,7 +160,7 @@ cJSON *handle_type_hierarchy_supertypes_request(SZrStdioServer *server, const cJ
     cJSON *result;
 
     if (!parse_hierarchy_item(server, params, &item)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     ZrCore_Array_Init(server->state, &items, sizeof(SZrLspHierarchyItem *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(server->state, server->context, &item, &items)) {
@@ -178,7 +178,7 @@ cJSON *handle_type_hierarchy_subtypes_request(SZrStdioServer *server, const cJSO
     cJSON *result;
 
     if (!parse_hierarchy_item(server, params, &item)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     ZrCore_Array_Init(server->state, &items, sizeof(SZrLspHierarchyItem *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(server->state, server->context, &item, &items)) {

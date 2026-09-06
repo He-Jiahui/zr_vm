@@ -143,6 +143,12 @@ request-id rejection, invalid initialize params, and the classified frame
 failures. Both servers pass 34/34 with no Clang sanitizer diagnostic. See [Tasks
 1-2 protocol negative replay](../plans/lsp/optimize/2026-09-07-plan01-task01-task02-protocol-negative-replay.md).
 
+The hierarchy parameter regression extends that replay to 35 cases. Missing or
+malformed params for call/type hierarchy prepare and item requests now return
+`-32602 Invalid params`; provider queries that genuinely find no item continue to
+return a valid empty array. GCC and Clang ASan/UBSan both pass 35/35. See [Plan
+01 Task 2 Sub05](../plans/lsp/optimize/2026-09-07-plan01-task02-sub05-hierarchy-invalid-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

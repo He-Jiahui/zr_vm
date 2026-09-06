@@ -181,6 +181,12 @@ envelope 现在拒绝 fractional numeric request id，仍保留 JSON-safe 上下
 顶层/envelope/request-id/params 负向和 frame 分类。Task 2 的统一 handler status/result
 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub05 hierarchy invalid params](2026-09-07-plan01-task02-sub05-hierarchy-invalid-params.md)：
+六个 call/type hierarchy request 的 malformed params 现在返回 `-32602`，provider 无结果
+的合法空数组保持不变；GCC 与 Clang ASan/UBSan protocol conformance 均为 35/35，
+lifecycle/protocol CTest 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍保持
+pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭

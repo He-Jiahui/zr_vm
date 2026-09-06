@@ -312,6 +312,26 @@ async function testInvalidPositionAndRangeNumbers(serverPath) {
     });
 }
 
+async function testInvalidHierarchyParams(serverPath) {
+    const cases = [
+        ['call hierarchy prepare', 'textDocument/prepareCallHierarchy', {}],
+        ['call hierarchy incoming', 'callHierarchy/incomingCalls', { item: {} }],
+        ['call hierarchy outgoing', 'callHierarchy/outgoingCalls', { item: {} }],
+        ['type hierarchy prepare', 'textDocument/prepareTypeHierarchy', {}],
+        ['type hierarchy supertypes', 'typeHierarchy/supertypes', { item: {} }],
+        ['type hierarchy subtypes', 'typeHierarchy/subtypes', { item: {} }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-hierarchy-initialize');
+        for (const [label, method, params] of cases) {
+            const id = `invalid-hierarchy-${label}`;
+            const response = await client.request(method, params, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -900,6 +920,7 @@ function protocolCases() {
         ['invalid top-level messages', testInvalidTopLevelMessages],
         ['invalid params', testInvalidParams],
         ['invalid position and range numbers', testInvalidPositionAndRangeNumbers],
+        ['invalid hierarchy params', testInvalidHierarchyParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],
