@@ -72,6 +72,7 @@ typedef enum EZrLspHandlerStatus {
 
 - [ ] handler 返回 status + result；“没有语义结果”可返回合法 null/empty，“解析失败”只能是 InvalidParams。
 - [x] Sub05：call/type hierarchy 的参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub05-hierarchy-invalid-params.md)。
+- [x] Sub06：implementation、foldingRange、selectionRange、documentLink 和 codeLens 的参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub06-editor-feature-invalid-params.md)。
 - [x] Sub02：`initialize` 的 params 缺失、`null`、标量或数组时返回 `-32602 InvalidParams`，且不进入初始化生命周期；[记录](2026-09-07-plan01-task02-sub02-initialize-params.md)。
 - [x] Sub03：numeric request id 只接受有限、整数且处于 JSON-safe 范围的值，fractional id 返回 `-32600 Invalid Request`；[记录](2026-09-07-plan01-task02-sub03-integer-request-ids.md)。
 - [x] Sub04：直接回归验证 envelope 对顶层消息、jsonrpc 版本、typed id、params 形状和 request/notification 分类；[记录](2026-09-07-plan01-task02-sub04-envelope-api.md)。

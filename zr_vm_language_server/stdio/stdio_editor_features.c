@@ -17,7 +17,7 @@ static cJSON *handle_location_request(SZrStdioServer *server,
 
     if (server == ZR_NULL || provider == NULL ||
         !get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZR_UNUSED_PARAMETER(uriText);
@@ -39,7 +39,7 @@ cJSON *handle_folding_range_request(SZrStdioServer *server, const cJSON *params)
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZR_UNUSED_PARAMETER(uriText);
@@ -64,12 +64,12 @@ cJSON *handle_selection_range_request(SZrStdioServer *server, const cJSON *param
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     positionsJson = get_object_item(params, "positions");
     if (!cJSON_IsArray((cJSON *)positionsJson)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     positionCount = cJSON_GetArraySize((cJSON *)positionsJson);
@@ -87,7 +87,7 @@ cJSON *handle_selection_range_request(SZrStdioServer *server, const cJSON *param
                                     cJSON_GetArrayItem((cJSON *)positionsJson, index),
                                     &positions[index])) {
             free(positions);
-            return cJSON_CreateArray();
+            return NULL;
         }
     }
 
@@ -117,7 +117,7 @@ cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params)
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZR_UNUSED_PARAMETER(uriText);
@@ -143,7 +143,7 @@ cJSON *handle_code_lens_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     ZR_UNUSED_PARAMETER(uriText);

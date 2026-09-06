@@ -149,6 +149,12 @@ malformed params for call/type hierarchy prepare and item requests now return
 return a valid empty array. GCC and Clang ASan/UBSan both pass 35/35. See [Plan
 01 Task 2 Sub05](../plans/lsp/optimize/2026-09-07-plan01-task02-sub05-hierarchy-invalid-params.md).
 
+The editor-feature parameter regression extends the current replay to 36 cases.
+Missing or malformed params for implementation, foldingRange, selectionRange,
+documentLink and codeLens now return `-32602 Invalid params`; genuine empty provider
+results remain successful empty arrays. GCC and Clang ASan/UBSan both pass 36/36.
+See [Plan 01 Task 2 Sub06](../plans/lsp/optimize/2026-09-07-plan01-task02-sub06-editor-feature-invalid-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as
