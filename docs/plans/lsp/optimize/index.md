@@ -196,6 +196,12 @@ registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 p
 完成后复用；GCC 与 Clang ASan/UBSan lifecycle 专项均通过。Task 4 的执行线性化、
 活动查询取消、ContentModified 与统一 progress sink 父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 5 deterministic teardown current replay](2026-09-07-plan01-task05-deterministic-teardown-current.md)：
+当前 `2f94ce94` 源树重放 100 次同进程 `New/Start/Shutdown/Free`、`exit` 帧停止和四个
+构造/reader-start fault point；GCC 与 Clang ASan/UBSan lifecycle CTest 均为 1/1，
+直接目标均输出 `Pass - stdio server lifecycle`。Task 6 的完整当前提交跨工具链汇总仍保持
+pending。
+
 2026-09-07 已完成 [Plan 01 Task 4 Sub04 setTrace stderr channel](2026-09-07-plan01-task04-sub04-set-trace-channel.md)：
 `$/setTrace` 在活动生命周期中接受 `off`、`messages`、`verbose` 三种 level，trace
 只写 stderr，stdout 仍只包含 JSON-RPC frame；初始化前和 shutdown 后的 control

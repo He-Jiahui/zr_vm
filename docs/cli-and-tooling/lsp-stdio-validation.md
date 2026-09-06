@@ -323,6 +323,14 @@ allocations and frees, zero live bytes and zero errors, and passes Helgrind
 with zero race reports. MSVC Debug passes the four-test stdio CTest set; MSVC
 AddressSanitizer passes the lifecycle executable.
 
+The current source replay on `2f94ce94` reruns the lifecycle executable and CTest
+after the protocol envelope, frame, ID and progress changes. GCC and Clang
+ASan/UBSan each pass `language_server_stdio_server_lifecycle` (`1/1`), and the
+direct executable reports `Pass - stdio server lifecycle`. The target still
+contains the 100-cycle same-process loop, valid `exit` stop path and global,
+context, input-init and reader-start fault injection. See [Plan 01 Task 5 current
+replay](../plans/lsp/optimize/2026-09-07-plan01-task05-deterministic-teardown-current.md).
+
 ## Protocol Lifecycle And Transport Completion
 
 The protocol lifecycle and transport tasks were revalidated on 2026-08-23

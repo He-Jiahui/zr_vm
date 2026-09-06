@@ -125,11 +125,11 @@ typedef enum EZrLspHandlerStatus {
 - Modify: `zr_vm_language_server/stdio/stdio_transport.c`
 - Create: `tests/language_server/test_stdio_server_lifecycle.c`
 
-- [ ] RED：在同一进程中连续 New/Start/Shutdown/Free 100 次；禁止依赖 process exit。
-- [ ] `SZrStdioRequestInputState` 保存 thread handle/id 与 stop flag；Free 顺序固定为 stop reader → join → drain messages/requests → destroy cond/mutex → free caches → free LSP context → free global state。
-- [ ] 调试现有 context/global teardown access violation，定位首个 invalid free/use-after-free；不得保留“让 OS 回收”的注释作为 workaround。
-- [ ] 对启动中途失败使用同一 teardown path，覆盖 global 创建后、context 创建后、input init 后、thread start 后的 fault injection。
-- [ ] Windows 与 pthread 两端都测试 join；不再 `CloseHandle`/`pthread_detach` 后遗失 reader 所有权。
+- [x] RED：在同一进程中连续 New/Start/Shutdown/Free 100 次；禁止依赖 process exit；[当前 replay](2026-09-07-plan01-task05-deterministic-teardown-current.md)。
+- [x] `SZrStdioRequestInputState` 保存 thread handle/id 与 stop flag；Free 顺序固定为 stop reader → join → drain messages/requests → destroy cond/mutex → free caches → free LSP context → free global state；[当前 replay](2026-09-07-plan01-task05-deterministic-teardown-current.md)。
+- [x] 调试现有 context/global teardown access violation，定位首个 invalid free/use-after-free；不得保留“让 OS 回收”的注释作为 workaround；实现和历史 sanitizer/leak 结论见[当前 replay](2026-09-07-plan01-task05-deterministic-teardown-current.md)。
+- [x] 对启动中途失败使用同一 teardown path，覆盖 global 创建后、context 创建后、input init 后、thread start 后的 fault injection；[当前 replay](2026-09-07-plan01-task05-deterministic-teardown-current.md)。
+- [x] Windows 与 pthread 两端都测试 join；不再 `CloseHandle`/`pthread_detach` 后遗失 reader 所有权；[当前 replay](2026-09-07-plan01-task05-deterministic-teardown-current.md)。
 
 ## Task 6：验证门禁
 
