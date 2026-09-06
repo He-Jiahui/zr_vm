@@ -88,6 +88,30 @@ GCC and MSVC configured inventory selections also pass their two existing
 inventory tests (`2/2` each). The Clang current-source build additionally
 registers and passes the nine-case regression test (`3/3`).
 
+The new independent GCC build configured from the current checkout compiled
+all requested targets (`841/841`). The three compiled semantic executables were
+also run to keep the broader Plan 00 gate visible: the interface executable
+returned 1 with 8 failures (`Class Member Navigation And Completion`, `Closed
+Generic Type Display And Definition`, `Hover And Completion Surface Explicit
+Exact Type Failures`, `Extern Type Symbols Surface Hover And Definition`, `Extern
+Layout Hover Surfaces FFI Metadata`, `Semantic Query Unifies Local Symbol
+Navigation And Hover`, `Hover Includes Local Reference Fact Payload`, and
+`Container Matrix Project Infers Bucket And Foreach Types`); project features
+returned 1 with 14 failures (`Auto Discovers Project From Source File`,
+`Imported Constructor And Meta Call Infer Through Module Type`, `Relative And
+Alias Import Literal Navigation And Hover`, `Network Native Members Semantic
+Tokens Cover Chain And Receivers`, `Binary Import Metadata Surfaces Hover And
+Completion`, `Binary Import References Surface Metadata And Usages`, `Binary
+Import Document Highlights Cover All Local Usages`, `Source Module Refresh
+Reanalyzes Open Documents`, `Source Module Identity Change Refreshes Old And
+New Importers`, `Watched Binary Metadata Refresh Reanalyzes Open Documents`,
+`Watched Descriptor Plugin Refresh Reanalyzes Open Documents`, `Semantic Tokens
+Cover External Metadata Members`, `Semantic Tokens Cover Native Value
+Constructor Members`, and `Pooling Hover Completion And Projection Expose Guard
+Contract`); advanced editor features returned 1 with 1 failure (`code action
+skips placeholder diagnostic fix`). These active semantic failures remain
+outside this inventory slice and keep the full Plan 00 semantic baseline open.
+
 ## Results
 
 The final report is schema version 2 with 30 runtime exports, 28 bridge calls,
@@ -100,6 +124,6 @@ host. The source mutation suite rejects all eight previously accepted drifts.
 ## Acceptance Decision
 
 Accepted for the Plan 00 Task 5 source-level integrated inventory slice at
-`dfe80e8c`. Linked WASM export-table loading, generated worker asset loading,
+`dfe80e8c` and its runtime/documentation follow-up `35a9be1e`. Linked WASM export-table loading, generated worker asset loading,
 full native/Web behavioral parity, complete control/notification parity and
 semantic acceptance remain open gates for Plans 00 and 05.

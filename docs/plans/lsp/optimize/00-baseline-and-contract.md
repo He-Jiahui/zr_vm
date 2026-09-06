@@ -120,8 +120,14 @@ changeNotifications 的依据已被后续实现取代。当前 implementation �
 - [x] Web 静态子项：`wasm_capability_inventory.js` 已检查 CMake export、WASM C++ 定义/声明、bridge 调用、worker 路由及 semantic-token legend；完成记录见[WASM static inventory](2026-09-06-plan00-task02-sub03-wasm-static-inventory.md)。真实 `.wasm` export 表和 worker 资产加载仍待验证。
 - [x] `stdio_protocol_inventory.js` 对 registry、initialize JSON、dispatch 和 WASM source-level worker/bridge wiring 做一一映射，输出 `integrated-contract-mapped`、0 个 native orphan/overclaim 和 schema 2 WASM 子报告；真实 linked asset 仍待验证，完成记录见[集成 inventory](2026-09-06-plan00-task05-integrated-inventory.md)。
 - [x] 所有当前失败在 acceptance 文档中有 owner 和后续计划链接；见[优化 baseline owner ledger](../../../acceptance/lsp/optimize-baseline.md)、[GCC failure baseline](2026-09-05-plan00-task01-sub02-gcc-baseline.md)和[native inventory open gates](../../../../tests/acceptance/2026-09-05-lsp-native-capability-inventory.md)。
-- [ ] `git diff --check`、GCC focused build、extension unit/noEmit 通过。
-- [ ] 只提交基线/契约相关路径，不夹带活动 L8 overlay。
+- [x] `git diff --check`、GCC focused build、extension unit/noEmit 通过；当前独立构建完成 `841/841`，extension unit `41/41`，TypeScript `noEmit` 退出 0。
+- [x] 只提交基线/契约相关路径，不夹带活动 L8 overlay；本轮提交为 `dfe80e8c`、`35a9be1e`，并保留活动工作树的其他修改未暂存。
+
+2026-09-06 当前工作树的三个语义 focused executable 仍未通过：interface
+`8` 个失败、project features `14` 个失败、advanced editor features `1` 个失败。
+这些失败属于活动 semantic overlay 与 Plan 00 Task 1 的全量基线责任，不能由
+本 Task 5 的 inventory/build 门禁代替；精确名称和日志保存在
+[WASM worker wiring acceptance](../../../../tests/acceptance/2026-09-06-lsp-wasm-worker-wiring.md)。
 
 ```powershell
 git diff --check
