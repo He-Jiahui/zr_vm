@@ -175,6 +175,12 @@ progress numeric token 使用 round-trip raw JSON 保留正负安全边界，超
 `-32602` 且不发送通知；当前 GCC protocol conformance 33/33。Task 4 的完整
 registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 4 Sub04 setTrace stderr channel](2026-09-07-plan01-task04-sub04-set-trace-channel.md)：
+`$/setTrace` 在活动生命周期中接受 `off`、`messages`、`verbose` 三种 level，trace
+只写 stderr，stdout 仍只包含 JSON-RPC frame；初始化前和 shutdown 后的 control
+notification 无副作用。GCC、Clang ASan/UBSan focused、MSVC 协议回归通过，Task 4
+的 registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

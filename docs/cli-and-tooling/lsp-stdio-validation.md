@@ -141,6 +141,13 @@ and after `shutdown`; `exit` remains the only notification that is handled in
 every state. A successful `shutdown` followed by `exit` returns process code 0,
 whereas an exit without a successful shutdown returns 1.
 
+During an active lifecycle, `$/setTrace` accepts `off`, `messages` and `verbose`.
+Trace records are written to stderr only; stdout remains reserved for framed
+JSON-RPC messages. `messages` records request/response metadata, while `verbose`
+also records notification metadata. Invalid or non-string values leave the
+current level unchanged, and the notification itself never produces a response.
+The focused cross-toolchain evidence is in [Plan 01 Task 4 Sub04](../plans/lsp/optimize/2026-09-07-plan01-task04-sub04-set-trace-channel.md).
+
 `stdio_protocol_envelope_mutations.js` imports the production conformance case
 list without starting its CLI. Six unchanged cases must pass first. It then
 runs 11 cases with one decoded response mutation each, covering missing/wrong
