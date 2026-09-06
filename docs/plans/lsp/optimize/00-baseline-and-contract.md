@@ -41,6 +41,13 @@ Pop-Location
 
 **当前审查快照：** extension unit tests 30/30 和 TypeScript no-emit 通过；并发 L8 日志显示 isolated GCC build、canonical consumers、project features 通过。活动会话仍记录 interface 两项与 aggregate language-server 十一项失败，因此全量绿色尚未成立。
 
+2026-09-06 已用当前 checkout 的独立 GCC Debug 目录完成 focused build `841/841`、
+协议 conformance `30/30`、inventory 三项 CTest `3/3`、extension unit `41/41` 和
+noEmit；aggregate `language_server` 在缺失的
+`zr_vm_language_server_symbol_table_test` 处以 `No such file or directory` 失败，
+三个已构建 semantic executable 仍有 8/14/1 个失败。精确命令、输出和责任边界见
+[current GCC replay](2026-09-06-plan00-task01-current-gcc-replay.md)。
+
 ## Task 2：创建能力清单
 
 **Files:**

@@ -31,6 +31,12 @@ Task 1 Sub03 修复 project features 测试的 exit-zero 伪成功，三工具�
 14 个失败并返回 1；[harness 记录](2026-09-05-plan00-task01-sub03-project-test-exit.md)
 不提升语义验收状态。
 
+2026-09-06 的[current GCC replay](2026-09-06-plan00-task01-current-gcc-replay.md)
+在独立当前 checkout 完成 focused build `841/841`、协议 conformance `30/30`、
+inventory `3/3`、extension unit `41/41` 和 noEmit；aggregate suite 仍在缺少
+`zr_vm_language_server_symbol_table_test` 处停止，三个 semantic focused executable
+保留 8/14/1 个失败，因此 Task 1 全量门禁继续 pending。
+
 Task 2 Sub01 完成[能力登记表实际实现元数据](2026-09-05-plan00-task02-sub01-registry-metadata.md)：
 明确 core/native adapter 归属及 runtime 字段约束，修正入口、导出、测试 ID 和
 3.18 标记；GCC/Clang/MSVC 专项各 9/9。随后 Task 2 Sub02 完成[编译期 native
