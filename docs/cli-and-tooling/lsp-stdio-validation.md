@@ -162,6 +162,12 @@ empty arrays. GCC and Clang ASan/UBSan both pass 37/37, and the lifecycle/protoc
 CTest pair passes 2/2 on each build. The optional `rangesFormatting` method remains
 gated off by the current capability matrix. See [Plan 01 Task 2 Sub07](../plans/lsp/optimize/2026-09-07-plan01-task02-sub07-editing-invalid-params.md).
 
+The completion resolve parameter regression extends the current replay to 38 cases.
+An empty completion item or missing/invalid label, resolve data URI or position now
+returns `-32602 Invalid params`; a valid item that does not match remains a successful
+unchanged item response. GCC and Clang ASan/UBSan both pass 38/38, and the
+lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01 Task 2 Sub08](../plans/lsp/optimize/2026-09-07-plan01-task02-sub08-completion-resolve-invalid-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

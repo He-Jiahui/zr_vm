@@ -202,8 +202,8 @@ cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSO
     SZrArray completions = {0};
     cJSON *result;
 
-    if (server == ZR_NULL || params == NULL) {
-        return cJSON_CreateObject();
+    if (server == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
+        return NULL;
     }
 
     labelJson = get_object_item(params, ZR_LSP_FIELD_LABEL);
@@ -213,14 +213,14 @@ cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSO
     if (!cJSON_IsString((cJSON *)labelJson) ||
         !cJSON_IsString((cJSON *)uriJson) ||
         !parse_position(positionJson, &position)) {
-        return cJSON_Duplicate((cJSON *)params, 1);
+        return NULL;
     }
 
     label = cJSON_GetStringValue((cJSON *)labelJson);
     uriText = cJSON_GetStringValue((cJSON *)uriJson);
     uri = server_get_cached_uri(server, uriText);
     if (label == NULL || uri == ZR_NULL) {
-        return cJSON_Duplicate((cJSON *)params, 1);
+        return NULL;
     }
 
     prefixRange = completion_prefix_range(server, uri, position);

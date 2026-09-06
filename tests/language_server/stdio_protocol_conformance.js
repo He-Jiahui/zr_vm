@@ -368,6 +368,16 @@ async function testInvalidEditingParams(serverPath) {
     });
 }
 
+async function testInvalidCompletionResolveParams(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-completion-resolve-initialize');
+        const response = await client.request('completionItem/resolve', {},
+                                              'invalid-completion-resolve', RESPONSE_TIMEOUT_MS);
+        assertErrorEnvelope(response, 'invalid-completion-resolve', -32602,
+                            'completion resolve params');
+    });
+}
+
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -959,6 +969,7 @@ function protocolCases() {
         ['invalid hierarchy params', testInvalidHierarchyParams],
         ['invalid editor feature params', testInvalidEditorFeatureParams],
         ['invalid editing params', testInvalidEditingParams],
+        ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

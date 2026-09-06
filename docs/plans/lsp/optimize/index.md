@@ -200,6 +200,12 @@ protocol conformance 均为 37/37，lifecycle/protocol CTest 均为 2/2。未声
 `rangesFormatting` 仍由 capability gate 维持 `Method not found`，不纳入本子项。
 统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub08 completion resolve invalid params](2026-09-07-plan01-task02-sub08-completion-resolve-invalid-params.md)：
+`completionItem/resolve` 对空对象以及缺失或畸形 label/resolve data URI/position
+现在返回 `-32602`，合法但未匹配 item 的成功结果保持不变；当前 GCC 与 Clang
+ASan/UBSan protocol conformance 均为 38/38，lifecycle/protocol CTest 均为 2/2。
+统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
