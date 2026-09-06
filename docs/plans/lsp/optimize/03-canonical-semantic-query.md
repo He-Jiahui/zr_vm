@@ -1446,3 +1446,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   仍报告 18,528 字节泄漏，完整 sanitizer 与 Task 3/7/8 门禁继续 pending。详见
   [Task 7.68 record](2026-09-07-plan03-task07-scope-symbol-owner-lifetime.md)
   与 [Source Scope Fact Ownership](../../../parser-and-semantics/semantic-scope-fact-ownership.md)。
+
+- 补充完成时间：2026-09-07 07:34 +08:00。Plan 03 Task 7.69 修复 native file
+  list producer 在空结果时向 `qsort` 传入 NULL base pointer 的 UBSan 问题：
+  `ListDirectory` 与 `Glob` 仅在至少两项时排序，空列表继续使用合法零值表示。
+  GCC、Clang ASan/UBSan、MSVC 的独立 `file_list` CTest 均为 `5/5`；完整 Clang
+  interface 不再报告两个 `file.c` qsort 位置，但仍保留既有八项功能失败和 LSan。
+  详见 [Task 7.69 record](2026-09-07-plan03-task07-file-list-qsort-empty.md)。

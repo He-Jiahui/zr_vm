@@ -1286,7 +1286,9 @@ TZrBool ZrLibrary_File_ListDirectory(TZrNativeString path,
         return ZR_FALSE;
     }
 
-    qsort(outList->entries, outList->count, sizeof(outList->entries[0]), file_list_entry_compare);
+    if (outList->count > 1U) {
+        qsort(outList->entries, outList->count, sizeof(outList->entries[0]), file_list_entry_compare);
+    }
     return ZR_TRUE;
 }
 
@@ -1333,7 +1335,9 @@ TZrBool ZrLibrary_File_Glob(TZrNativeString path,
     }
 
     ZrLibrary_File_List_Free(&allEntries);
-    qsort(outList->entries, outList->count, sizeof(outList->entries[0]), file_list_entry_compare);
+    if (outList->count > 1U) {
+        qsort(outList->entries, outList->count, sizeof(outList->entries[0]), file_list_entry_compare);
+    }
     return ZR_TRUE;
 }
 

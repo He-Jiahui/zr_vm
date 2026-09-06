@@ -37,6 +37,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 plan_sources:
+  - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - user: 2026-03-29 实现“zr.system 模块细分与子模块化方案”
   - user: 2026-08-10 区分所有权 intrinsic 与对象/弱引用成员访问
   - .codex/plans/ZR VM 分区式分代 GC 与作用域逃逸管理设计.md
@@ -49,6 +50,7 @@ tests:
   - tests/parser/test_ownership_intrinsic_member_separation.c
   - tests/parser/test_type_inference.c
   - tests/system/test_system_fs_module.c
+  - tests/library/test_file_list.c
   - tests/ffi/ffi_fixture.c
   - tests/fixtures/projects/native_numeric_pipeline/src/main.zr
   - tests/fixtures/projects/native_math_export_probe/src/main.zr
@@ -289,7 +291,14 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 
 - `entries`、`files`、`folders`、`glob` 的返回结果按 `fullPath` 词法排序，保证测试稳定
 - `glob` 当前支持 `*` 和 `?`
+- 空目录或没有匹配项的 `glob` 正常返回空数组。底层 `ListDirectory` / `Glob`
+  成功结果的 `entries == NULL`、`count == 0`、`capacity == 0` 是合法空列表，
+  无须分配占位存储；零项和单项结果不调用要求非空 base pointer 的 `qsort`。
 - `delete(false)` 只允许删除空目录；递归删除必须显式传 `true`
+
+宿主 C 调用者持有 `SZrLibrary_File_List` 的结果存储，并通过
+`ZrLibrary_File_List_Free` 释放；释放后三个字段恢复空值，重复释放空列表合法。
+非空结果继续按规范化完整路径排序，递归与 wildcard 匹配规则保持同一实现。
 
 ### IStreamReader And IStreamWriter
 
@@ -485,6 +494,10 @@ acceptFd(stream); // 编译期报错
 - `handle_id` lowering 只在 extern 边界生效，且关闭后的流会被拒绝
 
 `tests/ffi/ffi_fixture.c` 提供 `zr_ffi_tell_fd` 等宿主入口，用于验证 `FileStream -> i32` 的实际 lowering 与消费路径。
+
+`tests/library/test_file_list.c` 在文件库层直接覆盖空目录、无匹配项、单项和递归
+词法排序。独立 `file_list` CTest 开启 `UBSAN_OPTIONS=halt_on_error=1`，使空指针
+排序错误直接导致测试失败；每个用例只创建并清理自身的 generated 目录和结果存储。
 
 ## Plan Sources
 

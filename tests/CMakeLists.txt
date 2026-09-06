@@ -4050,6 +4050,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_parser_core_plus_library(zr_vm_exceptions_test)
 
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_file_list_tests.cmake)
+
     zr_vm_add_unity_test_target(
             zr_vm_system_fs_test
             ${CMAKE_SOURCE_DIR}/tests/system/test_system_fs_module.c

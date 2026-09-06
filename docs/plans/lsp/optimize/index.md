@@ -263,6 +263,12 @@ keyword-prefix 结果和 code-span 过滤继续保持。当前 GCC 与 Clang ASa
 conformance 均为 47/47，lifecycle/protocol CTest 均为 2/2。统一 handler status/result
 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub18 code action range](2026-09-07-plan01-task02-sub18-code-action-range.md)：
+`textDocument/codeAction` 现在严格解析 canonical `range`，缺失、`null`、标量、数组或
+逆序输入返回 `-32602`，合法 action 的请求 range 与 snapshot 语义继续保持。当前 GCC
+与 Clang ASan/UBSan protocol conformance 均为 48/48，lifecycle/protocol CTest 均为 2/2。
+统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
@@ -350,6 +356,12 @@ facts、calls 分别为 30/30、17/17、31/31，完整 interface 已越过原 si
 三套对齐 native 模块后的功能失败名单均保持原有八项；Clang 仍有 18,528 字节泄漏，
 Task 3/7/8 与完整 sanitizer 门禁继续 pending。契约见
 [Source Scope Fact Ownership](../../../parser-and-semantics/semantic-scope-fact-ownership.md)。
+
+2026-09-07 已完成 [Plan 03 Task 7.69 empty file-list qsort guard](2026-09-07-plan03-task07-file-list-qsort-empty.md)：
+`ListDirectory` 与 `Glob` 仅在至少两项时调用 `qsort`，避免成功空结果的 NULL
+数组触发 UBSan。GCC、Clang ASan/UBSan、MSVC 的 `file_list` CTest 均为 `5/5`；
+完整 LSP interface 不再报告两处 `file.c` qsort 问题，但完整功能失败、泄漏及
+其它并发 support issue 继续 pending。
 
 ## 2. 审查证据
 
