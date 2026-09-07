@@ -275,6 +275,12 @@ conformance 均为 47/47，lifecycle/protocol CTest 均为 2/2。统一 handler 
 当前 GCC 与 Clang ASan/UBSan protocol conformance 均为 49/49，lifecycle/protocol CTest
 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub20 code action context](2026-09-07-plan01-task02-sub20-code-action-context.md)：
+`textDocument/codeAction` 现在要求 object `context`、object diagnostics array 以及可选
+string `only` array，缺失或畸形输入返回 `-32602`；合法 quickfix/organize-import 过滤
+继续保持。当前 GCC 与 Clang ASan/UBSan protocol conformance 均为 50/50，lifecycle/protocol
+CTest 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
