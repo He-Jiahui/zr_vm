@@ -396,6 +396,10 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - source scope 和 visible-symbol fact 的 type/method owner 使用同一 snapshot 的 canonical SymbolId
   - generic parameter 发布可能扩容 symbol array，visitor 在发布前保存 owner ID，避免借用 record 失效
   - class/struct/interface 的 generic type 与 method 均有强制搬迁分配器回归
+- `lsp-typecheck-canonical-binding.md`
+  - LSP typecheck 通过 identifier pattern range 命中 source-local canonical symbol
+  - inferred binding 复用 SymbolId/TypeId 与 declaration range，避免重复 semantic records
+  - analyzer identity、structured local query 和 hover 的 exactness/lifetime 边界
 - `semantic-fact-layer.md`
   - `SZrSemanticContext` 统一持有表达式、引用、数值、可达性、逻辑和所有权事实
   - 事实层提供 append-by-copy、reset/free 和按节点/位置查询契约

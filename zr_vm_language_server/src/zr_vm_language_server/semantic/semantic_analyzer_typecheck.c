@@ -249,6 +249,7 @@ static void semantic_typecheck_register_inferred_binding(
         const SZrInferredType *bindingType,
         SZrAstNode *declarationNode) {
     SZrSymbol *symbol;
+    SZrFileRange lookupRange;
 
     if (state == ZR_NULL || analyzer == ZR_NULL ||
         analyzer->compilerState == ZR_NULL ||
@@ -257,11 +258,19 @@ static void semantic_typecheck_register_inferred_binding(
         return;
     }
 
+    lookupRange = declarationNode != ZR_NULL ? declarationNode->location : (SZrFileRange){0};
+    if (declarationNode != ZR_NULL &&
+        declarationNode->type == ZR_AST_VARIABLE_DECLARATION &&
+        declarationNode->data.variableDeclaration.pattern != ZR_NULL &&
+        declarationNode->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+        lookupRange = declarationNode->data.variableDeclaration.pattern->location;
+    }
+
     symbol = declarationNode != ZR_NULL
                  ? ZrLanguageServer_SymbolTable_LookupAtPosition(
                        analyzer->symbolTable,
                        name,
-                       declarationNode->location)
+                       lookupRange)
                  : ZR_NULL;
     if (symbol != ZR_NULL &&
         symbol->semanticId != ZR_SEMANTIC_ID_INVALID &&

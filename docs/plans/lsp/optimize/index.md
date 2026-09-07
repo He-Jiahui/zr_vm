@@ -375,6 +375,15 @@ Task 3/7/8 与完整 sanitizer 门禁继续 pending。契约见
 完整 LSP interface 不再报告两处 `file.c` qsort 问题，但完整功能失败、泄漏及
 其它并发 support issue 继续 pending。
 
+2026-09-07 已完成 [Plan 03 Task 7.70 canonical local binding identity](2026-09-07-plan03-task07-canonical-local-binding-identity.md)：
+LSP typecheck 对普通变量声明使用 identifier pattern range 查找已有 canonical
+symbol，并以原 `SymbolId`/`TypeId`/declaration range 注册 inferred binding，避免重复
+semantic record。新增 inferred、explicit typed、nested shadowing identity 回归；GCC、
+Clang ASan/UBSan、MSVC 的 analyzer identity/interface/source-contract 窄验证通过，
+interface local structured query/hover 转为 PASS，固定失败集合由八项降为六项。相关契约见
+[LSP Typecheck Canonical Local Bindings](../../../parser-and-semantics/lsp-typecheck-canonical-binding.md)；
+parity write/reference、Clang LSan、Task 3/7/8 完整矩阵继续 pending。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

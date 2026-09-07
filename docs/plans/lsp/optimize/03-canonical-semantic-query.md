@@ -1453,3 +1453,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   GCC、Clang ASan/UBSan、MSVC 的独立 `file_list` CTest 均为 `5/5`；完整 Clang
   interface 不再报告两个 `file.c` qsort 位置，但仍保留既有八项功能失败和 LSan。
   详见 [Task 7.69 record](2026-09-07-plan03-task07-file-list-qsort-empty.md)。
+
+- 补充完成时间：2026-09-07 08:30 +08:00。Plan 03 Task 7.70 修复 LSP
+  typecheck 使用变量声明整段范围查找 symbol、因此落入 `RegisterVariable` 并生成重复
+  `SymbolId` 的缺口。普通 identifier declaration 现在以 pattern selection range 命中已发布
+  canonical symbol，并把 inferred binding 注册到相同 `SymbolId`、`TypeId` 与 declaration
+  range。新增 inferred、explicit typed、nested shadowing identity 回归；GCC、Clang
+  ASan/UBSan、MSVC 的 analyzer identity/interface/source-contract 窄验证通过，interface
+  固定失败集合从八项降为六项，local reference hover 与 structured query 转为 PASS。
+  parity 的既有 write/reference projection 失败、Clang LSan 与 broad analyzer 历史失败仍
+  保持记录。详见 [Task 7.70 record](2026-09-07-plan03-task07-canonical-local-binding-identity.md)
+  与 [LSP Typecheck Canonical Local Bindings](../../../parser-and-semantics/lsp-typecheck-canonical-binding.md)。
