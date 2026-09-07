@@ -1483,6 +1483,7 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
             source->modulesLength == 0 ||
             source->modules == ZR_NULL ||
             source->modules[0].entryFunction == ZR_NULL) {
+            ZrCore_Io_ReadSourceFree(global, source);
             return ZR_NULL;
         }
 
@@ -1490,6 +1491,7 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
                                                                                   sizeof(SZrImportedCompileTimeModule),
                                                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
         if (module == ZR_NULL) {
+            ZrCore_Io_ReadSourceFree(global, source);
             return ZR_NULL;
         }
 
@@ -1506,6 +1508,7 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
         if (!compile_statement_collect_imported_compile_time_declarations_from_binary(cs,
                                                                                       module,
                                                                                       source->modules[0].entryFunction)) {
+            ZrCore_Io_ReadSourceFree(global, source);
             compile_statement_free_imported_compile_time_variables(cs->state, module);
             compile_statement_free_imported_compile_time_functions(
                     cs->state, module);
@@ -1516,6 +1519,7 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
             return ZR_NULL;
         }
 
+        ZrCore_Io_ReadSourceFree(global, source);
         ZrCore_Array_Push(cs->state, &cs->importedCompileTimeModules, &module);
         return module;
     }

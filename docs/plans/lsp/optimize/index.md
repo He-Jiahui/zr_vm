@@ -446,6 +446,12 @@ parser 删除 `.zri` 文本摘要替代读取，统一保留 `.zro` 的身份、
 GCC/MSVC 完整 smoke exit 0，峰值 36.98/44.91 MiB；Clang 功能推进至最后内存
 门槛，678.66 MiB 超过 512 MiB，完整 sanitizer 验收和其他扩展失败仍待闭合。
 
+2026-09-08 已完成 [Plan 01 Task 6 Sub10 compile-time import ownership](2026-09-08-plan01-task06-sub10-compile-time-import-ownership.md)：
+compile-time binary import 补齐成功和失败出口的临时 IO source 释放，清除类型推断的
+5,187 字节/44 次分配泄漏。三工具链所有权 4/4、相关 CTest 3/3、类型推断 124/124，
+结合 Sub11 后 parity 20/20，均 exit 0；Valgrind 4,767 次分配全部释放、0 错误。
+完整 LSP 内存与项目历史失败仍待办。
+
 2026-09-08 已完成 [Plan 01 Task 6 Sub11 parity fixture ownership](2026-09-08-plan01-task06-sub11-parity-fixture-ownership.md)：
 parity 释放两份 TypeAt 深拷贝与 hover，三个 URI 比较改用公开 Core API，修复 MSVC
 共享库链接。包含 Sub10 底层导入清理时，三工具链均为 20/20、exit 0，Clang 无泄漏；

@@ -451,6 +451,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 - [binary-metadata-source.md](binary-metadata-source.md)
   - Binary import analysis preserves serialized identity, declaration positions
     and callable metadata; intermediate text cannot replace the source graph.
+- [compile-time-import-source-ownership.md](compile-time-import-source-ownership.md)
+  - Compiler-owned binary projections release temporary decoded IO graphs on
+    successful, invalid and failed projection paths.
 - `semantic-query-api-foundation.md`
   - parser 侧公共 semantic query 查询面骨架
   - `TypeAt`、`DefinitionOf`、`FactsAt` 和 `Diagnostics` 的当前语义

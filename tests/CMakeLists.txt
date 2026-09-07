@@ -603,6 +603,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
 
     include(${CMAKE_SOURCE_DIR}/tests/cmake/zr_vm_parser_recovery_tests.cmake)
     include(${CMAKE_SOURCE_DIR}/tests/cmake/zr_vm_binary_metadata_source_tests.cmake)
+    include(${CMAKE_SOURCE_DIR}/tests/cmake/zr_vm_compile_time_import_ownership_tests.cmake)
 
     zr_vm_add_unity_test_target(
             zr_vm_expression_fragment_parser_test
