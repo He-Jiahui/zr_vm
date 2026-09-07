@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 static cJSON *create_rename_text_edit(SZrLspRange range, const char *newNameText) {
     cJSON *textEdit = cJSON_CreateObject();
@@ -195,7 +196,7 @@ cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
     return edit;
 }
 
-cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -205,7 +206,7 @@ cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params
     char *placeholderText;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     if (!ZrLanguageServer_Lsp_PrepareRename(
@@ -215,22 +216,22 @@ cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params
             position,
             &range,
             &placeholder)) {
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
     }
 
     result = cJSON_CreateObject();
     if (result == NULL) {
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
     placeholderText = zr_string_to_c_string(placeholder);
     cJSON_AddItemToObject(result, ZR_LSP_FIELD_RANGE, serialize_range(range));
     cJSON_AddStringToObject(result, ZR_LSP_FIELD_PLACEHOLDER, placeholderText != NULL ? placeholderText : "");
     free(placeholderText);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrArray documentSnapshots = {0};
     SZrLspPosition position;
@@ -242,22 +243,22 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     newNameJson = get_object_item(params, ZR_LSP_FIELD_NEW_NAME);
     if (!cJSON_IsString((cJSON *)newNameJson)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     newNameText = cJSON_GetStringValue((cJSON *)newNameJson);
     if (newNameText == NULL) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     newName = ZrCore_String_Create(server->state, (TZrNativeString)newNameText, (TZrSize)strlen(newNameText));
     if (newName == ZR_NULL) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INTERNAL_ERROR);
     }
 
     if (!ZrLanguageServer_Lsp_Rename(
@@ -268,7 +269,7 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
             newName,
             &locations)) {
         free_locations_array(server->state, &locations);
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
     }
 
     if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
@@ -284,12 +285,12 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
         if (documentSnapshots.isValid) {
             ZrCore_Array_Free(server->state, &documentSnapshots);
         }
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
     }
 
     result = create_workspace_edit_for_locations(
             server, &locations, newName, &documentSnapshots);
     free_locations_array(server->state, &locations);
     ZrCore_Array_Free(server->state, &documentSnapshots);
-    return result != NULL ? result : cJSON_CreateNull();
+    return stdio_handler_result_from_json(server->context, result);
 }

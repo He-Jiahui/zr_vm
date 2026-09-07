@@ -346,6 +346,12 @@ navigation 十个 handler 采用显式 status/result，区分根 JSON 分配失�
 Clang inventory 修正 Node 12 前置条件后单独通过。Valgrind 356,758 次分配全部释放、
 0 字节/0 错误。其他 handler 和内部 serializer/runtime 分配错误仍 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub23 query handler status](2026-09-07-plan01-task02-sub23-query-handler-status.md)：
+六个 hierarchy 方法、prepareRename/rename 和五个基础 editor query 采用显式状态。
+测试矩阵累计覆盖二十三个 handler；GCC、Clang ASan/UBSan、MSVC 的九个相关目标
+全部通过，Valgrind 712,914 次分配全部释放、0 字节/0 错误。剩余十九个普通请求
+handler、内部序列化分配失败和 Plan 01 父级门禁继续 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

@@ -34,7 +34,7 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
         return dispatch_handler_result(handle_definition_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_IMPLEMENTATION) == 0) {
-        *outResult = handle_implementation_request(server, params);
+        return dispatch_handler_result(handle_implementation_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0) {
         return dispatch_handler_result(handle_references_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_FORMATTING) == 0) {
@@ -55,9 +55,9 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_CODE_ACTION_RESOLVE) == 0) {
         *outResult = handle_code_action_resolve_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_FOLDING_RANGE) == 0) {
-        *outResult = handle_folding_range_request(server, params);
+        return dispatch_handler_result(handle_folding_range_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SELECTION_RANGE) == 0) {
-        *outResult = handle_selection_range_request(server, params);
+        return dispatch_handler_result(handle_selection_range_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_LINKED_EDITING_RANGE) == 0) {
         *outResult = handle_linked_editing_range_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_MONIKER) == 0) {
@@ -70,21 +70,21 @@ int dispatch_request_method(SZrStdioServer *server,
         }
         *outResult = handle_inline_completion_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_LINK) == 0) {
-        *outResult = handle_document_link_request(server, params);
+        return dispatch_handler_result(handle_document_link_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_CODE_LENS) == 0) {
-        *outResult = handle_code_lens_request(server, params);
+        return dispatch_handler_result(handle_code_lens_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY) == 0) {
-        *outResult = handle_prepare_call_hierarchy_request(server, params);
+        return dispatch_handler_result(handle_prepare_call_hierarchy_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_INCOMING_CALLS) == 0) {
-        *outResult = handle_call_hierarchy_incoming_calls_request(server, params);
+        return dispatch_handler_result(handle_call_hierarchy_incoming_calls_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_OUTGOING_CALLS) == 0) {
-        *outResult = handle_call_hierarchy_outgoing_calls_request(server, params);
+        return dispatch_handler_result(handle_call_hierarchy_outgoing_calls_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_TYPE_HIERARCHY) == 0) {
-        *outResult = handle_prepare_type_hierarchy_request(server, params);
+        return dispatch_handler_result(handle_prepare_type_hierarchy_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUPERTYPES) == 0) {
-        *outResult = handle_type_hierarchy_supertypes_request(server, params);
+        return dispatch_handler_result(handle_type_hierarchy_supertypes_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0) {
-        *outResult = handle_type_hierarchy_subtypes_request(server, params);
+        return dispatch_handler_result(handle_type_hierarchy_subtypes_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DIAGNOSTIC) == 0) {
         *outResult = handle_text_document_diagnostic_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC) == 0) {
@@ -104,9 +104,9 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_RANGE) == 0) {
         *outResult = handle_semantic_tokens_range_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_RENAME) == 0) {
-        *outResult = handle_prepare_rename_request(server, params);
+        return dispatch_handler_result(handle_prepare_rename_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME) == 0) {
-        *outResult = handle_rename_request(server, params);
+        return dispatch_handler_result(handle_rename_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT) == 0) {
         return dispatch_handler_result(handle_native_declaration_document_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_ZR_PROJECT_MODULES) == 0) {

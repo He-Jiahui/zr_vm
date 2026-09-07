@@ -2,6 +2,8 @@
 related_code:
   - zr_vm_language_server/stdio/stdio_handler_result.h
   - zr_vm_language_server/stdio/stdio_json_rpc.h
+  - zr_vm_language_server/stdio/stdio_hierarchy.c
+  - zr_vm_language_server/stdio/stdio_editor_features.c
   - tests/language_server/lsp_capability_inventory_probe.c
   - tests/language_server/test_stdio_handler_cancellation.c
   - tests/cmake/zr_vm_lsp_stdio_handler_tests.cmake
@@ -41,6 +43,8 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/stdio/stdio_hierarchy.c
+  - zr_vm_language_server/stdio/stdio_editor_features.c
   - zr_vm_language_server/stdio/stdio_handler_result.h
   - zr_vm_language_server/stdio/stdio_json_rpc.h
   - tests/language_server/test_stdio_handler_cancellation.c
@@ -87,6 +91,25 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Hierarchy, Rename And Editor Status
+
+Plan 01 Task 2 Sub23 extends the explicit handler result to six call/type hierarchy
+methods, prepareRename/rename, implementation, folding ranges, selection ranges,
+document links and code lenses. Their provider result containers are released before
+returning status, and cancellation disposes of serialized JSON through the same
+helper as navigation. A root serialization failure returns internal error; prepare
+rename and rename no longer replace it with JSON null. Selection-position buffer
+allocation and rename string allocation also have explicit internal-error branches.
+
+The direct test matrix now covers 23 methods. Hierarchy input items come from actual
+prepare responses on the current context; tests do not fabricate snapshot identities.
+The source fixture contains both call and type relations, and selection ranges receive
+a nonempty position list. All five calibrated partial-result cases, including rename,
+require CANCELLED and no JSON value. The existing workspace-edit snapshot capture and
+validation failure classification remains separate from this migration, as do nested
+serializer and parser/provider allocation failures. See
+[Sub23](../plans/lsp/optimize/2026-09-07-plan01-task02-sub23-query-handler-status.md).
 
 ## Navigation Handler Status
 
