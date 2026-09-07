@@ -4,6 +4,7 @@
 #include "zr_vm_parser/semantic_display.h"
 #include "zr_vm_parser/semantic_query.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static const TZrChar *canonical_completion_kind_text(
@@ -71,12 +72,36 @@ static SZrString *canonical_completion_documentation(
     return documentation;
 }
 
+static const TZrChar *canonical_completion_type_use_detail(
+        const SZrSemanticContext *semanticContext,
+        const SZrParserSemanticSymbolQuery *symbol,
+        const SZrParserSemanticSymbolQuery *typeUse,
+        const TZrChar *detail,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    TZrChar typeText[ZR_LSP_TYPE_BUFFER_LENGTH];
+    int length;
+
+    if (typeUse->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        typeUse->symbolId != symbol->symbolId ||
+        typeUse->role != ZR_SEMANTIC_REFERENCE_TYPE ||
+        typeUse->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
+        typeUse->typeId == symbol->typeId ||
+        !ZrParser_CanonicalType_Format(
+                semanticContext, typeUse->typeId, typeText, sizeof(typeText))) {
+        return detail;
+    }
+    length = snprintf(buffer, bufferSize, "%s\nResolved Type: %s", detail, typeText);
+    return length >= 0 && (TZrSize)length < bufferSize ? buffer : detail;
+}
+
 TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
         SZrFileRange position,
         SZrArray *result) {
     SZrParserSemanticVisibleSymbolOptions options;
+    SZrParserSemanticSymbolQuery typeUse;
     SZrArray symbols;
     TZrSize initialLength;
 
@@ -87,6 +112,8 @@ TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
     }
 
     memset(&options, 0, sizeof(options));
+    memset(&typeUse, 0, sizeof(typeUse));
+    (void)ZrParser_SemanticQuery_SymbolAt(semanticContext, position, ZR_NULL, &typeUse);
     ZrCore_Array_Construct(&symbols);
     if (!ZrParser_SemanticQuery_VisibleSymbols(
                 semanticContext,
@@ -106,6 +133,7 @@ TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
                 (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
                         &symbols, index);
         TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+        TZrChar detailBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
         const TZrChar *label;
         const TZrChar *detail;
         SZrString *documentation;
@@ -120,6 +148,8 @@ TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         if (detail == ZR_NULL) {
             continue;
         }
+        detail = canonical_completion_type_use_detail(
+                semanticContext, symbol, &typeUse, detail, detailBuffer, sizeof(detailBuffer));
         documentation = canonical_completion_documentation(
                 state, semanticContext, symbol);
         item = ZrLanguageServer_CompletionItem_New(

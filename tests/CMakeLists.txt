@@ -1126,6 +1126,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_semantic_query_symbols_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_semantic_query_symbols.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
     )
     target_include_directories(zr_vm_semantic_query_symbols_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -4858,6 +4859,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_parse_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_progress_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_cancellation_tests.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_type_use_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_handler_tests.cmake)
 
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_wasm_response_tests.cmake)

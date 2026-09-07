@@ -439,6 +439,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - 当前引擎过滤 entry 不可达块，避免 unreachable 语句污染后向分析，并在首次到达 block 时复制输入状态、后续路径再执行 join
   - definite assignment 已有 `UNINIT` / `INIT` / `MAYBE_INIT` 状态格 helper，覆盖直线路径保持 `INIT` 和分支 join 后变 `MAYBE_INIT`，并已有 CFG-backed resolver 把分支汇合状态、声明初始化器内 self-read 顺序和 cloned-finally read joins 写回 reference read facts
   - reaching-defs 已有直线 reference fact 载荷和首版 CFG-backed branch-join producer；不同分支写入不同 token 时会清掉单一 `definitionRange`，loop fixed point / 多定义展示仍待后续具体分析
+- [semantic-type-use-publication.md](semantic-type-use-publication.md)
+  - Shared analysis-time type-use publication preserves closed TypeId and exact
+    declaration SymbolId, including nested generic ranges and failed-conversion atomicity.
 - `semantic-query-api-foundation.md`
   - parser 侧公共 semantic query 查询面骨架
   - `TypeAt`、`DefinitionOf`、`FactsAt` 和 `Diagnostics` 的当前语义

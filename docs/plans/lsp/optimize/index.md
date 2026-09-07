@@ -404,6 +404,13 @@ generic completion detail 失败限制。Task 6 仅勾选 Valgrind 与 MSVC life
 exit 0 且 stderr 为空；缺失 possibly_uninitialized_read 的历史语义断言仍失败，
 完整诊断与 Plan 01 门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub03 generic type-use identity](2026-09-07-plan01-task06-sub03-generic-type-use-identity.md)：
+parser 共享 producer 同时保留使用处实例 TypeId 和准确声明 SymbolId，泛型转换成功
+后才发布根节点与嵌套类型引用；completion 按 SymbolId 投影实例详情。三工具链相关
+单元均为 89/89，Valgrind 两项均为 0 字节/0 错误。GCC/MSVC 六个协议目标通过，
+Clang 的 cancellation setup 超时复现并保持登记。三工具链完整 smoke 均越过原始
+泛型失败，停于 MissingType callable detail 断言；Plan 01 和 Plan 03 父门禁未完成。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

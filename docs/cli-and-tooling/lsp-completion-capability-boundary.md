@@ -12,6 +12,7 @@ tests:
   - tests/language_server/test_lsp_native_construct_receiver_fact_cases.h
   - tests/language_server/test_lsp_source_contract_canonical_completion_cases.h
   - tests/language_server/test_lsp_source_contracts.c
+  - tests/language_server/test_lsp_type_use.c
 doc_type: module-detail
 ---
 
@@ -29,6 +30,14 @@ Lexical completion uses parser `VisibleSymbols` through
 already-published canonical expression/reference facts and structured metadata.
 The completion projector copies labels, details, and documentation into
 request-owned items before the snapshot is released.
+
+At a resolved type-use position, the projector queries `SymbolAt` and compares
+its SymbolId with each visible candidate in the same snapshot. A matching
+candidate retains its declaration detail and appends the formatted instantiated
+TypeId when it differs from the declaration type. This carries const-generic
+normalization through completion and resolve without matching display names.
+The [type-use publication contract](../parser-and-semantics/semantic-type-use-publication.md)
+defines the producer, unavailable-identity behavior, range and lifetime rules.
 
 ## No Request-Time Reanalysis
 

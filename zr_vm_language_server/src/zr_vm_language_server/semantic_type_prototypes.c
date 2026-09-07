@@ -1,4 +1,5 @@
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_parser/semantic_type_use.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -2045,15 +2046,10 @@ static void semantic_type_prototypes_publish_declared_type_reference(
         SZrAstNode *functionNode,
         const SZrType *typeNode,
         const SZrInferredType *inferredType) {
-    SZrSemanticReferenceFact fact;
     TZrTypeId typeId;
 
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || typeNode == ZR_NULL ||
-        typeNode->name == ZR_NULL || inferredType == ZR_NULL ||
-        ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
-                analyzer->semanticContext,
-                typeNode->name,
-                ZR_SEMANTIC_REFERENCE_TYPE) != ZR_NULL) {
+        typeNode->name == ZR_NULL || inferredType == ZR_NULL) {
         return;
     }
 
@@ -2066,28 +2062,10 @@ static void semantic_type_prototypes_publish_declared_type_reference(
         return;
     }
 
-    memset(&fact, 0, sizeof(fact));
-    fact.node = typeNode->name;
-    fact.range = typeNode->name->location;
-    if (typeNode->name->type == ZR_AST_GENERIC_TYPE &&
-        typeNode->name->data.genericType.name != ZR_NULL &&
-        typeNode->name->data.genericType.name->name != ZR_NULL) {
-        TZrSize nameLength = ZrCore_String_GetByteLength(
-                typeNode->name->data.genericType.name->name);
-        if (fact.range.start.offset >= nameLength + 1U &&
-            fact.range.start.column >= (TZrInt32)(nameLength + 1U)) {
-            fact.range.end = fact.range.start;
-            fact.range.end.offset--;
-            fact.range.end.column--;
-            fact.range.start.offset -= nameLength + 1U;
-            fact.range.start.column -= (TZrInt32)(nameLength + 1U);
-        }
-    }
-    fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
-    fact.typeId = typeId;
-    fact.isResolved = semantic_type_prototypes_declared_type_is_resolved(
-            analyzer, ownerTypeNode, functionNode, typeNode);
-    (void)ZrParser_SemanticFacts_AppendReference(analyzer->semanticContext, &fact);
+    (void)ZrParser_SemanticTypeUse_Publish(
+            analyzer->semanticContext, typeNode, typeId,
+            semantic_type_prototypes_declared_type_is_resolved(
+                    analyzer, ownerTypeNode, functionNode, typeNode));
 }
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(

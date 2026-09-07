@@ -2476,6 +2476,7 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
 
 #include "test_semantic_query_declared_symbol_cases.h"
 #include "test_semantic_query_symbol_specialization_cases.h"
+#include "test_semantic_query_type_use_cases.h"
 #include "test_semantic_scope_symbol_lifetime_cases.h"
 
 int main(void) {
@@ -2510,5 +2511,11 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);
     RUN_TEST(test_declared_symbols_projects_exact_snapshot_declarations);
     RUN_TEST(test_symbol_at_preserves_declaration_identity_for_specialized_type);
+    RUN_TEST(test_type_use_query_preserves_closed_type_and_declaration_identity);
+    RUN_TEST(test_type_use_identity_distinguishes_same_name_modules);
+    RUN_TEST(test_type_use_identity_keeps_missing_declaration_unavailable);
+    RUN_TEST(test_type_use_identity_keeps_conflicting_declarations_unavailable);
+    RUN_TEST(test_type_use_identity_keeps_unresolved_reference_unavailable);
+    RUN_TEST(test_type_use_identity_rejects_inconsistent_whole_range);
     return UNITY_END();
 }

@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/semantic_type_use.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 #include "type_inference/type_inference_semantic_facts.h"
@@ -28,10 +29,8 @@
 #include <math.h>
 #include <limits.h>
 
-static void type_inference_record_type_use_reference_fact(
-        SZrCompilerState *cs,
-        const SZrType *astType,
-        TZrTypeId typeId);
+static TZrBool type_inference_convert_ast_type(
+        SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result);
 
 static void type_error_report_detailed(
         SZrCompilerState *cs,
@@ -3414,7 +3413,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                                        &ownershipGenericInnerType)) {
             SZrSemanticContext *savedSemanticContext = cs->semanticContext;
             cs->semanticContext = ZR_NULL;
-            if (!ZrParser_AstTypeToInferredType_Convert(cs, ownershipGenericInnerType, result)) {
+            if (!type_inference_convert_ast_type(cs, ownershipGenericInnerType, result)) {
                 cs->semanticContext = savedSemanticContext;
                 return ZR_FALSE;
             }
@@ -3432,10 +3431,6 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                         ZR_SEMANTIC_TYPE_KIND_REFERENCE,
                         result->typeName,
                         astType->name);
-                type_inference_record_type_use_reference_fact(
-                        cs,
-                        astType,
-                        registeredTypeId);
             }
             return ZR_TRUE;
         }
@@ -3448,7 +3443,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             TZrBool isResourceTarget;
 
             cs->semanticContext = ZR_NULL;
-            if (!ZrParser_AstTypeToInferredType_Convert(cs, gcBridgeInnerType, result)) {
+            if (!type_inference_convert_ast_type(cs, gcBridgeInnerType, result)) {
                 cs->semanticContext = savedSemanticContext;
                 return ZR_FALSE;
             }
@@ -3526,7 +3521,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                 cs->state,
                                 &paramType,
                                 constParameterName);
-                    } else if (!ZrParser_AstTypeToInferredType_Convert(cs, argumentType, &paramType)) {
+                    } else if (!type_inference_convert_ast_type(cs, argumentType, &paramType)) {
                         ZrParser_InferredType_Free(cs->state, &paramType);
                         ZrParser_InferredType_Free(cs->state, result);
                         return ZR_FALSE;
@@ -3926,51 +3921,8 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
     return ZR_TRUE;
 }
 
-static void type_inference_record_type_use_reference_fact(
-        SZrCompilerState *cs,
-        const SZrType *astType,
-        TZrTypeId typeId) {
-    SZrSemanticReferenceFact fact;
-    SZrAstNode *typeNode;
-
-    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || astType == ZR_NULL ||
-        astType->name == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID) {
-        return;
-    }
-
-    typeNode = astType->name;
-    if (ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
-                cs->semanticContext,
-                typeNode,
-                ZR_SEMANTIC_REFERENCE_TYPE) != ZR_NULL) {
-        return;
-    }
-
-    memset(&fact, 0, sizeof(fact));
-    fact.node = typeNode;
-    fact.range = typeNode->location;
-    if (typeNode->type == ZR_AST_GENERIC_TYPE &&
-        typeNode->data.genericType.name != ZR_NULL &&
-        typeNode->data.genericType.name->name != ZR_NULL) {
-        TZrSize nameLength =
-                ZrCore_String_GetByteLength(typeNode->data.genericType.name->name);
-        if (fact.range.start.offset >= nameLength + 1U &&
-            fact.range.start.column >= (TZrInt32)(nameLength + 1U)) {
-            fact.range.end = fact.range.start;
-            fact.range.end.offset--;
-            fact.range.end.column--;
-            fact.range.start.offset -= nameLength + 1U;
-            fact.range.start.column -= (TZrInt32)(nameLength + 1U);
-        }
-    }
-    fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
-    fact.typeId = typeId;
-    fact.isResolved = ZR_TRUE;
-    (void)ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
-}
-
 // 将AST类型注解转换为推断类型
-TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
+static TZrBool type_inference_convert_ast_type(SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
     SZrInferredType namedType;
     TZrBool namedTypeInitialized = ZR_FALSE;
     TZrBool resolvedQualifiedType = ZR_FALSE;
@@ -4099,6 +4051,20 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     }
     if (namedTypeInitialized) {
         ZrParser_InferredType_Free(cs->state, &namedType);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_AstTypeToInferredType_Convert(
+        SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
+    if (!type_inference_convert_ast_type(cs, astType, result)) {
+        return ZR_FALSE;
+    }
+    if (cs->semanticContext != ZR_NULL && astType != ZR_NULL &&
+        astType->name != ZR_NULL && astType->name->type == ZR_AST_GENERIC_TYPE) {
+        (void)ZrParser_SemanticTypeUse_Publish(
+                cs->semanticContext, astType,
+                ZrParser_CanonicalType_FromInferred(cs->semanticContext, result), ZR_TRUE);
     }
     return ZR_TRUE;
 }
