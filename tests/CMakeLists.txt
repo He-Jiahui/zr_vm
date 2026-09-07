@@ -4856,6 +4856,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_parse_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_progress_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_cancellation_tests.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_handler_tests.cmake)
 
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_wasm_response_tests.cmake)
 

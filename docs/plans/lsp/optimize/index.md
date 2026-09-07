@@ -334,6 +334,12 @@ calls 和 subtypes 在首条结果后停止，清除 callback 后完整结果恢
 ASan/UBSan 和 MSVC 均为 7/7，Clang 无 sanitizer 报告。此项未修改 provider 实现；
 parser 内部扫描、workspace diagnostics 和 50 ms 延迟门禁仍待验收。
 
+2026-09-07 已完成 [Plan 01 Task 4 Sub07 cancelled-handler cleanup](2026-09-07-plan01-task04-sub07-cancelled-handler-cleanup.md)：
+references、rename、workspace/document symbols 和 highlights 的 provider 取消后，
+stdio handler 现在释放部分结果。RED 中五条路径各残留两块 runtime 分配；修复后
+正常对照及五个取消场景均归零。三工具链 CTest 6/6，Clang 无 sanitizer 报告，
+GCC handler 测试 Valgrind 为 0 字节/0 错误。Task 4/6 完整门禁仍 pending。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

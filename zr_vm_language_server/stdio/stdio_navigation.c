@@ -174,6 +174,7 @@ cJSON *handle_references_request(SZrStdioServer *server, const cJSON *params) {
             position,
             includeDeclaration,
             &locations)) {
+        free_locations_array(server->state, &locations);
         return cJSON_CreateArray();
     }
 
@@ -193,6 +194,7 @@ cJSON *handle_document_symbols_request(SZrStdioServer *server, const cJSON *para
     }
 
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(server->state, server->context, uri, &symbols)) {
+        free_symbols_array(server->state, &symbols);
         return cJSON_CreateArray();
     }
 
@@ -227,6 +229,7 @@ cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *par
     }
 
     if (!ZrLanguageServer_Lsp_GetWorkspaceSymbols(server->state, server->context, query, &symbols)) {
+        free_symbols_array(server->state, &symbols);
         return cJSON_CreateArray();
     }
 
@@ -247,6 +250,7 @@ cJSON *handle_document_highlights_request(SZrStdioServer *server, const cJSON *p
     }
 
     if (!ZrLanguageServer_Lsp_GetDocumentHighlights(server->state, server->context, uri, position, &highlights)) {
+        free_highlights_array(server->state, &highlights);
         return cJSON_CreateArray();
     }
 

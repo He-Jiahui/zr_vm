@@ -267,6 +267,7 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
             position,
             newName,
             &locations)) {
+        free_locations_array(server->state, &locations);
         return cJSON_CreateNull();
     }
 

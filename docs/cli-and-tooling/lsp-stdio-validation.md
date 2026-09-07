@@ -1,5 +1,9 @@
 ---
 related_code:
+  - tests/language_server/test_stdio_handler_cancellation.c
+  - tests/cmake/zr_vm_lsp_stdio_handler_tests.cmake
+  - zr_vm_language_server/stdio/stdio_navigation.c
+  - zr_vm_language_server/stdio/stdio_rename.c
   - tests/language_server/test_lsp_provider_cancellation.c
   - tests/cmake/zr_vm_lsp_cancellation_tests.cmake
   - tests/language_server/test_stdio_request_progress.c
@@ -34,6 +38,10 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - tests/language_server/test_stdio_handler_cancellation.c
+  - tests/cmake/zr_vm_lsp_stdio_handler_tests.cmake
+  - zr_vm_language_server/stdio/stdio_navigation.c
+  - zr_vm_language_server/stdio/stdio_rename.c
   - tests/language_server/test_lsp_provider_cancellation.c
   - tests/cmake/zr_vm_lsp_cancellation_tests.cmake
   - tests/cmake/zr_vm_lsp_stdio_progress_tests.cmake
@@ -57,6 +65,7 @@ plan_sources:
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_handler_cancellation.c
   - tests/language_server/test_lsp_provider_cancellation.c
   - tests/language_server/test_stdio_lsp_parse.c
   - tests/language_server/collect_lsp_baseline_test.js
@@ -304,6 +313,23 @@ GCC, Clang ASan/UBSan and MSVC pass all seven cases and the registered CTest tar
 These synchronous checks cover provider result loops, not parser-internal scans,
 workspace-diagnostic traversal or the separate 50 ms cancellation latency budget.
 See [Plan 01 Task 4 Sub06](../plans/lsp/optimize/2026-09-07-plan01-task04-sub06-provider-loop-cancellation.md).
+
+The stdio references, rename, workspace/document symbols and document highlights
+handlers release partial provider arrays on failure before returning an empty JSON
+value to the request coordinator. The coordinator still maps an observed request
+cancellation to `-32800`. Provider failure does not transfer cleanup responsibility
+to the context or runtime destructor.
+
+`language_server_stdio_handler_cancellation` calibrates cancellation at the first
+provider result, then invokes each real handler at that same check. A tracking
+allocator requires zero live runtime blocks after server destruction. The ordinary
+query control passed before the fix; all five cancelled handlers originally leaked
+two blocks each. GCC, Clang ASan/UBSan and MSVC now pass all six cases and the six-target
+CTest group. Valgrind reports zero bytes in zero blocks and zero errors for this
+handler test. The CMake test target reuses the production stdio sources and renames
+the process entrypoint only in the tests directory, retaining its shared helpers.
+This test starts no reader thread and keeps the cancellation callback borrowed only
+for the synchronous query. See [Plan 01 Task 4 Sub07](../plans/lsp/optimize/2026-09-07-plan01-task04-sub07-cancelled-handler-cleanup.md).
 
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
