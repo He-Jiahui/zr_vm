@@ -446,6 +446,11 @@ parser 删除 `.zri` 文本摘要替代读取，统一保留 `.zro` 的身份、
 GCC/MSVC 完整 smoke exit 0，峰值 36.98/44.91 MiB；Clang 功能推进至最后内存
 门槛，678.66 MiB 超过 512 MiB，完整 sanitizer 验收和其他扩展失败仍待闭合。
 
+2026-09-08 已完成 [Plan 01 Task 6 Sub11 parity fixture ownership](2026-09-08-plan01-task06-sub11-parity-fixture-ownership.md)：
+parity 释放两份 TypeAt 深拷贝与 hover，三个 URI 比较改用公开 Core API，修复 MSVC
+共享库链接。包含 Sub10 底层导入清理时，三工具链均为 20/20、exit 0，Clang 无泄漏；
+Valgrind 1,295,828 次分配全部释放、0 错误，完整 LSP 内存与其他项目失败保持待办。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

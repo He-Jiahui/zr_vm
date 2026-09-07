@@ -173,6 +173,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub07：rename 验收直接检查 canonical OBJECT 到 DOUBLE，并与 hover 的准确类型段对齐；三工具链 project 单项和精简协议通过，MSVC 完整 smoke exit 0。project 仍有 10 个历史失败，Linux 完整 smoke 和 Clang 内存门禁未完成；[记录](2026-09-07-plan01-task06-sub07-rename-canonical-type-assertions.md)。
 - [x] Sub08：类型推断测试的 source-name literal 改用实际长度，消除 Clang ASan global-buffer-overflow；三工具链功能均 124/124，GCC/MSVC exit 0，Clang 仍有导入缓存 5,187 字节/44 次分配泄漏、exit 1，父级 sanitizer 门禁未关闭；[记录](2026-09-07-plan01-task06-sub08-type-test-string-boundary.md)。
 - [x] Sub09：binary metadata 统一读取 `.zro`，删除 `.zri` 摘要替代与特殊释放路径；三工具链身份回归 7/7、IO 生命周期 3/3，两个 Valgrind 均为 0 字节/0 错误。GCC/MSVC 完整 smoke exit 0；Clang 到达最后 512 MiB 内存门槛时为 678.66 MiB，父门禁未关闭；[记录](2026-09-07-plan01-task06-sub09-binary-metadata-source.md)。
+- [x] Sub11：parity 测试释放自有 TypeAt 与 hover 结果，并通过公开 Core API 比较 URI；三工具链 20/20、exit 0，Clang 无泄漏，Valgrind 0 字节/0 错误。验证包含 Sub10 的底层导入清理，父级完整门禁仍待办；[记录](2026-09-08-plan01-task06-sub11-parity-fixture-ownership.md)。
 
 ```powershell
 wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /tmp/zr_vm-build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -no-pie"'

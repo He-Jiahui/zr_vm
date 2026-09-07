@@ -102,6 +102,8 @@ doc_type: category-index
 
 ## 当前主题
 
+- [lsp-semantic-query-parity.md](lsp-semantic-query-parity.md)
+  - Query result ownership, snapshot parity and public DLL linkage boundaries.
 - `compiler-inline-portability.md`
   - GCC、Clang 与 MSVC 的 compiler detection 和 force-inline 合同
   - 为什么 Clang Debug 静态链接必须使用 `always_inline`

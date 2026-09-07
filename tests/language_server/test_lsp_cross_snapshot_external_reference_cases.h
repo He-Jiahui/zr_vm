@@ -10,7 +10,8 @@ static TZrBool external_reference_locations_match(
     TZrBool foundMain = ZR_FALSE;
     TZrBool foundSibling = ZR_FALSE;
 
-    if (locations->length != (includeSibling ? 2U : 1U)) {
+    if (mainUri == ZR_NULL || (includeSibling && siblingUri == ZR_NULL) ||
+        locations->length != (includeSibling ? 2U : 1U)) {
         return ZR_FALSE;
     }
     for (index = 0U; index < locations->length; index++) {
@@ -19,14 +20,14 @@ static TZrBool external_reference_locations_match(
         const SZrLspLocation *location = slot != ZR_NULL ? *slot : ZR_NULL;
         SZrLspPosition expected;
 
-        if (location == ZR_NULL) {
+        if (location == ZR_NULL || location->uri == ZR_NULL) {
             return ZR_FALSE;
         }
-        if (ZrLanguageServer_Lsp_StringsEqual(location->uri, mainUri)) {
+        if (ZrCore_String_Equal(location->uri, mainUri)) {
             expected = mainPosition;
             foundMain = ZR_TRUE;
         } else if (includeSibling &&
-                   ZrLanguageServer_Lsp_StringsEqual(location->uri, siblingUri)) {
+                   ZrCore_String_Equal(location->uri, siblingUri)) {
             expected = siblingPosition;
             foundSibling = ZR_TRUE;
         } else {

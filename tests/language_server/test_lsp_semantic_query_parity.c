@@ -448,6 +448,8 @@ cleanup:
     }
     ZrCore_Array_Free(state, &firstReferences);
     ZrCore_Array_Free(state, &secondReferences);
+    ZrParser_InferredType_Free(state, &firstType);
+    ZrParser_InferredType_Free(state, &secondType);
     return valid;
 }
 
@@ -948,8 +950,8 @@ static void test_local_implementation_consumer_uses_canonical_relations(
                 (SZrLspLocation **)ZrCore_Array_Get(&locations, 0U);
         location = slot != ZR_NULL ? *slot : ZR_NULL;
     }
-    if (location == ZR_NULL ||
-        !ZrLanguageServer_Lsp_StringsEqual(location->uri, uri) ||
+    if (location == ZR_NULL || location->uri == ZR_NULL ||
+        !ZrCore_String_Equal(location->uri, uri) ||
         location->range.start.line != 1 ||
         location->range.start.character != 0 ||
         location->range.end.line != 3 ||
@@ -1548,6 +1550,10 @@ cleanup:
     }
     if (savedAnalyzerAst != ZR_NULL && analyzer != ZR_NULL) {
         analyzer->ast = savedAnalyzerAst;
+    }
+    if (hover != ZR_NULL) {
+        ZrCore_Array_Free(state, &hover->contents);
+        ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
     }
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
