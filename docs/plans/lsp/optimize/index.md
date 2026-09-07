@@ -424,6 +424,11 @@ SymbolId/TypeId 的引用发布签名。三个工具链相关单元各 129/129�
 悬停并推进到 workspace diagnostic 内部错误。原有 Clang cancellation setup 与
 父级完整验证继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub08 type-test string boundary](2026-09-07-plan01-task06-sub08-type-test-string-boundary.md)：
+修正既有 parser 测试 source-name literal 的硬编码长度，Clang ASan 越界消失。
+三工具链功能均为 124/124，GCC/MSVC exit 0；Clang 继续报告导入模块缓存
+5,187 bytes/44 allocations、exit 1，完整 sanitizer 门禁保持未完成。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

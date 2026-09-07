@@ -7149,7 +7149,7 @@ static void test_type_inference_source_import_array_preserves_iterable_protocol(
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "pub var numbers: int[3] = [1, 2, 3];";
         const char *source = "let data = import(\"data\"); data.numbers;";
-        SZrString *sourceName = ZrCore_String_Create(state, "source_import_array_iterable_test.zr", 40);
+        SZrString *sourceName = ZrCore_String_CreateFromNative(state, "source_import_array_iterable_test.zr");
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expression;
         SZrInferredType result;

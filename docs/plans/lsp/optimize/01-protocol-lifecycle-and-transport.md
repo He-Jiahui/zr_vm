@@ -169,6 +169,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub03：共享 parser type-use producer 保留泛型实例 TypeId、精确声明 SymbolId 和嵌套范围，completion 按 SymbolId 投影实例详情；三工具链相关单元 89/89，Valgrind 两项均 0 字节/0 错误。GCC/MSVC 六个协议目标通过，Clang cancellation setup 超时保持登记；完整 smoke 均推进至 MissingType 详情失败，父门禁未完成；[记录](2026-09-07-plan01-task06-sub03-generic-type-use-identity.md)。
 - [x] Sub04：parser callable signature 保留显式未解析 TYPE fact，并按相同 SymbolId/TypeId 发布到引用；三工具链相关单元各 129/129，Valgrind 两项均 0 字节/0 错误。三个完整 smoke 均通过 MissingType 补全/悬停，推进至 workspace diagnostic 内部错误；父门禁未完成；[记录](2026-09-07-plan01-task06-sub04-unresolved-callable-display.md)。
 - [x] Sub05：关闭释放文档时同步清理所有匹配的项目 source record，避免诊断枚举残留无 fileVersion 的 URI；三工具链关闭回归 4/4、相关 CTest 3/3、关闭相关协议 3/3，Valgrind 0 字节/0 错误。完整 smoke 均推进至 binary member definition 断言，父门禁未完成；[记录](2026-09-07-plan01-task06-sub05-closed-project-diagnostic-target.md)。
+- [x] Sub08：类型推断测试的 source-name literal 改用实际长度，消除 Clang ASan global-buffer-overflow；三工具链功能均 124/124，GCC/MSVC exit 0，Clang 仍有导入缓存 5,187 字节/44 次分配泄漏、exit 1，父级 sanitizer 门禁未关闭；[记录](2026-09-07-plan01-task06-sub08-type-test-string-boundary.md)。
 
 ```powershell
 wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /tmp/zr_vm-build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -no-pie"'

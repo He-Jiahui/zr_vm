@@ -23,6 +23,7 @@ related_code:
   - tests/test_runner.c
   - tests/TEST_EXECUTION_ORDER.md
   - tests/parser/test_char_and_type_cast.c
+  - tests/parser/test_type_inference.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
   - tests/parser/test_syntax_reference_v1.c
@@ -142,6 +143,16 @@ doc_type: category-index
   - Syntax 07A 的单一 project fixture、coverage feature ids 和 collection contract
   - `design-pending` owner gate 规则，以及 provider/file-locator golden 的 path hygiene
   - formatted/minified `.zrs` 与 source-range-independent `.zri` fingerprint evidence
+
+## Parser Fixture String Bounds
+
+Parser test source names use `ZrCore_String_CreateFromNative` for NUL-terminated
+literals. The helper computes the byte length; hardcoded lengths can make the
+hash function read beyond the fixture string before parsing starts. The runtime
+owns the created string, while the literal remains borrowed input for the call.
+The iterable import case in `tests/parser/test_type_inference.c` is covered by
+the full type-inference runner under Clang ASan/UBSan; see
+[Plan 01 Task 6 Sub08](../plans/lsp/optimize/2026-09-07-plan01-task06-sub08-type-test-string-boundary.md).
 
 ## 阅读顺序
 
