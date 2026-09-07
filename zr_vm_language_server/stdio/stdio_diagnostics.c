@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
+#include "stdio_json_builder.h"
 #include "zr_vm_language_server/lsp_diagnostic_store.h"
 #include "project/lsp_project_internal.h"
 
@@ -116,16 +117,19 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     }
     diagnosticsJson = serialize_diagnostics_array_for_uri(&diagnostics, uriText);
     apply_position_encoding_to_json_for_uri(server, uriText, diagnosticsJson);
-    if (params != NULL) {
-        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
-        if (fileVersion != ZR_NULL) {
-            cJSON_AddNumberToObject(params, ZR_LSP_FIELD_VERSION, (double)fileVersion->version);
-        }
-        cJSON_AddItemToObject(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnosticsJson);
-        send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params);
-        (void)diagnostic_push_cache_store(server, uriText != NULL ? uriText : "", resultId, fileVersion);
-    } else {
+    if (params == ZR_NULL || diagnosticsJson == ZR_NULL ||
+        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI,
+                                uriText != NULL ? uriText : "") == ZR_NULL ||
+        (fileVersion != ZR_NULL &&
+         cJSON_AddNumberToObject(params, ZR_LSP_FIELD_VERSION,
+                                 (double)fileVersion->version) == ZR_NULL)) {
+        cJSON_Delete(params);
         cJSON_Delete(diagnosticsJson);
+    } else if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnosticsJson)) {
+        cJSON_Delete(params);
+    } else if (send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params) ==
+               ZR_STDIO_SEND_OK) {
+        (void)diagnostic_push_cache_store(server, uriText != NULL ? uriText : "", resultId, fileVersion);
     }
 
     free(uriText);
@@ -152,14 +156,16 @@ void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
         return;
     }
 
-    if (params != NULL && diagnostics != NULL) {
-        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
-        cJSON_AddItemToObject(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnostics);
-        send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params);
-        (void)diagnostic_push_cache_store(server, uriText != NULL ? uriText : "", "", ZR_NULL);
-    } else {
+    if (params == ZR_NULL || diagnostics == ZR_NULL ||
+        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI,
+                                uriText != NULL ? uriText : "") == ZR_NULL) {
         cJSON_Delete(params);
         cJSON_Delete(diagnostics);
+    } else if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnostics)) {
+        cJSON_Delete(params);
+    } else if (send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params) ==
+               ZR_STDIO_SEND_OK) {
+        (void)diagnostic_push_cache_store(server, uriText != NULL ? uriText : "", "", ZR_NULL);
     }
 
     free(uriText);

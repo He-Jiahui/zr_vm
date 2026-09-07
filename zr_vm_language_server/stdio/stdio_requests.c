@@ -144,20 +144,23 @@ void handle_request_message(SZrStdioServer *server,
             send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");
             return;
         }
-        ZrLanguageServer_StdioLifecycle_BeginInitialize(&server->lifecycle);
-        send_result_response(id, initializeResult.result);
+        if (send_result_response(id, initializeResult.result) == ZR_STDIO_SEND_OK) {
+            (void)ZrLanguageServer_StdioLifecycle_BeginInitialize(&server->lifecycle);
+        }
         return;
     }
 
     if (strcmp(method, ZR_LSP_METHOD_SHUTDOWN) == 0) {
-        if (!ZrLanguageServer_StdioLifecycle_BeginShutdown(&server->lifecycle)) {
+        if (!ZrLanguageServer_StdioLifecycle_CanProcessRequest(&server->lifecycle)) {
             send_lifecycle_request_error(server, id);
             return;
         }
         if (send_active_request_lifecycle_error(server, id)) {
             return;
         }
-        send_result_response(id, NULL);
+        if (send_result_response(id, NULL) == ZR_STDIO_SEND_OK) {
+            (void)ZrLanguageServer_StdioLifecycle_BeginShutdown(&server->lifecycle);
+        }
         return;
     }
 

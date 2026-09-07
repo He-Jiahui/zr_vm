@@ -1,5 +1,6 @@
 ---
 related_code:
+  - tests/language_server/test_stdio_diagnostic_publication.c
   - zr_vm_language_server/stdio/stdio_json_builder.h
   - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
   - zr_vm_language_server/stdio/stdio_semantic_tokens_json.c
@@ -60,6 +61,7 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - tests/language_server/test_stdio_diagnostic_publication.c
   - zr_vm_language_server/stdio/stdio_json_builder.h
   - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
   - zr_vm_language_server/stdio/stdio_semantic_tokens_json.c
@@ -109,6 +111,7 @@ plan_sources:
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_diagnostic_publication.c
   - tests/language_server/test_stdio_initialize.c
   - tests/language_server/test_stdio_optional_capability_allocations.c
   - tests/language_server/test_stdio_handler_cancellation.c
@@ -147,9 +150,33 @@ Clang ASan/UBSan, and MSVC Debug each pass the focused CTest; GCC Valgrind repor
 1,563 matching allocations and frees with no errors. See
 [Sub26](../plans/lsp/optimize/2026-09-07-plan01-task02-sub26-response-envelope-ownership.md).
 
-Callers still need to consume publication status transactionally: initialize/shutdown
-lifecycle changes, work-done and partial-result notifications, and diagnostics push
-cache updates are not accepted by this transport-only slice.
+## Publication State
+
+Plan 01 Task 2 Sub27 makes initialize/shutdown lifecycle transitions conditional on
+successful response publication. Envelope construction failure or an actual stdout
+write failure preserves the preceding lifecycle state. Cancellation is checked before
+shutdown changes state, so a cancelled shutdown also leaves the server active.
+
+Work-done begin sets `workDoneBegan` only after a successful notification. Partial
+publication stops on any failed batch and retains the original result for controller
+error handling. Every constructed token, value and batch has one JSON owner; failed
+attachments consume the unattached child. Work-done end clears borrowed request tokens
+even when its notification cannot be sent.
+
+Ordinary and clearing diagnostic notifications update the deduplication cache only
+after successful publication. A failed version-two notification leaves the last
+published version-one cache entry intact and permits a later resend. Notification
+construction failures emit no bytes and retain no cJSON allocations. The direct tests
+cover 213 progress/diagnostic allocation points with transient and persistent failure,
+real stdout write errors, response-envelope failures and cancelled shutdown.
+
+GCC, Clang ASan/UBSan and MSVC Debug each pass the seven-target unit/protocol group.
+The direct initialize/progress/diagnostic tests pass 15/15, 11/11 and 5/5; GCC Valgrind
+reports zero bytes and errors for all three. See
+[Sub27](../plans/lsp/optimize/2026-09-07-plan01-task02-sub27-publication-state.md).
+These transitions do not roll back bytes already written before an I/O error or
+initialize workspace/runtime state. Nested diagnostic-content serializer failures
+remain a separate acceptance item.
 
 ## Initialize Result Contract
 
@@ -167,12 +194,13 @@ which its initialize caller discards. It publishes optional dispatch flags only
 after all its fields succeed. An initialize handler error restores the previous
 position encoding and optional flags. Workspace setup starts after JSON success.
 
-The controller keeps NEW until the handler succeeds and cancellation is checked.
+The controller keeps NEW until the handler succeeds, cancellation is checked, and
+the response is successfully written.
 Failed or cancelled initialization therefore leaves ordinary requests gated by
 `-32002`, allows a later initialization attempt, and still rejects initialize after
 success. Frame serialization releases its buffer with `cJSON_free` so allocation
-hooks remain paired. Transport write failure, runtime workspace setup failures and
-the final publication fence remain separate parent-plan work.
+hooks remain paired. Sub27 covers transport status at the lifecycle boundary;
+runtime workspace setup failure handling remains separate parent-plan work.
 
 The direct test scans all 227 allocations with both optional capabilities and all
 223 base allocations, once with a transient fault and once with persistent faults:

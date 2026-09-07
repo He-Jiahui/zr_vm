@@ -82,7 +82,18 @@ static void restore_stdout(void) {
 #ifdef _WIN32
         _setmode(test_fileno(stdout), g_stdoutMode);
 #endif
+        clearerr(stdout);
     }
+}
+
+static void redirect_stdout(FILE *output) {
+    fflush(stdout);
+#ifdef _WIN32
+    g_stdoutMode = _setmode(test_fileno(stdout), _O_BINARY);
+#endif
+    g_savedStdout = test_dup(test_fileno(stdout));
+    TEST_ASSERT_TRUE(g_savedStdout >= 0);
+    TEST_ASSERT_TRUE(test_dup2(test_fileno(output), test_fileno(stdout)) >= 0);
 }
 
 void setUp(void) {
@@ -252,13 +263,7 @@ static void capture_request(const char *method, size_t failureOrdinal) {
     g_response = ZR_NULL;
     g_output = tmpfile();
     TEST_ASSERT_NOT_NULL(g_output);
-    fflush(stdout);
-#ifdef _WIN32
-    g_stdoutMode = _setmode(test_fileno(stdout), _O_BINARY);
-#endif
-    g_savedStdout = test_dup(test_fileno(stdout));
-    TEST_ASSERT_TRUE(g_savedStdout >= 0);
-    TEST_ASSERT_TRUE(test_dup2(test_fileno(g_output), test_fileno(stdout)) >= 0);
+    redirect_stdout(g_output);
     begin_json_tracking(failureOrdinal, ZR_FALSE);
     handle_request_message(g_server, g_id, method, g_params);
     cJSON_InitHooks(ZR_NULL);
@@ -275,6 +280,32 @@ static void capture_request(const char *method, size_t failureOrdinal) {
     TEST_ASSERT_EQUAL_INT(ZR_STDIO_FRAME_READ_OK, frameStatus);
     TEST_ASSERT_NOT_NULL(g_response);
     TEST_ASSERT_EQUAL_UINT64(0, g_liveJson);
+}
+
+static void write_request_to_readonly_stdout(const char *method) {
+    g_output = fopen(__FILE__, "rb");
+
+    TEST_ASSERT_NOT_NULL(g_output);
+    redirect_stdout(g_output);
+    handle_request_message(g_server, g_id, method, g_params);
+    restore_stdout();
+    fclose(g_output);
+    g_output = ZR_NULL;
+}
+
+static void fail_response_envelope_allocation(const char *method, size_t failureOrdinal) {
+    g_output = tmpfile();
+    TEST_ASSERT_NOT_NULL(g_output);
+    redirect_stdout(g_output);
+    begin_json_tracking(failureOrdinal, ZR_FALSE);
+    handle_request_message(g_server, g_id, method, g_params);
+    cJSON_InitHooks(ZR_NULL);
+    restore_stdout();
+    TEST_ASSERT_TRUE(g_injectedFailures > 0);
+    TEST_ASSERT_EQUAL_INT64(0, ftell(g_output));
+    TEST_ASSERT_EQUAL_UINT64(0, g_liveJson);
+    fclose(g_output);
+    g_output = ZR_NULL;
 }
 
 static void expect_error(int code) {
@@ -296,6 +327,58 @@ static void test_initialize_failure_keeps_lifecycle_new(void) {
     TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_CanProcessRequest(&g_server->lifecycle));
     capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
     expect_error(ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE);
+}
+
+static void test_initialize_output_failure_keeps_lifecycle_new(void) {
+    write_request_to_readonly_stdout(ZR_LSP_METHOD_INITIALIZE);
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsNew(&g_server->lifecycle));
+    TEST_ASSERT_FALSE(ZrLanguageServer_StdioLifecycle_CanProcessRequest(&g_server->lifecycle));
+    capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
+    TEST_ASSERT_TRUE(cJSON_IsObject(get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_RESULT)));
+}
+
+static void test_shutdown_output_failure_keeps_lifecycle_active(void) {
+    capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_CanProcessRequest(&g_server->lifecycle));
+    write_request_to_readonly_stdout(ZR_LSP_METHOD_SHUTDOWN);
+    TEST_ASSERT_FALSE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_CanProcessRequest(&g_server->lifecycle));
+    capture_request(ZR_LSP_METHOD_SHUTDOWN, 0);
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
+}
+
+static void test_initialize_envelope_failure_keeps_lifecycle_new(void) {
+    size_t handlerAllocations = run_allocation_case(0, ZR_FALSE);
+
+    fail_response_envelope_allocation(ZR_LSP_METHOD_INITIALIZE, handlerAllocations + 1);
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsNew(&g_server->lifecycle));
+    capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
+    TEST_ASSERT_TRUE(cJSON_IsObject(get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_RESULT)));
+}
+
+static void test_shutdown_envelope_failure_keeps_lifecycle_running(void) {
+    capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
+    ZrLanguageServer_StdioLifecycle_MarkInitialized(&g_server->lifecycle);
+    fail_response_envelope_allocation(ZR_LSP_METHOD_SHUTDOWN, 1);
+    TEST_ASSERT_EQUAL_INT(ZR_STDIO_LIFECYCLE_RUNNING, g_server->lifecycle.state);
+    capture_request(ZR_LSP_METHOD_SHUTDOWN, 0);
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
+}
+
+static void test_cancelled_shutdown_keeps_lifecycle_running(void) {
+    capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
+    ZrLanguageServer_StdioLifecycle_MarkInitialized(&g_server->lifecycle);
+    TEST_ASSERT_EQUAL_INT(ZR_STDIO_REQUEST_RESERVATION_ACCEPTED,
+                         ZrLanguageServer_StdioRequestRegistry_Reserve(g_server->requestRegistry, g_id));
+    ZrLanguageServer_StdioRequestInput_Activate(g_server, g_id);
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioRequestRegistry_Cancel(g_server->requestRegistry, g_id));
+    capture_request(ZR_LSP_METHOD_SHUTDOWN, 0);
+    expect_error(ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE);
+    TEST_ASSERT_EQUAL_INT(ZR_STDIO_LIFECYCLE_RUNNING, g_server->lifecycle.state);
+    ZrLanguageServer_StdioRequestInput_Complete(g_server, g_id);
+    capture_request(ZR_LSP_METHOD_SHUTDOWN, 0);
+    TEST_ASSERT_TRUE(cJSON_IsNull(get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_RESULT)));
+    TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
 }
 
 static void test_initialize_cancelled_request_keeps_lifecycle_new(void) {
@@ -326,6 +409,11 @@ int main(void) {
     RUN_TEST(test_initialize_cancelled_result_rolls_back_capabilities);
     RUN_TEST(test_initialize_late_cancellation_releases_result);
     RUN_TEST(test_initialize_failure_keeps_lifecycle_new);
+    RUN_TEST(test_initialize_output_failure_keeps_lifecycle_new);
+    RUN_TEST(test_shutdown_output_failure_keeps_lifecycle_active);
+    RUN_TEST(test_initialize_envelope_failure_keeps_lifecycle_new);
+    RUN_TEST(test_shutdown_envelope_failure_keeps_lifecycle_running);
+    RUN_TEST(test_cancelled_shutdown_keeps_lifecycle_running);
     RUN_TEST(test_initialize_cancelled_request_keeps_lifecycle_new);
     return UNITY_END();
 }

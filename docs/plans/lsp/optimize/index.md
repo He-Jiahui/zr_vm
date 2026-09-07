@@ -375,6 +375,14 @@ result/error/notification 的 JSON-RPC envelope 现在在任一嵌套 JSON 构�
 0 字节/0 错误。lifecycle、progress 和 diagnostics cache 对发送状态的 publication
 fence，以及其余 serializer/runtime 分类和 Plan 01 父级门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub27 publication state](2026-09-07-plan01-task02-sub27-publication-state.md)：
+initialize/shutdown 的生命周期状态只在成功写出响应后提交，shutdown 取消保持运行状态；
+progress 失败停止后续批次并保留原结果，诊断去重缓存只记录成功发布的版本。新增 213 个
+JSON 分配点各经历单次/持续故障，共 426 次注入；真实 stdout 失败、响应构造失败、
+重试和取消有直接回归。GCC、Clang ASan/UBSan、MSVC 七项 CTest 均通过，initialize
+15/15、progress 11/11、diagnostic publication 5/5，三项 Valgrind 均为 0 字节/0 错误。
+工作区 runtime 回滚、其他嵌套 serializer 分类和 Plan 01 父级完整门禁继续 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

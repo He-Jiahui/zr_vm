@@ -1,6 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
 #include "stdio_request_progress.h"
+#include "stdio_json_builder.h"
 
 static TZrBool stdio_request_progress_token_is_valid(const cJSON *token) {
     double number;
@@ -112,15 +113,25 @@ static TZrBool stdio_request_progress_send(SZrStdioServer *server,
         return ZR_FALSE;
     }
 
-    cJSON_AddItemToObject(params, ZR_LSP_FIELD_TOKEN, token);
-    cJSON_AddStringToObject(value, ZR_LSP_FIELD_KIND, kind);
-    if (title != ZR_NULL) {
-        cJSON_AddStringToObject(value, ZR_LSP_FIELD_TITLE, title);
-        cJSON_AddBoolToObject(value, ZR_LSP_FIELD_CANCELLABLE, 1);
+    if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_TOKEN, token) ||
+        cJSON_AddStringToObject(value, ZR_LSP_FIELD_KIND, kind) == ZR_NULL) {
+        cJSON_Delete(params);
+        cJSON_Delete(value);
+        return ZR_FALSE;
     }
-    cJSON_AddItemToObject(params, ZR_LSP_FIELD_VALUE, value);
-    send_notification(ZR_LSP_METHOD_PROGRESS, params);
-    return ZR_TRUE;
+    if (title != ZR_NULL) {
+        if (cJSON_AddStringToObject(value, ZR_LSP_FIELD_TITLE, title) == ZR_NULL ||
+            cJSON_AddBoolToObject(value, ZR_LSP_FIELD_CANCELLABLE, 1) == ZR_NULL) {
+            cJSON_Delete(params);
+            cJSON_Delete(value);
+            return ZR_FALSE;
+        }
+    }
+    if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_VALUE, value)) {
+        cJSON_Delete(params);
+        return ZR_FALSE;
+    }
+    return send_notification(ZR_LSP_METHOD_PROGRESS, params) == ZR_STDIO_SEND_OK;
 }
 
 TZrBool stdio_request_progress_begin(SZrStdioServer *server, const char *method) {
@@ -185,7 +196,11 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
                 cJSON_Delete(batch);
                 return ZR_FALSE;
             }
-            cJSON_AddItemToArray(batch, copy);
+            if (!stdio_json_add_owned_array_item(batch, copy)) {
+                cJSON_Delete(params);
+                cJSON_Delete(batch);
+                return ZR_FALSE;
+            }
         }
 
         {
@@ -196,7 +211,11 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
                 cJSON_Delete(batch);
                 return ZR_FALSE;
             }
-            cJSON_AddItemToObject(params, ZR_LSP_FIELD_TOKEN, token);
+            if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_TOKEN, token)) {
+                cJSON_Delete(params);
+                cJSON_Delete(batch);
+                return ZR_FALSE;
+            }
         }
         value = batch;
         if (itemsField != ZR_NULL) {
@@ -206,10 +225,19 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
                 cJSON_Delete(batch);
                 return ZR_FALSE;
             }
-            cJSON_AddItemToObject(value, itemsField, batch);
+            if (!stdio_json_add_owned_item(value, itemsField, batch)) {
+                cJSON_Delete(value);
+                cJSON_Delete(params);
+                return ZR_FALSE;
+            }
         }
-        cJSON_AddItemToObject(params, ZR_LSP_FIELD_VALUE, value);
-        send_notification(ZR_LSP_METHOD_PROGRESS, params);
+        if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_VALUE, value)) {
+            cJSON_Delete(params);
+            return ZR_FALSE;
+        }
+        if (send_notification(ZR_LSP_METHOD_PROGRESS, params) != ZR_STDIO_SEND_OK) {
+            return ZR_FALSE;
+        }
         if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
             return ZR_FALSE;
         }
