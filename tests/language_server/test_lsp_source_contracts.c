@@ -1580,6 +1580,13 @@ static void test_cross_snapshot_references_use_external_identity_queries(void) {
     assert_text_contains_none(crossSnapshot, "CollectImportBindings");
     assert_text_contains_none(crossSnapshot, "memberName");
     assert_text_contains_none(crossSnapshot, "strstr");
+    assert_text_contains(
+        crossSnapshot, "ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal");
+    assert_text_contains(crossSnapshot, "externalProviderGeneration");
+    assert_text_contains(crossSnapshot, "externalMetadataToken");
+    assert_text_contains(crossSnapshot, "externalSignatureToken");
+    assert_text_contains(crossSnapshot, "externalSignatureHash");
+    assert_text_contains(crossSnapshot, "externalTargetKind");
     assert_text_contains_none(externalMetadata, "declarationNode");
     assert_text_contains_none(externalMetadata, "strcmp");
     assert_text_contains_none(externalMetadata, "memberName");
@@ -1829,6 +1836,11 @@ static void test_imported_reference_consumers_require_canonical_identity(void) {
         appendReferencesStart,
         appendReferencesEnd,
         "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences");
+    assert_text_section_contains(
+        "LspSemanticQuery_AppendReferences imported canonical projection",
+        appendReferencesStart,
+        appendReferencesEnd,
+        "ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal");
     assert_text_section_contains_none(
         "LspSemanticQuery_AppendReferences imported canonical projection",
         appendReferencesStart,

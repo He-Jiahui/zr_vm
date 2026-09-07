@@ -97,6 +97,9 @@ doc_type: category-index
   - LSP code action、formatting、folding、selection、document link、CodeLens 和 pull diagnostics
   - stdio capability 广告、request wiring 与 JSON wire shape
   - 新增 C 单测和 stdio smoke 覆盖
+- [lsp-cross-snapshot-external-references.md](lsp-cross-snapshot-external-references.md)
+  - binary/native imported member references 的跨文件完整身份匹配
+  - provider generation 校验、同名排除与 AST 脱离回归
 - `lsp-diagnostic-safe-fixes.md`
   - parser structured fix的primary/edit range与applicability ownership
   - LSP machine-applicable projection、placeholder负边界与diagnostic数组释放

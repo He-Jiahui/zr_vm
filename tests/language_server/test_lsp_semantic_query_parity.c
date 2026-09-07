@@ -1561,6 +1561,7 @@ cleanup:
 #include "test_lsp_canonical_completion_cases.h"
 #include "test_lsp_declared_primitive_type_identity_cases.h"
 #include "test_lsp_external_member_reference_identity_cases.h"
+#include "test_lsp_cross_snapshot_external_reference_cases.h"
 #include "test_lsp_symbol_projection_cases.h"
 
 int main(void) {
@@ -1594,6 +1595,8 @@ int main(void) {
     test_external_member_references_reject_mismatched_declaration_identity(state);
     test_external_member_query_rejects_stale_document_snapshot(state);
     test_external_member_query_rejects_missing_declaration_identity(state);
+    test_cross_snapshot_imported_references_use_external_identity(state, ZR_FALSE);
+    test_cross_snapshot_imported_references_use_external_identity(state, ZR_TRUE);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

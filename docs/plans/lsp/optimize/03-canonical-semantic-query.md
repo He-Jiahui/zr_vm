@@ -1481,10 +1481,21 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   不再分别推断左右子树，也不再依赖已删除的 expected-type name lookup；左值即使赋值
   失败仍保留 Write fact，右值保留 Read fact。新增四项 parser diagnostic/range regression
   与 updated-snapshot highlight role assertion；GCC、Clang ASan/UBSan、MSVC 的
-  reference facts `11/11`、semantic-query parity `18/18`、local hover `12/12` 真实
-  exit 0，GCC/MSVC type-inference `124/124`。完整 analyzer/interface 的九项/六项
+  reference facts `11/11`、local hover `12/12` 真实 exit 0；semantic-query parity
+  `18/18` 功能通过，GCC/MSVC exit 0，Clang 因既有 544 字节/4 分配 LSan 泄漏
+  exit 1。GCC/MSVC type-inference `124/124`。完整 analyzer/interface 的九项/六项
   历史失败和 Clang LSan 继续登记，ownership diagnostics 保留冻结的 13 项失败，Clang
   type-inference 另受固定文件名 hash 的当前
   sanitizer 越界阻断。详见
   [Task 7.72 record](2026-09-07-plan03-task07-assignment-reference-roles.md) 与
   [Semantic Assignment Fact Ownership](../../../parser-and-semantics/semantic-assignment-fact-ownership.md)。
+
+- 2026-09-07 22:24 +08:00 完成：Plan 03 Task 7.73 将导入成员引用的跨文件关联从源声明范围
+  扩展到完整 external identity。新查询消费 parser `ExternalReferences`，比较 owner、
+  generation、metadata/signature token/hash 与 target kind；不同 snapshot 的本地
+  SymbolId 不参与关联。binary/native 回归包含别名、同名本地 decoy、移除 AST、八种
+  候选身份失效和目标身份失效。GCC/MSVC parity `20/20`；干净 Clang parity 的 20 项
+  功能用例通过但既有 LSan `5069 bytes/41 allocations` 使 exit 1。三套 source contracts
+  仅保留并行 stdio 的 `cJSON_CreateString("declaration")` 基线失败。
+  详见 [Task 7.73 record](2026-09-07-plan03-task07-cross-snapshot-external-references.md)
+  与 [Cross-Snapshot External References](../../../cli-and-tooling/lsp-cross-snapshot-external-references.md)。

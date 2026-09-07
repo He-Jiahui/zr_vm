@@ -500,11 +500,20 @@ typecheck 只消费该完整事实并投影结构化诊断。canonical binding d
 expected range，右值提供 source range；旧的 `semantic_analyzer_expected_type` helper
 已删除。新增 ownership、scalar、nominal 和 nullable 失败赋值回归，以及
 updated-snapshot 高亮角色断言。GCC、Clang ASan/UBSan、MSVC 的 reference-fact
-`11/11`、semantic-query parity `18/18`、local hover `12/12` 均真实 exit 0；
+`11/11`、local hover `12/12` 均真实 exit 0；semantic-query parity 均为 `18/18`
+功能通过，GCC/MSVC exit 0，Clang 因既有 544 字节/4 分配 LSan 泄漏 exit 1；
 GCC/MSVC type-inference `124/124`。三套 broad analyzer 仍为九项、完整 interface
 仍为六项既有失败，ownership diagnostics 仍为冻结的 13 项失败，Clang 继续报告
 既有 LSan；Clang type-inference 在固定字符串 hash 的当前越界测试处提前终止。详见
 [Semantic Assignment Fact Ownership](../../../parser-and-semantics/semantic-assignment-fact-ownership.md)。
+
+2026-09-07 22:24 +08:00 已完成 [Plan 03 Task 7.73 cross-snapshot external references](2026-09-07-plan03-task07-cross-snapshot-external-references.md)：
+导入成员引用以 parser external owner、generation、metadata/signature token/hash 和
+target kind 跨快照匹配。不同别名、同名本地符号和移除 AST 的 binary/native 回归覆盖
+八种候选身份失效与目标失效；GCC/MSVC parity `20/20`，干净 Clang parity 的 20 项
+功能用例通过但既有 LSan `5069 bytes/41 allocations` 使进程 exit 1；三套 source
+contracts 仅保留并行 stdio 的 `cJSON_CreateString("declaration")` 基线失败。
+模块契约见 [Cross-Snapshot External References](../../../cli-and-tooling/lsp-cross-snapshot-external-references.md)。
 
 ## 2. 审查证据
 

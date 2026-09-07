@@ -636,8 +636,18 @@ static TZrBool semantic_query_canonical_identity_is_available(
 }
 
 static TZrBool semantic_query_imported_canonical_identity_is_available(
+        const SZrLspContext *context,
         const SZrLspSemanticQuery *query) {
     if (!semantic_query_canonical_identity_is_available(query)) {
+        return ZR_FALSE;
+    }
+    if (query->canonicalSymbol.hasExternalTarget &&
+        (!ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
+                 &query->canonicalSymbol, &query->resolvedMember) ||
+         (query->canonicalSymbol.externalProviderGeneration != 0U &&
+          (context == ZR_NULL ||
+           query->canonicalSymbol.externalProviderGeneration !=
+                   context->semanticSnapshotProviderGeneration)))) {
         return ZR_FALSE;
     }
     if (semantic_query_file_range_is_known(
@@ -2531,7 +2541,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
             } else {
                 query->resolvedMember = importChainHit.resolvedMember;
                 if (!query->hasCanonicalSymbol ||
-                    !semantic_query_imported_canonical_identity_is_available(query) ||
+                    !semantic_query_imported_canonical_identity_is_available(context, query) ||
                     (!semantic_query_file_range_is_known(
                              query->canonicalSymbol.declarationRange) &&
                      !ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
@@ -2982,7 +2992,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
         TZrBool appended = ZR_FALSE;
 
         if (!query->hasCanonicalSymbol ||
-            !semantic_query_imported_canonical_identity_is_available(query)) {
+            !semantic_query_imported_canonical_identity_is_available(context, query)) {
             return ZR_FALSE;
         }
 
@@ -3001,13 +3011,19 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
         canonicalQuery = *query;
         canonicalQuery.kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;
         canonicalQuery.symbol = ZR_NULL;
-        appended = ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
-                state,
-                context,
-                &canonicalQuery,
-                ZR_FALSE,
-                result);
-        if (query->resolvedMember.hasDeclaration &&
+        if (query->canonicalSymbol.hasExternalTarget) {
+            appended = ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal(
+                    state, context, query, result);
+        } else {
+            appended = ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
+                    state,
+                    context,
+                    &canonicalQuery,
+                    ZR_FALSE,
+                    result);
+        }
+        if (!query->canonicalSymbol.hasExternalTarget &&
+            query->resolvedMember.hasDeclaration &&
             query->resolvedMember.declarationUri != ZR_NULL) {
             canonicalQuery.canonicalSymbol.declarationRange =
                     query->resolvedMember.declarationRange;
@@ -3105,7 +3121,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentH
         SZrLspSemanticQuery canonicalQuery;
 
         if (!query->hasCanonicalSymbol ||
-            !semantic_query_imported_canonical_identity_is_available(query)) {
+            !semantic_query_imported_canonical_identity_is_available(context, query)) {
             return ZR_FALSE;
         }
         canonicalQuery = *query;

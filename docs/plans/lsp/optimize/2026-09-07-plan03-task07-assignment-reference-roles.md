@@ -54,7 +54,9 @@ The LSP test also checks role counts after replacing the document snapshot.
 - 完成项目：完整赋值事实生产路径；parser 统一详细兼容性检查；删除旧 LSP
   expected-type lookup；新增 parser 负向角色/范围回归及 updated-snapshot 高亮断言。
 - 验证命令及结果：GCC、Clang ASan/UBSan、MSVC static Debug 的 reference-fact
-  `11/11`、parity `18/18`、local semantic hover `12/12` 均真实 exit 0；GCC/MSVC
+  `11/11`、local semantic hover `12/12` 均真实 exit 0；parity 功能断言均为
+  `18/18`，GCC/MSVC 真实 exit 0，Clang 因既有 544 字节/4 分配 LSan 泄漏
+  真实 exit 1（依据 `.codex/task772-clang-parity.log` 修正原 exit 0 记录）；GCC/MSVC
   type-inference `124/124` 真实 exit 0。GCC/Clang/MSVC broad semantic analyzer
   均只保留已登记的九项功能失败；完整 LSP interface 均只保留已登记的六项失败。
   GCC/MSVC local semantic query 保留两项历史缓存依赖失败，Clang 同样两项并报告

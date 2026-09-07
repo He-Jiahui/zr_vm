@@ -9,4 +9,10 @@ TZrBool ZrLanguageServer_LspCrossSnapshotReferences_Append(
         SZrLspSemanticQuery *query,
         SZrArray *result);
 
+TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspSemanticQuery *query,
+        SZrArray *result);
+
 #endif
