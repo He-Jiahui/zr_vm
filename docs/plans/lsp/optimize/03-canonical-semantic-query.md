@@ -1464,3 +1464,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   parity 的既有 write/reference projection 失败、Clang LSan 与 broad analyzer 历史失败仍
   保持记录。详见 [Task 7.70 record](2026-09-07-plan03-task07-canonical-local-binding-identity.md)
   与 [LSP Typecheck Canonical Local Bindings](../../../parser-and-semantics/lsp-typecheck-canonical-binding.md)。
+
+- 补充完成时间：2026-09-07 14:22 +08:00。Plan 03 Task 7.71 修复 parser call-fact
+  producer 在签名 interning 扩容 canonical type array 后读取旧 declared-function record 的
+  use-after-free。现在扩容前保存 validity，后续通过 TypeId 重绑定声明契约。强制搬迁回归
+  先复现 readonly return 丢失，再验证 identity、return substitution 与 effects 保持。
+  GCC、Clang ASan/UBSan、MSVC calls `32/32`、canonical type graph `19/19`；Clang
+  analyzer 越过原 UAF 并完整运行，三套仍有相同九项功能失败，Clang 另有 448 字节泄漏。
+  Task 3/7/8 整体验收继续 pending。详见
+  [Task 7.71 record](2026-09-07-plan03-task07-call-type-lifetime.md) 与
+  [Semantic Call Fact Ownership](../../../parser-and-semantics/semantic-call-fact-ownership.md)。

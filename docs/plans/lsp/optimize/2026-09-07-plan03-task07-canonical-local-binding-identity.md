@@ -45,19 +45,20 @@ the absence of duplicate `result` records.
 
 ## Verification
 
-- GCC parser reference facts: `0` failures; semantic symbols: `30/30`.
+- GCC, Clang ASan/UBSan, and MSVC parser reference facts: `7/7`;
+  semantic symbols: `30/30`.
 - GCC, Clang ASan/UBSan, and MSVC analyzer identity fixture: PASS.
 - GCC, Clang ASan/UBSan, and MSVC LSP interface: structured local query and
   local reference hover PASS; the frozen complete-interface failure set moved
-  from eight to six plus the existing container-matrix failure (six total).
+  from eight to six, including the existing container-matrix failure.
 - GCC, Clang ASan/UBSan, and MSVC source-contract target: PASS.
 - GCC, Clang ASan/UBSan, and MSVC semantic-query parity: source snapshot and
   detached-analyzer source hover PASS. The existing local write/reference
   projection failure remains.
 
 The Clang semantic-analyzer executable still reports previously recorded
-expression/cleanup/generic failures, an unrelated call-fact UAF in its broad
-runner, and sanitizer leaks. The full interface retains the existing closed
+expression/cleanup/generic failures and a call-fact UAF in its broad runner.
+Other Clang runners report sanitizer leaks. The full interface retains the existing closed
 generic, exact-type, extern metadata, and container-matrix failures; this slice
 does not claim Plan 03 Task 7 or Task 8 completion.
 

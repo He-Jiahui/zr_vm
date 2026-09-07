@@ -50,6 +50,10 @@ copied id through the same snapshot and fail closed when the identity or source
 does not match. No request-time name, range, AST, or display-text matching is
 part of this contract.
 
+The range correction is a written exception for a narrow edit in the existing
+large typecheck file. It changes one binding lookup input without adding a new
+production responsibility; the regression fixture lives in a separate header.
+
 ## Regression Coverage
 
 The analyzer regression covers inferred and explicitly typed locals, plus nested

@@ -298,6 +298,7 @@ static TZrTypeId type_inference_resolved_call_type_id(
         const SZrFunctionTypeInfo *functionInfo,
         const SZrResolvedCallSignature *resolvedSignature) {
     const SZrCanonicalTypeNode *declaredFunction;
+    TZrBool hasDeclaredFunction;
     EZrCanonicalReceiverEffect receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
     TZrUInt32 effectFlags = ZR_CANONICAL_CALLABLE_EFFECT_NONE;
     TZrTypeId resolvedTypeId;
@@ -307,7 +308,9 @@ static TZrTypeId type_inference_resolved_call_type_id(
         return ZR_SEMANTIC_ID_INVALID;
     }
     declaredFunction = ZrParser_CanonicalType_Find(cs->semanticContext, functionInfo->typeId);
-    if (declaredFunction != ZR_NULL && declaredFunction->kind == ZR_CANONICAL_TYPE_FUNCTION) {
+    hasDeclaredFunction = declaredFunction != ZR_NULL &&
+                          declaredFunction->kind == ZR_CANONICAL_TYPE_FUNCTION;
+    if (hasDeclaredFunction) {
         receiverEffect = declaredFunction->data.function.receiverEffect;
         effectFlags = declaredFunction->data.function.effectFlags;
     }
@@ -321,8 +324,7 @@ static TZrTypeId type_inference_resolved_call_type_id(
     if (resolvedTypeId == ZR_SEMANTIC_ID_INVALID) {
         return resolvedTypeId;
     }
-    if (declaredFunction == ZR_NULL ||
-        declaredFunction->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+    if (!hasDeclaredFunction) {
         return ZrParser_SyntaxCallable_RefineFromDeclaration(
                 cs->semanticContext,
                 functionInfo->declarationNode,

@@ -879,6 +879,7 @@ static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
 #include "test_semantic_query_call_argument_mapping_cases.h"
 #include "test_semantic_query_call_caller_identity_cases.h"
 #include "test_semantic_query_call_unresolved_reason_cases.h"
+#include "test_semantic_query_call_type_lifetime_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -913,5 +914,6 @@ int main(void) {
     RUN_TEST(test_resolved_call_edge_reports_missing_declaration_reason);
     RUN_TEST(test_resolved_call_edge_rejects_non_function_target_identity);
     RUN_TEST(test_call_edge_fails_closed_for_ambiguous_equal_function_scopes);
+    RUN_TEST(test_call_fact_preserves_declaration_contract_after_type_growth);
     return UNITY_END();
 }

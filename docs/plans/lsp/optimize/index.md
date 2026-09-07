@@ -417,6 +417,12 @@ interface local structured query/hover 转为 PASS，固定失败集合由八项
 [LSP Typecheck Canonical Local Bindings](../../../parser-and-semantics/lsp-typecheck-canonical-binding.md)；
 parity write/reference、Clang LSan、Task 3/7/8 完整矩阵继续 pending。
 
+2026-09-07 已完成 [Plan 03 Task 7.71 call type lifetime](2026-09-07-plan03-task07-call-type-lifetime.md)：
+parser call-fact producer 在 signature interning 前保存 declared-function validity，避免类型
+数组搬迁后读取借用 record。强制搬迁回归锁定 readonly return contract；三套工具链 calls
+`32/32`、canonical type graph `19/19`。Clang analyzer 不再触发原 UAF，仍有九项既有功能
+失败和 448 字节泄漏；完整 consumer 与 Task 3/7/8 门禁继续进行中。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期
