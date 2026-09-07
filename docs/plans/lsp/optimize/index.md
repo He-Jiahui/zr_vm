@@ -366,6 +366,15 @@ initialize 现在返回显式 status/result，base/optional capability 树的 22
 的相关 CTest 均为 12/12，GCC Valgrind 为 0 字节/0 错误。workspace runtime、response
 publication、其余嵌套 serializer/runtime 分类和 Plan 01 父级门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub26 response envelope ownership](2026-09-07-plan01-task02-sub26-response-envelope-ownership.md)：
+result/error/notification 的 JSON-RPC envelope 现在在任一嵌套 JSON 构造或挂接失败时
+原子失败，所有拥有的 JSON 都由 transport 消费，并精确区分 BUILD_ERROR 与 IO_ERROR。
+五类输出合计 58 个 allocation points 的 transient/persistent 注入均为零字节半帧、零
+活动 allocation；typed id 和实际 stdout 写入失败都有直接回归。GCC、Clang ASan/UBSan
+与 MSVC focused CTest 均为 1/1，GCC 相关 stdio 组为 4/4，Valgrind 1,563 alloc/free、
+0 字节/0 错误。lifecycle、progress 和 diagnostics cache 对发送状态的 publication
+fence，以及其余 serializer/runtime 分类和 Plan 01 父级门禁继续 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

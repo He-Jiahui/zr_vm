@@ -19,7 +19,7 @@ static TZrBool request_is_cancelled(void *userData) {
 }
 
 /* Link this receiver in place of the transport to cancel at an exact send boundary. */
-void send_notification(const char *method, cJSON *params) {
+EZrStdioSendStatus send_notification(const char *method, cJSON *params) {
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(params, ZR_LSP_FIELD_VALUE);
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(value, ZR_LSP_FIELD_ITEMS);
 
@@ -32,6 +32,7 @@ void send_notification(const char *method, cJSON *params) {
                     g_server.requestRegistry, g_cancelId != ZR_NULL ? g_cancelId : g_requestId));
         }
     }
+    return ZR_STDIO_SEND_OK;
 }
 
 void setUp(void) {

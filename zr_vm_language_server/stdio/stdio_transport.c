@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_json_builder.h"
 
 static cJSON *duplicate_id(const cJSON *id) {
     char number[64];
@@ -362,83 +363,92 @@ void ZrLanguageServer_StdioRequestInput_Complete(SZrStdioServer *server, const c
     server->activeRequestId = ZR_NULL;
 }
 
-void send_json_message(cJSON *message) {
+EZrStdioSendStatus send_json_message(cJSON *message) {
     char *payload;
     size_t payloadLength;
+    EZrStdioSendStatus status = ZR_STDIO_SEND_OK;
 
     if (message == NULL) {
-        return;
+        return ZR_STDIO_SEND_BUILD_ERROR;
     }
 
     payload = cJSON_PrintUnformatted(message);
     if (payload == NULL) {
         cJSON_Delete(message);
-        return;
+        return ZR_STDIO_SEND_BUILD_ERROR;
     }
 
     payloadLength = strlen(payload);
-    fprintf(stdout, "%s %zu\r\n\r\n", ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX, payloadLength);
-    fwrite(payload, 1, payloadLength, stdout);
-    fflush(stdout);
+    if (fprintf(stdout, "%s %zu\r\n\r\n", ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX, payloadLength) < 0 ||
+        fwrite(payload, 1, payloadLength, stdout) != payloadLength ||
+        fflush(stdout) != 0) {
+        status = ZR_STDIO_SEND_IO_ERROR;
+    }
 
     cJSON_free(payload);
     cJSON_Delete(message);
+    return status;
 }
 
-void send_result_response(const cJSON *id, cJSON *result) {
+static cJSON *create_response_envelope(const cJSON *id) {
     cJSON *message = cJSON_CreateObject();
+
+    if (message == NULL ||
+        cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION) == NULL ||
+        !stdio_json_add_owned_item(message, ZR_LSP_JSON_RPC_FIELD_ID, duplicate_id(id))) {
+        cJSON_Delete(message);
+        return NULL;
+    }
+    return message;
+}
+
+EZrStdioSendStatus send_result_response(const cJSON *id, cJSON *result) {
+    cJSON *message = create_response_envelope(id);
 
     if (message == NULL) {
         cJSON_Delete(result);
-        return;
+        return ZR_STDIO_SEND_BUILD_ERROR;
     }
-
-    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION);
-    cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_ID, duplicate_id(id));
-    if (result == NULL) {
-        cJSON_AddNullToObject(message, ZR_LSP_JSON_RPC_FIELD_RESULT);
-    } else {
-        cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_RESULT, result);
-    }
-
-    send_json_message(message);
-}
-
-void send_error_response(const cJSON *id, int code, const char *messageText) {
-    cJSON *message = cJSON_CreateObject();
-    cJSON *errorObject = cJSON_CreateObject();
-
-    if (message == NULL || errorObject == NULL) {
+    if (!stdio_json_add_owned_item(message, ZR_LSP_JSON_RPC_FIELD_RESULT,
+                                   result != NULL ? result : cJSON_CreateNull())) {
         cJSON_Delete(message);
-        cJSON_Delete(errorObject);
-        return;
+        return ZR_STDIO_SEND_BUILD_ERROR;
     }
 
-    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION);
-    cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_ID, duplicate_id(id));
-    cJSON_AddNumberToObject(errorObject, ZR_LSP_JSON_RPC_FIELD_CODE, code);
-    cJSON_AddStringToObject(
-            errorObject, ZR_LSP_JSON_RPC_FIELD_MESSAGE, messageText != NULL ? messageText : "Unknown error");
-    cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_ERROR, errorObject);
-
-    send_json_message(message);
+    return send_json_message(message);
 }
 
-void send_notification(const char *method, cJSON *params) {
+EZrStdioSendStatus send_error_response(const cJSON *id, int code, const char *messageText) {
+    cJSON *message = create_response_envelope(id);
+    cJSON *errorObject;
+
+    if (message == NULL ||
+        (errorObject = cJSON_AddObjectToObject(message, ZR_LSP_JSON_RPC_FIELD_ERROR)) == NULL ||
+        cJSON_AddNumberToObject(errorObject, ZR_LSP_JSON_RPC_FIELD_CODE, code) == NULL ||
+        cJSON_AddStringToObject(errorObject, ZR_LSP_JSON_RPC_FIELD_MESSAGE,
+                                messageText != NULL ? messageText : "Unknown error") == NULL) {
+        cJSON_Delete(message);
+        return ZR_STDIO_SEND_BUILD_ERROR;
+    }
+
+    return send_json_message(message);
+}
+
+EZrStdioSendStatus send_notification(const char *method, cJSON *params) {
     cJSON *message = cJSON_CreateObject();
 
-    if (message == NULL) {
+    if (message == NULL ||
+        cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION) == NULL ||
+        cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_METHOD, method) == NULL) {
+        cJSON_Delete(message);
         cJSON_Delete(params);
-        return;
+        return ZR_STDIO_SEND_BUILD_ERROR;
+    }
+    if (!stdio_json_add_owned_item(message, ZR_LSP_JSON_RPC_FIELD_PARAMS,
+                                   params != NULL ? params : cJSON_CreateNull())) {
+        cJSON_Delete(message);
+        return ZR_STDIO_SEND_BUILD_ERROR;
     }
 
-    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION);
-    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_METHOD, method);
-    if (params == NULL) {
-        cJSON_AddNullToObject(message, ZR_LSP_JSON_RPC_FIELD_PARAMS);
-    } else {
-        cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_PARAMS, params);
-    }
-
-    send_json_message(message);
+    return send_json_message(message);
 }

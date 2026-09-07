@@ -148,10 +148,17 @@ SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText);
 void free_uri_cache(SZrUriCache *cache);
 void free_desynchronized_document_set(SZrDesynchronizedDocumentSet *set);
 
-void send_json_message(cJSON *message);
-void send_result_response(const cJSON *id, cJSON *result);
-void send_error_response(const cJSON *id, int code, const char *messageText);
-void send_notification(const char *method, cJSON *params);
+typedef enum EZrStdioSendStatus {
+    ZR_STDIO_SEND_OK = 0,
+    ZR_STDIO_SEND_BUILD_ERROR,
+    ZR_STDIO_SEND_IO_ERROR,
+} EZrStdioSendStatus;
+
+/* Output functions consume their owned JSON arguments for every status. */
+EZrStdioSendStatus send_json_message(cJSON *message);
+EZrStdioSendStatus send_result_response(const cJSON *id, cJSON *result);
+EZrStdioSendStatus send_error_response(const cJSON *id, int code, const char *messageText);
+EZrStdioSendStatus send_notification(const char *method, cJSON *params);
 TZrBool ZrLanguageServer_StdioRequestInput_Init(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server);
 void ZrLanguageServer_StdioRequestInput_Stop(SZrStdioServer *server);

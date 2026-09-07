@@ -56,6 +56,7 @@ related_code:
   - zr_vm_language_server/stdio/stdio_request_progress.h
   - zr_vm_language_server/stdio/stdio_server.c
   - zr_vm_language_server/stdio/stdio_transport.c
+  - tests/language_server/test_stdio_transport_output.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
@@ -64,6 +65,7 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_semantic_tokens_json.c
   - zr_vm_language_server/stdio/stdio_completion_json.c
   - zr_vm_language_server/stdio/stdio_transport.c
+  - tests/language_server/test_stdio_transport_output.c
   - tests/language_server/test_stdio_initialize.c
   - tests/language_server/test_stdio_optional_capability_allocations.c
   - zr_vm_language_server/stdio/stdio_completion.c
@@ -126,6 +128,28 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Response Envelope Ownership
+
+Plan 01 Task 2 Sub26 makes stdio result, error, notification, and raw JSON output
+report whether JSON construction or frame publication failed. Each output API consumes
+its owned JSON for every outcome. A response is built only after its JSON-RPC version,
+typed id, and payload field have attached successfully, so allocation failure cannot
+write an incomplete `Content-Length` frame. `fprintf`, `fwrite`, and `fflush` are
+checked separately from JSON construction; the payload is released with `cJSON_free`.
+
+The direct transport test sweeps 58 output allocation points over five envelope forms,
+with transient and persistent faults. Every failed build emits zero bytes and releases
+the full owned tree. Success frames are parsed through the production frame reader and
+preserve null, numeric, and escaped-string request IDs. A read-only stdout target
+confirms that an actual write failure returns `IO_ERROR` without retaining JSON. GCC,
+Clang ASan/UBSan, and MSVC Debug each pass the focused CTest; GCC Valgrind reports
+1,563 matching allocations and frees with no errors. See
+[Sub26](../plans/lsp/optimize/2026-09-07-plan01-task02-sub26-response-envelope-ownership.md).
+
+Callers still need to consume publication status transactionally: initialize/shutdown
+lifecycle changes, work-done and partial-result notifications, and diagnostics push
+cache updates are not accepted by this transport-only slice.
 
 ## Initialize Result Contract
 
