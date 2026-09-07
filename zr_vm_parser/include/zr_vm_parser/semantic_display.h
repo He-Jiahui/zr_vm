@@ -59,6 +59,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatSymbol(
 ZR_PARSER_API SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         SZrSemanticContext *context,
         TZrSymbolId symbolId);
+/* Analysis-time publication to references with the same SymbolId and TypeId. */
+ZR_PARSER_API SZrString *ZrParser_SemanticDisplay_PublishCallableSignature(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId);
 ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatProperty(
         const SZrSemanticContext *context,
         const SZrSemanticPropertyContract *property,

@@ -411,6 +411,13 @@ parser 共享 producer 同时保留使用处实例 TypeId 和准确声明 Symbol
 Clang 的 cancellation setup 超时复现并保持登记。三工具链完整 smoke 均越过原始
 泛型失败，停于 MissingType callable detail 断言；Plan 01 和 Plan 03 父门禁未完成。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub04 unresolved callable display](2026-09-07-plan01-task06-sub04-unresolved-callable-display.md)：
+parser signature producer 保留显式未解析或冲突的 TYPE fact，分析阶段仅向相同
+SymbolId/TypeId 的引用发布签名。三个工具链相关单元各 129/129，两个 Valgrind
+均为 0 字节/0 错误。四个独立 smoke 通过；完整 smoke 均通过 MissingType 补全与
+悬停并推进到 workspace diagnostic 内部错误。原有 Clang cancellation setup 与
+父级完整验证继续 pending。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

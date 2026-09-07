@@ -193,6 +193,8 @@ static void test_nested_generic_type_uses_keep_independent_closed_types(void) {
     assert_closed_hover(source, "Box<int>", "Resolved Type: Box<int>");
 }
 
+#include "test_lsp_unresolved_callable_display_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_generic_type_use_has_canonical_symbol_and_closed_type);
@@ -201,5 +203,8 @@ int main(void) {
     RUN_TEST(test_generic_type_use_reloads_closed_type_with_document);
     RUN_TEST(test_generic_type_use_whitespace_and_crlf_preserve_exact_range);
     RUN_TEST(test_nested_generic_type_uses_keep_independent_closed_types);
+    RUN_TEST(test_completion_preserves_unresolved_callable_type_state);
+    RUN_TEST(test_hover_preserves_unresolved_callable_type_state);
+    RUN_TEST(test_callable_display_replaces_unresolved_snapshot_state);
     return UNITY_END();
 }

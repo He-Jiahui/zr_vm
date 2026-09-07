@@ -306,10 +306,12 @@ static TZrBool semantic_scope_facts_publish_reference_declaration(
     fact.definitionRange = reference->definitionRange;
     fact.hasDefinitionRange = reference->hasDefinitionRange;
     fact.signatureDisplay = reference->signatureDisplay;
-    if (fact.signatureDisplay == ZR_NULL &&
-        symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
-        fact.signatureDisplay = ZrParser_SemanticDisplay_CreateCallableSignature(
+    if (symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
+        SZrString *signature = ZrParser_SemanticDisplay_PublishCallableSignature(
                 builder->context, symbol->id);
+        if (signature != ZR_NULL) {
+            fact.signatureDisplay = signature;
+        }
     }
     fact.externalOriginUri = externalOriginUri;
     fact.externalOriginRange = externalOriginRange;

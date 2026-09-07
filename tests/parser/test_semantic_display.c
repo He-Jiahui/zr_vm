@@ -959,9 +959,16 @@ static void test_callable_signature_formats_canonical_effects_and_passing_modes(
     ZrParser_Ast_Free(g_state, ast);
 }
 
+#include "test_semantic_display_unresolved_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_display_formats_canonical_type_symbol_and_property);
+    RUN_TEST(test_callable_signature_redacts_unresolved_parameter_type);
+    RUN_TEST(test_callable_signature_redacts_unresolved_return_type);
+    RUN_TEST(test_callable_signature_redacts_both_unresolved_type_uses);
+    RUN_TEST(test_callable_signature_keeps_resolved_type_uses);
+    RUN_TEST(test_callable_signature_redacts_conflicting_parameter_type_identity);
     RUN_TEST(test_semantic_display_fails_closed_for_missing_identity);
     RUN_TEST(test_semantic_display_uses_matching_declaration_signature_fact);
     RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);

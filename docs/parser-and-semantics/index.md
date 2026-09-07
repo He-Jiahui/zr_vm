@@ -442,6 +442,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 - [semantic-type-use-publication.md](semantic-type-use-publication.md)
   - Shared analysis-time type-use publication preserves closed TypeId and exact
     declaration SymbolId, including nested generic ranges and failed-conversion atomicity.
+- [callable-display-resolution.md](callable-display-resolution.md)
+  - Callable signature publication preserves unresolved annotation facts and
+    propagates only to references with matching SymbolId and TypeId.
 - `semantic-query-api-foundation.md`
   - parser 侧公共 semantic query 查询面骨架
   - `TypeAt`、`DefinitionOf`、`FactsAt` 和 `Diagnostics` 的当前语义

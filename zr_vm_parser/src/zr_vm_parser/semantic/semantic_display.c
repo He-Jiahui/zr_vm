@@ -220,6 +220,50 @@ static const SZrGenericDeclaration *semantic_display_callable_generic(
     }
 }
 
+static const SZrType *semantic_display_callable_return_type(
+        const SZrAstNode *declaration) {
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.returnType;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return declaration->data.externFunctionDeclaration.returnType;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return declaration->data.externDelegateDeclaration.returnType;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.returnType;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.returnType;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.returnType;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool semantic_display_declared_type(
+        const SZrSemanticContext *context,
+        const SZrType *typeUse,
+        TZrTypeId typeId,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    if (typeUse != ZR_NULL && typeUse->name != ZR_NULL) {
+        for (TZrSize index = 0U; index < context->referenceFacts.length; index++) {
+            const SZrSemanticReferenceFact *fact =
+                    (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                            (SZrArray *)&context->referenceFacts, index);
+            if (fact == ZR_NULL || fact->kind != ZR_SEMANTIC_REFERENCE_TYPE ||
+                fact->node != typeUse->name) {
+                continue;
+            }
+            if (!fact->isResolved || fact->typeId != typeId) {
+                int length = snprintf(buffer, bufferSize, "cannot infer exact type");
+                return length >= 0 && (TZrSize)length < bufferSize;
+            }
+        }
+    }
+    return ZrParser_CanonicalType_Format(context, typeId, buffer, bufferSize);
+}
+
 static TZrBool semantic_display_append_generic_clause(
         TZrChar *buffer,
         TZrSize bufferSize,
@@ -395,8 +439,8 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
             displayTypeId = contractType->data.refType.pointeeTypeId;
         }
         if (name == ZR_NULL || name[0] == '\0' ||
-            !ZrParser_CanonicalType_Format(
-                    context, displayTypeId, typeBuffer, sizeof(typeBuffer)) ||
+            !semantic_display_declared_type(
+                    context, parameter->typeInfo, displayTypeId, typeBuffer, sizeof(typeBuffer)) ||
             (index > 0U &&
              !semantic_display_append(buffer, sizeof(buffer), &offset, ", ")) ||
             !semantic_display_append(buffer, sizeof(buffer), &offset, name) ||
@@ -410,10 +454,9 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
             return ZR_NULL;
         }
     }
-    if (!ZrParser_CanonicalType_Format(context,
-                                       functionType->data.function.returnTypeId,
-                                       typeBuffer,
-                                       sizeof(typeBuffer)) ||
+    if (!semantic_display_declared_type(
+                context, semantic_display_callable_return_type(symbol->astNode),
+                functionType->data.function.returnTypeId, typeBuffer, sizeof(typeBuffer)) ||
         !semantic_display_append(buffer, sizeof(buffer), &offset, "): ") ||
         !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer) ||
         ((functionType->data.function.effectFlags &
@@ -422,6 +465,27 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         return ZR_NULL;
     }
     return ZrCore_String_Create(context->state, buffer, offset);
+}
+
+SZrString *ZrParser_SemanticDisplay_PublishCallableSignature(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    SZrString *signature = ZrParser_SemanticDisplay_CreateCallableSignature(context, symbolId);
+    const SZrSemanticSymbolRecord *symbol;
+
+    if (signature == ZR_NULL) {
+        return ZR_NULL;
+    }
+    symbol = ZrParser_Semantic_FindSymbolById(context, symbolId);
+    for (TZrSize index = 0U; index < context->referenceFacts.length; index++) {
+        SZrSemanticReferenceFact *fact = (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                &context->referenceFacts, index);
+        if (fact != ZR_NULL && fact->isResolved && fact->symbolId == symbolId &&
+            fact->typeId == symbol->typeId) {
+            fact->signatureDisplay = signature;
+        }
+    }
+    return signature;
 }
 
 TZrBool ZrParser_SemanticDocumentation_Publish(

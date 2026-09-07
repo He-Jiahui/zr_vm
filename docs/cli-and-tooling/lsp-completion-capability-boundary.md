@@ -39,6 +39,12 @@ normalization through completion and resolve without matching display names.
 The [type-use publication contract](../parser-and-semantics/semantic-type-use-publication.md)
 defines the producer, unavailable-identity behavior, range and lifetime rules.
 
+Explicit unresolved type-reference facts are retained in parser-published
+callable signatures as `cannot infer exact type`. Completion and hover consume
+the same signature for matching callable identities; the
+[callable display contract](../parser-and-semantics/callable-display-resolution.md)
+describes publication timing and the canonical-only contract boundary.
+
 ## No Request-Time Reanalysis
 
 When the current snapshot cannot supply receiver or lexical completions, the

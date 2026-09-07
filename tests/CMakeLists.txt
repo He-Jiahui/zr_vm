@@ -1147,9 +1147,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_semantic_query_calls_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_semantic_query_calls.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_argument_semantic_facts.c
     )
     target_include_directories(zr_vm_semantic_query_calls_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_semantic_query_calls_test)
