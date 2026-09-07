@@ -1086,6 +1086,47 @@ async function testWorkspaceSymbolPartialResults(serverPath) {
     });
 }
 
+async function testCancelDuringPartialResults(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const uri = 'file:///cancel-during-partial.zr';
+        const requestId = 'cancel-during-partial-request';
+        const documentSetupTimeoutMs = 10000;
+        const responseTimeoutMs = 20000;
+        const namePadding = 'X'.repeat(64);
+        const symbols = Array.from(
+            { length: 1024 },
+            (_, index) => `class CancellationPartialSymbol${index}${namePadding} { }`).join('\n');
+
+        await initialize(client, 'cancel-during-partial-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: symbols,
+            },
+        });
+        const diagnostics = await client.waitForNotification(
+            'textDocument/publishDiagnostics', documentSetupTimeoutMs);
+        assert(diagnostics && diagnostics.uri === uri && diagnostics.version === 1,
+               `partial cancellation setup must publish the exact document/version, actual=${JSON.stringify(diagnostics)}`);
+
+        const responsePromise = client.request('workspace/symbol', {
+            query: 'CancellationPartialSymbol',
+            partialResultToken: 'cancel-during-partial-progress',
+        }, requestId, responseTimeoutMs);
+        const firstPartial = await client.waitForNotification('$/progress', responseTimeoutMs);
+        assert(firstPartial && firstPartial.token === 'cancel-during-partial-progress' &&
+               Array.isArray(firstPartial.value) && firstPartial.value.length === 64,
+               `partial cancellation must observe the first 64-item batch, actual=${JSON.stringify(firstPartial)}`);
+
+        client.notify('$/cancelRequest', { id: requestId });
+        const response = await responsePromise;
+        assertErrorEnvelope(response, requestId, -32800,
+                            'cancellation during partial result publishing');
+    });
+}
+
 async function testReferencesPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///partial-progress-references.zr';
@@ -1352,6 +1393,7 @@ function protocolCases() {
         ['control notifications outside lifecycle are ignored', testControlNotificationsOutsideLifecycleAreIgnored],
         ['request work-done progress', testRequestWorkDoneProgress],
         ['workspace symbol partial results', testWorkspaceSymbolPartialResults],
+        ['cancel during partial results', testCancelDuringPartialResults],
         ['references partial results', testReferencesPartialResults],
         ['call hierarchy partial results', testCallHierarchyPartialResults],
         ['type hierarchy partial results', testTypeHierarchyPartialResults],
