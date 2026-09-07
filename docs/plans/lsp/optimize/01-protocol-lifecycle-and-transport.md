@@ -70,10 +70,11 @@ typedef enum EZrLspHandlerStatus {
 } EZrLspHandlerStatus;
 ```
 
-- [ ] handler 返回 status + result；“没有语义结果”可返回合法 null/empty，“解析失败”只能是 InvalidParams。
+- [x] handler 返回 status + result；“没有语义结果”可返回合法 null/empty，“解析失败”只能是 InvalidParams。Sub22–Sub25 已覆盖四十二个普通 handler 与 initialize；内部 serializer/runtime 分配、response publication 和父级门禁仍按独立子项推进；[Sub25 记录](2026-09-07-plan01-task02-sub25-initialize-result-contract.md)。
 - [x] Sub22：navigation 十个 handler 迁移为显式 status/result，JSON 根节点分配失败返回内部错误、取消返回 CANCELLED 并释放 JSON，正常空结果和参数错误保持；三工具链 11/11 handler 回归及八项相关检查通过，Valgrind 0 字节/0 错误；[记录](2026-09-07-plan01-task02-sub22-navigation-handler-status.md)。
 - [x] Sub23：hierarchy、rename 和基础 editor query 的十三个 handler 迁移为显式 status/result，移除 rename 序列化失败的成功 null fallback；累计二十三个方法参与状态矩阵，三工具链九项目标通过，Valgrind 0 字节/0 错误；[记录](2026-09-07-plan01-task02-sub23-query-handler-status.md)。
-- [x] Sub24：剩余十九个普通 handler 迁移完成，dispatcher 的四十三条路由全部转发显式状态；补齐 linked editing 取消清理及 resolve/report 根分配失败分类。三工具链 handler 14/14、扩展 CTest 各 16/17，诊断 smoke 保留底层失败；Valgrind 0 字节/0 错误。initialize、内部 serializer/runtime 分配和父级门禁仍待完成；[记录](2026-09-07-plan01-task02-sub24-dispatch-handler-status.md)。
+- [x] Sub24：剩余十九个普通 handler 迁移完成，dispatcher 的四十三条路由全部转发显式状态；补齐 linked editing 取消清理及 resolve/report 根分配失败分类。三工具链 handler 14/14、扩展 CTest 各 16/17，诊断 smoke 保留底层失败；Valgrind 0 字节/0 错误。内部 serializer/runtime 分配和父级门禁仍待完成；[记录](2026-09-07-plan01-task02-sub24-dispatch-handler-status.md)。
+- [x] Sub25：initialize 返回显式 status/result；base/optional capability 树的 223/227 个 JSON 分配点各覆盖 transient/persistent 故障注入，共 900 次注入，结果、协商字段和取消路径均无泄漏。GCC、Clang ASan/UBSan、MSVC 的 12 项 CTest 均通过，GCC Valgrind 0 字节/0 错误；workspace runtime、response publication 和其余嵌套 serializer/runtime 错误分类继续待办；[记录](2026-09-07-plan01-task02-sub25-initialize-result-contract.md)。
 - [x] Sub05：call/type hierarchy 的参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub05-hierarchy-invalid-params.md)。
 - [x] Sub06：implementation、foldingRange、selectionRange、documentLink 和 codeLens 的参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub06-editor-feature-invalid-params.md)。
 - [x] Sub07：formatting、onTypeFormatting 和 codeAction 的 `textDocument` 参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub07-editing-invalid-params.md)。

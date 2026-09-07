@@ -308,7 +308,7 @@ int handle_did_change(SZrStdioServer *server, const cJSON *params);
 int handle_did_close(SZrStdioServer *server, const cJSON *params);
 int handle_did_save(SZrStdioServer *server, const cJSON *params);
 void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *params);
-void add_workspace_file_operation_capabilities(cJSON *workspace);
+TZrBool add_workspace_file_operation_capabilities(cJSON *workspace);
 int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params);
 int handle_did_create_files(SZrStdioServer *server, const cJSON *params);
@@ -319,8 +319,8 @@ void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,
                             const char *method,
                             const cJSON *params);
-cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params);
-void add_advanced_editor_capabilities(SZrStdioServer *server,
+SZrLspHandlerResult handle_initialize_request(SZrStdioServer *server, const cJSON *params);
+TZrBool add_advanced_editor_capabilities(SZrStdioServer *server,
                                       const cJSON *params,
                                       cJSON *capabilities);
 void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON *params);

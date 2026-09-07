@@ -98,6 +98,7 @@ static void run_publication(size_t failAt, int persistent, size_t *controlOrdina
     const cJSON *rangeProvider;
     const cJSON *rangesSupport;
     const cJSON *inlineProvider;
+    TZrBool published;
 
     failureOrdinal = 0;
     params = cJSON_Parse("{\"capabilities\":{\"textDocument\":{"
@@ -115,19 +116,16 @@ static void run_publication(size_t failAt, int persistent, size_t *controlOrdina
     injectedFailures = 0;
     failureOrdinal = failAt;
     failRemaining = persistent;
-    add_advanced_editor_capabilities(&server, params, capabilities);
+    published = add_advanced_editor_capabilities(&server, params, capabilities);
     failureOrdinal = 0;
     rangeProvider = get_object_item(capabilities, ZR_LSP_FIELD_DOCUMENT_RANGE_FORMATTING_PROVIDER);
     rangesSupport = get_object_item(rangeProvider, "rangesSupport");
     inlineProvider = get_object_item(capabilities, ZR_LSP_FIELD_INLINE_COMPLETION_PROVIDER);
 
-    expect_true((server.supportsRangesFormatting != ZR_FALSE) ==
-                        (cJSON_IsObject(rangeProvider) && cJSON_IsTrue(rangesSupport)),
-                "ranges dispatch support must equal successful optional publication");
-    expect_true((server.supportsInlineCompletion != ZR_FALSE) == cJSON_IsTrue(inlineProvider),
-                "inline dispatch support must equal successful optional publication");
-
     if (failAt == 0) {
+        expect_true(published, "control must finish capability construction");
+        expect_true(cJSON_IsObject(rangeProvider) && cJSON_IsTrue(rangesSupport) && cJSON_IsTrue(inlineProvider),
+                    "control must advertise both optional providers");
         expect_true(server.supportsRangesFormatting && server.supportsInlineCompletion,
                     "control must publish both optional capabilities");
         /* Locate allocation sites from owned output, independent of earlier providers. */
@@ -140,13 +138,12 @@ static void run_publication(size_t failAt, int persistent, size_t *controlOrdina
             controlOrdinals[5] = ordinal_of(inlineProvider->string);
         }
     } else {
+        expect_true(!published, "allocation failure must reject incomplete capability construction");
+        expect_true(!server.supportsRangesFormatting && !server.supportsInlineCompletion,
+                    "failed capability construction must preserve dispatch support");
         expect_true(injectedFailures != 0, "selected optional allocation failure must be reached");
         if (!persistent) {
             expect_true(injectedFailures == 1, "transient fault must fail exactly one allocation");
-            if (failAt <= controlOrdinals[3]) {
-                expect_true(cJSON_IsTrue(rangeProvider),
-                            "transient range publication failure must retain ordinary range formatting");
-            }
         }
     }
 

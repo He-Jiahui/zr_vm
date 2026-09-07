@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
+#include "stdio_json_builder.h"
 
 #include "project/lsp_workspace.h"
 
@@ -28,42 +29,41 @@ TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *s
 
 static cJSON *create_file_operation_registration(void) {
     cJSON *registration = cJSON_CreateObject();
-    cJSON *filters = cJSON_CreateArray();
-    cJSON *filter = cJSON_CreateObject();
-    cJSON *pattern = cJSON_CreateObject();
+    cJSON *filters;
+    cJSON *filter;
+    cJSON *pattern;
 
-    if (registration == NULL || filters == NULL || filter == NULL || pattern == NULL) {
+    if (registration == NULL ||
+        (filters = cJSON_AddArrayToObject(registration, ZR_LSP_FIELD_FILTERS)) == NULL) {
         cJSON_Delete(registration);
-        cJSON_Delete(filters);
-        cJSON_Delete(filter);
-        cJSON_Delete(pattern);
         return NULL;
     }
-
-    cJSON_AddStringToObject(pattern, ZR_LSP_FIELD_GLOB, "**/*.{zr,zrp,zro,dll,so,dylib}");
-    cJSON_AddItemToObject(filter, ZR_LSP_FIELD_PATTERN, pattern);
-    cJSON_AddItemToArray(filters, filter);
-    cJSON_AddItemToObject(registration, ZR_LSP_FIELD_FILTERS, filters);
+    filter = cJSON_CreateObject();
+    if (!stdio_json_add_owned_array_item(filters, filter) ||
+        (pattern = cJSON_AddObjectToObject(filter, ZR_LSP_FIELD_PATTERN)) == NULL ||
+        cJSON_AddStringToObject(pattern, ZR_LSP_FIELD_GLOB, "**/*.{zr,zrp,zro,dll,so,dylib}") == NULL) {
+        cJSON_Delete(registration);
+        return NULL;
+    }
     return registration;
 }
 
-void add_workspace_file_operation_capabilities(cJSON *workspace) {
+TZrBool add_workspace_file_operation_capabilities(cJSON *workspace) {
     cJSON *fileOperations;
 
     if (workspace == NULL) {
-        return;
+        return ZR_FALSE;
     }
 
-    fileOperations = cJSON_CreateObject();
+    fileOperations = cJSON_AddObjectToObject(workspace, ZR_LSP_FIELD_FILE_OPERATIONS);
     if (fileOperations == NULL) {
-        return;
+        return ZR_FALSE;
     }
 
-    cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_DID_CREATE, create_file_operation_registration());
-    cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_WILL_RENAME, create_file_operation_registration());
-    cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_DID_RENAME, create_file_operation_registration());
-    cJSON_AddItemToObject(fileOperations, ZR_LSP_FIELD_DID_DELETE, create_file_operation_registration());
-    cJSON_AddItemToObject(workspace, ZR_LSP_FIELD_FILE_OPERATIONS, fileOperations);
+    return stdio_json_add_owned_item(fileOperations, ZR_LSP_FIELD_DID_CREATE, create_file_operation_registration()) &&
+           stdio_json_add_owned_item(fileOperations, ZR_LSP_FIELD_WILL_RENAME, create_file_operation_registration()) &&
+           stdio_json_add_owned_item(fileOperations, ZR_LSP_FIELD_DID_RENAME, create_file_operation_registration()) &&
+           stdio_json_add_owned_item(fileOperations, ZR_LSP_FIELD_DID_DELETE, create_file_operation_registration());
 }
 
 static TZrBool workspace_file_string_ends_with(SZrString *value, const TZrChar *suffix) {

@@ -359,6 +359,13 @@ linked editing 取消清理和 resolve/report 根分配失败有直接回归；�
 诊断 smoke 的 GCC/MSVC 缺失诊断与 Clang parser 恢复泄漏均保留为失败，后者移除
 所有普通请求后仍有 4,056 字节/20 次分配泄漏。initialize 和父级完整验收仍 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub25 initialize result contract](2026-09-07-plan01-task02-sub25-initialize-result-contract.md)：
+initialize 现在返回显式 status/result，base/optional capability 树的 223/227 个 JSON
+分配点各覆盖 transient/persistent 故障注入，共 900 次注入；失败结果、协商字段回滚、
+预取消/末次分配取消和 controller 生命周期均有直接回归。GCC、Clang ASan/UBSan、MSVC
+的相关 CTest 均为 12/12，GCC Valgrind 为 0 字节/0 错误。workspace runtime、response
+publication、其余嵌套 serializer/runtime 分类和 Plan 01 父级门禁继续 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

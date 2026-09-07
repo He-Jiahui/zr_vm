@@ -381,7 +381,7 @@ void send_json_message(cJSON *message) {
     fwrite(payload, 1, payloadLength, stdout);
     fflush(stdout);
 
-    free(payload);
+    cJSON_free(payload);
     cJSON_Delete(message);
 }
 

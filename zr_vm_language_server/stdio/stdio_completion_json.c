@@ -1,30 +1,13 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
-static void add_string_to_array(cJSON *array, const char *value) {
-    cJSON *item;
-
-    if (array == NULL || value == NULL) {
-        return;
-    }
-
-    item = cJSON_CreateString(value);
-    if (item != NULL) {
-        cJSON_AddItemToArray(array, item);
-    }
-}
-
 cJSON *create_completion_commit_characters_array(void) {
-    cJSON *json = cJSON_CreateArray();
-
-    if (json == NULL) {
-        return NULL;
-    }
-
-    add_string_to_array(json, ZR_LSP_COMPLETION_COMMIT_CHARACTER_SEMICOLON);
-    add_string_to_array(json, ZR_LSP_COMPLETION_COMMIT_CHARACTER_COMMA);
-    add_string_to_array(json, ZR_LSP_COMPLETION_COMMIT_CHARACTER_DOT);
-    add_string_to_array(json, ZR_LSP_COMPLETION_COMMIT_CHARACTER_OPEN_PAREN);
-    return json;
+    const char *characters[] = {
+            ZR_LSP_COMPLETION_COMMIT_CHARACTER_SEMICOLON,
+            ZR_LSP_COMPLETION_COMMIT_CHARACTER_COMMA,
+            ZR_LSP_COMPLETION_COMMIT_CHARACTER_DOT,
+            ZR_LSP_COMPLETION_COMMIT_CHARACTER_OPEN_PAREN
+    };
+    return cJSON_CreateStringArray(characters, (int)(sizeof(characters) / sizeof(characters[0])));
 }
 
 cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {

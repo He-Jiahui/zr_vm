@@ -1,5 +1,11 @@
 ---
 related_code:
+  - zr_vm_language_server/stdio/stdio_json_builder.h
+  - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
+  - zr_vm_language_server/stdio/stdio_semantic_tokens_json.c
+  - zr_vm_language_server/stdio/stdio_completion_json.c
+  - tests/language_server/test_stdio_initialize.c
+  - tests/language_server/test_stdio_optional_capability_allocations.c
   - zr_vm_language_server/stdio/stdio_completion.c
   - zr_vm_language_server/stdio/stdio_diagnostics.c
   - zr_vm_language_server/stdio/stdio_editing.c
@@ -53,6 +59,13 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/stdio/stdio_json_builder.h
+  - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
+  - zr_vm_language_server/stdio/stdio_semantic_tokens_json.c
+  - zr_vm_language_server/stdio/stdio_completion_json.c
+  - zr_vm_language_server/stdio/stdio_transport.c
+  - tests/language_server/test_stdio_initialize.c
+  - tests/language_server/test_stdio_optional_capability_allocations.c
   - zr_vm_language_server/stdio/stdio_completion.c
   - zr_vm_language_server/stdio/stdio_diagnostics.c
   - zr_vm_language_server/stdio/stdio_editing.c
@@ -94,6 +107,8 @@ plan_sources:
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_initialize.c
+  - tests/language_server/test_stdio_optional_capability_allocations.c
   - tests/language_server/test_stdio_handler_cancellation.c
   - tests/language_server/test_lsp_provider_cancellation.c
   - tests/language_server/test_stdio_lsp_parse.c
@@ -111,6 +126,39 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Initialize Result Contract
+
+Plan 01 Task 2 Sub25 gives initialize the same explicit `SZrLspHandlerResult`
+contract as ordinary requests. Invalid parameter shapes return INVALID_PARAMS;
+JSON construction errors return INTERNAL_ERROR; cancellation returns CANCELLED.
+Only a successful result owns JSON. Every allocation in the base and optional
+capability trees is checked, including semantic-token legend entries, completion
+characters, advanced editor providers and workspace file-operation filters.
+
+`stdio_json_builder.h` supplies consuming object/array attachment helpers. They
+delete an item when attachment fails; successfully attached children belong to
+the result root. The advanced-editor builder returns false for incomplete output,
+which its initialize caller discards. It publishes optional dispatch flags only
+after all its fields succeed. An initialize handler error restores the previous
+position encoding and optional flags. Workspace setup starts after JSON success.
+
+The controller keeps NEW until the handler succeeds and cancellation is checked.
+Failed or cancelled initialization therefore leaves ordinary requests gated by
+`-32002`, allows a later initialization attempt, and still rejects initialize after
+success. Frame serialization releases its buffer with `cJSON_free` so allocation
+hooks remain paired. Transport write failure, runtime workspace setup failures and
+the final publication fence remain separate parent-plan work.
+
+The direct test scans all 227 allocations with both optional capabilities and all
+223 base allocations, once with a transient fault and once with persistent faults:
+900 injected runs plus controls. It checks status, result ownership and negotiated
+flags. Other cases exercise pre-existing and late cancellation, complete output,
+invalid params, and actual error/success frames through the production controller.
+The optional-provider test now requires construction failure rather than silently
+degrading an allocation-failed result. See
+[Sub25](../plans/lsp/optimize/2026-09-07-plan01-task02-sub25-initialize-result-contract.md)
+for validation results and the remaining acceptance boundary.
 
 ## Diagnostic Replay Memory
 
@@ -131,8 +179,8 @@ completion/resolve, semantic tokens, pull diagnostics, formatting/code actions a
 additional editor/workspace queries. All forty-two ordinary handlers now return
 `SZrLspHandlerResult`; the dispatcher forwards status directly for all forty-three
 routes, including the willSaveWaitUntil formatting alias. It no longer infers an
-invalid-parameter error from a null result pointer. Initialize is still separately
-orchestrated and remains outside this migration.
+invalid-parameter error from a null result pointer. Initialize was outside Sub24;
+its explicit result contract is now covered by Sub25 above.
 
 Root JSON allocation failures return internal error, while genuine empty results
 keep their existing JSON representation. A matched completion resolve cannot fall
@@ -149,8 +197,9 @@ pass on GCC, Clang ASan/UBSan and MSVC; their Valgrind run has no remaining bloc
 or errors. The expanded seventeen-target CTest group passes sixteen targets on each
 toolchain. Diagnostic-fix smoke still fails: GCC/MSVC reach the recorded missing
 possibly_uninitialized_read publication, while Clang reports parser recovery leaks
-also reproduced without ordinary requests. Full Task 2/4/6 acceptance, initialize,
-nested serializer failures and runtime allocation classification remain pending.
+also reproduced without ordinary requests (subsequently fixed by Task 6 Sub02).
+Full Task 2/4/6 acceptance, other nested serializer failures and runtime allocation
+classification remain pending.
 Exact evidence is in [Sub24](../plans/lsp/optimize/2026-09-07-plan01-task02-sub24-dispatch-handler-status.md).
 
 ## Hierarchy, Rename And Editor Status

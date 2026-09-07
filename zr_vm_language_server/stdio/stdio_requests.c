@@ -119,24 +119,33 @@ void handle_request_message(SZrStdioServer *server,
     }
 
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
+        SZrLspHandlerResult initializeResult;
         if (!cJSON_IsObject((cJSON *)params)) {
             send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid params");
             return;
         }
-        if (!ZrLanguageServer_StdioLifecycle_BeginInitialize(&server->lifecycle)) {
+        if (!ZrLanguageServer_StdioLifecycle_IsNew(&server->lifecycle)) {
             send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
             return;
         }
-        result = handle_initialize_request(server, params);
+        ZrLanguageServer_LspContext_SetRequestCancellationCheck(
+                server->context, stdio_active_request_cancellation_check, server);
+        initializeResult = handle_initialize_request(server, params);
+        ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
         if (send_active_request_lifecycle_error(server, id)) {
-            cJSON_Delete(result);
+            cJSON_Delete(initializeResult.result);
             return;
         }
-        if (result == ZR_NULL) {
+        if (initializeResult.status == ZR_LSP_HANDLER_CANCELLED) {
+            send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+            return;
+        }
+        if (initializeResult.status != ZR_LSP_HANDLER_OK) {
             send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");
             return;
         }
-        send_result_response(id, result);
+        ZrLanguageServer_StdioLifecycle_BeginInitialize(&server->lifecycle);
+        send_result_response(id, initializeResult.result);
         return;
     }
 

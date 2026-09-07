@@ -1,29 +1,30 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_json_builder.h"
 
 #define ZR_LSP_SEMANTIC_TOKEN_TUPLE_SIZE 5
 
 cJSON *create_semantic_token_legend_json(void) {
     cJSON *legend = cJSON_CreateObject();
-    cJSON *types = cJSON_CreateArray();
-    cJSON *modifiers = cJSON_CreateArray();
+    cJSON *types;
+    const char *modifiers[] = {"declaration"};
 
-    if (legend == NULL || types == NULL || modifiers == NULL) {
+    if (legend == NULL ||
+        (types = cJSON_AddArrayToObject(legend, ZR_LSP_FIELD_TOKEN_TYPES)) == NULL ||
+        !stdio_json_add_owned_item(legend, ZR_LSP_FIELD_TOKEN_MODIFIERS,
+                                   cJSON_CreateStringArray(modifiers, 1))) {
         cJSON_Delete(legend);
-        cJSON_Delete(types);
-        cJSON_Delete(modifiers);
         return NULL;
     }
 
     for (TZrSize index = 0; index < ZrLanguageServer_Lsp_SemanticTokenTypeCount(); index++) {
         const TZrChar *typeName = ZrLanguageServer_Lsp_SemanticTokenTypeName(index);
-        if (typeName != ZR_NULL) {
-            cJSON_AddItemToArray(types, cJSON_CreateString(typeName));
+        if (typeName == ZR_NULL ||
+            !stdio_json_add_owned_array_item(types, cJSON_CreateString(typeName))) {
+            cJSON_Delete(legend);
+            return NULL;
         }
     }
 
-    cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_TYPES, types);
-    cJSON_AddItemToArray(modifiers, cJSON_CreateString("declaration"));
-    cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_MODIFIERS, modifiers);
     return legend;
 }
 
