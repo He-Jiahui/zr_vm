@@ -1,6 +1,28 @@
 #ifndef ZR_VM_TEST_LSP_PROJECT_MODULE_IDENTITY_EDGE_CASES_H
 #define ZR_VM_TEST_LSP_PROJECT_MODULE_IDENTITY_EDGE_CASES_H
 
+#include "zr_vm_parser/canonical_type.h"
+
+static TZrBool module_identity_has_canonical_primitive(
+        SZrLspContext *context,
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        SZrLspPosition position,
+        EZrValueType expectedType) {
+    SZrFilePosition filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, position);
+    SZrParserSemanticTypeQuery query;
+    const SZrCanonicalTypeNode *type;
+
+    if (!ZrParser_SemanticQuery_CanonicalTypeAt(analyzer->semanticContext,
+            ZrParser_FileRange_Create(filePosition, filePosition, uri), ZR_NULL, &query)) {
+        return ZR_FALSE;
+    }
+    type = ZrParser_CanonicalType_Find(analyzer->semanticContext, query.typeId);
+    return type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_PRIMITIVE &&
+           type->data.primitive.valueType == expectedType;
+}
+
 static void test_lsp_source_module_identity_change_refreshes_old_and_new_importers(
         SZrState *state) {
     static const TZrChar *projectContent =
@@ -144,6 +166,12 @@ static void test_lsp_source_module_identity_change_refreshes_old_and_new_importe
         goto cleanup;
     }
 
+    if (!module_identity_has_canonical_primitive(
+                context, newUserAnalyzer, newUserUri, cachedHoverPosition, ZR_VALUE_TYPE_OBJECT)) {
+        TEST_FAIL(timer, summary, "The missing new provider should not already resolve cached to a numeric type");
+        goto cleanup;
+    }
+
     ZrLanguageServer_SemanticAnalyzer_GetMetrics(oldUserAnalyzer, &oldUserInitialMetrics);
     ZrLanguageServer_SemanticAnalyzer_GetMetrics(newUserAnalyzer, &newUserInitialMetrics);
     initialReanalysisCount = projectIndex->reverseDependencyReanalysisCount;
@@ -193,10 +221,16 @@ static void test_lsp_source_module_identity_change_refreshes_old_and_new_importe
         goto cleanup;
     }
 
+    if (!module_identity_has_canonical_primitive(
+                context, newUserAnalyzerAfterRefresh, newUserUri, cachedHoverPosition, ZR_VALUE_TYPE_DOUBLE)) {
+        TEST_FAIL(timer, summary, "The added ModuleIdentity edge did not publish the canonical double type");
+        goto cleanup;
+    }
+
     if (!ZrLanguageServer_Lsp_GetHover(
                 state, context, newUserUri, cachedHoverPosition, &hover) ||
         hover == ZR_NULL || !hover_contains_text(hover, "cached") ||
-        !hover_contains_text(hover, "float")) {
+        !hover_contains_text(hover, "Resolved Type: double")) {
         TEST_FAIL(timer, summary, "The added ModuleIdentity edge retained stale semantic facts");
         goto cleanup;
     }

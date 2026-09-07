@@ -1,3 +1,16 @@
+---
+related_code:
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_source_rename.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/stdio/stdio_workspace_files.c
+tests:
+  - tests/language_server/test_lsp_project_module_identity_edge_cases.h
+  - tests/language_server/stdio_smoke.js
+plan_sources:
+  - docs/plans/lsp/optimize/2026-09-07-plan01-task06-sub07-rename-canonical-type-assertions.md
+doc_type: module-detail
+---
+
 # LSP ModuleIdentity Edge Migration
 
 ## Scope
@@ -22,7 +35,7 @@ When the public contract changes, reverse traversal first queues importers of th
 
 For a supported source rename, `workspace/didRenameFiles` clears diagnostics for the old URI and updates the new URI from disk. The regular update path then publishes diagnostics for the new URI and refreshes affected open importers. Other create/delete/rename operations continue through the prior file-operation handlers.
 
-The protocol test renames `legacy.zr` to `modern.zr`, updates `module legacy;` to `module modern;`, and keeps two open importers. One importer uses the removed identity; the other imports both old and new identities to fix the deduplication boundary. After the notification, hover on the added edge reports `float` and definition resolves to the renamed source URI.
+The protocol test renames `legacy.zr` to `modern.zr`, updates `module legacy;` to `module modern;`, and keeps two open importers. One importer uses the removed identity; the other imports both old and new identities to fix the deduplication boundary. After the notification, hover on the added edge reports `Resolved Type: double` and definition resolves to the renamed source URI. The provider's source annotation `float` maps to the canonical DOUBLE primitive; inferred display is checked against that canonical contract.
 
 ## Failure Boundaries
 
@@ -33,6 +46,18 @@ The protocol test renames `legacy.zr` to `modern.zr`, updates `module legacy;` t
 
 ## Validation
 
-The focused project test first failed to link because the source-rename preparation API did not exist. The completed test records exactly two reverse-dependency analyses: the old-only importer once and the overlapping old/new importer once. The latter's cached local hover changes to `float`, proving that added-edge semantic facts were rebuilt.
+The focused project test first failed to link because the source-rename preparation API did not exist. The completed test records exactly two reverse-dependency analyses: the old-only importer once and the overlapping old/new importer once. Its current assertion queries the cached local's canonical primitive before and after migration: OBJECT while the new provider is absent, then DOUBLE after the rename. It also checks the exact hover type section. The original pre-canonical hover assertion used the source spelling `float`.
 
 On the isolated `HEAD 229022f + 7 LSP code/test paths` snapshot, GCC 11.4, Clang 14.0, and MSVC 19.44.35228 each pass the same sixteen-target matrix with real process exits, no failure markers, project features `50/50`, descriptor/UTF range `3/3`, and source contracts `38/38`. Each toolchain also passes the stdio/CLI smoke with the real rename notification.
+
+The 2026-09-07 replay passes the updated migration case on GCC, Clang ASan/UBSan
+and MSVC. The full project runner retains ten unrelated functional failures and
+Clang reports 19,160 bytes in 481 leaked allocations. A three-file protocol probe
+passes canonical hover and exact renamed definition checks on all three builds;
+MSVC full stdio smoke passes. Linux full smoke stops earlier at the separately
+recorded CLI binary-member identity failure. These results do not supersede the
+remaining parent acceptance gates.
+
+Canonical nodes and query results are borrowed from the current analyzer snapshot.
+The test checks primitive kind and value type in each snapshot; it does not compare
+numeric TypeIds across reanalysis or retain node pointers across the rename.

@@ -3816,7 +3816,7 @@ async function main() {
     });
     assert(renamedImporterHover && renamedImporterHover.contents &&
         typeof renamedImporterHover.contents.value === 'string' &&
-        renamedImporterHover.contents.value.includes('float'),
+        renamedImporterHover.contents.value.includes('Resolved Type: double'),
     'workspace/didRenameFiles must refresh semantic facts on the added ModuleIdentity edge');
     const renamedProviderDefinition = await client.request('textDocument/definition', {
         textDocument: { uri: moduleIdentityRenameFixture.newUserUri },

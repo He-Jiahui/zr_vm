@@ -430,6 +430,11 @@ cast 分析操作数后发布自己的目标类型，内部调用的 canonical �
 0 字节/0 错误。MSVC 原版 smoke 通过 binary 跳转并推进至 rename 显示断言；
 Linux CLI artifact member 身份与导入缓存泄漏另行跟进，父门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub07 rename canonical type assertions](2026-09-07-plan01-task06-sub07-rename-canonical-type-assertions.md)：
+rename 回归直接检查 canonical OBJECT 到 DOUBLE，并验证准确的 hover 类型段。
+三工具链 project 单项和三文件协议均通过，MSVC 完整 smoke exit 0、峰值
+44.39 MiB；project 十项历史失败、Linux CLI artifact 与 Clang 内存门禁继续待办。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub08 type-test string boundary](2026-09-07-plan01-task06-sub08-type-test-string-boundary.md)：
 修正既有 parser 测试 source-name literal 的硬编码长度，Clang ASan 越界消失。
 三工具链功能均为 124/124，GCC/MSVC exit 0；Clang 继续报告导入模块缓存
