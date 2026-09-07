@@ -17,6 +17,7 @@ static SZrArray g_plainLocations;
 static SZrArray g_castLocations;
 static char g_projectPath[ZR_TESTS_PATH_MAX];
 static char g_binaryPath[ZR_TESTS_PATH_MAX];
+static char g_intermediatePath[ZR_TESTS_PATH_MAX];
 static char g_mainPath[ZR_TESTS_PATH_MAX];
 
 static void free_locations(SZrArray *locations) {
@@ -38,7 +39,7 @@ void setUp(void) {
     TEST_ASSERT_NOT_NULL(g_context);
     ZrCore_Array_Construct(&g_plainLocations);
     ZrCore_Array_Construct(&g_castLocations);
-    g_projectPath[0] = g_binaryPath[0] = g_mainPath[0] = '\0';
+    g_projectPath[0] = g_binaryPath[0] = g_intermediatePath[0] = g_mainPath[0] = '\0';
 }
 
 void tearDown(void) {
@@ -49,6 +50,7 @@ void tearDown(void) {
     if (g_projectPath[0] != '\0') {
         remove(g_projectPath);
         remove(g_binaryPath);
+        remove(g_intermediatePath);
         remove(g_mainPath);
     }
 }
@@ -132,7 +134,7 @@ static void assert_cast_preserves_external_call(SZrString *uri, const char *sour
     TEST_ASSERT_EQUAL_INT(plainLocation->range.end.character, castLocation->range.end.character);
 }
 
-static void test_binary_cast_operand_retains_external_identity_and_navigation(void) {
+static void assert_binary_cast_operand(const char *intermediateSource) {
     const char *source = "var binary = import(\"cast_provider\");\n"
                          "var plain = binary.measure();\n"
                          "var cast = <int> binary.measure();\n";
@@ -146,6 +148,9 @@ static void test_binary_cast_operand_retains_external_identity_and_navigation(vo
             g_projectPath, sizeof(g_projectPath)));
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("lsp_cast_operand", "project/bin", "cast_provider", ".zro",
             g_binaryPath, sizeof(g_binaryPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("lsp_cast_operand", "project/bin", "cast_provider", ".zri",
+            g_intermediatePath, sizeof(g_intermediatePath)));
+    remove(g_intermediatePath);
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("lsp_cast_operand", "project/src", "main", ".zr",
             g_mainPath, sizeof(g_mainPath)));
     write_text(g_projectPath, "{\"name\":\"cast\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\"}");
@@ -157,7 +162,26 @@ static void test_binary_cast_operand_retains_external_identity_and_navigation(vo
     written = ZrParser_Writer_WriteBinaryFileWithOptions(g_state, function, g_binaryPath, &options);
     ZrCore_Function_Free(g_state, function);
     TEST_ASSERT_TRUE(written);
+    if (intermediateSource != ZR_NULL) {
+        function = ZrParser_Source_Compile(g_state, intermediateSource, strlen(intermediateSource), sourceName);
+        TEST_ASSERT_NOT_NULL(function);
+        written = ZrParser_Writer_WriteIntermediateFile(g_state, function, g_intermediatePath);
+        ZrCore_Function_Free(g_state, function);
+        TEST_ASSERT_TRUE(written);
+    }
     assert_cast_preserves_external_call(ZrLanguageServer_LspUri_FromNativePath(g_state, g_mainPath), source, "measure");
+}
+
+static void test_binary_cast_operand_retains_external_identity_and_navigation(void) {
+    assert_binary_cast_operand(ZR_NULL);
+}
+
+static void test_binary_cast_operand_with_current_intermediate(void) {
+    assert_binary_cast_operand("pub var measure = fn(): float => 3.5;\n");
+}
+
+static void test_binary_cast_operand_with_stale_intermediate(void) {
+    assert_binary_cast_operand("pub var obsolete = fn(): int => 7;\n");
 }
 
 static void test_native_cast_operand_retains_external_identity_and_navigation(void) {
@@ -171,6 +195,8 @@ static void test_native_cast_operand_retains_external_identity_and_navigation(vo
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_binary_cast_operand_retains_external_identity_and_navigation);
+    RUN_TEST(test_binary_cast_operand_with_current_intermediate);
+    RUN_TEST(test_binary_cast_operand_with_stale_intermediate);
     RUN_TEST(test_native_cast_operand_retains_external_identity_and_navigation);
     return UNITY_END();
 }

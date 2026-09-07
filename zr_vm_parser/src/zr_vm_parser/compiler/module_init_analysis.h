@@ -99,9 +99,6 @@ ZR_PARSER_API TZrBool ZrParser_ModuleInitAnalysis_EnsureSummary(SZrCompilerState
 ZR_PARSER_API TZrBool ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromIo(SZrState *state,
                                                                                      const SZrIo *io,
                                                                                      SZrIoSource **outSource);
-ZR_PARSER_API TZrBool ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromPath(SZrState *state,
-                                                                                       const TZrChar *binaryPath,
-                                                                                       SZrIoSource **outSource);
 ZR_PARSER_API void ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(SZrGlobalState *global, SZrIoSource *source);
 ZR_PARSER_API void ZrParser_ModuleInitAnalysis_GlobalCleanup(SZrGlobalState *global, TZrPtr opaqueState);
 

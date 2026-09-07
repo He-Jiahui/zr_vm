@@ -440,6 +440,12 @@ rename 回归直接检查 canonical OBJECT 到 DOUBLE，并验证准确的 hover
 三工具链功能均为 124/124，GCC/MSVC exit 0；Clang 继续报告导入模块缓存
 5,187 bytes/44 allocations、exit 1，完整 sanitizer 门禁保持未完成。
 
+2026-09-08 已完成 [Plan 01 Task 6 Sub09 binary metadata source](2026-09-07-plan01-task06-sub09-binary-metadata-source.md)：
+parser 删除 `.zri` 文本摘要替代读取，统一保留 `.zro` 的身份、声明位置及参数元数据。
+三工具链身份回归 7/7、IO 生命周期 3/3；两个 Valgrind 均为 0 字节/0 错误。
+GCC/MSVC 完整 smoke exit 0，峰值 36.98/44.91 MiB；Clang 功能推进至最后内存
+门槛，678.66 MiB 超过 512 MiB，完整 sanitizer 验收和其他扩展失败仍待闭合。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

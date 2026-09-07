@@ -448,6 +448,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 - [cast-operand-semantic-facts.md](cast-operand-semantic-facts.md)
   - Cast inference publishes operand types and call identity before producing
     the explicit target type, including binary and native navigation facts.
+- [binary-metadata-source.md](binary-metadata-source.md)
+  - Binary import analysis preserves serialized identity, declaration positions
+    and callable metadata; intermediate text cannot replace the source graph.
 - `semantic-query-api-foundation.md`
   - parser 侧公共 semantic query 查询面骨架
   - `TypeAt`、`DefinitionOf`、`FactsAt` 和 `Diagnostics` 的当前语义
