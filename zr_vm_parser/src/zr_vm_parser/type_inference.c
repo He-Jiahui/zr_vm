@@ -10,6 +10,7 @@
 #include "type_inference/type_inference_semantic_facts.h"
 #include "type_inference/type_inference_reflection_surface.h"
 #include "type_inference/type_inference_call_diagnostics.h"
+#include "type_inference/type_inference_cast.h"
 #include "type_inference/type_inference_type_display_alias.h"
 #include "zr_vm_parser/ast.h"
 #include "type_inference/type_inference_constant_eval.h"
@@ -2906,10 +2907,7 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             break;
 
         case ZR_AST_TYPE_CAST_EXPRESSION:
-            if (node->data.typeCastExpression.targetType == ZR_NULL) {
-                return ZR_FALSE;
-            }
-            success = ZrParser_AstTypeToInferredType_Convert(cs, node->data.typeCastExpression.targetType, result);
+            success = type_inference_cast_expression(cs, node, result);
             if (success) {
                 numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_CONVERSION;
             }
