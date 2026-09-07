@@ -340,6 +340,13 @@ stdio handler 现在释放部分结果。RED 中五条路径各残留两块 runt
 正常对照及五个取消场景均归零。三工具链 CTest 6/6，Clang 无 sanitizer 报告，
 GCC handler 测试 Valgrind 为 0 字节/0 错误。Task 4/6 完整门禁仍 pending。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
+当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
+退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang
+证据验收 lifecycle、provider、handler 和 progress 清理。GCC/Clang 六目标通过；
+MSVC 六目标首轮通过，复跑 protocol 有一次启动请求超时，完整 smoke 仍受已登记
+generic completion detail 失败限制。Task 6 仅勾选 Valgrind 与 MSVC lifecycle 条目。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

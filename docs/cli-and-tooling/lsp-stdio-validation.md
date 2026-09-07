@@ -83,6 +83,30 @@ doc_type: module-guide
 
 # LSP Stdio Validation
 
+## Current Native Memory Matrix
+
+Plan 01 Task 6 Sub01 validates the lifecycle and cancellation paths on the source
+tree based on `4b07a398`. GCC 11 and Clang 14 Debug builds use address/undefined
+sanitizers, frame pointers and executable `-no-pie`. MSVC 19.44 Debug uses
+`/fsanitize=address`, `/MDd /Zi /Ob0 /Od` without `/RTC1`, and non-incremental linking.
+The Windows runtime is provided by the VS developer environment. The three builds
+pass lifecycle, provider cancellation, handler cleanup and partial-progress tests.
+
+The 100-cycle lifecycle test also passes Valgrind with 3,301,645 allocations and
+frees, zero bytes remaining and zero errors. It includes the regular stop/join path
+and construction failures after global, context, input setup and reader start.
+The caller retains ownership of its `FILE *`; the server owns the reader handle,
+request registry, caches, context and global state and releases them in that order.
+
+GCC and Clang pass the six-target group including protocol and optional capabilities.
+MSVC ASan passes that group once, but a repeated protocol run times out waiting for
+`shutdown-before-initialize` without a sanitizer diagnostic. The full Clang smoke,
+after building its CLI and descriptor-plugin prerequisites, still fails the previously
+recorded generic completion detail assertion. These failures keep the full protocol
+stability and smoke gates open. Validation uses the shared source overlay and is not
+a frozen full-repository acceptance. Commands, build paths and remaining boundaries
+are recorded in [Plan 01 Task 6 Sub01](../plans/lsp/optimize/2026-09-07-plan01-task06-sub01-native-memory-matrix.md).
+
 ## Strict Numeric Parsing
 
 `stdio_lsp_parse.c` is the single validation boundary for LSP sizes, positions
