@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "project/lsp_project_internal.h"
 
 TZrBool ZrLanguageServer_LspWorkspace_CanProcessFileEvent(SZrLspContext *context,
                                                            SZrString *uri);
@@ -282,6 +283,9 @@ int handle_did_close(SZrStdioServer *server, const cJSON *params) {
         }
     }
     publish_empty_diagnostics(server, uri);
+    while (ZrLanguageServer_LspProject_RemoveFileRecordByUri(server->state, server->context, uri)) {
+        /* A shared source can be registered in more than one project index. */
+    }
     {
         SZrTypeValue key;
         SZrHashKeyValuePair *pair;

@@ -411,6 +411,12 @@ parser 共享 producer 同时保留使用处实例 TypeId 和准确声明 Symbol
 Clang 的 cancellation setup 超时复现并保持登记。三工具链完整 smoke 均越过原始
 泛型失败，停于 MissingType callable detail 断言；Plan 01 和 Plan 03 父门禁未完成。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub05 closed project diagnostic target](2026-09-07-plan01-task06-sub05-closed-project-diagnostic-target.md)：
+关闭释放文件时同步清除匹配的项目 source record，工作区内磁盘恢复和其他 open
+overlay 保持有效。三工具链 C 关闭回归 4/4、相关 CTest 3/3、关闭相关协议 3/3，
+Valgrind 0 字节/0 错误。完整 smoke 均通过工作区诊断与随后取消/stale churn，推进
+至 binary member definition 断言；父门禁保持未完成。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub04 unresolved callable display](2026-09-07-plan01-task06-sub04-unresolved-callable-display.md)：
 parser signature producer 保留显式未解析或冲突的 TYPE fact，分析阶段仅向相同
 SymbolId/TypeId 的引用发布签名。三个工具链相关单元各 129/129，两个 Valgrind

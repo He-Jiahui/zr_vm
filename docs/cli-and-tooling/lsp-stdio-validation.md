@@ -117,6 +117,9 @@ plan_sources:
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_document_close.c
+  - tests/language_server/stdio_snapshot_workspace_diagnostics_smoke.js
+  - tests/language_server/stdio_workspace_folders_smoke.js
   - tests/language_server/test_stdio_diagnostic_json.c
   - tests/language_server/test_stdio_diagnostic_publication.c
   - tests/language_server/test_stdio_initialize.c
@@ -852,9 +855,27 @@ state. An invalid change for an unopened URI is recorded too, so a later
 request cannot accidentally consult disk content as a substitute for a valid
 overlay.
 
-`didClose` clears the open overlay but preserves an indexed workspace document
-by reloading its disk/project content; virtual, deleted, and no-longer-indexed
-documents are removed. `didSave` without text refreshes a disk document or
+`didClose` clears the open overlay but preserves a document under a registered
+workspace root by reloading its disk/project content. A deleted, virtual, or
+root-external document is released. This release removes every matching project
+source record through the project removal API before the final parser/analyzer
+cleanup. The API owns record deletion and associated cache cleanup; a URI shared
+by multiple indexes is removed from each one. Other source records and open
+overlays retain their state. Repeating close is harmless, and a later open can
+register the URI again with a new client version sequence.
+
+Diagnostic enumeration borrows URIs only while their project/context state is
+alive. A released document must no longer be a diagnostic target: leaving a
+source record without its file version makes `GetDiagnostics` fail and the
+workspace handler correctly returns InternalError. Close does not repair that
+inconsistency by fabricating an empty report or reading a root-external file
+from disk. The C handler test checks external close/reopen, other open documents,
+disk restoration, and missing disk files. The workspace diagnostic smoke checks
+the externally opened project lifecycle alongside multi-root/provider reload;
+the workspace-folder smoke retains its removed-root release assertion. See
+[Plan 01 Task 6 Sub05](../plans/lsp/optimize/2026-09-07-plan01-task06-sub05-closed-project-diagnostic-target.md).
+
+`didSave` without text refreshes a disk document or
 confirms an existing open overlay. A supplied `text` does not become a same-
 version change. A syntactically invalid but committed full replacement remains
 synchronized: the server determines commit status from the content snapshot,

@@ -111,6 +111,7 @@ doc_type: category-index
 - `lsp-stdio-validation.md`
   - stdio server child process 的 OS peak working-set budget 与跨平台采集
   - request/cancel/change/close 的 reader-thread 线性化和精确 snapshot 验证
+  - 关闭文档时同步释放项目诊断目标，保留工作区内磁盘恢复和其他 open overlay
   - server-owned reader stop/join、ordered teardown 与启动故障注入
 - [lsp-capability-resolve-contract.md](lsp-capability-resolve-contract.md)
   - native/WASM resolve runtime masks 与初始响应完整性

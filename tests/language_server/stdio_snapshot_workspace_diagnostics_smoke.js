@@ -81,6 +81,7 @@ async function main() {
     const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-task7-workspace-diagnostics-'));
     const first = createProject(path.join(workspaceRoot, 'first'), 'first', true);
     const second = createProject(path.join(workspaceRoot, 'second'), 'second', false);
+    const outside = createProject(path.join(workspaceRoot, 'outside'), 'outside', false);
     const client = new StdioProtocolClient(serverPath);
 
     assert(serverPath, 'expected stdio server path');
@@ -132,7 +133,27 @@ async function main() {
         const reloadedMain = reportForUri(reloaded, first.mainUri);
         assert(reloadedMain && reloadedMain.resultId !== initialMain.resultId,
             'unopened provider reload must change the importer diagnostic resultId');
-        console.log('stdio snapshot workspace diagnostics smoke: 7/7 Pass');
+
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: outside.mainUri,
+                languageId: 'zr',
+                version: 7,
+                text: 'module main;\npub fn outsideOverlay(): int { return 7; }\n',
+            },
+        });
+        const openedOutside = await request(client, 'workspace/diagnostic', {});
+        assert.equal(reportForUri(openedOutside, outside.mainUri).version, 7,
+            'an explicitly opened root-external project must publish overlay diagnostics');
+        client.notify('textDocument/didClose', {
+            textDocument: { uri: outside.mainUri },
+        });
+        const closedOutside = await request(client, 'workspace/diagnostic', {});
+        assert(!reportForUri(closedOutside, outside.mainUri),
+            'a released root-external file must leave the project diagnostic index');
+        assert(reportForUri(closedOutside, first.mainUri) && reportForUri(closedOutside, second.mainUri),
+            'closing an external document must preserve registered workspace diagnostics');
+        console.log('stdio snapshot workspace diagnostics smoke: 10/10 Pass');
     } finally {
         await client.terminate();
         removePathSync(workspaceRoot);
