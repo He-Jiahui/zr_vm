@@ -1115,13 +1115,13 @@ async function testCancelDuringPartialResults(serverPath) {
             query: 'CancellationPartialSymbol',
             partialResultToken: 'cancel-during-partial-progress',
         }, requestId, responseTimeoutMs);
-        const firstPartial = await client.waitForNotification('$/progress', responseTimeoutMs);
-        assert(firstPartial && firstPartial.token === 'cancel-during-partial-progress' &&
-               Array.isArray(firstPartial.value) && firstPartial.value.length === 64,
-               `partial cancellation must observe the first 64-item batch, actual=${JSON.stringify(firstPartial)}`);
-
-        client.notify('$/cancelRequest', { id: requestId });
-        const response = await responsePromise;
+        const cancellation = client.waitForNotification('$/progress', responseTimeoutMs).then((firstPartial) => {
+            assert(firstPartial && firstPartial.token === 'cancel-during-partial-progress' &&
+                   Array.isArray(firstPartial.value) && firstPartial.value.length === 64,
+                   `partial cancellation must observe the first 64-item batch, actual=${JSON.stringify(firstPartial)}`);
+            client.notify('$/cancelRequest', { id: requestId });
+        });
+        const [response] = await Promise.all([responsePromise, cancellation]);
         assertErrorEnvelope(response, requestId, -32800,
                             'cancellation during partial result publishing');
     });

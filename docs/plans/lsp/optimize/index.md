@@ -321,6 +321,13 @@ pending。
 notification 无副作用。GCC、Clang ASan/UBSan focused、MSVC 协议回归通过，Task 4
 的 registry、取消、ContentModified 和统一 progress sink 父门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 4 Sub05 partial-result cancellation](2026-09-07-plan01-task04-sub05-partial-result-cancellation.md)：
+实现提交 `10fe1e20` 将 progress 编排独立为模块，并将 request cancellation callback
+延长到 partial 发布与最终状态判定结束；首批或末批发送期间观测到精确请求 ID
+取消时返回 `-32800`。GCC、Clang ASan/UBSan、MSVC 协议回放均为 52/52，同步通知
+接收器驱动的 C 回归均为 6/6，progress/lifecycle/protocol/optional-capability CTest
+均为 4/4。provider 长循环、content fence 与 Task 4/6 父门禁继续 pending。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

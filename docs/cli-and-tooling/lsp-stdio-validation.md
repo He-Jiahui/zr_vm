@@ -1,5 +1,7 @@
 ---
 related_code:
+  - tests/language_server/test_stdio_request_progress.c
+  - tests/cmake/zr_vm_lsp_stdio_progress_tests.cmake
   - tests/language_server/test_stdio_lsp_parse.c
   - tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake
   - tests/language_server/collect_lsp_baseline.js
@@ -23,11 +25,15 @@ related_code:
   - zr_vm_language_server/stdio/stdio_frame_reader.c
   - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_request_progress.c
+  - zr_vm_language_server/stdio/stdio_request_progress.h
   - zr_vm_language_server/stdio/stdio_server.c
   - zr_vm_language_server/stdio/stdio_transport.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - tests/cmake/zr_vm_lsp_stdio_progress_tests.cmake
+  - tests/language_server/test_stdio_request_progress.c
   - tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake
   - tests/language_server/stdio_protocol_conformance.js
   - tests/language_server/stdio_protocol_envelope_mutations.js
@@ -40,6 +46,7 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_frame_reader.c
   - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_request_progress.c
   - zr_vm_language_server/stdio/stdio_server.c
 plan_sources:
   - docs/plans/lsp/optimize/00-baseline-and-contract.md
@@ -263,6 +270,19 @@ successful empty edit result. GCC and MSVC direct protocol replay pass 51/51; Cl
 ASan/UBSan on an isolated WSL ext4 build also passes 51/51 with no sanitizer diagnostic.
 The lifecycle, protocol and optional-capability CTest trio passes 3/3 on all three builds.
 See [Plan 01 Task 2 Sub21](../plans/lsp/optimize/2026-09-07-plan01-task02-sub21-ranges-formatting-params.md).
+
+The active partial-result cancellation regression extends the protocol replay to 52
+cases. It waits for the first 64-item workspace-symbol batch before cancelling the
+exact request ID, then requires a `-32800` error envelope. The dispatcher retains its
+context cancellation callback through partial publication and final status selection;
+`stdio_request_progress.c` checks cancellation before and after each batch, including
+the final batch. Six direct C cases use a synchronous notification receiver and the
+real request registry to cover first/last-batch cancellation, typed ID isolation,
+workspace-diagnostic batches and ordinary results without a partial token. GCC,
+Clang ASan/UBSan and MSVC pass 52/52 protocol cases, 6/6 direct C cases and 4/4 CTest
+cases (progress, lifecycle, protocol and optional capabilities). Clang reports no
+sanitizer diagnostic. Cross-toolchain evidence is tracked in [Plan 01 Task 4
+Sub05](../plans/lsp/optimize/2026-09-07-plan01-task04-sub05-partial-result-cancellation.md).
 
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints

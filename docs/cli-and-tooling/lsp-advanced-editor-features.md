@@ -43,6 +43,8 @@ related_code:
   - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
+  - zr_vm_language_server/stdio/stdio_request_progress.c
+  - zr_vm_language_server/stdio/stdio_request_progress.h
   - zr_vm_language_server/stdio/stdio_diagnostic_json.c
   - zr_vm_language_server/wasm/wasm_diagnostic_json.cpp
   - zr_vm_language_server/wasm/wasm_diagnostic_json.h
@@ -369,6 +371,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 - `codeAction/resolve` 要求带完整 snapshot data 的 object item；缺失、`null`、标量、数组、空对象或畸形 data 返回 `-32602 InvalidParams`，合法但 stale 的 snapshot 继续返回 disabled action。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。
+- stdio 的 work-done/partial-result 编排由 `stdio_request_progress.c` 管理；request cancellation callback 持续到 partial 发布与最终状态判定结束。批次发送前后观测到精确请求 ID 的取消时停止发送并返回 `-32800`，成功数组、workspace diagnostic `{items}` 与 token identity 保持。
 - `textDocument/references` 要求 object `context` 和 boolean `includeDeclaration`；缺失或畸形字段返回 `-32602 InvalidParams`，合法 references/partial-result 语义不变。
 - linked editing 仍优先依赖语义 references；fallback 是文档级 token 扫描，只用于语义 references 不足时的保守体验，不声明声明解析或跨文件 rename。
 - moniker 目前只提供文档内稳定 identity，不声明跨文档解析或 workspace symbol 绑定；comment/string 过滤来自 stdio 层轻量 scanner，不替代 parser token stream。
