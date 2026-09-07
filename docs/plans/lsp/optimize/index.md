@@ -281,6 +281,13 @@ string `only` array，缺失或畸形输入返回 `-32602`；合法 quickfix/org
 继续保持。当前 GCC 与 Clang ASan/UBSan protocol conformance 均为 50/50，lifecycle/protocol
 CTest 均为 2/2。统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub21 ranges formatting params](2026-09-07-plan01-task02-sub21-ranges-formatting-params.md)：
+协商启用的 `textDocument/rangesFormatting` 对缺失或畸形 params、URI、ranges array
+及任一 range 返回 `-32602`，已聚合编辑在失败时整体释放；合法空 ranges 仍返回空数组。
+实现提交 `367e9b5a`。GCC、Clang ASan/UBSan、MSVC protocol conformance 均为 51/51，
+lifecycle/protocol/optional-capability CTest 均为 3/3。Clang 使用独立 WSL ext4 构建
+排除共享产物写入竞争。统一 handler status/result 与 Plan 01 父级门禁仍保持 pending。
+
 2026-09-07 已完成 [Plan 01 Task 1 Sub01 lifecycle notification 门禁](2026-09-07-plan01-task01-sub01-lifecycle-notifications.md)：
 `$/setTrace` 在初始化前和 shutdown 后被忽略，`shutdown` 前后的 `exit` 分别返回
 1/0；当前 GCC protocol conformance 33/33 且 lifecycle loop 通过。该记录只关闭
