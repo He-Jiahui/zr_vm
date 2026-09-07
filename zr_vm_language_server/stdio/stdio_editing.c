@@ -277,12 +277,40 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray actions = {0};
     SZrLspRange range = {{0, 0}, {0, 0}};
     SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
+    const cJSON *contextJson;
+    const cJSON *diagnosticsJson;
+    const cJSON *onlyJson;
+    cJSON *itemJson;
     const char *uriText;
     SZrString *uri;
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return NULL;
+    }
+    contextJson = get_object_item(params, ZR_LSP_FIELD_CONTEXT);
+    if (!cJSON_IsObject((cJSON *)contextJson)) {
+        return NULL;
+    }
+    diagnosticsJson = get_object_item(contextJson, ZR_LSP_FIELD_DIAGNOSTICS);
+    if (!cJSON_IsArray((cJSON *)diagnosticsJson)) {
+        return NULL;
+    }
+    cJSON_ArrayForEach(itemJson, (cJSON *)diagnosticsJson) {
+        if (!cJSON_IsObject(itemJson)) {
+            return NULL;
+        }
+    }
+    onlyJson = get_object_item(contextJson, ZR_LSP_FIELD_ONLY);
+    if (onlyJson != ZR_NULL) {
+        if (!cJSON_IsArray((cJSON *)onlyJson)) {
+            return NULL;
+        }
+        cJSON_ArrayForEach(itemJson, (cJSON *)onlyJson) {
+            if (!cJSON_IsString(itemJson) || itemJson->valuestring == ZR_NULL) {
+                return NULL;
+            }
+        }
     }
     if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
                 server->state,

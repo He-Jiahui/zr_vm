@@ -246,6 +246,14 @@ while stale snapshots retain their disabled-action behavior. GCC and Clang ASan/
 pass 49/49, and the lifecycle/protocol CTest pair passes 2/2 on each build. See [Plan 01
 Task 2 Sub19](../plans/lsp/optimize/2026-09-07-plan01-task02-sub19-code-action-resolve-params.md).
 
+The code-action context regression extends the current replay to 50 cases.
+`textDocument/codeAction` now requires an object `context` with a diagnostics array
+of objects; when `only` is present it must be an array of strings. Missing or malformed
+context values return `-32602 Invalid params` before snapshot/provider work, while valid
+quickfix and organize-import requests retain their existing filtering. GCC and Clang
+ASan/UBSan both pass 50/50, and the lifecycle/protocol CTest pair passes 2/2 on each
+build. See [Plan 01 Task 2 Sub20](../plans/lsp/optimize/2026-09-07-plan01-task02-sub20-code-action-context.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

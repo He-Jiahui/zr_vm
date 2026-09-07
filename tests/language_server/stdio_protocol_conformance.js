@@ -405,6 +405,51 @@ async function testInvalidCodeActionRange(serverPath) {
     });
 }
 
+async function testInvalidCodeActionContext(serverPath) {
+    const uri = 'file:///invalid-code-action-context.zr';
+    const contexts = [
+        ['missing context', undefined],
+        ['null context', null],
+        ['scalar context', 'not-a-context'],
+        ['array context', []],
+        ['missing diagnostics', {}],
+        ['null diagnostics', { diagnostics: null }],
+        ['scalar diagnostics', { diagnostics: 'not-an-array' }],
+        ['malformed diagnostic item', { diagnostics: [1] }],
+        ['scalar only', { diagnostics: [], only: 'quickfix' }],
+        ['malformed only item', { diagnostics: [], only: [1] }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'invalid-code-action-context-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: 'var answer = 1;\n',
+            },
+        });
+        await client.waitForNotification('textDocument/publishDiagnostics');
+        for (const [label, context] of contexts) {
+            const params = {
+                textDocument: { uri },
+                range: {
+                    start: { line: 0, character: 0 },
+                    end: { line: 0, character: 15 },
+                },
+            };
+            if (context !== undefined) {
+                params.context = context;
+            }
+            const id = `invalid-code-action-context-${label}`;
+            const response = await client.request('textDocument/codeAction', params, id,
+                                                  RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+    });
+}
+
 async function testInvalidCodeActionResolveParams(serverPath) {
     const cases = [
         ['missing params', undefined],
@@ -1215,6 +1260,7 @@ function protocolCases() {
         ['invalid editor feature params', testInvalidEditorFeatureParams],
         ['invalid editing params', testInvalidEditingParams],
         ['invalid code action range', testInvalidCodeActionRange],
+        ['invalid code action context', testInvalidCodeActionContext],
         ['invalid code action resolve params', testInvalidCodeActionResolveParams],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],
