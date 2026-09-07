@@ -215,7 +215,7 @@ doc_type: module-detail
 - stable-slot hover/completion 消费 imported prototype 的 `protocolMask`、member `contractRole` 和 structured reference access。它把 scalar identity handle 标为 weak identity，把 acquisition owner 标为 stable slot source，把 ref-like guard view 标为 scoped readonly/writable ref，并在 ref-property hover 中显示 getter-only 与 active-guard lifetime。分类器不比较 `Pool`/`PoolHandle`/`PoolRef` 或 acquire method 的固定名字；completion 仍由真实 prototype members 生成，因此 acquisition 只出现在 source capability 上。
 
 - formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。full/range formatting 在生成 edit 前复用 `ZrParser_LegacyMigration_PlanSource`；文档只要含有已登记的迁移项，就成功返回空 edit 集合，避免 formatter 重新输出已经移除的 `%keyword` 或其他旧表层。普通 `%` / `%=` 运算不产生迁移项；`remainder%value` 和 `remainder %value` 等相邻写法也按前置表达式上下文识别为模运算，不会误报成 legacy directive。
-- stdio 的 formatting、onTypeFormatting 和 codeAction handler 在缺失或畸形 `textDocument` 时返回 `-32602 InvalidParams`；provider 没有结果时仍返回合法空数组。`textDocument/rangesFormatting` 只有在 capability matrix 声明后才进入 handler，未声明时由能力门禁返回 `-32601 Method not found`。
+- stdio 的 formatting、onTypeFormatting 和 codeAction handler 在缺失或畸形 `textDocument` 时返回 `-32602 InvalidParams`；provider 没有结果时仍返回合法空数组。`textDocument/rangesFormatting` 只有在 capability matrix 声明后才进入 handler，未声明时由能力门禁返回 `-32601 Method not found`；协商启用后要求 object params、字符串 URI、ranges array 以及每个可解析的 canonical range，畸形值返回 `-32602 InvalidParams`，空 ranges 仍成功返回空 edit array。
 - stdio 的 `completionItem/resolve` 在 item、label、resolve data URI 或 position 解析失败时返回 `-32602 InvalidParams`；合法但未匹配的 item 仍保持成功回传。
 - stdio 的 `inlineValue`、`moniker` 和 `linkedEditingRange` 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；provider 无结果时仍分别保持空数组或 `null`。
 - stdio 的 semantic tokens full、full/delta 和 range 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；合法请求仍按既有 full/delta/range 响应结构返回。
@@ -365,6 +365,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 - code action 稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix。缺失 import仍使用owned snapshot做alias/insert-offset/code-span检查；缺失分号已收敛到parser structured diagnostic fix，支持EOF和line-comment前精确插入并跳过placeholder/maybe fix。delimiter及其他diagnostic fix仍需按同一fact-first边界接入。
 - `textDocument/codeAction` 要求 canonical `range`；缺失、`null`、标量、数组或逆序 range 返回 `-32602 InvalidParams`，合法 action 继续使用请求 range 与 snapshot。
 - `textDocument/codeAction` 的 `context` 要求 object `diagnostics` 数组及可选 string `only` 数组；缺失或畸形值返回 `-32602 InvalidParams`，合法 quickfix/organize-import 过滤保持。
+- 协商启用的 `textDocument/rangesFormatting` 要求 object params、有效 `textDocument.uri` 和 canonical `ranges` array；缺失或畸形值返回 `-32602 InvalidParams`，合法空 ranges 保持成功空 edit array。
 - `codeAction/resolve` 要求带完整 snapshot data 的 object item；缺失、`null`、标量、数组、空对象或畸形 data 返回 `-32602 InvalidParams`，合法但 stale 的 snapshot 继续返回 disabled action。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。

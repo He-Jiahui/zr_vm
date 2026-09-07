@@ -450,6 +450,72 @@ async function testInvalidCodeActionContext(serverPath) {
     });
 }
 
+async function testInvalidRangesFormattingParams(serverPath) {
+    const uri = 'file:///invalid-ranges-formatting.zr';
+    const cases = [
+        ['missing params', undefined],
+        ['null params', null],
+        ['scalar params', 'not-an-object'],
+        ['array params', []],
+        ['missing text document', { ranges: [] }],
+        ['missing ranges', { textDocument: { uri } }],
+        ['null ranges', { textDocument: { uri }, ranges: null }],
+        ['scalar ranges', { textDocument: { uri }, ranges: 'not-an-array' }],
+        ['object ranges', { textDocument: { uri }, ranges: {} }],
+        ['null range item', { textDocument: { uri }, ranges: [null] }],
+        ['scalar range item', { textDocument: { uri }, ranges: ['not-a-range'] }],
+        ['array range item', { textDocument: { uri }, ranges: [[]] }],
+        ['reverse range item', {
+            textDocument: { uri },
+            ranges: [{
+                start: { line: 1, character: 0 },
+                end: { line: 0, character: 0 },
+            }],
+        }],
+        ['invalid item after valid range', {
+            textDocument: { uri },
+            ranges: [{
+                start: { line: 1, character: 0 },
+                end: { line: 1, character: 9 },
+            }, null],
+        }],
+    ];
+
+    await withClient(serverPath, async (client) => {
+        const payload = initializePayload('invalid-ranges-formatting-initialize');
+        payload.params.capabilities = {
+            textDocument: { rangeFormatting: { rangesSupport: true } },
+        };
+        const initializeResponse = await client.requestEnvelope(payload, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(initializeResponse, 'invalid-ranges-formatting-initialize',
+                              'ranges formatting initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: 'fn main(): int {\nreturn 1;\n}\n',
+            },
+        });
+        await client.waitForNotification('textDocument/publishDiagnostics');
+        for (const [label, params] of cases) {
+            const id = `invalid-ranges-formatting-${label}`;
+            const response = await client.request('textDocument/rangesFormatting', params, id,
+                                                  RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+        const emptyId = 'valid-empty-ranges-formatting';
+        const emptyResponse = await client.request('textDocument/rangesFormatting', {
+            textDocument: { uri },
+            ranges: [],
+            options: { tabSize: 4, insertSpaces: true },
+        }, emptyId, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(emptyResponse, emptyId, 'empty ranges formatting');
+        assert(Array.isArray(emptyResponse.result) && emptyResponse.result.length === 0,
+               'empty ranges formatting must return an empty edit array');
+    });
+}
+
 async function testInvalidCodeActionResolveParams(serverPath) {
     const cases = [
         ['missing params', undefined],
@@ -1261,6 +1327,7 @@ function protocolCases() {
         ['invalid editing params', testInvalidEditingParams],
         ['invalid code action range', testInvalidCodeActionRange],
         ['invalid code action context', testInvalidCodeActionContext],
+        ['invalid ranges formatting params', testInvalidRangesFormattingParams],
         ['invalid code action resolve params', testInvalidCodeActionResolveParams],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],

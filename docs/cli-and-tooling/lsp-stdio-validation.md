@@ -254,6 +254,16 @@ quickfix and organize-import requests retain their existing filtering. GCC and C
 ASan/UBSan both pass 50/50, and the lifecycle/protocol CTest pair passes 2/2 on each
 build. See [Plan 01 Task 2 Sub20](../plans/lsp/optimize/2026-09-07-plan01-task02-sub20-code-action-context.md).
 
+The optional multi-range-formatting parameter regression extends the current replay to
+51 cases. When the client advertises `textDocument.rangeFormatting.rangesSupport`,
+`textDocument/rangesFormatting` now requires an object params value with a valid document
+URI and ranges array; every range must pass the canonical range parser. Missing or
+malformed params return `-32602 Invalid params`, while an empty ranges array remains a
+successful empty edit result. GCC and MSVC direct protocol replay pass 51/51; Clang 14
+ASan/UBSan on an isolated WSL ext4 build also passes 51/51 with no sanitizer diagnostic.
+The lifecycle, protocol and optional-capability CTest trio passes 3/3 on all three builds.
+See [Plan 01 Task 2 Sub21](../plans/lsp/optimize/2026-09-07-plan01-task02-sub21-ranges-formatting-params.md).
+
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints
 are preserved in `$/progress`; values outside the boundary are rejected as

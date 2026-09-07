@@ -87,6 +87,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub18：`textDocument/codeAction` 的 `range` 严格通过 canonical parser，缺失或畸形值返回 `-32602 InvalidParams`，合法 action 的请求 range 与 snapshot 语义保持；[记录](2026-09-07-plan01-task02-sub18-code-action-range.md)。
 - [x] Sub19：`codeAction/resolve` 缺失或畸形 item/data 返回 `-32602 InvalidParams`，合法 current snapshot 正常 resolve，stale snapshot 继续返回 disabled action；[记录](2026-09-07-plan01-task02-sub19-code-action-resolve-params.md)。
 - [x] Sub20：`textDocument/codeAction` 的 `context.diagnostics` 严格要求 object array，`only` 若出现则要求 string array，畸形值返回 `-32602 InvalidParams`；[记录](2026-09-07-plan01-task02-sub20-code-action-context.md)。
+- [x] Sub21：协商启用的 `textDocument/rangesFormatting` 要求 object params、URI 和 ranges array，所有 range 通过 canonical parser；缺失或畸形值返回 `-32602 InvalidParams`，合法空 ranges 仍返回成功空数组；[记录](2026-09-07-plan01-task02-sub21-ranges-formatting-params.md)。
 - [x] Sub02：`initialize` 的 params 缺失、`null`、标量或数组时返回 `-32602 InvalidParams`，且不进入初始化生命周期；[记录](2026-09-07-plan01-task02-sub02-initialize-params.md)。
 - [x] Sub03：numeric request id 只接受有限、整数且处于 JSON-safe 范围的值，fractional id 返回 `-32600 Invalid Request`；[记录](2026-09-07-plan01-task02-sub03-integer-request-ids.md)。
 - [x] Sub04：直接回归验证 envelope 对顶层消息、jsonrpc 版本、typed id、params 形状和 request/notification 分类；[记录](2026-09-07-plan01-task02-sub04-envelope-api.md)。

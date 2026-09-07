@@ -204,11 +204,11 @@ cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *par
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
     rangesJson = get_object_item(params, ZR_LSP_FIELD_RANGES);
     if (!cJSON_IsArray(rangesJson)) {
-        return cJSON_CreateArray();
+        return NULL;
     }
 
     result = cJSON_CreateArray();
@@ -221,7 +221,8 @@ cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *par
         SZrLspRange range;
 
         if (!parse_range_for_uri(server, uri, rangeJson, &range)) {
-            continue;
+            cJSON_Delete(result);
+            return NULL;
         }
 
         ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
