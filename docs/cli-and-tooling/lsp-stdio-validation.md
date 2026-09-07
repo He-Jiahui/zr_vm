@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_language_server/stdio/stdio_json.c
+  - zr_vm_language_server/stdio/stdio_diagnostic_json.c
+  - tests/language_server/test_stdio_diagnostic_json.c
   - tests/language_server/test_stdio_diagnostic_publication.c
   - zr_vm_language_server/stdio/stdio_json_builder.h
   - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
@@ -61,6 +64,9 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/stdio/stdio_json.c
+  - zr_vm_language_server/stdio/stdio_diagnostic_json.c
+  - tests/language_server/test_stdio_diagnostic_json.c
   - tests/language_server/test_stdio_diagnostic_publication.c
   - zr_vm_language_server/stdio/stdio_json_builder.h
   - zr_vm_language_server/stdio/stdio_initialize_capabilities.c
@@ -111,6 +117,7 @@ plan_sources:
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_diagnostic_json.c
   - tests/language_server/test_stdio_diagnostic_publication.c
   - tests/language_server/test_stdio_initialize.c
   - tests/language_server/test_stdio_optional_capability_allocations.c
@@ -175,8 +182,37 @@ The direct initialize/progress/diagnostic tests pass 15/15, 11/11 and 5/5; GCC V
 reports zero bytes and errors for all three. See
 [Sub27](../plans/lsp/optimize/2026-09-07-plan01-task02-sub27-publication-state.md).
 These transitions do not roll back bytes already written before an I/O error or
-initialize workspace/runtime state. Nested diagnostic-content serializer failures
-remain a separate acceptance item.
+initialize workspace/runtime state. Sub28 below covers nested diagnostic JSON.
+
+## Diagnostic JSON Ownership
+
+Plan 01 Task 2 Sub28 checks every JSON construction and attachment in the shared
+position/range/location serializers, diagnostic content, and document/workspace
+full or unchanged reports. A nested failure discards the entire partial result.
+The report handlers classify it as INTERNAL_ERROR; diagnostic push leaves the
+publication cache unchanged. Arrays also fail as a whole when an element fails.
+
+The diagnostic tree owns its code description, related locations, fix edits and
+data as soon as each child is attached. The consuming helpers release a child if
+attachment fails. Runtime strings are copied without transferring the original;
+temporary copies are freed after JSON insertion, and a failed copy of a present
+string is an error. Optional fields may be absent when the input omits them, but
+construction failure no longer silently removes an intended field.
+
+Nine direct cases cover 587 allocation points, and a real nonempty diagnostic
+notification adds 130 points. Transient and persistent injection totals 1,434 new
+failure runs, each requiring absent output and zero live JSON allocations. Valid
+controls check exact coordinates, URI, messages, code description, related data,
+fix edits and report identity. The notification test also parses production frames
+and verifies that failed publication never updates its deduplication cache.
+
+GCC, Clang ASan/UBSan and MSVC Debug pass the same 13-target unit/protocol/smoke
+group, including position encoding and workspace diagnostics. GCC Valgrind reports
+387,576 and 215,460 matching allocations/frees for the JSON and publication tests,
+with zero bytes and errors. See
+[Sub28](../plans/lsp/optimize/2026-09-07-plan01-task02-sub28-diagnostic-json-ownership.md).
+Runtime allocator fault injection, other handler serializers and full Plan 01
+acceptance remain separate work.
 
 ## Initialize Result Contract
 

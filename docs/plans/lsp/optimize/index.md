@@ -383,6 +383,13 @@ JSON 分配点各经历单次/持续故障，共 426 次注入；真实 stdout �
 15/15、progress 11/11、diagnostic publication 5/5，三项 Valgrind 均为 0 字节/0 错误。
 工作区 runtime 回滚、其他嵌套 serializer 分类和 Plan 01 父级完整门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub28 diagnostic JSON ownership](2026-09-07-plan01-task02-sub28-diagnostic-json-ownership.md)：
+position/range/location、diagnostic content 以及 document/workspace full/unchanged
+report 现在逐层检查 JSON 构造与所有权，任一子项失败会删除部分树并返回内部错误。
+直接回归 9/9、发布回归 6/6，新增 717 个分配点和 1,434 次故障注入；三工具链
+扩展 CTest 均为 13/13，Valgrind 两项均为 0 字节/0 错误。其他 handler serializer、
+运行时分配错误分类和 Plan 01 父级完整验收继续 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

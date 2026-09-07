@@ -246,6 +246,7 @@ SZrLspHandlerResult handle_text_document_diagnostic_request(SZrStdioServer *serv
     const cJSON *previousResultIdJson;
     char resultId[ZR_LSP_DIAGNOSTIC_RESULT_ID_MAX];
     cJSON *result;
+    TZrBool unchanged;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
@@ -255,7 +256,6 @@ SZrLspHandlerResult handle_text_document_diagnostic_request(SZrStdioServer *serv
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
-    ZR_UNUSED_PARAMETER(uriText);
     ZrCore_Array_Init(server->state, &diagnostics, sizeof(SZrLspDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(server->state, server->context, uri, &diagnostics)) {
         free_diagnostics_array(server->state, &diagnostics);
@@ -265,24 +265,18 @@ SZrLspHandlerResult handle_text_document_diagnostic_request(SZrStdioServer *serv
         free_diagnostics_array(server->state, &diagnostics);
         return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
-    if (cJSON_IsString((cJSON *)previousResultIdJson) &&
-        strcmp(previousResultIdJson->valuestring, resultId) == 0) {
-        free_diagnostics_array(server->state, &diagnostics);
-        result = cJSON_CreateObject();
-        if (result != NULL) {
-            cJSON_AddStringToObject(result,
-                                    ZR_LSP_FIELD_KIND,
-                                    ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_UNCHANGED);
-            cJSON_AddStringToObject(result, ZR_LSP_FIELD_RESULT_ID, resultId);
-        }
-        return stdio_handler_result_from_json(server->context, result);
-    }
-
+    unchanged = cJSON_IsString((cJSON *)previousResultIdJson) &&
+                strcmp(previousResultIdJson->valuestring, resultId) == 0;
     result = cJSON_CreateObject();
-    if (result != NULL) {
-        cJSON_AddStringToObject(result, ZR_LSP_FIELD_KIND, ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_FULL);
-        cJSON_AddStringToObject(result, ZR_LSP_FIELD_RESULT_ID, resultId);
-        cJSON_AddItemToObject(result, ZR_LSP_FIELD_ITEMS, serialize_diagnostics_array_for_uri(&diagnostics, uriText));
+    if (result == NULL ||
+        cJSON_AddStringToObject(result, ZR_LSP_FIELD_KIND,
+                                unchanged ? ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_UNCHANGED
+                                          : ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_FULL) == NULL ||
+        cJSON_AddStringToObject(result, ZR_LSP_FIELD_RESULT_ID, resultId) == NULL ||
+        (!unchanged && !stdio_json_add_owned_item(result, ZR_LSP_FIELD_ITEMS,
+                                                  serialize_diagnostics_array_for_uri(&diagnostics, uriText)))) {
+        cJSON_Delete(result);
+        result = NULL;
     }
     free_diagnostics_array(server->state, &diagnostics);
     return stdio_handler_result_from_json(server->context, result);
@@ -296,6 +290,7 @@ static cJSON *serialize_workspace_diagnostic_report_for_uri(SZrStdioServer *serv
     char *uriText;
     char resultId[ZR_LSP_DIAGNOSTIC_RESULT_ID_MAX];
     SZrFileVersion *fileVersion;
+    TZrBool unchanged;
 
     report = cJSON_CreateObject();
     if (report == NULL) {
@@ -304,40 +299,43 @@ static cJSON *serialize_workspace_diagnostic_report_for_uri(SZrStdioServer *serv
 
     fileVersion = get_file_version_for_uri(server, uri);
     uriText = zr_string_to_c_string(uri);
-    cJSON_AddStringToObject(report, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
+    if (uriText == NULL || cJSON_AddStringToObject(report, ZR_LSP_FIELD_URI, uriText) == NULL) {
+        goto failed;
+    }
     if (fileVersion != ZR_NULL && fileVersion->isOpenDocument) {
-        cJSON_AddNumberToObject(report, ZR_LSP_FIELD_VERSION, (double)fileVersion->version);
+        if (cJSON_AddNumberToObject(report, ZR_LSP_FIELD_VERSION, (double)fileVersion->version) == NULL) {
+            goto failed;
+        }
     } else {
-        cJSON_AddNullToObject(report, ZR_LSP_FIELD_VERSION);
+        if (cJSON_AddNullToObject(report, ZR_LSP_FIELD_VERSION) == NULL) {
+            goto failed;
+        }
     }
     ZrCore_Array_Init(server->state, &diagnostics, sizeof(SZrLspDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (uri == ZR_NULL || !ZrLanguageServer_Lsp_GetDiagnostics(server->state, server->context, uri, &diagnostics)) {
-        free_diagnostics_array(server->state, &diagnostics);
-        free(uriText);
-        cJSON_Delete(report);
-        return ZR_NULL;
+        goto failed;
     }
     if (!build_diagnostic_result_id(server, uri, &diagnostics, resultId, sizeof(resultId))) {
-        free_diagnostics_array(server->state, &diagnostics);
-        free(uriText);
-        cJSON_Delete(report);
-        return ZR_NULL;
+        goto failed;
     }
-    cJSON_AddStringToObject(report, ZR_LSP_FIELD_RESULT_ID, resultId);
-    if (workspace_previous_result_id_matches(previousResultIds, uriText, resultId)) {
-        cJSON_AddStringToObject(report,
-                                ZR_LSP_FIELD_KIND,
-                                ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_UNCHANGED);
-        free_diagnostics_array(server->state, &diagnostics);
-        free(uriText);
-        return report;
+    unchanged = workspace_previous_result_id_matches(previousResultIds, uriText, resultId);
+    if (cJSON_AddStringToObject(report, ZR_LSP_FIELD_RESULT_ID, resultId) == NULL ||
+        cJSON_AddStringToObject(report, ZR_LSP_FIELD_KIND,
+                                unchanged ? ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_UNCHANGED
+                                          : ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_FULL) == NULL ||
+        (!unchanged && !stdio_json_add_owned_item(report, ZR_LSP_FIELD_ITEMS,
+                                                  serialize_diagnostics_array_for_uri(&diagnostics, uriText)))) {
+        goto failed;
     }
-    cJSON_AddStringToObject(report, ZR_LSP_FIELD_KIND, ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_FULL);
-
-    cJSON_AddItemToObject(report, ZR_LSP_FIELD_ITEMS, serialize_diagnostics_array_for_uri(&diagnostics, uriText));
     free_diagnostics_array(server->state, &diagnostics);
     free(uriText);
     return report;
+
+failed:
+    free_diagnostics_array(server->state, &diagnostics);
+    free(uriText);
+    cJSON_Delete(report);
+    return NULL;
 }
 
 SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *params) {
@@ -357,10 +355,8 @@ SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, 
     }
 
     result = cJSON_CreateObject();
-    items = cJSON_CreateArray();
-    if (result == NULL || items == NULL) {
+    if (result == NULL || (items = cJSON_AddArrayToObject(result, ZR_LSP_FIELD_ITEMS)) == NULL) {
         cJSON_Delete(result);
-        cJSON_Delete(items);
         return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
@@ -370,7 +366,6 @@ SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, 
                     server->state, server->context, &uris)) {
             ZrCore_Array_Free(server->state, &uris);
             cJSON_Delete(result);
-            cJSON_Delete(items);
             return stdio_handler_result_from_json(server->context, ZR_NULL);
         }
         for (TZrSize index = 0U; index < uris.length; index++) {
@@ -380,24 +375,20 @@ SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, 
             if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
                 ZrCore_Array_Free(server->state, &uris);
                 cJSON_Delete(result);
-                cJSON_Delete(items);
                 return stdio_handler_error(ZR_LSP_HANDLER_CANCELLED);
             }
             if (uri == ZR_NULL || *uri == ZR_NULL) {
                 continue;
             }
             report = serialize_workspace_diagnostic_report_for_uri(server, *uri, previousResultIds);
-            if (report == NULL) {
+            if (!stdio_json_add_owned_array_item(items, report)) {
                 ZrCore_Array_Free(server->state, &uris);
                 cJSON_Delete(result);
-                cJSON_Delete(items);
                 return stdio_handler_result_from_json(server->context, ZR_NULL);
             }
-            cJSON_AddItemToArray(items, report);
         }
         ZrCore_Array_Free(server->state, &uris);
     }
 
-    cJSON_AddItemToObject(result, ZR_LSP_FIELD_ITEMS, items);
     return stdio_handler_result_from_json(server->context, result);
 }

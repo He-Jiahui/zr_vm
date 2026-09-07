@@ -5,7 +5,8 @@ if(TARGET zr_vm_language_server_stdio)
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
             PROPERTIES COMPILE_DEFINITIONS main=zr_tests_stdio_entry
     )
-    foreach(_zr_vm_stdio_handler_test IN ITEMS handler_cancellation initialize transport_output diagnostic_publication)
+    foreach(_zr_vm_stdio_handler_test IN ITEMS
+            handler_cancellation initialize transport_output diagnostic_publication diagnostic_json)
         set(_zr_vm_stdio_handler_target zr_vm_language_server_stdio_${_zr_vm_stdio_handler_test}_test)
         zr_vm_add_unity_test_target(
                 ${_zr_vm_stdio_handler_target}

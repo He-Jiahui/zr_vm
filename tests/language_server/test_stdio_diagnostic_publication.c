@@ -187,20 +187,22 @@ static void test_empty_diagnostics_write_failure_does_not_update_cache(void) {
     TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.count);
 }
 
-static void update_document(TZrSize version) {
-    const char source[] = "fn publicationTarget(): int { return 1; }\n";
+static void update_document(TZrSize version, TZrBool withDiagnostic) {
+    const char *source = withDiagnostic
+                            ? "fn main(): int {\n var amount: int = 3.75;\n return 0;\n}\n"
+                            : "fn publicationTarget(): int { return 1; }\n";
 
     TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_UpdateDocument(
             g_server->state, g_server->context, g_uri, source, strlen(source), version));
 }
 
 static void test_diagnostic_write_failure_preserves_previous_published_version(void) {
-    update_document(1);
+    update_document(1, ZR_FALSE);
     TEST_ASSERT_TRUE(capture_diagnostics(ZR_FALSE) > 0L);
     TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.count);
     TEST_ASSERT_TRUE(g_server->diagnosticPushCache.items[0].hasDocumentVersion);
     TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.items[0].documentVersion);
-    update_document(2);
+    update_document(2, ZR_FALSE);
     publish_to_readonly_stdout(ZR_FALSE);
     TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.items[0].documentVersion);
     TEST_ASSERT_TRUE(capture_diagnostics(ZR_FALSE) > 0L);
@@ -231,26 +233,33 @@ static size_t run_allocation_case(TZrBool empty, size_t failAt, TZrBool persiste
     return g_jsonAttempts;
 }
 
-static void sweep_allocations(TZrBool empty) {
+static void sweep_allocations(TZrBool empty, TZrBool withDiagnostic) {
     size_t count;
 
     if (!empty) {
-        update_document(1);
+        update_document(1, withDiagnostic);
     }
     count = run_allocation_case(empty, 0, ZR_FALSE);
+    if (withDiagnostic) {
+        TEST_ASSERT_TRUE(cJSON_GetArraySize(get_object_item(get_object_item(g_message, "params"), "diagnostics")) > 0);
+    }
     for (size_t index = 1; index <= count; index++) {
         run_allocation_case(empty, index, ZR_FALSE);
         run_allocation_case(empty, index, ZR_TRUE);
     }
-    printf("diagnostic publication empty=%d: %zu allocation points\n", empty, count);
+    printf("diagnostic publication empty=%d withDiagnostic=%d: %zu allocation points\n", empty, withDiagnostic, count);
 }
 
 static void test_empty_diagnostic_allocation_failures_do_not_publish(void) {
-    sweep_allocations(ZR_TRUE);
+    sweep_allocations(ZR_TRUE, ZR_FALSE);
 }
 
 static void test_document_diagnostic_allocation_failures_do_not_publish(void) {
-    sweep_allocations(ZR_FALSE);
+    sweep_allocations(ZR_FALSE, ZR_FALSE);
+}
+
+static void test_nonempty_diagnostic_allocation_failures_do_not_publish(void) {
+    sweep_allocations(ZR_FALSE, ZR_TRUE);
 }
 
 int main(void) {
@@ -260,5 +269,6 @@ int main(void) {
     RUN_TEST(test_diagnostic_write_failure_preserves_previous_published_version);
     RUN_TEST(test_empty_diagnostic_allocation_failures_do_not_publish);
     RUN_TEST(test_document_diagnostic_allocation_failures_do_not_publish);
+    RUN_TEST(test_nonempty_diagnostic_allocation_failures_do_not_publish);
     return UNITY_END();
 }
