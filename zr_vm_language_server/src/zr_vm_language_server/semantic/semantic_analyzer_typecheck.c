@@ -3,7 +3,6 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
-#include "semantic/semantic_analyzer_expected_type.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 #include "zr_vm_parser/const_assignment.h"
 #include "type_inference_semantic_facts.h"
@@ -906,45 +905,20 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         }
         
         case ZR_AST_ASSIGNMENT_EXPRESSION: {
-            SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
-            if (assignExpr->left != ZR_NULL && assignExpr->right != ZR_NULL) {
-                SZrInferredType leftType, rightType;
-                SZrFileRange expectedLocation;
-                TZrBool hasLeftType;
-                TZrBool hasRightType;
-                ZrParser_InferredType_Init(state, &leftType, ZR_VALUE_TYPE_OBJECT);
-                ZrParser_InferredType_Init(state, &rightType, ZR_VALUE_TYPE_OBJECT);
-                hasLeftType = ZrParser_ExpressionType_Infer(analyzer->compilerState, assignExpr->left, &leftType);
-                hasRightType = hasLeftType
-                               ? ZrParser_ExpressionType_Infer(analyzer->compilerState, assignExpr->right, &rightType)
-                               : ZR_FALSE;
-                if (hasLeftType && hasRightType) {
-                    expectedLocation =
-                            ZrLanguageServer_SemanticAnalyzer_AssignmentExpectedTypeLocation(
-                                    analyzer,
-                                    assignExpr->left);
-                    // 检查赋值类型兼容性
-                    if (!ZrParser_AssignmentCompatibility_CheckDetailed(
-                                analyzer->compilerState,
-                                &leftType,
-                                &rightType,
-                                assignExpr->right->location,
-                                &expectedLocation)) {
-                        (void)semantic_publish_current_compiler_diagnostic(
-                                state,
-                                analyzer);
-                    }
-                }
-                if (hasRightType) {
-                    ZrParser_InferredType_Free(state, &rightType);
-                }
-                if (hasLeftType) {
-                    ZrParser_InferredType_Free(state, &leftType);
-                }
-                
-                (void)ZrParser_ConstAssignment_PublishDiagnostic(
-                        analyzer->compilerState, analyzer->ast, node);
-            }
+            SZrInferredType assignmentType;
+
+            /* Complete assignment inference preserves the target's write role. */
+            ZrParser_InferredType_Init(state, &assignmentType, ZR_VALUE_TYPE_OBJECT);
+            (void)semantic_infer_node_type(
+                    state,
+                    analyzer,
+                    node,
+                    &assignmentType,
+                    ZR_NULL);
+            ZrParser_InferredType_Free(state, &assignmentType);
+
+            (void)ZrParser_ConstAssignment_PublishDiagnostic(
+                    analyzer->compilerState, analyzer->ast, node);
             break;
         }
         

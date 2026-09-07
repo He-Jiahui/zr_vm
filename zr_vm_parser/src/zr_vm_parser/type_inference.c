@@ -2453,11 +2453,16 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
 // 从赋值表达式推断类型
 TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
     TZrBool hasLeftType = ZR_FALSE;
+    SZrFileRange expectedLocation;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
         return ZR_FALSE;
     }
     SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
+    if (assignExpr->left == ZR_NULL || assignExpr->right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    expectedLocation = assignExpr->left->location;
     // 推断右值类型
     if (!ZrParser_ExpressionType_Infer(cs, assignExpr->right, result)) {
         return ZR_FALSE;
@@ -2477,6 +2482,18 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         if (binding != ZR_NULL) {
             SZrInferredType normalizedType;
             EZrSemanticNumericFactKind leftNumericKind = ZR_SEMANTIC_NUMERIC_FACT_UNKNOWN;
+            const SZrSemanticSymbolRecord *symbol =
+                    ZrParser_Semantic_FindSymbolById(cs->semanticContext, binding->symbolId);
+
+            if (binding->hasDeclarationRange) {
+                expectedLocation = binding->declarationRange;
+            }
+            if (symbol != ZR_NULL && symbol->astNode != ZR_NULL &&
+                symbol->astNode->type == ZR_AST_VARIABLE_DECLARATION &&
+                symbol->astNode->data.variableDeclaration.typeInfo != ZR_NULL &&
+                symbol->astNode->data.variableDeclaration.typeInfo->name != ZR_NULL) {
+                expectedLocation = symbol->astNode->data.variableDeclaration.typeInfo->name->location;
+            }
 
             ZrParser_InferredType_Copy(cs->state, &leftType, &binding->type);
             ZrParser_InferredType_Init(cs->state, &normalizedType, ZR_VALUE_TYPE_OBJECT);
@@ -2516,16 +2533,12 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             leftType.referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
             leftType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
         }
-        if (!type_inference_report_ownership_flow_escape(cs, &leftType, result, node->location)) {
-            ZrParser_InferredType_Free(cs->state, &leftType);
-            return ZR_FALSE;
-        }
-
-        // 2. 检查类型兼容性
-        if (leftType.baseType != ZR_VALUE_TYPE_OBJECT && result->baseType != ZR_VALUE_TYPE_OBJECT &&
-            !ZrParser_InferredType_IsCompatible(result, &leftType)) {
-            // 3. 报告错误如果不兼容
-            ZrParser_TypeError_Report(cs, "Assignment type mismatch", &leftType, result, node->location);
+        if (!ZrParser_AssignmentCompatibility_CheckDetailed(
+                    cs,
+                    &leftType,
+                    result,
+                    assignExpr->right->location,
+                    &expectedLocation)) {
             ZrParser_InferredType_Free(cs->state, &leftType);
             return ZR_FALSE;
         }

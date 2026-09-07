@@ -1474,3 +1474,17 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   Task 3/7/8 整体验收继续 pending。详见
   [Task 7.71 record](2026-09-07-plan03-task07-call-type-lifetime.md) 与
   [Semantic Call Fact Ownership](../../../parser-and-semantics/semantic-call-fact-ownership.md)。
+
+- 补充完成时间：2026-09-07 19:45 +08:00。Plan 03 Task 7.72 将 assignment 的
+  reference role、ownership/type compatibility 和 diagnostic ranges 收敛到 parser
+  canonical fact producer。LSP typecheck 对 assignment 节点调用完整 parser inference，
+  不再分别推断左右子树，也不再依赖已删除的 expected-type name lookup；左值即使赋值
+  失败仍保留 Write fact，右值保留 Read fact。新增四项 parser diagnostic/range regression
+  与 updated-snapshot highlight role assertion；GCC、Clang ASan/UBSan、MSVC 的
+  reference facts `11/11`、semantic-query parity `18/18`、local hover `12/12` 真实
+  exit 0，GCC/MSVC type-inference `124/124`。完整 analyzer/interface 的九项/六项
+  历史失败和 Clang LSan 继续登记，ownership diagnostics 保留冻结的 13 项失败，Clang
+  type-inference 另受固定文件名 hash 的当前
+  sanitizer 越界阻断。详见
+  [Task 7.72 record](2026-09-07-plan03-task07-assignment-reference-roles.md) 与
+  [Semantic Assignment Fact Ownership](../../../parser-and-semantics/semantic-assignment-fact-ownership.md)。

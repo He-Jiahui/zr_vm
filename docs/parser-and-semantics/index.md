@@ -400,6 +400,10 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - call signature interning 前保存 declared-function validity、receiver 与 effects
   - canonical type array 搬迁后仅通过稳定 TypeId 重绑定声明契约
   - 强制搬迁回归验证 callable identity、return substitution 与 readonly contract
+- `semantic-assignment-fact-ownership.md`
+  - parser 完整赋值推断统一产生左值 Write、右值 Read 和详细兼容性诊断
+  - diagnostic source/expected ranges 来自右值与 canonical binding declaration
+  - LSP 只投影事实，覆盖失败赋值及文档更新后的高亮角色
 - `lsp-typecheck-canonical-binding.md`
   - LSP typecheck 通过 identifier pattern range 命中 source-local canonical symbol
   - inferred binding 复用 SymbolId/TypeId 与 declaration range，避免重复 semantic records

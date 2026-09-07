@@ -773,9 +773,15 @@ static void test_resolved_extern_function_call_reuses_declaration_identity(void)
     destroy_compiler_state(cs);
 }
 
+#include "test_assignment_reference_diagnostic_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_assignment_identifier_records_write_reference_fact);
+    RUN_TEST(test_assignment_write_fact_preserves_ownership_diagnostic_range);
+    RUN_TEST(test_assignment_write_fact_preserves_type_diagnostic_ranges);
+    RUN_TEST(test_assignment_write_fact_rejects_incompatible_object_type);
+    RUN_TEST(test_assignment_write_fact_rejects_null_nonnullable_owner);
     RUN_TEST(test_reference_facts_resolve_linear_reaching_definition_to_latest_write);
     RUN_TEST(test_member_access_records_member_reference_fact);
     RUN_TEST(test_computed_member_access_records_member_reference_without_hiding_index_read);

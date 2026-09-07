@@ -1431,6 +1431,8 @@ static void test_named_call_compatibility_uses_parser_inference_projection(void)
 static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+    const char *assignment;
+    const char *nextCase;
 
     if (typecheck == NULL) {
         printf("FAIL: could not read semantic analyzer typecheck source\n");
@@ -1444,6 +1446,15 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     assert_text_contains_none(
         typecheck,
         "semantic_emit_ownership_compatibility_diagnostic");
+    assert_text_contains_none(typecheck, "semantic_analyzer_expected_type.h");
+    assignment = strstr(typecheck, "case ZR_AST_ASSIGNMENT_EXPRESSION:");
+    nextCase = assignment != NULL ? strstr(assignment, "case ZR_AST_FUNCTION_CALL:") : NULL;
+    assert_text_section_contains("assignment inference", assignment, nextCase,
+                                 "semantic_infer_node_type(");
+    assert_text_section_contains_none("assignment inference", assignment, nextCase,
+                                      "ZrParser_ExpressionType_Infer");
+    assert_text_section_contains_none("assignment inference", assignment, nextCase,
+                                      "ZrParser_AssignmentCompatibility_CheckDetailed");
 
     free(typecheck);
 }

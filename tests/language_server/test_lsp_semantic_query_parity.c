@@ -652,6 +652,10 @@ static void test_local_reference_consumers_use_canonical_facts(
         }
     }
     if (readHighlightCount != 1U || writeHighlightCount != 2U) {
+        snprintf(failureBuffer, sizeof(failureBuffer),
+                 "highlight roles read=%zu write=%zu",
+                 (size_t)readHighlightCount, (size_t)writeHighlightCount);
+        failure = failureBuffer;
         goto cleanup;
     }
 
@@ -711,6 +715,27 @@ static void test_local_reference_consumers_use_canonical_facts(
         !ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
                 state, context, &query, &highlights) ||
         highlights.length != 4U) {
+        goto cleanup;
+    }
+    readHighlightCount = 0U;
+    writeHighlightCount = 0U;
+    for (TZrSize index = 0U; index < highlights.length; index++) {
+        SZrLspDocumentHighlight **slot =
+                (SZrLspDocumentHighlight **)ZrCore_Array_Get(&highlights, index);
+        if (slot == ZR_NULL || *slot == ZR_NULL) {
+            goto cleanup;
+        }
+        if ((*slot)->kind == 2) {
+            readHighlightCount++;
+        } else if ((*slot)->kind == 3) {
+            writeHighlightCount++;
+        }
+    }
+    if (readHighlightCount != 1U || writeHighlightCount != 3U) {
+        snprintf(failureBuffer, sizeof(failureBuffer),
+                 "updated highlight roles read=%zu write=%zu",
+                 (size_t)readHighlightCount, (size_t)writeHighlightCount);
+        failure = failureBuffer;
         goto cleanup;
     }
 

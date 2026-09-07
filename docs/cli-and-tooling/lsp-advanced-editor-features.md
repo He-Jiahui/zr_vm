@@ -26,8 +26,6 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
@@ -94,8 +92,6 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
@@ -1079,8 +1075,10 @@ projects the resulting diagnostic; it no longer constructs a second mismatch
 diagnostic from inferred type names.
 
 The former `semantic_analyzer_type_mismatch_diagnostics` producer was removed.
-Its non-diagnostic declaration-range lookup remains in
-`semantic_analyzer_expected_type`, which does not create diagnostic policy.
+The later Task 7.72 assignment convergence also removes
+`semantic_analyzer_expected_type`: complete parser assignment inference now
+obtains the expected declaration range from the canonical binding. See
+[Semantic Assignment Fact Ownership](../parser-and-semantics/semantic-assignment-fact-ownership.md).
 Expression-statement traversal also leaves assignment compatibility to the
 dedicated assignment node so one source mismatch cannot produce an additional
 wide-range fact before the precise canonical fact.

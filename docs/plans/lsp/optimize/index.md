@@ -465,6 +465,18 @@ parser call-fact producer 在 signature interning 前保存 declared-function va
 `32/32`、canonical type graph `19/19`。Clang analyzer 不再触发原 UAF，仍有九项既有功能
 失败和 448 字节泄漏；完整 consumer 与 Task 3/7/8 门禁继续进行中。
 
+2026-09-07 已完成 [Plan 03 Task 7.72 assignment reference roles](2026-09-07-plan03-task07-assignment-reference-roles.md)：
+parser 完整赋值推断在左值发布 Write、右值发布 Read 后调用详细兼容性检查，LSP
+typecheck 只消费该完整事实并投影结构化诊断。canonical binding declaration 提供
+expected range，右值提供 source range；旧的 `semantic_analyzer_expected_type` helper
+已删除。新增 ownership、scalar、nominal 和 nullable 失败赋值回归，以及
+updated-snapshot 高亮角色断言。GCC、Clang ASan/UBSan、MSVC 的 reference-fact
+`11/11`、semantic-query parity `18/18`、local hover `12/12` 均真实 exit 0；
+GCC/MSVC type-inference `124/124`。三套 broad analyzer 仍为九项、完整 interface
+仍为六项既有失败，ownership diagnostics 仍为冻结的 13 项失败，Clang 继续报告
+既有 LSan；Clang type-inference 在固定字符串 hash 的当前越界测试处提前终止。详见
+[Semantic Assignment Fact Ownership](../../../parser-and-semantics/semantic-assignment-fact-ownership.md)。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期
