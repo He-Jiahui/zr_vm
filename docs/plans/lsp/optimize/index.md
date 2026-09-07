@@ -340,6 +340,12 @@ stdio handler 现在释放部分结果。RED 中五条路径各残留两块 runt
 正常对照及五个取消场景均归零。三工具链 CTest 6/6，Clang 无 sanitizer 报告，
 GCC handler 测试 Valgrind 为 0 字节/0 错误。Task 4/6 完整门禁仍 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub22 navigation handler status](2026-09-07-plan01-task02-sub22-navigation-handler-status.md)：
+navigation 十个 handler 采用显式 status/result，区分根 JSON 分配失败、精确取消、
+参数错误和合法空值。三工具链 handler 回归 11/11，八项相关目标均有通过证据；
+Clang inventory 修正 Node 12 前置条件后单独通过。Valgrind 356,758 次分配全部释放、
+0 字节/0 错误。其他 handler 和内部 serializer/runtime 分配错误仍 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

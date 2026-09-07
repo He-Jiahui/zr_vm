@@ -1,5 +1,13 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+static int dispatch_handler_result(SZrLspHandlerResult response,
+                                  cJSON **outResult,
+                                  EZrLspHandlerStatus *outStatus) {
+    *outResult = response.result;
+    *outStatus = response.status;
+    return 1;
+}
+
 int dispatch_request_method(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params,
@@ -16,19 +24,19 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_COMPLETION_ITEM_RESOLVE) == 0) {
         *outResult = handle_completion_item_resolve_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER) == 0) {
-        *outResult = handle_hover_request(server, params);
+        return dispatch_handler_result(handle_hover_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_ZR_RICH_HOVER) == 0) {
-        *outResult = handle_rich_hover_request(server, params);
+        return dispatch_handler_result(handle_rich_hover_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SIGNATURE_HELP) == 0) {
-        *outResult = handle_signature_help_request(server, params);
+        return dispatch_handler_result(handle_signature_help_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT) == 0) {
-        *outResult = handle_inlay_hint_request(server, params);
+        return dispatch_handler_result(handle_inlay_hint_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
-        *outResult = handle_definition_request(server, params);
+        return dispatch_handler_result(handle_definition_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_IMPLEMENTATION) == 0) {
         *outResult = handle_implementation_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0) {
-        *outResult = handle_references_request(server, params);
+        return dispatch_handler_result(handle_references_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_FORMATTING) == 0) {
         *outResult = handle_formatting_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RANGE_FORMATTING) == 0) {
@@ -82,13 +90,13 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC) == 0) {
         *outResult = handle_workspace_diagnostic_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_SYMBOL) == 0) {
-        *outResult = handle_document_symbols_request(server, params);
+        return dispatch_handler_result(handle_document_symbols_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0) {
-        *outResult = handle_workspace_symbols_request(server, params);
+        return dispatch_handler_result(handle_workspace_symbols_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_WILL_RENAME_FILES) == 0) {
         *outResult = handle_will_rename_files_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT) == 0) {
-        *outResult = handle_document_highlights_request(server, params);
+        return dispatch_handler_result(handle_document_highlights_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL) == 0) {
         *outResult = handle_semantic_tokens_full_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL_DELTA) == 0) {
@@ -100,7 +108,7 @@ int dispatch_request_method(SZrStdioServer *server,
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME) == 0) {
         *outResult = handle_rename_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT) == 0) {
-        *outResult = handle_native_declaration_document_request(server, params);
+        return dispatch_handler_result(handle_native_declaration_document_request(server, params), outResult, outStatus);
     } else if (strcmp(method, ZR_LSP_METHOD_ZR_PROJECT_MODULES) == 0) {
         *outResult = handle_project_modules_request(server, params);
     } else {

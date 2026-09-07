@@ -22,10 +22,34 @@ static SZrArray g_probe;
 static cJSON *g_params;
 static cJSON *g_response;
 static EHandlerQuery g_kind;
+static EZrLspHandlerStatus g_handlerStatus;
 static size_t g_liveBlocks;
+static size_t g_jsonAllocationAttempts;
 static size_t g_checkCount;
 static size_t g_cancelAtCheck;
 static TZrBool g_cancelObserved;
+
+static const char *g_navigationMethods[] = {
+        ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER,
+        ZR_LSP_METHOD_ZR_RICH_HOVER,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_SIGNATURE_HELP,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION,
+        ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_SYMBOL,
+        ZR_LSP_METHOD_WORKSPACE_SYMBOL,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT,
+};
+
+static void *fail_json_allocation(size_t size) {
+    ZR_UNUSED_PARAMETER(size);
+    return ZR_NULL;
+}
+
+static void *fail_first_json_allocation(size_t size) {
+    return g_jsonAllocationAttempts++ == 0 ? ZR_NULL : malloc(size);
+}
 
 static TZrPtr tracking_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
                                 TZrSize newSize, TZrInt64 flag) {
@@ -86,6 +110,7 @@ void setUp(void) {
     g_checkCount = 0;
     g_cancelAtCheck = 0;
     g_cancelObserved = ZR_FALSE;
+    g_jsonAllocationAttempts = 0;
     g_params = ZR_NULL;
     g_response = ZR_NULL;
     memset(&g_probe, 0, sizeof(g_probe));
@@ -108,6 +133,9 @@ void setUp(void) {
             g_server->state, g_server->context, g_uri, g_source, strlen(g_source), 1));
     g_params = cJSON_Parse("{\"textDocument\":{\"uri\":\"file:///handler-cancellation.zr\"},"
                           "\"position\":{\"line\":0,\"character\":3},\"query\":\"\","
+                          "\"uri\":\"file:///handler-cancellation.zr\","
+                          "\"range\":{\"start\":{\"line\":0,\"character\":0},"
+                          "\"end\":{\"line\":2,\"character\":1}},"
                           "\"context\":{\"includeDeclaration\":true},\"newName\":\"renamedTarget\"}");
     TEST_ASSERT_NOT_NULL(g_params);
 }
@@ -149,19 +177,17 @@ static TZrBool run_provider(void) {
 }
 
 static cJSON *run_handler(void) {
-    switch (g_kind) {
-        case QUERY_WORKSPACE_SYMBOLS:
-            return handle_workspace_symbols_request(g_server, g_params);
-        case QUERY_DOCUMENT_SYMBOLS:
-            return handle_document_symbols_request(g_server, g_params);
-        case QUERY_REFERENCES:
-            return handle_references_request(g_server, g_params);
-        case QUERY_RENAME:
-            return handle_rename_request(g_server, g_params);
-        case QUERY_HIGHLIGHTS:
-            return handle_document_highlights_request(g_server, g_params);
-    }
-    return ZR_NULL;
+    static const char *methods[] = {
+            ZR_LSP_METHOD_WORKSPACE_SYMBOL,
+            ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_SYMBOL,
+            ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES,
+            ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME,
+            ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT,
+    };
+    cJSON *result = ZR_NULL;
+    TEST_ASSERT_TRUE(dispatch_request_method(g_server, methods[g_kind], g_params,
+                                            &result, &g_handlerStatus));
+    return result;
 }
 
 static void expect_cancelled_handler_cleanup(EHandlerQuery kind) {
@@ -184,8 +210,14 @@ static void expect_cancelled_handler_cleanup(EHandlerQuery kind) {
             g_server->context, cancel_at_calibrated_check, ZR_NULL);
     g_response = run_handler();
     TEST_ASSERT_TRUE_MESSAGE(g_cancelObserved, "handler must reach the calibrated cancellation check");
-    TEST_ASSERT_TRUE(cJSON_IsNull(g_response) ||
-                     (cJSON_IsArray(g_response) && cJSON_GetArraySize(g_response) == 0));
+    if (g_kind == QUERY_RENAME) {
+        TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_OK, g_handlerStatus);
+        TEST_ASSERT_TRUE(cJSON_IsNull(g_response) ||
+                         (cJSON_IsArray(g_response) && cJSON_GetArraySize(g_response) == 0));
+    } else {
+        TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_CANCELLED, g_handlerStatus);
+        TEST_ASSERT_NULL(g_response);
+    }
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(g_server->context, ZR_NULL, ZR_NULL);
 }
 
@@ -212,6 +244,7 @@ static void test_highlights_release_cancelled_result(void) {
 static void test_ordinary_handlers_release_results(void) {
     for (g_kind = QUERY_WORKSPACE_SYMBOLS; g_kind <= QUERY_HIGHLIGHTS; g_kind++) {
         g_response = run_handler();
+        TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_OK, g_handlerStatus);
         if (g_kind == QUERY_RENAME) {
             TEST_ASSERT_TRUE(cJSON_IsObject(g_response));
         } else {
@@ -223,8 +256,71 @@ static void test_ordinary_handlers_release_results(void) {
     }
 }
 
+static void expect_navigation_allocation_failure(void *(*allocator)(size_t)) {
+    cJSON_Hooks hooks = {allocator, free};
+    for (size_t index = 0; index < sizeof(g_navigationMethods) / sizeof(g_navigationMethods[0]); index++) {
+        EZrLspHandlerStatus status = ZR_LSP_HANDLER_OK;
+        int handled;
+        g_jsonAllocationAttempts = 0;
+        cJSON_InitHooks(&hooks);
+        handled = dispatch_request_method(g_server, g_navigationMethods[index], g_params, &g_response, &status);
+        cJSON_InitHooks(ZR_NULL);
+        TEST_ASSERT_TRUE(handled);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LSP_HANDLER_INTERNAL_ERROR, status, g_navigationMethods[index]);
+        TEST_ASSERT_NULL(g_response);
+    }
+}
+
+static void test_navigation_json_allocation_failure_is_internal(void) {
+    expect_navigation_allocation_failure(fail_json_allocation);
+}
+
+static void test_navigation_first_json_allocation_failure_is_internal(void) {
+    expect_navigation_allocation_failure(fail_first_json_allocation);
+}
+
+static void test_navigation_cancelled_status_is_explicit(void) {
+    ZrLanguageServer_LspContext_SetRequestCancellationCheck(
+            g_server->context, cancel_at_calibrated_check, ZR_NULL);
+    for (size_t index = 0; index < sizeof(g_navigationMethods) / sizeof(g_navigationMethods[0]); index++) {
+        EZrLspHandlerStatus status = ZR_LSP_HANDLER_OK;
+        TEST_ASSERT_TRUE(dispatch_request_method(g_server, g_navigationMethods[index], g_params,
+                                                &g_response, &status));
+        TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LSP_HANDLER_CANCELLED, status, g_navigationMethods[index]);
+        TEST_ASSERT_NULL(g_response);
+    }
+    TEST_ASSERT_TRUE(g_cancelObserved);
+}
+
+static void test_navigation_invalid_params_remain_invalid(void) {
+    for (size_t index = 0; index < sizeof(g_navigationMethods) / sizeof(g_navigationMethods[0]); index++) {
+        EZrLspHandlerStatus status = ZR_LSP_HANDLER_OK;
+        TEST_ASSERT_TRUE(dispatch_request_method(g_server, g_navigationMethods[index], ZR_NULL,
+                                                &g_response, &status));
+        TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LSP_HANDLER_INVALID_PARAMS, status, g_navigationMethods[index]);
+        TEST_ASSERT_NULL(g_response);
+    }
+}
+
+static void test_navigation_valid_results_remain_successful(void) {
+    for (size_t index = 0; index < sizeof(g_navigationMethods) / sizeof(g_navigationMethods[0]); index++) {
+        EZrLspHandlerStatus status = ZR_LSP_HANDLER_INTERNAL_ERROR;
+        TEST_ASSERT_TRUE(dispatch_request_method(g_server, g_navigationMethods[index], g_params,
+                                                &g_response, &status));
+        TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LSP_HANDLER_OK, status, g_navigationMethods[index]);
+        TEST_ASSERT_NOT_NULL(g_response);
+        cJSON_Delete(g_response);
+        g_response = ZR_NULL;
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_navigation_json_allocation_failure_is_internal);
+    RUN_TEST(test_navigation_first_json_allocation_failure_is_internal);
+    RUN_TEST(test_navigation_cancelled_status_is_explicit);
+    RUN_TEST(test_navigation_invalid_params_remain_invalid);
+    RUN_TEST(test_navigation_valid_results_remain_successful);
     RUN_TEST(test_ordinary_handlers_release_results);
     RUN_TEST(test_workspace_symbols_release_cancelled_result);
     RUN_TEST(test_document_symbols_release_cancelled_result);

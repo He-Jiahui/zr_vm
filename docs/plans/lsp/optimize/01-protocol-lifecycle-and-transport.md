@@ -71,6 +71,7 @@ typedef enum EZrLspHandlerStatus {
 ```
 
 - [ ] handler 返回 status + result；“没有语义结果”可返回合法 null/empty，“解析失败”只能是 InvalidParams。
+- [x] Sub22：navigation 十个 handler 迁移为显式 status/result，JSON 根节点分配失败返回内部错误、取消返回 CANCELLED 并释放 JSON，正常空结果和参数错误保持；三工具链 11/11 handler 回归及八项相关检查通过，Valgrind 0 字节/0 错误；[记录](2026-09-07-plan01-task02-sub22-navigation-handler-status.md)。
 - [x] Sub05：call/type hierarchy 的参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub05-hierarchy-invalid-params.md)。
 - [x] Sub06：implementation、foldingRange、selectionRange、documentLink 和 codeLens 的参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub06-editor-feature-invalid-params.md)。
 - [x] Sub07：formatting、onTypeFormatting 和 codeAction 的 `textDocument` 参数解析失败返回 `-32602 InvalidParams`，provider 无结果仍返回合法空数组；[记录](2026-09-07-plan01-task02-sub07-editing-invalid-params.md)。

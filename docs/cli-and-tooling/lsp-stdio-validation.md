@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_language_server/stdio/stdio_handler_result.h
+  - zr_vm_language_server/stdio/stdio_json_rpc.h
+  - tests/language_server/lsp_capability_inventory_probe.c
   - tests/language_server/test_stdio_handler_cancellation.c
   - tests/cmake/zr_vm_lsp_stdio_handler_tests.cmake
   - zr_vm_language_server/stdio/stdio_navigation.c
@@ -38,6 +41,8 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/stdio/stdio_handler_result.h
+  - zr_vm_language_server/stdio/stdio_json_rpc.h
   - tests/language_server/test_stdio_handler_cancellation.c
   - tests/cmake/zr_vm_lsp_stdio_handler_tests.cmake
   - zr_vm_language_server/stdio/stdio_navigation.c
@@ -82,6 +87,30 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Navigation Handler Status
+
+Plan 01 Task 2 Sub22 migrates all ten handlers in `stdio_navigation.c` to
+`SZrLspHandlerResult`. The dispatcher forwards their explicit status and owned JSON
+result. Invalid request fields produce `INVALID_PARAMS`; successful empty semantic
+queries still return allocated JSON null/arrays. A failed root JSON allocation
+produces `INTERNAL_ERROR`, including a failure followed by successful allocations.
+Hover, rich hover and signature help no longer replace serialization failure with
+a successful JSON null. The request layer maps internal errors to `-32603`.
+
+The shared result helper checks the borrowed request cancellation callback before
+transferring JSON ownership. Cancellation deletes any result and returns
+`CANCELLED` with a null pointer, which maps to `-32800`. Provider output is released
+on both success and cancellation; callbacks remain owned by the active request.
+No-result provider boolean returns retain their existing semantic meaning.
+
+The handler test covers ten-method allocation, cancellation, invalid-parameter and
+success matrices, plus five calibrated partial-result cleanup cases and an ordinary
+control. The capability inventory probe retains production dispatch and adapts its
+ten handler stubs to the new return type. Other handlers still use the legacy
+pointer contract; nested serializer allocation failures and runtime parser/provider
+allocation classification remain separate work. Evidence and exact commands are in
+[Sub22](../plans/lsp/optimize/2026-09-07-plan01-task02-sub22-navigation-handler-status.md).
 
 ## Current Native Memory Matrix
 

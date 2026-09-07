@@ -20,6 +20,11 @@ typedef enum EZrLspHandlerStatus {
     ZR_LSP_HANDLER_INTERNAL_ERROR,
 } EZrLspHandlerStatus;
 
+typedef struct SZrLspHandlerResult {
+    EZrLspHandlerStatus status;
+    cJSON *result;
+} SZrLspHandlerResult;
+
 typedef enum EZrJsonRpcEnvelopeStatus {
     ZR_JSON_RPC_ENVELOPE_OK = 0,
     ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST,

@@ -54,16 +54,21 @@ static cJSON *inventory_handler_result(const char *handler,
     cJSON *name(SZrStdioServer *server, const cJSON *params) { \
         return inventory_handler_result(#name, server, params); \
     }
+#define INVENTORY_STATUS_HANDLER(name) \
+    SZrLspHandlerResult name(SZrStdioServer *server, const cJSON *params) { \
+        SZrLspHandlerResult response = {ZR_LSP_HANDLER_OK, inventory_handler_result(#name, server, params)}; \
+        return response; \
+    }
 
 INVENTORY_HANDLER(handle_completion_request)
 INVENTORY_HANDLER(handle_completion_item_resolve_request)
-INVENTORY_HANDLER(handle_hover_request)
-INVENTORY_HANDLER(handle_rich_hover_request)
-INVENTORY_HANDLER(handle_signature_help_request)
-INVENTORY_HANDLER(handle_inlay_hint_request)
-INVENTORY_HANDLER(handle_definition_request)
+INVENTORY_STATUS_HANDLER(handle_hover_request)
+INVENTORY_STATUS_HANDLER(handle_rich_hover_request)
+INVENTORY_STATUS_HANDLER(handle_signature_help_request)
+INVENTORY_STATUS_HANDLER(handle_inlay_hint_request)
+INVENTORY_STATUS_HANDLER(handle_definition_request)
 INVENTORY_HANDLER(handle_implementation_request)
-INVENTORY_HANDLER(handle_references_request)
+INVENTORY_STATUS_HANDLER(handle_references_request)
 INVENTORY_HANDLER(handle_formatting_request)
 INVENTORY_HANDLER(handle_range_formatting_request)
 INVENTORY_HANDLER(handle_ranges_formatting_request)
@@ -86,19 +91,20 @@ INVENTORY_HANDLER(handle_type_hierarchy_supertypes_request)
 INVENTORY_HANDLER(handle_type_hierarchy_subtypes_request)
 INVENTORY_HANDLER(handle_text_document_diagnostic_request)
 INVENTORY_HANDLER(handle_workspace_diagnostic_request)
-INVENTORY_HANDLER(handle_document_symbols_request)
-INVENTORY_HANDLER(handle_workspace_symbols_request)
+INVENTORY_STATUS_HANDLER(handle_document_symbols_request)
+INVENTORY_STATUS_HANDLER(handle_workspace_symbols_request)
 INVENTORY_HANDLER(handle_will_rename_files_request)
-INVENTORY_HANDLER(handle_document_highlights_request)
+INVENTORY_STATUS_HANDLER(handle_document_highlights_request)
 INVENTORY_HANDLER(handle_semantic_tokens_full_request)
 INVENTORY_HANDLER(handle_semantic_tokens_full_delta_request)
 INVENTORY_HANDLER(handle_semantic_tokens_range_request)
 INVENTORY_HANDLER(handle_prepare_rename_request)
 INVENTORY_HANDLER(handle_rename_request)
-INVENTORY_HANDLER(handle_native_declaration_document_request)
+INVENTORY_STATUS_HANDLER(handle_native_declaration_document_request)
 INVENTORY_HANDLER(handle_project_modules_request)
 
 #undef INVENTORY_HANDLER
+#undef INVENTORY_STATUS_HANDLER
 
 /* The guarded internal header is already loaded before strcmp is intercepted. */
 #define strcmp inventory_method_compare
