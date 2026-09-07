@@ -1,5 +1,7 @@
 ---
 related_code:
+  - tests/language_server/test_lsp_provider_cancellation.c
+  - tests/cmake/zr_vm_lsp_cancellation_tests.cmake
   - tests/language_server/test_stdio_request_progress.c
   - tests/cmake/zr_vm_lsp_stdio_progress_tests.cmake
   - tests/language_server/test_stdio_lsp_parse.c
@@ -32,6 +34,8 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - tests/language_server/test_lsp_provider_cancellation.c
+  - tests/cmake/zr_vm_lsp_cancellation_tests.cmake
   - tests/cmake/zr_vm_lsp_stdio_progress_tests.cmake
   - tests/language_server/test_stdio_request_progress.c
   - tests/cmake/zr_vm_lsp_stdio_parse_tests.cmake
@@ -53,6 +57,7 @@ plan_sources:
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_lsp_provider_cancellation.c
   - tests/language_server/test_stdio_lsp_parse.c
   - tests/language_server/collect_lsp_baseline_test.js
   - tests/language_server/stdio_protocol_conformance.js
@@ -283,6 +288,22 @@ Clang ASan/UBSan and MSVC pass 52/52 protocol cases, 6/6 direct C cases and 4/4 
 cases (progress, lifecycle, protocol and optional capabilities). Clang reports no
 sanitizer diagnostic. Cross-toolchain evidence is tracked in [Plan 01 Task 4
 Sub05](../plans/lsp/optimize/2026-09-07-plan01-task04-sub05-partial-result-cancellation.md).
+
+`language_server_provider_cancellation` checks seven provider projection loops:
+workspace symbols, document symbols, references, rename, incoming calls, outgoing
+calls and subtypes. Each case first obtains multiple results, installs a callback
+that requests cancellation after the first result, requires failure with exactly
+one result, then clears the callback and verifies the full result count again.
+The callback's borrowed array pointer remains valid only during that query. A
+cancelled query may leave an owned partial array; the caller releases symbol or
+location records directly, or uses the hierarchy-specific free functions for
+nested call ranges and hierarchy items. Context cleanup always clears the callback
+before destroying the result array and runtime.
+
+GCC, Clang ASan/UBSan and MSVC pass all seven cases and the registered CTest target.
+These synchronous checks cover provider result loops, not parser-internal scans,
+workspace-diagnostic traversal or the separate 50 ms cancellation latency budget.
+See [Plan 01 Task 4 Sub06](../plans/lsp/optimize/2026-09-07-plan01-task04-sub06-provider-loop-cancellation.md).
 
 `workDoneToken` and `partialResultToken` use the same finite, integral safe
 integer boundary for numeric tokens. Both positive and negative safe endpoints

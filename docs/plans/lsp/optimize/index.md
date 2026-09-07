@@ -328,6 +328,12 @@ notification 无副作用。GCC、Clang ASan/UBSan focused、MSVC 协议回归�
 接收器驱动的 C 回归均为 6/6，progress/lifecycle/protocol/optional-capability CTest
 均为 4/4。provider 长循环、content fence 与 Task 4/6 父门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 4 Sub06 provider-loop cancellation](2026-09-07-plan01-task04-sub06-provider-loop-cancellation.md)：
+七项同步回归验证 workspace/document symbols、references、rename、incoming/outgoing
+calls 和 subtypes 在首条结果后停止，清除 callback 后完整结果恢复。GCC、Clang
+ASan/UBSan 和 MSVC 均为 7/7，Clang 无 sanitizer 报告。此项未修改 provider 实现；
+parser 内部扫描、workspace diagnostics 和 50 ms 延迟门禁仍待验收。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；
