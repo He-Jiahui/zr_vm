@@ -1514,3 +1514,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   由现有 optional-capabilities 的真实 initialize 响应快照验证。GCC、Clang ASan/UBSan、
   MSVC 完整 source contracts 均 exit 0，协议回归均 `25/25`，Clang 该组无 sanitizer
   报告。详见 [Task 7.75 record](2026-09-07-plan03-task07-legend-contract-boundary.md)。
+
+- 2026-09-08 00:39 +08:00 完成：Plan 03 Task 3.26 为 semantic context 增加宿主提供的
+  64 位 external provider generation。调用、函数值、模块成员事实在分析时捕获输入，
+  script 内部 reset 保留输入，显式 context reset 回到 unavailable 0。实际 native
+  module-chain 回归覆盖 0、9、4294967305 及稳定 metadata 身份；三套 symbols `37/37`、
+  calls `32/32`、relations `29/29`、source contracts `76/76`、parity `20/20` 均 exit 0。
+  Clang 最终检查包含并行 Sub10/Sub11 的 IO/测试清理支持，开启 ASan/UBSan/LSan 无报告。
+  本项仅接受 producer 输入与投影，真实 reload、跨项目 generation、virtual URI 与
+  Task 3/7/8 总门禁继续未完成。详见
+  [Task 3.26 record](2026-09-07-plan03-task03-sub26-analysis-provider-generation.md)。

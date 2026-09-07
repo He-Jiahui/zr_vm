@@ -463,10 +463,11 @@ TZrSymbolId type_inference_member_symbol_id(
 }
 
 static TZrBool type_inference_reference_set_external_target(
+        const SZrSemanticContext *context,
         SZrSemanticReferenceFact *fact,
         const SZrTypeMemberInfo *memberInfo,
         EZrSemanticExternalTargetKind targetKind) {
-    if (fact == ZR_NULL || memberInfo == ZR_NULL ||
+    if (context == ZR_NULL || fact == ZR_NULL || memberInfo == ZR_NULL ||
         memberInfo->ownerTypeName == ZR_NULL ||
         ZrCore_String_GetByteLength(memberInfo->ownerTypeName) == 0U ||
         memberInfo->metadataToken == 0U || memberInfo->signatureToken == 0U ||
@@ -476,7 +477,7 @@ static TZrBool type_inference_reference_set_external_target(
     }
 
     fact->externalOwnerIdentity = memberInfo->ownerTypeName;
-    fact->externalProviderGeneration = 0U;
+    fact->externalProviderGeneration = context->externalProviderGeneration;
     fact->externalMetadataToken = memberInfo->metadataToken;
     fact->externalSignatureToken = memberInfo->signatureToken;
     fact->externalSignatureHash = memberInfo->signatureHash;
@@ -715,6 +716,7 @@ void type_inference_record_external_callable_member_reference_fact(
     fact.symbolId = symbolId;
     fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID &&
                       type_inference_reference_set_external_target(
+                              cs->semanticContext,
                               &fact,
                               memberInfo,
                               ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
@@ -763,7 +765,7 @@ void type_inference_record_external_member_reference_fact(
     fact.name = memberInfo->name;
     fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID &&
                       type_inference_reference_set_external_target(
-                              &fact, memberInfo, targetKind);
+                              cs->semanticContext, &fact, memberInfo, targetKind);
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
@@ -824,6 +826,7 @@ void type_inference_record_member_call_reference_fact(
     if (memberInfo->declarationNode == ZR_NULL) {
         fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID &&
                           type_inference_reference_set_external_target(
+                                  cs->semanticContext,
                                   &fact,
                                   memberInfo,
                                   ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);

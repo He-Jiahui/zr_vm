@@ -2478,6 +2478,7 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
 #include "test_semantic_query_symbol_specialization_cases.h"
 #include "test_semantic_query_type_use_cases.h"
 #include "test_semantic_scope_symbol_lifetime_cases.h"
+#include "test_semantic_external_provider_generation_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -2505,6 +2506,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_direct_import_alias);
     RUN_TEST(test_symbol_at_projects_native_module_function_identity);
     RUN_TEST(test_symbol_at_projects_native_module_chain_external_identity);
+    RUN_TEST(test_external_references_preserve_analysis_provider_generation);
     RUN_TEST(test_symbol_at_projects_native_generic_receiver_declaration_identity);
     RUN_TEST(test_visible_symbols_projects_destructured_import_and_type_value_aliases);
     RUN_TEST(test_visible_symbols_projects_source_type_members);

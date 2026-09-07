@@ -561,6 +561,12 @@ contracts 仅保留并行 stdio 的 `cJSON_CreateString("declaration")` 基线�
 完整 source contracts 全部 exit 0，三套 optional-capabilities 协议测试均 `25/25`，
 Clang 该组无 sanitizer 报告。canonical query 的源码边界检查继续保留。
 
+2026-09-08 00:39 +08:00 已完成 [Plan 03 Task 3.26 analysis provider generation](2026-09-07-plan03-task03-sub26-analysis-provider-generation.md)：
+parser 在分析时将宿主提供的 64 位代际写入 external call/member facts，script reset 保留
+输入，显式 context reset 归零。三套 symbols `37/37`、calls `32/32`、relations `29/29`、
+source contracts `76/76`、parity `20/20` 均 exit 0；Clang 最终窄门禁包含并行 Sub10/Sub11
+清理支持且无 sanitizer 报告。真实 reload 与跨项目代际、virtual URI 及父级总门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

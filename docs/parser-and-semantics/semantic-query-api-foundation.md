@@ -149,6 +149,7 @@ tests:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_contract.c
   - tests/parser/test_semantic_query_symbols.c
+  - tests/parser/test_semantic_external_provider_generation_cases.h
   - tests/parser/test_semantic_query_relations.c
   - tests/parser/test_semantic_query_calls.c
   - tests/parser/test_semantic_query_call_unresolved_reason_cases.h
@@ -224,6 +225,18 @@ the source-independent lookup after canonical identity has already resolved.
 `ZrParser_SemanticQuery_SymbolAt` is the resolved-reference projection for position-based symbol consumers. It reads the existing `FactsAt` result and succeeds only when the selected reference fact is resolved and has a valid `symbolId`. The query copies the fact's `symbolId`, `typeId`, role, declaration range, and direct or resolved definition range, then returns borrowed display and signature strings from that same fact. It clears the caller output and returns `ZR_FALSE` for a missing or unresolved reference. `ownerSymbolId` remains unavailable unless the producer has a canonical symbol owner; consumers must not infer it from source text.
 
 An imported member without a source declaration range can instead carry a complete external target identity. `SymbolAt` projects the snapshot-borrowed owner identity, provider generation, metadata token, signature token, signature hash, target kind, and `hasExternalTarget` flag from the selected reference fact. Generation zero means that the producer did not publish a provider generation; consumers preserve that value and never derive one from load order, URI, or module spelling. `hasExternalTarget` is true only when the producer also supplied a valid stable SymbolId and nonzero metadata/signature tokens and hash. The owner string and all returned display strings remain borrowed from the semantic snapshot.
+
+The host can supply `SZrSemanticContext.externalProviderGeneration` before
+metadata projection and analysis. External call, callable-value, and member
+reference producers capture this 64-bit provider-set epoch in their facts.
+`SemanticContext_New` and `SemanticContext_Reset` initialize the input to zero.
+The script compilation entry preserves that input across its internal reset of
+previous facts. The host owns epoch selection and must rebuild semantic facts
+when its admitted provider set changes; consumers neither restamp existing
+facts nor derive an epoch from metadata names. The producer regression is
+`tests/parser/test_semantic_external_provider_generation_cases.h`; production
+LSP reload integration remains pending after
+[Plan 03 Task 3.26](../plans/lsp/optimize/2026-09-07-plan03-task03-sub26-analysis-provider-generation.md).
 
 Source declaration identity remains authoritative when its exact URI and range are available. For a sourceless imported member, `lsp_external_target_identity.c` accepts a metadata row only when owner identity, metadata token, signature token, signature hash, and target kind all agree with the parser query. A changed hash, incomplete identity, or mismatched row fails closed. The LSP metadata provider may locate candidate rows while loading an imported module, but it cannot authorize a semantic target by member name alone. Semantic token classification consumes the external target kind from `SymbolAt`; the token scanner no longer performs an import-chain metadata lookup or reconstructs kind from a displayed member.
 

@@ -710,7 +710,11 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     SZrScript *script = &node->data.script;
 
     if (cs->semanticContext != ZR_NULL) {
+        const TZrUInt64 externalProviderGeneration =
+                cs->semanticContext->externalProviderGeneration;
         ZrParser_SemanticContext_Reset(cs->semanticContext);
+        cs->semanticContext->externalProviderGeneration =
+                externalProviderGeneration;
         compiler_semantic_ir_reset(cs);
         if (cs->hirModule != ZR_NULL) {
             ZrParser_HirModule_Free(cs->state, cs->hirModule);

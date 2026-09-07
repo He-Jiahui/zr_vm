@@ -168,6 +168,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
         return;
     }
 
+    context->externalProviderGeneration = 0U;
     context->nextTypeId = ZR_SEMANTIC_ID_FIRST;
     context->nextSymbolId = ZR_SEMANTIC_ID_FIRST;
     context->nextOverloadSetId = ZR_SEMANTIC_ID_FIRST;
