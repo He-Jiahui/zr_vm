@@ -55,3 +55,21 @@ TZrBool ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
            symbol->externalSignatureToken == memberInfo->signatureToken &&
            symbol->externalSignatureHash == memberInfo->signatureHash;
 }
+
+TZrBool ZrLanguageServer_LspExternalTargetIdentity_MatchesReference(
+    const SZrParserSemanticSymbolQuery *symbol,
+    const SZrParserSemanticExternalReferenceQuery *reference) {
+    return ZrLanguageServer_LspExternalTargetIdentity_IsAvailable(symbol) &&
+           reference != ZR_NULL &&
+           reference->symbolId != ZR_SEMANTIC_ID_INVALID &&
+           reference->externalOwnerIdentity != ZR_NULL &&
+           ZrCore_String_Equal(
+                   reference->externalOwnerIdentity,
+                   symbol->externalOwnerIdentity) &&
+           reference->externalProviderGeneration ==
+                   symbol->externalProviderGeneration &&
+           reference->externalMetadataToken == symbol->externalMetadataToken &&
+           reference->externalSignatureToken == symbol->externalSignatureToken &&
+           reference->externalSignatureHash == symbol->externalSignatureHash &&
+           reference->externalTargetKind == symbol->externalTargetKind;
+}

@@ -521,6 +521,13 @@ target kind 跨快照匹配。不同别名、同名本地符号和移除 AST 的
 contracts 仅保留并行 stdio 的 `cJSON_CreateString("declaration")` 基线失败。
 模块契约见 [Cross-Snapshot External References](../../../cli-and-tooling/lsp-cross-snapshot-external-references.md)。
 
+2026-09-07 23:17 +08:00 已完成 [Plan 03 Task 7.74 external highlight identity](2026-09-07-plan03-task07-external-highlight-identity.md)：
+外部成员高亮改为消费 parser `ExternalReferences`，与跨快照 references 共用完整身份比较。
+相同 SymbolId 不再接纳失效的 metadata 候选；十种候选失效、读取/写入角色、精确范围和
+移除 AST 的 binary/native 回归通过。GCC/MSVC parity `20/20`，Clang 20 项功能通过但
+保留既有 `5069 bytes/41 allocations` LSan；三套 local hover `12/12`。local query
+两项历史失败和 source contracts 的单项 stdio 构造方式断言继续登记，Task 3/7/8 总门禁未关闭。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

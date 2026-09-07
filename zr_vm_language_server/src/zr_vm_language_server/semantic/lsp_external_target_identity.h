@@ -8,5 +8,8 @@ TZrBool ZrLanguageServer_LspExternalTargetIdentity_IsAvailable(
 TZrBool ZrLanguageServer_LspExternalTargetIdentity_MatchesMember(
     const SZrParserSemanticSymbolQuery *symbol,
     const SZrLspResolvedMetadataMember *member);
+TZrBool ZrLanguageServer_LspExternalTargetIdentity_MatchesReference(
+    const SZrParserSemanticSymbolQuery *symbol,
+    const SZrParserSemanticExternalReferenceQuery *reference);
 
 #endif

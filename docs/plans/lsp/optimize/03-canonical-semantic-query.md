@@ -1499,3 +1499,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   仅保留并行 stdio 的 `cJSON_CreateString("declaration")` 基线失败。
   详见 [Task 7.73 record](2026-09-07-plan03-task07-cross-snapshot-external-references.md)
   与 [Cross-Snapshot External References](../../../cli-and-tooling/lsp-cross-snapshot-external-references.md)。
+
+- 2026-09-07 23:17 +08:00 完成：Plan 03 Task 7.74 将外部成员高亮候选切换为 parser
+  `ExternalReferences`，与跨快照 references 共用完整 owner/generation/token/hash/kind
+  比较。失效的候选不能凭相同 SymbolId 生成高亮，range 与 read/write role 仍由现有
+  文档内投影处理。binary/native 十种候选失效和移除 AST 回归通过；GCC/MSVC parity
+  `20/20`，Clang 20 项功能通过且仅保留既有 `5069 bytes/41 allocations` LSan；
+  三套 local hover `12/12`。local query 两项历史失败及 Clang 464-byte LSan、source
+  contracts 单项 stdio 构造方式断言继续登记。详见
+  [Task 7.74 record](2026-09-07-plan03-task07-external-highlight-identity.md)。

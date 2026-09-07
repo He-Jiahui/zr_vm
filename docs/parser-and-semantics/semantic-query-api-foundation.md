@@ -998,6 +998,15 @@ range and reference kind, and de-duplicates equal locations. Declaration,
 write, and member-write facts become write highlights; other resolved uses
 become read highlights. A later write fact upgrades an equal read range.
 
+Imported external members use parser `ExternalReferences` for references and
+same-document highlights. Both consumers compare complete external owner,
+provider generation, metadata token, signature token/hash and target kind through
+`LspExternalTargetIdentity_MatchesReference`. A matching local SymbolId cannot
+make an incomplete or mismatched external candidate valid. Highlight ranges and
+read/write roles use the same document-local projector as source facts. The
+[external reference module](../cli-and-tooling/lsp-cross-snapshot-external-references.md)
+records identity lifetime, generation checks and cross-snapshot traversal.
+
 Some LSP-created reference facts predate source ownership and carry a null
 source. The projection binds only those copied ranges through the analyzer's
 single AST snapshot helper; it never substitutes the request URI. Invalid
@@ -1012,9 +1021,9 @@ whether any local location was appended. That distinction preserves a valid
 zero-local-reference result so later project aggregation can still run. The
 project fallback no longer reads `SZrReferenceTracker`; invalid ids, missing
 semantic contexts, and cancellation still fail closed. Imported-member
-aggregation across project records remains a separate name-keyed migration
-boundary and must not be described as canonical until it consumes stable
-module and symbol identities.
+aggregation with complete external identity now uses the cross-snapshot query
+above. Module-entry and receiver type-member legacy adapters remain separate
+migration boundaries.
 
 Source-local definition projection follows the same source-ownership rule.
 It first queries `DefinitionsOf` at the exact request position. When that

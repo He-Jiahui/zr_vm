@@ -82,23 +82,6 @@ static TZrBool cross_snapshot_references_append_analyzer(
     return ZR_TRUE;
 }
 
-static TZrBool cross_snapshot_references_external_identity_matches(
-        const SZrParserSemanticExternalReferenceQuery *reference,
-        const SZrParserSemanticSymbolQuery *target) {
-    return reference != ZR_NULL && target != ZR_NULL &&
-           target->hasExternalTarget &&
-           reference->externalOwnerIdentity != ZR_NULL &&
-           ZrCore_String_Equal(
-                   reference->externalOwnerIdentity,
-                   target->externalOwnerIdentity) &&
-           reference->externalProviderGeneration ==
-                   target->externalProviderGeneration &&
-           reference->externalMetadataToken == target->externalMetadataToken &&
-           reference->externalSignatureToken == target->externalSignatureToken &&
-           reference->externalSignatureHash == target->externalSignatureHash &&
-           reference->externalTargetKind == target->externalTargetKind;
-}
-
 static TZrBool cross_snapshot_references_append_external_analyzer(
         SZrState *state,
         SZrLspContext *context,
@@ -128,7 +111,8 @@ static TZrBool cross_snapshot_references_append_external_analyzer(
             ZrCore_Array_Free(state, &externalReferences);
             return ZR_FALSE;
         }
-        if (cross_snapshot_references_external_identity_matches(reference, target)) {
+        if (ZrLanguageServer_LspExternalTargetIdentity_MatchesReference(
+                    target, reference)) {
             *outAppended =
                     ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
                             state,

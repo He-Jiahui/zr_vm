@@ -3,9 +3,14 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.h
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.c
 tests:
   - tests/language_server/test_lsp_cross_snapshot_external_reference_cases.h
   - tests/language_server/test_lsp_semantic_query_parity.c
@@ -53,10 +58,19 @@ snapshots. Temporary `ExternalReferences` arrays are freed after each analyzer.
 Returned locations belong to the caller. Existing request cancellation checks
 apply during file and fact traversal. This module does not add a retained cache.
 
-Same-document highlights keep the canonical SymbolId/role projection and share
-the imported-target validity gate. Source definition navigation still uses exact
-declaration identity. Module-entry and receiver type-member legacy reference
-adapters remain separate pending migrations.
+Same-document external highlights also consume parser `ExternalReferences`.
+Both consumers use `LspExternalTargetIdentity_MatchesReference` to compare the
+complete identity. A candidate's local SymbolId need not equal the selected
+target's id, but both must be valid. Candidate facts with incomplete identity or
+unresolved status cannot be accepted through a same-id local reference lookup.
+
+The highlight range projector accepts the fact's range and role, filters to the
+requested document, and merges duplicate ranges with write precedence. It does
+not reconstruct a reference fact from metadata or add a local declaration for
+an external member. Ordinary source highlights retain the canonical SymbolId
+path. Source definition navigation still uses exact declaration identity.
+Module-entry and receiver type-member legacy reference adapters remain separate
+pending migrations.
 
 ## Evidence and Regression
 
@@ -72,14 +86,19 @@ The generated binary and native fixtures place references behind different impor
 aliases in two project modules and include a same-named local decoy. The sibling
 analyzer's AST, symbol table and reference tracker are detached before querying.
 The test then invalidates metadata/signature tokens, signature hash, owner,
-generation, resolution and target kind independently. Callable inference may
+generation, resolution, external marking, SymbolId and target kind independently.
+Both references and same-document highlights reject those candidates. Published
+read and member-write roles retain their exact ranges and highlight kinds.
+Callable inference may
 publish several facts at the same range, so each mutation covers every external
 fact at the sibling usage before restoring the original snapshot. Target invalidation must
 also reject include-declaration and highlight requests.
 
 ## File Boundaries
 
-New traversal and identity matching stay in the focused cross-snapshot module.
+Traversal stays in the focused cross-snapshot module. Exact external identity
+comparison is shared in `lsp_external_target_identity.c`; the reference query
+module owns same-document highlight filtering and range projection.
 The oversized `lsp_semantic_query.c` changes only dispatch and the existing
 identity gate. Its remaining receiver-member AST traversal is a concrete future
 extraction/removal boundary, not expanded by this change. Test setup is isolated

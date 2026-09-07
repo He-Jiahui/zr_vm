@@ -1529,6 +1529,10 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     assert_text_contains(
         referenceQuery, "ZrParser_SemanticQuery_DeclarationOf");
     assert_text_contains(
+        referenceQuery, "ZrParser_SemanticQuery_ExternalReferences");
+    assert_text_contains(
+        referenceQuery, "ZrLanguageServer_LspExternalTargetIdentity_MatchesReference");
+    assert_text_contains(
         referenceQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
     assert_text_contains_none(referenceQuery, "referenceTracker");
     assert_text_contains_none(referenceQuery, "symbol->name");
@@ -1563,12 +1567,15 @@ static void test_cross_snapshot_references_use_external_identity_queries(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c");
     char *externalMetadata = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_external_metadata_identity.c");
+    char *externalIdentity = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_target_identity.c");
 
-    if (crossSnapshot == NULL || externalMetadata == NULL) {
+    if (crossSnapshot == NULL || externalMetadata == NULL || externalIdentity == NULL) {
         printf("FAIL: could not read cross-snapshot reference sources\n");
         g_failures++;
         free(crossSnapshot);
         free(externalMetadata);
+        free(externalIdentity);
         return;
     }
 
@@ -1583,16 +1590,20 @@ static void test_cross_snapshot_references_use_external_identity_queries(void) {
     assert_text_contains(
         crossSnapshot, "ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal");
     assert_text_contains(crossSnapshot, "externalProviderGeneration");
-    assert_text_contains(crossSnapshot, "externalMetadataToken");
-    assert_text_contains(crossSnapshot, "externalSignatureToken");
-    assert_text_contains(crossSnapshot, "externalSignatureHash");
-    assert_text_contains(crossSnapshot, "externalTargetKind");
+    assert_text_contains(
+        crossSnapshot, "ZrLanguageServer_LspExternalTargetIdentity_MatchesReference");
+    assert_text_contains(externalIdentity, "externalProviderGeneration");
+    assert_text_contains(externalIdentity, "externalMetadataToken");
+    assert_text_contains(externalIdentity, "externalSignatureToken");
+    assert_text_contains(externalIdentity, "externalSignatureHash");
+    assert_text_contains(externalIdentity, "externalTargetKind");
     assert_text_contains_none(externalMetadata, "declarationNode");
     assert_text_contains_none(externalMetadata, "strcmp");
     assert_text_contains_none(externalMetadata, "memberName");
 
     free(crossSnapshot);
     free(externalMetadata);
+    free(externalIdentity);
 }
 
 static void test_import_chain_terminal_member_uses_external_identity(void) {

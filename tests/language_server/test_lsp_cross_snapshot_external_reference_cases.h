@@ -43,6 +43,26 @@ static TZrBool external_reference_locations_match(
     return foundMain && (!includeSibling || foundSibling);
 }
 
+static TZrBool external_reference_highlight_matches(
+        const SZrArray *highlights,
+        SZrLspPosition position,
+        TZrSize memberLength,
+        TZrInt32 kind) {
+    const SZrLspDocumentHighlight *highlight;
+
+    if (highlights->length != 1U) {
+        return ZR_FALSE;
+    }
+    highlight = *(SZrLspDocumentHighlight **)ZrCore_Array_Get(
+            (SZrArray *)highlights, 0U);
+    return highlight != ZR_NULL && highlight->kind == kind &&
+           highlight->range.start.line == position.line &&
+           highlight->range.end.line == position.line &&
+           highlight->range.start.character == position.character &&
+           highlight->range.end.character ==
+                   position.character + (TZrInt32)memberLength;
+}
+
 static void test_cross_snapshot_imported_references_use_external_identity(
         SZrState *state,
         TZrBool native) {
@@ -232,7 +252,16 @@ static void test_cross_snapshot_imported_references_use_external_identity(
     }
     free_local_reference_projection_results(state, &references, ZR_NULL);
 
-    for (index = 0U; index < 8U; index++) {
+    failure = "external highlights must survive detached legacy state";
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                state, context, &siblingQuery, &highlights) ||
+        !external_reference_highlight_matches(
+                &highlights, siblingPosition, strlen(member), 2)) {
+        goto cleanup;
+    }
+    free_local_reference_projection_results(state, ZR_NULL, &highlights);
+
+    for (index = 0U; index < 10U; index++) {
         memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
                savedReferences, savedReferenceCount * sizeof(*savedReferences));
         for (TZrSize referenceIndex = 0U;
@@ -258,6 +287,10 @@ static void test_cross_snapshot_imported_references_use_external_identity(
                 case 4U: siblingReference->isResolved = ZR_FALSE; break;
                 case 5U: siblingReference->externalSignatureToken++; break;
                 case 6U: siblingReference->externalMetadataToken++; break;
+                case 8U: siblingReference->hasExternalTarget = ZR_FALSE; break;
+                case 9U:
+                    siblingReference->symbolId = ZR_SEMANTIC_ID_INVALID;
+                    break;
                 default:
                     siblingReference->externalTargetKind =
                             ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN;
@@ -276,14 +309,48 @@ static void test_cross_snapshot_imported_references_use_external_identity(
             goto cleanup;
         }
         free_local_reference_projection_results(state, &references, ZR_NULL);
+        if (ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                    state, context, &siblingQuery, &highlights) ||
+            highlights.length != 0U) {
+            snprintf(failureBuffer, sizeof(failureBuffer),
+                     "invalid local external identity case=%zu returned %zu highlights",
+                     (size_t)index, (size_t)highlights.length);
+            failure = failureBuffer;
+            goto cleanup;
+        }
+        free_local_reference_projection_results(state, ZR_NULL, &highlights);
     }
+    memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
+           savedReferences, savedReferenceCount * sizeof(*savedReferences));
+    for (index = 0U; index < savedReferenceCount; index++) {
+        SZrSemanticReferenceFact *reference =
+                (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &siblingQuery.analyzer->semanticContext->referenceFacts,
+                        index);
+        if (reference->hasExternalTarget &&
+            reference->range.start.line == siblingPosition.line + 1 &&
+            reference->range.start.column == siblingPosition.character + 1) {
+            reference->kind = ZR_SEMANTIC_REFERENCE_MEMBER_WRITE;
+        }
+    }
+    failure = "external highlights must preserve the published write role";
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                state, context, &siblingQuery, &highlights) ||
+        !external_reference_highlight_matches(
+                &highlights, siblingPosition, strlen(member), 3)) {
+        goto cleanup;
+    }
+    free_local_reference_projection_results(state, ZR_NULL, &highlights);
     memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
            savedReferences, savedReferenceCount * sizeof(*savedReferences));
     query.canonicalSymbol.externalMetadataToken = 0U;
     failure = "incomplete target identity must reject declaration and references";
     if (ZrLanguageServer_LspSemanticQuery_AppendReferences(
                 state, context, &query, ZR_TRUE, &references) ||
-        references.length != 0U) {
+        references.length != 0U ||
+        ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                state, context, &query, &highlights) ||
+        highlights.length != 0U) {
         goto cleanup;
     }
     query.canonicalSymbol.externalMetadataToken = targetMetadataToken;
