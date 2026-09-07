@@ -1508,3 +1508,9 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   三套 local hover `12/12`。local query 两项历史失败及 Clang 464-byte LSan、source
   contracts 单项 stdio 构造方式断言继续登记。详见
   [Task 7.74 record](2026-09-07-plan03-task07-external-highlight-identity.md)。
+
+- 2026-09-07 23:26 +08:00 完成：Plan 03 Task 7.75 修正 semantic-token 测试职责，
+  canonical query 源码检查不再要求旧 cJSON 单字符串创建表达式；`declaration` legend
+  由现有 optional-capabilities 的真实 initialize 响应快照验证。GCC、Clang ASan/UBSan、
+  MSVC 完整 source contracts 均 exit 0，协议回归均 `25/25`，Clang 该组无 sanitizer
+  报告。详见 [Task 7.75 record](2026-09-07-plan03-task07-legend-contract-boundary.md)。

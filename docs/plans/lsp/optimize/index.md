@@ -424,6 +424,12 @@ SymbolId/TypeId 的引用发布签名。三个工具链相关单元各 129/129�
 悬停并推进到 workspace diagnostic 内部错误。原有 Clang cancellation setup 与
 父级完整验证继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub06 cast operand semantic facts](2026-09-07-plan01-task06-sub06-cast-operand-semantic-facts.md)：
+cast 分析操作数后发布自己的目标类型，内部调用的 canonical 身份保持。
+三工具链专项 6/6、call query 32/32、type graph 19/19；两个 Valgrind 均为
+0 字节/0 错误。MSVC 原版 smoke 通过 binary 跳转并推进至 rename 显示断言；
+Linux CLI artifact member 身份与导入缓存泄漏另行跟进，父门禁继续 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub08 type-test string boundary](2026-09-07-plan01-task06-sub08-type-test-string-boundary.md)：
 修正既有 parser 测试 source-name literal 的硬编码长度，Clang ASan 越界消失。
 三工具链功能均为 124/124，GCC/MSVC exit 0；Clang 继续报告导入模块缓存
@@ -532,6 +538,12 @@ contracts 仅保留并行 stdio 的 `cJSON_CreateString("declaration")` 基线�
 移除 AST 的 binary/native 回归通过。GCC/MSVC parity `20/20`，Clang 20 项功能通过但
 保留既有 `5069 bytes/41 allocations` LSan；三套 local hover `12/12`。local query
 两项历史失败和 source contracts 的单项 stdio 构造方式断言继续登记，Task 3/7/8 总门禁未关闭。
+
+2026-09-07 23:26 +08:00 已完成 [Plan 03 Task 7.75 legend contract test boundary](2026-09-07-plan03-task07-legend-contract-boundary.md)：
+移除将 semantic-token canonical query 源码检查绑定到旧 cJSON 创建方式的断言；legend
+值由现有真实 initialize 响应的完整快照断言负责。GCC、Clang ASan/UBSan、MSVC 的
+完整 source contracts 全部 exit 0，三套 optional-capabilities 协议测试均 `25/25`，
+Clang 该组无 sanitizer 报告。canonical query 的源码边界检查继续保留。
 
 ## 2. 审查证据
 

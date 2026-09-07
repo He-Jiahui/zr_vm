@@ -745,8 +745,6 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c");
     char *canonicalSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_token_canonical.c");
-    char *stdioSource = read_repo_text_file_owned(
-        "zr_vm_language_server/stdio/stdio_semantic_tokens_json.c");
     const char *declarationsStart;
     const char *declarationsEnd;
     const char *canonicalStart;
@@ -756,13 +754,6 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
 
     if (source == NULL || canonicalSource == NULL) {
         printf("FAIL: could not read lsp_semantic_tokens.c\n");
-        g_failures++;
-        free(source);
-        free(canonicalSource);
-        return;
-    }
-    if (stdioSource == NULL) {
-        printf("FAIL: could not read stdio_semantic_tokens_json.c\n");
         g_failures++;
         free(source);
         free(canonicalSource);
@@ -824,11 +815,9 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
                                       scanStart,
                                       scanEnd,
                                       "ZrLanguageServer_SymbolTable_LookupAtPosition");
-    assert_text_contains(stdioSource, "cJSON_CreateString(\"declaration\")");
-
+    /* Wire legend values are checked by stdio_optional_capabilities_smoke.js. */
     free(source);
     free(canonicalSource);
-    free(stdioSource);
 }
 
 static void test_folding_ranges_uses_content_snapshot(void) {

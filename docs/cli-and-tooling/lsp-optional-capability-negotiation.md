@@ -14,6 +14,8 @@ plan_sources:
 tests:
   - tests/language_server/test_stdio_optional_capability_allocations.c
   - tests/language_server/stdio_optional_capabilities_smoke.js
+  - tests/language_server/stdio_capability_snapshot.js
+  - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/stdio_protocol_conformance.js
   - tests/language_server/stdio_protocol_inventory.js
   - tests/language_server/stdio_smoke.js
@@ -81,6 +83,14 @@ two precise nonoverlapping formatting edits when ranges are enabled. Ordinary
 completion preserves the two visible function labels and an exact text edit;
 single-range formatting preserves its exact edit. Repeated initialize is
 rejected and the original request behavior remains unchanged.
+
+`stdio_capability_snapshot.js` also requires the semantic-token legend's exact
+`tokenModifiers: ['declaration']` value. The 21 initialize negotiation cases
+compare parsed responses against this object; four additional cases exercise
+requests under each optional-provider combination. This protocol assertion owns
+the wire legend contract. The canonical semantic-token source check only guards
+parser query usage and forbidden reconstruction calls. It does not pin the
+cJSON allocation helper used to construct the legend.
 
 Every fixture owns its child process, completes shutdown/exit, checks exit zero
 and empty stderr, and terminates on failure. The two source documents belong to
