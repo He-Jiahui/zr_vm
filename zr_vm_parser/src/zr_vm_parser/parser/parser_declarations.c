@@ -162,6 +162,12 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     SZrFileRange returnDelimiterLoc;
     EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
     TZrBool isAsync = ZR_FALSE;
+    SZrAstNode *nameNode = ZR_NULL;
+    SZrGenericDeclaration *generic = ZR_NULL;
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrParameter *args = ZR_NULL;
+    SZrType *returnType = ZR_NULL;
+    SZrAstNode *body = ZR_NULL;
 
     memset(&fnKeywordLoc, 0, sizeof(fnKeywordLoc));
     memset(&returnDelimiterLoc, 0, sizeof(returnDelimiterLoc));
@@ -195,23 +201,20 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
                                          "keywordless function declaration",
                                          "Prefix the declaration with `fn` and keep `:` before its return TypeRef.");
         }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
     fnKeywordLoc = get_current_token_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
 
     // 解析函数名（不需要function关键字，直接是标识符）
-    SZrAstNode *nameNode = parse_identifier(ps);
+    nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
     SZrFileRange nameLoc = nameNode->location;
 
     // 解析泛型声明（可选）
-    SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
@@ -219,9 +222,6 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrParser_Lexer_Next(ps->lexer);
-
-    SZrAstNodeArray *params = ZR_NULL;
-    SZrParameter *args = ZR_NULL; // 可变参数
 
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         // 只有可变参数的情况 (...name: type)
@@ -232,8 +232,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         } else {
             // 如果解析失败，清理并返回
             // parse_parameter 已经报告了错误（如果 token 不是标识符）
-            ZrParser_AstNodeArray_Free(ps->state, decorators);
-            return ZR_NULL;
+            goto cleanup;
         }
         params = ZrParser_AstNodeArray_New(ps->state, 0);
     } else {
@@ -248,11 +247,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
                 } else {
                     // 如果解析失败，清理并返回
                     // parse_parameter 已经报告了错误（如果 token 不是标识符）
-                    if (params != ZR_NULL) {
-                        ZrParser_AstNodeArray_Free(ps->state, params);
-                    }
-                    ZrParser_AstNodeArray_Free(ps->state, decorators);
-                    return ZR_NULL;
+                    goto cleanup;
                 }
             } else {
                 // 逗号后不是可变参数，回退
@@ -263,16 +258,11 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
 
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
         report_missing_parameter_list_close(ps, get_current_token_location(ps));
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
-        }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 解析返回类型（可选）
-    SZrType *returnType = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_COLON) {
         returnDelimiterLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_COLON);
@@ -281,39 +271,22 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         report_removed_legacy_syntax(ps,
                                      "function definition arrow",
                                      "Use `:` before the declared return TypeRef; reserve `=>` for anonymous expression bodies.");
-        free_identifier_node_from_ptr(ps->state, name);
-        free_generic_declaration(ps->state, generic);
-        free_ast_node_array_with_elements(ps->state, params);
-        free_parameter_node_from_ptr(ps->state, args);
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
 
     if (!parse_optional_where_clauses(ps, generic)) {
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
-        }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
 
     if (ps->lexer->t.token != ZR_TK_LBRACE) {
         report_missing_declaration_body_open(ps, "function declaration", get_current_token_location(ps));
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
-        }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
 
     // 解析函数体
-    SZrAstNode *body = parse_declaration_body_block(ps, "function declaration");
+    body = parse_declaration_body_block(ps, "function declaration");
     if (body == ZR_NULL) {
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
-        }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
 
     SZrFileRange endLoc = body->location;
@@ -321,11 +294,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_FUNCTION_DECLARATION, funcLoc);
     if (node == ZR_NULL) {
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
-        }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        return ZR_NULL;
+        goto cleanup;
     }
 
     node->data.functionDeclaration.name = name;
@@ -341,6 +310,16 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     node->data.functionDeclaration.accessModifier = accessModifier;
     node->data.functionDeclaration.isAsync = isAsync;
     return node;
+
+cleanup:
+    ZrParser_Ast_Free(ps->state, nameNode);
+    free_generic_declaration(ps->state, generic);
+    free_ast_node_array_with_elements(ps->state, params);
+    free_parameter_node_from_ptr(ps->state, args);
+    free_owned_type(ps->state, returnType);
+    ZrParser_Ast_Free(ps->state, body);
+    free_ast_node_array_with_elements(ps->state, decorators);
+    return ZR_NULL;
 }
 
 // ==================== 语句解析 ====================

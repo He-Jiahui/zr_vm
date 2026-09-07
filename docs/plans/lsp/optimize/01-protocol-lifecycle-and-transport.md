@@ -161,6 +161,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Valgrind `--leak-check=full --errors-for-leak-kinds=definite,indirect` 返回 0；当前 100-cycle lifecycle 为 0 bytes/0 errors，handler 取消清理也通过；[Sub01](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)。
 - [x] MSVC Debug + ASan 通过同一 lifecycle 测试；独立 `/fsanitize=address` 构建覆盖 context/global/reader 清理和启动失败注入；[Sub01](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)。
 - [x] Sub01：GCC ASan/UBSan、Clang ASan/UBSan 与 MSVC ASan 的 lifecycle/provider/handler/progress 验证通过；GCC 和 Clang 六目标通过，MSVC 六目标首轮通过但 protocol 复跑存在启动请求超时，完整 smoke 保留历史泛型补全失败；[记录](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)。
+- [x] Sub02：修复 diagnostic-fix smoke 暴露的 parser 错误恢复子节点泄漏；三工具链清理用例 15/15、既有 parser 用例 74/74、相关 CTest 5/5，Valgrind 0 字节/0 错误。Clang 原始回放 server exit 0、stderr 为空，但缺失诊断的历史断言仍失败，完整 smoke 门禁保持未完成；[记录](2026-09-07-plan01-task06-sub02-parser-recovery-ownership.md)。
 
 ```powershell
 wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /tmp/zr_vm-build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -no-pie"'

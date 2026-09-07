@@ -366,6 +366,13 @@ linked editing 取消清理和 resolve/report 根分配失败有直接回归；�
 MSVC 六目标首轮通过，复跑 protocol 有一次启动请求超时，完整 smoke 仍受已登记
 generic completion detail 失败限制。Task 6 仅勾选 Valgrind 与 MSVC lifecycle 条目。
 
+2026-09-07 已完成 [Plan 01 Task 6 Sub02 parser recovery ownership](2026-09-07-plan01-task06-sub02-parser-recovery-ownership.md)：
+修复数组、对象、括号表达式和函数声明的错误恢复清理。三工具链新测试 15/15、
+既有 parser 测试 74/74、五个相关 CTest 全部通过；Valgrind 7,539 次分配全部释放，
+0 字节/0 错误。Clang 原始 diagnostic-fix 回放中的 4,056 字节泄漏消失，server
+exit 0 且 stderr 为空；缺失 possibly_uninitialized_read 的历史语义断言仍失败，
+完整诊断与 Plan 01 门禁继续 pending。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

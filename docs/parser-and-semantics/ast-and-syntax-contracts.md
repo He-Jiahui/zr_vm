@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
+  - tests/parser/test_parser_recovery_ownership.c
+  - tests/cmake/zr_vm_parser_recovery_tests.cmake
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/lexer.h
   - zr_vm_parser/src/zr_vm_parser/lexer.c
@@ -26,6 +30,9 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/include/zr_vm_parser/lexer.h
   - zr_vm_parser/src/zr_vm_parser/lexer.c
   - zr_vm_parser/src/zr_vm_parser/parser.c
@@ -44,12 +51,14 @@ implementation_files:
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
 plan_sources:
+  - docs/plans/lsp/optimize/2026-09-07-plan01-task06-sub02-parser-recovery-ownership.md
   - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
   - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
 tests:
+  - tests/parser/test_parser_recovery_ownership.c
   - tests/iterator/test_yield_syntax.c
   - tests/parser/test_lexer_parser_compiler_execution.c
   - tests/parser/test_ownership_intrinsic_member_separation.c
@@ -62,6 +71,31 @@ doc_type: module-detail
 ---
 
 # AST And Syntax Contracts
+
+## Parser Recovery Ownership
+
+An unfinished construct owns every child until it transfers them to its returned
+AST node. Array and object literal failures use
+`free_ast_node_array_with_elements`, since `ZrParser_AstNodeArray_Free` only frees
+the container. An unattached computed key, key/value pair, or grouped expression
+must also be freed when parsing its enclosing construct fails. Successfully
+returned partial objects retain their attached properties under normal AST ownership.
+
+Function declarations keep initialized local owners for the name, generic
+declaration, parameters, variadic parameter, return type and body. Every failed
+declaration exits through one cleanup block using the existing deep free helpers.
+Successful declarations transfer these values to the function AST. A failed
+parameter name releases its decorators; parameter node allocation failure also
+releases its name, default value and type.
+
+`parser_recovery_ownership` exercises normal constructs and fourteen malformed
+inputs with a tracking allocator. It releases AST, parser and global state before
+asserting that all allocations were freed. The test accepts both structured and
+legacy parser error callbacks, because these recovery paths use both APIs.
+GCC, Clang ASan/UBSan and MSVC pass all fifteen cases and the existing 74-case
+parser suite. See the [LSP memory gate record](../plans/lsp/optimize/2026-09-07-plan01-task06-sub02-parser-recovery-ownership.md)
+for Valgrind and protocol replay evidence. These cases cover syntax recovery;
+they do not establish exhaustive allocation-failure handling throughout the parser.
 
 ## Unified Property Grammar
 

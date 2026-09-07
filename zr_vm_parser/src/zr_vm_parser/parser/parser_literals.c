@@ -568,7 +568,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
         if (first != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, elements, first);
         } else {
-            ZrParser_AstNodeArray_Free(ps->state, elements);
+            free_ast_node_array_with_elements(ps->state, elements);
             return ZR_NULL;
         }
 
@@ -583,7 +583,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
             if (elem != ZR_NULL) {
                 ZrParser_AstNodeArray_Add(ps->state, elements, elem);
             } else {
-                ZrParser_AstNodeArray_Free(ps->state, elements);
+                free_ast_node_array_with_elements(ps->state, elements);
                 return ZR_NULL;
             }
         }
@@ -596,13 +596,13 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
 
     if (parser_array_literal_token_can_start_element(ps->lexer->t.token)) {
         report_missing_array_element_separator(ps, get_current_token_location(ps));
-        ZrParser_AstNodeArray_Free(ps->state, elements);
+        free_ast_node_array_with_elements(ps->state, elements);
         return ZR_NULL;
     }
 
     if (ps->lexer->t.token != ZR_TK_RBRACKET) {
         report_missing_array_close(ps, startLoc);
-        ZrParser_AstNodeArray_Free(ps->state, elements);
+        free_ast_node_array_with_elements(ps->state, elements);
         return ZR_NULL;
     }
     consume_token(ps, ZR_TK_RBRACKET);
@@ -612,7 +612,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ARRAY_LITERAL, arrayLoc);
     if (node == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, elements);
+        free_ast_node_array_with_elements(ps->state, elements);
         return ZR_NULL;
     }
 
@@ -652,13 +652,14 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             key = parse_expression(ps);
             if (ps->lexer->t.token != ZR_TK_RBRACKET) {
                 report_missing_object_computed_key_close(ps, keyOpenLocation);
-                ZrParser_AstNodeArray_Free(ps->state, properties);
+                ZrParser_Ast_Free(ps->state, key);
+                free_ast_node_array_with_elements(ps->state, properties);
                 return ZR_NULL;
             }
             consume_token(ps, ZR_TK_RBRACKET);
         } else {
             report_error(ps, "Expected key in object literal");
-            ZrParser_AstNodeArray_Free(ps->state, properties);
+            free_ast_node_array_with_elements(ps->state, properties);
             return ZR_NULL;
         }
 
@@ -669,7 +670,8 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         // 解析值
         SZrAstNode *value = parse_expression(ps);
         if (value == ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, properties);
+            ZrParser_Ast_Free(ps->state, key);
+            free_ast_node_array_with_elements(ps->state, properties);
             return ZR_NULL;
         }
 
@@ -677,7 +679,9 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         SZrFileRange kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
         SZrAstNode *kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
         if (kvNode == ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, properties);
+            ZrParser_Ast_Free(ps->state, key);
+            ZrParser_Ast_Free(ps->state, value);
+            free_ast_node_array_with_elements(ps->state, properties);
             return ZR_NULL;
         }
         kvNode->data.keyValuePair.key = key;
@@ -708,7 +712,8 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
                 key = parse_expression(ps);
                 if (ps->lexer->t.token != ZR_TK_RBRACKET) {
                     report_missing_object_computed_key_close(ps, keyOpenLocation);
-                    ZrParser_AstNodeArray_Free(ps->state, properties);
+                    ZrParser_Ast_Free(ps->state, key);
+                    free_ast_node_array_with_elements(ps->state, properties);
                     return ZR_NULL;
                 }
                 consume_token(ps, ZR_TK_RBRACKET);
@@ -722,12 +727,15 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
 
             value = parse_expression(ps);
             if (value == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, key);
                 break;
             }
 
             kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
             kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
             if (kvNode == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, key);
+                ZrParser_Ast_Free(ps->state, value);
                 break;
             }
             kvNode->data.keyValuePair.key = key;
@@ -744,13 +752,13 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
 
     if (parser_object_literal_token_can_start_property_key(ps->lexer->t.token)) {
         report_missing_object_property_separator(ps, get_current_token_location(ps));
-        ZrParser_AstNodeArray_Free(ps->state, properties);
+        free_ast_node_array_with_elements(ps->state, properties);
         return ZR_NULL;
     }
 
     if (ps->lexer->t.token != ZR_TK_RBRACE) {
         report_missing_object_close(ps, startLoc);
-        ZrParser_AstNodeArray_Free(ps->state, properties);
+        free_ast_node_array_with_elements(ps->state, properties);
         return ZR_NULL;
     }
     consume_token(ps, ZR_TK_RBRACE);
@@ -760,7 +768,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, objectLoc);
     if (node == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, properties);
+        free_ast_node_array_with_elements(ps->state, properties);
         return ZR_NULL;
     }
 

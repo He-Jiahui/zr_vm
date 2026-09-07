@@ -1187,6 +1187,7 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
             base = parse_expression(ps);
             if (ps->lexer->t.token != ZR_TK_RPAREN) {
                 report_missing_group_close(ps, groupOpenLocation);
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             consume_token(ps, ZR_TK_RPAREN);

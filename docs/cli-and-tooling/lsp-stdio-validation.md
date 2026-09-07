@@ -112,6 +112,18 @@ doc_type: module-guide
 
 # LSP Stdio Validation
 
+## Diagnostic Replay Memory
+
+Plan 01 Task 6 Sub02 repairs parser ownership exposed by diagnostic-fix smoke.
+Its malformed array/object/group expressions and function signatures previously
+leaked 4,056 bytes in twenty allocations on Clang. After the parser cleanup fix,
+the unchanged full protocol payload exits the server with status 0 and empty
+stderr. The smoke still fails at its historical missing
+possibly_uninitialized_read assertion, so this is memory evidence rather than
+full diagnostic acceptance. The parser tracking-allocator test and five related
+CTest targets pass on all three toolchains; the 74-case parser suite passes too.
+See [Sub02](../plans/lsp/optimize/2026-09-07-plan01-task06-sub02-parser-recovery-ownership.md).
+
 ## Ordinary Request Status Contract
 
 Plan 01 Task 2 Sub24 migrates the remaining nineteen ordinary handlers, including

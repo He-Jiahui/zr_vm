@@ -1479,6 +1479,7 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
 
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        free_ast_node_array_with_elements(ps->state, decorators);
         return ZR_NULL;
     }
 
@@ -1512,9 +1513,10 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PARAMETER, startLoc);
     if (node == ZR_NULL) {
-        if (decorators != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, decorators);
-        }
+        ZrParser_Ast_Free(ps->state, nameNode);
+        ZrParser_Ast_Free(ps->state, defaultValue);
+        free_owned_type(ps->state, typeInfo);
+        free_ast_node_array_with_elements(ps->state, decorators);
         return ZR_NULL;
     }
 
