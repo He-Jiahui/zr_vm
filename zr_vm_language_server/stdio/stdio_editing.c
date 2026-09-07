@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 #include <errno.h>
 #include <stdint.h>
@@ -134,43 +135,45 @@ static cJSON *disable_stale_code_action(const cJSON *params) {
                  : cJSON_CreateObject();
     if (result == NULL || !cJSON_IsObject(result)) {
         cJSON_Delete(result);
-        return cJSON_CreateObject();
+        return NULL;
     }
 
     cJSON_DeleteItemFromObjectCaseSensitive(result, ZR_LSP_FIELD_EDIT);
     cJSON_DeleteItemFromObjectCaseSensitive(result, ZR_LSP_FIELD_DISABLED);
     disabled = cJSON_CreateObject();
-    if (disabled != NULL) {
-        cJSON_AddStringToObject(
-                disabled, ZR_LSP_FIELD_REASON, ZR_LSP_CODE_ACTION_STALE_REASON);
-        cJSON_AddItemToObject(result, ZR_LSP_FIELD_DISABLED, disabled);
+    if (disabled == NULL ||
+        cJSON_AddStringToObject(disabled, ZR_LSP_FIELD_REASON, ZR_LSP_CODE_ACTION_STALE_REASON) == NULL ||
+        !cJSON_AddItemToObject(result, ZR_LSP_FIELD_DISABLED, disabled)) {
+        cJSON_Delete(disabled);
+        cJSON_Delete(result);
+        return NULL;
     }
     return result;
 }
 
-cJSON *handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     const char *uriText;
     SZrString *uri;
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetFormatting(server->state, server->context, uri, &edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     ZR_UNUSED_PARAMETER(uriText);
     result = serialize_text_edits_array(&edits);
     ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_range_formatting_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     SZrLspRange range;
     const char *uriText;
@@ -178,25 +181,25 @@ cJSON *handle_range_formatting_request(SZrStdioServer *server, const cJSON *para
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     if (!parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     ZR_UNUSED_PARAMETER(uriText);
     result = serialize_text_edits_array(&edits);
     ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *rangesJson;
     const cJSON *rangeJson;
     const char *uriText;
@@ -204,16 +207,16 @@ cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *par
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     rangesJson = get_object_item(params, ZR_LSP_FIELD_RANGES);
     if (!cJSON_IsArray(rangesJson)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     result = cJSON_CreateArray();
     if (result == NULL) {
-        return NULL;
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
     cJSON_ArrayForEach(rangeJson, rangesJson) {
@@ -222,7 +225,7 @@ cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *par
 
         if (!parse_range_for_uri(server, uri, rangeJson, &range)) {
             cJSON_Delete(result);
-            return NULL;
+            return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
         }
 
         ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
@@ -238,10 +241,10 @@ cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *par
     }
 
     ZR_UNUSED_PARAMETER(uriText);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *chJson;
     SZrArray edits = {0};
     const char *uriText;
@@ -255,7 +258,7 @@ cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *pa
         (strcmp(chJson->valuestring, "}") != 0 && strcmp(chJson->valuestring, ";") != 0) ||
         !get_uri_from_text_document(server, params, &uriText, &uri) ||
         !parse_position_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_POSITION), &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     ZR_UNUSED_PARAMETER(uriText);
@@ -266,15 +269,15 @@ cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *pa
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     result = serialize_text_edits_array(&edits);
     ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray actions = {0};
     SZrLspRange range = {{0, 0}, {0, 0}};
     SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
@@ -287,29 +290,29 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     contextJson = get_object_item(params, ZR_LSP_FIELD_CONTEXT);
     if (!cJSON_IsObject((cJSON *)contextJson)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     diagnosticsJson = get_object_item(contextJson, ZR_LSP_FIELD_DIAGNOSTICS);
     if (!cJSON_IsArray((cJSON *)diagnosticsJson)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     cJSON_ArrayForEach(itemJson, (cJSON *)diagnosticsJson) {
         if (!cJSON_IsObject(itemJson)) {
-            return NULL;
+            return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
         }
     }
     onlyJson = get_object_item(contextJson, ZR_LSP_FIELD_ONLY);
     if (onlyJson != ZR_NULL) {
         if (!cJSON_IsArray((cJSON *)onlyJson)) {
-            return NULL;
+            return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
         }
         cJSON_ArrayForEach(itemJson, (cJSON *)onlyJson) {
             if (!cJSON_IsString(itemJson) || itemJson->valuestring == ZR_NULL) {
-                return NULL;
+                return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
             }
         }
     }
@@ -318,16 +321,16 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
                 server->context,
                 uri,
                 &documentSnapshot)) {
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
     if (!parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     ZrCore_Array_Init(server->state, &actions, sizeof(SZrLspCodeAction *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetCodeActions(server->state, server->context, uri, range, &actions)) {
         ZrLanguageServer_Lsp_FreeCodeActions(server->state, &actions);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
@@ -335,27 +338,27 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
                 server->context,
                 &documentSnapshot)) {
         ZrLanguageServer_Lsp_FreeCodeActions(server->state, &actions);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
     result = serialize_code_actions_array(
             uriText, &documentSnapshot, &actions, params);
     ZrLanguageServer_Lsp_FreeCodeActions(server->state, &actions);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
 
     if (server == ZR_NULL || !cJSON_IsObject((cJSON *)params) ||
         !parse_code_action_document_snapshot(
                 server, params, &documentSnapshot)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
                 server->state,
                 server->context,
                 &documentSnapshot)) {
-        return disable_stale_code_action(params);
+        return stdio_handler_result_from_json(server->context, disable_stale_code_action(params));
     }
-    return cJSON_Duplicate((cJSON *)params, 1);
+    return stdio_handler_result_from_json(server->context, cJSON_Duplicate((cJSON *)params, 1));
 }

@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 static int linked_editing_location_matches_uri(const SZrLspLocation *location, const char *uriText) {
     char *locationUriText;
@@ -268,7 +269,7 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
     return ranges;
 }
 
-cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
     const char *uriText;
@@ -280,21 +281,23 @@ cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *
     TZrBool hasSemanticReferences;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     hasSemanticReferences =
         ZrLanguageServer_Lsp_FindReferences(server->state, server->context, uri, position, ZR_TRUE, &locations);
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
+        free_locations_array(server->state, &locations);
+        return stdio_handler_error(ZR_LSP_HANDLER_CANCELLED);
+    }
 
     result = cJSON_CreateObject();
     ranges = cJSON_CreateArray();
     if (result == NULL || ranges == NULL) {
         cJSON_Delete(result);
         cJSON_Delete(ranges);
-        if (hasSemanticReferences) {
-            free_locations_array(server->state, &locations);
-        }
-        return cJSON_CreateNull();
+        free_locations_array(server->state, &locations);
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
     if (hasSemanticReferences) {
@@ -320,16 +323,18 @@ cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *
         ranges = linked_editing_ranges_from_document(server, uri, position, &rangeCount);
     }
 
-    if (hasSemanticReferences) {
-        free_locations_array(server->state, &locations);
+    free_locations_array(server->state, &locations);
+    if (ranges == NULL) {
+        cJSON_Delete(result);
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
-    if (ranges == NULL || rangeCount < 2) {
+    if (rangeCount < 2) {
         cJSON_Delete(result);
         cJSON_Delete(ranges);
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
     }
 
     cJSON_AddItemToObject(result, ZR_LSP_FIELD_RANGES, ranges);
     cJSON_AddStringToObject(result, ZR_LSP_FIELD_WORD_PATTERN, "[A-Za-z_][A-Za-z0-9_]*");
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }

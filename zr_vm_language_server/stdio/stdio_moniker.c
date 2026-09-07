@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 static int moniker_is_identifier_start(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
@@ -156,7 +157,7 @@ static cJSON *moniker_create_for_word(const char *uriText,
     return moniker;
 }
 
-cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -171,30 +172,30 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *moniker;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     fileVersion = get_file_version_for_uri(server, uri);
     if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     content = snapshot.content;
     contentLength = snapshot.contentLength;
     if (!moniker_offset_from_position(content, contentLength, position, &offset)) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
     if (offset >= contentLength || !moniker_is_identifier_part(content[offset])) {
         if (offset == 0 || !moniker_is_identifier_part(content[offset - 1])) {
             ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-            return cJSON_CreateArray();
+            return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
         }
         offset--;
     }
     if (!moniker_offset_is_in_code(content, contentLength, offset)) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     wordStart = offset;
@@ -203,7 +204,7 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     }
     if (!moniker_is_identifier_start(content[wordStart])) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     wordEnd = offset + 1;
@@ -217,9 +218,9 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     if (result == NULL || moniker == NULL) {
         cJSON_Delete(result);
         cJSON_Delete(moniker);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
     cJSON_AddItemToArray(result, moniker);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }

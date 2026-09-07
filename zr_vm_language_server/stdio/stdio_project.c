@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 static cJSON *serialize_project_module_summary(const SZrLspProjectModuleSummary *summary) {
     cJSON *json;
@@ -63,7 +64,7 @@ static cJSON *serialize_project_modules_array(SZrArray *modules) {
     return json;
 }
 
-cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_project_modules_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *uriJson;
     const char *uriText;
     SZrString *projectUri;
@@ -71,33 +72,33 @@ cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON *param
     cJSON *result;
 
     if (server == ZR_NULL || params == NULL) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     uriJson = get_object_item(params, ZR_LSP_FIELD_URI);
     if (!cJSON_IsString((cJSON *)uriJson)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     uriText = cJSON_GetStringValue((cJSON *)uriJson);
     if (uriText == NULL) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     projectUri = server_get_cached_uri(server, uriText);
     if (projectUri == ZR_NULL) {
-        return cJSON_CreateArray();
+        return stdio_handler_error(ZR_LSP_HANDLER_INTERNAL_ERROR);
     }
 
     ZrCore_Array_Init(server->state, &modules, sizeof(SZrLspProjectModuleSummary *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetProjectModules(server->state, server->context, projectUri, &modules)) {
         ZrLanguageServer_Lsp_FreeProjectModules(server->state, &modules);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     result = serialize_project_modules_array(&modules);
     ZrLanguageServer_Lsp_FreeProjectModules(server->state, &modules);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
 void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON *params) {

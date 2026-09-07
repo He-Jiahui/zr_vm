@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 static int completion_offset_from_position(const char *content,
                                            size_t contentLength,
@@ -130,14 +131,13 @@ static TZrBool completion_item_label_matches(SZrLspCompletionItem *item, const c
     return matches;
 }
 
-static cJSON *serialize_resolved_completion_item(const cJSON *params,
-                                                 const cJSON *data,
+static cJSON *serialize_resolved_completion_item(const cJSON *data,
                                                  SZrLspCompletionItem *item,
                                                  SZrLspRange range) {
     cJSON *resolved = serialize_completion_item(item);
 
     if (resolved == NULL) {
-        return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
+        return NULL;
     }
 
     add_completion_text_edit(resolved, range);
@@ -147,7 +147,7 @@ static cJSON *serialize_resolved_completion_item(const cJSON *params,
     return resolved;
 }
 
-cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_completion_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray completions = {0};
     SZrLspPosition position;
     SZrLspRange prefixRange;
@@ -156,12 +156,13 @@ cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     prefixRange = completion_prefix_range(server, uri, position);
     if (!ZrLanguageServer_Lsp_GetCompletion(server->state, server->context, uri, position, &completions)) {
-        return cJSON_CreateArray();
+        free_completion_items_array(server->state, &completions);
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     result = serialize_completion_items_array(&completions);
@@ -186,10 +187,10 @@ cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params) {
         }
     }
     free_completion_items_array(server->state, &completions);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *labelJson;
     const cJSON *data;
     const cJSON *uriJson;
@@ -200,10 +201,11 @@ cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSO
     SZrLspPosition position;
     SZrLspRange prefixRange;
     SZrArray completions = {0};
+    TZrBool matched = ZR_FALSE;
     cJSON *result;
 
     if (server == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     labelJson = get_object_item(params, ZR_LSP_FIELD_LABEL);
@@ -213,19 +215,23 @@ cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSO
     if (!cJSON_IsString((cJSON *)labelJson) ||
         !cJSON_IsString((cJSON *)uriJson) ||
         !parse_position(positionJson, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     label = cJSON_GetStringValue((cJSON *)labelJson);
     uriText = cJSON_GetStringValue((cJSON *)uriJson);
     uri = server_get_cached_uri(server, uriText);
-    if (label == NULL || uri == ZR_NULL) {
-        return NULL;
+    if (label == NULL) {
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
+    }
+    if (uri == ZR_NULL) {
+        return stdio_handler_error(ZR_LSP_HANDLER_INTERNAL_ERROR);
     }
 
     prefixRange = completion_prefix_range(server, uri, position);
     if (!ZrLanguageServer_Lsp_GetCompletion(server->state, server->context, uri, position, &completions)) {
-        return cJSON_Duplicate((cJSON *)params, 1);
+        free_completion_items_array(server->state, &completions);
+        return stdio_handler_result_from_json(server->context, cJSON_Duplicate((cJSON *)params, 1));
     }
 
     result = ZR_NULL;
@@ -233,11 +239,13 @@ cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSO
         SZrLspCompletionItem **itemPtr = (SZrLspCompletionItem **)ZrCore_Array_Get(&completions, index);
 
         if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL && completion_item_label_matches(*itemPtr, label)) {
-            result = serialize_resolved_completion_item(params, data, *itemPtr, prefixRange);
+            matched = ZR_TRUE;
+            result = serialize_resolved_completion_item(data, *itemPtr, prefixRange);
             break;
         }
     }
 
     free_completion_items_array(server->state, &completions);
-    return result != NULL ? result : cJSON_Duplicate((cJSON *)params, 1);
+    return stdio_handler_result_from_json(
+            server->context, matched ? result : cJSON_Duplicate((cJSON *)params, 1));
 }

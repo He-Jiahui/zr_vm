@@ -1,5 +1,15 @@
 ---
 related_code:
+  - zr_vm_language_server/stdio/stdio_completion.c
+  - zr_vm_language_server/stdio/stdio_diagnostics.c
+  - zr_vm_language_server/stdio/stdio_editing.c
+  - zr_vm_language_server/stdio/stdio_inline_completion.c
+  - zr_vm_language_server/stdio/stdio_inline_value.c
+  - zr_vm_language_server/stdio/stdio_linked_editing.c
+  - zr_vm_language_server/stdio/stdio_moniker.c
+  - zr_vm_language_server/stdio/stdio_project.c
+  - zr_vm_language_server/stdio/stdio_semantic_tokens.c
+  - zr_vm_language_server/stdio/stdio_workspace_files.c
   - zr_vm_language_server/stdio/stdio_handler_result.h
   - zr_vm_language_server/stdio/stdio_json_rpc.h
   - zr_vm_language_server/stdio/stdio_hierarchy.c
@@ -43,6 +53,16 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/stdio/stdio_completion.c
+  - zr_vm_language_server/stdio/stdio_diagnostics.c
+  - zr_vm_language_server/stdio/stdio_editing.c
+  - zr_vm_language_server/stdio/stdio_inline_completion.c
+  - zr_vm_language_server/stdio/stdio_inline_value.c
+  - zr_vm_language_server/stdio/stdio_linked_editing.c
+  - zr_vm_language_server/stdio/stdio_moniker.c
+  - zr_vm_language_server/stdio/stdio_project.c
+  - zr_vm_language_server/stdio/stdio_semantic_tokens.c
+  - zr_vm_language_server/stdio/stdio_workspace_files.c
   - zr_vm_language_server/stdio/stdio_hierarchy.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
   - zr_vm_language_server/stdio/stdio_handler_result.h
@@ -91,6 +111,35 @@ doc_type: module-guide
 ---
 
 # LSP Stdio Validation
+
+## Ordinary Request Status Contract
+
+Plan 01 Task 2 Sub24 migrates the remaining nineteen ordinary handlers, including
+completion/resolve, semantic tokens, pull diagnostics, formatting/code actions and
+additional editor/workspace queries. All forty-two ordinary handlers now return
+`SZrLspHandlerResult`; the dispatcher forwards status directly for all forty-three
+routes, including the willSaveWaitUntil formatting alias. It no longer infers an
+invalid-parameter error from a null result pointer. Initialize is still separately
+orchestrated and remains outside this migration.
+
+Root JSON allocation failures return internal error, while genuine empty results
+keep their existing JSON representation. A matched completion resolve cannot fall
+back to the unresolved input after serialization failure. Failure to create a stale
+code action or a workspace diagnostic report also aborts that response. Linked
+editing releases partially collected references on cancellation before considering
+its lexical fallback. Completion releases partial provider output on failure too.
+
+The direct tests cover five status/allocation matrices across all forty-three
+routes, stale-action and workspace-report failures, six calibrated cancellation
+cleanup cases and their ordinary control. Resolve fixtures use a real completion
+and a code action serialized with the current document snapshot. All fourteen tests
+pass on GCC, Clang ASan/UBSan and MSVC; their Valgrind run has no remaining blocks
+or errors. The expanded seventeen-target CTest group passes sixteen targets on each
+toolchain. Diagnostic-fix smoke still fails: GCC/MSVC reach the recorded missing
+possibly_uninitialized_read publication, while Clang reports parser recovery leaks
+also reproduced without ordinary requests. Full Task 2/4/6 acceptance, initialize,
+nested serializer failures and runtime allocation classification remain pending.
+Exact evidence is in [Sub24](../plans/lsp/optimize/2026-09-07-plan01-task02-sub24-dispatch-handler-status.md).
 
 ## Hierarchy, Rename And Editor Status
 

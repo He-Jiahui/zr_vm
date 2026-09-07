@@ -282,9 +282,9 @@ cJSON *serialize_semantic_tokens_delta_result(SZrArray *tokens,
                                               const SZrSemanticTokenSnapshot *previousSnapshot,
                                               const char *resultId);
 cJSON *serialize_semantic_tokens_range_result(SZrArray *tokens, SZrLspRange range);
-cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params);
 int get_uri_from_text_document(SZrStdioServer *server,
                                const cJSON *params,
                                const char **outUriText,
@@ -310,7 +310,7 @@ int handle_did_save(SZrStdioServer *server, const cJSON *params);
 void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *params);
 void add_workspace_file_operation_capabilities(cJSON *workspace);
 int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params);
 int handle_did_create_files(SZrStdioServer *server, const cJSON *params);
 int handle_did_delete_files(SZrStdioServer *server, const cJSON *params);
 int handle_did_rename_files(SZrStdioServer *server, const cJSON *params);
@@ -335,8 +335,8 @@ void handle_notification_message(SZrStdioServer *server,
                                  int *outShouldExit,
                                  int *outExitCode);
 
-cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_completion_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_hover_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_rich_hover_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_signature_help_request(SZrStdioServer *server, const cJSON *params);
@@ -349,19 +349,19 @@ SZrLspHandlerResult handle_document_highlights_request(SZrStdioServer *server, c
 SZrLspHandlerResult handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_rename_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_native_declaration_document_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_formatting_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_range_formatting_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_project_modules_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_code_action_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_folding_range_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_selection_range_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_moniker_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_inline_value_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_inline_completion_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_document_link_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_implementation_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_code_lens_request(SZrStdioServer *server, const cJSON *params);
@@ -371,7 +371,7 @@ SZrLspHandlerResult handle_call_hierarchy_outgoing_calls_request(SZrStdioServer 
 SZrLspHandlerResult handle_prepare_type_hierarchy_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_type_hierarchy_supertypes_request(SZrStdioServer *server, const cJSON *params);
 SZrLspHandlerResult handle_type_hierarchy_subtypes_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_text_document_diagnostic_request(SZrStdioServer *server, const cJSON *params);
-cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_text_document_diagnostic_request(SZrStdioServer *server, const cJSON *params);
+SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *params);
 
 #endif

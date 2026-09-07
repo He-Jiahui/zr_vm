@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 typedef struct SZrInlineCompletionKeyword {
     const char *keyword;
@@ -161,7 +162,7 @@ static cJSON *inline_completion_create_item(SZrLspPosition position,
     return item;
 }
 
-cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_inline_completion_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -175,20 +176,20 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     cJSON *result;
 
     if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     ZR_UNUSED_PARAMETER(uriText);
 
     fileVersion = get_file_version_for_uri(server, uri);
     if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     content = snapshot.content;
     contentLength = snapshot.contentLength;
     if (!inline_completion_offset_from_position(content, contentLength, position, &offset)) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     prefixStart = offset;
@@ -198,17 +199,17 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     prefixLength = offset - prefixStart;
     if (prefixLength == 0 || prefixLength > 16) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
     if (!inline_completion_offset_is_in_code(content, contentLength, offset - 1)) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     result = cJSON_CreateArray();
     if (result == NULL) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return NULL;
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
     for (size_t index = 0;
@@ -231,5 +232,5 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     }
 
     ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }

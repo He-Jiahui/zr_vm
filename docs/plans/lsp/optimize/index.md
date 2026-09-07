@@ -352,6 +352,13 @@ Clang inventory 修正 Node 12 前置条件后单独通过。Valgrind 356,758 �
 全部通过，Valgrind 712,914 次分配全部释放、0 字节/0 错误。剩余十九个普通请求
 handler、内部序列化分配失败和 Plan 01 父级门禁继续 pending。
 
+2026-09-07 已完成 [Plan 01 Task 2 Sub24 dispatch handler status](2026-09-07-plan01-task02-sub24-dispatch-handler-status.md)：
+剩余十九个普通 handler 迁移完成，四十二个 handler / 四十三条路由全部返回显式状态。
+linked editing 取消清理和 resolve/report 根分配失败有直接回归；三工具链 handler
+14/14，Valgrind 919,240 次分配全部释放、0 字节/0 错误。扩展 CTest 各 16/17；
+诊断 smoke 的 GCC/MSVC 缺失诊断与 Clang parser 恢复泄漏均保留为失败，后者移除
+所有普通请求后仍有 4,056 字节/20 次分配泄漏。initialize 和父级完整验收仍 pending。
+
 2026-09-07 已完成 [Plan 01 Task 6 Sub01 native memory matrix](2026-09-07-plan01-task06-sub01-native-memory-matrix.md)：
 当前 `4b07a398` overlay 的 lifecycle 在 Valgrind 下完成约 330 万次分配/释放，
 退出时 0 字节/0 错误。新增 GCC ASan/UBSan 与 MSVC Debug ASan 构建，结合 Clang

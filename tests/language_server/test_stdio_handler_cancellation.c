@@ -7,6 +7,7 @@ typedef enum EHandlerQuery {
     QUERY_REFERENCES,
     QUERY_RENAME,
     QUERY_HIGHLIGHTS,
+    QUERY_LINKED_EDITING,
 } EHandlerQuery;
 
 static const char g_source[] =
@@ -24,6 +25,8 @@ static SZrArray g_probe;
 static cJSON *g_params;
 static cJSON *g_callParams;
 static cJSON *g_typeParams;
+static cJSON *g_completionParams;
+static cJSON *g_actionParams;
 static cJSON *g_response;
 static EHandlerQuery g_kind;
 static EZrLspHandlerStatus g_handlerStatus;
@@ -57,6 +60,26 @@ static const char *g_handlerMethods[] = {
         ZR_LSP_METHOD_TEXT_DOCUMENT_SELECTION_RANGE,
         ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_LINK,
         ZR_LSP_METHOD_TEXT_DOCUMENT_CODE_LENS,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_COMPLETION,
+        ZR_LSP_METHOD_COMPLETION_ITEM_RESOLVE,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL_DELTA,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_RANGE,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_DIAGNOSTIC,
+        ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_FORMATTING,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_RANGE_FORMATTING,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_RANGES_FORMATTING,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_ON_TYPE_FORMATTING,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_WILL_SAVE_WAIT_UNTIL,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_CODE_ACTION,
+        ZR_LSP_METHOD_CODE_ACTION_RESOLVE,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_LINKED_EDITING_RANGE,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_MONIKER,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_INLINE_VALUE,
+        ZR_LSP_METHOD_TEXT_DOCUMENT_INLINE_COMPLETION,
+        ZR_LSP_METHOD_ZR_PROJECT_MODULES,
+        ZR_LSP_METHOD_WORKSPACE_WILL_RENAME_FILES,
 };
 
 static void *fail_json_allocation(size_t size) {
@@ -66,6 +89,10 @@ static void *fail_json_allocation(size_t size) {
 
 static void *fail_first_json_allocation(size_t size) {
     return g_jsonAllocationAttempts++ == 0 ? ZR_NULL : malloc(size);
+}
+
+static void *fail_third_json_allocation(size_t size) {
+    return g_jsonAllocationAttempts++ == 2 ? ZR_NULL : malloc(size);
 }
 
 static TZrPtr tracking_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
@@ -139,6 +166,12 @@ static void prepare_hierarchy_params(cJSON **outParams, const char *method, int 
 }
 
 static const cJSON *params_for_method(const char *method) {
+    if (strcmp(method, ZR_LSP_METHOD_COMPLETION_ITEM_RESOLVE) == 0) {
+        return g_completionParams;
+    }
+    if (strcmp(method, ZR_LSP_METHOD_CODE_ACTION_RESOLVE) == 0) {
+        return g_actionParams;
+    }
     if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_TYPE_HIERARCHY) == 0 ||
         strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUPERTYPES) == 0 ||
         strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0) {
@@ -151,6 +184,36 @@ static const cJSON *params_for_method(const char *method) {
     return g_params;
 }
 
+static void prepare_resolve_params(void) {
+    EZrLspHandlerStatus status;
+    SZrLspWorkspaceEditDocumentSnapshot snapshot = {0};
+    SZrLspCodeAction action = {0};
+    SZrLspCodeAction *actionPtr = &action;
+    SZrArray actions = {0};
+
+    TEST_ASSERT_TRUE(dispatch_request_method(g_server, ZR_LSP_METHOD_TEXT_DOCUMENT_COMPLETION,
+                                            g_params, &g_response, &status));
+    TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_OK, status);
+    TEST_ASSERT_TRUE_MESSAGE(cJSON_GetArraySize(g_response) > 0, "fixture must offer a completion to resolve");
+    g_completionParams = cJSON_DetachItemFromArray(g_response, 0);
+    cJSON_Delete(g_response);
+    g_response = ZR_NULL;
+
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
+            g_server->state, g_server->context, g_uri, &snapshot));
+    action.title = g_newName;
+    action.kind = ZrCore_String_Create(g_server->state, "quickfix", strlen("quickfix"));
+    TEST_ASSERT_NOT_NULL(action.kind);
+    ZrCore_Array_Init(g_server->state, &actions, sizeof(actionPtr), 1);
+    ZrCore_Array_Push(g_server->state, &actions, &actionPtr);
+    g_response = serialize_code_actions_array("file:///handler-cancellation.zr", &snapshot, &actions, g_params);
+    ZrCore_Array_Free(g_server->state, &actions);
+    TEST_ASSERT_EQUAL_INT(1, cJSON_GetArraySize(g_response));
+    g_actionParams = cJSON_DetachItemFromArray(g_response, 0);
+    cJSON_Delete(g_response);
+    g_response = ZR_NULL;
+}
+
 void setUp(void) {
     SZrCallbackGlobal callbacks = {0};
     g_liveBlocks = 0;
@@ -161,6 +224,8 @@ void setUp(void) {
     g_params = ZR_NULL;
     g_callParams = ZR_NULL;
     g_typeParams = ZR_NULL;
+    g_completionParams = ZR_NULL;
+    g_actionParams = ZR_NULL;
     g_response = ZR_NULL;
     memset(&g_probe, 0, sizeof(g_probe));
     g_server = (SZrStdioServer *)calloc(1, sizeof(*g_server));
@@ -172,6 +237,8 @@ void setUp(void) {
     ZrCore_GlobalState_InitRegistry(g_server->state, g_server->global);
     g_server->context = ZrLanguageServer_LspContext_New(g_server->state);
     TEST_ASSERT_NOT_NULL(g_server->context);
+    g_server->supportsInlineCompletion = ZR_TRUE;
+    g_server->supportsRangesFormatting = ZR_TRUE;
     g_uri = server_get_cached_uri(g_server, "file:///handler-cancellation.zr");
     g_query = ZrCore_String_Create(g_server->state, "", 0);
     g_newName = ZrCore_String_Create(g_server->state, "renamedTarget", strlen("renamedTarget"));
@@ -183,13 +250,18 @@ void setUp(void) {
     g_params = cJSON_Parse("{\"textDocument\":{\"uri\":\"file:///handler-cancellation.zr\"},"
                           "\"position\":{\"line\":0,\"character\":3},\"query\":\"\","
                           "\"uri\":\"file:///handler-cancellation.zr\","
+                          "\"previousResultId\":\"missing\",\"files\":[],\"ch\":\"}\","
                           "\"positions\":[{\"line\":0,\"character\":3}],"
+                          "\"ranges\":[{\"start\":{\"line\":0,\"character\":0},"
+                          "\"end\":{\"line\":2,\"character\":1}}],"
                           "\"range\":{\"start\":{\"line\":0,\"character\":0},"
                           "\"end\":{\"line\":2,\"character\":1}},"
-                          "\"context\":{\"includeDeclaration\":true},\"newName\":\"renamedTarget\"}");
+                          "\"context\":{\"includeDeclaration\":true,\"diagnostics\":[]},"
+                          "\"newName\":\"renamedTarget\"}");
     TEST_ASSERT_NOT_NULL(g_params);
     prepare_hierarchy_params(&g_callParams, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY, 0, 3);
     prepare_hierarchy_params(&g_typeParams, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_TYPE_HIERARCHY, 3, 6);
+    prepare_resolve_params();
 }
 
 void tearDown(void) {
@@ -197,6 +269,8 @@ void tearDown(void) {
     cJSON_Delete(g_params);
     cJSON_Delete(g_callParams);
     cJSON_Delete(g_typeParams);
+    cJSON_Delete(g_completionParams);
+    cJSON_Delete(g_actionParams);
     if (g_server != ZR_NULL) {
         ZrLanguageServer_LspContext_SetRequestCancellationCheck(g_server->context, ZR_NULL, ZR_NULL);
         if (g_probe.isValid) {
@@ -218,6 +292,7 @@ static TZrBool run_provider(void) {
             return ZrLanguageServer_Lsp_GetDocumentSymbols(g_server->state, g_server->context,
                                                            g_uri, &g_probe);
         case QUERY_REFERENCES:
+        case QUERY_LINKED_EDITING:
             return ZrLanguageServer_Lsp_FindReferences(g_server->state, g_server->context,
                                                        g_uri, position, ZR_TRUE, &g_probe);
         case QUERY_RENAME:
@@ -237,6 +312,7 @@ static cJSON *run_handler(void) {
             ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES,
             ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME,
             ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT,
+            ZR_LSP_METHOD_TEXT_DOCUMENT_LINKED_EDITING_RANGE,
     };
     cJSON *result = ZR_NULL;
     TEST_ASSERT_TRUE(dispatch_request_method(g_server, methods[g_kind], g_params,
@@ -289,11 +365,15 @@ static void test_highlights_release_cancelled_result(void) {
     expect_cancelled_handler_cleanup(QUERY_HIGHLIGHTS);
 }
 
+static void test_linked_editing_releases_cancelled_result(void) {
+    expect_cancelled_handler_cleanup(QUERY_LINKED_EDITING);
+}
+
 static void test_ordinary_handlers_release_results(void) {
-    for (g_kind = QUERY_WORKSPACE_SYMBOLS; g_kind <= QUERY_HIGHLIGHTS; g_kind++) {
+    for (g_kind = QUERY_WORKSPACE_SYMBOLS; g_kind <= QUERY_LINKED_EDITING; g_kind++) {
         g_response = run_handler();
         TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_OK, g_handlerStatus);
-        if (g_kind == QUERY_RENAME) {
+        if (g_kind == QUERY_RENAME || g_kind == QUERY_LINKED_EDITING) {
             TEST_ASSERT_TRUE(cJSON_IsObject(g_response));
         } else {
             TEST_ASSERT_TRUE(cJSON_IsArray(g_response));
@@ -365,6 +445,50 @@ static void test_handler_valid_results_remain_successful(void) {
     }
 }
 
+static void test_stale_code_action_allocation_failure_is_internal(void) {
+    cJSON_Hooks hooks = {fail_first_json_allocation, free};
+    cJSON *data = cJSON_GetObjectItemCaseSensitive(g_actionParams, ZR_LSP_FIELD_DATA);
+    cJSON *snapshot = cJSON_GetObjectItemCaseSensitive(data, ZR_LSP_FIELD_SNAPSHOT);
+    cJSON *version = cJSON_GetObjectItemCaseSensitive(snapshot, ZR_LSP_FIELD_CONTENT_GENERATION);
+    EZrLspHandlerStatus status;
+    int handled;
+    cJSON_SetNumberValue(version, version->valuedouble + 1);
+    TEST_ASSERT_TRUE(dispatch_request_method(g_server, ZR_LSP_METHOD_CODE_ACTION_RESOLVE,
+                                            g_actionParams, &g_response, &status));
+    TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_OK, status);
+    TEST_ASSERT_TRUE(cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(g_response, ZR_LSP_FIELD_DISABLED)));
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(g_response, ZR_LSP_FIELD_EDIT));
+    cJSON_Delete(g_response);
+    g_response = ZR_NULL;
+    cJSON_InitHooks(&hooks);
+    handled = dispatch_request_method(g_server, ZR_LSP_METHOD_CODE_ACTION_RESOLVE,
+                                      g_actionParams, &g_response, &status);
+    cJSON_InitHooks(ZR_NULL);
+    TEST_ASSERT_TRUE(handled);
+    TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_INTERNAL_ERROR, status);
+    TEST_ASSERT_NULL(g_response);
+}
+
+static void test_workspace_report_allocation_failure_is_internal(void) {
+    cJSON_Hooks hooks = {fail_third_json_allocation, free};
+    EZrLspHandlerStatus status;
+    int handled;
+    TEST_ASSERT_TRUE(dispatch_request_method(g_server, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC,
+                                            g_params, &g_response, &status));
+    TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_OK, status);
+    TEST_ASSERT_TRUE(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(g_response, ZR_LSP_FIELD_ITEMS)) > 0);
+    cJSON_Delete(g_response);
+    g_response = ZR_NULL;
+    /* The response object and items array precede the first document report. */
+    cJSON_InitHooks(&hooks);
+    handled = dispatch_request_method(g_server, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC,
+                                      g_params, &g_response, &status);
+    cJSON_InitHooks(ZR_NULL);
+    TEST_ASSERT_TRUE(handled);
+    TEST_ASSERT_EQUAL_INT(ZR_LSP_HANDLER_INTERNAL_ERROR, status);
+    TEST_ASSERT_NULL(g_response);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_handler_json_allocation_failure_is_internal);
@@ -372,11 +496,14 @@ int main(void) {
     RUN_TEST(test_handler_cancelled_status_is_explicit);
     RUN_TEST(test_handler_invalid_params_remain_invalid);
     RUN_TEST(test_handler_valid_results_remain_successful);
+    RUN_TEST(test_stale_code_action_allocation_failure_is_internal);
+    RUN_TEST(test_workspace_report_allocation_failure_is_internal);
     RUN_TEST(test_ordinary_handlers_release_results);
     RUN_TEST(test_workspace_symbols_release_cancelled_result);
     RUN_TEST(test_document_symbols_release_cancelled_result);
     RUN_TEST(test_references_release_cancelled_result);
     RUN_TEST(test_rename_release_cancelled_result);
     RUN_TEST(test_highlights_release_cancelled_result);
+    RUN_TEST(test_linked_editing_releases_cancelled_result);
     return UNITY_END();
 }

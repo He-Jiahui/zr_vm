@@ -1,6 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
-static cJSON *create_semantic_tokens_response(SZrStdioServer *server,
+static SZrLspHandlerResult create_semantic_tokens_response(SZrStdioServer *server,
                                               const cJSON *params,
                                               const SZrLspRange *range) {
     const char *uriText;
@@ -12,7 +13,7 @@ static cJSON *create_semantic_tokens_response(SZrStdioServer *server,
     TZrBool ownsSnapshot = ZR_FALSE;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     snapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(server->context);
@@ -26,7 +27,7 @@ static cJSON *create_semantic_tokens_response(SZrStdioServer *server,
         if (ownsSnapshot) {
             ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
         }
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
     }
 
     ZrLanguageServer_LspSemanticSnapshot_FormatResultId(snapshot, tokens.length, resultId, sizeof(resultId));
@@ -39,14 +40,14 @@ static cJSON *create_semantic_tokens_response(SZrStdioServer *server,
     if (ownsSnapshot) {
         ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
     }
-    return result != NULL ? result : cJSON_CreateNull();
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params) {
     return create_semantic_tokens_response(server, params, ZR_NULL);
 }
 
-cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const cJSON *params) {
     const char *uriText;
     const cJSON *previousResultIdJson;
     const char *previousResultIdText = NULL;
@@ -60,13 +61,13 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
     TZrBool ownsSnapshot = ZR_FALSE;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     previousResultIdJson = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
     if (!cJSON_IsString((cJSON *)previousResultIdJson) ||
         cJSON_GetStringValue((cJSON *)previousResultIdJson) == NULL) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     snapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(server->context);
@@ -82,7 +83,7 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
         if (ownsSnapshot) {
             ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
         }
-        return cJSON_CreateNull();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
     }
 
     ZrLanguageServer_LspSemanticSnapshot_FormatResultId(snapshot, tokens.length, resultId, sizeof(resultId));
@@ -96,10 +97,10 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
     if (ownsSnapshot) {
         ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
     }
-    return result != NULL ? result : cJSON_CreateNull();
+    return stdio_handler_result_from_json(server->context, result);
 }
 
-cJSON *handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspRange range;
 
     const char *uriText;
@@ -107,7 +108,7 @@ cJSON *handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON 
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
         !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     ZR_UNUSED_PARAMETER(uriText);

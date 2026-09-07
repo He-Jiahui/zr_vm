@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 #include "stdio_inline_value_scan.h"
 #include "stdio_inline_value_semantic_text.h"
@@ -796,7 +797,7 @@ static void inline_value_scan_line(const char *content,
     }
 }
 
-cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_inline_value_request(SZrStdioServer *server, const cJSON *params) {
     const char *uriText;
     SZrString *uri;
     SZrLspRange requestRange;
@@ -811,19 +812,19 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
         !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &requestRange)) {
-        return NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
     ZR_UNUSED_PARAMETER(uriText);
 
     fileVersion = get_file_version_for_uri(server, uri);
     if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
-        return cJSON_CreateArray();
+        return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
     result = cJSON_CreateArray();
     if (result == NULL) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-        return NULL;
+        return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
     content = snapshot.content;
@@ -857,5 +858,5 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
     }
 
     ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
-    return result;
+    return stdio_handler_result_from_json(server->context, result);
 }

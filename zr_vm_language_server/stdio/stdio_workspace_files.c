@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "stdio_handler_result.h"
 
 #include "project/lsp_workspace.h"
 
@@ -303,17 +304,17 @@ int handle_did_rename_files(SZrStdioServer *server, const cJSON *params) {
     return handledAny;
 }
 
-cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params) {
+SZrLspHandlerResult handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *files;
     cJSON *workspaceEdit = NULL;
 
     if (server == ZR_NULL || params == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
-        return ZR_NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     files = get_object_item(params, ZR_LSP_FIELD_FILES);
     if (!cJSON_IsArray((cJSON *)files)) {
-        return ZR_NULL;
+        return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
     for (int index = 0; index < cJSON_GetArraySize((cJSON *)files); index++) {
@@ -328,7 +329,7 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
 
         if (!cJSON_IsObject((cJSON *)file)) {
             cJSON_Delete(workspaceEdit);
-            return ZR_NULL;
+            return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
         }
         oldUriJson = get_object_item(file, ZR_LSP_FIELD_OLD_URI);
         newUriJson = get_object_item(file, ZR_LSP_FIELD_NEW_URI);
@@ -337,7 +338,7 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
             cJSON_GetStringValue((cJSON *)oldUriJson) == NULL ||
             cJSON_GetStringValue((cJSON *)newUriJson) == NULL) {
             cJSON_Delete(workspaceEdit);
-            return ZR_NULL;
+            return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
         }
         oldUri = workspace_file_operation_uri(server, oldUriJson);
         newUri = workspace_file_operation_uri(server, newUriJson);
@@ -360,7 +361,7 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
             }
             if (failedPlan) {
                 cJSON_Delete(workspaceEdit);
-                return cJSON_CreateNull();
+                return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
             }
             continue;
         }
@@ -372,7 +373,7 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
             free_locations_array(server->state, &locations);
             ZrCore_Array_Free(server->state, &documentSnapshots);
             cJSON_Delete(workspaceEdit);
-            return cJSON_CreateNull();
+            return stdio_handler_result_from_json(server->context, cJSON_CreateNull());
         }
 
         if (workspaceEdit == NULL) {
@@ -394,9 +395,9 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
         ZrCore_Array_Free(server->state, &documentSnapshots);
 
         if (workspaceEdit == NULL) {
-            return cJSON_CreateNull();
+            return stdio_handler_result_from_json(server->context, ZR_NULL);
         }
     }
 
-    return workspaceEdit != NULL ? workspaceEdit : cJSON_CreateNull();
+    return stdio_handler_result_from_json(server->context, workspaceEdit != NULL ? workspaceEdit : cJSON_CreateNull());
 }
