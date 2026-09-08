@@ -112,7 +112,7 @@ test. These are not accepted as passing checks.
 
 Clang full smoke passes all preceding protocol assertions and reaches line 4174,
 where peak RSS is 711,630,848 bytes (678.66 MiB), above the unchanged 512 MiB limit.
-Because this assertion precedes explicit shutdown, this run does not certify
+Because this assertion follows shutdown but precedes explicit exit, this run does not certify
 normal full-smoke sanitizer teardown. No memory limit or sanitizer option was
 relaxed. The standalone focused sanitizer tests remain clean.
 

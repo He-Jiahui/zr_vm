@@ -718,6 +718,14 @@ value must be a positive safe integer. The smoke prints the peak and limit in
 bytes and MiB, and fails when the peak exceeds the limit. Unsupported host
 platforms fail instead of silently reporting an approximation.
 
+Final sampling occurs while the child exists, but the budget assertion runs
+after explicit `exit`, `waitForExit`, exit-status and stderr checks. A budget
+failure therefore retains complete normal-teardown evidence, including sanitizer
+reports. Sampling and the frozen default budget are unchanged. A one-byte limit
+provides a deterministic negative test: the smoke must exit 1 after the server
+has received `exit` and closed with status 0. See
+[Sub12](../plans/lsp/optimize/2026-09-08-plan01-task06-sub12-smoke-budget-teardown.md).
+
 ## Lifecycle Races
 
 The known-id protocol conformance case queues its request and cancellation

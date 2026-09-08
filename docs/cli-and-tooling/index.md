@@ -110,6 +110,7 @@ doc_type: category-index
   - 普通 rename 与 source-file rename 的 captured-version 序列化和整批失败边界
 - `lsp-stdio-validation.md`
   - stdio server child process 的 OS peak working-set budget 与跨平台采集
+  - 超预算仍先完成 exit 与 sanitizer 退出验证，保留原始峰值断言
   - request/cancel/change/close 的 reader-thread 线性化和精确 snapshot 验证
   - 关闭文档时同步释放项目诊断目标，保留工作区内磁盘恢复和其他 open overlay
   - server-owned reader stop/join、ordered teardown 与启动故障注入

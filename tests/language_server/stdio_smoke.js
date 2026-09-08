@@ -95,7 +95,6 @@ class LspProcessPeakMemory {
     }
 
     assertWithinBudget() {
-        this.observe('final');
         console.log(
             `LSP stdio peak working set: ${this.peakBytes} bytes ` +
             `(${formatMemoryMiB(this.peakBytes)} MiB), limit ${this.limitBytes} bytes ` +
@@ -4171,12 +4170,13 @@ async function main() {
 
     const shutdown = await client.request('shutdown', undefined);
     assert(shutdown === null, 'shutdown must return null');
-    peakMemory.assertWithinBudget();
+    peakMemory.observe('final');
 
     client.notify('exit', undefined);
     const exitCode = await client.waitForExit();
     assert(exitCode === 0, `server exited with ${exitCode}. stderr=${client.stderr()}`);
     assert(client.stderr().trim() === '', `language server stderr must stay empty during stdio smoke. stderr=${client.stderr()}`);
+    peakMemory.assertWithinBudget();
     cleanupPath(watchedFixtureRootToCleanup);
     cleanupPath(watchedBinaryFixtureRootToCleanup);
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
