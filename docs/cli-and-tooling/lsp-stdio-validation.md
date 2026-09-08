@@ -820,9 +820,12 @@ typed duplicate and cancellation ids, stdout-isolated trace output, progress,
 partial results, and classified malformed frames. It explicitly cancels a
 known active workspace-symbol request and requires `-32800`.
 
-The current driver has 31 cases. Its known-id fixture exercises a queued request;
+The current driver has 52 cases. Its known-id fixture exercises a queued request;
 the [2026-09-05 setup-deadline repair](../plans/lsp/optimize/2026-09-05-plan00-task03-sub01-cancellation-setup.md)
-records three-toolchain 30/30 results without claiming active-query latency.
+records three-toolchain 30/30 results without claiming active-query latency. The
+current GCC replay passes all 52 cases and its registered CTest target (`1/1`);
+the source-version and cross-toolchain limits are recorded in [Plan 01 Task 6
+Sub14](../plans/lsp/optimize/2026-09-09-plan01-task06-sub14-gcc-protocol-conformance.md).
 
 `stdio_document_sync_conformance.js` is a separate request/response test. It
 opens document version 1, replaces it through `didChange` version 2, confirms
