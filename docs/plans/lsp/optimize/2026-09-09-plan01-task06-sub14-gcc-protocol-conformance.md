@@ -58,6 +58,12 @@ that binary was not rebuilt by the current cache and is not accepted as current
 cross-toolchain evidence. No current MSVC stdio binary exists in the checkout's
 validation directories, so the prior MSVC replay remains historical evidence.
 
+As a repeatability check on the same GCC cache, one direct replay briefly failed
+the `cancel during partial results` envelope assertion; the next two direct
+replays passed `52/52`, and the registered CTest passed `1/1`. Keep the direct
+replay race visible while treating the repeated pass and CTest result as the
+current GCC evidence.
+
 ## 接受决定
 
 Accept the current GCC protocol conformance result only. Keep the Plan 01 Task

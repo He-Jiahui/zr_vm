@@ -468,7 +468,8 @@ server exit 0、stderr 为空且无 sanitizer 报告。生产 512 MiB 门禁仍�
 
 2026-09-09 已记录 [Plan 01 Task 6 Sub14 current GCC protocol conformance](2026-09-09-plan01-task06-sub14-gcc-protocol-conformance.md)：
 当前工作树在 WSL ext4 GCC cache 上重放完整 52-case protocol conformance 与注册 CTest，
-分别为 52/52 和 1/1，真实 exit 0。Clang 旧 cache 的 50/52 超时和当前 checkout 缺少
+两次复核为 52/52 和 1/1，期间一次直接回放在 `cancel during partial results` 的
+envelope 断言上瞬时失败后恢复。Clang 旧 cache 的 50/52 超时和当前 checkout 缺少
 MSVC stdio binary 均不计入跨工具链父门禁；生产 512 MiB 峰值和同版本 Clang/MSVC 重放继续待办。
 
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
