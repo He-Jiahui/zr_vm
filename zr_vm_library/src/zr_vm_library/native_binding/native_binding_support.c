@@ -768,6 +768,23 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
                                   0,
                                   ZR_MEMORY_NATIVE_TYPE_GLOBAL);
             }
+            /* Re-registration is a provider generation change. Existing
+             * closures remain rooted, but their cached dispatch is invalid
+             * until a new call-binding link resolves the replacement. */
+            if (record->descriptor != descriptor && registry->bindingEntries.isValid) {
+                for (TZrSize bindingIndex = 0u; bindingIndex < registry->bindingEntries.length; ++bindingIndex) {
+                    ZrLibBindingEntry *binding = (ZrLibBindingEntry *)ZrCore_Array_Get(
+                            &registry->bindingEntries, bindingIndex);
+                    if (binding != ZR_NULL && binding->moduleDescriptor == record->descriptor &&
+                        binding->closure != ZR_NULL) {
+                        binding->closure->nativeBindingDirectDispatch.callback = ZR_NULL;
+                        binding->closure->nativeBindingLookupIndex = ZR_MAX_SIZE;
+                        if (++binding->closure->callBindingGeneration == 0u)
+                            ++binding->closure->callBindingGeneration;
+                        binding->moduleSignatureHash = 0u;
+                    }
+                }
+            }
             record->descriptor = descriptor;
             record->moduleName = moduleNameCopy;
             record->registrationKind = registrationKind;

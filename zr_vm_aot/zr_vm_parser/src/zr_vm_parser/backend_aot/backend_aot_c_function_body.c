@@ -572,6 +572,22 @@ void backend_aot_write_c_function_body(FILE *file,
         TZrInt32 operandA2 = instruction->instruction.operand.operand2[0];
 
         fprintf(file, "zr_aot_fn_%u_ins_%u:\n", (unsigned)entry->flatIndex, (unsigned)instructionIndex);
+        if (entry->function->callBindingInstructionMap != ZR_NULL) {
+            fprintf(file, "    frame.currentInstructionIndex = %u;\n", (unsigned)instructionIndex);
+        }
+        if (entry->function->callBindingInstructionMap != ZR_NULL &&
+            instructionIndex < entry->function->callBindingInstructionMapLength &&
+            entry->function->callBindingInstructionMap[instructionIndex] != 0u) {
+            backend_aot_write_c_begin_instruction(file, instructionIndex,
+                    backend_aot_c_step_flags_for_instruction(entry->function, instruction));
+            TZrUInt32 cacheIndex = entry->function->callBindingInstructionMap[instructionIndex] - 1u;
+            if (cacheIndex < entry->function->callSiteCacheLength &&
+                entry->function->callSiteCaches[cacheIndex].kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL) {
+                fprintf(file, "    ZR_AOT_C_GUARD(ZrCore_CallBinding_TryPrepareKnownCall(state, frame.function, %u, "
+                        "&frame.slotBase[%u].value, &state->lastCallBindingError));\n",
+                        (unsigned)instructionIndex, (unsigned)operandA1);
+            }
+        }
         fprintf(file, "    /* opcode=%u extra=%u op1a=%u op1b=%u op2=%d */\n",
                 (unsigned)instruction->instruction.operationCode,
                 (unsigned)destinationSlot,
@@ -1928,44 +1944,44 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):
-                backend_aot_write_c_unsupported_meta_value_access(file,
-                                                                  "SUPER_META_GET_CACHED",
-                                                                  destinationSlot,
-                                                                  operandA1,
-                                                                  operandB1);
+                backend_aot_write_c_bound_meta_get_cached(file,
+                                                          destinationSlot,
+                                                          operandA1,
+                                                          operandB1,
+                                                          ZR_FALSE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
-                backend_aot_write_c_unsupported_meta_value_access(file,
-                                                                  "SUPER_META_SET_CACHED",
-                                                                  destinationSlot,
-                                                                  operandA1,
-                                                                  operandB1);
+                backend_aot_write_c_bound_meta_set_cached(file,
+                                                          destinationSlot,
+                                                          operandA1,
+                                                          operandB1,
+                                                          ZR_FALSE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
-                backend_aot_write_c_unsupported_meta_value_access(file,
-                                                                  "SUPER_META_GET_STATIC_CACHED",
-                                                                  destinationSlot,
-                                                                  operandA1,
-                                                                  operandB1);
+                backend_aot_write_c_bound_meta_get_cached(file,
+                                                          destinationSlot,
+                                                          operandA1,
+                                                          operandB1,
+                                                          ZR_TRUE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
-                backend_aot_write_c_unsupported_meta_value_access(file,
-                                                                  "SUPER_META_SET_STATIC_CACHED",
-                                                                  destinationSlot,
-                                                                  operandA1,
-                                                                  operandB1);
+                backend_aot_write_c_bound_meta_set_cached(file,
+                                                          destinationSlot,
+                                                          operandA1,
+                                                          operandB1,
+                                                          ZR_TRUE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,

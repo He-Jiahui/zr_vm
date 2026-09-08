@@ -48,6 +48,9 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
                                                  SZrTypeMemberInfo **outMember);
 ZR_PARSER_API TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 ZR_PARSER_API TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, SZrInferredType *result);
+TZrBool inferred_type_from_static_callable_member(SZrCompilerState *cs,
+                                                  const SZrTypeMemberInfo *memberInfo,
+                                                  SZrInferredType *result);
 ZR_PARSER_API TZrBool inferred_type_implements_protocol_mask(SZrCompilerState *cs,
                                                              const SZrInferredType *type,
                                                              TZrUInt64 protocolMask);

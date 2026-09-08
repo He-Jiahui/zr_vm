@@ -6,6 +6,7 @@
 #include "zr_vm_parser/writer.h"
 
 TZrBool ZrParser_Writer_FunctionTreeHasDebugInfo(const SZrFunction *function);
+TZrBool ZrParser_Writer_WriteCallBindings(FILE *file, const SZrFunction *function);
 
 TZrBool ZrParser_Writer_WriteIoFunction(SZrState *state,
                                         FILE *file,

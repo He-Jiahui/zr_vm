@@ -10,6 +10,7 @@
 #include "compiler_decorator_contract.h"
 #include "compiler_ffi_wrapper_decorators.h"
 #include "zr_vm_parser/interface_contract.h"
+#include "zr_vm_core/call_binding.h"
 
 static TZrUInt32 compiler_member_virtual_slot_none(void) {
     return (TZrUInt32)-1;
@@ -531,6 +532,13 @@ static void compiler_class_bind_interface_contract_slot(const SZrTypeMemberInfo 
     }
     if (requiredMember->interfaceContractSlot != compiler_member_interface_contract_slot_none()) {
         ((SZrTypeMemberInfo *)implementation)->interfaceContractSlot = requiredMember->interfaceContractSlot;
+    }
+    /* The interface declaration has no executable body.  Carry the concrete
+     * implementation's stable signature into the contract so the receiver
+     * slot can validate the selected target without a name lookup. */
+    if (requiredMember->signatureHash == 0u && implementation->compiledFunction != ZR_NULL) {
+        ((SZrTypeMemberInfo *)requiredMember)->signatureHash =
+                ZrCore_CallBinding_FunctionSignatureHash(implementation->compiledFunction);
     }
 }
 

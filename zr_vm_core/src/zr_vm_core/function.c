@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/function_identity.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution.h"
@@ -341,26 +342,15 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->semIrDeoptTableLength = 0;
     function->callSiteCaches = ZR_NULL;
     function->callSiteCacheLength = 0;
+    function->callBindingGeneration = 1u;
+    function->callBindingInstructionMap = ZR_NULL;
+    function->callBindingInstructionMapLength = 0u;
     function->cachedStatelessClosure = ZR_NULL;
     return function;
 }
 
 static TZrBool function_matches_inline_child(const SZrFunction *left, const SZrFunction *right) {
-    TZrBool sameFunctionName;
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    sameFunctionName = left->functionName == right->functionName ||
-                       (left->functionName != ZR_NULL && right->functionName != ZR_NULL &&
-                        ZrCore_String_Equal(left->functionName, right->functionName));
-
-    return sameFunctionName &&
-           left->parameterCount == right->parameterCount &&
-           left->instructionsLength == right->instructionsLength &&
-           left->lineInSourceStart == right->lineInSourceStart &&
-           left->lineInSourceEnd == right->lineInSourceEnd;
+    return ZrCore_Function_HasSameDefinition(left, right);
 }
 
 static const SZrFunction *function_resolve_closure_target_from_constant(const SZrTypeValue *constant) {
@@ -1053,6 +1043,7 @@ TZrBool ZrCore_Function_ApplyReturnEscape(struct SZrState *state,
 }
 
 void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function) {
+    /* Binding identity is resolved through explicit metadata when available. */
     SZrFunction *prototypeContextFunction;
 
     if (function == ZR_NULL) {
@@ -1117,9 +1108,20 @@ void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *functio
             continue;
         }
 
+        TZrUInt32 aliasIndex = 0u;
+        TZrBool hasDefinition;
+        TZrBool hasAlias = ZrCore_Function_FindConstantChildAlias(function, constantIndex, &aliasIndex, &hasDefinition);
+        if (hasDefinition && !hasAlias) continue;
+        if (!hasAlias) {
+            TZrUInt32 matches = 0u;
+            for (TZrUInt32 childIndex = 0u; childIndex < function->childFunctionLength; childIndex++) {
+                if (function_matches_inline_child(constantFunction, &function->childFunctionList[childIndex])) ++matches;
+            }
+            if (matches != 1u) continue;
+        }
         for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
             SZrFunction *childFunction = &function->childFunctionList[childIndex];
-            if (!function_matches_inline_child(constantFunction, childFunction)) {
+            if (hasAlias ? childIndex != aliasIndex : !function_matches_inline_child(constantFunction, childFunction)) {
                 continue;
             }
 
@@ -1240,6 +1242,9 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->semIrDeoptTableLength = 0;
     function->callSiteCaches = ZR_NULL;
     function->callSiteCacheLength = 0;
+    function->callBindingGeneration = 0u;
+    function->callBindingInstructionMap = ZR_NULL;
+    function->callBindingInstructionMapLength = 0u;
     function->prototypeInstances = ZR_NULL;
     function->prototypeInstancesLength = 0;
     function->functionName = ZR_NULL;
@@ -1589,6 +1594,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
                                       function->semIrDeoptTable,
                                       sizeof(SZrSemIrDeoptEntry) * function->semIrDeoptTableLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->callBindingInstructionMap != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(global, function->callBindingInstructionMap,
+                sizeof(TZrUInt32) * function->callBindingInstructionMapLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        function->callBindingInstructionMap = ZR_NULL;
+        function->callBindingInstructionMapLength = 0u;
     }
     if (function->callSiteCaches != ZR_NULL && function->callSiteCacheLength > 0) {
         ZrCore_Memory_RawFreeWithType(global,

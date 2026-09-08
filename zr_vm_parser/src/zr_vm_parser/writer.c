@@ -1845,6 +1845,9 @@ static TZrBool write_io_function_internal(SZrState *state,
     write_function_member_entries(file, state, function);
     write_function_semir_metadata(file, state, function);
     write_function_callsite_cache_metadata(file, function);
+    if (!ZrParser_Writer_WriteCallBindings(file, function)) {
+        return ZR_FALSE;
+    }
     write_function_native_import_contracts(file, function);
 
     write_function_prototypes(state, file, function);

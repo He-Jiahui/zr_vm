@@ -70,6 +70,12 @@ typedef struct ZrLibBindingEntry {
         const ZrLibMethodDescriptor *methodDescriptor;
         const ZrLibMetaMethodDescriptor *metaMethodDescriptor;
     } descriptor;
+    /* Compiler-visible identity. These are derived once when the closure is
+     * registered and make native call binding independent of member names. */
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt64 signatureHash;
+    TZrUInt64 moduleSignatureHash;
 } ZrLibBindingEntry;
 
 typedef struct ZrLibStableValueCopy {
@@ -107,6 +113,10 @@ typedef struct ZrLibrary_NativeRegistryState {
     TZrPtr hostNativeModuleLoaderUserData;
     FZrProviderModuleNameResolver hostProviderModuleNameResolver;
     TZrPtr hostProviderModuleNameResolverUserData;
+    FZrCallBindingModuleResolver hostCallBindingModuleResolver;
+    TZrPtr hostCallBindingModuleResolverUserData;
+    FZrTypedCallBindingResolver hostTypedCallBindingResolver;
+    TZrPtr hostTypedCallBindingResolverUserData;
     FZrOwnershipStrongRefObserver hostOwnershipStrongRefObserver;
     TZrPtr hostOwnershipStrongRefObserverUserData;
 } ZrLibrary_NativeRegistryState;
@@ -118,6 +128,12 @@ const ZrLibModuleDescriptor *ZrLibrary_ReflectionContract_GetDescriptor(void);
 const TZrChar *native_registry_resolve_provider_module_name(
         TZrUInt32 providerRole,
         TZrPtr userData);
+TZrBool native_registry_link_call_binding(SZrState *state, SZrFunction *function,
+        TZrUInt32 cacheIndex, SZrCallBindingDiagnostic *diagnostic, TZrPtr userData);
+TZrUInt64 native_registry_call_binding_type_hash(const ZrLibTypeDescriptor *type);
+TZrBool native_registry_resolve_typed_call_binding(SZrState *state,
+        const SZrTypeValue *callable, SZrCallBindingTarget *target,
+        TZrUInt64 *signatureHash, TZrPtr userData);
 
 static ZR_FORCE_INLINE TZrUInt32 native_binding_descriptor_dispatch_flags(EZrLibResolvedBindingKind bindingKind,
                                                                           const void *descriptor) {
@@ -567,6 +583,12 @@ void native_binding_register_prototype_in_global_scope(SZrState *state,
 ZR_LIBRARY_API ZrLibrary_NativeRegistryState *native_registry_get(SZrGlobalState *global);
 ZR_LIBRARY_API ZrLibBindingEntry *native_registry_find_binding(ZrLibrary_NativeRegistryState *registry,
                                                                SZrClosureNative *closure);
+ZR_LIBRARY_API TZrBool native_registry_assign_call_binding_identity(
+        const ZrLibModuleDescriptor *moduleDescriptor,
+        const ZrLibTypeDescriptor *typeDescriptor,
+        EZrLibResolvedBindingKind bindingKind,
+        const void *descriptor,
+        ZrLibBindingEntry *entry);
 const ZrLibRegisteredModuleRecord *native_registry_find_record(ZrLibrary_NativeRegistryState *registry,
                                                                       const TZrChar *moduleName);
 const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(

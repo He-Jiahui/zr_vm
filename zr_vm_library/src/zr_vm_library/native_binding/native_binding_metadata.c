@@ -1269,6 +1269,7 @@ TZrBool native_registry_add_methods(SZrState *state,
             descriptor.isStatic = methodDescriptor->isStatic;
             descriptor.isWritable = ZR_FALSE;
             descriptor.contractRole = methodDescriptor->contractRole;
+            descriptor.methodFunction = ZR_CAST(SZrFunction *, methodValue.value.object);
             ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
         }
 

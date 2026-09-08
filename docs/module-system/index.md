@@ -73,6 +73,10 @@ doc_type: category-index
   - Syntax 10R M1 的 domain-aware ModuleSpecifier / ModuleIdentity substrate
   - `zr`、`native:`、workspace、relative、`#alias`、`@package` 与 canonical `file:` 分类
   - provider/locator 与 public identity 的分离，以及 M2 manifest/resolution 边界
+- `call-binding-relocation.md`
+  - VM module relocation from compiler binding facts to the installed provider
+    closure or exact constant index
+  - pointer-free token/signature/layout persistence and generation failures
 
 ## Import Path Contract
 

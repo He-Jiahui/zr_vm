@@ -6,6 +6,9 @@
 #define ZR_VM_LIBRARY_NATIVE_REGISTRY_H
 
 #include "zr_vm_library/native_binding.h"
+#include "zr_vm_core/call_binding.h"
+
+struct SZrClosureNative;
 
 typedef enum EZrLibNativeModuleRegistrationKind {
     ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_BUILTIN = 0,
@@ -94,6 +97,18 @@ ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *global,
                                                                           const TZrChar *sourcePath,
                                                                           ZrLibRegisteredModuleInfo *outInfo);
+/* Stable provider identity used by compiler call-binding contracts. */
+ZR_LIBRARY_API TZrUInt64 ZrLibrary_NativeRegistry_ComputeModuleSignatureHash(
+        const ZrLibModuleDescriptor *descriptor);
+ZR_LIBRARY_API EZrCallBindingStatus ZrLibrary_NativeRegistry_ResolveCallBinding(
+        SZrState *state,
+        const SZrCallBindingContract *contract,
+        SZrCallBindingTarget *outTarget,
+        SZrCallBindingDiagnostic *diagnostic);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetCallBindingIdentity(
+        SZrGlobalState *global,
+        struct SZrClosureNative *closure,
+        SZrCallBindingContract *outContract);
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(SZrState *state,
                                                                               const TZrChar *projectDirectory,
                                                                               const TZrChar *moduleName);

@@ -149,7 +149,7 @@ const TZrChar *ZrCore_Artifact_SectionName(TZrUInt32 sectionKind) {
             "layout-table", "code-table", "relocation-binding-table", "debug-map",
             "syntax-tree", "semantic-ir", "domain-transfer-table", "scheduler-contract-table",
             "metadata-state-table", "metadata-record-table", "metadata-blob-heap",
-            "layout-map-heap"};
+            "layout-map-heap", "call-binding-table"};
     if (sectionKind >= (TZrUInt32)(sizeof(names) / sizeof(names[0]))) return "unknown";
     return names[sectionKind];
 }

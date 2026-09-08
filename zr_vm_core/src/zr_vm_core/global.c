@@ -401,6 +401,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->nativeRegistryStateCleanup = ZR_NULL;
     global->providerModuleNameResolver = ZR_NULL;
     global->providerModuleNameResolverUserData = ZR_NULL;
+    global->callBindingModuleResolver = ZR_NULL;
+    global->callBindingModuleResolverUserData = ZR_NULL;
     global->moduleLoadDiagnostic[0] = '\0';
     global->ownershipStrongRefObserver = ZR_NULL;
     global->ownershipStrongRefObserverUserData = ZR_NULL;
@@ -445,6 +447,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->nativeRegistryStateCleanup = ZR_NULL;
     global->providerModuleNameResolver = ZR_NULL;
     global->providerModuleNameResolverUserData = ZR_NULL;
+    global->callBindingModuleResolver = ZR_NULL;
+    global->callBindingModuleResolverUserData = ZR_NULL;
     global->moduleLoadDiagnostic[0] = '\0';
     global->ownershipStrongRefObserver = ZR_NULL;
     global->ownershipStrongRefObserverUserData = ZR_NULL;

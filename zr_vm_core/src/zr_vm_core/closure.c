@@ -210,6 +210,7 @@ SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closu
     closure->nativeFunction = ZR_NULL;
     closure->aotShimFunction = ZR_NULL;
     closure->nativeBindingLookupIndex = ZR_MAX_SIZE;
+    closure->callBindingGeneration = 1u;
     closure->nativeBindingDescriptor = ZR_NULL;
     closure->nativeBindingModuleDescriptor = ZR_NULL;
     closure->nativeBindingTypeDescriptor = ZR_NULL;

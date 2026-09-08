@@ -589,6 +589,9 @@ static TZrBool io_runtime_copy_callsite_cache_metadata(SZrState *state,
         dst->memberEntryIndex = src->memberEntryIndex;
         dst->deoptId = src->deoptId;
         dst->argumentCount = src->argumentCount;
+        dst->binding.contract = src->bindingContract;
+        dst->bindingLocation = src->bindingLocation;
+        dst->binding.target.targetKind = ZR_CALL_BINDING_TARGET_NONE;
     }
     function->callSiteCacheLength = (TZrUInt32)source->callSiteCacheLength;
     return ZR_TRUE;
@@ -1673,7 +1676,8 @@ struct SZrFunction *ZrCore_Io_LoadEntryFunctionToRuntime(struct SZrState *state,
         return ZR_NULL;
     }
 
-    if (!io_runtime_populate_function(state, module->entryFunction, function)) {
+    if (!io_runtime_populate_function(state, module->entryFunction, function) ||
+        !ZrCore_CallBinding_LinkFunction(state, function, &state->lastCallBindingError)) {
         ZrCore_Function_Free(state, function);
         return ZR_NULL;
     }

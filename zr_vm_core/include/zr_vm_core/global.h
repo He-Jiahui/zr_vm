@@ -29,6 +29,8 @@ struct SZrRawObject;
 // from state.h
 struct SZrState;
 struct SZrProfileRuntime;
+struct SZrFunction;
+struct SZrCallBindingDiagnostic;
 
 // from gc.h
 struct SZrGarbageCollector;
@@ -53,6 +55,15 @@ typedef struct SZrObjectModule *(*FZrAotModuleLoader)(struct SZrState *state,
 
 typedef const TZrChar *(*FZrProviderModuleNameResolver)(TZrUInt32 providerRole,
                                                         TZrPtr userData);
+
+typedef TZrBool (*FZrCallBindingModuleResolver)(struct SZrState *state,
+                                                struct SZrFunction *function,
+                                                TZrUInt32 cacheIndex,
+                                                struct SZrCallBindingDiagnostic *diagnostic,
+                                                TZrPtr userData);
+typedef TZrBool (*FZrTypedCallBindingResolver)(struct SZrState *state,
+        const SZrTypeValue *callable, struct SZrCallBindingTarget *target,
+        TZrUInt64 *signatureHash, TZrPtr userData);
 
 typedef void (*FZrGlobalOpaqueStateCleanup)(struct SZrGlobalState *global, TZrPtr state);
 typedef void (*FZrOwnershipStrongRefObserver)(struct SZrState *state,
@@ -113,6 +124,10 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     FZrGlobalOpaqueStateCleanup nativeRegistryStateCleanup;
     FZrProviderModuleNameResolver providerModuleNameResolver;
     TZrPtr providerModuleNameResolverUserData;
+    FZrCallBindingModuleResolver callBindingModuleResolver;
+    TZrPtr callBindingModuleResolverUserData;
+    FZrTypedCallBindingResolver typedCallBindingResolver;
+    TZrPtr typedCallBindingResolverUserData;
     TZrChar moduleLoadDiagnostic[ZR_RUNTIME_ERROR_BUFFER_LENGTH];
     FZrOwnershipStrongRefObserver ownershipStrongRefObserver;
     TZrPtr ownershipStrongRefObserverUserData;

@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
+#include "zr_vm_core/call_binding.h"
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
@@ -602,6 +603,8 @@ typedef struct SZrFunctionCallSiteCacheEntry {
     SZrFunctionCallSitePicSlot picSlots[ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY];
     TZrUInt32 runtimeHitCount;
     TZrUInt32 runtimeMissCount;
+    SZrCallBinding binding;
+    SZrCallBindingLocation bindingLocation;
 } SZrFunctionCallSiteCacheEntry;
 
 struct ZR_STRUCT_ALIGN SZrFunction {
@@ -745,6 +748,9 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 directValueFrameSlotCountPlusOne;
     /* Immutable derived summary; zero means scan the current instruction stream. */
     TZrUInt32 generatedFrameSlotCountPlusOne;
+    TZrUInt64 callBindingGeneration;
+    TZrUInt32 *callBindingInstructionMap;
+    TZrUInt32 callBindingInstructionMapLength;
 };
 
 typedef struct SZrFunction SZrFunction;

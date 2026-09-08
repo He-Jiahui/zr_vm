@@ -5,6 +5,7 @@
 #include "module/module_internal.h"
 #include "module/module_import_signature.h"
 #include "module/module_reflection_import.h"
+#include "zr_vm_core/module_call_binding.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/reflection.h"
@@ -867,6 +868,12 @@ static TZrInt64 module_loader_import_native_entry(SZrState *state, TZrBool allow
     if (module != ZR_NULL &&
         !zr_module_import_signature_verify(state, callerFunction, path, module, &signatureMismatch)) {
         if (!allowSignatureMismatchFallback) {
+            state->lastCallBindingError.status =
+                    signatureMismatch.kind == ZR_MODULE_IMPORT_SIGNATURE_MISMATCH_MEMBER_SIGNATURE
+                    ? ZR_CALL_BINDING_SIGNATURE_MISMATCH : ZR_CALL_BINDING_MODULE_MISMATCH;
+            state->lastCallBindingError.targetMetadataToken = signatureMismatch.expectedMetadataToken;
+            state->lastCallBindingError.expected = signatureMismatch.expectedHash;
+            state->lastCallBindingError.actual = signatureMismatch.actualHash;
             functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
             state->stackTop.valuePointer = functionBase + 1;
             module_loader_raise_import_signature_mismatch(state, &signatureMismatch, path, module);
@@ -874,6 +881,12 @@ static TZrInt64 module_loader_import_native_entry(SZrState *state, TZrBool allow
         module = ZR_NULL;
     }
 
+    if (module != ZR_NULL && !ZrCore_CallBinding_LinkImportedModule(state, callerFunction, module,
+                                                                  &state->lastCallBindingError)) {
+        ZrCore_Debug_RunError(state, "CallBinding link error: %s (token=0x%08x)",
+                ZrCore_CallBinding_StatusName(state->lastCallBindingError.status),
+                state->lastCallBindingError.targetMetadataToken);
+    }
     functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
     result = ZrCore_Stack_GetValue(functionBase);
     if (module == ZR_NULL) {

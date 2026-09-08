@@ -4,6 +4,7 @@
 #include "backend_aot_reachability.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/function_identity.h"
 
 static const SZrFunction *backend_aot_function_from_constant_value(SZrState *state, const SZrTypeValue *value) {
     return ZrCore_Closure_GetMetadataFunctionFromValue(state, value);
@@ -35,22 +36,7 @@ static TZrUInt32 backend_aot_count_function_graph_capacity(SZrState *state, cons
 }
 
 static TZrBool backend_aot_functions_equivalent(const SZrFunction *left, const SZrFunction *right) {
-    TZrBool sameFunctionName;
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    sameFunctionName = left->functionName == right->functionName ||
-                       (left->functionName == ZR_NULL && right->functionName == ZR_NULL) ||
-                       (left->functionName != ZR_NULL && right->functionName != ZR_NULL &&
-                        ZrCore_String_Equal(left->functionName, right->functionName));
-
-    return sameFunctionName &&
-           left->parameterCount == right->parameterCount &&
-           left->instructionsLength == right->instructionsLength &&
-           left->lineInSourceStart == right->lineInSourceStart &&
-           left->lineInSourceEnd == right->lineInSourceEnd;
+    return ZrCore_Function_HasSameDefinition(left, right);
 }
 
 static TZrBool backend_aot_function_table_contains(const SZrAotFunctionEntry *entries,

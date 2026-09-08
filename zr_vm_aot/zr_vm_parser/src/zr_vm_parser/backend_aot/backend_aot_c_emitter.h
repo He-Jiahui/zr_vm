@@ -559,6 +559,16 @@ void backend_aot_write_c_unsupported_meta_value_access(FILE *file,
                                                        TZrUInt32 primarySlot,
                                                        TZrUInt32 secondarySlot,
                                                        TZrUInt32 memberOrCacheIndex);
+void backend_aot_write_c_bound_meta_get_cached(FILE *file,
+                                               TZrUInt32 destinationSlot,
+                                               TZrUInt32 receiverSlot,
+                                               TZrUInt32 cacheIndex,
+                                               TZrBool expectedStatic);
+void backend_aot_write_c_bound_meta_set_cached(FILE *file,
+                                               TZrUInt32 receiverAndResultSlot,
+                                               TZrUInt32 assignedValueSlot,
+                                               TZrUInt32 cacheIndex,
+                                               TZrBool expectedStatic);
 void backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,
                                                           const char *opcodeName,
                                                           TZrUInt32 primarySlot,

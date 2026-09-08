@@ -1,4 +1,5 @@
 #include "backend_aot_llvm_module_artifacts.h"
+#include "backend_aot_llvm_call_bindings.h"
 
 #include "backend_aot_c_native_imports.h"
 #include "backend_aot_function_table.h"
@@ -384,6 +385,7 @@ void backend_aot_llvm_write_module_exports(FILE *file,
                                            const TZrChar *inputHash,
                                            const SZrAotFunctionTable *functionTable,
                                            const SZrAotWriterOptions *options,
+                                           TZrUInt32 callBindingRowCount,
                                            TZrBool stripGeneratedSymbols) {
     TZrUInt32 nativeImportContractCount;
     TZrUInt32 functionIndexSpace;
@@ -395,13 +397,16 @@ void backend_aot_llvm_write_module_exports(FILE *file,
     backend_aot_llvm_write_entry_thunk(file, functionTable, stripGeneratedSymbols);
     backend_aot_llvm_write_reflection_invoker(file);
     functionIndexSpace = backend_aot_function_table_index_space(functionTable);
+    backend_aot_llvm_write_bound_method_infos(file, functionTable);
     nativeImportContractCount = backend_aot_llvm_write_native_import_tables(
             file, functionTable, functionIndexSpace);
     fprintf(file, "@zr_aot_code_registration = private constant %%SZrAotCodeRegistration {\n");
     fprintf(file, "  i32 %u,\n", (unsigned)functionTable->count);
     fprintf(file, "  ptr @zr_aot_function_thunks,\n");
-    fprintf(file, "  ptr null, i32 0,\n");
-    fprintf(file, "  ptr null, i32 0,\n");
+    fprintf(file, "  %s, i32 %u,\n",
+            "ptr @zr_aot_method_infos", (unsigned)functionIndexSpace);
+    fprintf(file, "  %s, i32 %u,\n",
+            "ptr @zr_aot_method_tokens", (unsigned)functionIndexSpace);
     fprintf(file, "  ptr null, i32 0,\n");
     fprintf(file, "  ptr null, i32 0,\n");
     fprintf(file, "  ptr @zr_aot_reflection_invokers, i32 1,\n");
@@ -415,7 +420,8 @@ void backend_aot_llvm_write_module_exports(FILE *file,
                     ? "ptr @zr_aot_native_import_contracts"
                     : "ptr null",
             (unsigned)nativeImportContractCount);
-    fprintf(file, "  ptr @zr_aot_native_import_ranges, i32 %u\n", (unsigned)functionIndexSpace);
+    fprintf(file, "  ptr @zr_aot_native_import_ranges, i32 %u,\n", (unsigned)functionIndexSpace);
+    backend_aot_llvm_write_call_binding_registration(file, callBindingRowCount);
     fprintf(file, "}\n");
     fprintf(file, "@zr_aot_module = private constant %%ZrAotCompiledModule {\n");
     fprintf(file, "  i32 %u,\n", (unsigned)ZR_VM_AOT_ABI_VERSION);
@@ -435,10 +441,10 @@ void backend_aot_llvm_write_module_exports(FILE *file,
     fprintf(file, "  ptr @zr_aot_function_thunks,\n");
     fprintf(file, "  i32 %u,\n", (unsigned)functionTable->count);
     fprintf(file, "  ptr @zr_aot_entry,\n");
-    fprintf(file, "  ptr null,\n");
-    fprintf(file, "  i32 0,\n");
-    fprintf(file, "  ptr null,\n");
-    fprintf(file, "  i32 0,\n");
+    fprintf(file, "  ptr @zr_aot_method_infos,\n");
+    fprintf(file, "  i32 %u,\n", (unsigned)functionIndexSpace);
+    fprintf(file, "  ptr @zr_aot_method_tokens,\n");
+    fprintf(file, "  i32 %u,\n", (unsigned)functionIndexSpace);
     fprintf(file, "  ptr null,\n");
     fprintf(file, "  i32 0,\n");
     fprintf(file, "  ptr null,\n");
@@ -458,7 +464,8 @@ void backend_aot_llvm_write_module_exports(FILE *file,
     fprintf(file, "  i32 %u,\n", (unsigned)nativeImportContractCount);
     fprintf(file, "  ptr @zr_aot_native_import_ranges,\n");
     fprintf(file, "  i32 %u,\n", (unsigned)functionIndexSpace);
-    fprintf(file, "  ptr @zr_aot_code_registration\n");
+    fprintf(file, "  ptr @zr_aot_code_registration,\n");
+    backend_aot_llvm_write_call_binding_registration(file, callBindingRowCount);
     fprintf(file, "}\n");
     fprintf(file, "\n");
     fprintf(file, "; export-symbol: ZrVm_GetAotCompiledModule\n");

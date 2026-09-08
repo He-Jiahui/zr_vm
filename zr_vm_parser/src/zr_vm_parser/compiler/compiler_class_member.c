@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_typed_call_binding.h"
 #include "type_inference_semantic_facts.h"
 
 static TZrBool compiler_member_try_infer_expression_type_soft(SZrCompilerState *cs,
@@ -581,6 +582,8 @@ static SZrFunction *compile_type_member_function(
                                     paramNode,
                                     paramNode->location);
                             ZrParser_InferredType_Free(cs->state, &paramType);
+                            if (!compiler_register_typed_callable_parameter(cs, paramName, param->typeInfo))
+                                ZrParser_Compiler_Error(cs, "Cannot register typed callable parameter", paramNode->location);
                         } else {
                             ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
                             ZrParser_TypeEnvironment_RegisterVariableEx(

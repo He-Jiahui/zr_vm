@@ -2,6 +2,7 @@
 
 #include "backend_aot_llvm_function_body.h"
 #include "backend_aot_llvm_module_artifacts.h"
+#include "backend_aot_llvm_call_bindings.h"
 
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *state,
                                                                   SZrFunction *function,
@@ -15,6 +16,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
     const TZrChar *zroHash;
     const TZrChar *inputHash;
     TZrUInt32 inputKind;
+    TZrUInt32 callBindingRowCount;
     TZrBool requireExecutableLowering;
     TZrBool stripGeneratedSymbols;
 
@@ -27,6 +29,11 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
     }
 
     if (!backend_aot_build_function_table(state, function, &functionTable)) {
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_validate_call_bindings(state, &functionTable, &callBindingRowCount)) {
+        backend_aot_release_function_table(state, &functionTable);
         backend_aot_exec_ir_release_module(state, &module);
         return ZR_FALSE;
     }
@@ -74,12 +81,20 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
     }
 
     backend_aot_llvm_write_function_thunk_table(file, &functionTable, stripGeneratedSymbols);
+    if (!backend_aot_llvm_write_call_bindings(file, state, &functionTable, callBindingRowCount)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     backend_aot_llvm_write_module_exports(file,
                                           moduleName,
                                           inputKind,
                                           inputHash,
                                           &functionTable,
                                           options,
+                                          callBindingRowCount,
                                           stripGeneratedSymbols);
 
     fclose(file);

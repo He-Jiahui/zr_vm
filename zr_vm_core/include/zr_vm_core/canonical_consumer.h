@@ -29,6 +29,7 @@ typedef struct SZrCanonicalConsumerProjection {
     SZrArtifactSectionView layouts;
     SZrArtifactSectionView domainTransfers;
     SZrArtifactSectionView schedulerContracts;
+    SZrArtifactSectionView callBindings;
     SZrCanonicalTypeProjection rootType;
 } SZrCanonicalConsumerProjection;
 

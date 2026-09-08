@@ -6,6 +6,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/function_identity.h"
 
 typedef struct SZrFunctionGraphIndexResolver {
     struct SZrState *state;
@@ -21,19 +22,7 @@ typedef struct SZrFunctionGraphIndexResolver {
 static TZrBool function_graph_functions_equivalent(
         const SZrFunction *left,
         const SZrFunction *right) {
-    TZrBool sameFunctionName;
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    sameFunctionName = left->functionName == right->functionName ||
-                       (left->functionName != ZR_NULL && right->functionName != ZR_NULL &&
-                        ZrCore_String_Equal(left->functionName, right->functionName));
-    return sameFunctionName &&
-           left->parameterCount == right->parameterCount &&
-           left->instructionsLength == right->instructionsLength &&
-           left->lineInSourceStart == right->lineInSourceStart &&
-           left->lineInSourceEnd == right->lineInSourceEnd;
+    return ZrCore_Function_HasSameDefinition(left, right);
 }
 
 static TZrBool function_graph_index_resolver_has_visited(

@@ -1,4 +1,5 @@
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_call_bindings.h"
 #include "backend_aot_c_function_body.h"
 #include "backend_aot_c_annotation_warnings.h"
 #include "backend_aot_c_debug_sidecar_manifest.h"
@@ -754,6 +755,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     TZrUInt32 trimAnnotationWarningCount;
     TZrUInt32 trimAnnotationSuppressedCount;
     TZrUInt32 trimAnnotationWarningTotal;
+    TZrUInt32 callBindingRowCount = 0u;
     SZrAotCEmbeddedZrpMetadata embeddedZrpMetadata;
     SZrAotZrpMetadataSizeStats zrpMetadataSizeBeforeStripping;
     SZrAotZrpMetadataSizeStats zrpMetadataSizeAfterStripping;
@@ -1149,7 +1151,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                     ? methodMetadataGeneratedBytesBeforeStripping - methodMetadataGeneratedBytesAfterStripping
                     : 0u;
     functionIndexSpace = backend_aot_function_table_index_space(&functionTable);
-    if (functionIndexSpace == 0u) {
+    if (functionIndexSpace == 0u ||
+        !backend_aot_c_validate_call_bindings(state, &functionTable, &callBindingRowCount)) {
         fclose(file);
         remove(filename);
         backend_aot_release_annotation_roots(state,
@@ -1464,6 +1467,16 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "\n");
     backend_aot_write_c_function_table(file, &functionTable, functionIndexSpace);
     fprintf(file, "\n");
+    if (!backend_aot_c_write_call_bindings(file, state, &functionTable, callBindingRowCount)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state, annotationTypeLayoutRoots, annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     backend_aot_c_write_native_import_table(file, &functionTable);
     if (nativeImportContractCount > 0u) {
         fprintf(file, "\n");
@@ -1511,6 +1524,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                 retainedFunctionBodyBytesTotal);
     }
     fprintf(file, "static const SZrAotCodeRegistration zr_aot_code_registration = {\n");
+    backend_aot_c_write_call_binding_registration(file, callBindingRowCount);
     fprintf(file, "    .functionCount = %u,\n", (unsigned)functionIndexSpace);
     fprintf(file, "    .functionPointers = zr_aot_function_thunks,\n");
     fprintf(file, "    .methodInfos = zr_aot_method_infos,\n");
@@ -1546,6 +1560,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "};\n");
     fprintf(file, "\n");
     fprintf(file, "static const ZrAotCompiledModule zr_aot_module = {\n");
+    backend_aot_c_write_call_binding_registration(file, callBindingRowCount);
     fprintf(file, "    .abiVersion = ZR_VM_AOT_ABI_VERSION,\n");
     fprintf(file, "    .backendKind = ZR_AOT_BACKEND_KIND_C,\n");
     fprintf(file, "    .moduleName = \"%s\",\n", moduleName);

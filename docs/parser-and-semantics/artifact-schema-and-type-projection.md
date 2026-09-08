@@ -10,6 +10,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_encoding.c
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
+  - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
   - zr_vm_core/src/zr_vm_core/artifact_schema_metadata_graph.c
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
@@ -97,6 +98,10 @@ The core schema owns encoding, section validation, row decoding, public identity
 The readable projection contains named section summaries and literal syntax/SemIR content, followed by a deterministic hex payload that permits an exact text-to-binary roundtrip. A parser uses the final `payload-hex` anchor so source content cannot shadow the envelope payload.
 
 ## Binary Encoding
+
+Schema 5 adds the versioned, pointer-free `call-binding-table` section for `.zro`.
+Its format, validation, and C/LLVM projection are documented in
+[Call Binding Artifact And AOT](call-binding-artifact-and-aot.md).
 
 The binary envelope uses fixed-width little-endian fields:
 

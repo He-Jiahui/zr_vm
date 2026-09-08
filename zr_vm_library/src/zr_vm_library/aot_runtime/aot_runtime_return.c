@@ -262,6 +262,7 @@ TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,
     SZrTypeValue *callableValue;
     SZrTypeValue *destinationValue;
     SZrTypeValue *resultValue;
+    ZrAotGeneratedDirectCall directCall;
 
     runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
     if (state == ZR_NULL || frame == ZR_NULL || frame->function == ZR_NULL || frame->slotBase == ZR_NULL ||
@@ -282,6 +283,13 @@ TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,
     if (callableValue == ZR_NULL) {
         aot_runtime_fail(state, runtimeState, "generated AOT %s is missing callable value", label);
         return ZR_FALSE;
+    }
+
+    if (!ZrLibrary_AotRuntime_PrepareDirectCall(state, frame, destinationSlot,
+            functionSlot, argumentCount, &directCall)) return ZR_FALSE;
+    if (directCall.prepared) {
+        return ZrLibrary_AotRuntime_CallPreparedOrGeneric(state, frame, &directCall,
+                destinationSlot, functionSlot, argumentCount, 1u);
     }
 
     ZrCore_Function_StackAnchorInit(state, callBase, &callAnchor);

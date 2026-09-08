@@ -48,6 +48,7 @@ struct ZR_STRUCT_ALIGN SZrClosureNative {
     FZrNativeFunction nativeFunction;
     struct SZrFunction *aotShimFunction;
     TZrSize nativeBindingLookupIndex;
+    TZrUInt64 callBindingGeneration;
     TZrPtr nativeBindingDescriptor;
     TZrPtr nativeBindingModuleDescriptor;
     TZrPtr nativeBindingTypeDescriptor;

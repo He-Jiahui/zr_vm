@@ -7,7 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "zr_vm_core/call_binding.h"
+#include "zr_vm_core/module_call_binding.h"
 #include "zr_vm_core/gc.h"
+#include "object/object_internal.h"
 
 #if defined(ZR_PLATFORM_WIN)
 #include <windows.h>
@@ -300,6 +303,8 @@ void ZrCore_Module_AddToCache(SZrState *state, SZrString *path, struct SZrObject
 void ZrCore_Module_RemoveFromCache(SZrState *state, SZrString *path) {
     SZrObject *registry;
     SZrTypeValue key;
+    SZrObjectModule *module;
+    SZrFunction *function;
 
     if (state == ZR_NULL || path == ZR_NULL) {
         return;
@@ -310,7 +315,11 @@ void ZrCore_Module_RemoveFromCache(SZrState *state, SZrString *path) {
         return;
     }
 
+    module = ZrCore_Module_GetFromCache(state, path);
+    function = ZrCore_CallBinding_GetModuleFunction(state, module);
+    if (function != ZR_NULL && !ZrCore_CallBinding_AdvanceGeneration(function)) return;
     zr_module_init_string_key(state, &key, path);
+    object_reset_hot_field_pair_cache(registry);
     ZrCore_HashSet_Remove(state, &registry->nodeMap, &key);
 }
 
@@ -405,10 +414,25 @@ void ZrCore_Module_SetInitializationState(struct SZrObjectModule *module, EZrMod
 SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(SZrObjectModule *module,
                                                         SZrFunction *metadataFunction,
                                                         const SZrAotCodeRegistration *codeRegistration) {
+    SZrFunction *previousMetadataFunction;
+
     if (module == ZR_NULL || codeRegistration == ZR_NULL) {
         return ZR_NULL;
     }
 
+    previousMetadataFunction = module->hasMetadataRuntime ? module->metadataRuntime.metadataFunction : ZR_NULL;
+    if (module->hasMetadataRuntime) {
+        if (module->metadataGeneration == UINT32_MAX) {
+            module->metadataGeneration = 1u;
+        } else {
+            ++module->metadataGeneration;
+            if (module->metadataGeneration == 0u) {
+                module->metadataGeneration = 1u;
+            }
+        }
+    }
+    if (previousMetadataFunction != ZR_NULL &&
+        !ZrCore_CallBinding_AdvanceGeneration(previousMetadataFunction)) return ZR_NULL;
     memset(&module->metadataRuntime, 0, sizeof(module->metadataRuntime));
     module->metadataRuntime.module = module;
     module->metadataRuntime.metadataFunction = metadataFunction;

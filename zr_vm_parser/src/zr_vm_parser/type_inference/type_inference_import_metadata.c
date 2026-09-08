@@ -5,6 +5,7 @@
 #include "compiler_internal.h"
 #include "module_init_analysis.h"
 #include "type_inference_internal.h"
+#include "type_inference_import_call_binding.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/io.h"
 
@@ -912,6 +913,8 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
             moduleFunction, symbol->callableChildIndex);
     import_copy_runtime_parameter_metadata(cs, &memberInfo, metadataFunction);
 
+    import_call_binding_export(&memberInfo, moduleFunction->moduleSignatureHash);
+
     ZrCore_Array_Push(cs->state, &modulePrototype->members, &memberInfo);
 }
 
@@ -975,6 +978,8 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     metadataFunction = import_io_callable_metadata_by_child_index(
             moduleFunction, symbol->callableChildIndex);
     import_copy_io_parameter_metadata(cs, &memberInfo, metadataFunction);
+
+    import_call_binding_export(&memberInfo, moduleFunction->moduleSignatureHash);
 
     ZrCore_Array_Push(cs->state, &modulePrototype->members, &memberInfo);
 }
@@ -1644,6 +1649,7 @@ TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
                             import_copy_runtime_parameter_metadata(cs, &memberInfo, metadataFunction);
                         }
                     }
+                    import_call_binding_method(&memberInfo, function);
                     ZrCore_Array_Push(cs->state, &typePrototype.members, &memberInfo);
                 }
             }

@@ -345,7 +345,7 @@ void backend_aot_llvm_write_module_prelude(FILE *file,
             "%%SZrFfiSourceMapping = type { [512 x i8], i64, i64, i32, i32, i32, i32 }\n"
             "%%SZrNativeImportContract = type { i32, [512 x i8], [128 x i8], i64, i64, %%SZrFfiCallableContract, i32, i64, %%SZrFfiSourceMapping, %%SZrFfiSignatureContract }\n"
             "%%SZrAotNativeImportRange = type { i32, i32 }\n"
-            "%%SZrAotCodeRegistration = type { i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32 }\n"
-            "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr }\n");
+            "%%SZrAotCodeRegistration = type { i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, i32, ptr }\n"
+            "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, ptr, i32, i32, ptr }\n");
     fprintf(file, "\n");
 }

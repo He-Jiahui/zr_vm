@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
+#include "zr_vm_core/call_binding.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_ffi_contract.h"
 
@@ -350,6 +351,8 @@ typedef struct SZrIoFunctionCallSiteCacheEntry {
     TZrUInt32 memberEntryIndex;
     TZrUInt32 deoptId;
     TZrUInt32 argumentCount;
+    SZrCallBindingContract bindingContract;
+    SZrCallBindingLocation bindingLocation;
 } SZrIoFunctionCallSiteCacheEntry;
 
 struct SZrIoFunction;
@@ -645,4 +648,5 @@ ZR_CORE_API SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeS
 ZR_CORE_API struct SZrFunction *ZrCore_Io_LoadEntryFunctionToRuntime(struct SZrState *state,
                                                                      const SZrIoSource *source);
 ZR_CORE_API FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helperId);
+ZR_CORE_API TZrBool ZrCore_Io_ReadCallBindings(SZrIo *io, SZrIoFunction *function);
 #endif // ZR_VM_CORE_IO_H

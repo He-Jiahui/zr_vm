@@ -4165,6 +4165,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_core(zr_vm_reflection_token_resolve_test)
 
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_call_binding_tests.cmake)
+
     zr_vm_add_unity_test_target(
             zr_vm_reflection_method_invoke_test
             ${CMAKE_SOURCE_DIR}/tests/module/test_reflection_method_invoke.c

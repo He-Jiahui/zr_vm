@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_typed_call_binding.h"
 #include "compile_time_executor_internal.h"
 #include "compiler_attribute_binding.h"
 
@@ -286,6 +287,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                             paramNode,
                                             paramNode->location);
                                     ZrParser_InferredType_Free(cs->state, &paramType);
+                                    if (!compiler_register_typed_callable_parameter(cs, paramName, param->typeInfo)) {
+                                        ZrParser_Compiler_Error(cs, "Cannot register typed callable parameter", paramNode->location);
+                                    }
                                 }
                             } else {
                                 // 没有类型注解，注册为对象类型（默认）

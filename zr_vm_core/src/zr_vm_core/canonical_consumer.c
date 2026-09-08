@@ -728,6 +728,14 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
         memset(&outProjection->schedulerContracts, 0,
                sizeof(outProjection->schedulerContracts));
     }
+    status = ZrCore_Artifact_FindSection(
+            &outProjection->artifact,
+            ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE,
+            &outProjection->callBindings,
+            ZR_NULL);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        memset(&outProjection->callBindings, 0, sizeof(outProjection->callBindings));
+    }
     status = ZrCore_CanonicalConsumer_ResolveTypeToken(
             outProjection,
             outProjection->artifact.identity.typeSpecToken,

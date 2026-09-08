@@ -788,6 +788,15 @@ TZrBool native_binding_make_callable_value(SZrState *state,
             return ZR_FALSE;
     }
 
+    /* Publish the same metadata/signature identity consumed by static call
+     * sites. The registry remains the sole owner of the runtime closure; the
+     * artifact only carries these scalar identities. */
+    (void)native_registry_assign_call_binding_identity(moduleDescriptor,
+                                                       typeDescriptor,
+                                                       bindingKind,
+                                                       descriptor,
+                                                       &entry);
+
     ZrCore_Array_Push(state, &registry->bindingEntries, &entry);
     native_binding_closure_store_cached_binding(closure,
                                                 bindingIndex,

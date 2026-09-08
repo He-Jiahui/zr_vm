@@ -70,6 +70,7 @@ typedef struct SZrMemberDescriptor {
     struct SZrFunction *getterFunction;
     struct SZrFunction *setterFunction;
     struct SZrFunction *initializerFunction;
+    struct SZrFunction *methodFunction;
     TZrUInt32 contractRole;
     TZrUInt32 modifierFlags;
     struct SZrString *ownerTypeName;
@@ -204,6 +205,14 @@ typedef struct SZrManagedFieldInfo {
     TZrUInt32 declarationOrder;
 } SZrManagedFieldInfo;
 
+typedef struct SZrInterfaceDispatchEntry {
+    struct SZrObjectPrototype *interfacePrototype;
+    struct SZrObjectPrototype *implementationPrototype;
+    TZrUInt32 interfaceSlot;
+    TZrUInt32 descriptorIndex;
+    TZrUInt64 implementationLayoutGeneration;
+} SZrInterfaceDispatchEntry;
+
 struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     SZrObject super;
     struct SZrString *name;
@@ -213,9 +222,12 @@ struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     /* Stable identity for PIC keys; generation changes on shape mutation. */
     TZrUInt64 shapeId;
     TZrUInt64 shapeGeneration;
+    TZrUInt64 layoutGeneration;
     SZrMemberDescriptor *memberDescriptors;
     TZrUInt32 memberDescriptorCount;
     TZrUInt32 memberDescriptorCapacity;
+    SZrInterfaceDispatchEntry *interfaceDispatchEntries;
+    TZrUInt32 interfaceDispatchCount;
     SZrIndexContract indexContract;
     SZrIterableContract iterableContract;
     SZrIteratorContract iteratorContract;

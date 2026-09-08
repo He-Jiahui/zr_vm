@@ -466,6 +466,8 @@ typedef struct SZrTypeMemberInfo {
     TZrSymbolId setterAccessorSymbolId;   // visible property -> setter symbol
     TZrSymbolId initAccessorSymbolId;     // visible property -> init symbol
     TZrBool exportsWritableRef;           // 后续 ref-return property 合同；M1 默认 false
+    SZrCallBindingContract callBindingFact;
+    TZrUInt32 callBindingLocationKind;
 } SZrTypeMemberInfo;
 
 typedef enum EZrPropertyAccessorMask {

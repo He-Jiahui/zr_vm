@@ -16,6 +16,15 @@ typedef struct SZrParserArtifactPublicContract {
 
 struct ZrLibTypeDescriptor;
 struct SZrReflectionTypeIdentity;
+struct SZrFunction;
+
+ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactCallBinding_BuildRows(
+        const struct SZrFunction *function,
+        TZrUInt32 functionIndex,
+        SZrArtifactCallBindingRow *rows,
+        TZrUInt32 rowCapacity,
+        TZrUInt32 *outRowCount,
+        SZrArtifactDiagnostic *diagnostic);
 
 ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactLayout_ApplyNativeCapabilities(
         const struct ZrLibTypeDescriptor *typeDescriptor,

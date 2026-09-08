@@ -1242,6 +1242,8 @@ static void io_read_function_callsite_cache_metadata(SZrIo *io, SZrIoFunction *f
                                                             sizeof(SZrIoFunctionCallSiteCacheEntry) *
                                                                     function->callSiteCacheLength);
         if (function->callSiteCaches != ZR_NULL) {
+            ZrCore_Memory_RawSet(function->callSiteCaches, 0,
+                    sizeof(*function->callSiteCaches) * function->callSiteCacheLength);
             io_read_function_callsite_cache_table(io, function->callSiteCaches, function->callSiteCacheLength);
         }
     }
@@ -1910,6 +1912,11 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_CALLSITE_CACHE) {
             io_read_function_callsite_cache_metadata(io, function);
+        }
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_CALL_BINDING &&
+            !ZrCore_Io_ReadCallBindings(io, function)) {
+            io->hasReadError = ZR_TRUE;
+            return;
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_NATIVE_IMPORT_CONTRACTS) {
             io_read_function_native_import_contracts(io, function);

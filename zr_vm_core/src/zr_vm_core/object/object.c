@@ -77,6 +77,7 @@ void ZrCore_ObjectPrototype_MarkMutation(SZrObjectPrototype *prototype) {
         return;
     }
 
+    if (++prototype->layoutGeneration == 0u) ++prototype->layoutGeneration;
     object_bump_member_version(&prototype->super);
 }
 
@@ -1593,6 +1594,12 @@ void ZrCore_Object_Deconstruct(SZrState *state, SZrObject *object) {
                 ZrCore_HashSet_Deconstruct(state, &structPrototype->keyOffsetMap);
             }
         }
+        if (prototype->interfaceDispatchEntries != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, prototype->interfaceDispatchEntries,
+                    prototype->interfaceDispatchCount * sizeof(SZrInterfaceDispatchEntry));
+            prototype->interfaceDispatchEntries = ZR_NULL;
+            prototype->interfaceDispatchCount = 0u;
+        }
         if (prototype->memberDescriptors != ZR_NULL) {
             ZrCore_Memory_RawFreeWithType(global,
                                           prototype->memberDescriptors,
@@ -2061,9 +2068,12 @@ SZrObjectPrototype *ZrCore_ObjectPrototype_New(SZrState *state, SZrString *name,
     prototype->superPrototype = ZR_NULL;
     prototype->shapeId = object_prototype_next_shape_id();
     prototype->shapeGeneration = 1u;
+    prototype->layoutGeneration = 1u;
     prototype->memberDescriptors = ZR_NULL;
     prototype->memberDescriptorCount = 0;
     prototype->memberDescriptorCapacity = 0;
+    prototype->interfaceDispatchEntries = ZR_NULL;
+    prototype->interfaceDispatchCount = 0u;
     memset(&prototype->indexContract, 0, sizeof(prototype->indexContract));
     memset(&prototype->iterableContract, 0, sizeof(prototype->iterableContract));
     memset(&prototype->iteratorContract, 0, sizeof(prototype->iteratorContract));
@@ -2112,9 +2122,12 @@ SZrStructPrototype *ZrCore_StructPrototype_New(SZrState *state, SZrString *name)
     prototype->super.superPrototype = ZR_NULL;
     prototype->super.shapeId = object_prototype_next_shape_id();
     prototype->super.shapeGeneration = 1u;
+    prototype->super.layoutGeneration = 1u;
     prototype->super.memberDescriptors = ZR_NULL;
     prototype->super.memberDescriptorCount = 0;
     prototype->super.memberDescriptorCapacity = 0;
+    prototype->super.interfaceDispatchEntries = ZR_NULL;
+    prototype->super.interfaceDispatchCount = 0u;
     memset(&prototype->super.indexContract, 0, sizeof(prototype->super.indexContract));
     memset(&prototype->super.iterableContract, 0, sizeof(prototype->super.iterableContract));
     memset(&prototype->super.iteratorContract, 0, sizeof(prototype->super.iteratorContract));
@@ -2342,6 +2355,10 @@ TZrBool ZrCore_ObjectPrototype_AddMemberDescriptor(struct SZrState *state,
     }
 
     prototype->memberDescriptors[prototype->memberDescriptorCount++] = *descriptor;
+    if (descriptor->methodFunction != ZR_NULL) {
+        ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype),
+                                ZR_CAST_RAW_OBJECT_AS_SUPER(descriptor->methodFunction));
+    }
     ZrCore_ObjectPrototype_MarkMutation(prototype);
     return ZR_TRUE;
 }
@@ -2693,6 +2710,9 @@ SZrFunction *ZrCore_Object_GetMemberCachedCallableTargetUnchecked(struct SZrStat
     }
 
     descriptor = &ownerPrototype->memberDescriptors[descriptorIndex];
+    if (descriptor->methodFunction != ZR_NULL) {
+        return descriptor->methodFunction;
+    }
     if (descriptor->name == ZR_NULL) {
         return ZR_NULL;
     }

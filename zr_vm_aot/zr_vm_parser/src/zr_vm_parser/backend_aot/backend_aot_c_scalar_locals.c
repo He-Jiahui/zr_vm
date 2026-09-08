@@ -9,6 +9,7 @@
 #include "backend_aot_internal.h"
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/function_identity.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_meta_conf.h"
 
@@ -591,23 +592,7 @@ static const SZrFunction *backend_aot_c_scalar_locals_function_from_constant_val
 static TZrBool backend_aot_c_scalar_locals_function_matches_inline_child(
         const SZrFunction *left,
         const SZrFunction *right) {
-    TZrBool sameFunctionName;
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    sameFunctionName = (TZrBool)(
-            left->functionName == right->functionName ||
-            (left->functionName != ZR_NULL &&
-             right->functionName != ZR_NULL &&
-             ZrCore_String_Equal(left->functionName, right->functionName)));
-
-    return (TZrBool)(sameFunctionName &&
-                     left->parameterCount == right->parameterCount &&
-                     left->instructionsLength == right->instructionsLength &&
-                     left->lineInSourceStart == right->lineInSourceStart &&
-                     left->lineInSourceEnd == right->lineInSourceEnd);
+    return ZrCore_Function_HasSameDefinition(left, right);
 }
 
 static const SZrFunction *backend_aot_c_scalar_locals_child_function_for_resolved_constant(

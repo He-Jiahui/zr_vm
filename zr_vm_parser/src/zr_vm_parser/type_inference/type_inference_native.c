@@ -25,6 +25,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
+#include "zr_vm_library/native_binding_call_binding.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_common/zr_string_conf.h"
 
@@ -62,6 +63,7 @@ typedef struct SZrNativeModuleMemberIdentity {
     TZrMetadataToken metadataToken;
     TZrMetadataToken signatureToken;
     TZrUInt64 signatureHash;
+    SZrCallBindingContract callBindingFact;
 } SZrNativeModuleMemberIdentity;
 
 typedef struct ZrLibRegisteredModuleRecord ZrLibRegisteredModuleRecord;
@@ -1271,6 +1273,7 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
         memberInfo.metadataToken = identity->metadataToken;
         memberInfo.signatureToken = identity->signatureToken;
         memberInfo.signatureHash = identity->signatureHash;
+        memberInfo.callBindingFact = identity->callBindingFact;
     }
     ZrCore_Array_Push(state, &info->members, &memberInfo);
 }
@@ -1560,6 +1563,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
         memberInfo.metadataToken = identity->metadataToken;
         memberInfo.signatureToken = identity->signatureToken;
         memberInfo.signatureHash = identity->signatureHash;
+        memberInfo.callBindingFact = identity->callBindingFact;
     }
     native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
     native_module_info_copy_parameter_types(cs, moduleName, &memberInfo, parametersArray);
@@ -2220,6 +2224,9 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
                     ZrParser_InferredType_Copy(cs->state, result, parameterType);
                     return ZR_TRUE;
                 }
+            }
+            if (inferred_type_from_static_callable_member(cs, memberInfo, result)) {
+                return ZR_TRUE;
             }
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_CLOSURE);
             return ZR_TRUE;
@@ -3220,6 +3227,8 @@ load_descriptor_fallback:
     }
 
 translate_module_info:
+    if (nativeDescriptor == ZR_NULL && moduleNameText != ZR_NULL)
+        nativeDescriptor = ZrLibrary_NativeRegistry_FindModule(global, moduleNameText);
     native_module_info_init_prototype(cs->state, &modulePrototype, moduleName, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
     type_inference_apply_default_builtin_root(cs,
                                               &modulePrototype,
@@ -3251,6 +3260,14 @@ translate_module_info:
                                                     &nativeMemberRidCursor,
                                                     &nativeSignatureRidCursor,
                                                     &identity);
+            if (nativeDescriptor != ZR_NULL && i < nativeDescriptor->functionCount) {
+                (void)ZrLibrary_NativeCallBinding_GetDescriptorContract(
+                        nativeDescriptor,
+                        ZR_NULL,
+                        ZR_NATIVE_CALL_BINDING_FUNCTION,
+                        &nativeDescriptor->functions[i],
+                        &identity.callBindingFact);
+            }
             native_module_info_add_method_member_with_identity(cs,
                                                                moduleName,
                                                                &modulePrototype,
@@ -3561,6 +3578,13 @@ translate_module_info:
                                                         &nativeMemberRidCursor,
                                                         &nativeSignatureRidCursor,
                                                         &identity);
+                if (nativeDescriptor != ZR_NULL && i < nativeDescriptor->typeCount &&
+                    methodIndex < nativeDescriptor->types[i].methodCount) {
+                    (void)ZrLibrary_NativeCallBinding_GetDescriptorContract(
+                            nativeDescriptor, &nativeDescriptor->types[i],
+                            ZR_NATIVE_CALL_BINDING_METHOD, &nativeDescriptor->types[i].methods[methodIndex],
+                            &identity.callBindingFact);
+                }
                 if (propertyName != ZR_NULL &&
                     propertyReferenceAccess != ZR_REFERENCE_ACCESS_NONE) {
                     if (!native_module_info_add_reference_property(
@@ -3627,6 +3651,7 @@ translate_module_info:
                 continue;
             }
 
+            TZrSize memberCountBeforeMeta = typePrototype.members.length;
             native_module_info_add_meta_method_member(cs,
                                                       moduleName,
                                                       &typePrototype,
@@ -3639,6 +3664,22 @@ translate_module_info:
                                                       minArgumentCount,
                                                       parametersArray,
                                                       metaGenericParametersArray);
+            if (typePrototype.members.length == memberCountBeforeMeta + 1u &&
+                nativeDescriptor != ZR_NULL && i < nativeDescriptor->typeCount &&
+                metaIndex < nativeDescriptor->types[i].metaMethodCount) {
+                SZrTypeMemberInfo *metaMember = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                        &typePrototype.members, memberCountBeforeMeta);
+                if (metaMember != ZR_NULL && ZrLibrary_NativeCallBinding_GetDescriptorContract(
+                        nativeDescriptor, &nativeDescriptor->types[i], ZR_NATIVE_CALL_BINDING_META_METHOD,
+                        &nativeDescriptor->types[i].metaMethods[metaIndex], &metaMember->callBindingFact)) {
+                    metaMember->metadataToken = metaMember->callBindingFact.targetMetadataToken;
+                    metaMember->signatureToken = metaMember->callBindingFact.signatureToken;
+                    metaMember->signatureHash = metaMember->callBindingFact.signatureHash;
+                    metaMember->ownerTypeName = typePrototype.name;
+                    metaMember->virtualSlotIndex = UINT32_MAX;
+                    metaMember->interfaceContractSlot = UINT32_MAX;
+                }
+            }
         }
 
         for (TZrSize enumMemberIndex = 0; enumMemberIndex < native_module_info_array_length(enumMembersArray);
@@ -4380,7 +4421,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     } else {
                         inferred_type_from_member_access(cs, memberInfo, &nextType);
                     }
-                    if (!currentIsPrototypeReference &&
+                    if ((!currentIsPrototypeReference ||
+                         type_name_is_module_prototype_inference(cs, currentType.typeName)) &&
                         memberInfo->declarationNode == ZR_NULL && memberInfo->isStatic &&
                         (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
                          memberInfo->memberType == ZR_AST_CLASS_METHOD) &&
@@ -4390,7 +4432,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                 &externalCallableReturnType,
                                 &memberInfo->structuredReturnType);
                         hasExternalCallableReturnType = ZR_TRUE;
-                    } else if (!currentIsPrototypeReference &&
+                    } else if ((!currentIsPrototypeReference ||
+                                type_name_is_module_prototype_inference(cs, currentType.typeName)) &&
                                memberInfo->declarationNode == ZR_NULL && memberInfo->isStatic &&
                                (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
                                 memberInfo->memberType == ZR_AST_CLASS_METHOD) &&
@@ -4433,6 +4476,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                 externalTargetKind);
                     }
                     if (currentIsPrototypeReference &&
+                        !type_name_is_module_prototype_inference(cs, currentType.typeName) &&
                         (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
                          memberInfo->memberType == ZR_AST_CLASS_METHOD ||
                          memberInfo->memberType ==

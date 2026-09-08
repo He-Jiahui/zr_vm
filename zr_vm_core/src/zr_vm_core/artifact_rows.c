@@ -214,6 +214,12 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
                 artifact_write_relocation_row(bytes + (TZrSize)index * elementSize,
                                               &((const SZrArtifactRelocationRow *)section->data)[index]);
             break;
+        case ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE:
+            for (index = 0u; index < section->elementCount; ++index)
+                ZrCore_Artifact_WriteCallBindingRow(
+                        &((const SZrArtifactCallBindingRow *)section->data)[index],
+                        bytes + (TZrSize)index * elementSize, elementSize, ZR_NULL);
+            break;
         default:
             if (section->elementCount > 0u) memcpy(bytes, section->data, section->elementCount);
             break;

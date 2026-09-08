@@ -3,6 +3,7 @@
 //
 
 #include "execution/execution_internal.h"
+#include "object/object_call_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -596,6 +597,35 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (entry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+        SZrTypeValue callable;
+        SZrFunction *target;
+        if (!ZrCore_CallBinding_PrepareMember(state, function, cacheIndex, receiver, &callable,
+                                               &state->lastCallBindingError)) {
+            ZrCore_Debug_RunError(state, "CallBinding link error: %s (token=0x%08x, instruction=%u)",
+                    ZrCore_CallBinding_StatusName(state->lastCallBindingError.status),
+                    state->lastCallBindingError.targetMetadataToken, entry->instructionIndex);
+        }
+        /* Native and AOT providers are represented by a callable object rather
+         * than an SZrFunction.  Let the ordinary value call dispatcher select
+         * the provider ABI; VM targets retain the receiver-source path below so
+         * inline-struct writeback and ownership loans remain intact. */
+        if (callable.isNative || callable.type != ZR_VALUE_TYPE_FUNCTION) {
+            return ZrCore_Object_CallValue(state,
+                                           &callable,
+                                           expectedStatic ? ZR_NULL : receiver,
+                                           arguments,
+                                           argumentCount,
+                                           result);
+        }
+        target = (SZrFunction *)callable.value.object;
+        return receiverSourceFrameBase != ZR_NULL && !expectedStatic
+                       ? ZrCore_Object_InvokeResolvedFunctionWithReceiverSource(state, target, ZR_FALSE,
+                                 receiver, arguments, argumentCount, receiverSourceFrameBase, receiverSourceSlot, result)
+                       : ZrCore_Object_InvokeResolvedFunction(state, target, expectedStatic, receiver,
+                                 arguments, argumentCount, result);
+    }
+
     if (entry->picSlotCount == 0) {
         return ZR_FALSE;
     }
@@ -741,6 +771,23 @@ static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *stat
     receiver = ZrCore_Stack_GetValueNoProfile(stackPointer);
     if (receiver == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (entry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+        SZrTypeValue callable;
+        if (!ZrCore_CallBinding_PrepareMember(state, function, cacheIndex, receiver, &callable,
+                                               &state->lastCallBindingError)) {
+            ZrCore_Debug_RunError(state, "CallBinding link error: %s (token=0x%08x, instruction=%u)",
+                    ZrCore_CallBinding_StatusName(state->lastCallBindingError.status),
+                    state->lastCallBindingError.targetMetadataToken, entry->instructionIndex);
+            return ZR_FALSE;
+        }
+        for (TZrStackValuePointer slot = state->stackTop.valuePointer; slot > stackPointer; --slot) {
+            ZrCore_Stack_CopyValue(state, slot, ZrCore_Stack_GetValueNoProfile(slot - 1));
+        }
+        ++state->stackTop.valuePointer;
+        ZrCore_Stack_CopyValue(state, stackPointer, &callable);
+        return ZR_TRUE;
     }
 
     receiverPrototype = execution_meta_resolve_receiver_prototype(state, receiver);
@@ -944,6 +991,7 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
                                        expectedStatic)) {
         return ZR_TRUE;
     }
+    if (entry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) return ZR_FALSE;
     ZrCore_Profile_RecordMemoryFromState(
             state, ZR_PROFILE_MEMORY_MEMBER_CACHE_META_FALLBACK_COUNT, 1u);
     if (sourceIsInlineStruct &&
@@ -1203,6 +1251,10 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
             ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
         }
         return ZR_TRUE;
+    }
+    if (entry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+        if (hasReceiverAnchor) (void)ZrCore_Function_StackAnchorRestore(state, &receiverAnchor);
+        return ZR_FALSE;
     }
     ZrCore_Profile_RecordMemoryFromState(
             state, ZR_PROFILE_MEMORY_MEMBER_CACHE_META_FALLBACK_COUNT, 1u);

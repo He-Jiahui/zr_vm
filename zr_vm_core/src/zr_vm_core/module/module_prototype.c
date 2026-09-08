@@ -445,6 +445,7 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
         case ZR_AST_CONSTANT_CLASS_METHOD:
             descriptor.kind = descriptor.isStatic ? ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER
                                                   : ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+            descriptor.methodFunction = function;
             break;
         case ZR_AST_CONSTANT_PROPERTY_DECLARATION:
             descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
@@ -1192,7 +1193,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                 prototype =
                                         (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, protoInfoData.typeName);
                             } else if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS ||
-                                       protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+                                       protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_ENUM ||
+                                       protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
                                 prototype = ZrCore_ObjectPrototype_New(state,
                                                                        protoInfoData.typeName,
                                                                        protoInfoData.prototypeType);
@@ -1261,16 +1263,19 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
             continue;
         }
 
-        if (protoInfo->inheritTypeNames.length > 0) {
-            SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&protoInfo->inheritTypeNames, 0);
+        for (TZrSize inheritIndex = 0u; inheritIndex < protoInfo->inheritTypeNames.length; ++inheritIndex) {
+            SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&protoInfo->inheritTypeNames, inheritIndex);
             if (inheritTypeNamePtr != ZR_NULL && *inheritTypeNamePtr != ZR_NULL) {
                 SZrObjectPrototype *superPrototype =
                         find_local_created_prototype_by_name(&prototypeInfos, *inheritTypeNamePtr);
                 if (superPrototype == ZR_NULL) {
                     superPrototype = find_prototype_by_name(state, module, *inheritTypeNamePtr);
                 }
-                if (superPrototype != ZR_NULL) {
+                if (superPrototype != ZR_NULL &&
+                    (superPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE ||
+                     protoInfo->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE)) {
                     ZrCore_ObjectPrototype_SetSuper(state, protoInfo->prototype, superPrototype);
+                    break;
                 }
             }
         }
@@ -1356,6 +1361,25 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             continue;
                         }
 
+                        /* Interface declarations have no function constant, but their
+                         * contract still needs a runtime descriptor.  Materialize the
+                         * descriptor with a null target; implementations carry the
+                         * same stable interface slot and are selected by the binding
+                         * contract at the call site. */
+                        if (protoInfo->prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
+                            (member->memberType == ZR_AST_CONSTANT_CLASS_METHOD ||
+                             member->memberType == ZR_AST_CONSTANT_STRUCT_METHOD ||
+                             member->memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION ||
+                             member->memberType == ZR_AST_CONSTANT_STRUCT_META_FUNCTION)) {
+                            module_prototype_add_runtime_descriptor(state,
+                                                                    protoInfo->prototype,
+                                                                    entryFunction,
+                                                                    memberName,
+                                                                    member,
+                                                                    ZR_NULL);
+                            continue;
+                        }
+
                         if ((member->memberType == ZR_AST_CONSTANT_CLASS_METHOD ||
                              member->memberType == ZR_AST_CONSTANT_STRUCT_METHOD ||
                              member->memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION ||
@@ -1405,6 +1429,28 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                         state, &protoInfo->prototype->super, &methodKey, functionConstant);
                             }
                         }
+                    }
+                }
+            }
+        }
+
+    }
+
+    for (TZrSize index = 0u; index < prototypeInfos.length; ++index) {
+        SZrPrototypeCreationInfo *protoInfo = ZrCore_Array_Get(&prototypeInfos, index);
+        if (protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL) continue;
+        if (protoInfo->needsPostCreateSetup &&
+            protoInfo->prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
+            protoInfo->inheritTypeNames.length > 0u) {
+            for (TZrSize inheritIndex = 0u; inheritIndex < protoInfo->inheritTypeNames.length; ++inheritIndex) {
+                SZrString **inheritName = (SZrString **)ZrCore_Array_Get(&protoInfo->inheritTypeNames, inheritIndex);
+                SZrObjectPrototype *interfacePrototype = inheritName != ZR_NULL
+                        ? find_prototype_by_name(state, module, *inheritName) : ZR_NULL;
+                if (interfacePrototype != ZR_NULL && interfacePrototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
+                    if (!zr_module_bind_interface_dispatch(state, protoInfo->prototype, interfacePrototype)) {
+                        ZrCore_GlobalState_SetModuleLoadDiagnostic(state->global,
+                                "CallBinding interface dispatch allocation failed");
+                        break;
                     }
                 }
             }

@@ -101,9 +101,18 @@ TZrBool emit_member_slot_get(SZrCompilerState *cs,
                              SZrFileRange location);
 TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
                                       TZrUInt32 memberEntryIndex,
+                                      const SZrTypeMemberInfo *memberInfo,
                                       TZrUInt32 argumentCount,
                                       TZrUInt16 *outCacheIndex,
                                       SZrFileRange location);
+TZrBool reserve_meta_call_binding_cache(SZrCompilerState *cs,
+                                        TZrUInt32 memberEntryIndex,
+                                        const SZrTypeMemberInfo *memberInfo,
+                                        TZrUInt32 argumentCount,
+                                        TZrUInt16 *outCacheIndex,
+                                        SZrFileRange location);
+TZrBool compiler_record_known_call_binding(SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo, TZrUInt32 argumentCount, SZrFileRange location);
 TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
                                          TZrUInt32 destinationSlot,
                                          TZrUInt16 cacheIndex,
@@ -200,8 +209,7 @@ TZrBool emit_module_plain_share_helper_call(SZrCompilerState *cs,
 TZrUInt32 emit_property_setter_call(SZrCompilerState *cs,
                                     TZrUInt32 objectSlot,
                                     SZrString *propertyName,
-                                    TZrBool isStatic,
-                                    EZrPropertyAccessorRole accessorRole,
+                                    const SZrTypeMemberInfo *setterAccessor,
                                     TZrUInt32 assignedValueSlot,
                                     SZrFileRange location);
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs,

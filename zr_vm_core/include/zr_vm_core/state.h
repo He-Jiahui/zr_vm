@@ -5,6 +5,7 @@
 #ifndef ZR_VM_CORE_STATE_H
 #define ZR_VM_CORE_STATE_H
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/call_binding.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/debug.h"
@@ -96,6 +97,7 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrMemoryOffset exceptionHandlingFunctionOffset;
     SZrTypeValue currentException;
     EZrThreadStatus currentExceptionStatus;
+    SZrCallBindingDiagnostic lastCallBindingError;
     TZrBool hasCurrentException;
     SZrVmExceptionHandlerState *exceptionHandlerStack;
     TZrUInt32 exceptionHandlerStackLength;

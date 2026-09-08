@@ -14,7 +14,7 @@ struct SZrAotMethodInfo;
 struct SZrAotGcRootMap;
 struct SZrTypeLayout;
 
-#define ZR_VM_AOT_ABI_VERSION 15u
+#define ZR_VM_AOT_ABI_VERSION 16u
 
 typedef enum EZrAotBackendKind {
     ZR_AOT_BACKEND_KIND_NONE = 0,
@@ -207,6 +207,10 @@ typedef struct SZrAotCodeRegistration {
     TZrUInt32 nativeImportContractCount;
     const SZrAotNativeImportRange *nativeImportRanges;
     TZrUInt32 nativeImportRangeCount;
+    const TZrByte *callBindingRows;
+    TZrUInt32 callBindingRowCount;
+    TZrUInt32 callBindingRowSize;
+    const TZrUInt32 *callBindingTargetFunctionIndices;
 } SZrAotCodeRegistration;
 
 typedef struct ZrAotCompiledModule {
@@ -240,6 +244,10 @@ typedef struct ZrAotCompiledModule {
     const SZrAotNativeImportRange *nativeImportRanges;
     TZrUInt32 nativeImportRangeCount;
     const SZrAotCodeRegistration *codeRegistration;
+    const TZrByte *callBindingRows;
+    TZrUInt32 callBindingRowCount;
+    TZrUInt32 callBindingRowSize;
+    const TZrUInt32 *callBindingTargetFunctionIndices;
 } ZrAotCompiledModule;
 
 typedef const ZrAotCompiledModule *(*FZrVmGetAotCompiledModule)(void);

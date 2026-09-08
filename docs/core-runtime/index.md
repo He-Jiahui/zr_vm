@@ -122,7 +122,13 @@ doc_type: category-index
 
 # Core Runtime
 
+Typed function-value call contracts, closure preservation, and runtime signature
+validation are documented in [Typed Call Binding](typed-call-binding.md).
+
 Core runtime documents cover VM stack storage, call-frame data movement, ownership-aware inline values, and low-level execution helpers.
+
+- `call-binding.md`: shared static-call contract, generation/link validation,
+  function-graph identity, GC target witnesses, and reload invalidation.
 
 - `state-lifecycle.md`: state teardown for reusable call-info chains, compiled-function
   prototype pointer storage, module prototype scratch arrays, and allocator ownership

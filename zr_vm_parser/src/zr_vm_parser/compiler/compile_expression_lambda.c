@@ -3,6 +3,7 @@
 //
 
 #include "compile_expression_internal.h"
+#include "compiler_typed_call_binding.h"
 
 void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -262,6 +263,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                                         paramNode,
                                         paramNode->location);
                                 ZrParser_InferredType_Free(cs->state, &paramType);
+                                if (!compiler_register_typed_callable_parameter(cs, paramName, param->typeInfo))
+                                    ZrParser_Compiler_Error(cs, "Cannot register typed callable parameter", paramNode->location);
                             } else {
                                 ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
                                 ZrParser_TypeEnvironment_RegisterVariableEx(

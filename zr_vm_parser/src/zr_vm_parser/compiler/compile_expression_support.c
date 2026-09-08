@@ -3,6 +3,8 @@
 //
 
 #include "compile_expression_internal.h"
+#include "compiler_call_binding.h"
+#include "compiler_native_call_binding.h"
 
 TZrBool compiler_expression_consume_auto_loaded_property_reference(
         const SZrAstNode *expression,
@@ -200,16 +202,85 @@ TZrBool emit_member_slot_get(SZrCompilerState *cs,
 
 TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
                                       TZrUInt32 memberEntryIndex,
+                                      const SZrTypeMemberInfo *memberInfo,
                                       TZrUInt32 argumentCount,
                                       TZrUInt16 *outCacheIndex,
                                       SZrFileRange location) {
-    return compiler_append_callsite_cache_entry(cs,
+    if (!compiler_append_callsite_cache_entry(cs,
                                                 ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET,
                                                 (TZrUInt32)cs->instructionCount,
                                                 memberEntryIndex,
                                                 argumentCount,
                                                 outCacheIndex,
-                                                location);
+                                                location)) return ZR_FALSE;
+    if (memberInfo != ZR_NULL &&
+        (memberInfo->compiledFunction != ZR_NULL ||
+         memberInfo->callBindingFact.bindingKind != ZR_CALL_BINDING_NONE ||
+         memberInfo->interfaceContractSlot != ZR_CALL_BINDING_SLOT_NONE)) {
+        SZrTypeValue value;
+        SZrFunctionCallSiteCacheEntry *entry;
+        entry = &cs->currentFunction->callSiteCaches[*outCacheIndex];
+        if (memberInfo->callBindingFact.bindingKind != ZR_CALL_BINDING_NONE) {
+            entry->binding.contract = memberInfo->callBindingFact;
+        } else {
+            compiler_get_member_call_binding_fact(cs, memberInfo, &entry->binding.contract);
+        }
+        if (memberInfo->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+            entry->bindingLocation.kind = ZR_CALL_BINDING_RELOCATION_VM_MODULE;
+            entry->bindingLocation.targetIndex = 0u;
+        } else if (compiler_native_call_binding_is_provider_contract(&entry->binding.contract)) {
+            (void)compiler_native_call_binding_prepare_cache(
+                    entry, &entry->binding.contract, memberEntryIndex);
+        } else if (memberInfo->compiledFunction != ZR_NULL) {
+            TZrUInt32 constantIndex;
+            ZrCore_Value_InitAsRawObject(cs->state, &value,
+                    ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->compiledFunction));
+            constantIndex = add_constant(cs, &value);
+            entry->bindingLocation.kind = ZR_CALL_BINDING_RELOCATION_CONSTANT;
+            entry->bindingLocation.targetIndex = constantIndex;
+        } else if (entry->binding.contract.bindingKind == ZR_CALL_BINDING_INTERFACE ||
+                   entry->binding.contract.bindingKind == ZR_CALL_BINDING_VIRTUAL) {
+            /* Abstract/interface sites have no process-local target.  Keep a
+             * module relocation whose target index identifies the bound
+             * descriptor; the receiver slot is resolved at invocation. */
+            entry->bindingLocation.kind = ZR_CALL_BINDING_RELOCATION_MODULE;
+            entry->bindingLocation.targetIndex = memberEntryIndex;
+        }
+        if (memberEntryIndex == ZR_PARSER_MEMBER_ID_NONE) {
+            entry->binding.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
+            entry->binding.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+        }
+    }
+    return !cs->hasError;
+}
+
+TZrBool reserve_meta_call_binding_cache(SZrCompilerState *cs,
+                                        TZrUInt32 memberEntryIndex,
+                                        const SZrTypeMemberInfo *memberInfo,
+                                        TZrUInt32 argumentCount,
+                                        TZrUInt16 *outCacheIndex,
+                                        SZrFileRange location) {
+    SZrFunctionCallSiteCacheEntry *entry;
+
+    /* Reuse the same contract construction as a bound member call.  META_CALL
+     * has a distinct cache kind because the interpreter prepares the callable
+     * from the receiver slot before entering the call frame. */
+    if (!reserve_member_slot_get_cache(cs,
+                                       memberEntryIndex,
+                                       memberInfo,
+                                       argumentCount,
+                                       outCacheIndex,
+                                       location)) {
+        return ZR_FALSE;
+    }
+    if (cs == ZR_NULL || cs->currentFunction == ZR_NULL || outCacheIndex == ZR_NULL ||
+        *outCacheIndex >= cs->currentFunction->callSiteCacheLength) {
+        return ZR_FALSE;
+    }
+    entry = &cs->currentFunction->callSiteCaches[*outCacheIndex];
+    entry->kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL;
+    entry->binding.contract.operation = ZR_CALL_BINDING_OPERATION_META;
+    return !cs->hasError;
 }
 
 TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
@@ -231,6 +302,21 @@ TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
     emit_instruction(cs, instruction);
     return !cs->hasError;
 }
+
+TZrBool compiler_record_known_call_binding(SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo, TZrUInt32 argumentCount, SZrFileRange location) {
+    TZrUInt16 cacheIndex;
+    if (memberInfo == ZR_NULL ||
+        (memberInfo->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
+         !compiler_native_call_binding_is_provider_contract(&memberInfo->callBindingFact) &&
+         (memberInfo->compiledFunction == ZR_NULL || memberInfo->compiledFunction->closureValueLength != 0u)))
+        return ZR_TRUE;
+    if (!reserve_member_slot_get_cache(cs, ZR_PARSER_MEMBER_ID_NONE, memberInfo,
+                                      argumentCount, &cacheIndex, location)) return ZR_FALSE;
+    cs->currentFunction->callSiteCaches[cacheIndex].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL;
+    return ZR_TRUE;
+}
+
 
 TZrBool emit_known_native_member_call_cached(SZrCompilerState *cs,
                                              TZrUInt32 destinationSlot,
@@ -480,7 +566,12 @@ static TZrBool compiler_resolve_type_member_runtime_descriptor_binding(SZrCompil
                 if (!compiler_type_member_emits_runtime_descriptor(candidateMember)) {
                     continue;
                 }
-                if (candidateMember == memberInfo) {
+                if (candidateMember == memberInfo ||
+                    (memberInfo->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                     candidateMember->symbolId == memberInfo->symbolId) ||
+                    (memberInfo->metadataToken != 0u &&
+                     candidateMember->metadataToken == memberInfo->metadataToken &&
+                     candidateMember->signatureHash == memberInfo->signatureHash)) {
                     if (outPrototypeIndex != ZR_NULL) {
                         *outPrototypeIndex = serializedPrototypeIndex;
                     }
@@ -1983,6 +2074,8 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs,
                                   SZrFileRange location) {
     TZrUInt32 memberId;
     TZrInstruction metaGetInst;
+    TZrUInt16 cacheIndex = 0u;
+    TZrBool useCachedBinding = ZR_FALSE;
     TZrUInt8 memberFlags = getterAccessor != ZR_NULL && getterAccessor->isStatic
                                    ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR
                                    : 0;
@@ -1993,15 +2086,30 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    memberId = compiler_get_or_add_member_entry_with_flags(cs, propertyName, memberFlags);
+    memberId = compiler_get_or_add_member_entry_for_type_member(cs, propertyName, getterAccessor, memberFlags);
     if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to register property getter member symbol", location);
         return ZR_FALSE;
     }
-    metaGetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_GET),
+    if (getterAccessor != ZR_NULL &&
+        (getterAccessor->compiledFunction != ZR_NULL ||
+         getterAccessor->callBindingFact.bindingKind != ZR_CALL_BINDING_NONE ||
+         compiler_native_call_binding_is_provider_contract(&getterAccessor->callBindingFact))) {
+        if (!reserve_member_slot_get_cache(cs, memberId, getterAccessor, 0u, &cacheIndex, location))
+            return ZR_FALSE;
+        cs->currentFunction->callSiteCaches[cacheIndex].kind = getterAccessor->isStatic
+                ? ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC
+                : ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET;
+        useCachedBinding = ZR_TRUE;
+    }
+    metaGetInst = create_instruction_2(useCachedBinding
+                                               ? (getterAccessor->isStatic
+                                                          ? ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED)
+                                                          : ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED))
+                                               : ZR_INSTRUCTION_ENUM(META_GET),
                                        (TZrUInt16)resultSlot,
                                        (TZrUInt16)receiverSlot,
-                                       (TZrUInt16)memberId);
+                                       (TZrUInt16)(useCachedBinding ? cacheIndex : memberId));
     emit_instruction(cs, metaGetInst);
     if (!compiler_semantic_ir_record_property_ref_get(
                 cs,
@@ -2020,15 +2128,18 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, SZrString *propertyName, TZrBool isStatic,
-                                    EZrPropertyAccessorRole accessorRole,
+TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, SZrString *propertyName,
+                                    const SZrTypeMemberInfo *setterAccessor,
                                     TZrUInt32 assignedValueSlot, SZrFileRange location) {
     TZrUInt32 memberId;
     TZrUInt32 resultSlot;
     TZrInstruction metaSetInst;
-    TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
+    TZrUInt16 cacheIndex = 0u;
+    TZrBool useCachedBinding = ZR_FALSE;
+    TZrUInt8 memberFlags = setterAccessor != ZR_NULL && setterAccessor->isStatic
+                                  ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
 
-    if (accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_INIT) {
+    if (setterAccessor != ZR_NULL && setterAccessor->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_INIT) {
         memberFlags |= ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER;
     }
 
@@ -2036,15 +2147,30 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
         return ZR_PARSER_SLOT_NONE;
     }
 
-    memberId = compiler_get_or_add_member_entry_with_flags(cs, propertyName, memberFlags);
+    memberId = compiler_get_or_add_member_entry_for_type_member(cs, propertyName, setterAccessor, memberFlags);
     if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to register property setter member symbol", location);
         return ZR_PARSER_SLOT_NONE;
     }
-    metaSetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_SET),
+    if (setterAccessor != ZR_NULL &&
+        (setterAccessor->compiledFunction != ZR_NULL ||
+         setterAccessor->callBindingFact.bindingKind != ZR_CALL_BINDING_NONE ||
+         compiler_native_call_binding_is_provider_contract(&setterAccessor->callBindingFact))) {
+        if (!reserve_member_slot_get_cache(cs, memberId, setterAccessor, 1u, &cacheIndex, location))
+            return ZR_PARSER_SLOT_NONE;
+        cs->currentFunction->callSiteCaches[cacheIndex].kind = setterAccessor->isStatic
+                ? ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC
+                : ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET;
+        useCachedBinding = ZR_TRUE;
+    }
+    metaSetInst = create_instruction_2(useCachedBinding
+                                               ? (setterAccessor->isStatic
+                                                          ? ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED)
+                                                          : ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED))
+                                               : ZR_INSTRUCTION_ENUM(META_SET),
                                        (TZrUInt16)objectSlot,
                                        (TZrUInt16)assignedValueSlot,
-                                       (TZrUInt16)memberId);
+                                       (TZrUInt16)(useCachedBinding ? cacheIndex : memberId));
     emit_instruction(cs, metaSetInst);
     collapse_stack_to_slot(cs, objectSlot);
     resultSlot = allocate_stack_slot(cs);

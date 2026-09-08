@@ -37,4 +37,12 @@ EZrArtifactStatus zr_artifact_metadata_graph_validate_decoded(
         const SZrArtifactView *view,
         SZrArtifactDiagnostic *diagnostic);
 
+EZrArtifactStatus zr_artifact_call_binding_validate_input(
+        const SZrArtifactSectionInput *section,
+        SZrArtifactDiagnostic *diagnostic);
+
+EZrArtifactStatus zr_artifact_call_binding_validate_decoded(
+        const SZrArtifactView *view,
+        SZrArtifactDiagnostic *diagnostic);
+
 #endif // ZR_VM_CORE_ARTIFACT_SCHEMA_INTERNAL_H

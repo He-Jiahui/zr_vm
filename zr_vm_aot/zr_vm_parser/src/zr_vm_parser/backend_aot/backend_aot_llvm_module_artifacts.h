@@ -12,6 +12,7 @@ void backend_aot_llvm_write_module_exports(FILE *file,
                                            const TZrChar *inputHash,
                                            const SZrAotFunctionTable *functionTable,
                                            const SZrAotWriterOptions *options,
+                                           TZrUInt32 callBindingRowCount,
                                            TZrBool stripGeneratedSymbols);
 
 #endif

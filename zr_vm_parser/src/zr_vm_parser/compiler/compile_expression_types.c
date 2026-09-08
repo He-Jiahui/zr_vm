@@ -5,6 +5,9 @@
 #include "compile_expression_internal.h"
 #include "compile_expression_contiguous_view.h"
 #include "type_inference_internal.h"
+#include "compiler_native_call_binding.h"
+#include "compiler_call_binding.h"
+#include "compiler_typed_call_binding.h"
 
 static TZrBool compile_expression_is_testing_throws_call(
         const SZrTypeMemberInfo *memberInfo,
@@ -3024,15 +3027,24 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         goto cleanup;
                     }
                 }
-                if (typeMember != ZR_NULL && typeMember->isStatic) {
-                    isStaticMember = ZR_TRUE;
-                }
                 declaredFieldMatch = resolve_declared_field_member_access(cs,
                                                                           rootTypeName,
                                                                           memberName,
                                                                           &declaredFieldTypeName,
                                                                           &isStaticMember,
                                                                           &declaredFieldOwnershipQualifier);
+                if (typeMember != ZR_NULL && typeMember->isStatic) {
+                    isStaticMember = ZR_TRUE;
+                }
+                if (typeMember == ZR_NULL && !declaredFieldMatch &&
+                    find_type_declaration(cs, rootTypeName) != ZR_NULL) {
+                    TZrChar diagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
+                    snprintf(diagnostic, sizeof(diagnostic), "Unknown static member '%s.%s'",
+                             ZrCore_String_GetNativeString(rootTypeName),
+                             ZrCore_String_GetNativeString(memberName));
+                    ZrParser_Compiler_Error(cs, diagnostic, member->location);
+                    goto cleanup;
+                }
                 bindReceiverForCall = member_call_requires_bound_receiver(typeMember);
                 if (memberUsesSuperLookup &&
                     typeMember != ZR_NULL &&
@@ -3263,10 +3275,11 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                             ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR;
                             canUseDirectKnownMemberCall =
                                     nextIsFunctionCall &&
-                                    !cs->isInTailCallContext &&
                                     pendingReceiverRequiresBinding &&
                                     !memberUsesSuperLookup &&
-                                    memberEntryBoundAtCompileTime &&
+                                    (memberEntryBoundAtCompileTime ||
+                                     (typeMember != ZR_NULL && compiler_native_call_binding_is_provider_contract(
+                                             &typeMember->callBindingFact))) &&
                                     typeMember != ZR_NULL &&
                                     (typeMember->compiledFunction == ZR_NULL ||
                                      typeMember->compiledFunction->closureValueLength == 0);
@@ -3285,7 +3298,17 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                     !memberUsesSuperLookup &&
                                     compiler_contiguous_view_member_is_structural(typeMember);
 
-                            if (canLowerContiguousViewCall) {
+                            if (nextIsFunctionCall && isStaticMember && typeMember != ZR_NULL &&
+                                (typeMember->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE ||
+                                 compiler_native_call_binding_is_provider_contract(&typeMember->callBindingFact))) {
+                                /* The callsite supplies the relocated callable. The module
+                                 * expression has already run, including its import effects. */
+                            } else if (nextIsFunctionCall && isStaticMember && typeMember != ZR_NULL &&
+                                typeMember->compiledFunction != ZR_NULL &&
+                                typeMember->compiledFunction->closureValueLength == 0u) {
+                                if (!emit_member_function_constant_to_slot(cs, currentSlot, typeMember,
+                                                                          member->location)) goto cleanup;
+                            } else if (canLowerContiguousViewCall) {
                                 pendingContiguousViewCall = ZR_TRUE;
                                 pendingContiguousViewReceiverTypeName = rootTypeName;
                                 pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
@@ -3601,6 +3624,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
             SZrFunctionCall *call = &member->data.functionCall;
             SZrAstNodeArray *argsToCompile = call->args;
             SZrFunctionTypeInfo *resolvedFunctionType = ZR_NULL;
+            SZrFunctionTypeInfo typedCallableValue = {0};
             const SZrTypeMemberInfo *activeCallMemberInfo = pendingCallMemberInfo;
             SZrAstNodeArray *memberParamList = ZR_NULL;
             SZrResolvedCallSignature resolvedFunctionSignature;
@@ -3686,6 +3710,17 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                            member->location,
                                                            &resolvedFunctionType,
                                                            &resolvedFunctionSignature);
+                }
+                if (!hasResolvedFunctionSignature && !cs->hasError &&
+                    compiler_resolve_typed_callable_value(cs, funcName, &resolvedFunctionSignature,
+                                                          member->location)) {
+                    typedCallableValue.isCallableValueBinding = ZR_TRUE;
+                    typedCallableValue.name = funcName;
+                    typedCallableValue.returnType = resolvedFunctionSignature.returnType;
+                    typedCallableValue.paramTypes = resolvedFunctionSignature.parameterTypes;
+                    typedCallableValue.parameterPassingModes = resolvedFunctionSignature.parameterPassingModes;
+                    resolvedFunctionType = &typedCallableValue;
+                    hasResolvedFunctionSignature = ZR_TRUE;
                 }
                 if (hasResolvedFunctionSignature &&
                     resolvedFunctionType != ZR_NULL &&
@@ -4233,6 +4268,19 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         !useMetaCallOpcode &&
                         activeCallMemberInfo->compiledFunction != ZR_NULL;
                 TZrBool emitMetaCallOpcode = useMetaCallOpcode || useResolvedFunctionMetaCallOpcode;
+                if (emitMetaCallOpcode && !hasSpreadArgument &&
+                    activeCallMemberInfo != ZR_NULL) {
+                    TZrUInt16 metaBindingCacheIndex;
+                    if (!reserve_meta_call_binding_cache(
+                                cs,
+                                pendingDirectMemberCallMemberEntryIndex,
+                                activeCallMemberInfo,
+                                argCount,
+                                &metaBindingCacheIndex,
+                                member->location)) {
+                        goto cleanup;
+                    }
+                }
                 usePreferredCallResultSlot =
                         preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
                         pendingReceiverSlot == ZR_PARSER_SLOT_NONE &&
@@ -4249,6 +4297,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                     activeCallMemberInfo->compiledFunction->closureValueLength == 0) {
                     if (!reserve_member_slot_get_cache(cs,
                                                        pendingDirectMemberCallMemberEntryIndex,
+                                                       activeCallMemberInfo,
                                                        argCount,
                                                        &directMemberCallCacheIndex,
                                                        member->location)) {
@@ -4269,6 +4318,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                            activeCallMemberInfo->compiledFunction == ZR_NULL) {
                     if (!reserve_member_slot_get_cache(cs,
                                                        pendingDirectMemberCallMemberEntryIndex,
+                                                       activeCallMemberInfo,
                                                        argCount,
                                                        &directMemberCallCacheIndex,
                                                        member->location)) {
@@ -4280,7 +4330,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
                         goto cleanup;
                     }
-                    useKnownNativeDirectMemberCallOpcode = ZR_TRUE;
+                    if (cs->currentFunction->callSiteCaches[directMemberCallCacheIndex].binding.contract.bindingKind ==
+                                ZR_CALL_BINDING_INTERFACE ||
+                        cs->currentFunction->callSiteCaches[directMemberCallCacheIndex].binding.contract.bindingKind ==
+                                ZR_CALL_BINDING_VIRTUAL) {
+                        useKnownVmDirectMemberCallOpcode = ZR_TRUE;
+                    } else {
+                        useKnownNativeDirectMemberCallOpcode = ZR_TRUE;
+                    }
                 }
                 EZrInstructionCode callOpcode =
                         hasSpreadArgument
@@ -4323,6 +4380,22 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         goto cleanup;
                     }
                 } else {
+                    if (!emitMetaCallOpcode &&
+                        activeCallMemberInfo == ZR_NULL &&
+                        resolvedFunctionType != ZR_NULL &&
+                        resolvedFunctionType->isCallableValueBinding &&
+                        hasResolvedFunctionSignature &&
+                        !compiler_record_typed_call_binding(cs, &resolvedFunctionSignature,
+                                                            (TZrUInt32)resolvedFunctionSignature.parameterTypes.length,
+                                                            member->location)) {
+                        goto cleanup;
+                    }
+                    if (!hasSpreadArgument && !emitMetaCallOpcode &&
+                        !(activeCallMemberInfo == ZR_NULL && resolvedFunctionType != ZR_NULL &&
+                          resolvedFunctionType->isCallableValueBinding) &&
+                        !compiler_record_known_call_binding(cs, activeCallMemberInfo, argCount, member->location)) {
+                        goto cleanup;
+                    }
                     emit_instruction(cs,
                                      create_instruction_2(callOpcode,
                                                           (TZrUInt16)callResultSlot,

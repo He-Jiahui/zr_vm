@@ -1,4 +1,5 @@
 #include "type_inference_internal.h"
+#include "compiler/compiler_call_binding.h"
 #include "type_inference_call_diagnostics.h"
 
 #include <limits.h>
@@ -700,6 +701,7 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
             bestMember = ZR_NULL;
         }
         *outMember = bestMember;
+        if (bestMember != ZR_NULL) compiler_get_member_call_binding_fact(cs, bestMember, &bestMember->callBindingFact);
         ZrParser_InferredType_Free(cs->state, &firstExpectedType);
         ZrParser_InferredType_Free(cs->state, &firstActualType);
         return ZR_TRUE;
@@ -718,6 +720,7 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
     }
 
     *outMember = bestMember;
+    compiler_get_member_call_binding_fact(cs, bestMember, &bestMember->callBindingFact);
     ZrParser_InferredType_Free(cs->state, &firstExpectedType);
     ZrParser_InferredType_Free(cs->state, &firstActualType);
     return ZR_TRUE;

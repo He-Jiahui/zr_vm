@@ -3,8 +3,9 @@
 
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
+#include "zr_vm_core/call_binding.h"
 
-#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)4u)
+#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)5u)
 #define ZR_ARTIFACT_HEADER_ENCODED_SIZE ((TZrUInt32)112u)
 #define ZR_ARTIFACT_SECTION_DIRECTORY_ENTRY_ENCODED_SIZE ((TZrUInt32)24u)
 #define ZR_ARTIFACT_HEADER_SECTION_COUNT_OFFSET ((TZrUInt32)16u)
@@ -21,6 +22,7 @@
 #define ZR_ARTIFACT_CONTRACT_ROW_ENCODED_SIZE ((TZrUInt32)40u)
 #define ZR_ARTIFACT_LAYOUT_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 #define ZR_ARTIFACT_RELOCATION_ROW_ENCODED_SIZE ((TZrUInt32)40u)
+#define ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE ((TZrUInt32)96u)
 #define ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 #define ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 #define ZR_ARTIFACT_METADATA_STATE_ROW_ENCODED_SIZE ((TZrUInt32)64u)
@@ -55,7 +57,8 @@ typedef enum EZrArtifactSectionKind {
     ZR_ARTIFACT_SECTION_METADATA_STATE_TABLE = 17,
     ZR_ARTIFACT_SECTION_METADATA_RECORD_TABLE = 18,
     ZR_ARTIFACT_SECTION_METADATA_BLOB_HEAP = 19,
-    ZR_ARTIFACT_SECTION_LAYOUT_MAP_HEAP = 20
+    ZR_ARTIFACT_SECTION_LAYOUT_MAP_HEAP = 20,
+    ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE = 21
 } EZrArtifactSectionKind;
 
 #define ZR_ARTIFACT_SECTION_FLAG_MANDATORY ((TZrUInt32)0u)
@@ -447,6 +450,15 @@ typedef struct SZrArtifactRelocationRow {
     TZrUInt64 expectedModuleHash;
 } SZrArtifactRelocationRow;
 
+typedef struct SZrArtifactCallBindingRow {
+    TZrUInt32 schemaVersion;
+    TZrUInt32 functionIndex;
+    TZrUInt32 cacheIndex;
+    TZrUInt32 instructionIndex;
+    SZrCallBindingContract contract;
+    SZrCallBindingLocation location;
+} SZrArtifactCallBindingRow;
+
 typedef struct SZrArtifactSectionInput {
     EZrArtifactSectionKind kind;
     TZrUInt32 flags;
@@ -569,6 +581,18 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadRelocationRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
         SZrArtifactRelocationRow *outRow,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_WriteCallBindingRow(
+        const SZrArtifactCallBindingRow *row,
+        TZrByte *buffer,
+        TZrSize bufferCapacity,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactCallBindingRow *outRow,
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ValidatePublicIdentity(

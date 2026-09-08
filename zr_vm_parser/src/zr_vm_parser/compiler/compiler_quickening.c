@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "compiler_internal.h"
+#include "zr_vm_core/function_identity.h"
 #include "zr_vm_library/native_binding.h"
 
 #define ZR_COMPILER_QUICKENING_MEMBER_FLAGS_NONE ((TZrUInt8)0)
@@ -2235,6 +2236,14 @@ static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_f
     }
 
     cacheEntry = &function->callSiteCaches[cacheIndex];
+    if (cacheEntry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_CONSTANT &&
+        cacheEntry->bindingLocation.targetIndex < function->constantValueLength) {
+        callableValue = &function->constantValueList[cacheEntry->bindingLocation.targetIndex];
+        if (outSlotKind != ZR_NULL) {
+            *outSlotKind = compiler_quickening_slot_kind_from_callable_value(state, callableValue);
+        }
+        return compiler_quickening_metadata_function_from_callable_value(state, callableValue);
+    }
     if (function->memberEntries == ZR_NULL || cacheEntry->memberEntryIndex >= function->memberEntryLength) {
         return ZR_NULL;
     }
@@ -9899,15 +9908,7 @@ static TZrUInt8 compiler_quickening_member_entry_flags(const SZrFunction *functi
 }
 
 static TZrBool compiler_quickening_function_matches_inline_child(const SZrFunction *left, const SZrFunction *right) {
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return left->functionName == right->functionName &&
-           left->parameterCount == right->parameterCount &&
-           left->instructionsLength == right->instructionsLength &&
-           left->lineInSourceStart == right->lineInSourceStart &&
-           left->lineInSourceEnd == right->lineInSourceEnd;
+    return ZrCore_Function_HasSameDefinition(left, right);
 }
 
 static SZrFunction *compiler_quickening_function_from_vm_constant_value(SZrTypeValue *constant) {
@@ -9957,9 +9958,28 @@ static void compiler_quickening_rebind_constant_function_values_to_children(SZrF
             continue;
         }
 
+        TZrUInt32 aliasIndex = 0u;
+        TZrBool hasDefinition = ZR_FALSE;
+        TZrBool hasAlias = ZrCore_Function_FindConstantChildAlias(function, constantIndex,
+                &aliasIndex, &hasDefinition);
+        TZrUInt32 matchCount = 0u;
+        TZrUInt32 matchedIndex = 0u;
+        for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            if (compiler_quickening_function_matches_inline_child(constantFunction,
+                    &function->childFunctionList[childIndex])) {
+                matchCount++;
+                matchedIndex = childIndex;
+            }
+        }
+        /* Metadata aliases are authoritative. Without one, only a unique
+         * structural match may be rebound; first-match selection would make
+         * same-line nested functions with distinct constant pools ambiguous. */
+        if (hasDefinition && !hasAlias) continue;
+        if (!hasAlias && matchCount != 1u) continue;
+
         for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
             SZrFunction *childFunction = &function->childFunctionList[childIndex];
-            if (!compiler_quickening_function_matches_inline_child(constantFunction, childFunction)) {
+            if (hasAlias ? childIndex != aliasIndex : childIndex != matchedIndex) {
                 continue;
             }
 
@@ -10049,6 +10069,15 @@ static TZrBool compiler_quickening_append_callsite_cache(SZrState *state,
     if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL || outCacheIndex == ZR_NULL) {
         return ZR_FALSE;
     }
+    for (TZrUInt32 existing = 0u; existing < function->callSiteCacheLength; ++existing) {
+        if (function->callSiteCaches[existing].instructionIndex == instructionIndex &&
+            function->callSiteCaches[existing].binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+            function->callSiteCaches[existing].kind = (TZrUInt32)kind;
+            function->callSiteCaches[existing].argumentCount = argumentCount;
+            *outCacheIndex = (TZrUInt16)existing;
+            return ZR_TRUE;
+        }
+    }
 
     newCount = (TZrSize)function->callSiteCacheLength + 1;
     if (newCount > UINT16_MAX) {
@@ -10127,7 +10156,15 @@ static TZrBool compiler_quicken_cached_calls(SZrState *state, SZrFunction *funct
 
         argumentCount = instruction->instruction.operand.operand1[1];
         if (argumentCount == 0) {
-            continue;
+            TZrBool hasBinding = ZR_FALSE;
+            for (TZrUInt32 candidate = 0u; candidate < function->callSiteCacheLength; ++candidate) {
+                if (function->callSiteCaches[candidate].instructionIndex == index &&
+                    function->callSiteCaches[candidate].binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+                    hasBinding = ZR_TRUE;
+                    break;
+                }
+            }
+            if (!hasBinding) continue;
         }
 
         if (!compiler_quickening_append_callsite_cache(state,
@@ -10414,6 +10451,16 @@ static TZrBool compiler_quicken_meta_access(SZrState *state, SZrFunction *functi
         TZrUInt32 memberEntryIndex;
         TZrUInt8 memberFlags;
         TZrBool isStaticAccessor;
+        TZrBool hasBindingCache = ZR_FALSE;
+
+        for (TZrUInt32 candidate = 0u; candidate < function->callSiteCacheLength; ++candidate) {
+            const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[candidate];
+            if (entry->instructionIndex == index && entry->bindingLocation.kind != ZR_CALL_BINDING_RELOCATION_NONE) {
+                cacheIndex = (TZrUInt16)candidate;
+                hasBindingCache = ZR_TRUE;
+                break;
+            }
+        }
 
         if (opcode == ZR_INSTRUCTION_ENUM(META_GET)) {
             memberEntryIndex = instruction->instruction.operand.operand1[1];
@@ -10427,7 +10474,7 @@ static TZrBool compiler_quicken_meta_access(SZrState *state, SZrFunction *functi
         } else if (opcode == ZR_INSTRUCTION_ENUM(META_SET)) {
             memberEntryIndex = instruction->instruction.operand.operand1[1];
             memberFlags = compiler_quickening_member_entry_flags(function, memberEntryIndex);
-            if ((memberFlags & ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER) != 0u) {
+            if (!hasBindingCache && (memberFlags & ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER) != 0u) {
                 continue;
             }
             isStaticAccessor =
@@ -10440,7 +10487,7 @@ static TZrBool compiler_quicken_meta_access(SZrState *state, SZrFunction *functi
             continue;
         }
 
-        if (!compiler_quickening_append_callsite_cache(state,
+        if (!hasBindingCache && !compiler_quickening_append_callsite_cache(state,
                                                        function,
                                                        cacheKind,
                                                        index,
@@ -10450,6 +10497,7 @@ static TZrBool compiler_quicken_meta_access(SZrState *state, SZrFunction *functi
                                                        &cacheIndex)) {
             return ZR_FALSE;
         }
+        function->callSiteCaches[cacheIndex].kind = cacheKind;
 
         instruction->instruction.operationCode = (TZrUInt16)quickenedOpcode;
         instruction->instruction.operand.operand1[1] = cacheIndex;

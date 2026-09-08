@@ -1418,6 +1418,18 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_member_fast(
 
     callableValue = ZrCore_Stack_GetValueNoProfile(stackPointer);
     receiverValue = ZrCore_Stack_GetValueNoProfile(stackPointer + 1);
+    if (cacheEntry != ZR_NULL && cacheEntry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+        if (!ZrCore_CallBinding_PrepareMember(state, currentFunction, cacheIndex, receiverValue,
+                                             callableValue, &state->lastCallBindingError)) {
+            ZrCore_Debug_RunError(state, "CallBinding link error: %s (token=0x%08x, instruction=%u)",
+                    ZrCore_CallBinding_StatusName(state->lastCallBindingError.status),
+                    state->lastCallBindingError.targetMetadataToken, cacheEntry->instructionIndex);
+        }
+        resolvedFunction = ZR_CAST(SZrFunction *, callableValue->value.object);
+        return execution_pre_call_prepared_resolved_vm_with_argument_source_fast(state,
+                stackPointer, resolvedFunction, cachedArgumentCount, resultCount, returnDestination,
+                argumentSourceFrameBase, argumentSourceStartSlot);
+    }
     if (receiverValue != ZR_NULL &&
         execution_try_resolve_known_vm_member_exact_single_slot_fast(
                 cacheEntry, receiverValue, &resolvedFunction, &cachedArgumentCount) &&
@@ -3421,6 +3433,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_CALL");                   \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                         \
         resolvedFunction__ = execution_try_resolve_stateless_vm_function_value_fast(state, opA);                       \
         if (resolvedFunction__ == ZR_NULL) {                                                                           \
@@ -3466,6 +3480,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_CALL");               \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
                 state, callInfo, currentFunction, &base, (TZrUInt32)functionSlot__, parametersCount__);               \
@@ -3595,6 +3611,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_FUNCTION_CALL_NO_ARGS");                                           \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = execution_pre_call_frame_layout_generic_single_result(                                        \
@@ -3640,6 +3658,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_KNOWN_VM_CALL_NO_ARGS");                                          \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         state->stackTop.valuePointer = callWindow__ + 1;                                                               \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
@@ -3668,6 +3688,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_KNOWN_NATIVE_CALL_NO_ARGS");                                      \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
                 state, callInfo, currentFunction, &base, (TZrUInt32)functionSlot__, 0u);                              \
@@ -3704,6 +3726,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");                   \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = execution_pre_call_frame_layout_generic_single_result(                                        \
@@ -3737,6 +3761,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                 \
                   "Function value is NULL in FUNCTION_CALL_SPREAD");                                                 \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = execution_pre_call_frame_layout_spread_single_result(                                         \
                 state,                                                                                                 \
@@ -4008,6 +4034,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");                   \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         execution_stage_frame_layout_call_values(                                                                      \
                 state, currentFunction, base, (TZrUInt32)functionSlot__, parametersCount__);                          \
@@ -4051,6 +4079,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (callWindow__ == ZR_NULL) {                                                                                 \
             ZrCore_Debug_RunError(state, "KNOWN_VM_TAIL_CALL: failed to prepare call frame");                       \
         }                                                                                                              \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList),                                      \
+                ZrCore_Stack_GetValueNoProfile(callWindow__));                                                        \
         state->stackTop.valuePointer = callWindow__ + parametersCount__ + 1;                                          \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
@@ -4089,6 +4120,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_TAIL_CALL");         \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         execution_stage_frame_layout_call_values(                                                                      \
                 state, currentFunction, base, (TZrUInt32)functionSlot__, parametersCount__);                          \
@@ -4129,6 +4162,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_FUNCTION_TAIL_CALL_NO_ARGS");                                      \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         execution_stage_frame_layout_call_values(state, currentFunction, base, (TZrUInt32)functionSlot__, 0u);         \
         state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
@@ -4167,6 +4202,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS");                                     \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         execution_stage_frame_layout_call_values(state, currentFunction, base, (TZrUInt32)functionSlot__, 0u);         \
         state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
@@ -4211,6 +4248,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS");                                 \
+        ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
+                (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
         execution_stage_frame_layout_call_values(state, currentFunction, base, (TZrUInt32)functionSlot__, 0u);         \
         state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \

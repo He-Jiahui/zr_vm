@@ -127,12 +127,20 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     registry->hostProviderModuleNameResolver = global->providerModuleNameResolver;
     registry->hostProviderModuleNameResolverUserData =
             global->providerModuleNameResolverUserData;
+    registry->hostCallBindingModuleResolver = global->callBindingModuleResolver;
+    registry->hostCallBindingModuleResolverUserData = global->callBindingModuleResolverUserData;
+    registry->hostTypedCallBindingResolver = global->typedCallBindingResolver;
+    registry->hostTypedCallBindingResolverUserData = global->typedCallBindingResolverUserData;
     registry->hostOwnershipStrongRefObserver = global->ownershipStrongRefObserver;
     registry->hostOwnershipStrongRefObserverUserData =
             global->ownershipStrongRefObserverUserData;
 
     global->nativeRegistryState = registry;
     global->nativeRegistryStateCleanup = native_registry_cleanup_global_state;
+    global->callBindingModuleResolver = native_registry_link_call_binding;
+    global->callBindingModuleResolverUserData = registry;
+    global->typedCallBindingResolver = native_registry_resolve_typed_call_binding;
+    global->typedCallBindingResolverUserData = registry;
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);
     ZrCore_GlobalState_SetProviderModuleNameResolver(
             global, native_registry_resolve_provider_module_name, registry);
@@ -163,6 +171,16 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
     registry = native_registry_get(global);
     if (registry == ZR_NULL || global->mainThreadState == ZR_NULL) {
         return;
+    }
+    if (global->callBindingModuleResolver == native_registry_link_call_binding &&
+        global->callBindingModuleResolverUserData == registry) {
+        global->callBindingModuleResolver = registry->hostCallBindingModuleResolver;
+        global->callBindingModuleResolverUserData = registry->hostCallBindingModuleResolverUserData;
+    }
+    if (global->typedCallBindingResolver == native_registry_resolve_typed_call_binding &&
+        global->typedCallBindingResolverUserData == registry) {
+        global->typedCallBindingResolver = registry->hostTypedCallBindingResolver;
+        global->typedCallBindingResolverUserData = registry->hostTypedCallBindingResolverUserData;
     }
 
     if (global->ownershipStrongRefObserver ==

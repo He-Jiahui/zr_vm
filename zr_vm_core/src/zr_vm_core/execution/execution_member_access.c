@@ -2463,6 +2463,16 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
     ZR_ASSERT(cacheIndex < function->callSiteCacheLength);
 
     entry = &function->callSiteCaches[cacheIndex];
+    if (entry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
+        SZrTypeValue boundCallable;
+        if (!ZrCore_CallBinding_PrepareMember(state, function, cacheIndex, receiver,
+                                               &boundCallable, &state->lastCallBindingError)) {
+            return ZR_FALSE;
+        }
+        ZrCore_Value_Copy(state, result, &boundCallable);
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
     if (ZR_UNLIKELY((EZrFunctionCallSiteCacheKind)entry->kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET)) {
         ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_MISS);
         return ZR_FALSE;

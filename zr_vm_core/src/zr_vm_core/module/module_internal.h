@@ -46,6 +46,9 @@ typedef struct {
     TZrBool needsPostCreateSetup;
 } SZrPrototypeCreationInfo;
 
+TZrBool zr_module_bind_interface_dispatch(SZrState *state, SZrObjectPrototype *receiver,
+                                          SZrObjectPrototype *interfacePrototype);
+
 static inline void zr_module_init_string_key(SZrState *state, SZrTypeValue *key, SZrString *stringValue) {
     ZrCore_Value_InitAsRawObject(state, key, ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
     key->type = ZR_VALUE_TYPE_STRING;

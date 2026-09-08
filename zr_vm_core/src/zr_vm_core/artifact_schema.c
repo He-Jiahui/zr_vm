@@ -586,6 +586,9 @@ static EZrArtifactStatus artifact_validate_document(const SZrArtifactDocument *d
             case ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE:
                 status = artifact_validate_scheduler_contract_input(section, diagnostic);
                 break;
+            case ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE:
+                status = zr_artifact_call_binding_validate_input(section, diagnostic);
+                break;
             case ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE:
             case ZR_ARTIFACT_SECTION_PROPERTY_DEF_TABLE:
             case ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE:
@@ -1011,6 +1014,10 @@ static EZrArtifactStatus artifact_validate_decoded_rows(const SZrArtifactView *v
     {
         EZrArtifactStatus status =
                 zr_artifact_metadata_graph_validate_decoded(view, diagnostic);
+        if (status != ZR_ARTIFACT_STATUS_OK) return status;
+    }
+    {
+        EZrArtifactStatus status = zr_artifact_call_binding_validate_decoded(view, diagnostic);
         if (status != ZR_ARTIFACT_STATUS_OK) return status;
     }
     if (view->kind != ZR_ARTIFACT_KIND_ZRS) {

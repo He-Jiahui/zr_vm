@@ -2,6 +2,7 @@
 #define ZR_VM_CORE_METADATA_RUNTIME_H
 
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/call_binding.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/type_layout.h"
@@ -88,6 +89,20 @@ typedef struct SZrMetadataRuntimeMethodBindingView {
     FZrAotEntryThunk functionPointer;
     FZrAotReflectionInvoker invoker;
 } SZrMetadataRuntimeMethodBindingView;
+
+/* AOT call-binding rows are pointer-free in the generated artifact. This view
+ * adds the process-local target selected from the registration table. */
+typedef struct SZrMetadataRuntimeCallBindingView {
+    TZrUInt32 functionIndex;
+    TZrUInt32 cacheIndex;
+    TZrUInt32 instructionIndex;
+    TZrUInt32 targetFunctionIndex;
+    SZrCallBindingContract contract;
+    SZrCallBindingLocation location;
+    FZrAotEntryThunk functionPointer;
+    const SZrAotMethodInfo *methodInfo;
+    FZrAotReflectionInvoker invoker;
+} SZrMetadataRuntimeCallBindingView;
 
 typedef struct SZrMetadataRuntimeInterpreterMethodBindingView {
     TZrMetadataToken methodToken;
@@ -287,6 +302,13 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken methodToken,
         SZrMetadataRuntimeMethodBindingView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadCallBindingView(
+        SZrMetadataRuntime *runtime,
+        TZrUInt32 rowIndex,
+        SZrMetadataRuntimeCallBindingView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_LinkCallBindings(
+        struct SZrState *state,
+        SZrMetadataRuntime *runtime);
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadInterpreterMethodBindingView(
         struct SZrState *state,
         SZrMetadataRuntime *runtime,

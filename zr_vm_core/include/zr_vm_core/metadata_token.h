@@ -67,6 +67,13 @@ typedef struct SZrMetadataTokenRecord {
     struct SZrString *maxModuleVersionExclusive;
 } SZrMetadataTokenRecord;
 
+/* ownerIndex relocates a callable definition to this function's constant pool. */
+#define ZR_METADATA_TOKEN_RECORD_CALLABLE_CONSTANT ((TZrUInt32)1u)
+#define ZR_METADATA_TOKEN_RECORD_CALLABLE_OWNER ((TZrUInt32)2u)
+#define ZR_METADATA_TOKEN_RECORD_CALLABLE_MODULE ((TZrUInt32)3u)
+#define ZR_METADATA_TOKEN_RECORD_CALLABLE_SIGNATURE ((TZrUInt32)4u)
+#define ZR_METADATA_TOKEN_RECORD_CALLABLE_CHILD ((TZrUInt32)5u)
+
 typedef struct SZrMetadataStringHeapEntry {
     TZrUInt32 stringIndex;
     struct SZrString *value;

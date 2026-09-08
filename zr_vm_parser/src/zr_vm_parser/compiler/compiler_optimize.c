@@ -90,6 +90,14 @@ static void optimizer_remap_local_variable_instruction_offsets(SZrCompilerState 
         return;
     }
 
+    if (cs->currentFunction != ZR_NULL) {
+        for (index = 0u; index < cs->currentFunction->callSiteCacheLength; ++index) {
+            SZrFunctionCallSiteCacheEntry *entry = &cs->currentFunction->callSiteCaches[index];
+            TZrSize oldIndex = optimizer_clamp_instruction_boundary(entry->instructionIndex, instructionCount);
+            entry->instructionIndex = (TZrUInt32)newBoundaryIndex[oldIndex];
+        }
+    }
+
     for (index = 0; index < cs->localVars.length; index++) {
         SZrFunctionLocalVariable *localVar =
                 (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, index);

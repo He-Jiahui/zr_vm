@@ -1728,8 +1728,7 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
                 cs,
                 objectSlot,
                 propertyName,
-                setterAccessor->isStatic,
-                setterAccessor->accessorRole,
+                setterAccessor,
                 resultSlot,
                 location);
         if (assignmentResultSlot == ZR_PARSER_SLOT_NONE) {
@@ -2214,8 +2213,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     } else if (emit_property_setter_call(cs,
                                                                          objSlot,
                                                                          fieldName,
-                                                                         setterAccessor->isStatic,
-                                                                         setterAccessor->accessorRole,
+                                                                         setterAccessor,
                                                                          rightSlot,
                                                                          node->location) == ZR_PARSER_SLOT_NONE) {
                                         return;
