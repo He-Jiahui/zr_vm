@@ -795,6 +795,24 @@ The retained exact-copy/private-helper result is
 `-0.003641%/+0.013457%`. Full evidence is recorded in
 `tests/acceptance/2026-08-31-packed-direct-prepared-precall-fusion.md`.
 
+Quickened signed scalar handlers now reuse that strict packed proof at a
+narrower boundary. Dispatch derives the fixed-stride byte-mirror base once per
+resolved frame and uses it for signed arithmetic, comparison, conversion,
+fused load, branch operands, and complete-value destinations. The cached base
+is valid only while the call-info function base still matches the identity
+used to resolve `currentFunction`; a call switch or relocation clears it until
+the outer loop resolves the frame again. Missing proof, an out-of-range slot,
+or a cleared cache returns to the existing direct/checked getter. Values remain
+full `SZrTypeValue` objects, so this is an address-side precursor rather than
+the final unboxed typed-lane representation.
+
+Rechecking the summary per access regressed numeric by `7.076%` and was
+rejected. The once-per-frame cache changes `numeric_loops` from `111,746,343`
+to `94,984,122 Ir` (`-15.000241%`); mixed changes `+0.437322%` and object
+improves `6.308004%`, both inside the representative gate. The helper profile
+remains direct/checked `2,502,333 / 1`. Full evidence is recorded in
+`tests/acceptance/2026-09-01-packed-signed-scalar-frame-base.md`.
+
 Finalized functions also publish the generated frame-slot count as immutable
 derived metadata. `generatedFrameSlotCountPlusOne` reserves zero for the
 original instruction-stream scan, so unfinalized and hand-built functions keep

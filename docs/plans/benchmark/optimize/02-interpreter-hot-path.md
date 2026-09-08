@@ -349,6 +349,24 @@ copy/private helper 结果为 `245,339,382 -> 236,125,782 Ir`（`-3.755451%`）�
 更新为 `18/18`。完整证据见
 `tests/acceptance/2026-08-31-packed-direct-prepared-precall-fusion.md`。
 
+### Packed signed scalar frame-base cache（2026-09-01）
+
+这是 Task 2 的第一段地址侧切片，不改变 `SZrTypeValue`、公开 stack ABI 或所有权语义。
+strict packed direct VALUE frame 在 outer dispatch 解析当前函数后只计算一次固定 stride byte
+mirror base；signed 算术、比较、转换、fused load、branch operand 与完整 VALUE destination
+直接使用该 base。call-info 的 function base 与已解析 frame identity 不一致时立即清空 cache，
+outer loop 重新解析后才恢复；summary 缺失、越界、relocation/call switch 均回退原 direct/checked
+getter。unsigned/float/string/object/ownership/inline layout handler 不变。
+
+逐访问重复 summary 检查的首版虽通过测试，但 numeric 从 `111,746,343` 退化到
+`119,654,940 Ir`（`+7.076%`），已拒绝。最终 once-per-frame 版本为：numeric
+`111,746,343 -> 94,984,122 Ir`（`-15.000241%`）、mixed
+`236,125,782 -> 237,158,413 Ir`（`+0.437322%`）、object
+`110,875,378 -> 103,881,355 Ir`（`-6.308004%`），checksum 均不变。profile 的
+direct/checked 仍为 `2,502,333 / 1`；四配置 13 项矩阵通过，frame 更新为 `37/37`。
+完整 typed payload、dirty/materialization 与 Task 2 的 `30%` 总门禁仍开放。完整证据见
+`tests/acceptance/2026-09-01-packed-signed-scalar-frame-base.md`。
+
 ### Immutable generated frame-slot count summary（2026-08-31）
 
 `generatedFrameSlotCountPlusOne` 现在把完整指令流扫描结果发布为不可变派生摘要；

@@ -193,3 +193,10 @@ of the proven fixed-stride byte-mirror region, after which parameters copy
 directly from dense slots through the normal ownership-aware value copy. Every
 guard miss retains the original stack-growth, call-info allocation, debug, and
 checked-layout precall path.
+
+Signed quickened handlers also derive that packed byte-mirror base once per
+resolved dispatch frame. The cache is discarded across call-info/frame-base
+identity changes; absent proof and bounds misses use the original checked
+getter. This removes repeated address resolution while retaining complete
+`SZrTypeValue` storage, so unboxed typed payload lanes and their materialization
+boundaries remain future work.

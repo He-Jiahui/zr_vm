@@ -460,6 +460,8 @@ static void test_packed_direct_value_slot_uses_fixed_stride_address(void) {
             expected,
             execution_frame_value_slot_dispatch_try_packed_direct_inline(
                     &function, frameBase, 1u, ZR_NULL, ZR_FALSE));
+    TEST_ASSERT_NULL(execution_frame_value_slot_dispatch_try_packed_direct_inline(
+            &function, frameBase, 2u, ZR_NULL, ZR_FALSE));
 
     function.directValueFrameSlotCountPlusOne = 0u;
     TEST_ASSERT_NULL(execution_frame_value_slot_dispatch_try_packed_direct_inline(
