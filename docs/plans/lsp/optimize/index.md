@@ -462,6 +462,10 @@ Valgrind 1,295,828 次分配全部释放、0 错误，完整 LSP 内存与其他
 一字节负向预算仍失败且 server exit 0；GCC/MSVC 默认预算分别 37.03/45.06 MiB、
 exit 0。Clang 完成正常退出且 stderr 为空，但 668.64 MiB 超过 512 MiB，保留该门禁。
 
+2026-09-09 已完成 [Plan 01 Task 6 Sub13 Clang sanitizer smoke](2026-09-09-plan01-task06-sub13-clang-sanitizer-smoke.md)：
+Clang ASan/UBSan/LSan 在既有 1 GiB sanitizer 预算下 full smoke exit 0，峰值 654.71 MiB，
+server exit 0、stderr 为空且无 sanitizer 报告。生产 512 MiB 门禁仍保持独立待验收。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

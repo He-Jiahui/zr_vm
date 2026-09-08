@@ -176,6 +176,7 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub11：parity 测试释放自有 TypeAt 与 hover 结果，并通过公开 Core API 比较 URI；三工具链 20/20、exit 0，Clang 无泄漏，Valgrind 0 字节/0 错误。验证包含 Sub10 的底层导入清理，父级完整门禁仍待办；[记录](2026-09-08-plan01-task06-sub11-parity-fixture-ownership.md)。
 - [x] Sub10：compile-time binary import 在所有持有已解码 source 的出口释放临时 IO 图；三工具链所有权 4/4、相关 CTest 3/3、类型推断 124/124，结合 Sub11 后 parity 20/20，均 exit 0。Valgrind 4,767 次分配全部释放、0 错误，父级门禁仍待办；[记录](2026-09-08-plan01-task06-sub10-compile-time-import-ownership.md)。
 - [x] Sub12：完整 smoke 将最终峰值采样与预算断言分离，超预算仍完成 exit/status/stderr 验证；一字节负向预算保持失败且 server exit 0，GCC/MSVC 默认预算通过。Clang 正常退出、stderr 为空，668.64 MiB 超过 512 MiB，内存门禁保持未完成；[记录](2026-09-08-plan01-task06-sub12-smoke-budget-teardown.md)。
+- [x] Sub13：按既有 sanitizer 约定以 1 GiB 预算完成 Clang ASan/UBSan/LSan full smoke；峰值 654.71 MiB，server exit 0、stderr 为空、无 sanitizer 报告。生产 512 MiB 门禁仍由无插桩矩阵约束；[记录](2026-09-09-plan01-task06-sub13-clang-sanitizer-smoke.md)。
 
 ```powershell
 wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /tmp/zr_vm-build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -no-pie"'
