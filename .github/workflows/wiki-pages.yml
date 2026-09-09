@@ -1,0 +1,89 @@
+name: Wiki Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/wiki-pages.yml"
+      - "zensical.toml"
+      - "requirements-docs.txt"
+      - "scripts/validate_wiki.py"
+      - "tests/scripts/test_validate_wiki.py"
+      - "docs/wiki/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/wiki-pages.yml"
+      - "zensical.toml"
+      - "requirements-docs.txt"
+      - "scripts/validate_wiki.py"
+      - "tests/scripts/test_validate_wiki.py"
+      - "docs/wiki/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build wiki
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - name: Configure Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - name: Install documentation toolchain
+        run: python -m pip install --disable-pip-version-check -r requirements-docs.txt
+      - name: Run wiki contract tests
+        run: python -m unittest discover -s tests/scripts -p "test_validate_wiki.py" -v
+      - name: Validate wiki source
+        run: python scripts/validate_wiki.py --root .
+      - name: Build strict site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site
+          zensical build --clean --strict
+          test -s site/index.html
+          python scripts/validate_wiki.py --root . --site-dir site
+      - name: Upload Pages artifact
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Deploy wiki
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v5

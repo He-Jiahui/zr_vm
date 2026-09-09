@@ -1,0 +1,40 @@
+[project]
+site_name = "ZrVm Wiki"
+site_description = "ZrVm language, compiler, VM runtime, standard library, and C API reference"
+site_author = "ZrVm contributors"
+site_url = "https://he-jiahui.github.io/zr_vm/"
+repo_url = "https://github.com/He-Jiahui/zr_vm"
+repo_name = "He-Jiahui/zr_vm"
+edit_uri = "edit/main/docs/wiki/"
+docs_dir = "docs/wiki"
+site_dir = "site"
+use_directory_urls = true
+strict = true
+
+[project.theme]
+variant = "classic"
+language = "zh"
+features = [
+  "navigation.instant",
+  "navigation.instant.progress",
+  "navigation.sections",
+  "navigation.expand",
+  "navigation.path",
+  "navigation.tracking",
+  "navigation.indexes",
+  "toc.follow",
+  "search.suggest",
+  "search.highlight",
+  "content.action.edit",
+  "content.action.view",
+  "content.code.copy",
+]
+
+[project.theme.palette]
+scheme = "default"
+primary = "blue"
+accent = "teal"
+
+[project.validation]
+invalid_links = true
+invalid_link_anchors = true
