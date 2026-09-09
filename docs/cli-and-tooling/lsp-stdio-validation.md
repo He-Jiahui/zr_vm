@@ -38,6 +38,7 @@ related_code:
   - tests/language_server/collect_lsp_baseline.js
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_smoke_outcome.test.js
   - tests/language_server/stdio_protocol_client.js
   - tests/language_server/stdio_protocol_conformance.js
   - tests/language_server/stdio_protocol_envelope_mutations.js
@@ -113,10 +114,12 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_request_progress.c
   - zr_vm_language_server/stdio/stdio_server.c
 plan_sources:
+  - docs/plans/lsp/optimize/2026-09-09-plan01-task06-sub15-smoke-transport-error-evidence.md
   - docs/plans/lsp/optimize/00-baseline-and-contract.md
   - docs/plans/lsp/optimize/01-protocol-lifecycle-and-transport.md
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/stdio_smoke_outcome.test.js
   - tests/language_server/test_stdio_document_close.c
   - tests/language_server/stdio_snapshot_workspace_diagnostics_smoke.js
   - tests/language_server/stdio_workspace_folders_smoke.js
@@ -706,6 +709,16 @@ including client version zero. See the
 the Web worker's validation boundary.
 
 ## Process Peak Budget
+
+The smoke's request-outcome helper converts serialized JSON-RPC errors into
+structured error results. A transport timeout or close exception with a non-JSON
+message is rethrown unchanged, preserving its object identity, stack, request ID
+and stderr. A decoding failure must not replace that evidence with SyntaxError.
+The guarded smoke entry point permits importing the helper without starting a
+server. `language_server_stdio_smoke_outcome` runs four plain Node/assert cases
+through CTest for success, protocol error, timeout and close. See
+[Sub15](../plans/lsp/optimize/2026-09-09-plan01-task06-sub15-smoke-transport-error-evidence.md)
+for RED/GREEN and complete stdio validation; deadlines remain unchanged.
 
 `tests/language_server/stdio_smoke.js` measures the language-server child
 while it is alive, after the full protocol workload and after the `shutdown`

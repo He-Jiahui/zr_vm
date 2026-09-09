@@ -7010,6 +7010,11 @@ if (ZR_VM_NODE_EXECUTABLE)
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/collect_lsp_baseline_test.js
     )
+    add_test(
+            NAME language_server_stdio_smoke_outcome
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_smoke_outcome.test.js
+    )
 endif ()
 
 if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)

@@ -232,7 +232,13 @@ async function awaitLspRequestOutcome(promise) {
     try {
         return { result: await promise, error: null };
     } catch (error) {
-        return { result: null, error: JSON.parse(error.message) };
+        let protocolError;
+        try {
+            protocolError = JSON.parse(error.message);
+        } catch {
+            throw error;
+        }
+        return { result: null, error: protocolError };
     }
 }
 
@@ -4193,21 +4199,25 @@ async function main() {
     workspaceLatencyFixtureRootToCleanup = null;
 }
 
-main().catch((error) => {
-    cleanupPath(watchedFixtureRootToCleanup);
-    cleanupPath(watchedBinaryFixtureRootToCleanup);
-    cleanupPath(importDiagnosticsFixtureRootToCleanup);
-    cleanupPath(fileOperationsFixtureRootToCleanup);
-    cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
-    cleanupPath(descriptorPluginGenericFixtureRootToCleanup);
-    cleanupPath(workspaceLatencyFixtureRootToCleanup);
-    watchedFixtureRootToCleanup = null;
-    watchedBinaryFixtureRootToCleanup = null;
-    importDiagnosticsFixtureRootToCleanup = null;
-    fileOperationsFixtureRootToCleanup = null;
-    moduleIdentityRenameFixtureRootToCleanup = null;
-    descriptorPluginGenericFixtureRootToCleanup = null;
-    workspaceLatencyFixtureRootToCleanup = null;
-    console.error(error.stack || String(error));
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch((error) => {
+        cleanupPath(watchedFixtureRootToCleanup);
+        cleanupPath(watchedBinaryFixtureRootToCleanup);
+        cleanupPath(importDiagnosticsFixtureRootToCleanup);
+        cleanupPath(fileOperationsFixtureRootToCleanup);
+        cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
+        cleanupPath(descriptorPluginGenericFixtureRootToCleanup);
+        cleanupPath(workspaceLatencyFixtureRootToCleanup);
+        watchedFixtureRootToCleanup = null;
+        watchedBinaryFixtureRootToCleanup = null;
+        importDiagnosticsFixtureRootToCleanup = null;
+        fileOperationsFixtureRootToCleanup = null;
+        moduleIdentityRenameFixtureRootToCleanup = null;
+        descriptorPluginGenericFixtureRootToCleanup = null;
+        workspaceLatencyFixtureRootToCleanup = null;
+        console.error(error.stack || String(error));
+        process.exit(1);
+    });
+}
+
+module.exports = { awaitLspRequestOutcome };

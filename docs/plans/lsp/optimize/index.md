@@ -472,6 +472,11 @@ server exit 0、stderr 为空且无 sanitizer 报告。生产 512 MiB 门禁仍�
 envelope 断言上瞬时失败后恢复。Clang 旧 cache 的 50/52 超时和当前 checkout 缺少
 MSVC stdio binary 均不计入跨工具链父门禁；生产 512 MiB 峰值和同版本 Clang/MSVC 重放继续待办。
 
+2026-09-09 已完成 [Plan 01 Task 6 Sub15 smoke transport error evidence](2026-09-09-plan01-task06-sub15-smoke-transport-error-evidence.md)：
+smoke 遇到非 JSON transport 错误时保留原始异常，不再覆盖请求 ID、stderr 和 stack。
+四项 Node 回归在三构建目录 CTest 均 1/1，正常完整 smoke 均 exit 0；峰值 GCC 36.45、
+Clang 701.79、MSVC 45.80 MiB，保持既有预算。原始瞬时失败原因和父门禁仍未关闭。
+
 2026-09-07 已完成 [Plan 03 Task 7 Astra P1 canonical symbol projection](2026-09-07-plan03-task07-canonical-symbol-projection.md)：
 公开 `Lsp_FindSymbolAtUsageOrDefinition` 删除 `allScopes`、声明 range 和 retained
 reference range fallback，普通 symbol 只消费 parser `SymbolAt` 与 stable `SymbolId`；

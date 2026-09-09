@@ -179,6 +179,8 @@ typedef enum EZrLspHandlerStatus {
 - [x] Sub13：按既有 sanitizer 约定以 1 GiB 预算完成 Clang ASan/UBSan/LSan full smoke；峰值 654.71 MiB，server exit 0、stderr 为空、无 sanitizer 报告。生产 512 MiB 门禁仍由无插桩矩阵约束；[记录](2026-09-09-plan01-task06-sub13-clang-sanitizer-smoke.md)。
 - [x] Sub14：当前工作树在 WSL ext4 GCC cache 上重放完整 52-case protocol conformance 与注册 CTest，分别为 52/52 和 1/1，真实 exit 0；旧 Clang cache 的 50/52 超时与当前 checkout 缺少 MSVC stdio binary 不计入跨工具链父门禁，生产 512 MiB 峰值和同版本 Clang/MSVC 重放继续待办；[记录](2026-09-09-plan01-task06-sub14-gcc-protocol-conformance.md)。
 
+- [x] Sub15：smoke 保留非 JSON transport 异常对象、请求 ID 与 stderr，不再被 JSON 解析错误覆盖；四项 Node 回归注册 CTest，三构建目录各 1/1，正常完整 smoke 均 exit 0。原始 Clang 瞬时失败的原文未恢复，父门禁继续未完成；[记录](2026-09-09-plan01-task06-sub15-smoke-transport-error-evidence.md)。
+
 ```powershell
 wsl.exe bash -lc 'cmake -S /mnt/e/Git/zr_vm -B /tmp/zr_vm-build-lsp-protocol-asan -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -no-pie"'
 wsl.exe bash -lc 'cmake --build /tmp/zr_vm-build-lsp-protocol-asan --target zr_vm_language_server_stdio zr_vm_language_server_stdio_server_lifecycle_test --parallel 8'
