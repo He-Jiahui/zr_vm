@@ -991,3 +991,24 @@ signature hash. The member spelling is used only after an exact row has already
 been selected to hydrate the provider's existing structured payload; it cannot
 authorize a target. Module hops without a canonical member fact and completion
 remain outside this slice and do not receive a name or source-text fallback.
+
+## Provider Generation And Analyzer Cache Invalidation
+
+The LSP context owns a monotonically increasing provider generation. Each LSP
+analyzer stores the generation to apply on its next analysis. Analyzer lookup
+and project analysis synchronize that value with the context; a changed value
+invalidates the whole-document cache and drops the scoped query analyzer. The
+old borrowed semantic context is hidden until `PrepareState` rebuilds it, so
+requests cannot publish facts from the previous provider epoch.
+
+`PrepareState` writes the stored generation into the new parser semantic
+context before compiler publication. The parser facts therefore carry the
+same nonzero epoch into binary/native external identity queries. Snapshot
+detach preserves the live analyzer's generation, and a newly created scoped
+analyzer inherits its parent's generation. Direct parser/analyzer tests that
+never configure an LSP provider retain generation zero as the unavailable
+value.
+
+The focused regression covers binary and native external facts plus a same-AST
+provider change: the second analysis must execute, the old scoped cache must
+be gone, and the replacement facts must carry the new generation.

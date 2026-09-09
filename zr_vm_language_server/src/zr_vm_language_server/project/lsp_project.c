@@ -1747,6 +1747,11 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
         return ZR_FALSE;
     }
 
+    ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
+            state,
+            analyzer,
+            context->semanticSnapshotProviderGeneration);
+
     projectIndex = uri != ZR_NULL ? ZrLanguageServer_LspProject_FindProjectForUri(context, uri) : ZR_NULL;
     if (projectIndex == ZR_NULL || state->global == ZR_NULL) {
         return ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);

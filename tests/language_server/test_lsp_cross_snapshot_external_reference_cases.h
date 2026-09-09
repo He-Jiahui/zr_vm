@@ -197,6 +197,15 @@ static void test_cross_snapshot_imported_references_use_external_identity(
         goto cleanup;
     }
 
+    failure = "external facts must carry the current nonzero host generation";
+    if (context->semanticSnapshotProviderGeneration == 0U ||
+        query.canonicalSymbol.externalProviderGeneration !=
+                context->semanticSnapshotProviderGeneration ||
+        siblingQuery.canonicalSymbol.externalProviderGeneration !=
+                context->semanticSnapshotProviderGeneration) {
+        goto cleanup;
+    }
+
     for (index = 0U;
          index < siblingQuery.analyzer->semanticContext->referenceFacts.length;
          index++) {

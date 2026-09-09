@@ -2,13 +2,16 @@
 related_code:
   - tests/language_server/test_lsp_semantic_query_parity.c
   - tests/language_server/test_lsp_cross_snapshot_external_reference_cases.h
+  - tests/language_server/test_lsp_analysis_provider_generation_cases.h
 implementation_files:
   - tests/language_server/test_lsp_semantic_query_parity.c
   - tests/language_server/test_lsp_cross_snapshot_external_reference_cases.h
+  - tests/language_server/test_lsp_analysis_provider_generation_cases.h
 plan_sources:
   - docs/plans/lsp/optimize/2026-09-08-plan01-task06-sub11-parity-fixture-ownership.md
 tests:
   - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/test_lsp_analysis_provider_generation_cases.h
 doc_type: module-detail
 ---
 
@@ -45,3 +48,8 @@ Valgrind should run with full leak reporting and an error exit code.
 The temporary binary import source graph is a lower-level ownership dependency.
 See [IO source lifetime](../module-system/io-source-lifetime.md) for its recursive
 destructor contract. Sub10 covers the compile-time import consumer's releases.
+
+The provider-generation cases also verify that LSP reanalysis does not reuse a
+same-AST whole-document or scoped cache after `ProviderChanged`. The rebuilt
+parser context must carry the current nonzero generation into both binary and
+native external references.

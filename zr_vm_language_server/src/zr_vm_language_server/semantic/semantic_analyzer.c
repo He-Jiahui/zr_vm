@@ -1683,6 +1683,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->compilerState = ZR_NULL; // 延迟创建
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
+    analyzer->externalProviderGeneration = 0U;
     analyzer->scopedQueryAnalyzer = ZR_NULL;
     analyzer->ownedAst = ZR_NULL;
     analyzer->borrowedAst = ZR_NULL;
@@ -1707,6 +1708,23 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     (void)ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(state, analyzer);
     
     return analyzer;
+}
+
+void ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        TZrUInt64 generation) {
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->externalProviderGeneration == generation) {
+        return;
+    }
+
+    analyzer->externalProviderGeneration = generation;
+    ZrLanguageServer_SemanticAnalyzer_ClearCache(state, analyzer);
+    /* A changed provider epoch makes the borrowed facts stale until the next
+     * analysis rebuilds the compiler and semantic contexts. */
+    analyzer->semanticContext = ZR_NULL;
+    analyzer->hirModule = ZR_NULL;
 }
 
 // 释放语义分析器
@@ -1759,6 +1777,7 @@ ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
     SZrSemanticAnalysisMetrics metrics;
     TZrBool enableCache;
     TZrBool preserveOnNextAstChange;
+    TZrUInt64 externalProviderGeneration;
 
     if (state == ZR_NULL || state->global == ZR_NULL || analyzer == ZR_NULL ||
         retainedAst == ZR_NULL || analyzer->ast != retainedAst ||
@@ -1781,6 +1800,7 @@ ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
     metrics = analyzer->metrics;
     enableCache = analyzer->enableCache;
     preserveOnNextAstChange = analyzer->preserveScopedQueryAnalyzerOnNextAstChange;
+    externalProviderGeneration = analyzer->externalProviderGeneration;
     *snapshot = *analyzer;
     scopedAnalyzer = snapshot->scopedQueryAnalyzer;
     snapshot->ownedAst = retainedAst;
@@ -1793,6 +1813,7 @@ ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
             sizeof(SZrSemanticAnalyzer));
     analyzer->metrics = metrics;
     analyzer->enableCache = enableCache;
+    analyzer->externalProviderGeneration = externalProviderGeneration;
     analyzer->preserveScopedQueryAnalyzerOnNextAstChange =
             preserveOnNextAstChange;
     analyzer->scopedQueryAnalyzer = preserveScopedQueryAnalyzer

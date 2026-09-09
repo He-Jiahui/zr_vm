@@ -1524,3 +1524,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   本项仅接受 producer 输入与投影，真实 reload、跨项目 generation、virtual URI 与
   Task 3/7/8 总门禁继续未完成。详见
   [Task 3.26 record](2026-09-07-plan03-task03-sub26-analysis-provider-generation.md)。
+
+- 2026-09-09 完成：Plan 03 Task 3.27 将 provider generation 接入 LSP analyzer 生命周期。
+  analyzer 记录待应用的 external provider generation；LSP analyzer lookup 与项目分析入口
+  在 context generation 变化时清除整套语义/scoped cache，并屏蔽旧的 borrowed semantic
+  context，下一次 `PrepareState` 将当前代际写入 parser context。snapshot detach 保留该
+  字段，新建 scoped analyzer 继承父 analyzer 的 generation。新增 same-AST provider change
+  回归，同时 binary/native cross-snapshot 外部事实现验证当前非零 generation；GCC parity
+  `23/23` 真实 exit 0。实际 provider reload、跨项目代际、virtual URI 与 Task 3/7/8 总
+  门禁继续未完成。详见
+  [Task 3.27 record](2026-09-09-plan03-task03-sub27-lsp-provider-generation-cache-invalidation.md)。

@@ -1569,6 +1569,7 @@ cleanup:
 #include "test_lsp_external_member_reference_identity_cases.h"
 #include "test_lsp_cross_snapshot_external_reference_cases.h"
 #include "test_lsp_symbol_projection_cases.h"
+#include "test_lsp_analysis_provider_generation_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1603,6 +1604,7 @@ int main(void) {
     test_external_member_query_rejects_missing_declaration_identity(state);
     test_cross_snapshot_imported_references_use_external_identity(state, ZR_FALSE);
     test_cross_snapshot_imported_references_use_external_identity(state, ZR_TRUE);
+    test_analysis_provider_generation_invalidates_same_ast_cache(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

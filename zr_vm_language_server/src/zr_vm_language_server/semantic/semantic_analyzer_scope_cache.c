@@ -264,6 +264,8 @@ ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
         analyzer->scopedQueryAnalyzer =
                 ZrLanguageServer_SemanticAnalyzer_New(state);
         if (analyzer->scopedQueryAnalyzer != ZR_NULL) {
+            analyzer->scopedQueryAnalyzer->externalProviderGeneration =
+                    analyzer->externalProviderGeneration;
             ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(
                     analyzer->scopedQueryAnalyzer,
                     analyzer->enableCache);

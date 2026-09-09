@@ -347,6 +347,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
     }
 
     ZrParser_CompilerState_Init(analyzer->compilerState, state);
+    if (analyzer->compilerState->semanticContext != ZR_NULL) {
+        analyzer->compilerState->semanticContext->externalProviderGeneration =
+                analyzer->externalProviderGeneration;
+    }
     analyzer->compilerState->scriptAst = ast;
     analyzer->compilerState->suppressErrorOutput = ZR_TRUE;
     if (analyzer->compilerState->typeEnv != ZR_NULL) {

@@ -588,6 +588,13 @@ parser 在分析时将宿主提供的 64 位代际写入 external call/member fa
 source contracts `76/76`、parity `20/20` 均 exit 0；Clang 最终窄门禁包含并行 Sub10/Sub11
 清理支持且无 sanitizer 报告。真实 reload 与跨项目代际、virtual URI 及父级总门禁继续未完成。
 
+2026-09-09 已完成 [Plan 03 Task 3.27 LSP provider generation cache invalidation](2026-09-09-plan03-task03-sub27-lsp-provider-generation-cache-invalidation.md)：
+LSP analyzer 在取用和项目分析入口同步 provider generation，代际变化清除整套语义与
+scoped cache，并在下一次分析把代际写入 parser semantic context；快照 detach 保留该
+字段，新建 scoped analyzer 继承父代际。GCC parity `23/23` 真实 exit 0，覆盖 binary/
+native 外部事实和同 AST 重分析；真实 provider reload、多项目代际、virtual URI 与
+Plan 03/Task 8 总门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

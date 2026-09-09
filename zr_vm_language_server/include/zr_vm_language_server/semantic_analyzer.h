@@ -105,6 +105,7 @@ typedef struct SZrSemanticAnalyzer {
     SZrCompilerState *compilerState;   // 编译器状态（用于类型推断）
     SZrSemanticContext *semanticContext; // 当前分析共享的语义上下文（借用）
     SZrHirModule *hirModule;           // 当前分析共享的 HIR 模块（借用）
+    TZrUInt64 externalProviderGeneration; // LSP provider generation to apply on the next analysis
     struct SZrSemanticAnalyzer *scopedQueryAnalyzer; // 独立的单作用域查询缓存（所有）
     SZrAstNode *ownedAst;              // scoped cache保留的旧AST（可选，所有）
     SZrAstNode *borrowedAst;           // 由历史semantic snapshot持有的旧AST（可选，借用）

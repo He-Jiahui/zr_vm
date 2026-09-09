@@ -1108,6 +1108,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
         // 从原生指针中获取 SZrSemanticAnalyzer
         SZrSemanticAnalyzer *existing =
                 (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
+                state,
+                existing,
+                context->semanticSnapshotProviderGeneration);
         ZrLanguageServer_LspSemanticCacheLru_Touch(context, existing);
         return existing;
     }
@@ -1115,6 +1119,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
     // 创建新分析器
     SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
     if (analyzer != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
+                state,
+                analyzer,
+                context->semanticSnapshotProviderGeneration);
         // 添加到哈希表
         SZrHashKeyValuePair *newPair = ZrCore_HashSet_Add(state, &context->uriToAnalyzerMap, &key);
         if (newPair != ZR_NULL) {
@@ -1149,6 +1157,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
     if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
         SZrSemanticAnalyzer *analyzer =
                 (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
+                state,
+                analyzer,
+                context->semanticSnapshotProviderGeneration);
         ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
         return analyzer;
     }
