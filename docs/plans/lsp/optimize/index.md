@@ -637,6 +637,12 @@ native field/method 的正向声明投影和位置反查均保留 descriptor/own
 source contracts 与完整 stdio 均 exit 0；完整 interface/project 失败及 Clang LSan 与
 Sub31 相同。binary/plugin virtual URI、parser origin、多定义和父级门禁继续未完成。
 
+2026-09-09 已完成 [Plan 03 Task 3.33 virtual module-link target](2026-09-09-plan03-task03-sub33-virtual-module-link-target.md)：
+虚拟 module link 要求目标 descriptor 存在，并返回目标模块 identifier 的准确范围。
+两项 RED/GREEN 回归通过；三工具链 parity 32/32、snapshot、source contracts 与最终
+完整 stdio 均 exit 0。首次 Clang smoke 错误传播由 Task 6.15 修复后完成正常重放；
+interface 及其 Clang 泄漏基线、binary/plugin 项目 URI、parser origin 和父门禁仍开放。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

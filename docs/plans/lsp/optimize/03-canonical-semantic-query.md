@@ -1582,3 +1582,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   interface/project 及 Clang LSan 保持 Sub31 的失败集合和数量。实际 binary/plugin virtual
   URI/parser origin、多定义矩阵、canonical receiver acquisition 和 Task 3/7/8 仍未完成。
   详见 [Task 3.32 record](2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md)。
+
+- 2026-09-09 12:29 +08:00 完成：Plan 03 Task 3.33 的虚拟 module link 跳转要求
+  目标 descriptor 存在，并通过共享 MODULE 投影返回准确 identifier 范围。两项回归先
+  RED 后 GREEN；三工具链 parity `32/32`、snapshot executable、source contracts 与
+  最终完整 stdio 均 exit 0。Clang 首次 smoke 被测试助手 JSON.parse 覆盖原始错误，
+  已由独立 Task 6.15 修复错误传播后完成正常重放。interface 仍 `114 PASS / 2 FAIL`、
+  Clang `20144 bytes/422 allocations`，实际 binary/plugin 项目 URI、parser origin、
+  多定义矩阵与父门禁继续未完成。详见
+  [Task 3.33 record](2026-09-09-plan03-task03-sub33-virtual-module-link-target.md)。

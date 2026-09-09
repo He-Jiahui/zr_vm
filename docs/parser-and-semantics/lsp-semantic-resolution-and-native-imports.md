@@ -1,5 +1,6 @@
 ---
 related_code:
+  - tests/language_server/test_lsp_virtual_module_link_target_cases.h
   - tests/language_server/test_lsp_native_type_member_identity_cases.h
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.h
@@ -153,6 +154,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
 plan_sources:
+  - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub33-virtual-module-link-target.md
   - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md
   - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
@@ -166,6 +168,7 @@ plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
+  - tests/language_server/test_lsp_virtual_module_link_target_cases.h
   - tests/language_server/test_lsp_native_type_member_identity_cases.h
   - tests/language_server/test_lsp_virtual_declaration_projection_cases.h
   - tests/language_server/test_lsp_semantic_query_parity.c
@@ -1109,3 +1112,12 @@ reconstructing it from text. Returned pointers have the provider's lifetime and
 must not cross reload. The [type-member identity record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md)
 covers the four forward/reverse field/method cases and remaining gates. This
 projection fix does not accept the separate canonical receiver acquisition gate.
+
+Definition on a virtual module link resolves the target module descriptor before
+publishing its URI. The exact MODULE projection supplies the rendered identifier
+range, including when the target document is unopened. A missing descriptor or
+failed projection returns no location. A module name alone cannot establish an
+existing declaration, and a placeholder entry range is not a successful result.
+The [module-link target record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub33-virtual-module-link-target.md)
+contains positive and absent-target regressions; provider pointers are borrowed
+only for this lookup and cannot survive a reload.

@@ -5,6 +5,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "lsp_canonical_signature_help.h"
 #include "lsp_virtual_documents.h"
+#include "metadata/lsp_native_declaration_projection.h"
 #include "project/lsp_project_internal.h"
 #include "project/lsp_workspace.h"
 #include "semantic/lsp_local_semantic_query.h"
@@ -2070,8 +2071,16 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                                                                        &virtualMatch) &&
         virtualMatch.kind == ZR_LSP_VIRTUAL_DECLARATION_MODULE_LINK &&
         virtualMatch.targetModuleName != ZR_NULL) {
+        const ZrLibModuleDescriptor *targetDescriptor = ZR_NULL;
+        SZrFileRange targetRange = {0};
+
         targetUri = ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(state, virtualMatch.targetModuleName);
-        if (targetUri == ZR_NULL) {
+        if (targetUri == ZR_NULL ||
+            !lsp_resolve_virtual_descriptor(state, context, targetUri, &targetDescriptor,
+                    ZR_NULL, virtualModuleName, sizeof(virtualModuleName)) ||
+            !ZrLanguageServer_LspNativeDeclarationProjection_Find(
+                    state, targetDescriptor, targetUri, ZR_LSP_VIRTUAL_DECLARATION_MODULE,
+                    targetDescriptor, &targetRange)) {
             return ZR_FALSE;
         }
 
@@ -2081,7 +2090,7 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                                           ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
                                               context,
                                               targetUri,
-                                              ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(targetUri)));
+                                              targetRange));
     }
     
     if (ZrLanguageServer_Lsp_TryGetDecoratorDefinition(state, context, uri, position, result)) {
