@@ -40,6 +40,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_hover.c
+  - zr_vm_language_server/src/zr_vm_language_server/snapshot/lsp_semantic_snapshot.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
@@ -89,6 +91,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/snapshot/lsp_semantic_snapshot.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
@@ -98,6 +101,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_hover.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_external_callable_signature_help.c
@@ -1012,3 +1016,16 @@ value.
 The focused regression covers binary and native external facts plus a same-AST
 provider change: the second analysis must execute, the old scoped cache must
 be gone, and the replacement facts must carry the new generation.
+
+Watched binary and descriptor-plugin refreshes now advance the provider
+generation after the replacement project index is installed and before module
+loading or open-document reanalysis. The ordinary document refresh entry point
+retains its existing generation behavior. Before any completion or hover query,
+the watched-refresh regressions require an already-analyzed importer with a
+semantic context carrying the strictly newer, nonzero context generation.
+
+Importer-local hover uses the canonical primitive display: source `float`
+maps to `Resolved Type: double`. The source, binary, and descriptor-plugin
+refresh assertions verify that exact section and reject the old `int` section.
+Metadata member completion and hover retain their provider signature spelling.
+See the existing [canonical type assertion contract](../plans/lsp/optimize/2026-09-07-plan01-task06-sub07-rename-canonical-type-assertions.md).

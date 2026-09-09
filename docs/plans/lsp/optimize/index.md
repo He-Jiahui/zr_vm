@@ -595,6 +595,14 @@ scoped cache，并在下一次分析把代际写入 parser semantic context；�
 native 外部事实和同 AST 重分析；真实 provider reload、多项目代际、virtual URI 与
 Plan 03/Task 8 总门禁继续未完成。
 
+2026-09-09 推进 [Plan 03 Task 3.28 watched provider reload generation](2026-09-09-plan03-task03-sub28-watched-provider-reload-generation.md)：
+watched binary 与 descriptor-plugin refresh 在替换 project index 后、模块加载和 open-document
+reanalysis 前推进 provider generation。回归要求 refresh 返回时 importer 的 semantic context
+已经携带新的非零代际，并按现有 canonical 契约验证 local hover 的 `Resolved Type: double`。
+GCC project-feature 三项 refresh 用例、snapshot `1/1` 和 parity `21/21` 通过；完整 project
+target 的七项既有失败继续登记。当前 parity runner 有 21 次测试调用，更正上项记录的计数。
+Clang/MSVC 当前改动复验与 Task 3/7/8 总门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

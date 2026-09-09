@@ -1534,3 +1534,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   `23/23` 真实 exit 0。实际 provider reload、跨项目代际、virtual URI 与 Task 3/7/8 总
   门禁继续未完成。详见
   [Task 3.27 record](2026-09-09-plan03-task03-sub27-lsp-provider-generation-cache-invalidation.md)。
+
+- 2026-09-09 推进：Plan 03 Task 3.28 将 watched binary/native provider reload 接入真实
+  generation 生命周期。项目索引替换后在模块加载和 open-document reanalysis 前推进代际，
+  回归要求 refresh 返回时 importer 已有新代际的 semantic context。source/binary/native
+  importer local hover 按 canonical 契约验证 `Resolved Type: double`，拒绝旧的 `int` 段。
+  GCC 三项 refresh、snapshot `1/1` 和 parity `21/21` 通过；完整 project-feature target
+  仍有七项既有失败。当前 parity runner 实际为 21 次测试调用，更正上项计数。Clang/MSVC
+  当前改动复验、多 provider generation、sourceless virtual declaration URI、multi-definition
+  relation matrix 与 Task 3/7/8 总门禁继续未完成。详见
+  [Task 3.28 record](2026-09-09-plan03-task03-sub28-watched-provider-reload-generation.md)。

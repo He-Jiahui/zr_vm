@@ -1,6 +1,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "project/lsp_project_internal.h"
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "zr_vm_language_server/lsp_uri.h"
 
 #include "zr_vm_core/memory.h"
@@ -31,6 +32,14 @@ typedef struct SZrLspProjectSourceLoaderContext {
     TZrPtr fallbackSourceLoaderUserData;
     TZrPtr fallbackUserData;
 } SZrLspProjectSourceLoaderContext;
+
+static TZrBool project_refresh_for_updated_document_internal(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrString *uri,
+                                                             const TZrChar *content,
+                                                             TZrSize contentLength,
+                                                             TZrBool rescanAllLoadedSources,
+                                                             TZrBool advanceProviderGeneration);
 
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
@@ -1331,12 +1340,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
     }
 
     contentLength = strlen(projectContent);
-    refreshed = ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
-                                                                      context,
-                                                                      projectFileUri,
-                                                                      projectContent,
-                                                                      contentLength,
-                                                                      ZR_TRUE);
+    refreshed = project_refresh_for_updated_document_internal(state,
+                                                              context,
+                                                              projectFileUri,
+                                                              projectContent,
+                                                              contentLength,
+                                                              ZR_TRUE,
+                                                              ZR_TRUE);
     ZrCore_Memory_RawFreeWithType(state->global,
                                   projectContent,
                                   contentLength + 1,
@@ -2598,12 +2608,13 @@ static TZrBool project_refresh_transitive_importers(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
+static TZrBool project_refresh_for_updated_document_internal(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
                                                               const TZrChar *content,
                                                               TZrSize contentLength,
-                                                              TZrBool rescanAllLoadedSources) {
+                                                              TZrBool rescanAllLoadedSources,
+                                                              TZrBool advanceProviderGeneration) {
     SZrLspProjectIndex *projectIndex;
     TZrSize existingIndex;
     SZrArray loadedUris;
@@ -2644,6 +2655,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         }
 
         ZrCore_Array_Push(state, &context->projectIndexes, &projectIndex);
+        if (advanceProviderGeneration) {
+            ZrLanguageServer_LspSemanticSnapshot_ProviderChanged(context);
+        }
         if (!project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry) ||
             !project_collect_loaded_source_uris(state, context, projectIndex, &loadedUris)) {
             ZrCore_Array_Free(state, &loadedUris);
@@ -2683,6 +2697,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                               ? updatedFileVersion->lastChangeInfo.impact
                               : ZR_FILE_CHANGE_IMPACT_MODULE;
     projectBootstrap = ZR_FALSE;
+    if (advanceProviderGeneration) {
+        ZrLanguageServer_LspSemanticSnapshot_ProviderChanged(context);
+    }
     if (!projectIndex->hasSemanticProjectLoad) {
         if (projectIndex->project == ZR_NULL || projectIndex->project->entry == ZR_NULL ||
             !project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry)) {
@@ -2757,6 +2774,21 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
     ZrCore_Array_Free(state, &loadedUris);
     lsp_project_trace("[lsp_project] refresh end uri=%s\n", get_string_text(uri));
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              TZrBool rescanAllLoadedSources) {
+    return project_refresh_for_updated_document_internal(state,
+                                                          context,
+                                                          uri,
+                                                          content,
+                                                          contentLength,
+                                                          rescanAllLoadedSources,
+                                                          ZR_FALSE);
 }
 
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,

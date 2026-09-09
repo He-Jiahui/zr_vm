@@ -6048,7 +6048,8 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, localHoverPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "cachedAnswer") ||
-        !hover_contains_text(hover, "float")) {
+        !hover_contains_text(hover, "Resolved Type: double") ||
+        hover_contains_text(hover, "Resolved Type: int")) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6082,6 +6083,8 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
     SZrArray completions;
     SZrLspHover *hover = ZR_NULL;
     const TZrChar *completionDetail;
+    TZrUInt64 providerGenerationBeforeReload;
+    SZrSemanticAnalyzer *refreshedAnalyzer;
 
     TEST_START("LSP Watched Binary Metadata Refresh Reanalyzes Open Documents");
     TEST_INFO("Watched binary metadata refresh",
@@ -6154,7 +6157,7 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
     if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, localHoverPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "cachedSeed") ||
-        !hover_contains_text(hover, "int")) {
+        !hover_contains_text(hover, "Resolved Type: int")) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6163,6 +6166,7 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
         return;
     }
 
+    providerGenerationBeforeReload = context->semanticSnapshotProviderGeneration;
     if (!regenerate_binary_metadata_fixture_artifacts(state, &fixture, updatedBinaryMetadataSource) ||
         !ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, binaryUri)) {
         free(mainContent);
@@ -6170,6 +6174,20 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
         TEST_FAIL(timer,
                   "LSP Watched Binary Metadata Refresh Reanalyzes Open Documents",
                   "Failed to regenerate watched binary artifacts and trigger project reload");
+        return;
+    }
+
+    refreshedAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    if (providerGenerationBeforeReload == 0U ||
+        context->semanticSnapshotProviderGeneration <= providerGenerationBeforeReload ||
+        refreshedAnalyzer == ZR_NULL || refreshedAnalyzer->semanticContext == ZR_NULL ||
+        refreshedAnalyzer->semanticContext->externalProviderGeneration !=
+                context->semanticSnapshotProviderGeneration) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Watched Binary Metadata Refresh Reanalyzes Open Documents",
+                  "Watched binary reload must publish the new provider generation before returning");
         return;
     }
 
@@ -6209,7 +6227,8 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
     if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, localHoverPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "cachedSeed") ||
-        !hover_contains_text(hover, "float")) {
+        !hover_contains_text(hover, "Resolved Type: double") ||
+        hover_contains_text(hover, "Resolved Type: int")) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6241,6 +6260,8 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
     SZrArray completions;
     SZrLspHover *hover = ZR_NULL;
     const TZrChar *completionDetail;
+    TZrUInt64 providerGenerationBeforeReload;
+    SZrSemanticAnalyzer *refreshedAnalyzer;
 
     TEST_START("LSP Watched Descriptor Plugin Refresh Reanalyzes Open Documents");
     TEST_INFO("Watched descriptor plugin refresh",
@@ -6313,7 +6334,7 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
     if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, localHoverPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "cachedAnswer") ||
-        !hover_contains_text(hover, "int")) {
+        !hover_contains_text(hover, "Resolved Type: int")) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6322,6 +6343,7 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
         return;
     }
 
+    providerGenerationBeforeReload = context->semanticSnapshotProviderGeneration;
     if (!ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, pluginUri) ||
         !copy_fixture_binary_file(ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_FLOAT_PATH, fixture.pluginPath) ||
         !ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, pluginUri)) {
@@ -6330,6 +6352,20 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
         TEST_FAIL(timer,
                   "LSP Watched Descriptor Plugin Refresh Reanalyzes Open Documents",
                   "Failed to replace the watched descriptor plugin fixture and trigger project reload");
+        return;
+    }
+
+    refreshedAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    if (providerGenerationBeforeReload == 0U ||
+        context->semanticSnapshotProviderGeneration <= providerGenerationBeforeReload ||
+        refreshedAnalyzer == ZR_NULL || refreshedAnalyzer->semanticContext == ZR_NULL ||
+        refreshedAnalyzer->semanticContext->externalProviderGeneration !=
+                context->semanticSnapshotProviderGeneration) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Watched Descriptor Plugin Refresh Reanalyzes Open Documents",
+                  "Watched descriptor plugin reload must publish the new provider generation before returning");
         return;
     }
 
@@ -6369,7 +6405,8 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
     if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, localHoverPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "cachedAnswer") ||
-        !hover_contains_text(hover, "float")) {
+        !hover_contains_text(hover, "Resolved Type: double") ||
+        hover_contains_text(hover, "Resolved Type: int")) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
