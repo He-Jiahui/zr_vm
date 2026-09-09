@@ -603,6 +603,13 @@ GCC project-feature 三项 refresh 用例、snapshot `1/1` 和 parity `21/21` �
 target 的七项既有失败继续登记。当前 parity runner 有 21 次测试调用，更正上项记录的计数。
 Clang/MSVC 当前改动复验与 Task 3/7/8 总门禁继续未完成。
 
+2026-09-09 已完成 [Plan 03 Task 3.29 provider generation shared build validation](2026-09-09-plan03-task03-sub29-provider-generation-shared-build-validation.md)：
+same-AST 回归通过现有导出 API 检查 lookup 后旧事实不可用和后续重分析，修复 MSVC
+LNK2019。三工具链 parity `21/21` exit 0；Sub28 的三项 refresh 和 snapshot `1/1` 已补齐
+Clang/MSVC 验证。Clang parity 无 sanitizer 报告，完整 project runner 保留同名七项失败与
+历史 `19160 bytes/481 allocations` LSan。上述 Sub28 的跨工具链功能验证待办已关闭，
+完整 project/memory 和 Plan 03 Task 3/7/8 门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

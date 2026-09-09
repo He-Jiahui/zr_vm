@@ -1544,3 +1544,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   当前改动复验、多 provider generation、sourceless virtual declaration URI、multi-definition
   relation matrix 与 Task 3/7/8 总门禁继续未完成。详见
   [Task 3.28 record](2026-09-09-plan03-task03-sub28-watched-provider-reload-generation.md)。
+
+- 2026-09-09 完成：Plan 03 Task 3.29 修复 Sub27 same-AST 测试对未导出 project API 的
+  调用，改用现有 analyzer lookup 与公开 Analyze，并显式验证 lookup 后旧 context/scoped
+  facts 已屏蔽。GCC/Clang/MSVC parity 均 `21/21` exit 0；Sub28 三项 refresh 与 snapshot
+  `1/1` 的 Clang/MSVC 复验已补齐，Clang parity 无 sanitizer 报告。完整 project runner
+  三工具链保持同名七项失败，Clang 保留历史 `19160 bytes/481 allocations` LSan；Task 3/7/8
+  总门禁继续未完成。详见
+  [Task 3.29 record](2026-09-09-plan03-task03-sub29-provider-generation-shared-build-validation.md)。

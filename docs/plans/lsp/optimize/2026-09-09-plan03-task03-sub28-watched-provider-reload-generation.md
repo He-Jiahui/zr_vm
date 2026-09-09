@@ -1,7 +1,7 @@
 ---
 plan_id: optimize
 task: plan03-task03-sub28
-status: in-progress
+status: completed
 related_code:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_language_server/src/zr_vm_language_server/snapshot/lsp_semantic_snapshot.c
@@ -93,18 +93,21 @@ ctest --test-dir /home/hejiahui/.codex-builds/l8-callable-value-gcc \
 /home/hejiahui/.codex-builds/l8-callable-value-gcc/bin/zr_vm_language_server_semantic_query_parity_test
 ```
 
-Clang/MSVC validation of this change and the full Plan 03 matrix remain pending.
-The earlier Clang ASan/UBSan rebuild was stopped after more than 20 minutes;
-it is not current validation evidence. Multi-provider generation, sourceless
-virtual declaration URIs, multi-definition relations, and the parent Task 3/7/8
-acceptance gates also remain pending.
+Clang/MSVC functional validation was completed in
+[Sub29](2026-09-09-plan03-task03-sub29-provider-generation-shared-build-validation.md).
+All three refresh cases pass, snapshot is `1/1`, and parity is `21/21` with
+process exit 0 on both compilers. Clang parity has no sanitizer report. The full
+project runners retain the same seven failures; Clang additionally retains the
+historical `19160 bytes / 481 allocations` LSan report. Multi-provider generation,
+sourceless virtual declaration URIs, multi-definition relations, and the parent
+Task 3/7/8 acceptance gates remain pending.
 
 ## 状态与产出记录
 
 - 开始时间：2026-09-09 +08:00。
-- 实际完成时间：
+- 实际完成时间：2026-09-09 10:28 +08:00。
 - GCC 验证时间：2026-09-09 10:20 +08:00。
-- 状态：实现与 GCC 窄验证完成；Task 3.28 跨工具链验收进行中，Plan 03 Task 3、7、8
+- 状态：实现与三工具链功能验证完成；完整 project/sanitizer 和 Plan 03 Task 3、7、8
   整体门槛保持未完成。
 - 源码版本：`d717af6c` 加本项 project/test 改动和共享工作区既有修改。
 - 产出：project watched reload ordering, binary/native generation assertions,

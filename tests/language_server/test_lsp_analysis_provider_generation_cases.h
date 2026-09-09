@@ -32,7 +32,7 @@ static void test_analysis_provider_generation_invalidates_same_ast_cache(
     const TZrChar *summary = "LSP Provider Generation Invalidates Same AST Caches";
     const TZrChar *content =
             "var api = import(\"zr.system\");\nreturn api.console;\n";
-    const TZrChar *uriText = "file:///analysis_provider_generation.zr";
+    TZrChar uriText[] = "file:///analysis_provider_generation.zr";
     SZrParityTimer timer;
     SZrLspContext *context = ZR_NULL;
     SZrString *uri;
@@ -66,8 +66,7 @@ static void test_analysis_provider_generation_invalidates_same_ast_cache(
         goto cleanup;
     }
     ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &before);
-    if (!ZrLanguageServer_Lsp_ProjectAnalyzeDocument(
-                state, context, uri, analyzer, ast) ||
+    if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast) ||
         analyzer->metrics.executionCount != before.executionCount ||
         analyzer->metrics.cacheHitCount != before.cacheHitCount + 1U ||
         analyzer->scopedQueryAnalyzer != scoped) {
@@ -75,10 +74,14 @@ static void test_analysis_provider_generation_invalidates_same_ast_cache(
     }
 
     ZrLanguageServer_LspSemanticSnapshot_ProviderChanged(context);
+    failure = "analyzer lookup must hide the previous provider facts";
+    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer ||
+        analyzer->semanticContext != ZR_NULL || analyzer->scopedQueryAnalyzer != ZR_NULL) {
+        goto cleanup;
+    }
     failure = "changed provider generation must reanalyze the same AST";
-    if (context->semanticSnapshotProviderGeneration == generation ||
-        !ZrLanguageServer_Lsp_ProjectAnalyzeDocument(
-                state, context, uri, analyzer, ast) ||
+    if (generation == 0U || context->semanticSnapshotProviderGeneration == generation ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast) ||
         analyzer->metrics.executionCount != before.executionCount + 1U ||
         analyzer->scopedQueryAnalyzer != ZR_NULL ||
         !analysis_external_references_have_generation(

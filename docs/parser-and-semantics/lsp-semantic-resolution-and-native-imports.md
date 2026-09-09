@@ -77,6 +77,7 @@ related_code:
   - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_receiver_dependency_cases.h
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/test_lsp_analysis_provider_generation_cases.h
   - tests/language_server/test_lsp_project_native_callable_signature_cases.h
   - tests/language_server/test_lsp_project_native_receiver_callable_cases.h
   - tests/language_server/stdio_smoke.js
@@ -1016,6 +1017,9 @@ value.
 The focused regression covers binary and native external facts plus a same-AST
 provider change: the second analysis must execute, the old scoped cache must
 be gone, and the replacement facts must carry the new generation.
+It uses the exported analyzer lookup and Analyze APIs so shared-library builds
+exercise the same contract. Immediately after lookup, the prior semantic
+context and scoped analyzer must be unavailable, before fresh analysis begins.
 
 Watched binary and descriptor-plugin refreshes now advance the provider
 generation after the replacement project index is installed and before module
