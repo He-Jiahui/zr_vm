@@ -29,6 +29,7 @@
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_scheduler_contract.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "path_support.h"
+#include "lsp_query_result_cleanup.h"
 
 #include <errno.h>
 
@@ -5994,6 +5995,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     SZrLspContext *context;
     SZrString *uri;
     SZrString *consoleModuleUri = ZR_NULL;
+    SZrString *consoleDeclarationText = ZR_NULL;
     const TZrChar *content =
         "var system = import(\"zr.system\");\n"
         "fn run() {\n"
@@ -6002,6 +6004,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         "}\n";
     SZrLspPosition firstPrintLinePosition;
     SZrLspPosition secondPrintLinePosition;
+    SZrLspPosition printLineDeclarationPosition;
     SZrSemanticAnalyzer *analyzer;
     SZrAstNode *savedAst;
     SZrSemanticReferenceFact *externalReferenceFact = ZR_NULL;
@@ -6063,7 +6066,9 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         strcmp(test_string_ptr(query.moduleName), "zr.system.console") != 0 ||
         strcmp(test_string_ptr(query.memberName), "printLine") != 0 ||
         query.resolvedMember.typeMemberInfo == ZR_NULL ||
-        !ZrLanguageServer_Lsp_StringsEqual(
+        query.canonicalSymbol.externalOwnerIdentity == ZR_NULL ||
+        query.resolvedMember.typeMemberInfo->ownerTypeName == ZR_NULL ||
+        !ZrCore_String_Equal(
                 query.canonicalSymbol.externalOwnerIdentity,
                 query.resolvedMember.typeMemberInfo->ownerTypeName) ||
         query.canonicalSymbol.externalMetadataToken !=
@@ -6124,7 +6129,12 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         return;
     }
     consoleModuleUri = query.resolvedMember.declarationUri;
-    if (!query.resolvedMember.hasDeclaration || consoleModuleUri == ZR_NULL) {
+    if (!query.resolvedMember.hasDeclaration || consoleModuleUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetNativeDeclarationDocument(
+                state, context, consoleModuleUri, &consoleDeclarationText) ||
+        consoleDeclarationText == ZR_NULL ||
+        !lsp_find_utf16_position_for_substring(test_string_ptr(consoleDeclarationText),
+                "pub printLine", 0U, 4, &printLineDeclarationPosition)) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6135,16 +6145,18 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_LspSemanticQuery_AppendDefinitions(state, context, &query, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, test_string_ptr(consoleModuleUri), 0, 0, 0, 0)) {
-        ZrCore_Array_Free(state, &definitions);
+        !location_array_contains_uri_and_range(&definitions, test_string_ptr(consoleModuleUri),
+                printLineDeclarationPosition.line, printLineDeclarationPosition.character,
+                printLineDeclarationPosition.line, printLineDeclarationPosition.character + 9)) {
+        free_local_reference_projection_results(state, &definitions, ZR_NULL);
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
-                  "Definition on system.console.printLine should resolve to the linked native module metadata entry");
+                  "Definition on system.console.printLine should select its rendered declaration");
         return;
     }
-    ZrCore_Array_Free(state, &definitions);
+    free_local_reference_projection_results(state, &definitions, ZR_NULL);
 
     {
         SZrLspSemanticQuery mismatchedQuery = query;
@@ -6154,7 +6166,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         if (ZrLanguageServer_LspSemanticQuery_AppendReferences(
                     state, context, &mismatchedQuery, ZR_TRUE, &references) ||
             references.length != 0U) {
-            ZrCore_Array_Free(state, &references);
+            free_local_reference_projection_results(state, &references, ZR_NULL);
             ZrLanguageServer_LspSemanticQuery_Free(state, &query);
             ZrLanguageServer_LspContext_Free(state, context);
             TEST_FAIL(timer,
@@ -6162,12 +6174,14 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
                       "Imported references must fail closed when canonical external signature identity differs from the metadata row");
             return;
         }
-        ZrCore_Array_Free(state, &references);
+        free_local_reference_projection_results(state, &references, ZR_NULL);
     }
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_LspSemanticQuery_AppendReferences(state, context, &query, ZR_TRUE, &references) ||
-        !location_array_contains_uri_and_range(&references, test_string_ptr(consoleModuleUri), 0, 0, 0, 0) ||
+        !location_array_contains_uri_and_range(&references, test_string_ptr(consoleModuleUri),
+                printLineDeclarationPosition.line, printLineDeclarationPosition.character,
+                printLineDeclarationPosition.line, printLineDeclarationPosition.character + 9) ||
         !location_array_contains_uri_and_range(&references,
                                                test_string_ptr(uri),
                                                firstPrintLinePosition.line,
@@ -6180,21 +6194,21 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
                                                secondPrintLinePosition.character,
                                                secondPrintLinePosition.line,
                                                secondPrintLinePosition.character + 9)) {
-        ZrCore_Array_Free(state, &references);
+        free_local_reference_projection_results(state, &references, ZR_NULL);
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
-                  "References on system.console.printLine should include the linked module entry and each secondary member usage");
+                  "References on system.console.printLine should include its rendered declaration and each member usage");
         return;
     }
-    ZrCore_Array_Free(state, &references);
+    free_local_reference_projection_results(state, &references, ZR_NULL);
 
     ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
     if (!ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(state, context, &query, &highlights) ||
         !highlight_array_contains_position(&highlights, firstPrintLinePosition.line, firstPrintLinePosition.character) ||
         !highlight_array_contains_position(&highlights, secondPrintLinePosition.line, secondPrintLinePosition.character)) {
-        ZrCore_Array_Free(state, &highlights);
+        free_local_reference_projection_results(state, ZR_NULL, &highlights);
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6202,7 +6216,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
                   "Document highlights on system.console.printLine should include each same-document secondary member usage");
         return;
     }
-    ZrCore_Array_Free(state, &highlights);
+    free_local_reference_projection_results(state, ZR_NULL, &highlights);
 
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     ZrLanguageServer_LspContext_Free(state, context);

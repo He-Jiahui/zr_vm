@@ -1562,3 +1562,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   project runner 均 `55 PASS / 7 FAIL` exit 1，Clang 既有 LSan 数量不变；无源码 virtual
   declaration URI、多定义 relation matrix 与 Task 3/7/8 总门禁仍未完成。详见
   [Task 3.30 record](2026-09-09-plan03-task03-sub30-multi-project-provider-acquisition.md)。
+
+- 2026-09-09 11:39 +08:00 完成：Plan 03 Task 3.31 将 builtin native 虚拟声明
+  的文本与范围投影抽出独立模块，按 descriptor row 身份和 kind 选择准确 identifier。
+  共用范围转换器对未打开的虚拟文档获取生成文本并转换 UTF-16，不再丢失已投影范围。
+  四类定义移除 AST 回归、同名非 BMP descriptor 的 64 次投影和身份负向用例通过；
+  三工具链 relations `29/29`、parity `26/26`、snapshot `1/1`、source contracts 与
+  完整 stdio smoke 均 exit 0。interface `114 PASS / 2 FAIL`，project `55 PASS / 7 FAIL`，
+  均 exit 1；Clang interface 在清理本次用例六笔泄漏后仍有 `20144 bytes/422 allocations`，
+  project 保留 `19160 bytes/481 allocations`。binary/plugin 项目隔离 virtual URI、实际
+  parser origin、多定义矩阵与 Task 3/7/8 总门禁保持未完成。详见
+  [Task 3.31 record](2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md)。

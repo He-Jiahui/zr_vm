@@ -619,6 +619,13 @@ hover、local facts 和 snapshot admission 共用该入口。每路八轮替换�
 runner 均为 `55 PASS / 7 FAIL` exit 1，Clang 仍有既有 `19160 bytes/481 allocations`
 LSan。无源码 virtual URI、多定义关系及 Plan 03 Task 3/7/8 总门禁保持未完成。
 
+2026-09-09 已完成 [Plan 03 Task 3.31 native virtual declaration projection](2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md)：
+builtin native module/function/constant/type 的定义选中生成文本中的准确 identifier；
+descriptor 身份投影区分同名行，未打开虚拟文档使用生成内容转换 UTF-16。三工具链
+relations `29/29`、parity `26/26`、snapshot `1/1`、source contracts 与完整 stdio 均 exit 0。
+interface 仍 `114 PASS / 2 FAIL`，project 仍 `55 PASS / 7 FAIL`，完整 Clang LSan 未通过。
+本项未关闭 binary/plugin 项目隔离虚拟 URI、parser origin、多定义及 Task 3/7/8 总门禁。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

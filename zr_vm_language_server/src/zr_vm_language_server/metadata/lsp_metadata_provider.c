@@ -2,6 +2,7 @@
 #include "interface/lsp_canonical_symbol_display.h"
 #include "interface/lsp_interface_internal.h"
 #include "lsp_virtual_documents.h"
+#include "metadata/lsp_native_declaration_projection.h"
 #include "semantic/lsp_external_callable_contract.h"
 #include "semantic/lsp_property_contract.h"
 
@@ -1398,8 +1399,15 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(SZrLspMe
                                                                            moduleName,
                                                                            &outResolved->declarationUri) &&
                outResolved->declarationUri != ZR_NULL) {
-        outResolved->declarationRange = metadata_provider_module_entry_range(outResolved->declarationUri);
-        outResolved->hasDeclaration = ZR_TRUE;
+        if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(outResolved->declarationUri)) {
+            outResolved->hasDeclaration = ZrLanguageServer_LspNativeDeclarationProjection_Find(
+                    provider->state, outResolved->module.nativeDescriptor,
+                    outResolved->declarationUri, ZR_LSP_VIRTUAL_DECLARATION_MODULE,
+                    outResolved->module.nativeDescriptor, &outResolved->declarationRange);
+        } else {
+            outResolved->declarationRange = metadata_provider_module_entry_range(outResolved->declarationUri);
+            outResolved->hasDeclaration = ZR_TRUE;
+        }
     }
 
     return ZR_TRUE;
@@ -1827,8 +1835,14 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
                                                                            moduleName,
                                                                            &outResolved->declarationUri) &&
                outResolved->declarationUri != ZR_NULL) {
-        outResolved->declarationRange = metadata_provider_module_entry_range(outResolved->declarationUri);
-        outResolved->hasDeclaration = ZR_TRUE;
+        if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(outResolved->declarationUri)) {
+            outResolved->hasDeclaration =
+                    ZrLanguageServer_LspNativeDeclarationProjection_ResolveMember(
+                            provider->state, outResolved);
+        } else {
+            outResolved->declarationRange = metadata_provider_module_entry_range(outResolved->declarationUri);
+            outResolved->hasDeclaration = ZR_TRUE;
+        }
     }
 
     return ZR_TRUE;

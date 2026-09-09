@@ -988,6 +988,15 @@ SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *co
             ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
             return lspRange;
         }
+        {
+            SZrString *virtualText = ZR_NULL;
+            if (ZrLanguageServer_Lsp_GetNativeDeclarationDocument(
+                        context->state, context, rangeUri, &virtualText) && virtualText != ZR_NULL) {
+                const TZrChar *content = ZrCore_String_GetNativeString(virtualText);
+                return ZrLanguageServer_LspRange_FromFileRangeWithContent(
+                        range, content, strlen(content));
+            }
+        }
     }
 
     emptyPosition.line = 0;

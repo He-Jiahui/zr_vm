@@ -15,6 +15,7 @@
 #include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/writer.h"
 #include "path_support.h"
+#include "lsp_query_result_cleanup.h"
 
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
@@ -497,42 +498,6 @@ static void test_source_semantic_query_snapshot_parity(SZrState *state) {
     }
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
-    }
-}
-
-static void free_local_reference_projection_results(
-        SZrState *state,
-        SZrArray *locations,
-        SZrArray *highlights) {
-    TZrSize index;
-
-    if (state == ZR_NULL) {
-        return;
-    }
-    if (locations != ZR_NULL && locations->isValid) {
-        for (index = 0U; index < locations->length; index++) {
-            SZrLspLocation **slot =
-                    (SZrLspLocation **)ZrCore_Array_Get(locations, index);
-            if (slot != ZR_NULL && *slot != ZR_NULL) {
-                ZrCore_Memory_RawFree(
-                        state->global, *slot, sizeof(SZrLspLocation));
-            }
-        }
-        ZrCore_Array_Free(state, locations);
-    }
-    if (highlights != ZR_NULL && highlights->isValid) {
-        for (index = 0U; index < highlights->length; index++) {
-            SZrLspDocumentHighlight **slot =
-                    (SZrLspDocumentHighlight **)ZrCore_Array_Get(
-                            highlights, index);
-            if (slot != ZR_NULL && *slot != ZR_NULL) {
-                ZrCore_Memory_RawFree(
-                        state->global,
-                        *slot,
-                        sizeof(SZrLspDocumentHighlight));
-            }
-        }
-        ZrCore_Array_Free(state, highlights);
     }
 }
 
@@ -1570,6 +1535,7 @@ cleanup:
 #include "test_lsp_cross_snapshot_external_reference_cases.h"
 #include "test_lsp_symbol_projection_cases.h"
 #include "test_lsp_analysis_provider_generation_cases.h"
+#include "test_lsp_virtual_declaration_projection_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1605,6 +1571,10 @@ int main(void) {
     test_cross_snapshot_imported_references_use_external_identity(state, ZR_FALSE);
     test_cross_snapshot_imported_references_use_external_identity(state, ZR_TRUE);
     test_analysis_provider_generation_invalidates_same_ast_cache(state);
+    for (TZrSize caseIndex = 0U; caseIndex < 4U; caseIndex++) {
+        test_native_virtual_definition_selects_rendered_declaration(state, caseIndex);
+    }
+    test_native_declaration_projection_preserves_descriptor_identity(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

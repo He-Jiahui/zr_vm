@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.h
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
+  - tests/language_server/test_lsp_virtual_declaration_projection_cases.h
+  - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/lsp_query_result_cleanup.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h
@@ -87,6 +94,9 @@ related_code:
   - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
   - tests/acceptance/2026-08-13-lsp-l8-canonical-closure-value-signature-fact.md
 implementation_files:
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
@@ -142,6 +152,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
 plan_sources:
+  - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
   - user: 2026-04-06 继续清理 runtime 残留，并把 imported Pair 显式绑定规则补成 LSP 断言
@@ -153,6 +164,9 @@ plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
+  - tests/language_server/test_lsp_virtual_declaration_projection_cases.h
+  - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/lsp_query_result_cleanup.h
   - tests/language_server/test_lsp_language_feature_matrix.c
   - tests/parser/test_compiler_regressions.c
   - tests/container/test_container_type_inference.c
@@ -1050,3 +1064,29 @@ multi-project binary/native regression rotates the first request after reload,
 checks exact provider URIs and isolated reference ranges, rejects old snapshots,
 and repeats with cache eviction. See the
 [multi-project acquisition record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub30-multi-project-provider-acquisition.md).
+
+## Native Virtual Declaration Projection
+
+Builtin native definitions select identifiers in the rendered `zr-decompiled`
+document. The native projection module renders both text and range records;
+each record retains the exact borrowed descriptor row and declaration kind.
+`Find` requires a unique matching identity and copies its range before freeing
+the record array. Spelling cannot select another same-named row. Missing,
+wrong-kind or ambiguous identity produces no declaration. These temporary
+addresses do not replace canonical tokens or survive provider reload.
+
+The provider applies this projection to native module entries and module-link,
+constant, function and type members. `RangeFromFileRangeForDocument` first uses
+an available content snapshot, then obtains generated native text for an
+unopened virtual document. Both paths use the existing content-aware UTF-16
+conversion. Generating text does not open a document or reanalyze an AST.
+Text remains GC-owned; record arrays and test result entries have explicit
+caller cleanup. A returned range is copied while its provider remains alive.
+
+The regression detaches the request-time AST, selects four builtin declaration
+kinds and checks two same-named non-BMP identifiers on separate rendered lines.
+Its negative identity cases fail closed. The module-link interface case checks
+the exact `printLine` range in definitions and declaration-inclusive references.
+See the [projection record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md)
+for three-toolchain evidence and the still-open binary/plugin virtual URI,
+parser origin, multi-definition and aggregate memory gates.
