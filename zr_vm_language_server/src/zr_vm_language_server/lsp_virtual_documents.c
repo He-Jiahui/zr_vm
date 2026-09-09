@@ -2,6 +2,7 @@
 
 #include "metadata/lsp_metadata_provider.h"
 #include "metadata/lsp_native_declaration_projection.h"
+#include "metadata/lsp_virtual_document_identity.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -196,6 +197,7 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_ParseDeclarationUri(SZrString *uri,
 }
 
 TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *state,
+                                                                     SZrLspContext *context,
                                                                      SZrLspProjectIndex *projectIndex,
                                                                      SZrString *uri,
                                                                      const ZrLibModuleDescriptor **outDescriptor,
@@ -214,6 +216,25 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *s
     }
     if (state == ZR_NULL || uri == ZR_NULL || moduleNameBuffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(uri)) {
+        SZrLspVirtualDocumentIdentity identity;
+        SZrLspProjectIndex *owner = ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, uri);
+        if (owner == ZR_NULL || (projectIndex != ZR_NULL && projectIndex != owner) ||
+            !ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeDescriptor(
+                    state, context, uri, &identity, ZR_NULL, outDescriptor) ||
+            strlen(ZrCore_String_GetNativeString(identity.moduleName)) >= bufferSize) {
+            if (outDescriptor != ZR_NULL) {
+                *outDescriptor = ZR_NULL;
+            }
+            return ZR_FALSE;
+        }
+        strcpy(moduleNameBuffer, ZrCore_String_GetNativeString(identity.moduleName));
+        if (outSourceKind != ZR_NULL) {
+            *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN;
+        }
+        return ZR_TRUE;
     }
 
     parsedVirtualUri = ZrLanguageServer_LspVirtualDocuments_ParseDeclarationUri(uri, moduleNameBuffer, bufferSize);
@@ -247,6 +268,9 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *s
                                                                  moduleNameString,
                                                                  &resolved) &&
         resolved.nativeDescriptor != ZR_NULL) {
+        if (parsedVirtualUri && resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+            return ZR_FALSE;
+        }
         if (outDescriptor != ZR_NULL) {
             *outDescriptor = resolved.nativeDescriptor;
         }
@@ -257,9 +281,17 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *s
     }
 
     if (outDescriptor != ZR_NULL) {
+        EZrLspImportedModuleSourceKind sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
         *outDescriptor = ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(state,
                                                                                           moduleNameBuffer,
-                                                                                          outSourceKind);
+                                                                                          &sourceKind);
+        if (parsedVirtualUri && sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+            *outDescriptor = ZR_NULL;
+            return ZR_FALSE;
+        }
+        if (outSourceKind != ZR_NULL) {
+            *outSourceKind = sourceKind;
+        }
     }
     return outDescriptor != ZR_NULL && *outDescriptor != ZR_NULL;
 }

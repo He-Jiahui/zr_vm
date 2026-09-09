@@ -112,6 +112,9 @@ static TZrBool provider_matrix_check_project(
         goto cleanup;
     }
     location = *(SZrLspLocation **)ZrCore_Array_Get(&definitions, 0U);
+    if (query.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+        providerUri = test_native_virtual_document_uri(state, context, uri, providerUri);
+    }
     if (location == ZR_NULL || location->uri == ZR_NULL ||
         !ZrCore_String_Equal(location->uri, providerUri)) {
         goto cleanup;

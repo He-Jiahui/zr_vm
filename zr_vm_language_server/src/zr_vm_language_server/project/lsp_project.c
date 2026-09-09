@@ -3,6 +3,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "zr_vm_language_server/lsp_uri.h"
+#include "metadata/lsp_virtual_document_identity.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
@@ -1006,6 +1007,9 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext 
 
     if (context == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
+    }
+    if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(uri)) {
+        return ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, uri);
     }
 
     for (TZrSize index = 0; index < context->projectIndexes.length; index++) {

@@ -1,5 +1,6 @@
 #include "lsp_editor_features_internal.h"
 #include "lsp_virtual_documents.h"
+#include "metadata/lsp_virtual_document_identity.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -84,14 +85,16 @@ static TZrBool lsp_document_links_import_is_native(const TZrChar *content,
 }
 
 static TZrBool lsp_document_links_append_native_import(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrString *uri,
                                                        SZrArray *result,
                                                        const TZrChar *content,
                                                        TZrSize valueStart,
                                                        TZrSize valueEnd,
                                                        SZrLspRange range) {
-    TZrChar targetBuffer[512];
     TZrSize valueLength;
-    SZrString *target;
+    SZrString *target = ZR_NULL;
+    SZrString *moduleName;
 
     if (state == ZR_NULL || result == ZR_NULL ||
         !lsp_document_links_import_is_native(content, valueStart, valueEnd)) {
@@ -99,18 +102,11 @@ static TZrBool lsp_document_links_append_native_import(SZrState *state,
     }
 
     valueLength = valueEnd - valueStart;
-    if (valueLength >= sizeof(targetBuffer) - strlen("zr-decompiled:/.zr")) {
+    moduleName = ZrCore_String_Create(state, (TZrNativeString)(content + valueStart), valueLength);
+    if (!ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(state, context,
+                ZrLanguageServer_LspProject_FindProjectForUri(context, uri), moduleName, &target)) {
         return ZR_TRUE;
     }
-    if (snprintf(targetBuffer,
-                 sizeof(targetBuffer),
-                 "zr-decompiled:/%.*s.zr",
-                 (int)valueLength,
-                 content + valueStart) <= 0) {
-        return ZR_FALSE;
-    }
-
-    target = lsp_editor_create_string(state, targetBuffer, strlen(targetBuffer));
     return lsp_document_links_append(state, result, range, target);
 }
 
@@ -416,6 +412,7 @@ static TZrBool lsp_document_links_append_zrp_links(SZrState *state,
 }
 
 static TZrBool lsp_document_links_append_virtual_module_links(SZrState *state,
+                                                              SZrLspContext *context,
                                                               SZrArray *result,
                                                               SZrString *uri,
                                                               const TZrChar *content,
@@ -446,11 +443,8 @@ static TZrBool lsp_document_links_append_virtual_module_links(SZrState *state,
             memcmp(content + trimStart, prefix, strlen(prefix)) == 0) {
             TZrSize nameStart = trimStart + strlen(prefix);
             TZrSize nameEnd = nameStart;
-            TZrSize targetStart;
-            TZrSize targetEnd;
-            TZrChar targetBuffer[ZR_VM_PATH_LENGTH_MAX];
             SZrLspRange range;
-            SZrString *target;
+            SZrArray definitions = {0};
 
             while (nameEnd < lineEnd &&
                    content[nameEnd] != ':' &&
@@ -459,40 +453,19 @@ static TZrBool lsp_document_links_append_virtual_module_links(SZrState *state,
                 nameEnd++;
             }
 
-            targetStart = nameEnd;
-            while (targetStart < lineEnd && content[targetStart] != ':') {
-                targetStart++;
-            }
-            if (targetStart >= lineEnd) {
-                cursor = lineEnd < contentLength ? lineEnd + 1 : lineEnd;
-                continue;
-            }
-            targetStart++;
-            while (targetStart < lineEnd &&
-                   (content[targetStart] == ' ' || content[targetStart] == '\t')) {
-                targetStart++;
-            }
-            targetEnd = targetStart;
-            while (targetEnd < lineEnd &&
-                   content[targetEnd] != ';' &&
-                   content[targetEnd] != ' ' &&
-                   content[targetEnd] != '\t' &&
-                   content[targetEnd] != '\r') {
-                targetEnd++;
-            }
-
-            if (nameStart < nameEnd &&
-                targetStart < targetEnd &&
-                snprintf(targetBuffer,
-                         sizeof(targetBuffer),
-                         "zr-decompiled:/%.*s.zr",
-                         (int)(targetEnd - targetStart),
-                         content + targetStart) > 0) {
+            if (nameStart < nameEnd) {
                 range = lsp_editor_range_from_offsets(content, contentLength, nameStart, nameEnd);
-                target = lsp_editor_create_string(state, targetBuffer, strlen(targetBuffer));
-                if (!lsp_document_links_append(state, result, range, target)) {
-                    return ZR_FALSE;
+                if (ZrLanguageServer_Lsp_GetDefinition(state, context, uri, range.start, &definitions)) {
+                    for (TZrSize index = 0U; index < definitions.length; index++) {
+                        SZrLspLocation **location = (SZrLspLocation **)ZrCore_Array_Get(&definitions, index);
+                        if (location != ZR_NULL && *location != ZR_NULL &&
+                            !lsp_document_links_append(state, result, range, (*location)->uri)) {
+                            lsp_document_links_free_locations(state, &definitions);
+                            return ZR_FALSE;
+                        }
+                    }
                 }
+                lsp_document_links_free_locations(state, &definitions);
             }
         }
 
@@ -578,7 +551,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             }
             content = lsp_document_links_string_text(virtualDocumentText);
             contentLength = content != ZR_NULL ? strlen(content) : 0;
-            return lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength);
+            return lsp_document_links_append_virtual_module_links(state, context, result, uri, content, contentLength);
         }
     }
 
@@ -593,7 +566,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             }
             content = lsp_document_links_string_text(virtualDocumentText);
             contentLength = content != ZR_NULL ? strlen(content) : 0;
-            return lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength);
+            return lsp_document_links_append_virtual_module_links(state, context, result, uri, content, contentLength);
         }
         diskContent = lsp_document_links_read_uri_from_disk(state, uri, &contentLength);
         if (diskContent == ZR_NULL) {
@@ -605,7 +578,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
     if (!lsp_document_links_append_zrp_links(state, result, uri, content, contentLength)) {
         goto cleanup;
     }
-    if (!lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength)) {
+    if (!lsp_document_links_append_virtual_module_links(state, context, result, uri, content, contentLength)) {
         goto cleanup;
     }
 
@@ -663,6 +636,8 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
         lsp_document_links_free_locations(state, &definitions);
         if (!appendedDefinition &&
             !lsp_document_links_append_native_import(state,
+                                                     context,
+                                                     uri,
                                                      result,
                                                      content,
                                                      quoteOffset + 1,

@@ -1,5 +1,6 @@
 #include "semantic/lsp_semantic_query.h"
 #include "metadata/lsp_external_metadata_identity.h"
+#include "metadata/lsp_virtual_document_identity.h"
 #include "semantic/lsp_external_target_identity.h"
 #include "semantic/lsp_cross_snapshot_references.h"
 #include "semantic/lsp_semantic_definition_query.h"
@@ -44,6 +45,10 @@ static TZrBool semantic_query_document_version_is_current(
 
     if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL ||
         query->uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(query->uri) &&
+        ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, query->uri) == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -975,6 +980,7 @@ static TZrBool semantic_query_try_resolve_receiver_external_type_member(SZrState
     }
 
     return ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(state,
+                                                               context,
                                                                projectIndex,
                                                                analyzer,
                                                                uri,
@@ -1068,7 +1074,7 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
                                                                    memberNode->data.memberExpression.property->location);
         if (cursorOffset >= contentLength ||
             !semantic_query_try_resolve_receiver_external_type_member(state,
-                                                                      ZR_NULL,
+                                                                      context,
                                                                       projectIndex,
                                                                       analyzer,
                                                                       uri,
@@ -2471,6 +2477,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     query->queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
 
+    if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(uri)) {
+        query->projectIndex = ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, uri);
+        if (query->projectIndex == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        resolved = semantic_query_resolve_external_metadata_type_member_declaration_target(
+                state, context, uri, position, query) ||
+                semantic_query_resolve_external_metadata_target(state, context, uri, position, query);
+        return resolved && semantic_query_capture_document_version(state, context, query);
+    }
+
     if (semantic_query_uri_is_binary_metadata_uri(uri) ||
         semantic_query_uri_is_native_plugin_metadata_uri(uri)) {
         query->projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
@@ -3060,6 +3077,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                 return ZR_FALSE;
             }
 
+            if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(query->resolvedMember.declarationUri)) {
+                return ZrLanguageServer_LspCrossSnapshotReferences_AppendNativeDeclaration(
+                               state, context, query->projectIndex,
+                               &query->resolvedMember.declarationRange, result) || result->length > 0;
+            }
             return semantic_query_append_project_external_type_member_references(state, context, query, result) ||
                    result->length > 0;
         }

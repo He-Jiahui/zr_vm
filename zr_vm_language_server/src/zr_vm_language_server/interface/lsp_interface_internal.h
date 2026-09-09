@@ -72,6 +72,7 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
                                                               const TZrChar *content,
                                                               TZrSize contentLength);
 TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
+                                                            SZrLspContext *context,
                                                             SZrLspProjectIndex *projectIndex,
                                                             SZrSemanticAnalyzer *analyzer,
                                                             SZrString *uri,

@@ -1,5 +1,17 @@
 ---
 related_code:
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_document_links.c
+  - tests/language_server/lsp_native_virtual_fixture.h
+  - tests/language_server/test_lsp_native_virtual_provider_scope_cases.h
+  - tests/language_server/test_lsp_virtual_document_identity_cases.h
+  - tests/language_server/test_lsp_compile_tool_projection_cases.h
+  - tests/language_server/test_lsp_multi_project_provider_generation_cases.h
+  - zr_vm_language_server_extension/test/virtualDocuments.test.js
   - tests/language_server/test_lsp_virtual_module_link_target_cases.h
   - tests/language_server/test_lsp_native_type_member_identity_cases.h
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
@@ -96,6 +108,9 @@ related_code:
   - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
   - tests/acceptance/2026-08-13-lsp-l8-canonical-closure-value-signature-fact.md
 implementation_files:
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_document_links.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -154,6 +169,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
 plan_sources:
+  - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub34-native-virtual-provider-scope.md
   - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub33-virtual-module-link-target.md
   - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md
   - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md
@@ -168,6 +184,10 @@ plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
+  - tests/language_server/test_lsp_native_virtual_provider_scope_cases.h
+  - tests/language_server/test_lsp_virtual_document_identity_cases.h
+  - tests/language_server/test_lsp_multi_project_provider_generation_cases.h
+  - zr_vm_language_server_extension/test/virtualDocuments.test.js
   - tests/language_server/test_lsp_virtual_module_link_target_cases.h
   - tests/language_server/test_lsp_native_type_member_identity_cases.h
   - tests/language_server/test_lsp_virtual_declaration_projection_cases.h
@@ -1121,3 +1141,46 @@ existing declaration, and a placeholder entry range is not a successful result.
 The [module-link target record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub33-virtual-module-link-target.md)
 contains positive and absent-target regressions; provider pointers are borrowed
 only for this lookup and cannot survive a reload.
+
+## Project Native Virtual Identity
+
+Project-local descriptor plugins now publish virtual declaration URIs instead
+of DLL/SO navigation locations. `lsp_virtual_document_identity` serializes the
+logical module path and one percent-encoded cJSON object containing `project`,
+`origin` and `generation`. The project and origin values are exact file URIs;
+generation is a nonzero decimal uint64 string. One encoded JSON component
+preserves reserved characters through VS Code URI serialization. Parsing rejects
+malformed escapes, embedded NUL, incomplete/duplicate fields, lossy JSON and
+invalid or overflowing generations.
+
+URI admission finds the exact loaded project and checks its current context-wide
+provider generation before resolving metadata. Both production and consumption
+require `EnsureProjectDescriptorPlugin` to confirm the project-local provider;
+the registry's ambient same-named entry is insufficient. Consumption then checks
+the actual origin URI. A missing local plugin or an unassociated global plugin
+is unresolved at this boundary. Builtin descriptors retain their unscoped URI;
+bare plugin virtual URIs cannot establish project identity and are rejected.
+Physical plugin URIs remain provider-origin values for reload notifications.
+
+Identity strings and rendered text are GC-owned. Temporary cJSON trees, encoded
+buffers and reference arrays have explicit cleanup. Descriptor and owner rows
+remain borrowed only during the current provider lookup. Old-generation virtual
+documents are rejected before descriptor access; a new reload receives a new
+URI even in another project sharing the same context generation.
+
+Virtual-position lookup supplies the exact module/member declaration range.
+Reverse references for plugin module members read parser `ExternalReferences`
+and validate metadata owner, kind and token identities before comparing the
+project-scoped projected declaration. This path works with the request-time AST
+detached. Existing receiver field/method reference acquisition now retains the
+LSP context through native provider initialization. Its remaining legacy
+receiver inference belongs to the open Task 7 migration.
+
+Source document links use the same provider URI. Generated module links query
+the selected declaration and require its real target instead of manufacturing
+another module-name URI. Two-project tests alternate int/float providers, reload
+one provider, check exact UTF-16 ranges and isolated references, and reject stale,
+conflicting, unscoped and unowned identities. Stdio exercises definition, rendered
+text and reverse references; the extension test verifies the installed URI
+library round-trip. Validation and remaining binary/parser-origin gates are in
+the [provider-scope record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub34-native-virtual-provider-scope.md).

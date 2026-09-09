@@ -37,6 +37,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_ParseDeclara
         TZrSize bufferSize);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(
         SZrState *state,
+        SZrLspContext *context,
         SZrLspProjectIndex *projectIndex,
         SZrString *uri,
         const ZrLibModuleDescriptor **outDescriptor,

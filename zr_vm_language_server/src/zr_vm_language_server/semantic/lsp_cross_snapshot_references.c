@@ -1,6 +1,7 @@
 #include "semantic/lsp_cross_snapshot_references.h"
 
 #include "metadata/lsp_external_metadata_identity.h"
+#include "metadata/lsp_virtual_document_identity.h"
 #include "semantic/lsp_external_target_identity.h"
 #include "project/lsp_project_internal.h"
 #include "semantic/lsp_semantic_reference_query.h"
@@ -236,6 +237,71 @@ TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal(
                     &appended)) {
             return ZR_FALSE;
         }
+    }
+    return appended;
+}
+
+TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendNativeDeclaration(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        const SZrFileRange *declaration,
+        SZrArray *result) {
+    SZrLspMetadataProvider provider;
+    TZrBool appended = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL ||
+        declaration == ZR_NULL || result == ZR_NULL ||
+        ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, declaration->source) != projectIndex ||
+        !ZrLanguageServer_LspProject_EnsureScannedSourceGraph(state, context, projectIndex)) {
+        return ZR_FALSE;
+    }
+    ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+    for (TZrSize fileIndex = 0U; fileIndex < projectIndex->files.length; fileIndex++) {
+        SZrLspProjectFileRecord **record = (SZrLspProjectFileRecord **)ZrCore_Array_Get(
+                &projectIndex->files, fileIndex);
+        SZrSemanticAnalyzer *analyzer = ZR_NULL;
+        SZrArray references = {0};
+
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            return ZR_FALSE;
+        }
+        if (record == ZR_NULL || *record == ZR_NULL || (*record)->uri == ZR_NULL ||
+            !ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                    state, context, (*record)->uri, &analyzer) || analyzer == ZR_NULL ||
+            analyzer->semanticContext == ZR_NULL) {
+            continue;
+        }
+        if (!ZrParser_SemanticQuery_ExternalReferences(analyzer->semanticContext, ZR_NULL, &references)) {
+            if (references.isValid) {
+                ZrCore_Array_Free(state, &references);
+            }
+            continue;
+        }
+        for (TZrSize index = 0U; index < references.length; index++) {
+            const SZrParserSemanticExternalReferenceQuery *identity =
+                    (const SZrParserSemanticExternalReferenceQuery *)ZrCore_Array_Get(&references, index);
+            SZrLspResolvedMetadataMember member;
+            SZrLspExternalMetadataIdentityDeclaration candidate = {0};
+
+            if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                ZrCore_Array_Free(state, &references);
+                return ZR_FALSE;
+            }
+            if (!ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
+                        &provider, analyzer, projectIndex, identity, &member) ||
+                member.module.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN ||
+                !member.hasDeclaration) {
+                continue;
+            }
+            candidate.uri = member.declarationUri;
+            candidate.range = member.declarationRange;
+            if (cross_snapshot_references_same_declaration(declaration, &candidate)) {
+                appended = ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
+                        state, context, analyzer, result, identity->referenceRange) || appended;
+            }
+        }
+        ZrCore_Array_Free(state, &references);
     }
     return appended;
 }

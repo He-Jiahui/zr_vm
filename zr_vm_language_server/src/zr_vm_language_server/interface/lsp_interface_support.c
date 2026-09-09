@@ -3558,6 +3558,7 @@ static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
 }
 
 TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
+                                                            SZrLspContext *context,
                                                             SZrLspProjectIndex *projectIndex,
                                                             SZrSemanticAnalyzer *analyzer,
                                                             SZrString *uri,
@@ -3696,7 +3697,7 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
             outResolved->resolvedTypeText =
                 ZrCore_String_Create(state, (TZrNativeString)specializedType, strlen(specializedType));
         }
-        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, ZR_NULL);
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
         ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(&provider, projectIndex, outResolved);
         return outResolved->memberName != ZR_NULL;
     }
@@ -3715,7 +3716,7 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
             outResolved->resolvedTypeText =
                 ZrCore_String_Create(state, (TZrNativeString)specializedType, strlen(specializedType));
         }
-        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, ZR_NULL);
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
         ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(&provider, projectIndex, outResolved);
         return outResolved->memberName != ZR_NULL;
     }

@@ -643,6 +643,14 @@ Sub31 相同。binary/plugin virtual URI、parser origin、多定义和父级门
 完整 stdio 均 exit 0。首次 Clang smoke 错误传播由 Task 6.15 修复后完成正常重放；
 interface 及其 Clang 泄漏基线、binary/plugin 项目 URI、parser origin 和父门禁仍开放。
 
+2026-09-09 已完成 [Plan 03 Task 3.34 native virtual provider scope](2026-09-09-plan03-task03-sub34-native-virtual-provider-scope.md)：
+项目原生插件的虚拟 URI 携带精确 project/origin 和当前 generation，拒绝旧版本、
+冲突 origin、无项目身份及借用另一项目 registry 的 provider。反向模块成员引用读取
+canonical external facts，AST-detached、双项目 reload、document link 和协议用例通过。
+三工具链 parity `34/34`、snapshot、source contracts 与完整 stdio 均 exit 0；扩展
+unit `43/43`、noEmit exit 0。project/interface 保留同名七项/两项失败和实际 Clang
+泄漏报告；binary/parser origin、project summary 范围、多定义及父门禁仍未验收。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

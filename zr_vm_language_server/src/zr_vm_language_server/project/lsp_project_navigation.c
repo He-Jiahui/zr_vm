@@ -2,6 +2,7 @@
 #include "project/lsp_project_internal.h"
 #include "semantic/lsp_semantic_import_chain.h"
 #include "lsp_virtual_documents.h"
+#include "metadata/lsp_virtual_document_identity.h"
 #include "zr_vm_language_server/lsp_uri.h"
 
 #include "zr_vm_core/memory.h"
@@ -1207,6 +1208,7 @@ static TZrBool project_navigation_try_find_binary_export_declaration_at(
 
 static TZrBool project_navigation_try_find_descriptor_plugin_member_declaration_at(
     SZrState *state,
+    SZrLspContext *context,
     SZrLspProjectIndex *projectIndex,
     SZrString *moduleName,
     SZrString *uri,
@@ -1233,6 +1235,7 @@ static TZrBool project_navigation_try_find_descriptor_plugin_member_declaration_
     moduleText = project_navigation_string_text(moduleName);
     moduleNameBuffer[0] = '\0';
     if (!ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(state,
+                                                                      context,
                                                                       projectIndex,
                                                                       uri,
                                                                       &descriptor,
@@ -1318,6 +1321,7 @@ static TZrBool project_append_descriptor_plugin_entry_member_references(SZrState
 
     moduleNameBuffer[0] = '\0';
     if (!ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(state,
+                                                                       context,
                                                                        resolved->projectIndex,
                                                                        resolved->declarationUri,
                                                                        &descriptor,
@@ -1399,6 +1403,35 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
         return ZR_FALSE;
     }
 
+    if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(uri)) {
+        SZrLspVirtualDocumentIdentity identity;
+        const ZrLibModuleDescriptor *descriptor;
+        SZrLspVirtualDeclarationMatch match;
+        if (!ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeDescriptor(
+                    state, context, uri, &identity, &projectIndex, &descriptor) ||
+            !ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(
+                    state, descriptor, uri, position, &match)) {
+            return ZR_FALSE;
+        }
+        if (match.kind != ZR_LSP_VIRTUAL_DECLARATION_MODULE) {
+            if (match.name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            outResolved->memberName = ZrCore_String_Create(state,
+                    (TZrNativeString)match.name, strlen(match.name));
+            if (outResolved->memberName == ZR_NULL) {
+                return ZR_FALSE;
+            }
+        }
+        outResolved->projectIndex = projectIndex;
+        outResolved->moduleName = identity.moduleName;
+        outResolved->sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN;
+        outResolved->declarationUri = uri;
+        outResolved->declarationRange = match.range;
+        outResolved->hasDeclaration = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
     projectIndex = ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri);
     if (projectIndex == ZR_NULL || !ZrLanguageServer_LspUri_FileToNativePath(uri, nativePath, sizeof(nativePath))) {
         return ZR_FALSE;
@@ -1473,6 +1506,7 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
         outResolved->hasDeclaration = outResolved->moduleName != ZR_NULL;
         if (outResolved->hasDeclaration && !project_navigation_position_is_module_entry(position)) {
             if (!project_navigation_try_find_descriptor_plugin_member_declaration_at(state,
+                                                                                     context,
                                                                                      projectIndex,
                                                                                      outResolved->moduleName,
                                                                                      uri,
@@ -1504,6 +1538,7 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
             outResolved->hasDeclaration = outResolved->moduleName != ZR_NULL;
             if (outResolved->hasDeclaration && !project_navigation_position_is_module_entry(position)) {
                 if (!project_navigation_try_find_descriptor_plugin_member_declaration_at(state,
+                                                                                         context,
                                                                                          projectIndex,
                                                                                          outResolved->moduleName,
                                                                                          uri,

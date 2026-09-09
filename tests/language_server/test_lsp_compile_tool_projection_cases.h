@@ -65,6 +65,7 @@ static void test_lsp_compile_tool_projection_uses_canonical_contract(
         !ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(
                 state,
                 ZR_NULL,
+                ZR_NULL,
                 uri,
                 &resolved,
                 &sourceKind,

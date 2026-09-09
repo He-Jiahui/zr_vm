@@ -1538,6 +1538,7 @@ cleanup:
 #include "test_lsp_virtual_declaration_projection_cases.h"
 #include "test_lsp_native_type_member_identity_cases.h"
 #include "test_lsp_virtual_module_link_target_cases.h"
+#include "test_lsp_virtual_document_identity_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1583,6 +1584,8 @@ int main(void) {
     test_native_type_member_projection_preserves_descriptor_identity(state, ZR_TRUE, ZR_TRUE);
     test_virtual_module_link_requires_exact_target(state, ZR_FALSE);
     test_virtual_module_link_requires_exact_target(state, ZR_TRUE);
+    test_virtual_document_identity_round_trip(state);
+    test_virtual_document_identity_rejects_malformed(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

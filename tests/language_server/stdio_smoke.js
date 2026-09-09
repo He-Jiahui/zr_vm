@@ -669,6 +669,8 @@ function createDescriptorPluginGenericCallableFixture(serverPath) {
         rootPath,
         content,
         mainUri: pathToFileURL(mainPath).toString(),
+        projectUri: pathToFileURL(projectPath).toString(),
+        pluginUri: pathToFileURL(pluginPath).toString(),
     };
 }
 
@@ -2214,6 +2216,35 @@ async function main() {
         nativeGenericReceiverHover.contents.value.includes(
             'Returns a value using an unconstrained method generic.'),
     'native generic receiver hover should share the structured generic contract');
+
+    const pluginDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: descriptorPluginGenericFixture.mainUri },
+        position: findPosition(descriptorPluginGenericFixture.content, 'plugin.makePoint()', 0, 7),
+    });
+    assert(Array.isArray(pluginDefinition) && pluginDefinition.length === 1,
+        'native plugin definition must select one declaration');
+    const pluginLocation = pluginDefinition[0];
+    const pluginVirtualUri = new URL(pluginLocation.uri);
+    assert(pluginVirtualUri.protocol === 'zr-decompiled:', 'native plugin declaration must use a virtual URI');
+    const pluginIdentity = JSON.parse(decodeURIComponent(pluginVirtualUri.search.slice(1)));
+    assert(diagnosticRelatedUriMatches(pluginIdentity.project, descriptorPluginGenericFixture.projectUri) &&
+        diagnosticRelatedUriMatches(pluginIdentity.origin, descriptorPluginGenericFixture.pluginUri) &&
+        /^[1-9][0-9]*$/.test(pluginIdentity.generation),
+    'virtual declaration identity must retain its project, provider source, and nonzero generation');
+    const pluginDeclarationText = await client.request('zr/nativeDeclarationDocument', { uri: pluginLocation.uri });
+    const pluginDeclarationPosition = findPosition(pluginDeclarationText, 'pub makePoint()', 0, 4);
+    assertStrict.deepEqual(pluginLocation.range, {
+        start: pluginDeclarationPosition,
+        end: { line: pluginDeclarationPosition.line, character: pluginDeclarationPosition.character + 9 },
+    });
+    const pluginDeclarationReferences = await client.request('textDocument/references', {
+        textDocument: { uri: pluginLocation.uri },
+        position: pluginDeclarationPosition,
+        context: { includeDeclaration: true },
+    });
+    assert(pluginDeclarationReferences.length === 2 && pluginDeclarationReferences.some((location) =>
+        diagnosticRelatedUriMatches(location.uri, descriptorPluginGenericFixture.mainUri)),
+    'virtual plugin references must include exactly its declaration and owning project usage');
 
     const warmHoverLatency = await measureWarmRequestLatency(client, 'textDocument/hover', {
         textDocument: { uri: nativeCallableUri },

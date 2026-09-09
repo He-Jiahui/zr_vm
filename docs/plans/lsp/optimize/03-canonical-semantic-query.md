@@ -1591,3 +1591,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   Clang `20144 bytes/422 allocations`，实际 binary/plugin 项目 URI、parser origin、
   多定义矩阵与父门禁继续未完成。详见
   [Task 3.33 record](2026-09-09-plan03-task03-sub33-virtual-module-link-target.md)。
+
+- 2026-09-09 13:35 +08:00 完成：Plan 03 Task 3.34 为项目原生插件发布包含
+  project、origin、非零 generation 的虚拟 URI，并验证实际项目 provider 归属。
+  声明文本、精确位置反查、引用和 document link 使用该 URI；模块成员反向引用读取
+  canonical external facts，移除 AST 后仍可返回所属项目的准确引用集合。两项目轮换、
+  reload、冲突/缺失 provider、旧 URI 拒绝和 VS Code URI round-trip 均通过。
+  三工具链 parity `34/34`、snapshot、source contracts 和完整 stdio 均 exit 0；
+  extension unit `43/43`、noEmit exit 0。project 为 `57 PASS / 7 FAIL`，interface 为
+  `114 PASS / 2 FAIL`，均真实 exit 1；Clang LSan 分别为 `18968 bytes/473 allocations`
+  和 `20144 bytes/422 allocations`。binary virtual URI、parser origin、project summary
+  范围、多定义矩阵及 Task 3/7/8 父门禁继续未完成。详见
+  [Task 3.34 record](2026-09-09-plan03-task03-sub34-native-virtual-provider-scope.md)。

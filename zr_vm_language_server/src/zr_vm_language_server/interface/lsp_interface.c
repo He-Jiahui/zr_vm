@@ -6,6 +6,7 @@
 #include "lsp_canonical_signature_help.h"
 #include "lsp_virtual_documents.h"
 #include "metadata/lsp_native_declaration_projection.h"
+#include "metadata/lsp_virtual_document_identity.h"
 #include "project/lsp_project_internal.h"
 #include "project/lsp_workspace.h"
 #include "semantic/lsp_local_semantic_query.h"
@@ -213,6 +214,7 @@ static TZrBool lsp_resolve_virtual_descriptor(SZrState *state,
                 (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, index);
             if (projectPtr != ZR_NULL && *projectPtr != ZR_NULL &&
                 ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(state,
+                                                                             context,
                                                                              *projectPtr,
                                                                              uri,
                                                                              outDescriptor,
@@ -226,6 +228,7 @@ static TZrBool lsp_resolve_virtual_descriptor(SZrState *state,
     }
 
     return ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(state,
+                                                                        context,
                                                                         ZR_NULL,
                                                                         uri,
                                                                         outDescriptor,
@@ -2074,8 +2077,11 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
         const ZrLibModuleDescriptor *targetDescriptor = ZR_NULL;
         SZrFileRange targetRange = {0};
 
-        targetUri = ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(state, virtualMatch.targetModuleName);
-        if (targetUri == ZR_NULL ||
+        SZrLspProjectIndex *owner = ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, uri);
+        SZrString *targetModule = ZrCore_String_Create(state,
+                (TZrNativeString)virtualMatch.targetModuleName, strlen(virtualMatch.targetModuleName));
+        if (!ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
+                    state, context, owner, targetModule, &targetUri) || targetUri == ZR_NULL ||
             !lsp_resolve_virtual_descriptor(state, context, targetUri, &targetDescriptor,
                     ZR_NULL, virtualModuleName, sizeof(virtualModuleName)) ||
             !ZrLanguageServer_LspNativeDeclarationProjection_Find(
@@ -2548,10 +2554,8 @@ TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
                 }
             } else if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN ||
                        resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
-                if (!ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(state,
-                                                                               projectIndex,
-                                                                               resolved.moduleName,
-                                                                               &navigationUri) ||
+                if (!ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
+                            state, context, projectIndex, resolved.moduleName, &navigationUri) ||
                     navigationUri == ZR_NULL) {
                     continue;
                 }

@@ -1,4 +1,5 @@
 #include "metadata/lsp_metadata_provider.h"
+#include "metadata/lsp_virtual_document_identity.h"
 #include "interface/lsp_canonical_symbol_display.h"
 #include "interface/lsp_interface_internal.h"
 #include "lsp_virtual_documents.h"
@@ -1468,10 +1469,8 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeModuleUri(SZrLspMetada
         return ZR_FALSE;
     }
 
-    return ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(provider->state,
-                                                                     projectIndex,
-                                                                     moduleName,
-                                                                     outUri);
+    return ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
+            provider->state, provider->context, projectIndex, moduleName, outUri);
 }
 
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
@@ -1642,6 +1641,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     }
     if (provider == ZR_NULL || provider->state == ZR_NULL || uri == ZR_NULL || outResolved == ZR_NULL ||
         !ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(provider->state,
+                                                                      provider->context,
                                                                       projectIndex,
                                                                       uri,
                                                                       &descriptor,

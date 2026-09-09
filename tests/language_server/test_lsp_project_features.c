@@ -1191,55 +1191,7 @@ static TZrBool highlight_array_contains_binary_seed_declaration(SZrArray *highli
     return highlight_array_contains_range(highlights, 0, 8, 0, 18);
 }
 
-static void descriptor_plugin_type_member_field_range(TZrSize typeIndex,
-                                                      TZrSize fieldIndex,
-                                                      TZrSize fieldNameLength,
-                                                      TZrInt32 *startLine,
-                                                      TZrInt32 *startCharacter,
-                                                      TZrInt32 *endLine,
-                                                      TZrInt32 *endCharacter) {
-    TZrInt32 resolvedStartLine = (TZrInt32)(1 + typeIndex);
-    TZrInt32 resolvedStartCharacter = (TZrInt32)(fieldIndex * 8);
-    TZrInt32 resolvedEndCharacter = resolvedStartCharacter + (TZrInt32)(fieldNameLength > 0 ? fieldNameLength : 1);
-
-    if (startLine != ZR_NULL) {
-        *startLine = resolvedStartLine;
-    }
-    if (startCharacter != ZR_NULL) {
-        *startCharacter = resolvedStartCharacter;
-    }
-    if (endLine != ZR_NULL) {
-        *endLine = resolvedStartLine;
-    }
-    if (endCharacter != ZR_NULL) {
-        *endCharacter = resolvedEndCharacter;
-    }
-}
-
-static void descriptor_plugin_type_member_method_range(TZrSize typeIndex,
-                                                       TZrSize methodIndex,
-                                                       TZrSize methodNameLength,
-                                                       TZrInt32 *startLine,
-                                                       TZrInt32 *startCharacter,
-                                                       TZrInt32 *endLine,
-                                                       TZrInt32 *endCharacter) {
-    TZrInt32 resolvedStartLine = (TZrInt32)(1 + typeIndex);
-    TZrInt32 resolvedStartCharacter = (TZrInt32)(128 + methodIndex * 8);
-    TZrInt32 resolvedEndCharacter = resolvedStartCharacter + (TZrInt32)(methodNameLength > 0 ? methodNameLength : 1);
-
-    if (startLine != ZR_NULL) {
-        *startLine = resolvedStartLine;
-    }
-    if (startCharacter != ZR_NULL) {
-        *startCharacter = resolvedStartCharacter;
-    }
-    if (endLine != ZR_NULL) {
-        *endLine = resolvedStartLine;
-    }
-    if (endCharacter != ZR_NULL) {
-        *endCharacter = resolvedEndCharacter;
-    }
-}
+#include "lsp_native_virtual_fixture.h"
 
 static TZrBool completion_array_contains_label(SZrArray *completions, const TZrChar *label) {
     if (completions == ZR_NULL || label == ZR_NULL) {
@@ -3056,7 +3008,7 @@ static void test_lsp_import_literal_definition_targets_native_descriptor_plugin(
 
     TEST_START("LSP Import Literal Definition Targets Native Descriptor Plugin");
     TEST_INFO("Descriptor plugin import target definition",
-              "Definition on import(\"zr.pluginprobe\") should navigate to the backing native descriptor plugin file when no source or binary metadata module exists");
+              "Definition on import(\"zr.pluginprobe\") should select its project-scoped virtual module declaration");
 
     if (!prepare_generated_descriptor_plugin_fixture("project_features_descriptor_plugin_import_definition",
                                                      ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH,
@@ -3092,14 +3044,15 @@ static void test_lsp_import_literal_definition_targets_native_descriptor_plugin(
     }
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    pluginUri = test_native_virtual_document_uri(state, context, mainUri, pluginUri);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, importPosition, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, pluginUri, 0, 0, 0, 0)) {
+        !location_array_contains_uri_and_range(&definitions, pluginUri, 0, 15, 0, 29)) {
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal Definition Targets Native Descriptor Plugin",
-                  "Definition on a descriptor-plugin import literal should resolve to the native plugin file entry");
+                  "Definition on a descriptor-plugin import literal should select the rendered module identifier");
         return;
     }
 
@@ -3688,8 +3641,9 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Free(state, &completions);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    pluginUri = test_native_virtual_document_uri(state, context, mainUri, pluginUri);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, firstUsagePosition, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, pluginUri, 0, 0, 0, 0)) {
+        !location_array_contains_uri_and_range(&definitions, pluginUri, 2, 8, 2, 14)) {
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -3701,8 +3655,8 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
-    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, pluginUri, (SZrLspPosition){0, 0}, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, pluginUri, 0, 0, 0, 0)) {
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, pluginUri, (SZrLspPosition){2, 8}, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, pluginUri, 2, 8, 2, 14)) {
         describe_first_location(&definitions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
@@ -3717,7 +3671,7 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_Lsp_FindReferences(state, context, mainUri, firstUsagePosition, ZR_TRUE, &references) ||
         references.length < 4 ||
-        !location_array_contains_uri_and_range(&references, pluginUri, 0, 0, 0, 0) ||
+        !location_array_contains_uri_and_range(&references, pluginUri, 2, 8, 2, 14) ||
         !location_array_contains_uri_and_range(&references,
                                                mainUri,
                                                firstUsagePosition.line,
@@ -3750,11 +3704,11 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     if (!ZrLanguageServer_Lsp_FindReferences(state,
                                              context,
                                              pluginUri,
-                                             (SZrLspPosition){0, 0},
+                                             (SZrLspPosition){2, 8},
                                              ZR_TRUE,
                                              &references) ||
         references.length < 4 ||
-        !location_array_contains_uri_and_range(&references, pluginUri, 0, 0, 0, 0) ||
+        !location_array_contains_uri_and_range(&references, pluginUri, 2, 8, 2, 14) ||
         !location_array_contains_uri_and_range(&references,
                                                mainUri,
                                                firstUsagePosition.line,
@@ -3888,20 +3842,13 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
         return;
     }
 
-    descriptor_plugin_type_member_field_range(0,
-                                              1,
-                                              1,
-                                              &fieldDeclStartLine,
-                                              &fieldDeclStartCharacter,
-                                              &fieldDeclEndLine,
-                                              &fieldDeclEndCharacter);
-    descriptor_plugin_type_member_method_range(0,
-                                               0,
-                                               5,
-                                               &methodDeclStartLine,
-                                               &methodDeclStartCharacter,
-                                               &methodDeclEndLine,
-                                               &methodDeclEndCharacter);
+    pluginUri = test_native_virtual_document_uri(state, context, mainUri, pluginUri);
+    fieldDeclStartLine = fieldDeclEndLine = 8;
+    fieldDeclStartCharacter = 16;
+    fieldDeclEndCharacter = 17;
+    methodDeclStartLine = methodDeclEndLine = 9;
+    methodDeclStartCharacter = 12;
+    methodDeclEndCharacter = 17;
     fieldDeclarationPosition.line = fieldDeclStartLine;
     fieldDeclarationPosition.character = fieldDeclStartCharacter;
     methodDeclarationPosition.line = methodDeclStartLine;
@@ -4337,9 +4284,11 @@ static void test_lsp_descriptor_plugin_project_local_definition_overrides_stale_
     ZrCore_Array_Free(state, &completions);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    floatPluginUri = test_native_virtual_document_uri(state, context, floatMainUri, floatPluginUri);
+    intPluginUri = test_native_virtual_document_uri(state, context, intMainUri, intPluginUri);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, floatMainUri, floatImportPosition, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, floatPluginUri, 0, 0, 0, 0) ||
-        location_array_contains_uri_and_range(&definitions, intPluginUri, 0, 0, 0, 0)) {
+        !location_array_contains_uri_and_range(&definitions, floatPluginUri, 0, 15, 0, 29) ||
+        location_array_contains_uri_and_range(&definitions, intPluginUri, 0, 15, 0, 29)) {
         free(intMainContent);
         free(floatMainContent);
         ZrCore_Array_Free(state, &definitions);
@@ -4353,8 +4302,8 @@ static void test_lsp_descriptor_plugin_project_local_definition_overrides_stale_
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_Lsp_FindReferences(state, context, floatMainUri, floatUsagePosition, ZR_TRUE, &references) ||
-        !location_array_contains_uri_and_range(&references, floatPluginUri, 0, 0, 0, 0) ||
-        location_array_contains_uri_and_range(&references, intPluginUri, 0, 0, 0, 0)) {
+        !location_array_contains_uri_and_range(&references, floatPluginUri, 2, 8, 2, 14) ||
+        location_array_contains_uri_and_range(&references, intPluginUri, 2, 8, 2, 14)) {
         free(intMainContent);
         free(floatMainContent);
         ZrCore_Array_Free(state, &references);
@@ -4688,6 +4637,7 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
         return;
     }
 
+    pluginUri = test_native_virtual_document_uri(state, context, pluginMainUri, pluginUri);
     ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 4);
     if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state,
                                                     context,
@@ -4709,9 +4659,9 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
     if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state,
                                                     context,
                                                     pluginUri,
-                                                    (SZrLspPosition){0, 0},
+                                                    (SZrLspPosition){0, 15},
                                                     &highlights) ||
-        !highlight_array_contains_range(&highlights, 0, 0, 0, 0)) {
+        !highlight_array_contains_range(&highlights, 0, 15, 0, 29)) {
         describe_first_highlight(&highlights, reason, sizeof(reason));
         free(pluginMainContent);
         ZrCore_Array_Free(state, &highlights);
@@ -4757,10 +4707,10 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
     if (!ZrLanguageServer_Lsp_FindReferences(state,
                                              context,
                                              pluginUri,
-                                             (SZrLspPosition){0, 0},
+                                             (SZrLspPosition){0, 15},
                                              ZR_TRUE,
                                              &references) ||
-        !location_array_contains_uri_and_range(&references, pluginUri, 0, 0, 0, 0) ||
+        !location_array_contains_uri_and_range(&references, pluginUri, 0, 15, 0, 29) ||
         !location_array_contains_uri_and_range(&references,
                                                pluginMainUri,
                                                pluginImportLiteralPosition.line,
@@ -4814,7 +4764,7 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
                                              pluginImportLiteralPosition,
                                              ZR_TRUE,
                                              &references) ||
-        !location_array_contains_uri_and_range(&references, pluginUri, 0, 0, 0, 0) ||
+        !location_array_contains_uri_and_range(&references, pluginUri, 0, 15, 0, 29) ||
         !location_array_contains_uri_and_range(&references,
                                                pluginMainUri,
                                                pluginImportLiteralPosition.line,
@@ -7938,6 +7888,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 #include "test_lsp_project_public_contract_cases.h"
 #include "test_lsp_project_module_identity_edge_cases.h"
 #include "test_lsp_multi_project_provider_generation_cases.h"
+#include "test_lsp_native_virtual_provider_scope_cases.h"
 #include "test_lsp_project_native_callable_signature_cases.h"
 #include "test_lsp_project_native_receiver_callable_cases.h"
 #include "test_lsp_project_source_rename_edit_cases.h"
@@ -8150,6 +8101,10 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_pooling_hover_completion_and_projection_expose_guard_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_virtual_documents_preserve_provider_scope(state);
+    test_lsp_native_virtual_documents_reject_unowned_provider(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);

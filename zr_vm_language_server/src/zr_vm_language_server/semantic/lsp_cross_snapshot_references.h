@@ -15,4 +15,11 @@ TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal(
         SZrLspSemanticQuery *query,
         SZrArray *result);
 
+TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendNativeDeclaration(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        const SZrFileRange *declaration,
+        SZrArray *result);
+
 #endif
