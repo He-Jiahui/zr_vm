@@ -1478,8 +1478,13 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
     SZrLspResolvedMetadataMember *resolvedMember) {
-    const TZrChar *ownerTypeText;
-    const TZrChar *memberText;
+    const void *declarationIdentity;
+
+    if (resolvedMember != ZR_NULL) {
+        resolvedMember->hasDeclaration = ZR_FALSE;
+        resolvedMember->declarationUri = ZR_NULL;
+        memset(&resolvedMember->declarationRange, 0, sizeof(resolvedMember->declarationRange));
+    }
 
     if (provider == ZR_NULL || provider->state == ZR_NULL || resolvedMember == ZR_NULL ||
         resolvedMember->module.moduleName == ZR_NULL || resolvedMember->ownerTypeDescriptor == ZR_NULL ||
@@ -1489,19 +1494,18 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
         return ZR_FALSE;
     }
 
-    ownerTypeText = resolvedMember->ownerTypeDescriptor->name;
-    memberText = metadata_provider_string_text(resolvedMember->memberName);
+    declarationIdentity = resolvedMember->memberKind == ZR_LSP_METADATA_MEMBER_FIELD
+            ? (const void *)resolvedMember->fieldDescriptor
+            : (const void *)resolvedMember->methodDescriptor;
     if (!ZrLanguageServer_LspMetadataProvider_ResolveNativeModuleUri(provider,
                                                                      projectIndex,
                                                                      resolvedMember->module.moduleName,
                                                                      &resolvedMember->declarationUri) ||
         resolvedMember->declarationUri == ZR_NULL ||
-        ownerTypeText == ZR_NULL || memberText == ZR_NULL ||
         !ZrLanguageServer_LspVirtualDocuments_FindTypeMemberDeclaration(provider->state,
                                                                         resolvedMember->module.nativeDescriptor,
                                                                         resolvedMember->declarationUri,
-                                                                        ownerTypeText,
-                                                                        memberText,
+                                                                        declarationIdentity,
                                                                         resolvedMember->memberKind,
                                                                         &resolvedMember->declarationRange)) {
         return ZR_FALSE;
@@ -1682,19 +1686,9 @@ TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
         outResolved->module.sourceKind = sourceKind;
     }
 
-    for (TZrSize typeIndex = 0; typeIndex < descriptor->typeCount; typeIndex++) {
-        const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[typeIndex];
-
-        if (typeDescriptor != ZR_NULL &&
-            typeDescriptor->name != ZR_NULL &&
-            match.ownerName != ZR_NULL &&
-            strcmp(typeDescriptor->name, match.ownerName) == 0) {
-            ownerTypeDescriptor = typeDescriptor;
-            break;
-        }
-    }
-
-    if (ownerTypeDescriptor == ZR_NULL || match.name == ZR_NULL) {
+    ownerTypeDescriptor = match.ownerTypeDescriptor;
+    if (ownerTypeDescriptor == ZR_NULL || ownerTypeDescriptor->name == ZR_NULL ||
+        match.name == ZR_NULL || match.declarationIdentity == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1709,14 +1703,14 @@ TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
                                                       strlen(ownerTypeDescriptor->name));
     outResolved->declarationUri = uri;
     outResolved->declarationRange = match.range;
-    outResolved->hasDeclaration = ZR_TRUE;
 
     if (match.kind == ZR_LSP_VIRTUAL_DECLARATION_FIELD) {
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_FIELD;
         for (TZrSize fieldIndex = 0; fieldIndex < ownerTypeDescriptor->fieldCount; fieldIndex++) {
             const ZrLibFieldDescriptor *fieldDescriptor = &ownerTypeDescriptor->fields[fieldIndex];
-            if (fieldDescriptor->name != ZR_NULL && strcmp(fieldDescriptor->name, match.name) == 0) {
+            if (fieldDescriptor == match.declarationIdentity) {
                 outResolved->fieldDescriptor = fieldDescriptor;
+                outResolved->hasDeclaration = ZR_TRUE;
                 metadata_provider_set_type_text(provider->state, outResolved, fieldDescriptor->typeName);
                 return ZR_TRUE;
             }
@@ -1725,8 +1719,9 @@ TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_METHOD;
         for (TZrSize methodIndex = 0; methodIndex < ownerTypeDescriptor->methodCount; methodIndex++) {
             const ZrLibMethodDescriptor *methodDescriptor = &ownerTypeDescriptor->methods[methodIndex];
-            if (methodDescriptor->name != ZR_NULL && strcmp(methodDescriptor->name, match.name) == 0) {
+            if (methodDescriptor == match.declarationIdentity) {
                 outResolved->methodDescriptor = methodDescriptor;
+                outResolved->hasDeclaration = ZR_TRUE;
                 metadata_provider_set_type_text(provider->state, outResolved, methodDescriptor->returnTypeName);
                 return ZR_TRUE;
             }

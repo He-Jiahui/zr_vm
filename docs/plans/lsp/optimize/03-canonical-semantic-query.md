@@ -1573,3 +1573,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   project 保留 `19160 bytes/481 allocations`。binary/plugin 项目隔离 virtual URI、实际
   parser origin、多定义矩阵与 Task 3/7/8 总门禁保持未完成。详见
   [Task 3.31 record](2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md)。
+
+- 2026-09-09 11:58 +08:00 完成：Plan 03 Task 3.32 修复 native field/method
+  声明投影和位置反查仍按 owner/member 名称选首行的问题。文本及 compact plugin record
+  保留 descriptor row 和 owner type 身份；正向使用唯一 row，反向在所属类型的 typed array
+  验证 exact row。四项双向回归先 RED 后 GREEN，覆盖同名 owner/member 和失败后旧范围清除。
+  三工具链 parity `30/30`、snapshot `1/1`、source contracts 与完整 stdio 均 exit 0；
+  interface/project 及 Clang LSan 保持 Sub31 的失败集合和数量。实际 binary/plugin virtual
+  URI/parser origin、多定义矩阵、canonical receiver acquisition 和 Task 3/7/8 仍未完成。
+  详见 [Task 3.32 record](2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md)。

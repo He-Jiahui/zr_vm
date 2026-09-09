@@ -18,6 +18,8 @@ typedef enum EZrLspVirtualDeclarationKind {
 typedef struct SZrLspVirtualDeclarationMatch {
     EZrLspVirtualDeclarationKind kind;
     const ZrLibModuleDescriptor *descriptor;
+    const void *declarationIdentity;
+    const ZrLibTypeDescriptor *ownerTypeDescriptor;
     const TZrChar *moduleName;
     const TZrChar *ownerName;
     const TZrChar *name;
@@ -50,8 +52,7 @@ ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspVirtualDocuments_ModuleE
 TZrBool ZrLanguageServer_LspVirtualDocuments_FindTypeMemberDeclaration(SZrState *state,
                                                                        const ZrLibModuleDescriptor *descriptor,
                                                                        SZrString *uri,
-                                                                       const TZrChar *typeName,
-                                                                       const TZrChar *memberName,
+                                                                       const void *declarationIdentity,
                                                                        TZrInt32 memberKind,
                                                                        SZrFileRange *outRange);
 TZrBool ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(SZrState *state,

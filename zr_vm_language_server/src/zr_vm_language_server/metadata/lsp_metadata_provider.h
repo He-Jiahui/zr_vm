@@ -106,7 +106,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeModuleUri(SZrLspMetada
                                                                     SZrLspProjectIndex *projectIndex,
                                                                     SZrString *moduleName,
                                                                     SZrString **outUri);
-TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
     SZrLspResolvedMetadataMember *resolvedMember);
@@ -120,7 +120,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
     SZrLspResolvedMetadataMember *resolvedMember);
-TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
     SZrString *uri,

@@ -157,7 +157,7 @@ static SZrFilePosition virtual_builder_position(const SZrLspVirtualBuilder *buil
 static void virtual_builder_record_name(SZrLspVirtualBuilder *builder,
                                         EZrLspVirtualDeclarationKind kind,
                                         const void *declarationIdentity,
-                                        const TZrChar *ownerName,
+                                        const ZrLibTypeDescriptor *ownerTypeDescriptor,
                                         const TZrChar *name,
                                         const TZrChar *targetModuleName) {
     SZrLspVirtualRecord record;
@@ -171,7 +171,8 @@ static void virtual_builder_record_name(SZrLspVirtualBuilder *builder,
     memset(&record, 0, sizeof(record));
     record.kind = kind;
     record.declarationIdentity = declarationIdentity;
-    record.ownerName = ownerName;
+    record.ownerTypeDescriptor = ownerTypeDescriptor;
+    record.ownerName = ownerTypeDescriptor != ZR_NULL ? ownerTypeDescriptor->name : ZR_NULL;
     record.name = name;
     record.targetModuleName = targetModuleName;
     start = virtual_builder_position(builder);
@@ -185,12 +186,12 @@ static void virtual_builder_append_identifier_line(SZrLspVirtualBuilder *builder
                                                    const TZrChar *prefix,
                                                    EZrLspVirtualDeclarationKind kind,
                                                    const void *declarationIdentity,
-                                                   const TZrChar *ownerName,
+                                                   const ZrLibTypeDescriptor *ownerTypeDescriptor,
                                                    const TZrChar *name,
                                                    const TZrChar *suffix,
                                                    const TZrChar *targetModuleName) {
     virtual_builder_append_text(builder, prefix);
-    virtual_builder_record_name(builder, kind, declarationIdentity, ownerName, name, targetModuleName);
+    virtual_builder_record_name(builder, kind, declarationIdentity, ownerTypeDescriptor, name, targetModuleName);
     virtual_builder_append_text(builder, suffix);
 }
 
@@ -492,7 +493,7 @@ static void virtual_documents_append_type_fields(SZrLspVirtualBuilder *builder,
                                                "        pub var ",
                                                ZR_LSP_VIRTUAL_DECLARATION_FIELD,
                                                fieldDescriptor,
-                                               typeDescriptor->name,
+                                               typeDescriptor,
                                                fieldDescriptor->name != ZR_NULL ? fieldDescriptor->name : "",
                                                suffix,
                                                ZR_NULL);
@@ -528,7 +529,7 @@ static void virtual_documents_append_type_methods(SZrLspVirtualBuilder *builder,
                                                prefix,
                                                ZR_LSP_VIRTUAL_DECLARATION_METHOD,
                                                methodDescriptor,
-                                               typeDescriptor->name,
+                                               typeDescriptor,
                                                methodDescriptor->name != ZR_NULL ? methodDescriptor->name : "",
                                                suffix,
                                                ZR_NULL);
@@ -560,7 +561,7 @@ static void virtual_documents_append_type_meta_methods(SZrLspVirtualBuilder *bui
                                                "        pub ",
                                                ZR_LSP_VIRTUAL_DECLARATION_META_METHOD,
                                                metaMethodDescriptor,
-                                               typeDescriptor->name,
+                                               typeDescriptor,
                                                metaName,
                                                suffix,
                                                ZR_NULL);
@@ -603,7 +604,7 @@ static void virtual_documents_append_type_declaration(SZrLspVirtualBuilder *buil
                                                    "        pub enum ",
                                                    ZR_LSP_VIRTUAL_DECLARATION_FIELD,
                                                    enumMember,
-                                                   typeDescriptor->name,
+                                                   typeDescriptor,
                                                    enumMember->name != ZR_NULL ? enumMember->name : "",
                                                    ";\n",
                                                    ZR_NULL);

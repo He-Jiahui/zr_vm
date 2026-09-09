@@ -1536,6 +1536,7 @@ cleanup:
 #include "test_lsp_symbol_projection_cases.h"
 #include "test_lsp_analysis_provider_generation_cases.h"
 #include "test_lsp_virtual_declaration_projection_cases.h"
+#include "test_lsp_native_type_member_identity_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1575,6 +1576,10 @@ int main(void) {
         test_native_virtual_definition_selects_rendered_declaration(state, caseIndex);
     }
     test_native_declaration_projection_preserves_descriptor_identity(state);
+    test_native_type_member_projection_preserves_descriptor_identity(state, ZR_FALSE, ZR_FALSE);
+    test_native_type_member_projection_preserves_descriptor_identity(state, ZR_TRUE, ZR_FALSE);
+    test_native_type_member_projection_preserves_descriptor_identity(state, ZR_FALSE, ZR_TRUE);
+    test_native_type_member_projection_preserves_descriptor_identity(state, ZR_TRUE, ZR_TRUE);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

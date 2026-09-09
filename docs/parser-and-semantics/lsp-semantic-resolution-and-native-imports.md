@@ -1,5 +1,6 @@
 ---
 related_code:
+  - tests/language_server/test_lsp_native_type_member_identity_cases.h
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.h
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
@@ -152,6 +153,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
 plan_sources:
+  - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md
   - docs/plans/lsp/optimize/2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
@@ -164,6 +166,7 @@ plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
+  - tests/language_server/test_lsp_native_type_member_identity_cases.h
   - tests/language_server/test_lsp_virtual_declaration_projection_cases.h
   - tests/language_server/test_lsp_semantic_query_parity.c
   - tests/language_server/lsp_query_result_cleanup.h
@@ -1090,3 +1093,19 @@ the exact `printLine` range in definitions and declaration-inclusive references.
 See the [projection record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub31-native-virtual-declaration-projection.md)
 for three-toolchain evidence and the still-open binary/plugin virtual URI,
 parser origin, multi-definition and aggregate memory gates.
+
+Native field/method declaration projection also uses the selected descriptor
+row. The internal type-member finder no longer accepts owner/member spelling
+as lookup input. Builtin virtual ranges use the exact native projection; compact
+plugin records retain their existing coordinate format and now carry identity.
+Each lookup requires a unique row, and the provider clears stale declaration
+state before attempting a new projection.
+
+Both record forms retain the borrowed owner type descriptor. Reverse lookup
+from a virtual document position returns that owner and the selected member
+identity; the provider validates the address within the owner's typed member
+array. This preserves identity across duplicate owner/member names without
+reconstructing it from text. Returned pointers have the provider's lifetime and
+must not cross reload. The [type-member identity record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md)
+covers the four forward/reverse field/method cases and remaining gates. This
+projection fix does not accept the separate canonical receiver acquisition gate.

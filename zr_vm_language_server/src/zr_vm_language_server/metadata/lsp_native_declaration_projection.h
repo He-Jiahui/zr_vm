@@ -6,6 +6,7 @@
 typedef struct SZrLspVirtualRecord {
     EZrLspVirtualDeclarationKind kind;
     const void *declarationIdentity;
+    const ZrLibTypeDescriptor *ownerTypeDescriptor;
     const TZrChar *ownerName;
     const TZrChar *name;
     const TZrChar *targetModuleName;

@@ -91,6 +91,8 @@ static TZrBool virtual_documents_record_compact_type_members(SZrState *state,
             startColumn = (TZrInt32)(fieldIndex * 8 + 1);
             endColumn = startColumn + (TZrInt32)(nameLength > 0 ? nameLength : 1);
             record.kind = ZR_LSP_VIRTUAL_DECLARATION_FIELD;
+            record.declarationIdentity = fieldDescriptor;
+            record.ownerTypeDescriptor = typeDescriptor;
             record.ownerName = typeDescriptor->name;
             record.name = fieldDescriptor->name;
             record.range = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, fileLine, startColumn),
@@ -115,6 +117,8 @@ static TZrBool virtual_documents_record_compact_type_members(SZrState *state,
             startColumn = (TZrInt32)(methodIndex * 8 + 129);
             endColumn = startColumn + (TZrInt32)(nameLength > 0 ? nameLength : 1);
             record.kind = ZR_LSP_VIRTUAL_DECLARATION_METHOD;
+            record.declarationIdentity = methodDescriptor;
+            record.ownerTypeDescriptor = typeDescriptor;
             record.ownerName = typeDescriptor->name;
             record.name = methodDescriptor->name;
             record.range = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, fileLine, startColumn),
@@ -275,18 +279,27 @@ SZrFileRange ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(SZrString *ur
 TZrBool ZrLanguageServer_LspVirtualDocuments_FindTypeMemberDeclaration(SZrState *state,
                                                                        const ZrLibModuleDescriptor *descriptor,
                                                                        SZrString *uri,
-                                                                       const TZrChar *typeName,
-                                                                       const TZrChar *memberName,
+                                                                       const void *declarationIdentity,
                                                                        TZrInt32 memberKind,
                                                                        SZrFileRange *outRange) {
     SZrArray records;
     TZrBool found = ZR_FALSE;
+    const SZrLspVirtualRecord *match = ZR_NULL;
+    EZrLspVirtualDeclarationKind kind;
 
     if (outRange != ZR_NULL) {
-        *outRange = ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(uri);
+        memset(outRange, 0, sizeof(*outRange));
     }
-    if (state == ZR_NULL || descriptor == ZR_NULL || uri == ZR_NULL || typeName == ZR_NULL || memberName == ZR_NULL) {
+    if (state == ZR_NULL || descriptor == ZR_NULL || uri == ZR_NULL ||
+        declarationIdentity == ZR_NULL || outRange == ZR_NULL ||
+        (memberKind != ZR_LSP_METADATA_MEMBER_FIELD && memberKind != ZR_LSP_METADATA_MEMBER_METHOD)) {
         return ZR_FALSE;
+    }
+    kind = memberKind == ZR_LSP_METADATA_MEMBER_FIELD
+            ? ZR_LSP_VIRTUAL_DECLARATION_FIELD : ZR_LSP_VIRTUAL_DECLARATION_METHOD;
+    if (virtual_documents_uri_is_virtual_declaration(uri)) {
+        return ZrLanguageServer_LspNativeDeclarationProjection_Find(
+                state, descriptor, uri, kind, declarationIdentity, outRange);
     }
 
     if (!virtual_documents_collect_records(state, descriptor, uri, &records)) {
@@ -295,28 +308,21 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_FindTypeMemberDeclaration(SZrState 
 
     for (TZrSize index = 0; index < records.length; index++) {
         SZrLspVirtualRecord *record = (SZrLspVirtualRecord *)ZrCore_Array_Get(&records, index);
-        TZrBool kindMatches;
-
-        if (record == ZR_NULL || record->ownerName == ZR_NULL || record->name == ZR_NULL ||
-            strcmp(record->ownerName, typeName) != 0 || strcmp(record->name, memberName) != 0) {
+        if (record == ZR_NULL || record->kind != kind ||
+            record->declarationIdentity != declarationIdentity) {
             continue;
         }
-
-        kindMatches = (memberKind == ZR_LSP_METADATA_MEMBER_FIELD &&
-                       record->kind == ZR_LSP_VIRTUAL_DECLARATION_FIELD) ||
-                      (memberKind == ZR_LSP_METADATA_MEMBER_METHOD &&
-                       record->kind == ZR_LSP_VIRTUAL_DECLARATION_METHOD);
-        if (!kindMatches) {
-            continue;
+        if (match != ZR_NULL) {
+            goto cleanup;
         }
-
-        if (outRange != ZR_NULL) {
-            *outRange = record->range;
-        }
+        match = record;
+    }
+    if (match != ZR_NULL) {
+        *outRange = match->range;
         found = ZR_TRUE;
-        break;
     }
 
+cleanup:
     ZrCore_Array_Free(state, &records);
     return found;
 }
@@ -356,6 +362,8 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(SZrState 
             virtual_documents_range_contains_lsp_position(record->range, position, content, contentLength)) {
             outMatch->kind = record->kind;
             outMatch->descriptor = descriptor;
+            outMatch->declarationIdentity = record->declarationIdentity;
+            outMatch->ownerTypeDescriptor = record->ownerTypeDescriptor;
             outMatch->moduleName = descriptor->moduleName;
             outMatch->ownerName = record->ownerName;
             outMatch->name = record->name;

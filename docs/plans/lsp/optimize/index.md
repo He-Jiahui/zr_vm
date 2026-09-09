@@ -626,6 +626,12 @@ relations `29/29`、parity `26/26`、snapshot `1/1`、source contracts 与完整
 interface 仍 `114 PASS / 2 FAIL`，project 仍 `55 PASS / 7 FAIL`，完整 Clang LSan 未通过。
 本项未关闭 binary/plugin 项目隔离虚拟 URI、parser origin、多定义及 Task 3/7/8 总门禁。
 
+2026-09-09 已完成 [Plan 03 Task 3.32 native type-member projection identity](2026-09-09-plan03-task03-sub32-native-type-member-projection-identity.md)：
+native field/method 的正向声明投影和位置反查均保留 descriptor/owner 身份，修复同名行
+误选与失败后旧范围残留。四项双向回归通过，三工具链 parity `30/30`、snapshot `1/1`、
+source contracts 与完整 stdio 均 exit 0；完整 interface/project 失败及 Clang LSan 与
+Sub31 相同。binary/plugin virtual URI、parser origin、多定义和父级门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期
