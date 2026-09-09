@@ -1756,8 +1756,8 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     }
     
     // 获取分析器
-    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL) {
+    if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                state, context, uri, &analyzer)) {
         return ZR_FALSE;
     }
     

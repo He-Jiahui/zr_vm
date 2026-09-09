@@ -1033,3 +1033,20 @@ maps to `Resolved Type: double`. The source, binary, and descriptor-plugin
 refresh assertions verify that exact section and reject the old `int` section.
 Metadata member completion and hover retain their provider signature spelling.
 See the existing [canonical type assertion contract](../plans/lsp/optimize/2026-09-07-plan01-task06-sub07-rename-canonical-type-assertions.md).
+
+Provider invalidation is context-wide, so an unchanged second project can keep
+its AST while losing access to its old semantic context. The common
+`LspSemanticQuery_TryGetAnalyzerForUri` acquisition boundary rebuilds that
+context through `Lsp_ProjectAnalyzeDocument` before returning the analyzer and
+enforces the configured cache storage limit. The project-aware loader and
+descriptor selection preserve that project's own provider identity and types.
+Canonical facts remain usable even when the cache storage budget is zero.
+
+Hover performs acquisition before borrowing symbol-table entries. Local
+expression/reference requests and semantic snapshot acquisition use the same
+boundary; the snapshot records identity only after the current facts exist.
+Subsequent canonical queries read those facts without rebuilding them. The
+multi-project binary/native regression rotates the first request after reload,
+checks exact provider URIs and isolated reference ranges, rejects old snapshots,
+and repeats with cache eviction. See the
+[multi-project acquisition record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub30-multi-project-provider-acquisition.md).

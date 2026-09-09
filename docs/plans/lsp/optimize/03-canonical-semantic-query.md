@@ -1552,3 +1552,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   三工具链保持同名七项失败，Clang 保留历史 `19160 bytes/481 allocations` LSan；Task 3/7/8
   总门禁继续未完成。详见
   [Task 3.29 record](2026-09-09-plan03-task03-sub29-provider-generation-shared-build-validation.md)。
+
+- 2026-09-09 完成：Plan 03 Task 3.30 以 binary/native 两个同名 provider 项目重复 reload，
+  复现另一项目 analyzer 保留 AST 但丢失 semantic context 后无法查询的问题。共用
+  acquisition 在当前项目 loader/provider 下重分析并执行缓存限额；hover、local facts、
+  snapshot admission 在借用语义数据前完成获取。八轮替换轮换五种首次请求，后四轮为零
+  缓存预算，验证当前 generation、canonical 类型、独立定义 URI/reference 范围及旧快照拒绝。
+  三工具链新增矩阵通过；parity `21/21`、snapshot `1/1`、完整 stdio smoke 均 exit 0。
+  project runner 均 `55 PASS / 7 FAIL` exit 1，Clang 既有 LSan 数量不变；无源码 virtual
+  declaration URI、多定义 relation matrix 与 Task 3/7/8 总门禁仍未完成。详见
+  [Task 3.30 record](2026-09-09-plan03-task03-sub30-multi-project-provider-acquisition.md)。

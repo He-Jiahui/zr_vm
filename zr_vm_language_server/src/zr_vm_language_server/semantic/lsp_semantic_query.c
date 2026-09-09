@@ -484,6 +484,13 @@ TZrBool ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     if (analyzer != ZR_NULL &&
         (analyzer->ast != ZR_NULL || analyzer->semanticContext != ZR_NULL)) {
+        /* Provider invalidation retains the AST but removes its semantic facts. */
+        if (analyzer->semanticContext == ZR_NULL &&
+            !ZrLanguageServer_Lsp_ProjectAnalyzeDocument(
+                    state, context, uri, analyzer, analyzer->ast)) {
+            return ZR_FALSE;
+        }
+        ZrLanguageServer_LspSemanticCacheLru_Enforce(state, context);
         *outAnalyzer = analyzer;
         return ZR_TRUE;
     }

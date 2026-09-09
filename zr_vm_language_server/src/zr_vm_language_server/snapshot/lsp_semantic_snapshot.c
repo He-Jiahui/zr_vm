@@ -1,6 +1,7 @@
 #include "interface/lsp_interface_internal.h"
 
 #include "project/lsp_project_internal.h"
+#include "semantic/lsp_semantic_query.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include <string.h>
@@ -315,8 +316,11 @@ SZrLspSemanticSnapshot *ZrLanguageServer_LspSemanticSnapshot_Acquire(
     }
     /* Request handlers lazily complete this project transition before semantic reads. */
     (void)ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
+    if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                state, context, uri, &analyzer)) {
+        return ZR_NULL;
+    }
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || analyzer == ZR_NULL) {
         return ZR_NULL;
     }

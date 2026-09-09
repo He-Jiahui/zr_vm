@@ -610,6 +610,15 @@ Clang/MSVC 验证。Clang parity 无 sanitizer 报告，完整 project runner �
 历史 `19160 bytes/481 allocations` LSan。上述 Sub28 的跨工具链功能验证待办已关闭，
 完整 project/memory 和 Plan 03 Task 3/7/8 门禁继续未完成。
 
+2026-09-09 已完成 [Plan 03 Task 3.30 multi-project provider acquisition](2026-09-09-plan03-task03-sub30-multi-project-provider-acquisition.md)：
+真实 binary/native reload 的双项目矩阵复现了另一项目 facts 已失效但 AST 仍在时 hover
+为空的问题。共用 analyzer acquisition 通过所属项目重分析，并在返回前执行缓存限额；
+hover、local facts 和 snapshot admission 共用该入口。每路八轮替换包含五种首次请求和
+四轮零缓存预算，验证代际、canonical 类型、独立 provider URI/reference 范围与旧快照拒绝。
+三工具链均通过新增矩阵、parity `21/21`、snapshot `1/1` 和完整 stdio smoke；project
+runner 均为 `55 PASS / 7 FAIL` exit 1，Clang 仍有既有 `19160 bytes/481 allocations`
+LSan。无源码 virtual URI、多定义关系及 Plan 03 Task 3/7/8 总门禁保持未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

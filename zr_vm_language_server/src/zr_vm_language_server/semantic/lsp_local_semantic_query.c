@@ -2,6 +2,7 @@
 
 #include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_local_semantic_hover_text.h"
+#include "semantic/lsp_semantic_query.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_language_server/incremental_parser.h"
@@ -603,11 +604,8 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
         return ZR_TRUE;
     }
 
-    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL) {
-        analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
-    }
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
+    if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                state, context, uri, &analyzer) || analyzer->semanticContext == ZR_NULL) {
         return ZR_TRUE;
     }
 
@@ -636,11 +634,8 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ReferenceAt(
         return ZR_TRUE;
     }
 
-    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL) {
-        analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
-    }
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
+    if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
+                state, context, uri, &analyzer) || analyzer->semanticContext == ZR_NULL) {
         return ZR_TRUE;
     }
 
