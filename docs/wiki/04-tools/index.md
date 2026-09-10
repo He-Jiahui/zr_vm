@@ -35,11 +35,15 @@ doc_type: category-index
 | 工具 | 页面 | 入口 |
 | --- | --- | --- |
 | CLI/REPL | [cli](cli.md) | `zr_vm_cli` |
+| CLI 完整命令、组合约束与嵌入式解析 | [cli-command-reference](cli-command-reference.md) | `ZrCli_Command_Parse` |
 | 测试命令 | [testing](testing.md) | `zr_vm_cli test`（帮助文本显示为 `zr test`） |
+| TestManifest、case id、并发与 child isolation | [test-manifest-runner-reference](test-manifest-runner-reference.md) | parser manifest + CLI runner |
 | Language Server | [language-server](language-server.md) | stdio JSON-RPC / WASM |
+| LSP 生命周期、能力注册、position codec 与 WASM ABI | [language-server-protocol-reference](language-server-protocol-reference.md) | `SZrLspContext` / stdio / WASM |
 | VS Code/DAP | [editor-debugger](editor-debugger.md) | extension + debug agent |
 | 迁移与元数据 | [migration](migration.md) | `migrate syntax`, `--dump-zrp-metadata` |
 | 构建/验证 | [build-validation](build-validation.md) | CMake、CTest、sanitizer |
+| Wiki 编写与发布 | [wiki-authoring](wiki-authoring.md) | front matter、manifest、链接校验、strict build、Pages |
 
 工具文档中的命令行返回码、JSON 字段和 diagnostic code 是稳定接口；文本排版可变，自动化
 脚本应优先使用 JSON/manifest 输出而不是抓取人类可读行。

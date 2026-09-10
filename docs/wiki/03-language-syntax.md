@@ -28,6 +28,15 @@ doc_type: module-detail
 
 **状态：`current`；个别高级能力的跨后端状态见[状态矩阵](06-reference/status-matrix.md)。**
 
+本页是快速概览。需要逐条语法规则、可复制用例、错误用法和 parser/AST/semantic 实现映射时，请进入[ZR 语言手册](02-language/index.md)：
+[词法与字面量](02-language/lexical-structure.md)、[声明与类型构造](02-language/declarations.md)、
+[类型表达式与参数契约](02-language/type-expression-reference.md)、[表达式与运算符](02-language/expressions.md)、
+[对象类型、成员与构造](02-language/object-model-member-reference.md)、[表达式、构造与调用形状](02-language/expression-construction-reference.md)、
+[可调用对象、调用与异步迭代](02-language/callable-async-iterator-reference.md)、[控制流与资源清理](02-language/control-flow.md)、
+[控制流、模式与清理](02-language/control-flow-pattern-cleanup-reference.md)、[作用域、名称绑定与可见性](02-language/scope-binding-reference.md)、
+[模块、并发与 FFI](02-language/modules-concurrency.md)、[模块导入与 Native FFI](02-language/module-import-native-ffi-reference.md)、
+[Attribute 与 Comptime 契约](02-language/attribute-comptime-contract-reference.md)、[诊断与错误恢复](02-language/diagnostics.md)、[语法实用配方](02-language/cookbook.md)以及[语义与执行模型](02-language/semantics-implementation.md)。
+
 本页描述生产 parser 接受的 ZR 表层。换行是 trivia，**不会自动插入分号**；简单声明、绑定、表达式、赋值、`return`、`throw`、`break`、`continue` 和无函数体声明必须写 `;`。
 
 ## 源文件与模块

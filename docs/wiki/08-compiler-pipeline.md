@@ -106,7 +106,14 @@ LSP 查询和 compiler diagnostics 都消费这些 producer facts，不能在 re
 
 ## Semantic IR
 
-Semantic IR 是 backend-neutral 的语义层，典型 opcode 包括 `VALUE_ADDR`、`FIELD_ADDR`、`LOAD_VALUE`、`STORE_VALUE`、`INIT_VALUE`、`COPY_VALUE`、`CALL_TYPED`、`RETURN_TYPED`、`META_GET/SET`、`DYN_CALL`、ownership transitions、property ref、dynamic index/iterator 和 typed arithmetic。它携带 TypeId、PlaceId、source range、effect 和 cleanup information。
+Semantic IR 是 backend-neutral 的语义层。当前 opcode 家族包括 `CONSTANT`、`PLACE_BASE`、
+`PLACE_PROJECT`、`LOAD`、`STORE`、`INITIALIZE`、`MOVE`、`COPY`、`DROP`、typed/virtual/
+dynamic/meta call、borrow/loan、property、构造、destructure、yield 和 iterator 操作。每条指令
+携带 TypeId、PlaceId、source range、effect 和 cleanup information；不能用旧的字节码助记符
+或显示类型字符串替代这些 identity。
+
+CFG block/edge、Place/Value/Loan/Region、escape/bounds fact、flow diagnostic、生命周期和公共
+C 查询 API 的逐项说明见[Semantic IR、CFG 与数据流事实参考](08-compiler-semantic-ir-facts-reference.md)。
 
 ExecBC 可以把多个安全的 IR 指令 quicken 成 superinstruction（如 zero-arg call 或 dynamic iterator move-next/jump），但 `.zri` 的 SemIR 区段和 AOT artifact 保留可复现的原始语义。
 

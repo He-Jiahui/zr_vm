@@ -38,6 +38,9 @@ doc_type: module-detail
 
 **状态：`experimental`（已有可运行 baseline；是否可称 full-AOT 由具体 fixture/选项决定）。**
 
+本页是架构总览；生成 frame、root map、direct call/deopt、异常 cleanup、module registration 和
+runtime helper 的逐项契约见[AOT Lowering、运行时 Helper 与注册参考](10-aot-lowering-registration-reference.md)。
+
 ## AOT 的边界
 
 AOT 不重新定义 ZR 语法、ownership、module、Task 或 property。输入必须是已经通过 parser/compiler 验证的 Canonical Type、TypeLayout、Place/CFG facts、Semantic/Exec IR 和 versioned artifact。backend 不得从 AST token、旧 `%xxx`、runtime object shape 或具体类型名推断语义。

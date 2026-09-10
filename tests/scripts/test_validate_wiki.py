@@ -51,8 +51,8 @@ class WikiValidationTests(unittest.TestCase):
         result = validate_wiki.validate(REPO_ROOT)
 
         self.assertEqual(result.errors, ())
-        self.assertEqual(result.markdown_files, 47)
-        self.assertEqual(result.manifest_pages, 46)
+        self.assertEqual(result.markdown_files, 116)
+        self.assertEqual(result.manifest_pages, 115)
         self.assertGreaterEqual(result.local_links, 100)
 
     def test_missing_manifest_page_is_reported(self) -> None:

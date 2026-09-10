@@ -10,6 +10,9 @@ on:
       - "requirements-docs.txt"
       - "scripts/validate_wiki.py"
       - "tests/scripts/test_validate_wiki.py"
+      - "tests/scripts/test_wiki_theme_assets.py"
+      - "tests/scripts/test_zr_pygments.py"
+      - "docs/pygments_zr/**"
       - "docs/wiki/**"
   pull_request:
     branches:
@@ -20,6 +23,9 @@ on:
       - "requirements-docs.txt"
       - "scripts/validate_wiki.py"
       - "tests/scripts/test_validate_wiki.py"
+      - "tests/scripts/test_wiki_theme_assets.py"
+      - "tests/scripts/test_zr_pygments.py"
+      - "docs/pygments_zr/**"
       - "docs/wiki/**"
   workflow_dispatch:
 
@@ -53,7 +59,9 @@ jobs:
       - name: Install documentation toolchain
         run: python -m pip install --disable-pip-version-check -r requirements-docs.txt
       - name: Run wiki contract tests
-        run: python -m unittest discover -s tests/scripts -p "test_validate_wiki.py" -v
+        run: python -m unittest tests/scripts/test_validate_wiki.py tests/scripts/test_wiki_theme_assets.py tests/scripts/test_zr_pygments.py -v
+      - name: Verify ZR lexer registration
+        run: python -c "from pygments.lexers import get_lexer_by_name; lexer = get_lexer_by_name('zr'); assert 'zr' in lexer.aliases; print(lexer.name)"
       - name: Validate wiki source
         run: python scripts/validate_wiki.py --root .
       - name: Build strict site
@@ -63,6 +71,7 @@ jobs:
           rm -rf site
           zensical build --clean --strict
           test -s site/index.html
+          python -c "from pathlib import Path; html = Path('site/03-language-syntax/index.html').read_text(encoding='utf-8'); assert 'language-zr' in html; assert 'class=\"k\"' in html or 'class=\"kn\"' in html"
           python scripts/validate_wiki.py --root . --site-dir site
       - name: Upload Pages artifact
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')

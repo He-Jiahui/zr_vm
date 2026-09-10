@@ -26,6 +26,11 @@ doc_type: api-reference
 
 # AOT ABI v16
 
+本页保留 AOT runtime 结构速查；native plugin、artifact、FFI、layout、call-binding 和 AOT
+之间的独立版本轴及升级决策见 [ABI 与兼容性参考](../06-reference/abi-compatibility-reference.md)。
+生成 frame、根表、direct call/deopt、异常 cleanup 和 module registration 的行为细节见
+[AOT Lowering、运行时 Helper 与注册参考](../10-aot-lowering-registration-reference.md)。
+
 当前 `ZR_VM_AOT_ABI_VERSION` 为 **16**。AOT module 载荷必须声明 `abiVersion`、`backendKind`
 （C=1，LLVM=2）、`inputKind`（source/binary）、moduleName、inputHash 和 runtimeContracts；
 loader 在任何函数调用前校验这些字段。

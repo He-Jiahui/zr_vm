@@ -57,6 +57,9 @@ doc_type: module-detail
 
 call-info 链把当前 function、参数源 frame、返回目标、PC、native continuation、yield/tail 状态连接起来。debug frame generation 让 LSP/debugger 在 frame 重建后拒绝过时变量句柄。
 
+栈扩容后的 pointer 重定位、inline frame place、call-info 返回目标、pending control、GC safepoint
+与 native/AOT 边界的完整约束见[VM 执行栈、调用帧与解释器参考](09-runtime-stack-execution-reference.md)。
+
 ## 指令执行
 
 `ZrCore_Execute(state, callInfo)` 是主解释器入口。dispatch 根据 instruction opcode 选择 numeric、value、member/index、call, control, ownership, iterator 或 meta lane。每条 lane 先验证 stack/layout/contract，再执行；开启的 bounds/type/range checks 在运行时保留。

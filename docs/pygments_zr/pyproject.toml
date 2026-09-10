@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zr-vm-pygments"
+version = "0.1.0"
+description = "Pygments lexer for the ZR language used by the ZrVm Wiki"
+requires-python = ">=3.9"
+dependencies = ["Pygments>=2.17"]
+
+[project.entry-points."pygments.lexers"]
+zr = "zr_pygments.lexer:ZrLexer"
+
+[tool.setuptools]
+packages = ["zr_pygments"]

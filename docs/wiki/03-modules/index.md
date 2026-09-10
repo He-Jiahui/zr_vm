@@ -48,6 +48,33 @@ descriptor/hint 的接口记法，不等同于用户函数声明的语法。ZR �
 | `zr.compile` | [compile](compile.md) | CompileTool/N3 | build feature、编译期诊断、conditional call-elision |
 | `zr.compile.declaration` | [compile-declaration](compile-declaration.md) | CompileTool/N3 | immutable declaration view、typed Patch 和生成字段 |
 
+## 详细 API 参考
+
+概览页保留模块定位和状态；下列页面按源码 descriptor 拆出可查的函数、类型、参数、错误和
+C 入口。API 页中的签名以当前 public header/registry 为准，`?` 仍只是可选/可空的表格记法。
+
+| 主题 | 详细页 |
+| --- | --- |
+| Native descriptor、callback、registry | [Native API](native-api.md) |
+| 官方内置库逐模块接口总目录 | [官方库 API 总目录](official-library-api-catalog.md) |
+| call-binding contract、hash、resolver 和 generation | [Native Registry 调用绑定](native-registry-call-binding.md) |
+| 官方 module identity、phase、tier、contract | [官方 Provider 矩阵](provider-matrix.md) |
+| `zr.builtin` 协议、TypeInfo、wrapper | [Builtin API](builtin-api.md) |
+| System 叶子模块和文件流 | [System API](system-api.md) |
+| Array/Map/Set/Span/Pool | [Container API](container-api.md) |
+| 标量、向量、矩阵、Tensor | [Math API](math-api.md) |
+| TCP/UDP、endpoint、framing | [Network API](network-api.md) |
+| Task/Job/Scheduler/channel/atomic | [Task API](task-api.md) |
+| Task 状态机、Scheduler bridge、GC root 与 await hook | [Task Runtime 深度参考](task-scheduler-runtime-reference.md) |
+| Send/Sync、worker、lock、domain | [Thread API](thread-api.md) |
+| Iterable/Enumerator/AsyncIterator | [Iteration API](iteration-api.md) |
+| 动态库、pointer、buffer、callback | [FFI API](ffi-api.md) |
+| `zr.ffi` handle、callback、pin 与动态符号生命周期 | [FFI Runtime Handle 深度参考](ffi-runtime-handle-reference.md) |
+| provider descriptor、注册 phase、热加载和 call-binding identity | [Native Provider Descriptor 深度参考](native-provider-descriptor-reference.md) |
+| Debug agent、coverage、profile、testing | [Debug/Testing API](debug-testing-api.md) |
+| Reflection token 和 stable pool | [Reflection/Pooling API](reflection-pooling-api.md) |
+| system/container/reflection/pooling 的组合、handle/generation/root 与 C API | [运行时协同参考](system-container-reflection-runtime-reference.md) |
+
 ## 官方注册清单
 
 以下 25 个名称来自 `native_binding_official_inventory.c`，是当前产品图中可被 resolver

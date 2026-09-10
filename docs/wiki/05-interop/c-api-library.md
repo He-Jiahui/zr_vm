@@ -96,6 +96,10 @@ ZrLibrary_NativeRegistry_Free(global);
 Attach 会组合宿主已有 loader/resolver，Free 时恢复并调用 cleanup；descriptor plugin 的 source
 失效使用 `InvalidateDescriptorPluginSource`。
 
+descriptor callback 的参数读取、`ref/out` 写回、临时 GC root、inline value 借用期与嵌套调用
+规则见[Native Call Context 与回调 C API](native-call-context-reference.md)；不要直接改写
+`ZrLibCallContext` 的内部 pointer 或跨 safepoint 保存 stack/inline 地址。
+
 ## AOT/task bridge
 
 `ZrLibrary_AotRuntime_ConfigureGlobal` 安装 AOT loader；`AotRuntime_ModuleLoader`、
@@ -103,3 +107,6 @@ Attach 会组合宿主已有 loader/resolver，Free 时恢复并调用 cleanup�
 module。任务桥接 API `TaskRuntime_PrepareJob/ExecutePreparedJob/CompletePreparedJob/`
 `FaultPreparedJob/ReleasePreparedJob/RegisterAwaitHook/AwaitProviderTask` 负责消费 Job、root
 Task、执行和 fault；所有 prepared handle 必须成对 release。
+
+generated frame、AOT helper、deopt 和 module registration 的完整运行时契约见
+[AOT Lowering、运行时 Helper 与注册参考](../10-aot-lowering-registration-reference.md)。

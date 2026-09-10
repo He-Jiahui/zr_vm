@@ -61,7 +61,8 @@ IsolatedDomain 则序列化 capture/result，通过独立 domain envelope 交付
 
 ## Transport、锁与关闭
 
-`Channel<T: Send + Sync>` 提供 `send/recv/close/isClosed/length`；`Transfer<T>` 是一次消费的
+`Channel<T>` 的闭合实参必须满足 provider 声明的 `Send`/`Sync` 约束，并提供
+`send/recv/close/isClosed/length`；`Transfer<T>` 是一次消费的
 `take/isTaken`；`Shared<T>`/`WeakShared<T>` 提供 `load/store/clone/downgrade/upgrade`。
 `UniqueMutex<T>`/`SharedMutex<T>` 产生 `Lock<T>`/`SharedLock<T>` guard，guard 是 affine，
 不能跨 await，也不实现 Send/Sync。

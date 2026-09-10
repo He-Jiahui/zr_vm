@@ -6,6 +6,9 @@ related_code:
   - .github/workflows
   - zensical.toml
   - requirements-docs.txt
+  - docs/pygments_zr/pyproject.toml
+  - docs/pygments_zr/zr_pygments/lexer.py
+  - docs/wiki/stylesheets/extra.css
 implementation_files:
   - CMakeLists.txt
   - tests/CMakeLists.txt
@@ -15,6 +18,9 @@ implementation_files:
   - tests/scripts/test_validate_wiki.py
   - .github/workflows/wiki-pages.yml
   - zensical.toml
+  - docs/pygments_zr/pyproject.toml
+  - docs/pygments_zr/zr_pygments/lexer.py
+  - docs/wiki/stylesheets/extra.css
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/plans/syntax/README.md
@@ -24,6 +30,8 @@ tests:
   - tests/cmake/run_projects_suite.cmake
   - tests/cmake/run_performance_suite.cmake
   - tests/scripts/test_validate_wiki.py
+  - tests/scripts/test_wiki_theme_assets.py
+  - tests/scripts/test_zr_pygments.py
 doc_type: workflow-detail
 ---
 
@@ -70,10 +78,26 @@ MSVC 使用 multi-config generator，应传 `--config Debug`；Unix 会加入 `-
 
 构建阶段按以下顺序执行：
 
-1. `python -m unittest discover -s tests/scripts -p "test_validate_wiki.py" -v` 检查 manifest、front matter、内部链接和锚点。
+1. `python -m unittest tests/scripts/test_validate_wiki.py tests/scripts/test_wiki_theme_assets.py tests/scripts/test_zr_pygments.py -v` 检查 manifest、front matter、内部链接、主题资源和 `zr` 高亮 lexer。
 2. `python scripts/validate_wiki.py --root .` 复查源目录契约。
-3. `zensical build --clean --strict` 生成站点，并要求 `site/index.html` 非空。
-4. `python scripts/validate_wiki.py --root . --site-dir site` 确认产物入口存在后再上传。
+3. `python -c "from pygments.lexers import get_lexer_by_name; print(get_lexer_by_name('zr').name)"` 确认本地插件已安装并注册。
+4. `zensical build --clean --strict` 生成站点，并要求 `site/index.html` 非空。
+5. `python scripts/validate_wiki.py --root . --site-dir site` 确认产物入口存在后再上传。
+
+本次参考文档扩展的可复核记录保存在仓库文件
+`tests/acceptance/2026-09-10-wiki-reference-expansion.md`（该目录不属于 Wiki 页面树）。
+它固定了源文件数、manifest 页面数、内部链接数、测试和 strict build 的验收输出；后续
+新增页面时应在同一记录或新的日期记录中追加实际命令和结果，不要只写“已验证”。
+
+ZrVm 的源码 fence 使用 `zr` 标记。`docs/pygments_zr` 是一个本地 Pygments plugin，
+通过 `requirements-docs.txt` 安装并注册 `zr`、`zro`、`zrs`、`zrp` aliases；没有安装该
+包时，构建器会把未知语言降级为纯文本，页面仍能显示但不会有 token class。构建后可用
+`rg -n "language-zr|class=\"k\"|class=\"nf\"" site` 检查 HTML，确认高亮不是只在
+源 Markdown 中声明。
+
+明暗主题由 `zensical.toml` 的三组 `project.theme.palette` 提供：系统偏好、light/default
+和 dark/slate。`docs/wiki/stylesheets/extra.css` 只覆盖 ZR token 颜色、代码块边框和
+reduced-motion 行为；正文颜色仍交给主题变量，避免在 dark mode 中写死白底或黑字。
 
 ### 首次启用
 
@@ -95,6 +119,10 @@ zensical serve
 zensical build --clean --strict
 python scripts/validate_wiki.py --root . --site-dir site
 ```
+
+打开预览后，应在任一含 `zr` fence 的页面确认三件事：代码行出现关键字/函数名/数字的
+不同 token 颜色；页面右上角能在系统、浅色、深色之间切换；深色下正文、代码背景和行号
+仍保持足够对比度。切换只影响展示主题，不会改变 source、搜索索引或链接地址。
 
 ### 常见故障
 

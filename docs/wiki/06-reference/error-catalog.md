@@ -25,6 +25,9 @@ doc_type: reference
 
 # 错误目录
 
+结构化 diagnostic 的创建、复制、fix applicability、LSP 映射、result-id 和 native/runtime
+失败投影见 [诊断生命周期与修复契约](diagnostic-lifecycle-reference.md)。
+
 ## Parser/semantic
 
 常见 code 包括 `unexpected_token`、`legacy_syntax_removed`、`missing_semicolon`、

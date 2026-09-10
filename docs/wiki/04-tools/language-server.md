@@ -30,6 +30,9 @@ doc_type: module-detail
 
 # Language Server
 
+完整的 JSON-RPC lifecycle、能力 registry、native/WASM 差异、position encoding、payload 所有权和
+嵌入式 C 接口见 [Language Server 协议与嵌入式接口参考](language-server-protocol-reference.md)。
+
 ## 传输和生命周期
 
 stdio 服务器使用 LSP JSON-RPC：读取 `Content-Length` frame，解析 request/notification，

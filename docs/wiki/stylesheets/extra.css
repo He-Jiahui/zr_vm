@@ -1,0 +1,119 @@
+/* ZrVm Wiki: readable code and explicit light/dark token contrast. */
+:root > * {
+  --md-code-hl-keyword-color: #8b3a8b;
+  --md-code-hl-string-color: #0f766e;
+  --md-code-hl-number-color: #b45309;
+  --md-code-hl-function-color: #1d4ed8;
+  --md-code-hl-operator-color: #be123c;
+  --md-code-hl-comment-color: #64748b;
+  --md-code-hl-name-color: #075985;
+  --zr-token-keyword: #8b3a8b;
+  --zr-token-type: #075985;
+  --zr-token-string: #0f766e;
+  --zr-token-number: #b45309;
+  --zr-token-function: #1d4ed8;
+  --zr-token-operator: #be123c;
+  --zr-token-comment: #64748b;
+  --zr-code-border: #cbd5e1;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-code-hl-keyword-color: #e9a7e9;
+  --md-code-hl-string-color: #73daca;
+  --md-code-hl-number-color: #f6c177;
+  --md-code-hl-function-color: #9cc4ff;
+  --md-code-hl-operator-color: #ff9da8;
+  --md-code-hl-comment-color: #aab7c8;
+  --md-code-hl-name-color: #80cfff;
+  --zr-token-keyword: #e9a7e9;
+  --zr-token-type: #80cfff;
+  --zr-token-string: #73daca;
+  --zr-token-number: #f6c177;
+  --zr-token-function: #9cc4ff;
+  --zr-token-operator: #ff9da8;
+  --zr-token-comment: #aab7c8;
+  --zr-code-border: #475569;
+}
+
+.md-typeset .highlight,
+.md-typeset pre {
+  border: 1px solid var(--zr-code-border);
+  border-radius: 0.35rem;
+}
+
+.md-typeset .highlight code {
+  tab-size: 4;
+}
+
+.highlight .k,
+.highlight .kd,
+.highlight .kn,
+.highlight .kr,
+.highlight .nt,
+.zr-token-keyword {
+  color: var(--zr-token-keyword);
+}
+
+.highlight .kt,
+.highlight .nc,
+.highlight .nn,
+.zr-token-type {
+  color: var(--zr-token-type);
+}
+
+.highlight .s,
+.highlight .sa,
+.highlight .sb,
+.highlight .sc,
+.highlight .sd,
+.highlight .se,
+.highlight .sh,
+.highlight .si,
+.highlight .sx,
+.highlight .sr,
+.highlight .s1,
+.highlight .s2,
+.zr-token-string {
+  color: var(--zr-token-string);
+}
+
+.highlight .m,
+.highlight .mb,
+.highlight .mf,
+.highlight .mh,
+.highlight .mi,
+.highlight .mo,
+.zr-token-number {
+  color: var(--zr-token-number);
+}
+
+.highlight .nf,
+.highlight .fm,
+.zr-token-function {
+  color: var(--zr-token-function);
+}
+
+.highlight .o,
+.highlight .ow,
+.zr-token-operator {
+  color: var(--zr-token-operator);
+}
+
+.highlight .c,
+.highlight .ch,
+.highlight .cm,
+.highlight .cp,
+.highlight .c1,
+.highlight .cs,
+.zr-token-comment {
+  color: var(--zr-token-comment);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

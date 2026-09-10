@@ -26,6 +26,9 @@ doc_type: reference
 
 # 产物与格式
 
+本页提供格式家族总览；header、section、typed row reader、public identity 和输入安全边界见
+[Canonical Artifact 二进制 Schema](artifact-binary-schema-reference.md)。
+
 | 后缀/对象 | 生产者 | 消费者 | 身份校验 |
 | --- | --- | --- | --- |
 | `.zr` | 用户/生成器 | parser/source loader | module declaration + source hash |
