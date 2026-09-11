@@ -8724,3 +8724,8 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
 endif ()
 
 add_executable(zr_vm_test_runner ${CMAKE_SOURCE_DIR}/tests/test_runner.c)
+
+# SSA plan tests are registered in a dedicated include after the legacy
+# targets/helpers have been declared.  This keeps future SSA slices isolated
+# from the large historical test list.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-tests.cmake")
