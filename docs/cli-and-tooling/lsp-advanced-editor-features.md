@@ -19,6 +19,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_module_ranges.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
@@ -30,6 +31,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
@@ -87,6 +90,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_module_ranges.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
@@ -97,6 +101,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
@@ -171,6 +177,9 @@ tests:
   - tests/acceptance/2026-06-20-lsp-position-stage0.md
   - tests/acceptance/2026-08-26-plan03-task06-type-mismatch-query-projection.md
   - tests/acceptance/2026-09-12-plan03-task03-sub36-project-module-summary-range.md
+  - tests/language_server/test_lsp_virtual_document_identity_cases.h
+  - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/acceptance/2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/stdio_inline_value_semantic_smoke.js
@@ -325,6 +334,15 @@ module-name `FileRange`，并由接口层用当前文档快照转换为 UTF-16 L
 `test_lsp_project_module_summary_range_cases.h` 与 Task 3.36 acceptance record。
 
 `lsp_metadata_provider.c` 负责 imported module/member hover、metadata-backed declaration range refinement 和按 URI 刷新 analyzer。打开文档存在时，member name range 精修、analyzer refresh 输入、imported member hover 的 markdown/documentation/leading-comment extraction 都会先 acquire owned snapshot，再读取 snapshot content/length；snapshot 不可用时 analyzer refresh 仍保留磁盘读取 fallback，避免 hover 路径直接依赖 live `fileVersion->content`。
+
+Binary module entry metadata 现在区分物理导航 origin 和虚拟声明 identity：
+`declarationUri` 继续指向 `.zro` 并保持已有 typed-export 坐标契约，
+`virtualDeclarationUri` 则由 `lsp_virtual_document_identity.c` 绑定 module、
+project、physical origin 和当前 provider generation。parser relation callback
+只发布 metadata 已生成的 identity；relation consumer 对其做相等性校验，旧代际
+URI fail closed。当前该 virtual URI 是 sourceless declaration 的 identity
+producer，不代表 binary virtual text 已可渲染，source-ranged binary definition
+仍返回物理 `.zro` 位置。完整边界与验证见 Task 3.37 acceptance record。
 
 `lsp_semantic_query.c` 负责共享 semantic query 的 local symbol、import/member、external metadata 和 completion/hover 入口。打开文档存在时，identifier/code-span scan、enum member range refinement、analyzer refresh、external type/member reference scans、receiver/import alias target resolution、hover documentation/comment extraction、completion collection 和 completion metadata enrichment 都会先 acquire owned snapshot，再读取 snapshot content/length；snapshot 不可用时 analyzer refresh 仍保留磁盘 fallback，避免共享 semantic query 在请求处理中直接依赖 live `fileVersion->content`。
 

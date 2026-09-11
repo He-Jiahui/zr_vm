@@ -98,9 +98,9 @@ The callback is admission-only: a result must already be a declared virtual
 document URI from metadata projection. It does not derive a `zr-decompiled`
 URI from text, and a binary physical module URI is not relabeled as virtual.
 The parser regression is 29/29 on GCC and the new AST-detached native import
-case passes in the interface runner. Binary virtual URI producers, parser
-origin producers for source/binary metadata and the multi-definition matrix
-remain unchecked.
+case passes in the interface runner. The binary metadata producer is tracked
+in Task 3.37; source/binary sourceless origin production and the
+multi-definition matrix remain unchecked.
 
 ### Task 3.36：exact source project-module summary ranges
 
@@ -113,9 +113,32 @@ state. `lsp_interface.c` converts the result with the shared content-aware
 UTF-16 helper for both direct source records and imported source records;
 binary metadata and native virtual summaries retain their own projections.
 The `lsp_ownership` regression asserts `(0,7)-(0,11)` for `module main;`.
-This closes only the source summary-range sub-item; binary virtual URI,
-source/binary origin producers, multi-definition identity and the parent
-cross-toolchain gates remain open.
+This closes only the source summary-range sub-item; binary virtual identity is
+now produced by the metadata entry projection (Task 3.37), while binary
+virtual rendering, source/binary sourceless origin producers,
+multi-definition identity and the parent cross-toolchain gates remain open.
+
+### Task 3.37：binary virtual identity producer
+
+Binary metadata module entries now expose two distinct origins. The existing
+physical `.zro` `declarationUri` remains the coordinate source for typed
+exports and compatibility navigation. Metadata also publishes an optional
+`virtualDeclarationUri` through the project-scoped identity encoder; its
+payload binds the module name to the owning project URI, physical origin URI
+and current nonzero provider generation. The encoder rejects a missing
+generation and never relabels a physical URI as a virtual document.
+
+The parser import-origin callback consumes that provider field without
+constructing a URI from source text. Relation consumers compare any supplied
+virtual URI with the provider-owned value. Source-ranged binary relations keep
+their physical `.zro` declaration range; the adapter is ready for a future
+sourceless relation to project the validated virtual module-entry range.
+GCC/Clang parity and source-contract targets pass, and the interface runners
+retain the frozen two-case baseline. Binary virtual-document rendering,
+member-level identity, source/binary sourceless producers and multi-definition
+relations remain separate follow-up work. See
+[the Task 3.37 record](2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md)
+and [its acceptance evidence](../../../tests/acceptance/2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md).
 
 ## Task 4：补齐 call graph 与 overload facts
 

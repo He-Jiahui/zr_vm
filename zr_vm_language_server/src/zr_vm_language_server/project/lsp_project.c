@@ -65,11 +65,18 @@ static SZrString *project_resolve_virtual_declaration_uri(
                 resolverContext->projectIndex,
                 externalOriginUri,
                 &resolved) ||
-        !resolved.hasDeclaration || resolved.declarationUri == ZR_NULL ||
-        !ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(resolved.declarationUri)) {
+        !resolved.hasDeclaration) {
         return ZR_NULL;
     }
 
+    if (resolved.virtualDeclarationUri != ZR_NULL &&
+        ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(resolved.virtualDeclarationUri)) {
+        return resolved.virtualDeclarationUri;
+    }
+    if (resolved.declarationUri == ZR_NULL ||
+        !ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(resolved.declarationUri)) {
+        return ZR_NULL;
+    }
     return resolved.declarationUri;
 }
 

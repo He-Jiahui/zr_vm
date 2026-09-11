@@ -1,6 +1,7 @@
 #include "semantic/lsp_semantic_relation_query.h"
 
 #include "zr_vm_parser/semantic_query.h"
+#include "lsp_virtual_documents.h"
 
 #include <string.h>
 
@@ -24,8 +25,10 @@ semantic_relation_query_resolve_metadata_target(
         SZrString *originIdentity,
         SZrString *virtualDeclarationUri,
         SZrFileRange referenceRange,
+        TZrBool hasSourceRange,
         SZrLspSemanticImportOriginTarget *outTarget) {
     SZrLspMetadataProvider provider;
+    SZrString *resolvedVirtualDeclarationUri;
 
     if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
         originIdentity == ZR_NULL || outTarget == ZR_NULL) {
@@ -42,12 +45,38 @@ semantic_relation_query_resolve_metadata_target(
                 outTarget->originIdentity,
                 &outTarget->declaration) ||
         !outTarget->declaration.hasDeclaration ||
-        outTarget->declaration.declarationUri == ZR_NULL ||
-        (outTarget->virtualDeclarationUri != ZR_NULL &&
-         !ZrCore_String_Equal(outTarget->virtualDeclarationUri,
-                             outTarget->declaration.declarationUri))) {
+        outTarget->declaration.declarationUri == ZR_NULL) {
         memset(outTarget, 0, sizeof(*outTarget));
         return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+    }
+
+    resolvedVirtualDeclarationUri = outTarget->declaration.virtualDeclarationUri;
+    if (resolvedVirtualDeclarationUri == ZR_NULL &&
+        ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(
+                outTarget->declaration.declarationUri)) {
+        resolvedVirtualDeclarationUri = outTarget->declaration.declarationUri;
+    }
+    if ((!hasSourceRange && outTarget->virtualDeclarationUri == ZR_NULL) ||
+        (outTarget->virtualDeclarationUri != ZR_NULL &&
+         (resolvedVirtualDeclarationUri == ZR_NULL ||
+          !ZrCore_String_Equal(outTarget->virtualDeclarationUri,
+                               resolvedVirtualDeclarationUri)))) {
+        memset(outTarget, 0, sizeof(*outTarget));
+        return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+    }
+
+    /* Source-backed binary projections keep their physical .zro location for
+     * compatibility. A sourceless relation must instead expose the
+     * metadata-owned virtual identity and a range in that virtual document. */
+    if (!hasSourceRange) {
+        if (resolvedVirtualDeclarationUri == ZR_NULL) {
+            memset(outTarget, 0, sizeof(*outTarget));
+            return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_INVALID;
+        }
+        outTarget->declaration.declarationUri = resolvedVirtualDeclarationUri;
+        outTarget->declaration.declarationRange =
+                ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(
+                        resolvedVirtualDeclarationUri);
     }
 
     outTarget->module = outTarget->declaration.module;
@@ -126,6 +155,7 @@ ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
             origin->externalOriginUri,
             origin->virtualDeclarationUri,
             symbol->referenceRange,
+            origin->hasSourceRange,
             outTarget);
     ZrCore_Array_Free(state, &relations);
     return resolution;
@@ -165,5 +195,6 @@ ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOriginAt(
             importOrigin.externalOriginUri,
             importOrigin.virtualDeclarationUri,
             importOrigin.referenceRange,
+            ZR_TRUE,
             outTarget);
 }

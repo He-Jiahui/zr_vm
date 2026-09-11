@@ -19,6 +19,11 @@ TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(SZrString *uri);
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
         SZrState *state, SZrLspContext *context, SZrLspProjectIndex *projectIndex,
         SZrString *moduleName, SZrString **outUri);
+/* Builds a project-scoped identity for a binary metadata module. The origin
+ * remains the physical .zro URI; callers must not treat it as source text. */
+TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveBinaryUri(
+        SZrState *state, SZrLspContext *context, SZrLspProjectIndex *projectIndex,
+        SZrString *moduleName, SZrString **outUri);
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeDescriptor(
         SZrState *state, SZrLspContext *context, SZrString *uri,
         SZrLspVirtualDocumentIdentity *outIdentity, SZrLspProjectIndex **outProject,

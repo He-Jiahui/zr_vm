@@ -47,6 +47,10 @@ typedef struct SZrLspResolvedMetadataMember {
 typedef struct SZrLspResolvedImportedModuleEntry {
     SZrLspResolvedImportedModule module;
     SZrString *declarationUri;
+    /* Optional metadata-owned virtual identity for source-less declarations.
+     * declarationUri remains the physical/source origin used by existing
+     * coordinate projections. */
+    SZrString *virtualDeclarationUri;
     SZrFileRange declarationRange;
     TZrBool hasDeclaration;
 } SZrLspResolvedImportedModuleEntry;

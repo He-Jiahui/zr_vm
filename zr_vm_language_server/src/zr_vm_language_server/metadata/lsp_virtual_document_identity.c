@@ -228,6 +228,34 @@ TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
     return *outUri != ZR_NULL;
 }
 
+TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveBinaryUri(
+        SZrState *state, SZrLspContext *context, SZrLspProjectIndex *projectIndex,
+        SZrString *moduleName, SZrString **outUri) {
+    SZrString *origin = ZR_NULL;
+    SZrLspVirtualDocumentIdentity identity = {0};
+
+    if (outUri != ZR_NULL) {
+        *outUri = ZR_NULL;
+    }
+    if (outUri == ZR_NULL || state == ZR_NULL || context == ZR_NULL ||
+        projectIndex == ZR_NULL || projectIndex->projectFileUri == ZR_NULL ||
+        moduleName == ZR_NULL ||
+        context->semanticSnapshotProviderGeneration == 0U ||
+        !ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(
+                state, projectIndex, moduleName, &origin) ||
+        origin == ZR_NULL ||
+        ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(origin)) {
+        return ZR_FALSE;
+    }
+
+    identity.moduleName = moduleName;
+    identity.projectUri = projectIndex->projectFileUri;
+    identity.originUri = origin;
+    identity.providerGeneration = context->semanticSnapshotProviderGeneration;
+    *outUri = ZrLanguageServer_LspVirtualDocumentIdentity_Create(state, &identity);
+    return *outUri != ZR_NULL;
+}
+
 SZrLspProjectIndex *ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(
         SZrLspContext *context, SZrString *uri) {
     SZrLspVirtualDocumentIdentity identity;

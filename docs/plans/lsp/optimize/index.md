@@ -671,6 +671,17 @@ GCC 接口新增精确范围回归通过，邻近 source/binary/native 汇总与
 binary virtual URI、source/binary origin producer、多定义矩阵及 Task 3/7/8
 总门禁继续未完成。
 
+2026-09-12 完成 [Plan 03 Task 3.37 binary virtual identity producer](2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md)：
+binary metadata module entry 现在同时保留物理 `.zro` declaration URI 和
+metadata-owned 的 project-scoped virtual identity；后者绑定 module、project、
+physical origin 与当前非零 provider generation，并由 parser import-origin
+callback 进入 snapshot-owned relation。source-ranged binary navigation 继续
+使用物理坐标，旧代际 virtual identity 在 provider change 后被拒绝。GCC/Clang
+parity 与 source-contract 目标真实通过，完整 interface 仍精确保留冻结的两项
+旧失败；Clang LSan 基线不变。binary virtual rendering、member-level identity、
+source/binary sourceless origin producer、多定义矩阵、MSVC replay 及 Task 3/7/8
+总门禁继续未完成，详见 [acceptance record](../../../tests/acceptance/2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md)。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

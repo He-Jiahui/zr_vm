@@ -1586,6 +1586,7 @@ int main(void) {
     test_virtual_module_link_requires_exact_target(state, ZR_TRUE);
     test_virtual_document_identity_round_trip(state);
     test_virtual_document_identity_rejects_malformed(state);
+    test_binary_virtual_document_identity_is_project_scoped(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

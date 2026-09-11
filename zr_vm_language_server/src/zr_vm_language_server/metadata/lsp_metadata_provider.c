@@ -1395,6 +1395,15 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(SZrLspMe
                outResolved->declarationUri != ZR_NULL) {
         outResolved->declarationRange = metadata_provider_module_entry_range(outResolved->declarationUri);
         outResolved->hasDeclaration = ZR_TRUE;
+        /* Keep the historical physical .zro declaration URI for existing
+         * coordinate projections, while publishing a distinct project-scoped
+         * identity for parser relations that have no source declaration. */
+        (void)ZrLanguageServer_LspVirtualDocumentIdentity_ResolveBinaryUri(
+                provider->state,
+                provider->context,
+                projectIndex,
+                moduleName,
+                &outResolved->virtualDeclarationUri);
     } else if (ZrLanguageServer_LspMetadataProvider_ResolveNativeModuleUri(provider,
                                                                            projectIndex,
                                                                            moduleName,

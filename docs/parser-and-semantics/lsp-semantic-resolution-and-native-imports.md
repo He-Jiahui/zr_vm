@@ -17,9 +17,11 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.h
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
   - tests/language_server/test_lsp_virtual_declaration_projection_cases.h
   - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/acceptance/2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md
   - tests/language_server/lsp_query_result_cleanup.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.h
@@ -1207,8 +1209,17 @@ escape a request, then restores the active callback around the reset. Analyzer
 scoped-query state copies the callback, and both project and ordinary no-project
 document analysis install and clear it through the same wrapper. Relation URI
 values are cloned when appended, so they remain valid after the resolver's stack
-context is gone. Binary virtual-document production, source/binary origin
-producers and multi-definition identity remain pending follow-up work.
+context is gone.
+
+Binary module entries now add a separate metadata-owned virtual identity to the
+existing physical `.zro` declaration URI. The scoped URI records the module,
+owning project, physical origin and current nonzero provider generation. It is
+admission-only: the provider never relabels the physical URI, and a stale
+generation is rejected. Source-ranged binary relations continue to project
+the physical coordinate; a future sourceless relation can use the validated
+virtual module-entry range. Binary virtual rendering, member-level identity,
+source/binary sourceless producers and multi-definition identity remain pending
+follow-up work. See the [Task 3.37 record](../plans/lsp/optimize/2026-09-12-plan03-task03-sub37-binary-virtual-identity-producer.md).
 
 ## Source Project-Module Summary Ranges
 
@@ -1228,5 +1239,5 @@ If the AST is missing, the module is implicit, or the record no longer agrees
 with the parsed value, the helper returns the existing file-origin fallback;
 binary `.zro` and native virtual summaries keep their metadata/projection
 ranges. The focused `lsp_ownership` case verifies `module main;` as
-`(0,7)-(0,11)`, while the parent binary virtual URI and multi-definition work
+`(0,7)-(0,11)`, while binary virtual rendering and multi-definition work
 remain open. See the [Task 3.36 record](../plans/lsp/optimize/2026-09-12-plan03-task03-sub36-project-module-summary-range.md).
