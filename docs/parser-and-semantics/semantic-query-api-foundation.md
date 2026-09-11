@@ -491,6 +491,20 @@ provide both URIs or fail before mutating the relation store. This is a metadata
 projection contract only: it does not derive a URI from module text, symbol
 spelling, a file path, or the language server's virtual-document scheme.
 
+Task 3.35 closes the producer lifecycle for source-ranged import-origin facts.
+The host may install `FZrSemanticVirtualDeclarationUriResolver` for one analysis;
+`PublishImportOrigins` passes the canonical external origin to it and the append
+boundary clones the returned URI into the semantic snapshot. `compile_script`
+clears request-scoped callbacks during a reset, then restores the active callback
+and provider generation before continuing, preventing stack user data from
+leaking while preserving the current analysis contract. LSP project and
+no-project analysis paths install the callback through the same wrapper and
+clear it before returning. A null result is valid for a source or physical
+binary declaration; only metadata-admitted virtual declaration URIs are
+published. Callback user data is borrowed for the analysis call, while returned
+relation URI strings are snapshot-owned and query results borrow them until the
+semantic context is replaced.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph

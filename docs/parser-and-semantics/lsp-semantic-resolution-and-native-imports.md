@@ -1184,3 +1184,22 @@ conflicting, unscoped and unowned identities. Stdio exercises definition, render
 text and reverse references; the extension test verifies the installed URI
 library round-trip. Validation and remaining binary/parser-origin gates are in
 the [provider-scope record](../plans/lsp/optimize/2026-09-09-plan03-task03-sub34-native-virtual-provider-scope.md).
+
+## Parser-Owned Import-Origin Virtual URI
+
+Import-origin relations are now the producer boundary for a metadata-projected
+virtual declaration URI. During semantic analysis the LSP project wrapper gives
+the parser a short-lived resolver containing the current project and provider
+context. `PublishImportOrigins` passes the canonical external module origin to
+that resolver and stores the returned URI in the snapshot-owned relation. The
+resolver accepts only an existing metadata declaration marked as a virtual
+document; it never constructs a URI from a module name or changes a binary
+physical path into a virtual path.
+
+The compiler's script reset clears callbacks by default so stack user data cannot
+escape a request, then restores the active callback around the reset. Analyzer
+scoped-query state copies the callback, and both project and ordinary no-project
+document analysis install and clear it through the same wrapper. Relation URI
+values are cloned when appended, so they remain valid after the resolver's stack
+context is gone. Binary virtual-document production, source/binary origin
+producers and multi-definition identity remain pending follow-up work.

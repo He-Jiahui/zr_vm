@@ -1684,6 +1684,8 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
     analyzer->externalProviderGeneration = 0U;
+    analyzer->virtualDeclarationUriResolver = ZR_NULL;
+    analyzer->virtualDeclarationUriResolverUserData = ZR_NULL;
     analyzer->scopedQueryAnalyzer = ZR_NULL;
     analyzer->ownedAst = ZR_NULL;
     analyzer->borrowedAst = ZR_NULL;
@@ -1725,6 +1727,27 @@ void ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
      * analysis rebuilds the compiler and semantic contexts. */
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
+}
+
+void ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+        SZrSemanticAnalyzer *analyzer,
+        FZrSemanticVirtualDeclarationUriResolver resolver,
+        TZrPtr userData) {
+    if (analyzer == ZR_NULL) {
+        return;
+    }
+
+    analyzer->virtualDeclarationUriResolver = resolver;
+    analyzer->virtualDeclarationUriResolverUserData = userData;
+    if (analyzer->semanticContext != ZR_NULL) {
+        ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
+                analyzer->semanticContext, resolver, userData);
+    }
+    if (analyzer->scopedQueryAnalyzer != ZR_NULL &&
+        analyzer->scopedQueryAnalyzer != analyzer) {
+        ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+                analyzer->scopedQueryAnalyzer, resolver, userData);
+    }
 }
 
 // 释放语义分析器

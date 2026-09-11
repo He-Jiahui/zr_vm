@@ -350,6 +350,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
     if (analyzer->compilerState->semanticContext != ZR_NULL) {
         analyzer->compilerState->semanticContext->externalProviderGeneration =
                 analyzer->externalProviderGeneration;
+        ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
+                analyzer->compilerState->semanticContext,
+                analyzer->virtualDeclarationUriResolver,
+                analyzer->virtualDeclarationUriResolverUserData);
     }
     analyzer->compilerState->scriptAst = ast;
     analyzer->compilerState->suppressErrorOutput = ZR_TRUE;

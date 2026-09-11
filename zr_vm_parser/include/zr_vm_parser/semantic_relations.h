@@ -35,6 +35,12 @@ typedef struct SZrSemanticRelationFact {
 
 struct SZrSemanticContext;
 typedef struct SZrSemanticContext SZrSemanticContext;
+struct SZrString;
+typedef struct SZrString SZrString;
+typedef SZrString *(*FZrSemanticVirtualDeclarationUriResolver)(
+        SZrSemanticContext *context,
+        SZrString *externalOriginUri,
+        TZrPtr userData);
 struct SZrCompilerState;
 typedef struct SZrCompilerState SZrCompilerState;
 
@@ -53,6 +59,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
 /* Publishes external import origins from existing source scope facts only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
         SZrSemanticContext *context);
+/* Supplies metadata-owned declaration URIs while publishing external import relations. */
+ZR_PARSER_API void ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
+        SZrSemanticContext *context,
+        FZrSemanticVirtualDeclarationUriResolver resolver,
+        TZrPtr userData);
 /* Publishes alias-to-type edges from existing visible alias facts only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishAliasTargets(
         SZrSemanticContext *context);

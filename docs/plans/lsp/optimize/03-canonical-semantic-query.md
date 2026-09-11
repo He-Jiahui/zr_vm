@@ -82,6 +82,26 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 - [ ] 处理多定义、partial/extern/native/binary 无 source definition 情形；没有 source range 时返回明确 external origin 和 virtual declaration URI，由 metadata projection 提供，不由 LSP 编造。
 - [ ] 测试同名不同模块、重载、generic open/closed type、receiver method、alias chain、base/interface、多项目 provider generation。
 
+### Task 3.35：parser-owned virtual import origin
+
+`SZrSemanticContext` now carries an optional host callback for resolving a
+metadata-owned declaration URI from an external import origin. The parser
+relation producer invokes it while publishing `IMPORT_EXPORT_ORIGIN`, and the
+relation append boundary clones the returned URI into the semantic snapshot.
+The compiler explicitly preserves the callback across its per-script semantic
+reset, while the LSP analyzer/project wrapper installs it only for the active
+analysis and clears the stack user-data afterward. The ordinary no-project
+document path now uses the same wrapper, so it cannot silently bypass the
+producer.
+
+The callback is admission-only: a result must already be a declared virtual
+document URI from metadata projection. It does not derive a `zr-decompiled`
+URI from text, and a binary physical module URI is not relabeled as virtual.
+The parser regression is 29/29 on GCC and the new AST-detached native import
+case passes in the interface runner. Binary virtual URI producers, parser
+origin producers for source/binary metadata and the multi-definition matrix
+remain unchecked.
+
 ## Task 4：补齐 call graph 与 overload facts
 
 **Files:**

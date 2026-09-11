@@ -65,6 +65,10 @@ void ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
         TZrUInt64 generation);
+void ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+        SZrSemanticAnalyzer *analyzer,
+        FZrSemanticVirtualDeclarationUriResolver resolver,
+        TZrPtr userData);
 
 SZrSemanticAnalyzer *
 ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(

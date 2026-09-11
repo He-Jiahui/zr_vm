@@ -206,6 +206,9 @@ typedef struct SZrSemanticContext {
     SZrState *state;
     /* Set by the host before analysis; zero means no provider epoch supplied. */
     TZrUInt64 externalProviderGeneration;
+    /* Optional host resolver used only to attach metadata-owned declaration URIs. */
+    FZrSemanticVirtualDeclarationUriResolver virtualDeclarationUriResolver;
+    TZrPtr virtualDeclarationUriResolverUserData;
     TZrTypeId nextTypeId;
     TZrSymbolId nextSymbolId;
     TZrOverloadSetId nextOverloadSetId;

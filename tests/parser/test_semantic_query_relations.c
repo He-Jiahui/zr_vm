@@ -113,6 +113,19 @@ static void relation_release_compiler_function(SZrCompilerState *cs) {
     }
 }
 
+static SZrString *test_virtual_declaration_uri_resolver(
+        SZrSemanticContext *context,
+        SZrString *externalOriginUri,
+        TZrPtr userData) {
+    ZR_UNUSED_PARAMETER(context);
+    ZR_UNUSED_PARAMETER(userData);
+    if (externalOriginUri != ZR_NULL &&
+        strcmp(ZrCore_String_GetNativeString(externalOriginUri), "zr.math") == 0) {
+        return ZrCore_String_CreateFromNative(g_state, "zr-decompiled:/zr.math.zr");
+    }
+    return ZR_NULL;
+}
+
 static const SZrSemanticSymbolRecord *relation_find_symbol(
         const SZrSemanticContext *context,
         TZrNativeString name) {
@@ -1420,6 +1433,8 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
     cs.suppressErrorOutput = ZR_TRUE;
     cs.currentFunction = ZrCore_Function_New(g_state);
     TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
+            cs.semanticContext, test_virtual_declaration_uri_resolver, ZR_NULL);
     compile_script(&cs, ast);
 
     TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
@@ -1449,6 +1464,10 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
     TEST_ASSERT_EQUAL_STRING(
             "zr.math",
             ZrCore_String_GetNativeString(originRelation->externalOriginUri));
+    TEST_ASSERT_NOT_NULL(originRelation->virtualDeclarationUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr-decompiled:/zr.math.zr",
+            ZrCore_String_GetNativeString(originRelation->virtualDeclarationUri));
 
     ZrCore_Array_Free(g_state, &relations);
     relation_release_compiler_function(&cs);

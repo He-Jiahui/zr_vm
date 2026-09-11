@@ -3,6 +3,8 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "zr_vm_language_server/lsp_uri.h"
+#include "lsp_virtual_documents.h"
+#include "metadata/lsp_metadata_provider.h"
 #include "metadata/lsp_virtual_document_identity.h"
 
 #include "zr_vm_core/memory.h"
@@ -33,6 +35,43 @@ typedef struct SZrLspProjectSourceLoaderContext {
     TZrPtr fallbackSourceLoaderUserData;
     TZrPtr fallbackUserData;
 } SZrLspProjectSourceLoaderContext;
+
+typedef struct SZrLspProjectVirtualDeclarationUriResolverContext {
+    SZrState *state;
+    SZrLspContext *context;
+    SZrLspProjectIndex *projectIndex;
+} SZrLspProjectVirtualDeclarationUriResolverContext;
+
+static SZrString *project_resolve_virtual_declaration_uri(
+        SZrSemanticContext *semanticContext,
+        SZrString *externalOriginUri,
+        TZrPtr userData) {
+    SZrLspProjectVirtualDeclarationUriResolverContext *resolverContext =
+            (SZrLspProjectVirtualDeclarationUriResolverContext *)userData;
+    SZrLspMetadataProvider provider;
+    SZrLspResolvedImportedModuleEntry resolved;
+
+    ZR_UNUSED_PARAMETER(semanticContext);
+    if (resolverContext == ZR_NULL || resolverContext->state == ZR_NULL ||
+        resolverContext->context == ZR_NULL || externalOriginUri == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrLanguageServer_LspMetadataProvider_Init(
+            &provider, resolverContext->state, resolverContext->context);
+    if (!ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(
+                &provider,
+                ZR_NULL,
+                resolverContext->projectIndex,
+                externalOriginUri,
+                &resolved) ||
+        !resolved.hasDeclaration || resolved.declarationUri == ZR_NULL ||
+        !ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(resolved.declarationUri)) {
+        return ZR_NULL;
+    }
+
+    return resolved.declarationUri;
+}
 
 static TZrBool project_refresh_for_updated_document_internal(SZrState *state,
                                                              SZrLspContext *context,
@@ -1682,6 +1721,7 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     TZrPtr previousUserData = ZR_NULL;
     TZrPtr previousSourceLoaderUserData = ZR_NULL;
     SZrLspProjectSourceLoaderContext sourceLoaderContext;
+    SZrLspProjectVirtualDeclarationUriResolverContext virtualUriResolverContext;
     TZrBool analyzeSuccess;
     TZrSize currentAstHash;
     TZrBool sameAstAsCachedAnalysis;
@@ -1713,6 +1753,11 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         ZrLanguageServer_SemanticAnalyzer_ClearCache(state, analyzer);
     }
     project_preload_descriptor_plugin_imports(state, projectIndex, fileVersion->ast);
+    virtualUriResolverContext.state = state;
+    virtualUriResolverContext.context = context;
+    virtualUriResolverContext.projectIndex = projectIndex;
+    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+            analyzer, project_resolve_virtual_declaration_uri, &virtualUriResolverContext);
     if (state->global != ZR_NULL) {
         sourceLoaderContext.projectIndex = projectIndex;
         sourceLoaderContext.fallbackSourceLoader = state->global->sourceLoader;
@@ -1725,6 +1770,8 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         state->global->sourceLoader = project_source_loader;
     }
     analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, fileVersion->ast);
+    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+            analyzer, ZR_NULL, ZR_NULL);
     if (state->global != ZR_NULL) {
         state->global->userData = previousUserData;
         state->global->sourceLoaderUserData = previousSourceLoaderUserData;
@@ -1751,6 +1798,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
     TZrPtr previousUserData = ZR_NULL;
     TZrPtr previousSourceLoaderUserData = ZR_NULL;
     SZrLspProjectSourceLoaderContext sourceLoaderContext;
+    SZrLspProjectVirtualDeclarationUriResolverContext virtualUriResolverContext;
     TZrBool analyzeSuccess;
     TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
@@ -1768,7 +1816,15 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
 
     projectIndex = uri != ZR_NULL ? ZrLanguageServer_LspProject_FindProjectForUri(context, uri) : ZR_NULL;
     if (projectIndex == ZR_NULL || state->global == ZR_NULL) {
-        return ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        virtualUriResolverContext.state = state;
+        virtualUriResolverContext.context = context;
+        virtualUriResolverContext.projectIndex = projectIndex;
+        ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+                analyzer, project_resolve_virtual_declaration_uri, &virtualUriResolverContext);
+        analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+                analyzer, ZR_NULL, ZR_NULL);
+        return analyzeSuccess;
     }
     if (uri != ZR_NULL &&
         ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer)) &&
@@ -1787,6 +1843,11 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
     }
 
     project_preload_descriptor_plugin_imports(state, projectIndex, ast);
+    virtualUriResolverContext.state = state;
+    virtualUriResolverContext.context = context;
+    virtualUriResolverContext.projectIndex = projectIndex;
+    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+            analyzer, project_resolve_virtual_declaration_uri, &virtualUriResolverContext);
     sourceLoaderContext.projectIndex = projectIndex;
     sourceLoaderContext.fallbackSourceLoader = state->global->sourceLoader;
     previousUserData = state->global->userData;
@@ -1798,6 +1859,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
     state->global->sourceLoader = project_source_loader;
 
     analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+
+    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
+            analyzer, ZR_NULL, ZR_NULL);
 
     state->global->userData = previousUserData;
     state->global->sourceLoaderUserData = previousSourceLoaderUserData;

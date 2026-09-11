@@ -509,6 +509,12 @@ TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
         fact.targetTypeId = symbol->typeId;
         fact.sourceRange = symbol->location;
         fact.externalOriginUri = visible->externalOriginUri;
+        if (context->virtualDeclarationUriResolver != ZR_NULL) {
+            fact.virtualDeclarationUri = context->virtualDeclarationUriResolver(
+                    context,
+                    visible->externalOriginUri,
+                    context->virtualDeclarationUriResolverUserData);
+        }
         fact.hasSourceRange = ZR_TRUE;
         fact.isExternal = ZR_TRUE;
         if (!ZrParser_SemanticRelations_Append(context, &fact)) {
@@ -516,6 +522,18 @@ TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
         }
     }
     return ZR_TRUE;
+}
+
+void ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
+        SZrSemanticContext *context,
+        FZrSemanticVirtualDeclarationUriResolver resolver,
+        TZrPtr userData) {
+    if (context == ZR_NULL) {
+        return;
+    }
+
+    context->virtualDeclarationUriResolver = resolver;
+    context->virtualDeclarationUriResolverUserData = userData;
 }
 
 static TZrBool semantic_relations_has_alias_target(

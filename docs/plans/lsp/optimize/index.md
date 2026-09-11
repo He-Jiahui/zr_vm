@@ -651,6 +651,17 @@ canonical external facts，AST-detached、双项目 reload、document link 和�
 unit `43/43`、noEmit exit 0。project/interface 保留同名七项/两项失败和实际 Clang
 泄漏报告；binary/parser origin、project summary 范围、多定义及父门禁仍未验收。
 
+2026-09-11 完成 [Plan 03 Task 3.35 parser virtual origin publication](2026-09-11-plan03-task03-sub35-parser-virtual-origin-publication.md)：
+parser semantic context 接收短生命周期的 metadata virtual-declaration URI
+resolver，`PublishImportOrigins` 将其结果作为 snapshot-owned relation fact 发布；
+compiler reset 保留当前分析的 provider generation/resolver，LSP 项目和无项目路径
+统一经 project-analysis wrapper 安装和清理回调。GCC/Clang parser relations 均为
+`29/29` 真实 exit 0，interface 新增 native canonical-origin/AST-detached 用例均通过；
+完整 interface 仍保留既有两项失败，Clang 另报告既有 LSan 泄漏，project 长基线运行
+本轮中止，MSVC 未重放。
+binary virtual URI、source/binary origin producer、多定义矩阵、summary range、
+canonical receiver 和 Task 3/7/8 总门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

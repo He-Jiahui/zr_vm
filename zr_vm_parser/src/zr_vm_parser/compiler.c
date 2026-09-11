@@ -713,9 +713,17 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs->semanticContext != ZR_NULL) {
         const TZrUInt64 externalProviderGeneration =
                 cs->semanticContext->externalProviderGeneration;
+        const FZrSemanticVirtualDeclarationUriResolver virtualDeclarationUriResolver =
+                cs->semanticContext->virtualDeclarationUriResolver;
+        const TZrPtr virtualDeclarationUriResolverUserData =
+                cs->semanticContext->virtualDeclarationUriResolverUserData;
         ZrParser_SemanticContext_Reset(cs->semanticContext);
         cs->semanticContext->externalProviderGeneration =
                 externalProviderGeneration;
+        ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
+                cs->semanticContext,
+                virtualDeclarationUriResolver,
+                virtualDeclarationUriResolverUserData);
         compiler_semantic_ir_reset(cs);
         if (cs->hirModule != ZR_NULL) {
             ZrParser_HirModule_Free(cs->state, cs->hirModule);

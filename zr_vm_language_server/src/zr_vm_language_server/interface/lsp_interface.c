@@ -1440,9 +1440,8 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return analyzeSuccess;
         }
 
-        analyzeSuccess = projectIndex != ZR_NULL
-                             ? ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast)
-                             : ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(
+                state, context, uri, analyzer, ast);
         if (!analyzeSuccess) {
             ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
             return ZR_FALSE;

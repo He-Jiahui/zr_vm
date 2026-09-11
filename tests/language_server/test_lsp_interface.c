@@ -6802,6 +6802,7 @@ static void test_lsp_native_import_alias_definition_uses_canonical_origin_withou
     TZrBool missingMetadataRejected;
     TZrBool mismatchedVirtualRejected;
     TZrBool ambiguousRejected;
+    TZrBool parserRelationPublishesVirtualUri;
 
     TEST_START("LSP Native Import Alias Definition Uses Canonical Origin Without AST");
     TEST_INFO("Canonical import-origin definition",
@@ -6877,6 +6878,11 @@ static void test_lsp_native_import_alias_definition_uses_canonical_origin_withou
         }
     }
 
+    parserRelationPublishesVirtualUri =
+            originFact != ZR_NULL && originFact->virtualDeclarationUri != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(originFact->virtualDeclarationUri),
+                   "zr-decompiled:/zr.container.zr") == 0;
+
     missingSymbolOriginRejected = visibleImportFact != ZR_NULL;
     if (missingSymbolOriginRejected) {
         savedVisibleOrigin = visibleImportFact->externalOriginUri;
@@ -6939,7 +6945,8 @@ static void test_lsp_native_import_alias_definition_uses_canonical_origin_withou
     ZrCore_Array_Free(state, &definitions);
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     ZrLanguageServer_LspContext_Free(state, context);
-    if (!resolved || !missingSymbolOriginRejected || !missingRelationRejected ||
+    if (!resolved || !parserRelationPublishesVirtualUri ||
+        !missingSymbolOriginRejected || !missingRelationRejected ||
         !missingMetadataRejected ||
         !mismatchedVirtualRejected || !ambiguousRejected) {
         TEST_FAIL(timer,

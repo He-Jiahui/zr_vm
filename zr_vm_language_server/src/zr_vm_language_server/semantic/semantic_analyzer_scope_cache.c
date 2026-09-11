@@ -266,6 +266,10 @@ ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
         if (analyzer->scopedQueryAnalyzer != ZR_NULL) {
             analyzer->scopedQueryAnalyzer->externalProviderGeneration =
                     analyzer->externalProviderGeneration;
+            analyzer->scopedQueryAnalyzer->virtualDeclarationUriResolver =
+                    analyzer->virtualDeclarationUriResolver;
+            analyzer->scopedQueryAnalyzer->virtualDeclarationUriResolverUserData =
+                    analyzer->virtualDeclarationUriResolverUserData;
             ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(
                     analyzer->scopedQueryAnalyzer,
                     analyzer->enableCache);
