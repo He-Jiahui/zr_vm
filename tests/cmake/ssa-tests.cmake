@@ -22,3 +22,37 @@ if (NOT TARGET zr_vm_ssa_baseline_metrics_test)
     add_test(NAME ssa_baseline_metrics COMMAND zr_vm_ssa_baseline_metrics_test)
     set_tests_properties(ssa_baseline_metrics PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_contract_freeze_test)
+    add_executable(
+            zr_vm_ssa_contract_freeze_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_contract_freeze.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+    )
+    target_include_directories(zr_vm_ssa_contract_freeze_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+    target_compile_definitions(zr_vm_ssa_contract_freeze_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS
+    )
+    add_test(NAME ssa_contract_freeze COMMAND zr_vm_ssa_contract_freeze_test)
+    set_tests_properties(ssa_contract_freeze PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_differential_harness_test)
+    add_executable(
+            zr_vm_ssa_differential_harness_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_differential_harness.c
+            ${CMAKE_SOURCE_DIR}/tests/harness/ssa_differential_support.c
+    )
+    target_include_directories(zr_vm_ssa_differential_harness_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/harness
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+    target_compile_definitions(zr_vm_ssa_differential_harness_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS
+    )
+    add_test(NAME ssa_differential_harness COMMAND zr_vm_ssa_differential_harness_test)
+    set_tests_properties(ssa_differential_harness PROPERTIES LABELS "ssa")
+endif ()

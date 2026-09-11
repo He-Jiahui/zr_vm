@@ -1,0 +1,105 @@
+#ifndef ZR_VM_CORE_EXECUTION_CONTRACT_H
+#define ZR_VM_CORE_EXECUTION_CONTRACT_H
+
+#include "zr_vm_core/conf.h"
+#include "zr_vm_core/metadata_token.h"
+
+/*
+ * The legacy artifact/call-binding/AOT versions remain readable by their
+ * existing consumers.  These values are the candidate version of the shared
+ * execution contract; publishing them does not silently reinterpret an old
+ * on-disk artifact.
+ */
+#define ZR_EXECUTION_CONTRACT_SCHEMA_VERSION ((TZrUInt32)6u)
+#define ZR_EXECUTION_CONTRACT_ABI_VERSION ((TZrUInt32)17u)
+#define ZR_EXECUTION_CONTRACT_LOGICAL_VERSION ((TZrUInt32)1u)
+
+#define ZR_EXECUTION_CAPABILITY_ARITHMETIC ((TZrUInt32)1u << 0u)
+#define ZR_EXECUTION_CAPABILITY_MEMORY ((TZrUInt32)1u << 1u)
+#define ZR_EXECUTION_CAPABILITY_NATIVE_CALL ((TZrUInt32)1u << 2u)
+#define ZR_EXECUTION_CAPABILITY_SUSPEND ((TZrUInt32)1u << 3u)
+#define ZR_EXECUTION_CAPABILITY_GC ((TZrUInt32)1u << 4u)
+#define ZR_EXECUTION_CAPABILITY_KNOWN_MASK \
+    (ZR_EXECUTION_CAPABILITY_ARITHMETIC | ZR_EXECUTION_CAPABILITY_MEMORY | \
+     ZR_EXECUTION_CAPABILITY_NATIVE_CALL | ZR_EXECUTION_CAPABILITY_SUSPEND | \
+     ZR_EXECUTION_CAPABILITY_GC)
+
+#define ZR_EXECUTION_EFFECT_READ_MEMORY ((TZrUInt32)1u << 0u)
+#define ZR_EXECUTION_EFFECT_WRITE_MEMORY ((TZrUInt32)1u << 1u)
+#define ZR_EXECUTION_EFFECT_ALLOCATE ((TZrUInt32)1u << 2u)
+#define ZR_EXECUTION_EFFECT_THROW ((TZrUInt32)1u << 3u)
+#define ZR_EXECUTION_EFFECT_SUSPEND ((TZrUInt32)1u << 4u)
+#define ZR_EXECUTION_EFFECT_KNOWN_MASK \
+    (ZR_EXECUTION_EFFECT_READ_MEMORY | ZR_EXECUTION_EFFECT_WRITE_MEMORY | \
+     ZR_EXECUTION_EFFECT_ALLOCATE | ZR_EXECUTION_EFFECT_THROW | \
+     ZR_EXECUTION_EFFECT_SUSPEND)
+
+typedef enum EZrExecutionContractStatus {
+    ZR_EXECUTION_CONTRACT_OK = 0,
+    ZR_EXECUTION_CONTRACT_INVALID_ARGUMENT,
+    ZR_EXECUTION_CONTRACT_RECOMPILE_REQUIRED,
+    ZR_EXECUTION_CONTRACT_TARGET_MISMATCH,
+    ZR_EXECUTION_CONTRACT_SIGNATURE_MISMATCH,
+    ZR_EXECUTION_CONTRACT_LAYOUT_MISMATCH,
+    ZR_EXECUTION_CONTRACT_MODULE_MISMATCH,
+    ZR_EXECUTION_CONTRACT_CAPABILITY_MISMATCH,
+    ZR_EXECUTION_CONTRACT_EFFECT_MISMATCH,
+    ZR_EXECUTION_CONTRACT_STALE_GENERATION,
+    ZR_EXECUTION_CONTRACT_UNSUPPORTED,
+    ZR_EXECUTION_CONTRACT_STATUS_COUNT
+} EZrExecutionContractStatus;
+
+typedef enum EZrExecutionDiagnosticCode {
+    ZR_EXECUTION_DIAGNOSTIC_NONE = 0,
+    ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+    ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_TARGET_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_SIGNATURE_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_MODULE_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_CAPABILITY_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_EFFECT_MISMATCH,
+    ZR_EXECUTION_DIAGNOSTIC_STALE_GENERATION
+} EZrExecutionDiagnosticCode;
+
+/*
+ * This diagnostic is intentionally made only of stable scalar identities.
+ * It can be copied into a report without exposing an AST, runtime pointer, or
+ * host address.
+ */
+typedef struct SZrExecIrDiagnostic {
+    EZrExecutionDiagnosticCode code;
+    TZrUInt32 functionToken;
+    TZrUInt32 blockId;
+    TZrUInt32 instructionId;
+    TZrUInt32 sourceId;
+    TZrUInt32 expectedVersion;
+    TZrUInt32 actualVersion;
+    TZrUInt64 expectedHash;
+    TZrUInt64 actualHash;
+} SZrExecIrDiagnostic;
+
+/* Stable identity fields shared by ExecIR, artifact links, and backends. */
+typedef struct SZrExecutionContract {
+    TZrUInt32 schemaVersion;
+    TZrUInt32 abiVersion;
+    TZrUInt32 logicalVersion;
+    TZrUInt32 reserved0;
+    TZrUInt64 generation;
+    TZrMetadataToken targetToken;
+    TZrUInt32 reserved1;
+    TZrUInt64 signatureHash;
+    TZrUInt64 layoutHash;
+    TZrUInt64 moduleHash;
+    TZrUInt32 requiredCapabilities;
+    TZrUInt32 declaredEffects;
+} SZrExecutionContract;
+
+ZR_CORE_API EZrExecutionContractStatus ZrCore_ExecutionContract_Check(
+        const SZrExecutionContract *expected,
+        const SZrExecutionContract *actual,
+        SZrExecIrDiagnostic *diagnostic);
+ZR_CORE_API const TZrChar *ZrCore_ExecutionContract_StatusName(
+        EZrExecutionContractStatus status);
+
+#endif
