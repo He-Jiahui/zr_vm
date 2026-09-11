@@ -53,6 +53,9 @@ static TZrBool lsp_project_modules_append_summary(SZrState *state,
                                                   SZrString *description,
                                                   SZrString *navigationUri,
                                                   SZrLspRange range);
+static SZrLspRange lsp_project_modules_source_entry_range(
+        SZrLspContext *context,
+        const SZrLspProjectFileRecord *record);
 static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
                                                   SZrSymbolScope *scope,
                                                   SZrSymbol *symbol,
@@ -293,6 +296,18 @@ static TZrBool lsp_project_modules_append_summary(SZrState *state,
     summary->range = range;
     ZrCore_Array_Push(state, result, &summary);
     return ZR_TRUE;
+}
+
+static SZrLspRange lsp_project_modules_source_entry_range(
+        SZrLspContext *context,
+        const SZrLspProjectFileRecord *record) {
+    SZrFileRange range =
+            ZrLanguageServer_LspProject_GetSourceModuleEntryRange(
+                    context, record);
+    return ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+            context,
+            record != ZR_NULL ? record->uri : ZR_NULL,
+            range);
 }
 
 static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
@@ -2479,7 +2494,7 @@ TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
                 (*recordPtr)->moduleName,
                 (*recordPtr)->path,
                 (*recordPtr)->uri,
-                fileEntryRange)) {
+                lsp_project_modules_source_entry_range(context, *recordPtr))) {
             return ZR_FALSE;
         }
     }
@@ -2536,7 +2551,8 @@ TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
                         resolved.sourceRecord->moduleName,
                         resolved.sourceRecord->path,
                         resolved.sourceRecord->uri,
-                        fileEntryRange)) {
+                        lsp_project_modules_source_entry_range(
+                                context, resolved.sourceRecord))) {
                     ZrCore_Array_Free(state, &moduleNames);
                     return ZR_FALSE;
                 }

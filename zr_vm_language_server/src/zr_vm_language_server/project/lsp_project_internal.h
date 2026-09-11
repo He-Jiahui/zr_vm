@@ -34,6 +34,9 @@ SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByUri(SZrLspProje
                                                                      SZrString *uri);
 SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByModuleName(SZrLspProjectIndex *projectIndex,
                                                                             SZrString *moduleName);
+SZrFileRange ZrLanguageServer_LspProject_GetSourceModuleEntryRange(
+        SZrLspContext *context,
+        const SZrLspProjectFileRecord *record);
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspContext *context,
                                                                         SZrString *uri,
                                                                         TZrSize *outIndex);

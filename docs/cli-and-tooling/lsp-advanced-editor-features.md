@@ -17,6 +17,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_module_ranges.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
@@ -84,6 +85,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_module_ranges.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
@@ -146,6 +148,7 @@ tests:
   - tests/language_server/test_lsp_declaration_parser_diagnostics.c
   - tests/language_server/test_lsp_statement_parser_diagnostics.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_project_module_summary_range_cases.h
   - tests/language_server/test_lsp_position_mapping.c
   - tests/language_server/test_lsp_position_fuzz.c
   - tests/language_server/test_lsp_decorator_utf16_ranges.c
@@ -167,6 +170,7 @@ tests:
   - tests/language_server/wasm_diagnostic_projection_smoke.js
   - tests/acceptance/2026-06-20-lsp-position-stage0.md
   - tests/acceptance/2026-08-26-plan03-task06-type-mismatch-query-projection.md
+  - tests/acceptance/2026-09-12-plan03-task03-sub36-project-module-summary-range.md
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/stdio_inline_value_semantic_smoke.js
@@ -312,6 +316,13 @@ member name 或源码文本重建诊断策略。
 `lsp_project_navigation.c` 为 project-aware definition、references、documentHighlight 和 external metadata navigation 编排 analyzer refresh 与 import target refinement。打开文档存在时，这两处直接读取文档文本的路径现在都会 acquire owned snapshot；未打开文件仍保留磁盘读取 fallback，避免项目索引刷新必须依赖 live `fileVersion->content`。
 
 `lsp_project.c` 负责 project index 的 source record 注册、source module graph scan 和 import module name collection。打开文档存在时，这些 project refresh 路径会先 acquire owned snapshot，再把 snapshot content 交给 module-key 识别、FFI wrapper marker 检测和 import name collection；未打开文件仍保留磁盘读取 fallback，避免项目索引刷新期间直接依赖 live `fileVersion->content`。
+
+`lsp_project_module_ranges.c` 为 `projectModules` 提供独立的 source module
+entry-range lookup：显式 `module` 声明直接复用 incremental-parser AST 的
+module-name `FileRange`，并由接口层用当前文档快照转换为 UTF-16 LSP range；
+隐式或不可用 AST 保留文件起点 fallback。该职责从大型 `lsp_project.c`
+拆出，binary/native summary projection 不受影响。对应回归见
+`test_lsp_project_module_summary_range_cases.h` 与 Task 3.36 acceptance record。
 
 `lsp_metadata_provider.c` 负责 imported module/member hover、metadata-backed declaration range refinement 和按 URI 刷新 analyzer。打开文档存在时，member name range 精修、analyzer refresh 输入、imported member hover 的 markdown/documentation/leading-comment extraction 都会先 acquire owned snapshot，再读取 snapshot content/length；snapshot 不可用时 analyzer refresh 仍保留磁盘读取 fallback，避免 hover 路径直接依赖 live `fileVersion->content`。
 

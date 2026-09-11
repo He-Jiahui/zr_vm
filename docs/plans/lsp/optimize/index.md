@@ -662,6 +662,15 @@ compiler reset 保留当前分析的 provider generation/resolver，LSP 项目�
 binary virtual URI、source/binary origin producer、多定义矩阵、summary range、
 canonical receiver 和 Task 3/7/8 总门禁继续未完成。
 
+2026-09-12 完成 [Plan 03 Task 3.36 exact source project-module summary ranges](2026-09-12-plan03-task03-sub36-project-module-summary-range.md)：
+新增独立 project range helper，从当前 incremental-parser AST 读取显式
+`module` 名称 token，并经 document-aware UTF-16 转换发布到 `projectModules`；
+隐式模块、缺失/陈旧 AST 保留 `(0,0)` fallback，binary/native range 逻辑不变。
+GCC 接口新增精确范围回归通过，邻近 source/binary/native 汇总与 bootstrap 用例也通过；
+完整接口仍保留冻结的两项功能失败，本子项的 Clang/MSVC 与全矩阵尚待重放。
+binary virtual URI、source/binary origin producer、多定义矩阵及 Task 3/7/8
+总门禁继续未完成。
+
 ## 2. 审查证据
 
 ### 2.1 协议与生命周期

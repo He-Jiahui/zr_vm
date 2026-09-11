@@ -8919,6 +8919,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_compile_tool_projection_cases.h"
 #include "test_lsp_native_construct_receiver_fact_cases.h"
 #include "test_lsp_receiver_completion_projection_cases.h"
+#include "test_lsp_project_module_summary_range_cases.h"
 
 // 主测试函数
 int main(void) {
@@ -9205,6 +9206,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_project_modules_summarize_project_native_and_binary_modules(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_modules_publish_exact_source_declaration_range(state);
     TEST_DIVIDER();
 
     test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modules(state);

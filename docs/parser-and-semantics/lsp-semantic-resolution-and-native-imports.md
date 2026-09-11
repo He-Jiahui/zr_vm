@@ -28,6 +28,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.h
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_module_ranges.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
@@ -90,6 +92,7 @@ related_code:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_project_module_summary_range_cases.h
   - tests/language_server/test_lsp_native_construct_receiver_fact_cases.h
   - tests/language_server/test_lsp_property_contract_cases.h
   - tests/language_server/test_lsp_property_incremental_cases.h
@@ -107,6 +110,7 @@ related_code:
   - tests/parser/test_semantic_query_relations.c
   - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
   - tests/acceptance/2026-08-13-lsp-l8-canonical-closure-value-signature-fact.md
+  - tests/acceptance/2026-09-12-plan03-task03-sub36-project-module-summary-range.md
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c
@@ -119,6 +123,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_module_ranges.c
   - zr_vm_language_server/src/zr_vm_language_server/snapshot/lsp_semantic_snapshot.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
@@ -1203,3 +1209,24 @@ document analysis install and clear it through the same wrapper. Relation URI
 values are cloned when appended, so they remain valid after the resolver's stack
 context is gone. Binary virtual-document production, source/binary origin
 producers and multi-definition identity remain pending follow-up work.
+
+## Source Project-Module Summary Ranges
+
+Project source records retain the parser's explicit `module` declaration
+range. `ZrLanguageServer_LspProject_GetSourceModuleEntryRange` reads the
+current incremental-parser AST, requires a script/module-declaration/string
+literal whose canonical value still matches the indexed record, and returns
+that `SZrFileRange` without rebuilding a range from the module spelling. The
+new project range module keeps this lookup separate from the large project
+index implementation.
+
+`ZrLanguageServer_Lsp_GetProjectModules` runs the returned range through
+`ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`, so byte offsets become
+the correct UTF-16 LSP positions for the current document snapshot. Direct
+source records and source records reached through imports use the same path.
+If the AST is missing, the module is implicit, or the record no longer agrees
+with the parsed value, the helper returns the existing file-origin fallback;
+binary `.zro` and native virtual summaries keep their metadata/projection
+ranges. The focused `lsp_ownership` case verifies `module main;` as
+`(0,7)-(0,11)`, while the parent binary virtual URI and multi-definition work
+remain open. See the [Task 3.36 record](../plans/lsp/optimize/2026-09-12-plan03-task03-sub36-project-module-summary-range.md).

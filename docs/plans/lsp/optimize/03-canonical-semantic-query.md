@@ -102,6 +102,21 @@ case passes in the interface runner. Binary virtual URI producers, parser
 origin producers for source/binary metadata and the multi-definition matrix
 remain unchecked.
 
+### Task 3.36：exact source project-module summary ranges
+
+`projectModules` now obtains the explicit source module-name token range from
+the incremental-parser AST through `lsp_project_module_ranges.c`. The helper
+checks that the parsed module value still agrees with the indexed project
+record, returns the parser `SZrFileRange` with its source URI, and falls back
+to the file-origin position for implicit modules or unavailable/stale AST
+state. `lsp_interface.c` converts the result with the shared content-aware
+UTF-16 helper for both direct source records and imported source records;
+binary metadata and native virtual summaries retain their own projections.
+The `lsp_ownership` regression asserts `(0,7)-(0,11)` for `module main;`.
+This closes only the source summary-range sub-item; binary virtual URI,
+source/binary origin producers, multi-definition identity and the parent
+cross-toolchain gates remain open.
+
 ## Task 4：补齐 call graph 与 overload facts
 
 **Files:**
