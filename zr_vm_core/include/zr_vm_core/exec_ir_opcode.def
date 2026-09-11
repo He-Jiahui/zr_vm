@@ -1,0 +1,42 @@
+/*
+ * Canonical ExecIR opcode schema.
+ *
+ * The including translation unit must define ZR_EXEC_IR_OP with the
+ * following signature:
+ *
+ *   ZR_EXEC_IR_OP(name, resultArity, operandArity, memoryReads,
+ *                 memoryWrites, schemaFlags)
+ *
+ * `operandArity` may be ZR_EXEC_IR_VARIADIC.  Memory fields are masks of
+ * EZrExecIrMemoryClass bits (zero means no memory token is required).  The
+ * same rows generate the enum, metadata table, and verifier arity rules.
+ */
+
+ZR_EXEC_IR_OP(NOP,                 0u, 0u,                   0u, 0u, 0u)
+ZR_EXEC_IR_OP(CONSTANT,            1u, 0u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(CONVERT,             1u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(ARITHMETIC,           1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(COPY,                1u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(MOVE,                1u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(ADD,                 1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(SUB,                 1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(MUL,                 1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(DIV,                 1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW)
+ZR_EXEC_IR_OP(NEG,                 1u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(COMPARE,             1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(PLACE_BASE,          1u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(PLACE_PROJECT,       1u, 2u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(LOAD,                1u, 1u,                   (1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP), 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+ZR_EXEC_IR_OP(STORE,               0u, 2u,                   0u, (1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP), ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW)
+ZR_EXEC_IR_OP(CALL,                1u, ZR_EXEC_IR_VARIADIC,   ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI)), ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI)), ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE)
+ZR_EXEC_IR_OP(ALLOC,               1u, ZR_EXEC_IR_VARIADIC,   0u, ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_GC)), ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_SCHEMA_FLAG_MAY_GC)
+ZR_EXEC_IR_OP(BARRIER,             0u, 1u,                   (1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP), ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_GC)), ZR_EXEC_IR_SCHEMA_FLAG_MAY_GC)
+ZR_EXEC_IR_OP(DROP,                0u, 1u,                   (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP), (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP), ZR_EXEC_IR_SCHEMA_FLAG_MAY_DROP)
+ZR_EXEC_IR_OP(BRANCH,              0u, 0u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR)
+ZR_EXEC_IR_OP(CONDITIONAL_BRANCH,  0u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR)
+ZR_EXEC_IR_OP(SWITCH,              0u, ZR_EXEC_IR_VARIADIC,   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR)
+ZR_EXEC_IR_OP(INVOKE,              1u, ZR_EXEC_IR_VARIADIC,   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE)
+ZR_EXEC_IR_OP(THROW,              0u, 1u,                   0u, (1u << ZR_EXEC_IR_MEMORY_SCHEDULER_TASK), ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW)
+ZR_EXEC_IR_OP(SUSPEND,             1u, ZR_EXEC_IR_VARIADIC,   (1u << ZR_EXEC_IR_MEMORY_SCHEDULER_TASK), (1u << ZR_EXEC_IR_MEMORY_SCHEDULER_TASK), ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND)
+ZR_EXEC_IR_OP(RETURN,              0u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR)
+ZR_EXEC_IR_OP(PHI,                 1u, ZR_EXEC_IR_VARIADIC,   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)

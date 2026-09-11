@@ -56,3 +56,22 @@ if (NOT TARGET zr_vm_ssa_differential_harness_test)
     add_test(NAME ssa_differential_harness COMMAND zr_vm_ssa_differential_harness_test)
     set_tests_properties(ssa_differential_harness PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_core_model_test)
+    add_executable(
+            zr_vm_ssa_core_model_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_core_model.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+    )
+    target_include_directories(zr_vm_ssa_core_model_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+    target_compile_definitions(zr_vm_ssa_core_model_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS
+    )
+    add_test(NAME ssa_core_model COMMAND zr_vm_ssa_core_model_test)
+    set_tests_properties(ssa_core_model PROPERTIES LABELS "ssa")
+endif ()
