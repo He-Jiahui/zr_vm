@@ -354,6 +354,23 @@ TZrBool ZrCore_ExecIr_ValidateModule(const SZrExecIrModule *module,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_ExecIr_VerifyModule(const SZrExecIrModule *module,
+                                   SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 index;
+
+    if (!ZrCore_ExecIr_ValidateModule(module, diagnostic)) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < module->functionCount; ++index) {
+        if (!ZrCore_ExecIr_VerifyFunction(&module->functions[index],
+                                          ZR_EXEC_IR_VERIFY_ALL,
+                                          diagnostic)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                      EZrExecIrVerifyLevel level,
                                      SZrExecIrDiagnostic *diagnostic) {
@@ -531,43 +548,8 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
     }
 
     if ((level & ZR_EXEC_IR_VERIFY_EFFECT) != 0u) {
-        for (instructionIndex = 0u;
-             instructionIndex < function->instructionCount;
-             ++instructionIndex) {
-            const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
-            const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(instruction->opcode);
-            if (info == ZR_NULL) {
-                zr_exec_ir_set_diagnostic(diagnostic,
-                                          ZR_EXEC_IR_DIAGNOSTIC_UNKNOWN_OPCODE,
-                                          function,
-                                          instructionIndex + 1u,
-                                          0u,
-                                          0u,
-                                          instruction->opcode);
-                return ZR_FALSE;
-            }
-            if ((info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE) != 0u &&
-                (instruction->flags & ZR_EXEC_IR_FLAG_MAY_ALLOCATE) == 0u) {
-                zr_exec_ir_set_diagnostic(diagnostic,
-                                          ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
-                                          function,
-                                          instructionIndex + 1u,
-                                          0u,
-                                          ZR_EXEC_IR_FLAG_MAY_ALLOCATE,
-                                          instruction->flags);
-                return ZR_FALSE;
-            }
-            if ((info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW) != 0u &&
-                (instruction->flags & ZR_EXEC_IR_FLAG_MAY_THROW) == 0u) {
-                zr_exec_ir_set_diagnostic(diagnostic,
-                                          ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE,
-                                          function,
-                                          instructionIndex + 1u,
-                                          0u,
-                                          ZR_EXEC_IR_FLAG_MAY_THROW,
-                                          instruction->flags);
-                return ZR_FALSE;
-            }
+        if (!ZrCore_ExecIr_VerifyEffects(function, diagnostic)) {
+            return ZR_FALSE;
         }
     }
     return ZR_TRUE;

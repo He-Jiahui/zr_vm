@@ -524,8 +524,12 @@ ZR_CORE_API const SZrExecIrOpcodeInfo *ZrCore_ExecIr_OpcodeInfo(EZrExecIrOpcode 
 ZR_CORE_API const TZrChar *ZrCore_ExecIr_OpcodeName(EZrExecIrOpcode opcode);
 ZR_CORE_API TZrBool ZrCore_ExecIr_ValidateModule(const SZrExecIrModule *module,
                                                  SZrExecIrDiagnostic *diagnostic);
+ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyModule(const SZrExecIrModule *module,
+                                               SZrExecIrDiagnostic *diagnostic);
 ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                                  EZrExecIrVerifyLevel level,
                                                  SZrExecIrDiagnostic *diagnostic);
+ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
+                                                SZrExecIrDiagnostic *diagnostic);
 
 #endif
