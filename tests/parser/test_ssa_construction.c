@@ -23,9 +23,23 @@ void test_ssa_construction_empty_semir_is_safe(void) {
     ZrCore_ExecIr_FreeFunction(&out);
 }
 
+void test_ssa_construction_dominator_linear_cfg(void) {
+    SZrExecIrFunction f; SZrExecIrDiagnostic d; TZrExecIrBlockId a, b;
+    ZrCore_ExecIr_FunctionInit(&f);
+    a = ZrCore_ExecIr_FunctionAddBlock(&f, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    b = ZrCore_ExecIr_FunctionAddBlock(&f, 0u);
+    f.entryBlockId = a;
+    ZrCore_ExecIr_FunctionAppendSuccessors(&f, &b, 1u, &f.blocks[a - 1u].successorRange);
+    ZrCore_ExecIr_FunctionAppendPredecessors(&f, &a, 1u, &f.blocks[b - 1u].predecessorRange);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_ComputeDominators(&f, &d));
+    TEST_ASSERT_EQUAL(a, f.blocks[b - 1u].immediateDominator);
+    ZrCore_ExecIr_FreeFunction(&f);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ssa_construction_rejects_missing_semantic_facts);
     RUN_TEST(test_ssa_construction_empty_semir_is_safe);
+    RUN_TEST(test_ssa_construction_dominator_linear_cfg);
     return UNITY_END();
 }

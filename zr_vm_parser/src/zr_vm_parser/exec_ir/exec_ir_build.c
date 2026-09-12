@@ -60,7 +60,7 @@ static TZrBool append_source(SZrExecIrFunction *f, const SZrSemanticIrInstructio
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFunction,
+static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                               const SZrExecIrBuildOptions *options,
                               SZrExecIrFunction *output,
                               SZrExecIrDiagnostic *diagnostic) {
@@ -116,7 +116,10 @@ TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFuncti
                 ZrCore_ExecIr_FunctionAppendPredecessors(output, &db->id, 1u, &sb->predecessorRange);
             }
         }
-        if (b->instructionCount != 0u && b->firstInstructionIndex + b->instructionCount <= s->instructions.length) {
+        if (b->instructionCount != 0u && (b->firstInstructionIndex > s->instructions.length || b->instructionCount > s->instructions.length - b->firstInstructionIndex)) {
+            diag_missing(diagnostic, output, db->id, 0u); if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE; ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
+        }
+        if (b->instructionCount != 0u) {
             for (j = 0u; j < b->instructionCount; ++j) {
                 const SZrSemanticIrInstruction *in = (const SZrSemanticIrInstruction *)ZrCore_Array_Get((SZrArray *)&s->instructions, b->firstInstructionIndex + j);
                 SZrExecIrInstruction x; SZrExecIrRange rr = {0u, 0u}, orr = {0u, 0u};
@@ -132,7 +135,9 @@ TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFuncti
                     if (!ZrCore_ExecIr_FunctionAppendOperands(output, ops, in->operandCount, &orr)) { ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
                 }
                 x.results = rr; x.operands = orr;
-                if (!ZrCore_ExecIr_FunctionAppendInstruction(output, &x, ZR_NULL) || !append_source(output, in)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
+                { TZrExecIrInstructionId execId = 0u;
+                if (!ZrCore_ExecIr_FunctionAppendInstruction(output, &x, &execId) || !append_source(output, in)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
+                output->sourceMaps[output->sourceMapCount - 1u].instructionId = execId; }
             }
             db->instructionRange.start = b->firstInstructionIndex + 1u;
             db->instructionRange.count = b->instructionCount;
@@ -140,6 +145,21 @@ TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFuncti
         }
     }
     return ZrParser_ExecIr_ComputeDominators(output, diagnostic) && ZrParser_ExecIr_BuildSsa(output, diagnostic);
+}
+
+TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFunction,
+                              const SZrExecIrBuildOptions *options,
+                              SZrExecIrFunction *output,
+                              SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrFunction temporary;
+    TZrBool ok;
+    if (output == ZR_NULL) return ZR_FALSE;
+    ZrCore_ExecIr_FunctionInit(&temporary);
+    ok = build_impl(semanticFunction, options, &temporary, diagnostic);
+    if (!ok) { ZrCore_ExecIr_FreeFunction(&temporary); return ZR_FALSE; }
+    ZrCore_ExecIr_FreeFunction(output);
+    *output = temporary;
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_ExecIr_BuildModule(const SZrExecIrBuildInput *input, SZrExecIrModule *output, SZrExecIrDiagnostic *diagnostic) {
