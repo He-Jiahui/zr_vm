@@ -49,16 +49,18 @@ static TZrBool zr_exec_ir_value_range_is_valid(const SZrExecIrFunction *function
         return ZR_FALSE;
     }
     for (index = range.start; index < range.start + range.count; ++index) {
-        if (function->operands == ZR_NULL ||
-            function->operands[index] == ZR_EXEC_IR_VALUE_ID_INVALID ||
-            function->operands[index] > function->valueCount) {
+        TZrExecIrValueId valueId = function->operands == ZR_NULL
+                                       ? ZR_EXEC_IR_VALUE_ID_INVALID
+                                       : function->operands[index];
+        if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
+            valueId > function->valueCount) {
             zr_exec_ir_set_diagnostic(diagnostic,
                                       ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                       function,
                                       0u,
                                       0u,
                                       function->valueCount,
-                                      function->operands[index]);
+                                      valueId);
             return ZR_FALSE;
         }
     }

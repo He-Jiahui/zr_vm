@@ -160,10 +160,45 @@ static void test_invalid_opcode_and_overflow_fail_before_allocation(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_validation_rejects_null_operand_pool_without_dereference(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function;
+    TZrExecIrFunctionId functionId;
+    SZrExecIrInstruction instruction;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(
+                        &module,
+                        ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 10u),
+                        UINT64_C(0x66),
+                        &functionId),
+                "null operand fixture function append failed");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, functionId);
+    expect_true(ZrCore_ExecIr_FunctionAddBlock(function,
+                                                ZR_EXEC_IR_BLOCK_FLAG_ENTRY) ==
+                        ZR_EXEC_IR_BLOCK_ID_ENTRY,
+                "null operand fixture entry append failed");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_COPY;
+    instruction.operandRange.count = 1u;
+    /* Deliberately claim one occupied operand without providing a pool. */
+    function->operandCount = 1u;
+    function->operandCapacity = 1u;
+    expect_true(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+                "null operand fixture instruction append failed");
+    expect_true(!ZrCore_ExecIr_ValidateModule(&module, &diagnostic),
+                "null operand pool was accepted");
+    expect_true(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                "null operand pool reported the wrong diagnostic");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_empty_module_and_entry_block();
     test_side_arrays_clone_without_aliasing();
     test_invalid_opcode_and_overflow_fail_before_allocation();
+    test_validation_rejects_null_operand_pool_without_dereference();
     puts("ssa core model PASS");
     return EXIT_SUCCESS;
 }
