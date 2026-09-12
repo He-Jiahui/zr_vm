@@ -141,6 +141,9 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
   before member-address conversion, with read/write and receiver-change coverage.
 - `profile-memory-metrics.md`: allocation, copy, barrier, GC, materialization, and
   member-cache counters with hotspot-derived rates and explicit scope limits.
+- `oracle-projections.md`: pointer-free ExecIR reference execution, observable
+  effect events, transactional no-optimization ExecBC/AOT projections, phi
+  parallel copies, critical-edge splitting, and explicit backend limitations.
 - `task-frame-runtime.md`: structured Task/frame state, synchronous no-allocation completion,
   suspension-only promotion, layout-declared GC/drop maps, result roots, non-Copy transfer,
   and typed frame pooling without a dynamic-object coroutine fallback.

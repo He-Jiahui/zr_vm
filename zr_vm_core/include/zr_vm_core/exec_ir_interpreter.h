@@ -1,0 +1,103 @@
+#ifndef ZR_VM_CORE_EXEC_IR_INTERPRETER_H
+#define ZR_VM_CORE_EXEC_IR_INTERPRETER_H
+
+#include "zr_vm_core/exec_ir.h"
+
+/*
+ * A deliberately small, pointer-free value model for the reference
+ * interpreter.  Runtime SZrTypeValue is not required here: the oracle is
+ * also used by parser-only and cross-process differential tests.
+ */
+typedef enum EZrExecIrOracleValueKind {
+    ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED = 0,
+    ZR_EXEC_IR_ORACLE_VALUE_BOOL,
+    ZR_EXEC_IR_ORACLE_VALUE_SIGNED,
+    ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED,
+    ZR_EXEC_IR_ORACLE_VALUE_FLOAT,
+    ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT
+} EZrExecIrOracleValueKind;
+
+typedef struct SZrExecIrOracleValue {
+    EZrExecIrOracleValueKind kind;
+    union {
+        TZrBool boolean;
+        TZrInt64 signedInteger;
+        TZrUInt64 unsignedInteger;
+        TZrFloat64 floating;
+    } as;
+} SZrExecIrOracleValue;
+
+typedef enum EZrExecIrOracleEventKind {
+    ZR_EXEC_IR_ORACLE_EVENT_CALL = 0,
+    ZR_EXEC_IR_ORACLE_EVENT_STORE,
+    ZR_EXEC_IR_ORACLE_EVENT_THROW,
+    ZR_EXEC_IR_ORACLE_EVENT_DROP,
+    ZR_EXEC_IR_ORACLE_EVENT_BARRIER,
+    ZR_EXEC_IR_ORACLE_EVENT_SUSPEND,
+    ZR_EXEC_IR_ORACLE_EVENT_KIND_COUNT
+} EZrExecIrOracleEventKind;
+
+#define ZR_EXEC_IR_ORACLE_EVENT_OPERAND_LIMIT ((TZrUInt32)4u)
+
+typedef struct SZrExecIrOracleEvent {
+    EZrExecIrOracleEventKind kind;
+    TZrExecIrInstructionId instructionId;
+    TZrExecIrSourceId sourceId;
+    TZrUInt32 operandCount;
+    SZrExecIrOracleValue operands[ZR_EXEC_IR_ORACLE_EVENT_OPERAND_LIMIT];
+} SZrExecIrOracleEvent;
+
+struct SZrExecIrOracleInput;
+typedef TZrBool (*FZrExecIrOracleCall)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands,
+        TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result);
+
+typedef struct SZrExecIrOracleInput {
+    const SZrExecIrFunction *function;
+    /* Initial values are indexed by valueId - 1. */
+    const SZrExecIrOracleValue *initialValues;
+    TZrUInt32 initialValueCount;
+    /* CONSTANT.layoutId is an index into this optional pool. */
+    const SZrExecIrOracleValue *constants;
+    TZrUInt32 constantCount;
+    TZrUInt32 maxSteps;
+    FZrExecIrOracleCall call;
+    void *userData;
+} SZrExecIrOracleInput;
+
+typedef struct SZrExecIrOracleExecutionResult {
+    TZrUInt32 instructionCount;
+    TZrUInt32 executedInstructionCount;
+    TZrUInt32 supportedInstructionCount;
+    TZrUInt32 unsupportedInstructionId;
+    TZrExecIrBlockId currentBlock;
+    SZrExecIrOracleValue returnValue;
+    TZrBool returned;
+    TZrBool terminatedByThrow;
+    TZrBool suspended;
+    SZrExecIrOracleValue *values; /* valueCount entries, valueId - 1 indexed */
+    TZrUInt32 valueCount;
+    TZrUInt32 valueCapacity;
+    SZrExecIrOracleEvent *events;
+    TZrUInt32 eventCount;
+    TZrUInt32 eventCapacity;
+    /* Set by Init/RunOracleEx so Free and transactional replacement can
+     * distinguish API-owned storage from a merely zeroed record. */
+    TZrUInt32 ownershipTag;
+} SZrExecIrOracleExecutionResult;
+
+#define ZR_EXEC_IR_ORACLE_RESULT_TAG ((TZrUInt32)0x4f52434cu)
+
+ZR_CORE_API void ZrCore_ExecIr_OracleResultInit(
+        SZrExecIrOracleExecutionResult *result);
+ZR_CORE_API void ZrCore_ExecIr_OracleResultFree(
+        SZrExecIrOracleExecutionResult *result);
+ZR_CORE_API TZrBool ZrCore_ExecIr_RunOracleEx(
+        const SZrExecIrOracleInput *input,
+        SZrExecIrOracleExecutionResult *result,
+        SZrExecIrDiagnostic *diagnostic);
+
+#endif

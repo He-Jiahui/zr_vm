@@ -545,4 +545,15 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *functi
 ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                                                 SZrExecIrDiagnostic *diagnostic);
 
+/* Compatibility counter for the richer pointer-free oracle in
+ * exec_ir_interpreter.h (01.05). */
+typedef struct SZrExecIrOracleResult {
+    TZrUInt32 instructionCount;
+    TZrUInt32 supportedInstructionCount;
+    TZrUInt32 unsupportedInstructionId;
+} SZrExecIrOracleResult;
+ZR_CORE_API TZrBool ZrCore_ExecIr_RunOracle(const SZrExecIrFunction *function,
+                                             SZrExecIrOracleResult *result,
+                                             SZrExecIrDiagnostic *diagnostic);
+
 #endif
