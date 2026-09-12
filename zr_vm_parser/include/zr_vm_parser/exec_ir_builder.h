@@ -32,9 +32,12 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildModule(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildSsa(
         SZrExecIrFunction *function,
         SZrExecIrDiagnostic *diagnostic);
-ZR_PARSER_API TZrBool ZrParser_ExecIr_Verify(
+ZR_PARSER_API TZrBool ZrParser_ExecIr_VerifyFunction(
         const SZrExecIrFunction *function,
         EZrExecIrVerifyLevel level,
+        SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_Verify(
+        const SZrExecIrModule *module,
         SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_ComputeDominators(
         SZrExecIrFunction *function,
