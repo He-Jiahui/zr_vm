@@ -64,6 +64,7 @@ if (NOT TARGET zr_vm_ssa_core_model_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
     )
     target_include_directories(zr_vm_ssa_core_model_test PRIVATE
@@ -83,6 +84,7 @@ if (NOT TARGET zr_vm_ssa_effects_verifier_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
     target_include_directories(zr_vm_ssa_effects_verifier_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -104,4 +106,24 @@ if (NOT TARGET zr_vm_ssa_construction_test)
     zr_vm_link_parser_core(zr_vm_ssa_construction_test)
     add_test(NAME ssa_construction COMMAND zr_vm_ssa_construction_test)
     set_tests_properties(ssa_construction PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_state_maps_test)
+    add_executable(zr_vm_ssa_state_maps_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_state_maps.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_state_maps_test)
+    target_include_directories(zr_vm_ssa_state_maps_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_state_maps_test PRIVATE UNITY_INCLUDE_CONFIG_H)
+    zr_link_third_party_for_target(zr_vm_ssa_state_maps_test "zr_unity")
+    add_test(NAME ssa_state_maps COMMAND zr_vm_ssa_state_maps_test)
+    set_tests_properties(ssa_state_maps PROPERTIES LABELS "ssa")
 endif ()

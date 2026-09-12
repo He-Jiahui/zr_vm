@@ -1,4 +1,5 @@
 #include "zr_vm_core/exec_ir.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -163,6 +164,10 @@ static void zr_exec_ir_free_function_arrays(SZrExecIrFunction *function) {
     free(function->deoptStates);
     free(function->deoptValues);
     free(function->sourceMaps);
+    if (function->stateMap != ZR_NULL) {
+        ZrCore_ExecIr_StateMapFree(function->stateMap);
+        free(function->stateMap);
+    }
 }
 
 void ZrCore_ExecIr_FrameLayoutInit(SZrExecIrFrameLayout *layout) {
@@ -347,6 +352,12 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
     if (!zr_exec_ir_clone_array((void **)&destination->sourceMaps, &destination->sourceMapCapacity,
                                 source->sourceMaps, source->sourceMapCount, sizeof(*source->sourceMaps))) return ZR_FALSE;
     destination->sourceMapCount = source->sourceMapCount;
+    if (source->stateMap != ZR_NULL) {
+        destination->stateMap = (SZrExecIrStateMap *)calloc(1u, sizeof(*destination->stateMap));
+        if (destination->stateMap == ZR_NULL) return ZR_FALSE;
+        ZrCore_ExecIr_StateMapInit(destination->stateMap);
+        if (!ZrCore_ExecIr_StateMapClone(source->stateMap, destination->stateMap)) return ZR_FALSE;
+    }
     if (source->frameLayout != ZR_NULL) {
         destination->frameLayout = (SZrExecIrFrameLayout *)calloc(1u, sizeof(*destination->frameLayout));
         if (destination->frameLayout == ZR_NULL) return ZR_FALSE;

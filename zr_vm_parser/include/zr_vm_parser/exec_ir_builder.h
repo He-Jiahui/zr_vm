@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_EXEC_IR_BUILDER_H
 
 #include "zr_vm_core/exec_ir.h"
+#include "zr_vm_parser/exec_ir_state_maps.h"
 #include "zr_vm_parser/conf.h"
 
 struct SZrSemanticIrFunction;

@@ -20,6 +20,9 @@ typedef TZrUInt32 TZrExecIrTypeToken;
 typedef TZrUInt32 TZrExecIrSourceId;
 typedef TZrUInt32 TZrExecIrDeoptId;
 
+/* Optional logical state-map side table, defined in exec_ir_state_map.h. */
+typedef struct SZrExecIrStateMap SZrExecIrStateMap;
+
 #define ZR_EXEC_IR_MODULE_ID_INVALID ((TZrExecIrModuleId)0u)
 #define ZR_EXEC_IR_FUNCTION_ID_INVALID ((TZrExecIrFunctionId)0u)
 #define ZR_EXEC_IR_BLOCK_ID_INVALID ((TZrExecIrBlockId)0u)
@@ -66,12 +69,16 @@ typedef enum EZrExecIrInstructionFlags {
     ZR_EXEC_IR_FLAG_MAY_ALLOCATE = (TZrUInt16)1u << 0u,
     ZR_EXEC_IR_FLAG_MAY_THROW = (TZrUInt16)1u << 1u,
     ZR_EXEC_IR_FLAG_MAY_GC = (TZrUInt16)1u << 2u,
-    ZR_EXEC_IR_FLAG_MAY_SUSPEND = (TZrUInt16)1u << 3u
+    ZR_EXEC_IR_FLAG_MAY_SUSPEND = (TZrUInt16)1u << 3u,
+    /* Explicit safepoint/guard boundaries used by logical state maps. */
+    ZR_EXEC_IR_FLAG_DEBUG_POLL = (TZrUInt16)1u << 4u,
+    ZR_EXEC_IR_FLAG_GUARD_EXIT = (TZrUInt16)1u << 5u
 } EZrExecIrInstructionFlags;
 
 #define ZR_EXEC_IR_INSTRUCTION_FLAG_KNOWN_MASK \
     ((TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW | \
-                 ZR_EXEC_IR_FLAG_MAY_GC | ZR_EXEC_IR_FLAG_MAY_SUSPEND))
+                 ZR_EXEC_IR_FLAG_MAY_GC | ZR_EXEC_IR_FLAG_MAY_SUSPEND | \
+                 ZR_EXEC_IR_FLAG_DEBUG_POLL | ZR_EXEC_IR_FLAG_GUARD_EXIT))
 
 /* Schema flags describe an opcode, while instruction flags describe the
  * dynamic properties carried by a concrete instruction.  Keep the old names
@@ -377,6 +384,12 @@ typedef struct SZrExecIrFunction {
     SZrExecIrSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
     TZrUInt32 sourceMapCapacity;
+    union {
+        SZrExecIrStateMap *stateMap;
+        /* Plural spelling retained for callers that model the side table as
+         * a collection of resume maps. */
+        SZrExecIrStateMap *stateMaps;
+    };
     TZrBool sealed;
 } SZrExecIrFunction;
 
