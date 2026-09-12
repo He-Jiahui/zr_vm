@@ -189,6 +189,22 @@ static void test_malformed_block_instruction_range_is_rejected(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_empty_range_with_invalid_start_is_rejected(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+
+    function->blocks[0].instructions.start = UINT32_MAX;
+    function->blocks[0].instructions.count = 0u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "empty range with invalid start accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+           diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY,
+       "empty invalid range diagnostic lost block");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_throw_requires_flag();
     test_memory_tokens_must_be_monotonic();
@@ -198,6 +214,7 @@ int main(void) {
     test_phi_incoming_order_matches_predecessors();
     test_call_binding_row_zero_does_not_require_all_dynamic_flags();
     test_malformed_block_instruction_range_is_rejected();
+    test_empty_range_with_invalid_start_is_rejected();
     puts("ssa effects verifier PASS");
     return EXIT_SUCCESS;
 }

@@ -40,8 +40,10 @@ static TZrExecIrBlockId zr_exec_ir_containing_block(const SZrExecIrFunction *fun
 static TZrBool zr_exec_ir_range_valid(SZrExecIrRange range,
                                       TZrUInt32 count,
                                       const void *pool) {
-    if (range.count == 0u) return ZR_TRUE;
-    if (pool == ZR_NULL || range.start > count || range.count > count - range.start) {
+    if (range.start > count || range.count > count - range.start) {
+        return ZR_FALSE;
+    }
+    if (range.count != 0u && pool == ZR_NULL) {
         return ZR_FALSE;
     }
     return ZR_TRUE;
