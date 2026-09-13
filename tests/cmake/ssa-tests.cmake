@@ -359,3 +359,18 @@ if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_test(NAME ssa_call_return_tail COMMAND zr_vm_ssa_call_return_tail_test)
     set_tests_properties(ssa_call_return_tail PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_roots_observation_test)
+    add_executable(zr_vm_ssa_roots_observation_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_roots_observation.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_roots.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.c)
+    target_include_directories(zr_vm_ssa_roots_observation_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_roots_observation_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    zr_vm_link_core(zr_vm_ssa_roots_observation_test)
+    add_test(NAME ssa_roots_observation COMMAND zr_vm_ssa_roots_observation_test)
+    set_tests_properties(ssa_roots_observation PROPERTIES LABELS "ssa")
+endif ()
