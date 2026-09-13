@@ -341,3 +341,21 @@ if (NOT TARGET zr_vm_ssa_capability_validation_test)
     add_test(NAME ssa_capability_validation COMMAND zr_vm_ssa_capability_validation_test)
     set_tests_properties(ssa_capability_validation PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_call_return_tail_test)
+    add_executable(zr_vm_ssa_call_return_tail_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_call_transfer.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_call_transfer.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_call_return_tail_test)
+    target_compile_definitions(zr_vm_ssa_call_return_tail_test PRIVATE UNITY_INCLUDE_CONFIG_H)
+    target_include_directories(zr_vm_ssa_call_return_tail_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    zr_link_third_party_for_target(zr_vm_ssa_call_return_tail_test "zr_unity")
+    zr_vm_link_core(zr_vm_ssa_call_return_tail_test)
+    add_test(NAME ssa_call_return_tail COMMAND zr_vm_ssa_call_return_tail_test)
+    set_tests_properties(ssa_call_return_tail PROPERTIES LABELS "ssa")
+endif ()
