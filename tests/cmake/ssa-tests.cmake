@@ -204,3 +204,23 @@ if (NOT TARGET zr_vm_ssa_escape_ownership_test)
     add_test(NAME ssa_escape_ownership COMMAND zr_vm_ssa_escape_ownership_test)
     set_tests_properties(ssa_escape_ownership PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_interprocedural_inlining_test)
+    add_executable(zr_vm_ssa_interprocedural_inlining_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_interprocedural_inlining.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_call_graph.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_devirtualize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_inline.c)
+    target_include_directories(zr_vm_ssa_interprocedural_inlining_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_interprocedural_inlining_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_interprocedural_inlining COMMAND zr_vm_ssa_interprocedural_inlining_test)
+    set_tests_properties(ssa_interprocedural_inlining PROPERTIES LABELS "ssa")
+endif ()
