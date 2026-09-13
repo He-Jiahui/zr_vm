@@ -224,3 +224,18 @@ if (NOT TARGET zr_vm_ssa_interprocedural_inlining_test)
     add_test(NAME ssa_interprocedural_inlining COMMAND zr_vm_ssa_interprocedural_inlining_test)
     set_tests_properties(ssa_interprocedural_inlining PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_dispatch_boundaries_test)
+    add_executable(zr_vm_ssa_dispatch_boundaries_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_dispatch_boundaries.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_cold.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_dispatch_boundaries_test)
+    target_compile_definitions(zr_vm_ssa_dispatch_boundaries_test PRIVATE UNITY_INCLUDE_CONFIG_H)
+    target_include_directories(zr_vm_ssa_dispatch_boundaries_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_link_third_party_for_target(zr_vm_ssa_dispatch_boundaries_test "zr_unity")
+    zr_vm_link_core(zr_vm_ssa_dispatch_boundaries_test)
+    add_test(NAME ssa_dispatch_boundaries COMMAND zr_vm_ssa_dispatch_boundaries_test)
+    set_tests_properties(ssa_dispatch_boundaries PROPERTIES LABELS "ssa")
+endif ()
