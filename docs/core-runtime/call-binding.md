@@ -90,6 +90,22 @@ fails with a structured stale-generation diagnostic. A subsequent import links
 the replacement provider by token and contract; static sites do not fall back
 to a member-name lookup.
 
+## Guarded cache witnesses
+
+`ZrCore_Execution_CheckBindingGuard` is the common witness check for resolved
+callsite entries. It validates the persistent contract first, then the
+frame-owned generation, optional module/signature/layout expectations, and
+receiver shape. A shape miss can be reported as `slot-fallback` when the
+declared dispatch slot is still within the receiver's bounded slot table;
+otherwise it is a typed `shape-miss`. Stale generations and contract failures
+remain distinct structured outcomes and never trigger a name lookup.
+
+Dynamic target pointers and PIC witnesses remain runtime-only. The reset
+helper clears those witnesses and statistics while preserving the contract and
+relocation location, so reload and deoptimization cannot erase persistent
+binding facts. Existing GC tracing continues to visit callable, prototype, and
+cached function edges.
+
 ## Test coverage
 
 `call_binding_runtime` covers direct, virtual, interface, typed, generation,
