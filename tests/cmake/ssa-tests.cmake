@@ -268,3 +268,21 @@ if (NOT TARGET zr_vm_ssa_guarded_caches_test)
     add_test(NAME ssa_guarded_caches COMMAND zr_vm_ssa_guarded_caches_test)
     set_tests_properties(ssa_guarded_caches PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_frame_layout_test)
+    add_executable(zr_vm_ssa_frame_layout_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_frame_layout.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.c)
+    target_include_directories(zr_vm_ssa_frame_layout_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_frame_layout_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_frame_layout COMMAND zr_vm_ssa_frame_layout_test)
+    set_tests_properties(ssa_frame_layout PROPERTIES LABELS "ssa")
+endif ()
