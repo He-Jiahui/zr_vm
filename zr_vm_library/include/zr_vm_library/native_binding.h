@@ -6,6 +6,7 @@
 #define ZR_VM_LIBRARY_NATIVE_BINDING_H
 
 #include "zr_vm_library/conf.h"
+#include "zr_vm_library/native_call_plan.h"
 #include "zr_vm_library/zrm.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/type_layout.h"

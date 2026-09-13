@@ -37,6 +37,7 @@
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/native_call_contract.h"
 #include "zr_vm_core/native.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"

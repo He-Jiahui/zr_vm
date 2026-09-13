@@ -9,6 +9,7 @@
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_binding.h"
+#include "zr_vm_library/native_call_plan.h"
 #include "zr_vm_library/native_hints.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"

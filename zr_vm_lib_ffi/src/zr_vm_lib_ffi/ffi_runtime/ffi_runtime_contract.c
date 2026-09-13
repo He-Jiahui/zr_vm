@@ -1,6 +1,9 @@
 #include "ffi_runtime_internal.h"
 
 #include "zr_vm_common/zr_io_conf.h"
+#include "zr_vm_library/native_binding.h"
+
+#include <string.h>
 
 static const char *zr_ffi_contract_primitive_name(
         EZrFfiTypeKind kind,
@@ -592,4 +595,51 @@ TZrBool ZrVmLibFfi_ValidateNativeImportContract(
     }
     zr_ffi_destroy_signature(signature);
     return ZR_TRUE;
+}
+
+TZrBool ZrVmLibFfi_PrepareNativeCallPlan(
+        const SZrNativeImportContract *contract,
+        TZrUInt64 callbackId,
+        SZrNativeCallPlan *plan,
+        SZrNativeCallDiagnostic *diagnostic) {
+    SZrNativeCallRequest request;
+
+    memset(&request, 0, sizeof(request));
+    request.contract = contract;
+    request.expectedSignatureHash = contract != ZR_NULL
+                                            ? contract->signature.signatureHash
+                                            : 0u;
+    request.expectedLayoutHash = contract != ZR_NULL
+                                         ? ZrCore_NativeCall_ComputeLayoutHash(contract)
+                                         : 0u;
+    request.callbackId = callbackId;
+    request.allowDirect = ZR_TRUE;
+    if (contract != ZR_NULL) {
+        if ((contract->requiredCapabilities &
+             ~ZR_VM_NATIVE_RUNTIME_CAPABILITIES) != 0u) {
+            ZrCore_NativeCall_DiagnosticClear(diagnostic);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->status = ZR_NATIVE_CALL_STATUS_INVALID_CONTRACT;
+                diagnostic->phase = ZR_NATIVE_CALL_PHASE_VALIDATE;
+                diagnostic->sourceId = contract->symbolId != 0u
+                                               ? contract->symbolId
+                                               : contract->declaringModuleId;
+                diagnostic->expected = ZR_VM_NATIVE_RUNTIME_CAPABILITIES;
+                diagnostic->actual = contract->requiredCapabilities;
+            }
+            if (plan != ZR_NULL) {
+                memset(plan, 0, sizeof(*plan));
+            }
+            return ZR_FALSE;
+        }
+        request.targetPointerSize = contract->signature.targetPointerSize;
+        request.targetEndianness = contract->signature.targetEndianness;
+        request.targetAbiHash = contract->signature.targetAbiHash;
+        request.hasTargetEnvironment = ZR_TRUE;
+    }
+    /* A FFI pointer is never assumed stable merely because its signature is
+     * typed.  The plan therefore selects the pin/copy lane and the caller
+     * must provide a live pin lease before invoking. */
+    request.nativeAddressStable = ZR_FALSE;
+    return ZrCore_NativeCall_Prepare(&request, plan, diagnostic);
 }

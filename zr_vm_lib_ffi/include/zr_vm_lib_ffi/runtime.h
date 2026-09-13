@@ -7,6 +7,7 @@
 
 #include "zr_vm_lib_ffi/conf.h"
 #include "zr_vm_common/zr_ffi_contract.h"
+#include "zr_vm_core/native_call_contract.h"
 
 const ZrLibModuleDescriptor *ZrVmLibFfiRuntime_GetModuleDescriptor(void);
 
@@ -26,6 +27,11 @@ ZR_VM_LIB_FFI_API TZrBool ZrVmLibFfi_ValidateNativeImportContract(
         const SZrNativeImportContract *contract,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize);
+ZR_VM_LIB_FFI_API TZrBool ZrVmLibFfi_PrepareNativeCallPlan(
+        const SZrNativeImportContract *contract,
+        TZrUInt64 callbackId,
+        SZrNativeCallPlan *plan,
+        SZrNativeCallDiagnostic *diagnostic);
 
 TZrBool ZrFfi_Symbol_Call(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Symbol_MetaCall(ZrLibCallContext *context, SZrTypeValue *result);

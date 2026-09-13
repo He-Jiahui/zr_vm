@@ -108,6 +108,11 @@ depend on the string table: GC shutdown may already be releasing peer string
 objects. The finalizer clears the context before freeing the payload so a
 repeated finalizer callback is a no-op rather than a read through freed memory.
 
+The provider-neutral native call plan and its pin/root/callback lease protocol
+are documented in [Native and FFI call contract](native-ffi-contract.md).  A
+pool view lease and a native-call lease are separate lifetimes; neither one
+implicitly extends or closes the other.
+
 Native symbol invocation follows a cleanup-before-throw contract. Validation
 that runs before argument allocation may raise immediately. Once marshalling,
 pinning, callback activation, or return storage begins, failures record the
