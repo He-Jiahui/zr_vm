@@ -302,3 +302,15 @@ if (NOT TARGET zr_vm_ssa_native_abi_test)
     add_test(NAME ssa_native_abi COMMAND zr_vm_ssa_native_abi_test)
     set_tests_properties(ssa_native_abi PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_aotir_contract_test)
+    add_executable(zr_vm_ssa_aotir_contract_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aotir_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c)
+    target_include_directories(zr_vm_ssa_aotir_contract_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_aotir_contract_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_aotir_contract COMMAND zr_vm_ssa_aotir_contract_test)
+    set_tests_properties(ssa_aotir_contract PROPERTIES LABELS "ssa")
+endif ()
