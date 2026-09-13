@@ -239,3 +239,18 @@ if (NOT TARGET zr_vm_ssa_dispatch_boundaries_test)
     add_test(NAME ssa_dispatch_boundaries COMMAND zr_vm_ssa_dispatch_boundaries_test)
     set_tests_properties(ssa_dispatch_boundaries PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_static_binding_facts_test)
+    add_executable(zr_vm_ssa_static_binding_facts_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_static_binding_facts.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_binding_facts.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_static_binding_facts_test)
+    target_compile_definitions(zr_vm_ssa_static_binding_facts_test PRIVATE UNITY_INCLUDE_CONFIG_H)
+    target_include_directories(zr_vm_ssa_static_binding_facts_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_link_third_party_for_target(zr_vm_ssa_static_binding_facts_test "zr_unity")
+    zr_vm_link_core(zr_vm_ssa_static_binding_facts_test)
+    add_test(NAME ssa_static_binding_facts COMMAND zr_vm_ssa_static_binding_facts_test)
+    set_tests_properties(ssa_static_binding_facts PROPERTIES LABELS "ssa")
+endif ()
