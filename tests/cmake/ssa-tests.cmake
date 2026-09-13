@@ -328,3 +328,16 @@ if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     add_test(NAME ssa_schema_relocation COMMAND zr_vm_ssa_schema_relocation_test)
     set_tests_properties(ssa_schema_relocation PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_capability_validation_test)
+    add_executable(zr_vm_ssa_capability_validation_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_capability_validation.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c)
+    target_include_directories(zr_vm_ssa_capability_validation_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_capability_validation_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_capability_validation COMMAND zr_vm_ssa_capability_validation_test)
+    set_tests_properties(ssa_capability_validation PROPERTIES LABELS "ssa")
+endif ()
