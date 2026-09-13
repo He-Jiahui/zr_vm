@@ -314,3 +314,17 @@ if (NOT TARGET zr_vm_ssa_aotir_contract_test)
     add_test(NAME ssa_aotir_contract COMMAND zr_vm_ssa_aotir_contract_test)
     set_tests_properties(ssa_aotir_contract PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_schema_relocation_test)
+    add_executable(zr_vm_ssa_schema_relocation_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_schema_relocation.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir.c)
+    target_include_directories(zr_vm_ssa_schema_relocation_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_schema_relocation_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_schema_relocation COMMAND zr_vm_ssa_schema_relocation_test)
+    set_tests_properties(ssa_schema_relocation PROPERTIES LABELS "ssa")
+endif ()
