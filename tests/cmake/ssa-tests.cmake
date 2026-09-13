@@ -175,7 +175,8 @@ endif ()
 if (NOT TARGET zr_vm_ssa_gvn_range_test)
     add_executable(zr_vm_ssa_gvn_range_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_gvn_range.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_alias.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_alias.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_ranges.c)
     target_include_directories(zr_vm_ssa_gvn_range_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include

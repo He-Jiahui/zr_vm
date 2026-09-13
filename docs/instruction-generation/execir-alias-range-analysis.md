@@ -23,5 +23,12 @@ same layout; projection IDs alone are not evidence.
 
 Unknown writes, stale generation identities, invalid/unknown bases, or escaped
 external locations force `unknown`. Consumers must therefore retain loads and
-guards whenever the query is not a positive proof. This first batch defines
-only the conservative query; range propagation and GVN are subsequent stages.
+guards whenever the query is not a positive proof.
+
+Range and shape facts are generation-scoped. A bounds proof requires known
+lower and upper bounds for both index and length, matching generations, no
+arithmetic overflow, non-negative bounds, and `index.upper < length.lower`.
+Missing lower bounds, mutable lengths, overflow, or stale generations return
+false. Shape facts require nonzero type/layout/shape identities and are
+discarded on generation invalidation. Range propagation and GVN are subsequent
+stages.
