@@ -39,6 +39,18 @@ set(ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_IDS
         ios_aarch64
         wasm32
         wasm64)
+set(ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_IDS_INTERNAL "")
+set(ZR_VM_SSA_PLATFORM_MATRIX_EXPECTED_PROFILE_IDS
+        desktop_windows_x86_64
+        desktop_windows_aarch64
+        desktop_linux_x86_64
+        desktop_linux_aarch64
+        desktop_darwin_x86_64
+        desktop_darwin_aarch64
+        android_aarch64
+        ios_aarch64
+        wasm32
+        wasm64)
 
 set(ZR_VM_SSA_PLATFORM_MATRIX_BACKENDS
         execbc
@@ -380,6 +392,15 @@ endfunction()
 function(zr_vm_ssa_platform_matrix_validate output_variable)
     set(_valid TRUE)
     set(_reason "")
+    if (NOT "${ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_IDS}" STREQUAL
+            "${ZR_VM_SSA_PLATFORM_MATRIX_EXPECTED_PROFILE_IDS}")
+        set(_valid FALSE)
+        set(_reason "profile-order-or-identity-drift")
+    endif ()
+    if (NOT ZR_VM_SSA_PLATFORM_MATRIX_SCHEMA_VERSION EQUAL 1)
+        set(_valid FALSE)
+        set(_reason "schema-version-${ZR_VM_SSA_PLATFORM_MATRIX_SCHEMA_VERSION}")
+    endif ()
     list(LENGTH ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_IDS _profile_count)
     if (NOT _profile_count EQUAL 10)
         set(_valid FALSE)
@@ -558,47 +579,84 @@ function(zr_vm_ssa_platform_matrix_register_test)
     endif ()
     if (ARG_PROFILE STREQUAL "")
         zr_vm_ssa_platform_matrix_detect_current_target(
-                ARG_PROFILE _detect_reason)
+                _profile _detect_reason)
     else ()
+        string(TOLOWER "${ARG_PROFILE}" _profile)
         set(_detect_reason "")
-    endif ()
-    _zr_vm_ssa_platform_matrix_profile_is_known("${ARG_PROFILE}" _profile_known)
-    if (NOT _profile_known)
-        if (ARG_REQUIRE_TARGET)
-            message(FATAL_ERROR
-                    "${ARG_NAME}: unknown platform profile '${ARG_PROFILE}'")
-        endif ()
-        _zr_vm_ssa_platform_matrix_skip_test(
-                "${ARG_NAME}" "${_detect_reason}profile-unknown" "${ARG_PROFILE}" "${ARG_BACKEND}")
-        return()
     endif ()
     if (ARG_BACKEND STREQUAL "")
         message(FATAL_ERROR
                 "${ARG_NAME}: BACKEND is required for platform registration")
     endif ()
+    string(TOLOWER "${ARG_BACKEND}" _backend)
+    _zr_vm_ssa_platform_matrix_profile_is_known("${_profile}" _profile_known)
+    if (NOT _profile_known)
+        if (ARG_REQUIRE_TARGET)
+            message(FATAL_ERROR
+                    "${ARG_NAME}: unknown platform profile '${_profile}'")
+        endif ()
+        _zr_vm_ssa_platform_matrix_skip_test(
+                "${ARG_NAME}" "${_detect_reason}profile-unknown" "${_profile}" "${_backend}")
+        return()
+    endif ()
     _zr_vm_ssa_platform_matrix_list_contains(
-            "${ZR_VM_SSA_PLATFORM_MATRIX_BACKENDS}" "${ARG_BACKEND}"
+            "${ZR_VM_SSA_PLATFORM_MATRIX_BACKENDS}" "${_backend}"
             _backend_known)
     if (NOT _backend_known)
-        message(FATAL_ERROR "${ARG_NAME}: unknown backend '${ARG_BACKEND}'")
+        message(FATAL_ERROR "${ARG_NAME}: unknown backend '${_backend}'")
     endif ()
-    set(_prefix "ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_${ARG_PROFILE}")
+    set(_prefix "ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_${_profile}")
     set(_allowed_backends ${${_prefix}_ALLOWED_BACKENDS})
-    list(FIND _allowed_backends "${ARG_BACKEND}" _backend_index)
+    list(FIND _allowed_backends "${_backend}" _backend_index)
     if (_backend_index EQUAL -1)
         if (ARG_REQUIRE_TARGET)
             message(FATAL_ERROR
-                    "${ARG_NAME}: backend '${ARG_BACKEND}' is forbidden for ${ARG_PROFILE}")
+                    "${ARG_NAME}: backend '${_backend}' is forbidden for ${_profile}")
         endif ()
         _zr_vm_ssa_platform_matrix_skip_test(
-                "${ARG_NAME}" "backend-unsupported-${ARG_BACKEND}" "${ARG_PROFILE}" "${ARG_BACKEND}")
+                "${ARG_NAME}" "backend-unsupported-${_backend}" "${_profile}" "${_backend}")
         return()
     endif ()
 
-    set(_declared_features ${${_prefix}_DEFAULT_FEATURES})
-    list(APPEND _declared_features ${ARG_DECLARED_FEATURES})
+    set(_default_features ${${_prefix}_DEFAULT_FEATURES})
+    set(_declared_features ${_default_features})
+    set(_optional_features ${${_prefix}_OPTIONAL_FEATURES})
+    set(_forbidden_features ${${_prefix}_FORBIDDEN_FEATURES})
+    foreach (_declared_feature_raw IN LISTS ARG_DECLARED_FEATURES)
+        string(TOLOWER "${_declared_feature_raw}" _declared_feature)
+        _zr_vm_ssa_platform_matrix_list_contains(
+                "${ZR_VM_SSA_PLATFORM_MATRIX_FEATURES}"
+                "${_declared_feature}" _declared_known)
+        if (NOT _declared_known)
+            message(FATAL_ERROR
+                    "${ARG_NAME}: unknown declared feature '${_declared_feature}'")
+        endif ()
+        list(FIND _forbidden_features "${_declared_feature}" _forbidden_index)
+        if (_forbidden_index GREATER -1)
+            if (ARG_REQUIRE_TARGET)
+                message(FATAL_ERROR
+                        "${ARG_NAME}: declared feature '${_declared_feature}' is forbidden on ${_profile}")
+            endif ()
+            _zr_vm_ssa_platform_matrix_skip_test(
+                    "${ARG_NAME}" "feature-forbidden-${_declared_feature}" "${_profile}" "${_backend}")
+            return()
+        endif ()
+        list(FIND _optional_features "${_declared_feature}" _optional_index)
+        list(FIND _default_features "${_declared_feature}" _default_index)
+        if (_optional_index EQUAL -1 AND _default_index EQUAL -1)
+            if (ARG_REQUIRE_TARGET)
+                message(FATAL_ERROR
+                        "${ARG_NAME}: feature '${_declared_feature}' is not declared by ${_profile}")
+            endif ()
+            _zr_vm_ssa_platform_matrix_skip_test(
+                    "${ARG_NAME}" "feature-not-declared-${_declared_feature}" "${_profile}" "${_backend}")
+            return()
+        endif ()
+        list(APPEND _declared_features "${_declared_feature}")
+    endforeach ()
     list(REMOVE_DUPLICATES _declared_features)
-    foreach (_required_feature IN LISTS ARG_REQUIRED_FEATURES)
+    foreach (_required_feature_raw IN LISTS ARG_REQUIRED_FEATURES)
+        string(TOLOWER "${_required_feature_raw}" _required_feature)
         _zr_vm_ssa_platform_matrix_list_contains(
                 "${ZR_VM_SSA_PLATFORM_MATRIX_FEATURES}"
                 "${_required_feature}" _required_known)
@@ -610,10 +668,10 @@ function(zr_vm_ssa_platform_matrix_register_test)
         if (_feature_index EQUAL -1)
             if (ARG_REQUIRE_TARGET)
                 message(FATAL_ERROR
-                        "${ARG_NAME}: required feature '${_required_feature}' is unavailable on ${ARG_PROFILE}")
+                        "${ARG_NAME}: required feature '${_required_feature}' is unavailable on ${_profile}")
             endif ()
             _zr_vm_ssa_platform_matrix_skip_test(
-                    "${ARG_NAME}" "feature-unavailable-${_required_feature}" "${ARG_PROFILE}" "${ARG_BACKEND}")
+                    "${ARG_NAME}" "feature-unavailable-${_required_feature}" "${_profile}" "${_backend}")
             return()
         endif ()
     endforeach ()
@@ -628,7 +686,7 @@ function(zr_vm_ssa_platform_matrix_register_test)
                     "${ARG_NAME}: target '${ARG_TARGET}' does not exist")
         endif ()
         _zr_vm_ssa_platform_matrix_skip_test(
-                "${ARG_NAME}" "target-unavailable-${ARG_TARGET}" "${ARG_PROFILE}" "${ARG_BACKEND}")
+                "${ARG_NAME}" "target-unavailable-${ARG_TARGET}" "${_profile}" "${_backend}")
         return()
     endif ()
 
@@ -638,7 +696,7 @@ function(zr_vm_ssa_platform_matrix_register_test)
         add_test(NAME "${ARG_NAME}" COMMAND ${ARG_COMMAND})
     endif ()
     set_tests_properties("${ARG_NAME}" PROPERTIES
-            LABELS "ssa;platform;platform-${ARG_PROFILE};backend-${ARG_BACKEND}")
+            LABELS "ssa;platform;platform-${_profile};backend-${_backend}")
 endfunction()
 
 # Short alias used by a few test CMake fragments.
@@ -693,4 +751,13 @@ if (CMAKE_SCRIPT_MODE_FILE)
     list(LENGTH ZR_VM_SSA_PLATFORM_MATRIX_PROFILE_IDS _self_profile_count)
     message(STATUS
             "SSA platform matrix self-check passed (${ZR_VM_SSA_PLATFORM_MATRIX_SCHEMA_VERSION}; ${_self_profile_count} profiles)")
+else ()
+    # Validate at include time as well as in standalone script mode.  This
+    # keeps a malformed frozen declaration from silently changing which tests
+    # are registered during a normal project configure.
+    zr_vm_ssa_platform_matrix_validate(_zr_ssa_platform_matrix_valid)
+    if (NOT _zr_ssa_platform_matrix_valid)
+        message(FATAL_ERROR
+                "invalid SSA platform matrix declaration: ${ZR_VM_SSA_PLATFORM_MATRIX_VALID_REASON}")
+    endif ()
 endif ()

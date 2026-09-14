@@ -348,6 +348,8 @@ ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         const SZrSsaPlatformCapability *declared,
         const SZrSsaPlatformObservation *observed,
         SZrSsaPlatformDiagnostic *diagnostic);
+/* Fail-closed convenience predicate: malformed schema/identity/ABI/dispatch
+ * fields are never considered runtime acceptance. */
 ZR_API TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
         const SZrSsaPlatformObservation *observation);
 
