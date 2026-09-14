@@ -1,4 +1,5 @@
 #include "zr_vm_core/artifact_exec_ir.h"
+#include "zr_vm_core/execbc_verify.h"
 #include "zr_vm_parser/artifact_exec_ir.h"
 
 #include <assert.h>
@@ -92,6 +93,38 @@ int main(void) {
         assert(ZrCore_ArtifactExecIr_Read(corrupt, writer.written, &view,
                                           &diagnostic) !=
                ZR_ARTIFACT_EXEC_IR_OK);
+    }
+
+    {
+        TZrByte execBc[8] = {1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+        SZrArtifactExecIrView execBcView;
+        SZrExecBcVerifyOptions options;
+        SZrExecBcVerifyDiagnostic verifyDiagnostic;
+
+        memset(&execBcView, 0, sizeof(execBcView));
+        execBcView.buffer = execBc;
+        execBcView.bufferLength = sizeof(execBc);
+        execBcView.sectionCount = 1u;
+        execBcView.execBcHash = ZrCore_ArtifactExecIr_HashBytes(
+                execBc, sizeof(execBc));
+        execBcView.sections[0].kind = ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_BC;
+        execBcView.sections[0].elementCount = 1u;
+        execBcView.sections[0].elementSize = sizeof(execBc);
+        execBcView.sections[0].byteOffset = 0u;
+        execBcView.sections[0].byteLength = sizeof(execBc);
+        execBcView.sections[0].data = execBc;
+        ZrCore_ExecBcVerifyOptions_Init(&options);
+        options.instructionWidth = sizeof(execBc);
+        assert(ZrCore_ExecBc_VerifyArtifact(
+                       &execBcView, &options, ZR_NULL, ZR_NULL,
+                       &verifyDiagnostic) == ZR_EXEC_BC_VERIFY_OK);
+        execBc[0] = 0xffu;
+        execBc[1] = 0xffu;
+        execBcView.execBcHash = ZrCore_ArtifactExecIr_HashBytes(
+                execBc, sizeof(execBc));
+        assert(ZrCore_ExecBc_VerifyArtifact(
+                       &execBcView, &options, ZR_NULL, ZR_NULL,
+                       &verifyDiagnostic) == ZR_EXEC_BC_VERIFY_INVALID_OPCODE);
     }
     return 0;
 }

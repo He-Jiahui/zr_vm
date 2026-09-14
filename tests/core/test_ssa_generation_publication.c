@@ -1,4 +1,6 @@
 #include "zr_vm_core/hotpatch_generation.h"
+#include "zr_vm_core/hotpatch_publish.h"
+#include "zr_vm_core/hotpatch_retire.h"
 
 #include <assert.h>
 #include <string.h>
@@ -29,10 +31,10 @@ int main(void) {
     make_validated(&v1, &a1, &m1, 101u, 7u);
     make_validated(&v2, &a2, &m2, 202u, 7u);
     assert(ZrCore_HotPatch_Generation_Prepare(&manager, &v1, 7u, &p1, &d) == ZR_HOT_PATCH_GENERATION_OK);
-    assert(ZrCore_HotPatch_Generation_Publish(&manager, &p1, &d) == ZR_HOT_PATCH_GENERATION_OK);
+    assert(ZrCore_HotPatch_PublishPrepared(&manager, &p1, &d) == ZR_HOT_PATCH_GENERATION_OK);
     assert(ZrCore_HotPatch_Generation_AcquireActive(&manager, &oldFrame, &d) == ZR_HOT_PATCH_GENERATION_OK);
     assert(ZrCore_HotPatch_Generation_Prepare(&manager, &v2, 7u, &p2, &d) == ZR_HOT_PATCH_GENERATION_OK);
-    assert(ZrCore_HotPatch_Generation_Publish(&manager, &p2, &d) == ZR_HOT_PATCH_GENERATION_OK);
+    assert(ZrCore_HotPatch_Publish(&manager, &p2, &d) == ZR_HOT_PATCH_GENERATION_OK);
     assert(ZrCore_HotPatch_Generation_AcquireActive(&manager, &newCall, &d) == ZR_HOT_PATCH_GENERATION_OK);
     assert(oldFrame.generation != newCall.generation);
     assert(ZrCore_HotPatch_Generation_Resolve(&manager, &oldFrame, &view, &d) == ZR_HOT_PATCH_GENERATION_OK);
@@ -41,10 +43,10 @@ int main(void) {
     assert(view.contentHash == 202u && view.state == ZR_HOT_PATCH_VERSION_ACTIVE);
     assert(ZrCore_HotPatch_Generation_Release(&manager, &newCall, &d) == ZR_HOT_PATCH_GENERATION_OK);
     collected = 0u;
-    assert(ZrCore_HotPatch_Generation_CollectRetired(&manager, &collected, &d) == ZR_HOT_PATCH_GENERATION_OK);
+    assert(ZrCore_HotPatch_RetireCollect(&manager, &collected, &d) == ZR_HOT_PATCH_GENERATION_OK);
     assert(collected == 0u);
     assert(ZrCore_HotPatch_Generation_Release(&manager, &oldFrame, &d) == ZR_HOT_PATCH_GENERATION_OK);
-    assert(ZrCore_HotPatch_Generation_CollectRetired(&manager, &collected, &d) == ZR_HOT_PATCH_GENERATION_OK);
+    assert(ZrCore_HotPatch_CollectRetired(&manager, &collected, &d) == ZR_HOT_PATCH_GENERATION_OK);
     assert(collected == 1u);
     assert(ZrCore_HotPatch_Generation_Acquire(&manager, 1u, &newCall, &d) == ZR_HOT_PATCH_GENERATION_STALE_LINK);
     ZrCore_HotPatch_GenerationManager_Deinit(&manager);

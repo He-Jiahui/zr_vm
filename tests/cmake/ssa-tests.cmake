@@ -403,6 +403,7 @@ if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     add_executable(zr_vm_ssa_schema_relocation_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_schema_relocation.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/execbc_verify.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir.c)
     target_include_directories(zr_vm_ssa_schema_relocation_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -417,7 +418,8 @@ if (NOT TARGET zr_vm_ssa_capability_validation_test)
     add_executable(zr_vm_ssa_capability_validation_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_capability_validation.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_capability.c)
     target_include_directories(zr_vm_ssa_capability_validation_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -492,7 +494,9 @@ endif ()
 if (NOT TARGET zr_vm_ssa_generation_publication_test)
     add_executable(zr_vm_ssa_generation_publication_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_generation_publication.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_publish.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_retire.c)
     target_include_directories(zr_vm_ssa_generation_publication_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -506,7 +510,8 @@ if (NOT TARGET zr_vm_ssa_rollback_restricted_test)
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_rollback_restricted.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_profile.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_profile.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_capability.c)
     target_include_directories(zr_vm_ssa_rollback_restricted_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)

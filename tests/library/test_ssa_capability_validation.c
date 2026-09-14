@@ -1,4 +1,5 @@
 #include "zr_vm_core/capability_manifest.h"
+#include "zr_vm_core/hotpatch_capability.h"
 
 #include <assert.h>
 #include <string.h>
@@ -55,11 +56,26 @@ int main(void) {
     assert(validated.signatureVerified && validated.immutableContent);
     assert(validated.requiredCapabilities == UINT64_C(0x03));
 
+    {
+        TZrUInt64 required = 0u;
+        assert(ZrCore_HotPatch_ComputeRequiredCapabilities(
+                       &manifest, UINT64_C(0x03), &required, &diagnostic) ==
+               ZR_HOT_PATCH_OK);
+        assert(required == UINT64_C(0x03));
+    }
+
     manifest.requiredCapabilities = UINT64_C(0x04);
     validated.contentHash = 777u;
     assert(ZrCore_HotPatch_Validate(&input, verify, ZR_NULL, &validated,
                                     &diagnostic) ==
            ZR_HOT_PATCH_CAPABILITY_ESCALATION);
+    {
+        TZrUInt64 required = 0u;
+        assert(ZrCore_HotPatch_ComputeCapabilityClosure(
+                       &requirement, 1u, 0u, UINT64_C(0x01), &required,
+                       &diagnostic) == ZR_HOT_PATCH_CAPABILITY_ESCALATION);
+        assert(required == 0u);
+    }
     assert(validated.contentHash == 0u);
     manifest.requiredCapabilities = 0u;
     manifest.flags = ZR_HOT_PATCH_FLAG_HAS_MACHINE_CODE;
