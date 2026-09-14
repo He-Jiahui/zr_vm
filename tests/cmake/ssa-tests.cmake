@@ -740,6 +740,7 @@ if (NOT TARGET zr_vm_ssa_generated_fusion_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call_binding.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call_binding_graph.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_binding_facts.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
