@@ -232,6 +232,26 @@ if (NOT TARGET zr_vm_ssa_interprocedural_inlining_test)
     set_tests_properties(ssa_interprocedural_inlining PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_loops_specialization_test)
+    add_executable(zr_vm_ssa_loops_specialization_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_loops_specialization.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_loops.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_licm.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_profile.c)
+    target_include_directories(zr_vm_ssa_loops_specialization_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_loops_specialization_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_loops_specialization COMMAND zr_vm_ssa_loops_specialization_test)
+    set_tests_properties(ssa_loops_specialization PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_dispatch_boundaries_test)
     add_executable(zr_vm_ssa_dispatch_boundaries_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_dispatch_boundaries.c
