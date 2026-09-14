@@ -16,6 +16,7 @@
 #include "zr_vm_parser/exec_ir_alias.h"
 #include "zr_vm_parser/exec_ir_ranges.h"
 #include "zr_vm_parser/exec_ir_gvn.h"
+#include "zr_vm_parser/aot_ir_lowering.h"
 #include "zr_vm_parser/exec_ir_fusion.h"
 #include "zr_vm_parser/exec_ir_layout_visibility.h"
 #include "zr_vm_parser/exec_ir_send_sync.h"

@@ -322,6 +322,20 @@ if (NOT TARGET zr_vm_ssa_aotir_contract_test)
     set_tests_properties(ssa_aotir_contract PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_c_llvm_lowering_test)
+    add_executable(zr_vm_ssa_c_llvm_lowering_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_c_llvm_lowering.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c)
+    target_include_directories(zr_vm_ssa_c_llvm_lowering_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_c_llvm_lowering_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_c_llvm_lowering COMMAND zr_vm_ssa_c_llvm_lowering_test)
+    set_tests_properties(ssa_c_llvm_lowering PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     add_executable(zr_vm_ssa_schema_relocation_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_schema_relocation.c
