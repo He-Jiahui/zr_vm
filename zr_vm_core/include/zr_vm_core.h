@@ -21,6 +21,7 @@
 #include "zr_vm_core/artifact_exec_ir.h"
 #include "zr_vm_core/capability_manifest.h"
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/container_storage_contract.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conf.h"

@@ -343,6 +343,20 @@ if (NOT TARGET zr_vm_ssa_capability_validation_test)
     set_tests_properties(ssa_capability_validation PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_maps_strings_test)
+    add_executable(zr_vm_ssa_maps_strings_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_maps_strings.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/object/container_storage_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/src/zr_vm_library/container_storage_contract.c)
+    target_include_directories(zr_vm_ssa_maps_strings_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_maps_strings_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_maps_strings COMMAND zr_vm_ssa_maps_strings_test)
+    set_tests_properties(ssa_maps_strings PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
