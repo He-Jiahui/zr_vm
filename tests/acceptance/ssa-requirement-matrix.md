@@ -57,7 +57,7 @@ missing case, duplicate ID, or unbound evidence is a gate failure.
 | 07.02 | AOT / `07-aot-backends/02-c-llvm-lowering.md` | `ssa_c_llvm_lowering` | C/LLVM lowering parity | unsupported lowering keeps fallback | event/exception mismatch rejected | open |
 | 07.03 | AOT / `07-aot-backends/03-generics-lto-pgo.md` | `ssa_generics_lto_pgo` | generic release policy | stale profile ignored | capability/ABI mismatch rejected | open |
 | 07.04 | AOT / `07-aot-backends/04-aot-runner-coverage.md` | `ssa_aot_runner_coverage` | actual backend coverage | zero denominator unavailable | fallback cannot be labelled AOT | open |
-| 08.01 | artifact / `08-artifact-hotpatch/01-schema-relocation.md` | `ssa_artifact_schema` | pointer-free artifact | unknown optional section skipped | raw process address rejected | open |
+| 08.01 | artifact / `08-artifact-hotpatch/01-schema-relocation.md` | `ssa_schema_relocation` | pointer-free artifact | unknown optional section skipped | raw process address rejected | open |
 | 08.02 | artifact / `08-artifact-hotpatch/02-capability-validation.md` | `ssa_capability_validation` | capability intersection | empty capability set valid | capability escalation rejected | open |
 | 08.03 | artifact / `08-artifact-hotpatch/03-generation-publication.md` | `ssa_generation_publication` | atomic generation publish | old frame keeps old generation | stale binding returns link error | open |
 | 08.04 | artifact / `08-artifact-hotpatch/04-rollback-restricted.md` | `ssa_rollback_restricted` | restricted rollback | repeated rollback idempotent | new import/layout change rejected | open |
