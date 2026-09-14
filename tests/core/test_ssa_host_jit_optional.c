@@ -64,10 +64,11 @@ static SZrJitStateMapFacts test_maps(void) {
     maps.unwindEntryCount = 1u;
     maps.debugEntryCount = 1u;
     maps.deoptEntryCount = 1u;
-    maps.rootMapHash = 5001u;
-    maps.unwindMapHash = 5002u;
-    maps.debugMapHash = 5003u;
-    maps.deoptMapHash = 5004u;
+    /* The publication proof carries the canonical hashes for these maps. */
+    maps.rootMapHash = 3001u;
+    maps.unwindMapHash = 3002u;
+    maps.debugMapHash = 3003u;
+    maps.deoptMapHash = 3004u;
     maps.frameLayoutHash = 1002u;
     return maps;
 }
