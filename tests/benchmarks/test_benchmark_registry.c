@@ -263,6 +263,14 @@ int main(void) {
     failures += benchmark_registry_expect_file_contains(registryPath,
                                                         "ZR_VM_BENCHMARK_TIER_SCALE_profile",
                                                         "profile tier");
+    failures += benchmark_registry_expect_file_contains(
+            registryPath,
+            "ZR_VM_BENCHMARK_AOT_IMPLEMENTATION_ORDER",
+            "AOT implementation order");
+    failures += benchmark_registry_expect_file_contains(
+            registryPath, "\"aot_c\"", "C-AOT implementation id");
+    failures += benchmark_registry_expect_file_contains(
+            registryPath, "\"aot_llvm\"", "LLVM-AOT implementation id");
     failures += benchmark_registry_expect_file_contains(registryPath, "\"java\"", "Java implementation id");
     failures += benchmark_registry_expect_file_contains(registryPath, "\"lua\"", "Lua implementation id");
     failures += benchmark_registry_expect_file_contains(registryPath, "\"qjs\"", "QuickJS implementation id");

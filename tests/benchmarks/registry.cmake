@@ -13,6 +13,25 @@ set(ZR_VM_BENCHMARK_IMPLEMENTATION_ORDER
         "dotnet"
         "java")
 
+# AOT implementations are declared separately from the cross-language process
+# order.  The regular performance suite must not silently execute an
+# interpreter or zr_binary row under an AOT label when a generated artifact is
+# unavailable; consumers opt into these rows only after resolving the runner
+# target below.
+set(ZR_VM_BENCHMARK_AOT_IMPLEMENTATION_ORDER
+        "aot_c"
+        "aot_llvm")
+set(ZR_VM_BENCHMARK_AOT_BACKEND_aot_c "C")
+set(ZR_VM_BENCHMARK_AOT_BACKEND_aot_llvm "LLVM")
+set(ZR_VM_BENCHMARK_AOT_MODE_aot_c "aot_c")
+set(ZR_VM_BENCHMARK_AOT_MODE_aot_llvm "aot_llvm")
+set(ZR_VM_BENCHMARK_AOT_RUNNER_TARGET_aot_c "")
+set(ZR_VM_BENCHMARK_AOT_RUNNER_TARGET_aot_llvm "")
+set(ZR_VM_BENCHMARK_AOT_AVAILABLE_aot_c FALSE)
+set(ZR_VM_BENCHMARK_AOT_AVAILABLE_aot_llvm FALSE)
+set(ZR_VM_BENCHMARK_AOT_DEFAULT_IMPLEMENTATIONS
+        "${ZR_VM_BENCHMARK_AOT_IMPLEMENTATION_ORDER}")
+
 set(ZR_VM_BENCHMARK_TIER_SCALE_smoke 1)
 set(ZR_VM_BENCHMARK_TIER_SCALE_core 4)
 set(ZR_VM_BENCHMARK_TIER_SCALE_stress 16)
@@ -24,6 +43,29 @@ set(ZR_VM_BENCHMARK_DEFAULT_CORE_IMPLEMENTATIONS
         "zr_interp"
         "zr_binary"
         "python")
+
+function(zr_vm_benchmark_aot_implementation_is_declared implementation_id output_variable)
+    list(FIND ZR_VM_BENCHMARK_AOT_IMPLEMENTATION_ORDER
+            "${implementation_id}" _aot_index)
+    if (_aot_index GREATER -1)
+        set(${output_variable} TRUE PARENT_SCOPE)
+    else ()
+        set(${output_variable} FALSE PARENT_SCOPE)
+    endif ()
+endfunction()
+
+function(zr_vm_benchmark_aot_is_available implementation_id output_variable)
+    zr_vm_benchmark_aot_implementation_is_declared(
+            "${implementation_id}" _aot_declared)
+    if (NOT _aot_declared)
+        set(${output_variable} FALSE PARENT_SCOPE)
+    elseif (DEFINED ZR_VM_BENCHMARK_AOT_AVAILABLE_${implementation_id} AND
+            ZR_VM_BENCHMARK_AOT_AVAILABLE_${implementation_id})
+        set(${output_variable} TRUE PARENT_SCOPE)
+    else ()
+        set(${output_variable} FALSE PARENT_SCOPE)
+    endif ()
+endfunction()
 
 function(zr_vm_register_benchmark_case name)
     set(options "")
@@ -40,7 +82,8 @@ function(zr_vm_register_benchmark_case name)
     set(multiValueArgs
             TIERS
             IMPLEMENTATIONS
-            CORE_IMPLEMENTATIONS)
+            CORE_IMPLEMENTATIONS
+            AOT_IMPLEMENTATIONS)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if (NOT ARG_DESCRIPTION OR NOT ARG_PASS_BANNER)
@@ -75,6 +118,18 @@ function(zr_vm_register_benchmark_case name)
     if (NOT ARG_CORE_IMPLEMENTATIONS)
         set(ARG_CORE_IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_CORE_IMPLEMENTATIONS}")
     endif ()
+    if (NOT ARG_AOT_IMPLEMENTATIONS)
+        set(ARG_AOT_IMPLEMENTATIONS "${ZR_VM_BENCHMARK_AOT_DEFAULT_IMPLEMENTATIONS}")
+    endif ()
+
+    foreach (aot_implementation IN LISTS ARG_AOT_IMPLEMENTATIONS)
+        zr_vm_benchmark_aot_implementation_is_declared(
+                "${aot_implementation}" aot_implementation_declared)
+        if (NOT aot_implementation_declared)
+            message(FATAL_ERROR
+                    "Unknown AOT implementation id '${aot_implementation}' for case '${name}'")
+        endif ()
+    endforeach ()
 
     list(APPEND ZR_VM_BENCHMARK_CASE_NAMES "${name}")
     set(ZR_VM_BENCHMARK_CASE_NAMES "${ZR_VM_BENCHMARK_CASE_NAMES}" PARENT_SCOPE)
@@ -86,6 +141,7 @@ function(zr_vm_register_benchmark_case name)
     set("ZR_VM_BENCHMARK_TIERS_${name}" "${ARG_TIERS}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_IMPLEMENTATIONS_${name}" "${ARG_IMPLEMENTATIONS}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CORE_IMPLEMENTATIONS_${name}" "${ARG_CORE_IMPLEMENTATIONS}" PARENT_SCOPE)
+    set("ZR_VM_BENCHMARK_AOT_IMPLEMENTATIONS_${name}" "${ARG_AOT_IMPLEMENTATIONS}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CHECKSUM_${name}_smoke" "${ARG_CHECKSUM_SMOKE}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CHECKSUM_${name}_core" "${ARG_CHECKSUM_CORE}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CHECKSUM_${name}_profile" "${ARG_CHECKSUM_PROFILE}" PARENT_SCOPE)

@@ -222,3 +222,203 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
     }
     return fclose(file) == 0;
 }
+
+static int zr_perf_report_aot_text_valid(const TZrChar *text,
+                                         size_t capacity,
+                                         int required) {
+    size_t index;
+    size_t length = 0u;
+
+    if (text == NULL || capacity == 0u) {
+        return 0;
+    }
+    while (length < capacity && text[length] != '\0') {
+        ++length;
+    }
+    if (length == capacity || (required && length == 0u)) {
+        return 0;
+    }
+    for (index = 0u; index < length; ++index) {
+        const unsigned char value = (unsigned char)text[index];
+        if (value < 0x20u || value > 0x7eu) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int zr_perf_report_aot_phase_valid(double value) {
+    return (value == -1.0 || (isfinite(value) && value >= 0.0)) ? 1 : 0;
+}
+
+const TZrChar *ZrPerfReport_AotStatusName(EZrPerfAotReportStatus status) {
+    switch (status) {
+        case ZR_PERF_AOT_REPORT_RAN:
+            return "RAN";
+        case ZR_PERF_AOT_REPORT_FALLBACK:
+            return "FALLBACK";
+        case ZR_PERF_AOT_REPORT_UNAVAILABLE:
+            return "UNAVAILABLE";
+        case ZR_PERF_AOT_REPORT_FAILED:
+            return "FAILED";
+        case ZR_PERF_AOT_REPORT_INVALID:
+        case ZR_PERF_AOT_REPORT_STATUS_COUNT:
+        default:
+            return "INVALID";
+    }
+}
+
+int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
+    TZrUInt64 semanticSum;
+
+    if (report == NULL || report->status <= ZR_PERF_AOT_REPORT_INVALID ||
+        report->status >= ZR_PERF_AOT_REPORT_STATUS_COUNT ||
+        !zr_perf_report_aot_text_valid(report->requestedBackend,
+                                       sizeof(report->requestedBackend), 1) ||
+        !zr_perf_report_aot_text_valid(report->entryToken,
+                                       sizeof(report->entryToken), 1) ||
+        !zr_perf_report_aot_text_valid(report->actualBackend,
+                                       sizeof(report->actualBackend),
+                                       report->status != ZR_PERF_AOT_REPORT_UNAVAILABLE) ||
+        !zr_perf_report_aot_text_valid(report->artifactHash,
+                                       sizeof(report->artifactHash), 0) ||
+        !zr_perf_report_aot_text_valid(report->toolchain,
+                                       sizeof(report->toolchain), 0) ||
+        !zr_perf_report_aot_text_valid(report->failureReason,
+                                       sizeof(report->failureReason), 0) ||
+        !zr_perf_report_aot_phase_valid(report->compileMs) ||
+        !zr_perf_report_aot_phase_valid(report->linkMs) ||
+        !zr_perf_report_aot_phase_valid(report->loadMs) ||
+        !zr_perf_report_aot_phase_valid(report->startupMs) ||
+        !zr_perf_report_aot_phase_valid(report->runMs)) {
+        return 0;
+    }
+    if (report->status == ZR_PERF_AOT_REPORT_RAN &&
+        (report->processExitCode != 0 ||
+         strcmp(report->requestedBackend, report->actualBackend) != 0)) {
+        return 0;
+    }
+    if (report->status == ZR_PERF_AOT_REPORT_FALLBACK &&
+        (report->processExitCode != 0 || report->actualBackend[0] == '\0' ||
+         strcmp(report->requestedBackend, report->actualBackend) == 0)) {
+        return 0;
+    }
+    if (report->status == ZR_PERF_AOT_REPORT_UNAVAILABLE &&
+        report->processExitCode == 0) {
+        /* An unavailable artifact cannot be represented as a successful
+         * process invocation. */
+        return 0;
+    }
+    if (report->coverageAvailable == ZR_FALSE) {
+        if (report->nativeCoverage != -1.0 || report->semanticSites != 0u ||
+            report->executedSemanticSites != 0u || report->nativeSites != 0u ||
+            report->nativeHelperSites != 0u || report->interpreterSites != 0u) {
+            return 0;
+        }
+    } else {
+        if (report->semanticSites == 0u || report->executedSemanticSites == 0u ||
+            report->executedSemanticSites > report->semanticSites ||
+            !isfinite(report->nativeCoverage) || report->nativeCoverage < 0.0 ||
+            report->nativeCoverage > 1.0 ||
+            report->nativeSites > report->executedSemanticSites ||
+            report->nativeHelperSites > report->executedSemanticSites ||
+            report->interpreterSites > report->executedSemanticSites ||
+            report->nativeSites > UINT64_MAX - report->nativeHelperSites) {
+            return 0;
+        }
+        semanticSum = report->nativeSites + report->nativeHelperSites;
+        if (semanticSum > UINT64_MAX - report->interpreterSites ||
+            semanticSum + report->interpreterSites != report->executedSemanticSites) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void zr_perf_report_aot_json_phase(FILE *file,
+                                          const char *name,
+                                          double value) {
+    fprintf(file, "\"%s\": ", name);
+    if (value == -1.0) {
+        fputs("null", file);
+    } else {
+        fprintf(file, "%.3f", value);
+    }
+}
+
+int ZrPerfReport_WriteAotJson(const char *jsonPath,
+                              const SZrPerfAotPhaseReport *report) {
+    FILE *file;
+
+    if (jsonPath == NULL || !ZrPerfReport_ValidateAotPhase(report)) {
+        return 0;
+    }
+    file = fopen(jsonPath, "wb");
+    if (file == NULL) {
+        return 0;
+    }
+    fprintf(file, "{\n  \"schema_version\": 1,\n  \"status\": ");
+    zr_perf_report_json_escaped(file, ZrPerfReport_AotStatusName(report->status));
+    fprintf(file, ",\n  \"process_exit_code\": %d,\n  \"requested_backend\": ",
+            report->processExitCode);
+    zr_perf_report_json_escaped(file, report->requestedBackend);
+    fputs(",\n  \"actual_backend\": ", file);
+    if (report->actualBackend[0] == '\0') fputs("null", file);
+    else zr_perf_report_json_escaped(file, report->actualBackend);
+    fputs(",\n  \"entry_token\": ", file);
+    zr_perf_report_json_escaped(file, report->entryToken);
+    fputs(",\n  \"failure_reason\": ", file);
+    if (report->failureReason[0] == '\0') fputs("null", file);
+    else zr_perf_report_json_escaped(file, report->failureReason);
+    fputs(",\n  \"artifact\": {\n    \"hash\": ", file);
+    if (report->artifactHash[0] == '\0') fputs("null", file);
+    else zr_perf_report_json_escaped(file, report->artifactHash);
+    fputs(",\n    \"toolchain\": ", file);
+    if (report->toolchain[0] == '\0') fputs("null", file);
+    else zr_perf_report_json_escaped(file, report->toolchain);
+    fputs("\n  },\n  \"phase_ms\": {", file);
+    zr_perf_report_aot_json_phase(file, "compile", report->compileMs);
+    fputs(", ", file);
+    zr_perf_report_aot_json_phase(file, "link", report->linkMs);
+    fputs(", ", file);
+    zr_perf_report_aot_json_phase(file, "load", report->loadMs);
+    fputs(", ", file);
+    zr_perf_report_aot_json_phase(file, "startup", report->startupMs);
+    fputs(", ", file);
+    zr_perf_report_aot_json_phase(file, "run", report->runMs);
+    fputs("},\n  \"memory\": {\n    \"rss_bytes\": ", file);
+    if (report->hasRssBytes == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->rssBytes);
+    fputs(",\n    \"code_size_bytes\": ", file);
+    if (report->hasCodeSizeBytes == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->codeSizeBytes);
+    fputs("\n  },\n  \"coverage\": {\n    \"available\": ", file);
+    fputs(report->coverageAvailable != ZR_FALSE ? "true" : "false", file);
+    fputs(",\n    \"semantic_sites\": ", file);
+    if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->semanticSites);
+    fputs(",\n    \"executed_semantic_sites\": ", file);
+    if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->executedSemanticSites);
+    fputs(",\n    \"native_sites\": ", file);
+    if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->nativeSites);
+    fputs(",\n    \"native_helper_sites\": ", file);
+    if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->nativeHelperSites);
+    fputs(",\n    \"interpreter_sites\": ", file);
+    if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%" PRIu64, report->interpreterSites);
+    fprintf(file, ",\n    \"fallback_count\": %" PRIu64
+                 ",\n    \"deopt_count\": %" PRIu64
+                 ",\n    \"native_coverage\": ",
+            report->fallbackCount, report->deoptCount);
+    if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
+    else fprintf(file, "%.9f", report->nativeCoverage);
+    fputs("\n  }\n}\n", file);
+    if (ferror(file) || fflush(file) != 0) {
+        fclose(file);
+        return 0;
+    }
+    return fclose(file) == 0;
+}

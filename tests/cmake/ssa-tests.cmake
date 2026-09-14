@@ -782,6 +782,42 @@ if (NOT TARGET zr_vm_ssa_aot_backend_adapters_test)
     set_tests_properties(aot_backend_adapters PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_aot_runner_coverage_test)
+    add_executable(zr_vm_ssa_aot_runner_coverage_test
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/test_ssa_aot_runner_coverage.c
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner/aot_coverage.c
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner/aot_runner.c
+            ${CMAKE_SOURCE_DIR}/tests/performance/perf_report.c
+            ${CMAKE_SOURCE_DIR}/tests/performance/perf_statistics.c)
+    target_include_directories(zr_vm_ssa_aot_runner_coverage_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner
+            ${CMAKE_SOURCE_DIR}/tests/performance
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_aot_runner_coverage_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_aot_runner_coverage
+            COMMAND zr_vm_ssa_aot_runner_coverage_test)
+    set_tests_properties(ssa_aot_runner_coverage PROPERTIES LABELS "ssa")
+    if (NOT WIN32)
+        target_link_libraries(zr_vm_ssa_aot_runner_coverage_test PRIVATE m)
+    endif ()
+endif ()
+
+# Build the process-facing runner as a separate artifact as well.  It has no
+# generated entries in the repository, so it is intentionally not registered
+# as a passing CTest; invoking it without a provider must report unavailable.
+if (NOT TARGET zr_vm_aot_benchmark_runner)
+    add_executable(zr_vm_aot_benchmark_runner
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner/main.c
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner/aot_runner.c
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner/aot_coverage.c)
+    target_include_directories(zr_vm_aot_benchmark_runner PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/benchmarks/aot_runner
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_aot_benchmark_runner PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+endif ()
+
 if (NOT TARGET zr_vm_ssa_optimization_remarks_test)
     add_executable(zr_vm_ssa_optimization_remarks_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_optimization_remarks.c
