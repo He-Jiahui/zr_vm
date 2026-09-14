@@ -3,6 +3,8 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_frame_layout.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.c
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/include/zr_vm_core/execution_frame_layout.h
+  - zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
 doc_type: runtime-contract
 status: implemented
 ---
@@ -23,3 +25,12 @@ logical-to-physical mapping and every physical slot's identity, offset, size,
 alignment and type token. The legacy `SZrFunction.frameSlotLayouts` and dense
 `SZrTypeValueOnStack` mirror remain unchanged; this descriptor is an additive
 migration boundary until the runtime consumers are switched in later 04.x work.
+
+The core-facing `SZrExecutionFrameLayout` is the checked consumer boundary. It
+uses the same logical/physical distinction, rejects offset and alignment
+overflow, and hashes slots in logical-id order so producer insertion order
+cannot change a guard. `ZrCore_ExecutionFrameLayout_Finalize` must succeed
+before a frame is published; consumers reject a stale or unfinalized
+descriptor instead of guessing an offset. The standalone
+`ssa_core_frame_layout` test exercises reuse, address-escape pinning, hash
+canonicalization, and malformed layouts without linking the parser.

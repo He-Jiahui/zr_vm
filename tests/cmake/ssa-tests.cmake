@@ -316,6 +316,23 @@ if (NOT TARGET zr_vm_ssa_frame_layout_test)
     set_tests_properties(ssa_frame_layout PROPERTIES LABELS "ssa")
 endif ()
 
+# Core-facing frame descriptors are tested independently from the parser
+# producer.  Keeping this contract test standalone catches accidental
+# dependencies on parser diagnostics or pointer-bearing producer state.
+if (NOT TARGET zr_vm_ssa_core_frame_layout_test)
+    add_executable(zr_vm_ssa_core_frame_layout_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_frame_layout.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c)
+    target_include_directories(zr_vm_ssa_core_frame_layout_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_core_frame_layout_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_core_frame_layout COMMAND zr_vm_ssa_core_frame_layout_test)
+    set_tests_properties(ssa_core_frame_layout PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_native_abi_test)
     add_executable(zr_vm_ssa_native_abi_test
             ${CMAKE_SOURCE_DIR}/tests/ffi/test_ssa_native_abi.c
@@ -761,6 +778,21 @@ if (NOT TARGET zr_vm_ssa_roots_observation_test)
     zr_vm_link_core(zr_vm_ssa_roots_observation_test)
     add_test(NAME ssa_roots_observation COMMAND zr_vm_ssa_roots_observation_test)
     set_tests_properties(ssa_roots_observation PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_core_roots_observation_test)
+    add_executable(zr_vm_ssa_core_roots_observation_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_roots_observation.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c)
+    target_include_directories(zr_vm_ssa_core_roots_observation_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_core_roots_observation_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_core_roots_observation
+            COMMAND zr_vm_ssa_core_roots_observation_test)
+    set_tests_properties(ssa_core_roots_observation PROPERTIES LABELS "ssa")
 endif ()
 
 # The AOT archive is an optional consumer of the shared parser/core libraries.

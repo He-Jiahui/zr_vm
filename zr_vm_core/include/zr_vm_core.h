@@ -38,6 +38,7 @@
 #include "zr_vm_core/execution_contract.h"
 #include "zr_vm_core/execution_backend.h"
 #include "zr_vm_core/execution_call_transfer.h"
+#include "zr_vm_core/execution_frame_layout.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/function.h"
