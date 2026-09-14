@@ -387,6 +387,18 @@ if (NOT TARGET zr_vm_ssa_arrays_slices_test)
     set_tests_properties(ssa_arrays_slices PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_generation_publication_test)
+    add_executable(zr_vm_ssa_generation_publication_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_generation_publication.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c)
+    target_include_directories(zr_vm_ssa_generation_publication_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_generation_publication_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_generation_publication COMMAND zr_vm_ssa_generation_publication_test)
+    set_tests_properties(ssa_generation_publication PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
