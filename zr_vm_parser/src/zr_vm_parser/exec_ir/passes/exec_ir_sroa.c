@@ -7,6 +7,51 @@
 #define ZR_AGGREGATE_FNV_OFFSET UINT64_C(1469598103934665603)
 #define ZR_AGGREGATE_FNV_PRIME UINT64_C(1099511628211)
 
+static EZrExecutionDiagnosticCode zr_aggregate_execution_code(
+        EZrExecIrAggregateStatus status) {
+    switch (status) {
+        case ZR_EXEC_IR_AGGREGATE_INVALID_ARGUMENT:
+            return ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT;
+        case ZR_EXEC_IR_AGGREGATE_SCHEMA_MISMATCH:
+            return ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH;
+        case ZR_EXEC_IR_AGGREGATE_GENERATION_STALE:
+            return ZR_EXECUTION_DIAGNOSTIC_STALE_GENERATION;
+        case ZR_EXEC_IR_AGGREGATE_HASH_MISMATCH:
+        case ZR_EXEC_IR_AGGREGATE_PHYSICAL_LAYOUT_INVALID:
+            return ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH;
+        case ZR_EXEC_IR_AGGREGATE_MATERIALIZATION_REQUIRED:
+        case ZR_EXEC_IR_AGGREGATE_IDENTITY_MISMATCH:
+        case ZR_EXEC_IR_AGGREGATE_UNINITIALIZED_READ:
+            return ZR_EXEC_IR_DIAGNOSTIC_MATERIALIZATION_FAILED;
+        case ZR_EXEC_IR_AGGREGATE_OK:
+            return ZR_EXECUTION_DIAGNOSTIC_NONE;
+        case ZR_EXEC_IR_AGGREGATE_FIELD_LIMIT:
+        case ZR_EXEC_IR_AGGREGATE_FIELD_ORDER:
+        case ZR_EXEC_IR_AGGREGATE_INVALID_FIELD_LAYOUT:
+        case ZR_EXEC_IR_AGGREGATE_UNKNOWN_FLAGS:
+        case ZR_EXEC_IR_AGGREGATE_UNION_OVERLAY:
+        case ZR_EXEC_IR_AGGREGATE_ADDRESS_OBSERVED:
+        case ZR_EXEC_IR_AGGREGATE_UNKNOWN_ESCAPE:
+        case ZR_EXEC_IR_AGGREGATE_PUBLIC_LAYOUT:
+        case ZR_EXEC_IR_AGGREGATE_REFLECTION_VISIBLE:
+        case ZR_EXEC_IR_AGGREGATE_FFI_VISIBLE:
+        case ZR_EXEC_IR_AGGREGATE_SERIALIZATION_VISIBLE:
+        case ZR_EXEC_IR_AGGREGATE_IDENTITY_NOT_RECONSTRUCTIBLE:
+        case ZR_EXEC_IR_AGGREGATE_OWNERSHIP_UNSAFE:
+        case ZR_EXEC_IR_AGGREGATE_ROOT_METADATA_MISSING:
+        case ZR_EXEC_IR_AGGREGATE_DROP_ORDER_UNSAFE:
+        case ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN:
+        case ZR_EXEC_IR_AGGREGATE_LIFETIME_OPEN:
+        case ZR_EXEC_IR_AGGREGATE_PROFILE_MISSING:
+        case ZR_EXEC_IR_AGGREGATE_COST_UNPROFITABLE:
+        case ZR_EXEC_IR_AGGREGATE_BRIDGE_TOO_EXPENSIVE:
+        case ZR_EXEC_IR_AGGREGATE_UNSUPPORTED:
+        case ZR_EXEC_IR_AGGREGATE_STATUS_COUNT:
+        default:
+            return ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+    }
+}
+
 static void zr_aggregate_diag(SZrExecIrAggregateDiagnostic *diagnostic,
                               EZrExecIrAggregateStatus status,
                               const SZrExecIrAggregateFacts *facts,
@@ -15,6 +60,7 @@ static void zr_aggregate_diag(SZrExecIrAggregateDiagnostic *diagnostic,
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->status = status;
     diagnostic->fieldIndex = fieldIndex;
+    diagnostic->execution.code = zr_aggregate_execution_code(status);
     if (facts != ZR_NULL) {
         diagnostic->sourceId = facts->sourceId;
         diagnostic->instructionId = facts->instructionId;
@@ -27,16 +73,25 @@ static void zr_aggregate_diag(SZrExecIrAggregateDiagnostic *diagnostic,
 
 static void zr_aggregate_diag_hash(SZrExecIrAggregateDiagnostic *diagnostic,
                                    EZrExecIrAggregateStatus status,
-                                   TZrUInt64 expected, TZrUInt64 actual) {
+                                   TZrUInt64 expected, TZrUInt64 actual,
+                                   const SZrExecIrAggregateFacts *facts) {
     if (diagnostic == ZR_NULL) return;
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->status = status;
     diagnostic->fieldIndex = ZR_EXEC_IR_AGGREGATE_INVALID_INDEX;
+    diagnostic->execution.code = zr_aggregate_execution_code(status);
     diagnostic->expectedHash = expected;
     diagnostic->actualHash = actual;
-    diagnostic->execution.code = ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH;
     diagnostic->execution.expectedHash = expected;
     diagnostic->execution.actualHash = actual;
+    if (facts != ZR_NULL) {
+        diagnostic->sourceId = facts->sourceId;
+        diagnostic->instructionId = facts->instructionId;
+        diagnostic->execution.functionToken = facts->functionToken;
+        diagnostic->execution.blockId = facts->blockId;
+        diagnostic->execution.instructionId = facts->instructionId;
+        diagnostic->execution.sourceId = facts->sourceId;
+    }
 }
 
 static void zr_aggregate_hash_u32(TZrUInt64 *hash, TZrUInt32 value) {
@@ -70,13 +125,79 @@ static TZrBool zr_field_unbox_eligible(
         ZR_EXEC_IR_AGGREGATE_FIELD_OWNERSHIP |
         ZR_EXEC_IR_AGGREGATE_FIELD_GC_ROOT |
         ZR_EXEC_IR_AGGREGATE_FIELD_NESTED_LAYOUT |
-        ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING;
+        ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING |
+        ZR_EXEC_IR_AGGREGATE_FIELD_DROP_OBSERVED |
+        ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED;
     if (field == ZR_NULL) return ZR_FALSE;
     return (TZrBool)(field->byteSize <= sizeof(TZrUInt64) &&
+                     field->byteAlign <= sizeof(TZrUInt64) &&
                      (field->flags & semanticFlags) == 0u &&
                      field->ownership != ZR_EXEC_IR_OWNERSHIP_UNIQUE &&
                      field->ownership != ZR_EXEC_IR_OWNERSHIP_SHARED &&
                      field->ownership != ZR_EXEC_IR_OWNERSHIP_GC);
+}
+
+/* Scalar replacement may split storage only when every observed alias pair
+ * has a proof that the projections are either the same object or disjoint.
+ * AliasQuery deliberately returns MAY_ALIAS/UNKNOWN for stale, external, or
+ * incompletely described locations; those relations are not safe to infer
+ * away at an optimisation boundary. */
+static TZrBool zr_sroa_alias_pair_safe(
+        const SZrExecIrAggregateFieldFact *left,
+        const SZrExecIrAggregateFieldFact *right) {
+    const SZrExecIrAliasLocation *a;
+    const SZrExecIrAliasLocation *b;
+    if (left == ZR_NULL || right == ZR_NULL) return ZR_FALSE;
+    a = &left->aliasLocation;
+    b = &right->aliasLocation;
+    if (a->baseKind == ZR_EXEC_IR_ALIAS_BASE_UNKNOWN ||
+        b->baseKind == ZR_EXEC_IR_ALIAS_BASE_UNKNOWN || a->baseId == 0u ||
+        b->baseId == 0u || !a->hasStableBase || !b->hasStableBase ||
+        a->unknownWrite || b->unknownWrite ||
+        ((a->escaped && (a->baseKind == ZR_EXEC_IR_ALIAS_BASE_EXTERNAL ||
+                         a->baseKind == ZR_EXEC_IR_ALIAS_BASE_PARAMETER)) ||
+         (b->escaped && (b->baseKind == ZR_EXEC_IR_ALIAS_BASE_EXTERNAL ||
+                         b->baseKind == ZR_EXEC_IR_ALIAS_BASE_PARAMETER))))
+        return ZR_FALSE;
+    if (a->generation != 0u && b->generation != 0u &&
+        a->generation != b->generation)
+        return ZR_FALSE;
+    if (a->baseKind == b->baseKind && a->baseId == b->baseId) {
+        if (a->projectionId != 0u && a->projectionId == b->projectionId)
+            return (TZrBool)(a->layoutId != 0u && a->layoutId == b->layoutId &&
+                             left->aliasClass == right->aliasClass);
+        return (TZrBool)(a->projectionId != 0u && b->projectionId != 0u &&
+                         a->projectionDisjoint && b->projectionDisjoint &&
+                         a->layoutId != 0u && a->layoutId == b->layoutId);
+    }
+    return (TZrBool)(!a->escaped && !b->escaped &&
+                     (a->baseKind == ZR_EXEC_IR_ALIAS_BASE_ALLOCATION ||
+                      a->baseKind == ZR_EXEC_IR_ALIAS_BASE_STACK) &&
+                     (b->baseKind == ZR_EXEC_IR_ALIAS_BASE_ALLOCATION ||
+                      b->baseKind == ZR_EXEC_IR_ALIAS_BASE_STACK));
+}
+
+static TZrBool zr_sroa_aliases_safe(const SZrExecIrAggregateFacts *facts,
+                                    SZrExecIrAggregateDiagnostic *diagnostic) {
+    TZrUInt32 index;
+    if (facts == ZR_NULL) return ZR_FALSE;
+    for (index = 0u; index < facts->fieldCount; ++index) {
+        const SZrExecIrAggregateFieldFact *field = &facts->fields[index];
+        TZrUInt32 next;
+        if ((field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED) == 0u)
+            continue;
+        for (next = index + 1u; next < facts->fieldCount; ++next) {
+            const SZrExecIrAggregateFieldFact *other = &facts->fields[next];
+            if ((other->flags & ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED) == 0u)
+                continue;
+            if (!zr_sroa_alias_pair_safe(field, other)) {
+                zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN,
+                                  facts, next);
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
 }
 
 void ZrParser_ExecIr_AggregateDiagnosticInit(
@@ -146,6 +267,8 @@ TZrUInt64 ZrParser_ExecIr_AggregateFactsHash(
     TZrUInt64 hash = ZR_AGGREGATE_FNV_OFFSET;
     TZrUInt32 index;
     if (facts == ZR_NULL) return 0u;
+    zr_aggregate_hash_u32(&hash, facts->magic);
+    zr_aggregate_hash_u32(&hash, facts->schemaVersion);
     zr_aggregate_hash_u32(&hash, facts->logicalTypeToken);
     zr_aggregate_hash_u32(&hash, facts->logicalLayoutId);
     zr_aggregate_hash_u64(&hash, facts->logicalLayoutHash);
@@ -204,12 +327,19 @@ TZrUInt64 ZrParser_ExecIr_AggregateFactsHash(
     return hash == 0u ? 1u : hash;
 }
 
-TZrBool ZrParser_ExecIr_AggregateFactsValidate(
+/*
+ * Validate the scalar witness itself.  A structural pass is deliberately
+ * distinct from the optimisation eligibility checks below: an unknown escape,
+ * ownership transfer, alias relation, or drop proof is still a well-formed
+ * witness and must be representable by an ordinary AoS/GENERIC fallback.  The
+ * public validator keeps the stricter, optimisation-ready behaviour for
+ * callers that need a complete proof.
+ */
+static TZrBool zr_aggregate_facts_validate_impl(
         const SZrExecIrAggregateFacts *facts,
-        SZrExecIrAggregateDiagnostic *diagnostic) {
+        SZrExecIrAggregateDiagnostic *diagnostic,
+        TZrBool requireSemanticProof) {
     TZrUInt32 index;
-    TZrUInt32 previousOffset = 0u;
-    TZrUInt32 previousEnd = 0u;
     if (diagnostic != ZR_NULL) ZrParser_ExecIr_AggregateDiagnosticInit(diagnostic);
     if (facts == ZR_NULL) {
         zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_INVALID_ARGUMENT,
@@ -223,6 +353,9 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
         if (diagnostic != ZR_NULL) {
             diagnostic->expectedHash = ZR_EXEC_IR_AGGREGATE_LAYOUT_SCHEMA_VERSION;
             diagnostic->actualHash = facts->schemaVersion;
+            diagnostic->execution.expectedVersion =
+                ZR_EXEC_IR_AGGREGATE_LAYOUT_SCHEMA_VERSION;
+            diagnostic->execution.actualVersion = facts->schemaVersion;
         }
         return ZR_FALSE;
     }
@@ -259,6 +392,28 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
                           facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
         return ZR_FALSE;
     }
+    if (requireSemanticProof &&
+        (facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_IDENTITY_OBSERVED) != 0u &&
+        facts->identityToken == 0u) {
+        zr_aggregate_diag(diagnostic,
+                          ZR_EXEC_IR_AGGREGATE_IDENTITY_NOT_RECONSTRUCTIBLE,
+                          facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+        return ZR_FALSE;
+    }
+    if (requireSemanticProof &&
+        (facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_ALIAS_OBSERVED) != 0u &&
+        !facts->aliasProven) {
+        zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN,
+                          facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+        return ZR_FALSE;
+    }
+    if (requireSemanticProof &&
+        (facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_DROP_ORDER_OBSERVED) != 0u &&
+        !facts->dropOrderProven) {
+        zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_DROP_ORDER_UNSAFE,
+                          facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+        return ZR_FALSE;
+    }
     for (index = 0u; index < facts->fieldCount; ++index) {
         const SZrExecIrAggregateFieldFact *field = &facts->fields[index];
         TZrUInt32 end;
@@ -281,31 +436,73 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
             return ZR_FALSE;
         }
         end = field->logicalOffset + field->byteSize;
-        if (index != 0u && field->logicalOffset < previousOffset) {
-            zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_FIELD_ORDER,
-                              facts, index);
-            return ZR_FALSE;
+        if ((facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_UNION_OR_OVERLAY) == 0u) {
+            TZrUInt32 priorIndex;
+            for (priorIndex = 0u; priorIndex < index; ++priorIndex) {
+                const SZrExecIrAggregateFieldFact *prior =
+                    &facts->fields[priorIndex];
+                TZrUInt32 priorEnd = prior->logicalOffset + prior->byteSize;
+                TZrBool overlay =
+                    (TZrBool)((field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_OVERLAY) != 0u ||
+                              (prior->flags & ZR_EXEC_IR_AGGREGATE_FIELD_OVERLAY) != 0u);
+                if (!overlay && field->logicalOffset < priorEnd &&
+                    prior->logicalOffset < end) {
+                    zr_aggregate_diag(
+                            diagnostic,
+                            ZR_EXEC_IR_AGGREGATE_INVALID_FIELD_LAYOUT,
+                            facts, index);
+                    return ZR_FALSE;
+                }
+            }
         }
-        if ((facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_UNION_OR_OVERLAY) == 0u &&
-            (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_OVERLAY) == 0u &&
-            index != 0u && field->logicalOffset < previousEnd) {
-            zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_INVALID_FIELD_LAYOUT,
-                              facts, index);
-            return ZR_FALSE;
-        }
-        if (field->ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT) {
+        if (field->ownership < ZR_EXEC_IR_OWNERSHIP_UNKNOWN ||
+            field->ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT) {
             zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_OWNERSHIP_UNSAFE,
                               facts, index);
             return ZR_FALSE;
         }
-        if ((field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_GC_ROOT) != 0u &&
+        {
+            TZrUInt32 priorIndex;
+            for (priorIndex = 0u; priorIndex < index; ++priorIndex) {
+                if (facts->fields[priorIndex].fieldId == field->fieldId) {
+                    zr_aggregate_diag(diagnostic,
+                                      ZR_EXEC_IR_AGGREGATE_FIELD_ORDER,
+                                      facts, index);
+                    return ZR_FALSE;
+                }
+            }
+        }
+        if (!zr_aggregate_bool_valid(field->initialized) ||
+            !zr_aggregate_bool_valid(field->readBeforeInit) ||
+            !zr_aggregate_bool_valid(field->ownershipTransferProven) ||
+            !zr_aggregate_bool_valid(field->aliasProven) ||
+            field->aliasLocation.baseKind < ZR_EXEC_IR_ALIAS_BASE_UNKNOWN ||
+            field->aliasLocation.baseKind > ZR_EXEC_IR_ALIAS_BASE_EXTERNAL ||
+            !zr_aggregate_bool_valid(field->aliasLocation.hasStableBase) ||
+            !zr_aggregate_bool_valid(field->aliasLocation.escaped) ||
+            !zr_aggregate_bool_valid(field->aliasLocation.unknownWrite) ||
+            !zr_aggregate_bool_valid(field->aliasLocation.projectionDisjoint)) {
+            zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_INVALID_ARGUMENT,
+                              facts, index);
+            return ZR_FALSE;
+        }
+        if (requireSemanticProof &&
+            (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_GC_ROOT) != 0u &&
             field->rootSlot == ZR_EXEC_IR_AGGREGATE_INVALID_INDEX) {
             zr_aggregate_diag(diagnostic,
                               ZR_EXEC_IR_AGGREGATE_ROOT_METADATA_MISSING,
                               facts, index);
             return ZR_FALSE;
         }
-        if ((field->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+        if (requireSemanticProof && field->ownership == ZR_EXEC_IR_OWNERSHIP_GC &&
+            (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_GC_ROOT) == 0u) {
+            zr_aggregate_diag(diagnostic,
+                              ZR_EXEC_IR_AGGREGATE_ROOT_METADATA_MISSING,
+                              facts, index);
+            return ZR_FALSE;
+        }
+        if (requireSemanticProof &&
+            (field->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
              field->ownership == ZR_EXEC_IR_OWNERSHIP_SHARED ||
              field->ownership == ZR_EXEC_IR_OWNERSHIP_GC) &&
             !field->ownershipTransferProven) {
@@ -313,7 +510,8 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
                               facts, index);
             return ZR_FALSE;
         }
-        if ((field->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+        if (requireSemanticProof &&
+            (field->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
              field->ownership == ZR_EXEC_IR_OWNERSHIP_SHARED ||
              field->ownership == ZR_EXEC_IR_OWNERSHIP_GC ||
              (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_DROP_OBSERVED) != 0u) &&
@@ -323,9 +521,14 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
                               facts, index);
             return ZR_FALSE;
         }
-        if ((field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED) != 0u &&
+        if (requireSemanticProof &&
+            (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED) != 0u &&
             (!field->aliasProven || !facts->aliasProven ||
              field->aliasClass == ZR_EXEC_IR_AGGREGATE_UNKNOWN_ALIAS ||
+             field->aliasLocation.baseKind == ZR_EXEC_IR_ALIAS_BASE_UNKNOWN ||
+             field->aliasLocation.baseId == 0u ||
+             field->aliasLocation.projectionId == 0u ||
+             field->aliasLocation.layoutId == 0u ||
              field->aliasLocation.unknownWrite || field->aliasLocation.escaped ||
              !field->aliasLocation.hasStableBase ||
              (field->aliasLocation.generation != 0u &&
@@ -334,7 +537,7 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
                               facts, index);
             return ZR_FALSE;
         }
-        if (field->readBeforeInit && field->initialized) {
+        if (requireSemanticProof && field->readBeforeInit && field->initialized) {
             /* A producer must not claim both an uninitialised read and a
              * fully initialised field; zero-initialisation is represented by
              * initialized=true and readBeforeInit=false. */
@@ -343,15 +546,34 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
                               facts, index);
             return ZR_FALSE;
         }
-        if (field->readBeforeInit && !field->initialized) {
+        if (requireSemanticProof && field->readBeforeInit && !field->initialized) {
             zr_aggregate_diag(diagnostic,
                               ZR_EXEC_IR_AGGREGATE_UNINITIALIZED_READ,
                               facts, index);
             return ZR_FALSE;
         }
-        previousOffset = field->logicalOffset;
-        previousEnd = end;
+        if (requireSemanticProof &&
+            (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING) != 0u &&
+            facts->identityToken == 0u) {
+            zr_aggregate_diag(
+                    diagnostic,
+                    ZR_EXEC_IR_AGGREGATE_IDENTITY_NOT_RECONSTRUCTIBLE,
+                    facts, index);
+            return ZR_FALSE;
+        }
+        if (requireSemanticProof &&
+            (field->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+             field->ownership == ZR_EXEC_IR_OWNERSHIP_SHARED ||
+             field->ownership == ZR_EXEC_IR_OWNERSHIP_GC ||
+             (field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_DROP_OBSERVED) != 0u) &&
+            field->dropOrder == ZR_EXEC_IR_AGGREGATE_INVALID_INDEX) {
+            zr_aggregate_diag(diagnostic,
+                              ZR_EXEC_IR_AGGREGATE_DROP_ORDER_UNSAFE,
+                              facts, index);
+            return ZR_FALSE;
+        }
     }
+    if (!requireSemanticProof) return ZR_TRUE;
     for (index = 0u; index < facts->fieldCount; ++index) {
         const SZrExecIrAggregateFieldFact *field = &facts->fields[index];
         TZrUInt32 next;
@@ -375,6 +597,18 @@ TZrBool ZrParser_ExecIr_AggregateFactsValidate(
         }
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_ExecIr_AggregateFactsValidate(
+        const SZrExecIrAggregateFacts *facts,
+        SZrExecIrAggregateDiagnostic *diagnostic) {
+    return zr_aggregate_facts_validate_impl(facts, diagnostic, ZR_TRUE);
+}
+
+TZrBool ZrParser_ExecIr_AggregateFactsValidateStructural(
+        const SZrExecIrAggregateFacts *facts,
+        SZrExecIrAggregateDiagnostic *diagnostic) {
+    return zr_aggregate_facts_validate_impl(facts, diagnostic, ZR_FALSE);
 }
 void ZrParser_ExecIr_SroaCandidateInit(SZrExecIrSroaCandidate *candidate) {
     TZrUInt32 index;
@@ -445,6 +679,19 @@ static TZrBool zr_sroa_gate(const SZrExecIrAggregateFacts *facts,
                           facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
         return ZR_FALSE;
     }
+    if ((facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_IDENTITY_OBSERVED) != 0u &&
+        facts->identityToken == 0u) {
+        zr_aggregate_diag(diagnostic,
+                          ZR_EXEC_IR_AGGREGATE_IDENTITY_NOT_RECONSTRUCTIBLE,
+                          facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+        return ZR_FALSE;
+    }
+    if ((facts->flags & ZR_EXEC_IR_AGGREGATE_FLAG_DROP_ORDER_OBSERVED) != 0u &&
+        !facts->dropOrderProven) {
+        zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_DROP_ORDER_UNSAFE,
+                          facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+        return ZR_FALSE;
+    }
     for (index = 0u; index < facts->fieldCount; ++index) {
         const SZrExecIrAggregateFieldFact *field = &facts->fields[index];
         if (field->readBeforeInit) {
@@ -475,7 +722,21 @@ static TZrBool zr_sroa_gate(const SZrExecIrAggregateFacts *facts,
                               facts, index);
             return ZR_FALSE;
         }
+        if (field->ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN) {
+            zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_OWNERSHIP_UNSAFE,
+                              facts, index);
+            return ZR_FALSE;
+        }
+        if ((field->flags & ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING) != 0u &&
+            facts->identityToken == 0u) {
+            zr_aggregate_diag(
+                    diagnostic,
+                    ZR_EXEC_IR_AGGREGATE_IDENTITY_NOT_RECONSTRUCTIBLE,
+                    facts, index);
+            return ZR_FALSE;
+        }
     }
+    if (!zr_sroa_aliases_safe(facts, diagnostic)) return ZR_FALSE;
     return ZR_TRUE;
 }
 
@@ -509,9 +770,8 @@ TZrBool ZrParser_ExecIr_SroaBuildCandidate(
     candidate->unboxedFieldCount = 0u;
     candidate->identityPreserved = ZR_TRUE;
     candidate->requiresMaterialization =
-        (TZrBool)((facts->flags & (ZR_EXEC_IR_AGGREGATE_FLAG_DEOPT_BOUNDARY |
-                                   ZR_EXEC_IR_AGGREGATE_FLAG_NATIVE_BOUNDARY |
-                                   ZR_EXEC_IR_AGGREGATE_FLAG_EXCEPTION_BOUNDARY)) != 0u);
+        (TZrBool)((facts->flags &
+                   ZR_EXEC_IR_AGGREGATE_FLAG_MATERIALIZATION_BOUNDARY_MASK) != 0u);
     for (index = 0u; index < facts->fieldCount; ++index) {
         const SZrExecIrAggregateFieldFact *field = &facts->fields[index];
         TZrUInt32 word = index / 32u;
@@ -542,6 +802,8 @@ TZrUInt64 ZrParser_ExecIr_SroaCandidateHash(
     TZrUInt64 hash = ZR_AGGREGATE_FNV_OFFSET;
     TZrUInt32 index;
     if (candidate == ZR_NULL) return 0u;
+    zr_aggregate_hash_u32(&hash, candidate->magic);
+    zr_aggregate_hash_u32(&hash, candidate->schemaVersion);
     zr_aggregate_hash_u32(&hash, (TZrUInt32)candidate->strategy);
     zr_aggregate_hash_u32(&hash, candidate->logicalTypeToken);
     zr_aggregate_hash_u32(&hash, candidate->logicalLayoutId);
@@ -589,6 +851,12 @@ TZrBool ZrParser_ExecIr_SroaCandidateValidate(
                           facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
         return ZR_FALSE;
     }
+    if (candidate->requiresMaterialization > (TZrBool)ZR_TRUE ||
+        candidate->identityPreserved > (TZrBool)ZR_TRUE) {
+        zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_INVALID_ARGUMENT,
+                          facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+        return ZR_FALSE;
+    }
     if (candidate->fieldCount != facts->fieldCount ||
         candidate->logicalTypeToken != facts->logicalTypeToken ||
         candidate->logicalLayoutId != facts->logicalLayoutId ||
@@ -612,9 +880,8 @@ TZrBool ZrParser_ExecIr_SroaCandidateValidate(
     }
     {
         TZrBool expectedMaterialization =
-            (TZrBool)((facts->flags & (ZR_EXEC_IR_AGGREGATE_FLAG_DEOPT_BOUNDARY |
-                                       ZR_EXEC_IR_AGGREGATE_FLAG_NATIVE_BOUNDARY |
-                                       ZR_EXEC_IR_AGGREGATE_FLAG_EXCEPTION_BOUNDARY)) != 0u);
+            (TZrBool)((facts->flags &
+                       ZR_EXEC_IR_AGGREGATE_FLAG_MATERIALIZATION_BOUNDARY_MASK) != 0u);
         if (candidate->requiresMaterialization != expectedMaterialization) {
             zr_aggregate_diag(diagnostic,
                               ZR_EXEC_IR_AGGREGATE_MATERIALIZATION_REQUIRED,
@@ -630,13 +897,20 @@ TZrBool ZrParser_ExecIr_SroaCandidateValidate(
                               facts, index);
             return ZR_FALSE;
         }
-        if (facts->fields[index].initialized &&
-            (candidate->initializedMask[index / 32u] &
-             ((TZrUInt32)1u << (index % 32u))) == 0u) {
-            zr_aggregate_diag(diagnostic,
-                              ZR_EXEC_IR_AGGREGATE_UNINITIALIZED_READ,
-                              facts, index);
-            return ZR_FALSE;
+        {
+            TZrBool actualInitialized = (TZrBool)(
+                (candidate->initializedMask[index / 32u] &
+                 ((TZrUInt32)1u << (index % 32u))) != 0u);
+            /* The bitmap is an independent per-field state witness.  Check
+             * both directions: an extra bit is just as unsafe as a missing
+             * bit because it could make an uninitialised scalar readable at
+             * a deopt or exception edge. */
+            if (actualInitialized != facts->fields[index].initialized) {
+                zr_aggregate_diag(diagnostic,
+                                  ZR_EXEC_IR_AGGREGATE_UNINITIALIZED_READ,
+                                  facts, index);
+                return ZR_FALSE;
+            }
         }
         {
             TZrUInt32 bit = (TZrUInt32)1u << (index % 32u);
@@ -672,6 +946,20 @@ TZrBool ZrParser_ExecIr_SroaCandidateValidate(
             }
         }
     }
+    if ((candidate->fieldCount % 32u) != 0u) {
+        TZrUInt32 validBits = candidate->fieldCount % 32u;
+        TZrUInt32 validMask = ((TZrUInt32)1u << validBits) - 1u;
+        TZrUInt32 lastWord = candidate->fieldCount / 32u;
+        if ((candidate->initializedMask[lastWord] & ~validMask) != 0u ||
+            (candidate->unboxedMask[lastWord] & ~validMask) != 0u ||
+            (candidate->ownershipMask[lastWord] & ~validMask) != 0u ||
+            (candidate->rootMask[lastWord] & ~validMask) != 0u ||
+            (candidate->dropMask[lastWord] & ~validMask) != 0u) {
+            zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_FIELD_ORDER,
+                              facts, ZR_EXEC_IR_AGGREGATE_INVALID_INDEX);
+            return ZR_FALSE;
+        }
+    }
     {
         TZrUInt32 expectedUnboxed = 0u;
         for (index = 0u; index < facts->fieldCount; ++index)
@@ -686,7 +974,7 @@ TZrBool ZrParser_ExecIr_SroaCandidateValidate(
     expectedHash = ZrParser_ExecIr_SroaCandidateHash(candidate);
     if (candidate->planHash != expectedHash) {
         zr_aggregate_diag_hash(diagnostic, ZR_EXEC_IR_AGGREGATE_HASH_MISMATCH,
-                               expectedHash, candidate->planHash);
+                               expectedHash, candidate->planHash, facts);
         return ZR_FALSE;
     }
     return ZR_TRUE;

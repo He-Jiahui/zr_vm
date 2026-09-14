@@ -39,15 +39,25 @@ layout from a missing field.  Unknown flags, overlapping fields, invalid
 alignment/size, stale schema, unknown escape, address observation, reflection,
 FFI, serialization, public slices, unions/overlays, and non-reconstructible
 identity all block SROA or SoA.  A ref field retained by native code is treated
-as address observation.  Unique/shared/GC fields require an explicit proven
-ownership transfer; GC-root fields require a root slot.  Drop order is copied
-by logical field index and is never inferred from physical column order.
+as address observation.  Unknown ownership is also a conservative blocker for
+either transform; unique/shared/GC fields require an explicit proven ownership
+transfer, and GC-root fields require a root slot.  Drop order is copied by
+logical field index and is never inferred from physical column order.
+Debug, deopt, exception, and native boundary bits do not block a private
+transform, but force a logical-layout materialisation witness on the candidate.
 
 Initialisation is tracked per field.  A field that may be read before
 initialisation is rejected, but an as-yet-uninitialised field that is not read
 can still be scalarized and remains clear in the candidate's bit mask.  A
 producer that zero-initialises a field can mark it `initialized` without a
 separate aggregate-wide bit.
+
+`AggregateFactsValidateStructural` checks the fixed-size record, identities,
+field ranges, flags, and scalar enum/boolean encodings.  The ordinary
+`AggregateFactsValidate` additionally requires complete ownership, alias,
+identity, drop-order, root, and initialization proof for an optimization.
+This split deliberately lets an incomplete—but well-formed—witness produce an
+AoS/GENERIC fallback with its blocker preserved as the diagnostic reason.
 
 ## SROA candidate
 
@@ -71,27 +81,38 @@ locality values and PMU cache-miss counters are stored in separate fields;
 unknown measured counters use `UINT64_MAX`.  No static estimate is presented
 as a measured cache miss reduction.
 
-Physical field order is a deterministic descending loop-use-density order (ties
-use logical index).  The physical layout hash includes logical layout hash,
-strategy, field order, field sizes, and bridge version.  Ownership, root, and
-drop metadata are marked as migrated on every candidate and validated before
-materialisation.
+Physical field order is a deterministic descending loop-use-density order,
+then total-use count (ties use logical index), for a real SoA candidate.  An AoS fallback keeps the logical
+field order and offsets, so a failed proof cannot accidentally reorder an
+observable object.  The physical layout hash includes logical type/layout
+identity, strategy, field order, field identities/type/layout/size/alignment,
+physical column offsets, and bridge version.  Ownership, root, and drop metadata are
+marked as migrated on every candidate and validated before materialisation.
+When alias locations are present, every observed pair must be proven
+`MUST_ALIAS` (with one alias class) or `DISJOINT`; a `MAY_ALIAS`/unknown relation
+never gets split into independent columns.
 
 ## Materialisation and identity
 
 `SZrExecIrMaterializationMap` maps each logical field to a physical index and
 offset while retaining type/layout, initialisation, ownership, root slot, drop
-order, and alias class.  `Begin` checks generation and logical layout identity;
+order, alias class, and the aggregate observability/boundary flags.  `Begin`
+checks generation and logical layout identity;
 `AddField` rejects duplicate logical or physical indices; `Finalize` requires a
 complete one-to-one map and computes a stable map hash.  `Validate` checks the
 candidate, generation, logical/physical hashes, every field's semantic
-metadata, and the identity token.  Thus two deoptimised references carrying the
-same identity token can rebuild one logical object and preserve their alias
-relationship.  A mismatched token or generation is rejected rather than
-silently cloning an object.
+metadata, and that each entry's offset and stride exactly match the physical
+column.  Thus two deoptimised references carrying the same identity token can
+rebuild one logical object and preserve their alias relationship.  A mismatched
+token, generation, hash, or edited physical offset is rejected rather than
+silently cloning or misaddressing an object.
 
-The map is also suitable for debug, deopt, exception, and native boundaries:
-those boundaries can request logical materialisation while the optimised
+Finalize canonicalizes entries by logical field index, so producer insertion
+order cannot perturb an otherwise identical bridge hash.
+
+The map is also suitable for debug, deopt, exception, and native boundaries
+(`DEBUG_BOUNDARY`, `DEOPT_BOUNDARY`, `EXCEPTION_BOUNDARY`, and
+`NATIVE_BOUNDARY`): those boundaries can request logical materialisation while the optimised
 physical columns remain private.  This implementation only builds and checks
 the map; actual object allocation and attachment to an ExecIR state map remain
 backend/runtime work.
@@ -99,12 +120,14 @@ backend/runtime work.
 ## High-level planning
 
 `ZrParser_ExecIr_PlanAggregateLayout` first attempts SROA and then a profitable
-SoA candidate.  If proof is incomplete it emits a `GENERIC` plan with a
-diagnostic status as `fallbackReason`; no user annotation is required to force
-an unsafe transformation.  `ZrParser_ExecIr_ApplyAggregateLayout` is a
-pointer-free validation/no-op boundary for this milestone.  It accepts generic
-and AoS fallback plans and validates SROA/SoA identity before a future lowering
-stage performs the physical rewrite.
+SoA candidate.  Boundary bits (debug/deopt/native/exception) are carried as an
+explicit `requiresMaterialization` bit even on the SROA plan.  If proof is
+incomplete it emits a `GENERIC` plan with a diagnostic status as
+`fallbackReason`; no user annotation is required to force an unsafe
+transformation.  `ZrParser_ExecIr_ApplyAggregateLayout` is a pointer-free
+validation/no-op boundary for this milestone.  It accepts generic and AoS
+fallback plans and validates SROA/SoA identity and physical hashes before a
+future lowering stage performs the physical rewrite.
 
 ## Test coverage
 
@@ -112,11 +135,16 @@ stage performs the physical rewrite.
 
 - two-field private SROA and per-field initialisation bits;
 - union/overlay, uninitialised-read, address/native-retained, unknown-escape,
-  public, FFI, and unsafe-ownership rejection diagnostics;
+  public, FFI, unknown-ownership, and unsafe-ownership rejection diagnostics;
 - profitable closed-lifetime SoA versus AoS fallback and separate measured
   evidence fields;
 - identity-preserving materialisation with root/ownership/drop metadata;
+- alias relation gating (disjoint projections accepted, may-alias projections
+  rejected);
+- exact physical offset/stride validation and tamper rejection;
 - conservative generic planning when escape proof is unavailable.
+- incomplete alias or ownership-transfer proof remaining a valid AoS/GENERIC
+  fallback rather than being mistaken for a malformed source record.
 
 The focused fixture is intentionally standalone until the owning CMake target
 is registered by the integration owner.  It has no heap ownership or lease to

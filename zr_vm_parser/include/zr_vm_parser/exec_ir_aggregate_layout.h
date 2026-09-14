@@ -87,7 +87,12 @@ typedef enum EZrExecIrAggregateFlags {
     ZR_EXEC_IR_AGGREGATE_FLAG_EXCEPTION_BOUNDARY = (TZrUInt32)1u << 11u,
     ZR_EXEC_IR_AGGREGATE_FLAG_PUBLIC_SLICE = (TZrUInt32)1u << 12u,
     ZR_EXEC_IR_AGGREGATE_FLAG_PROFILE_AVAILABLE = (TZrUInt32)1u << 13u,
-    ZR_EXEC_IR_AGGREGATE_FLAG_DROP_ORDER_OBSERVED = (TZrUInt32)1u << 14u
+    ZR_EXEC_IR_AGGREGATE_FLAG_DROP_ORDER_OBSERVED = (TZrUInt32)1u << 14u,
+    /* Debug materialisation is a logical-layout boundary just like deopt,
+     * native, and exception hand-off.  Keep this bit append-only so the
+     * existing schema values remain stable for producers that already emit
+     * the lower bits. */
+    ZR_EXEC_IR_AGGREGATE_FLAG_DEBUG_BOUNDARY = (TZrUInt32)1u << 15u
 } EZrExecIrAggregateFlags;
 
 #define ZR_EXEC_IR_AGGREGATE_FLAG_KNOWN_MASK \
@@ -105,7 +110,14 @@ typedef enum EZrExecIrAggregateFlags {
                  ZR_EXEC_IR_AGGREGATE_FLAG_EXCEPTION_BOUNDARY | \
                  ZR_EXEC_IR_AGGREGATE_FLAG_PUBLIC_SLICE | \
                  ZR_EXEC_IR_AGGREGATE_FLAG_PROFILE_AVAILABLE | \
-                 ZR_EXEC_IR_AGGREGATE_FLAG_DROP_ORDER_OBSERVED))
+                 ZR_EXEC_IR_AGGREGATE_FLAG_DROP_ORDER_OBSERVED | \
+                 ZR_EXEC_IR_AGGREGATE_FLAG_DEBUG_BOUNDARY))
+
+#define ZR_EXEC_IR_AGGREGATE_FLAG_MATERIALIZATION_BOUNDARY_MASK \
+    ((TZrUInt32)(ZR_EXEC_IR_AGGREGATE_FLAG_DEBUG_BOUNDARY | \
+                 ZR_EXEC_IR_AGGREGATE_FLAG_DEOPT_BOUNDARY | \
+                 ZR_EXEC_IR_AGGREGATE_FLAG_NATIVE_BOUNDARY | \
+                 ZR_EXEC_IR_AGGREGATE_FLAG_EXCEPTION_BOUNDARY))
 
 typedef enum EZrExecIrAggregateFieldFlags {
     ZR_EXEC_IR_AGGREGATE_FIELD_GC_ROOT = (TZrUInt32)1u << 0u,
@@ -328,6 +340,13 @@ ZR_PARSER_API void ZrParser_ExecIr_AggregateFactsInit(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_AggregateFactsValidate(
         const SZrExecIrAggregateFacts *facts,
         SZrExecIrAggregateDiagnostic *diagnostic);
+/* Structural validation accepts conservative/unknown semantic proofs so an
+ * ordinary AoS or generic fallback can still be described.  Optimisation
+ * passes must use the full validator above (or their semantic gate) before
+ * applying SROA/SoA. */
+ZR_PARSER_API TZrBool ZrParser_ExecIr_AggregateFactsValidateStructural(
+        const SZrExecIrAggregateFacts *facts,
+        SZrExecIrAggregateDiagnostic *diagnostic);
 ZR_PARSER_API TZrUInt64 ZrParser_ExecIr_AggregateFactsHash(
         const SZrExecIrAggregateFacts *facts);
 
@@ -409,6 +428,10 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_ApplyAggregateLayout(
 /* Compatibility spellings used by pass prototypes and older plan notes. */
 #define ZrParser_ExecIr_AggregateFacts_Init ZrParser_ExecIr_AggregateFactsInit
 #define ZrParser_ExecIr_AggregateFacts_Validate ZrParser_ExecIr_AggregateFactsValidate
+#define ZrParser_ExecIr_AggregateFacts_ValidateStructural \
+    ZrParser_ExecIr_AggregateFactsValidateStructural
+#define ZrParser_ExecIr_AggregateFacts_StructuralValidate \
+    ZrParser_ExecIr_AggregateFactsValidateStructural
 #define ZrParser_ExecIr_SroaCanUse ZrParser_ExecIr_SroaCanScalarize
 #define ZrParser_ExecIr_SROACanScalarize ZrParser_ExecIr_SroaCanScalarize
 #define ZrParser_ExecIr_SROABuildCandidate ZrParser_ExecIr_SroaBuildCandidate
