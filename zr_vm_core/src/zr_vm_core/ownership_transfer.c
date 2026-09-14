@@ -817,6 +817,23 @@ TZrBool ZrCore_OwnershipTransfer_AbortCrossDomain(
                 &envelope->state,
                 (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_CLAIMED,
                 (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_ABORTED);
+    } else if (!envelope->commitInProgress &&
+               transferState == ZR_OWNERSHIP_TRANSFER_STATE_CLAIMED &&
+               envelope->claimantWorkerId == workerId &&
+               envelope->claimEpoch == claimEpoch &&
+               ownership_transfer_state_matches_source_domain(state, envelope)) {
+        /*
+         * The source is also an explicit cancellation authority.  In
+         * particular this is the only live authority after the target domain
+         * has been torn down: requiring a current target here would strand a
+         * claimed graph/token and leak its transaction resources.  The
+         * commitInProgress check above keeps this source-side cancellation
+         * linear with a target commit.
+         */
+        result = ownership_transfer_atomic_compare_exchange(
+                &envelope->state,
+                (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_CLAIMED,
+                (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_ABORTED);
     }
     if (result && envelope->hasPayload) {
         ownerGlobal = envelope->ownerGlobal;

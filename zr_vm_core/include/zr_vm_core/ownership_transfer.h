@@ -169,6 +169,10 @@ ZR_CORE_API TZrBool ZrCore_OwnershipTransfer_Abort(
         struct SZrState *targetState,
         TZrUInt64 workerId,
         TZrUInt64 claimEpoch);
+/* The source domain is an explicit cancellation authority for a claimed
+ * cross-domain envelope when the exact claimant worker/epoch are supplied.
+ * This permits deterministic cleanup after target-domain shutdown while
+ * preserving commit/abort linearization through the envelope lock. */
 ZR_CORE_API TZrBool ZrCore_OwnershipTransfer_AbortCrossDomain(
         SZrOwnershipTransferEnvelope *envelope,
         struct SZrState *state,
