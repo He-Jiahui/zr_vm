@@ -32,3 +32,17 @@ Missing lower bounds, mutable lengths, overflow, or stale generations return
 false. Shape facts require nonzero type/layout/shape identities and are
 discarded on generation invalidation. Range propagation and GVN are subsequent
 stages.
+
+## Conservative GVN and guard use
+
+The initial GVN pass only folds syntactically identical pure scalar operations
+within one basic block. It rejects memory/effect-token users, `LOAD`, calls,
+allocation, barriers, drop, throwing operations, GC, suspension, and all
+terminators. A duplicate is rewritten to `COPY` of the prior result while
+retaining its original result ID; this avoids assuming that physical instruction
+order proves dominance for arbitrary later uses. Invalid storage/ranges and
+allocation failure return a structured diagnostic without partial use rewrites.
+
+The bounds-elision API is proof-only: it does not delete an instruction and
+returns false for incomplete range facts. Callers retain the original guard on
+false and emit their own missed/blocked remark with the relevant source ID.

@@ -1,7 +1,9 @@
 #include "zr_vm_parser/exec_ir_alias.h"
 #include "zr_vm_parser/exec_ir_ranges.h"
+#include "zr_vm_parser/exec_ir_gvn.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 static SZrExecIrAliasLocation location(EZrExecIrAliasBaseKind kind,
@@ -142,6 +144,76 @@ static void test_nullability_fact_is_generation_scoped(void) {
     ZrParser_ExecIr_AnalysisFactsFree(&facts);
 }
 
+static void test_bounds_check_api_is_conservative(void) {
+    SZrExecIrRangeFact index = {1u, 0, 2, 1u, ZR_TRUE, ZR_TRUE,
+                                ZR_FALSE, ZR_FALSE};
+    SZrExecIrRangeFact length = {2u, 3, 3, 1u, ZR_TRUE, ZR_TRUE,
+                                 ZR_FALSE, ZR_FALSE};
+    SZrExecIrDiagnostic diagnostic;
+    assert(ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
+    index.upper = 4;
+    assert(!ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
+}
+
+static void test_gvn_rewrites_only_duplicate_pure_definitions(void) {
+    SZrExecIrFunction function;
+    SZrExecIrRemarkSink remarks;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId values[4];
+    SZrExecIrRange leftRange, rightRange, addOperands, resultRange;
+    SZrExecIrInstruction instruction;
+    TZrExecIrInstructionId id;
+    TZrExecIrBlockId block;
+    ZrCore_ExecIr_FunctionInit(&function);
+    block = ZrCore_ExecIr_FunctionAddBlock(&function,
+                                            ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    function.entryBlockId = block;
+    values[0] = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    values[1] = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    values[2] = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    values[3] = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(values[3] != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &values[0], 1u,
+                                               &leftRange));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.resultRange = leftRange;
+    instruction.layoutId = 1u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &values[1], 1u,
+                                               &rightRange));
+    instruction.resultRange = rightRange;
+    instruction.layoutId = 2u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(&function, values, 2u,
+                                                &addOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &values[2], 1u,
+                                               &resultRange));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_ADD;
+    instruction.operandRange = addOperands;
+    instruction.resultRange = resultRange;
+    instruction.typeToken = 1u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &values[3], 1u,
+                                               &resultRange));
+    instruction.resultRange = resultRange;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, &id));
+    function.blocks[0].instructionRange.start = 0u;
+    function.blocks[0].instructionRange.count = function.instructionCount;
+    memset(&remarks, 0, sizeof(remarks));
+    assert(ZrParser_ExecIr_RunGvnCse(&function, ZR_NULL, &remarks, &diagnostic));
+    assert(function.instructions[3].opcode == ZR_EXEC_IR_OPCODE_COPY);
+    assert(function.resultPool[function.instructions[3].resultRange.start] == values[3]);
+    assert(remarks.count >= 1u && remarks.items[remarks.count - 1u].sourceId == 0u);
+    free(remarks.items);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_identical_locations_must_alias();
     test_distinct_stable_allocations_are_disjoint();
@@ -152,5 +224,7 @@ int main(void) {
     test_range_facts_reject_overflow_and_stale_generation();
     test_shape_fact_invalidates_on_generation_change();
     test_nullability_fact_is_generation_scoped();
+    test_bounds_check_api_is_conservative();
+    test_gvn_rewrites_only_duplicate_pure_definitions();
     return 0;
 }
