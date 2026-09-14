@@ -81,6 +81,11 @@ ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Publish(
         SZrHotPatchGenerationManager *manager,
         SZrHotPatchGenerationHandle *prepared,
         SZrHotPatchGenerationDiagnostic *diagnostic);
+ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Rollback(
+        SZrHotPatchGenerationManager *manager,
+        TZrUInt64 targetGeneration,
+        SZrHotPatchGenerationHandle *outHandle,
+        SZrHotPatchGenerationDiagnostic *diagnostic);
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_AcquireActive(
         SZrHotPatchGenerationManager *manager,
         SZrHotPatchGenerationHandle *outHandle,

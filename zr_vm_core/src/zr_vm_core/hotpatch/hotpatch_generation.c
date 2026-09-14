@@ -65,6 +65,56 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Publish(SZrHotPatchGenera
     h->record->state=ZR_HOT_PATCH_VERSION_ACTIVE; atomic_store_explicit(&m->active,h->record,memory_order_release); gen_unlock(m); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,h->generation,0);
 }
 
+EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Rollback(
+        SZrHotPatchGenerationManager *m, TZrUInt64 target,
+        SZrHotPatchGenerationHandle *out, SZrHotPatchGenerationDiagnostic *d) {
+    if (!m || !out || target == 0u)
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT, target, 0u, 0u);
+    memset(out, 0, sizeof(*out));
+    gen_lock(m);
+    SZrHotPatchVersionRecord *source = ZR_NULL;
+    for (TZrUInt32 i = 0u; i < m->capacity; ++i) {
+        if (m->records[i].generation == target &&
+            m->records[i].state != ZR_HOT_PATCH_VERSION_FREE) {
+            source = &m->records[i];
+            break;
+        }
+    }
+    if (!source) {
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_STALE_LINK, target, 0u, 0u);
+    }
+    SZrHotPatchVersionRecord *slot = ZR_NULL;
+    for (TZrUInt32 i = 0u; i < m->capacity; ++i) {
+        if (m->records[i].state == ZR_HOT_PATCH_VERSION_FREE) {
+            slot = &m->records[i];
+            break;
+        }
+    }
+    if (!slot) {
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_CAPACITY, target, 0u, 0u);
+    }
+    TZrUInt64 generation = gen_next(m);
+    if (!generation) {
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_OVERFLOW, target, 0u, 0u);
+    }
+    slot->generation = generation;
+    slot->moduleHash = source->moduleHash;
+    slot->contentHash = source->contentHash;
+    slot->publicContractHash = source->publicContractHash;
+    slot->targetProfile = source->targetProfile;
+    slot->state = ZR_HOT_PATCH_VERSION_PREPARED;
+    atomic_store_explicit(&slot->leaseCount, 0u, memory_order_relaxed);
+    if (m->count < m->capacity) ++m->count;
+    out->record = slot;
+    out->generation = generation;
+    out->leased = ZR_FALSE;
+    gen_unlock(m);
+    return gen_fail(d, ZR_HOT_PATCH_GENERATION_OK, target, generation, 0u);
+}
+
 static EZrHotPatchGenerationStatus gen_acquire_locked(SZrHotPatchGenerationManager *m,SZrHotPatchVersionRecord *r,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) { (void)m; if(!r||r->state==ZR_HOT_PATCH_VERSION_FREE){return gen_fail(d,ZR_HOT_PATCH_GENERATION_STALE_LINK,0,r?r->generation:0u,0);} atomic_fetch_add_explicit(&r->leaseCount,1u,memory_order_relaxed); out->record=r; out->generation=r->generation; out->leased=ZR_TRUE; return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,r->generation,atomic_load_explicit(&r->leaseCount,memory_order_relaxed)); }
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_AcquireActive(SZrHotPatchGenerationManager *m,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) { if(!m||!out)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0); memset(out,0,sizeof(*out)); gen_lock(m); SZrHotPatchVersionRecord *r=atomic_load_explicit(&m->active,memory_order_acquire); EZrHotPatchGenerationStatus s=gen_acquire_locked(m,r,out,d); gen_unlock(m); return s; }
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Acquire(SZrHotPatchGenerationManager *m,TZrUInt64 generation,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) { if(!m||!out||!generation)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,generation,0,0); memset(out,0,sizeof(*out)); gen_lock(m); SZrHotPatchVersionRecord *found=ZR_NULL; for(TZrUInt32 i=0u;i<m->capacity;i++)if(m->records[i].generation==generation){found=&m->records[i];break;} EZrHotPatchGenerationStatus s=gen_acquire_locked(m,found,out,d); gen_unlock(m); return s; }

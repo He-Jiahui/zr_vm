@@ -38,6 +38,8 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/hotpatch_generation.h"
+#include "zr_vm_core/hotpatch_profile.h"
+#include "zr_vm_core/hotpatch_rollback.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/io.h"

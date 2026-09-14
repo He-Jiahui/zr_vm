@@ -399,6 +399,20 @@ if (NOT TARGET zr_vm_ssa_generation_publication_test)
     set_tests_properties(ssa_generation_publication PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_rollback_restricted_test)
+    add_executable(zr_vm_ssa_rollback_restricted_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_rollback_restricted.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_profile.c)
+    target_include_directories(zr_vm_ssa_rollback_restricted_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_rollback_restricted_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_rollback_restricted COMMAND zr_vm_ssa_rollback_restricted_test)
+    set_tests_properties(ssa_rollback_restricted PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
