@@ -11,6 +11,7 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/exec_ir_builder.h"
+#include "zr_vm_parser/exec_ir_array_lowering.h"
 #include "zr_vm_parser/exec_ir_binding_facts.h"
 #include "zr_vm_parser/exec_ir_layout_visibility.h"
 #include "zr_vm_parser/semantic.h"
