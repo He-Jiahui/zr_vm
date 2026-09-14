@@ -576,6 +576,20 @@ if (NOT TARGET zr_vm_ssa_numeric_vector_ir_test)
     set_tests_properties(ssa_numeric_vector_ir PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_inferred_protocols_test)
+    add_executable(zr_vm_ssa_inferred_protocols_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_inferred_protocols.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_protocols.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
+    target_include_directories(zr_vm_ssa_inferred_protocols_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_inferred_protocols_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_inferred_protocols COMMAND zr_vm_ssa_inferred_protocols_test)
+    set_tests_properties(ssa_inferred_protocols PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_generics_lto_pgo_test)
     add_executable(zr_vm_ssa_generics_lto_pgo_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_generics_lto_pgo.c
