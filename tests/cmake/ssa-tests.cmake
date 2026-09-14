@@ -373,6 +373,20 @@ if (NOT TARGET zr_vm_ssa_objects_layout_maps_test)
     set_tests_properties(ssa_objects_layout_maps PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_arrays_slices_test)
+    add_executable(zr_vm_ssa_arrays_slices_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_arrays_slices.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/object/contiguous_view.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_array_lowering.c)
+    target_include_directories(zr_vm_ssa_arrays_slices_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_arrays_slices_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_arrays_slices COMMAND zr_vm_ssa_arrays_slices_test)
+    set_tests_properties(ssa_arrays_slices PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
