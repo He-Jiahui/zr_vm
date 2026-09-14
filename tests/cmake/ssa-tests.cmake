@@ -540,7 +540,10 @@ endif ()
 if (NOT TARGET zr_vm_ssa_major_budget_test)
     add_executable(zr_vm_ssa_major_budget_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_major_budget.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_budget_contract.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_budget_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_budget.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_major.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_compact.c)
     target_include_directories(zr_vm_ssa_major_budget_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)

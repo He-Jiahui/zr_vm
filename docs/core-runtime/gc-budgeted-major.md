@@ -5,9 +5,17 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc_budget_contract.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_major.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_compact.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/gc_budget_contract.h
   - zr_vm_core/src/zr_vm_core/gc/gc_budget_contract.c
+  - zr_vm_core/include/zr_vm_core/gc_major.h
+  - zr_vm_core/include/zr_vm_core/gc_compact.h
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_major.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_compact.c
 plan_sources:
   - docs/plans/ssa/06-gc-domain/02-major-budget.md
 tests:
@@ -69,3 +77,22 @@ rejection without cursor publication, atomic-pause and pressure reporting,
 compact deferral, malformed input, and cursor overflow. It is run as a direct
 focused fixture in this stage; shared CTest registration belongs to the parent
 integration task.
+
+## Runtime seams
+
+`SZrGcBudgetLedger` provides a pointer-free cumulative view for a scheduler.
+`ZrCore_GcBudget_LedgerAccumulate` accepts only coherent results and preserves
+cursor monotonicity; telemetry counters saturate instead of wrapping. The
+`SZrGcMajorState` contract makes the ordered
+`INITIAL_SNAPSHOT -> CONCURRENT_MARK -> REMARK -> SWEEP -> COMPACT -> COMPLETE`
+transitions explicit and rejects phase skips or an inconsistent publication
+boundary. It is an adapter witness, not a second heap queue: the existing
+`gc_concurrent_major.c` remains the owner of locks, roots and object marking.
+
+`ZrCore_GcCompact_Plan` is the admission boundary for selective compaction. It
+counts fragmented old regions, excludes pinned/large/permanent regions, and
+selects whole regions that fit the requested byte budget. A non-moving or
+budget-insufficient request is reported as deferred; `plannedBytes` is never
+reported as moved object bytes until a relocation implementation has completed
+its own transaction. The focused test covers pinned-region exclusion,
+whole-region budgeting, non-moving fallback, and malformed region facts.

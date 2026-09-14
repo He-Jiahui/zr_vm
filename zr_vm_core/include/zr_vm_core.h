@@ -43,6 +43,8 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_compact.h"
+#include "zr_vm_core/gc_major.h"
 #include "zr_vm_core/gc_young_allocation.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/gc_domain.h"

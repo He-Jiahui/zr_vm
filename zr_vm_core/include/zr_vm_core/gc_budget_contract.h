@@ -107,6 +107,27 @@ typedef struct SZrGcBudgetStepResult {
     TZrBool consistentBoundary;
 } SZrGcBudgetStepResult;
 
+/* Cumulative scalar accounting for a major scheduler.  A ledger is updated
+ * only with a result that has already crossed a coherent boundary; counters
+ * saturate instead of wrapping and repeating work. */
+typedef struct SZrGcBudgetLedger {
+    TZrUInt32 magic;
+    TZrUInt32 schemaVersion;
+    EZrGcBudgetStepStatus lastStatus;
+    EZrGcBudgetPhase lastPhase;
+    EZrGcBudgetPauseReason lastPauseReason;
+    TZrUInt64 cursor;
+    TZrUInt64 workDone;
+    TZrUInt64 elapsedUs;
+    TZrUInt64 bytesDone;
+    TZrUInt64 objectsDone;
+    TZrInt64 debtBytes;
+    TZrUInt64 overBudgetCount;
+    TZrUInt64 compactDeferredCount;
+    TZrBool pressure;
+    TZrBool consistentBoundary;
+} SZrGcBudgetLedger;
+
 ZR_CORE_API void ZrCore_GcBudget_DiagnosticClear(
         SZrGcBudgetDiagnostic *diagnostic);
 ZR_CORE_API const TZrChar *ZrCore_GcBudget_DiagnosticName(
@@ -126,6 +147,18 @@ ZR_CORE_API TZrBool ZrCore_GcBudget_EvaluateStep(
         TZrInt64 debtBytes,
         TZrUInt64 atomicPauseUs,
         SZrGcBudgetStepResult *result,
+        SZrGcBudgetDiagnostic *diagnostic);
+ZR_CORE_API const TZrChar *ZrCore_GcBudget_StatusName(
+        EZrGcBudgetStepStatus status);
+ZR_CORE_API const TZrChar *ZrCore_GcBudget_PauseReasonName(
+        EZrGcBudgetPauseReason reason);
+ZR_CORE_API void ZrCore_GcBudget_LedgerInit(SZrGcBudgetLedger *ledger);
+ZR_CORE_API TZrBool ZrCore_GcBudget_LedgerValidate(
+        const SZrGcBudgetLedger *ledger,
+        SZrGcBudgetDiagnostic *diagnostic);
+ZR_CORE_API TZrBool ZrCore_GcBudget_LedgerAccumulate(
+        SZrGcBudgetLedger *ledger,
+        const SZrGcBudgetStepResult *result,
         SZrGcBudgetDiagnostic *diagnostic);
 
 #ifdef __cplusplus
