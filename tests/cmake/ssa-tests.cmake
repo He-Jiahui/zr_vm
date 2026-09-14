@@ -516,6 +516,21 @@ if (NOT TARGET zr_vm_ssa_generated_fusion_test)
     set_tests_properties(ssa_generated_fusion PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_aggregate_soa_test)
+    add_executable(zr_vm_ssa_aggregate_soa_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aggregate_soa.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sroa.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_data_layout.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_materialization_map.c)
+    target_include_directories(zr_vm_ssa_aggregate_soa_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_aggregate_soa_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_aggregate_soa COMMAND zr_vm_ssa_aggregate_soa_test)
+    set_tests_properties(ssa_aggregate_soa PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
