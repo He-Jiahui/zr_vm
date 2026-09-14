@@ -828,3 +828,19 @@ if (NOT TARGET zr_vm_optimization_remarks_projection_test)
             COMMAND zr_vm_optimization_remarks_projection_test)
     set_tests_properties(optimization_remarks_projection PROPERTIES LABELS "ssa")
 endif ()
+
+# The release gate is intentionally self-contained: it validates the
+# requirement/coverage manifest without linking the production runtime.  This
+# keeps the denominator executable even in reduced builds where optional
+# backends are disabled.
+if (NOT TARGET zr_vm_ssa_release_acceptance_test)
+    add_executable(zr_vm_ssa_release_acceptance_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_release_acceptance.c)
+    target_include_directories(zr_vm_ssa_release_acceptance_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_release_acceptance_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_release_acceptance
+            COMMAND zr_vm_ssa_release_acceptance_test)
+    set_tests_properties(ssa_release_acceptance PROPERTIES LABELS "ssa")
+endif ()
