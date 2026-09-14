@@ -47,9 +47,7 @@ if (MSVC)
 else ()
     target_compile_options(zr_vm_jit PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-Wno-pedantic>
-            $<$<COMPILE_LANGUAGE:CXX>:-Wno-write-strings>
-            $<$<COMPILE_LANGUAGE:CXX>:-Wno-strict-prototypes>
-            $<$<COMPILE_LANGUAGE:CXX>:-Wno-missing-prototypes>)
+            $<$<COMPILE_LANGUAGE:CXX>:-Wno-write-strings>)
 endif ()
 
 if (TARGET zr_vm_parser_aot_ir)
