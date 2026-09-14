@@ -29,6 +29,7 @@
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_common/zr_version_info.h"
 #include "zr_vm_common/zr_vm_conf.h"
+#include "zr_vm_common/ssa_platform_contract.h"
 #define ZR_TODO_PARAMETER(PARAMETER) ((void) PARAMETER);
 
 #define ZR_UNUSED_PARAMETER(PARAMETER) ((void) PARAMETER);
