@@ -14,6 +14,10 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/execution_contract.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define ZR_HOST_JIT_CONTRACT_SCHEMA_VERSION ((TZrUInt32)1u)
 
 typedef enum EZrHostJitArchitecture {
@@ -250,5 +254,9 @@ ZR_CORE_API EZrHostJitStatus ZrCore_HostJit_Code_CollectRetired(
         TZrUInt32 *outCollected,
         SZrHostJitDiagnostic *diagnostic);
 ZR_CORE_API const TZrChar *ZrCore_HostJit_StatusName(EZrHostJitStatus status);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

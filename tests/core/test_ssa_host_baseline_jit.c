@@ -1,7 +1,18 @@
 #include "zr_vm_core/host_baseline_jit.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
+
+static EZrHostJitArchitecture host_architecture(void) {
+#if defined(_M_X64) || defined(__x86_64__) || defined(__amd64__)
+    return ZR_HOST_JIT_ARCH_X86_64;
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return ZR_HOST_JIT_ARCH_AARCH64;
+#else
+    return ZR_HOST_JIT_ARCH_NONE;
+#endif
+}
 
 static SZrHostJitTargetContract host_target(EZrHostJitArchitecture architecture) {
     SZrHostJitTargetContract target;
@@ -20,7 +31,7 @@ static SZrHostJitTargetContract host_target(EZrHostJitArchitecture architecture)
 static SZrHostJitPublicationFacts valid_facts(void) {
     SZrHostJitPublicationFacts facts;
     memset(&facts, 0, sizeof(facts));
-    facts.target = host_target(ZR_HOST_JIT_ARCH_X86_64);
+    facts.target = host_target(host_architecture());
     facts.flags = ZR_HOST_JIT_PUBLICATION_FLAG_MACHINE_CODE |
                   ZR_HOST_JIT_PUBLICATION_FLAG_WX;
     facts.signatureHash = 101u;
@@ -45,15 +56,19 @@ static SZrHostJitPublicationFacts valid_facts(void) {
 
 int main(void) {
     SZrHostJitDiagnostic diagnostic;
-    SZrHostJitTargetContract target = host_target(ZR_HOST_JIT_ARCH_X86_64);
+    SZrHostJitTargetContract target = host_target(host_architecture());
     SZrHostJitPublicationFacts facts = valid_facts();
     SZrHostJitOptions options;
-    SZrHostJitImport imports[1];
+    SZrHostJitImport imports[2];
     SZrHostJitImportManifest manifest;
     SZrHostJitCodeRecord records[2];
     SZrHostJitCodeManager manager;
     SZrHostJitCodeHandle first;
     SZrHostJitCodeHandle active;
+    SZrHostJitCodeHandle duplicate;
+    SZrHostJitCodeHandle overflow;
+    SZrHostJitCodeView view;
+    TZrUInt32 savedCount;
     TZrUInt32 collected;
 
     assert(ZrCore_HostJit_ValidateTarget(&target, &diagnostic) ==
@@ -78,7 +93,13 @@ int main(void) {
     target.platform = ZR_HOST_JIT_PLATFORM_WASM;
     assert(ZrCore_HostJit_ValidateTarget(&target, &diagnostic) ==
            ZR_HOST_JIT_STATUS_TARGET_UNSUPPORTED);
-    target = host_target(ZR_HOST_JIT_ARCH_X86_64);
+    target = host_target(host_architecture());
+    target.architecture = host_architecture() == ZR_HOST_JIT_ARCH_X86_64
+                              ? ZR_HOST_JIT_ARCH_AARCH64
+                              : ZR_HOST_JIT_ARCH_X86_64;
+    assert(ZrCore_HostJit_ValidateTarget(&target, &diagnostic) ==
+           ZR_HOST_JIT_STATUS_TARGET_MISMATCH);
+    target = host_target(host_architecture());
 
     memset(imports, 0, sizeof(imports));
     imports[0].symbolId = 501u;
@@ -94,6 +115,12 @@ int main(void) {
            ZR_HOST_JIT_STATUS_OK);
     assert(ZrCore_HostJit_ValidateImports(&manifest, 999u, 502u, &diagnostic) ==
            ZR_HOST_JIT_STATUS_IMPORT_FORBIDDEN);
+    imports[1] = imports[0];
+    imports[1].signatureHash = 504u;
+    manifest.count = 2u;
+    assert(ZrCore_HostJit_ValidateImports(&manifest, 501u, 502u, &diagnostic) ==
+           ZR_HOST_JIT_STATUS_IMPORT_INVALID);
+    manifest.count = 1u;
     facts.imports = ZR_NULL;
 
     facts.registrationFlags = ZR_HOST_JIT_REGISTRATION_ROOTS |
@@ -122,10 +149,27 @@ int main(void) {
            ZR_HOST_JIT_STATUS_OK);
     assert(ZrCore_HostJit_Code_Publish(&manager, &first, &diagnostic) ==
            ZR_HOST_JIT_STATUS_OK);
+    assert(ZrCore_HostJit_Code_Prepare(&manager, &facts, &duplicate, &diagnostic) ==
+           ZR_HOST_JIT_STATUS_CODE_INVALID);
     assert(ZrCore_HostJit_Code_AcquireActive(&manager, &active, &diagnostic) ==
            ZR_HOST_JIT_STATUS_OK);
+    active.record->leaseCount = UINT32_MAX;
+    assert(ZrCore_HostJit_Code_AcquireActive(&manager, &overflow, &diagnostic) ==
+           ZR_HOST_JIT_STATUS_OVERFLOW);
+    active.record->leaseCount = 1u;
+    savedCount = manager.count;
+    manager.count = 0u;
+    assert(ZrCore_HostJit_Code_Resolve(&manager, &active, &view, &diagnostic) ==
+           ZR_HOST_JIT_STATUS_INVALID_ARGUMENT);
+    manager.count = savedCount;
     assert(ZrCore_HostJit_Code_Evict(&manager, active.codeIdentity, &diagnostic) ==
            ZR_HOST_JIT_STATUS_OK);
+    ZrCore_HostJit_CodeManager_Deinit(&manager);
+    assert(manager.records != ZR_NULL);
+    assert(manager.count == 1u);
+    assert(ZrCore_HostJit_Code_Resolve(&manager, &active, &view, &diagnostic) ==
+           ZR_HOST_JIT_STATUS_OK);
+    assert(view.state == ZR_HOST_JIT_CODE_RETIRED);
     collected = 0u;
     assert(ZrCore_HostJit_Code_CollectRetired(&manager, &collected, &diagnostic) ==
            ZR_HOST_JIT_STATUS_OK);
@@ -135,7 +179,7 @@ int main(void) {
     assert(ZrCore_HostJit_Code_CollectRetired(&manager, &collected, &diagnostic) ==
            ZR_HOST_JIT_STATUS_OK);
     assert(collected == 1u);
-    assert(ZrCore_HostJit_Code_Resolve(&manager, &active, ZR_NULL, &diagnostic) ==
+    assert(ZrCore_HostJit_Code_Resolve(&manager, &active, &view, &diagnostic) ==
            ZR_HOST_JIT_STATUS_STALE_HANDLE);
     ZrCore_HostJit_CodeManager_Deinit(&manager);
     return 0;

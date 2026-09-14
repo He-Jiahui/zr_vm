@@ -32,9 +32,22 @@ status: implemented-subset
 
 `SZrHostJitPublicationFacts` 以稳定标量承载发布前 proof；其中的 import manifest 是只读的 borrowed validation view，不会复制到 code record。它必须声明 typed scalar、control、direct call、simple member 或 array 中至少一个受支持操作，且 signature/layout/ABI、GC map、unwind、debug、deopt map 和 code identity 都非零。machine-code 与 W^X 标志必须同时存在，四种 registration（roots、unwind、debug、deopt）全部完成后才能进入 published 状态。
 
+The public header is usable from C++ adapters through an `extern "C"` guard.
+Target validation also compares the requested host architecture with the
+architecture used to compile the core (x86-64 or AArch64); a mismatched target
+is rejected before publication. Import manifests reject duplicate symbol IDs,
+even when the duplicate carries a different signature, so resolver lookups do
+not have an ambiguous identity.
+
 ## Lifecycle
 
-`ZrCore_HostJit_Code_Prepare` 先完整验证 facts，再占用一个 free record；失败时不会留下可发布的部分记录。`Code_Publish` 在 manager lock 下把旧 published record 标为 retired，再发布新 record。`Code_AcquireActive` 创建 lease；`Code_Evict` 只撤销 active 入口并标记 retired，不释放仍有 lease 的 record。`Code_CollectRetired` 仅回收 lease count 为零的记录，因此 active frame 期间不会释放其 code page 的拥有者。宿主适配层应在调用本 API 前后负责 W^X 页权限和真实 unwind/debug/root 注册，登记完成后才提交 facts。
+`ZrCore_HostJit_Code_Prepare` 先完整验证 facts，再占用一个 free record；失败时不会留下可发布的部分记录，且同一 `codeIdentity` 不能重复占用记录。`Code_Publish` 在 manager lock 下把旧 published record 标为 retired，再发布新 record。`Code_AcquireActive` 创建 lease，并在计数达到 `UINT32_MAX` 时拒绝溢出。`Code_Evict`、`Code_Resolve`、`Code_Release` 和 `Code_CollectRetired` 都先验证 manager shell，再在锁内验证完整 record shape；Resolve/Release 的 record、state 和 lease 读取不会与 collect 并发发生竞态。`Code_Evict` 只撤销 active 入口并标记 retired，不释放仍有 lease 的 record。`Code_CollectRetired` 仅回收 lease count 为零的记录，因此 active frame 期间不会释放其 code page 的拥有者。
+
+`CodeManager_Deinit` 同样在 manager lock 下运行。只要存在 active/non-free
+record（包括仍有 lease 的 retired record），deinit 保持 manager 完整并返回；
+调用方应先 release/collect，再重试 deinit。无效或内部 shape 不一致的
+manager 也不会被清空。宿主适配层应在调用本 API 前后负责 W^X 页权限和真实
+unwind/debug/root 注册，登记完成后才提交 facts。
 
 Code handle 只携带 record identity 和 lease 状态，不暴露函数指针或 executable address。`Resolve` 可以读取 semantic signature/layout/ABI witness 及状态；实际 entry address 必须留在适配层的进程内存中，不能进入 artifact、persistent CallBinding 或 cache key。
 
@@ -49,10 +62,14 @@ The contract deliberately validates all registrations before publication. A back
 `tests/core/test_ssa_host_baseline_jit.c` verifies:
 
 - valid host target and explicit WASM rejection;
+- host-architecture mismatch rejection and C++-compatible C linkage;
 - manifest import acceptance and unlisted symbol rejection;
+- duplicate import identity rejection;
 - W^X/publication registration completeness;
 - prepare/publish/active lease/eviction/retired collection sequence;
-- no collection while an active lease remains, followed by collection after release.
+- no collection while an active lease remains, followed by collection after release;
+- duplicate code identity, lease-counter overflow, malformed manager shape, and
+  deinit refusal while a live record remains.
 
 The fixture is intentionally core-only so it can be compiled directly without changing shared CMake or requiring an unavailable LLVM installation. The parent integration task may register it in `tests/cmake/ssa-tests.cmake` as `ssa_host_baseline_jit`.
 
