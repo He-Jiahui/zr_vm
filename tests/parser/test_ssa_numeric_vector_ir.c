@@ -257,6 +257,23 @@ static void test_ordered_reduction_never_changes_association(void) {
     assert(ZrParser_ExecIr_LegalizeVector(&request, &result, &diagnostic));
     assert(result.decision == ZR_EXEC_IR_NUMERIC_LEGALIZE_VECTOR);
     assert(result.preservesSourceOrder == ZR_FALSE);
+
+    effective.requestedFastMath |= ZR_EXEC_IR_NUMERIC_FAST_MATH_FMA;
+    effective.effectiveFastMath |= ZR_EXEC_IR_NUMERIC_FAST_MATH_FMA;
+    request = make_request(ZR_EXEC_IR_NUMERIC_VECTOR_FMA,
+                           ZR_EXEC_IR_NUMERIC_ELEMENT_F32, 4u);
+    request.targetCapabilities = ZR_EXEC_IR_NUMERIC_TARGET_CAP_VECTOR |
+                                 ZR_EXEC_IR_NUMERIC_TARGET_CAP_F32 |
+                                 ZR_EXEC_IR_NUMERIC_TARGET_CAP_FMA;
+    request.requiredFastMath = ZR_EXEC_IR_NUMERIC_FAST_MATH_FMA;
+    request.policy = &effective;
+    assert(ZrParser_ExecIr_LegalizeVector(&request, &result, &diagnostic));
+    assert(result.decision == ZR_EXEC_IR_NUMERIC_LEGALIZE_VECTOR);
+
+    request.policy = ZR_NULL;
+    assert(ZrParser_ExecIr_LegalizeVector(&request, &result, &diagnostic));
+    assert(result.decision == ZR_EXEC_IR_NUMERIC_LEGALIZE_SCALAR_FALLBACK);
+    assert(result.reason == ZR_EXEC_IR_NUMERIC_LEGALIZE_REASON_FAST_MATH_DENIED);
 }
 
 static void test_vector_shape_boundaries_and_operation_validation(void) {
@@ -278,6 +295,11 @@ static void test_vector_shape_boundaries_and_operation_validation(void) {
 
     request = make_request(ZR_EXEC_IR_NUMERIC_VECTOR_FMA,
                            ZR_EXEC_IR_NUMERIC_ELEMENT_I32, 4u);
+    assert(!ZrParser_ExecIr_LegalizeVector(&request, &result, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT);
+
+    request = make_request(ZR_EXEC_IR_NUMERIC_VECTOR_SHIFT_LEFT,
+                           ZR_EXEC_IR_NUMERIC_ELEMENT_F32, 4u);
     assert(!ZrParser_ExecIr_LegalizeVector(&request, &result, &diagnostic));
     assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT);
 

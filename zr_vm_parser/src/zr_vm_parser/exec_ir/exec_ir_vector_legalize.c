@@ -151,6 +151,12 @@ static TZrBool vector_operation_valid(EZrNumericVectorOperation operation,
         !vector_is_float(elementKind)) {
         return ZR_FALSE;
     }
+    if ((operation == ZR_EXEC_IR_NUMERIC_VECTOR_SHIFT_LEFT ||
+         operation == ZR_EXEC_IR_NUMERIC_VECTOR_SHIFT_RIGHT ||
+         operation == ZR_EXEC_IR_NUMERIC_VECTOR_MOD) &&
+        !vector_is_integer(elementKind)) {
+        return ZR_FALSE;
+    }
     if (vector_operation_is_reduction(operation) &&
         !vector_is_float(elementKind) && !vector_is_integer(elementKind)) {
         return ZR_FALSE;

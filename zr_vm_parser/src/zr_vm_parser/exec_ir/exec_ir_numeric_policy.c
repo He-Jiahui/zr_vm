@@ -271,6 +271,18 @@ TZrBool ZrParser_ExecIr_NumericSemanticsFor(
                                (TZrUInt64)elementKind);
         return ZR_FALSE;
     }
+    if ((operation == ZR_EXEC_IR_NUMERIC_VECTOR_ADD ||
+         operation == ZR_EXEC_IR_NUMERIC_VECTOR_SUB ||
+         operation == ZR_EXEC_IR_NUMERIC_VECTOR_MUL ||
+         operation == ZR_EXEC_IR_NUMERIC_VECTOR_DIV ||
+         operation == ZR_EXEC_IR_NUMERIC_VECTOR_NEG) &&
+        !isFloat && !isInteger) {
+        numeric_diagnostic_set(diagnostic,
+                               ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                               ZR_EXEC_IR_NUMERIC_ELEMENT_I8,
+                               (TZrUInt64)elementKind);
+        return ZR_FALSE;
+    }
     if (operation == ZR_EXEC_IR_NUMERIC_VECTOR_FMA && !isFloat) {
         numeric_diagnostic_set(diagnostic,
                                ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
