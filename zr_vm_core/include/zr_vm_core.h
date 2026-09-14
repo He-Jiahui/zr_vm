@@ -25,6 +25,7 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/object_layout_map.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"

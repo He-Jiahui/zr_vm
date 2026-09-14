@@ -357,6 +357,22 @@ if (NOT TARGET zr_vm_ssa_maps_strings_test)
     set_tests_properties(ssa_maps_strings PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_objects_layout_maps_test)
+    add_executable(zr_vm_ssa_objects_layout_maps_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_objects_layout_maps.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/object/object_layout_map.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_layout_visibility.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_objects_layout_maps_test)
+    target_compile_definitions(zr_vm_ssa_objects_layout_maps_test PRIVATE
+            UNITY_INCLUDE_CONFIG_H _CRT_SECURE_NO_WARNINGS)
+    target_include_directories(zr_vm_ssa_objects_layout_maps_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_link_third_party_for_target(zr_vm_ssa_objects_layout_maps_test "zr_unity")
+    add_test(NAME ssa_objects_layout_maps COMMAND zr_vm_ssa_objects_layout_maps_test)
+    set_tests_properties(ssa_objects_layout_maps PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
