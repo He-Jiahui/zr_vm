@@ -712,3 +712,27 @@ if (NOT TARGET zr_vm_ssa_roots_observation_test)
     add_test(NAME ssa_roots_observation COMMAND zr_vm_ssa_roots_observation_test)
     set_tests_properties(ssa_roots_observation PROPERTIES LABELS "ssa")
 endif ()
+
+# The AOT archive is an optional consumer of the shared parser/core libraries.
+# Keep its adapter contract test independent from the dormant native emitters:
+# descriptor facts and explicit artifact-unavailable status are still
+# validated when no AOT archive target is enabled.
+if (NOT TARGET zr_vm_ssa_aot_backend_adapters_test)
+    add_executable(zr_vm_ssa_aot_backend_adapters_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_backend_adapters.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_c.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_llvm.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_coverage.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_link_profile.c)
+    target_include_directories(zr_vm_ssa_aot_backend_adapters_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_aot_backend_adapters_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    zr_vm_link_parser_core(zr_vm_ssa_aot_backend_adapters_test)
+    add_test(NAME aot_backend_adapters COMMAND zr_vm_ssa_aot_backend_adapters_test)
+    set_tests_properties(aot_backend_adapters PROPERTIES LABELS "ssa")
+endif ()
