@@ -455,6 +455,44 @@ if (NOT TARGET zr_vm_ssa_batch_vectorization_test)
     set_tests_properties(ssa_batch_vectorization PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_numeric_vector_ir_test)
+    add_executable(zr_vm_ssa_numeric_vector_ir_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_numeric_vector_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_numeric_policy.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_vector_legalize.c)
+    target_include_directories(zr_vm_ssa_numeric_vector_ir_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_numeric_vector_ir_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_numeric_vector_ir COMMAND zr_vm_ssa_numeric_vector_ir_test)
+    set_tests_properties(ssa_numeric_vector_ir PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_generics_lto_pgo_test)
+    add_executable(zr_vm_ssa_generics_lto_pgo_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_generics_lto_pgo.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_generic_policy.c)
+    target_include_directories(zr_vm_ssa_generics_lto_pgo_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_generics_lto_pgo_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_generics_lto_pgo COMMAND zr_vm_ssa_generics_lto_pgo_test)
+    set_tests_properties(ssa_generics_lto_pgo PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_host_baseline_jit_test)
+    add_executable(zr_vm_ssa_host_baseline_jit_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_host_baseline_jit.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c)
+    target_include_directories(zr_vm_ssa_host_baseline_jit_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_host_baseline_jit_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_host_baseline_jit COMMAND zr_vm_ssa_host_baseline_jit_test)
+    set_tests_properties(ssa_host_baseline_jit PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
