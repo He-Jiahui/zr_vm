@@ -440,6 +440,25 @@ if (NOT TARGET zr_vm_ssa_maps_strings_test)
     set_tests_properties(ssa_maps_strings PROPERTIES LABELS "ssa")
 endif ()
 
+# 05.03's parser admission pass is kept as a small standalone contract test.
+# It intentionally does not add a second `ssa_*` denominator row: the
+# canonical maps/strings row above covers the runtime storage contract while
+# this target exercises the parser-side proof gate and generic fallback.
+if (NOT TARGET zr_vm_container_specialization_test)
+    add_executable(zr_vm_container_specialization_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_container_specialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_container_specialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/object/container_storage_contract.c)
+    target_include_directories(zr_vm_container_specialization_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_container_specialization_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME container_specialization COMMAND zr_vm_container_specialization_test)
+    set_tests_properties(container_specialization PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_objects_layout_maps_test)
     add_executable(zr_vm_ssa_objects_layout_maps_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_objects_layout_maps.c
