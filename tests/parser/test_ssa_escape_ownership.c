@@ -781,6 +781,98 @@ static void test_malformed_operand_range_reports_location(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_allocation_and_ownership_plans_are_hash_bound(void) {
+    SZrExecIrFunction allocationFunction;
+    SZrExecIrEscapeSummary allocationSummary;
+    SZrExecIrAllocationPlan allocationPlan;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId allocationValue;
+    SZrExecIrFunction ownershipFunction;
+    SZrExecIrEscapeSummary ownershipSummary;
+    SZrExecIrOwnershipElisionPlan ownershipPlan;
+    TZrBool changed = ZR_FALSE;
+    TZrExecIrValueId sourceValue;
+    TZrExecIrValueId destinationValue;
+
+    /* A local managed allocation produces a publishable stack-placement
+     * witness, while ApplyAllocationPlan deliberately leaves the semantic
+     * ALLOC instruction untouched for the backend/frame lowering boundary. */
+    init_function(&allocationFunction);
+    allocationValue = add_gc_value(&allocationFunction, 61u);
+    append_instruction(&allocationFunction, ZR_EXEC_IR_OPCODE_ALLOC,
+                       ZR_NULL, 0u, &allocationValue, 1u, 7u,
+                       (TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_ALLOCATE |
+                                   ZR_EXEC_IR_FLAG_MAY_GC),
+                       0u, 301u);
+    memset(&allocationSummary, 0, sizeof(allocationSummary));
+    memset(&allocationPlan, 0, sizeof(allocationPlan));
+    ZrParser_ExecIr_EscapeSummaryInit(&allocationSummary);
+    ZrParser_ExecIr_AllocationPlanInit(&allocationPlan);
+    assert(ZrParser_ExecIr_AnalyzeEscape(&allocationFunction,
+                                         &allocationSummary, &diagnostic));
+    assert(ZrParser_ExecIr_BuildAllocationPlan(&allocationFunction,
+                                               &allocationSummary,
+                                               &allocationPlan, &diagnostic));
+    assert(allocationPlan.siteCount == 1u);
+    assert(allocationPlan.stackCount == 1u);
+    assert(allocationPlan.sites[0].decision == ZR_EXEC_IR_ALLOC_STACK);
+    assert(ZrParser_ExecIr_ApplyAllocationPlan(&allocationFunction,
+                                               &allocationPlan, &diagnostic));
+    assert(allocationFunction.instructions[0].opcode ==
+           ZR_EXEC_IR_OPCODE_ALLOC);
+    allocationFunction.signatureHash ^= 1u;
+    assert(!ZrParser_ExecIr_ApplyAllocationPlan(&allocationFunction,
+                                                &allocationPlan, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_STALE_GENERATION);
+    ZrParser_ExecIr_AllocationPlanFree(&allocationPlan);
+    ZrParser_ExecIr_EscapeSummaryFree(&allocationSummary);
+    ZrCore_ExecIr_FreeFunction(&allocationFunction);
+
+    /* A unique source whose only remaining use is a COPY feeding RETURN can
+     * be changed to MOVE.  The plan is rejected after the IR hash changes,
+     * proving that stale ownership facts cannot rewrite a new function. */
+    init_function(&ownershipFunction);
+    sourceValue = add_value(&ownershipFunction, 62u);
+    destinationValue = add_value(&ownershipFunction, 62u);
+    append_instruction(&ownershipFunction, ZR_EXEC_IR_OPCODE_COPY,
+                       &sourceValue, 1u, &destinationValue, 1u, 0u, 0u,
+                       0u, 302u);
+    append_instruction(&ownershipFunction, ZR_EXEC_IR_OPCODE_RETURN,
+                       &destinationValue, 1u, ZR_NULL, 0u, 0u, 0u, 0u,
+                       303u);
+    memset(&ownershipSummary, 0, sizeof(ownershipSummary));
+    memset(&ownershipPlan, 0, sizeof(ownershipPlan));
+    ZrParser_ExecIr_EscapeSummaryInit(&ownershipSummary);
+    ZrParser_ExecIr_OwnershipElisionPlanInit(&ownershipPlan);
+    assert(ZrParser_ExecIr_AnalyzeEscape(&ownershipFunction,
+                                         &ownershipSummary, &diagnostic));
+    assert(ZrParser_ExecIr_BuildOwnershipElisionPlan(&ownershipFunction,
+                                                     &ownershipSummary,
+                                                     &ownershipPlan,
+                                                     &diagnostic));
+    assert(ownershipPlan.itemCount == 1u);
+    assert(ownershipPlan.items[0].kind ==
+           ZR_EXEC_IR_OWNERSHIP_ELISION_RETURN_FORWARD);
+    assert(ZrParser_ExecIr_ApplyOwnershipElisionPlan(
+            &ownershipFunction, &ownershipPlan, &changed, &diagnostic));
+    assert(changed == ZR_TRUE);
+    assert(ownershipFunction.instructions[0].opcode == ZR_EXEC_IR_OPCODE_MOVE);
+
+    /* Rebuild facts for the now-mutated function before checking the stale
+     * plan path; this also exercises the source-map-preserving rollback
+     * boundary without relying on undefined pointer state. */
+    ownershipFunction.instructions[0].opcode = ZR_EXEC_IR_OPCODE_COPY;
+    ownershipFunction.signatureHash ^= 1u;
+    changed = ZR_TRUE;
+    assert(!ZrParser_ExecIr_ApplyOwnershipElisionPlan(
+            &ownershipFunction, &ownershipPlan, &changed, &diagnostic));
+    assert(changed == ZR_FALSE);
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_STALE_GENERATION);
+    ZrParser_ExecIr_OwnershipElisionPlanFree(&ownershipPlan);
+    ZrParser_ExecIr_EscapeSummaryFree(&ownershipSummary);
+    ZrCore_ExecIr_FreeFunction(&ownershipFunction);
+}
+
 int main(void) {
     test_local_alloc_is_stack_candidate();
     test_alloc_without_concrete_layout_stays_on_heap();
@@ -807,5 +899,6 @@ int main(void) {
     test_uninitialized_output_is_replaced_safely();
     test_summary_init_is_idempotent_after_analysis();
     test_malformed_operand_range_reports_location();
+    test_allocation_and_ownership_plans_are_hash_bound();
     return 0;
 }

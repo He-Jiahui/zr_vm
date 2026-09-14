@@ -117,6 +117,94 @@ typedef struct SZrExecIrEscapeSummary {
     TZrUInt64 irHash;
 } SZrExecIrEscapeSummary;
 
+/*
+ * Allocation and ownership passes consume an escape summary through a
+ * pointer-free, hash-bound plan.  The current ExecIR schema has no physical
+ * stack/region allocation opcode or placement field, so an allocation plan is
+ * deliberately a backend-facing publication contract: applying it validates
+ * that the IR is unchanged and leaves the semantic ALLOC instruction intact.
+ * A later frame/GC lowering pass can consume the same plan without having to
+ * rediscover escape facts.
+ */
+#define ZR_EXEC_IR_ALLOCATION_PLAN_MAGIC ((TZrUInt32)0x414c5031u)
+#define ZR_EXEC_IR_OWNERSHIP_PLAN_MAGIC ((TZrUInt32)0x4f574e31u)
+
+typedef enum EZrExecIrAllocationReason {
+    ZR_EXEC_IR_ALLOCATION_REASON_PROVEN_LOCAL = 0,
+    ZR_EXEC_IR_ALLOCATION_REASON_ESCAPE,
+    ZR_EXEC_IR_ALLOCATION_REASON_IDENTITY_OBSERVED,
+    ZR_EXEC_IR_ALLOCATION_REASON_CROSSED_SUSPEND,
+    ZR_EXEC_IR_ALLOCATION_REASON_NATIVE_RETAINED,
+    ZR_EXEC_IR_ALLOCATION_REASON_DROP_OBSERVABLE,
+    ZR_EXEC_IR_ALLOCATION_REASON_UNKNOWN_ESCAPE,
+    ZR_EXEC_IR_ALLOCATION_REASON_NO_LAYOUT,
+    ZR_EXEC_IR_ALLOCATION_REASON_NOT_CANDIDATE,
+    ZR_EXEC_IR_ALLOCATION_REASON_MATERIALIZATION,
+    ZR_EXEC_IR_ALLOCATION_REASON_INVALID,
+    ZR_EXEC_IR_ALLOCATION_REASON_COUNT
+} EZrExecIrAllocationReason;
+
+typedef struct SZrExecIrAllocationSite {
+    TZrExecIrValueId valueId;
+    TZrExecIrInstructionId instructionId;
+    EZrExecIrAllocationDecision decision;
+    EZrExecIrAllocationReason reason;
+    TZrUInt32 liveStart;
+    TZrUInt32 liveEnd;
+    TZrBool requiresGcRoot;
+    TZrBool requiresMaterialization;
+    TZrBool identityPreserved;
+} SZrExecIrAllocationSite;
+
+typedef struct SZrExecIrAllocationPlan {
+    TZrUInt32 magic;
+    TZrUInt64 irHash;
+    SZrExecIrAllocationSite *sites;
+    TZrUInt32 siteCount;
+    TZrUInt32 siteCapacity;
+    TZrUInt32 heapCount;
+    TZrUInt32 stackCount;
+    TZrUInt32 regionCount;
+    TZrBool hasUnknownEscape;
+} SZrExecIrAllocationPlan;
+
+typedef enum EZrExecIrOwnershipElisionKind {
+    ZR_EXEC_IR_OWNERSHIP_ELISION_NONE = 0,
+    ZR_EXEC_IR_OWNERSHIP_ELISION_COPY_TO_MOVE,
+    ZR_EXEC_IR_OWNERSHIP_ELISION_RETURN_FORWARD,
+    ZR_EXEC_IR_OWNERSHIP_ELISION_KIND_COUNT
+} EZrExecIrOwnershipElisionKind;
+
+typedef enum EZrExecIrOwnershipElisionReason {
+    ZR_EXEC_IR_OWNERSHIP_REASON_UNIQUE_LAST_USE = 0,
+    ZR_EXEC_IR_OWNERSHIP_REASON_RETURN_FORWARD,
+    ZR_EXEC_IR_OWNERSHIP_REASON_UNKNOWN_OWNERSHIP,
+    ZR_EXEC_IR_OWNERSHIP_REASON_SOURCE_ESCAPES,
+    ZR_EXEC_IR_OWNERSHIP_REASON_DROP_OBSERVABLE,
+    ZR_EXEC_IR_OWNERSHIP_REASON_METADATA_USE,
+    ZR_EXEC_IR_OWNERSHIP_REASON_ALIAS_UNPROVEN,
+    ZR_EXEC_IR_OWNERSHIP_REASON_NOT_LAST_USE,
+    ZR_EXEC_IR_OWNERSHIP_REASON_INVALID,
+    ZR_EXEC_IR_OWNERSHIP_REASON_COUNT
+} EZrExecIrOwnershipElisionReason;
+
+typedef struct SZrExecIrOwnershipElision {
+    TZrExecIrInstructionId instructionId;
+    TZrExecIrValueId sourceValueId;
+    TZrExecIrValueId destinationValueId;
+    EZrExecIrOwnershipElisionKind kind;
+    EZrExecIrOwnershipElisionReason reason;
+} SZrExecIrOwnershipElision;
+
+typedef struct SZrExecIrOwnershipElisionPlan {
+    TZrUInt32 magic;
+    TZrUInt64 irHash;
+    SZrExecIrOwnershipElision *items;
+    TZrUInt32 itemCount;
+    TZrUInt32 itemCapacity;
+    TZrBool changed;
+} SZrExecIrOwnershipElisionPlan;
+
 ZR_PARSER_API void ZrParser_ExecIr_EscapeSummaryInit(
         SZrExecIrEscapeSummary *summary);
 ZR_PARSER_API void ZrParser_ExecIr_EscapeSummaryFree(
@@ -137,6 +225,48 @@ ZR_PARSER_API const TZrChar *ZrParser_ExecIr_EscapeStateName(
         EZrExecIrEscapeState state);
 ZR_PARSER_API const TZrChar *ZrParser_ExecIr_AllocationDecisionName(
         EZrExecIrAllocationDecision decision);
+ZR_PARSER_API const TZrChar *ZrParser_ExecIr_AllocationReasonName(
+        EZrExecIrAllocationReason reason);
+ZR_PARSER_API const TZrChar *ZrParser_ExecIr_OwnershipElisionReasonName(
+        EZrExecIrOwnershipElisionReason reason);
+
+ZR_PARSER_API void ZrParser_ExecIr_AllocationPlanInit(
+        SZrExecIrAllocationPlan *plan);
+ZR_PARSER_API void ZrParser_ExecIr_AllocationPlanFree(
+        SZrExecIrAllocationPlan *plan);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildAllocationPlan(
+        const SZrExecIrFunction *function,
+        const SZrExecIrEscapeSummary *summary,
+        SZrExecIrAllocationPlan *plan,
+        SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_AnalyzeAllocation(
+        const SZrExecIrFunction *function,
+        const SZrExecIrEscapeSummary *summary,
+        SZrExecIrAllocationPlan *plan,
+        SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_ApplyAllocationPlan(
+        SZrExecIrFunction *function,
+        const SZrExecIrAllocationPlan *plan,
+        SZrExecIrDiagnostic *diagnostic);
+
+ZR_PARSER_API void ZrParser_ExecIr_OwnershipElisionPlanInit(
+        SZrExecIrOwnershipElisionPlan *plan);
+ZR_PARSER_API void ZrParser_ExecIr_OwnershipElisionPlanFree(
+        SZrExecIrOwnershipElisionPlan *plan);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildOwnershipElisionPlan(
+        const SZrExecIrFunction *function,
+        const SZrExecIrEscapeSummary *summary,
+        SZrExecIrOwnershipElisionPlan *plan,
+        SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_ApplyOwnershipElisionPlan(
+        SZrExecIrFunction *function,
+        const SZrExecIrOwnershipElisionPlan *plan,
+        TZrBool *changed,
+        SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_ElideAllocationAndCopies(
+        SZrExecIrFunction *function,
+        const SZrExecIrEscapeSummary *summary,
+        SZrExecIrDiagnostic *diagnostic);
 
 /* Noun-first spellings match the other parser-owned analysis APIs while the
  * compact camel-case names above remain the canonical ABI symbols. */
