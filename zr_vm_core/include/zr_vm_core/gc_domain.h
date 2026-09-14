@@ -13,6 +13,32 @@ typedef struct SZrGcDomainIdentity {
     TZrUInt32 generation;
 } SZrGcDomainIdentity;
 
+typedef enum EZrGcDomainShareFailure {
+    ZR_GC_DOMAIN_SHARE_FAILURE_NONE = 0,
+    ZR_GC_DOMAIN_SHARE_FAILURE_INVALID_ARGUMENT,
+    ZR_GC_DOMAIN_SHARE_FAILURE_FOREIGN_DOMAIN,
+    ZR_GC_DOMAIN_SHARE_FAILURE_SEND_PROOF_REQUIRED,
+    ZR_GC_DOMAIN_SHARE_FAILURE_SYNC_PROOF_REQUIRED,
+    ZR_GC_DOMAIN_SHARE_FAILURE_LIFETIME,
+    ZR_GC_DOMAIN_SHARE_FAILURE_ROOT_REGISTRATION
+} EZrGcDomainShareFailure;
+
+typedef struct SZrGcDomainShareRequest {
+    struct SZrState *producerState;
+    struct SZrState *consumerState;
+    struct SZrRawObject *target;
+    TZrBool sendProof;
+    TZrBool syncProof;
+    TZrBool sharedReference;
+} SZrGcDomainShareRequest;
+
+typedef struct SZrGcDomainShareDiagnostic {
+    EZrGcDomainShareFailure failure;
+    SZrGcDomainIdentity producerDomain;
+    SZrGcDomainIdentity consumerDomain;
+    const struct SZrRawObject *target;
+} SZrGcDomainShareDiagnostic;
+
 typedef struct SZrGcRootHandle {
     SZrGcDomainIdentity domain;
     TZrUInt32 slotIndex;
@@ -120,5 +146,11 @@ ZR_CORE_API TZrSize ZrCore_GcDomain_GetOwnershipRootCount(
 ZR_CORE_API TZrBool ZrCore_GcDomain_IsOwnershipRoot(
         const struct SZrState *state,
         const struct SZrRawObject *object);
+ZR_CORE_API TZrBool ZrCore_GcDomain_ShareValue(
+        const SZrGcDomainShareRequest *request,
+        SZrGcDomainShareDiagnostic *diagnostic,
+        SZrGcRootHandle *outHandle);
+
+#define ZrCore_Domain_ShareValue ZrCore_GcDomain_ShareValue
 
 #endif

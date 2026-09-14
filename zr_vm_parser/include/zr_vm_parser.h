@@ -14,6 +14,7 @@
 #include "zr_vm_parser/exec_ir_array_lowering.h"
 #include "zr_vm_parser/exec_ir_binding_facts.h"
 #include "zr_vm_parser/exec_ir_layout_visibility.h"
+#include "zr_vm_parser/exec_ir_send_sync.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_parser/writer.h"
