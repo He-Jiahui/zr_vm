@@ -267,6 +267,19 @@ TZrBool ZrParser_OptimizationFacts_Validate(
         return ZR_FALSE;
     }
     if (facts->validity == ZR_OPTIMIZATION_FACTS_PROVEN &&
+            (facts->ownershipMask &
+             ~ZR_OPTIMIZATION_OWNERSHIP_CAPABILITY_KNOWN_MASK) != 0u) {
+        /* A proven summary cannot silently carry an ownership capability that
+         * this schema does not understand.  Unknown records may retain such
+         * bits as producer evidence, but consumers must never treat them as
+         * part of a proven contract. */
+        zr_diagnostic_set(
+                diagnostic, ZR_EXECUTION_DIAGNOSTIC_CAPABILITY_MISMATCH,
+                ZR_OPTIMIZATION_OWNERSHIP_CAPABILITY_KNOWN_MASK,
+                facts->ownershipMask);
+        return ZR_FALSE;
+    }
+    if (facts->validity == ZR_OPTIMIZATION_FACTS_PROVEN &&
             (facts->factMask & ZR_OPTIMIZATION_FACT_RECEIVER_READONLY) != 0u &&
             facts->receiverEffect != ZR_OPTIMIZATION_RECEIVER_READONLY) {
         zr_diagnostic_set(diagnostic, ZR_EXECUTION_DIAGNOSTIC_CAPABILITY_MISMATCH,
@@ -279,6 +292,25 @@ TZrBool ZrParser_OptimizationFacts_Validate(
             facts->borrowState != ZR_OPTIMIZATION_BORROW_STABLE) {
         zr_diagnostic_set(diagnostic, ZR_EXECUTION_DIAGNOSTIC_CAPABILITY_MISMATCH,
                           ZR_OPTIMIZATION_BORROW_STABLE, facts->borrowState);
+        return ZR_FALSE;
+    }
+    if (facts->validity == ZR_OPTIMIZATION_FACTS_PROVEN &&
+            (facts->factMask & ZR_OPTIMIZATION_FACT_BORROW_SAFE) != 0u &&
+            (facts->declaredEffects & ZR_EXECUTION_EFFECT_SUSPEND) != 0u) {
+        zr_diagnostic_set(diagnostic, ZR_EXECUTION_DIAGNOSTIC_EFFECT_MISMATCH,
+                          ZR_EXECUTION_EFFECT_SUSPEND,
+                          facts->declaredEffects);
+        return ZR_FALSE;
+    }
+    if (facts->validity == ZR_OPTIMIZATION_FACTS_PROVEN &&
+            (facts->factMask & ZR_OPTIMIZATION_FACT_BORROW_SAFE) != 0u &&
+            (facts->taskEffects &
+             (ZR_OPTIMIZATION_TASK_EFFECT_SUSPEND |
+              ZR_OPTIMIZATION_TASK_EFFECT_BORROW_ESCAPE |
+              ZR_OPTIMIZATION_TASK_EFFECT_UNKNOWN)) != 0u) {
+        zr_diagnostic_set(diagnostic, ZR_EXECUTION_DIAGNOSTIC_EFFECT_MISMATCH,
+                          ZR_OPTIMIZATION_TASK_EFFECT_NONE,
+                          facts->taskEffects);
         return ZR_FALSE;
     }
     if (facts->validity == ZR_OPTIMIZATION_FACTS_PROVEN &&
@@ -669,10 +701,22 @@ TZrBool ZrParser_Optimization_QueryFacts(
                (((query->requiredFacts & ZR_OPTIMIZATION_FACT_BORROW_SAFE) != 0u) &&
                 facts->borrowState == ZR_OPTIMIZATION_BORROW_UNKNOWN)) {
         reason = ZR_OPTIMIZATION_UNKNOWN_BORROW;
+    } else if ((facts->factMask & ZR_OPTIMIZATION_FACT_BORROW_SAFE) != 0u &&
+               (facts->taskEffects &
+                (ZR_OPTIMIZATION_TASK_EFFECT_SUSPEND |
+                 ZR_OPTIMIZATION_TASK_EFFECT_BORROW_ESCAPE |
+                 ZR_OPTIMIZATION_TASK_EFFECT_UNKNOWN)) != 0u) {
+        reason = ZR_OPTIMIZATION_UNKNOWN_TASK_EFFECT;
+    } else if ((facts->factMask & ZR_OPTIMIZATION_FACT_BORROW_SAFE) != 0u &&
+               (facts->declaredEffects & ZR_EXECUTION_EFFECT_SUSPEND) != 0u) {
+        /* A producer may publish a candidate borrow proof before the complete
+         * effect summary arrives.  Keep this a conservative optimization miss
+         * rather than surfacing the validator's malformed-PROVEN result. */
+        reason = ZR_OPTIMIZATION_UNKNOWN_BORROW;
     } else if (query->observedReceiverMayMutate != 0u ||
-               (query->expectedReceiverEffect ==
-                        ZR_OPTIMIZATION_RECEIVER_READONLY &&
-                facts->receiverEffect != ZR_OPTIMIZATION_RECEIVER_READONLY) ||
+               (query->expectedReceiverEffect !=
+                        ZR_OPTIMIZATION_RECEIVER_UNKNOWN &&
+                facts->receiverEffect != query->expectedReceiverEffect) ||
                ((facts->factMask & ZR_OPTIMIZATION_FACT_RECEIVER_READONLY) != 0u &&
                 facts->receiverEffect != ZR_OPTIMIZATION_RECEIVER_READONLY)) {
         reason = ZR_OPTIMIZATION_UNKNOWN_RECEIVER;

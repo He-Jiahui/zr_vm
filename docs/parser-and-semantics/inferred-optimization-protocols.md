@@ -92,6 +92,9 @@ bits receive dedicated reasons (`UNKNOWN_RECEIVER`, `UNKNOWN_BORROW`,
 `UNKNOWN_UNSUPPORTED`.  Every result gets a deterministic proof hash.  The
 hash excludes its own witness field, so `ZrParser_OptimizationFacts_Validate`
 can detect a tampered/stale witness without creating a self-referential hash.
+When a caller supplies an expected receiver state, the comparison is exact:
+`MUTABLE` does not accept a readonly observation (and vice versa), even when no
+receiver fact bit is required.
 Optional function/block/instruction/source ids on the query are copied to a
 diagnostic, allowing a missed-proof or contract mismatch to point back to the
 parser/IR location without retaining an AST pointer.  The same ids are copied
@@ -103,13 +106,23 @@ If a candidate negative bit conflicts with a known observation (for example
 `UNKNOWN_*` optimization miss.  Only a caller that directly publishes a
 `PROVEN` contradictory record is rejected by the validator.
 
+The same rule applies to an explicitly supplied `BORROW_SAFE` candidate:
+known suspension or borrow-escape/unknown task evidence is reported as
+`UNKNOWN_BORROW` or `UNKNOWN_TASK_EFFECT` by the query.  The validator still
+rejects a record that is directly marked `PROVEN` with those contradictions,
+so a malformed producer cannot smuggle the capability into an optimization
+consumer.
+
 Validation rejects unknown masks, contradictory negative effects on a
 `PROVEN` record (for example `NO_ALLOC` with `ALLOCATE`, `PURITY` with
-write/throw/suspend), impossible receiver/borrow/task combinations, invalid
-enum values, and a non-matching non-zero proof hash.  An `UNKNOWN` record may
-retain contradictory raw observations for diagnostics, but its validity keeps
-them out of optimization consumers.  Malformed producer records are distinct
-from ordinary optimization misses.
+write/throw/suspend), impossible receiver/borrow/task combinations, and
+unrecognized ownership capability bits on a proven summary.  In particular,
+`BORROW_SAFE` requires a stable borrow with no suspend, borrow-escape, or
+unknown task evidence.  Invalid enum values and a non-matching non-zero proof
+hash are also rejected.  An `UNKNOWN` record may retain contradictory raw
+observations (including opaque ownership bits) for diagnostics, but its
+validity keeps them out of optimization consumers.  Malformed producer
+records are distinct from ordinary optimization misses.
 
 ## Capability protocols
 
@@ -159,6 +172,8 @@ covers:
 
 - missing facts and known readonly/borrow/task evidence;
 - mutable receivers and escaping borrows as conservative unknowns;
+- exact receiver-effect expectations and rejection of opaque proven ownership
+  or borrow/task combinations;
 - borrow-across-suspend as a precise language diagnostic;
 - missing external/task effects not becoming pure;
 - capability-based contiguous, iteration, and persistent protocol matching;

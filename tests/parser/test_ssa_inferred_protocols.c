@@ -93,6 +93,26 @@ static void test_readonly_borrow_and_task_facts_are_inferred(void) {
     assert(facts.unknownReason == ZR_OPTIMIZATION_UNKNOWN_TASK_EFFECT);
 }
 
+static void test_expected_receiver_effect_is_exact(void) {
+    SZrOptimizationFactQuery query;
+    SZrOptimizationFacts facts;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrParser_OptimizationFactQuery_Init(&query);
+    query.expectedReceiverEffect = ZR_OPTIMIZATION_RECEIVER_MUTABLE;
+    query.observedReceiverEffect = ZR_OPTIMIZATION_RECEIVER_READONLY;
+    assert(ZrParser_Optimization_QueryFacts(&query, &facts, &diagnostic));
+    assert(facts.validity == ZR_OPTIMIZATION_FACTS_UNKNOWN);
+    assert(facts.unknownReason == ZR_OPTIMIZATION_UNKNOWN_RECEIVER);
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_CAPABILITY_MISMATCH);
+    assert(diagnostic.expectedHash == ZR_OPTIMIZATION_RECEIVER_MUTABLE);
+    assert(diagnostic.actualHash == ZR_OPTIMIZATION_RECEIVER_READONLY);
+
+    query.observedReceiverEffect = ZR_OPTIMIZATION_RECEIVER_MUTABLE;
+    assert(ZrParser_Optimization_QueryFacts(&query, &facts, &diagnostic));
+    assert(facts.validity == ZR_OPTIMIZATION_FACTS_PROVEN);
+}
+
 static void test_invalid_borrow_across_suspend_is_language_error(void) {
     SZrOptimizationFactQuery query;
     SZrOptimizationFacts facts;
@@ -116,6 +136,37 @@ static void test_invalid_borrow_across_suspend_is_language_error(void) {
     assert(facts.proofInstructionId == query.instructionId);
     assert(facts.proofSourceId == query.sourceId);
     assert(facts.validity == ZR_OPTIMIZATION_FACTS_INVALID_LANGUAGE_USE);
+}
+
+static void test_query_downgrades_explicit_borrow_contradictions(void) {
+    SZrOptimizationFactQuery query;
+    SZrOptimizationFacts facts;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrParser_OptimizationFactQuery_Init(&query);
+    query.requiredFacts = ZR_OPTIMIZATION_FACT_BORROW_SAFE;
+    query.observedFactMask = ZR_OPTIMIZATION_FACT_BORROW_SAFE;
+    query.observedBorrowState = ZR_OPTIMIZATION_BORROW_STABLE;
+    query.observedEffects = ZR_EXECUTION_EFFECT_SUSPEND;
+    assert(ZrParser_Optimization_QueryFacts(&query, &facts, &diagnostic));
+    assert(facts.validity == ZR_OPTIMIZATION_FACTS_UNKNOWN);
+    assert(facts.unknownReason == ZR_OPTIMIZATION_UNKNOWN_BORROW);
+
+    query.observedEffects = 0u;
+    query.observedTaskEffects = ZR_OPTIMIZATION_TASK_EFFECT_SUSPEND;
+    assert(ZrParser_Optimization_QueryFacts(&query, &facts, &diagnostic));
+    assert(facts.validity == ZR_OPTIMIZATION_FACTS_UNKNOWN);
+    assert(facts.unknownReason == ZR_OPTIMIZATION_UNKNOWN_TASK_EFFECT);
+
+    query.observedTaskEffects = ZR_OPTIMIZATION_TASK_EFFECT_BORROW_ESCAPE;
+    assert(ZrParser_Optimization_QueryFacts(&query, &facts, &diagnostic));
+    assert(facts.validity == ZR_OPTIMIZATION_FACTS_UNKNOWN);
+    assert(facts.unknownReason == ZR_OPTIMIZATION_UNKNOWN_TASK_EFFECT);
+
+    query.observedTaskEffects = ZR_OPTIMIZATION_TASK_EFFECT_UNKNOWN;
+    assert(ZrParser_Optimization_QueryFacts(&query, &facts, &diagnostic));
+    assert(facts.validity == ZR_OPTIMIZATION_FACTS_UNKNOWN);
+    assert(facts.unknownReason == ZR_OPTIMIZATION_UNKNOWN_TASK_EFFECT);
 }
 
 static void test_unknown_external_and_task_effects_never_become_pure(void) {
@@ -364,6 +415,48 @@ static void test_proven_contradictions_are_rejected_but_unknown_is_inspectable(v
      * scheduling effects; the record remains valid when both are published. */
     assert(ZrParser_OptimizationFacts_Validate(&facts, &diagnostic));
 
+    facts.ownershipMask = ZR_OPTIMIZATION_OWNERSHIP_CAPABILITY_SEND_SYNC |
+                          ((TZrUInt32)1u << 31u);
+    facts.proofHash = ZrParser_OptimizationFacts_Hash(&facts);
+    assert(!ZrParser_OptimizationFacts_Validate(&facts, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_CAPABILITY_MISMATCH);
+    assert(diagnostic.expectedHash ==
+           ZR_OPTIMIZATION_OWNERSHIP_CAPABILITY_KNOWN_MASK);
+    assert(diagnostic.actualHash == facts.ownershipMask);
+
+    facts.validity = ZR_OPTIMIZATION_FACTS_UNKNOWN;
+    facts.unknownReason = ZR_OPTIMIZATION_UNKNOWN_OWNERSHIP;
+    facts.proofHash = ZrParser_OptimizationFacts_Hash(&facts);
+    assert(ZrParser_OptimizationFacts_Validate(&facts, &diagnostic));
+
+    facts.ownershipMask = 0u;
+    facts.validity = ZR_OPTIMIZATION_FACTS_PROVEN;
+    facts.unknownReason = ZR_OPTIMIZATION_UNKNOWN_NONE;
+    facts.factMask = ZR_OPTIMIZATION_FACT_BORROW_SAFE;
+    facts.borrowState = ZR_OPTIMIZATION_BORROW_STABLE;
+    facts.declaredEffects = ZR_EXECUTION_EFFECT_SUSPEND;
+    facts.taskEffects = ZR_OPTIMIZATION_TASK_EFFECT_NONE;
+    facts.proofHash = ZrParser_OptimizationFacts_Hash(&facts);
+    assert(!ZrParser_OptimizationFacts_Validate(&facts, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_EFFECT_MISMATCH);
+    assert(diagnostic.expectedHash == ZR_EXECUTION_EFFECT_SUSPEND);
+    assert(diagnostic.actualHash == facts.declaredEffects);
+
+    facts.declaredEffects = 0u;
+    facts.taskEffects = ZR_OPTIMIZATION_TASK_EFFECT_BORROW_ESCAPE;
+    facts.proofHash = ZrParser_OptimizationFacts_Hash(&facts);
+    assert(!ZrParser_OptimizationFacts_Validate(&facts, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_EFFECT_MISMATCH);
+    assert(diagnostic.expectedHash == ZR_OPTIMIZATION_TASK_EFFECT_NONE);
+    assert(diagnostic.actualHash == facts.taskEffects);
+
+    facts.taskEffects = ZR_OPTIMIZATION_TASK_EFFECT_UNKNOWN;
+    facts.proofHash = ZrParser_OptimizationFacts_Hash(&facts);
+    assert(!ZrParser_OptimizationFacts_Validate(&facts, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_EFFECT_MISMATCH);
+    assert(diagnostic.expectedHash == ZR_OPTIMIZATION_TASK_EFFECT_NONE);
+    assert(diagnostic.actualHash == facts.taskEffects);
+
     facts.factMask = ZR_OPTIMIZATION_FACT_RECEIVER_READONLY;
     facts.taskEffects = ZR_OPTIMIZATION_TASK_EFFECT_NONE;
     facts.receiverEffect = ZR_OPTIMIZATION_RECEIVER_UNKNOWN;
@@ -386,7 +479,9 @@ static void test_diagnostic_is_optional(void) {
 int main(void) {
     test_facts_are_conservative();
     test_readonly_borrow_and_task_facts_are_inferred();
+    test_expected_receiver_effect_is_exact();
     test_invalid_borrow_across_suspend_is_language_error();
+    test_query_downgrades_explicit_borrow_contradictions();
     test_unknown_external_and_task_effects_never_become_pure();
     test_protocol_identity_is_capability_based();
     test_iteration_and_persistent_protocols();
