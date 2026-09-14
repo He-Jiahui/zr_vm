@@ -2,18 +2,27 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/host_baseline_jit.h
   - zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c
+  - zr_vm_jit/include/zr_vm_jit/backend.h
+  - zr_vm_jit/src/orc_backend.cpp
+  - zr_vm_jit/src/jit_state_maps.cpp
   - zr_vm_core/include/zr_vm_core/execution_contract.h
   - zr_vm_core/include/zr_vm_core/aot_ir.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
 implementation_files:
   - zr_vm_core/include/zr_vm_core/host_baseline_jit.h
   - zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c
+  - zr_vm_jit/CMakeLists.txt
+  - zr_vm_jit/include/zr_vm_jit/backend.h
+  - zr_vm_jit/src/orc_backend.cpp
+  - zr_vm_jit/src/jit_state_maps.cpp
 plan_sources:
   - docs/plans/ssa/10-jit-platforms/02-host-baseline-jit.md
   - docs/plans/ssa/10-jit-platforms/01-backend-service.md
   - "user: 2026-09-13 实现 10.02 host baseline/JIT contract leaf"
 tests:
   - tests/core/test_ssa_host_baseline_jit.c
+  - tests/core/test_ssa_host_jit_optional.c
+  - tests/acceptance/ssa-host-baseline-jit.md
 doc_type: module-detail
 status: implemented-subset
 ---
@@ -57,6 +66,23 @@ Code handle 只携带 record identity 和 lease 状态，不暴露函数指针�
 
 The contract deliberately validates all registrations before publication. A backend compile failure or unsupported operation must retain AOT/ExecBC fallback and must not install a partially initialized entry. The independent backend-service state machine, asynchronous queue, cancellation, generation key and deopt resume remain dependencies/follow-up from 10.01.
 
+## Optional C++ adapter
+
+`ZR_VM_ENABLE_HOST_JIT` enables `zr_vm_jit` after the C core and parser.  The
+adapter exposes a C ABI (`zr_vm_jit/backend.h`) and an execution-backend
+descriptor, while keeping all C++/LLVM concerns out of the default build.  It
+copies only scalar target and publication witnesses, delegates code ownership
+to `ZrCore_HostJit_CodeManager_*`, and keeps callback `userData` null so a
+descriptor copied into the core service cannot retain a dangling C++ object.
+
+The checked-in provider is deliberately contract-only when LLVM ORC/JITLink is
+not available.  Registration can therefore succeed for capability discovery,
+but `ZrJit_Host_Compile`, entry lookup, and descriptor target probing return an
+explicit `BACKEND_UNAVAILABLE` (or `FALLBACK_EXECBC` when requested).  No
+machine-code address is synthesized.  `jit_state_maps.cpp` requires non-zero
+root, unwind, debug, and deopt counts/hashes plus a frame-layout witness before
+a compile request is admitted.
+
 ## Test coverage
 
 `tests/core/test_ssa_host_baseline_jit.c` verifies:
@@ -71,8 +97,17 @@ The contract deliberately validates all registrations before publication. A back
 - duplicate code identity, lease-counter overflow, malformed manager shape, and
   deinit refusal while a live record remains.
 
-The fixture is intentionally core-only so it can be compiled directly without changing shared CMake or requiring an unavailable LLVM installation. The parent integration task may register it in `tests/cmake/ssa-tests.cmake` as `ssa_host_baseline_jit`.
+The core fixture remains independently compilable without C++.  When the
+option is enabled, `test_ssa_host_jit_optional.c` additionally checks the C
+ABI descriptor, explicit no-LLVM fallback, state-map rejection, import
+allow-listing, and active-lease shutdown/collection ordering.
 
 ## Open issues and follow-up
 
-This leaf has no executable memory allocator, LLVM version pin, real ORC/JITLink symbol resolver, generated stack maps, platform unwind/debug registration, or AOTIR lowering. Those pieces require the 10.01 backend service and 07.02 C/LLVM lowering contracts. Platform smoke and unavailable records belong to 10.03. Performance acceptance must separately measure compile latency, cold start, warm throughput, cache and RSS using the 00.01 measurement contract.
+The contract adapter still has no executable memory allocator, LLVM version
+pin, real ORC/JITLink symbol resolver, generated stack maps, platform
+unwind/debug registration, or AOTIR machine-code lowering.  Those remain
+explicitly unavailable until a verified ORC provider is supplied.  Platform
+smoke and unavailable records belong to 10.03.  Performance acceptance must
+separately measure compile latency, cold start, warm throughput, cache and RSS
+using the 00.01 measurement contract.

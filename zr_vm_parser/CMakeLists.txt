@@ -39,3 +39,19 @@ zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_library")
 
 zr_install_module(${zr_curr_module_name})
+
+# The optional host-JIT adapter consumes the same pointer-free AOTIR contract
+# as the parser/backends.  Keep this as an interface target so enabling the
+# adapter does not add C++ or LLVM dependencies to normal parser builds.
+if (ZR_VM_ENABLE_HOST_JIT AND NOT TARGET zr_vm_parser_aot_ir)
+    add_library(zr_vm_parser_aot_ir INTERFACE)
+    target_include_directories(zr_vm_parser_aot_ir INTERFACE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    if (TARGET zr_vm_core_static)
+        target_link_libraries(zr_vm_parser_aot_ir INTERFACE zr_vm_core_static)
+    elseif (TARGET zr_vm_core_shared)
+        target_link_libraries(zr_vm_parser_aot_ir INTERFACE zr_vm_core_shared)
+    endif ()
+endif ()

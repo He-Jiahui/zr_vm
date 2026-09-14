@@ -50,6 +50,20 @@ option(BUILD_LANGUAGE_SERVER "Build zr_vm_language_server module" ON)
 option(BUILD_RUST_BINDING "Build zr_vm_rust_binding module" ON)
 option(BUILD_CLI "Build zr_vm_cli executable" ON)
 
+# Host x86-64/AArch64 JIT is an isolated optional C++ adapter.  Keeping this
+# OFF by default means ordinary C11/AOT/ExecBC builds never require a C++
+# compiler or LLVM/ORC installation.
+option(ZR_VM_ENABLE_HOST_JIT
+        "Build the optional host baseline JIT adapter"
+        OFF)
+
+if (ZR_VM_ENABLE_HOST_JIT)
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif ()
+
 add_compile_definitions(
         $<$<CONFIG:Debug>:ZR_DEBUG>
         $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:ZR_RELEASE>
@@ -84,6 +98,10 @@ add_subdirectory("zr_vm_common")
 add_subdirectory("zr_vm_core")
 
 add_subdirectory("zr_vm_parser")
+
+if (ZR_VM_ENABLE_HOST_JIT)
+    add_subdirectory("zr_vm_jit")
+endif ()
 
 add_subdirectory("zr_vm_library")
 
