@@ -496,7 +496,7 @@ endif ()
 
 if (NOT TARGET zr_vm_ssa_arrays_slices_test)
     add_executable(zr_vm_ssa_arrays_slices_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_arrays_slices.c
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_arrays_slices.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/object/contiguous_view.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_array_lowering.c)
     target_include_directories(zr_vm_ssa_arrays_slices_test PRIVATE
