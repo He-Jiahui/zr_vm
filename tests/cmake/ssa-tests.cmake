@@ -364,6 +364,19 @@ if (NOT TARGET zr_vm_ssa_platform_matrix_test)
     set_tests_properties(ssa_platform_matrix PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_backend_service_test)
+    add_executable(zr_vm_ssa_backend_service_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_backend_service.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_backend.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c)
+    target_include_directories(zr_vm_ssa_backend_service_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_backend_service_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_backend_service COMMAND zr_vm_ssa_backend_service_test)
+    set_tests_properties(ssa_backend_service PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     add_executable(zr_vm_ssa_schema_relocation_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_schema_relocation.c
