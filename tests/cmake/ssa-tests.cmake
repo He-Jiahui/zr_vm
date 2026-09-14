@@ -493,6 +493,29 @@ if (NOT TARGET zr_vm_ssa_host_baseline_jit_test)
     set_tests_properties(ssa_host_baseline_jit PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_generated_fusion_test)
+    add_executable(zr_vm_ssa_generated_fusion_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_generated_fusion.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call_binding.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_binding_facts.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c)
+    target_include_directories(zr_vm_ssa_generated_fusion_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_generated_fusion_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_generated_fusion COMMAND zr_vm_ssa_generated_fusion_test)
+    set_tests_properties(ssa_generated_fusion PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c

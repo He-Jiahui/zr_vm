@@ -1,0 +1,2 @@
+/* Compatibility include retained for the original guide spelling. */
+#include "execbc_patterns.def"
