@@ -830,6 +830,19 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
                 diagnostic, ZR_SSA_PLATFORM_STATUS_REQUIRED_FEATURE_UNSUPPORTED);
         return ZR_SSA_PLATFORM_STATUS_REQUIRED_FEATURE_UNSUPPORTED;
     }
+    /* A passed row must not carry an unsupported-feature witness.  Without
+     * this check a producer could set outcome=PASSED while leaving a required
+     * feature unavailable; the Boolean test entry point would then report a
+     * false success even though IsRuntimeAcceptance() rejects the row. */
+    if (observed->outcome == ZR_SSA_PLATFORM_OUTCOME_PASSED &&
+        observed->unsupportedFeatures != 0u) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->unsupportedFeatures = observed->unsupportedFeatures;
+        }
+        ssa_platform_set_status(diagnostic,
+                                 ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
+        return ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID;
+    }
     if (!observed->compiled) {
         ssa_platform_set_status(
                 diagnostic, ZR_SSA_PLATFORM_STATUS_COMPILE_NOT_COMPLETED);
@@ -896,8 +909,40 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
 
 TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
         const SZrSsaPlatformObservation *observation) {
-    return observation != ZR_NULL && observation->compiled &&
-           observation->executed && observation->semanticPassed &&
+    if (observation == ZR_NULL ||
+        observation->magic != ZR_SSA_PLATFORM_CONTRACT_MAGIC ||
+        observation->schemaVersion != ZR_SSA_PLATFORM_CONTRACT_SCHEMA_VERSION ||
+        !ssa_platform_valid_target(observation->target) ||
+        !ssa_platform_valid_architecture(observation->architecture) ||
+        !ssa_platform_target_architecture_compatible(
+                observation->target, observation->architecture) ||
+        !ssa_platform_string_present(
+                observation->targetTriple,
+                ZR_SSA_PLATFORM_TARGET_TRIPLE_CAPACITY) ||
+        !ssa_platform_valid_backend(observation->backend) ||
+        !ssa_platform_valid_runner(observation->runner) ||
+        !ssa_platform_valid_outcome(observation->outcome) ||
+        !ssa_platform_valid_dispatch(observation->dispatchKind) ||
+        (observation->requiredFeatures &
+         ~ZR_SSA_PLATFORM_FEATURE_KNOWN_MASK) != 0u ||
+        (observation->unsupportedFeatures &
+         ~ZR_SSA_PLATFORM_FEATURE_KNOWN_MASK) != 0u ||
+        (observation->unsupportedFeatures &
+         ~observation->requiredFeatures) != 0u ||
+        (observation->dispatchFlags &
+         ~ZR_SSA_PLATFORM_DISPATCH_FLAG_KNOWN_MASK) != 0u ||
+        (observation->dispatchKind == ZR_SSA_PLATFORM_DISPATCH_SWITCH &&
+         (observation->dispatchFlags & ZR_SSA_PLATFORM_DISPATCH_FLAG_SWITCH) ==
+                 0u) ||
+        (observation->dispatchKind == ZR_SSA_PLATFORM_DISPATCH_COMPUTED_GOTO &&
+         (observation->dispatchFlags &
+          ZR_SSA_PLATFORM_DISPATCH_FLAG_COMPUTED_GOTO) == 0u) ||
+        ZrCommon_SsaPlatform_ValidateAbi(&observation->observedAbi, ZR_NULL) !=
+                ZR_SSA_PLATFORM_STATUS_OK) {
+        return ZR_FALSE;
+    }
+    return observation->compiled && observation->executed &&
+           observation->semanticPassed &&
            observation->outcome == ZR_SSA_PLATFORM_OUTCOME_PASSED &&
            observation->unsupportedFeatures == 0u &&
            !(observation->machineCodeJitExecuted &&

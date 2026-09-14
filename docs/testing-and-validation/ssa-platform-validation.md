@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_common/include/zr_vm_common/ssa_platform_contract.h
   - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c
+  - tests/cmake/ssa-platform-matrix.cmake
   - tests/core/test_ssa_platform_matrix.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/ssa_platform_contract.h
@@ -61,6 +62,9 @@ stages and a `passed` outcome; cross compilation alone is never sufficient.
   PMU, or other required features.  WASM PMU is not inferred from the target.
 - `RUNTIME_UNAVAILABLE` is used for a cross-compiled or otherwise unexecuted
   observation with no semantic result.  It is not a pass.
+- A `passed` observation carrying any `unsupportedFeatures` bit is rejected as
+  `OBSERVATION_INVALID`; the convenience acceptance predicate also fails
+  closed on malformed schema, ABI, identity, dispatch, or feature fields.
 - `MACHINE_CODE_JIT_FORBIDDEN` rejects mobile/WASM JIT attempts before a pass
   can be reported.
 - `SEMANTIC_WITNESS_MISMATCH` keeps result, exception, and source-map failures
@@ -117,6 +121,8 @@ runtime acceptance.
 
 ## Plan Sources and Scope
 
-This module implements the value-only contract portion of 10.03 and the ABI
-boundary shared with 10.02.  It does not register CTest targets, configure
-cross compilers, allocate executable pages, or claim device/browser coverage.
+This module and `tests/cmake/ssa-platform-matrix.cmake` implement the
+value-only contract and configure-time registration boundary of 10.03.  The
+CMake helper can register a real target/command or a visible unavailable skip;
+it does not configure cross compilers, allocate executable pages, or claim
+device/browser coverage.

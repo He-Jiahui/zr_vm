@@ -6,6 +6,7 @@ related_code:
 implementation_files:
   - zr_vm_common/include/zr_vm_common/ssa_platform_contract.h
   - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c
+  - tests/cmake/ssa-platform-matrix.cmake
 plan_sources:
   - docs/plans/ssa/10-jit-platforms/03-platform-matrix.md
   - docs/plans/ssa/10-jit-platforms/02-host-baseline-jit.md
@@ -68,6 +69,28 @@ The focused executable exercises:
 | Target-triple or callback ABI drift | explicit target/ABI mismatch |
 | Switch versus computed-goto with matching semantic witnesses | `OK`; witness drift rejected |
 | Unavailable AOT-LLVM backend | `BACKEND_UNSUPPORTED` |
+| Passed row carrying `unsupportedFeatures` | `OBSERVATION_INVALID` (never a false pass) |
+
+## Capability-driven CMake registration
+
+`tests/cmake/ssa-platform-matrix.cmake` is the configure-time companion to the
+value-only C contract.  It freezes ten desktop/mobile/WASM profile rows,
+normalizes the current target without inferring runtime support, and exposes
+`zr_vm_ssa_platform_matrix_register_test(...)`.  A missing executable, backend,
+or required feature registers a visible CTest skip marker containing the
+unavailable reason; it is never silently omitted or counted as a pass.
+
+The declaration is self-checked independently of a configured project:
+
+```text
+cmake -P tests/cmake/ssa-platform-matrix.cmake
+```
+
+Expected output includes `SSA platform matrix self-check passed (1; 10
+profiles)`.  This check validates profile identity, pointer-width policy,
+mobile/WASM JIT prohibition, backend/feature vocabulary, and the
+concurrent-GC/threads invariant.  It does not claim that Android, iOS, or WASM
+rows have executed on a real device or browser.
 
 ## Tooling Evidence
 

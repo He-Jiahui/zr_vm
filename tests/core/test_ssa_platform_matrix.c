@@ -279,6 +279,24 @@ static void test_unavailable_backend_is_not_silently_passed(void) {
             ZR_SSA_PLATFORM_FEATURE_AOT_LLVM) != 0u);
 }
 
+static void test_passed_observation_cannot_advertise_unsupported_features(void) {
+    SZrSsaPlatformCapability capability = platform_capability(
+            ZR_SSA_PLATFORM_TARGET_DESKTOP_LINUX,
+            ZR_SSA_PLATFORM_ARCH_X86_64);
+    SZrSsaPlatformObservation observation = passing_observation(
+            &capability, ZR_SSA_PLATFORM_BACKEND_EXECBC);
+    SZrSsaPlatformDiagnostic diagnostic;
+
+    capability.featureFlags |= ZR_SSA_PLATFORM_FEATURE_THREADS;
+    observation.requiredFeatures = ZR_SSA_PLATFORM_FEATURE_THREADS;
+    observation.unsupportedFeatures = ZR_SSA_PLATFORM_FEATURE_THREADS;
+    assert(ZrCommon_SsaPlatform_Check(&capability, &observation, &diagnostic) ==
+           ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
+    assert(diagnostic.unsupportedFeatures == observation.unsupportedFeatures);
+    assert(!ZrTests_Ssa_CheckPlatform(&capability, &observation));
+    assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+}
+
 static void test_diagnostic_keeps_source_and_instruction_context(void) {
     SZrSsaPlatformCapability capability = platform_capability(
             ZR_SSA_PLATFORM_TARGET_DESKTOP_LINUX,
@@ -377,6 +395,22 @@ static void test_null_and_repeated_initialization_are_safe(void) {
     assert(observation.magic == ZR_SSA_PLATFORM_CONTRACT_MAGIC);
 }
 
+static void test_runtime_acceptance_fails_closed_for_malformed_observations(void) {
+    SZrSsaPlatformCapability capability = platform_capability(
+            ZR_SSA_PLATFORM_TARGET_DESKTOP_LINUX,
+            ZR_SSA_PLATFORM_ARCH_X86_64);
+    SZrSsaPlatformObservation observation = passing_observation(
+            &capability, ZR_SSA_PLATFORM_BACKEND_EXECBC);
+
+    assert(ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+    observation.magic = 0u;
+    assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+    observation = passing_observation(&capability, ZR_SSA_PLATFORM_BACKEND_EXECBC);
+    observation.dispatchKind = ZR_SSA_PLATFORM_DISPATCH_SWITCH;
+    observation.dispatchFlags = 0u;
+    assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+}
+
 int main(void) {
     test_desktop_execbc_evidence_requires_all_runtime_stages();
     test_artifact_rejects_pointer_and_numeric_contract_mismatch();
@@ -388,10 +422,12 @@ int main(void) {
     test_observation_rejects_target_and_callback_abi_drift();
     test_host_jit_is_checked_on_both_supported_architectures();
     test_unavailable_backend_is_not_silently_passed();
+    test_passed_observation_cannot_advertise_unsupported_features();
     test_diagnostic_keeps_source_and_instruction_context();
     test_dispatch_implementation_can_differ_when_semantic_witnesses_match();
     test_host_abi_probe_is_valid_and_hash_is_sensitive();
     test_invalid_observed_abi_is_rejected_before_hash_comparison();
     test_null_and_repeated_initialization_are_safe();
+    test_runtime_acceptance_fails_closed_for_malformed_observations();
     return 0;
 }
