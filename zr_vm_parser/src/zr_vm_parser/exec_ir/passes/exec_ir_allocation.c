@@ -27,7 +27,6 @@ static void zr_allocation_diag(SZrExecIrDiagnostic *diagnostic,
     diagnostic->instructionId = instructionId;
     diagnostic->sourceId = sourceId;
 }
-
 static void zr_allocation_hash_diag(SZrExecIrDiagnostic *diagnostic,
                                     const SZrExecIrFunction *function,
                                     TZrUInt64 expected,
@@ -577,4 +576,3 @@ TZrBool ZrParser_ExecIr_ApplyAllocationPlan(
      */
     return ZR_TRUE;
 }
-
