@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "zr_vm_core/optimization_remark.h"
+
 #define ZR_DIAGNOSTIC_HELP_URI \
     "https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md"
 
@@ -162,6 +164,56 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
     ZR_DIAGNOSTIC_DESCRIPTOR(4011, "nullable_ownership_intrinsic_operand",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
+
+    /* Optimization remarks are informational facts, not compile errors.
+     * Register their stable reason names in the same catalog so IDE clients
+     * can resolve a code/help URI without reinterpreting the pass output. */
+    ZR_DIAGNOSTIC_DESCRIPTOR(5001, "optimization_remark_alias_unknown",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5002, "optimization_remark_escapes",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5003, "optimization_remark_abi_visible",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5004, "optimization_remark_effect_order",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5005, "optimization_remark_code_budget",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5006, "optimization_remark_profile_stale",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5007, "optimization_remark_target_unsupported",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5008, "optimization_remark_capability_denied",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5009, "optimization_remark_no_profile",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5010, "optimization_remark_boxing",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5011, "optimization_remark_bounds",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5012, "optimization_remark_vector",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5013, "optimization_remark_barrier",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5014, "optimization_remark_inlining",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5015, "optimization_remark_aot",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5016, "optimization_remark_layout",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5017, "optimization_remark_allocation",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5018, "optimization_remark_deopt",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5019, "optimization_remark_software_ic_miss",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5020, "optimization_remark_hardware_cache_miss",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5021, "optimization_remark_bounds_unknown",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5022, "optimization_remark_cancelled",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
+    ZR_DIAGNOSTIC_DESCRIPTOR(5023, "optimization_remark_truncated",
+                             ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
 };
 
 TZrSize ZrParser_DiagnosticRegistry_Count(void) {

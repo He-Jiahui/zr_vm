@@ -22,6 +22,7 @@
 #include "zr_vm_core/batch_contract.h"
 #include "zr_vm_core/exec_ir_numeric.h"
 #include "zr_vm_core/host_baseline_jit.h"
+#include "zr_vm_core/optimization_remark.h"
 #include "zr_vm_core/capability_manifest.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/container_storage_contract.h"

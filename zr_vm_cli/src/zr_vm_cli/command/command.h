@@ -2,6 +2,7 @@
 #define ZR_VM_CLI_COMMAND_H
 
 #include "zr_vm_cli/conf.h"
+#include "commands/explain_optimize_command.h"
 
 struct SZrState;
 
@@ -17,7 +18,8 @@ typedef enum EZrCliMode {
     ZR_CLI_MODE_DIFF_ZRP_METADATA = 8,
     ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION = 9,
     ZR_CLI_MODE_MIGRATE_SYNTAX = 10,
-    ZR_CLI_MODE_TEST = 11
+    ZR_CLI_MODE_TEST = 11,
+    ZR_CLI_MODE_EXPLAIN_OPTIMIZE = 12
 } EZrCliMode;
 
 typedef enum EZrCliMigrationFormat {
@@ -72,6 +74,10 @@ typedef struct SZrCliCommand {
     TZrBool migrationIncludeGenerated;
     TZrBool testList;
     EZrCliMigrationFormat migrationFormat;
+    /* Parsed `explain optimize` filters.  The record itself remains owned by
+     * the compiler/runtime producer; the command only carries a value copy
+     * of the query so it is safe to dispatch after parsing. */
+    SZrCliExplainOptimizeOptions explainOptimize;
 } SZrCliCommand;
 
 TZrBool ZrCli_Command_Parse(int argc,

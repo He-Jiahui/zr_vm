@@ -81,6 +81,44 @@ static int cli_assert_program_args(const SZrCliCommand *command,
     return 0;
 }
 
+static int test_explain_optimize_mode_parse(void) {
+    char *argv[] = {
+        "zr_vm_cli", "explain", "optimize", "--json", "--reason", "bounds",
+        "--backend", "aot", "--limit", "2"
+    };
+    char *missingSubcommand[] = {"zr_vm_cli", "explain"};
+    char *mixedMode[] = {"zr_vm_cli", "explain", "optimize", "--run"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(
+                        (int)(sizeof(argv) / sizeof(argv[0])), argv,
+                        &command, error, sizeof(error)),
+                    "explain optimize should parse");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_EXPLAIN_OPTIMIZE, command.mode,
+                      "mode should be explain optimize");
+    CLI_ASSERT_TRUE(command.explainOptimize.json == ZR_TRUE,
+                    "explain optimize should preserve json flag");
+    CLI_ASSERT_TRUE(command.explainOptimize.reasonMask ==
+                        ZR_OPTIMIZATION_REMARK_REASON_MASK(
+                            ZR_OPTIMIZATION_REMARK_REASON_BOUNDS),
+                    "explain optimize should parse reason filter");
+    CLI_ASSERT_TRUE(command.explainOptimize.backendMask ==
+                        ZR_OPTIMIZATION_REMARK_BACKEND_AOT,
+                    "explain optimize should parse backend filter");
+    CLI_ASSERT_TRUE(command.explainOptimize.pageLimit == 2u,
+                    "explain optimize should parse page limit");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(
+                        (int)(sizeof(missingSubcommand) / sizeof(missingSubcommand[0])),
+                        missingSubcommand, &command, error, sizeof(error)),
+                    "explain without optimize should fail");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(
+                        (int)(sizeof(mixedMode) / sizeof(mixedMode[0])), mixedMode,
+                        &command, error, sizeof(error)),
+                    "explain optimize should reject runtime modifiers");
+    return 0;
+}
+
 static int test_no_args_enters_repl(void) {
     char *argv[] = {"zr_vm_cli"};
     char error[256];
@@ -918,6 +956,9 @@ int main(void) {
         return 1;
     }
     if (test_unknown_and_duplicate_modes_fail() != 0) {
+        return 1;
+    }
+    if (test_explain_optimize_mode_parse() != 0) {
         return 1;
     }
 

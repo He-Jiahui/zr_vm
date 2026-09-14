@@ -30,6 +30,7 @@
 #include "zr_vm_parser/exec_ir_container_specialize.h"
 #include "zr_vm_parser/exec_ir_loops.h"
 #include "zr_vm_parser/exec_ir_vectorize.h"
+#include "zr_vm_parser/optimization_remarks.h"
 #include "zr_vm_parser/exec_ir_profile.h"
 #include "zr_vm_parser/optimization_facts.h"
 #include "zr_vm_parser/semantic.h"

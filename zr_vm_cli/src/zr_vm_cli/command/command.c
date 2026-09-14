@@ -7,6 +7,7 @@
 
 #include "zr_vm_common/zr_version_info.h"
 #include "zr_vm_core/log.h"
+#include "commands/explain_optimize_command.h"
 
 typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_NONE = 0,
@@ -20,7 +21,8 @@ typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA = 8,
     ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION = 9,
     ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX = 10,
-    ZR_CLI_PRIMARY_MODE_TEST = 11
+    ZR_CLI_PRIMARY_MODE_TEST = 11,
+    ZR_CLI_PRIMARY_MODE_EXPLAIN_OPTIMIZE = 12
 } EZrCliPrimaryMode;
 
 static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *format, ...) {
@@ -82,6 +84,7 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->migrationIncludeGenerated = ZR_FALSE;
     command->testList = ZR_FALSE;
     command->migrationFormat = ZR_CLI_MIGRATION_FORMAT_JSON;
+    ZrCli_ExplainOptimizeOptions_Init(&command->explainOptimize);
 }
 
 static TZrBool zr_cli_command_parse_execution_mode(const TZrChar *text, EZrCliExecutionMode *outMode) {
@@ -198,6 +201,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  %s --diff-zrp-metadata <before> <after>\n"
             "  %s --check-zrp-metadata-version <file>\n"
             "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
+            "  %s explain optimize [filters]\n"
             "  zr test <project-or-module> [--filter <pattern>] [--jobs N] [--timeout <duration>] [--list]\n"
             "  %s -e <code> [-- <args...>]\n"
             "  %s -c <code> [-- <args...>]\n"
@@ -213,6 +217,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
             "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
             "  migrate syntax <path>             Report or safely apply current-parser migration edits.\n"
+            "  explain optimize                  Show canonical optimization remarks (use --json for JSON).\n"
             "  -e <code>, -c <code>             Execute inline source with a bare global runtime.\n"
             "  --project <project.zrp> -m <m>   Run a specific module entry inside the project.\n"
             "\n"
@@ -266,6 +271,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             name,
             name,
             name,
+            name,
             name);
     if (requiredLength < 0) {
         return ZR_NULL;
@@ -285,7 +291,8 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s --dump-zrp-metadata <file>\n"
              "  %s --diff-zrp-metadata <before> <after>\n"
              "  %s --check-zrp-metadata-version <file>\n"
-             "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
+            "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
+            "  %s explain optimize [filters]\n"
              "  zr test <project-or-module> [--filter <pattern>] [--jobs N] [--timeout <duration>] [--list]\n"
              "  %s -e <code> [-- <args...>]\n"
              "  %s -c <code> [-- <args...>]\n"
@@ -300,7 +307,8 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
              "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
              "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
-             "  migrate syntax <path>             Report or safely apply current-parser migration edits.\n"
+            "  migrate syntax <path>             Report or safely apply current-parser migration edits.\n"
+            "  explain optimize                  Show canonical optimization remarks (use --json for JSON).\n"
              "  -e <code>, -c <code>             Execute inline source with a bare global runtime.\n"
              "  --project <project.zrp> -m <m>   Run a specific module entry inside the project.\n"
              "\n"
@@ -335,7 +343,8 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s --check-zrp-metadata-version module.zrp\n"
              "  %s -e \"return 1;\" -- foo bar\n"
              "  %s --project demo.zrp -m tools.seed --execution-mode binary -- foo bar\n",
-             name,
+            name,
+            name,
              name,
              name,
              name,
@@ -459,6 +468,41 @@ TZrBool ZrCli_Command_Parse(int argc,
             }
             outCommand->testPath = argv[++index];
             continue;
+        }
+
+        if (strcmp(argument, "explain") == 0) {
+            int optionStart;
+
+            if (!zr_cli_command_set_primary_mode(
+                        &primaryMode,
+                        ZR_CLI_PRIMARY_MODE_EXPLAIN_OPTIMIZE,
+                        "explain optimize",
+                        errorBuffer,
+                        errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc ||
+                strcmp(argv[index + 1], "optimize") != 0) {
+                zr_cli_write_error(errorBuffer,
+                                    errorBufferSize,
+                                    "explain requires the optimize subcommand");
+                return ZR_FALSE;
+            }
+
+            /* The explain command owns its complete option grammar.  Stop
+             * the general run/compile parser from interpreting filters such
+             * as --reason or --range as unrelated runtime modifiers. */
+            optionStart = index + 2;
+            if (!ZrCli_ExplainOptimizeOptions_Parse(
+                        argc - optionStart,
+                        (const TZrChar *const *)(argv + optionStart),
+                        &outCommand->explainOptimize,
+                        errorBuffer,
+                        errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            index = argc;
+            break;
         }
 
         if (strcmp(argument, "--filter") == 0 || strcmp(argument, "--jobs") == 0 ||
@@ -911,6 +955,25 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_EXPLAIN_OPTIMIZE) {
+        if (interactiveRequested || outCommand->programArgCount > 0 ||
+            compileSeen || explicitProjectSeen || positionalSeen ||
+            outCommand->moduleName != ZR_NULL ||
+            outCommand->emitIntermediate || outCommand->emitZrm ||
+            outCommand->emitAotC || outCommand->incremental ||
+            outCommand->runAfterCompile || outCommand->emitExecutedVia ||
+            outCommand->debugEnabled || outCommand->debugWait ||
+            outCommand->debugPrintEndpoint || outCommand->debugAddress != ZR_NULL ||
+            outCommand->profileEnabled || outCommand->coverageEnabled ||
+            outCommand->dumpBytecodeEnabled || outCommand->heapSummaryEnabled ||
+            outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP) {
+            zr_cli_write_error(errorBuffer,
+                               errorBufferSize,
+                               "explain optimize cannot be combined with run, compile, or runtime modifiers");
+            return ZR_FALSE;
+        }
+    }
+
     if (primaryMode == ZR_CLI_PRIMARY_MODE_HELP) {
         if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
             outCommand->incremental || outCommand->runAfterCompile ||
@@ -1109,6 +1172,10 @@ TZrBool ZrCli_Command_Parse(int argc,
 
         case ZR_CLI_PRIMARY_MODE_TEST:
             outCommand->mode = ZR_CLI_MODE_TEST;
+            return ZR_TRUE;
+
+        case ZR_CLI_PRIMARY_MODE_EXPLAIN_OPTIMIZE:
+            outCommand->mode = ZR_CLI_MODE_EXPLAIN_OPTIMIZE;
             return ZR_TRUE;
 
         case ZR_CLI_PRIMARY_MODE_COMPILE:

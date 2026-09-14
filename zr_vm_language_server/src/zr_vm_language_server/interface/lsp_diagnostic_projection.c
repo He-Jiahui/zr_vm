@@ -1,5 +1,7 @@
 #include "zr_vm_language_server/lsp_interface.h"
 
+#include "semantic/lsp_optimization_remarks.h"
+
 const TZrChar *ZrLanguageServer_Lsp_DiagnosticNoFixReasonName(
         EZrDiagnosticNoFixReason reason) {
     switch (reason) {
@@ -15,4 +17,22 @@ const TZrChar *ZrLanguageServer_Lsp_DiagnosticNoFixReasonName(
         default:
             return ZR_NULL;
     }
+}
+
+TZrBool ZrLanguageServer_Lsp_ProjectOptimizationRemarkRange(
+        const struct SZrOptimizationRemark *remark,
+        const TZrChar *content,
+        TZrSize contentLength,
+        SZrLspRange *outRange) {
+    SZrLspOptimizationRemark projected;
+    SZrOptimizationRemarkDiagnostic diagnostic;
+    EZrLspOptimizationRemarkResult result;
+
+    if (remark == ZR_NULL || outRange == ZR_NULL) return ZR_FALSE;
+    result = ZrLanguageServer_LspOptimizationRemark_ProjectVersioned(
+            remark, ZR_FALSE, 0u, content, contentLength, &projected,
+            &diagnostic);
+    if (result != ZR_LSP_OPTIMIZATION_REMARK_OK) return ZR_FALSE;
+    *outRange = projected.range;
+    return ZR_TRUE;
 }

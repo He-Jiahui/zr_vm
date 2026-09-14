@@ -2,6 +2,7 @@
 
 #include "command/command.h"
 #include "commands/test_command.h"
+#include "commands/explain_optimize_command.h"
 #include "compiler/compiler.h"
 #include "metadata/zrp_metadata_dump.h"
 #include "migration/migration.h"
@@ -70,6 +71,21 @@ int ZrCli_App_Run(int argc, char **argv) {
                     argc > 0 ? argv[0] : "zr_vm_cli",
                     stdout,
                     stderr);
+
+        case ZR_CLI_MODE_EXPLAIN_OPTIMIZE: {
+            SZrOptimizationRemarkStore store;
+            int result;
+
+            /* Compilation owns the producer-side sink.  The standalone CLI
+             * route deliberately starts with an empty, valid sink until a
+             * compile/run command supplies a snapshot through the public
+             * embedding API; it must never invent remarks from source text. */
+            ZrCore_OptimizationRemarks_StoreInit(&store);
+            result = ZrCli_ExplainOptimize_RunStore(
+                    &store, &command.explainOptimize, stdout, stderr);
+            ZrCore_OptimizationRemarks_StoreFree(&store);
+            return result;
+        }
 
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);

@@ -6028,6 +6028,7 @@ if (TARGET zr_vm_cli_executable AND
             zr_vm_cli_args_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_args.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/command/command.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/commands/explain_optimize_command.c
     )
     target_include_directories(zr_vm_cli_args_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/include

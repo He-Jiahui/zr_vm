@@ -26,6 +26,11 @@ typedef struct SZrLspRange {
     SZrLspPosition end;
 } SZrLspRange;
 
+/* Forward declaration keeps the general LSP interface independent from the
+ * semantic remark implementation while allowing adapters to project the
+ * canonical source byte range produced by ExecIR. */
+struct SZrOptimizationRemark;
+
 // LSP 位置（URI + 位置）
 typedef struct SZrLspLocation {
     SZrString *uri;                   // 文件 URI
@@ -503,6 +508,16 @@ ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspRange_ToFileRangeWithCon
 
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(
         SZrFileRange range,
+        SZrLspRange *outRange);
+
+/* Project a pointer-free optimization remark's canonical byte range into
+ * LSP UTF-16 coordinates.  The implementation delegates to the semantic
+ * remark adapter; no source re-analysis is performed here. */
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_Lsp_ProjectOptimizationRemarkRange(
+        const struct SZrOptimizationRemark *remark,
+        const TZrChar *content,
+        TZrSize contentLength,
         SZrLspRange *outRange);
 
 // 转换 FilePosition 到 LspPosition（带文件内容）

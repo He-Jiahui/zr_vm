@@ -781,3 +781,50 @@ if (NOT TARGET zr_vm_ssa_aot_backend_adapters_test)
     add_test(NAME aot_backend_adapters COMMAND zr_vm_ssa_aot_backend_adapters_test)
     set_tests_properties(aot_backend_adapters PROPERTIES LABELS "ssa")
 endif ()
+
+if (NOT TARGET zr_vm_ssa_optimization_remarks_test)
+    add_executable(zr_vm_ssa_optimization_remarks_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_optimization_remarks.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/optimization_remark.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/diagnostics/optimization_remarks.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c)
+    target_include_directories(zr_vm_ssa_optimization_remarks_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_optimization_remarks_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_optimization_remarks
+            COMMAND zr_vm_ssa_optimization_remarks_test)
+    set_tests_properties(ssa_optimization_remarks PROPERTIES LABELS "ssa")
+endif ()
+
+# CLI and LSP projections have separate process-facing entry points.  Keep
+# this supplemental fixture outside the 47-leaf denominator while compiling
+# the same pointer-free core schema and the canonical LSP range bridge.
+if (NOT TARGET zr_vm_optimization_remarks_projection_test)
+    add_executable(zr_vm_optimization_remarks_projection_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_optimization_remarks_projection.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/optimization_remark.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/commands/explain_optimize_command.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_optimization_remarks.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_projection.c)
+    target_include_directories(zr_vm_optimization_remarks_projection_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/type_inference
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_optimization_remarks_projection_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME optimization_remarks_projection
+            COMMAND zr_vm_optimization_remarks_projection_test)
+    set_tests_properties(optimization_remarks_projection PROPERTIES LABELS "ssa")
+endif ()
