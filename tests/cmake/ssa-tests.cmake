@@ -561,6 +561,19 @@ if (NOT TARGET zr_vm_ssa_cross_domain_clone_test)
     set_tests_properties(ssa_cross_domain_clone PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_async_frame_budget_test)
+    add_executable(zr_vm_ssa_async_frame_budget_test
+            ${CMAKE_SOURCE_DIR}/tests/task/test_ssa_async_frame_budget.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_async_wait.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_compile_queue.c)
+    target_include_directories(zr_vm_ssa_async_frame_budget_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_async_frame_budget_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_async_frame_budget COMMAND zr_vm_ssa_async_frame_budget_test)
+    set_tests_properties(ssa_async_frame_budget PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_batch_vectorization_test)
     add_executable(zr_vm_ssa_batch_vectorization_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_batch_vectorization.c

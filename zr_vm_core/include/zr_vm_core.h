@@ -45,6 +45,8 @@
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/gc_domain_clone.h"
 #include "zr_vm_core/gc_budget_contract.h"
+#include "zr_vm_core/async_frame_budget.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/hotpatch_generation.h"
 #include "zr_vm_core/hotpatch_profile.h"
 #include "zr_vm_core/hotpatch_rollback.h"
