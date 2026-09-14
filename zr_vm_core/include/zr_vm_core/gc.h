@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_GC_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/gc_budget_contract.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/stack.h"
@@ -168,6 +169,20 @@ typedef struct SZrGarbageCollectorStatsSnapshot {
     TZrUInt64 inboundTransferAbortCount;
     TZrUInt64 inboundTransferObjectCount;
     TZrUInt64 inboundTransferByteCount;
+    /* Bounded-major-GC scheduler telemetry.  These scalar fields are
+     * intentionally appended so existing snapshot consumers remain valid. */
+    TZrBool budgetConfigured;
+    EZrGcBudgetStepStatus budgetLastStatus;
+    EZrGcBudgetPhase budgetPhase;
+    EZrGcBudgetPauseReason budgetPauseReason;
+    TZrUInt64 budgetCursor;
+    TZrUInt64 budgetWorkDone;
+    TZrUInt64 budgetElapsedUs;
+    TZrInt64 budgetDebtBytes;
+    TZrUInt64 budgetOverBudgetCount;
+    TZrUInt64 budgetCompactDeferredCount;
+    TZrBool budgetPressure;
+    TZrBool budgetFallback;
 } SZrGarbageCollectorStatsSnapshot;
 
 // generational mode
@@ -248,6 +263,22 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrUInt64 collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
     TZrUInt64 collectionTotalDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
     TZrUInt64 collectionMaxDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
+
+    /* Optional bounded-major-GC scheduler state.  Legacy collection drivers
+     * leave this disabled and continue to use their existing pause budgets. */
+    SZrGcBudget budget;
+    TZrBool budgetConfigured;
+    EZrGcBudgetStepStatus budgetLastStatus;
+    EZrGcBudgetPhase budgetPhase;
+    EZrGcBudgetPauseReason budgetPauseReason;
+    TZrUInt64 budgetCursor;
+    TZrUInt64 budgetWorkDone;
+    TZrUInt64 budgetElapsedUs;
+    TZrInt64 budgetDebtBytes;
+    TZrUInt64 budgetOverBudgetCount;
+    TZrUInt64 budgetCompactDeferredCount;
+    TZrBool budgetPressure;
+    TZrBool budgetFallback;
 
     SZrRawObject *aliveObjectList;
     SZrRawObject *circleMoreObjectList;
@@ -351,6 +382,29 @@ ZR_CORE_API void ZrCore_GarbageCollector_SetHeapLimitBytes(struct SZrGlobalState
 ZR_CORE_API void ZrCore_GarbageCollector_SetPauseBudgetUs(struct SZrGlobalState *global,
                                                           TZrUInt64 pauseBudgetUs,
                                                           TZrUInt64 remarkBudgetUs);
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_SetBudget(struct SZrGlobalState *global,
+                                                       const SZrGcBudget *budget);
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_GetBudget(struct SZrGlobalState *global,
+                                                       SZrGcBudget *outBudget);
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_EvaluateBudgetStep(
+        struct SZrGlobalState *global,
+        EZrGcBudgetPhase phase,
+        TZrUInt64 workUnits,
+        TZrUInt64 elapsedUs,
+        TZrUInt64 bytes,
+        TZrUInt64 objects,
+        TZrUInt64 atomicPauseUs,
+        SZrGcBudgetStepResult *outResult);
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_GetBudgetStats(
+        struct SZrGlobalState *global,
+        SZrGcBudgetStepResult *outResult);
+/* State-oriented aliases used by embedding hosts; they address the same
+ * collector-owned budget state through state->global. */
+typedef SZrGcBudgetStepResult SZrGcBudgetStats;
+ZR_CORE_API TZrBool ZrCore_Gc_SetBudget(struct SZrState *state,
+                                        const SZrGcBudget *budget);
+ZR_CORE_API TZrBool ZrCore_Gc_GetStats(struct SZrState *state,
+                                       SZrGcBudgetStats *stats);
 ZR_CORE_API void ZrCore_GarbageCollector_SetWorkerCount(struct SZrGlobalState *global, TZrUInt32 workerCount);
 ZR_CORE_API void ZrCore_GarbageCollector_ScheduleCollection(struct SZrGlobalState *global,
                                                             EZrGarbageCollectCollectionKind kind);

@@ -506,6 +506,19 @@ if (NOT TARGET zr_vm_ssa_major_budget_test)
     set_tests_properties(ssa_major_budget PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_major_budget_runtime_test)
+    add_executable(zr_vm_ssa_major_budget_runtime_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_major_budget_runtime.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_budget_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c)
+    target_include_directories(zr_vm_ssa_major_budget_runtime_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_major_budget_runtime_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_major_budget_runtime COMMAND zr_vm_ssa_major_budget_runtime_test)
+    set_tests_properties(ssa_major_budget_runtime PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_young_allocation_test)
     add_executable(zr_vm_ssa_young_allocation_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_young_allocation.c
