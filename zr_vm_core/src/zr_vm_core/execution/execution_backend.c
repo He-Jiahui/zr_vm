@@ -855,6 +855,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
     TZrUInt32 jobSlot = UINT32_MAX;
     TZrUInt32 codeSlot;
     SZrExecutionBackendDescriptor descriptor;
+    SZrExecutionBackendDescriptor staleDescriptor;
     SZrExecutionBackendCodeInfo disposeCode;
     TZrBool dispose = ZR_FALSE;
     EZrExecutionBackendStatus status;
@@ -865,8 +866,12 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
     TZrUInt32 codeCountSnapshot = 0u;
     SZrExecutionCompileRequest requestSnapshot;
     TZrUInt64 completedCodeIdentity = 0u;
+    TZrBool staleDispose = ZR_FALSE;
+    EZrExecutionBackendStatus staleDisposeStatus =
+            ZR_EXECUTION_BACKEND_STATUS_OK;
     zr_execution_backend_diag_clear(diagnostic);
     memset(&descriptor, 0, sizeof(descriptor));
+    memset(&staleDescriptor, 0, sizeof(staleDescriptor));
     memset(&disposeCode, 0, sizeof(disposeCode));
     memset(&requestSnapshot, 0, sizeof(requestSnapshot));
     if (!zr_execution_backend_service_shape_valid(service) || ticket == ZR_NULL ||
@@ -879,10 +884,35 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
     zr_execution_backend_lock(service);
     job = zr_execution_backend_find_job_locked(service, ticket, &jobSlot);
     if (job == ZR_NULL) {
+        /* A worker can finish after its terminal ticket slot has been reused.
+         * If the ticket still carries a validated backend registration key,
+         * route the orphaned result through that backend's normal disposal
+         * callbacks instead of leaking an unpublished code object. */
+        if (ticket->magic == ZR_EXECUTION_BACKEND_MAGIC &&
+            ticket->schemaVersion == ZR_EXECUTION_BACKEND_SCHEMA_VERSION &&
+            ticket->serviceIdentity == service->serviceIdentity &&
+            zr_execution_backend_key_valid(&ticket->generationKey, ZR_TRUE)) {
+            SZrExecutionBackendRegistrationRecord *staleRegistration =
+                    zr_execution_backend_find_registration_locked(
+                            service,
+                            ticket->generationKey.backendRegistrationIdentity,
+                            ZR_NULL);
+            if (staleRegistration != ZR_NULL) {
+                staleDescriptor = staleRegistration->descriptor;
+                staleDispose = ZR_TRUE;
+            }
+        }
         zr_execution_backend_unlock(service);
+        if (staleDispose) {
+            SZrExecutionBackendDiagnostic disposeDiagnostic;
+            memset(&disposeDiagnostic, 0, sizeof(disposeDiagnostic));
+            staleDisposeStatus = zr_execution_backend_dispose_unpublished(
+                    service, &staleDescriptor, code, &disposeDiagnostic);
+        }
         return zr_execution_backend_fail(
                 ZR_EXECUTION_BACKEND_STATUS_STALE_TICKET, diagnostic,
-                1u, 0u, ticket->ticketId, code->codeIdentity, 0u, 0u);
+                1u, 0u, ticket->ticketId, code->codeIdentity,
+                0u, staleDisposeStatus);
     }
     requestSnapshot = job->request;
     ticketId = job->ticket.ticketId;
@@ -1545,6 +1575,7 @@ TZrBool ZrCore_ExecutionBackendService_ResumeInterpreter(
         SZrExecIrDiagnostic *diagnostic) {
     FZrExecutionBackendResumeInterpreter resume;
     TZrPtr userData;
+    TZrBool callbackPinned = ZR_FALSE;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (!zr_execution_backend_service_shape_valid(service) || request == ZR_NULL) {
         if (diagnostic != ZR_NULL) {
@@ -1555,17 +1586,28 @@ TZrBool ZrCore_ExecutionBackendService_ResumeInterpreter(
     zr_execution_backend_lock(service);
     resume = service->resumeInterpreter;
     userData = service->resumeUserData;
+    if (resume != ZR_NULL) {
+        callbackPinned = zr_execution_backend_callback_enter_locked(service);
+    }
     zr_execution_backend_unlock(service);
     if (resume == ZR_NULL) {
         if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
         return ZR_FALSE;
     }
+    if (!callbackPinned) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW;
+        }
+        return ZR_FALSE;
+    }
     if (!resume(request, userData, diagnostic)) {
+        zr_execution_backend_callback_leave(service);
         if (diagnostic != ZR_NULL && diagnostic->code == ZR_EXECUTION_DIAGNOSTIC_NONE) {
             diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_MATERIALIZATION_FAILED;
         }
         return ZR_FALSE;
     }
+    zr_execution_backend_callback_leave(service);
     return ZR_TRUE;
 }
 
