@@ -425,6 +425,36 @@ if (NOT TARGET zr_vm_ssa_major_budget_test)
     set_tests_properties(ssa_major_budget PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_domain_sharing_test)
+    add_executable(zr_vm_ssa_domain_sharing_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_domain_sharing.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_send_sync.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_domain_sharing_test)
+    target_compile_definitions(zr_vm_ssa_domain_sharing_test PRIVATE
+            UNITY_INCLUDE_CONFIG_H _CRT_SECURE_NO_WARNINGS)
+    target_include_directories(zr_vm_ssa_domain_sharing_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_link_third_party_for_target(zr_vm_ssa_domain_sharing_test "zr_unity")
+    zr_vm_link_core(zr_vm_ssa_domain_sharing_test)
+    add_test(NAME ssa_domain_sharing COMMAND zr_vm_ssa_domain_sharing_test)
+    set_tests_properties(ssa_domain_sharing PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_batch_vectorization_test)
+    add_executable(zr_vm_ssa_batch_vectorization_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_batch_vectorization.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/batch_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/src/zr_vm_library/batch_protocol.c)
+    target_include_directories(zr_vm_ssa_batch_vectorization_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_batch_vectorization_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_batch_vectorization COMMAND zr_vm_ssa_batch_vectorization_test)
+    set_tests_properties(ssa_batch_vectorization PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_call_return_tail_test)
     add_executable(zr_vm_ssa_call_return_tail_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_call_return_tail.c
