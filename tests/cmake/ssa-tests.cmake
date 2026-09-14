@@ -609,6 +609,32 @@ if (NOT TARGET zr_vm_ssa_batch_vectorization_test)
     set_tests_properties(ssa_batch_vectorization PROPERTIES LABELS "ssa")
 endif ()
 
+# 09.03 planner coverage is a separate non-denominator fixture because the
+# existing batch runtime test has its own executable entry point.  Keeping the
+# planner target standalone makes its no-rewrite and scalar-fallback contract
+# testable without changing the 47-leaf CTest denominator.
+if (NOT TARGET zr_vm_vectorize_pass_test)
+    add_executable(zr_vm_vectorize_pass_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_vectorize_pass.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_vectorize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_loops.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_numeric_policy.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_vector_legalize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
+    target_include_directories(zr_vm_vectorize_pass_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_vectorize_pass_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME vectorize_pass COMMAND zr_vm_vectorize_pass_test)
+    set_tests_properties(vectorize_pass PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_numeric_vector_ir_test)
     add_executable(zr_vm_ssa_numeric_vector_ir_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_numeric_vector_ir.c
