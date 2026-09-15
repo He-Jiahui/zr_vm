@@ -50,9 +50,9 @@ cmake -P tests/cmake/ssa-coverage-manifest.cmake
 
 Observed result at authoring time: both focused executables printed
 `ssa release acceptance PASS` and exited 0; the CMake declaration check exited
-0.  These are contract-level results only.  The parent integration still has
-to register and run the named CTest target and refresh this record at the
-final revision.
+0.  These are contract-level results only.  The focused target is registered
+as `ssa_release_acceptance`; this record still needs a fresh, final-revision
+release matrix before any milestone can be accepted.
 
 The focused failure fixtures prove that:
 
@@ -67,7 +67,7 @@ The focused failure fixtures prove that:
 
 The repository-local implementation audit was refreshed after the SSA leaf
 commits.  The code snapshot audited immediately before this record update was
-`06103f644c0e02962d31db87bcbc46f17152bc29`; it reports:
+`10f76292`; it reports:
 
 - all 47 leaf plans have their declared implementation and test paths present;
 - all 47 manifest CTest names are registered, and the manifest declaration
@@ -76,14 +76,18 @@ commits.  The code snapshot audited immediately before this record update was
   `ZR_VM_JIT_USE_LLVM=OFF` last ran 51 `^ssa_` tests with 51/51 passing at
   `210aa19b` (the subsequent `06103f64` change is whitespace-only); and
 - the current Windows GCC strict standalone release-acceptance fixture exits
-  with `ssa release acceptance PASS`.
+  with `ssa release acceptance PASS`; and
+- the Windows MSVC Debug `ssa_release_acceptance` CTest passes 1/1 after
+  `10f76292` enables MSVC's C11 atomics mode for C sources.
 
 The checkout still contains unrelated user changes and untracked plan input,
 so no dirty-tree digest is claimed here.  A fresh WSL Clang rebuild could not
 be started during this audit because the host WSL service returned HCS
 `0x800705aa`; the older Clang CTest database is not counted as current
-evidence.  These results validate repository contracts only and do not close
-the release gate below.
+evidence.  A wider MSVC-focused build stopped in the linker with PDB resource
+errors (`LNK1140`, `LNK1318`, then `LNK1285`); those rows are likewise not
+counted as evidence.  These results validate repository contracts only and do
+not close the release gate below.
 
 ## Milestone state
 
@@ -137,8 +141,9 @@ ctest --test-dir build/ssa-gcc-debug -N -L ssa
 ctest --test-dir build/ssa-gcc-debug -L ssa --output-on-failure --no-tests=error
 ```
 
-The target/CTest registration is owned by the parent integration task.  This
-leaf does not edit the shared CMake file.
+The target/CTest registration lives in `tests/cmake/ssa-tests.cmake`.  The
+commands remain release-run recipes; their output must be refreshed at the
+final revision.
 
 ### Toolchains and sanitizers
 
