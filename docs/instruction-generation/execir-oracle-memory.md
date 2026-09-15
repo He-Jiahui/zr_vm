@@ -51,6 +51,12 @@ provider result. These are reference-mode semantics: the callback owns any
 external allocation ledger and decides how to roll back if a later oracle
 operation fails.
 
+The no-optimization ExecBC and AOT projections preserve `ALLOC` as a typed
+instruction with its operand/result ranges. This is metadata transport only:
+the AOT projection remains non-runnable and an eventual backend allocator must
+establish its own runtime ownership and GC protocol before execution is
+enabled.
+
 ## Projection ownership
 
 The no-optimization ExecBC and AOT projection records now own a copy of the

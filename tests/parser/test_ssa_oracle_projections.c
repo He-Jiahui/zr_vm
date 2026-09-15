@@ -271,6 +271,8 @@ static void test_allocate_requires_and_uses_provider(void) {
     SZrExecIrOracleExecutionResult execution;
     SZrExecIrDiagnostic diagnostic;
     SZrOracleAllocationFixture allocation;
+    SZrExecBcProjection bc = {0};
+    SZrAotIrProjection aot = {0};
 
     build_allocate_function(&function);
     memset(&input, 0, sizeof(input));
@@ -316,6 +318,19 @@ static void test_allocate_requires_and_uses_provider(void) {
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
            diagnostic.instructionId == 2u && execution.eventCount == 0u);
     ZrCore_ExecIr_OracleResultFree(&execution);
+
+    /* Both no-optimization projections carry the allocation opcode and its
+     * stable ranges even though neither projection is executable yet. */
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.instructionCount == 3u &&
+           bc.instructions[1u].opcode == ZR_EXEC_IR_OPCODE_ALLOC &&
+           bc.opcodes[1u] == ZR_EXEC_IR_OPCODE_ALLOC);
+    assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(aot.instructionCount == 3u &&
+           aot.instructions[1u].opcode == ZR_EXEC_IR_OPCODE_ALLOC &&
+           aot.opcodes[1u] == ZR_EXEC_IR_OPCODE_ALLOC && !aot.runnable);
+    ZrParser_ExecBcProjection_Free(&bc);
+    ZrParser_AotIrProjection_Free(&aot);
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
@@ -646,7 +661,7 @@ static void test_unsupported_and_transactional_failures(void) {
     oldInstructions = bc.instructions;
     oldCount = bc.instructionCount;
     oldAotCount = aot.instructionCount;
-    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_ALLOC;
+    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_PLACE_BASE;
     function.instructions[0].operands = range(0u, 1u);
     assert(!ZrCore_ExecIr_RunOracle(&function, ZR_NULL, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&

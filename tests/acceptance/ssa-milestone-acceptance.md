@@ -150,6 +150,11 @@ WSL GCC 11.4   ASan+UBSan ssa_oracle_projections 1/1 passed
 This remains reference-mode evidence and does not claim production heap
 migration.
 
+The projection follow-up now carries `ALLOC` through both no-optimization
+views, preserving the opcode, operand/result ranges, and source identity. The
+focused fixture asserts ExecBC transport and a non-runnable AOT view; it does
+not count metadata transport as executable allocation or GC coverage.
+
 The M0 metrics follow-up also keeps paired conclusions conservative: samples
 with different measurement phases or different `availableMetrics` masks are
 classified as `INCOMPARABLE` before bootstrap statistics or gate promotion.

@@ -36,14 +36,14 @@ static TZrBool zr_projection_bytes(TZrUInt32 count, size_t element, size_t *byte
 }
 
 /* The first projection is intentionally a no-optimization scalar/control
- * slice.  Operations whose physical representation needs a runtime layout,
- * allocator, or invoke/landing-pad ABI stay explicit unsupported until their
- * dedicated lowering stage is present. */
+ * slice.  Operations whose physical representation needs a runtime layout or
+ * invoke/landing-pad ABI stay explicit unsupported until their dedicated
+ * lowering stage is present.  ALLOC is copied as metadata; an executable
+ * allocator is still a separate backend concern. */
 static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
         case ZR_EXEC_IR_OPCODE_PLACE_BASE:
         case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
-        case ZR_EXEC_IR_OPCODE_ALLOC:
         case ZR_EXEC_IR_OPCODE_INVOKE:
             return ZR_FALSE;
         default:

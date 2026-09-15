@@ -56,6 +56,11 @@ assignments are emitted as edge-tagged parallel-copy records; cyclic swaps set
 edges are split into synthetic empty blocks in the projection, preserving the
 source function and keeping phi copies on an edge-local block.
 
+Allocation instructions are transported with the same stable opcode, ranges,
+and source identity. This does not enable execution: the lowerer carries the
+metadata while the runtime allocator and GC protocol remain a backend-owned
+follow-up.
+
 `ZrParser_ExecIr_LowerAot` uses the same builder and transfers ownership of the
 projection arrays, adding the function token, signature hash, and execution
 contract. It is an AOTIR seam only: `runnable` is deliberately false until the
