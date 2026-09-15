@@ -21,7 +21,7 @@ coverage numbers.  The source revision observed while authoring this record
 was:
 
 ```text
-HEAD: b2b726eed491f5fe358914b8ca9382c33ccf2586
+HEAD: b90d949d162427970960490a9bb9effa346e8650
 ```
 
 The checkout was concurrently dirty, so the value above is an authoring
@@ -67,7 +67,7 @@ The focused failure fixtures prove that:
 
 The repository-local implementation audit was refreshed after the SSA leaf
 commits.  The code snapshot audited immediately before this record update was
-`802c3ab8`; it reports:
+`b90d949d`; it reports:
 
 - all 47 leaf plans have their declared implementation and test paths present;
 - all 47 manifest CTest names are registered, and the manifest declaration
@@ -78,19 +78,23 @@ commits.  The code snapshot audited immediately before this record update was
   treating that result as final-revision evidence;
 - the current Windows GCC strict standalone release-acceptance fixture exits
   with `ssa release acceptance PASS`; and
-- the Windows MSVC Debug `ssa_release_acceptance` CTest passes 1/1 after
-  `10f76292` enables MSVC's C11 atomics mode for C sources; and
+- the Windows MSVC Debug/Ninja `-L ssa` run (MSVC 19.44.35228,
+  `ZR_VM_ENABLE_HOST_JIT=ON`, `ZR_VM_JIT_USE_LLVM=OFF`) passes 55/55,
+  including `ssa_release_acceptance`, `ssa_host_jit_optional`, and the two
+  parser tests whose executables were built during the audit; and
 - a native MinGW GCC CMake subset (`ssa_contract_freeze`,
-  `ssa_differential_harness`, `ssa_core_model`, and `ssa_release_acceptance`)
-  passes 4/4 after `802c3ab8` centralizes legacy GCC thread-local storage.
+  `ssa_differential_harness`, `ssa_core_model`, `ssa_effects_verifier`, and
+  `ssa_release_acceptance`) passes 5/5 after `802c3ab8` centralizes legacy GCC
+  thread-local storage.
 
 The checkout still contains unrelated user changes and untracked plan input,
 so no dirty-tree digest is claimed here.  A fresh WSL Clang rebuild could not
 be started during this audit because the host WSL service returned HCS
 `0x800705aa`; the older Clang CTest database is not counted as current
-evidence.  A wider MSVC-focused build stopped in the linker with PDB resource
-errors (`LNK1140`, `LNK1318`, then `LNK1285`); those rows are likewise not
-counted as evidence.  The native MinGW full-core build is also unavailable
+evidence.  A wider MSVC-focused build attempt stopped in the linker with PDB
+resource errors (`LNK1140`, `LNK1318`, then `LNK1285`); that historical attempt
+is not counted as evidence, while the current 55-test Debug CTest run is
+recorded above.  The native MinGW full-core build is also unavailable
 because GCC 4.8 has no `stdatomic.h`; this is not substituted for the required
 WSL/MSVC matrix.  These results validate repository contracts only and do not
 close the release gate below.
