@@ -66,7 +66,8 @@ The focused failure fixtures prove that:
 ## Current implementation audit (not release evidence)
 
 The repository-local implementation audit was refreshed after the SSA leaf
-commits.  At `HEAD 06103f644c0e02962d31db87bcbc46f17152bc29` it reports:
+commits.  The code snapshot audited immediately before this record update was
+`06103f644c0e02962d31db87bcbc46f17152bc29`; it reports:
 
 - all 47 leaf plans have their declared implementation and test paths present;
 - all 47 manifest CTest names are registered, and the manifest declaration
