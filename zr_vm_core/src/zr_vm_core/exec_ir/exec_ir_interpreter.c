@@ -451,6 +451,9 @@ static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInpu
     if (op == ZR_EXEC_IR_OPCODE_LOAD) {
         return (TZrBool)(input != ZR_NULL && input->memory != ZR_NULL);
     }
+    if (op == ZR_EXEC_IR_OPCODE_ALLOC) {
+        return (TZrBool)(input != ZR_NULL && input->allocate != ZR_NULL);
+    }
     switch (op) {
         case ZR_EXEC_IR_OPCODE_NOP: case ZR_EXEC_IR_OPCODE_CONSTANT: case ZR_EXEC_IR_OPCODE_CONVERT:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC: case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE:
@@ -597,6 +600,31 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
                 }
             }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
+            break;
+        case ZR_EXEC_IR_OPCODE_ALLOC:
+            zr_oracle_undefined(&callback);
+            if (input->allocate == ZR_NULL ||
+                !input->allocate(input->allocateUserData, ins, ops, n,
+                                 &callback)) {
+                zr_oracle_diag(d,
+                               ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ALLOCATION_ERROR,
+                               f, block, id, ins->sourceId, 1u, n);
+                goto fail;
+            }
+            if (!zr_oracle_value_kind_valid(callback.kind) ||
+                callback.kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f,
+                               block, id, ins->sourceId,
+                               ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT,
+                               (TZrUInt32)callback.kind);
+                goto fail;
+            }
+            if (!zr_oracle_append_event(r,
+                                        ZR_EXEC_IR_ORACLE_EVENT_ALLOCATE, id,
+                                        ins->sourceId, ops, n, f, block, d) ||
+                !zr_oracle_assign(f, ins, r, &callback, block, id, d)) {
+                goto fail;
+            }
             break;
         case ZR_EXEC_IR_OPCODE_LOAD:
             if (n != 1u || input->memory == ZR_NULL ||

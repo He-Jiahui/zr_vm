@@ -201,6 +201,124 @@ static void test_load_requires_and_uses_memory_provider(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void build_allocate_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId size, allocated;
+    SZrExecIrRange sizeResult, allocateOperands, allocateResult, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    size = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    allocated = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_GC,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(size != 0u && allocated != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &size, 1u, &sizeResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &size, 1u, &allocateOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &allocated, 1u, &allocateResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &allocated, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), sizeResult, range(0u, 0u),
+                       16u, 601u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_ALLOC,
+                       allocateOperands, allocateResult, range(0u, 0u),
+                       0u, 602u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 603u);
+}
+
+typedef struct SZrOracleAllocationFixture {
+    SZrExecIrOracleValue value;
+    TZrUInt32 allocateCount;
+    TZrUInt32 observedOperandCount;
+    TZrBool reject;
+    TZrBool returnUndefined;
+} SZrOracleAllocationFixture;
+
+static TZrBool oracle_allocate_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result) {
+    SZrOracleAllocationFixture *allocation =
+            (SZrOracleAllocationFixture *)userData;
+    assert(allocation != ZR_NULL && instruction != ZR_NULL &&
+           instruction->opcode == ZR_EXEC_IR_OPCODE_ALLOC &&
+           operands != ZR_NULL && result != ZR_NULL);
+    if (allocation->reject != ZR_FALSE || operandCount != 1u ||
+        operands[0].kind != ZR_EXEC_IR_ORACLE_VALUE_SIGNED ||
+        operands[0].as.signedInteger != 16) {
+        return ZR_FALSE;
+    }
+    ++allocation->allocateCount;
+    allocation->observedOperandCount = operandCount;
+    if (allocation->returnUndefined != ZR_FALSE) {
+        result->kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+    } else {
+        *result = allocation->value;
+    }
+    return ZR_TRUE;
+}
+
+static void test_allocate_requires_and_uses_provider(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+    SZrOracleAllocationFixture allocation;
+
+    build_allocate_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    /* ALLOC has no implicit host heap.  Without a provider it must remain
+     * unsupported and leave no observable event. */
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 2u && diagnostic.sourceId == 602u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    memset(&allocation, 0, sizeof(allocation));
+    allocation.value.kind = ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED;
+    allocation.value.as.unsignedInteger = 0xa110cu;
+    input.allocate = oracle_allocate_callback;
+    input.allocateUserData = &allocation;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED &&
+           execution.returnValue.as.unsignedInteger == 0xa110cu &&
+           allocation.allocateCount == 1u &&
+           allocation.observedOperandCount == 1u && execution.eventCount == 1u &&
+           execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_ALLOCATE &&
+           execution.events[0].instructionId == 2u &&
+           execution.events[0].sourceId == 602u &&
+           execution.events[0].operandCount == 1u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    allocation.reject = ZR_TRUE;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ALLOCATION_ERROR &&
+           diagnostic.instructionId == 2u && diagnostic.sourceId == 602u &&
+           execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    allocation.reject = ZR_FALSE;
+    allocation.returnUndefined = ZR_TRUE;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+           diagnostic.instructionId == 2u && execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_memory_projection_preserves_load_and_token_pool(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection bc;
@@ -570,6 +688,7 @@ static void test_malformed_input(void) {
 
 int main(void) {
     test_load_requires_and_uses_memory_provider();
+    test_allocate_requires_and_uses_provider();
     test_memory_projection_preserves_load_and_token_pool();
     test_scalar_oracle_and_projection();
     test_branch_phi_oracle();

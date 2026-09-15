@@ -27,5 +27,5 @@ the following M1 tasks.
 
 The direct reference execution boundary is documented separately in
 [`execir-oracle-memory.md`](execir-oracle-memory.md). Its memory callback is
-caller-owned and deterministic; it is deliberately not a host-pointer field
-inside ExecIR.
+caller-owned and deterministic, as is the pointer-free allocation callback;
+neither boundary is represented as a host-pointer field inside ExecIR.

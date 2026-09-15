@@ -39,12 +39,14 @@ callers that only need instruction coverage.
 The oracle currently executes the scalar/control subset (constants, copies and
 conversions, checked integer/floating arithmetic, comparisons, branches,
 switches, phi entry, return, throw, suspend, and callback-backed calls). Store,
-drop, barrier, call, throw, and suspend operations append bounded operand
-snapshots to the observable event stream. Calls require an explicit callback;
-place projection, load, allocation, and invoke/landing-pad operations return
-`ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED` with their instruction and source IDs.
-Arithmetic faults and infinite control flow have separate diagnostics and a
-caller-configurable step limit.
+drop, barrier, call, throw, suspend, and provider-backed allocation operations
+append bounded operand snapshots to the observable event stream. Calls,
+loads, and allocations require explicit caller providers; place projection and
+invoke/landing-pad operations remain unsupported. Provider failures preserve a
+specific oracle diagnostic and instruction/source identity, while missing
+providers return `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and
+infinite control flow have separate diagnostics and a caller-configurable step
+limit.
 
 `ZrParser_ExecIr_LowerExecBc` copies instruction, operand/result, CFG, source,
 state-map, GC/deopt counts, and value-slot metadata into owned arrays. Every

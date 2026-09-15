@@ -33,6 +33,24 @@ rejection, stateful store-then-load replay, event order/source identity, and a
 provider failure. It is a reference-mode contract, not a claim that the
 production ExecBC heap has been switched to this callback.
 
+## Allocation boundary
+
+`ALLOC` has the same explicit-host-boundary rule as LOAD. A caller may supply
+`FZrExecIrOracleAllocate` and its `allocateUserData`; the callback receives the
+bounded constructor operands and returns one defined, pointer-free oracle value
+(for example, a deterministic object token). The callback must not encode a
+host pointer or append an event itself. Without a provider, ALLOC fails closed
+with `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`; a provider rejection preserves the
+instruction/source identity in
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ALLOCATION_ERROR`. The oracle publishes an
+`ZR_EXEC_IR_ORACLE_EVENT_ALLOCATE` event only after a valid callback result is
+available, then assigns that value to the instruction's result slot.
+
+The allocation fixture also covers a provider rejection and an undefined
+provider result. These are reference-mode semantics: the callback owns any
+external allocation ledger and decides how to roll back if a later oracle
+operation fails.
+
 ## Projection ownership
 
 The no-optimization ExecBC and AOT projection records now own a copy of the

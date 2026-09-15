@@ -45,6 +45,7 @@ typedef enum EZrExecIrOracleEventKind {
     ZR_EXEC_IR_ORACLE_EVENT_BARRIER,
     ZR_EXEC_IR_ORACLE_EVENT_SUSPEND,
     ZR_EXEC_IR_ORACLE_EVENT_LOAD,
+    ZR_EXEC_IR_ORACLE_EVENT_ALLOCATE,
     ZR_EXEC_IR_ORACLE_EVENT_KIND_COUNT
 } EZrExecIrOracleEventKind;
 
@@ -74,6 +75,17 @@ typedef TZrBool (*FZrExecIrOracleMemory)(
         TZrUInt32 operandCount,
         SZrExecIrOracleValue *result);
 
+/* Allocation is intentionally caller-owned and pointer-free.  The callback
+ * receives the allocation's bounded constructor operands and returns a
+ * scalar/token value that can be carried by ExecIR; it must not encode a host
+ * address or publish an allocation event on behalf of the oracle. */
+typedef TZrBool (*FZrExecIrOracleAllocate)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands,
+        TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result);
+
 typedef struct SZrExecIrOracleInput {
     const SZrExecIrFunction *function;
     /* Initial values are indexed by valueId - 1. */
@@ -87,6 +99,8 @@ typedef struct SZrExecIrOracleInput {
     void *userData;
     FZrExecIrOracleMemory memory;
     void *memoryUserData;
+    FZrExecIrOracleAllocate allocate;
+    void *allocateUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {
