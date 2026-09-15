@@ -1,7 +1,7 @@
 #include "zr_vm_core/exec_ir.h"
 
-#include <limits.h>
-#include <stdlib.h>
+#include "exec_ir_verify_ssa.h"
+
 #include <string.h>
 
 static void zr_exec_ir_clear_diagnostic(SZrExecIrDiagnostic *diagnostic) {
@@ -374,9 +374,7 @@ TZrBool ZrCore_ExecIr_VerifyModule(const SZrExecIrModule *module,
 TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                      EZrExecIrVerifyLevel level,
                                      SZrExecIrDiagnostic *diagnostic) {
-    TZrUInt8 *definitions = ZR_NULL;
     TZrUInt32 blockIndex;
-    TZrUInt32 instructionIndex;
 
     zr_exec_ir_clear_diagnostic(diagnostic);
     if (function == ZR_NULL || level == 0u ||
@@ -480,71 +478,9 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
     }
 
     if ((level & ZR_EXEC_IR_VERIFY_SSA) != 0u) {
-        if (function->valueCount != 0u) {
-            if ((size_t)function->valueCount + 1u > SIZE_MAX / sizeof(*definitions)) {
-                zr_exec_ir_set_diagnostic(diagnostic,
-                                          ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
-                                          function,
-                                          0u,
-                                          0u,
-                                          0u,
-                                          function->valueCount);
-                return ZR_FALSE;
-            }
-            definitions = (TZrUInt8 *)calloc((size_t)function->valueCount + 1u,
-                                             sizeof(*definitions));
-            if (definitions == ZR_NULL) {
-                zr_exec_ir_set_diagnostic(diagnostic,
-                                          ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
-                                          function,
-                                          0u,
-                                          0u,
-                                          0u,
-                                          0u);
-                return ZR_FALSE;
-            }
+        if (!zr_exec_ir_verify_ssa(function, diagnostic)) {
+            return ZR_FALSE;
         }
-        for (instructionIndex = 0u;
-             instructionIndex < function->instructionCount;
-             ++instructionIndex) {
-            const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
-            TZrUInt32 resultIndex;
-            for (resultIndex = instruction->resultRange.start;
-                 resultIndex < instruction->resultRange.start + instruction->resultRange.count;
-                 ++resultIndex) {
-                TZrExecIrValueId valueId = function->results[resultIndex];
-                if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID || valueId > function->valueCount) {
-                    free(definitions);
-                    zr_exec_ir_set_diagnostic(diagnostic,
-                                              ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
-                                              function,
-                                              instructionIndex + 1u,
-                                              0u,
-                                              function->valueCount,
-                                              valueId);
-                    return ZR_FALSE;
-                }
-                if (definitions[valueId] != 0u ||
-                    (function->values[valueId - 1u].definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
-                     function->values[valueId - 1u].definition != instructionIndex + 1u)) {
-                    free(definitions);
-                    zr_exec_ir_set_diagnostic(diagnostic,
-                                              ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION,
-                                              function,
-                                              instructionIndex + 1u,
-                                              0u,
-                                              valueId,
-                                              valueId);
-                    return ZR_FALSE;
-                }
-                definitions[valueId] = 1u;
-                if (function->values[valueId - 1u].definition == ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
-                    /* Keep the model immutable during verification; this is
-                     * only a consistency check for the optional back-pointer. */
-                }
-            }
-        }
-        free(definitions);
     }
 
     if ((level & ZR_EXEC_IR_VERIFY_EFFECT) != 0u) {

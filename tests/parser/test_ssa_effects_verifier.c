@@ -205,6 +205,368 @@ static void test_empty_range_with_invalid_start_is_rejected(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_ssa_rejects_use_before_definition_in_linear_ir(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrRange operands;
+    SZrExecIrRange results;
+    TZrExecIrValueId source;
+    TZrExecIrValueId copy;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    ok(ZrCore_ExecIr_ModuleAddFunction(&module, 900u, 1u, &id),
+       "linear dominance function");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
+    source = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    copy = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    ok(source != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           copy != ZR_EXEC_IR_VALUE_ID_INVALID,
+       "linear dominance values");
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &source, 1u,
+                                             &operands),
+       "linear dominance operands");
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &copy, 1u, &results),
+       "linear dominance result");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_COPY;
+    instruction.operands = operands;
+    instruction.results = results;
+    instruction.sourceId = 901u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "linear use-before-definition instruction");
+
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &source, 1u, &results),
+       "linear late definition result");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.results = results;
+    instruction.layoutId = 7u;
+    instruction.sourceId = 902u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "linear late definition instruction");
+
+    ok(!ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "linear use-before-definition accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_DOMINANCE &&
+           diagnostic.instructionId == 1u && diagnostic.sourceId == 901u &&
+           diagnostic.expectedVersion == 2u && diagnostic.actualVersion == source,
+       "linear dominance diagnostic lost definition/use identity");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_ssa_rejects_cross_branch_use_not_dominated(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrRange conditionOperands;
+    SZrExecIrRange sourceResult;
+    SZrExecIrRange returnOperands;
+    TZrExecIrValueId condition;
+    TZrExecIrValueId source;
+    TZrExecIrBlockId entry;
+    TZrExecIrBlockId left;
+    TZrExecIrBlockId right;
+    TZrExecIrBlockId successors[2];
+    TZrExecIrBlockId predecessor;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    ok(ZrCore_ExecIr_ModuleAddFunction(&module, 910u, 1u, &id),
+       "branch dominance function");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
+    condition = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    source = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    ok(condition != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           source != ZR_EXEC_IR_VALUE_ID_INVALID,
+       "branch dominance values");
+    entry = ZrCore_ExecIr_FunctionAddBlock(function,
+                                             ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    left = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    right = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    ok(entry == 1u && left == 2u && right == 3u,
+       "branch dominance blocks");
+    function->entryBlockId = entry;
+    successors[0] = left;
+    successors[1] = right;
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, successors, 2u,
+               &function->blocks[entry - 1u].successorRange),
+       "branch dominance successors");
+    predecessor = entry;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[left - 1u].predecessorRange),
+       "left dominance predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[right - 1u].predecessorRange),
+       "right dominance predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &condition, 1u,
+                                             &conditionOperands),
+       "branch condition operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH;
+    instruction.operands = conditionOperands;
+    instruction.successorRange = function->blocks[entry - 1u].successorRange;
+    instruction.sourceId = 911u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "branch terminator");
+
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &source, 1u,
+                                           &sourceResult),
+       "branch late definition result");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.results = sourceResult;
+    instruction.layoutId = 3u;
+    instruction.sourceId = 912u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "branch left definition");
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &source, 1u,
+                                             &returnOperands),
+       "branch return operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returnOperands;
+    instruction.sourceId = 913u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "branch left return");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returnOperands;
+    instruction.sourceId = 914u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "branch right return");
+
+    function->blocks[entry - 1u].instructionRange.start = 0u;
+    function->blocks[entry - 1u].instructionRange.count = 1u;
+    function->blocks[entry - 1u].terminatorInstructionId = 1u;
+    function->blocks[left - 1u].instructionRange.start = 1u;
+    function->blocks[left - 1u].instructionRange.count = 2u;
+    function->blocks[left - 1u].terminatorInstructionId = 3u;
+    function->blocks[right - 1u].instructionRange.start = 3u;
+    function->blocks[right - 1u].instructionRange.count = 1u;
+    function->blocks[right - 1u].terminatorInstructionId = 4u;
+
+    ok(!ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "cross-branch non-dominated use accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_DOMINANCE &&
+           diagnostic.blockId == right && diagnostic.instructionId == 4u &&
+           diagnostic.sourceId == 914u && diagnostic.expectedVersion == 2u &&
+           diagnostic.actualVersion == source,
+       "cross-branch dominance diagnostic lost edge identity");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_ssa_accepts_phi_edge_definitions_and_rejects_wrong_edge(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrPhi phi;
+    SZrExecIrPhiIncoming incoming[2];
+    SZrExecIrRange conditionOperands;
+    SZrExecIrRange leftResult;
+    SZrExecIrRange rightResult;
+    SZrExecIrRange returnOperands;
+    SZrExecIrRange incomingRange;
+    SZrExecIrRange phiRange;
+    TZrExecIrValueId condition;
+    TZrExecIrValueId leftValue;
+    TZrExecIrValueId rightValue;
+    TZrExecIrValueId merged;
+    TZrExecIrBlockId entry;
+    TZrExecIrBlockId left;
+    TZrExecIrBlockId right;
+    TZrExecIrBlockId merge;
+    TZrExecIrBlockId successors[2];
+    TZrExecIrBlockId mergePredecessors[2];
+    TZrExecIrBlockId predecessor;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    ok(ZrCore_ExecIr_ModuleAddFunction(&module, 920u, 1u, &id),
+       "phi dominance function");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
+    condition = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    leftValue = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    rightValue = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    merged = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    ok(condition != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           leftValue != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           rightValue != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           merged != ZR_EXEC_IR_VALUE_ID_INVALID,
+       "phi dominance values");
+    entry = ZrCore_ExecIr_FunctionAddBlock(function,
+                                             ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    left = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    right = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    merge = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    ok(entry == 1u && left == 2u && right == 3u && merge == 4u,
+       "phi dominance blocks");
+    function->entryBlockId = entry;
+    successors[0] = left;
+    successors[1] = right;
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, successors, 2u,
+               &function->blocks[entry - 1u].successorRange),
+       "phi entry successors");
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, &merge, 1u,
+               &function->blocks[left - 1u].successorRange),
+       "phi left successor");
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, &merge, 1u,
+               &function->blocks[right - 1u].successorRange),
+       "phi right successor");
+    predecessor = entry;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[left - 1u].predecessorRange),
+       "phi left predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[right - 1u].predecessorRange),
+       "phi right predecessor");
+    mergePredecessors[0] = left;
+    mergePredecessors[1] = right;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, mergePredecessors, 2u,
+               &function->blocks[merge - 1u].predecessorRange),
+       "phi merge predecessors");
+
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &condition, 1u,
+                                             &conditionOperands),
+       "phi condition operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH;
+    instruction.operands = conditionOperands;
+    instruction.successorRange = function->blocks[entry - 1u].successorRange;
+    instruction.sourceId = 921u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "phi entry branch");
+
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &leftValue, 1u,
+                                           &leftResult),
+       "phi left result");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.results = leftResult;
+    instruction.layoutId = 5u;
+    instruction.sourceId = 922u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "phi left definition");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    instruction.successorRange = function->blocks[left - 1u].successorRange;
+    instruction.sourceId = 923u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "phi left branch");
+
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &rightValue, 1u,
+                                           &rightResult),
+       "phi right result");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.results = rightResult;
+    instruction.layoutId = 6u;
+    instruction.sourceId = 924u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "phi right definition");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    instruction.successorRange = function->blocks[right - 1u].successorRange;
+    instruction.sourceId = 925u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "phi right branch");
+
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &merged, 1u,
+                                             &returnOperands),
+       "phi return operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returnOperands;
+    instruction.sourceId = 926u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "phi merge return");
+
+    function->blocks[entry - 1u].instructionRange.start = 0u;
+    function->blocks[entry - 1u].instructionRange.count = 1u;
+    function->blocks[entry - 1u].terminatorInstructionId = 1u;
+    function->blocks[left - 1u].instructionRange.start = 1u;
+    function->blocks[left - 1u].instructionRange.count = 2u;
+    function->blocks[left - 1u].terminatorInstructionId = 3u;
+    function->blocks[right - 1u].instructionRange.start = 3u;
+    function->blocks[right - 1u].instructionRange.count = 2u;
+    function->blocks[right - 1u].terminatorInstructionId = 5u;
+    function->blocks[merge - 1u].instructionRange.start = 5u;
+    function->blocks[merge - 1u].instructionRange.count = 1u;
+    function->blocks[merge - 1u].terminatorInstructionId = 6u;
+
+    incoming[0].predecessor = left;
+    incoming[0].value = leftValue;
+    incoming[1].predecessor = right;
+    incoming[1].value = rightValue;
+    ok(ZrCore_ExecIr_FunctionAppendPhiIncoming(function, incoming, 2u,
+                                                &incomingRange),
+       "phi incoming range");
+    memset(&phi, 0, sizeof(phi));
+    phi.result = merged;
+    phi.incomings = incomingRange;
+    ok(ZrCore_ExecIr_FunctionAppendPhis(function, &phi, 1u, &phiRange),
+       "phi append");
+    function->blocks[merge - 1u].phis = phiRange;
+
+    ok(ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "valid phi edge definitions rejected");
+
+    function->phiIncoming[incomingRange.start + 1u].value = leftValue;
+    ok(!ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "phi accepted value unavailable on predecessor edge");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_DOMINANCE &&
+           diagnostic.blockId == merge && diagnostic.instructionId == 6u &&
+           diagnostic.sourceId == 926u && diagnostic.expectedVersion == 2u &&
+           diagnostic.actualVersion == leftValue,
+       "phi edge dominance diagnostic lost identity");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_throw_requires_flag();
     test_memory_tokens_must_be_monotonic();
@@ -215,6 +577,9 @@ int main(void) {
     test_call_binding_row_zero_does_not_require_all_dynamic_flags();
     test_malformed_block_instruction_range_is_rejected();
     test_empty_range_with_invalid_start_is_rejected();
+    test_ssa_rejects_use_before_definition_in_linear_ir();
+    test_ssa_rejects_cross_branch_use_not_dominated();
+    test_ssa_accepts_phi_edge_definitions_and_rejects_wrong_edge();
     puts("ssa effects verifier PASS");
     return EXIT_SUCCESS;
 }

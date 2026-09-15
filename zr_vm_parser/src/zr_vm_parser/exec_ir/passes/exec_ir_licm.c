@@ -177,12 +177,14 @@ static TZrBool zr_licm_operand_invariant(const SZrExecIrFunction *function,
 }
 
 static TZrBool zr_licm_result_uses_after(const SZrExecIrFunction *function,
-                                         TZrExecIrValueId resultValue,
-                                         TZrExecIrInstructionId definitionId) {
+                                          TZrExecIrValueId resultValue,
+                                          TZrExecIrInstructionId definitionId) {
     TZrUInt32 instructionIndex;
+    TZrUInt32 blockIndex;
     TZrBool used = ZR_FALSE;
     if (function == ZR_NULL || resultValue == 0u ||
-        function->operands == ZR_NULL) return ZR_FALSE;
+        (function->operandCount != 0u && function->operands == ZR_NULL))
+        return ZR_FALSE;
     for (instructionIndex = 0u; instructionIndex < function->instructionCount;
          ++instructionIndex) {
         const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
@@ -198,6 +200,35 @@ static TZrBool zr_licm_result_uses_after(const SZrExecIrFunction *function,
              * dominance query and therefore rejects uncertain shapes. */
             if (instructionIndex + 1u <= definitionId) return ZR_FALSE;
             used = ZR_TRUE;
+        }
+    }
+    /* PHI inputs are edge uses.  They are not represented in an instruction's
+     * operand range, but a definition feeding any PHI still has a real use
+     * that must keep LICM from treating it as dead.  The verifier has already
+     * established the predecessor-edge dominance before this helper runs. */
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrUInt32 phiIndex;
+        if (!zr_licm_range_valid(block->phis, function->phiCount) ||
+            (block->phis.count != 0u && function->phiPool == ZR_NULL))
+            return ZR_FALSE;
+        for (phiIndex = block->phis.start;
+             phiIndex < block->phis.start + block->phis.count;
+             ++phiIndex) {
+            const SZrExecIrPhi *phi = &function->phiPool[phiIndex];
+            TZrUInt32 incomingIndex;
+            if (!zr_licm_range_valid(phi->incomings,
+                                     function->phiIncomingCount) ||
+                (phi->incomings.count != 0u &&
+                 function->phiIncoming == ZR_NULL))
+                return ZR_FALSE;
+            for (incomingIndex = phi->incomings.start;
+                 incomingIndex < phi->incomings.start +
+                                   phi->incomings.count;
+                 ++incomingIndex) {
+                if (function->phiIncoming[incomingIndex].value == resultValue)
+                    used = ZR_TRUE;
+            }
         }
     }
     return used;

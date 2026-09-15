@@ -68,8 +68,14 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     TZrExecIrValueId quotient = 0u;
     TZrExecIrValueId factor = 0u;
     TZrExecIrValueId product = 0u;
+    TZrExecIrValueId merged;
+    TZrExecIrValueId returnValue;
     SZrExecIrRange resultRange;
     SZrExecIrRange operandRange;
+    SZrExecIrRange incomingRange;
+    SZrExecIrRange phiRange;
+    SZrExecIrPhi phi;
+    SZrExecIrPhiIncoming incoming[2];
     TZrExecIrBlockId edge;
     TZrExecIrBlockId edges[2];
     TZrUInt32 blockIndex;
@@ -88,6 +94,7 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
         factor = add_value(function);
         product = add_value(function);
     }
+    merged = add_value(function);
 
     for (blockIndex = 0u; blockIndex < 4u; ++blockIndex) {
         TZrExecIrBlockId id = ZrCore_ExecIr_FunctionAddBlock(
@@ -153,14 +160,12 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
             function->blocks[2].instructionRange.start +
             function->blocks[2].instructionRange.count;
 
-    {
-        TZrExecIrValueId returnValue = throwingBody ? quotient
-                                                     : (strengthBody ? product : invariant);
-        assert(ZrCore_ExecIr_FunctionAppendOperands(function, &returnValue, 1u,
-                                                    &operandRange));
-        append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN, operandRange,
-                           range(0u, 0u), 0u, 0u, 41u);
-    }
+    returnValue = throwingBody ? quotient
+                               : (strengthBody ? product : invariant);
+    assert(ZrCore_ExecIr_FunctionAppendOperands(function, &merged, 1u,
+                                                &operandRange));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN, operandRange,
+                       range(0u, 0u), 0u, 0u, 41u);
     function->blocks[3].instructionRange = range(function->instructionCount - 1u, 1u);
     function->blocks[3].terminatorInstructionId = function->instructionCount;
 
@@ -169,8 +174,9 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     edges[0] = 3u;
     edges[1] = 4u;
     append_successors(function, 2u, edges, 2u);
-    edge = 2u;
-    append_successors(function, 3u, &edge, 1u);
+    edges[0] = 2u;
+    edges[1] = 4u;
+    append_successors(function, 3u, edges, 2u);
     append_successors(function, 4u, ZR_NULL, 0u);
 
     edge = 1u;
@@ -181,10 +187,22 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     edge = 2u;
     append_predecessors(function, 3u, &edge, 1u);
     edges[0] = 2u;
-    edges[1] = 0u; /* overwritten below; keeps the fixture explicit */
-    edge = 2u;
-    append_predecessors(function, 4u, &edge, 1u);
-    (void)edges;
+    edges[1] = 3u;
+    append_predecessors(function, 4u, edges, 2u);
+
+    incoming[0].predecessor = 2u;
+    incoming[0].value = condition;
+    incoming[1].predecessor = 3u;
+    incoming[1].value = returnValue;
+    assert(ZrCore_ExecIr_FunctionAppendPhiIncoming(function, incoming, 2u,
+                                                   &incomingRange));
+    assert(ZrCore_ExecIr_FunctionAppendResults(function, &merged, 1u,
+                                               ZR_NULL));
+    memset(&phi, 0, sizeof(phi));
+    phi.result = merged;
+    phi.incomings = incomingRange;
+    assert(ZrCore_ExecIr_FunctionAppendPhis(function, &phi, 1u, &phiRange));
+    function->blocks[3].phis = phiRange;
 }
 
 static void test_loop_forest_and_trip_count(void) {
