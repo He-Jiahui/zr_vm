@@ -30,6 +30,13 @@ if (MSVC)
             "$<$<COMPILE_LANGUAGE:C>:/wd4819>"
             "$<$<COMPILE_LANGUAGE:C>:/wd4103>"
     )  # Windows: 开启所有警告并视警告为错误 /WX
+    # MSVC's C11 stdatomic.h implementation is gated behind this switch
+    # (VS 2019 16.8 / MSVC 19.28 and newer).  Keep it C-only so the optional
+    # C++ JIT target continues to use the native C++ atomic headers.
+    if (MSVC_VERSION GREATER_EQUAL 1928)
+        add_compile_options(
+                "$<$<COMPILE_LANGUAGE:C>:/experimental:c11atomics>")
+    endif ()
     add_compile_options("$<$<COMPILE_LANGUAGE:C>:/utf-8>")  # 设置源文件和执行字符集为UTF-8，解决中文注释和标识符编码问题
     add_compile_options(-DZR_PLATFORM_WIN_USE_MSVC)
     add_compile_options(-D_CRT_SECURE_NO_WARNINGS)  # 禁用 MSVC 安全函数警告
