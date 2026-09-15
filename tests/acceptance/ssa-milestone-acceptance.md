@@ -67,18 +67,22 @@ The focused failure fixtures prove that:
 
 The repository-local implementation audit was refreshed after the SSA leaf
 commits.  The code snapshot audited immediately before this record update was
-`10f76292`; it reports:
+`802c3ab8`; it reports:
 
 - all 47 leaf plans have their declared implementation and test paths present;
 - all 47 manifest CTest names are registered, and the manifest declaration
   check exits zero;
 - the WSL GCC Debug/static build with `ZR_VM_ENABLE_HOST_JIT=ON` and
   `ZR_VM_JIT_USE_LLVM=OFF` last ran 51 `^ssa_` tests with 51/51 passing at
-  `210aa19b` (the subsequent `06103f64` change is whitespace-only); and
+  `210aa19b`; later portability/build commits require a fresh run before
+  treating that result as final-revision evidence;
 - the current Windows GCC strict standalone release-acceptance fixture exits
   with `ssa release acceptance PASS`; and
 - the Windows MSVC Debug `ssa_release_acceptance` CTest passes 1/1 after
-  `10f76292` enables MSVC's C11 atomics mode for C sources.
+  `10f76292` enables MSVC's C11 atomics mode for C sources; and
+- a native MinGW GCC CMake subset (`ssa_contract_freeze`,
+  `ssa_differential_harness`, `ssa_core_model`, and `ssa_release_acceptance`)
+  passes 4/4 after `802c3ab8` centralizes legacy GCC thread-local storage.
 
 The checkout still contains unrelated user changes and untracked plan input,
 so no dirty-tree digest is claimed here.  A fresh WSL Clang rebuild could not
@@ -86,8 +90,10 @@ be started during this audit because the host WSL service returned HCS
 `0x800705aa`; the older Clang CTest database is not counted as current
 evidence.  A wider MSVC-focused build stopped in the linker with PDB resource
 errors (`LNK1140`, `LNK1318`, then `LNK1285`); those rows are likewise not
-counted as evidence.  These results validate repository contracts only and do
-not close the release gate below.
+counted as evidence.  The native MinGW full-core build is also unavailable
+because GCC 4.8 has no `stdatomic.h`; this is not substituted for the required
+WSL/MSVC matrix.  These results validate repository contracts only and do not
+close the release gate below.
 
 ## Milestone state
 
