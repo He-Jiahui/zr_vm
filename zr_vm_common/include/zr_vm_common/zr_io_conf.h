@@ -11,7 +11,7 @@
 static const union {
     TZrUInt64 dummy;
     TZrBool littleEndian;
-} CZrIoEndian = {.dummy = 1};
+} CZrIoEndian = {1};
 
 #define ZR_IO_IS_LITTLE_ENDIAN (CZrIoEndian.littleEndian)
 

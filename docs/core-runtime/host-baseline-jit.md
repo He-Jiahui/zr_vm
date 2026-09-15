@@ -7,6 +7,7 @@ related_code:
   - zr_vm_jit/src/jit_state_maps.cpp
   - zr_vm_core/include/zr_vm_core/execution_contract.h
   - zr_vm_core/include/zr_vm_core/aot_ir.h
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
 implementation_files:
   - zr_vm_core/include/zr_vm_core/host_baseline_jit.h
@@ -15,6 +16,7 @@ implementation_files:
   - zr_vm_jit/include/zr_vm_jit/backend.h
   - zr_vm_jit/src/orc_backend.cpp
   - zr_vm_jit/src/jit_state_maps.cpp
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
 plan_sources:
   - docs/plans/ssa/10-jit-platforms/02-host-baseline-jit.md
   - docs/plans/ssa/10-jit-platforms/01-backend-service.md
@@ -82,6 +84,10 @@ explicit `BACKEND_UNAVAILABLE` (or `FALLBACK_EXECBC` when requested).  No
 machine-code address is synthesized.  `jit_state_maps.cpp` requires non-zero
 root, unwind, debug, and deopt counts/hashes plus a frame-layout witness before
 a compile request is admitted.
+
+The C++17 adapter also includes the shared I/O configuration header. Its endian
+probe uses a positional union initializer, which is valid in both C11 and
+MSVC's C++17 mode; it does not rely on a C99 designated initializer.
 
 ## Test coverage
 
