@@ -408,6 +408,76 @@ static void test_drop_consumes_value_and_rejects_reuse(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void build_move_function(SZrExecIrFunction *function,
+                                TZrBool useMovedValue) {
+    TZrExecIrValueId source, destination;
+    SZrExecIrRange sourceResult, moveOperands, destinationResult;
+    SZrExecIrRange returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    source = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNIQUE,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    destination = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNIQUE,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(source != 0u && destination != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &source, 1u, &sourceResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &source, 1u, &moveOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &destination, 1u, &destinationResult));
+    {
+        TZrExecIrValueId returnValue = useMovedValue ? source : destination;
+        assert(ZrCore_ExecIr_FunctionAppendOperands(
+                function, &returnValue, 1u, &returnOperands));
+    }
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), sourceResult, range(0u, 0u),
+                       17u, 711u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_MOVE,
+                       moveOperands, destinationResult, range(0u, 0u),
+                       0u, 712u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 713u);
+}
+
+static void test_move_consumes_source_and_rejects_reuse(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+
+    build_move_function(&function, ZR_FALSE);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.returnValue.as.signedInteger == 17 &&
+           execution.values[0].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED &&
+           execution.values[1].kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.values[1].as.signedInteger == 17 &&
+           execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+
+    build_move_function(&function, ZR_TRUE);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+           diagnostic.instructionId == 3u && diagnostic.sourceId == 713u &&
+           execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_memory_projection_preserves_load_and_token_pool(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection bc;
@@ -779,6 +849,7 @@ int main(void) {
     test_load_requires_and_uses_memory_provider();
     test_allocate_requires_and_uses_provider();
     test_drop_consumes_value_and_rejects_reuse();
+    test_move_consumes_source_and_rejects_reuse();
     test_memory_projection_preserves_load_and_token_pool();
     test_scalar_oracle_and_projection();
     test_branch_phi_oracle();

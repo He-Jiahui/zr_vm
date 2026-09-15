@@ -53,6 +53,11 @@ use is rejected as `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE`. This is the
 pointer-free reference equivalent of clearing a runtime OWN_DROP slot and does
 not claim that an external destructor is executed by the oracle.
 
+MOVE transfers its oracle value into the SSA result and consumes the source
+slot, while COPY leaves its source available. A later source use after MOVE is
+therefore rejected with the same invalid-value diagnostic; this models the
+state-map moved-owner boundary without adding a runtime ownership action.
+
 `ZrParser_ExecIr_LowerExecBc` copies instruction, operand/result, CFG, source,
 state-map, GC/deopt counts, and value-slot metadata into owned arrays. Every
 value receives a distinct slot while optimization is disabled. Phi incoming

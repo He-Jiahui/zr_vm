@@ -57,7 +57,7 @@ the AOT projection remains non-runnable and an eventual backend allocator must
 establish its own runtime ownership and GC protocol before execution is
 enabled.
 
-## Ownership/drop boundary
+## Ownership transfer boundary
 
 `DROP` remains available without a provider, but it is a consuming operation in
 the oracle value environment. The bounded DROP event is published first; once
@@ -67,6 +67,12 @@ and source ID. This models the runtime OWN_DROP slot reset while keeping the
 external destructor/ledger outside the pointer-free oracle. If a later step
 fails, the prepared execution result is discarded transactionally, so the
 caller never observes a partial event stream.
+
+`MOVE` is also consuming, but has no external effect event. The oracle assigns
+the source value to the MOVE result and then resets the source slot to
+`UNDEFINED`; a later source use receives the same invalid-value diagnostic.
+`COPY` deliberately leaves its source live. This represents SSA ownership
+transfer without claiming a runtime destructor, reference-count, or GC action.
 
 ## Projection ownership
 

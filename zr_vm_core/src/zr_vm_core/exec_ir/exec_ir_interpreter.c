@@ -584,10 +584,19 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             else { v.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED; v.as.signedInteger = (TZrInt64)ins->layoutId; }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
             break;
-        case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE: case ZR_EXEC_IR_OPCODE_CONVERT:
+        case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_CONVERT:
             if (n != 1u) goto invalid;
             v = ops[0];
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
+            break;
+        case ZR_EXEC_IR_OPCODE_MOVE:
+            if (n != 1u) goto invalid;
+            v = ops[0];
+            if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
+            /* MOVE transfers the value into its SSA result, then makes the
+             * source unavailable just as the state-map ownership contract
+             * records it as moved. */
+            zr_oracle_consume_operands(f, ins, r);
             break;
         case ZR_EXEC_IR_OPCODE_ADD: case ZR_EXEC_IR_OPCODE_SUB: case ZR_EXEC_IR_OPCODE_MUL:
         case ZR_EXEC_IR_OPCODE_DIV: case ZR_EXEC_IR_OPCODE_ARITHMETIC:

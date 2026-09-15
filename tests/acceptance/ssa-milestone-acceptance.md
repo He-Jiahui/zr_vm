@@ -162,6 +162,12 @@ identity. The focused fixture covers both the successful reset and the
 transactional use-after-drop failure; external destructor execution remains a
 runtime/backend responsibility.
 
+The same fixture family now distinguishes MOVE from COPY: MOVE transfers its
+oracle value into its result and resets the source slot, so a later source use
+fails transactionally with the later instruction/source identity. COPY remains
+non-consuming; neither operation is evidence of a production ownership or GC
+implementation.
+
 The M0 metrics follow-up also keeps paired conclusions conservative: samples
 with different measurement phases or different `availableMetrics` masks are
 classified as `INCOMPARABLE` before bootstrap statistics or gate promotion.
