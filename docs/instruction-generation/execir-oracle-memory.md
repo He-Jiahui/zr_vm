@@ -57,6 +57,17 @@ the AOT projection remains non-runnable and an eventual backend allocator must
 establish its own runtime ownership and GC protocol before execution is
 enabled.
 
+## Ownership/drop boundary
+
+`DROP` remains available without a provider, but it is a consuming operation in
+the oracle value environment. The bounded DROP event is published first; once
+it succeeds, every operand slot is reset to `UNDEFINED`. A later use therefore
+fails with `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` at the consuming instruction
+and source ID. This models the runtime OWN_DROP slot reset while keeping the
+external destructor/ledger outside the pointer-free oracle. If a later step
+fails, the prepared execution result is discarded transactionally, so the
+caller never observes a partial event stream.
+
 ## Projection ownership
 
 The no-optimization ExecBC and AOT projection records now own a copy of the

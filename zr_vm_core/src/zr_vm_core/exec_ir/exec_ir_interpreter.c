@@ -439,6 +439,22 @@ static TZrBool zr_oracle_assign(const SZrExecIrFunction *f, const SZrExecIrInstr
     return ZR_TRUE;
 }
 
+static void zr_oracle_consume_operands(const SZrExecIrFunction *f,
+                                       const SZrExecIrInstruction *ins,
+                                       SZrExecIrOracleExecutionResult *r) {
+    TZrUInt32 i;
+    if (f == ZR_NULL || ins == ZR_NULL || r == ZR_NULL) return;
+    for (i = 0u; i < ins->operands.count; ++i) {
+        TZrExecIrValueId valueId = f->operands[ins->operands.start + i];
+        /* Structural validation and the operand load already checked these
+         * identities.  Keep the guard so a future caller cannot turn the
+         * ownership transition into an out-of-bounds write. */
+        if (valueId != ZR_EXEC_IR_VALUE_ID_INVALID && valueId <= r->valueCount) {
+            zr_oracle_undefined(&r->values[valueId - 1u]);
+        }
+    }
+}
+
 static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInput *input) {
     if (op == ZR_EXEC_IR_OPCODE_CALL) {
         return (TZrBool)(input != ZR_NULL && input->call != ZR_NULL);
@@ -660,7 +676,14 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_STORE, id, ins->sourceId, ops, n, f, block, d)) goto fail;
             break;
         case ZR_EXEC_IR_OPCODE_DROP:
-            if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_DROP, id, ins->sourceId, ops, n, f, block, d)) goto fail;
+            if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_DROP, id,
+                                        ins->sourceId, ops, n, f, block, d)) {
+                goto fail;
+            }
+            /* Publish the bounded observation before clearing the consumed
+             * slot.  A later use then fails through the normal invalid-value
+             * path, matching the runtime's OWN_DROP slot reset. */
+            zr_oracle_consume_operands(f, ins, r);
             break;
         case ZR_EXEC_IR_OPCODE_BARRIER:
             if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_BARRIER, id, ins->sourceId, ops, n, f, block, d)) goto fail;

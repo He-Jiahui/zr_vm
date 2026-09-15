@@ -48,6 +48,11 @@ providers return `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and
 infinite control flow have separate diagnostics and a caller-configurable step
 limit.
 
+DROP also consumes its oracle operand slot after publishing the event; a later
+use is rejected as `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE`. This is the
+pointer-free reference equivalent of clearing a runtime OWN_DROP slot and does
+not claim that an external destructor is executed by the oracle.
+
 `ZrParser_ExecIr_LowerExecBc` copies instruction, operand/result, CFG, source,
 state-map, GC/deopt counts, and value-slot metadata into owned arrays. Every
 value receives a distinct slot while optimization is disabled. Phi incoming

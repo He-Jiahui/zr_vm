@@ -155,6 +155,13 @@ views, preserving the opcode, operand/result ranges, and source identity. The
 focused fixture asserts ExecBC transport and a non-runnable AOT view; it does
 not count metadata transport as executable allocation or GC coverage.
 
+The ownership follow-up makes DROP consuming: after its event is published,
+the operand value slot is reset to `UNDEFINED`, and a later use fails with
+`ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` carrying the later instruction/source
+identity. The focused fixture covers both the successful reset and the
+transactional use-after-drop failure; external destructor execution remains a
+runtime/backend responsibility.
+
 The M0 metrics follow-up also keeps paired conclusions conservative: samples
 with different measurement phases or different `availableMetrics` masks are
 classified as `INCOMPARABLE` before bootstrap statistics or gate promotion.
