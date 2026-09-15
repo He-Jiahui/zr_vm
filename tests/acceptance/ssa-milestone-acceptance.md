@@ -82,10 +82,10 @@ commits.  The code snapshot audited immediately before this record update was
   `ZR_VM_ENABLE_HOST_JIT=ON`, `ZR_VM_JIT_USE_LLVM=OFF`) passes 55/55,
   including `ssa_release_acceptance`, `ssa_host_jit_optional`, and the two
   parser tests whose executables were built during the audit; and
-- a native MinGW GCC CMake subset (`ssa_contract_freeze`,
-  `ssa_differential_harness`, `ssa_core_model`, `ssa_effects_verifier`, and
-  `ssa_release_acceptance`) passes 5/5 after `802c3ab8` centralizes legacy GCC
-  thread-local storage.
+- a native MinGW GCC 4.8 CMake subset (`ssa_baseline_metrics`,
+  `ssa_contract_freeze`, `ssa_differential_harness`, `ssa_core_model`,
+  `ssa_effects_verifier`, and `ssa_release_acceptance`) passes 6/6 after
+  `802c3ab8` centralizes legacy GCC thread-local storage.
 
 The checkout still contains unrelated user changes and untracked plan input,
 so no dirty-tree digest is claimed here.  A fresh WSL Clang rebuild could not
