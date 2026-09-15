@@ -21,7 +21,7 @@ coverage numbers.  The source revision observed while authoring this record
 was:
 
 ```text
-HEAD: b90d949d162427970960490a9bb9effa346e8650
+HEAD: aef6fb571132cf291269f497e6897f3f8a487225
 ```
 
 The checkout was concurrently dirty, so the value above is an authoring
@@ -67,15 +67,14 @@ The focused failure fixtures prove that:
 
 The repository-local implementation audit was refreshed after the SSA leaf
 commits.  The code snapshot audited immediately before this record update was
-`b90d949d`; it reports:
+`aef6fb57`; it reports:
 
 - all 47 leaf plans have their declared implementation and test paths present;
 - all 47 manifest CTest names are registered, and the manifest declaration
   check exits zero;
-- the WSL GCC Debug/static build with `ZR_VM_ENABLE_HOST_JIT=ON` and
-  `ZR_VM_JIT_USE_LLVM=OFF` last ran 51 `^ssa_` tests with 51/51 passing at
-  `210aa19b`; later portability/build commits require a fresh run before
-  treating that result as final-revision evidence;
+- fresh WSL GCC 11.4 and Clang 14 Debug/static builds with
+  `ZR_VM_ENABLE_HOST_JIT=ON` and `ZR_VM_JIT_USE_LLVM=OFF` each run the current
+  55-test `-L ssa` matrix with 55/55 passing at `aef6fb57`;
 - the current Windows GCC strict standalone release-acceptance fixture exits
   with `ssa release acceptance PASS`; and
 - the Windows MSVC Debug/Ninja `-L ssa` run (MSVC 19.44.35228,
@@ -88,10 +87,12 @@ commits.  The code snapshot audited immediately before this record update was
   `802c3ab8` centralizes legacy GCC thread-local storage.
 
 The checkout still contains unrelated user changes and untracked plan input,
-so no dirty-tree digest is claimed here.  A fresh WSL Clang rebuild could not
-be started during this audit because the host WSL service returned HCS
-`0x800705aa`; the older Clang CTest database is not counted as current
-evidence.  A wider MSVC-focused build attempt stopped in the linker with PDB
+so no dirty-tree digest is claimed here.  An earlier WSL start attempt returned
+HCS `0x800705aa`, but the service recovered and the fresh GCC/Clang runs above
+were completed in isolated D: build directories.  A whole-tree default build
+was not used as release evidence because its unrelated performance runner
+stopped on a missing `zr_vm_common` include path.  A wider MSVC-focused build
+attempt stopped in the linker with PDB
 resource errors (`LNK1140`, `LNK1318`, then `LNK1285`); that historical attempt
 is not counted as evidence, while the current 55-test Debug CTest run is
 recorded above.  The native MinGW full-core build is also unavailable
