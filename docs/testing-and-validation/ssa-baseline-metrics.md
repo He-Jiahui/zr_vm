@@ -24,9 +24,11 @@ backend result.
 
 `ZrTests_Perf_ComparePaired` reuses `perf_statistics.c` for the median, sample
 variation, and deterministic bootstrap interval.  Comparisons require the
-same workload/checksum/environment, paired samples, and at least three
-samples.  Excessive coefficient of variation is `INCONCLUSIVE`; mismatched
-identity is `INCOMPARABLE`; fallback is visible and never gate eligible.
+same workload/checksum/environment, measurement phase, and availability mask,
+plus paired samples and at least three samples.  Comparing a compile sample
+with a steady-state sample, or a sample with an optional metric that the other
+sample does not provide, is `INCOMPARABLE`.  Excessive coefficient of
+variation is `INCONCLUSIVE`; fallback is visible and never gate eligible.
 
 The performance gate is conservative: the lower bootstrap improvement bound
 must be at least 3% before a result is `gateEligible`.  A point estimate above
@@ -38,7 +40,8 @@ The focused executable is registered by `tests/cmake/ssa-tests.cmake` as
 `zr_vm_ssa_baseline_metrics_test`, with CTest name
 `ssa_baseline_metrics`.  It covers valid/unavailable fields, crash and
 checksum rejection, visible fallback, stable improvement, confidence-bound
-rejection, environment mismatch, noisy samples, and malformed optional data.
+rejection, environment mismatch, noisy samples, phase and metric-availability
+mismatches, and malformed optional data.
 
 The first implementation was developed test-first: compiling the test before
 the new header produced the expected missing-header failure, then the same

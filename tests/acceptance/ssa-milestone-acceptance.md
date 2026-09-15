@@ -130,6 +130,13 @@ ExecBC-to-AOT move.  The focused target remained green on WSL GCC 11.4, WSL
 Clang 14, and MSVC 19.44; the AOT projection is intentionally still marked
 metadata-only until a backend emitter produces runnable code.
 
+The M0 metrics follow-up also keeps paired conclusions conservative: samples
+with different measurement phases or different `availableMetrics` masks are
+classified as `INCOMPARABLE` before bootstrap statistics or gate promotion.
+The `ssa_baseline_metrics` target passed after the change on WSL GCC 11.4,
+WSL Clang 14, and MSVC 19.44.  This remains a focused contract result; the
+persistent runner still needs to supply the full phase/counter matrix.
+
 ## Milestone state
 
 `accepted` means every in-scope requirement is accepted, every prerequisite is

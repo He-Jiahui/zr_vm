@@ -202,6 +202,47 @@ static void test_environment_mismatch_and_noise_are_not_promoted(void) {
                 "inconclusive samples were gate eligible");
 }
 
+static void test_phase_mismatch_is_not_comparable(void) {
+    const double baselineValues[] = {100.0, 100.0, 100.0};
+    const double candidateValues[] = {96.0, 96.0, 96.0};
+    SZrPerfBackendMetrics baseline = make_sample(ZR_PERF_BACKEND_INTERPRETER,
+                                                 baselineValues,
+                                                 3u);
+    SZrPerfBackendMetrics candidate = make_sample(ZR_PERF_BACKEND_AOT_C,
+                                                  candidateValues,
+                                                  3u);
+    SZrPerfComparison comparison;
+
+    candidate.phase = ZR_PERF_MEASUREMENT_PHASE_COMPILE;
+    expect_true(ZrTests_Perf_ComparePaired(&baseline, &candidate, &comparison),
+                "phase mismatch could not be classified");
+    expect_true(comparison.status == ZR_PERF_COMPARISON_INCOMPARABLE,
+                "different measurement phases were compared");
+    expect_true(comparison.comparable == 0u && comparison.gateEligible == 0u,
+                "phase mismatch was eligible for a performance gate");
+}
+
+static void test_metric_availability_mismatch_is_not_comparable(void) {
+    const double baselineValues[] = {100.0, 100.0, 100.0};
+    const double candidateValues[] = {96.0, 96.0, 96.0};
+    SZrPerfBackendMetrics baseline = make_sample(ZR_PERF_BACKEND_INTERPRETER,
+                                                 baselineValues,
+                                                 3u);
+    SZrPerfBackendMetrics candidate = make_sample(ZR_PERF_BACKEND_AOT_C,
+                                                  candidateValues,
+                                                  3u);
+    SZrPerfComparison comparison;
+
+    candidate.availableMetrics = ZR_PERF_METRIC_RSS;
+    candidate.rssBytes = 4096u;
+    expect_true(ZrTests_Perf_ComparePaired(&baseline, &candidate, &comparison),
+                "metric availability mismatch could not be classified");
+    expect_true(comparison.status == ZR_PERF_COMPARISON_INCOMPARABLE,
+                "samples with different metric availability were compared");
+    expect_true(comparison.comparable == 0u && comparison.gateEligible == 0u,
+                "metric availability mismatch was eligible for a performance gate");
+}
+
 int main(void) {
     test_valid_sample_preserves_unavailable_counters();
     test_crash_and_checksum_mismatch_are_invalid();
@@ -209,6 +250,8 @@ int main(void) {
     test_stable_paired_improvement_requires_three_percent();
     test_marginal_gain_is_not_promoted_by_point_estimate();
     test_environment_mismatch_and_noise_are_not_promoted();
+    test_phase_mismatch_is_not_comparable();
+    test_metric_availability_mismatch_is_not_comparable();
     test_unavailable_and_malformed_optional_metrics();
     puts("ssa baseline metrics PASS");
     return EXIT_SUCCESS;

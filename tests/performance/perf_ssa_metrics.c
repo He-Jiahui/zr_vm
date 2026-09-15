@@ -262,6 +262,18 @@ TZrBool ZrTests_Perf_ComparePaired(const SZrPerfBackendMetrics *baseline,
                                       "workload or checksum mismatch");
         return ZR_TRUE;
     }
+    if (baseline->phase != candidate->phase) {
+        zr_perf_comparison_set_status(result,
+                                      ZR_PERF_COMPARISON_INCOMPARABLE,
+                                      "measurement phase mismatch");
+        return ZR_TRUE;
+    }
+    if (baseline->availableMetrics != candidate->availableMetrics) {
+        zr_perf_comparison_set_status(result,
+                                      ZR_PERF_COMPARISON_INCOMPARABLE,
+                                      "metric availability mismatch");
+        return ZR_TRUE;
+    }
     if (result->fallbackCount != 0u) {
         zr_perf_comparison_set_status(result,
                                       ZR_PERF_COMPARISON_FALLBACK_VISIBLE,
