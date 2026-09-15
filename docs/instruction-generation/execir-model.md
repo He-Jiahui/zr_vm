@@ -24,3 +24,8 @@ Structural validation reports the first unknown opcode, invalid range, block,
 or value with a stable diagnostic identity.  This slice is intentionally not
 the default compiler path yet; SSA construction and projections consume it in
 the following M1 tasks.
+
+The direct reference execution boundary is documented separately in
+[`execir-oracle-memory.md`](execir-oracle-memory.md). Its memory callback is
+caller-owned and deterministic; it is deliberately not a host-pointer field
+inside ExecIR.

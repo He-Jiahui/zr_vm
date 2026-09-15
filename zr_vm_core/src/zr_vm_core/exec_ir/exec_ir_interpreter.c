@@ -440,7 +440,17 @@ static TZrBool zr_oracle_assign(const SZrExecIrFunction *f, const SZrExecIrInstr
 }
 
 static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInput *input) {
-    if (op == ZR_EXEC_IR_OPCODE_CALL) return input->call != ZR_NULL;
+    if (op == ZR_EXEC_IR_OPCODE_CALL) {
+        return (TZrBool)(input != ZR_NULL && input->call != ZR_NULL);
+    }
+    /* A load has no meaningful default value.  Require an explicit provider
+     * so an oracle run cannot accidentally turn an unmodelled heap read into
+     * a successful constant.  Stores retain the historical event-only mode
+     * when no provider is supplied, while a provider enables stateful replay.
+     */
+    if (op == ZR_EXEC_IR_OPCODE_LOAD) {
+        return (TZrBool)(input != ZR_NULL && input->memory != ZR_NULL);
+    }
     switch (op) {
         case ZR_EXEC_IR_OPCODE_NOP: case ZR_EXEC_IR_OPCODE_CONSTANT: case ZR_EXEC_IR_OPCODE_CONVERT:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC: case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE:
@@ -588,7 +598,37 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
             break;
+        case ZR_EXEC_IR_OPCODE_LOAD:
+            if (n != 1u || input->memory == ZR_NULL ||
+                !input->memory(input->memoryUserData, ins,
+                               ZR_EXEC_IR_ORACLE_MEMORY_LOAD, ops, n, &v)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR,
+                               f, block, id, ins->sourceId, 1u, n);
+                goto fail;
+            }
+            if (!zr_oracle_value_kind_valid(v.kind) ||
+                v.kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                               f, block, id, ins->sourceId,
+                               ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT,
+                               (TZrUInt32)v.kind);
+                goto fail;
+            }
+            if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_LOAD,
+                                        id, ins->sourceId, ops, n, f, block, d) ||
+                !zr_oracle_assign(f, ins, r, &v, block, id, d)) {
+                goto fail;
+            }
+            break;
         case ZR_EXEC_IR_OPCODE_STORE:
+            if (input->memory != ZR_NULL &&
+                !input->memory(input->memoryUserData, ins,
+                               ZR_EXEC_IR_ORACLE_MEMORY_STORE, ops, n,
+                               ZR_NULL)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR,
+                               f, block, id, ins->sourceId, 2u, n);
+                goto fail;
+            }
             if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_STORE, id, ins->sourceId, ops, n, f, block, d)) goto fail;
             break;
         case ZR_EXEC_IR_OPCODE_DROP:

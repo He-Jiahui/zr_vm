@@ -100,6 +100,29 @@ because GCC 4.8 has no `stdatomic.h`; this is not substituted for the required
 WSL/MSVC matrix.  These results validate repository contracts only and do not
 close the release gate below.
 
+## M1 oracle memory stage
+
+The current M1 development slice adds a caller-owned memory provider to the
+direct ExecIR oracle.  LOAD now fails closed as
+`ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED` when no provider is supplied; provider
+failures preserve the instruction/source identity as
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR`.  With a provider, STORE then
+LOAD replay updates a deterministic semantic fixture and emits ordered
+STORE/LOAD events.  This keeps memory state out of host pointers and leaves the
+legacy event-only STORE mode available for parser-only observations.
+
+The focused test was first run RED against the pre-stage oracle (LOAD was
+unsupported), then GREEN after the provider boundary was implemented:
+
+```text
+WSL GCC 11.4   ssa_oracle_projections       1/1 passed
+WSL Clang 14   ssa_oracle_projections       1/1 passed
+MSVC 19.44     ssa_oracle_projections       1/1 passed
+```
+
+These are reference-oracle contract results.  They do not claim production
+ExecBC heap migration or close the M1 cross-backend differential gate.
+
 ## Milestone state
 
 `accepted` means every in-scope requirement is accepted, every prerequisite is

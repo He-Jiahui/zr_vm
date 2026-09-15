@@ -66,6 +66,141 @@ static void build_scalar_function(SZrExecIrFunction *function) {
                        range(0u, 0u), range(0u, 0u), 0u, 104u);
 }
 
+/* A small caller-owned memory fixture keeps LOAD/STORE replay deterministic
+ * without exposing host pointers through the reference oracle. */
+static void build_load_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId address, stored, loaded;
+    SZrExecIrRange addressResult, storedResult, storeOperands;
+    SZrExecIrRange loadOperands, loadResult, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    address = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    loaded = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    stored = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(address != 0u && stored != 0u && loaded != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &address, 1u, &addressResult));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &stored, 1u, &storedResult));
+    {
+        TZrExecIrValueId operands[2] = {address, stored};
+        assert(ZrCore_ExecIr_FunctionAppendOperands(
+                function, operands, 2u, &storeOperands));
+    }
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &address, 1u, &loadOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &loaded, 1u, &loadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &loaded, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), addressResult, range(0u, 0u),
+                       7u, 501u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), storedResult, range(0u, 0u),
+                       42u, 502u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_STORE,
+                       storeOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 503u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_LOAD,
+                       loadOperands, loadResult, range(0u, 0u), 0u, 504u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 505u);
+}
+
+typedef struct SZrOracleMemoryFixture {
+    TZrInt64 address;
+    SZrExecIrOracleValue value;
+    TZrUInt32 loadCount;
+    TZrUInt32 storeCount;
+    TZrBool reject;
+} SZrOracleMemoryFixture;
+
+static TZrBool oracle_memory_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        EZrExecIrOracleMemoryOperation operation,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result) {
+    SZrOracleMemoryFixture *memory = (SZrOracleMemoryFixture *)userData;
+    assert(instruction != ZR_NULL && memory != ZR_NULL && operands != ZR_NULL);
+    if (memory->reject != ZR_FALSE) {
+        return ZR_FALSE;
+    }
+    if (operation == ZR_EXEC_IR_ORACLE_MEMORY_STORE) {
+        if (operandCount != 2u || result != ZR_NULL ||
+            operands[0].kind != ZR_EXEC_IR_ORACLE_VALUE_SIGNED ||
+            operands[1].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED ||
+            operands[0].as.signedInteger != memory->address) {
+            return ZR_FALSE;
+        }
+        memory->value = operands[1];
+        ++memory->storeCount;
+        return ZR_TRUE;
+    }
+    if (operation == ZR_EXEC_IR_ORACLE_MEMORY_LOAD) {
+        if (operandCount != 1u || result == ZR_NULL ||
+            operands[0].kind != ZR_EXEC_IR_ORACLE_VALUE_SIGNED ||
+            operands[0].as.signedInteger != memory->address) {
+            return ZR_FALSE;
+        }
+        *result = memory->value;
+        ++memory->loadCount;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static void test_load_requires_and_uses_memory_provider(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+    SZrOracleMemoryFixture memory;
+
+    build_load_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    /* Without a provider, LOAD must fail closed with a stable unsupported
+     * diagnostic instead of manufacturing a value. */
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 4u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    memset(&memory, 0, sizeof(memory));
+    memory.address = 7;
+    memory.value.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    memory.value.as.signedInteger = 0;
+    input.memory = oracle_memory_callback;
+    input.memoryUserData = &memory;
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.returnValue.as.signedInteger == 42);
+    assert(memory.storeCount == 1u && memory.loadCount == 1u &&
+           execution.eventCount == 2u &&
+           execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_STORE &&
+           execution.events[1].kind == ZR_EXEC_IR_ORACLE_EVENT_LOAD &&
+           execution.events[1].sourceId == 504u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    memory.reject = ZR_TRUE;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR &&
+           diagnostic.instructionId == 3u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void build_branch_phi_function(SZrExecIrFunction *function) {
     TZrExecIrValueId condition, left, right, merged;
     TZrExecIrBlockId entry, leftBlock, rightBlock, merge;
@@ -403,6 +538,7 @@ static void test_malformed_input(void) {
 }
 
 int main(void) {
+    test_load_requires_and_uses_memory_provider();
     test_scalar_oracle_and_projection();
     test_branch_phi_oracle();
     test_call_event_oracle();

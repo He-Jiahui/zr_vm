@@ -84,7 +84,9 @@ typedef enum EZrExecutionDiagnosticCode {
     ZR_EXEC_IR_DIAGNOSTIC_CRITICAL_EDGE,
     ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
     ZR_EXEC_IR_DIAGNOSTIC_ORACLE_STEP_LIMIT,
-    ZR_EXEC_IR_DIAGNOSTIC_ARITHMETIC_ERROR
+    ZR_EXEC_IR_DIAGNOSTIC_ARITHMETIC_ERROR,
+    /* A reference-oracle memory provider rejected a load/store operation. */
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR
 } EZrExecutionDiagnosticCode;
 
 /*

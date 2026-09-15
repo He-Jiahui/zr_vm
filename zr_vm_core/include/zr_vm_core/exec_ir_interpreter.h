@@ -27,6 +27,16 @@ typedef struct SZrExecIrOracleValue {
     } as;
 } SZrExecIrOracleValue;
 
+/* Memory is intentionally supplied by the caller: the oracle must not
+ * reinterpret an ExecIR value as a host pointer or invent a process-global
+ * heap.  A LOAD receives one address operand and writes result; a STORE
+ * receives address/value operands and must leave result untouched (NULL). */
+typedef enum EZrExecIrOracleMemoryOperation {
+    ZR_EXEC_IR_ORACLE_MEMORY_LOAD = 0,
+    ZR_EXEC_IR_ORACLE_MEMORY_STORE,
+    ZR_EXEC_IR_ORACLE_MEMORY_OPERATION_COUNT
+} EZrExecIrOracleMemoryOperation;
+
 typedef enum EZrExecIrOracleEventKind {
     ZR_EXEC_IR_ORACLE_EVENT_CALL = 0,
     ZR_EXEC_IR_ORACLE_EVENT_STORE,
@@ -34,6 +44,7 @@ typedef enum EZrExecIrOracleEventKind {
     ZR_EXEC_IR_ORACLE_EVENT_DROP,
     ZR_EXEC_IR_ORACLE_EVENT_BARRIER,
     ZR_EXEC_IR_ORACLE_EVENT_SUSPEND,
+    ZR_EXEC_IR_ORACLE_EVENT_LOAD,
     ZR_EXEC_IR_ORACLE_EVENT_KIND_COUNT
 } EZrExecIrOracleEventKind;
 
@@ -55,6 +66,14 @@ typedef TZrBool (*FZrExecIrOracleCall)(
         TZrUInt32 operandCount,
         SZrExecIrOracleValue *result);
 
+typedef TZrBool (*FZrExecIrOracleMemory)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        EZrExecIrOracleMemoryOperation operation,
+        const SZrExecIrOracleValue *operands,
+        TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result);
+
 typedef struct SZrExecIrOracleInput {
     const SZrExecIrFunction *function;
     /* Initial values are indexed by valueId - 1. */
@@ -66,6 +85,8 @@ typedef struct SZrExecIrOracleInput {
     TZrUInt32 maxSteps;
     FZrExecIrOracleCall call;
     void *userData;
+    FZrExecIrOracleMemory memory;
+    void *memoryUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {
