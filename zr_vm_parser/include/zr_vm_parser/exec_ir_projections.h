@@ -51,6 +51,9 @@ typedef struct SZrExecBcProjection {
     TZrUInt32 operandCount;
     TZrExecIrValueId *results;
     TZrUInt32 resultCount;
+    /* Owns the token pool referenced by instruction memoryIn/memoryOut. */
+    TZrExecIrMemoryTokenId *memoryTokens;
+    TZrUInt32 memoryTokenCount;
     TZrUInt32 *valueSlots; /* valueId -> physical slot, no slot reuse */
     TZrUInt32 valueSlotCount;
     SZrExecBcBlock *blocks;
@@ -91,6 +94,9 @@ typedef struct SZrAotIrProjection {
     TZrUInt32 operandCount;
     TZrExecIrValueId *results;
     TZrUInt32 resultCount;
+    /* Owns the token pool referenced by instruction memoryIn/memoryOut. */
+    TZrExecIrMemoryTokenId *memoryTokens;
+    TZrUInt32 memoryTokenCount;
     TZrUInt32 *valueSlots;
     TZrUInt32 valueSlotCount;
     SZrExecBcBlock *blocks;

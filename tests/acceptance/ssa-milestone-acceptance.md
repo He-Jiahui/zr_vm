@@ -123,6 +123,13 @@ MSVC 19.44     ssa_oracle_projections       1/1 passed
 These are reference-oracle contract results.  They do not claim production
 ExecBC heap migration or close the M1 cross-backend differential gate.
 
+The follow-on projection slice keeps the same memory fixture in the no-
+optimization ExecBC/AOT seam.  It verifies that LOAD is projected and that
+the copied memory-token pool remains owned by the destination view after the
+ExecBC-to-AOT move.  The focused target remained green on WSL GCC 11.4, WSL
+Clang 14, and MSVC 19.44; the AOT projection is intentionally still marked
+metadata-only until a backend emitter produces runnable code.
+
 ## Milestone state
 
 `accepted` means every in-scope requirement is accepted, every prerequisite is

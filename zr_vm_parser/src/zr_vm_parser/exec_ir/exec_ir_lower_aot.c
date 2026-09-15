@@ -9,10 +9,13 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->instructions);
     free(projection->operands);
     free(projection->results);
+    free(projection->memoryTokens);
     free(projection->valueSlots);
     free(projection->blocks);
     free(projection->predecessors);
     free(projection->successors);
+    free(projection->phis);
+    free(projection->phiIncomings);
     free(projection->phiCopySources);
     free(projection->phiCopyDestinations);
     free(projection->phiCopyEdges);

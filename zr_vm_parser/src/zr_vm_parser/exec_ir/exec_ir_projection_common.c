@@ -43,7 +43,6 @@ static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
         case ZR_EXEC_IR_OPCODE_PLACE_BASE:
         case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
-        case ZR_EXEC_IR_OPCODE_LOAD:
         case ZR_EXEC_IR_OPCODE_ALLOC:
         case ZR_EXEC_IR_OPCODE_INVOKE:
             return ZR_FALSE;
@@ -534,6 +533,7 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->instructions);
     free(p->operands);
     free(p->results);
+    free(p->memoryTokens);
     free(p->valueSlots);
     free(p->blocks);
     free(p->predecessors);
@@ -607,6 +607,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     p->frameLayoutHash = f->frameLayout != ZR_NULL ? f->frameLayout->layoutHash : 0u;
     p->operandCount = f->operandCount;
     p->resultCount = f->resultCount;
+    p->memoryTokenCount = f->memoryTokenCount;
     p->valueSlotCount = f->valueCount;
     p->blockCount = f->blockCount + splitCount;
     p->syntheticBlockCount = splitCount;
@@ -630,6 +631,12 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     if (p->operandCount != 0u) { p->operands = (TZrExecIrValueId *)malloc(bytes); if (p->operands == ZR_NULL) goto oom; memcpy(p->operands, f->operands, bytes); }
     if (!zr_projection_bytes(p->resultCount, sizeof(*p->results), &bytes)) goto overflow;
     if (p->resultCount != 0u) { p->results = (TZrExecIrValueId *)malloc(bytes); if (p->results == ZR_NULL) goto oom; memcpy(p->results, f->results, bytes); }
+    if (!zr_projection_bytes(p->memoryTokenCount, sizeof(*p->memoryTokens), &bytes)) goto overflow;
+    if (p->memoryTokenCount != 0u) {
+        p->memoryTokens = (TZrExecIrMemoryTokenId *)malloc(bytes);
+        if (p->memoryTokens == ZR_NULL) goto oom;
+        memcpy(p->memoryTokens, f->memoryTokenPool, bytes);
+    }
     if (!zr_projection_bytes(p->valueSlotCount, sizeof(*p->valueSlots), &bytes)) goto overflow;
     if (p->valueSlotCount != 0u) {
         p->valueSlots = (TZrUInt32 *)malloc(bytes);
@@ -770,6 +777,8 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->operandCount = source->operandCount;
     destination->results = source->results;
     destination->resultCount = source->resultCount;
+    destination->memoryTokens = source->memoryTokens;
+    destination->memoryTokenCount = source->memoryTokenCount;
     destination->valueSlots = source->valueSlots;
     destination->valueSlotCount = source->valueSlotCount;
     destination->blocks = source->blocks;
@@ -800,6 +809,7 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->instructions = ZR_NULL;
     source->operands = ZR_NULL;
     source->results = ZR_NULL;
+    source->memoryTokens = ZR_NULL;
     source->valueSlots = ZR_NULL;
     source->blocks = ZR_NULL;
     source->predecessors = ZR_NULL;

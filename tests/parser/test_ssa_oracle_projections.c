@@ -201,6 +201,37 @@ static void test_load_requires_and_uses_memory_provider(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_memory_projection_preserves_load_and_token_pool(void) {
+    SZrExecIrFunction function;
+    SZrExecBcProjection bc;
+    SZrAotIrProjection aot;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrMemoryTokenId tokens[2] = {1u, 2u};
+
+    build_load_function(&function);
+    assert(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, tokens, 2u, ZR_NULL));
+    /* STORE publishes token 2; LOAD consumes token 1.  The projection must
+     * carry the pool, not just these ranges into the source function. */
+    function.instructions[2u].memoryOut = range(1u, 1u);
+    function.instructions[3u].memoryIn = range(0u, 1u);
+    memset(&bc, 0, sizeof(bc));
+    memset(&aot, 0, sizeof(aot));
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.instructionCount == 5u &&
+           bc.instructions[3u].opcode == ZR_EXEC_IR_OPCODE_LOAD &&
+           bc.memoryTokenCount == 2u && bc.memoryTokens != ZR_NULL &&
+           bc.memoryTokens[0u] == 1u && bc.memoryTokens[1u] == 2u);
+    assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(aot.instructionCount == 5u &&
+           aot.instructions[3u].opcode == ZR_EXEC_IR_OPCODE_LOAD &&
+           aot.memoryTokenCount == 2u && aot.memoryTokens != ZR_NULL &&
+           aot.memoryTokens[0u] == 1u && aot.memoryTokens[1u] == 2u);
+    ZrParser_ExecBcProjection_Free(&bc);
+    ZrParser_AotIrProjection_Free(&aot);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void build_branch_phi_function(SZrExecIrFunction *function) {
     TZrExecIrValueId condition, left, right, merged;
     TZrExecIrBlockId entry, leftBlock, rightBlock, merge;
@@ -497,7 +528,7 @@ static void test_unsupported_and_transactional_failures(void) {
     oldInstructions = bc.instructions;
     oldCount = bc.instructionCount;
     oldAotCount = aot.instructionCount;
-    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_LOAD;
+    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_ALLOC;
     function.instructions[0].operands = range(0u, 1u);
     assert(!ZrCore_ExecIr_RunOracle(&function, ZR_NULL, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
@@ -539,6 +570,7 @@ static void test_malformed_input(void) {
 
 int main(void) {
     test_load_requires_and_uses_memory_provider();
+    test_memory_projection_preserves_load_and_token_pool();
     test_scalar_oracle_and_projection();
     test_branch_phi_oracle();
     test_call_event_oracle();

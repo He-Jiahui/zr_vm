@@ -32,3 +32,13 @@ The focused `ssa_oracle_projections` fixture covers missing-provider
 rejection, stateful store-then-load replay, event order/source identity, and a
 provider failure. It is a reference-mode contract, not a claim that the
 production ExecBC heap has been switched to this callback.
+
+## Projection ownership
+
+The no-optimization ExecBC and AOT projection records now own a copy of the
+memory-token pool referenced by each instruction's `memoryIn` and `memoryOut`
+ranges. LOAD is retained as a projected operation; it is not silently dropped
+or relabeled as an interpreter fallback. Moving a projection into the AOT
+view transfers that pool exactly once, and freeing either view releases it
+along with the other copied side arrays. The AOT view remains metadata-only
+(`runnable == false`) until a real backend emitter supplies executable code.
