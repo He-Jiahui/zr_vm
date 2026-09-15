@@ -74,6 +74,23 @@ the source value to the MOVE result and then resets the source slot to
 `COPY` deliberately leaves its source live. This represents SSA ownership
 transfer without claiming a runtime destructor, reference-count, or GC action.
 
+## Exception and suspend boundary
+
+THROW and SUSPEND publish their bounded operand event before ending direct
+oracle execution. A successful THROW commits `terminatedByThrow`; a successful
+SUSPEND commits `suspended`. The payload-bearing SUSPEND form also copies its
+first operand into its result slot and the reference return-value snapshot.
+Neither path executes a later instruction, a landing pad, or a resume block in
+the same oracle run. The schema still permits zero-operand SUSPEND records for
+analysis and transport, but the direct oracle does not turn that representation
+into a production coroutine-resume protocol.
+
+Because `RunOracleEx` executes into a prepared result, an error before the
+terminal instruction completes leaves the caller with no partial event stream.
+The focused projection fixture covers the one-payload THROW and SUSPEND forms,
+their event identity/snapshot, their termination flags, and the fact that a
+following RETURN is not reached.
+
 ## Projection ownership
 
 The no-optimization ExecBC and AOT projection records now own a copy of the

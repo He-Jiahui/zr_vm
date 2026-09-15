@@ -478,6 +478,129 @@ static void test_move_consumes_source_and_rejects_reuse(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void build_throw_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId payload, dead;
+    SZrExecIrRange payloadResult, throwOperands, deadResult, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    payload = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    dead = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(payload != 0u && dead != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &payload, 1u, &payloadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &payload, 1u, &throwOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &dead, 1u, &deadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &dead, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), payloadResult, range(0u, 0u),
+                       37u, 721u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_THROW,
+                       throwOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 722u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), deadResult, range(0u, 0u),
+                       99u, 723u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 724u);
+}
+
+static void build_suspend_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId payload, suspended, dead;
+    SZrExecIrRange payloadResult, suspendOperands, suspendResult;
+    SZrExecIrRange deadResult, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    payload = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    suspended = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    dead = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(payload != 0u && suspended != 0u && dead != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &payload, 1u, &payloadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &payload, 1u, &suspendOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &suspended, 1u, &suspendResult));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &dead, 1u, &deadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &dead, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), payloadResult, range(0u, 0u),
+                       41u, 731u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_SUSPEND,
+                       suspendOperands, suspendResult, range(0u, 0u),
+                       0u, 732u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), deadResult, range(0u, 0u),
+                       101u, 733u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 734u);
+}
+
+static void test_throw_and_suspend_publish_boundary(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+
+    build_throw_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(!execution.returned && execution.terminatedByThrow &&
+           !execution.suspended && execution.executedInstructionCount == 2u &&
+           execution.values[0].kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.values[0].as.signedInteger == 37 &&
+           execution.values[1].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED &&
+           execution.eventCount == 1u &&
+           execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_THROW &&
+           execution.events[0].instructionId == 2u &&
+           execution.events[0].sourceId == 722u &&
+           execution.events[0].operandCount == 1u &&
+           execution.events[0].operands[0].as.signedInteger == 37);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+
+    build_suspend_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(!execution.returned && !execution.terminatedByThrow &&
+           execution.suspended && execution.executedInstructionCount == 2u &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.returnValue.as.signedInteger == 41 &&
+           execution.values[0].as.signedInteger == 41 &&
+           execution.values[1].as.signedInteger == 41 &&
+           execution.values[2].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED &&
+           execution.eventCount == 1u &&
+           execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_SUSPEND &&
+           execution.events[0].instructionId == 2u &&
+           execution.events[0].sourceId == 732u &&
+           execution.events[0].operandCount == 1u &&
+           execution.events[0].operands[0].as.signedInteger == 41);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_memory_projection_preserves_load_and_token_pool(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection bc;
@@ -850,6 +973,7 @@ int main(void) {
     test_allocate_requires_and_uses_provider();
     test_drop_consumes_value_and_rejects_reuse();
     test_move_consumes_source_and_rejects_reuse();
+    test_throw_and_suspend_publish_boundary();
     test_memory_projection_preserves_load_and_token_pool();
     test_scalar_oracle_and_projection();
     test_branch_phi_oracle();

@@ -39,14 +39,22 @@ callers that only need instruction coverage.
 The oracle currently executes the scalar/control subset (constants, copies and
 conversions, checked integer/floating arithmetic, comparisons, branches,
 switches, phi entry, return, throw, suspend, and callback-backed calls). Store,
-drop, barrier, call, throw, suspend, and provider-backed allocation operations
-append bounded operand snapshots to the observable event stream. Calls,
+load, drop, barrier, call, throw, suspend, and provider-backed allocation
+operations append bounded operand snapshots to the observable event stream. Calls,
 loads, and allocations require explicit caller providers; place projection and
 invoke/landing-pad operations remain unsupported. Provider failures preserve a
 specific oracle diagnostic and instruction/source identity, while missing
 providers return `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and
 infinite control flow have separate diagnostics and a caller-configurable step
 limit.
+
+THROW and SUSPEND are observable termination boundaries in reference mode. The
+oracle publishes their event into its prepared result, stops before any later
+instruction, and commits `terminatedByThrow` or `suspended` respectively. The
+payload-bearing SUSPEND form additionally copies its first operand to the
+result slot and return-value snapshot. This is not a landing-pad, handler, or
+resume implementation: those paths remain deliberately outside the direct
+oracle until their runtime ABI is specified.
 
 DROP also consumes its oracle operand slot after publishing the event; a later
 use is rejected as `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE`. This is the

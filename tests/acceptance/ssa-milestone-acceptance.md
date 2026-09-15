@@ -168,6 +168,14 @@ fails transactionally with the later instruction/source identity. COPY remains
 non-consuming; neither operation is evidence of a production ownership or GC
 implementation.
 
+The direct oracle boundary fixture now covers payload-bearing THROW and
+SUSPEND. Each emits one source-identified event with its operand snapshot,
+sets only its respective termination flag, and stops before a following
+instruction or RETURN. The payload-bearing SUSPEND form also copies the value
+to its result slot and oracle return-value snapshot. This is focused
+reference-mode evidence only: it does not claim landing-pad dispatch or
+coroutine resume execution.
+
 The M0 metrics follow-up also keeps paired conclusions conservative: samples
 with different measurement phases or different `availableMetrics` masks are
 classified as `INCOMPARABLE` before bootstrap statistics or gate promotion.
