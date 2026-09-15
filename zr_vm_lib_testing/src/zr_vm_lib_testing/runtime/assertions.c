@@ -10,11 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(_MSC_VER)
-#define ZR_TESTING_THREAD_LOCAL __declspec(thread)
-#else
-#define ZR_TESTING_THREAD_LOCAL _Thread_local
-#endif
+#define ZR_TESTING_THREAD_LOCAL ZR_THREAD_LOCAL
 
 static ZR_TESTING_THREAD_LOCAL SZrTestingAssertionFailure g_last_failure;
 static ZR_TESTING_THREAD_LOCAL TZrBool g_has_last_failure = ZR_FALSE;

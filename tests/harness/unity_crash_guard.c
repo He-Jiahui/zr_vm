@@ -8,11 +8,7 @@
 #include "runtime_support.h"
 #include "unity_internals.h"
 
-#if defined(_MSC_VER)
-    #define ZR_TESTS_THREAD_LOCAL __declspec(thread)
-#else
-    #define ZR_TESTS_THREAD_LOCAL _Thread_local
-#endif
+#define ZR_TESTS_THREAD_LOCAL ZR_THREAD_LOCAL
 
 static ZrTestsUnityCrashInfo g_zr_tests_unity_last_crash_info = {0};
 static int g_zr_tests_unity_handlers_installed = 0;

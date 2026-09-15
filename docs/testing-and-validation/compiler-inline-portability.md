@@ -1,16 +1,28 @@
 ---
 related_code:
   - zr_vm_common/include/zr_vm_common/zr_common_conf.h
+  - zr_vm_core/include/zr_vm_core/profile.h
+  - zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c
+  - tests/harness/unity_crash_guard.c
+  - tests/harness/runtime_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_core/include/zr_vm_core/array.h
   - zr_vm_core/include/zr_vm_core/string.h
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_common_conf.h
+  - zr_vm_core/include/zr_vm_core/profile.h
+  - zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c
+  - tests/harness/unity_crash_guard.c
+  - tests/harness/runtime_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
 plan_sources:
   - user: 2026-08-25 complete ownership/object-member acceptance on GCC, Clang, and MSVC
   - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
   - docs/plans/lsp/optimize/2026-08-24-plan03-task02-visible-symbols.md
+  - docs/plans/ssa/00-measurement-contracts/02-contract-freeze.md
 tests:
   - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_ssa_contract_freeze.c
   - tests/acceptance/2026-08-25-clang-force-inline-portability.md
 doc_type: module-detail
 ---
@@ -48,6 +60,19 @@ definition. A static executable then fails to link on helpers such as
 The Clang branch deliberately matches the established GNU branch. Converting
 all public helpers to `static inline` would change linkage across a much larger
 API surface and is not needed to restore the existing contract.
+
+## Thread-Local Storage Contract
+
+The common `ZR_THREAD_LOCAL` macro selects the platform/compiler storage
+class used by profile state, assertion state, crash guards, and native-binding
+contexts. MSVC uses `__declspec(thread)`. Modern C/C++ compilers use the
+standard `_Thread_local`/`thread_local` spelling, while the supported GCC 4.8
+MinGW toolchain uses GNU `__thread` because it rejects `_Thread_local` even
+with `-std=c11`. Keeping this decision in `zr_common_conf.h` prevents each
+consumer from silently carrying a different compiler-version assumption.
+
+`tests/parser/test_ssa_contract_freeze.c` is a compile-and-run regression for
+the profile header path; a native GCC 4.8 C11 build must link and pass it.
 
 ## Failure Boundary
 

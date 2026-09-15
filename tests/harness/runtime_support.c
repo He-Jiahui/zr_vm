@@ -8,11 +8,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/stack.h"
 
-#if defined(_MSC_VER)
-    #define ZR_TESTS_THREAD_LOCAL __declspec(thread)
-#else
-    #define ZR_TESTS_THREAD_LOCAL _Thread_local
-#endif
+#define ZR_TESTS_THREAD_LOCAL ZR_THREAD_LOCAL
 
 #define ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY 16u
 

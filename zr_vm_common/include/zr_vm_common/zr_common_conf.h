@@ -113,6 +113,27 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_COMPILER_MSVC
 #endif
 
+/*
+ * GCC 4.8 (still used by the supported Windows MinGW toolchain) does not
+ * recognize the C11 _Thread_local keyword even when -std=c11 is selected.
+ * Keep the storage-class spelling in one common contract so headers and test
+ * harnesses do not silently diverge by compiler version or language mode.
+ */
+#if defined(_MSC_VER)
+#define ZR_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) && !defined(__clang__) && \
+      ((__GNUC__ < 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ < 9)))
+#define ZR_THREAD_LOCAL __thread
+#elif defined(__cplusplus)
+#if __cplusplus >= 201103L
+#define ZR_THREAD_LOCAL thread_local
+#else
+#define ZR_THREAD_LOCAL __thread
+#endif
+#else
+#define ZR_THREAD_LOCAL _Thread_local
+#endif
+
 #if defined(ZR_COMPILER_GNU)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_ALIGN_SIZE (sizeof(max_align_t))

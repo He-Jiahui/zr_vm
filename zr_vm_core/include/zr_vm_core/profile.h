@@ -15,11 +15,7 @@
 struct SZrGlobalState;
 struct SZrState;
 
-#if defined(_MSC_VER)
-    #define ZR_PROFILE_THREAD_LOCAL __declspec(thread)
-#else
-    #define ZR_PROFILE_THREAD_LOCAL _Thread_local
-#endif
+#define ZR_PROFILE_THREAD_LOCAL ZR_THREAD_LOCAL
 
 typedef enum EZrProfileHelperKind {
     ZR_PROFILE_HELPER_VALUE_COPY = 0,

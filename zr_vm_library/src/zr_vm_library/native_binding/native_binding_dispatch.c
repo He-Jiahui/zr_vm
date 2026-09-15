@@ -28,11 +28,7 @@
 #define native_binding_can_use_inline_pinned_lane native_binding_can_use_inline_pinned_lane_inline
 #define native_binding_context_adopt_inline_frame_anchor native_binding_context_adopt_inline_frame_anchor_inline
 
-#if defined(_MSC_VER)
-    #define ZR_LIB_THREAD_LOCAL __declspec(thread)
-#else
-    #define ZR_LIB_THREAD_LOCAL _Thread_local
-#endif
+#define ZR_LIB_THREAD_LOCAL ZR_THREAD_LOCAL
 
 TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context) {
     if (context == ZR_NULL) {
