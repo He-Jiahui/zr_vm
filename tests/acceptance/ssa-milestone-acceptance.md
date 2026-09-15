@@ -63,6 +63,27 @@ The focused failure fixtures prove that:
   claim; and
 - a non-zero production legacy consumer blocks the removal claim.
 
+## Current implementation audit (not release evidence)
+
+The repository-local implementation audit was refreshed after the SSA leaf
+commits.  At `HEAD 06103f644c0e02962d31db87bcbc46f17152bc29` it reports:
+
+- all 47 leaf plans have their declared implementation and test paths present;
+- all 47 manifest CTest names are registered, and the manifest declaration
+  check exits zero;
+- the WSL GCC Debug/static build with `ZR_VM_ENABLE_HOST_JIT=ON` and
+  `ZR_VM_JIT_USE_LLVM=OFF` last ran 51 `^ssa_` tests with 51/51 passing at
+  `210aa19b` (the subsequent `06103f64` change is whitespace-only); and
+- the current Windows GCC strict standalone release-acceptance fixture exits
+  with `ssa release acceptance PASS`.
+
+The checkout still contains unrelated user changes and untracked plan input,
+so no dirty-tree digest is claimed here.  A fresh WSL Clang rebuild could not
+be started during this audit because the host WSL service returned HCS
+`0x800705aa`; the older Clang CTest database is not counted as current
+evidence.  These results validate repository contracts only and do not close
+the release gate below.
+
 ## Milestone state
 
 `accepted` means every in-scope requirement is accepted, every prerequisite is

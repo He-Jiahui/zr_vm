@@ -109,3 +109,8 @@ The manifest keeps these dimensions independent:
 No performance number is asserted by this file.  A candidate may only claim a
 relative improvement after paired samples share the environment and checksum,
 have a non-zero sample count, and pass the independent variance/quality gate.
+
+The current implementation audit is recorded in
+`tests/acceptance/ssa-milestone-acceptance.md`; it intentionally does not
+change any row from `open` or substitute focused CTest results for the full
+backend, platform, sanitizer, performance, legacy, and documentation gates.
