@@ -567,6 +567,351 @@ static void test_ssa_accepts_phi_edge_definitions_and_rejects_wrong_edge(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_ssa_rejects_invoke_result_on_exception_edge(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrRange resultRange;
+    SZrExecIrRange normalOperands;
+    SZrExecIrRange exceptionOperands;
+    SZrExecIrRange cleanupOperands;
+    TZrExecIrValueId argument;
+    TZrExecIrValueId result;
+    TZrExecIrBlockId entry;
+    TZrExecIrBlockId normal;
+    TZrExecIrBlockId exception;
+    TZrExecIrBlockId cleanup;
+    TZrExecIrBlockId successors[2];
+    TZrExecIrBlockId predecessor;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    ok(ZrCore_ExecIr_ModuleAddFunction(&module, 930u, 1u, &id),
+       "invoke exception function");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
+    argument = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    result = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    ok(argument != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           result != ZR_EXEC_IR_VALUE_ID_INVALID,
+       "invoke exception values");
+    entry = ZrCore_ExecIr_FunctionAddBlock(function,
+                                             ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    normal = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    exception = ZrCore_ExecIr_FunctionAddBlock(
+            function, ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION);
+    cleanup = ZrCore_ExecIr_FunctionAddBlock(
+            function, ZR_EXEC_IR_BLOCK_FLAG_CLEANUP);
+    ok(entry == 1u && normal == 2u && exception == 3u && cleanup == 4u,
+       "invoke exception blocks");
+    function->entryBlockId = entry;
+    successors[0] = normal;
+    successors[1] = exception;
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, successors, 2u,
+               &function->blocks[entry - 1u].successorRange),
+       "invoke exception successors");
+    predecessor = entry;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[normal - 1u].predecessorRange),
+       "invoke normal predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[exception - 1u].predecessorRange),
+       "invoke exception predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, &cleanup, 1u,
+               &function->blocks[exception - 1u].successorRange),
+       "invoke cleanup successor");
+    predecessor = exception;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[cleanup - 1u].predecessorRange),
+       "invoke cleanup predecessor");
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_INVOKE;
+    instruction.flags = (TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_THROW |
+                                    ZR_EXEC_IR_FLAG_MAY_ALLOCATE);
+    instruction.successorRange = function->blocks[entry - 1u].successorRange;
+    instruction.sourceId = 931u;
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &result, 1u,
+                                           &resultRange),
+       "invoke result range");
+    instruction.results = resultRange;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke exception instruction");
+
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &result, 1u,
+                                             &normalOperands),
+       "invoke normal use operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = normalOperands;
+    instruction.sourceId = 932u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke normal return");
+
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &argument, 1u,
+                                             &exceptionOperands),
+       "invoke exception operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    instruction.successorRange = function->blocks[exception - 1u].successorRange;
+    instruction.sourceId = 933u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke exception branch");
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_THROW;
+    instruction.flags = ZR_EXEC_IR_FLAG_MAY_THROW;
+    instruction.operands = exceptionOperands;
+    instruction.sourceId = 934u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke cleanup throw");
+
+    function->blocks[entry - 1u].instructionRange.start = 0u;
+    function->blocks[entry - 1u].instructionRange.count = 1u;
+    function->blocks[entry - 1u].terminatorInstructionId = 1u;
+    function->blocks[normal - 1u].instructionRange.start = 1u;
+    function->blocks[normal - 1u].instructionRange.count = 1u;
+    function->blocks[normal - 1u].terminatorInstructionId = 2u;
+    function->blocks[exception - 1u].instructionRange.start = 2u;
+    function->blocks[exception - 1u].instructionRange.count = 1u;
+    function->blocks[exception - 1u].terminatorInstructionId = 3u;
+    function->blocks[cleanup - 1u].instructionRange.start = 3u;
+    function->blocks[cleanup - 1u].instructionRange.count = 1u;
+    function->blocks[cleanup - 1u].terminatorInstructionId = 4u;
+
+    /* The normal edge is valid; the same result must not be usable on the
+     * exceptional edge.  Put the use in the exception block after proving
+     * the normal fixture itself is accepted. */
+    ok(ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "valid invoke normal result rejected");
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &result, 1u,
+                                             &exceptionOperands),
+       "invoke exceptional result operands");
+    function->instructions[2].opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    function->instructions[2].flags = 0u;
+    function->instructions[2].operands = exceptionOperands;
+    function->instructions[2].successorRange.start = 0u;
+    function->instructions[2].successorRange.count = 0u;
+    function->instructions[2].sourceId = 935u;
+    ok(!ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "invoke result flowed through exceptional edge");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+           diagnostic.blockId == exception && diagnostic.instructionId == 3u &&
+           diagnostic.sourceId == 935u && diagnostic.expectedVersion == 1u &&
+           diagnostic.actualVersion == result,
+       "invoke exceptional result diagnostic lost identity");
+
+    function->instructions[2].opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    function->instructions[2].operands.start = 0u;
+    function->instructions[2].operands.count = 0u;
+    function->instructions[2].successorRange =
+            function->blocks[exception - 1u].successorRange;
+    function->instructions[2].sourceId = 933u;
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &result, 1u,
+                                             &cleanupOperands),
+       "invoke cleanup result operands");
+    function->instructions[3].opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    function->instructions[3].flags = 0u;
+    function->instructions[3].operands = cleanupOperands;
+    function->instructions[3].sourceId = 936u;
+    ok(!ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "invoke result flowed through exceptional cleanup path");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+           diagnostic.blockId == cleanup && diagnostic.instructionId == 4u &&
+           diagnostic.sourceId == 936u && diagnostic.expectedVersion == 1u &&
+           diagnostic.actualVersion == result,
+       "invoke cleanup result diagnostic lost identity");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_ssa_rejects_invoke_result_in_exception_phi(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrPhi phi;
+    SZrExecIrPhiIncoming incoming[2];
+    SZrExecIrRange resultRange;
+    SZrExecIrRange returnOperands;
+    SZrExecIrRange incomingRange;
+    SZrExecIrRange phiRange;
+    TZrExecIrValueId argument;
+    TZrExecIrValueId result;
+    TZrExecIrValueId merged;
+    TZrExecIrBlockId entry;
+    TZrExecIrBlockId normal;
+    TZrExecIrBlockId exception;
+    TZrExecIrBlockId merge;
+    TZrExecIrBlockId entrySuccessors[2];
+    TZrExecIrBlockId predecessor;
+    TZrExecIrBlockId mergePredecessors[2];
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    ok(ZrCore_ExecIr_ModuleAddFunction(&module, 940u, 1u, &id),
+       "invoke phi function");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
+    argument = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    result = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    merged = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    ok(argument != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           result != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           merged != ZR_EXEC_IR_VALUE_ID_INVALID,
+       "invoke phi values");
+    entry = ZrCore_ExecIr_FunctionAddBlock(function,
+                                             ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    normal = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    exception = ZrCore_ExecIr_FunctionAddBlock(
+            function, ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION);
+    merge = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    ok(entry == 1u && normal == 2u && exception == 3u && merge == 4u,
+       "invoke phi blocks");
+    function->entryBlockId = entry;
+
+    entrySuccessors[0] = normal;
+    entrySuccessors[1] = exception;
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, entrySuccessors, 2u,
+               &function->blocks[entry - 1u].successorRange),
+       "invoke phi entry successors");
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, &merge, 1u,
+               &function->blocks[normal - 1u].successorRange),
+       "invoke phi normal successor");
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(
+               function, &merge, 1u,
+               &function->blocks[exception - 1u].successorRange),
+       "invoke phi exception successor");
+
+    predecessor = entry;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[normal - 1u].predecessorRange),
+       "invoke phi normal predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[exception - 1u].predecessorRange),
+       "invoke phi exception predecessor");
+    mergePredecessors[0] = normal;
+    mergePredecessors[1] = exception;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, mergePredecessors, 2u,
+               &function->blocks[merge - 1u].predecessorRange),
+       "invoke phi merge predecessors");
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_INVOKE;
+    instruction.flags = (TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_THROW |
+                                    ZR_EXEC_IR_FLAG_MAY_ALLOCATE);
+    instruction.successorRange = function->blocks[entry - 1u].successorRange;
+    instruction.sourceId = 941u;
+    ok(ZrCore_ExecIr_FunctionAppendResults(function, &result, 1u,
+                                           &resultRange),
+       "invoke phi result range");
+    instruction.results = resultRange;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke phi instruction");
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    instruction.successorRange = function->blocks[normal - 1u].successorRange;
+    instruction.sourceId = 942u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke phi normal branch");
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    instruction.successorRange =
+            function->blocks[exception - 1u].successorRange;
+    instruction.sourceId = 943u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke phi exception branch");
+
+    ok(ZrCore_ExecIr_FunctionAppendOperands(function, &merged, 1u,
+                                             &returnOperands),
+       "invoke phi return operands");
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returnOperands;
+    instruction.sourceId = 944u;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "invoke phi merge return");
+
+    function->blocks[entry - 1u].instructionRange.start = 0u;
+    function->blocks[entry - 1u].instructionRange.count = 1u;
+    function->blocks[entry - 1u].terminatorInstructionId = 1u;
+    function->blocks[normal - 1u].instructionRange.start = 1u;
+    function->blocks[normal - 1u].instructionRange.count = 1u;
+    function->blocks[normal - 1u].terminatorInstructionId = 2u;
+    function->blocks[exception - 1u].instructionRange.start = 2u;
+    function->blocks[exception - 1u].instructionRange.count = 1u;
+    function->blocks[exception - 1u].terminatorInstructionId = 3u;
+    function->blocks[merge - 1u].instructionRange.start = 3u;
+    function->blocks[merge - 1u].instructionRange.count = 1u;
+    function->blocks[merge - 1u].terminatorInstructionId = 4u;
+
+    incoming[0].predecessor = normal;
+    incoming[0].value = result;
+    incoming[1].predecessor = exception;
+    incoming[1].value = argument;
+    ok(ZrCore_ExecIr_FunctionAppendPhiIncoming(function, incoming, 2u,
+                                                &incomingRange),
+       "invoke phi incoming range");
+    memset(&phi, 0, sizeof(phi));
+    phi.result = merged;
+    phi.incomings = incomingRange;
+    ok(ZrCore_ExecIr_FunctionAppendPhis(function, &phi, 1u, &phiRange),
+       "invoke phi append");
+    function->blocks[merge - 1u].phis = phiRange;
+
+    ok(ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "valid invoke phi rejected");
+    function->phiIncoming[incomingRange.start + 1u].value = result;
+    ok(!ZrCore_ExecIr_VerifyFunction(
+               function,
+               (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                      ZR_EXEC_IR_VERIFY_SSA),
+               &diagnostic),
+       "invoke result flowed through exceptional phi edge");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+           diagnostic.blockId == merge && diagnostic.instructionId == 4u &&
+           diagnostic.sourceId == 944u && diagnostic.expectedVersion == 1u &&
+           diagnostic.actualVersion == result,
+       "invoke phi exceptional diagnostic lost identity");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_throw_requires_flag();
     test_memory_tokens_must_be_monotonic();
@@ -580,6 +925,8 @@ int main(void) {
     test_ssa_rejects_use_before_definition_in_linear_ir();
     test_ssa_rejects_cross_branch_use_not_dominated();
     test_ssa_accepts_phi_edge_definitions_and_rejects_wrong_edge();
+    test_ssa_rejects_invoke_result_on_exception_edge();
+    test_ssa_rejects_invoke_result_in_exception_phi();
     puts("ssa effects verifier PASS");
     return EXIT_SUCCESS;
 }

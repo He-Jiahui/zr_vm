@@ -59,6 +59,13 @@ is checked against the predecessor edge named by that incoming.  Foreign PHI
 predecessors are rejected at the SSA boundary; effect verification additionally
 enforces one incoming per predecessor and exact range order.
 
+An `INVOKE` result is committed only on a normal continuation.  If an operand
+or PHI incoming reaches a successor marked `ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION`,
+or any block reachable from that successor, the SSA phase reports
+`ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE` with the use site and defining
+instruction identity; block dominance by itself is not treated as proof that
+the result exists on that path.
+
 Dominators use a reachable-block bit set and an iterative predecessor
 intersection.  Unreachable rows are kept empty, so a definition from an
 unreachable block cannot accidentally prove a reachable use.  The algorithm
@@ -84,7 +91,8 @@ being incorrectly discarded.
 
 `ssa_effects_verifier` covers linear use-before-definition, cross-branch
 non-dominating uses, valid PHI edge definitions, and wrong-edge diagnostics in
-addition to the existing effect-token negatives.  The standalone SSA
+addition to direct, cleanup-path, and PHI-input exceptional-edge `INVOKE`
+result negatives and the existing effect-token negatives.  The standalone SSA
 consumer targets compile the split verifier source explicitly through
 `tests/cmake/ssa-tests.cmake`; the full core library obtains it through the
 module source glob.  The loop-specialization and scalar pass-manager fixtures

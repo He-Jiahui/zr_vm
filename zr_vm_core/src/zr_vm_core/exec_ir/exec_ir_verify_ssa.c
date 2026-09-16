@@ -344,6 +344,161 @@ static TZrBool zr_exec_ir_ssa_report_dominance(
     return ZR_FALSE;
 }
 
+/* An INVOKE publishes its result only after the call has completed normally.
+ * The exceptional successor is entered without that result in the value
+ * environment.  Keep this edge check here, next to the dominance check,
+ * because a block-level dominance relation alone cannot express the
+ * instruction-level split at a throwing terminator. */
+static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
+        const SZrExecIrFunction *function,
+        const SZrExecIrSsaDominance *dominance,
+        TZrExecIrInstructionId definitionInstruction,
+        TZrExecIrBlockId useBlock,
+        TZrBool *outOfMemory) {
+    const SZrExecIrInstruction *definition;
+    TZrExecIrBlockId definitionBlock;
+    const SZrExecIrBlock *definitionContainer;
+    SZrExecIrRange edgeRange;
+    TZrUInt8 *visited = ZR_NULL;
+    TZrExecIrBlockId *stack = ZR_NULL;
+    TZrUInt32 stackCount = 0u;
+    TZrUInt32 successorIndex;
+    TZrBool hasExceptionalSuccessor = ZR_FALSE;
+
+    if (outOfMemory != ZR_NULL) {
+        *outOfMemory = ZR_FALSE;
+    }
+
+    if (function == ZR_NULL || dominance == ZR_NULL ||
+        definitionInstruction == ZR_EXEC_IR_INSTRUCTION_ID_INVALID ||
+        definitionInstruction > function->instructionCount ||
+        useBlock == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+        useBlock > function->blockCount ||
+        dominance->instructionBlocks == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    definition = &function->instructions[definitionInstruction - 1u];
+    if ((EZrExecIrOpcode)definition->opcode != ZR_EXEC_IR_OPCODE_INVOKE) {
+        return ZR_FALSE;
+    }
+    definitionBlock = dominance->instructionBlocks[definitionInstruction - 1u];
+    if (definitionBlock == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+        definitionBlock > function->blockCount) {
+        return ZR_FALSE;
+    }
+    definitionContainer = &function->blocks[definitionBlock - 1u];
+    /* Early builders stored terminator edges only on the containing block.
+     * Prefer the instruction-owned range when present, but accept that
+     * compatibility representation while the structural phase is still the
+     * authority for range validity. */
+    edgeRange = definition->successorRange.count != 0u
+                    ? definition->successorRange
+                    : definitionContainer->successorRange;
+    if (edgeRange.count == 0u || edgeRange.start > function->successorCount ||
+        edgeRange.count > function->successorCount - edgeRange.start) {
+        return ZR_FALSE;
+    }
+
+    /* Seed only explicitly marked exceptional successors.  Once an exception
+     * is raised, every block reachable from that successor is potentially on
+     * the exceptional path, even if a handler branches through an ordinary
+     * (unflagged) cleanup/join block.  This conservative closure is what
+     * prevents a result from being used after an exceptional path rejoins. */
+    for (successorIndex = edgeRange.start;
+         successorIndex < edgeRange.start + edgeRange.count;
+         ++successorIndex) {
+        TZrExecIrBlockId successor = function->successors[successorIndex];
+        if (successor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+            successor > function->blockCount ||
+            (function->blocks[successor - 1u].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) == 0u) {
+            continue;
+        }
+        if (successor == useBlock) {
+            return ZR_TRUE;
+        }
+        hasExceptionalSuccessor = ZR_TRUE;
+    }
+    if (!hasExceptionalSuccessor) {
+        return ZR_FALSE;
+    }
+    if (sizeof(*stack) > SIZE_MAX / (size_t)function->blockCount) {
+        if (outOfMemory != ZR_NULL) {
+            *outOfMemory = ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+    visited = (TZrUInt8 *)calloc((size_t)function->blockCount,
+                                 sizeof(*visited));
+    stack = (TZrExecIrBlockId *)malloc((size_t)function->blockCount *
+                                       sizeof(*stack));
+    if (visited == ZR_NULL || stack == ZR_NULL) {
+        free(visited);
+        free(stack);
+        if (outOfMemory != ZR_NULL) {
+            *outOfMemory = ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+    for (successorIndex = edgeRange.start;
+         successorIndex < edgeRange.start + edgeRange.count;
+         ++successorIndex) {
+        TZrExecIrBlockId successor = function->successors[successorIndex];
+        if (successor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+            successor > function->blockCount) {
+            continue;
+        }
+        if ((function->blocks[successor - 1u].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u &&
+            visited[successor - 1u] == 0u) {
+            visited[successor - 1u] = 1u;
+            stack[stackCount++] = successor;
+        }
+    }
+    while (stackCount != 0u) {
+        TZrExecIrBlockId blockId = stack[--stackCount];
+        const SZrExecIrBlock *block = &function->blocks[blockId - 1u];
+        if (blockId == useBlock) {
+            free(visited);
+            free(stack);
+            return ZR_TRUE;
+        }
+        for (successorIndex = block->successorRange.start;
+             successorIndex < block->successorRange.start +
+                               block->successorRange.count;
+             ++successorIndex) {
+            TZrExecIrBlockId successor = function->successors[successorIndex];
+            if (successor != ZR_EXEC_IR_BLOCK_ID_INVALID &&
+                successor <= function->blockCount &&
+                visited[successor - 1u] == 0u) {
+                visited[successor - 1u] = 1u;
+                stack[stackCount++] = successor;
+            }
+        }
+    }
+    free(visited);
+    free(stack);
+    return ZR_FALSE;
+}
+
+static TZrBool zr_exec_ir_ssa_report_exception_edge(
+        SZrExecIrDiagnostic *diagnostic,
+        const SZrExecIrFunction *function,
+        TZrExecIrInstructionId instructionId,
+        TZrExecIrBlockId blockId,
+        TZrExecIrSourceId sourceId,
+        TZrExecIrInstructionId definitionInstruction,
+        TZrExecIrValueId valueId) {
+    zr_exec_ir_set_diagnostic(diagnostic,
+                              ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE,
+                              function, instructionId, blockId,
+                              definitionInstruction, valueId);
+    if (diagnostic != ZR_NULL) {
+        diagnostic->sourceId = sourceId;
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool zr_exec_ir_ssa_block_has_predecessor(
         const SZrExecIrFunction *function,
         const SZrExecIrBlock *block,
@@ -512,6 +667,32 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
             TZrUInt8 kind = definitionKinds[valueId];
             TZrBool dominatesUse = ZR_TRUE;
             if (kind == 1u) {
+                TZrBool exceptionTraversalOutOfMemory = ZR_FALSE;
+                if (zr_exec_ir_ssa_result_unavailable_on_exception_edge(
+                            function, dominance, definitionInstructions[valueId],
+                            useBlock, &exceptionTraversalOutOfMemory)) {
+                    zr_exec_ir_ssa_report_exception_edge(
+                            diagnostic, function, instructionIndex + 1u,
+                            useBlock, instruction->sourceId,
+                            definitionInstructions[valueId], valueId);
+                    free(definitionKinds);
+                    free(definitionInstructions);
+                    free(definitionBlocks);
+                    return ZR_FALSE;
+                }
+                if (exceptionTraversalOutOfMemory) {
+                    zr_exec_ir_set_diagnostic(
+                            diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                            function, instructionIndex + 1u, useBlock,
+                            function->blockCount, 0u);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->sourceId = instruction->sourceId;
+                    }
+                    free(definitionKinds);
+                    free(definitionInstructions);
+                    free(definitionBlocks);
+                    return ZR_FALSE;
+                }
                 if (function->blockCount == 0u) {
                     dominatesUse = (TZrBool)(definitionInstructions[valueId] <
                                               instructionIndex + 1u);
@@ -603,6 +784,47 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                     free(definitionInstructions);
                     free(definitionBlocks);
                     return ZR_FALSE;
+                }
+                if (kind == 1u) {
+                    TZrBool exceptionTraversalOutOfMemory = ZR_FALSE;
+                    if (zr_exec_ir_ssa_result_unavailable_on_exception_edge(
+                            function, dominance, definitionInstructions[valueId],
+                            incoming->predecessor,
+                            &exceptionTraversalOutOfMemory)) {
+                        TZrExecIrInstructionId site = block->terminatorInstructionId;
+                        TZrExecIrSourceId sourceId =
+                                (site != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+                                 site <= function->instructionCount)
+                                        ? function->instructions[site - 1u].sourceId
+                                        : 0u;
+                        zr_exec_ir_ssa_report_exception_edge(
+                                diagnostic, function, site, block->id, sourceId,
+                                definitionInstructions[valueId], valueId);
+                        free(definitionKinds);
+                        free(definitionInstructions);
+                        free(definitionBlocks);
+                        return ZR_FALSE;
+                    }
+                    if (exceptionTraversalOutOfMemory) {
+                        TZrExecIrInstructionId site = block->terminatorInstructionId;
+                        TZrExecIrSourceId sourceId =
+                                (site != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+                                 site <= function->instructionCount)
+                                        ? function->instructions[site - 1u].sourceId
+                                        : 0u;
+                        zr_exec_ir_set_diagnostic(
+                                diagnostic,
+                                ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                function, site, block->id,
+                                function->blockCount, 0u);
+                        if (diagnostic != ZR_NULL) {
+                            diagnostic->sourceId = sourceId;
+                        }
+                        free(definitionKinds);
+                        free(definitionInstructions);
+                        free(definitionBlocks);
+                        return ZR_FALSE;
+                    }
                 }
             }
         }
