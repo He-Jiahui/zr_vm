@@ -247,12 +247,20 @@ static EZrInstructionCode compiler_semantic_ir_exec_opcode(
 static SZrCompilerSemanticIrSlot *compiler_semantic_ir_add_temporary_slot(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
-        SZrFileRange sourceRange) {
+        SZrFileRange sourceRange,
+        TZrValueId sourceValueId) {
     SZrCompilerSemanticIrSlot slot;
     SZrParserPlaceBase base;
     SZrSemanticIrInstructionSpec spec;
+    const SZrSemanticIrValue *sourceValue;
 
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized) {
+        return ZR_NULL;
+    }
+    sourceValue = sourceValueId != ZR_VALUE_ID_INVALID
+            ? ZrParser_SemanticIr_Value(&cs->preSemanticIr, sourceValueId)
+            : ZR_NULL;
+    if (sourceValueId != ZR_VALUE_ID_INVALID && sourceValue == ZR_NULL) {
         return ZR_NULL;
     }
     memset(&slot, 0, sizeof(slot));
@@ -260,22 +268,27 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_add_temporary_slot(
     base.kind = ZR_PARSER_PLACE_BASE_TEMPORARY;
     base.identity = stackSlot;
     slot.stackSlot = stackSlot;
+    slot.typeId = sourceValue != ZR_NULL
+            ? sourceValue->typeId : ZR_SEMANTIC_ID_INVALID;
     slot.placeId = ZrParser_PlaceGraph_AddBase(
             &cs->preSemanticIr.places,
             &base,
-            ZR_SEMANTIC_ID_INVALID,
+            slot.typeId,
             sourceRange);
     if (slot.placeId == ZR_PLACE_ID_INVALID) {
         return ZR_NULL;
     }
-    slot.valueId = ZrParser_SemanticIr_AddValue(
-            &cs->preSemanticIr, ZR_SEMANTIC_ID_INVALID, sourceRange);
+    slot.valueId = sourceValueId != ZR_VALUE_ID_INVALID
+            ? sourceValueId
+            : ZrParser_SemanticIr_AddValue(
+                      &cs->preSemanticIr, ZR_SEMANTIC_ID_INVALID, sourceRange);
     if (slot.valueId == ZR_VALUE_ID_INVALID) {
         return ZR_NULL;
     }
     ZrCore_Array_Push(cs->state, &cs->preSemanticIrSlots, &slot);
     memset(&spec, 0, sizeof(spec));
     spec.opcode = ZR_SEMANTIC_IR_PLACE_BASE;
+    spec.typeId = slot.typeId;
     spec.placeId = slot.placeId;
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.sourceRange = sourceRange;
@@ -320,7 +333,7 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_materialize_slot(
         }
     }
     return compiler_semantic_ir_add_temporary_slot(
-            cs, stackSlot, sourceRange);
+            cs, stackSlot, sourceRange, ZR_VALUE_ID_INVALID);
 }
 
 static TZrBool compiler_semantic_ir_materialize_slot_snapshot(
@@ -351,7 +364,8 @@ static TZrBool compiler_semantic_ir_add_temporary_slot_snapshot(
     if (outSlot == ZR_NULL) {
         return ZR_FALSE;
     }
-    slot = compiler_semantic_ir_add_temporary_slot(cs, stackSlot, sourceRange);
+    slot = compiler_semantic_ir_add_temporary_slot(
+            cs, stackSlot, sourceRange, ZR_VALUE_ID_INVALID);
     if (slot == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -692,8 +706,7 @@ static TZrBool compiler_semantic_ir_propagate_contiguous_view(
         SZrCompilerState *cs,
         TZrUInt32 destinationSlot,
         TZrUInt32 sourceSlot,
-        SZrFileRange sourceRange,
-        TZrBool destinationIsFreshValue) {
+        SZrFileRange sourceRange) {
     const SZrSemanticContiguousViewFact *sourceFact;
     SZrCompilerSemanticIrSlot destination;
     SZrSemanticContiguousViewFact copiedFact;
@@ -704,11 +717,8 @@ static TZrBool compiler_semantic_ir_propagate_contiguous_view(
         return ZR_TRUE;
     }
     copiedFact = *sourceFact;
-    if (destinationIsFreshValue
-                ? !compiler_semantic_ir_add_temporary_slot_snapshot(
-                          cs, destinationSlot, sourceRange, &destination)
-                : !compiler_semantic_ir_materialize_slot_snapshot(
-                          cs, destinationSlot, sourceRange, &destination)) {
+    if (!compiler_semantic_ir_materialize_slot_snapshot(
+                cs, destinationSlot, sourceRange, &destination)) {
         return ZR_FALSE;
     }
     copiedFact.factId = ZR_SEMANTIC_CONTIGUOUS_VIEW_FACT_ID_INVALID;
@@ -1548,27 +1558,31 @@ static TZrBool compiler_semantic_ir_emit_load(SZrCompilerState *cs,
 
 static TZrBool compiler_semantic_ir_emit_store(SZrCompilerState *cs,
                                                TZrUInt32 stackSlot,
+                                               TZrUInt32 valueSlot,
                                                SZrFileRange sourceRange) {
-    SZrCompilerSemanticIrSlot *slot =
-            compiler_semantic_ir_materialize_slot(cs, stackSlot, sourceRange);
+    SZrCompilerSemanticIrSlot destination, source;
+    SZrCompilerSemanticIrSlot *slot;
     SZrSemanticIrInstructionSpec spec;
-    TZrValueId valueId;
 
+    if (valueSlot == ZR_PARSER_SLOT_NONE ||
+        !compiler_semantic_ir_materialize_slot_snapshot(
+                cs, stackSlot, sourceRange, &destination) ||
+        !compiler_semantic_ir_materialize_slot_snapshot(
+                cs, valueSlot, sourceRange, &source) ||
+        source.valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    slot = compiler_semantic_ir_find_slot(cs, stackSlot);
     if (slot == ZR_NULL) {
         return ZR_FALSE;
     }
-    valueId = ZrParser_SemanticIr_AddValue(
-            &cs->preSemanticIr, slot->typeId, sourceRange);
-    if (valueId == ZR_VALUE_ID_INVALID) {
-        return ZR_FALSE;
-    }
-    slot->valueId = valueId;
+    slot->valueId = source.valueId;
     memset(&spec, 0, sizeof(spec));
     spec.opcode = ZR_SEMANTIC_IR_STORE;
-    spec.typeId = slot->typeId;
-    spec.placeId = slot->placeId;
-    spec.valueId = valueId;
-    spec.symbolId = slot->symbolId;
+    spec.typeId = destination.typeId;
+    spec.placeId = destination.placeId;
+    spec.valueId = source.valueId;
+    spec.symbolId = destination.symbolId;
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.sourceRange = sourceRange;
     return compiler_semantic_ir_emit(cs, &spec);
@@ -1704,12 +1718,16 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
     if (opcode != ZR_INSTRUCTION_ENUM(GET_STACK)) {
         return ZR_FALSE;
     }
+    if (compiler_semantic_ir_add_temporary_slot(
+                cs, resultSlot, sourceRange,
+                instruction->resultValueId) == ZR_NULL) {
+        return ZR_FALSE;
+    }
     if (!compiler_semantic_ir_propagate_contiguous_view(
                 cs,
                 resultSlot,
                 stackSlot,
-                sourceRange,
-                ZR_TRUE)) {
+                sourceRange)) {
         return ZR_FALSE;
     }
     emit_instruction(
@@ -1728,15 +1746,15 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
     const SZrSemanticIrInstruction *instruction;
     EZrInstructionCode opcode;
 
-    if (!compiler_semantic_ir_emit_store(cs, stackSlot, sourceRange)) {
+    if (!compiler_semantic_ir_emit_store(
+                cs, stackSlot, valueSlot, sourceRange)) {
         return ZR_FALSE;
     }
     if (!compiler_semantic_ir_propagate_contiguous_view(
                 cs,
                 stackSlot,
                 valueSlot,
-                sourceRange,
-                ZR_FALSE)) {
+                sourceRange)) {
         return ZR_FALSE;
     }
     instruction = compiler_semantic_ir_last_instruction(cs);

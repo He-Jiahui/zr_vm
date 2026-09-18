@@ -266,7 +266,11 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         ZR_SEMANTIC_IR_LOAD,
         ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_LOAD,
+        ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_STORE,
     };
     static const TZrChar source[] =
@@ -308,6 +312,47 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
                 ZrParser_SemanticIr_InstructionAt(function, index);
         TEST_ASSERT_NOT_NULL(instruction);
         TEST_ASSERT_EQUAL_INT(expectedOpcodes[index], instruction->opcode);
+        if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
+            const SZrSemanticIrInstruction *temporaryBase =
+                    ZrParser_SemanticIr_InstructionAt(function, index + 1U);
+            const SZrSemanticIrInstruction *temporaryInit =
+                    ZrParser_SemanticIr_InstructionAt(function, index + 2U);
+            TEST_ASSERT_NOT_NULL(temporaryBase);
+            TEST_ASSERT_NOT_NULL(temporaryInit);
+            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_PLACE_BASE,
+                                  temporaryBase->opcode);
+            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_INITIALIZE,
+                                  temporaryInit->opcode);
+            TEST_ASSERT_EQUAL_UINT32(temporaryBase->placeId,
+                                     temporaryInit->placeId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->resultValueId,
+                                     temporaryInit->valueId);
+        }
+    }
+    {
+        const SZrSemanticIrInstruction *sourceLoad = ZR_NULL;
+        const SZrSemanticIrInstruction *assignmentStore = ZR_NULL;
+        const SZrSemanticIrValue *assignedValue;
+
+        for (index = 0U; index < function->instructions.length; index++) {
+            const SZrSemanticIrInstruction *instruction =
+                    ZrParser_SemanticIr_InstructionAt(function, index);
+            if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
+                sourceLoad = instruction;
+            } else if (instruction->opcode == ZR_SEMANTIC_IR_STORE) {
+                assignmentStore = instruction;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(sourceLoad);
+        TEST_ASSERT_NOT_NULL(assignmentStore);
+        TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, sourceLoad->resultValueId);
+        TEST_ASSERT_EQUAL_UINT32(sourceLoad->resultValueId,
+                                 assignmentStore->valueId);
+        assignedValue = ZrParser_SemanticIr_Value(
+                function, assignmentStore->valueId);
+        TEST_ASSERT_NOT_NULL(assignedValue);
+        TEST_ASSERT_EQUAL_UINT32(sourceLoad->id,
+                                 assignedValue->definitionInstructionId);
     }
     TEST_ASSERT_TRUE(semantic_ir_has_opcode(
             function, ZR_SEMANTIC_IR_INITIALIZE));

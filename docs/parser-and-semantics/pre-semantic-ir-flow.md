@@ -30,6 +30,7 @@ tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
+  - tests/acceptance/ssa-compiler-load-store-provenance.md
 doc_type: module-detail
 ---
 
@@ -64,6 +65,16 @@ Every compiler state owns an independent pre-execution semantic function and a p
 
 For the current lowering surface, local initialization, identifier load, local store, and ownership operations emit semantic instructions first. The bridge then selects `GET_STACK`, `SET_STACK`, or the exact `OWN_*` ExecBC opcode from that emitted semantic instruction; AST callers no longer make a second load/store/move/borrow decision. A readonly view is declared as `var view: ref readonly T = ref owner`, a mutable view as `var view: ref T = ref owner`, GC return as `intoGc(owner)`, and deterministic release as `drop(owner)`. The other ownership transitions are `share(owner)`, `degrade(shared)`, and `wake(weak)`. Percent directives and removed ownership member-call forms stop before this bridge and only produce migration errors. Internal shared/mutable loan facts and region opcodes remain semantic implementation details, not source spellings. Unsupported ownership kinds fail instead of falling through to construction. Script compilation validates the complete pre-execution function before final function assembly, optimization sidecars, and quickening.
 
+Each identifier `LOAD` defines a ValueId and materializes its result stack slot
+as a distinct temporary Place initialized with that *same* value. A later
+local `STORE` resolves the right-hand stack slot's existing ValueId and
+records it as the source rather than allocating an unrelated, undefined
+value. This preserves assignment provenance for simple identifier RHS
+expressions and keeps temporary Places available to reference/contiguous
+view consumers. Literal, arithmetic, and other producer families still
+need their own explicit definitions; neither the temporary Place nor a
+post-ExecBC decode manufactures those missing facts.
+
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 
 The private stack-slot bridge is backed by a growable array. Any operation that
@@ -72,7 +83,14 @@ slot contents as value snapshots across materialization and re-resolves a slot
 by `stackSlot` immediately before a writeback. This applies to value construction,
 contiguous-view/bounds facts, receiver projections, and property-ref load/store;
 no semantic instruction may retain an interior slot pointer across a possible
-array growth.
+array growth. Local store snapshots both source and destination before
+updating the destination bridge slot, because materializing the RHS can grow
+the bridge array.
+The existing compiler Semantic IR producer is already a large, shared bridge;
+this change stays inside its slot-transfer responsibility. Once literal and
+computed-value producers are added, the temporary-slot/materialization and
+load/store transfer group is the smallest coherent boundary to extract into
+a focused compiler-internal module without exposing the bridge to core IR.
 
 The old `SZrSemIrInstruction` table is an execution compatibility projection. `compiler_semir.c` builds it only after final ExecBC assembly. It is not consulted when the compiler chooses local or ownership semantics, and it may legitimately be empty for source programs whose front-end Semantic IR is non-empty.
 
