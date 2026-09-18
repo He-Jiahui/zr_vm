@@ -1277,11 +1277,19 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
+#include "test_pre_semantic_ir_source_cfg.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pre_semantic_ir_opcode_golden_covers_supported_families);
     RUN_TEST(test_value_construct_requires_destination_place_and_constructor_identity);
     RUN_TEST(test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar);
+    RUN_TEST(test_source_if_emits_typed_semantic_control_flow);
+    RUN_TEST(test_nested_source_if_covers_each_instruction_once);
+    RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);
+    RUN_TEST(test_late_unmodeled_arm_abandons_partial_source_cfg);
+    RUN_TEST(test_nested_untracked_condition_abandons_outer_source_cfg);
+    RUN_TEST(test_short_circuit_arm_keeps_legacy_cfg);
     RUN_TEST(test_field_initialization_tracks_partial_parent_and_cleanup_bitmap);
     RUN_TEST(test_field_initialize_rejects_non_projected_destination);
     RUN_TEST(test_flow_join_keeps_dimensions_separate_and_reports_negative_uses);

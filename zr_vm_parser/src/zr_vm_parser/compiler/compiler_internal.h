@@ -101,6 +101,19 @@ typedef struct SZrCompilerSemanticIrSlotIdentity {
 void compiler_semantic_ir_init(SZrCompilerState *cs);
 void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
+TZrValueId compiler_semantic_ir_slot_value(SZrCompilerState *cs,
+                                           TZrUInt32 stackSlot);
+TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
+                                      TZrUInt32 conditionSlot,
+                                      SZrAstNode *node,
+                                      TZrUInt32 *thenBlock,
+                                      TZrUInt32 *elseBlock,
+                                      TZrUInt32 *joinBlock);
+TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
+                                  TZrUInt32 target,
+                                  SZrFileRange range);
+void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block);
+TZrBool compiler_semantic_cfg_finish(SZrCompilerState *cs);
 TZrBool compiler_semantic_ir_get_slot_identity(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,

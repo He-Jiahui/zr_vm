@@ -3767,6 +3767,16 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Compiler_Error(cs, "Failed to compile if condition", node->location);
         return;
     }
+
+    TZrUInt32 thenBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrUInt32 elseBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrUInt32 joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrBool hasSemanticCfg = compiler_semantic_cfg_begin_if(
+            cs, condSlot, node, &thenBlock, &elseBlock, &joinBlock);
+    if (!hasSemanticCfg && cs->preSemanticIrCfgActive) {
+        ZrParser_Compiler_Error(cs, "If condition lacks a semantic value", node->location);
+        return;
+    }
     
     // 创建 else 标签
     TZrSize elseLabelId = create_label(cs);
@@ -3782,6 +3792,17 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (ifExpr->thenExpr != ZR_NULL) {
         ZrParser_Statement_Compile(cs, ifExpr->thenExpr);
     }
+    if (cs->hasError) {
+        return;
+    }
+    if (hasSemanticCfg && !cs->preSemanticIrCfgActive) {
+        hasSemanticCfg = ZR_FALSE;
+    }
+    if (hasSemanticCfg &&
+        !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
+        ZrParser_Compiler_Error(cs, "Failed to record if true branch", node->location);
+        return;
+    }
     
     // JUMP -> end
     TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);  // 偏移将在后面填充
@@ -3791,14 +3812,31 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 解析 else 标签
     resolve_label(cs, elseLabelId);
+    if (hasSemanticCfg) {
+        compiler_semantic_cfg_enter(cs, elseBlock);
+    }
     
     // 编译 else 分支
     if (ifExpr->elseExpr != ZR_NULL) {
         ZrParser_Statement_Compile(cs, ifExpr->elseExpr);
     }
+    if (cs->hasError) {
+        return;
+    }
+    if (hasSemanticCfg && !cs->preSemanticIrCfgActive) {
+        hasSemanticCfg = ZR_FALSE;
+    }
+    if (hasSemanticCfg &&
+        !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
+        ZrParser_Compiler_Error(cs, "Failed to record if false branch", node->location);
+        return;
+    }
     
     // 解析 end 标签
     resolve_label(cs, endLabelId);
+    if (hasSemanticCfg) {
+        compiler_semantic_cfg_enter(cs, joinBlock);
+    }
 }
 
 // 编译 while 语句

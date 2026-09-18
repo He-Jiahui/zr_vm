@@ -92,6 +92,9 @@ typedef struct SZrCompilerState {
     SZrArray preSemanticIrReceiverLoanIds; // compiler-generated receiver loans
     TZrBool preSemanticIrInitialized;
     TZrBool preSemanticIrValidated;
+    TZrBool preSemanticIrCfgActive;
+    TZrUInt32 preSemanticIrCfgBlock;
+    TZrUInt32 preSemanticIrCfgStart;
     
     // 常量池管理
     SZrArray constants;                 // 常量值数组（SZrTypeValue）

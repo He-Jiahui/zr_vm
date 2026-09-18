@@ -29,6 +29,13 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
     return ZR_NULL;
 }
 
+TZrValueId compiler_semantic_ir_slot_value(SZrCompilerState *cs,
+                                           TZrUInt32 stackSlot) {
+    const SZrCompilerSemanticIrSlot *slot =
+            compiler_semantic_ir_find_slot(cs, stackSlot);
+    return slot == ZR_NULL ? ZR_VALUE_ID_INVALID : slot->valueId;
+}
+
 TZrBool compiler_semantic_ir_get_slot_identity(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
@@ -1256,6 +1263,9 @@ void compiler_semantic_ir_init(SZrCompilerState *cs) {
             ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->preSemanticIrInitialized = ZR_TRUE;
     cs->preSemanticIrValidated = ZR_FALSE;
+    cs->preSemanticIrCfgActive = ZR_FALSE;
+    cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgStart = 0U;
     (void)ZrParser_SemanticIr_AddRegion(
             &cs->preSemanticIr,
             ZR_SEMANTIC_REGION_ID_INVALID,
@@ -1281,6 +1291,7 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     ZrCore_Array_Free(cs->state, &cs->preSemanticIrReceiverLoanIds);
     cs->preSemanticIrInitialized = ZR_FALSE;
     cs->preSemanticIrValidated = ZR_FALSE;
+    cs->preSemanticIrCfgActive = ZR_FALSE;
 }
 
 const SZrSemanticIrFunction *ZrParser_Compiler_PreSemanticIr(
@@ -1308,10 +1319,17 @@ TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
         return ZR_FALSE;
     }
     cs->preSemanticIrValidated = ZR_FALSE;
-    if (!ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
+    if (!cs->preSemanticIrCfgActive &&
+        !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
         return ZR_FALSE;
     }
 
+    if (cs->preSemanticIrCfgActive) {
+        if (!compiler_semantic_cfg_finish(cs) ||
+            !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
+            return ZR_FALSE;
+        }
+    } else {
     ZrParser_Cfg_Free(cs->state, &cs->preSemanticIr.cfg);
     ZrParser_Cfg_Init(cs->state, &cs->preSemanticIr.cfg);
     entryBlock = ZrParser_Cfg_AppendBlock(
@@ -1351,6 +1369,7 @@ TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
                 0U,
                 ZR_PARSER_CFG_TERMINATOR_EXIT)) {
         return ZR_FALSE;
+    }
     }
 
     ZrParser_SemanticFlowResult_Init(cs->state, &flowResult);

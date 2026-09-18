@@ -7,12 +7,15 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
 tests:
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_semantic_facts.c
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_canonical_type_place_cfg.c
@@ -85,6 +88,19 @@ Place graph ----------- CFG blocks and edges
 | source map | 每条可诊断指令都带 source range，不能在后端自行猜测源码位置。 |
 
 ## 3. CFG：控制流的可查询骨架
+
+编译器的源码 `if` 语句在条件产生可追溯的 SemIR `ValueId` 时，由
+`compiler_semantic_cfg.c` 直接记录条件 `BRANCH`、有序的 `TRUE_BRANCH` / `FALSE_BRANCH`
+边，以及 then、else 和 join 各自连续的 SemIR 指令区间。没有 `else` 时仍有一条空的假
+分支通向 join。编译完成后，尾块连接到出口的 `RETURN`；这条路径不从 ExecBC 跳转偏移反推。
+当前只接受简单字面量/标识符初始化、简单赋值、块和嵌套 `if` 组成的分支体。
+没有启用源码 CFG 的代码仍使用旧的入口/出口两块占位图；包含目前尚未建模的
+call/short-circuit/loop/return/throw/cleanup/suspend 路径的 `if` 不会发布不完整的条件菱形。
+
+这只是 SSA 01.02 的源码条件分支阶段：循环、短路、异常/cleanup/suspend 和任意计算
+条件尚未全部接入，不能由这一阶段推断那些路径已有精确的源码 CFG 或 phi。
+当前 ExecIR builder 对普通源码中尚未补齐结果值的 `PLACE_BASE` 仍会拒绝构建，
+本阶段的 SemIR CFG 测试不代表端到端 SSA 构建通过。
 
 `SZrParserCfg` 是 function 级的控制流图。公开 block、edge 和 terminator 枚举的含义如下。
 
