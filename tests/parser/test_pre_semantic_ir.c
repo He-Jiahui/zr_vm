@@ -1279,6 +1279,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 }
 
 #include "test_pre_semantic_ir_source_cfg.inc"
+#include "test_pre_semantic_ir_optional_value.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1296,6 +1297,7 @@ int main(void) {
     RUN_TEST(test_source_if_arm_composes_short_circuit_cfg);
     RUN_TEST(test_unmodeled_short_circuit_rhs_keeps_legacy_cfg);
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
+    RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);
     RUN_TEST(test_unmodeled_optional_value_abandons_partial_source_cfg);
     RUN_TEST(test_source_if_lowers_place_provenance_to_exec_ir);
     RUN_TEST(test_source_if_isolates_sibling_temporary_values);

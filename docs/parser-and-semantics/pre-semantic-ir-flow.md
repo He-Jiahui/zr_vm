@@ -19,6 +19,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -39,12 +40,14 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -53,6 +56,7 @@ tests:
   - tests/acceptance/ssa-compiler-literal-type-provenance.md
   - tests/acceptance/ssa-compiler-source-short-circuit-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
+  - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
 doc_type: module-detail
 ---
 
@@ -79,10 +83,10 @@ and oracle use that same true/false order. Reversed or untyped inline edges
 fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
-surface for `if`, straight-line `while`, linear-operand `&&`/`||`, and nullable
-optional calls whose final result is `void`/no-op. Return, general loop control,
-value-producing or Weak optional access, cleanup, suspension, and other
-unmodeled control still use the conservative legacy graph rather than
+surface for `if`, straight-line `while`, linear-operand `&&`/`||`, and known
+nullable optional calls with either `void`/no-op or nullable value results.
+Return, general loop control, Weak optional access, cleanup, suspension, and
+other unmodeled control still use the conservative legacy graph rather than
 publishing partial facts.
 
 ## Compiler Bridge
@@ -151,26 +155,28 @@ uses true-to-RHS/false-to-join edges; `||` uses true-to-join/false-to-RHS.
 This temporary is not a scalar source local and is intentionally not eligible
 for local Place promotion.
 
-Nullable `receiver?.method(arguments)` chains whose canonical receiver-guard
-fact ends in `VOID_NOOP` publish a present/absent diamond. The receiver ValueId
-terminates the prefix with ordered present-true and absent-false edges. Argument
-and suffix facts are emitted only on the present path. A supported known member
-call receives a dedicated invoke block after those facts. It records a typed
-`CALL_*` instruction with the callable/receiver ValueId, the argument-window
-ValueIds, the resolved symbol, and a typed result bound to the result stack
-slot. The call block has ordered normal and exception edges, so ExecIR lowers it
-to `INVOKE` without assigning an earlier present-path operation the call's
-exceptional transfer. The normal continuation reaches the join and the absent
-edge enters the join directly. The exceptional continuation is an explicit
-zero-instruction propagation sink: the current model has no edge-defined
-exception payload value, so the producer does not invent a normal-entry value
-for `THROW`. The compiler restores the pre-branch slot snapshot at the join.
-Ownership operations with results also bind their defining ValueId to the
-result stack slot, so a nullable `wake(weak)` result can serve as a defined
-receiver operand. Value-producing optional chains, Weak-wake guard frames, and
-calls missing a canonical result type, symbol, callable, or argument value
-remain outside this subset; if one appears after a source graph has started,
-the compiler abandons the partial CFG and removes its synthetic branches.
+Nullable `receiver?.method(arguments)` chains publish ordered present-true and
+absent-false edges from the receiver ValueId. Argument and suffix facts are
+emitted only on the present path. A supported known member call receives a
+dedicated invoke block and records a typed `CALL_*` with the receiver/callee
+ValueId, explicit argument ValueIds, resolved symbol, and typed result. The
+runtime-only hidden receiver count is excluded from the semantic explicit-
+argument range. Ordered normal and exception edges lower the call to `INVOKE`
+without assigning an earlier present-path operation the call's exceptional
+transfer.
+
+`VOID_NOOP` absent edges reach the join directly. A `NULLABLE` result instead
+uses a typed temporary Place: the normal block converts and stores the call
+result, the dedicated absent block stores a typed null constant, and the join
+restores the pre-branch slot snapshot and loads one merged ValueId. The
+exception continuation is an explicit zero-instruction propagation sink and
+does not reach that merge. The current model has no edge-defined exception
+payload value, so the producer does not invent a normal-entry value for
+`THROW`. Ownership results remain bound to their result slots so an explicitly
+awakened nullable receiver can be the branch operand. Weak-wake guard frames
+and calls missing a canonical result type, symbol, callable, or explicit
+argument value remain outside this subset; after a source graph has started,
+they abandon the partial CFG and remove its synthetic branches.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 

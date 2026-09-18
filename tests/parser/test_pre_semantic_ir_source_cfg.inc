@@ -846,7 +846,7 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
                     invoke->firstInstructionIndex + invoke->instructionCount -
                             1U,
                     (TZrUInt32)index);
-            TEST_ASSERT_EQUAL_UINT32(3U, instruction->operandCount);
+            TEST_ASSERT_EQUAL_UINT32(2U, instruction->operandCount);
             TEST_ASSERT_NOT_EQUAL(
                     ZR_SEMANTIC_ID_INVALID, instruction->symbolId);
             TEST_ASSERT_NOT_EQUAL(
@@ -916,42 +916,6 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     TEST_ASSERT_EQUAL_UINT64(1U, invokeCount);
     TEST_ASSERT_EQUAL_UINT64(1U, exceptionBlockCount);
     ZrCore_ExecIr_FreeFunction(&output);
-
-    ZrCore_Function_Free(g_state, compiler.currentFunction);
-    compiler.currentFunction = ZR_NULL;
-    ZrParser_CompilerState_Free(&compiler);
-    ZrParser_Ast_Free(g_state, ast);
-}
-
-static void test_unmodeled_optional_value_abandons_partial_source_cfg(void) {
-    static const TZrChar source[] =
-            "var flag: bool = true;\n"
-            "if (flag) { var yes: int = 1; } else { var no: int = 2; }\n"
-            "var receiver = null;\n"
-            "var result = receiver?.value;\n";
-    SZrString *name = ZrCore_String_Create(
-            g_state, "optional_value_fallback.zr", 26U);
-    SZrAstNode *ast = ZrParser_Parse(
-            g_state, source, sizeof(source) - 1U, name);
-    SZrCompilerState compiler;
-    const SZrSemanticIrFunction *function;
-    TZrSize index;
-
-    TEST_ASSERT_NOT_NULL(ast);
-    ZrParser_CompilerState_Init(&compiler, g_state);
-    compiler.currentAst = ast;
-    compiler.currentFunction = ZrCore_Function_New(g_state);
-    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
-    for (index = 0U; index < ast->data.script.statements->count; index++) {
-        ZrParser_Statement_Compile(
-                &compiler, ast->data.script.statements->nodes[index]);
-    }
-    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
-    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
-    function = ZrParser_Compiler_PreSemanticIr(&compiler);
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_EQUAL_UINT64(2U, function->cfg.blocks.length);
-    TEST_ASSERT_FALSE(semantic_ir_has_opcode(function, ZR_SEMANTIC_IR_BRANCH));
 
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;

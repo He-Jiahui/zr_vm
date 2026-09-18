@@ -408,9 +408,11 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
         TZrUInt32 receiverSlot,
         SZrAstNode *node,
         TZrUInt32 *presentBlock,
+        TZrUInt32 *absentBlock,
         TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
     TZrUInt32 entry;
+    TZrUInt32 falseBlock;
     TZrValueId receiver;
 
     if (cs == ZR_NULL || node == ZR_NULL || presentBlock == ZR_NULL ||
@@ -438,9 +440,16 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
     }
     *presentBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, node);
+    if (absentBlock != ZR_NULL) {
+        *absentBlock = ZrParser_Cfg_AppendBlock(
+                cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, node);
+    }
     *joinBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
+    falseBlock = absentBlock != ZR_NULL ? *absentBlock : *joinBlock;
     if (*presentBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        (absentBlock != ZR_NULL &&
+         *absentBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) ||
         *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         !compiler_semantic_cfg_emit_branch(
                 cs, *presentBlock, receiver, node->location) ||
@@ -450,7 +459,7 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
                 cfg, cs->preSemanticIrCfgBlock, *presentBlock,
                 ZR_PARSER_CFG_EDGE_TRUE_BRANCH, node) ||
         !ZrParser_Cfg_Connect(
-                cfg, cs->preSemanticIrCfgBlock, *joinBlock,
+                cfg, cs->preSemanticIrCfgBlock, falseBlock,
                 ZR_PARSER_CFG_EDGE_FALSE_BRANCH, node)) {
         return ZR_FALSE;
     }

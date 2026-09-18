@@ -4422,6 +4422,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                 if (cs->preSemanticIrCfgActive &&
                     activeCallMemberInfo != ZR_NULL &&
                     !hasSpreadArgument) {
+                    TZrUInt32 semanticArgumentCount = argCount;
                     const SZrInferredType *semanticResultType =
                             hasResolvedMemberSignature
                                     ? &resolvedMemberSignature.returnType
@@ -4440,6 +4441,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                        ZR_CALL_BINDING_VIRTUAL
                                                ? ZR_SEMANTIC_IR_CALL_VIRTUAL
                                                : ZR_SEMANTIC_IR_CALL_TYPED);
+                    /* The direct member-call bridge uses the receiver as the
+                     * typed callee operand. Runtime argCount also includes
+                     * that receiver, so only the following explicit argument
+                     * slots belong in the remaining semantic operands. */
+                    if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) {
+                        semanticArgumentCount--;
+                    }
                     if (!compiler_semantic_ir_lower_call(
                                 cs,
                                 semanticCallOpcode,
@@ -4448,7 +4456,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                         : currentSlot,
                                 activeReceiverLoanId,
                                 argBaseSlot,
-                                argCount,
+                                semanticArgumentCount,
                                 callResultSlot,
                                 semanticResultType,
                                 activeCallMemberInfo->symbolId,

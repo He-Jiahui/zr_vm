@@ -98,9 +98,22 @@ typedef struct SZrCompilerSemanticIrSlotIdentity {
     SZrFileRange declarationRange;
 } SZrCompilerSemanticIrSlotIdentity;
 
+typedef struct SZrCompilerSemanticIrSlot {
+    TZrUInt32 stackSlot;
+    TZrPlaceId placeId;
+    TZrValueId valueId;
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+    TZrLoanId loanId;
+    TZrRegionId regionId;
+} SZrCompilerSemanticIrSlot;
+
 void compiler_semantic_ir_init(SZrCompilerState *cs);
 void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
+SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot);
 TZrValueId compiler_semantic_ir_slot_value(SZrCompilerState *cs,
                                            TZrUInt32 stackSlot);
 TZrBool compiler_semantic_ir_emit(
@@ -111,6 +124,24 @@ TZrBool compiler_semantic_ir_bind_result_value(
         TZrUInt32 stackSlot,
         TZrTypeId typeId,
         TZrValueId valueId,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_prepare_optional_merge(
+        SZrCompilerState *cs,
+        TZrUInt32 mergeSlot,
+        const SZrInferredType *resultType,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_store_optional_present(
+        SZrCompilerState *cs,
+        TZrUInt32 mergeSlot,
+        TZrUInt32 sourceSlot,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_store_optional_absent(
+        SZrCompilerState *cs,
+        TZrUInt32 mergeSlot,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_load_optional_merge(
+        SZrCompilerState *cs,
+        TZrUInt32 mergeSlot,
         SZrFileRange sourceRange);
 TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 conditionSlot,
@@ -134,6 +165,7 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
         TZrUInt32 receiverSlot,
         SZrAstNode *node,
         TZrUInt32 *presentBlock,
+        TZrUInt32 *absentBlock,
         TZrUInt32 *joinBlock);
 TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,

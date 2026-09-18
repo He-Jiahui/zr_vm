@@ -49,27 +49,26 @@ seven-block topology, canonical present-true/absent-false ordering, the
 present-to-invoke edge, ordered invoke normal/exception edges, a normal-to-join
 edge, two join predecessors, and the empty exceptional sink. It also proves
 that the argument's only semantic `STORE` belongs to the present block, the
-typed call is the invoke block's tail with all three runtime operands, and the
+typed call is the invoke block's tail with its receiver/callee and explicit
+argument operands, and the
 resulting ExecIR contains exactly one `INVOKE` and one exception block.
 
-`test_unmodeled_optional_value_abandons_partial_source_cfg` first starts a
-source `if` graph and then compiles a value-producing optional member chain.
-It requires the producer to remove all synthetic branch instructions and
-retain the legacy two-block graph instead of publishing a partially correct
-optional CFG.
+Value-producing nullable optional calls are covered by the follow-up
+[nullable optional-call value merge](ssa-compiler-source-optional-value-cfg.md)
+record.
 
 ## Validation evidence (2026-09-18)
 
 - MSVC 19.44.35228 debug build under `D:/zr-ssa-verify-871bc234` built the
-  focused target and passed 25/25 direct Unity cases.
+  focused target and passed 26/26 direct Unity cases.
 - WSL GCC 11.4.0 and Clang 14.0.0 debug builds under the matching `wsl-gcc`
-  and `wsl-clang` roots rebuilt the same target and each passed 25/25 direct
+  and `wsl-clang` roots rebuilt the same target and each passed 26/26 direct
   Unity cases.
 - On MSVC, GCC, and Clang, the adjacent `ssa_builder_cfg`,
   `ssa_builder_dominance`, `ssa_builder_control_edges`,
   `ssa_builder_fact_identity`, `ssa_place_eligibility`,
   `ssa_place_promotion`, and `ssa_value_validation` gate passed 7/7.
-- The WSL GCC ASan+UBSan build under `wsl-gcc-asan` passed 25/25 with leak
+- The WSL GCC ASan+UBSan build under `wsl-gcc-asan` passed 26/26 with leak
   detection and both sanitizers configured to halt on the first error.
 - The receiver-guard performance executable passed its one test after the
   change on all three toolchains. The broader ownership-intrinsic executable
@@ -80,10 +79,10 @@ optional CFG.
 ## Boundary
 
 This checkpoint covers nullable, value-discarded `void` optional calls with a
-known member symbol and complete canonical operand/type facts. It does not yet
-merge nullable values, model Weak guard wake/cleanup in the canonical CFG,
-materialize exception payloads or enclosing handlers, split cleanup exits, or
-start source CFG solely for general calls outside an already supported graph.
+known member symbol and complete canonical operand/type facts. The follow-up
+checkpoint merges nullable call values; Weak guard wake/cleanup, exception
+payloads and enclosing handlers, cleanup exits, and source CFG startup for
+general calls remain open.
 The earlier untyped resource-construction boundary is closed by
 [SSA 01.02: ownership facts through ExecIR](ssa-compiler-ownership-execir.md),
 but the remaining control-flow items still prevent a complete 01.02 exit-gate

@@ -3,6 +3,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -12,6 +13,7 @@ related_code:
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -27,9 +29,11 @@ tests:
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
+  - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
+  - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
 doc_type: module-detail
 ---
 
@@ -147,22 +151,27 @@ one merged expression value. The temporary remains explicit memory rather
 than being marked as a promotable source local. Unsupported operand families
 abandon any partial source CFG and retain the legacy two-block path.
 
-The same producer owns a narrower optional-access slice. A canonical nullable
-receiver guard whose final call has `VOID_NOOP` lift emits present-true and
-absent-false edges. Call arguments and suffix side effects belong only to the
-present path. A known typed member call is isolated in its own terminal block,
-where a source-owned `CALL_TYPED`, `CALL_VIRTUAL`, or `CALL_META` carries the
-canonical callable/receiver and argument ValueIds plus a typed result. Ordered
-normal and exception edges lower that call to `INVOKE`; the normal continuation
-reaches the optional join, while the exception edge enters an explicit
-propagation sink. Isolating the call prevents earlier present-path stores from
-being attributed to its exceptional transfer. The sink has no fabricated
-`THROW` operand because edge-defined exception payload values are not yet part
-of the model. The absent edge reaches the join directly and the slot bridge is
-restored there. Value-producing optional chains, Weak-wake guards, calls that
-lack required canonical facts, and cleanup suffixes still abandon an active
-partial graph and use the legacy two-block path, so this checkpoint does not
-claim the complete optional-chain exit gate.
+The same producer owns a bounded optional-access slice. A canonical nullable
+receiver guard emits ordered present-true and absent-false edges, and call
+arguments and suffix side effects belong only to the present path. A known
+typed member call is isolated in its own terminal block, where a source-owned
+`CALL_TYPED`, `CALL_VIRTUAL`, or `CALL_META` carries the canonical receiver as
+its typed callee operand, followed by explicit argument ValueIds and a typed
+result. Runtime's hidden receiver count is not duplicated in that explicit
+argument range. Ordered normal and exception edges lower the call to `INVOKE`.
+
+For `VOID_NOOP`, the absent edge reaches the join directly. For a nullable
+value result, it enters a dedicated absent block. The normal continuation
+converts and stores the call result into a typed temporary Place; the absent
+block stores a typed null constant into the same Place; and the join loads one
+merged ValueId. The call's exception edge instead enters an explicit
+propagation sink and cannot reach the merge. Isolating the call prevents
+earlier present-path stores from being attributed to its exceptional transfer.
+The sink has no fabricated `THROW` operand because edge-defined exception
+payload values are not yet part of the model. Weak-wake guards, calls that lack
+required canonical facts, and cleanup suffixes still abandon an active partial
+graph and use the legacy two-block path, so this checkpoint does not claim the
+complete optional-chain exit gate.
 
 The complete ownership setup used by this nullable-call fixture now also
 builds through ExecIR. Its source and result values have canonical TypeIds,

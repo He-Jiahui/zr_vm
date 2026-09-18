@@ -1,16 +1,6 @@
 #include "compiler_internal.h"
 
-typedef struct SZrCompilerSemanticIrSlot {
-    TZrUInt32 stackSlot;
-    TZrPlaceId placeId;
-    TZrValueId valueId;
-    TZrTypeId typeId;
-    TZrSymbolId symbolId;
-    TZrLoanId loanId;
-    TZrRegionId regionId;
-} SZrCompilerSemanticIrSlot;
-
-static SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
+SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot) {
     TZrSize index;
