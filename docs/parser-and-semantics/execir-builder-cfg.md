@@ -10,6 +10,7 @@ plan_sources:
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
 tests:
   - tests/parser/test_ssa_builder_cfg.c
+  - tests/parser/test_ssa_builder_dominance.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
@@ -22,6 +23,7 @@ tests:
   - tests/acceptance/ssa-builder-instruction-partition.md
   - tests/acceptance/ssa-builder-edge-source.md
   - tests/acceptance/ssa-builder-cfg-fact-identity.md
+  - tests/acceptance/ssa-builder-ssa-dominance.md
 doc_type: module-detail
 ---
 
@@ -118,6 +120,20 @@ destination. A 32-bit predecessor count or allocation-size overflow reports
 `CAPACITY_OVERFLOW`; allocation failure reports `OUT_OF_MEMORY`. Scratch
 counts, cursors and rows are freed on every path. The outer builder frees a
 failed temporary function and leaves existing caller output unchanged.
+
+Once predecessors, dominators and the conservative parser SSA pass succeed,
+the builder also asks the existing core verifier for `VERIFY_SSA` before
+publishing its temporary function. Core verification requires a nonzero
+module function ID; the candidate uses an ID only during this check and
+restores its unassigned ID afterward, including on failure. This catches
+uses before a definition in the same block and definitions that do not
+dominate every incoming path to a join. A failed dominance check carries
+the source block/instruction/value site and leaves caller output untouched.
+The independent `ssa_builder_dominance` test owns these cases; it reuses
+the same production builder/core sources as `ssa_builder_cfg` without
+growing that CFG fixture past its single-purpose boundary. See
+`tests/acceptance/ssa-builder-ssa-dominance.md`. Verification does not
+insert phi nodes or rename local variables.
 
 Before reading canonical facts, the builder checks the block, instruction,
 value, and value-operand arrays for logical length within capacity and the

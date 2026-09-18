@@ -307,6 +307,19 @@ cleanup:
     return result;
 }
 
+static TZrBool verify_unpublished_ssa(SZrExecIrFunction *output,
+                                     SZrExecIrDiagnostic *diagnostic) {
+    TZrExecIrFunctionId savedId = output->id;
+    TZrBool valid;
+    /* The core verifier requires a module-assigned function ID. This
+     * isolated candidate has not been published yet; keep its ID unassigned
+     * after verification so BuildModule can assign the real slot. */
+    if (savedId == ZR_EXEC_IR_FUNCTION_ID_INVALID) output->id = 1u;
+    valid = ZrCore_ExecIr_VerifyFunction(output, ZR_EXEC_IR_VERIFY_SSA, diagnostic);
+    output->id = savedId;
+    return valid;
+}
+
 static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                               const SZrExecIrBuildOptions *options,
                               SZrExecIrFunction *output,
@@ -446,7 +459,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     }
     return append_cfg_predecessors(s, output, diagnostic) &&
            ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
-           ZrParser_ExecIr_BuildSsa(output, diagnostic);
+           ZrParser_ExecIr_BuildSsa(output, diagnostic) &&
+           verify_unpublished_ssa(output, diagnostic);
 }
 
 TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFunction,
