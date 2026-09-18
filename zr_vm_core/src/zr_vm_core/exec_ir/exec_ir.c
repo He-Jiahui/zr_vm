@@ -969,6 +969,9 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
         return ZR_FALSE;
     }
     for (index = 0u; index < source->functionCount; ++index) {
+        /* Include the in-progress function in rollback: cloning can fail after
+         * one of its owned side arrays has already been allocated. */
+        temporary.functionCount++;
         if (!zr_exec_ir_clone_function_into(&source->functions[index],
                                             &temporary.functions[index])) {
             ZrCore_ExecIr_FreeModule(&temporary);
@@ -981,7 +984,6 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
                                       0u);
             return ZR_FALSE;
         }
-        temporary.functionCount++;
     }
     ZrCore_ExecIr_FreeModule(destination);
     *destination = temporary;

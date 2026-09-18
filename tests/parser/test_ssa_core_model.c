@@ -194,6 +194,46 @@ static void test_validation_rejects_null_operand_pool_without_dereference(void) 
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_failed_module_clone_reclaims_partially_copied_function(void) {
+    SZrExecIrModule source;
+    SZrExecIrModule destination;
+    SZrExecIrFunction *function;
+    TZrExecIrFunctionId id;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_ModuleInit(&source);
+    ZrCore_ExecIr_ModuleInit(&destination);
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&destination, 73u, 91u, &id),
+                "clone destination setup failed");
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&source, 81u, 101u, &id),
+                "first clone source function setup failed");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&source, id);
+    expect_true(ZrCore_ExecIr_FunctionAddValue(function, 7u,
+                    ZR_EXEC_IR_OWNERSHIP_BORROWED,
+                    ZR_EXEC_IR_NULLABILITY_NONNULL) != ZR_EXEC_IR_VALUE_ID_INVALID,
+                "first clone source value setup failed");
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&source, 82u, 102u, &id),
+                "second clone source function setup failed");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&source, id);
+    expect_true(ZrCore_ExecIr_FunctionAddValue(function, 8u,
+                    ZR_EXEC_IR_OWNERSHIP_BORROWED,
+                    ZR_EXEC_IR_NULLABILITY_NONNULL) != ZR_EXEC_IR_VALUE_ID_INVALID,
+                "second clone source value setup failed");
+    /* Fail after the second temporary function has allocated its value pool. */
+    function->instructionCount = 1u;
+    function->instructionCapacity = 1u;
+    expect_true(!ZrCore_ExecIr_CloneModule(&source, &destination, &diagnostic),
+                "malformed source pool was cloned");
+    expect_true(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+                    diagnostic.functionToken == 82u,
+                "failed clone did not identify the source function");
+    expect_true(destination.functionCount == 1u &&
+                    destination.functions[0].functionToken == 73u,
+                "failed clone changed the published destination");
+    ZrCore_ExecIr_FreeModule(&destination);
+    ZrCore_ExecIr_FreeModule(&source);
+}
+
 static void test_structure_requires_reciprocal_cfg_edges(void) {
     SZrExecIrModule module;
     SZrExecIrFunction *function;
@@ -253,6 +293,7 @@ int main(void) {
     test_side_arrays_clone_without_aliasing();
     test_invalid_opcode_and_overflow_fail_before_allocation();
     test_validation_rejects_null_operand_pool_without_dereference();
+    test_failed_module_clone_reclaims_partially_copied_function();
     test_structure_requires_reciprocal_cfg_edges();
     puts("ssa core model PASS");
     return EXIT_SUCCESS;

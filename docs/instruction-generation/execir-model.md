@@ -20,6 +20,12 @@ control-flow, exception, suspension, and phi operations.
 
 `ZrCore_ExecIr_CloneModule` and `ZrCore_ExecIr_CloneFunction` build a temporary
 deep copy and publish it only after every side-array allocation succeeds.
+Module clone rollback includes the function currently being copied, even if a
+later side-array copy fails after earlier arrays have allocated storage; the
+previous destination remains published. `ssa_core_model` exercises this with
+two source functions, an invalid instruction pool in the second function, and
+a pre-existing destination. GCC AddressSanitizer with leak detection caught
+the partial-function leak before the rollback fix and reports no leak after it.
 Structural validation reports the first unknown opcode, invalid range, block,
 or value with a stable diagnostic identity.  This slice is intentionally not
 the default compiler path yet; SSA construction and projections consume it in
