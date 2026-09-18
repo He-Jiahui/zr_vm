@@ -201,6 +201,24 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
                     }
                     return ZR_FALSE;
                 }
+                if (edge->kind >= ZR_PARSER_CFG_EDGE_EXCEPTION) {
+                    TZrSemanticInstructionId site = 0u;
+                    if (block->instructionCount != 0u) {
+                        const SZrSemanticIrInstruction *terminator =
+                            (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                                (SZrArray *)&semantic->instructions,
+                                block->firstInstructionIndex + block->instructionCount - 1u);
+                        site = terminator->id;
+                    }
+                    diag_missing(diagnostic, output, i + 1u, site);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+                        diagnostic->sourceId = site;
+                        diagnostic->expectedVersion = ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT;
+                        diagnostic->actualVersion = (TZrUInt32)edge->kind;
+                    }
+                    return ZR_FALSE;
+                }
             }
             TZrUInt32 destination = block->outgoingEdges.isValid
                 ? ((const SZrParserCfgEdge *)ZrCore_Array_Get(

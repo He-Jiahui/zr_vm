@@ -11,6 +11,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
+  - tests/parser/test_ssa_builder_control_edges.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
@@ -25,6 +26,7 @@ tests:
   - tests/acceptance/ssa-builder-cfg-fact-identity.md
   - tests/acceptance/ssa-builder-ssa-dominance.md
   - tests/acceptance/ssa-builder-opcode-arity.md
+  - tests/acceptance/ssa-builder-control-edge-rejection.md
 doc_type: module-detail
 ---
 
@@ -69,6 +71,14 @@ silently accepting malformed CFG facts. They do not lower edge kinds into
 ExecIR exceptional/resume semantics; see
 `tests/acceptance/ssa-builder-cfg-fact-identity.md`.
 
+Dynamic edges representing exception, cleanup, return, suspend or resume
+control cannot yet be represented by this lowering. The builder rejects
+them with `UNSUPPORTED` and the source block and final semantic instruction
+site (when present), rather than silently publishing them as ordinary
+successors. Normal, true/false and switch edges retain their order. This
+is a temporary fail-closed boundary, not implementation of those control
+paths; see `tests/acceptance/ssa-builder-control-edge-rejection.md`.
+
 The instruction pool uses zero-based range offsets while published
 `terminatorInstructionId` uses one-based instruction IDs. For each semantic
 block, the builder records the current ExecIR instruction count before
@@ -104,7 +114,8 @@ arity before publishing their ranges: `BRANCH` needs exactly one target,
 reports `INVALID_RANGE` with the source block/instruction and the expected
 boundary versus actual count. `THROW` and `SUSPEND` are intentionally not
 constrained by these normal-edge rules until exceptional/resume CFG lowering
-has its own contract. The positive switch fixture retains its successor in
+has its own contract; typed exceptional/resume edges are rejected in the
+meantime. The positive switch fixture retains its successor in
 structurally verifiable ExecIR. See
 `tests/acceptance/ssa-builder-successor-arity.md`.
 
