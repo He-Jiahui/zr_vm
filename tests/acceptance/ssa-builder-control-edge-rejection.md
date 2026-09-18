@@ -81,3 +81,16 @@ built the focused builder fixture with ASan/UBSan and its standalone
 a synthetic canonical CFG fixture, **not**
 source-level exception-CFG production, effect-token construction, Oracle
 exception transfer, or four-backend acceptance.
+
+## Earlier throwing operation follow-up (2026-09-18)
+
+An additional RED case placed a second `CALL_TYPED` earlier in the same
+source block; it exited 1 with `FAIL: earlier throwing call used the last
+call's exception edge without a split`. The builder now rejects any earlier
+operation whose ExecIR schema declares may-throw or may-suspend, reporting
+`UNSUPPORTED` at that operation's source ID and preserving existing output.
+The producer must split at each throwing site. This guard is limited to
+known schema effects; it does not establish complete canonical effect facts.
+After this guard, the same MSVC builder CTest selection passed 4/4 and the
+focused WSL GCC ASan/UBSan executable printed
+`ssa builder control edges PASS` (exit 0, no sanitizer report).

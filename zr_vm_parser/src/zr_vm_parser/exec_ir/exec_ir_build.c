@@ -234,6 +234,27 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
             }
             count = block->successorCount;
         }
+        if (has_typed_invoke_edges(semantic, block)) {
+            TZrUInt32 prior;
+            for (prior = 0u; prior + 1u < block->instructionCount; ++prior) {
+                const SZrSemanticIrInstruction *instruction =
+                    (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                        (SZrArray *)&semantic->instructions,
+                        block->firstInstructionIndex + prior);
+                const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
+                    map_opcode(instruction->opcode));
+                if (info != ZR_NULL &&
+                    (info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW |
+                                    ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND)) != 0u) {
+                    diag_missing(diagnostic, output, i + 1u, instruction->id);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+                        diagnostic->sourceId = instruction->id;
+                    }
+                    return ZR_FALSE;
+                }
+            }
+        }
         for (j = 0u; j < count; ++j) {
             if (block->outgoingEdges.isValid) {
                 const SZrParserCfgEdge *edge = (const SZrParserCfgEdge *)

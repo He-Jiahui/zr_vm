@@ -263,6 +263,14 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
               (output.blocks[2].flags & ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u,
           "typed call normal/exception edges were not preserved as INVOKE");
 
+    instructions[0].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+              diagnostic.blockId == 1u && diagnostic.sourceId == 1u &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_INVOKE,
+          "earlier throwing call used the last call's exception edge without a split");
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+
     /* A call result does not exist on the exceptional continuation. */
     instructions[2].id = 3u;
     instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;

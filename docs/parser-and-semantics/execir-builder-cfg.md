@@ -85,6 +85,11 @@ leaves the caller's output unchanged. Cleanup, return, suspend, and resume
 edges remain unsupported, not ordinary successors. Normal, true/false, and
 switch edges retain their order. This is not yet production compiler CFG or
 effect-token generation; see `tests/acceptance/ssa-builder-control-edge-rejection.md`.
+An earlier schema-declared throwing or suspending operation in the same block
+also reports `UNSUPPORTED` at its own source instruction: the producer must
+split the block rather than attribute that operation's exceptional exit to
+the final call. Operations without known effect facts still require producer
+work before full exception/effect correctness can be claimed.
 For legacy inline successor rows without edge kinds, a nonempty row paired
 with `RETURN`, `THROW`, `SUSPEND`, `CLEANUP_DISPATCH`, or `EXIT` terminator
 metadata is rejected the same way; a typed control transfer must not evade
