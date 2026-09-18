@@ -10,4 +10,8 @@ TZrBool zr_parser_exec_ir_mark_place_values(
         TZrExecIrValueId firstPlaceValue,
         SZrExecIrDiagnostic *diagnostic);
 
+TZrBool zr_parser_exec_ir_promote_places(
+        SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic);
+
 #endif /* ZR_VM_PARSER_EXEC_IR_INTERNAL_H */

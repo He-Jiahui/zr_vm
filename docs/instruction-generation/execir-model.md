@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
@@ -12,6 +14,7 @@ tests:
   - tests/parser/test_ssa_core_model.c
   - tests/parser/test_ssa_value_validation.c
   - tests/parser/test_ssa_place_eligibility.c
+  - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
 doc_type: module-detail
@@ -67,6 +70,25 @@ the scalar-local fact, and the builder clears eligibility by omission for
 parameters, projected roots, loans, and escapes. The value flags are included
 by existing clone/hash paths and validated by core, so downstream passes do
 not need access to parser-owned Place or canonical-type objects.
+
+`ZrParser_ExecIr_BuildSsa` consumes that fact transactionally. It computes
+pruned phi placement from live-in blocks and iterated dominance frontiers,
+then renames along the dominator tree. An eligible `STORE` becomes a `NOP`
+after updating the current definition, and an eligible `LOAD` becomes a
+`COPY` from the current definition. Existing value and instruction IDs remain
+stable; only phi result values and incoming rows are appended. The dead
+`PLACE_BASE` remains as the stable Place identity in this stage. Unsupported
+uses of an address disable promotion for that Place, and ineligible addresses
+retain their original `LOAD` and `STORE` operations.
+
+Promotion runs on a deep clone and replaces the caller's function only after
+the rewritten candidate passes structural and SSA verification. A read before
+any reaching definition reports `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` without
+changing the input. Repeating the pass is a no-op because the promoted Place
+has no remaining memory operations. Phi incoming rows preserve predecessor
+occurrences, including loop backedges and parallel predecessor entries.
+Exceptional-edge definition points and critical-edge splitting are not part
+of this checkpoint.
 
 `RETURN` accepts zero operands for a void function and one operand for a value
 return. The opcode metadata exposes this as a zero minimum and one maximum, so

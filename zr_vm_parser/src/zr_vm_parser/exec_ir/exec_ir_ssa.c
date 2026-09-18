@@ -1,4 +1,4 @@
-#include "zr_vm_parser/exec_ir_builder.h"
+#include "exec_ir_internal.h"
 
 #include <string.h>
 
@@ -14,6 +14,19 @@ static TZrBool ssa_fail(const SZrExecIrFunction *function,
     return ZR_FALSE;
 }
 
+static TZrBool ssa_value_is_phi_result(const SZrExecIrFunction *function,
+                                       TZrExecIrValueId valueId) {
+    TZrUInt32 phiIndex;
+    if (function->phiCount > function->phiCapacity ||
+        (function->phiCount != 0u && function->phiPool == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    for (phiIndex = 0u; phiIndex < function->phiCount; ++phiIndex) {
+        if (function->phiPool[phiIndex].result == valueId) return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
 TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
     TZrUInt32 i, j;
     if (d != ZR_NULL) memset(d, 0, sizeof(*d));
@@ -25,9 +38,8 @@ TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         f->valueCount > f->valueCapacity ||
         (f->valueCount != 0u && f->values == ZR_NULL))
         return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u);
-    /* Values emitted by SemIR already carry stable definitions.  This pass
-       performs the conservative verifier-side SSA checks and leaves memory
-       places unpromoted when no canonical fact is available. */
+    /* Values emitted by SemIR already carry stable definitions.  Phi results
+       deliberately have no ordinary instruction definition. */
     for (i = 0u; i < f->valueCount; ++i) {
         if ((f->values[i].flags & ~ZR_EXEC_IR_VALUE_FLAG_MASK) != 0u ||
             ((f->values[i].flags &
@@ -62,11 +74,12 @@ TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
                     (f->values[id - 1u].flags &
                      ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u);
             if (!external && f->values[id - 1u].definition ==
-                                     ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+                                     ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+                !ssa_value_is_phi_result(f, id)) {
                 return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                 i + 1u);
             }
         }
     }
-    return ZR_TRUE;
+    return zr_parser_exec_ir_promote_places(f, d);
 }

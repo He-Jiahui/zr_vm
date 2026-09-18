@@ -40,9 +40,10 @@ The eligibility fixture covers a direct scalar local, parameter, non-scalar
 local, address-taken local, escaped local, and projected Place. The value
 validation fixture covers the new flag dependency and a truly unknown flag.
 
-## Remaining 01.02 work
+## Follow-on status
 
-Eligible Places are still represented by `PLACE_BASE`, `LOAD`, and `STORE`.
-Dominance-frontier phi insertion, liveness pruning, renaming, loop-carried
-values, and exceptional-edge availability remain open and must not be inferred
-from this checkpoint.
+This checkpoint records eligibility only. The subsequent
+`ssa-place-promotion.md` checkpoint implements liveness-pruned dominance-
+frontier phi insertion and renaming for normal control flow and loop
+backedges. Exceptional-edge availability and critical-edge conventions remain
+open and must not be inferred from either checkpoint.
