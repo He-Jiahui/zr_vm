@@ -57,3 +57,27 @@ printed the same PASS (exit 0). Full CTest on Linux remains outstanding.
 Explicit exceptional-result availability, handler/cleanup entry, suspend
 resume maps, loop phi insertion, and source-language parity are still
 outstanding. The unrelated dirty `test_ssa_construction.c` was not edited.
+
+## Typed call exception-edge follow-up (2026-09-18)
+
+The prior fail-closed guard rejected even a source-located typed call with
+explicit normal/exception edges; the new test first exited 1 on MSVC with
+`FAIL: typed call normal/exception edges were not preserved as INVOKE`.
+The builder now lowers exactly a final `CALL_TYPED`/virtual/dynamic/meta call
+with distinct, ordered normal and exception destinations to `INVOKE`, marks
+the handler block exceptional, and retains both successor occurrences. A
+handler reading the call result fails the core SSA verifier with
+`EXCEPTION_EDGE` on its own return instruction; reversed edge kinds still
+fail with `UNSUPPORTED` at the call site, preserving caller output. Bare
+throw/cleanup/suspend/return/resume edges still fail closed.
+
+MSVC 19.44 rebuilt four adjacent builder targets and
+`ctest --test-dir D:/zr-ssa-verify-871bc234 -R
+'^ssa_builder_(control_edges|cfg|dominance|fact_identity)$'
+--output-on-failure --no-tests=error` reported 4/4 passed. WSL GCC 11.4
+built the focused builder fixture with ASan/UBSan and its standalone
+`/mnt/d/zr-ssa-verify-871bc234/ssa_builder_control_gcc_asan` exited 0 with
+`ssa builder control edges PASS`, without a sanitizer report. This confirms
+a synthetic canonical CFG fixture, **not**
+source-level exception-CFG production, effect-token construction, Oracle
+exception transfer, or four-backend acceptance.

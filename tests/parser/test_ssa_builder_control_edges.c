@@ -222,12 +222,81 @@ static void test_conditional_branch_requires_ordered_typed_edges(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_typed_call_exception_edges_lower_to_invoke(void) {
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[2];
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u},
+                                    {.id = 2u, .typeId = 1u}};
+    TZrValueId resultOperand = 2u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_function(&semantic, blocks, edges);
+    memset(&blocks[2], 0, sizeof(blocks[2]));
+    memset(&edges[1], 0, sizeof(edges[1]));
+    blocks[2].id = 2u;
+    blocks[2].kind = ZR_PARSER_CFG_BLOCK_STATEMENT;
+    semantic.cfg.blocks = input_array(blocks, 3u, sizeof(*blocks));
+    edges[0].toBlockId = 1u;
+    edges[0].kind = ZR_PARSER_CFG_EDGE_NORMAL;
+    edges[1].toBlockId = 2u;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_EXCEPTION;
+    blocks[0].outgoingEdges = input_array(edges, 2u, sizeof(*edges));
+    blocks[0].instructionCount = 2u;
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    instructions[1].resultValueId = 2u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.values = input_array(values, 2u, sizeof(*values));
+    ZrCore_ExecIr_FunctionInit(&output);
+
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+              output.instructions[1].successorRange.count == 2u &&
+              output.successors[output.instructions[1].successorRange.start] == 2u &&
+              output.successors[output.instructions[1].successorRange.start + 1u] == 3u &&
+              (output.blocks[2].flags & ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u,
+          "typed call normal/exception edges were not preserved as INVOKE");
+
+    /* A call result does not exist on the exceptional continuation. */
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[2].operandCount = 1u;
+    blocks[2].firstInstructionIndex = 2u;
+    blocks[2].instructionCount = 1u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.valueOperands = input_array(&resultOperand, 1u, sizeof(resultOperand));
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+              diagnostic.blockId == 3u && diagnostic.instructionId == 3u &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_INVOKE,
+          "exception handler used an INVOKE result that only exists on the normal edge");
+
+    blocks[2].instructionCount = 0u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    edges[0].kind = ZR_PARSER_CFG_EDGE_EXCEPTION;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_NORMAL;
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+              diagnostic.blockId == 1u && diagnostic.sourceId == 2u &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_INVOKE,
+          "reversed call edges silently changed the exceptional continuation");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_rejects_unrepresentable_control_edges();
     test_exception_edge_reports_throw_source();
     test_rejects_typed_control_in_inline_successors();
     test_accepts_ordinary_dynamic_edge();
     test_conditional_branch_requires_ordered_typed_edges();
+    test_typed_call_exception_edges_lower_to_invoke();
     puts("ssa builder control edges PASS");
     return EXIT_SUCCESS;
 }

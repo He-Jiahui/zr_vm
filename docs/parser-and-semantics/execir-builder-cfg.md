@@ -75,13 +75,16 @@ silently accepting malformed CFG facts. They do not lower edge kinds into
 ExecIR exceptional/resume semantics; see
 `tests/acceptance/ssa-builder-cfg-fact-identity.md`.
 
-Dynamic edges representing exception, cleanup, return, suspend or resume
-control cannot yet be represented by this lowering. The builder rejects
-them with `UNSUPPORTED` and the source block and final semantic instruction
-site (when present), rather than silently publishing them as ordinary
-successors. Normal, true/false and switch edges retain their order. This
-is a temporary fail-closed boundary, not implementation of those control
-paths; see `tests/acceptance/ssa-builder-control-edge-rejection.md`.
+The builder lowers one explicit exceptional shape: a call at the end of a
+semantic block with exactly two dynamic edges, ordered normal then exception
+and targeting distinct blocks, becomes an `INVOKE` terminator. Its exceptional
+destination is marked as such in ExecIR, so the SSA verifier rejects use of
+the call result there. Reversing the edge order, omitting its kind, or putting
+an exception edge on a throw still reports source-located `UNSUPPORTED` and
+leaves the caller's output unchanged. Cleanup, return, suspend, and resume
+edges remain unsupported, not ordinary successors. Normal, true/false, and
+switch edges retain their order. This is not yet production compiler CFG or
+effect-token generation; see `tests/acceptance/ssa-builder-control-edge-rejection.md`.
 For legacy inline successor rows without edge kinds, a nonempty row paired
 with `RETURN`, `THROW`, `SUSPEND`, `CLEANUP_DISPATCH`, or `EXIT` terminator
 metadata is rejected the same way; a typed control transfer must not evade
@@ -118,11 +121,12 @@ focused negative and positive boundaries.
 
 For terminators with fixed normal-edge meaning, the builder checks successor
 arity before publishing their ranges: `BRANCH` needs exactly one target,
-`SWITCH` needs at least one, and `RETURN` needs none. A mismatched count
+`INVOKE` needs two typed targets, `SWITCH` needs at least one, and `RETURN`
+needs none. A mismatched count
 reports `INVALID_RANGE` with the source block/instruction and the expected
 boundary versus actual count. `THROW` and `SUSPEND` are intentionally not
 constrained by these normal-edge rules until exceptional/resume CFG lowering
-has its own contract; typed exceptional/resume edges are rejected in the
+has its own contract; other exceptional and resume edges are rejected in the
 meantime. The positive switch fixture retains its successor in
 structurally verifiable ExecIR. See
 `tests/acceptance/ssa-builder-successor-arity.md`.
