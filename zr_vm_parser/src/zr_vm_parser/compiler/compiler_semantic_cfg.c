@@ -276,6 +276,54 @@ void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block) {
     cs->preSemanticIrCfgStart = (TZrUInt32)cs->preSemanticIr.instructions.length;
 }
 
+TZrBool compiler_semantic_cfg_capture_slots(SZrCompilerState *cs,
+                                            SZrArray *snapshot) {
+    const SZrArray *slots;
+    if (cs == ZR_NULL || snapshot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    slots = &cs->preSemanticIrSlots;
+    if (!slots->isValid || slots->head == ZR_NULL ||
+        slots->elementSize == 0U || slots->length > slots->capacity) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Init(cs->state, snapshot, slots->elementSize,
+                      slots->length == 0U ? 1U : slots->length);
+    if (slots->length != 0U) {
+        ZrCore_Array_Append(cs->state, snapshot, slots->head, slots->length);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_restore_slots(SZrCompilerState *cs,
+                                            const SZrArray *snapshot) {
+    SZrArray *slots;
+    if (cs == ZR_NULL || snapshot == ZR_NULL || !snapshot->isValid ||
+        snapshot->head == ZR_NULL || snapshot->elementSize == 0U ||
+        snapshot->length > snapshot->capacity) {
+        return ZR_FALSE;
+    }
+    slots = &cs->preSemanticIrSlots;
+    if (!slots->isValid || slots->head == ZR_NULL ||
+        slots->elementSize != snapshot->elementSize ||
+        slots->capacity < snapshot->length) {
+        return ZR_FALSE;
+    }
+    if (snapshot->length != 0U) {
+        ZrCore_Memory_RawCopy(slots->head, snapshot->head,
+                              snapshot->length * snapshot->elementSize);
+    }
+    slots->length = snapshot->length;
+    return ZR_TRUE;
+}
+
+void compiler_semantic_cfg_free_slots(SZrCompilerState *cs,
+                                      SZrArray *snapshot) {
+    if (cs != ZR_NULL && snapshot != ZR_NULL) {
+        ZrCore_Array_Free(cs->state, snapshot);
+    }
+}
+
 TZrBool compiler_semantic_cfg_finish(SZrCompilerState *cs) {
     SZrSemanticIrInstructionSpec spec;
     SZrParserCfg *cfg;

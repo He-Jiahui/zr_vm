@@ -55,11 +55,14 @@ static void test_nested_source_if_covers_each_instruction_once(void) {
     static const TZrChar source[] =
             "var flag: bool = true;\n"
             "if (flag) { if (flag) { var inner: int = 1; } } "
-            "else { var outside: int = 2; }\n";
+            "else { var outside: int = 2; }\n"
+            "var after: int = 3;\n";
     SZrString *name = ZrCore_String_Create(g_state, "nested_if.zr", 12U);
     SZrAstNode *ast = ZrParser_Parse(g_state, source, sizeof(source) - 1U, name);
     SZrCompilerState compiler;
     const SZrSemanticIrFunction *function;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
     TZrSize instructionIndex;
     TZrSize blockIndex;
 
@@ -92,6 +95,11 @@ static void test_nested_source_if_covers_each_instruction_once(void) {
         }
         TEST_ASSERT_EQUAL_UINT32(1U, owners);
     }
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;
     ZrParser_CompilerState_Free(&compiler);
@@ -309,6 +317,47 @@ static void test_source_if_lowers_place_provenance_to_exec_ir(void) {
     TEST_ASSERT_GREATER_THAN_UINT32(0U, placeInstructionCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0U, loadInstructionCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0U, storeInstructionCount);
+
+    ZrCore_ExecIr_FreeFunction(&output);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_source_if_isolates_sibling_temporary_values(void) {
+    static const TZrChar source[] =
+            "var flag: bool = true;\n"
+            "if (flag) { var left: int = 1; } "
+            "else { var right: int = 2; }\n";
+    SZrString *name = ZrCore_String_Create(
+            g_state, "source_branch_temps.zr", 22U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    semantic = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(semantic);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            semantic, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
 
     ZrCore_ExecIr_FreeFunction(&output);
     ZrCore_Function_Free(g_state, compiler.currentFunction);

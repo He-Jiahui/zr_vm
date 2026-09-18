@@ -3748,6 +3748,10 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
 // 编译 if 语句
 static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrArray semanticSlotSnapshot;
+    TZrBool hasSemanticSlotSnapshot = ZR_FALSE;
+
+    ZrCore_Array_Construct(&semanticSlotSnapshot);
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -3777,6 +3781,15 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Compiler_Error(cs, "If condition lacks a semantic value", node->location);
         return;
     }
+    if (hasSemanticCfg) {
+        hasSemanticSlotSnapshot = compiler_semantic_cfg_capture_slots(
+                cs, &semanticSlotSnapshot);
+        if (!hasSemanticSlotSnapshot) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to snapshot semantic branch values", node->location);
+            return;
+        }
+    }
     
     // 创建 else 标签
     TZrSize elseLabelId = create_label(cs);
@@ -3793,7 +3806,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Statement_Compile(cs, ifExpr->thenExpr);
     }
     if (cs->hasError) {
-        return;
+        goto cleanup;
     }
     if (hasSemanticCfg && !cs->preSemanticIrCfgActive) {
         hasSemanticCfg = ZR_FALSE;
@@ -3801,7 +3814,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (hasSemanticCfg &&
         !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
         ZrParser_Compiler_Error(cs, "Failed to record if true branch", node->location);
-        return;
+        goto cleanup;
     }
     
     // JUMP -> end
@@ -3813,6 +3826,12 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     // 解析 else 标签
     resolve_label(cs, elseLabelId);
     if (hasSemanticCfg) {
+        if (!compiler_semantic_cfg_restore_slots(
+                    cs, &semanticSlotSnapshot)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to restore semantic branch values", node->location);
+            goto cleanup;
+        }
         compiler_semantic_cfg_enter(cs, elseBlock);
     }
     
@@ -3821,7 +3840,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Statement_Compile(cs, ifExpr->elseExpr);
     }
     if (cs->hasError) {
-        return;
+        goto cleanup;
     }
     if (hasSemanticCfg && !cs->preSemanticIrCfgActive) {
         hasSemanticCfg = ZR_FALSE;
@@ -3829,13 +3848,24 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (hasSemanticCfg &&
         !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
         ZrParser_Compiler_Error(cs, "Failed to record if false branch", node->location);
-        return;
+        goto cleanup;
     }
     
     // 解析 end 标签
     resolve_label(cs, endLabelId);
     if (hasSemanticCfg) {
+        if (!compiler_semantic_cfg_restore_slots(
+                    cs, &semanticSlotSnapshot)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to restore semantic join values", node->location);
+            goto cleanup;
+        }
         compiler_semantic_cfg_enter(cs, joinBlock);
+    }
+
+cleanup:
+    if (hasSemanticSlotSnapshot) {
+        compiler_semantic_cfg_free_slots(cs, &semanticSlotSnapshot);
     }
 }
 

@@ -4,11 +4,14 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
   - zr_vm_core/include/zr_vm_core/exec_ir.h
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
 tests:
+  - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
@@ -31,6 +34,7 @@ tests:
   - tests/acceptance/ssa-builder-control-edge-rejection.md
   - tests/acceptance/ssa-builder-fact-identity.md
   - tests/acceptance/ssa-builder-test-registration.md
+  - tests/acceptance/ssa-source-branch-slot-isolation.md
 doc_type: module-detail
 ---
 
@@ -44,6 +48,15 @@ constructs SSA. It replaces the caller's function only after every stage
 succeeds. CFG block indices in SemanticIR are zero-based; emitted ExecIR block
 IDs are one-based. The producer uses `outgoingEdges` when that array is valid,
 otherwise the block's bounded inline `successors` array.
+
+While the source compiler emits a diamond, each arm starts from a snapshot of
+the entry stack-slot-to-ValueId bridge. The producer restores that snapshot
+before the sibling arm and again at the join. This prevents a recycled stack
+slot in one arm from resolving to a temporary defined only in another arm;
+nested diamonds use independent snapshots. Restoration changes only the
+compiler's mutable lookup bridge: instructions, values, Places, source ranges,
+and both arm CFG ranges remain in canonical SemanticIR. Values assigned across
+the join still require the planned promotion and phi/rename work.
 
 For each source block, outgoing IDs occupy a contiguous segment of the
 function's successor side pool. The builder records the segment start before

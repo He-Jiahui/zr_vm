@@ -113,6 +113,12 @@ TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                   TZrUInt32 target,
                                   SZrFileRange range);
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block);
+TZrBool compiler_semantic_cfg_capture_slots(SZrCompilerState *cs,
+                                            SZrArray *snapshot);
+TZrBool compiler_semantic_cfg_restore_slots(SZrCompilerState *cs,
+                                            const SZrArray *snapshot);
+void compiler_semantic_cfg_free_slots(SZrCompilerState *cs,
+                                      SZrArray *snapshot);
 TZrBool compiler_semantic_cfg_finish(SZrCompilerState *cs);
 TZrBool compiler_semantic_ir_get_slot_identity(
         SZrCompilerState *cs,
