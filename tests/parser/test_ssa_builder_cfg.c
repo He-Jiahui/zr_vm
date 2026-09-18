@@ -136,6 +136,47 @@ static void test_accepts_edge_with_matching_source_block(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_rejects_cfg_block_with_mismatched_id(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    blocks[1].id = 0u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.functionToken == 42u && diagnostic.blockId == 2u &&
+              diagnostic.expectedVersion == 2u && diagnostic.actualVersion == 1u &&
+              output.blockCount == 0u,
+          "builder silently renumbered a malformed canonical CFG block");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_rejects_unknown_dynamic_edge_kind(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrParserCfgEdge edge = {.fromBlockId = 0u, .toBlockId = 1u,
+                             .kind = ZR_PARSER_CFG_EDGE_ENUM_MAX};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    blocks[0].outgoingEdges = input_array(&edge, 1u, sizeof(edge));
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.functionToken == 42u && diagnostic.blockId == 1u &&
+              diagnostic.expectedVersion == ZR_PARSER_CFG_EDGE_ENUM_MAX - 1u &&
+              diagnostic.actualVersion == ZR_PARSER_CFG_EDGE_ENUM_MAX &&
+              output.blockCount == 0u,
+          "builder accepted an unknown canonical CFG edge kind");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 static void test_inline_successors_preserve_both_edges(void) {
     SZrParserCfgBlock blocks[3];
     SZrSemanticIrFunction semantic;
@@ -748,6 +789,8 @@ int main(void) {
     test_rejects_out_of_range_semantic_target();
     test_rejects_edge_with_wrong_source_block();
     test_accepts_edge_with_matching_source_block();
+    test_rejects_cfg_block_with_mismatched_id();
+    test_rejects_unknown_dynamic_edge_kind();
     test_inline_successors_preserve_both_edges();
     test_rejects_malformed_outgoing_edge_storage();
     test_rejects_outgoing_edges_beyond_declared_capacity();

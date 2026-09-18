@@ -21,6 +21,7 @@ tests:
   - tests/acceptance/ssa-builder-successor-arity.md
   - tests/acceptance/ssa-builder-instruction-partition.md
   - tests/acceptance/ssa-builder-edge-source.md
+  - tests/acceptance/ssa-builder-cfg-fact-identity.md
 doc_type: module-detail
 ---
 
@@ -54,6 +55,16 @@ with the enclosing one-based block and expected/actual one-based source IDs.
 The check does not apply to the legacy inline successor IDs, which contain
 only destinations. See `tests/acceptance/ssa-builder-edge-source.md` for
 the wrong-source and valid non-entry self-edge fixtures.
+
+Canonical CFG blocks also carry their own zero-based `id`; it must equal
+their index in the block array before the builder emits a one-based ExecIR
+block. Dynamic edge kinds must be within the declared parser CFG enum.
+Invalid block identity reports `INVALID_BLOCK` with expected and actual
+one-based IDs; an unknown edge kind reports `INVALID_RANGE` with the highest
+known enum value and the encountered value. These input checks prevent
+silently accepting malformed CFG facts. They do not lower edge kinds into
+ExecIR exceptional/resume semantics; see
+`tests/acceptance/ssa-builder-cfg-fact-identity.md`.
 
 The instruction pool uses zero-based range offsets while published
 `terminatorInstructionId` uses one-based instruction IDs. For each semantic

@@ -146,6 +146,16 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
         const SZrParserCfgBlock *block = (const SZrParserCfgBlock *)
             ZrCore_Array_Get((SZrArray *)&semantic->cfg.blocks, i);
         TZrUInt32 count, j;
+        if (block->id != i) {
+            diag_missing(diagnostic, output, i + 1u, 0u);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK;
+                diagnostic->expectedVersion = i + 1u;
+                diagnostic->actualVersion = block->id == UINT32_MAX
+                    ? UINT32_MAX : block->id + 1u;
+            }
+            return ZR_FALSE;
+        }
         if (block->outgoingEdges.isValid) {
             if (block->outgoingEdges.length > UINT32_MAX ||
                 block->outgoingEdges.length > block->outgoingEdges.capacity ||
@@ -178,6 +188,16 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
                         diagnostic->expectedVersion = i + 1u;
                         diagnostic->actualVersion = edge->fromBlockId == UINT32_MAX
                             ? UINT32_MAX : edge->fromBlockId + 1u;
+                    }
+                    return ZR_FALSE;
+                }
+                if (edge->kind < ZR_PARSER_CFG_EDGE_NORMAL ||
+                    edge->kind >= ZR_PARSER_CFG_EDGE_ENUM_MAX) {
+                    diag_missing(diagnostic, output, i + 1u, 0u);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                        diagnostic->expectedVersion = ZR_PARSER_CFG_EDGE_ENUM_MAX - 1u;
+                        diagnostic->actualVersion = (TZrUInt32)edge->kind;
                     }
                     return ZR_FALSE;
                 }
