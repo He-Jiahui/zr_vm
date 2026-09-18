@@ -313,10 +313,44 @@ TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFuncti
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_ExecIr_BuildModule(const SZrExecIrBuildInput *input, SZrExecIrModule *output, SZrExecIrDiagnostic *diagnostic) {
-    TZrExecIrFunctionId id; SZrExecIrFunction *f;
-    if (input == ZR_NULL || output == ZR_NULL || input->semanticFunction == ZR_NULL) return ZR_FALSE;
-    if (!ZrCore_ExecIr_ModuleAddFunction(output, input->functionToken, input->signatureHash, &id)) return ZR_FALSE;
-    f = ZrCore_ExecIr_ModuleFunctionAt(output, id);
-    return ZrParser_ExecIr_Build(input->semanticFunction, &input->options, f, diagnostic);
+TZrBool ZrParser_ExecIr_BuildModule(const SZrExecIrBuildInput *input,
+                                    SZrExecIrModule *output,
+                                    SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrFunction prepared;
+    SZrExecIrFunction *slot;
+    SZrExecutionContract contract;
+    TZrExecIrFunctionId id;
+    if (input == ZR_NULL || output == ZR_NULL || input->semanticFunction == ZR_NULL ||
+        input->functionToken == 0u) {
+        diag_missing(diagnostic, ZR_NULL, 0u, 0u);
+        return ZR_FALSE;
+    }
+    ZrCore_ExecIr_FunctionInit(&prepared);
+    if (!ZrParser_ExecIr_Build(input->semanticFunction, &input->options,
+                               &prepared, diagnostic)) {
+        if (diagnostic != ZR_NULL) diagnostic->functionToken = input->functionToken;
+        return ZR_FALSE;
+    }
+    /* Do not reserve a published module slot until the whole function is
+     * ready: a failed build must not leave a zero-ID function behind. */
+    if (!ZrCore_ExecIr_ModuleAddFunction(output, input->functionToken,
+                                         input->signatureHash, &id)) {
+        ZrCore_ExecIr_FreeFunction(&prepared);
+        diag_missing(diagnostic, ZR_NULL, 0u, 0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->functionToken = input->functionToken;
+            diagnostic->code = output->functionCount == UINT32_MAX
+                                   ? ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW
+                                   : ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+        }
+        return ZR_FALSE;
+    }
+    slot = ZrCore_ExecIr_ModuleFunctionAt(output, id);
+    contract = slot->contract;
+    prepared.id = id;
+    prepared.functionToken = input->functionToken;
+    prepared.signatureHash = input->signatureHash;
+    prepared.contract = contract;
+    *slot = prepared;
+    return ZR_TRUE;
 }

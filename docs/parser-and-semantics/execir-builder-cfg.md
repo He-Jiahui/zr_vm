@@ -13,6 +13,7 @@ tests:
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
+  - tests/acceptance/ssa-builder-module-transaction.md
 doc_type: module-detail
 ---
 
@@ -59,6 +60,19 @@ destination. A 32-bit predecessor count or allocation-size overflow reports
 `CAPACITY_OVERFLOW`; allocation failure reports `OUT_OF_MEMORY`. Scratch
 counts, cursors and rows are freed on every path. The outer builder frees a
 failed temporary function and leaves existing caller output unchanged.
+
+The module-level entry builds an isolated candidate before reserving the next
+published function slot. If canonical-fact lowering fails, the module's
+function count and existing entries are unchanged; successful publication
+retains the module-assigned one-based function ID, caller-provided token and
+signature, and its initialized execution contract (including generation).
+An invalid zero token is diagnosed before construction, and a failed slot
+reservation frees the prepared candidate. Failed module builds report the
+caller-supplied function token while preserving the lower-level block and
+instruction diagnostic. See
+`tests/acceptance/ssa-builder-module-transaction.md` for the independent
+failure/success/retry fixture. This is a builder transaction boundary, not
+pruned SSA promotion or full source-language parity.
 
 This preflight covers adjacency bounds, not semantic correctness of the
 terminator opcode, exceptional-result availability, pruned phi insertion or

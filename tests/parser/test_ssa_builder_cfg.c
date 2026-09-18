@@ -200,6 +200,80 @@ static void test_builder_preserves_instruction_ranges_and_branch_successors(void
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_module_builder_preserves_assigned_identity(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrBuildInput input = {0};
+    SZrExecIrModule module;
+    SZrExecIrDiagnostic diagnostic;
+    const SZrExecIrFunction *function;
+
+    make_semantic_function(&semantic, &block, 1u);
+    input.semanticFunction = &semantic;
+    input.functionToken = 77u;
+    input.signatureHash = 99u;
+    ZrCore_ExecIr_ModuleInit(&module);
+    check(ZrParser_ExecIr_BuildModule(&input, &module, &diagnostic),
+          "module builder rejected valid canonical facts");
+    function = ZrCore_ExecIr_ModuleFunctionAtConst(&module, 1u);
+    check(module.functionCount == 1u && function != NULL &&
+              function->id == 1u && function->functionToken == 77u &&
+              function->signatureHash == 99u &&
+              function->contract.targetToken == 77u &&
+              function->contract.signatureHash == 99u &&
+              function->contract.generation == 1u,
+          "module builder lost the module-assigned function identity");
+    check(ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "module builder published an invalid function ID or contract");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_module_builder_failure_does_not_append_partial_function(void) {
+    SZrParserCfgBlock validBlock, invalidBlock;
+    SZrSemanticIrFunction validSemantic, invalidSemantic;
+    SZrExecIrBuildInput input = {0};
+    SZrExecIrModule module;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&validSemantic, &validBlock, 1u);
+    make_semantic_function(&invalidSemantic, &invalidBlock, 1u);
+    invalidBlock.successorCount = 1u;
+    invalidBlock.successors[0] = 1u; /* There is no target block 1. */
+    input.semanticFunction = &invalidSemantic;
+    input.functionToken = 77u;
+    input.signatureHash = 99u;
+    ZrCore_ExecIr_ModuleInit(&module);
+    input.functionToken = 0u;
+    check(!ZrParser_ExecIr_BuildModule(&input, &module, &diagnostic) &&
+              diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+              module.functionCount == 0u,
+          "module builder accepted a missing function token");
+    input.functionToken = 77u;
+    check(!ZrParser_ExecIr_BuildModule(&input, &module, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.functionToken == 77u &&
+              module.functionCount == 0u,
+          "failed initial module build published a partial function");
+    input.semanticFunction = &validSemantic;
+    check(ZrParser_ExecIr_BuildModule(&input, &module, &diagnostic),
+          "valid module build failed after a rejected input");
+    input.semanticFunction = &invalidSemantic;
+    check(!ZrParser_ExecIr_BuildModule(&input, &module, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.functionToken == 77u &&
+              module.functionCount == 1u && module.functions[0].id == 1u &&
+              module.functions[0].functionToken == 77u,
+          "failed repeat module build changed the published function table");
+    input.semanticFunction = &validSemantic;
+    input.functionToken = 78u;
+    check(ZrParser_ExecIr_BuildModule(&input, &module, &diagnostic) &&
+              module.functionCount == 2u && module.functions[1].id == 2u &&
+              module.functions[1].functionToken == 78u,
+          "failed module build consumed the next stable function ID");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -207,6 +281,8 @@ int main(void) {
     test_rejects_malformed_outgoing_edge_storage();
     test_rejects_excess_inline_successors();
     test_builder_preserves_instruction_ranges_and_branch_successors();
+    test_module_builder_failure_does_not_append_partial_function();
+    test_module_builder_preserves_assigned_identity();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }
