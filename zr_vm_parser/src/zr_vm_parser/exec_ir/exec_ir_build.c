@@ -78,6 +78,7 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
         TZrUInt32 count, j;
         if (block->outgoingEdges.isValid) {
             if (block->outgoingEdges.length > UINT32_MAX ||
+                block->outgoingEdges.length > block->outgoingEdges.capacity ||
                 (block->outgoingEdges.length != 0u &&
                  (block->outgoingEdges.head == ZR_NULL ||
                   block->outgoingEdges.elementSize != sizeof(SZrParserCfgEdge)))) {

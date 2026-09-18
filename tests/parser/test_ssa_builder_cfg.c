@@ -130,6 +130,27 @@ static void test_rejects_malformed_outgoing_edge_storage(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_rejects_outgoing_edges_beyond_declared_capacity(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrParserCfgEdge edge = {.toBlockId = 1u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    blocks[0].outgoingEdges = input_array(&edge, 1u, sizeof(edge));
+    blocks[0].outgoingEdges.capacity = 0u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrCore_ExecIr_FunctionAddBlock(&output, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+          "could not prepare output for edge-capacity failure");
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY &&
+              output.blockCount == 1u && output.successorCount == 0u,
+          "builder accepted an outgoing edge count exceeding its capacity");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 static void test_rejects_excess_inline_successors(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrFunction semantic;
@@ -324,6 +345,7 @@ int main(void) {
     test_rejects_out_of_range_semantic_target();
     test_inline_successors_preserve_both_edges();
     test_rejects_malformed_outgoing_edge_storage();
+    test_rejects_outgoing_edges_beyond_declared_capacity();
     test_rejects_excess_inline_successors();
     test_builder_preserves_instruction_ranges_and_branch_successors();
     test_module_builder_failure_does_not_append_partial_function();

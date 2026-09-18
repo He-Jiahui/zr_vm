@@ -15,6 +15,7 @@ tests:
   - tests/acceptance/ssa-builder-instruction-lowering.md
   - tests/acceptance/ssa-builder-module-transaction.md
   - tests/acceptance/ssa-builder-canonical-input-shape.md
+  - tests/acceptance/ssa-builder-edge-capacity.md
 doc_type: module-detail
 ---
 
@@ -53,8 +54,11 @@ exception/short-circuit semantics.
 
 ## Validation, ownership and failure
 
-The builder checks CFG block array shape, outgoing edge storage, inline edge
-capacity and all destinations before publishing an edge. Bad storage reports
+The builder checks CFG block array shape, outgoing edge storage and declared
+edge capacity, inline edge capacity and all destinations before publishing an
+edge. A nonempty dynamic edge row cannot advertise more entries than its
+backing array's capacity, even when its pointer and element width are valid.
+Bad storage reports
 `INVALID_RANGE` with the source block; a missing destination reports
 `INVALID_BLOCK` with source block, valid block count and offending one-based
 destination. A 32-bit predecessor count or allocation-size overflow reports
@@ -87,6 +91,8 @@ This preflight covers adjacency bounds, not semantic correctness of the
 terminator opcode, exceptional-result availability, pruned phi insertion or
 source-program behavioral parity. The dominator analysis has its own
 validation and is described in `execir-cfg-dominators.md`.
+The nested edge-capacity regression is recorded in
+`tests/acceptance/ssa-builder-edge-capacity.md`.
 
 ## Regression boundary
 
