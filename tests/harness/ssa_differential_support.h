@@ -108,7 +108,8 @@ TZrBool ZrTests_Ssa_RunFixture(const SZrSsaFixture *fixture,
 void ZrTests_Ssa_CoverageInit(SZrSsaCoverage *coverage, TZrUInt32 requiredBackends);
 void ZrTests_Ssa_CoverageRecord(SZrSsaCoverage *coverage,
                                 TZrUInt32 backend,
-                                TZrBool succeeded);
+                                const SZrSsaObservation *observation,
+                                TZrBool semanticMatches);
 TZrBool ZrTests_Ssa_CoverageComplete(const SZrSsaCoverage *coverage);
 const TZrChar *ZrTests_Ssa_DiffReasonName(EZrSsaDiffReason reason);
 

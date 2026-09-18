@@ -44,6 +44,15 @@ static TZrBool fixture_runner(const SZrSsaFixture *fixture,
     return ZR_TRUE;
 }
 
+static TZrBool fallback_fixture_runner(const SZrSsaFixture *fixture,
+                                       TZrUInt32 backend,
+                                       SZrSsaObservation *observation) {
+    if (!fixture_runner(fixture, backend, observation)) return ZR_FALSE;
+    observation->backend = 0u;
+    observation->fallbackVisible = ZR_TRUE;
+    return ZR_TRUE;
+}
+
 static void test_observation_compare_checks_event_order(void) {
     SZrSsaObservation expected;
     SZrSsaObservation actual;
@@ -98,13 +107,15 @@ static void test_runner_and_coverage_fail_closed(void) {
     expect_true(observation.backend == 1u, "runner backend identity was lost");
 
     ZrTests_Ssa_CoverageInit(&coverage, fixture.requiredBackends);
-    ZrTests_Ssa_CoverageRecord(&coverage, 0u, ZR_TRUE);
+    observation.backend = 0u;
+    ZrTests_Ssa_CoverageRecord(&coverage, 0u, &observation, ZR_TRUE);
     expect_true(!ZrTests_Ssa_CoverageComplete(&coverage),
                 "incomplete backend coverage was accepted");
-    ZrTests_Ssa_CoverageRecord(&coverage, 1u, ZR_FALSE);
+    observation.backend = 1u;
+    ZrTests_Ssa_CoverageRecord(&coverage, 1u, &observation, ZR_FALSE);
     expect_true(!ZrTests_Ssa_CoverageComplete(&coverage),
                 "missing required backend was accepted");
-    ZrTests_Ssa_CoverageRecord(&coverage, 1u, ZR_TRUE);
+    ZrTests_Ssa_CoverageRecord(&coverage, 1u, &observation, ZR_TRUE);
     expect_true(!ZrTests_Ssa_CoverageComplete(&coverage),
                 "a previously failed backend was silently cleared");
 
@@ -115,10 +126,53 @@ static void test_runner_and_coverage_fail_closed(void) {
                 "unsupported backend diagnostic was lost");
 }
 
+static void test_fallback_preserves_semantics_but_not_native_coverage(void) {
+    SZrSsaFixture fixture;
+    SZrSsaObservation baseline, fallback, native;
+    SZrSsaCoverage coverage;
+    SZrSsaDiffDiagnostic diagnostic;
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.name = "fallback";
+    fixture.requiredBackends = ((TZrUInt32)1u << 1u);
+    fixture.runner = fallback_fixture_runner;
+    expect_true(fixture_runner(&fixture, 0u, &baseline), "baseline runner failed");
+    expect_true(ZrTests_Ssa_RunFixture(&fixture, 1u, &fallback, &diagnostic) &&
+                    fallback.fallbackVisible && fallback.backend == 0u &&
+                    ZrTests_Ssa_Compare(&baseline, &fallback, &diagnostic),
+                "visible fallback lost its valid semantic observation");
+    ZrTests_Ssa_CoverageInit(&coverage, fixture.requiredBackends);
+    ZrTests_Ssa_CoverageRecord(&coverage, 1u, &fallback, ZR_TRUE);
+    expect_true(!ZrTests_Ssa_CoverageComplete(&coverage) &&
+                    coverage.executedBackends == ((TZrUInt32)1u << 1u) &&
+                    coverage.failedBackends == ((TZrUInt32)1u << 1u),
+                "fallback was counted as native coverage");
+
+    fixture.runner = fixture_runner;
+    expect_true(ZrTests_Ssa_RunFixture(&fixture, 1u, &native, &diagnostic),
+                "native fixture failed");
+    ZrTests_Ssa_CoverageInit(&coverage, fixture.requiredBackends);
+    ZrTests_Ssa_CoverageRecord(&coverage, 1u, &native, ZR_TRUE);
+    expect_true(ZrTests_Ssa_CoverageComplete(&coverage),
+                "matching actual backend was not counted");
+    native.fallbackVisible = ZR_TRUE;
+    ZrTests_Ssa_CoverageInit(&coverage, fixture.requiredBackends);
+    ZrTests_Ssa_CoverageRecord(&coverage, 1u, &native, ZR_TRUE);
+    expect_true(!ZrTests_Ssa_CoverageComplete(&coverage),
+                "a declared fallback to the requested backend was counted as native");
+    native.fallbackVisible = ZR_FALSE;
+    native.backend = 0u;
+    ZrTests_Ssa_CoverageInit(&coverage, fixture.requiredBackends);
+    ZrTests_Ssa_CoverageRecord(&coverage, 1u, &native, ZR_TRUE);
+    expect_true(!ZrTests_Ssa_CoverageComplete(&coverage),
+                "a different actual backend was counted as requested coverage");
+}
+
 int main(void) {
     test_observation_compare_checks_event_order();
     test_observation_compare_checks_exception_and_bits();
     test_runner_and_coverage_fail_closed();
+    test_fallback_preserves_semantics_but_not_native_coverage();
     puts("ssa differential harness PASS");
     return EXIT_SUCCESS;
 }

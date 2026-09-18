@@ -15,7 +15,8 @@ static TZrBool zr_ssa_event_kind_is_valid(EZrSsaEventKind kind) {
 static TZrBool zr_ssa_observation_is_valid(const SZrSsaObservation *observation) {
     TZrUInt32 index;
 
-    if (observation == ZR_NULL || observation->eventCount > ZR_SSA_MAX_EVENTS ||
+    if (observation == ZR_NULL || observation->backend >= 32u ||
+        observation->eventCount > ZR_SSA_MAX_EVENTS ||
         observation->resultType < ZR_SSA_RESULT_NONE ||
         observation->resultType > ZR_SSA_RESULT_UNIT ||
         (observation->hasException == ZR_FALSE &&
@@ -211,7 +212,8 @@ void ZrTests_Ssa_CoverageInit(SZrSsaCoverage *coverage, TZrUInt32 requiredBacken
 
 void ZrTests_Ssa_CoverageRecord(SZrSsaCoverage *coverage,
                                 TZrUInt32 backend,
-                                TZrBool succeeded) {
+                                const SZrSsaObservation *observation,
+                                TZrBool semanticMatches) {
     TZrUInt32 bit;
 
     if (coverage == ZR_NULL || backend >= 32u) {
@@ -219,7 +221,11 @@ void ZrTests_Ssa_CoverageRecord(SZrSsaCoverage *coverage,
     }
     bit = (TZrUInt32)1u << backend;
     coverage->executedBackends |= bit;
-    if (succeeded == ZR_FALSE) {
+    /* Semantic equality can succeed under fallback; only the requested
+     * backend actually executing without fallback satisfies its gate. */
+    if (semanticMatches == ZR_FALSE ||
+        !zr_ssa_observation_is_valid(observation) ||
+        observation->backend != backend || observation->fallbackVisible) {
         coverage->failedBackends |= bit;
     }
 }
