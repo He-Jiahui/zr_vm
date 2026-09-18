@@ -47,6 +47,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
@@ -123,6 +124,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
@@ -329,6 +331,8 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - failure-atomic cached idoms for diamond, loop and unreachable block cases
 - `execir-builder-cfg.md`
   - contiguous builder successor/predecessor side pools and malformed-edge diagnostics
+- `execir-ssa-validation.md`
+  - conservative operand/value validation and precise SSA diagnostic locations
 - `iterator-yield-suspension.md`
   - `yield expression;` as a normal `FunctionDefinition` statement
   - explicit canonical `zr.iteration.Iterator<T>` carrier and element contract
