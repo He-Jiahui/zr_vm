@@ -5,6 +5,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_call_graph.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_escape.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_inline.c
@@ -12,6 +13,7 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 tests:
   - tests/parser/test_ssa_value_validation.c
+  - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_escape_ownership.c
   - tests/parser/test_ssa_interprocedural_inlining.c
@@ -39,6 +41,16 @@ fully defined operands even though the backing storage remains unpromoted.
 Semantic data value IDs retain their original numeric identity; appended
 address/provenance values cannot renumber source facts.
 
+The builder preserves the first promotion-screening decision on those address
+values. `PLACE_ADDRESS` identifies every lowered Place address, while
+`PROMOTABLE_PLACE` identifies only a direct non-parameter local whose producer
+proved a canonical primitive representation and for which the function has no
+child projection, loan fact, or escape fact. The screen is fail-closed:
+parameters, aggregate or unknown representations, projected Places,
+address-taken locals, and escaped locals retain explicit load/store form. This
+metadata is the input contract for phi insertion and renaming; this stage does
+not remove memory operations yet.
+
 The pass checks function-level storage consistency before reading instructions
 or operand/value side pools: counts may not exceed allocated capacities and a
 nonempty pool needs backing storage. Per instruction, the opcode must be known,
@@ -65,6 +77,12 @@ cannot appear as an instruction or phi result. Call-graph and inlining
 parameter discovery, plus escape function-lifetime initialization, use the
 flag rather than inferring parameter status from `definition == 0`; that
 inference was unsound for phi results and unused reserved values.
+
+`ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE` is valid only together with
+`ZR_EXEC_IR_VALUE_FLAG_PLACE_ADDRESS`. Both the parser SSA entry point and the
+core structural verifier reject a promotable bit on an ordinary value. Value
+flags remain part of the existing function hashes, so the eligibility decision
+participates in cache and pass identity without a parallel side channel.
 
 ## Diagnostics and ownership
 

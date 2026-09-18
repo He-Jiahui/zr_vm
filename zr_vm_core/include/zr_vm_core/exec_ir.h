@@ -153,7 +153,12 @@ typedef struct SZrExecIrOpcodeInfo {
 } SZrExecIrOpcodeInfo;
 
 #define ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY ((TZrUInt32)1u << 0u)
-#define ZR_EXEC_IR_VALUE_FLAG_MASK ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY
+#define ZR_EXEC_IR_VALUE_FLAG_PLACE_ADDRESS ((TZrUInt32)1u << 1u)
+#define ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE ((TZrUInt32)1u << 2u)
+#define ZR_EXEC_IR_VALUE_FLAG_MASK                                      \
+    (ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY |                             \
+     ZR_EXEC_IR_VALUE_FLAG_PLACE_ADDRESS |                              \
+     ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE)
 
 typedef struct SZrExecIrValue {
     TZrExecIrValueId id;

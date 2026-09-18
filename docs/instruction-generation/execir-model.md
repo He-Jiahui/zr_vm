@@ -11,6 +11,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_core_model.c
   - tests/parser/test_ssa_value_validation.c
+  - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
 doc_type: module-detail
@@ -40,6 +41,12 @@ value flags, an external value reused as an instruction or phi result, and an
 unflagged undefined operand are invalid. The explicit flag prevents analyses
 from confusing a phi result or an unused reserved value with a parameter.
 
+Place address values carry `ZR_EXEC_IR_VALUE_FLAG_PLACE_ADDRESS`. A screened
+local root may also carry `ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE`; that flag
+is invalid without the address flag. These bits are declarative facts rather
+than completed optimization state: until SSA construction rewrites the Place,
+its `PLACE_BASE`, `LOAD`, and `STORE` instructions remain authoritative.
+
 `exec_ir_opcode.def` is the single opcode schema source for the enum and
 metadata table.  It records operand bounds, terminator/value flags, and effect
 classes for arithmetic, place, memory, call, allocation, ownership/drop,
@@ -54,6 +61,12 @@ address followed by the stored data value. Static projections use their entry
 descriptor as the second operand; dynamic projections use their canonical
 index value. This keeps frame roots and selectors explicit without encoding a
 host pointer or reconstructing facts from ExecBC.
+
+Promotion eligibility is likewise explicit. The SemanticIR producer supplies
+the scalar-local fact, and the builder clears eligibility by omission for
+parameters, projected roots, loans, and escapes. The value flags are included
+by existing clone/hash paths and validated by core, so downstream passes do
+not need access to parser-owned Place or canonical-type objects.
 
 `RETURN` accepts zero operands for a void function and one operand for a value
 return. The opcode metadata exposes this as a zero minimum and one maximum, so

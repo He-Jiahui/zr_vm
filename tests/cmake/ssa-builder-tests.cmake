@@ -3,6 +3,7 @@
 set(_zr_vm_ssa_builder_sources
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
@@ -61,4 +62,17 @@ if (NOT TARGET zr_vm_ssa_builder_fact_identity_test)
     target_compile_definitions(zr_vm_ssa_builder_fact_identity_test PRIVATE _CRT_SECURE_NO_WARNINGS)
     add_test(NAME ssa_builder_fact_identity COMMAND zr_vm_ssa_builder_fact_identity_test)
     set_tests_properties(ssa_builder_fact_identity PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_place_eligibility_test)
+    add_executable(zr_vm_ssa_place_eligibility_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_place_eligibility.c
+            ${_zr_vm_ssa_builder_sources})
+    target_include_directories(zr_vm_ssa_place_eligibility_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_place_eligibility_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_place_eligibility COMMAND zr_vm_ssa_place_eligibility_test)
+    set_tests_properties(ssa_place_eligibility PROPERTIES LABELS "ssa")
 endif ()

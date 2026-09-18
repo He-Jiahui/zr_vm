@@ -84,6 +84,19 @@ static TZrBool compiler_semantic_ir_slot_is_unique_owner(
                      type->data.owner.ownerKind == ZR_CANONICAL_OWNER_UNIQUE);
 }
 
+static TZrBool compiler_semantic_ir_type_is_scalar(
+        const SZrCompilerState *cs,
+        TZrTypeId typeId) {
+    const SZrCanonicalTypeNode *type;
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    type = ZrParser_CanonicalType_Find(cs->semanticContext, typeId);
+    return (TZrBool)(type != ZR_NULL &&
+                     type->kind == ZR_CANONICAL_TYPE_PRIMITIVE);
+}
+
 static TZrBool compiler_semantic_ir_is_receiver_loan(
         const SZrCompilerState *cs,
         TZrLoanId loanId) {
@@ -1488,6 +1501,11 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
             sourceRange,
             ZR_FALSE);
     if (slot.placeId == ZR_PLACE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (compiler_semantic_ir_type_is_scalar(cs, slot.typeId) &&
+        !ZrParser_SemanticIr_SetLocalScalar(
+                &cs->preSemanticIr, slot.placeId, ZR_TRUE)) {
         return ZR_FALSE;
     }
     ZrCore_Array_Push(cs->state, &cs->preSemanticIrSlots, &slot);

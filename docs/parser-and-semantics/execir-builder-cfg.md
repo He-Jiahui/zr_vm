@@ -7,6 +7,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
@@ -16,6 +17,7 @@ tests:
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/parser/test_ssa_builder_fact_identity.c
+  - tests/parser/test_ssa_place_eligibility.c
   - tests/cmake/ssa-tests.cmake
   - tests/cmake/ssa-builder-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
@@ -57,6 +59,15 @@ nested diamonds use independent snapshots. Restoration changes only the
 compiler's mutable lookup bridge: instructions, values, Places, source ranges,
 and both arm CFG ranges remain in canonical SemanticIR. Values assigned across
 the join still require the planned promotion and phi/rename work.
+
+Before SSA construction, the builder annotates every appended Place value as
+an address and screens direct local roots for promotion. The compiler records
+`isScalar` from the canonical type node only for primitive locals. The builder
+then rejects promotion for parameters, projections, and any root mentioned by
+a loan or escape fact. This keeps borrowed storage and inline-aggregate
+writeback on the explicit Place path while giving the standalone SSA pass an
+IR-visible eligibility contract. It does not yet insert phis or rewrite
+loads/stores; see `tests/acceptance/ssa-place-eligibility.md`.
 
 For each source block, outgoing IDs occupy a contiguous segment of the
 function's successor side pool. The builder records the segment start before
@@ -235,8 +246,9 @@ The nested edge-capacity regression is recorded in
 ## Regression boundary
 
 `tests/cmake/ssa-tests.cmake` remains the one SSA suite entry point and
-includes a small builder-specific registration module for the four focused
-CFG, dominance, typed-control and canonical-ID fixtures. They share the
+includes a small builder-specific registration module for the five focused
+CFG, dominance, typed-control, canonical-ID and Place-eligibility fixtures.
+They share the
 same real builder/core source list and retain their CTest names; this moves
 test-target ownership out of the growing central SSA registration file,
 without touching the legacy `tests/CMakeLists.txt`. See

@@ -177,6 +177,7 @@ typedef struct SZrSemanticIrLocal {
     TZrPlaceId placeId;
     TZrTypeId typeId;
     TZrBool isParameter;
+    TZrBool isScalar;
 } SZrSemanticIrLocal;
 
 typedef struct SZrSemanticIrRegion {
@@ -383,6 +384,10 @@ ZR_PARSER_API TZrPlaceId ZrParser_SemanticIr_AddLocal(
         TZrTypeId typeId,
         SZrFileRange sourceRange,
         TZrBool isParameter);
+ZR_PARSER_API TZrBool ZrParser_SemanticIr_SetLocalScalar(
+        SZrSemanticIrFunction *function,
+        TZrPlaceId placeId,
+        TZrBool isScalar);
 ZR_PARSER_API TZrValueId ZrParser_SemanticIr_AddValue(
         SZrSemanticIrFunction *function,
         TZrTypeId typeId,

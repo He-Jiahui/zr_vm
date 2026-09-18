@@ -31,6 +31,10 @@ TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
     for (i = 0u; i < f->valueCount; ++i) {
         if ((f->values[i].flags & ~ZR_EXEC_IR_VALUE_FLAG_MASK) != 0u ||
             ((f->values[i].flags &
+              ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE) != 0u &&
+             (f->values[i].flags &
+              ZR_EXEC_IR_VALUE_FLAG_PLACE_ADDRESS) == 0u) ||
+            ((f->values[i].flags &
               ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u &&
              f->values[i].definition !=
                      ZR_EXEC_IR_INSTRUCTION_ID_INVALID)) {

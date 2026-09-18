@@ -218,8 +218,29 @@ TZrPlaceId ZrParser_SemanticIr_AddLocal(SZrSemanticIrFunction *function,
     local.placeId = placeId;
     local.typeId = typeId;
     local.isParameter = isParameter;
+    local.isScalar = ZR_FALSE;
     ZrCore_Array_Push(function->state, &function->locals, &local);
     return placeId;
+}
+
+TZrBool ZrParser_SemanticIr_SetLocalScalar(SZrSemanticIrFunction *function,
+                                           TZrPlaceId placeId,
+                                           TZrBool isScalar) {
+    TZrSize index;
+
+    if (!semantic_ir_function_is_valid(function) ||
+        placeId == ZR_PLACE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < function->locals.length; ++index) {
+        SZrSemanticIrLocal *local = (SZrSemanticIrLocal *)ZrCore_Array_Get(
+                &function->locals, index);
+        if (local != ZR_NULL && local->placeId == placeId) {
+            local->isScalar = isScalar ? ZR_TRUE : ZR_FALSE;
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
 }
 
 TZrValueId ZrParser_SemanticIr_AddValue(SZrSemanticIrFunction *function,

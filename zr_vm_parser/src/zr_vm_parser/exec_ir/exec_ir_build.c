@@ -1,6 +1,8 @@
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/semantic_ir.h"
 
+#include "exec_ir_internal.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -574,6 +576,11 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
         diag_missing(diagnostic, output, 0u, 0u);
         if (diagnostic != ZR_NULL)
             diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+        ZrCore_ExecIr_FreeFunction(output);
+        return ZR_FALSE;
+    }
+    if (!zr_parser_exec_ir_mark_place_values(
+                s, output, firstPlaceValue, diagnostic)) {
         ZrCore_ExecIr_FreeFunction(output);
         return ZR_FALSE;
     }

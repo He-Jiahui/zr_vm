@@ -202,7 +202,7 @@ static void test_rejects_unknown_value_flags(void) {
             &function, (TZrMetadataToken)1u,
             ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
             ZR_EXEC_IR_NULLABILITY_UNKNOWN);
-    function.values[value - 1u].flags = (TZrUInt32)1u << 1u;
+    function.values[value - 1u].flags = (TZrUInt32)1u << 31u;
     check(!ZrParser_ExecIr_BuildSsa(&function, &diagnostic) &&
               diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
               diagnostic.instructionId == 0u,
@@ -211,6 +211,30 @@ static void test_rejects_unknown_value_flags(void) {
                   &function, ZR_EXEC_IR_VERIFY_SSA, &diagnostic) &&
               diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
           "verifier accepted an unknown value flag");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_rejects_promotable_value_without_place_address(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId value;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = (TZrMetadataToken)82u;
+    value = ZrCore_ExecIr_FunctionAddValue(
+            &function, (TZrMetadataToken)1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    function.values[value - 1u].flags =
+            ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE;
+    check(!ZrParser_ExecIr_BuildSsa(&function, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+          "SSA pass accepted promotable metadata on a non-place value");
+    check(!ZrCore_ExecIr_VerifyFunction(
+                  &function, ZR_EXEC_IR_VERIFY_SSA, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+          "verifier accepted promotable metadata on a non-place value");
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
@@ -273,6 +297,7 @@ int main(void) {
     test_external_entry_cannot_be_instruction_result();
     test_external_entry_cannot_be_phi_result();
     test_rejects_unknown_value_flags();
+    test_rejects_promotable_value_without_place_address();
     test_rejects_range_past_logical_operand_count();
     test_rejects_wrapped_operand_range();
     test_rejects_missing_operand_storage();

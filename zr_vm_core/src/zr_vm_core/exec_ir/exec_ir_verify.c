@@ -144,7 +144,11 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
             function->values[index].ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT ||
             function->values[index].nullability >= ZR_EXEC_IR_NULLABILITY_COUNT ||
             (function->values[index].flags &
-             ~ZR_EXEC_IR_VALUE_FLAG_MASK) != 0u) {
+             ~ZR_EXEC_IR_VALUE_FLAG_MASK) != 0u ||
+            ((function->values[index].flags &
+              ZR_EXEC_IR_VALUE_FLAG_PROMOTABLE_PLACE) != 0u &&
+             (function->values[index].flags &
+              ZR_EXEC_IR_VALUE_FLAG_PLACE_ADDRESS) == 0u)) {
             zr_exec_ir_set_diagnostic(diagnostic,
                                       ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                       function,
