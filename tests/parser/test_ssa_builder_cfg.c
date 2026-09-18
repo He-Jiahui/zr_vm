@@ -784,6 +784,62 @@ static void test_builder_accepts_out_of_order_instruction_slices(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_reports_missing_canonical_result(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[2] = {0};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    block.instructionCount = 2u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.functionToken == 42u && diagnostic.blockId == 1u &&
+              diagnostic.instructionId == 1u &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 0u &&
+              output.blockCount == 0u,
+          "builder lost the source block for a missing canonical result");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_reports_missing_fixed_operand(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[2] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_LOAD;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    block.instructionCount = 2u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.functionToken == 42u && diagnostic.blockId == 1u &&
+              diagnostic.instructionId == 1u &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 0u &&
+              output.blockCount == 0u,
+          "builder lost the source block for a missing fixed operand");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -810,6 +866,8 @@ int main(void) {
     test_builder_rejects_overlapping_instruction_owners();
     test_builder_rejects_unowned_semantic_instruction();
     test_builder_accepts_out_of_order_instruction_slices();
+    test_builder_reports_missing_canonical_result();
+    test_builder_reports_missing_fixed_operand();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }

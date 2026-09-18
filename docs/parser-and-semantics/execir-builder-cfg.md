@@ -24,6 +24,7 @@ tests:
   - tests/acceptance/ssa-builder-edge-source.md
   - tests/acceptance/ssa-builder-cfg-fact-identity.md
   - tests/acceptance/ssa-builder-ssa-dominance.md
+  - tests/acceptance/ssa-builder-opcode-arity.md
 doc_type: module-detail
 ---
 
@@ -151,6 +152,15 @@ and semantic instruction ID; it is never silently converted to a zero-operand
 variadic call. A valid constant/call/return fixture retains both the call
 operand and return value and passes structural ExecIR verification. See
 `tests/acceptance/ssa-builder-operand-bounds.md` for focused evidence.
+
+After the side-pool check, the builder compares fixed operand and result
+counts with the mapped ExecIR opcode schema. A missing `CONSTANT` result or
+missing `LOAD` operand is reported at the semantic block and instruction,
+with expected/actual counts and source ID, before the generic verifier
+would lose the source-block location. Variadic operand arities are left to
+their schema bounds; a missing physical operand range still takes priority
+over an arity mismatch. This does not fabricate absent canonical facts from
+legacy ExecBC. See `tests/acceptance/ssa-builder-opcode-arity.md`.
 
 The module-level entry builds an isolated candidate before reserving the next
 published function slot. If canonical-fact lowering fails, the module's

@@ -412,6 +412,27 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
                 }
+                if ((info->operandArity != ZR_EXEC_IR_VARIADIC &&
+                     in->operandCount != info->operandArity) ||
+                    (info->resultArity != ZR_EXEC_IR_VARIADIC &&
+                     (TZrUInt32)(in->resultValueId != ZR_VALUE_ID_INVALID) !=
+                         info->resultArity)) {
+                    TZrBool wrongOperands = (TZrBool)(
+                        info->operandArity != ZR_EXEC_IR_VARIADIC &&
+                        in->operandCount != info->operandArity);
+                    diag_missing(diagnostic, output, db->id, in->id);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                        diagnostic->sourceId = in->id;
+                        diagnostic->expectedVersion = wrongOperands
+                            ? info->operandArity : info->resultArity;
+                        diagnostic->actualVersion = wrongOperands
+                            ? in->operandCount
+                            : (TZrUInt32)(in->resultValueId != ZR_VALUE_ID_INVALID);
+                    }
+                    ZrCore_ExecIr_FreeFunction(output);
+                    return ZR_FALSE;
+                }
                 if (isTerminator != (TZrBool)(j == b->instructionCount - 1u)) {
                     diag_missing(diagnostic, output, db->id, in->id);
                     if (diagnostic != ZR_NULL) diagnostic->code = isTerminator
