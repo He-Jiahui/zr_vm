@@ -60,6 +60,140 @@ static TZrBool append_source(SZrExecIrFunction *f, const SZrSemanticIrInstructio
     return ZR_TRUE;
 }
 
+static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic,
+                                          SZrExecIrFunction *output,
+                                          SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 i;
+    for (i = 0u; i < output->blockCount; ++i) {
+        const SZrParserCfgBlock *block = (const SZrParserCfgBlock *)
+            ZrCore_Array_Get((SZrArray *)&semantic->cfg.blocks, i);
+        TZrUInt32 count, j;
+        if (block->outgoingEdges.isValid) {
+            if (block->outgoingEdges.length > UINT32_MAX ||
+                (block->outgoingEdges.length != 0u &&
+                 (block->outgoingEdges.head == ZR_NULL ||
+                  block->outgoingEdges.elementSize != sizeof(SZrParserCfgEdge)))) {
+                diag_missing(diagnostic, output, i + 1u, 0u);
+                if (diagnostic != ZR_NULL)
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                return ZR_FALSE;
+            }
+            count = (TZrUInt32)block->outgoingEdges.length;
+        } else {
+            if (block->successorCount > ZR_PARSER_CFG_INLINE_SUCCESSOR_CAPACITY) {
+                diag_missing(diagnostic, output, i + 1u, 0u);
+                if (diagnostic != ZR_NULL)
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                return ZR_FALSE;
+            }
+            count = block->successorCount;
+        }
+        for (j = 0u; j < count; ++j) {
+            TZrUInt32 destination = block->outgoingEdges.isValid
+                ? ((const SZrParserCfgEdge *)ZrCore_Array_Get(
+                       (SZrArray *)&block->outgoingEdges, j))->toBlockId
+                : block->successors[j];
+            if (destination >= output->blockCount) {
+                diag_missing(diagnostic, output, i + 1u, 0u);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK;
+                    diagnostic->expectedVersion = output->blockCount;
+                    diagnostic->actualVersion = destination == UINT32_MAX
+                        ? UINT32_MAX : destination + 1u;
+                }
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool append_cfg_predecessors(const SZrSemanticIrFunction *semantic,
+                                      SZrExecIrFunction *output,
+                                      SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 *counts = ZR_NULL;
+    TZrUInt32 *cursor = ZR_NULL;
+    TZrExecIrBlockId *rows = ZR_NULL;
+    SZrExecIrRange appended = {0u, 0u};
+    TZrUInt32 total = 0u;
+    TZrUInt32 i;
+    TZrBool result = ZR_FALSE;
+
+    counts = (TZrUInt32 *)calloc(output->blockCount, sizeof(*counts));
+    cursor = (TZrUInt32 *)calloc(output->blockCount, sizeof(*cursor));
+    if (counts == ZR_NULL || cursor == ZR_NULL) goto oom;
+    for (i = 0u; i < output->blockCount; ++i) {
+        const SZrParserCfgBlock *block = (const SZrParserCfgBlock *)
+            ZrCore_Array_Get((SZrArray *)&semantic->cfg.blocks, i);
+        TZrUInt32 edgeCount = block->outgoingEdges.isValid
+                                 ? (TZrUInt32)block->outgoingEdges.length
+                                 : block->successorCount;
+        TZrUInt32 j;
+        for (j = 0u; j < edgeCount; ++j) {
+            TZrUInt32 destination = block->outgoingEdges.isValid
+                ? ((const SZrParserCfgEdge *)ZrCore_Array_Get(
+                       (SZrArray *)&block->outgoingEdges, j))->toBlockId
+                : block->successors[j];
+            if (total == UINT32_MAX || counts[destination] == UINT32_MAX) {
+                diag_missing(diagnostic, output, i + 1u, 0u);
+                if (diagnostic != ZR_NULL)
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW;
+                goto cleanup;
+            }
+            ++counts[destination];
+            ++total;
+        }
+    }
+#if SIZE_MAX <= UINT32_MAX
+    if (total > SIZE_MAX / sizeof(*rows)) {
+        diag_missing(diagnostic, output, 0u, 0u);
+        if (diagnostic != ZR_NULL)
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW;
+        goto cleanup;
+    }
+#endif
+    if (total != 0u) {
+        rows = (TZrExecIrBlockId *)malloc((TZrSize)total * sizeof(*rows));
+        if (rows == ZR_NULL) goto oom;
+    }
+    for (i = 1u; i < output->blockCount; ++i)
+        cursor[i] = cursor[i - 1u] + counts[i - 1u];
+    for (i = 0u; i < output->blockCount; ++i) {
+        const SZrParserCfgBlock *block = (const SZrParserCfgBlock *)
+            ZrCore_Array_Get((SZrArray *)&semantic->cfg.blocks, i);
+        TZrUInt32 edgeCount = block->outgoingEdges.isValid
+                                 ? (TZrUInt32)block->outgoingEdges.length
+                                 : block->successorCount;
+        TZrUInt32 j;
+        for (j = 0u; j < edgeCount; ++j) {
+            TZrUInt32 destination = block->outgoingEdges.isValid
+                ? ((const SZrParserCfgEdge *)ZrCore_Array_Get(
+                       (SZrArray *)&block->outgoingEdges, j))->toBlockId
+                : block->successors[j];
+            rows[cursor[destination]++] = i + 1u;
+        }
+    }
+    if (total != 0u &&
+        !ZrCore_ExecIr_FunctionAppendPredecessors(output, rows, total, &appended))
+        goto oom;
+    for (i = 0u; i < output->blockCount; ++i) {
+        output->blocks[i].predecessorRange.start =
+            appended.start + cursor[i] - counts[i];
+        output->blocks[i].predecessorRange.count = counts[i];
+    }
+    result = ZR_TRUE;
+    goto cleanup;
+
+oom:
+    diag_missing(diagnostic, output, 0u, 0u);
+    if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+cleanup:
+    free(counts);
+    free(cursor);
+    free(rows);
+    return result;
+}
+
 static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                               const SZrExecIrBuildOptions *options,
                               SZrExecIrFunction *output,
@@ -70,6 +204,15 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (s == ZR_NULL || output == ZR_NULL || !s->instructions.isValid || !s->cfg.blocks.isValid) {
         diag_missing(diagnostic, output, 0u, 0u); return ZR_FALSE;
+    }
+    if (s->cfg.blocks.length > UINT32_MAX ||
+        (s->cfg.blocks.length != 0u &&
+         (s->cfg.blocks.head == ZR_NULL ||
+          s->cfg.blocks.elementSize != sizeof(SZrParserCfgBlock)))) {
+        diag_missing(diagnostic, output, 0u, 0u);
+        if (diagnostic != ZR_NULL)
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+        return ZR_FALSE;
     }
     ZrCore_ExecIr_FunctionInit(output);
     output->functionToken = (TZrMetadataToken)s->symbolId;
@@ -96,25 +239,28 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     }
     output->entryBlockId = s->cfg.entryBlockId < s->cfg.blocks.length
                                ? s->cfg.entryBlockId + 1u : ZR_EXEC_IR_BLOCK_ID_INVALID;
+    if (!validate_semantic_cfg_edges(s, output, diagnostic)) return ZR_FALSE;
     for (i = 0u; i < (TZrUInt32)s->cfg.blocks.length; ++i) {
         const SZrParserCfgBlock *b = (const SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&s->cfg.blocks, i);
         SZrExecIrBlock *db = ZrCore_ExecIr_FunctionBlockAt(output, i + 1u);
         TZrUInt32 j;
         TZrUInt32 edgeCount = b->outgoingEdges.isValid ? (TZrUInt32)b->outgoingEdges.length : b->successorCount;
+        db->successorRange.start = output->successorCount;
         for (j = 0u; j < edgeCount; ++j) {
             TZrUInt32 succ;
             if (b->outgoingEdges.isValid) {
                 const SZrParserCfgEdge *edge = (const SZrParserCfgEdge *)ZrCore_Array_Get((SZrArray *)&b->outgoingEdges, j);
                 succ = edge->toBlockId;
             } else {
-                succ = b->successors[j < ZR_PARSER_CFG_INLINE_SUCCESSOR_CAPACITY ? j : 0u];
+                succ = b->successors[j];
             }
-            if (succ < s->cfg.blocks.length) {
-                TZrExecIrBlockId sid = succ + 1u;
-                ZrCore_ExecIr_FunctionAppendSuccessors(output, &sid, 1u, &db->successorRange);
-                SZrExecIrBlock *sb = ZrCore_ExecIr_FunctionBlockAt(output, sid);
-                ZrCore_ExecIr_FunctionAppendPredecessors(output, &db->id, 1u, &sb->predecessorRange);
+            TZrExecIrBlockId sid = succ + 1u;
+            if (!ZrCore_ExecIr_FunctionAppendSuccessors(output, &sid, 1u, ZR_NULL)) {
+                diag_missing(diagnostic, output, db->id, 0u);
+                if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+                ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
             }
+            ++db->successorRange.count;
         }
         if (b->instructionCount != 0u && (b->firstInstructionIndex > s->instructions.length || b->instructionCount > s->instructions.length - b->firstInstructionIndex)) {
             diag_missing(diagnostic, output, db->id, 0u); if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE; ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
@@ -144,7 +290,9 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             db->terminatorInstructionId = db->instructionRange.start + db->instructionRange.count - 1u;
         }
     }
-    return ZrParser_ExecIr_ComputeDominators(output, diagnostic) && ZrParser_ExecIr_BuildSsa(output, diagnostic);
+    return append_cfg_predecessors(s, output, diagnostic) &&
+           ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
+           ZrParser_ExecIr_BuildSsa(output, diagnostic);
 }
 
 TZrBool ZrParser_ExecIr_Build(const struct SZrSemanticIrFunction *semanticFunction,
