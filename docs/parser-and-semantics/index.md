@@ -45,6 +45,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
@@ -119,6 +120,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_argument_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
@@ -152,6 +154,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md
   - docs/plans/syntax/06-percent-migration-lsp-fixtures/m1-migration-inventory-implementation-plan.md
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”
@@ -168,6 +171,8 @@ plan_sources:
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/parser/test_ssa_dominator_cfg.c
+  - tests/acceptance/ssa-dominator-cfg.md
   - tests/scripts/test_syntax_migration_inventory.py
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
@@ -317,6 +322,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - pre-execution semantic instructions with owned Place/CFG/Value/loan state
   - compiler ordering and the execution SemIR compatibility boundary
   - separate initialization, availability, borrowing, escape, and reachability joins
+- `execir-cfg-dominators.md`
+  - validated ExecIR adjacency and iterative reverse-postorder dominator analysis
+  - failure-atomic cached idoms for diamond, loop and unreachable block cases
 - `iterator-yield-suspension.md`
   - `yield expression;` as a normal `FunctionDefinition` statement
   - explicit canonical `zr.iteration.Iterator<T>` carrier and element contract

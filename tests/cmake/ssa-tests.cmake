@@ -110,6 +110,25 @@ if (NOT TARGET zr_vm_ssa_construction_test)
     set_tests_properties(ssa_construction PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_dominator_cfg_test)
+    add_executable(zr_vm_ssa_dominator_cfg_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_dominator_cfg.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
+    target_include_directories(zr_vm_ssa_dominator_cfg_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_dominator_cfg_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_dominator_cfg COMMAND zr_vm_ssa_dominator_cfg_test)
+    set_tests_properties(ssa_dominator_cfg PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_state_maps_test)
     add_executable(zr_vm_ssa_state_maps_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_state_maps.c
