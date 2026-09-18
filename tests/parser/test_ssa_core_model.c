@@ -194,11 +194,66 @@ static void test_validation_rejects_null_operand_pool_without_dereference(void) 
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_structure_requires_reciprocal_cfg_edges(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function;
+    TZrExecIrFunctionId id;
+    TZrExecIrBlockId entry;
+    TZrExecIrBlockId target;
+    SZrExecIrInstruction branch;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&module, 1u, 1u, &id),
+                "CFG fixture function append failed");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
+    entry = ZrCore_ExecIr_FunctionAddBlock(function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    target = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    expect_true(entry == ZR_EXEC_IR_BLOCK_ID_ENTRY && target == 2u,
+                "CFG fixture block IDs invalid");
+    expect_true(ZrCore_ExecIr_FunctionAppendSuccessors(
+                    function, &target, 1u, &function->blocks[entry - 1u].successorRange),
+                "CFG fixture successor append failed");
+    expect_true(ZrCore_ExecIr_FunctionAppendPredecessors(
+                    function, &entry, 1u, &function->blocks[target - 1u].predecessorRange),
+                "CFG fixture predecessor append failed");
+    memset(&branch, 0, sizeof(branch));
+    branch.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    branch.successorRange = function->blocks[entry - 1u].successorRange;
+    expect_true(ZrCore_ExecIr_FunctionAppendInstruction(function, &branch, NULL),
+                "CFG fixture terminator append failed");
+    function->blocks[entry - 1u].instructionRange.count = 1u;
+    expect_true(ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                               &diagnostic),
+                "reciprocal CFG edge rejected");
+
+    function->blocks[target - 1u].predecessorRange.count = 0u;
+    expect_true(!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                                &diagnostic),
+                "forward CFG edge without reciprocal predecessor accepted");
+    expect_true(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+                    diagnostic.blockId == entry && diagnostic.expectedVersion == entry &&
+                    diagnostic.actualVersion == target,
+                "forward CFG edge diagnostic lost its endpoints");
+
+    function->blocks[target - 1u].predecessorRange.count = 1u;
+    function->blocks[entry - 1u].successorRange.count = 0u;
+    expect_true(!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                                &diagnostic),
+                "predecessor without reciprocal successor accepted");
+    expect_true(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+                    diagnostic.blockId == target && diagnostic.expectedVersion == entry &&
+                    diagnostic.actualVersion == target,
+                "reverse CFG edge diagnostic lost its endpoints");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_empty_module_and_entry_block();
     test_side_arrays_clone_without_aliasing();
     test_invalid_opcode_and_overflow_fail_before_allocation();
     test_validation_rejects_null_operand_pool_without_dereference();
+    test_structure_requires_reciprocal_cfg_edges();
     puts("ssa core model PASS");
     return EXIT_SUCCESS;
 }

@@ -32,6 +32,19 @@ static TZrBool zr_exec_ir_range_is_valid(SZrExecIrRange range, TZrUInt32 count) 
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
 }
 
+/* Only call after validating both the side-pool range and every block ID. */
+static TZrBool zr_exec_ir_edge_contains(const TZrExecIrBlockId *edges,
+                                        SZrExecIrRange range,
+                                        TZrExecIrBlockId blockId) {
+    TZrUInt32 index;
+    for (index = range.start; index < range.start + range.count; ++index) {
+        if (edges[index] == blockId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool zr_exec_ir_value_range_is_valid(const SZrExecIrFunction *function,
                                                SZrExecIrRange range,
                                                TZrUInt32 count,
@@ -431,6 +444,17 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                               function->predecessors[edgeIndex]);
                     return ZR_FALSE;
                 }
+                {
+                    TZrExecIrBlockId from = function->predecessors[edgeIndex];
+                    const SZrExecIrBlock *predecessor = &function->blocks[from - 1u];
+                    if (!zr_exec_ir_edge_contains(function->successors,
+                                                   predecessor->successorRange, block->id)) {
+                        zr_exec_ir_set_diagnostic(diagnostic,
+                                                  ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                                                  function, 0u, block->id, from, block->id);
+                        return ZR_FALSE;
+                    }
+                }
             }
             for (edgeIndex = block->successorRange.start;
                  edgeIndex < block->successorRange.start + block->successorRange.count;
@@ -445,6 +469,17 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                               function->blockCount,
                                               function->successors[edgeIndex]);
                     return ZR_FALSE;
+                }
+                {
+                    TZrExecIrBlockId to = function->successors[edgeIndex];
+                    const SZrExecIrBlock *successor = &function->blocks[to - 1u];
+                    if (!zr_exec_ir_edge_contains(function->predecessors,
+                                                   successor->predecessorRange, block->id)) {
+                        zr_exec_ir_set_diagnostic(diagnostic,
+                                                  ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                                                  function, 0u, block->id, block->id, to);
+                        return ZR_FALSE;
+                    }
                 }
             }
             if (block->instructionRange.count != 0u) {
