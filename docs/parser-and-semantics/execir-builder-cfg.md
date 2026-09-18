@@ -14,6 +14,7 @@ tests:
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/parser/test_ssa_builder_fact_identity.c
   - tests/cmake/ssa-tests.cmake
+  - tests/cmake/ssa-builder-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
   - tests/acceptance/ssa-builder-module-transaction.md
@@ -29,6 +30,7 @@ tests:
   - tests/acceptance/ssa-builder-opcode-arity.md
   - tests/acceptance/ssa-builder-control-edge-rejection.md
   - tests/acceptance/ssa-builder-fact-identity.md
+  - tests/acceptance/ssa-builder-test-registration.md
 doc_type: module-detail
 ---
 
@@ -209,6 +211,14 @@ The nested edge-capacity regression is recorded in
 `tests/acceptance/ssa-builder-edge-capacity.md`.
 
 ## Regression boundary
+
+`tests/cmake/ssa-tests.cmake` remains the one SSA suite entry point and
+includes a small builder-specific registration module for the four focused
+CFG, dominance, typed-control and canonical-ID fixtures. They share the
+same real builder/core source list and retain their CTest names; this moves
+test-target ownership out of the growing central SSA registration file,
+without touching the legacy `tests/CMakeLists.txt`. See
+`tests/acceptance/ssa-builder-test-registration.md` for before/after checks.
 
 The independent `ssa_builder_cfg` target uses real builder, dominator, SSA and
 core ExecIR implementations. It checks both arms of a diamond and both merge

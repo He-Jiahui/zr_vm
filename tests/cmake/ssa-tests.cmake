@@ -129,67 +129,7 @@ if (NOT TARGET zr_vm_ssa_dominator_cfg_test)
     set_tests_properties(ssa_dominator_cfg PROPERTIES LABELS "ssa")
 endif ()
 
-set(_zr_vm_ssa_builder_sources
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
-if (NOT TARGET zr_vm_ssa_builder_cfg_test)
-    add_executable(zr_vm_ssa_builder_cfg_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_builder_cfg.c
-            ${_zr_vm_ssa_builder_sources})
-    target_include_directories(zr_vm_ssa_builder_cfg_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
-    target_compile_definitions(zr_vm_ssa_builder_cfg_test PRIVATE _CRT_SECURE_NO_WARNINGS)
-    add_test(NAME ssa_builder_cfg COMMAND zr_vm_ssa_builder_cfg_test)
-    set_tests_properties(ssa_builder_cfg PROPERTIES LABELS "ssa")
-endif ()
-
-if (NOT TARGET zr_vm_ssa_builder_dominance_test)
-    add_executable(zr_vm_ssa_builder_dominance_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_builder_dominance.c
-            ${_zr_vm_ssa_builder_sources})
-    target_include_directories(zr_vm_ssa_builder_dominance_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
-    target_compile_definitions(zr_vm_ssa_builder_dominance_test PRIVATE _CRT_SECURE_NO_WARNINGS)
-    add_test(NAME ssa_builder_dominance COMMAND zr_vm_ssa_builder_dominance_test)
-    set_tests_properties(ssa_builder_dominance PROPERTIES LABELS "ssa")
-endif ()
-
-if (NOT TARGET zr_vm_ssa_builder_control_edges_test)
-    add_executable(zr_vm_ssa_builder_control_edges_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_builder_control_edges.c
-            ${_zr_vm_ssa_builder_sources})
-    target_include_directories(zr_vm_ssa_builder_control_edges_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
-    target_compile_definitions(zr_vm_ssa_builder_control_edges_test PRIVATE _CRT_SECURE_NO_WARNINGS)
-    add_test(NAME ssa_builder_control_edges COMMAND zr_vm_ssa_builder_control_edges_test)
-    set_tests_properties(ssa_builder_control_edges PROPERTIES LABELS "ssa")
-endif ()
-
-if (NOT TARGET zr_vm_ssa_builder_fact_identity_test)
-    add_executable(zr_vm_ssa_builder_fact_identity_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_builder_fact_identity.c
-            ${_zr_vm_ssa_builder_sources})
-    target_include_directories(zr_vm_ssa_builder_fact_identity_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
-    target_compile_definitions(zr_vm_ssa_builder_fact_identity_test PRIVATE _CRT_SECURE_NO_WARNINGS)
-    add_test(NAME ssa_builder_fact_identity COMMAND zr_vm_ssa_builder_fact_identity_test)
-    set_tests_properties(ssa_builder_fact_identity PROPERTIES LABELS "ssa")
-endif ()
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-builder-tests.cmake)
 
 if (NOT TARGET zr_vm_ssa_value_validation_test)
     add_executable(zr_vm_ssa_value_validation_test
