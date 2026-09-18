@@ -97,3 +97,9 @@ This graph remains compilation-session data. Canonical public contracts and hash
 ## Verification
 
 `test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, a source-level local initialize/load/store golden, explicit ownership-operation and shared-loan lowering, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
+
+The ownership compiler fixture sends its top-level resource class through the
+class-declaration entry and borrows twice from a shared owner. A direct
+statement-compile call is only valid for the following executable statements;
+borrowing the unique owner with `ref` instead produces a mutable loan, not the
+shared-loan fact that this fixture asserts.

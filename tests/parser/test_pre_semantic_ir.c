@@ -1032,8 +1032,9 @@ static void test_compiler_ownership_lowering_records_explicit_semantic_operation
     static const TZrChar source[] =
             "resource class Value {}\n"
             "var owner = own Value();\n"
-            "var borrowed: ref readonly Value = ref owner;\n"
-            "var memberBorrowed: ref readonly Value = ref owner;\n";
+            "var shared = share(owner);\n"
+            "var borrowed: ref readonly Value = ref shared;\n"
+            "var memberBorrowed: ref readonly Value = ref shared;\n";
     SZrString *sourceName =
             ZrCore_String_Create(g_state, "pre_semantic_ownership.zr", 25U);
     SZrAstNode *ast = ZrParser_Parse(
@@ -1055,8 +1056,12 @@ static void test_compiler_ownership_lowering_records_explicit_semantic_operation
     TEST_ASSERT_NOT_NULL(compiler.currentFunction);
 
     for (index = 0; index < ast->data.script.statements->count; index++) {
-        ZrParser_Statement_Compile(
-                &compiler, ast->data.script.statements->nodes[index]);
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
     }
 
     TEST_ASSERT_FALSE(compiler.hasError);
@@ -1067,7 +1072,8 @@ static void test_compiler_ownership_lowering_records_explicit_semantic_operation
         const SZrSemanticIrInstruction *instruction =
                 ZrParser_SemanticIr_InstructionAt(function, index);
         TEST_ASSERT_NOT_NULL(instruction);
-        if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT) {
+        if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
+            instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_UNIQUE) {
             ownConstruct = instruction;
         } else if (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED) {
             borrowShared = instruction;
