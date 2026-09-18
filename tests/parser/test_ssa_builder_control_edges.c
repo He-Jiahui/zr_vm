@@ -103,6 +103,40 @@ static void test_exception_edge_reports_throw_source(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_rejects_typed_control_in_inline_successors(void) {
+    const EZrParserCfgTerminatorKind kinds[] = {
+        ZR_PARSER_CFG_TERMINATOR_RETURN,
+        ZR_PARSER_CFG_TERMINATOR_THROW,
+        ZR_PARSER_CFG_TERMINATOR_SUSPEND,
+        ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+        ZR_PARSER_CFG_TERMINATOR_EXIT
+    };
+    TZrSize i;
+
+    for (i = 0u; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
+        SZrParserCfgBlock blocks[2];
+        SZrParserCfgEdge edge;
+        SZrSemanticIrFunction semantic;
+        SZrExecIrFunction output;
+        SZrExecIrDiagnostic diagnostic;
+
+        make_function(&semantic, blocks, &edge);
+        blocks[0].outgoingEdges.isValid = ZR_FALSE;
+        blocks[0].successorCount = 1u;
+        blocks[0].successors[0] = 1u;
+        blocks[0].terminatorKind = kinds[i];
+        ZrCore_ExecIr_FunctionInit(&output);
+        check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+                  diagnostic.functionToken == 42u && diagnostic.blockId == 1u &&
+                  diagnostic.instructionId == 0u &&
+                  diagnostic.actualVersion == (TZrUInt32)kinds[i] &&
+                  output.blockCount == 0u,
+              "builder silently published a typed control edge in an inline row");
+        ZrCore_ExecIr_FreeFunction(&output);
+    }
+}
+
 static void test_accepts_ordinary_dynamic_edge(void) {
     SZrParserCfgBlock blocks[2];
     SZrParserCfgEdge edge;
@@ -123,6 +157,7 @@ static void test_accepts_ordinary_dynamic_edge(void) {
 int main(void) {
     test_rejects_unrepresentable_control_edges();
     test_exception_edge_reports_throw_source();
+    test_rejects_typed_control_in_inline_successors();
     test_accepts_ordinary_dynamic_edge();
     puts("ssa builder control edges PASS");
     return EXIT_SUCCESS;

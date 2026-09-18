@@ -78,6 +78,10 @@ site (when present), rather than silently publishing them as ordinary
 successors. Normal, true/false and switch edges retain their order. This
 is a temporary fail-closed boundary, not implementation of those control
 paths; see `tests/acceptance/ssa-builder-control-edge-rejection.md`.
+For legacy inline successor rows without edge kinds, a nonempty row paired
+with `RETURN`, `THROW`, `SUSPEND`, `CLEANUP_DISPATCH`, or `EXIT` terminator
+metadata is rejected the same way; a typed control transfer must not evade
+the dynamic-edge guard by using the inline compatibility representation.
 
 The instruction pool uses zero-based range offsets while published
 `terminatorInstructionId` uses one-based instruction IDs. For each semantic

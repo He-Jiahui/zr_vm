@@ -235,6 +235,29 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
                 return ZR_FALSE;
             }
         }
+        if (count != 0u &&
+            (block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_RETURN ||
+             block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_THROW ||
+             block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_SUSPEND ||
+             block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH ||
+             block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_EXIT)) {
+            TZrSemanticInstructionId site = 0u;
+            if (block->instructionCount != 0u) {
+                const SZrSemanticIrInstruction *tail =
+                    (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                        (SZrArray *)&semantic->instructions,
+                        block->firstInstructionIndex + block->instructionCount - 1u);
+                site = tail->id;
+            }
+            diag_missing(diagnostic, output, i + 1u, site);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+                diagnostic->sourceId = site;
+                diagnostic->expectedVersion = ZR_PARSER_CFG_TERMINATOR_NONE;
+                diagnostic->actualVersion = (TZrUInt32)block->terminatorKind;
+            }
+            return ZR_FALSE;
+        }
     }
     return ZR_TRUE;
 }
