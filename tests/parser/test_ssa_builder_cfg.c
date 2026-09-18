@@ -419,6 +419,67 @@ static void test_builder_copies_valid_variadic_operands(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_rejects_nonterminal_tail(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instruction = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instruction.id = 1u;
+    instruction.opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instruction.resultValueId = 1u;
+    semantic.instructions = input_array(&instruction, 1u, sizeof(instruction));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    block.instructionCount = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrCore_ExecIr_FunctionAddBlock(&output, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+          "could not prepare output for missing-terminator test");
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 1u &&
+              output.blockCount == 1u,
+          "builder published a nonterminal tail as a block terminator");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_rejects_premature_terminator(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    TZrValueId operands[2] = {1u, 1u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[1].operandCount = 1u;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[2].operandStart = 1u;
+    instructions[2].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    semantic.valueOperands = input_array(operands, 2u, sizeof(*operands));
+    block.instructionCount = 3u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              output.blockCount == 0u,
+          "builder accepted instructions following a block terminator");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -432,6 +493,8 @@ int main(void) {
     test_builder_rejects_unbacked_canonical_fact_arrays();
     test_builder_rejects_missing_variadic_operands();
     test_builder_copies_valid_variadic_operands();
+    test_builder_rejects_nonterminal_tail();
+    test_builder_rejects_premature_terminator();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }

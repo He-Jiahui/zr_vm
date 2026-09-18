@@ -279,11 +279,13 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             for (j = 0u; j < b->instructionCount; ++j) {
                 const SZrSemanticIrInstruction *in = (const SZrSemanticIrInstruction *)ZrCore_Array_Get((SZrArray *)&s->instructions, b->firstInstructionIndex + j);
                 SZrExecIrInstruction x; SZrExecIrRange rr = {0u, 0u}, orr = {0u, 0u};
+                const SZrExecIrOpcodeInfo *info;
+                TZrBool isTerminator;
                 memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in->opcode); x.sourceId = in->id;
                 if (x.opcode == ZR_EXEC_IR_OPCODE_INVALID) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
-                if ((ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)x.opcode)->flags &
-                     ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u)
-                    x.successorRange = db->successorRange;
+                info = ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)x.opcode);
+                isTerminator = (TZrBool)(info != ZR_NULL &&
+                    (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u);
                 x.typeToken = (TZrExecIrTypeToken)in->typeId;
                 if (in->operandStart > s->valueOperands.length ||
                     in->operandCount > s->valueOperands.length - in->operandStart) {
@@ -292,6 +294,16 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
                 }
+                if (isTerminator != (TZrBool)(j == b->instructionCount - 1u)) {
+                    diag_missing(diagnostic, output, db->id, in->id);
+                    if (diagnostic != ZR_NULL) diagnostic->code = isTerminator
+                        ? ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE
+                        : ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR;
+                    ZrCore_ExecIr_FreeFunction(output);
+                    return ZR_FALSE;
+                }
+                if (isTerminator)
+                    x.successorRange = db->successorRange;
                 if (in->resultValueId != ZR_VALUE_ID_INVALID) {
                     TZrExecIrValueId v = in->resultValueId;
                     if (!ZrCore_ExecIr_FunctionAppendResults(output, &v, 1u, &rr)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }

@@ -17,6 +17,7 @@ tests:
   - tests/acceptance/ssa-builder-canonical-input-shape.md
   - tests/acceptance/ssa-builder-edge-capacity.md
   - tests/acceptance/ssa-builder-operand-bounds.md
+  - tests/acceptance/ssa-builder-terminator-placement.md
 doc_type: module-detail
 ---
 
@@ -52,6 +53,15 @@ adjacency. A constant/branch/return fixture checks both block ranges and
 terminator IDs, then passes the emitted function through core structural
 verification. This does not construct phis or prove all source-level
 exception/short-circuit semantics.
+
+For every nonempty semantic block, the last instruction must carry the
+canonical terminator opcode flag and no earlier instruction may terminate.
+A nonterminal tail reports `MISSING_TERMINATOR`; an early terminator reports
+`INVALID_RANGE` at its source instruction. Input operand bounds are checked
+first when both conditions are malformed, preserving the more specific
+side-pool diagnostic. Empty CFG blocks remain valid during this construction
+stage. See `tests/acceptance/ssa-builder-terminator-placement.md` for the
+focused negative and positive boundaries.
 
 ## Validation, ownership and failure
 
