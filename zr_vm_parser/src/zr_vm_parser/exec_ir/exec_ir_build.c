@@ -36,7 +36,7 @@ static EZrExecIrOpcode map_opcode(EZrSemanticIrOpcode op) {
         case ZR_SEMANTIC_IR_THROW: return ZR_EXEC_IR_OPCODE_THROW;
         case ZR_SEMANTIC_IR_YIELD_SUSPEND: return ZR_EXEC_IR_OPCODE_SUSPEND;
         case ZR_SEMANTIC_IR_GC_NEW: return ZR_EXEC_IR_OPCODE_ALLOC;
-        case ZR_SEMANTIC_IR_INITIALIZE: return ZR_EXEC_IR_OPCODE_COPY;
+        case ZR_SEMANTIC_IR_INITIALIZE: return ZR_EXEC_IR_OPCODE_STORE;
         default: return ZR_EXEC_IR_OPCODE_INVALID;
     }
 }
@@ -47,6 +47,90 @@ static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize)
                      (array->length == 0u ||
                       (array->isValid && array->head != ZR_NULL &&
                        array->elementSize == elementSize)));
+}
+
+static TZrBool validate_semantic_places(
+        const SZrSemanticIrFunction *semantic,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 i;
+
+    if (!canonical_array_shape(
+                &semantic->places.places, sizeof(SZrParserPlace))) {
+        diag_missing(diagnostic, ZR_NULL, 0u, 0u);
+        if (diagnostic != ZR_NULL)
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+        return ZR_FALSE;
+    }
+    for (i = 0u; i < (TZrUInt32)semantic->places.places.length; ++i) {
+        const SZrParserPlace *place = (const SZrParserPlace *)ZrCore_Array_Get(
+                (SZrArray *)&semantic->places.places, i);
+        if (place == ZR_NULL || place->id != i + 1u ||
+            place->parentId > semantic->places.places.length ||
+            !canonical_array_shape(
+                    &place->projections, sizeof(SZrParserPlaceProjection))) {
+            diag_missing(diagnostic, ZR_NULL, 0u, 0u);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = place != ZR_NULL && place->id != i + 1u
+                    ? ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE
+                    : ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                diagnostic->functionToken =
+                        (TZrMetadataToken)semantic->symbolId;
+                diagnostic->expectedVersion = i + 1u;
+                diagnostic->actualVersion = place != ZR_NULL ? place->id : 0u;
+            }
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrExecIrValueId place_value_id(TZrExecIrValueId firstPlaceValue,
+                                       TZrPlaceId placeId) {
+    return firstPlaceValue + placeId - 1u;
+}
+
+static const SZrParserPlace *semantic_place_at(
+        const SZrSemanticIrFunction *semantic,
+        TZrPlaceId placeId) {
+    if (semantic == ZR_NULL || placeId == ZR_PLACE_ID_INVALID ||
+        placeId > semantic->places.places.length) {
+        return ZR_NULL;
+    }
+    return (const SZrParserPlace *)ZrCore_Array_Get(
+            (SZrArray *)&semantic->places.places, placeId - 1u);
+}
+
+static TZrBool append_place_values(const SZrSemanticIrFunction *semantic,
+                                   SZrExecIrFunction *output,
+                                   TZrExecIrValueId *firstPlaceValue,
+                                   TZrExecIrValueId *firstPlaceProvenance) {
+    TZrUInt32 i;
+
+    *firstPlaceValue = output->valueCount + 1u;
+    for (i = 0u; i < (TZrUInt32)semantic->places.places.length; ++i) {
+        const SZrParserPlace *place = (const SZrParserPlace *)ZrCore_Array_Get(
+                (SZrArray *)&semantic->places.places, i);
+        if (ZrCore_ExecIr_FunctionAddValue(
+                    output, (TZrMetadataToken)place->typeId,
+                    ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+                    ZR_EXEC_IR_NULLABILITY_UNKNOWN) ==
+            ZR_EXEC_IR_VALUE_ID_INVALID) {
+            return ZR_FALSE;
+        }
+    }
+    *firstPlaceProvenance = output->valueCount + 1u;
+    for (i = 0u; i < (TZrUInt32)semantic->places.places.length; ++i) {
+        const SZrParserPlace *place = (const SZrParserPlace *)ZrCore_Array_Get(
+                (SZrArray *)&semantic->places.places, i);
+        if (ZrCore_ExecIr_FunctionAddExternalValue(
+                    output, (TZrMetadataToken)place->typeId,
+                    ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+                    ZR_EXEC_IR_NULLABILITY_UNKNOWN) ==
+            ZR_EXEC_IR_VALUE_ID_INVALID) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool validate_semantic_ids(const SZrSemanticIrFunction *semantic,
@@ -431,13 +515,16 @@ cleanup:
 static TZrBool verify_unpublished_ssa(SZrExecIrFunction *output,
                                      SZrExecIrDiagnostic *diagnostic) {
     TZrExecIrFunctionId savedId = output->id;
+    TZrMetadataToken savedToken = output->functionToken;
     TZrBool valid;
-    /* The core verifier requires a module-assigned function ID. This
-     * isolated candidate has not been published yet; keep its ID unassigned
-     * after verification so BuildModule can assign the real slot. */
+    /* The core verifier requires published identities. This isolated
+     * candidate may not have either identity yet; keep both unchanged after
+     * verification so BuildModule can assign the real contract. */
     if (savedId == ZR_EXEC_IR_FUNCTION_ID_INVALID) output->id = 1u;
+    if (savedToken == 0u) output->functionToken = 1u;
     valid = ZrCore_ExecIr_VerifyFunction(output, ZR_EXEC_IR_VERIFY_SSA, diagnostic);
     output->id = savedId;
+    output->functionToken = savedToken;
     return valid;
 }
 
@@ -446,6 +533,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                               SZrExecIrFunction *output,
                               SZrExecIrDiagnostic *diagnostic) {
     const SZrSemanticIrFunction *s = semanticFunction;
+    TZrExecIrValueId firstPlaceValue = ZR_EXEC_IR_VALUE_ID_INVALID;
+    TZrExecIrValueId firstPlaceProvenance = ZR_EXEC_IR_VALUE_ID_INVALID;
     TZrUInt32 i;
     (void)options;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
@@ -461,6 +550,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
         return ZR_FALSE;
     }
+    if (!validate_semantic_places(s, diagnostic)) return ZR_FALSE;
     if (!validate_semantic_ids(s, diagnostic) ||
         !validate_instruction_owners(s, diagnostic)) return ZR_FALSE;
     ZrCore_ExecIr_FunctionInit(output);
@@ -478,6 +568,14 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN) == ZR_EXEC_IR_VALUE_ID_INVALID) {
             diag_missing(diagnostic, output, 0u, 0u); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
         }
+    }
+    if (!append_place_values(s, output, &firstPlaceValue,
+                             &firstPlaceProvenance)) {
+        diag_missing(diagnostic, output, 0u, 0u);
+        if (diagnostic != ZR_NULL)
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+        ZrCore_ExecIr_FreeFunction(output);
+        return ZR_FALSE;
     }
     for (i = 0u; i < (TZrUInt32)s->cfg.blocks.length; ++i) {
         const SZrParserCfgBlock *b = (const SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&s->cfg.blocks, i);
@@ -530,6 +628,12 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             for (j = 0u; j < b->instructionCount; ++j) {
                 const SZrSemanticIrInstruction *in = (const SZrSemanticIrInstruction *)ZrCore_Array_Get((SZrArray *)&s->instructions, b->firstInstructionIndex + j);
                 SZrExecIrInstruction x; SZrExecIrRange rr = {0u, 0u}, orr = {0u, 0u};
+                TZrExecIrValueId loweredOperands[2];
+                TZrExecIrValueId loweredResult = ZR_EXEC_IR_VALUE_ID_INVALID;
+                const TZrExecIrValueId *operandValues = ZR_NULL;
+                TZrUInt32 operandCount = in->operandCount;
+                TZrUInt32 resultCount =
+                        in->resultValueId != ZR_VALUE_ID_INVALID ? 1u : 0u;
                 const SZrExecIrOpcodeInfo *info;
                 TZrBool isTerminator;
                 memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in->opcode); x.sourceId = in->id;
@@ -551,23 +655,94 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
                 }
-                if ((info->operandArity != ZR_EXEC_IR_VARIADIC &&
-                     in->operandCount != info->operandArity) ||
+                if (in->operandCount != 0u) {
+                    operandValues = (const TZrExecIrValueId *)ZrCore_Array_Get(
+                            (SZrArray *)&s->valueOperands, in->operandStart);
+                }
+                switch (in->opcode) {
+                    case ZR_SEMANTIC_IR_PLACE_BASE:
+                        if (semantic_place_at(s, in->placeId) != ZR_NULL) {
+                            loweredResult = place_value_id(
+                                    firstPlaceValue, in->placeId);
+                            loweredOperands[0] = place_value_id(
+                                    firstPlaceProvenance, in->placeId);
+                            operandValues = loweredOperands;
+                            operandCount = 1u;
+                            resultCount = 1u;
+                        }
+                        break;
+                    case ZR_SEMANTIC_IR_PLACE_PROJECT: {
+                        const SZrParserPlace *place = semantic_place_at(
+                                s, in->placeId);
+                        if (place != ZR_NULL &&
+                            place->parentId != ZR_PLACE_ID_INVALID) {
+                            loweredResult = place_value_id(
+                                    firstPlaceValue, in->placeId);
+                            loweredOperands[0] = place_value_id(
+                                    firstPlaceValue, place->parentId);
+                            loweredOperands[1] =
+                                    in->auxiliaryValueId != ZR_VALUE_ID_INVALID
+                                        ? in->auxiliaryValueId
+                                        : place_value_id(
+                                                firstPlaceProvenance,
+                                                in->placeId);
+                            operandValues = loweredOperands;
+                            operandCount = 2u;
+                            resultCount = 1u;
+                        }
+                        break;
+                    }
+                    case ZR_SEMANTIC_IR_LOAD:
+                        if (semantic_place_at(s, in->placeId) != ZR_NULL) {
+                            loweredOperands[0] = place_value_id(
+                                    firstPlaceValue, in->placeId);
+                            operandValues = loweredOperands;
+                            operandCount = 1u;
+                        }
+                        break;
+                    case ZR_SEMANTIC_IR_STORE:
+                    case ZR_SEMANTIC_IR_INITIALIZE:
+                        if (semantic_place_at(s, in->placeId) != ZR_NULL) {
+                            loweredOperands[0] = place_value_id(
+                                    firstPlaceValue, in->placeId);
+                            loweredOperands[1] = in->valueId;
+                            operandValues = loweredOperands;
+                            operandCount = 2u;
+                            resultCount = 0u;
+                        }
+                        break;
+                    case ZR_SEMANTIC_IR_CONVERT:
+                    case ZR_SEMANTIC_IR_MOVE:
+                    case ZR_SEMANTIC_IR_COPY:
+                    case ZR_SEMANTIC_IR_DROP:
+                        if (operandCount == 0u &&
+                            in->valueId != ZR_VALUE_ID_INVALID) {
+                            loweredOperands[0] = in->valueId;
+                            operandValues = loweredOperands;
+                            operandCount = 1u;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                if ((operandCount < info->minimumOperands ||
+                     operandCount > info->maximumOperands) ||
                     (info->resultArity != ZR_EXEC_IR_VARIADIC &&
-                     (TZrUInt32)(in->resultValueId != ZR_VALUE_ID_INVALID) !=
-                         info->resultArity)) {
+                     resultCount != info->resultArity)) {
                     TZrBool wrongOperands = (TZrBool)(
-                        info->operandArity != ZR_EXEC_IR_VARIADIC &&
-                        in->operandCount != info->operandArity);
+                        operandCount < info->minimumOperands ||
+                        operandCount > info->maximumOperands);
                     diag_missing(diagnostic, output, db->id, in->id);
                     if (diagnostic != ZR_NULL) {
                         diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
                         diagnostic->sourceId = in->id;
                         diagnostic->expectedVersion = wrongOperands
-                            ? info->operandArity : info->resultArity;
+                            ? (operandCount < info->minimumOperands
+                                   ? info->minimumOperands
+                                   : info->maximumOperands)
+                            : info->resultArity;
                         diagnostic->actualVersion = wrongOperands
-                            ? in->operandCount
-                            : (TZrUInt32)(in->resultValueId != ZR_VALUE_ID_INVALID);
+                            ? operandCount : resultCount;
                     }
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
@@ -625,13 +800,16 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 }
                 if (isTerminator)
                     x.successorRange = db->successorRange;
-                if (in->resultValueId != ZR_VALUE_ID_INVALID) {
-                    TZrExecIrValueId v = in->resultValueId;
+                if (resultCount != 0u) {
+                    TZrExecIrValueId v = loweredResult !=
+                                                 ZR_EXEC_IR_VALUE_ID_INVALID
+                                             ? loweredResult
+                                             : in->resultValueId;
                     if (!ZrCore_ExecIr_FunctionAppendResults(output, &v, 1u, &rr)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
                 }
-                if (in->operandCount != 0u) {
-                    const TZrValueId *ops = (const TZrValueId *)ZrCore_Array_Get((SZrArray *)&s->valueOperands, in->operandStart);
-                    if (!ZrCore_ExecIr_FunctionAppendOperands(output, ops, in->operandCount, &orr)) {
+                if (operandCount != 0u) {
+                    if (!ZrCore_ExecIr_FunctionAppendOperands(
+                                output, operandValues, operandCount, &orr)) {
                         diag_missing(diagnostic, output, db->id, in->id);
                         if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
                         ZrCore_ExecIr_FreeFunction(output);

@@ -31,6 +31,14 @@ nodes, promote address-taken places, rename definitions across a dominance
 frontier, or prove exceptional-result availability. The builder invokes this
 step only after it emits CFG adjacency and computes immediate dominators.
 
+Before this check, source-produced canonical Places are assigned separate
+ExecIR address values. Place results are ordinary instruction definitions;
+their storage roots and static projection descriptors are explicit external
+entry values. Lowered loads and stores therefore reach SSA verification with
+fully defined operands even though the backing storage remains unpromoted.
+Semantic data value IDs retain their original numeric identity; appended
+address/provenance values cannot renumber source facts.
+
 The pass checks function-level storage consistency before reading instructions
 or operand/value side pools: counts may not exceed allocated capacities and a
 nonempty pool needs backing storage. Per instruction, the opcode must be known,

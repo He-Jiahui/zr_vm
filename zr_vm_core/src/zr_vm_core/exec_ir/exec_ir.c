@@ -888,7 +888,12 @@ static const SZrExecIrOpcodeInfo g_zr_exec_ir_opcode_info[ZR_EXEC_IR_OPCODE_COUN
     [ZR_EXEC_IR_OPCODE_##opcode_name] = { \
         .opcode = ZR_EXEC_IR_OPCODE_##opcode_name, .resultArity = (result_arity), \
         .operandArity = (operand_arity), \
-        .minimumOperands = ((operand_arity) == ZR_EXEC_IR_VARIADIC ? 0u : (operand_arity)), \
+        .minimumOperands = (ZR_EXEC_IR_OPCODE_##opcode_name == \
+                                    ZR_EXEC_IR_OPCODE_RETURN \
+                                ? 0u \
+                                : ((operand_arity) == ZR_EXEC_IR_VARIADIC \
+                                       ? 0u \
+                                       : (operand_arity))), \
         .memoryReads = (memory_reads), .memoryWrites = (memory_writes), \
         .flags = (schema_flags), \
         .effects = (((memory_reads) != 0u) ? ZR_EXEC_IR_EFFECT_READ_MEMORY : 0u) | \

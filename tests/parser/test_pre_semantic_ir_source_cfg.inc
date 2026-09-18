@@ -190,6 +190,133 @@ static void test_nested_untracked_condition_abandons_outer_source_cfg(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_if_lowers_place_provenance_to_exec_ir(void) {
+    static const TZrChar source[] =
+            "var flag: bool = true;\n"
+            "if (flag) { } else { }\n";
+    SZrString *name = ZrCore_String_Create(
+            g_state, "source_exec_ir.zr", 17U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrBool built;
+    TZrSize index;
+    TZrUInt32 placeInstructionCount = 0U;
+    TZrUInt32 loadInstructionCount = 0U;
+    TZrUInt32 storeInstructionCount = 0U;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    semantic = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(semantic);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    built = ZrParser_ExecIr_Build(
+            semantic, ZR_NULL, &output, &diagnostic);
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(built);
+    for (index = 0U; index < output.instructionCount; index++) {
+        const SZrExecIrInstruction *instruction = &output.instructions[index];
+        TZrUInt32 operandIndex;
+
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE ||
+            instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT) {
+            TZrExecIrValueId resultValueId;
+
+            TEST_ASSERT_EQUAL_UINT32(1U, instruction->results.count);
+            resultValueId = output.results[instruction->results.start];
+            TEST_ASSERT_GREATER_THAN_UINT32(0U, resultValueId);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(
+                    output.valueCount, resultValueId);
+            TEST_ASSERT_EQUAL_UINT32(index + 1U,
+                    output.values[resultValueId - 1U].definition);
+            if (instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE) {
+                TZrExecIrValueId provenance;
+
+                TEST_ASSERT_EQUAL_UINT32(1U, instruction->operands.count);
+                provenance = output.operands[instruction->operands.start];
+                TEST_ASSERT_GREATER_THAN_UINT32(0U, provenance);
+                TEST_ASSERT_LESS_OR_EQUAL_UINT32(
+                        output.valueCount, provenance);
+                TEST_ASSERT_BITS_HIGH(
+                        ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY,
+                        output.values[provenance - 1U].flags);
+            }
+            placeInstructionCount++;
+        } else if (instruction->opcode == ZR_EXEC_IR_OPCODE_LOAD) {
+            TZrExecIrValueId address;
+            TZrExecIrInstructionId definition;
+
+            TEST_ASSERT_EQUAL_UINT32(1U, instruction->operands.count);
+            address = output.operands[instruction->operands.start];
+            TEST_ASSERT_GREATER_THAN_UINT32(0U, address);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(output.valueCount, address);
+            definition = output.values[address - 1U].definition;
+            TEST_ASSERT_GREATER_THAN_UINT32(0U, definition);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(
+                    output.instructionCount, definition);
+            TEST_ASSERT_TRUE(
+                    output.instructions[definition - 1U].opcode ==
+                            ZR_EXEC_IR_OPCODE_PLACE_BASE ||
+                    output.instructions[definition - 1U].opcode ==
+                            ZR_EXEC_IR_OPCODE_PLACE_PROJECT);
+            loadInstructionCount++;
+        } else if (instruction->opcode == ZR_EXEC_IR_OPCODE_STORE) {
+            TZrExecIrValueId address;
+            TZrExecIrInstructionId definition;
+
+            TEST_ASSERT_EQUAL_UINT32(2U, instruction->operands.count);
+            address = output.operands[instruction->operands.start];
+            TEST_ASSERT_GREATER_THAN_UINT32(0U, address);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(output.valueCount, address);
+            definition = output.values[address - 1U].definition;
+            TEST_ASSERT_GREATER_THAN_UINT32(0U, definition);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(
+                    output.instructionCount, definition);
+            TEST_ASSERT_TRUE(
+                    output.instructions[definition - 1U].opcode ==
+                            ZR_EXEC_IR_OPCODE_PLACE_BASE ||
+                    output.instructions[definition - 1U].opcode ==
+                            ZR_EXEC_IR_OPCODE_PLACE_PROJECT);
+            storeInstructionCount++;
+        }
+        for (operandIndex = 0U; operandIndex < instruction->operands.count;
+             operandIndex++) {
+            TZrExecIrValueId valueId = output.operands[
+                    instruction->operands.start + operandIndex];
+            const SZrExecIrValue *value;
+
+            TEST_ASSERT_GREATER_THAN_UINT32(0U, valueId);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(output.valueCount, valueId);
+            value = &output.values[valueId - 1U];
+            TEST_ASSERT_TRUE(
+                    value->definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID ||
+                    (value->flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0U);
+        }
+    }
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, placeInstructionCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, loadInstructionCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, storeInstructionCount);
+
+    ZrCore_ExecIr_FreeFunction(&output);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_short_circuit_arm_keeps_legacy_cfg(void) {
     static const TZrChar source[] =
             "var flag: bool = true;\n"

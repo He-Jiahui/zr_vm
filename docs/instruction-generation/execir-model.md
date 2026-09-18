@@ -45,6 +45,20 @@ metadata table.  It records operand bounds, terminator/value flags, and effect
 classes for arithmetic, place, memory, call, allocation, ownership/drop,
 control-flow, exception, suspension, and phi operations.
 
+The SemanticIR builder preserves the original semantic value IDs and appends
+two stable ranges for each canonical Place. The first range contains address
+values defined by `PLACE_BASE` or `PLACE_PROJECT`; the second contains explicit
+entry values for the storage root or projection descriptor. `LOAD` consumes
+the address value, while both `STORE` and SemanticIR `INITIALIZE` consume the
+address followed by the stored data value. Static projections use their entry
+descriptor as the second operand; dynamic projections use their canonical
+index value. This keeps frame roots and selectors explicit without encoding a
+host pointer or reconstructing facts from ExecBC.
+
+`RETURN` accepts zero operands for a void function and one operand for a value
+return. The opcode metadata exposes this as a zero minimum and one maximum, so
+the builder, SSA precheck, core verifier, and oracle use the same range.
+
 `ZrCore_ExecIr_CloneModule` and `ZrCore_ExecIr_CloneFunction` build a temporary
 deep copy and publish it only after every side-array allocation succeeds.
 Module clone rollback includes the function currently being copied, even if a

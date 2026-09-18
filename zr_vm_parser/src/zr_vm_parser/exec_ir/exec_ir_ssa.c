@@ -42,8 +42,8 @@ TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)in->opcode);
         if (info == ZR_NULL)
             return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_UNKNOWN_OPCODE, i + 1u);
-        if (info->operandArity != ZR_EXEC_IR_VARIADIC &&
-            in->operands.count != info->operandArity)
+        if (in->operands.count < info->minimumOperands ||
+            in->operands.count > info->maximumOperands)
             return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, i + 1u);
         if (in->operands.start > f->operandCount ||
             in->operands.count > f->operandCount - in->operands.start)

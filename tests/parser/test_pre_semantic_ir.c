@@ -8,6 +8,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/cfg.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_ir.h"
 
@@ -1290,6 +1291,7 @@ int main(void) {
     RUN_TEST(test_late_unmodeled_arm_abandons_partial_source_cfg);
     RUN_TEST(test_nested_untracked_condition_abandons_outer_source_cfg);
     RUN_TEST(test_short_circuit_arm_keeps_legacy_cfg);
+    RUN_TEST(test_source_if_lowers_place_provenance_to_exec_ir);
     RUN_TEST(test_field_initialization_tracks_partial_parent_and_cleanup_bitmap);
     RUN_TEST(test_field_initialize_rejects_non_projected_destination);
     RUN_TEST(test_flow_join_keeps_dimensions_separate_and_reports_negative_uses);
