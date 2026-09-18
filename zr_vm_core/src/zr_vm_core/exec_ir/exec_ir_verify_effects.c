@@ -161,7 +161,6 @@ static TZrBool zr_exec_ir_verify_phi_predecessors(const SZrExecIrFunction *funct
                  incomingIndex < phi->incomings.start + phi->incomings.count;
                  ++incomingIndex) {
                 const SZrExecIrPhiIncoming *incoming = &function->phiIncoming[incomingIndex];
-                TZrUInt32 duplicateIndex;
                 TZrUInt32 predecessorIndex = incomingIndex - phi->incomings.start;
                 if (!zr_exec_ir_block_has_predecessor(function, block, incoming->predecessor)) {
                     zr_exec_ir_effect_diag(diagnostic,
@@ -184,20 +183,9 @@ static TZrBool zr_exec_ir_verify_phi_predecessors(const SZrExecIrFunction *funct
                                            incoming->predecessor);
                     return ZR_FALSE;
                 }
-                for (duplicateIndex = phi->incomings.start;
-                     duplicateIndex < incomingIndex;
-                     ++duplicateIndex) {
-                    if (function->phiIncoming[duplicateIndex].predecessor == incoming->predecessor) {
-                        zr_exec_ir_effect_diag(diagnostic,
-                                               ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
-                                               function,
-                                               block->id,
-                                               0u,
-                                               block->predecessors.count,
-                                               incoming->predecessor);
-                        return ZR_FALSE;
-                    }
-                }
+                /* Parallel edges from the same source have separate ordered
+                 * incoming slots. Position, not source-block uniqueness,
+                 * identifies the predecessor edge occurrence. */
             }
         }
     }

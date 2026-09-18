@@ -73,3 +73,19 @@ Accepted for the **same-block chain continuity slice** only. No M1 or full
 SSA-plan acceptance is claimed. The next verifier slice must check CFG edges,
 token PHIs and per-region memory versions before proving optimizer reordering
 safe across branches.
+
+## Parallel-edge PHI follow-up (2026-09-18)
+
+Before the fix, the new `ssa_effects_verifier` case exited 1 on MSVC with
+`FAIL: effect verifier rejected two distinct incoming CFG edge occurrences`.
+The existing count and exact positional checks already require one incoming
+per edge, including repeated source-block IDs. The effect phase now accepts
+those parallel occurrences rather than rejecting duplicate predecessor IDs;
+its foreign and out-of-order predecessor negatives remain in the same test.
+
+MSVC 19.44 rebuilt `zr_vm_ssa_effects_verifier_test` and
+`zr_vm_ssa_oracle_parallel_edges_test` under `D:/zr-ssa-verify-871bc234`;
+both standalone executables exited 0. WSL GCC 11.4 rebuilt the focused effect
+verifier with ASan/UBSan and ran
+`/mnt/d/zr-ssa-verify-871bc234/ssa_effects_gcc_asan`: exit 0, no sanitizer
+report. Full cross-block token PHIs and M1 acceptance remain open.

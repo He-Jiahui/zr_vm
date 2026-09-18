@@ -75,7 +75,9 @@ ordinary definition remain the model's explicit function-input/parameter
 form.  A block PHI defines its result at block entry, and each incoming value
 is checked against the predecessor edge named by that incoming.  Foreign PHI
 predecessors are rejected at the SSA boundary; effect verification additionally
-enforces one incoming per predecessor and exact range order.
+enforces one incoming per predecessor *edge occurrence* and exact range order.
+Two distinct incoming slots may name the same source block when it has two
+parallel edges to the destination; source-block uniqueness is not an invariant.
 
 An `INVOKE` result is committed only on a normal continuation.  If an operand
 or PHI incoming reaches a successor marked `ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION`,
@@ -110,7 +112,8 @@ being incorrectly discarded.
 `ssa_effects_verifier` covers linear use-before-definition, cross-branch
 non-dominating uses, valid PHI edge definitions, and wrong-edge diagnostics in
 addition to direct, cleanup-path, and PHI-input exceptional-edge `INVOKE`
-result negatives and the existing effect-token negatives. A skipped effect
+result negatives, matching parallel-edge PHI incoming slots, and the existing
+effect-token negatives. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.
 The standalone SSA consumer targets compile the split verifier source through

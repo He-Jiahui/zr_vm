@@ -147,6 +147,33 @@ static void test_phi_incoming_order_matches_predecessors(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_phi_accepts_parallel_edge_occurrences(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrPhi phi = {0};
+    SZrExecIrPhiIncoming incoming[2] = {{1u, 0u}, {1u, 0u}};
+    TZrExecIrBlockId successors[2] = {2u, 2u};
+    TZrExecIrBlockId predecessors[2] = {1u, 1u};
+
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+       "parallel target block");
+    ok(ZrCore_ExecIr_FunctionAppendSuccessors(function, successors, 2u,
+                                              &function->blocks[0].successors),
+       "parallel successors");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(function, predecessors, 2u,
+                                                &function->blocks[1].predecessors),
+       "parallel predecessors");
+    ok(ZrCore_ExecIr_FunctionAppendPhiIncoming(function, incoming, 2u,
+                                               &phi.incomings), "parallel phi inputs");
+    ok(ZrCore_ExecIr_FunctionAppendPhis(function, &phi, 1u,
+                                       &function->blocks[1].phis), "parallel phi");
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "effect verifier rejected two distinct incoming CFG edge occurrences");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_call_binding_row_zero_does_not_require_all_dynamic_flags(void) {
     SZrExecIrModule module;
     TZrExecIrFunctionId id;
@@ -962,6 +989,7 @@ int main(void) {
     test_malformed_memory_range_is_rejected();
     test_memory_inputs_must_advance_across_instructions();
     test_phi_incoming_order_matches_predecessors();
+    test_phi_accepts_parallel_edge_occurrences();
     test_call_binding_row_zero_does_not_require_all_dynamic_flags();
     test_observable_effect_chain_rejects_skipped_version();
     test_malformed_block_instruction_range_is_rejected();
