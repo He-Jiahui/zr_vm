@@ -738,12 +738,19 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     const SZrParserCfgBlock *entry;
     const SZrParserCfgBlock *present;
     const SZrParserCfgBlock *join;
+    const SZrParserCfgBlock *invoke;
+    const SZrParserCfgBlock *normal;
+    const SZrParserCfgBlock *exception;
     SZrExecIrFunction output;
     SZrExecIrDiagnostic diagnostic;
+    TZrBool buildResult;
     TZrSize storeCount = 0U;
+    TZrSize semanticCallCount = 0U;
     TZrSize moveCount = 0U;
     TZrSize copyCount = 0U;
     TZrSize nopCount = 0U;
+    TZrSize invokeCount = 0U;
+    TZrSize exceptionBlockCount = 0U;
     TZrSize index;
 
     TEST_ASSERT_NOT_NULL(ast);
@@ -763,16 +770,25 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_EQUAL_UINT64(4U, function->cfg.blocks.length);
+    TEST_ASSERT_EQUAL_UINT64(7U, function->cfg.blocks.length);
     entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
             (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
     present = (const SZrParserCfgBlock *)ZrCore_Array_Get(
             (SZrArray *)&function->cfg.blocks, 1U);
     join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
             (SZrArray *)&function->cfg.blocks, 2U);
+    invoke = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    normal = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 4U);
+    exception = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 5U);
     TEST_ASSERT_NOT_NULL(entry);
     TEST_ASSERT_NOT_NULL(present);
     TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_NOT_NULL(invoke);
+    TEST_ASSERT_NOT_NULL(normal);
+    TEST_ASSERT_NOT_NULL(exception);
     TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
     TEST_ASSERT_EQUAL_INT(
             ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
@@ -785,8 +801,29 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     TEST_ASSERT_EQUAL_UINT32(
             2U, ZrParser_Cfg_BlockEdgeAt(entry, 1U)->toBlockId);
     TEST_ASSERT_EQUAL_UINT32(1U, present->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(present, 0U)->kind);
     TEST_ASSERT_EQUAL_UINT32(
-            2U, ZrParser_Cfg_BlockEdgeAt(present, 0U)->toBlockId);
+            3U, ZrParser_Cfg_BlockEdgeAt(present, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, invoke->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(invoke, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            4U, ZrParser_Cfg_BlockEdgeAt(invoke, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_EXCEPTION,
+            ZrParser_Cfg_BlockEdgeAt(invoke, 1U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            5U, ZrParser_Cfg_BlockEdgeAt(invoke, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, normal->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(normal, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_THROW,
+            exception->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(0U, exception->instructionCount);
     TEST_ASSERT_EQUAL_UINT32(2U, join->predecessorCount);
     for (index = 0U; index < function->instructions.length; index++) {
         const SZrSemanticIrInstruction *instruction =
@@ -800,8 +837,24 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
                     present->firstInstructionIndex + present->instructionCount,
                     (TZrUInt32)index);
         }
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED ||
+            instruction->opcode == ZR_SEMANTIC_IR_CALL_VIRTUAL ||
+            instruction->opcode == ZR_SEMANTIC_IR_CALL_DYNAMIC ||
+            instruction->opcode == ZR_SEMANTIC_IR_CALL_META) {
+            semanticCallCount++;
+            TEST_ASSERT_EQUAL_UINT32(
+                    invoke->firstInstructionIndex + invoke->instructionCount -
+                            1U,
+                    (TZrUInt32)index);
+            TEST_ASSERT_EQUAL_UINT32(3U, instruction->operandCount);
+            TEST_ASSERT_NOT_EQUAL(
+                    ZR_SEMANTIC_ID_INVALID, instruction->symbolId);
+            TEST_ASSERT_NOT_EQUAL(
+                    ZR_VALUE_ID_INVALID, instruction->resultValueId);
+        }
     }
     TEST_ASSERT_EQUAL_UINT64(1U, storeCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, semanticCallCount);
     for (index = 0U; index < function->values.length; index++) {
         const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
                 function, (TZrValueId)index + 1U);
@@ -817,9 +870,10 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
 
     ZrCore_ExecIr_FunctionInit(&output);
     memset(&diagnostic, 0, sizeof(diagnostic));
-    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
-            function, ZR_NULL, &output, &diagnostic));
+    buildResult = ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(buildResult);
     for (index = 0U; index < output.instructionCount; index++) {
         switch ((EZrExecIrOpcode)output.instructions[index].opcode) {
             case ZR_EXEC_IR_OPCODE_MOVE:
@@ -831,13 +885,36 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
             case ZR_EXEC_IR_OPCODE_NOP:
                 nopCount++;
                 break;
+            case ZR_EXEC_IR_OPCODE_INVOKE:
+                invokeCount++;
+                TEST_ASSERT_EQUAL_UINT32(
+                        2U, output.instructions[index].successorRange.count);
+                TEST_ASSERT_EQUAL_UINT32(
+                        normal->id + 1U,
+                        output.successors[
+                                output.instructions[index].successorRange.start]);
+                TEST_ASSERT_EQUAL_UINT32(
+                        exception->id + 1U,
+                        output.successors[
+                                output.instructions[index]
+                                                .successorRange.start +
+                                        1U]);
+                break;
             default:
                 break;
+        }
+    }
+    for (index = 0U; index < output.blockCount; index++) {
+        if ((output.blocks[index].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0U) {
+            exceptionBlockCount++;
         }
     }
     TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, moveCount);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT64(4U, copyCount);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, nopCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, invokeCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, exceptionBlockCount);
     ZrCore_ExecIr_FreeFunction(&output);
 
     ZrCore_Function_Free(g_state, compiler.currentFunction);

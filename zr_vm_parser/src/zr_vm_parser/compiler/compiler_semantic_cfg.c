@@ -499,6 +499,74 @@ TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                 ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL);
 }
 
+TZrBool compiler_semantic_cfg_begin_invoke(
+        SZrCompilerState *cs,
+        SZrAstNode *callNode,
+        SZrFileRange range) {
+    TZrUInt32 invokeBlock;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive) {
+        return ZR_FALSE;
+    }
+    invokeBlock = ZrParser_Cfg_AppendBlock(
+            cs->state,
+            &cs->preSemanticIr.cfg,
+            ZR_PARSER_CFG_BLOCK_STATEMENT,
+            callNode);
+    if (invokeBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        !compiler_semantic_cfg_jump(cs, invokeBlock, range)) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_enter(cs, invokeBlock);
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_split_invoke(
+        SZrCompilerState *cs,
+        SZrAstNode *callNode,
+        SZrFileRange range) {
+    SZrParserCfg *cfg;
+    TZrUInt32 invokeBlock;
+    TZrUInt32 normalBlock;
+    TZrUInt32 exceptionBlock;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive ||
+        cs->preSemanticIrCfgBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        cs->preSemanticIr.instructions.length == 0U) {
+        return ZR_FALSE;
+    }
+    ZR_UNUSED_PARAMETER(range);
+    invokeBlock = cs->preSemanticIrCfgBlock;
+    cfg = &cs->preSemanticIr.cfg;
+    normalBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, callNode);
+    exceptionBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, callNode);
+    if (normalBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        exceptionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        !compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_NONE) ||
+        !ZrParser_Cfg_Connect(
+                cfg, invokeBlock, normalBlock,
+                ZR_PARSER_CFG_EDGE_NORMAL, callNode) ||
+        !ZrParser_Cfg_Connect(
+                cfg, invokeBlock, exceptionBlock,
+                ZR_PARSER_CFG_EDGE_EXCEPTION, callNode)) {
+        return ZR_FALSE;
+    }
+
+    compiler_semantic_cfg_enter(cs, exceptionBlock);
+    /* The current ExecIR model has no edge-defined exception payload value.
+     * Keep propagation as an explicit exceptional sink until that value
+     * contract is added; do not fabricate a normal-entry external value. */
+    if (!compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_THROW)) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_enter(cs, normalBlock);
+    return ZR_TRUE;
+}
+
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block) {
     cs->preSemanticIrCfgBlock = block;
     cs->preSemanticIrCfgStart = (TZrUInt32)cs->preSemanticIr.instructions.length;

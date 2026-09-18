@@ -160,7 +160,7 @@ static TZrBool compiler_semantic_ir_is_contiguous_view_source_loan(
     return ZR_FALSE;
 }
 
-static TZrBool compiler_semantic_ir_emit(
+TZrBool compiler_semantic_ir_emit(
         SZrCompilerState *cs,
         const SZrSemanticIrInstructionSpec *spec) {
     if (cs == ZR_NULL || spec == ZR_NULL || !cs->preSemanticIrInitialized) {
@@ -345,6 +345,53 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_add_temporary_slot(
     }
     return (SZrCompilerSemanticIrSlot *)ZrCore_Array_Get(
             &cs->preSemanticIrSlots, cs->preSemanticIrSlots.length - 1U);
+}
+
+TZrBool compiler_semantic_ir_bind_result_value(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrTypeId typeId,
+        TZrValueId valueId,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *existing;
+    SZrCompilerSemanticIrSlot slot;
+    SZrParserPlaceBase base;
+    SZrSemanticIrInstructionSpec spec;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE ||
+        typeId == ZR_SEMANTIC_ID_INVALID ||
+        valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    existing = compiler_semantic_ir_find_slot(cs, stackSlot);
+    if (existing != ZR_NULL && existing->typeId == typeId) {
+        existing->valueId = valueId;
+        return ZR_TRUE;
+    }
+
+    memset(&slot, 0, sizeof(slot));
+    memset(&base, 0, sizeof(base));
+    base.kind = ZR_PARSER_PLACE_BASE_TEMPORARY;
+    base.identity = stackSlot;
+    slot.stackSlot = stackSlot;
+    slot.typeId = typeId;
+    slot.valueId = valueId;
+    slot.placeId = ZrParser_PlaceGraph_AddBase(
+            &cs->preSemanticIr.places, &base, typeId, sourceRange);
+    if (slot.placeId == ZR_PLACE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(cs->state, &cs->preSemanticIrSlots, &slot);
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_PLACE_BASE;
+    spec.typeId = typeId;
+    spec.placeId = slot.placeId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 static SZrCompilerSemanticIrSlot *compiler_semantic_ir_materialize_slot(

@@ -4419,6 +4419,48 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                                           ? spreadPrefixArgumentCount
                                                                           : argCount)));
                 }
+                if (cs->preSemanticIrCfgActive &&
+                    activeCallMemberInfo != ZR_NULL &&
+                    !hasSpreadArgument) {
+                    const SZrInferredType *semanticResultType =
+                            hasResolvedMemberSignature
+                                    ? &resolvedMemberSignature.returnType
+                                    : (hasContractReturnType
+                                               ? &contractReturnType
+                                               : ZR_NULL);
+                    EZrSemanticIrOpcode semanticCallOpcode =
+                            emitMetaCallOpcode
+                                    ? ZR_SEMANTIC_IR_CALL_META
+                                    : (activeCallMemberInfo->callBindingFact
+                                                       .bindingKind ==
+                                                       ZR_CALL_BINDING_INTERFACE ||
+                                               activeCallMemberInfo
+                                                       ->callBindingFact
+                                                       .bindingKind ==
+                                                       ZR_CALL_BINDING_VIRTUAL
+                                               ? ZR_SEMANTIC_IR_CALL_VIRTUAL
+                                               : ZR_SEMANTIC_IR_CALL_TYPED);
+                    if (!compiler_semantic_ir_lower_call(
+                                cs,
+                                semanticCallOpcode,
+                                pendingReceiverSlot != ZR_PARSER_SLOT_NONE
+                                        ? pendingReceiverSlot
+                                        : currentSlot,
+                                activeReceiverLoanId,
+                                argBaseSlot,
+                                argCount,
+                                callResultSlot,
+                                semanticResultType,
+                                activeCallMemberInfo->symbolId,
+                                member,
+                                member->location)) {
+                        ZrParser_Compiler_Error(
+                                cs,
+                                "Failed to lower call through pre-execution Semantic IR",
+                                member->location);
+                        goto cleanup;
+                    }
+                }
             }
             }
             if (usesIsolatedReadonlyAggregateCallWindow) {

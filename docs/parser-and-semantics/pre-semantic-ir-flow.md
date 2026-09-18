@@ -14,9 +14,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -32,9 +34,11 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
@@ -150,14 +154,23 @@ for local Place promotion.
 Nullable `receiver?.method(arguments)` chains whose canonical receiver-guard
 fact ends in `VOID_NOOP` publish a present/absent diamond. The receiver ValueId
 terminates the prefix with ordered present-true and absent-false edges. Argument
-and suffix facts are emitted only in the present block, which then reaches the
-join normally; the absent edge enters the join directly. The compiler restores
-the pre-branch slot snapshot at that join. Ownership operations with results
-also bind their defining ValueId to the result stack slot, so a nullable
-`wake(weak)` result can serve as a defined receiver operand. Value-producing
-optional chains and Weak-wake guard frames remain outside this subset; if one
-appears after a source graph has started, the compiler abandons the partial CFG
-and removes its synthetic branches.
+and suffix facts are emitted only on the present path. A supported known member
+call receives a dedicated invoke block after those facts. It records a typed
+`CALL_*` instruction with the callable/receiver ValueId, the argument-window
+ValueIds, the resolved symbol, and a typed result bound to the result stack
+slot. The call block has ordered normal and exception edges, so ExecIR lowers it
+to `INVOKE` without assigning an earlier present-path operation the call's
+exceptional transfer. The normal continuation reaches the join and the absent
+edge enters the join directly. The exceptional continuation is an explicit
+zero-instruction propagation sink: the current model has no edge-defined
+exception payload value, so the producer does not invent a normal-entry value
+for `THROW`. The compiler restores the pre-branch slot snapshot at the join.
+Ownership operations with results also bind their defining ValueId to the
+result stack slot, so a nullable `wake(weak)` result can serve as a defined
+receiver operand. Value-producing optional chains, Weak-wake guard frames, and
+calls missing a canonical result type, symbol, callable, or argument value
+remain outside this subset; if one appears after a source graph has started,
+the compiler abandons the partial CFG and removes its synthetic branches.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 

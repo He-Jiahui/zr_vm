@@ -103,6 +103,15 @@ void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
 TZrValueId compiler_semantic_ir_slot_value(SZrCompilerState *cs,
                                            TZrUInt32 stackSlot);
+TZrBool compiler_semantic_ir_emit(
+        SZrCompilerState *cs,
+        const SZrSemanticIrInstructionSpec *spec);
+TZrBool compiler_semantic_ir_bind_result_value(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrTypeId typeId,
+        TZrValueId valueId,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 conditionSlot,
                                       SZrAstNode *node,
@@ -135,6 +144,14 @@ TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
 TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                   TZrUInt32 target,
                                   SZrFileRange range);
+TZrBool compiler_semantic_cfg_begin_invoke(
+        SZrCompilerState *cs,
+        SZrAstNode *callNode,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_split_invoke(
+        SZrCompilerState *cs,
+        SZrAstNode *callNode,
+        SZrFileRange range);
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block);
 TZrBool compiler_semantic_cfg_capture_slots(SZrCompilerState *cs,
                                             SZrArray *snapshot);
@@ -183,6 +200,18 @@ TZrBool compiler_semantic_ir_lower_constructed_ownership(
         TZrUInt32 sourceSlot,
         TZrUInt32 resultSlot,
         SZrAstNode *constructExpression,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_call(
+        SZrCompilerState *cs,
+        EZrSemanticIrOpcode opcode,
+        TZrUInt32 callableSlot,
+        TZrLoanId receiverLoanId,
+        TZrUInt32 firstArgumentSlot,
+        TZrUInt32 argumentCount,
+        TZrUInt32 resultSlot,
+        const SZrInferredType *resultType,
+        TZrSymbolId symbolId,
+        SZrAstNode *callNode,
         SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_lower_value_construct(
         SZrCompilerState *cs,

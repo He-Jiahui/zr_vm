@@ -70,9 +70,12 @@ families.
 
 ## Boundary
 
-The source call itself still lacks a source-owned `CALL_*` fact. Nullable
-value-producing optional chains, Weak-wake CFGs, and exception/cleanup exits
-remain outside the compiler-owned graph. ExecIR ownership and nullability
-fields also remain `UNKNOWN`; this checkpoint preserves canonical type tokens
-and executable opcode expansion but does not implement the later ownership
-metadata projection. These items keep the overall 01.02 exit gate partial.
+The supported nullable `void` member-call path now owns a typed `CALL_*` fact
+and lowers it to a split `INVOKE`, as recorded in
+[SSA 01.02: nullable optional-call SemanticIR CFG](ssa-compiler-source-optional-call-cfg.md).
+General calls, nullable value-producing optional chains, Weak-wake CFGs,
+exception payloads/handlers, and cleanup exits remain outside the
+compiler-owned graph. ExecIR ownership and nullability fields also remain
+`UNKNOWN`; this checkpoint preserves canonical type tokens and executable
+opcode expansion but does not implement the later ownership metadata
+projection. These items keep the overall 01.02 exit gate partial.

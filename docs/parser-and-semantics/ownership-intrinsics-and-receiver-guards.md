@@ -26,6 +26,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_completion_semantic_facts.c
@@ -66,6 +67,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
@@ -314,13 +316,20 @@ The pre-execution Semantic IR producer now mirrors one bounded form of that
 branch: a nullable optional chain whose final call publishes `VOID_NOOP` lift.
 Its receiver ValueId terminates the prefix with ordered present-true and
 absent-false edges. Argument and suffix facts are owned only by the present
-block, which reaches the join normally; the absent edge skips directly there.
-The slot bridge is snapshotted before the present path and restored at the
-join. Result-producing ownership operations bind their defining ValueId to the
-result stack slot, allowing an explicitly awakened nullable receiver to be the
-branch operand. Nullable value-producing chains, Weak-wake guard frames, and
-exception/cleanup suffixes remain conservative fallback cases; encountering
-one after another source branch abandons the partial semantic CFG.
+path. A supported known member call occupies a separate terminal block and
+publishes a typed `CALL_*` fact with canonical callable/receiver, argument,
+symbol, and result identities. Its ordered normal and exception edges become
+one ExecIR `INVOKE`; the normal continuation reaches the optional join and the
+exception continuation is an explicit propagation sink. The sink remains
+instruction-free until the IR can represent an edge-defined exception payload,
+so lowering does not fabricate a `THROW` input. The absent edge skips directly
+to the join. The slot bridge is snapshotted before the present path and restored
+at that join. Result-producing ownership operations bind their defining
+ValueId to the result stack slot, allowing an explicitly awakened nullable
+receiver to be the branch operand. Nullable value-producing chains, Weak-wake
+guard frames, missing canonical call facts, and cleanup suffixes remain
+conservative fallback cases; encountering one after another source branch
+abandons the partial semantic CFG.
 
 The ownership setup for that branch now reaches ExecIR with canonical source
 and result TypeIds. Qualifier changes are derived for each ownership result,
@@ -330,7 +339,8 @@ non-consuming ownership and borrow/view operations to `COPY`, release to
 `DROP`, and loan activation/end facts to source-mapped `NOP`. Producer-less
 SemanticIR inputs are carried as external-entry values; this closes the prior
 untyped resource-construction boundary for the nullable `void` fixture without
-claiming value-producing optional, Weak, exception, or cleanup CFG support.
+claiming value-producing optional, Weak, exception-payload/handler, or cleanup
+CFG support.
 
 Every guard-owned `OWN_WAKE` is immediately followed by
 `MARK_TO_BE_CLOSED` for the same destination slot. Normal completion closes

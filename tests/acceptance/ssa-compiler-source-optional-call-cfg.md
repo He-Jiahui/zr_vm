@@ -3,8 +3,11 @@ doc_type: acceptance-record
 plan: docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 implementation:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
 tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
@@ -20,7 +23,17 @@ The source compiler now publishes a canonical present/absent diamond for
 complete chain has `VOID_NOOP` result lift. The receiver ValueId owns the
 conditional branch. Its ordered true edge enters the present block; its false
 edge skips directly to the join. The present path alone owns argument and
-suffix facts, then reaches the same join through a normal edge.
+suffix facts. A supported known member call then occupies a dedicated invoke
+block and publishes its typed `CALL_*` instruction, resolved symbol, ordered
+callable/receiver and argument operands, and result ValueId. Its normal
+continuation reaches the join; its exception edge enters a propagation sink.
+The ExecIR builder therefore emits one `INVOKE` with ordered normal/exception
+successors instead of assigning the exceptional transfer to an earlier store.
+
+The propagation sink deliberately has no instruction. ExecIR does not yet
+represent an exception value defined by an incoming edge, so emitting `THROW`
+would require a fabricated normal-entry payload. The sink's CFG terminator fact
+keeps the exceptional boundary explicit until that payload contract exists.
 
 The lowering snapshots the compiler's semantic slot bridge before the present
 path and restores it at the join. Result-producing ownership operations now
@@ -32,9 +45,12 @@ No execution-bytecode jump offset is inspected to construct this graph.
 
 `test_source_optional_call_skips_argument_semantic_effects` compiles a known
 `void` member call with `side = true` as its argument. It checks the exact
-four-block topology, canonical present-true/absent-false ordering, two join
-predecessors, and that the argument's only semantic `STORE` belongs to the
-present block.
+seven-block topology, canonical present-true/absent-false ordering, the
+present-to-invoke edge, ordered invoke normal/exception edges, a normal-to-join
+edge, two join predecessors, and the empty exceptional sink. It also proves
+that the argument's only semantic `STORE` belongs to the present block, the
+typed call is the invoke block's tail with all three runtime operands, and the
+resulting ExecIR contains exactly one `INVOKE` and one exception block.
 
 `test_unmodeled_optional_value_abandons_partial_source_cfg` first starts a
 source `if` graph and then compiles a value-producing optional member chain.
@@ -56,16 +72,19 @@ optional CFG.
 - The WSL GCC ASan+UBSan build under `wsl-gcc-asan` passed 25/25 with leak
   detection and both sanitizers configured to halt on the first error.
 - The receiver-guard performance executable passed its one test after the
-  change. The broader ownership-intrinsic executable retained the same four
-  pre-existing failures both with and without the ownership result-slot bridge,
-  so those failures are not attributed to this checkpoint.
+  change on all three toolchains. The broader ownership-intrinsic executable
+  retained the same four pre-existing failures and passed the nullable optional
+  argument-skipping regression, so those failures are not attributed to this
+  checkpoint.
 
 ## Boundary
 
-This checkpoint covers nullable, value-discarded `void` optional calls. It does
-not yet merge nullable values, model Weak guard wake/cleanup in the canonical
-CFG, split exception or cleanup exits, or lower the call operation itself into
-source-owned `CALL_*` facts. The earlier untyped resource-construction boundary
-is closed by [SSA 01.02: ownership facts through ExecIR](ssa-compiler-ownership-execir.md),
+This checkpoint covers nullable, value-discarded `void` optional calls with a
+known member symbol and complete canonical operand/type facts. It does not yet
+merge nullable values, model Weak guard wake/cleanup in the canonical CFG,
+materialize exception payloads or enclosing handlers, split cleanup exits, or
+start source CFG solely for general calls outside an already supported graph.
+The earlier untyped resource-construction boundary is closed by
+[SSA 01.02: ownership facts through ExecIR](ssa-compiler-ownership-execir.md),
 but the remaining control-flow items still prevent a complete 01.02 exit-gate
 claim.

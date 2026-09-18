@@ -672,6 +672,9 @@ TZrBool compiler_receiver_guard_finish(
             continue;
         }
 
+        if (frame->hasSemanticCfg && !cs->preSemanticIrCfgActive) {
+            frame->hasSemanticCfg = ZR_FALSE;
+        }
         if (frame->hasSemanticCfg) {
             if (!compiler_semantic_cfg_jump(
                         cs, frame->semanticJoinBlock, frame->range) ||
