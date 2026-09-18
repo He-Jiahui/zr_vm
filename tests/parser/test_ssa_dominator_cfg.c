@@ -112,10 +112,89 @@ static void test_backedge_and_unreachable_block(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_rejects_mismatched_predecessor_adjacency(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry, target, unrelated;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    entry = append_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    target = append_block(&function, 0u);
+    unrelated = append_block(&function, 0u);
+    append_successors(&function, entry, &target, 1u);
+    append_predecessors(&function, target, &unrelated, 1u);
+    check(!ZrParser_ExecIr_ComputeDominators(&function, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH &&
+              diagnostic.blockId == target &&
+              diagnostic.expectedVersion == entry &&
+              diagnostic.actualVersion == unrelated &&
+              function.blocks[target - 1u].immediateDominator ==
+                  ZR_EXEC_IR_BLOCK_ID_INVALID,
+          "dominator computation accepted a fabricated in-range predecessor");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_rejects_missing_parallel_predecessor_occurrence(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry, target, repeated[2];
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    entry = append_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    target = append_block(&function, 0u);
+    repeated[0] = target;
+    repeated[1] = target;
+    append_successors(&function, entry, repeated, 2u);
+    append_predecessors(&function, target, &entry, 1u);
+    check(!ZrParser_ExecIr_ComputeDominators(&function, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH &&
+              diagnostic.expectedVersion == 2u && diagnostic.actualVersion == 1u &&
+              function.blocks[target - 1u].immediateDominator ==
+                  ZR_EXEC_IR_BLOCK_ID_INVALID,
+          "dominator computation collapsed a parallel CFG edge");
+    ZrCore_ExecIr_FreeFunction(&function);
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    entry = append_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    target = append_block(&function, 0u);
+    repeated[0] = entry;
+    repeated[1] = entry;
+    append_successors(&function, entry, &target, 1u);
+    append_predecessors(&function, target, repeated, 2u);
+    check(!ZrParser_ExecIr_ComputeDominators(&function, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 2u,
+          "dominator computation accepted an extra predecessor occurrence");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_accepts_parallel_edge_occurrences(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry, target, repeatedSuccessors[2], repeatedPredecessors[2];
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    entry = append_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    target = append_block(&function, 0u);
+    repeatedSuccessors[0] = target;
+    repeatedSuccessors[1] = target;
+    repeatedPredecessors[0] = entry;
+    repeatedPredecessors[1] = entry;
+    append_successors(&function, entry, repeatedSuccessors, 2u);
+    append_predecessors(&function, target, repeatedPredecessors, 2u);
+    check(ZrParser_ExecIr_ComputeDominators(&function, &diagnostic) &&
+              function.blocks[target - 1u].immediateDominator == entry,
+          "matching parallel CFG edges did not retain their common dominator");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_rejects_invalid_successor_before_traversal();
     test_diamond_and_repeated_analysis();
     test_backedge_and_unreachable_block();
+    test_rejects_mismatched_predecessor_adjacency();
+    test_rejects_missing_parallel_predecessor_occurrence();
+    test_accepts_parallel_edge_occurrences();
     puts("ssa dominator CFG PASS");
     return EXIT_SUCCESS;
 }

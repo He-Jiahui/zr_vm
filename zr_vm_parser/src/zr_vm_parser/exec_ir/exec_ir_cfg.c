@@ -7,6 +7,91 @@ static TZrBool cfg_range_valid(SZrExecIrRange range, TZrUInt32 size) {
     return (TZrBool)(range.start <= size && range.count <= size - range.start);
 }
 
+typedef struct SZrCfgEdgePair {
+    TZrExecIrBlockId from;
+    TZrExecIrBlockId to;
+} SZrCfgEdgePair;
+
+static int cfg_compare_edge_pairs(const void *left, const void *right) {
+    const SZrCfgEdgePair *a = (const SZrCfgEdgePair *)left;
+    const SZrCfgEdgePair *b = (const SZrCfgEdgePair *)right;
+    if (a->to != b->to) return a->to < b->to ? -1 : 1;
+    if (a->from != b->from) return a->from < b->from ? -1 : 1;
+    return 0;
+}
+
+/* Dominators consume predecessors while reachability consumes successors.
+ * Validate the same multiset of edges, including parallel occurrences. */
+static TZrBool cfg_validate_edge_multiplicity(const SZrExecIrFunction *f,
+                                               SZrExecIrDiagnostic *d) {
+    SZrCfgEdgePair *successors = ZR_NULL, *predecessors = ZR_NULL;
+    TZrUInt32 successorCount = 0u, predecessorCount = 0u, i, j;
+    TZrBool valid = ZR_FALSE;
+
+    for (i = 0u; i < f->blockCount; ++i) {
+        const SZrExecIrBlock *block = &f->blocks[i];
+        if (block->successorRange.count > UINT32_MAX - successorCount ||
+            block->predecessorRange.count > UINT32_MAX - predecessorCount) {
+            if (d != ZR_NULL) d->code = ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW;
+            return ZR_FALSE;
+        }
+        successorCount += block->successorRange.count;
+        predecessorCount += block->predecessorRange.count;
+    }
+    if (successorCount != predecessorCount) {
+        if (d != ZR_NULL) {
+            d->code = ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH;
+            d->expectedVersion = successorCount;
+            d->actualVersion = predecessorCount;
+        }
+        return ZR_FALSE;
+    }
+    if (successorCount == 0u) return ZR_TRUE;
+#if SIZE_MAX <= UINT32_MAX
+    if (successorCount > SIZE_MAX / sizeof(*successors)) {
+        if (d != ZR_NULL) d->code = ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW;
+        return ZR_FALSE;
+    }
+#endif
+    successors = (SZrCfgEdgePair *)malloc((TZrSize)successorCount * sizeof(*successors));
+    predecessors = (SZrCfgEdgePair *)malloc((TZrSize)predecessorCount * sizeof(*predecessors));
+    if (successors == ZR_NULL || predecessors == ZR_NULL) {
+        if (d != ZR_NULL) d->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+    successorCount = 0u;
+    predecessorCount = 0u;
+    for (i = 0u; i < f->blockCount; ++i) {
+        const SZrExecIrBlock *block = &f->blocks[i];
+        for (j = 0u; j < block->successorRange.count; ++j) {
+            successors[successorCount++] = (SZrCfgEdgePair){
+                block->id, f->successors[block->successorRange.start + j]};
+        }
+        for (j = 0u; j < block->predecessorRange.count; ++j) {
+            predecessors[predecessorCount++] = (SZrCfgEdgePair){
+                f->predecessors[block->predecessorRange.start + j], block->id};
+        }
+    }
+    qsort(successors, successorCount, sizeof(*successors), cfg_compare_edge_pairs);
+    qsort(predecessors, predecessorCount, sizeof(*predecessors), cfg_compare_edge_pairs);
+    for (i = 0u; i < successorCount; ++i) {
+        if (cfg_compare_edge_pairs(&successors[i], &predecessors[i]) != 0) {
+            if (d != ZR_NULL) {
+                d->code = ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH;
+                d->blockId = successors[i].to;
+                d->expectedVersion = successors[i].from;
+                d->actualVersion = predecessors[i].from;
+            }
+            goto cleanup;
+        }
+    }
+    valid = ZR_TRUE;
+cleanup:
+    free(successors);
+    free(predecessors);
+    return valid;
+}
+
 static TZrBool cfg_validate_edges(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
     TZrUInt32 blockIndex;
     if (f->blockCount > f->blockCapacity || f->blocks == ZR_NULL ||
@@ -58,7 +143,7 @@ static TZrBool cfg_validate_edges(const SZrExecIrFunction *f, SZrExecIrDiagnosti
             }
         }
     }
-    return ZR_TRUE;
+    return cfg_validate_edge_multiplicity(f, d);
 }
 
 typedef struct SZrCfgDfsFrame {

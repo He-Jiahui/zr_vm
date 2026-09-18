@@ -32,10 +32,14 @@ entry point; it does not infer missing edges on their behalf.
 
 The function rejects a missing/invalid entry, null or inconsistent block/edge
 storage, out-of-range adjacency spans, nonsequential block IDs, and invalid
-successor/predecessor IDs before following an edge. Diagnostics carry the
-function token, owning block ID, error code, and expected/actual edge ID for
-invalid endpoints. Scratch allocation failures report `OUT_OF_MEMORY`; on a
-32-bit size type, impossible stack capacities report `CAPACITY_OVERFLOW`.
+successor/predecessor IDs before following an edge. It also compares sorted
+`(source, destination)` edge multisets in both adjacency tables: missing,
+invented, or collapsed parallel edges fail with
+`PHI_PREDECESSOR_MISMATCH`, including discrepant counts or endpoints.
+Diagnostics carry the function token, owning block ID, error code, and
+expected/actual edge ID for invalid endpoints. Scratch allocation failures
+report `OUT_OF_MEMORY`; on a 32-bit size type, impossible stack or edge
+capacities report `CAPACITY_OVERFLOW`.
 
 All traversal and dominator work stays in temporary arrays. The function
 updates `immediateDominator` only after the complete analysis succeeds.
@@ -65,11 +69,12 @@ this analysis alone; these remain the larger 01.02/01.03 milestones.
 ## Verification and follow-up
 
 `ssa_dominator_cfg` uses a standalone focused target to test invalid ID
-diagnostics and failure atomicity, a valid diamond and repeated analysis, plus
-a loop backedge and an unreachable block. The executable is compiled with the
-real parser CFG implementation and core ExecIR sources. The separate 01.03
-structural verifier tests adjacency symmetry; this analysis additionally
-checks that every referenced ID exists, but does not replace that verifier.
+diagnostics and failure atomicity, a valid diamond and repeated analysis, a
+loop backedge and unreachable block, and mismatched or matching parallel edge
+occurrences. The executable is compiled with the real parser CFG implementation
+and core ExecIR sources. The separate 01.03 structural verifier still owns
+the broader IR contract; this analysis validates edge symmetry before relying
+on its own cached predecessor information.
 
 An existing uncommitted `ssa_construction` fixture still needs its edge-range
 construction corrected before it can serve as an integration acceptance gate.

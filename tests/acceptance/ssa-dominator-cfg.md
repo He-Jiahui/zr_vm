@@ -79,3 +79,25 @@ Accepted only as the independent dominator-analysis correctness slice. Full
 01.02 and M1 acceptance remain open because the production builder,
 pre-existing dirty test fixture, full GCC/Clang CTest matrix and downstream
 ExecBC/AOT parity have not been verified at this revision.
+
+## Edge multiplicity follow-up (2026-09-18)
+
+The preflight previously checked endpoint ranges but trusted the predecessor
+table independently from the successor table. A new regression first failed
+on MSVC with `dominator computation accepted a fabricated in-range predecessor`.
+The analyzer now compares sorted directed-edge multisets before using any
+predecessor; an invented source and missing or extra parallel occurrence fail
+without changing cached idoms. Matching parallel edges still yield the
+correct idom. Edge comparison uses O(E log E) temporary storage and does not
+turn parallel CFG occurrences into unique source-block IDs.
+
+MSVC 19.44 rebuilt four focused targets in `D:/zr-ssa-verify-871bc234`:
+`zr_vm_ssa_dominator_cfg_test`, `zr_vm_ssa_builder_dominance_test`,
+`zr_vm_ssa_builder_cfg_test`, and `zr_vm_ssa_builder_control_edges_test`.
+All four standalone executables exited 0 after this change; this is not a
+claim that the full CTest suite or the M1 milestone passed.
+WSL GCC 11.4 rebuilt the same eight focused sources with
+`-fsanitize=address,undefined -fno-omit-frame-pointer` and ran the resulting
+`/mnt/d/zr-ssa-verify-871bc234/ssa_dominator_gcc_asan`; it printed
+`ssa dominator CFG PASS` and exited 0 without a sanitizer report. The
+earlier Clang evidence predates this follow-up and has not been rerun.
