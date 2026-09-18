@@ -4,6 +4,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir_interpreter.h
   - zr_vm_core/include/zr_vm_core/execution_contract.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_internal.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_oracle.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
@@ -12,6 +14,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_internal.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
@@ -23,7 +27,9 @@ plan_sources:
   - docs/plans/ssa/guides/E-projections-fusion-aot.md
 tests:
   - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/cmake/ssa-tests.cmake
+  - tests/acceptance/ssa-oracle-parallel-edges.md
 doc_type: module-detail
 ---
 
@@ -47,6 +53,27 @@ specific oracle diagnostic and instruction/source identity, while missing
 providers return `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and
 infinite control flow have separate diagnostics and a caller-configurable step
 limit.
+
+At block entry, value phis are evaluated together against the predecessor
+**edge slot**, not merely the predecessor block ID. The terminator records the
+selected successor ordinal (conditional branch or switch index). For repeated
+edges from one source to the same destination, the ordinal's occurrence number
+selects the corresponding occurrence in the destination's predecessor range;
+the phi incoming at that exact index is read before any phi result is written.
+This preserves distinct incoming values even when both branch arms target the
+same block. A missing or inconsistent edge occurrence reports
+`PHI_PREDECESSOR_MISMATCH` rather than silently reading another arm's value.
+The oracle's own preflight no longer rejects repeated predecessor IDs when
+their phi incoming positions match the predecessor range. See
+`tests/acceptance/ssa-oracle-parallel-edges.md` for the focused regression;
+the projection-layer handling of repeated predecessors remains a separate
+unverified 01.05 gate.
+
+The edge-occurrence lookup and two-phase phi entry live in
+`exec_ir_interpreter_phi.c`; `exec_ir_interpreter.c` remains responsible for
+instruction dispatch and tracking the selected successor ordinal. Their
+private header shares only diagnostic and checked-size helpers plus the block
+entry call; no new public core API or alternate execution path is introduced.
 
 THROW and SUSPEND are observable termination boundaries in reference mode. The
 oracle publishes their event into its prepared result, stops before any later

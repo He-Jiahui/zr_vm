@@ -199,6 +199,7 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
@@ -211,6 +212,25 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
     target_compile_definitions(zr_vm_ssa_oracle_projections_test PRIVATE _CRT_SECURE_NO_WARNINGS)
     add_test(NAME ssa_oracle_projections COMMAND zr_vm_ssa_oracle_projections_test)
     set_tests_properties(ssa_oracle_projections PROPERTIES LABELS "ssa")
+endif ()
+
+if (NOT TARGET zr_vm_ssa_oracle_parallel_edges_test)
+    add_executable(zr_vm_ssa_oracle_parallel_edges_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_parallel_edges.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
+    target_include_directories(zr_vm_ssa_oracle_parallel_edges_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_oracle_parallel_edges_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_oracle_parallel_edges COMMAND zr_vm_ssa_oracle_parallel_edges_test)
+    set_tests_properties(ssa_oracle_parallel_edges PROPERTIES LABELS "ssa")
 endif ()
 
 if (NOT TARGET zr_vm_ssa_pass_manager_scalar_test)

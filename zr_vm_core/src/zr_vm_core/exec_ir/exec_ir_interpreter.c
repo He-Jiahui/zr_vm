@@ -1,4 +1,4 @@
-#include "zr_vm_core/exec_ir_interpreter.h"
+#include "exec_ir_interpreter_internal.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -8,7 +8,7 @@
 #define ZR_ORACLE_DEFAULT_STEP_MULTIPLIER ((TZrUInt32)1024u)
 #define ZR_ORACLE_LOCAL_OPERAND_LIMIT ((TZrUInt32)8u)
 
-static void zr_oracle_diag(SZrExecIrDiagnostic *d, EZrExecutionDiagnosticCode code,
+void zr_oracle_diag(SZrExecIrDiagnostic *d, EZrExecutionDiagnosticCode code,
                            const SZrExecIrFunction *f, TZrExecIrBlockId block,
                            TZrExecIrInstructionId instruction, TZrExecIrSourceId source,
                            TZrUInt32 expected, TZrUInt32 actual) {
@@ -51,7 +51,7 @@ static TZrBool zr_oracle_block_has_predecessor(const SZrExecIrFunction *f,
     return ZR_FALSE;
 }
 
-static TZrBool zr_oracle_bytes(TZrUInt32 count, size_t element, size_t *bytes) {
+TZrBool zr_oracle_bytes(TZrUInt32 count, size_t element, size_t *bytes) {
     if (bytes == ZR_NULL || element == 0u || (size_t)count > SIZE_MAX / element) return ZR_FALSE;
     *bytes = (size_t)count * element;
     return ZR_TRUE;
@@ -135,24 +135,11 @@ static TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnosti
     }
     for (i = 0u; i < f->phiCount; ++i) {
         const SZrExecIrPhi *p = &f->phiPool[i];
-        TZrUInt32 j;
         if (p->result == ZR_EXEC_IR_VALUE_ID_INVALID || p->result > f->valueCount ||
             !zr_oracle_range(p->incomings, f->phiIncomingCount)) {
             zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, f, 0u, 0u, 0u,
                            f->phiIncomingCount, p->incomings.start + p->incomings.count);
             return ZR_FALSE;
-        }
-        for (j = 0u; j < p->incomings.count; ++j) {
-            TZrExecIrBlockId predecessor =
-                    f->phiIncoming[p->incomings.start + j].predecessor;
-            TZrUInt32 k;
-            for (k = j + 1u; k < p->incomings.count; ++k) {
-                if (f->phiIncoming[p->incomings.start + k].predecessor == predecessor) {
-                    zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
-                                   f, predecessor, 0u, 0u, 1u, k);
-                    return ZR_FALSE;
-                }
-            }
         }
     }
     for (i = 0u; i < f->blockCount; ++i) {
@@ -494,53 +481,12 @@ static TZrBool zr_oracle_truthy(const SZrExecIrOracleValue *v) {
     }
 }
 
-static TZrBool zr_oracle_enter(const SZrExecIrFunction *f, TZrExecIrBlockId blockId,
-                               TZrExecIrBlockId previous, SZrExecIrOracleExecutionResult *r,
-                               SZrExecIrDiagnostic *d) {
-    const SZrExecIrBlock *b = &f->blocks[blockId - 1u];
-    SZrExecIrOracleValue *pending;
-    size_t bytes;
-    TZrUInt32 i;
-    if (b->phis.count == 0u) return ZR_TRUE;
-    if (!zr_oracle_bytes(b->phis.count, sizeof(*pending), &bytes)) {
-        zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, f, blockId, 0u, 0u, UINT32_MAX, b->phis.count);
-        return ZR_FALSE;
-    }
-    pending = (SZrExecIrOracleValue *)malloc(bytes);
-    if (pending == ZR_NULL) {
-        zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY, f, blockId, 0u, 0u, b->phis.count, 0u);
-        return ZR_FALSE;
-    }
-    for (i = 0u; i < b->phis.count; ++i) {
-        const SZrExecIrPhi *p = &f->phiPool[b->phis.start + i];
-        TZrUInt32 j;
-        TZrBool found = ZR_FALSE;
-        zr_oracle_undefined(&pending[i]);
-        for (j = 0u; j < p->incomings.count; ++j) {
-            const SZrExecIrPhiIncoming *in = &f->phiIncoming[p->incomings.start + j];
-            if (in->predecessor == previous || (previous == ZR_EXEC_IR_BLOCK_ID_INVALID && j == 0u)) {
-                pending[i] = r->values[in->value - 1u]; found = ZR_TRUE; break;
-            }
-        }
-        if (!found) {
-            free(pending);
-            zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH, f, blockId, 0u, 0u, previous, p->incomings.count);
-            return ZR_FALSE;
-        }
-    }
-    for (i = 0u; i < b->phis.count; ++i) {
-        const SZrExecIrPhi *p = &f->phiPool[b->phis.start + i];
-        r->values[p->result - 1u] = pending[i];
-    }
-    free(pending);
-    return ZR_TRUE;
-}
-
 static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
                               SZrExecIrOracleExecutionResult *r,
                               const SZrExecIrInstruction *ins,
                               TZrExecIrInstructionId id, TZrExecIrBlockId block,
                               TZrBool *terminated, TZrExecIrBlockId *next,
+                              TZrUInt32 *nextOrdinal,
                               SZrExecIrDiagnostic *d) {
     const SZrExecIrFunction *f = input->function;
     TZrUInt32 n = ins->operands.count, i;
@@ -551,6 +497,7 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
     EZrExecIrOpcode op = (EZrExecIrOpcode)ins->opcode;
     if (terminated != ZR_NULL) *terminated = ZR_FALSE;
     if (next != ZR_NULL) *next = ZR_EXEC_IR_BLOCK_ID_INVALID;
+    if (nextOrdinal != ZR_NULL) *nextOrdinal = 0u;
     /* Reject a known-but-unmodeled operation before allocating an operand
      * scratch area or touching any value slot. */
     if (!zr_oracle_supported(op, input)) {
@@ -717,10 +664,11 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             break;
         case ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH:
             if (n != 1u || ins->successorRange.count < 2u) goto invalid;
-            *next = f->successors[ins->successorRange.start + (zr_oracle_truthy(&ops[0]) ? 0u : 1u)];
+            *nextOrdinal = zr_oracle_truthy(&ops[0]) ? 0u : 1u;
+            *next = f->successors[ins->successorRange.start + *nextOrdinal];
             *terminated = ZR_TRUE;
             break;
-        case ZR_EXEC_IR_OPCODE_SWITCH: { TZrUInt64 choice; if (n < 1u || ins->successorRange.count == 0u) goto invalid; choice = zr_oracle_unsigned(&ops[0]); if (choice >= ins->successorRange.count) choice = ins->successorRange.count - 1u; *next = f->successors[ins->successorRange.start + (TZrUInt32)choice]; *terminated = ZR_TRUE; break; }
+        case ZR_EXEC_IR_OPCODE_SWITCH: { TZrUInt64 choice; if (n < 1u || ins->successorRange.count == 0u) goto invalid; choice = zr_oracle_unsigned(&ops[0]); if (choice >= ins->successorRange.count) choice = ins->successorRange.count - 1u; *nextOrdinal = (TZrUInt32)choice; *next = f->successors[ins->successorRange.start + *nextOrdinal]; *terminated = ZR_TRUE; break; }
         case ZR_EXEC_IR_OPCODE_RETURN:
             if (n > 0u) r->returnValue = ops[0];
             r->returned = ZR_TRUE;
@@ -775,6 +723,7 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
     SZrExecIrOracleExecutionResult prepared;
     TZrUInt32 i, maxSteps, steps = 0u;
     TZrExecIrBlockId current, previous = ZR_EXEC_IR_BLOCK_ID_INVALID;
+    TZrUInt32 previousOrdinal = 0u;
     size_t bytes;
 
     memset(&prepared, 0, sizeof(prepared));
@@ -845,6 +794,7 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
         TZrBool blockTerminated = ZR_FALSE;
         TZrBool done = ZR_FALSE;
         TZrExecIrBlockId next = ZR_EXEC_IR_BLOCK_ID_INVALID;
+        TZrUInt32 nextOrdinal = 0u;
         if (steps >= maxSteps) {
             zr_oracle_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_STEP_LIMIT,
                            f, current, 0u, 0u, maxSteps, steps);
@@ -857,7 +807,8 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
         } else {
             const SZrExecIrBlock *b;
             if (current == ZR_EXEC_IR_BLOCK_ID_INVALID || current > f->blockCount ||
-                !zr_oracle_enter(f, current, previous, &prepared, diagnostic)) {
+                !zr_oracle_enter(f, current, previous, previousOrdinal,
+                                 &prepared, diagnostic)) {
                 if (diagnostic != ZR_NULL && diagnostic->code == ZR_EXECUTION_DIAGNOSTIC_NONE) {
                     zr_oracle_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
                                    f, current, 0u, 0u, f->blockCount, current);
@@ -882,7 +833,8 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
             ++steps;
             ++prepared.executedInstructionCount;
             if (!zr_oracle_exec(input, &prepared, &f->instructions[id - 1u],
-                                id, current, &terminated, &next, diagnostic)) {
+                                id, current, &terminated, &next, &nextOrdinal,
+                                diagnostic)) {
                 ZrCore_ExecIr_OracleResultFree(&prepared);
                 return ZR_FALSE;
             }
@@ -919,6 +871,7 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
             return ZR_FALSE;
         }
         previous = current;
+        previousOrdinal = nextOrdinal;
         current = next;
         prepared.currentBlock = current;
     }
