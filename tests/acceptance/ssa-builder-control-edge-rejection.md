@@ -34,8 +34,11 @@ WSL was not available for this follow-up: both the GCC compile attempt and
 the subsequent `wsl.exe -e bash -lc 'printf ...'` startup probe failed at
 `Wsl/Service/CreateInstance/CreateVm/0x800705b4` before invoking a Linux
 compiler. The GCC/Clang successes in the next section refer to the prior
-dynamic-edge revision, **not** to this new inline-row guard; cross-compiler
-revalidation remains outstanding.
+dynamic-edge revision, **not** to this new inline-row guard. WSL later
+recovered: GCC 11.4 recompiled the inline-row fixture with
+`-fsanitize=address,undefined` and printed `ssa builder control edges PASS`
+(exit 0, no sanitizer report); Clang 14 recompiled without sanitizers and
+printed the same PASS (exit 0). Full CTest on Linux remains outstanding.
 
 ## Observed validation
 

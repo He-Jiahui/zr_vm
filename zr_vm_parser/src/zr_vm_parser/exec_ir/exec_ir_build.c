@@ -49,6 +49,41 @@ static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize)
                        array->elementSize == elementSize)));
 }
 
+static TZrBool validate_semantic_ids(const SZrSemanticIrFunction *semantic,
+                                     SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 i;
+    for (i = 0u; i < semantic->values.length; ++i) {
+        const SZrSemanticIrValue *value = (const SZrSemanticIrValue *)
+            ZrCore_Array_Get((SZrArray *)&semantic->values, i);
+        if (value->id != i + 1u) {
+            diag_missing(diagnostic, ZR_NULL, 0u, 0u);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+                diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                diagnostic->expectedVersion = i + 1u;
+                diagnostic->actualVersion = value->id;
+            }
+            return ZR_FALSE;
+        }
+    }
+    for (i = 0u; i < semantic->instructions.length; ++i) {
+        const SZrSemanticIrInstruction *instruction = (const SZrSemanticIrInstruction *)
+            ZrCore_Array_Get((SZrArray *)&semantic->instructions, i);
+        if (instruction->id != i + 1u) {
+            diag_missing(diagnostic, ZR_NULL, 0u, instruction->id);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                diagnostic->sourceId = instruction->id;
+                diagnostic->expectedVersion = i + 1u;
+                diagnostic->actualVersion = instruction->id;
+            }
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 /* CFG blocks may be ordered differently from the source instruction pool,
  * but their slices must partition it without duplication or omission. */
 static TZrBool validate_instruction_owners(const SZrSemanticIrFunction *semantic,
@@ -381,7 +416,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
         return ZR_FALSE;
     }
-    if (!validate_instruction_owners(s, diagnostic)) return ZR_FALSE;
+    if (!validate_semantic_ids(s, diagnostic) ||
+        !validate_instruction_owners(s, diagnostic)) return ZR_FALSE;
     ZrCore_ExecIr_FunctionInit(output);
     output->functionToken = (TZrMetadataToken)s->symbolId;
     output->signatureHash = (TZrUInt64)s->callableTypeId;

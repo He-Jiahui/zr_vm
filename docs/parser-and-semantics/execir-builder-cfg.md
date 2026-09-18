@@ -12,6 +12,7 @@ tests:
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
+  - tests/parser/test_ssa_builder_fact_identity.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
@@ -27,6 +28,7 @@ tests:
   - tests/acceptance/ssa-builder-ssa-dominance.md
   - tests/acceptance/ssa-builder-opcode-arity.md
   - tests/acceptance/ssa-builder-control-edge-rejection.md
+  - tests/acceptance/ssa-builder-fact-identity.md
 doc_type: module-detail
 ---
 
@@ -158,6 +160,15 @@ have their declared element width. Bad shape reports `INVALID_RANGE` without
 touching caller output; it does not attempt to infer facts by reading raw
 memory or fall back to post-ExecBC decoding. See
 `tests/acceptance/ssa-builder-canonical-input-shape.md` for fault fixtures.
+
+After shape validation but before allocating any ExecIR function state,
+canonical value and instruction IDs must equal their one-based array
+positions. Otherwise a mismatched value ID would be silently rebound to
+another type/definition, and an instruction ID would produce a misleading
+source map. A mismatched value reports `INVALID_VALUE`; a mismatched
+instruction reports `INVALID_RANGE` with its actual source ID and the
+expected/actual IDs. Both leave caller output unchanged. See
+`tests/acceptance/ssa-builder-fact-identity.md`.
 
 Each instruction's operand range is checked against the logical operand
 side-pool length before copying. The check tests `start <= length` and then
