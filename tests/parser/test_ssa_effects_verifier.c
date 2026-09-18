@@ -356,7 +356,7 @@ static void test_ssa_rejects_cross_branch_use_not_dominated(void) {
     ok(ZrCore_ExecIr_ModuleAddFunction(&module, 910u, 1u, &id),
        "branch dominance function");
     function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
-    condition = ZrCore_ExecIr_FunctionAddValue(
+    condition = ZrCore_ExecIr_FunctionAddExternalValue(
             function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
             ZR_EXEC_IR_NULLABILITY_UNKNOWN);
     source = ZrCore_ExecIr_FunctionAddValue(
@@ -478,7 +478,7 @@ static void test_ssa_accepts_phi_edge_definitions_and_rejects_wrong_edge(void) {
     ok(ZrCore_ExecIr_ModuleAddFunction(&module, 920u, 1u, &id),
        "phi dominance function");
     function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
-    condition = ZrCore_ExecIr_FunctionAddValue(
+    condition = ZrCore_ExecIr_FunctionAddExternalValue(
             function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
             ZR_EXEC_IR_NULLABILITY_UNKNOWN);
     leftValue = ZrCore_ExecIr_FunctionAddValue(
@@ -660,7 +660,7 @@ static void test_ssa_rejects_invoke_result_on_exception_edge(void) {
     ok(ZrCore_ExecIr_ModuleAddFunction(&module, 930u, 1u, &id),
        "invoke exception function");
     function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
-    argument = ZrCore_ExecIr_FunctionAddValue(
+    argument = ZrCore_ExecIr_FunctionAddExternalValue(
             function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
             ZR_EXEC_IR_NULLABILITY_UNKNOWN);
     result = ZrCore_ExecIr_FunctionAddValue(
@@ -842,7 +842,7 @@ static void test_ssa_rejects_invoke_result_in_exception_phi(void) {
     ok(ZrCore_ExecIr_ModuleAddFunction(&module, 940u, 1u, &id),
        "invoke phi function");
     function = ZrCore_ExecIr_ModuleFunctionAt(&module, id);
-    argument = ZrCore_ExecIr_FunctionAddValue(
+    argument = ZrCore_ExecIr_FunctionAddExternalValue(
             function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
             ZR_EXEC_IR_NULLABILITY_UNKNOWN);
     result = ZrCore_ExecIr_FunctionAddValue(

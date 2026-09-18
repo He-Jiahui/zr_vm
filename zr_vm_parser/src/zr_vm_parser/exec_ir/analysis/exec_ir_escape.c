@@ -475,14 +475,11 @@ TZrBool ZrParser_ExecIr_AnalyzeEscape(
         SZrExecIrEscapeFact *fact = &temporary.facts[valueIndex];
         fact->valueId = valueIndex + 1u;
         fact->ownership = function->values[valueIndex].ownership;
-        /* ExecIR parameters are represented by values which have no ordinary
-         * instruction definition (the call-graph pass uses the same
-         * definition==0 convention).  Keep that canonical function-lifetime
-         * fact instead of pretending an incoming value was born in the local
-         * block.  Values produced by an instruction are refined back to LOCAL
-         * in the definition scan below. */
-        fact->state = function->values[valueIndex].definition ==
-                              ZR_EXEC_IR_INSTRUCTION_ID_INVALID
+        /* External entry values exist before the function body.  Phi results
+         * also have no ordinary instruction definition, so the explicit flag
+         * is the only sound parameter/capture classification. */
+        fact->state = (function->values[valueIndex].flags &
+                       ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u
                           ? ZR_EXEC_IR_ESCAPE_FUNCTION
                           : ZR_EXEC_IR_ESCAPE_LOCAL;
         fact->decision = ZR_EXEC_IR_ALLOC_HEAP;
@@ -905,8 +902,8 @@ TZrBool ZrParser_ExecIr_AnalyzeEscape(
     }
 
     /* Values live through a suspend are escaping even when they are not an
-     * explicit suspend operand (e.g. a later use reloads them).  Parameters
-     * have definition id zero and are treated as live from function entry.
+     * explicit suspend operand (e.g. a later use reloads them).  External
+     * entry values have definition id zero and are live from function entry.
      * Instruction IDs are monotonically assigned by the canonical builder, so
      * this check is deterministic; an ambiguous CFG remains conservative
      * through the direct suspend edges above. */

@@ -197,7 +197,8 @@ static TZrUInt32 parameter_count(const SZrExecIrFunction *callee,
     TZrUInt32 i, count = 0u;
     if (callee == ZR_NULL || parameters == ZR_NULL) return 0u;
     for (i = 0u; i < callee->valueCount; ++i) {
-        if (callee->values[i].definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID) continue;
+        if ((callee->values[i].flags &
+             ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) == 0u) continue;
         if (count < capacity) parameters[count] = i + 1u;
         ++count;
     }

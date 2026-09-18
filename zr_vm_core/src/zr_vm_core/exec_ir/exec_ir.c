@@ -545,6 +545,20 @@ TZrExecIrValueId ZrCore_ExecIr_FunctionAddValue(SZrExecIrFunction *function,
     return id;
 }
 
+TZrExecIrValueId ZrCore_ExecIr_FunctionAddExternalValue(
+        SZrExecIrFunction *function,
+        TZrMetadataToken typeToken,
+        EZrExecIrOwnership ownership,
+        EZrExecIrNullability nullability) {
+    TZrExecIrValueId id = ZrCore_ExecIr_FunctionAddValue(
+            function, typeToken, ownership, nullability);
+    if (id != ZR_EXEC_IR_VALUE_ID_INVALID) {
+        function->values[id - 1u].flags =
+                ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY;
+    }
+    return id;
+}
+
 TZrBool ZrCore_ExecIr_FunctionAppendOperands(SZrExecIrFunction *function,
                                               const TZrExecIrValueId *operands,
                                               TZrSize count,
@@ -616,7 +630,9 @@ TZrBool ZrCore_ExecIr_FunctionAppendInstruction(SZrExecIrFunction *function,
          ++resultIndex) {
         TZrExecIrValueId valueId = function->results[resultIndex];
         if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID || valueId > function->valueCount ||
-            function->values[valueId - 1u].definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+            function->values[valueId - 1u].definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID ||
+            (function->values[valueId - 1u].flags &
+             ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u) {
             return ZR_FALSE;
         }
     }

@@ -28,6 +28,15 @@ TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
     /* Values emitted by SemIR already carry stable definitions.  This pass
        performs the conservative verifier-side SSA checks and leaves memory
        places unpromoted when no canonical fact is available. */
+    for (i = 0u; i < f->valueCount; ++i) {
+        if ((f->values[i].flags & ~ZR_EXEC_IR_VALUE_FLAG_MASK) != 0u ||
+            ((f->values[i].flags &
+              ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u &&
+             f->values[i].definition !=
+                     ZR_EXEC_IR_INSTRUCTION_ID_INVALID)) {
+            return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0u);
+        }
+    }
     for (i = 0u; i < f->instructionCount; ++i) {
         const SZrExecIrInstruction *in = &f->instructions[i];
         const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)in->opcode);
@@ -41,8 +50,17 @@ TZrBool ZrParser_ExecIr_BuildSsa(SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
             return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, i + 1u);
         for (j = 0u; j < in->operands.count; ++j) {
             TZrExecIrValueId id = f->operands[in->operands.start + j];
-            if (id == ZR_EXEC_IR_VALUE_ID_INVALID || id > f->valueCount || f->values[id - 1u].definition == ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+            TZrBool external;
+            if (id == ZR_EXEC_IR_VALUE_ID_INVALID || id > f->valueCount) {
                 return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, i + 1u);
+            }
+            external = (TZrBool)(
+                    (f->values[id - 1u].flags &
+                     ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u);
+            if (!external && f->values[id - 1u].definition ==
+                                     ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+                return ssa_fail(f, d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                i + 1u);
             }
         }
     }

@@ -562,6 +562,29 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
         return ZR_FALSE;
     }
 
+    /* Parameters, captures and implicit frame roots exist at entry without an
+     * ordinary defining instruction.  They remain distinct from missing defs. */
+    for (instructionIndex = 0u;
+         instructionIndex < function->valueCount;
+         ++instructionIndex) {
+        const SZrExecIrValue *value = &function->values[instructionIndex];
+        if ((value->flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) == 0u) {
+            continue;
+        }
+        if (value->definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+            free(definitionKinds);
+            free(definitionInstructions);
+            free(definitionBlocks);
+            zr_exec_ir_set_diagnostic(
+                    diagnostic, ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION,
+                    function, value->definition, function->entryBlockId,
+                    value->id, value->id);
+            return ZR_FALSE;
+        }
+        definitionKinds[value->id] = 3u;
+        definitionBlocks[value->id] = function->entryBlockId;
+    }
+
     /* Collect ordinary instruction definitions first. */
     for (instructionIndex = 0u;
          instructionIndex < function->instructionCount;
@@ -666,6 +689,19 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
             TZrExecIrValueId valueId = function->operands[operandIndex];
             TZrUInt8 kind = definitionKinds[valueId];
             TZrBool dominatesUse = ZR_TRUE;
+            if (kind == 0u) {
+                zr_exec_ir_set_diagnostic(
+                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                        function, instructionIndex + 1u, useBlock,
+                        valueId, valueId);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->sourceId = instruction->sourceId;
+                }
+                free(definitionKinds);
+                free(definitionInstructions);
+                free(definitionBlocks);
+                return ZR_FALSE;
+            }
             if (kind == 1u) {
                 TZrBool exceptionTraversalOutOfMemory = ZR_FALSE;
                 if (zr_exec_ir_ssa_result_unavailable_on_exception_edge(
@@ -765,7 +801,18 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                     free(definitionBlocks);
                     return ZR_FALSE;
                 }
-                if (kind != 0u) {
+                if (kind == 0u) {
+                    TZrExecIrInstructionId site =
+                            block->terminatorInstructionId;
+                    zr_exec_ir_set_diagnostic(
+                            diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                            function, site, block->id, valueId, valueId);
+                    free(definitionKinds);
+                    free(definitionInstructions);
+                    free(definitionBlocks);
+                    return ZR_FALSE;
+                }
+                if (kind == 1u || kind == 2u) {
                     dominatesEdge = zr_exec_ir_ssa_block_dominates(
                             dominance, definitionBlocks[valueId],
                             incoming->predecessor, function->blockCount);

@@ -5,12 +5,19 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_call_graph.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_escape.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_inline.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 tests:
   - tests/parser/test_ssa_value_validation.c
+  - tests/parser/test_ssa_effects_verifier.c
+  - tests/parser/test_ssa_escape_ownership.c
+  - tests/parser/test_ssa_interprocedural_inlining.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-value-validation.md
+  - tests/acceptance/ssa-external-entry-values.md
 doc_type: module-detail
 ---
 
@@ -30,8 +37,26 @@ nonempty pool needs backing storage. Per instruction, the opcode must be known,
 fixed operand arity must match, and `[start, start + count)` must fit within
 the logical operand pool. The range comparison subtracts only after checking
 `start <= operandCount`, so a `UINT32_MAX` start cannot wrap around to a small
-index. Operand IDs must reference defined values in the function's value
-pool. No input arrays or value definitions are modified on either path.
+index. Operand IDs must reference either a locally defined value or an
+explicit external entry value in the function's value pool. No input arrays
+or value definitions are modified on either path.
+
+## External entry values
+
+`ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY` distinguishes parameters, captures,
+and implicit frame roots from missing SSA definitions. Producers create these
+values through `ZrCore_ExecIr_FunctionAddExternalValue`; their ordinary
+instruction definition stays invalid because they are available at function
+entry. The parser pass rejects unknown flags and rejects an external entry
+that also carries an ordinary instruction definition. An ordinary unflagged
+operand still requires a definition.
+
+The core SSA verifier seeds external entries as a separate definition kind.
+They dominate every ordinary use and every valid phi predecessor edge, but
+cannot appear as an instruction or phi result. Call-graph and inlining
+parameter discovery, plus escape function-lifetime initialization, use the
+flag rather than inferring parameter status from `definition == 0`; that
+inference was unsound for phi results and unused reserved values.
 
 ## Diagnostics and ownership
 
@@ -47,8 +72,11 @@ construction fails.
 ## Verification boundary
 
 `ssa_value_validation` links the production parser validation and core model.
-Its positive case defines an operand before its use; failure cases cover a
+Its positive cases define an operand before its use and consume an explicit
+external entry. Failure cases cover an unflagged undefined operand, an
+external entry reused as an instruction result, unknown value flags, a
 logical out-of-range operand whose physical memory contains a valid value, a
 wrapped range, null backing storage, and an unknown opcode. Full CFG-aware SSA
 construction and differential language fixtures remain separate 01.02 work;
-see `tests/acceptance/ssa-value-validation.md` for actual test runs.
+see `tests/acceptance/ssa-value-validation.md` and
+`tests/acceptance/ssa-external-entry-values.md` for actual test runs.

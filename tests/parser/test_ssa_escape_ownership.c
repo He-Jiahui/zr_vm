@@ -28,6 +28,15 @@ static TZrExecIrValueId add_gc_value(SZrExecIrFunction *function,
     return id;
 }
 
+static TZrExecIrValueId add_external_value(SZrExecIrFunction *function,
+                                           TZrUInt32 typeToken) {
+    TZrExecIrValueId id = ZrCore_ExecIr_FunctionAddExternalValue(
+            function, typeToken, ZR_EXEC_IR_OWNERSHIP_UNIQUE,
+            ZR_EXEC_IR_NULLABILITY_NONNULL);
+    assert(id != ZR_EXEC_IR_VALUE_ID_INVALID);
+    return id;
+}
+
 static void append_instruction(SZrExecIrFunction *function,
                                EZrExecIrOpcode opcode,
                                const TZrExecIrValueId *operands,
@@ -104,14 +113,14 @@ static void test_alloc_without_concrete_layout_stays_on_heap(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
-static void test_undefined_value_is_function_lifetime_parameter(void) {
+static void test_external_value_is_function_lifetime_parameter(void) {
     SZrExecIrFunction function;
     SZrExecIrEscapeSummary summary;
     SZrExecIrDiagnostic diagnostic;
     TZrExecIrValueId parameter;
 
     init_function(&function);
-    parameter = add_value(&function, 10u);
+    parameter = add_external_value(&function, 10u);
     ZrParser_ExecIr_EscapeSummaryInit(&summary);
     assert(ZrParser_ExecIr_AnalyzeEscape(&function, &summary, &diagnostic));
     assert(fact(&summary, parameter)->definitionInstructionId ==
@@ -132,7 +141,7 @@ static void test_parameter_lifetime_flows_through_alias_without_sink(void) {
     TZrExecIrValueId alias;
 
     init_function(&function);
-    parameter = add_value(&function, 11u);
+    parameter = add_external_value(&function, 11u);
     alias = add_value(&function, 11u);
     append_instruction(&function, ZR_EXEC_IR_OPCODE_COPY, &parameter, 1u,
                        &alias, 1u, 0u, 0u, 0u, 18u);
@@ -318,7 +327,7 @@ static void test_store_and_suspend_mark_identity_and_lifetime(void) {
 
     init_function(&function);
     object = add_value(&function, 6u);
-    payload = add_value(&function, 7u);
+    payload = add_external_value(&function, 7u);
     suspended = add_value(&function, 8u);
     afterSuspend = add_value(&function, 6u);
     append_instruction(&function, ZR_EXEC_IR_OPCODE_ALLOC, ZR_NULL, 0u,
@@ -352,7 +361,7 @@ static void test_parameter_live_after_suspend_is_marked_crossing(void) {
     TZrExecIrValueId suspendResult;
 
     init_function(&function);
-    parameter = add_value(&function, 34u);
+    parameter = add_external_value(&function, 34u);
     suspendResult = add_value(&function, 35u);
     append_instruction(&function, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_NULL, 0u,
                        &suspendResult, 1u, 0u, ZR_EXEC_IR_FLAG_MAY_SUSPEND,
@@ -407,7 +416,7 @@ static void test_checked_operation_operand_is_exception_observable(void) {
 
     init_function(&function);
     object = add_gc_value(&function, 49u);
-    divisor = add_value(&function, 50u);
+    divisor = add_external_value(&function, 50u);
     result = add_value(&function, 51u);
     operands[0] = object;
     operands[1] = divisor;
@@ -439,7 +448,7 @@ static void test_closure_capture_reason_is_explicit(void) {
 
     init_function(&function);
     object = add_value(&function, 13u);
-    payload = add_value(&function, 14u);
+    payload = add_external_value(&function, 14u);
     operands[0] = object;
     operands[1] = payload;
     append_instruction(&function, ZR_EXEC_IR_OPCODE_ALLOC, ZR_NULL, 0u,
@@ -539,7 +548,7 @@ static void test_phi_flow_propagates_return_and_records_definition(void) {
 
     init_function(&function);
     left = add_value(&function, 43u);
-    right = add_value(&function, 43u);
+    right = add_external_value(&function, 43u);
     merged = add_value(&function, 43u);
     assert(ZrCore_ExecIr_FunctionAddBlock(
                    &function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u);
@@ -600,8 +609,8 @@ static void test_explicit_phi_instruction_flows_all_incomings(void) {
     TZrExecIrValueId returnOperand;
 
     init_function(&function);
-    first = add_value(&function, 45u);
-    second = add_value(&function, 45u);
+    first = add_external_value(&function, 45u);
+    second = add_external_value(&function, 45u);
     merged = add_value(&function, 45u);
     phiOperands[0] = first;
     phiOperands[1] = second;
@@ -832,7 +841,7 @@ static void test_allocation_and_ownership_plans_are_hash_bound(void) {
      * be changed to MOVE.  The plan is rejected after the IR hash changes,
      * proving that stale ownership facts cannot rewrite a new function. */
     init_function(&ownershipFunction);
-    sourceValue = add_value(&ownershipFunction, 62u);
+    sourceValue = add_external_value(&ownershipFunction, 62u);
     destinationValue = add_value(&ownershipFunction, 62u);
     append_instruction(&ownershipFunction, ZR_EXEC_IR_OPCODE_COPY,
                        &sourceValue, 1u, &destinationValue, 1u, 0u, 0u,
@@ -876,7 +885,7 @@ static void test_allocation_and_ownership_plans_are_hash_bound(void) {
 int main(void) {
     test_local_alloc_is_stack_candidate();
     test_alloc_without_concrete_layout_stays_on_heap();
-    test_undefined_value_is_function_lifetime_parameter();
+    test_external_value_is_function_lifetime_parameter();
     test_parameter_lifetime_flows_through_alias_without_sink();
     test_return_flow_propagates_to_allocation();
     test_conflicting_heap_and_caller_observations_use_upper_bound();

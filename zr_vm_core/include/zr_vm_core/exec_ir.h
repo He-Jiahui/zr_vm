@@ -152,6 +152,9 @@ typedef struct SZrExecIrOpcodeInfo {
     const TZrChar *name;
 } SZrExecIrOpcodeInfo;
 
+#define ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY ((TZrUInt32)1u << 0u)
+#define ZR_EXEC_IR_VALUE_FLAG_MASK ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY
+
 typedef struct SZrExecIrValue {
     TZrExecIrValueId id;
     union {
@@ -458,6 +461,11 @@ ZR_CORE_API const SZrExecIrFunction *ZrCore_ExecIr_ModuleFunctionAtConst(
 ZR_CORE_API TZrExecIrBlockId ZrCore_ExecIr_FunctionAddBlock(SZrExecIrFunction *function,
                                                              TZrUInt32 flags);
 ZR_CORE_API TZrExecIrValueId ZrCore_ExecIr_FunctionAddValue(
+        SZrExecIrFunction *function,
+        TZrMetadataToken typeToken,
+        EZrExecIrOwnership ownership,
+        EZrExecIrNullability nullability);
+ZR_CORE_API TZrExecIrValueId ZrCore_ExecIr_FunctionAddExternalValue(
         SZrExecIrFunction *function,
         TZrMetadataToken typeToken,
         EZrExecIrOwnership ownership,

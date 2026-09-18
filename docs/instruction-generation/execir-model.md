@@ -1,3 +1,21 @@
+---
+related_code:
+  - zr_vm_core/include/zr_vm_core/exec_ir.h
+implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
+plan_sources:
+  - docs/plans/ssa/01-execir-ssa/01-core-model.md
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
+tests:
+  - tests/parser/test_ssa_core_model.c
+  - tests/parser/test_ssa_value_validation.c
+  - tests/parser/test_ssa_effects_verifier.c
+  - tests/acceptance/ssa-external-entry-values.md
+doc_type: module-detail
+---
+
 # ExecIR model and ownership boundary
 
 The first ExecIR model lives in
@@ -12,6 +30,15 @@ sentinel; block one is reserved for an explicitly flagged entry block.  The
 instruction, operand, result, phi, predecessor, successor, source, deopt, and
 GC collections are module/function-owned side arrays.  Instructions contain
 indices and stable tokens only, never runtime pointers or host addresses.
+
+Values normally have exactly one ordinary instruction or phi definition.
+Parameters, captures, and implicit frame roots are the exception: construct
+them with `ZrCore_ExecIr_FunctionAddExternalValue`, which sets
+`ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY`. These values are available from
+function entry and keep an invalid ordinary instruction definition. Unknown
+value flags, an external value reused as an instruction or phi result, and an
+unflagged undefined operand are invalid. The explicit flag prevents analyses
+from confusing a phi result or an unused reserved value with a parameter.
 
 `exec_ir_opcode.def` is the single opcode schema source for the enum and
 metadata table.  It records operand bounds, terminator/value flags, and effect

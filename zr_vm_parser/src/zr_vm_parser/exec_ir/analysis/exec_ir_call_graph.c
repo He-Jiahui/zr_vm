@@ -1407,7 +1407,8 @@ static TZrUInt32 parameter_count_for_inline(const SZrExecIrFunction *function) {
     TZrUInt32 count = 0u;
     if (function == ZR_NULL || function->values == ZR_NULL) return 0u;
     for (i = 0u; i < function->valueCount; ++i) {
-        if (function->values[i].definition == ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+        if ((function->values[i].flags &
+             ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u) {
             if (count == UINT32_MAX) return UINT32_MAX;
             ++count;
         }
@@ -1442,7 +1443,8 @@ static TZrBool scalar_call_shape_compatible(const SZrExecIrFunction *caller,
     /* Match the scalar ABI contract early so the graph never advertises an
      * edge that inline_one will reject after allocating a rollback copy. */
     for (i = 0u; i < callee->valueCount; ++i) {
-        if (callee->values[i].definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID) continue;
+        if ((callee->values[i].flags &
+             ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) == 0u) continue;
         if (parameterIndex >= call->operandRange.count) return ZR_FALSE;
         {
             TZrExecIrValueId argument =

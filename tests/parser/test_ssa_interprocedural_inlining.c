@@ -19,6 +19,12 @@ static TZrExecIrValueId add_value(SZrExecIrFunction *function,
                                            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
 }
 
+static TZrExecIrValueId add_external_value(SZrExecIrFunction *function,
+                                           EZrExecIrOwnership ownership) {
+    return ZrCore_ExecIr_FunctionAddExternalValue(
+            function, 1u, ownership, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+}
+
 static void append_constant(SZrExecIrFunction *function,
                             TZrExecIrValueId value, TZrUInt32 bits,
                             TZrExecIrSourceId sourceId) {
@@ -333,8 +339,8 @@ static void test_identity_return_forwarding_uses_copy(void) {
     ZrCore_ExecIr_ModuleInit(&module);
     callee = add_function(&module, 650u, UINT64_C(0x650), &calleeId);
     caller = add_function(&module, 651u, UINT64_C(0x651), &callerId);
-    parameter = add_value(callee, ZR_EXEC_IR_OWNERSHIP_BORROWED);
-    argument = add_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
+    parameter = add_external_value(callee, ZR_EXEC_IR_OWNERSHIP_BORROWED);
+    argument = add_external_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
     result = add_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
     append_return(callee, parameter, 6511u);
     publish_function(callee);
@@ -411,10 +417,10 @@ static void test_inline_parameter_and_arithmetic_body(void) {
     ZrCore_ExecIr_ModuleInit(&module);
     callee = add_function(&module, 850u, UINT64_C(0x850), &calleeId);
     caller = add_function(&module, 851u, UINT64_C(0x851), &callerId);
-    parameter = add_value(callee, ZR_EXEC_IR_OWNERSHIP_BORROWED);
+    parameter = add_external_value(callee, ZR_EXEC_IR_OWNERSHIP_BORROWED);
     constant = add_value(callee, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
     sum = add_value(callee, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
-    argument = add_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
+    argument = add_external_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
     result = add_value(caller, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
     append_constant(callee, constant, 5u, 8511u);
     append_binary(callee, ZR_EXEC_IR_OPCODE_ADD, parameter, constant, sum, 8512u);
@@ -477,10 +483,10 @@ static void test_inline_updates_linear_block_metadata(void) {
     ZrCore_ExecIr_ModuleInit(&module);
     callee = add_function(&module, 875u, UINT64_C(0x875), &calleeId);
     caller = add_function(&module, 876u, UINT64_C(0x876), &callerId);
-    parameter = add_value(callee, ZR_EXEC_IR_OWNERSHIP_BORROWED);
+    parameter = add_external_value(callee, ZR_EXEC_IR_OWNERSHIP_BORROWED);
     constant = add_value(callee, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
     sum = add_value(callee, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
-    argument = add_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
+    argument = add_external_value(caller, ZR_EXEC_IR_OWNERSHIP_BORROWED);
     result = add_value(caller, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
     append_constant(callee, constant, 9u, 8751u);
     append_binary(callee, ZR_EXEC_IR_OPCODE_ADD, parameter, constant, sum, 8752u);
