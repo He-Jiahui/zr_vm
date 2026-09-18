@@ -41,6 +41,14 @@ static EZrExecIrOpcode map_opcode(EZrSemanticIrOpcode op) {
     }
 }
 
+static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize) {
+    return (TZrBool)(array->length <= UINT32_MAX &&
+                     array->length <= array->capacity &&
+                     (array->length == 0u ||
+                      (array->isValid && array->head != ZR_NULL &&
+                       array->elementSize == elementSize)));
+}
+
 static TZrBool append_source(SZrExecIrFunction *f, const SZrSemanticIrInstruction *in) {
     SZrExecIrSourceMap *p;
     if (f->sourceMapCount == f->sourceMapCapacity) {
@@ -205,10 +213,10 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     if (s == ZR_NULL || output == ZR_NULL || !s->instructions.isValid || !s->cfg.blocks.isValid) {
         diag_missing(diagnostic, output, 0u, 0u); return ZR_FALSE;
     }
-    if (s->cfg.blocks.length > UINT32_MAX ||
-        (s->cfg.blocks.length != 0u &&
-         (s->cfg.blocks.head == ZR_NULL ||
-          s->cfg.blocks.elementSize != sizeof(SZrParserCfgBlock)))) {
+    if (!canonical_array_shape(&s->cfg.blocks, sizeof(SZrParserCfgBlock)) ||
+        !canonical_array_shape(&s->instructions, sizeof(SZrSemanticIrInstruction)) ||
+        !canonical_array_shape(&s->values, sizeof(SZrSemanticIrValue)) ||
+        !canonical_array_shape(&s->valueOperands, sizeof(TZrValueId))) {
         diag_missing(diagnostic, output, 0u, 0u);
         if (diagnostic != ZR_NULL)
             diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;

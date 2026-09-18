@@ -26,8 +26,13 @@ the semantic fixture's token 42 and failed the new identity assertion.
 - Attempted a fresh WSL GCC focused rebuild against this module-builder
   change; WSL failed to create its VM (`CreateVm`, `0x800705b4`) before a
   compiler or CTest could run. GCC and Clang validation for this slice are
-  therefore unverified, not passing results. The preceding instruction-
-  range slice has its own completed GCC CTest evidence.
+  therefore unverified at this commit, not passing results. After the next
+  canonical-array preflight slice, GCC 11.4 directly compiled the combined
+  builder fixture with ASan/UBSan and the D:-backed binary passed. Clang 14
+  later did the same in a standalone ASan/UBSan binary. This is later-head
+  coverage of the module tests, not a retroactive GCC/Clang CTest for
+  the original commit. The preceding instruction-range slice has its own
+  completed GCC CTest evidence.
 
 ## Acceptance boundary
 

@@ -14,6 +14,7 @@ tests:
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
   - tests/acceptance/ssa-builder-module-transaction.md
+  - tests/acceptance/ssa-builder-canonical-input-shape.md
 doc_type: module-detail
 ---
 
@@ -60,6 +61,14 @@ destination. A 32-bit predecessor count or allocation-size overflow reports
 `CAPACITY_OVERFLOW`; allocation failure reports `OUT_OF_MEMORY`. Scratch
 counts, cursors and rows are freed on every path. The outer builder frees a
 failed temporary function and leaves existing caller output unchanged.
+
+Before reading canonical facts, the builder checks the block, instruction,
+value, and value-operand arrays for logical length within capacity and the
+32-bit ExecIR bound. Nonempty arrays must be valid, backed by storage, and
+have their declared element width. Bad shape reports `INVALID_RANGE` without
+touching caller output; it does not attempt to infer facts by reading raw
+memory or fall back to post-ExecBC decoding. See
+`tests/acceptance/ssa-builder-canonical-input-shape.md` for fault fixtures.
 
 The module-level entry builds an isolated candidate before reserving the next
 published function slot. If canonical-fact lowering fails, the module's

@@ -274,6 +274,51 @@ static void test_module_builder_failure_does_not_append_partial_function(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_builder_rejects_unbacked_canonical_fact_arrays(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instruction = {0};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrCore_ExecIr_FunctionAddBlock(&output, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+          "could not prepare existing output for malformed-fact checks");
+    semantic.values = input_array(NULL, 1u, sizeof(SZrSemanticIrValue));
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              output.blockCount == 1u,
+          "builder read an unbacked value array or changed caller output");
+    semantic.values = input_array(NULL, 0u, sizeof(SZrSemanticIrValue));
+    semantic.instructions = input_array(NULL, 1u, sizeof(SZrSemanticIrInstruction));
+    block.instructionCount = 1u;
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              output.blockCount == 1u,
+          "builder read an unbacked instruction array or changed caller output");
+    block.instructionCount = 0u;
+    semantic.instructions = input_array(NULL, 0u, sizeof(SZrSemanticIrInstruction));
+    semantic.valueOperands = input_array(NULL, 1u, sizeof(TZrValueId));
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              output.blockCount == 1u,
+          "builder accepted an unbacked operand side pool");
+    semantic.valueOperands = input_array(NULL, 0u, sizeof(TZrValueId));
+    semantic.instructions = input_array(&instruction, 1u, sizeof(TZrByte));
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              output.blockCount == 1u,
+          "builder accepted the wrong instruction element width");
+    semantic.instructions = input_array(&instruction, 1u, sizeof(instruction));
+    semantic.instructions.length = 2u; /* Advertised length exceeds storage. */
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              output.blockCount == 1u,
+          "builder accepted an instruction length past its capacity");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -283,6 +328,7 @@ int main(void) {
     test_builder_preserves_instruction_ranges_and_branch_successors();
     test_module_builder_failure_does_not_append_partial_function();
     test_module_builder_preserves_assigned_identity();
+    test_builder_rejects_unbacked_canonical_fact_arrays();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }
