@@ -62,7 +62,7 @@ static TZrBool compiler_semantic_cfg_expression_is_linear(
     }
 }
 
-/* Until return, calls, cleanup, suspension, short-circuit and loop edges are
+/* Until return, calls, cleanup, suspension and short-circuit edges are
  * represented here, publish only a deliberately small straight-line subset. */
 static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
     TZrSize index;
@@ -85,6 +85,11 @@ static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
                                      node->data.ifExpression.thenExpr) &&
                              compiler_semantic_cfg_arm_falls_through(
                                      node->data.ifExpression.elseExpr));
+        case ZR_AST_WHILE_LOOP:
+            return (TZrBool)(compiler_semantic_cfg_expression_is_linear(
+                                     node->data.whileLoop.cond) &&
+                             compiler_semantic_cfg_arm_falls_through(
+                                     node->data.whileLoop.block));
         case ZR_AST_VARIABLE_DECLARATION:
             return compiler_semantic_cfg_expression_is_linear(
                     node->data.variableDeclaration.value);
@@ -255,6 +260,85 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     compiler_semantic_cfg_enter(cs, *thenBlock);
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
+                                          SZrAstNode *node,
+                                          TZrUInt32 *conditionBlock,
+                                          TZrUInt32 *bodyBlock,
+                                          TZrUInt32 *joinBlock) {
+    SZrParserCfg *cfg;
+    TZrUInt32 entry;
+    if (cs == ZR_NULL || node == ZR_NULL || conditionBlock == ZR_NULL ||
+        bodyBlock == ZR_NULL || joinBlock == ZR_NULL ||
+        node->type != ZR_AST_WHILE_LOOP) {
+        return ZR_FALSE;
+    }
+    if (!compiler_semantic_cfg_expression_is_linear(
+                node->data.whileLoop.cond) ||
+        !compiler_semantic_cfg_arm_falls_through(
+                node->data.whileLoop.block)) {
+        if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
+            return ZR_FALSE;
+        }
+        return ZR_FALSE;
+    }
+    cfg = &cs->preSemanticIr.cfg;
+    if (!cs->preSemanticIrCfgActive) {
+        entry = ZrParser_Cfg_AppendBlock(
+                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
+        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+            return ZR_FALSE;
+        }
+        cfg->entryBlockId = entry;
+        cs->preSemanticIrCfgBlock = entry;
+        cs->preSemanticIrCfgStart = 0U;
+        cs->preSemanticIrCfgActive = ZR_TRUE;
+    }
+    *conditionBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
+            node->data.whileLoop.cond);
+    *bodyBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
+            node->data.whileLoop.block);
+    *joinBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
+    if (*conditionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        *bodyBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        !compiler_semantic_cfg_jump(cs, *conditionBlock, node->location)) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_enter(cs, *conditionBlock);
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
+                                           TZrUInt32 conditionSlot,
+                                           SZrAstNode *node,
+                                           TZrUInt32 bodyBlock,
+                                           TZrUInt32 joinBlock) {
+    TZrValueId condition;
+    if (cs == ZR_NULL || node == ZR_NULL ||
+        !cs->preSemanticIrCfgActive) {
+        return ZR_FALSE;
+    }
+    condition = compiler_semantic_ir_slot_value(cs, conditionSlot);
+    if (condition == ZR_VALUE_ID_INVALID ||
+        !compiler_semantic_cfg_emit_branch(
+                cs, bodyBlock, condition, node->location) ||
+        !compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_BRANCH) ||
+        !ZrParser_Cfg_Connect(&cs->preSemanticIr.cfg,
+                              cs->preSemanticIrCfgBlock, bodyBlock,
+                              ZR_PARSER_CFG_EDGE_TRUE_BRANCH, node) ||
+        !ZrParser_Cfg_Connect(&cs->preSemanticIr.cfg,
+                              cs->preSemanticIrCfgBlock, joinBlock,
+                              ZR_PARSER_CFG_EDGE_FALSE_BRANCH, node)) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_enter(cs, bodyBlock);
     return ZR_TRUE;
 }
 

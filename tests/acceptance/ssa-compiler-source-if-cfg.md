@@ -42,13 +42,15 @@ path instead of publishing incomplete facts or rejecting valid source.
   loop arm, a later unsupported arm that abandons an already-started CFG, and
   a nested condition without a tracked ValueId that propagates that fallback
   to the outer `if`, and a short-circuit expression arm that remains on the
-  legacy CFG path.
+  legacy CFG path. The loop fallback case specifically contains `break`; the
+  straight-line source `while` subset is covered by
+  `ssa-compiler-source-while-cfg.md`.
 
 ## Boundary
 
 This is the source conditional-CFG slice of 01.02, not complete SSA
-construction. Loop, short-circuit, return, exception, cleanup and suspension
-edges remain to be modeled. A direct ExecIR builder probe rejected ordinary
-source SemIR at instruction 2 because `PLACE_BASE` still has no result value
-(`expected=1`, `actual=0`); therefore this record makes no end-to-end ExecIR,
-phi insertion, rename, Oracle-equivalence, or complete 01.02 acceptance claim.
+construction. General loop control (`break`/`continue`), short-circuit,
+return, exception, cleanup and suspension edges remain to be modeled. Source
+Place provenance and straight-line `while` now build through ExecIR and Place
+promotion, but this historical `if` checkpoint by itself makes no
+Oracle-equivalence or complete 01.02 acceptance claim.

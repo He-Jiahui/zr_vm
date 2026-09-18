@@ -106,6 +106,124 @@ static void test_nested_source_if_covers_each_instruction_once(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_while_emits_typed_backedge_cfg(void) {
+    static const TZrChar source[] =
+            "var flag: bool = true;\n"
+            "while (flag) { flag = false; }\n"
+            "var after: int = 1;\n";
+    SZrString *name = ZrCore_String_Create(g_state, "source_while.zr", 15U);
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *header;
+    const SZrParserCfgBlock *body;
+    const SZrParserCfgBlock *join;
+    const SZrSemanticIrInstruction *branch;
+    const TZrValueId *condition;
+    const SZrExecIrPhi *phi;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(5U, function->cfg.blocks.length);
+
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    header = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    body = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 2U);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(header);
+    TEST_ASSERT_NOT_NULL(body);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(1U, entry->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, ZrParser_Cfg_BlockEdgeAt(entry, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(2U, header->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(2U, header->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(header, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(header, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(header, 1U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            3U, ZrParser_Cfg_BlockEdgeAt(header, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, body->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, ZrParser_Cfg_BlockEdgeAt(body, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(body, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(1U, join->successorCount);
+
+    branch = ZrParser_SemanticIr_InstructionAt(
+            function,
+            header->firstInstructionIndex + header->instructionCount - 1U);
+    TEST_ASSERT_NOT_NULL(branch);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_BRANCH, branch->opcode);
+    TEST_ASSERT_EQUAL_UINT32(1U, branch->operandCount);
+    condition = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands, branch->operandStart);
+    TEST_ASSERT_NOT_NULL(condition);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, *condition);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+            ZrParser_SemanticIr_Value(function, *condition)
+                    ->definitionInstructionId);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_EQUAL_UINT32(5U, output.blockCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, output.phiCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, output.blocks[1].phis.count);
+    phi = &output.phiPool[output.blocks[1].phis.start];
+    TEST_ASSERT_EQUAL_UINT32(2U, phi->incomings.count);
+    TEST_ASSERT_EQUAL_UINT32(
+            output.blocks[1].predecessorRange.count,
+            phi->incomings.count);
+    TEST_ASSERT_EQUAL_UINT32(
+            output.predecessors[output.blocks[1].predecessors.start],
+            output.phiIncoming[phi->incomings.start].predecessor);
+    TEST_ASSERT_EQUAL_UINT32(
+            output.predecessors[output.blocks[1].predecessors.start + 1U],
+            output.phiIncoming[phi->incomings.start + 1U].predecessor);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_EXEC_IR_VALUE_ID_INVALID,
+            output.phiIncoming[phi->incomings.start].value);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_EXEC_IR_VALUE_ID_INVALID,
+            output.phiIncoming[phi->incomings.start + 1U].value);
+    ZrCore_ExecIr_FreeFunction(&output);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_unmodeled_loop_arm_keeps_legacy_cfg(void) {
     static const TZrChar source[] =
             "var flag: bool = true;\n"
@@ -315,7 +433,7 @@ static void test_source_if_lowers_place_provenance_to_exec_ir(void) {
         }
     }
     TEST_ASSERT_GREATER_THAN_UINT32(0U, placeInstructionCount);
-    TEST_ASSERT_GREATER_THAN_UINT32(0U, loadInstructionCount);
+    TEST_ASSERT_EQUAL_UINT32(0U, loadInstructionCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0U, storeInstructionCount);
 
     ZrCore_ExecIr_FreeFunction(&output);

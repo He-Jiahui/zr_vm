@@ -109,6 +109,16 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 *thenBlock,
                                       TZrUInt32 *elseBlock,
                                       TZrUInt32 *joinBlock);
+TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
+                                          SZrAstNode *node,
+                                          TZrUInt32 *conditionBlock,
+                                          TZrUInt32 *bodyBlock,
+                                          TZrUInt32 *joinBlock);
+TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
+                                           TZrUInt32 conditionSlot,
+                                           SZrAstNode *node,
+                                           TZrUInt32 bodyBlock,
+                                           TZrUInt32 joinBlock);
 TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                   TZrUInt32 target,
                                   SZrFileRange range);

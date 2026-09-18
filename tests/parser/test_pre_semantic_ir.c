@@ -1287,6 +1287,7 @@ int main(void) {
     RUN_TEST(test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar);
     RUN_TEST(test_source_if_emits_typed_semantic_control_flow);
     RUN_TEST(test_nested_source_if_covers_each_instruction_once);
+    RUN_TEST(test_source_while_emits_typed_backedge_cfg);
     RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);
     RUN_TEST(test_late_unmodeled_arm_abandons_partial_source_cfg);
     RUN_TEST(test_nested_untracked_condition_abandons_outer_source_cfg);

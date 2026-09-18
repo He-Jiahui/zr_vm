@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
@@ -15,6 +17,7 @@ tests:
   - tests/parser/test_ssa_value_validation.c
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_place_promotion.c
+  - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
 doc_type: module-detail
@@ -90,6 +93,23 @@ occurrences, including loop backedges, parallel predecessor entries, and
 critical edges. For an already split `INVOKE`, a pre-invoke definition is
 available on both successors while the invoke result is available only on the
 normal successor; the core verifier checks that boundary.
+
+The source compiler supplies a canonical loop path directly for a
+straight-line `while`. Before compiling the condition it closes the current
+prefix with an unconditional edge to a dedicated header. The header contains
+the condition facts and ordered true/body and false/join edges; a successful
+body closes with a normal backedge to that same header. The compiler restores
+the pre-loop semantic slot snapshot before entering the join, so body-only
+temporaries cannot leak into later source lowering. This graph is independent
+of ExecBC label offsets and reaches the existing dominator/frontier promotion
+path, which inserts the loop-carried Place phi.
+
+The source-loop subset intentionally accepts only linear conditions and
+fall-through bodies whose nested statements are already modeled. `break`,
+`continue`, return/throw, calls, cleanup, suspension, and short-circuit paths
+still trigger the legacy-CFG fallback. If an unsupported loop appears after a
+source CFG has started, the compiler abandons that partial graph and removes
+its synthetic branch instructions before validation.
 
 Before SSA construction, the parser normalizes a canonical block whose final
 typed call already carries ordered normal/exception edges. Each earlier typed,
