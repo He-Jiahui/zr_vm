@@ -49,6 +49,76 @@ static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize)
                        array->elementSize == elementSize)));
 }
 
+/* CFG blocks may be ordered differently from the source instruction pool,
+ * but their slices must partition it without duplication or omission. */
+static TZrBool validate_instruction_owners(const SZrSemanticIrFunction *semantic,
+                                          SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 total = (TZrUInt32)semantic->instructions.length;
+    TZrUInt32 covered = 0u, i, j;
+    unsigned char *claimed = total != 0u ? (unsigned char *)calloc(total, 1u) : ZR_NULL;
+    if (total != 0u && claimed == ZR_NULL) {
+        diag_missing(diagnostic, ZR_NULL, 0u, 0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+        }
+        return ZR_FALSE;
+    }
+    for (i = 0u; i < semantic->cfg.blocks.length; ++i) {
+        const SZrParserCfgBlock *block = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&semantic->cfg.blocks, i);
+        if (block->instructionCount != 0u &&
+            (block->firstInstructionIndex > total ||
+             block->instructionCount > total - block->firstInstructionIndex)) {
+            diag_missing(diagnostic, ZR_NULL, i + 1u, 0u);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+            }
+            free(claimed);
+            return ZR_FALSE;
+        }
+        for (j = 0u; j < block->instructionCount; ++j) {
+            TZrUInt32 index = block->firstInstructionIndex + j;
+            if (claimed[index] != 0u) {
+                const SZrSemanticIrInstruction *instruction = (const SZrSemanticIrInstruction *)
+                    ZrCore_Array_Get((SZrArray *)&semantic->instructions, index);
+                diag_missing(diagnostic, ZR_NULL, i + 1u, instruction->id);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                    diagnostic->expectedVersion = 1u;
+                    diagnostic->actualVersion = 2u;
+                }
+                free(claimed);
+                return ZR_FALSE;
+            }
+            claimed[index] = 1u;
+            ++covered;
+        }
+    }
+    if (covered != total) {
+        for (i = 0u; i < total; ++i) {
+            if (claimed[i] == 0u) {
+                const SZrSemanticIrInstruction *instruction = (const SZrSemanticIrInstruction *)
+                    ZrCore_Array_Get((SZrArray *)&semantic->instructions, i);
+                diag_missing(diagnostic, ZR_NULL, 0u, instruction->id);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                    diagnostic->expectedVersion = total;
+                    diagnostic->actualVersion = covered;
+                }
+                break;
+            }
+        }
+        free(claimed);
+        return ZR_FALSE;
+    }
+    free(claimed);
+    return ZR_TRUE;
+}
+
 static TZrBool append_source(SZrExecIrFunction *f, const SZrSemanticIrInstruction *in) {
     SZrExecIrSourceMap *p;
     if (f->sourceMapCount == f->sourceMapCapacity) {
@@ -223,6 +293,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
         return ZR_FALSE;
     }
+    if (!validate_instruction_owners(s, diagnostic)) return ZR_FALSE;
     ZrCore_ExecIr_FunctionInit(output);
     output->functionToken = (TZrMetadataToken)s->symbolId;
     output->signatureHash = (TZrUInt64)s->callableTypeId;

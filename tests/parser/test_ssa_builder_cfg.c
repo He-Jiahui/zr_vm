@@ -605,6 +605,101 @@ static void test_builder_accepts_switch_with_successor(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_rejects_overlapping_instruction_owners(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrSemanticIrInstruction branch = {0};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    branch.id = 1u;
+    branch.opcode = ZR_SEMANTIC_IR_BRANCH;
+    branch.resultValueId = ZR_VALUE_ID_INVALID;
+    semantic.instructions = input_array(&branch, 1u, sizeof(branch));
+    blocks[0].instructionCount = 1u;
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    blocks[1].instructionCount = 1u;
+    blocks[1].successorCount = 1u;
+    blocks[1].successors[0] = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == 2u && diagnostic.instructionId == 1u &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 2u &&
+              output.blockCount == 0u,
+          "builder let two blocks claim one semantic instruction");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_rejects_unowned_semantic_instruction(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction branch = {0};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    branch.id = 1u;
+    branch.opcode = ZR_SEMANTIC_IR_BRANCH;
+    branch.resultValueId = ZR_VALUE_ID_INVALID;
+    semantic.instructions = input_array(&branch, 1u, sizeof(branch));
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == 0u && diagnostic.instructionId == 1u &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 0u &&
+              output.blockCount == 0u,
+          "builder silently discarded a semantic instruction outside all blocks");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_accepts_out_of_order_instruction_slices(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    TZrValueId operand = 1u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[0].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[0].operandCount = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[1].resultValueId = 1u;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_BRANCH;
+    instructions[2].resultValueId = ZR_VALUE_ID_INVALID;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    semantic.valueOperands = input_array(&operand, 1u, sizeof(operand));
+    blocks[0].firstInstructionIndex = 1u;
+    blocks[0].instructionCount = 2u;
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    blocks[1].firstInstructionIndex = 0u;
+    blocks[1].instructionCount = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic),
+          "builder rejected disjoint semantic slices in a different block order");
+    check(output.instructionCount == 3u && output.sourceMapCount == 3u &&
+              output.sourceMaps[0].sourceId == 2u &&
+              output.sourceMaps[2].sourceId == 1u &&
+              output.blocks[0].instructionRange.start == 0u &&
+              output.blocks[1].instructionRange.start == 2u,
+          "builder lost source IDs while reordering disjoint block slices");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(&output, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "out-of-order source slices produced malformed ExecIR");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -624,6 +719,9 @@ int main(void) {
     test_builder_rejects_return_with_successor();
     test_builder_rejects_switch_without_successor();
     test_builder_accepts_switch_with_successor();
+    test_builder_rejects_overlapping_instruction_owners();
+    test_builder_rejects_unowned_semantic_instruction();
+    test_builder_accepts_out_of_order_instruction_slices();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }

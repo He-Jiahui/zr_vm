@@ -19,6 +19,7 @@ tests:
   - tests/acceptance/ssa-builder-operand-bounds.md
   - tests/acceptance/ssa-builder-terminator-placement.md
   - tests/acceptance/ssa-builder-successor-arity.md
+  - tests/acceptance/ssa-builder-instruction-partition.md
 doc_type: module-detail
 ---
 
@@ -54,6 +55,15 @@ adjacency. A constant/branch/return fixture checks both block ranges and
 terminator IDs, then passes the emitted function through core structural
 verification. This does not construct phis or prove all source-level
 exception/short-circuit semantics.
+
+Before lowering, a scratch coverage map checks that every semantic
+instruction index is owned by exactly one CFG block. Overlap reports the
+second block and duplicated instruction; a gap reports the first unowned
+source instruction. The map is freed on every success/error path. Blocks
+are free to reference disjoint instruction slices in another source-array
+order: the builder still emits in CFG block order and retains source IDs.
+See `tests/acceptance/ssa-builder-instruction-partition.md` for the
+overlap/gap/reordering fixtures.
 
 For every nonempty semantic block, the last instruction must carry the
 canonical terminator opcode flag and no earlier instruction may terminate.
