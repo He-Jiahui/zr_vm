@@ -279,11 +279,18 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_STORE,
+        ZR_SEMANTIC_IR_CONSTANT,
+        ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_CONVERT,
+        ZR_SEMANTIC_IR_INITIALIZE,
     };
     static const TZrChar source[] =
             "var value: int = 1;\n"
             "var copy: int = value;\n"
-            "value = copy;\n";
+            "value = copy;\n"
+            "var label: string = \"text\";\n";
     SZrString *sourceName =
             ZrCore_String_Create(g_state, "pre_semantic_ir.zr", 18U);
     SZrAstNode *ast = ZrParser_Parse(
@@ -320,18 +327,56 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         TEST_ASSERT_NOT_NULL(instruction);
         TEST_ASSERT_EQUAL_INT(expectedOpcodes[index], instruction->opcode);
         if (instruction->opcode == ZR_SEMANTIC_IR_CONSTANT) {
+            const SZrSemanticIrInstruction *temporaryBase =
+                    ZrParser_SemanticIr_InstructionAt(function, index + 1U);
             const SZrSemanticIrInstruction *temporaryInit =
                     ZrParser_SemanticIr_InstructionAt(function, index + 2U);
             const SZrSemanticIrValue *constantValue =
                     ZrParser_SemanticIr_Value(function, instruction->resultValueId);
             TEST_ASSERT_TRUE(instruction->hasConstantPoolIndex);
-            TEST_ASSERT_EQUAL_UINT32(0U, instruction->constantPoolIndex);
+            TEST_ASSERT_TRUE(instruction->constantPoolIndex <
+                             compiler.constants.length);
+            if (index == 0U) {
+                TEST_ASSERT_EQUAL_UINT32(0U, instruction->constantPoolIndex);
+            }
+            TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, instruction->typeId);
+            TEST_ASSERT_NOT_NULL(temporaryBase);
             TEST_ASSERT_NOT_NULL(temporaryInit);
             TEST_ASSERT_NOT_NULL(constantValue);
+            TEST_ASSERT_EQUAL_UINT32(instruction->typeId, constantValue->typeId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->typeId, temporaryBase->typeId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->typeId, temporaryInit->typeId);
             TEST_ASSERT_EQUAL_UINT32(instruction->id,
                                      constantValue->definitionInstructionId);
             TEST_ASSERT_EQUAL_UINT32(instruction->resultValueId,
                                      temporaryInit->valueId);
+            if (index != 0U) {
+                TZrSize typeIndex;
+                const SZrTypeValue *poolValue =
+                        (const SZrTypeValue *)ZrCore_Array_Get(
+                                &compiler.constants,
+                                instruction->constantPoolIndex);
+                const SZrSemanticTypeRecord *typeRecord = ZR_NULL;
+                TEST_ASSERT_NOT_NULL(poolValue);
+                TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, poolValue->type);
+                for (typeIndex = 0U;
+                     typeIndex < compiler.semanticContext->types.length;
+                     typeIndex++) {
+                    const SZrSemanticTypeRecord *candidate =
+                            (const SZrSemanticTypeRecord *)ZrCore_Array_Get(
+                                    &compiler.semanticContext->types, typeIndex);
+                    if (candidate != ZR_NULL &&
+                        candidate->id == instruction->typeId) {
+                        typeRecord = candidate;
+                        break;
+                    }
+                }
+                TEST_ASSERT_NOT_NULL(typeRecord);
+                TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                                      typeRecord->kind);
+                TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING,
+                                      typeRecord->baseType);
+            }
         }
         if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
             const SZrSemanticIrInstruction *temporaryBase =

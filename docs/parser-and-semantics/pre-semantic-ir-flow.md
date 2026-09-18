@@ -38,6 +38,7 @@ tests:
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-load-store-provenance.md
   - tests/acceptance/ssa-compiler-literal-provenance.md
+  - tests/acceptance/ssa-compiler-literal-type-provenance.md
 doc_type: module-detail
 ---
 
@@ -85,6 +86,13 @@ post-ExecBC decode manufactures those missing facts.
 Source literal expressions now emit `CONSTANT(resultValueId)` with an explicit
 `hasConstantPoolIndex`/`constantPoolIndex` reference to the compiler's existing
 constant pool before selecting the same `GET_CONSTANT` ExecBC operation.
+The literal's runtime value category is registered through the existing
+canonical inferred-type graph; its CONSTANT result, source ValueId, and
+temporary Place share that source TypeId. Contextual destination typing remains
+the local-binding CONVERT's responsibility, so a literal is not stamped with
+its destination's declared type without conversion. Registration uses the
+type graph's normal kind inference so string literals retain their reference
+category while integer literals remain values.
 Their expression stack slots are temporary Places initialized from that
 defined value. If expression normalization copies a known produced value to
 an as-yet-unmaterialized stack slot, the destination temporary retains that

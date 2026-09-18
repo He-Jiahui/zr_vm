@@ -412,7 +412,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
     if (!cs->hasError && hasConstant) {
         constantIndex = add_constant(cs, &constantValue);
         if (!compiler_semantic_ir_lower_literal(
-                    cs, destSlot, constantIndex, node->location)) {
+                    cs, destSlot, constantIndex, constantValue.type,
+                    node->location)) {
             ZrParser_Compiler_Error(
                     cs, "Failed to lower literal to pre-execution Semantic IR",
                     node->location);

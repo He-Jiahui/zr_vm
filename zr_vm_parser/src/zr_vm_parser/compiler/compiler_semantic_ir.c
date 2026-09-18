@@ -1744,23 +1744,36 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
 TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
                                            TZrUInt32 resultSlot,
                                            TZrUInt32 constantPoolIndex,
+                                           EZrValueType valueType,
                                            SZrFileRange sourceRange) {
     SZrSemanticIrInstructionSpec spec;
     const SZrSemanticIrInstruction *instruction;
+    SZrInferredType literalType;
+    TZrTypeId typeId;
     TZrValueId valueId;
     EZrInstructionCode opcode;
 
-    if (cs == ZR_NULL || !cs->preSemanticIrInitialized ||
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        !cs->preSemanticIrInitialized ||
         resultSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
+    ZrParser_InferredType_Init(cs->state, &literalType, valueType);
+    typeId = ZrParser_Semantic_RegisterInferredType(
+            cs->semanticContext, &literalType,
+            ZR_SEMANTIC_TYPE_KIND_UNKNOWN, ZR_NULL, ZR_NULL);
+    ZrParser_InferredType_Free(cs->state, &literalType);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
     valueId = ZrParser_SemanticIr_AddValue(
-            &cs->preSemanticIr, ZR_SEMANTIC_ID_INVALID, sourceRange);
+            &cs->preSemanticIr, typeId, sourceRange);
     if (valueId == ZR_VALUE_ID_INVALID) {
         return ZR_FALSE;
     }
     memset(&spec, 0, sizeof(spec));
     spec.opcode = ZR_SEMANTIC_IR_CONSTANT;
+    spec.typeId = typeId;
     spec.resultValueId = valueId;
     spec.constantPoolIndex = constantPoolIndex;
     spec.hasConstantPoolIndex = ZR_TRUE;
