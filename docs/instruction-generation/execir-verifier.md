@@ -16,6 +16,7 @@ plan_sources:
   - user: 2026-09-12 SSA implementation plan
 tests:
   - tests/parser/test_ssa_effects_verifier.c
+  - tests/acceptance/ssa-effect-chain-continuity.md
   - tests/parser/test_ssa_loops_specialization.c
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/cmake/ssa-tests.cmake
@@ -42,6 +43,13 @@ entry/terminator shape.  The SSA phase is implemented in
 definitions and uses.  The effect phase in `exec_ir_verify_effects.c` checks
 memory/effect token continuity and the stricter PHI predecessor count/order
 contract.
+
+Within one block, successive observable instructions must consume exactly the
+preceding observable instruction's `effectOut`: numerical growth alone does
+not prove the chain. Pure instructions between observations leave this token
+unchanged. Across blocks the current verifier still checks monotonic token
+order only; predecessor-edge effect PHIs and region-specific memory version
+proofs remain open M1 work, not a consequence of this local check.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes
@@ -92,8 +100,10 @@ being incorrectly discarded.
 `ssa_effects_verifier` covers linear use-before-definition, cross-branch
 non-dominating uses, valid PHI edge definitions, and wrong-edge diagnostics in
 addition to direct, cleanup-path, and PHI-input exceptional-edge `INVOKE`
-result negatives and the existing effect-token negatives.  The standalone SSA
-consumer targets compile the split verifier source explicitly through
+result negatives and the existing effect-token negatives. A skipped effect
+version between two same-block calls yields the second call's source-identified
+diagnostic; replacing it with the immediate predecessor token is accepted.
+The standalone SSA consumer targets compile the split verifier source through
 `tests/cmake/ssa-tests.cmake`; the full core library obtains it through the
 module source glob.  The loop-specialization and scalar pass-manager fixtures
 exercise PHI-aware LICM and post-pass revalidation.

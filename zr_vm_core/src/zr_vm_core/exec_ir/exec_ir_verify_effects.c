@@ -219,6 +219,7 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                                     SZrExecIrDiagnostic *diagnostic) {
     TZrExecIrMemoryTokenId latestMemory = ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
     TZrExecIrEffectTokenId latestEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+    TZrExecIrBlockId latestEffectBlock = ZR_EXEC_IR_BLOCK_ID_INVALID;
     TZrUInt32 index;
 
     if (function == ZR_NULL) {
@@ -320,13 +321,16 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                 instruction->effectOut == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
                 instruction->effectOut <= instruction->effectIn ||
                 (latestEffect != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
-                 instruction->effectIn < latestEffect)) {
+                 (blockId == latestEffectBlock
+                      ? instruction->effectIn != latestEffect
+                      : instruction->effectIn < latestEffect))) {
                 zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
                                        function, blockId, index + 1u, latestEffect,
                                        instruction->effectIn);
                 return ZR_FALSE;
             }
             latestEffect = instruction->effectOut;
+            latestEffectBlock = blockId;
         }
     }
     return ZR_TRUE;

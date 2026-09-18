@@ -173,6 +173,49 @@ static void test_call_binding_row_zero_does_not_require_all_dynamic_flags(void) 
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_observable_effect_chain_rejects_skipped_version(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    TZrExecIrMemoryTokenId tokens[] = {1u, 2u, 2u, 3u};
+    TZrUInt32 index;
+
+    for (index = 0u; index < 2u; ++index) {
+        memset(&instruction, 0, sizeof(instruction));
+        instruction.opcode = ZR_EXEC_IR_OPCODE_CALL;
+        instruction.flags = ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW;
+        instruction.sourceId = 551u + index;
+        instruction.effectIn = index == 0u ? 1u : 3u;
+        instruction.effectOut = index == 0u ? 2u : 4u;
+        ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &tokens[index * 2u], 1u,
+                                                     &instruction.memoryIn), "append effect input");
+        ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &tokens[index * 2u + 1u], 1u,
+                                                     &instruction.memoryOut), "append effect output");
+        ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+           "append observable call");
+        if (index == 0u) {
+            memset(&instruction, 0, sizeof(instruction));
+            instruction.opcode = ZR_EXEC_IR_OPCODE_NOP;
+            ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+               "append intervening pure instruction");
+        }
+    }
+    function->blocks[0].instructions.count = function->instructionCount;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "an observable effect skipped its preceding token");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+           diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY &&
+           diagnostic.instructionId == 3u && diagnostic.sourceId == 552u &&
+           diagnostic.expectedVersion == 2u && diagnostic.actualVersion == 3u,
+       "skipped effect diagnostic lost the producing token or location");
+    function->instructions[2].effectIn = 2u;
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "contiguous observable effect chain rejected");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_malformed_block_instruction_range_is_rejected(void) {
     SZrExecIrModule module;
     TZrExecIrFunctionId id;
@@ -920,6 +963,7 @@ int main(void) {
     test_memory_inputs_must_advance_across_instructions();
     test_phi_incoming_order_matches_predecessors();
     test_call_binding_row_zero_does_not_require_all_dynamic_flags();
+    test_observable_effect_chain_rejects_skipped_version();
     test_malformed_block_instruction_range_is_rejected();
     test_empty_range_with_invalid_start_is_rejected();
     test_ssa_rejects_use_before_definition_in_linear_ir();
