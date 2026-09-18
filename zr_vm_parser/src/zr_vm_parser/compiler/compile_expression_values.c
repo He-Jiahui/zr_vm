@@ -358,38 +358,27 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
     
     SZrTypeValue constantValue;
     ZrCore_Value_ResetAsNull(&constantValue);
-    TZrUInt32 constantIndex = 0;
+    TZrUInt32 constantIndex;
     TZrUInt32 destSlot = allocate_stack_slot(cs);
+    TZrBool hasConstant = ZR_TRUE;
     
     switch (node->type) {
         case ZR_AST_BOOLEAN_LITERAL: {
             TZrBool value = node->data.booleanLiteral.value;
             ZrCore_Value_InitAsInt(cs->state, &constantValue, value ? 1 : 0);
             constantValue.type = ZR_VALUE_TYPE_BOOL;
-            constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(
-                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
-            emit_instruction(cs, inst);
             break;
         }
         
         case ZR_AST_INTEGER_LITERAL: {
             TZrInt64 value = node->data.integerLiteral.value;
             ZrCore_Value_InitAsInt(cs->state, &constantValue, value);
-            constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(
-                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
-            emit_instruction(cs, inst);
             break;
         }
         
         case ZR_AST_FLOAT_LITERAL: {
             TZrDouble value = node->data.floatLiteral.value;
             ZrCore_Value_InitAsFloat(cs->state, &constantValue, value);
-            constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(
-                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
-            emit_instruction(cs, inst);
             break;
         }
         
@@ -398,10 +387,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             if (value != ZR_NULL) {
                 ZrCore_Value_InitAsRawObject(cs->state, &constantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
                 constantValue.type = ZR_VALUE_TYPE_STRING;
-                constantIndex = add_constant(cs, &constantValue);
-                TZrInstruction inst = create_instruction_1(
-                        ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
-                emit_instruction(cs, inst);
+            } else {
+                hasConstant = ZR_FALSE;
             }
             break;
         }
@@ -410,25 +397,27 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             TZrChar value = node->data.charLiteral.value;
             ZrCore_Value_InitAsInt(cs->state, &constantValue, (TZrInt64)value);
             constantValue.type = ZR_VALUE_TYPE_INT8;
-            constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(
-                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
-            emit_instruction(cs, inst);
             break;
         }
         
         case ZR_AST_NULL_LITERAL: {
             ZrCore_Value_ResetAsNull(&constantValue);
-            constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(
-                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
-            emit_instruction(cs, inst);
             break;
         }
         
         default:
             ZrParser_Compiler_Error(cs, "Unexpected literal type", node->location);
             break;
+    }
+    if (!cs->hasError && hasConstant) {
+        constantIndex = add_constant(cs, &constantValue);
+        if (!compiler_semantic_ir_lower_literal(
+                    cs, destSlot, constantIndex, node->location)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to lower literal to pre-execution Semantic IR",
+                    node->location);
+            return;
+        }
     }
     if (!cs->hasError) {
         cs->lastExpressionSlot = destSlot;

@@ -10,6 +10,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/bound_expression.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_struct_init.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
@@ -22,6 +25,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/bound_expression.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_struct_init.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
@@ -31,6 +37,7 @@ tests:
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-load-store-provenance.md
+  - tests/acceptance/ssa-compiler-literal-provenance.md
 doc_type: module-detail
 ---
 
@@ -71,9 +78,24 @@ local `STORE` resolves the right-hand stack slot's existing ValueId and
 records it as the source rather than allocating an unrelated, undefined
 value. This preserves assignment provenance for simple identifier RHS
 expressions and keeps temporary Places available to reference/contiguous
-view consumers. Literal, arithmetic, and other producer families still
+view consumers. Arithmetic and other computed producer families still
 need their own explicit definitions; neither the temporary Place nor a
 post-ExecBC decode manufactures those missing facts.
+
+Source literal expressions now emit `CONSTANT(resultValueId)` with an explicit
+`hasConstantPoolIndex`/`constantPoolIndex` reference to the compiler's existing
+constant pool before selecting the same `GET_CONSTANT` ExecBC operation.
+Their expression stack slots are temporary Places initialized from that
+defined value. If expression normalization copies a known produced value to
+an as-yet-unmaterialized stack slot, the destination temporary retains that
+ValueId; binding
+an initialized local then emits its existing typed `CONVERT` definition from
+the temporary. Synthetic SemIR functions may still use `CONSTANT` without a
+compiler-owned pool, and a pool index alone does not make a standalone SemIR
+function self-contained. Other computed expressions, conversions outside the
+local-binding path, and full CFG/phi construction remain open.
+Overwriting an already materialized destination remains a separate producer
+transfer to implement; this stage does not silently retag an existing Place.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 

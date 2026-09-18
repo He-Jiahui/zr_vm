@@ -229,6 +229,8 @@ typedef struct SZrSemanticIrInstruction {
     EZrSemanticEscapeState escape;
     TZrUInt32 operandStart;
     TZrUInt32 operandCount;
+    TZrUInt32 constantPoolIndex;
+    TZrBool hasConstantPoolIndex;
     SZrFileRange sourceRange;
 } SZrSemanticIrInstruction;
 
@@ -250,6 +252,8 @@ typedef struct SZrSemanticIrInstructionSpec {
     EZrSemanticEscapeState escape;
     const TZrValueId *operands;
     TZrSize operandCount;
+    TZrUInt32 constantPoolIndex;
+    TZrBool hasConstantPoolIndex;
     SZrFileRange sourceRange;
 } SZrSemanticIrInstructionSpec;
 

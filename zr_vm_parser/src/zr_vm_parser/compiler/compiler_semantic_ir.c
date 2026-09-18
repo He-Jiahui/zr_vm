@@ -208,6 +208,8 @@ static EZrInstructionCode compiler_semantic_ir_exec_opcode(
         return ZR_INSTRUCTION_ENUM(ENUM_MAX);
     }
     switch (instruction->opcode) {
+        case ZR_SEMANTIC_IR_CONSTANT:
+            return ZR_INSTRUCTION_ENUM(GET_CONSTANT);
         case ZR_SEMANTIC_IR_LOAD:
             return ZR_INSTRUCTION_ENUM(GET_STACK);
         case ZR_SEMANTIC_IR_STORE:
@@ -1737,6 +1739,70 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
                     (TZrUInt16)resultSlot,
                     (TZrInt32)stackSlot));
     return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
+                                           TZrUInt32 resultSlot,
+                                           TZrUInt32 constantPoolIndex,
+                                           SZrFileRange sourceRange) {
+    SZrSemanticIrInstructionSpec spec;
+    const SZrSemanticIrInstruction *instruction;
+    TZrValueId valueId;
+    EZrInstructionCode opcode;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrInitialized ||
+        resultSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    valueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, ZR_SEMANTIC_ID_INVALID, sourceRange);
+    if (valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_CONSTANT;
+    spec.resultValueId = valueId;
+    spec.constantPoolIndex = constantPoolIndex;
+    spec.hasConstantPoolIndex = ZR_TRUE;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+    instruction = compiler_semantic_ir_last_instruction(cs);
+    opcode = compiler_semantic_ir_exec_opcode(instruction);
+    if (opcode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        compiler_semantic_ir_add_temporary_slot(
+                cs, resultSlot, sourceRange, valueId) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    emit_instruction(cs, create_instruction_1(
+            opcode, (TZrUInt16)resultSlot, (TZrInt32)constantPoolIndex));
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_ir_transfer_expression_result(
+        SZrCompilerState *cs,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 destinationSlot,
+        SZrFileRange sourceRange) {
+    const SZrCompilerSemanticIrSlot *source;
+
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (sourceSlot == destinationSlot ||
+        sourceSlot == ZR_PARSER_SLOT_NONE ||
+        destinationSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_TRUE;
+    }
+    source = compiler_semantic_ir_find_slot(cs, sourceSlot);
+    if (source == ZR_NULL || source->valueId == ZR_VALUE_ID_INVALID ||
+        compiler_semantic_ir_find_slot(cs, destinationSlot) != ZR_NULL) {
+        return ZR_TRUE;
+    }
+    return (TZrBool)(compiler_semantic_ir_add_temporary_slot(
+            cs, destinationSlot, sourceRange, source->valueId) != ZR_NULL);
 }
 
 TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,

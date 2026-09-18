@@ -2061,6 +2061,13 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
         return ZR_PARSER_SLOT_NONE;
     }
 
+    if (!compiler_semantic_ir_transfer_expression_result(
+                cs, cs->lastExpressionSlot, targetSlot, node->location)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to transfer expression value in pre-execution Semantic IR",
+                node->location);
+        return ZR_PARSER_SLOT_NONE;
+    }
     return normalize_top_result_to_slot(cs, targetSlot);
 }
 

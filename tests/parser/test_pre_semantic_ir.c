@@ -261,12 +261,19 @@ static TZrBool semantic_ir_has_opcode(const SZrSemanticIrFunction *function,
 
 static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(void) {
     static const EZrSemanticIrOpcode expectedOpcodes[] = {
+        ZR_SEMANTIC_IR_CONSTANT,
         ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_CONVERT,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_LOAD,
         ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_CONVERT,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_LOAD,
         ZR_SEMANTIC_IR_PLACE_BASE,
@@ -312,6 +319,20 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
                 ZrParser_SemanticIr_InstructionAt(function, index);
         TEST_ASSERT_NOT_NULL(instruction);
         TEST_ASSERT_EQUAL_INT(expectedOpcodes[index], instruction->opcode);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CONSTANT) {
+            const SZrSemanticIrInstruction *temporaryInit =
+                    ZrParser_SemanticIr_InstructionAt(function, index + 2U);
+            const SZrSemanticIrValue *constantValue =
+                    ZrParser_SemanticIr_Value(function, instruction->resultValueId);
+            TEST_ASSERT_TRUE(instruction->hasConstantPoolIndex);
+            TEST_ASSERT_EQUAL_UINT32(0U, instruction->constantPoolIndex);
+            TEST_ASSERT_NOT_NULL(temporaryInit);
+            TEST_ASSERT_NOT_NULL(constantValue);
+            TEST_ASSERT_EQUAL_UINT32(instruction->id,
+                                     constantValue->definitionInstructionId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->resultValueId,
+                                     temporaryInit->valueId);
+        }
         if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
             const SZrSemanticIrInstruction *temporaryBase =
                     ZrParser_SemanticIr_InstructionAt(function, index + 1U);
@@ -332,6 +353,10 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
     {
         const SZrSemanticIrInstruction *sourceLoad = ZR_NULL;
         const SZrSemanticIrInstruction *assignmentStore = ZR_NULL;
+        const SZrSemanticIrInstruction *localInitialize = ZR_NULL;
+        const SZrSemanticIrInstruction *literalDefinition =
+                ZrParser_SemanticIr_InstructionAt(function, 0U);
+        const SZrSemanticIrInstruction *localDefinition;
         const SZrSemanticIrValue *assignedValue;
 
         for (index = 0U; index < function->instructions.length; index++) {
@@ -341,8 +366,26 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
                 sourceLoad = instruction;
             } else if (instruction->opcode == ZR_SEMANTIC_IR_STORE) {
                 assignmentStore = instruction;
+            } else if (instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE &&
+                       instruction->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                       localInitialize == ZR_NULL) {
+                localInitialize = instruction;
             }
         }
+        TEST_ASSERT_NOT_NULL(literalDefinition);
+        TEST_ASSERT_NOT_NULL(localInitialize);
+        assignedValue = ZrParser_SemanticIr_Value(
+                function, localInitialize->valueId);
+        TEST_ASSERT_NOT_NULL(assignedValue);
+        TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+                              assignedValue->definitionInstructionId);
+        localDefinition = ZrParser_SemanticIr_InstructionAt(
+                function, assignedValue->definitionInstructionId - 1U);
+        TEST_ASSERT_NOT_NULL(localDefinition);
+        TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_CONVERT,
+                              localDefinition->opcode);
+        TEST_ASSERT_EQUAL_UINT32(literalDefinition->resultValueId,
+                                 localDefinition->valueId);
         TEST_ASSERT_NOT_NULL(sourceLoad);
         TEST_ASSERT_NOT_NULL(assignmentStore);
         TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, sourceLoad->resultValueId);

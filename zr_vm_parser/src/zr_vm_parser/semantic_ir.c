@@ -584,6 +584,8 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
     instruction.escape = spec->escape;
     instruction.operandStart = (TZrUInt32)function->valueOperands.length;
     instruction.operandCount = (TZrUInt32)spec->operandCount;
+    instruction.constantPoolIndex = spec->constantPoolIndex;
+    instruction.hasConstantPoolIndex = spec->hasConstantPoolIndex;
     instruction.sourceRange = spec->sourceRange;
     for (index = 0; index < spec->operandCount; index++) {
         if (ZrParser_SemanticIr_Value(function, spec->operands[index]) == ZR_NULL) {

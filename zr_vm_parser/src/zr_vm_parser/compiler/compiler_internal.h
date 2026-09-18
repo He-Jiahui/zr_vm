@@ -114,6 +114,15 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
                                         TZrUInt32 stackSlot,
                                         TZrUInt32 resultSlot,
                                         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
+                                           TZrUInt32 resultSlot,
+                                           TZrUInt32 constantPoolIndex,
+                                           SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_transfer_expression_result(
+        SZrCompilerState *cs,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 destinationSlot,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
                                          TZrUInt32 stackSlot,
                                          TZrUInt32 valueSlot,
