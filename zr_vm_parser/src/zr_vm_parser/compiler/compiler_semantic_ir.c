@@ -29,6 +29,27 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
     return ZR_NULL;
 }
 
+static TZrValueId compiler_semantic_ir_value_for_place(
+        SZrCompilerState *cs,
+        TZrPlaceId placeId) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || placeId == ZR_PLACE_ID_INVALID ||
+        !cs->preSemanticIrSlots.isValid) {
+        return ZR_VALUE_ID_INVALID;
+    }
+    for (index = cs->preSemanticIrSlots.length; index > 0U; index--) {
+        const SZrCompilerSemanticIrSlot *slot =
+                (const SZrCompilerSemanticIrSlot *)ZrCore_Array_Get(
+                        &cs->preSemanticIrSlots, index - 1U);
+        if (slot != ZR_NULL && slot->placeId == placeId &&
+            slot->valueId != ZR_VALUE_ID_INVALID) {
+            return slot->valueId;
+        }
+    }
+    return ZR_VALUE_ID_INVALID;
+}
+
 TZrValueId compiler_semantic_ir_slot_value(SZrCompilerState *cs,
                                            TZrUInt32 stackSlot) {
     const SZrCompilerSemanticIrSlot *slot =
@@ -449,6 +470,7 @@ static TZrLoanId compiler_semantic_ir_begin_receiver_call_internal(
                                      : ZR_SEMANTIC_IR_BORROW_SHARED);
     spec.typeId = receiverPlace->typeId;
     spec.placeId = receiverPlaceId;
+    spec.valueId = compiler_semantic_ir_value_for_place(cs, receiverPlaceId);
     spec.resultValueId = borrowValueId;
     spec.loanId = loanId;
     spec.regionId = 1U;
@@ -567,6 +589,7 @@ static TZrLoanId compiler_semantic_ir_begin_contiguous_source_loan(
                           : ZR_SEMANTIC_IR_BORROW_SHARED;
     spec.typeId = sourcePlace->typeId;
     spec.placeId = sourcePlaceId;
+    spec.valueId = compiler_semantic_ir_value_for_place(cs, sourcePlaceId);
     spec.resultValueId = borrowValueId;
     spec.loanId = loanId;
     spec.regionId = regionId;
@@ -1631,18 +1654,41 @@ static TZrBool compiler_semantic_ir_emit_ownership(
         SZrCompilerState *cs,
         EZrOwnershipBuiltinKind builtinKind,
         TZrUInt32 sourceSlot,
+        TZrTypeId sourceTypeId,
+        TZrTypeId resultTypeId,
+        TZrBool sourceIsFresh,
         SZrFileRange sourceRange) {
-    SZrCompilerSemanticIrSlot *slot =
-            compiler_semantic_ir_materialize_slot(cs, sourceSlot, sourceRange);
+    SZrCompilerSemanticIrSlot *slot;
     SZrSemanticIrInstructionSpec spec;
+    TZrValueId sourceValueId;
     TZrValueId resultValueId = ZR_VALUE_ID_INVALID;
 
-    if (slot == ZR_NULL) {
+    if (cs == ZR_NULL || sourceTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    slot = compiler_semantic_ir_find_slot(cs, sourceSlot);
+    /* A freshly constructed runtime value can reuse a stack slot last seen
+     * while compiling a nested callable.  Publish a new typed binding for
+     * that slot instead of attaching ownership to the stale value. */
+    if (slot == ZR_NULL ||
+        (sourceIsFresh &&
+         (slot->typeId != sourceTypeId ||
+          slot->valueId == ZR_VALUE_ID_INVALID))) {
+        sourceValueId = ZrParser_SemanticIr_AddValue(
+                &cs->preSemanticIr, sourceTypeId, sourceRange);
+        if (sourceValueId == ZR_VALUE_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        slot = compiler_semantic_ir_add_temporary_slot(
+                cs, sourceSlot, sourceRange, sourceValueId);
+    }
+    if (slot == ZR_NULL || slot->typeId != sourceTypeId ||
+        slot->valueId == ZR_VALUE_ID_INVALID) {
         return ZR_FALSE;
     }
 
     memset(&spec, 0, sizeof(spec));
-    spec.typeId = slot->typeId;
+    spec.typeId = sourceTypeId;
     spec.placeId = slot->placeId;
     spec.valueId = slot->valueId;
     spec.symbolId = slot->symbolId;
@@ -1654,9 +1700,13 @@ static TZrBool compiler_semantic_ir_emit_ownership(
             slot->valueId = ZR_VALUE_ID_INVALID;
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             spec.opcode = ZR_SEMANTIC_IR_BORROW_SHARED;
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             spec.regionId = 1U;
             spec.loanId = ZrParser_SemanticIr_AddLoan(
@@ -1669,9 +1719,13 @@ static TZrBool compiler_semantic_ir_emit_ownership(
                     resultValueId);
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             spec.opcode = ZR_SEMANTIC_IR_BORROW_MUT;
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             spec.regionId = 1U;
             spec.loanId = ZrParser_SemanticIr_AddLoan(
@@ -1684,6 +1738,9 @@ static TZrBool compiler_semantic_ir_emit_ownership(
                     resultValueId);
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             if (compiler_semantic_ir_slot_is_unique_owner(cs, slot)) {
                 spec.opcode = ZR_SEMANTIC_IR_MOVE;
                 slot->valueId = ZR_VALUE_ID_INVALID;
@@ -1692,35 +1749,52 @@ static TZrBool compiler_semantic_ir_emit_ownership(
                 spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_UNIQUE;
             }
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
             spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_SHARE;
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
             spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_DEGRADE;
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
             spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_WAKE;
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+            if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+                return ZR_FALSE;
+            }
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
             spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX;
             resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
+                    &cs->preSemanticIr, resultTypeId, sourceRange);
+            spec.typeId = resultTypeId;
             spec.resultValueId = resultValueId;
             slot->valueId = ZR_VALUE_ID_INVALID;
             break;
@@ -1887,18 +1961,110 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool compiler_semantic_ir_lower_ownership(
+static TZrBool compiler_semantic_ir_derive_ownership_result_type(
+        SZrCompilerState *cs,
+        EZrOwnershipBuiltinKind builtinKind,
+        const SZrInferredType *sourceType,
+        SZrInferredType *resultType) {
+    if (cs == ZR_NULL || sourceType == ZR_NULL || resultType == ZR_NULL ||
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN) {
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Copy(cs->state, resultType, sourceType);
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+            resultType->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+            resultType->isNullable = ZR_TRUE;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+            resultType->referenceAccess = ZR_REFERENCE_ACCESS_READONLY;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+            resultType->referenceAccess = ZR_REFERENCE_ACCESS_WRITABLE;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+            resultType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            resultType->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+            resultType->gcBridgeKind = ZR_GC_BRIDGE_BOX;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
+        default:
+            return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_semantic_ir_lower_ownership_typed(
         SZrCompilerState *cs,
         EZrOwnershipBuiltinKind builtinKind,
         TZrUInt32 sourceSlot,
         TZrUInt32 resultSlot,
+        const SZrInferredType *sourceType,
+        TZrBool sourceIsFresh,
         SZrFileRange sourceRange) {
     const SZrSemanticIrInstruction *instruction;
     SZrCompilerSemanticIrSlot *result;
+    SZrInferredType resultType;
+    const SZrSemanticIrValue *value;
+    TZrTypeId sourceTypeId;
+    TZrTypeId resultTypeId = ZR_SEMANTIC_ID_INVALID;
+    TZrValueId resultValueId;
     EZrInstructionCode opcode;
 
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        sourceType == ZR_NULL || sourceSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    sourceTypeId = ZrParser_Semantic_RegisterInferredType(
+            cs->semanticContext,
+            sourceType,
+            ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+            ZR_NULL,
+            ZR_NULL);
+    ZrParser_InferredType_Init(cs->state, &resultType, sourceType->baseType);
+    if (sourceTypeId == ZR_SEMANTIC_ID_INVALID ||
+        !compiler_semantic_ir_derive_ownership_result_type(
+                cs, builtinKind, sourceType, &resultType)) {
+        ZrParser_InferredType_Free(cs->state, &resultType);
+        return ZR_FALSE;
+    }
+    if (builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_DROP) {
+        resultTypeId = ZrParser_Semantic_RegisterInferredType(
+                cs->semanticContext,
+                &resultType,
+                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+                ZR_NULL,
+                ZR_NULL);
+    }
+    ZrParser_InferredType_Free(cs->state, &resultType);
+    if (builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_DROP &&
+        resultTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
     if (!compiler_semantic_ir_emit_ownership(
-                cs, builtinKind, sourceSlot, sourceRange)) {
+                cs,
+                builtinKind,
+                sourceSlot,
+                sourceTypeId,
+                resultTypeId,
+                sourceIsFresh,
+                sourceRange)) {
         return ZR_FALSE;
     }
     instruction = compiler_semantic_ir_last_instruction(cs);
@@ -1908,25 +2074,26 @@ TZrBool compiler_semantic_ir_lower_ownership(
     if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         return ZR_FALSE;
     }
-    if (instruction->resultValueId != ZR_VALUE_ID_INVALID) {
+    resultValueId = instruction->resultValueId;
+    if (resultValueId != ZR_VALUE_ID_INVALID) {
         result = compiler_semantic_ir_find_slot(cs, resultSlot);
         if (result == ZR_NULL) {
             result = compiler_semantic_ir_add_temporary_slot(
                     cs,
                     resultSlot,
                     sourceRange,
-                    instruction->resultValueId);
+                    resultValueId);
             if (result == ZR_NULL) {
                 return ZR_FALSE;
             }
         } else {
-            const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
-                    &cs->preSemanticIr, instruction->resultValueId);
+            value = ZrParser_SemanticIr_Value(
+                    &cs->preSemanticIr, resultValueId);
             if (value == ZR_NULL) {
                 return ZR_FALSE;
             }
             result->typeId = value->typeId;
-            result->valueId = instruction->resultValueId;
+            result->valueId = resultValueId;
         }
     }
     emit_instruction(
@@ -1937,6 +2104,69 @@ TZrBool compiler_semantic_ir_lower_ownership(
                     (TZrUInt16)sourceSlot,
                     0));
     return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_ir_lower_ownership(
+        SZrCompilerState *cs,
+        EZrOwnershipBuiltinKind builtinKind,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resultSlot,
+        SZrAstNode *sourceExpression,
+        SZrFileRange sourceRange) {
+    SZrInferredType sourceType;
+    TZrBool inferred;
+    TZrBool lowered;
+
+    if (cs == ZR_NULL || sourceExpression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Init(cs->state, &sourceType, ZR_VALUE_TYPE_OBJECT);
+    inferred = ZrParser_ExpressionType_Infer(cs, sourceExpression, &sourceType);
+    lowered = inferred && compiler_semantic_ir_lower_ownership_typed(
+            cs,
+            builtinKind,
+            sourceSlot,
+            resultSlot,
+            &sourceType,
+            ZR_FALSE,
+            sourceRange);
+    ZrParser_InferredType_Free(cs->state, &sourceType);
+    return lowered;
+}
+
+TZrBool compiler_semantic_ir_lower_constructed_ownership(
+        SZrCompilerState *cs,
+        EZrOwnershipBuiltinKind builtinKind,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resultSlot,
+        SZrAstNode *constructExpression,
+        SZrFileRange sourceRange) {
+    SZrInferredType sourceType;
+    TZrBool inferred;
+    TZrBool lowered;
+
+    if (cs == ZR_NULL || constructExpression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Init(cs->state, &sourceType, ZR_VALUE_TYPE_OBJECT);
+    inferred = ZrParser_ExpressionType_Infer(
+            cs, constructExpression, &sourceType);
+    if (inferred) {
+        sourceType.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+        sourceType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+        sourceType.gcBridgeKind = ZR_GC_BRIDGE_NONE;
+        sourceType.isNullable = ZR_FALSE;
+    }
+    lowered = inferred && compiler_semantic_ir_lower_ownership_typed(
+            cs,
+            builtinKind,
+            sourceSlot,
+            resultSlot,
+            &sourceType,
+            ZR_TRUE,
+            sourceRange);
+    ZrParser_InferredType_Free(cs->state, &sourceType);
+    return lowered;
 }
 
 TZrBool compiler_semantic_ir_lower_value_construct(

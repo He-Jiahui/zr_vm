@@ -721,7 +721,7 @@ static void test_unmodeled_short_circuit_rhs_keeps_legacy_cfg(void) {
 static void test_source_optional_call_skips_argument_semantic_effects(void) {
     static const TZrChar source[] =
             "resource class Service {\n"
-            "    pub const fn consume(value: bool): void {}\n"
+            "    pub const fn consume(value: bool): void { var marker: int = 1; }\n"
             "}\n"
             "var seed = own Service();\n"
             "var shared = share(seed);\n"
@@ -738,7 +738,12 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     const SZrParserCfgBlock *entry;
     const SZrParserCfgBlock *present;
     const SZrParserCfgBlock *join;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
     TZrSize storeCount = 0U;
+    TZrSize moveCount = 0U;
+    TZrSize copyCount = 0U;
+    TZrSize nopCount = 0U;
     TZrSize index;
 
     TEST_ASSERT_NOT_NULL(ast);
@@ -797,6 +802,43 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
         }
     }
     TEST_ASSERT_EQUAL_UINT64(1U, storeCount);
+    for (index = 0U; index < function->values.length; index++) {
+        const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
+                function, (TZrValueId)index + 1U);
+        TEST_ASSERT_NOT_NULL(value);
+        TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, value->typeId);
+    }
+    for (index = 0U; index < function->places.places.length; index++) {
+        const SZrParserPlace *place = ZrParser_PlaceGraph_Get(
+                &function->places, (TZrPlaceId)index + 1U);
+        TEST_ASSERT_NOT_NULL(place);
+        TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, place->typeId);
+    }
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    for (index = 0U; index < output.instructionCount; index++) {
+        switch ((EZrExecIrOpcode)output.instructions[index].opcode) {
+            case ZR_EXEC_IR_OPCODE_MOVE:
+                moveCount++;
+                break;
+            case ZR_EXEC_IR_OPCODE_COPY:
+                copyCount++;
+                break;
+            case ZR_EXEC_IR_OPCODE_NOP:
+                nopCount++;
+                break;
+            default:
+                break;
+        }
+    }
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, moveCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(4U, copyCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, nopCount);
+    ZrCore_ExecIr_FreeFunction(&output);
 
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;

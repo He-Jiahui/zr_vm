@@ -1213,6 +1213,7 @@ void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *no
 
 static TZrBool finalize_resource_constructed_result(SZrCompilerState *cs,
                                                      TZrUInt32 targetSlot,
+                                                     SZrAstNode *constructNode,
                                                      SZrFileRange location) {
     TZrUInt32 sourceSlot;
     TZrUInt32 resultSlot;
@@ -1223,11 +1224,13 @@ static TZrBool finalize_resource_constructed_result(SZrCompilerState *cs,
 
     sourceSlot = cs->lastExpressionSlot;
     resultSlot = targetSlot != ZR_PARSER_SLOT_NONE ? targetSlot : allocate_stack_slot(cs);
-    if (!compiler_semantic_ir_lower_ownership(cs,
-                                              ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
-                                              sourceSlot,
-                                              resultSlot,
-                                              location)) {
+    if (!compiler_semantic_ir_lower_constructed_ownership(
+                cs,
+                ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
+                sourceSlot,
+                resultSlot,
+                constructNode,
+                location)) {
         return ZR_FALSE;
     }
     emit_instruction(cs,
@@ -1297,9 +1300,14 @@ static TZrUInt32 compile_construct_expression_with_target(SZrCompilerState *cs,
         TZrBool wrapped =
                 constructExpr->isResourceSurface &&
                 constructExpr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE
-                        ? finalize_resource_constructed_result(cs, targetSlot, node->location)
+                        ? finalize_resource_constructed_result(
+                                  cs, targetSlot, node, node->location)
                         : wrap_constructed_result_with_ownership_builtin(
-                                  cs, constructExpr, targetSlot, node->location);
+                                  cs,
+                                  constructExpr,
+                                  targetSlot,
+                                  node,
+                                  node->location);
         if (!wrapped && !cs->hasError) {
             ZrParser_Compiler_Error(cs, "Failed to wrap ownership-aware construction result", node->location);
         }

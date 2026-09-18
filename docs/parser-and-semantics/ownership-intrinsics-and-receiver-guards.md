@@ -108,6 +108,7 @@ tests:
   - tests/language_server/test_lsp_advanced_editor_features.c
   - tests/acceptance/2026-08-10-ownership-object-member-separation.md
   - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
+  - tests/acceptance/ssa-compiler-ownership-execir.md
 doc_type: module-detail
 ---
 
@@ -320,6 +321,16 @@ result stack slot, allowing an explicitly awakened nullable receiver to be the
 branch operand. Nullable value-producing chains, Weak-wake guard frames, and
 exception/cleanup suffixes remain conservative fallback cases; encountering
 one after another source branch abandons the partial semantic CFG.
+
+The ownership setup for that branch now reaches ExecIR with canonical source
+and result TypeIds. Qualifier changes are derived for each ownership result,
+and a pending receiver alias inherits the source ValueId before the borrow is
+published. The ExecIR builder lowers consuming ownership to `MOVE`,
+non-consuming ownership and borrow/view operations to `COPY`, release to
+`DROP`, and loan activation/end facts to source-mapped `NOP`. Producer-less
+SemanticIR inputs are carried as external-entry values; this closes the prior
+untyped resource-construction boundary for the nullable `void` fixture without
+claiming value-producing optional, Weak, exception, or cleanup CFG support.
 
 Every guard-owned `OWN_WAKE` is immediately followed by
 `MARK_TO_BE_CLOSED` for the same destination slot. Normal completion closes

@@ -1639,6 +1639,7 @@ static TZrBool stage_pending_receiver_binding(SZrCompilerState *cs,
                                                TZrUInt32 receiverSourceSlot,
                                                TZrUInt32 receiverTargetSlot,
                                                EZrOwnershipQualifier receiverOwnershipQualifier,
+                                               SZrFileRange sourceRange,
                                                TZrUInt32 *outReceiverSlot) {
     TZrUInt32 receiverSlot;
 
@@ -1669,6 +1670,13 @@ static TZrBool stage_pending_receiver_binding(SZrCompilerState *cs,
                                               (TZrInt32)receiverSourceSlot));
     }
     if (cs->hasError) {
+        return ZR_FALSE;
+    }
+    if (!compiler_semantic_ir_transfer_expression_result(
+                cs,
+                receiverSourceSlot,
+                receiverSlot,
+                sourceRange)) {
         return ZR_FALSE;
     }
 
@@ -3230,6 +3238,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                                pendingReceiverSourceSlot,
                                                                currentSlot + 1u,
                                                                rootOwnershipQualifier,
+                                                               member->location,
                                                                &pendingReceiverSlot)) {
                                 goto cleanup;
                             }
@@ -3324,6 +3333,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                 pendingReceiverSourceSlot,
                                                 preferredDirectMemberCallResultSlot + 1u,
                                                 rootOwnershipQualifier,
+                                                member->location,
                                                 &pendingReceiverSlot)) {
                                         goto cleanup;
                                     }
@@ -3340,6 +3350,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                                           pendingReceiverSourceSlot,
                                                                           currentSlot + 1u,
                                                                           rootOwnershipQualifier,
+                                                                          member->location,
                                                                           &pendingReceiverSlot)) {
                                     goto cleanup;
                                 }
@@ -3363,6 +3374,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                           pendingReceiverSourceSlot,
                                                           currentSlot + 1u,
                                                           rootOwnershipQualifier,
+                                                          member->location,
                                                           &pendingReceiverSlot);
                                 if (!receiverBound ||
                                     !emit_member_function_constant_to_slot(
@@ -3420,6 +3432,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                                    pendingReceiverSourceSlot,
                                                                    currentSlot + 1u,
                                                                    rootOwnershipQualifier,
+                                                                   member->location,
                                                                    &pendingReceiverSlot)) {
                                     goto cleanup;
                                 }
@@ -3455,6 +3468,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                                    pendingReceiverSourceSlot,
                                                                    currentSlot + 1u,
                                                                    rootOwnershipQualifier,
+                                                                   member->location,
                                                                    &pendingReceiverSlot)) {
                                     goto cleanup;
                                 }
@@ -3477,6 +3491,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                            pendingReceiverSourceSlot,
                                                            currentSlot + 1u,
                                                            rootOwnershipQualifier,
+                                                           member->location,
                                                            &pendingReceiverSlot)) {
                             goto cleanup;
                         }

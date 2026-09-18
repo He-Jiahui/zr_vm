@@ -17,8 +17,11 @@ static void diag_missing(SZrExecIrDiagnostic *d, const SZrExecIrFunction *f,
     }
 }
 
-static EZrExecIrOpcode map_opcode(EZrSemanticIrOpcode op) {
-    switch (op) {
+static EZrExecIrOpcode map_opcode(const SZrSemanticIrInstruction *instruction) {
+    if (instruction == ZR_NULL) {
+        return ZR_EXEC_IR_OPCODE_INVALID;
+    }
+    switch (instruction->opcode) {
         case ZR_SEMANTIC_IR_CONSTANT: return ZR_EXEC_IR_OPCODE_CONSTANT;
         case ZR_SEMANTIC_IR_CONVERT: return ZR_EXEC_IR_OPCODE_CONVERT;
         case ZR_SEMANTIC_IR_PLACE_BASE: return ZR_EXEC_IR_OPCODE_PLACE_BASE;
@@ -27,6 +30,24 @@ static EZrExecIrOpcode map_opcode(EZrSemanticIrOpcode op) {
         case ZR_SEMANTIC_IR_STORE: return ZR_EXEC_IR_OPCODE_STORE;
         case ZR_SEMANTIC_IR_MOVE: return ZR_EXEC_IR_OPCODE_MOVE;
         case ZR_SEMANTIC_IR_COPY: return ZR_EXEC_IR_OPCODE_COPY;
+        case ZR_SEMANTIC_IR_BORROW_SHARED:
+        case ZR_SEMANTIC_IR_BORROW_MUT:
+        case ZR_SEMANTIC_IR_RESERVE_BORROW_MUT:
+        case ZR_SEMANTIC_IR_REBORROW:
+        case ZR_SEMANTIC_IR_DEREFERENCE:
+            return ZR_EXEC_IR_OPCODE_COPY;
+        case ZR_SEMANTIC_IR_ACTIVATE_LOAN:
+        case ZR_SEMANTIC_IR_END_LOAN:
+            return ZR_EXEC_IR_OPCODE_NOP;
+        case ZR_SEMANTIC_IR_OWN_CONSTRUCT:
+            return instruction->ownershipOperation ==
+                                   ZR_SEMANTIC_OWNERSHIP_UNIQUE ||
+                           instruction->ownershipOperation ==
+                                   ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX ||
+                           instruction->ownershipOperation ==
+                                   ZR_SEMANTIC_OWNERSHIP_RETURN_TO_GC
+                    ? ZR_EXEC_IR_OPCODE_MOVE
+                    : ZR_EXEC_IR_OPCODE_COPY;
         case ZR_SEMANTIC_IR_DROP: return ZR_EXEC_IR_OPCODE_DROP;
         case ZR_SEMANTIC_IR_CALL_TYPED:
         case ZR_SEMANTIC_IR_CALL_VIRTUAL:
@@ -49,6 +70,35 @@ static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize)
                      (array->length == 0u ||
                       (array->isValid && array->head != ZR_NULL &&
                        array->elementSize == elementSize)));
+}
+
+static TZrBool semantic_value_has_instruction_definition(
+        const SZrSemanticIrFunction *semantic,
+        const SZrSemanticIrValue *value) {
+    TZrUInt32 instructionIndex;
+
+    if (semantic == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    /* Older hand-built SemIR fixtures leave the cached definition field at
+     * zero, so the result references remain the authoritative fallback. */
+    if (value->definitionInstructionId !=
+        ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+        return ZR_TRUE;
+    }
+    for (instructionIndex = 0u;
+         instructionIndex < (TZrUInt32)semantic->instructions.length;
+         instructionIndex++) {
+        const SZrSemanticIrInstruction *instruction =
+                (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                        (SZrArray *)&semantic->instructions,
+                        instructionIndex);
+        if (instruction != ZR_NULL &&
+            instruction->resultValueId == value->id) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
 }
 
 static TZrBool validate_semantic_places(
@@ -303,7 +353,7 @@ static TZrBool validate_no_unsplit_throwing_operations(
                             (SZrArray *)&semantic->instructions,
                             block->firstInstructionIndex + instructionIndex);
             const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
-                    map_opcode(instruction->opcode));
+                    map_opcode(instruction));
             if (info != ZR_NULL &&
                 (info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW |
                                 ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND)) != 0u) {
@@ -585,8 +635,19 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
 
     for (i = 0u; i < (TZrUInt32)s->values.length; ++i) {
         const SZrSemanticIrValue *v = (const SZrSemanticIrValue *)ZrCore_Array_Get((SZrArray *)&s->values, i);
-        if (ZrCore_ExecIr_FunctionAddValue(output, (TZrMetadataToken)v->typeId,
-                    ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN) == ZR_EXEC_IR_VALUE_ID_INVALID) {
+        TZrExecIrValueId valueId =
+                !semantic_value_has_instruction_definition(s, v)
+                        ? ZrCore_ExecIr_FunctionAddExternalValue(
+                                  output,
+                                  (TZrMetadataToken)v->typeId,
+                                  ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+                                  ZR_EXEC_IR_NULLABILITY_UNKNOWN)
+                        : ZrCore_ExecIr_FunctionAddValue(
+                                  output,
+                                  (TZrMetadataToken)v->typeId,
+                                  ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+                                  ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+        if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID) {
             diag_missing(diagnostic, output, 0u, 0u); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
         }
     }
@@ -677,7 +738,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                         in->resultValueId != ZR_VALUE_ID_INVALID ? 1u : 0u;
                 const SZrExecIrOpcodeInfo *info;
                 TZrBool isTerminator;
-                memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in->opcode); x.sourceId = in->id;
+                memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in); x.sourceId = in->id;
                 if (in->opcode == ZR_SEMANTIC_IR_BRANCH && in->operandCount != 0u)
                     x.opcode = ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH;
                 if (x.opcode == ZR_EXEC_IR_OPCODE_CALL &&
@@ -756,6 +817,12 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     case ZR_SEMANTIC_IR_MOVE:
                     case ZR_SEMANTIC_IR_COPY:
                     case ZR_SEMANTIC_IR_DROP:
+                    case ZR_SEMANTIC_IR_BORROW_SHARED:
+                    case ZR_SEMANTIC_IR_BORROW_MUT:
+                    case ZR_SEMANTIC_IR_RESERVE_BORROW_MUT:
+                    case ZR_SEMANTIC_IR_REBORROW:
+                    case ZR_SEMANTIC_IR_DEREFERENCE:
+                    case ZR_SEMANTIC_IR_OWN_CONSTRUCT:
                         if (operandCount == 0u &&
                             in->valueId != ZR_VALUE_ID_INVALID) {
                             loweredOperands[0] = in->valueId;

@@ -65,7 +65,7 @@ optional CFG.
 This checkpoint covers nullable, value-discarded `void` optional calls. It does
 not yet merge nullable values, model Weak guard wake/cleanup in the canonical
 CFG, split exception or cleanup exits, or lower the call operation itself into
-source-owned `CALL_*` facts. The complete ownership setup fixture also cannot
-yet pass through the ExecIR builder because the earlier resource-construction
-call still lacks a canonical result TypeId. These remaining items prevent a
-complete 01.02 exit-gate claim.
+source-owned `CALL_*` facts. The earlier untyped resource-construction boundary
+is closed by [SSA 01.02: ownership facts through ExecIR](ssa-compiler-ownership-execir.md),
+but the remaining control-flow items still prevent a complete 01.02 exit-gate
+claim.

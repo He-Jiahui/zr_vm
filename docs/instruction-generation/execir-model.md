@@ -25,6 +25,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
+  - tests/acceptance/ssa-compiler-ownership-execir.md
 doc_type: module-detail
 ---
 
@@ -72,6 +73,23 @@ address followed by the stored data value. Static projections use their entry
 descriptor as the second operand; dynamic projections use their canonical
 index value. This keeps frame roots and selectors explicit without encoding a
 host pointer or reconstructing facts from ExecBC.
+
+Producer-less SemanticIR values are materialized as explicit external-entry
+ExecIR values. Current producers cache the defining instruction ID on each
+defined value; for older hand-built fixtures that leave this field at zero,
+the builder treats instruction result references as the authoritative
+compatibility fallback. A value is external only when neither representation
+names an instruction definition.
+
+Ownership and view facts retain their canonical type tokens while the builder
+expands them into the first executable opcode surface. Unique construction,
+GC-box transfer, and artifact-only return-to-GC become `MOVE`; sharing,
+degrading, waking, borrow, reborrow, reserve-borrow, and dereference become
+`COPY`; deterministic release remains `DROP`. Loan activation and end markers
+become source-mapped `NOP` instructions because they carry semantic lifetime
+information but no standalone runtime value operation at this stage. ExecIR
+ownership and nullability fields remain unknown until the dedicated metadata
+projection is implemented.
 
 Promotion eligibility is likewise explicit. The SemanticIR producer supplies
 the scalar-local fact, and the builder clears eligibility by omission for
@@ -133,6 +151,12 @@ slot bridge is restored. Value-producing optional chains, Weak-wake guards,
 and exceptional/cleanup suffixes still abandon an active partial graph and use
 the legacy two-block path, so this checkpoint does not claim the complete
 optional-chain exit gate.
+
+The complete ownership setup used by this nullable-call fixture now also
+builds through ExecIR. Its source and result values have canonical TypeIds,
+receiver aliases inherit the source value before borrowing, and every
+producer-less entry value is represented explicitly rather than rejected as
+an undefined operand.
 
 Before SSA construction, the parser normalizes a canonical block whose final
 typed call already carries ordered normal/exception edges. Each earlier typed,

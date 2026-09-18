@@ -175,6 +175,14 @@ TZrBool compiler_semantic_ir_lower_ownership(
         EZrOwnershipBuiltinKind builtinKind,
         TZrUInt32 sourceSlot,
         TZrUInt32 resultSlot,
+        SZrAstNode *sourceExpression,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_constructed_ownership(
+        SZrCompilerState *cs,
+        EZrOwnershipBuiltinKind builtinKind,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resultSlot,
+        SZrAstNode *constructExpression,
         SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_lower_value_construct(
         SZrCompilerState *cs,

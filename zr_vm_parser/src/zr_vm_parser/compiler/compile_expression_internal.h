@@ -75,6 +75,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                                        SZrConstructExpression *constructExpr,
                                                        TZrUInt32 targetSlot,
+                                                       SZrAstNode *constructNode,
                                                        SZrFileRange location);
 EZrOwnershipQualifier infer_expression_ownership_qualifier_local(SZrCompilerState *cs, SZrAstNode *node);
 TZrBool compiler_is_super_identifier_node(SZrAstNode *node);

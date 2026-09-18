@@ -43,6 +43,7 @@ tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
+  - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-load-store-provenance.md
   - tests/acceptance/ssa-compiler-literal-provenance.md
   - tests/acceptance/ssa-compiler-literal-type-provenance.md
@@ -85,6 +86,24 @@ publishing partial facts.
 Every compiler state owns an independent pre-execution semantic function and a private stack-slot bridge. A declared local is registered with the canonical `TypeId` and `SymbolId` already assigned by the semantic context. Parameters, foreach bindings, and compiler-generated locals are materialized on first semantic use so existing compilation paths do not lose Place identity.
 
 For the current lowering surface, local initialization, identifier load, local store, and ownership operations emit semantic instructions first. The bridge then selects `GET_STACK`, `SET_STACK`, or the exact `OWN_*` ExecBC opcode from that emitted semantic instruction; AST callers no longer make a second load/store/move/borrow decision. A readonly view is declared as `var view: ref readonly T = ref owner`, a mutable view as `var view: ref T = ref owner`, GC return as `intoGc(owner)`, and deterministic release as `drop(owner)`. The other ownership transitions are `share(owner)`, `degrade(shared)`, and `wake(weak)`. Percent directives and removed ownership member-call forms stop before this bridge and only produce migration errors. Internal shared/mutable loan facts and region opcodes remain semantic implementation details, not source spellings. Unsupported ownership kinds fail instead of falling through to construction. Script compilation validates the complete pre-execution function before final function assembly, optimization sidecars, and quickening.
+
+Ownership lowering registers both its inferred source type and its derived
+result type in the canonical semantic type graph. The result qualifier is
+transformed explicitly for unique, shared, weak, wake, borrowed, loaned, and
+GC-box results instead of copying an unqualified construction token. A fresh
+resource construction may publish a new typed slot binding when a nested
+callable compilation left a stale or moved binding on the reused runtime stack
+slot; ordinary ownership operations remain strict and cannot resurrect such a
+binding. Receiver aliases transfer the canonical source ValueId before their
+borrow fact is emitted.
+
+The SemIR-to-ExecIR builder consumes these facts without reconstructing them
+from bytecode: consuming ownership operations become `MOVE`, non-consuming
+ownership and view operations become `COPY`, release remains `DROP`, and loan
+lifecycle markers become source-mapped `NOP`. Values with no instruction
+definition are explicit external-entry values; instruction result references
+remain the compatibility authority for older synthetic fixtures whose cached
+definition field is zero.
 
 Each identifier `LOAD` defines a ValueId and materializes its result stack slot
 as a distinct temporary Place initialized with that *same* value. A later

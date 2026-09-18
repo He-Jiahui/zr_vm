@@ -792,7 +792,12 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         }
 
         if (!compiler_semantic_ir_lower_ownership(
-                    cs, builtinKind, sourceSlot, resultSlot, location)) {
+                    cs,
+                    builtinKind,
+                    sourceSlot,
+                    resultSlot,
+                    constructExpr->target,
+                    location)) {
             ZrParser_Compiler_Error(
                     cs,
                     "Failed to lower ownership through pre-execution Semantic IR",
@@ -838,7 +843,12 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     }
 
     if (!compiler_semantic_ir_lower_ownership(
-                cs, builtinKind, argumentSlot, resultSlot, location)) {
+                cs,
+                builtinKind,
+                argumentSlot,
+                resultSlot,
+                constructExpr->target,
+                location)) {
         ZrParser_Compiler_Error(
                 cs,
                 "Failed to lower ownership through pre-execution Semantic IR",
@@ -870,13 +880,15 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                                        SZrConstructExpression *constructExpr,
                                                        TZrUInt32 targetSlot,
+                                                       SZrAstNode *constructNode,
                                                        SZrFileRange location) {
     EZrOwnershipBuiltinKind builtinKind;
     TZrUInt32 constructedSlot;
     TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
 
-    if (cs == ZR_NULL || constructExpr == ZR_NULL || cs->hasError || cs->stackSlotCount == 0) {
+    if (cs == ZR_NULL || constructExpr == ZR_NULL || constructNode == ZR_NULL ||
+        cs->hasError || cs->stackSlotCount == 0) {
         return ZR_FALSE;
     }
 
@@ -902,8 +914,13 @@ TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                               (TZrInt32)resultSlot));
     }
 
-    if (!compiler_semantic_ir_lower_ownership(
-                cs, builtinKind, argumentSlot, resultSlot, location)) {
+    if (!compiler_semantic_ir_lower_constructed_ownership(
+                cs,
+                builtinKind,
+                argumentSlot,
+                resultSlot,
+                constructNode,
+                location)) {
         ZrParser_Compiler_Error(
                 cs,
                 "Failed to lower ownership construct through pre-execution Semantic IR",
@@ -1999,6 +2016,7 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
                                                       ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
                                                       sourceSlot,
                                                       targetSlot,
+                                                      node,
                                                       node->location)) {
                 ZrParser_InferredType_Free(cs->state, &sourceType);
                 cs->isInTailCallContext = oldTailCallContext;
