@@ -477,6 +477,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 const SZrExecIrOpcodeInfo *info;
                 TZrBool isTerminator;
                 memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in->opcode); x.sourceId = in->id;
+                if (in->opcode == ZR_SEMANTIC_IR_BRANCH && in->operandCount != 0u)
+                    x.opcode = ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH;
                 if (x.opcode == ZR_EXEC_IR_OPCODE_INVALID) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
                 info = ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)x.opcode);
                 isTerminator = (TZrBool)(info != ZR_NULL &&
@@ -519,17 +521,44 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     return ZR_FALSE;
                 }
                 if ((x.opcode == ZR_EXEC_IR_OPCODE_BRANCH && db->successorRange.count != 1u) ||
+                    (x.opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
+                     db->successorRange.count != 2u) ||
                     (x.opcode == ZR_EXEC_IR_OPCODE_SWITCH && db->successorRange.count == 0u) ||
                     (x.opcode == ZR_EXEC_IR_OPCODE_RETURN && db->successorRange.count != 0u)) {
                     diag_missing(diagnostic, output, db->id, in->id);
                     if (diagnostic != ZR_NULL) {
                         diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
-                        diagnostic->expectedVersion =
-                            x.opcode == ZR_EXEC_IR_OPCODE_RETURN ? 0u : 1u;
+                        diagnostic->expectedVersion = x.opcode == ZR_EXEC_IR_OPCODE_RETURN
+                            ? 0u : x.opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH ? 2u : 1u;
                         diagnostic->actualVersion = db->successorRange.count;
                     }
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
+                }
+                if (x.opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH) {
+                    /* Oracle and projection interpret successor 0 as true and
+                     * successor 1 as false. Inline rows carry no edge kinds. */
+                    TZrUInt32 edgeIndex;
+                    for (edgeIndex = 0u; edgeIndex < 2u; ++edgeIndex) {
+                        EZrParserCfgEdgeKind expected = edgeIndex == 0u
+                            ? ZR_PARSER_CFG_EDGE_TRUE_BRANCH
+                            : ZR_PARSER_CFG_EDGE_FALSE_BRANCH;
+                        EZrParserCfgEdgeKind actual = b->outgoingEdges.isValid
+                            ? ((const SZrParserCfgEdge *)ZrCore_Array_Get(
+                                (SZrArray *)&b->outgoingEdges, edgeIndex))->kind
+                            : ZR_PARSER_CFG_EDGE_NORMAL;
+                        if (actual != expected) {
+                            diag_missing(diagnostic, output, db->id, in->id);
+                            if (diagnostic != ZR_NULL) {
+                                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+                                diagnostic->sourceId = in->id;
+                                diagnostic->expectedVersion = expected;
+                                diagnostic->actualVersion = actual;
+                            }
+                            ZrCore_ExecIr_FreeFunction(output);
+                            return ZR_FALSE;
+                        }
+                    }
                 }
                 if (isTerminator)
                     x.successorRange = db->successorRange;

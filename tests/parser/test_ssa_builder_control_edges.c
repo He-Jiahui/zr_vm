@@ -154,11 +154,80 @@ static void test_accepts_ordinary_dynamic_edge(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_conditional_branch_requires_ordered_typed_edges(void) {
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[2];
+    SZrSemanticIrInstruction instructions[2] = {0};
+    SZrSemanticIrValue condition = {.id = 1u, .typeId = 1u};
+    TZrValueId operand = 1u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_function(&semantic, blocks, edges);
+    memset(&blocks[2], 0, sizeof(blocks[2]));
+    memset(&edges[1], 0, sizeof(edges[1]));
+    blocks[2].id = 2u;
+    blocks[2].kind = ZR_PARSER_CFG_BLOCK_STATEMENT;
+    semantic.cfg.blocks = input_array(blocks, 3u, sizeof(*blocks));
+    edges[0].kind = ZR_PARSER_CFG_EDGE_TRUE_BRANCH;
+    edges[1].toBlockId = 2u;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_FALSE_BRANCH;
+    blocks[0].outgoingEdges = input_array(edges, 2u, sizeof(*edges));
+    blocks[0].terminatorKind = ZR_PARSER_CFG_TERMINATOR_BRANCH;
+    blocks[0].instructionCount = 2u;
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_BRANCH;
+    instructions[1].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.values = input_array(&condition, 1u, sizeof(condition));
+    semantic.valueOperands = input_array(&operand, 1u, sizeof(operand));
+    ZrCore_ExecIr_FunctionInit(&output);
+
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
+              output.instructions[1].operands.count == 1u &&
+              output.operands[output.instructions[1].operands.start] == 1u &&
+              output.instructions[1].successorRange.count == 2u &&
+              output.successors[output.instructions[1].successorRange.start] == 2u &&
+              output.successors[output.instructions[1].successorRange.start + 1u] == 3u,
+          "typed true/false branch lost its condition or successor order");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(&output, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "conditional branch did not pass core structural verification");
+
+    edges[0].kind = ZR_PARSER_CFG_EDGE_FALSE_BRANCH;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_TRUE_BRANCH;
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              diagnostic.expectedVersion == ZR_PARSER_CFG_EDGE_TRUE_BRANCH &&
+              diagnostic.actualVersion == ZR_PARSER_CFG_EDGE_FALSE_BRANCH &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+          "reversed true/false edges silently changed branch meaning");
+
+    blocks[0].outgoingEdges.isValid = ZR_FALSE;
+    blocks[0].successorCount = 2u;
+    blocks[0].successors[0] = 1u;
+    blocks[0].successors[1] = 2u;
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+          "untyped inline successors silently acquired true/false meaning");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_rejects_unrepresentable_control_edges();
     test_exception_edge_reports_throw_source();
     test_rejects_typed_control_in_inline_successors();
     test_accepts_ordinary_dynamic_edge();
+    test_conditional_branch_requires_ordered_typed_edges();
     puts("ssa builder control edges PASS");
     return EXIT_SUCCESS;
 }

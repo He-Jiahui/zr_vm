@@ -49,6 +49,15 @@ Value construction, ordinary/meta calls, GC allocation, and ownership constructi
 
 `ZrParser_SemanticIr_Validate` rejects dangling Place/Value/Loan/Region/Cleanup references, malformed operand spans, non-sequential instruction/source-map identities, and invalid owned CFG ranges or edges. Empty CFG storage is valid during straight-line compiler emission; once blocks exist, entry/exit IDs, instruction ranges, terminators, and typed edges are checked.
 
+The experimental SemIR-to-ExecIR builder consumes a `BRANCH` with one value
+operand as `CONDITIONAL_BRANCH` only when its two explicit outgoing CFG edges
+are ordered `TRUE_BRANCH`, then `FALSE_BRANCH`. The ExecIR successor ordinals
+and oracle use that same true/false order. Reversed or untyped inline edges
+fail with a source-located unsupported-edge diagnostic; a zero-operand branch
+remains an unconditional branch with exactly one successor. This is a builder
+boundary, not a claim that the compiler's current straight-line pre-SemIR
+producer already emits complete source-level conditional CFG facts or phi nodes.
+
 ## Compiler Bridge
 
 Every compiler state owns an independent pre-execution semantic function and a private stack-slot bridge. A declared local is registered with the canonical `TypeId` and `SymbolId` already assigned by the semantic context. Parameters, foreach bindings, and compiler-generated locals are materialized on first semantic use so existing compilation paths do not lose Place identity.
