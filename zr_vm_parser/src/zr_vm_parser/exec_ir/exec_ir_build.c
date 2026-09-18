@@ -302,6 +302,19 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
                 }
+                if ((x.opcode == ZR_EXEC_IR_OPCODE_BRANCH && db->successorRange.count != 1u) ||
+                    (x.opcode == ZR_EXEC_IR_OPCODE_SWITCH && db->successorRange.count == 0u) ||
+                    (x.opcode == ZR_EXEC_IR_OPCODE_RETURN && db->successorRange.count != 0u)) {
+                    diag_missing(diagnostic, output, db->id, in->id);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                        diagnostic->expectedVersion =
+                            x.opcode == ZR_EXEC_IR_OPCODE_RETURN ? 0u : 1u;
+                        diagnostic->actualVersion = db->successorRange.count;
+                    }
+                    ZrCore_ExecIr_FreeFunction(output);
+                    return ZR_FALSE;
+                }
                 if (isTerminator)
                     x.successorRange = db->successorRange;
                 if (in->resultValueId != ZR_VALUE_ID_INVALID) {

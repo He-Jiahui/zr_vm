@@ -480,6 +480,131 @@ static void test_builder_rejects_premature_terminator(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_rejects_branch_with_two_successors(void) {
+    SZrParserCfgBlock blocks[3];
+    SZrSemanticIrInstruction instruction = {0};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 3u);
+    instruction.id = 1u;
+    instruction.opcode = ZR_SEMANTIC_IR_BRANCH;
+    instruction.resultValueId = ZR_VALUE_ID_INVALID;
+    semantic.instructions = input_array(&instruction, 1u, sizeof(instruction));
+    blocks[0].instructionCount = 1u;
+    blocks[0].successorCount = 2u;
+    blocks[0].successors[0] = 1u;
+    blocks[0].successors[1] = 2u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 1u &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 2u &&
+              output.blockCount == 0u,
+          "builder lowered a two-target branch as a one-target opcode");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_rejects_return_with_successor(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrSemanticIrInstruction instructions[2] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    TZrValueId operand = 1u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[1].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    semantic.valueOperands = input_array(&operand, 1u, sizeof(operand));
+    blocks[0].instructionCount = 2u;
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              diagnostic.expectedVersion == 0u && diagnostic.actualVersion == 1u &&
+              output.blockCount == 0u,
+          "builder published a return instruction with a normal successor");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_rejects_switch_without_successor(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[2] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    TZrValueId selector = 1u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_SWITCH;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[1].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    semantic.valueOperands = input_array(&selector, 1u, sizeof(selector));
+    block.instructionCount = 2u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              diagnostic.expectedVersion == 1u && diagnostic.actualVersion == 0u &&
+              output.blockCount == 0u,
+          "builder published a switch without any CFG successor");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_accepts_switch_with_successor(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrSemanticIrInstruction instructions[2] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    TZrValueId selector = 1u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_SWITCH;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[1].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    semantic.valueOperands = input_array(&selector, 1u, sizeof(selector));
+    blocks[0].instructionCount = 2u;
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              output.instructions[1].successorRange.count == 1u &&
+              output.successors[output.instructions[1].successorRange.start] == 2u,
+          "builder rejected a switch with a real CFG successor");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(&output, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "valid switch output was not structurally verifiable ExecIR");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -495,6 +620,10 @@ int main(void) {
     test_builder_copies_valid_variadic_operands();
     test_builder_rejects_nonterminal_tail();
     test_builder_rejects_premature_terminator();
+    test_builder_rejects_branch_with_two_successors();
+    test_builder_rejects_return_with_successor();
+    test_builder_rejects_switch_without_successor();
+    test_builder_accepts_switch_with_successor();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }

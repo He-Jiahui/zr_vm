@@ -18,6 +18,7 @@ tests:
   - tests/acceptance/ssa-builder-edge-capacity.md
   - tests/acceptance/ssa-builder-operand-bounds.md
   - tests/acceptance/ssa-builder-terminator-placement.md
+  - tests/acceptance/ssa-builder-successor-arity.md
 doc_type: module-detail
 ---
 
@@ -62,6 +63,16 @@ first when both conditions are malformed, preserving the more specific
 side-pool diagnostic. Empty CFG blocks remain valid during this construction
 stage. See `tests/acceptance/ssa-builder-terminator-placement.md` for the
 focused negative and positive boundaries.
+
+For terminators with fixed normal-edge meaning, the builder checks successor
+arity before publishing their ranges: `BRANCH` needs exactly one target,
+`SWITCH` needs at least one, and `RETURN` needs none. A mismatched count
+reports `INVALID_RANGE` with the source block/instruction and the expected
+boundary versus actual count. `THROW` and `SUSPEND` are intentionally not
+constrained by these normal-edge rules until exceptional/resume CFG lowering
+has its own contract. The positive switch fixture retains its successor in
+structurally verifiable ExecIR. See
+`tests/acceptance/ssa-builder-successor-arity.md`.
 
 ## Validation, ownership and failure
 
