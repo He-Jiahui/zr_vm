@@ -2,10 +2,13 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
@@ -106,10 +109,19 @@ path, which inserts the loop-carried Place phi.
 
 The source-loop subset intentionally accepts only linear conditions and
 fall-through bodies whose nested statements are already modeled. `break`,
-`continue`, return/throw, calls, cleanup, suspension, and short-circuit paths
-still trigger the legacy-CFG fallback. If an unsupported loop appears after a
-source CFG has started, the compiler abandons that partial graph and removes
-its synthetic branch instructions before validation.
+`continue`, return/throw, calls, cleanup, suspension, and short-circuit loop
+conditions still trigger the legacy-CFG fallback. If an unsupported loop
+appears after a source CFG has started, the compiler abandons that partial
+graph and removes its synthetic branch instructions before validation.
+
+Source `&&` and `||` expressions with linear operands also publish their
+short-circuit topology directly. `&&` sends the true edge to the RHS and the
+false edge to the join; `||` reverses those targets while retaining the
+canonical true/false successor order. The left value initializes a private
+temporary Place, the evaluated RHS stores into that Place, and the join loads
+one merged expression value. The temporary remains explicit memory rather
+than being marked as a promotable source local. Unsupported operand families
+abandon any partial source CFG and retain the legacy two-block path.
 
 Before SSA construction, the parser normalizes a canonical block whose final
 typed call already carries ordered normal/exception edges. Each earlier typed,

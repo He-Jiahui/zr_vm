@@ -484,12 +484,216 @@ static void test_source_if_isolates_sibling_temporary_values(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
-static void test_short_circuit_arm_keeps_legacy_cfg(void) {
+static void test_source_short_circuit_and_emits_rhs_control_flow(void) {
+    static const TZrChar source[] =
+            "var left: bool = true;\n"
+            "var side: bool = false;\n"
+            "var result: bool = left && (side = true);\n";
+    SZrString *name = ZrCore_String_Create(g_state, "logical_and.zr", 14U);
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *right;
+    const SZrParserCfgBlock *join;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(4U, function->cfg.blocks.length);
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    right = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 2U);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(right);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, ZrParser_Cfg_BlockEdgeAt(entry, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(entry, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, right->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(right, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, join->predecessorCount);
+    TEST_ASSERT_TRUE(semantic_ir_has_opcode(function, ZR_SEMANTIC_IR_BRANCH));
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_source_short_circuit_or_skips_rhs_on_true_edge(void) {
+    static const TZrChar source[] =
+            "var left: bool = true;\n"
+            "var side: bool = false;\n"
+            "var result: bool = left || (side = true);\n";
+    SZrString *name = ZrCore_String_Create(g_state, "logical_or.zr", 13U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *right;
+    const SZrParserCfgBlock *join;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(4U, function->cfg.blocks.length);
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    right = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 2U);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(right);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(entry, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, ZrParser_Cfg_BlockEdgeAt(entry, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, right->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(right, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, join->predecessorCount);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_source_if_arm_composes_short_circuit_cfg(void) {
     static const TZrChar source[] =
             "var flag: bool = true;\n"
-            "if (flag) { var local: bool = flag && flag; }\n";
-    SZrString *name = ZrCore_String_Create(g_state, "logical_arm.zr", 14U);
-    SZrAstNode *ast = ZrParser_Parse(g_state, source, sizeof(source) - 1U, name);
+            "var side: bool = false;\n"
+            "if (flag) { var result: bool = flag && (side = true); }\n";
+    SZrString *name = ZrCore_String_Create(
+            g_state, "logical_if_arm.zr", 17U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *outerThen;
+    const SZrParserCfgBlock *logicalRight;
+    const SZrParserCfgBlock *logicalJoin;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(7U, function->cfg.blocks.length);
+    outerThen = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    logicalRight = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 4U);
+    logicalJoin = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 5U);
+    TEST_ASSERT_NOT_NULL(outerThen);
+    TEST_ASSERT_NOT_NULL(logicalRight);
+    TEST_ASSERT_NOT_NULL(logicalJoin);
+    TEST_ASSERT_EQUAL_UINT32(2U, outerThen->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            4U, ZrParser_Cfg_BlockEdgeAt(outerThen, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(
+            5U, ZrParser_Cfg_BlockEdgeAt(outerThen, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, logicalRight->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            5U, ZrParser_Cfg_BlockEdgeAt(logicalRight, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, logicalJoin->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, logicalJoin->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            3U, ZrParser_Cfg_BlockEdgeAt(logicalJoin, 0U)->toBlockId);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unmodeled_short_circuit_rhs_keeps_legacy_cfg(void) {
+    static const TZrChar source[] =
+            "var flag: bool = true;\n"
+            "var result: bool = flag && (1 == 1);\n";
+    SZrString *name = ZrCore_String_Create(
+            g_state, "logical_fallback.zr", 19U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
     SZrCompilerState compiler;
     const SZrSemanticIrFunction *function;
     TZrSize index;

@@ -12,7 +12,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
@@ -27,9 +29,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
 plan_sources:
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
@@ -39,6 +44,7 @@ tests:
   - tests/acceptance/ssa-compiler-load-store-provenance.md
   - tests/acceptance/ssa-compiler-literal-provenance.md
   - tests/acceptance/ssa-compiler-literal-type-provenance.md
+  - tests/acceptance/ssa-compiler-source-short-circuit-cfg.md
 doc_type: module-detail
 ---
 
@@ -64,8 +70,11 @@ are ordered `TRUE_BRANCH`, then `FALSE_BRANCH`. The ExecIR successor ordinals
 and oracle use that same true/false order. Reversed or untyped inline edges
 fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
-boundary, not a claim that the compiler's current straight-line pre-SemIR
-producer already emits complete source-level conditional CFG facts or phi nodes.
+boundary. The compiler producer now emits a deliberately bounded source CFG
+surface for `if`, straight-line `while`, and linear-operand `&&`/`||`; return,
+general loop control, optional access, cleanup, suspension, and other unmodeled
+control still use the conservative legacy graph rather than publishing partial
+facts.
 
 ## Compiler Bridge
 
@@ -102,8 +111,18 @@ the temporary. Synthetic SemIR functions may still use `CONSTANT` without a
 compiler-owned pool, and a pool index alone does not make a standalone SemIR
 function self-contained. Other computed expressions, conversions outside the
 local-binding path, and full CFG/phi construction remain open.
-Overwriting an already materialized destination remains a separate producer
-transfer to implement; this stage does not silently retag an existing Place.
+Overwriting an already materialized destination must use an explicit semantic
+`STORE`; expression normalization does not silently retag an existing Place.
+
+Logical short-circuit lowering does not treat `SET_STACK` as a semantic merge.
+The left operand initializes a compiler-private temporary Place before the
+conditional `BRANCH`. Only the evaluate-RHS block emits the RHS facts and a
+`STORE` to that Place. The join restores the pre-branch slot snapshot and
+emits a `LOAD` into one fresh result slot, so later consumers see a single
+defined ValueId while the skipped path never owns the RHS side effects. `&&`
+uses true-to-RHS/false-to-join edges; `||` uses true-to-join/false-to-RHS.
+This temporary is not a scalar source local and is intentionally not eligible
+for local Place promotion.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 
@@ -144,7 +163,7 @@ This graph remains compilation-session data. Canonical public contracts and hash
 
 ## Verification
 
-`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, a source-level local initialize/load/store golden, explicit ownership-operation and shared-loan lowering, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
+`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, source-level local initialize/load/store provenance, explicit ownership-operation and shared-loan lowering, source `if`/`while`/`&&`/`||` CFGs, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
 
 The ownership compiler fixture sends its top-level resource class through the
 class-declaration entry and borrows twice from a shared owner. A direct

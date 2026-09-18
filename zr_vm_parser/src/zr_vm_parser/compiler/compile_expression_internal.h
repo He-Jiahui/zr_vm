@@ -184,6 +184,7 @@ void collapse_stack_to_slot(SZrCompilerState *cs, TZrUInt32 slot);
 TZrUInt32 allocate_fresh_stack_slot_after(SZrCompilerState *cs, TZrUInt32 lowerBoundSlot);
 TZrUInt32 normalize_top_result_to_slot(SZrCompilerState *cs, TZrUInt32 targetSlot);
 void compile_expression_non_tail(SZrCompilerState *cs, SZrAstNode *node);
+void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value);
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 TZrBool note_inline_struct_result_slot(

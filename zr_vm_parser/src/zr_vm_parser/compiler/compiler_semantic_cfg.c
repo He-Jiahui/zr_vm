@@ -62,7 +62,24 @@ static TZrBool compiler_semantic_cfg_expression_is_linear(
     }
 }
 
-/* Until return, calls, cleanup, suspension and short-circuit edges are
+static TZrBool compiler_semantic_cfg_short_circuit_is_supported(
+        const SZrAstNode *node) {
+    const TZrChar *op;
+
+    if (node == ZR_NULL || node->type != ZR_AST_LOGICAL_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    op = node->data.logicalExpression.op;
+    return (TZrBool)(
+            op != ZR_NULL &&
+            (strcmp(op, "&&") == 0 || strcmp(op, "||") == 0) &&
+            compiler_semantic_cfg_expression_is_linear(
+                    node->data.logicalExpression.left) &&
+            compiler_semantic_cfg_expression_is_linear(
+                    node->data.logicalExpression.right));
+}
+
+/* Until return, calls, cleanup and suspension edges are
  * represented here, publish only a deliberately small straight-line subset. */
 static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
     TZrSize index;
@@ -91,11 +108,15 @@ static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
                              compiler_semantic_cfg_arm_falls_through(
                                      node->data.whileLoop.block));
         case ZR_AST_VARIABLE_DECLARATION:
-            return compiler_semantic_cfg_expression_is_linear(
-                    node->data.variableDeclaration.value);
+            return (TZrBool)(compiler_semantic_cfg_expression_is_linear(
+                                     node->data.variableDeclaration.value) ||
+                             compiler_semantic_cfg_short_circuit_is_supported(
+                                     node->data.variableDeclaration.value));
         case ZR_AST_EXPRESSION_STATEMENT:
-            return compiler_semantic_cfg_expression_is_linear(
-                    node->data.expressionStatement.expr);
+            return (TZrBool)(compiler_semantic_cfg_expression_is_linear(
+                                     node->data.expressionStatement.expr) ||
+                             compiler_semantic_cfg_short_circuit_is_supported(
+                                     node->data.expressionStatement.expr));
         default:
             return ZR_FALSE;
     }
@@ -311,6 +332,74 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     compiler_semantic_cfg_enter(cs, *conditionBlock);
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_begin_short_circuit(
+        SZrCompilerState *cs,
+        TZrUInt32 conditionSlot,
+        SZrAstNode *node,
+        TZrUInt32 *rightBlock,
+        TZrUInt32 *joinBlock) {
+    SZrParserCfg *cfg;
+    TZrUInt32 entry;
+    TZrUInt32 trueBlock;
+    TZrUInt32 falseBlock;
+    TZrValueId condition;
+    TZrBool isAnd;
+
+    if (cs == ZR_NULL || node == ZR_NULL || rightBlock == ZR_NULL ||
+        joinBlock == ZR_NULL || node->type != ZR_AST_LOGICAL_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    if (!compiler_semantic_cfg_short_circuit_is_supported(node)) {
+        if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
+            return ZR_FALSE;
+        }
+        return ZR_FALSE;
+    }
+    condition = compiler_semantic_ir_slot_value(cs, conditionSlot);
+    if (condition == ZR_VALUE_ID_INVALID) {
+        if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
+            return ZR_FALSE;
+        }
+        return ZR_FALSE;
+    }
+    cfg = &cs->preSemanticIr.cfg;
+    if (!cs->preSemanticIrCfgActive) {
+        entry = ZrParser_Cfg_AppendBlock(
+                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
+        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+            return ZR_FALSE;
+        }
+        cfg->entryBlockId = entry;
+        cs->preSemanticIrCfgBlock = entry;
+        cs->preSemanticIrCfgStart = 0U;
+        cs->preSemanticIrCfgActive = ZR_TRUE;
+    }
+    *rightBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
+            node->data.logicalExpression.right);
+    *joinBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
+    isAnd = (TZrBool)(strcmp(node->data.logicalExpression.op, "&&") == 0);
+    trueBlock = isAnd ? *rightBlock : *joinBlock;
+    falseBlock = isAnd ? *joinBlock : *rightBlock;
+    if (*rightBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        !compiler_semantic_cfg_emit_branch(
+                cs, trueBlock, condition, node->location) ||
+        !compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_BRANCH) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, trueBlock,
+                ZR_PARSER_CFG_EDGE_TRUE_BRANCH, node) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, falseBlock,
+                ZR_PARSER_CFG_EDGE_FALSE_BRANCH, node)) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_enter(cs, *rightBlock);
     return ZR_TRUE;
 }
 

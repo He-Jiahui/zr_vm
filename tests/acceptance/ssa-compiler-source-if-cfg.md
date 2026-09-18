@@ -41,16 +41,16 @@ path instead of publishing incomplete facts or rejecting valid source.
   every SemIR instruction owned by exactly one block, an initially unsupported
   loop arm, a later unsupported arm that abandons an already-started CFG, and
   a nested condition without a tracked ValueId that propagates that fallback
-  to the outer `if`, and a short-circuit expression arm that remains on the
-  legacy CFG path. The loop fallback case specifically contains `break`; the
-  straight-line source `while` subset is covered by
-  `ssa-compiler-source-while-cfg.md`.
+  to the outer `if`. The loop fallback case specifically contains `break`;
+  the straight-line source `while` subset is covered by
+  `ssa-compiler-source-while-cfg.md`, and the later short-circuit checkpoint is
+  covered by `ssa-compiler-source-short-circuit-cfg.md`.
 
 ## Boundary
 
 This is the source conditional-CFG slice of 01.02, not complete SSA
-construction. General loop control (`break`/`continue`), short-circuit,
-return, exception, cleanup and suspension edges remain to be modeled. Source
-Place provenance and straight-line `while` now build through ExecIR and Place
-promotion, but this historical `if` checkpoint by itself makes no
+construction. General loop control (`break`/`continue`), return, optional
+access, exception, cleanup and suspension edges remain to be modeled. Source
+Place provenance, straight-line `while`, and linear-operand short-circuit now
+build through ExecIR, but this historical `if` checkpoint by itself makes no
 Oracle-equivalence or complete 01.02 acceptance claim.

@@ -1291,7 +1291,10 @@ int main(void) {
     RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);
     RUN_TEST(test_late_unmodeled_arm_abandons_partial_source_cfg);
     RUN_TEST(test_nested_untracked_condition_abandons_outer_source_cfg);
-    RUN_TEST(test_short_circuit_arm_keeps_legacy_cfg);
+    RUN_TEST(test_source_short_circuit_and_emits_rhs_control_flow);
+    RUN_TEST(test_source_short_circuit_or_skips_rhs_on_true_edge);
+    RUN_TEST(test_source_if_arm_composes_short_circuit_cfg);
+    RUN_TEST(test_unmodeled_short_circuit_rhs_keeps_legacy_cfg);
     RUN_TEST(test_source_if_lowers_place_provenance_to_exec_ir);
     RUN_TEST(test_source_if_isolates_sibling_temporary_values);
     RUN_TEST(test_field_initialization_tracks_partial_parent_and_cleanup_bitmap);
