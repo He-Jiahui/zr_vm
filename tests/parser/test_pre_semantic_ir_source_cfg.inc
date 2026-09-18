@@ -717,3 +717,125 @@ static void test_unmodeled_short_circuit_rhs_keeps_legacy_cfg(void) {
     ZrParser_CompilerState_Free(&compiler);
     ZrParser_Ast_Free(g_state, ast);
 }
+
+static void test_source_optional_call_skips_argument_semantic_effects(void) {
+    static const TZrChar source[] =
+            "resource class Service {\n"
+            "    pub const fn consume(value: bool): void {}\n"
+            "}\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var receiver = wake(weak);\n"
+            "var side: bool = false;\n"
+            "receiver?.consume(side = true);\n";
+    SZrString *name = ZrCore_String_Create(
+            g_state, "optional_call_cfg.zr", 20U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *present;
+    const SZrParserCfgBlock *join;
+    TZrSize storeCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(4U, function->cfg.blocks.length);
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    present = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 2U);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(present);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, ZrParser_Cfg_BlockEdgeAt(entry, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(entry, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, present->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U, ZrParser_Cfg_BlockEdgeAt(present, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, join->predecessorCount);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_STORE) {
+            storeCount++;
+            TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+                    present->firstInstructionIndex, (TZrUInt32)index);
+            TEST_ASSERT_LESS_THAN_UINT32(
+                    present->firstInstructionIndex + present->instructionCount,
+                    (TZrUInt32)index);
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(1U, storeCount);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unmodeled_optional_value_abandons_partial_source_cfg(void) {
+    static const TZrChar source[] =
+            "var flag: bool = true;\n"
+            "if (flag) { var yes: int = 1; } else { var no: int = 2; }\n"
+            "var receiver = null;\n"
+            "var result = receiver?.value;\n";
+    SZrString *name = ZrCore_String_Create(
+            g_state, "optional_value_fallback.zr", 26U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(2U, function->cfg.blocks.length);
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(function, ZR_SEMANTIC_IR_BRANCH));
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}

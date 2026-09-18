@@ -139,7 +139,7 @@ static TZrUInt32 compiler_semantic_cfg_retained_before(
     return retained;
 }
 
-static TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs) {
+TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs) {
     SZrSemanticIrFunction *function = &cs->preSemanticIr;
     SZrArray instructions;
     SZrArray operands;
@@ -400,6 +400,61 @@ TZrBool compiler_semantic_cfg_begin_short_circuit(
         return ZR_FALSE;
     }
     compiler_semantic_cfg_enter(cs, *rightBlock);
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_begin_optional_guard(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSlot,
+        SZrAstNode *node,
+        TZrUInt32 *presentBlock,
+        TZrUInt32 *joinBlock) {
+    SZrParserCfg *cfg;
+    TZrUInt32 entry;
+    TZrValueId receiver;
+
+    if (cs == ZR_NULL || node == ZR_NULL || presentBlock == ZR_NULL ||
+        joinBlock == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    receiver = compiler_semantic_ir_slot_value(cs, receiverSlot);
+    if (receiver == ZR_VALUE_ID_INVALID) {
+        if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
+            return ZR_FALSE;
+        }
+        return ZR_FALSE;
+    }
+    cfg = &cs->preSemanticIr.cfg;
+    if (!cs->preSemanticIrCfgActive) {
+        entry = ZrParser_Cfg_AppendBlock(
+                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
+        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+            return ZR_FALSE;
+        }
+        cfg->entryBlockId = entry;
+        cs->preSemanticIrCfgBlock = entry;
+        cs->preSemanticIrCfgStart = 0U;
+        cs->preSemanticIrCfgActive = ZR_TRUE;
+    }
+    *presentBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, node);
+    *joinBlock = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
+    if (*presentBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        !compiler_semantic_cfg_emit_branch(
+                cs, *presentBlock, receiver, node->location) ||
+        !compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_BRANCH) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, *presentBlock,
+                ZR_PARSER_CFG_EDGE_TRUE_BRANCH, node) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, *joinBlock,
+                ZR_PARSER_CFG_EDGE_FALSE_BRANCH, node)) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_enter(cs, *presentBlock);
     return ZR_TRUE;
 }
 

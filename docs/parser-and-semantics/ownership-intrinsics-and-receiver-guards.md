@@ -21,6 +21,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -60,6 +61,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -77,6 +79,7 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 plan_sources:
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
   - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
   - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
@@ -104,6 +107,7 @@ tests:
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_advanced_editor_features.c
   - tests/acceptance/2026-08-10-ownership-object-member-separation.md
+  - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
 doc_type: module-detail
 ---
 
@@ -304,6 +308,18 @@ The lowering frame stores the fact-owned exclusive chain end and result-lift
 mode. Finalization requires the compiler's reached chain end to match the fact,
 and the absent block explicitly selects nullable versus void-no-op merge
 behavior from that stored mode.
+
+The pre-execution Semantic IR producer now mirrors one bounded form of that
+branch: a nullable optional chain whose final call publishes `VOID_NOOP` lift.
+Its receiver ValueId terminates the prefix with ordered present-true and
+absent-false edges. Argument and suffix facts are owned only by the present
+block, which reaches the join normally; the absent edge skips directly there.
+The slot bridge is snapshotted before the present path and restored at the
+join. Result-producing ownership operations bind their defining ValueId to the
+result stack slot, allowing an explicitly awakened nullable receiver to be the
+branch operand. Nullable value-producing chains, Weak-wake guard frames, and
+exception/cleanup suffixes remain conservative fallback cases; encountering
+one after another source branch abandons the partial semantic CFG.
 
 Every guard-owned `OWN_WAKE` is immediately followed by
 `MARK_TO_BE_CLOSED` for the same destination slot. Normal completion closes

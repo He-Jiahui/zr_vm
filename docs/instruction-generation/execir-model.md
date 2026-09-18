@@ -3,12 +3,14 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
@@ -122,6 +124,15 @@ temporary Place, the evaluated RHS stores into that Place, and the join loads
 one merged expression value. The temporary remains explicit memory rather
 than being marked as a promotable source local. Unsupported operand families
 abandon any partial source CFG and retain the legacy two-block path.
+
+The same producer owns a narrower optional-access slice. A canonical nullable
+receiver guard whose final call has `VOID_NOOP` lift emits present-true and
+absent-false edges. Call arguments and suffix side effects belong only to the
+present block; its normal edge and the absent edge meet at the join after the
+slot bridge is restored. Value-producing optional chains, Weak-wake guards,
+and exceptional/cleanup suffixes still abandon an active partial graph and use
+the legacy two-block path, so this checkpoint does not claim the complete
+optional-chain exit gate.
 
 Before SSA construction, the parser normalizes a canonical block whose final
 typed call already carries ordered normal/exception edges. Each earlier typed,

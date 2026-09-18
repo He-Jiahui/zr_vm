@@ -13,6 +13,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -30,6 +31,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -45,6 +47,7 @@ tests:
   - tests/acceptance/ssa-compiler-literal-provenance.md
   - tests/acceptance/ssa-compiler-literal-type-provenance.md
   - tests/acceptance/ssa-compiler-source-short-circuit-cfg.md
+  - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
 doc_type: module-detail
 ---
 
@@ -71,10 +74,11 @@ and oracle use that same true/false order. Reversed or untyped inline edges
 fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
-surface for `if`, straight-line `while`, and linear-operand `&&`/`||`; return,
-general loop control, optional access, cleanup, suspension, and other unmodeled
-control still use the conservative legacy graph rather than publishing partial
-facts.
+surface for `if`, straight-line `while`, linear-operand `&&`/`||`, and nullable
+optional calls whose final result is `void`/no-op. Return, general loop control,
+value-producing or Weak optional access, cleanup, suspension, and other
+unmodeled control still use the conservative legacy graph rather than
+publishing partial facts.
 
 ## Compiler Bridge
 
@@ -123,6 +127,18 @@ defined ValueId while the skipped path never owns the RHS side effects. `&&`
 uses true-to-RHS/false-to-join edges; `||` uses true-to-join/false-to-RHS.
 This temporary is not a scalar source local and is intentionally not eligible
 for local Place promotion.
+
+Nullable `receiver?.method(arguments)` chains whose canonical receiver-guard
+fact ends in `VOID_NOOP` publish a present/absent diamond. The receiver ValueId
+terminates the prefix with ordered present-true and absent-false edges. Argument
+and suffix facts are emitted only in the present block, which then reaches the
+join normally; the absent edge enters the join directly. The compiler restores
+the pre-branch slot snapshot at that join. Ownership operations with results
+also bind their defining ValueId to the result stack slot, so a nullable
+`wake(weak)` result can serve as a defined receiver operand. Value-producing
+optional chains and Weak-wake guard frames remain outside this subset; if one
+appears after a source graph has started, the compiler abandons the partial CFG
+and removes its synthetic branches.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 

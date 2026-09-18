@@ -11,8 +11,12 @@ typedef struct SZrReceiverGuardLoweringFrame {
     TZrSize chainSegmentEnd;
     EZrReceiverGuardResultLift resultLift;
     SZrFileRange range;
+    TZrUInt32 semanticJoinBlock;
+    SZrArray semanticSlotSnapshot;
     TZrBool hasOptionalBranch;
     TZrBool hasWakeCleanup;
+    TZrBool hasSemanticCfg;
+    TZrBool hasSemanticSlotSnapshot;
 } SZrReceiverGuardLoweringFrame;
 
 static TZrBool receiver_guard_segment_is_optional(const SZrAstNode *segment) {
@@ -257,6 +261,16 @@ void compiler_receiver_guard_lowering_free(
         SZrCompilerState *cs,
         SZrReceiverGuardLoweringContext *context) {
     if (cs != ZR_NULL && context != ZR_NULL && context->frames.isValid) {
+        for (TZrSize index = 0U; index < context->frames.length; index++) {
+            SZrReceiverGuardLoweringFrame *frame =
+                    (SZrReceiverGuardLoweringFrame *)ZrCore_Array_Get(
+                            &context->frames, index);
+            if (frame != ZR_NULL && frame->hasSemanticSlotSnapshot) {
+                compiler_semantic_cfg_free_slots(
+                        cs, &frame->semanticSlotSnapshot);
+                frame->hasSemanticSlotSnapshot = ZR_FALSE;
+            }
+        }
         ZrCore_Array_Free(cs->state, &context->frames);
     }
 }
@@ -415,6 +429,11 @@ TZrBool compiler_receiver_guard_begin_segment(
     guardedSlot = sourceSlot;
     if (fact->mode == ZR_RECEIVER_GUARD_OPTIONAL) {
         SZrReceiverGuardLoweringFrame frame;
+        TZrUInt32 semanticPresentBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        TZrBool supportsSemanticCfg;
+
+        memset(&frame, 0, sizeof(frame));
+        ZrCore_Array_Construct(&frame.semanticSlotSnapshot);
 
         frame.mergeSlot = allocate_fresh_stack_slot_after(cs, sourceSlot);
         frame.guardedSlot = allocate_fresh_stack_slot_after(cs, frame.mergeSlot);
@@ -427,6 +446,7 @@ TZrBool compiler_receiver_guard_begin_segment(
         frame.hasOptionalBranch = ZR_TRUE;
         frame.hasWakeCleanup =
                 (TZrBool)(fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE);
+        frame.semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         if (frame.mergeSlot == ZR_PARSER_SLOT_NONE ||
             frame.guardedSlot == ZR_PARSER_SLOT_NONE ||
             frame.nullLabelId == ZR_PARSER_LABEL_ID_NONE ||
@@ -435,6 +455,52 @@ TZrBool compiler_receiver_guard_begin_segment(
                     cs, fact, sourceSlot, frame.guardedSlot)) {
             ZrParser_Compiler_Error(
                     cs, "Failed to prepare optional receiver guard", fact->range);
+            return ZR_FALSE;
+        }
+
+        supportsSemanticCfg = (TZrBool)(
+                fact->kind == ZR_RECEIVER_GUARD_NULL &&
+                fact->resultLift == ZR_RECEIVER_GUARD_RESULT_VOID_NOOP);
+        if (supportsSemanticCfg) {
+            if (!compiler_semantic_ir_transfer_expression_result(
+                        cs, sourceSlot, frame.guardedSlot, fact->range)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to record semantic optional receiver value",
+                        fact->range);
+                return ZR_FALSE;
+            }
+            frame.hasSemanticCfg = compiler_semantic_cfg_begin_optional_guard(
+                    cs,
+                    sourceSlot,
+                    segment,
+                    &semanticPresentBlock,
+                    &frame.semanticJoinBlock);
+            if (!frame.hasSemanticCfg && cs->preSemanticIrCfgActive) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to start semantic optional receiver CFG",
+                        fact->range);
+                return ZR_FALSE;
+            }
+            if (frame.hasSemanticCfg) {
+                frame.hasSemanticSlotSnapshot =
+                        compiler_semantic_cfg_capture_slots(
+                                cs, &frame.semanticSlotSnapshot);
+                if (!frame.hasSemanticSlotSnapshot) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to snapshot semantic optional receiver values",
+                            fact->range);
+                    return ZR_FALSE;
+                }
+            }
+        } else if (cs->preSemanticIrCfgActive &&
+                   !compiler_semantic_cfg_abandon(cs)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to abandon unsupported semantic optional receiver CFG",
+                    fact->range);
             return ZR_FALSE;
         }
 
@@ -466,6 +532,9 @@ TZrBool compiler_receiver_guard_begin_segment(
         if (fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE) {
             SZrReceiverGuardLoweringFrame frame;
 
+            memset(&frame, 0, sizeof(frame));
+            ZrCore_Array_Construct(&frame.semanticSlotSnapshot);
+
             guardedSlot = allocate_fresh_stack_slot_after(cs, sourceSlot);
             if (guardedSlot == ZR_PARSER_SLOT_NONE ||
                 !receiver_guard_emit_working_value(
@@ -484,6 +553,7 @@ TZrBool compiler_receiver_guard_begin_segment(
             frame.range = fact->range;
             frame.hasOptionalBranch = ZR_FALSE;
             frame.hasWakeCleanup = ZR_TRUE;
+            frame.semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
             if (segment->type == ZR_AST_FUNCTION_CALL) {
                 frame.guardedSlot = receiver_guard_emit_callable_view(
                         cs, fact, frame.wakeCleanupSlot);
@@ -600,6 +670,20 @@ TZrBool compiler_receiver_guard_finish(
         if (!frame->hasOptionalBranch) {
             receiver_guard_emit_wake_cleanup(cs, frame, currentSlot);
             continue;
+        }
+
+        if (frame->hasSemanticCfg) {
+            if (!compiler_semantic_cfg_jump(
+                        cs, frame->semanticJoinBlock, frame->range) ||
+                !compiler_semantic_cfg_restore_slots(
+                        cs, &frame->semanticSlotSnapshot)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to finish semantic optional receiver CFG",
+                        frame->range);
+                return ZR_FALSE;
+            }
+            compiler_semantic_cfg_enter(cs, frame->semanticJoinBlock);
         }
 
         emit_instruction(

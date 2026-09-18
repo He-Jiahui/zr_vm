@@ -1894,6 +1894,7 @@ TZrBool compiler_semantic_ir_lower_ownership(
         TZrUInt32 resultSlot,
         SZrFileRange sourceRange) {
     const SZrSemanticIrInstruction *instruction;
+    SZrCompilerSemanticIrSlot *result;
     EZrInstructionCode opcode;
 
     if (!compiler_semantic_ir_emit_ownership(
@@ -1906,6 +1907,27 @@ TZrBool compiler_semantic_ir_lower_ownership(
                      : compiler_semantic_ir_exec_opcode(instruction);
     if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         return ZR_FALSE;
+    }
+    if (instruction->resultValueId != ZR_VALUE_ID_INVALID) {
+        result = compiler_semantic_ir_find_slot(cs, resultSlot);
+        if (result == ZR_NULL) {
+            result = compiler_semantic_ir_add_temporary_slot(
+                    cs,
+                    resultSlot,
+                    sourceRange,
+                    instruction->resultValueId);
+            if (result == ZR_NULL) {
+                return ZR_FALSE;
+            }
+        } else {
+            const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
+                    &cs->preSemanticIr, instruction->resultValueId);
+            if (value == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            result->typeId = value->typeId;
+            result->valueId = instruction->resultValueId;
+        }
     }
     emit_instruction(
             cs,

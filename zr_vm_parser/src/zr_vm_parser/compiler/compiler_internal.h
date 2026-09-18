@@ -120,6 +120,13 @@ TZrBool compiler_semantic_cfg_begin_short_circuit(
         SZrAstNode *node,
         TZrUInt32 *rightBlock,
         TZrUInt32 *joinBlock);
+TZrBool compiler_semantic_cfg_begin_optional_guard(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSlot,
+        SZrAstNode *node,
+        TZrUInt32 *presentBlock,
+        TZrUInt32 *joinBlock);
+TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
                                            TZrUInt32 conditionSlot,
                                            SZrAstNode *node,
