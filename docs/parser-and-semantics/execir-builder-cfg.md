@@ -12,6 +12,7 @@ tests:
   - tests/parser/test_ssa_builder_cfg.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
+  - tests/acceptance/ssa-builder-instruction-lowering.md
 doc_type: module-detail
 ---
 
@@ -37,6 +38,17 @@ side-pool append publishes those rows before dominator analysis. Duplicate
 source/destination edges remain distinct entries in both adjacency arrays;
 edge identity for phi construction is a separate outstanding milestone.
 
+The instruction pool uses zero-based range offsets while published
+`terminatorInstructionId` uses one-based instruction IDs. For each semantic
+block, the builder records the current ExecIR instruction count before
+appending that block's instructions; it does not mistake a semantic input
+index for an output-pool offset. Lowered terminators carry the block's
+successor range, so a `BRANCH` owns the same edge occurrence as the block
+adjacency. A constant/branch/return fixture checks both block ranges and
+terminator IDs, then passes the emitted function through core structural
+verification. This does not construct phis or prove all source-level
+exception/short-circuit semantics.
+
 ## Validation, ownership and failure
 
 The builder checks CFG block array shape, outgoing edge storage, inline edge
@@ -61,3 +73,5 @@ predecessors, a two-edge inline successor array, invalid target diagnostics and
 unchanged caller output, and malformed edge storage. See
 `tests/acceptance/ssa-builder-cfg.md` for the commands actually executed and
 the remaining 01.02 acceptance gaps.
+The separate instruction-range and branch-successor regression is recorded
+in `tests/acceptance/ssa-builder-instruction-lowering.md`.

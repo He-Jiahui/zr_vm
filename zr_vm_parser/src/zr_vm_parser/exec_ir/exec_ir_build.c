@@ -244,6 +244,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
         const SZrParserCfgBlock *b = (const SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&s->cfg.blocks, i);
         SZrExecIrBlock *db = ZrCore_ExecIr_FunctionBlockAt(output, i + 1u);
         TZrUInt32 j;
+        db->instructionRange.start = output->instructionCount;
         TZrUInt32 edgeCount = b->outgoingEdges.isValid ? (TZrUInt32)b->outgoingEdges.length : b->successorCount;
         db->successorRange.start = output->successorCount;
         for (j = 0u; j < edgeCount; ++j) {
@@ -271,6 +272,9 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 SZrExecIrInstruction x; SZrExecIrRange rr = {0u, 0u}, orr = {0u, 0u};
                 memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in->opcode); x.sourceId = in->id;
                 if (x.opcode == ZR_EXEC_IR_OPCODE_INVALID) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
+                if ((ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)x.opcode)->flags &
+                     ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u)
+                    x.successorRange = db->successorRange;
                 x.typeToken = (TZrExecIrTypeToken)in->typeId;
                 if (in->resultValueId != ZR_VALUE_ID_INVALID) {
                     TZrExecIrValueId v = in->resultValueId;
@@ -285,9 +289,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 if (!ZrCore_ExecIr_FunctionAppendInstruction(output, &x, &execId) || !append_source(output, in)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
                 output->sourceMaps[output->sourceMapCount - 1u].instructionId = execId; }
             }
-            db->instructionRange.start = b->firstInstructionIndex + 1u;
             db->instructionRange.count = b->instructionCount;
-            db->terminatorInstructionId = db->instructionRange.start + db->instructionRange.count - 1u;
+            db->terminatorInstructionId = db->instructionRange.start + db->instructionRange.count;
         }
     }
     return append_cfg_predecessors(s, output, diagnostic) &&

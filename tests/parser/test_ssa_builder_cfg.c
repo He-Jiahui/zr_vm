@@ -146,12 +146,67 @@ static void test_rejects_excess_inline_successors(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_preserves_instruction_ranges_and_branch_successors(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    TZrValueId returnValue = 1u;
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = returnValue;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_BRANCH;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[2].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.values = input_array(&value, 1u, sizeof(value));
+    semantic.valueOperands = input_array(&returnValue, 1u, sizeof(returnValue));
+    blocks[0].firstInstructionIndex = 0u;
+    blocks[0].instructionCount = 2u;
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    blocks[1].firstInstructionIndex = 2u;
+    blocks[1].instructionCount = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    TZrBool built = ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic);
+    if (!built) {
+        fprintf(stderr, "builder diagnostic code=%u block=%u instruction=%u\n",
+                (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,
+                (unsigned)diagnostic.instructionId);
+    }
+    check(built,
+          "two-block branch fixture did not build");
+    check(output.blocks[0].instructionRange.start == 0u &&
+              output.blocks[0].instructionRange.count == 2u &&
+              output.blocks[0].terminatorInstructionId == 2u &&
+              output.instructions[1].successorRange.start ==
+                  output.blocks[0].successorRange.start &&
+              output.instructions[1].successorRange.count == 1u &&
+              output.blocks[1].instructionRange.start == 2u &&
+              output.blocks[1].terminatorInstructionId == 3u,
+          "builder shifted instruction ranges or detached branch successor");
+    output.id = 1u; /* Module-level construction normally assigns this ID. */
+    check(ZrCore_ExecIr_VerifyFunction(&output, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "builder output was not structurally verifiable ExecIR");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
     test_inline_successors_preserve_both_edges();
     test_rejects_malformed_outgoing_edge_storage();
     test_rejects_excess_inline_successors();
+    test_builder_preserves_instruction_ranges_and_branch_successors();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }
