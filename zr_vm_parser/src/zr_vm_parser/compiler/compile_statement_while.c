@@ -54,6 +54,8 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrArray semanticSlotSnapshot;
     TZrBool hasSemanticSlotSnapshot = ZR_FALSE;
     TZrBool hasSemanticCfg;
+    TZrBool previousSemanticCfgStartupSuppressed = ZR_FALSE;
+    TZrBool restoreSemanticCfgStartupSuppression = ZR_FALSE;
     TZrUInt32 conditionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrUInt32 bodyBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrUInt32 joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
@@ -88,6 +90,12 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Compiler_Error(
                 cs, "Failed to start semantic while CFG", node->location);
         goto cleanup;
+    }
+    if (!hasSemanticCfg) {
+        previousSemanticCfgStartupSuppressed =
+                cs->preSemanticIrCfgStartupSuppressed;
+        cs->preSemanticIrCfgStartupSuppressed = ZR_TRUE;
+        restoreSemanticCfgStartupSuppression = ZR_TRUE;
     }
     if (hasSemanticCfg) {
         hasSemanticSlotSnapshot = compiler_semantic_cfg_capture_slots(
@@ -159,6 +167,10 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
 cleanup:
+    if (restoreSemanticCfgStartupSuppression) {
+        cs->preSemanticIrCfgStartupSuppressed =
+                previousSemanticCfgStartupSuppressed;
+    }
     if (hasSemanticSlotSnapshot) {
         compiler_semantic_cfg_free_slots(cs, &semanticSlotSnapshot);
     }

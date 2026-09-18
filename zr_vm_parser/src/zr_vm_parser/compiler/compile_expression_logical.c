@@ -49,6 +49,8 @@ void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize evaluateRightLabelId = 0U;
     TZrBool hasSemanticCfg;
     TZrBool hasSemanticSlotSnapshot = ZR_FALSE;
+    TZrBool previousSemanticCfgStartupSuppressed = ZR_FALSE;
+    TZrBool restoreSemanticCfgStartupSuppression = ZR_FALSE;
 
     ZrCore_Array_Construct(&semanticSlotSnapshot);
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -101,6 +103,12 @@ void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Compiler_Error(
                 cs, "Failed to start semantic short-circuit CFG", node->location);
         return;
+    }
+    if (!hasSemanticCfg) {
+        previousSemanticCfgStartupSuppressed =
+                cs->preSemanticIrCfgStartupSuppressed;
+        cs->preSemanticIrCfgStartupSuppressed = ZR_TRUE;
+        restoreSemanticCfgStartupSuppression = ZR_TRUE;
     }
     if (hasSemanticCfg) {
         hasSemanticSlotSnapshot = compiler_semantic_cfg_capture_slots(
@@ -179,6 +187,10 @@ void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
     collapse_stack_to_slot(cs, resultSlot);
 
 cleanup:
+    if (restoreSemanticCfgStartupSuppression) {
+        cs->preSemanticIrCfgStartupSuppressed =
+                previousSemanticCfgStartupSuppressed;
+    }
     if (hasSemanticSlotSnapshot) {
         compiler_semantic_cfg_free_slots(cs, &semanticSlotSnapshot);
     }

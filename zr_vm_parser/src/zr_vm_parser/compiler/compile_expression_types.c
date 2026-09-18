@@ -4419,36 +4419,59 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                                           ? spreadPrefixArgumentCount
                                                                           : argCount)));
                 }
-                if (cs->preSemanticIrCfgActive &&
-                    activeCallMemberInfo != ZR_NULL &&
-                    !hasSpreadArgument) {
+                if (cs->preSemanticIrInitialized) {
                     TZrUInt32 semanticArgumentCount = argCount;
-                    const SZrInferredType *semanticResultType =
-                            hasResolvedMemberSignature
-                                    ? &resolvedMemberSignature.returnType
-                                    : (hasContractReturnType
-                                               ? &contractReturnType
-                                               : ZR_NULL);
+                    const SZrInferredType *semanticResultType = ZR_NULL;
+                    TZrSymbolId semanticSymbolId = ZR_SEMANTIC_ID_INVALID;
                     EZrSemanticIrOpcode semanticCallOpcode =
                             emitMetaCallOpcode
                                     ? ZR_SEMANTIC_IR_CALL_META
-                                    : (activeCallMemberInfo->callBindingFact
-                                                       .bindingKind ==
-                                                       ZR_CALL_BINDING_INTERFACE ||
-                                               activeCallMemberInfo
-                                                       ->callBindingFact
-                                                       .bindingKind ==
-                                                       ZR_CALL_BINDING_VIRTUAL
-                                               ? ZR_SEMANTIC_IR_CALL_VIRTUAL
-                                               : ZR_SEMANTIC_IR_CALL_TYPED);
+                                    : ZR_SEMANTIC_IR_CALL_TYPED;
+                    TZrBool semanticCallSupported =
+                            hasSpreadArgument ? ZR_FALSE : ZR_TRUE;
+
+                    if (activeCallMemberInfo != ZR_NULL) {
+                        semanticResultType =
+                                hasResolvedMemberSignature
+                                        ? &resolvedMemberSignature.returnType
+                                        : (hasContractReturnType
+                                                   ? &contractReturnType
+                                                   : ZR_NULL);
+                        semanticSymbolId = activeCallMemberInfo->symbolId;
+                        if (!emitMetaCallOpcode &&
+                            (activeCallMemberInfo->callBindingFact.bindingKind ==
+                                     ZR_CALL_BINDING_INTERFACE ||
+                             activeCallMemberInfo->callBindingFact.bindingKind ==
+                                     ZR_CALL_BINDING_VIRTUAL)) {
+                            semanticCallOpcode = ZR_SEMANTIC_IR_CALL_VIRTUAL;
+                        }
+                    } else if (resolvedFunctionType != ZR_NULL) {
+                        semanticResultType =
+                                hasResolvedFunctionSignature
+                                        ? &resolvedFunctionSignature.returnType
+                                        : &resolvedFunctionType->returnType;
+                        semanticSymbolId = resolvedFunctionType->symbolId;
+                    } else {
+                        semanticCallSupported = ZR_FALSE;
+                    }
                     /* The direct member-call bridge uses the receiver as the
                      * typed callee operand. Runtime argCount also includes
                      * that receiver, so only the following explicit argument
                      * slots belong in the remaining semantic operands. */
-                    if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) {
+                    if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
+                        semanticArgumentCount > 0U) {
                         semanticArgumentCount--;
                     }
-                    if (!compiler_semantic_ir_lower_call(
+                    if (!semanticCallSupported) {
+                        if (cs->preSemanticIrCfgActive &&
+                            !compiler_semantic_cfg_abandon(cs)) {
+                            ZrParser_Compiler_Error(
+                                    cs,
+                                    "Failed to abandon unsupported call in pre-execution Semantic IR",
+                                    member->location);
+                            goto cleanup;
+                        }
+                    } else if (!compiler_semantic_ir_lower_call(
                                 cs,
                                 semanticCallOpcode,
                                 pendingReceiverSlot != ZR_PARSER_SLOT_NONE
@@ -4459,7 +4482,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                 semanticArgumentCount,
                                 callResultSlot,
                                 semanticResultType,
-                                activeCallMemberInfo->symbolId,
+                                semanticSymbolId,
                                 member,
                                 member->location)) {
                         ZrParser_Compiler_Error(

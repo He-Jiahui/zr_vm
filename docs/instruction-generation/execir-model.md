@@ -30,10 +30,12 @@ tests:
   - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
+  - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
+  - tests/acceptance/ssa-compiler-source-general-call-cfg.md
 doc_type: module-detail
 ---
 
@@ -150,6 +152,21 @@ temporary Place, the evaluated RHS stores into that Place, and the join loads
 one merged expression value. The temporary remains explicit memory rather
 than being marked as a promotable source local. Unsupported operand families
 abandon any partial source CFG and retain the legacy two-block path.
+
+A resolved, non-spread source function call can also establish the source CFG
+when no earlier branch has done so. The existing straight-line facts become the
+entry block, which jumps to a dedicated call block. A typed `CALL_TYPED` or
+`CALL_META` records the canonical callable ValueId, explicit argument ValueIds,
+resolved symbol, result TypeId, and result ValueId. Ordered normal and exception
+successors lower that block to `INVOKE`; only the normal successor owns the
+result, while the exception successor is the same explicit propagation sink
+used by the optional-call slice. An unresolved/dynamic call, a spread call, or
+a call missing a canonical prerequisite does not invent a target or operand:
+it leaves an inactive graph on the legacy path, or abandons an already active
+partial source graph. While an enclosing `if`, loop, or short-circuit construct
+is compiling after its own CFG preflight failed, inactive call-driven startup
+is suppressed; a nested call therefore cannot create a detached unconditional
+graph for a conditionally executed operation.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call

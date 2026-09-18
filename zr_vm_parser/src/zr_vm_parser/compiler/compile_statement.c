@@ -3750,6 +3750,8 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
 static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrArray semanticSlotSnapshot;
     TZrBool hasSemanticSlotSnapshot = ZR_FALSE;
+    TZrBool previousSemanticCfgStartupSuppressed = ZR_FALSE;
+    TZrBool restoreSemanticCfgStartupSuppression = ZR_FALSE;
 
     ZrCore_Array_Construct(&semanticSlotSnapshot);
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -3780,6 +3782,12 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (!hasSemanticCfg && cs->preSemanticIrCfgActive) {
         ZrParser_Compiler_Error(cs, "If condition lacks a semantic value", node->location);
         return;
+    }
+    if (!hasSemanticCfg) {
+        previousSemanticCfgStartupSuppressed =
+                cs->preSemanticIrCfgStartupSuppressed;
+        cs->preSemanticIrCfgStartupSuppressed = ZR_TRUE;
+        restoreSemanticCfgStartupSuppression = ZR_TRUE;
     }
     if (hasSemanticCfg) {
         hasSemanticSlotSnapshot = compiler_semantic_cfg_capture_slots(
@@ -3864,6 +3872,10 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
 cleanup:
+    if (restoreSemanticCfgStartupSuppression) {
+        cs->preSemanticIrCfgStartupSuppressed =
+                previousSemanticCfgStartupSuppressed;
+    }
     if (hasSemanticSlotSnapshot) {
         compiler_semantic_cfg_free_slots(cs, &semanticSlotSnapshot);
     }

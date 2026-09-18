@@ -80,9 +80,11 @@ record.
 
 This checkpoint covers nullable, value-discarded `void` optional calls with a
 known member symbol and complete canonical operand/type facts. The follow-up
-checkpoint merges nullable call values; Weak guard wake/cleanup, exception
-payloads and enclosing handlers, cleanup exits, and source CFG startup for
-general calls remain open.
+checkpoint merges nullable call values. General resolved-call CFG startup is
+covered separately by
+[the general-call checkpoint](ssa-compiler-source-general-call-cfg.md). Weak
+guard wake/cleanup, exception payloads and enclosing handlers, and cleanup
+exits remain open.
 The earlier untyped resource-construction boundary is closed by
 [SSA 01.02: ownership facts through ExecIR](ssa-compiler-ownership-execir.md),
 but the remaining control-flow items still prevent a complete 01.02 exit-gate

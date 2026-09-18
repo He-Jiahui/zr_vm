@@ -77,6 +77,7 @@ retain the conservative legacy two-block graph.
 This checkpoint covers nullable guards around known member calls with complete
 canonical receiver, symbol, result-type, and explicit-argument facts. Missing
 facts still abandon an active partial graph. Weak-wake guards, cleanup edges,
-edge-defined exception payloads and enclosing handlers, non-call exceptional
-operations, and source CFG startup for general calls remain open for the full
-01.02 exit gate.
+edge-defined exception payloads and enclosing handlers, and non-call
+exceptional operations remain open for the full 01.02 exit gate. Resolved
+general-call CFG startup is covered by
+[the follow-up checkpoint](ssa-compiler-source-general-call-cfg.md).

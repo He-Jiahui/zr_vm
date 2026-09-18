@@ -1,5 +1,11 @@
 #include "compiler_internal.h"
 
+static TZrBool compiler_semantic_ir_call_fallback(SZrCompilerState *cs) {
+    return cs != ZR_NULL && cs->preSemanticIrCfgActive
+                   ? compiler_semantic_cfg_abandon(cs)
+                   : ZR_TRUE;
+}
+
 TZrBool compiler_semantic_ir_lower_call(
         SZrCompilerState *cs,
         EZrSemanticIrOpcode opcode,
@@ -22,7 +28,6 @@ TZrBool compiler_semantic_ir_lower_call(
     TZrBool emitted;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
-        !cs->preSemanticIrCfgActive ||
         resultSlot == ZR_PARSER_SLOT_NONE || argumentCount == UINT32_MAX ||
         (opcode != ZR_SEMANTIC_IR_CALL_TYPED &&
          opcode != ZR_SEMANTIC_IR_CALL_VIRTUAL &&
@@ -30,8 +35,12 @@ TZrBool compiler_semantic_ir_lower_call(
          opcode != ZR_SEMANTIC_IR_CALL_META)) {
         return ZR_FALSE;
     }
+    if (!cs->preSemanticIrCfgActive &&
+        cs->preSemanticIrCfgStartupSuppressed) {
+        return ZR_TRUE;
+    }
     if (resultType == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {
-        return compiler_semantic_cfg_abandon(cs);
+        return compiler_semantic_ir_call_fallback(cs);
     }
     if (receiverLoanId != ZR_SEMANTIC_LOAN_ID_INVALID) {
         loan = ZrParser_SemanticIr_Loan(
@@ -41,7 +50,7 @@ TZrBool compiler_semantic_ir_lower_call(
             ? loan->createdByValueId
             : compiler_semantic_ir_slot_value(cs, callableSlot);
     if (callableValueId == ZR_VALUE_ID_INVALID) {
-        return compiler_semantic_cfg_abandon(cs);
+        return compiler_semantic_ir_call_fallback(cs);
     }
 
     ZrCore_Array_Init(
@@ -55,7 +64,7 @@ TZrBool compiler_semantic_ir_lower_call(
                 cs, firstArgumentSlot + index);
         if (argumentValueId == ZR_VALUE_ID_INVALID) {
             ZrCore_Array_Free(cs->state, &operands);
-            return compiler_semantic_cfg_abandon(cs);
+            return compiler_semantic_ir_call_fallback(cs);
         }
         ZrCore_Array_Push(cs->state, &operands, &argumentValueId);
     }
@@ -68,7 +77,7 @@ TZrBool compiler_semantic_ir_lower_call(
             ZR_NULL);
     if (resultTypeId == ZR_SEMANTIC_ID_INVALID) {
         ZrCore_Array_Free(cs->state, &operands);
-        return compiler_semantic_cfg_abandon(cs);
+        return compiler_semantic_ir_call_fallback(cs);
     }
     if (!compiler_semantic_cfg_begin_invoke(cs, callNode, sourceRange)) {
         ZrCore_Array_Free(cs->state, &operands);

@@ -1,8 +1,9 @@
 #include "compiler_internal.h"
 
 /* The source compiler owns block boundaries: ExecBC jump offsets never enter
- * this graph.  The first branch promotes the current straight-line prefix
- * into an entry block, and subsequent branches keep their own ranges. */
+ * this graph.  The first source control boundary promotes the current
+ * straight-line prefix into an entry block, and later boundaries keep their
+ * own ranges. */
 static TZrBool compiler_semantic_cfg_emit_branch(SZrCompilerState *cs,
                                                  TZrUInt32 target,
                                                  TZrValueId condition,
@@ -35,6 +36,32 @@ static TZrBool compiler_semantic_cfg_bind_current(
             cs->preSemanticIrCfgBlock, cs->preSemanticIrCfgStart,
             (TZrUInt32)cs->preSemanticIr.instructions.length -
                     cs->preSemanticIrCfgStart, kind);
+}
+
+static TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs) {
+    SZrParserCfg *cfg;
+    TZrUInt32 entry;
+
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (cs->preSemanticIrCfgActive) {
+        return ZR_TRUE;
+    }
+    if (cs->preSemanticIrCfgStartupSuppressed) {
+        return ZR_FALSE;
+    }
+    cfg = &cs->preSemanticIr.cfg;
+    entry = ZrParser_Cfg_AppendBlock(
+            cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
+    if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
+    cfg->entryBlockId = entry;
+    cs->preSemanticIrCfgBlock = entry;
+    cs->preSemanticIrCfgStart = 0U;
+    cs->preSemanticIrCfgActive = ZR_TRUE;
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_semantic_cfg_expression_is_linear(
@@ -226,7 +253,6 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 *elseBlock,
                                       TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
-    TZrUInt32 entry;
     TZrValueId condition;
     if (cs == ZR_NULL || node == ZR_NULL || thenBlock == ZR_NULL ||
         elseBlock == ZR_NULL || joinBlock == ZR_NULL) {
@@ -249,16 +275,8 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     cfg = &cs->preSemanticIr.cfg;
-    if (!cs->preSemanticIrCfgActive) {
-        entry = ZrParser_Cfg_AppendBlock(
-                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
-        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
-            return ZR_FALSE;
-        }
-        cfg->entryBlockId = entry;
-        cs->preSemanticIrCfgBlock = entry;
-        cs->preSemanticIrCfgStart = 0U;
-        cs->preSemanticIrCfgActive = ZR_TRUE;
+    if (!compiler_semantic_cfg_ensure_active(cs)) {
+        return ZR_FALSE;
     }
     *thenBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
@@ -290,7 +308,6 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
                                           TZrUInt32 *bodyBlock,
                                           TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
-    TZrUInt32 entry;
     if (cs == ZR_NULL || node == ZR_NULL || conditionBlock == ZR_NULL ||
         bodyBlock == ZR_NULL || joinBlock == ZR_NULL ||
         node->type != ZR_AST_WHILE_LOOP) {
@@ -306,16 +323,8 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     cfg = &cs->preSemanticIr.cfg;
-    if (!cs->preSemanticIrCfgActive) {
-        entry = ZrParser_Cfg_AppendBlock(
-                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
-        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
-            return ZR_FALSE;
-        }
-        cfg->entryBlockId = entry;
-        cs->preSemanticIrCfgBlock = entry;
-        cs->preSemanticIrCfgStart = 0U;
-        cs->preSemanticIrCfgActive = ZR_TRUE;
+    if (!compiler_semantic_cfg_ensure_active(cs)) {
+        return ZR_FALSE;
     }
     *conditionBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
@@ -342,7 +351,6 @@ TZrBool compiler_semantic_cfg_begin_short_circuit(
         TZrUInt32 *rightBlock,
         TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
-    TZrUInt32 entry;
     TZrUInt32 trueBlock;
     TZrUInt32 falseBlock;
     TZrValueId condition;
@@ -366,16 +374,8 @@ TZrBool compiler_semantic_cfg_begin_short_circuit(
         return ZR_FALSE;
     }
     cfg = &cs->preSemanticIr.cfg;
-    if (!cs->preSemanticIrCfgActive) {
-        entry = ZrParser_Cfg_AppendBlock(
-                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
-        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
-            return ZR_FALSE;
-        }
-        cfg->entryBlockId = entry;
-        cs->preSemanticIrCfgBlock = entry;
-        cs->preSemanticIrCfgStart = 0U;
-        cs->preSemanticIrCfgActive = ZR_TRUE;
+    if (!compiler_semantic_cfg_ensure_active(cs)) {
+        return ZR_FALSE;
     }
     *rightBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
@@ -411,7 +411,6 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
         TZrUInt32 *absentBlock,
         TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
-    TZrUInt32 entry;
     TZrUInt32 falseBlock;
     TZrValueId receiver;
 
@@ -427,16 +426,8 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
         return ZR_FALSE;
     }
     cfg = &cs->preSemanticIr.cfg;
-    if (!cs->preSemanticIrCfgActive) {
-        entry = ZrParser_Cfg_AppendBlock(
-                cs->state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
-        if (entry == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
-            return ZR_FALSE;
-        }
-        cfg->entryBlockId = entry;
-        cs->preSemanticIrCfgBlock = entry;
-        cs->preSemanticIrCfgStart = 0U;
-        cs->preSemanticIrCfgActive = ZR_TRUE;
+    if (!compiler_semantic_cfg_ensure_active(cs)) {
+        return ZR_FALSE;
     }
     *presentBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, node);
@@ -514,7 +505,7 @@ TZrBool compiler_semantic_cfg_begin_invoke(
         SZrFileRange range) {
     TZrUInt32 invokeBlock;
 
-    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive) {
+    if (!compiler_semantic_cfg_ensure_active(cs)) {
         return ZR_FALSE;
     }
     invokeBlock = ZrParser_Cfg_AppendBlock(

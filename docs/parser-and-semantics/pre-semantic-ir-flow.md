@@ -48,6 +48,7 @@ plan_sources:
 tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_optional_value.inc
+  - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -57,6 +58,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-short-circuit-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
+  - tests/acceptance/ssa-compiler-source-general-call-cfg.md
 doc_type: module-detail
 ---
 
@@ -154,6 +156,19 @@ defined ValueId while the skipped path never owns the RHS side effects. `&&`
 uses true-to-RHS/false-to-join edges; `||` uses true-to-join/false-to-RHS.
 This temporary is not a scalar source local and is intentionally not eligible
 for local Place promotion.
+
+Resolved, non-spread function calls now own a source control boundary even when
+they are the first non-linear operation in an otherwise straight-line caller.
+The compiler promotes the preceding facts to an entry block, isolates the
+typed call in an invoke block, and records its callable, explicit arguments,
+canonical symbol, result type, and result ValueId. Its ordered normal and
+exception edges lower to one ExecIR `INVOKE`; the result is available only on
+the normal continuation. Calls without a resolved canonical symbol or operand
+set, and spread calls whose fixed operand range is not represented, remain
+conservative fallback cases instead of being reconstructed from ExecBC. A call
+nested under an `if`, loop, or short-circuit expression whose CFG preflight
+already failed also remains on that enclosing legacy path; it cannot restart
+an inactive graph and falsely model conditional execution as unconditional.
 
 Nullable `receiver?.method(arguments)` chains publish ordered present-true and
 absent-false edges from the receiver ValueId. Argument and suffix facts are
