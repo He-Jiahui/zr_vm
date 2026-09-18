@@ -14,9 +14,10 @@ candidate, and publishes it only on success. A read without a reaching
 definition reports `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` and leaves the input
 unchanged. A repeated call does not append duplicate phis.
 
-This stage does not claim exceptional-edge throw-point availability,
-critical-edge splitting, optional-chain semantics, or the full 01.02 exit
-gate.
+This stage does not claim producer-side splitting for unsplit throwing
+operations, optional-chain semantics, or the full 01.02 exit gate. Existing
+split `INVOKE` normal/exception edges and critical/parallel predecessor
+occurrences are covered by the promotion fixture.
 
 ## Focused evidence
 
@@ -32,17 +33,17 @@ ssa_place_eligibility
 ssa_place_promotion
 ssa_value_validation
 
-100% tests passed, 0 tests failed out of 7
+100% tests passed, 0 tests failed out of 7 CTest targets
 ```
 
-The promotion fixture checks exact straight-line replacement, a two-arm
+The nine-case promotion fixture checks exact straight-line replacement, a two-arm
 diamond phi, a loop-header phi with entry and backedge values, repeated
 invocation, an ineligible Place, transactional read-before-definition failure,
-and post-transform core SSA verification.
+parallel predecessor occurrences through a critical edge, split `INVOKE`
+normal/exception availability, and post-transform core SSA verification.
 
 ## Remaining 01.02 work
 
-Exceptional and cleanup predecessors still need definition availability at
-the throwing instruction rather than block end. Critical-edge and parallel-
-edge identity must be finalized before optional access and try/finally can
-satisfy the full milestone gate.
+The producer still needs canonical block splitting and definition availability
+at the throwing instruction for unsplit exceptional and cleanup predecessors.
+Optional access, try/finally, and the full 01.02 milestone gate remain open.

@@ -86,9 +86,11 @@ the rewritten candidate passes structural and SSA verification. A read before
 any reaching definition reports `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` without
 changing the input. Repeating the pass is a no-op because the promoted Place
 has no remaining memory operations. Phi incoming rows preserve predecessor
-occurrences, including loop backedges and parallel predecessor entries.
-Exceptional-edge definition points and critical-edge splitting are not part
-of this checkpoint.
+occurrences, including loop backedges, parallel predecessor entries, and
+critical edges. For an already split `INVOKE`, a pre-invoke definition is
+available on both successors while the invoke result is available only on the
+normal successor; the core verifier checks that boundary. This pass does not
+split unsplit throwing operations or invent exceptional edges.
 
 `RETURN` accepts zero operands for a void function and one operand for a value
 return. The opcode metadata exposes this as a zero minimum and one maximum, so

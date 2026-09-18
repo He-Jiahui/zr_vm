@@ -428,12 +428,190 @@ static void test_inserts_loop_carried_phi(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_preserves_parallel_critical_edge_occurrences(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry, left, right, join;
+    TZrExecIrBlockId entrySuccessors[2], repeatedJoin[2];
+    TZrExecIrBlockId joinPredecessors[3];
+    TZrExecIrValueId place, condition, leftValue, rightValue, loaded;
+    TZrExecIrValueId storeOperands[2];
+    const SZrExecIrPhi *phi;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 106u;
+    entry = add_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    left = add_block(&function, 0u);
+    right = add_block(&function, 0u);
+    join = add_block(&function, 0u);
+    entrySuccessors[0] = left;
+    entrySuccessors[1] = right;
+    repeatedJoin[0] = join;
+    repeatedJoin[1] = join;
+    joinPredecessors[0] = left;
+    joinPredecessors[1] = left;
+    joinPredecessors[2] = right;
+    append_successors(&function, entry, entrySuccessors, 2u);
+    append_successors(&function, left, repeatedJoin, 2u);
+    append_successors(&function, right, &join, 1u);
+    append_predecessors(&function, left, &entry, 1u);
+    append_predecessors(&function, right, &entry, 1u);
+    append_predecessors(&function, join, joinPredecessors, 3u);
+
+    place = append_place_base(&function, ZR_TRUE);
+    condition = add_value(&function);
+    leftValue = add_value(&function);
+    rightValue = add_value(&function);
+    loaded = add_value(&function);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT, condition,
+                       NULL, 0u, (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, &condition, 1u,
+                       function.blocks[entry - 1u].successorRange);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT, leftValue,
+                       NULL, 0u, (SZrExecIrRange){0u, 0u});
+    storeOperands[0] = place;
+    storeOperands[1] = leftValue;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, &condition, 1u,
+                       function.blocks[left - 1u].successorRange);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT, rightValue,
+                       NULL, 0u, (SZrExecIrRange){0u, 0u});
+    storeOperands[1] = rightValue;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, NULL, 0u,
+                       function.blocks[right - 1u].successorRange);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_LOAD, loaded,
+                       &place, 1u, (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, &loaded, 1u,
+                       (SZrExecIrRange){0u, 0u});
+    set_block_instructions(&function, entry, 0u, 3u);
+    set_block_instructions(&function, left, 3u, 3u);
+    set_block_instructions(&function, right, 6u, 3u);
+    set_block_instructions(&function, join, 9u, 2u);
+
+    check(ZrParser_ExecIr_ComputeDominators(&function, &diagnostic),
+          "compute parallel critical-edge dominators");
+    build_ssa(&function, &diagnostic,
+              "promote across parallel critical edges");
+    check(function.blocks[join - 1u].phis.count == 1u,
+          "parallel critical-edge join did not receive one phi");
+    phi = &function.phiPool[function.blocks[join - 1u].phis.start];
+    check(phi->incomings.count == 3u &&
+              function.phiIncoming[phi->incomings.start].predecessor == left &&
+              function.phiIncoming[phi->incomings.start].value == leftValue &&
+              function.phiIncoming[phi->incomings.start + 1u].predecessor == left &&
+              function.phiIncoming[phi->incomings.start + 1u].value == leftValue &&
+              function.phiIncoming[phi->incomings.start + 2u].predecessor == right &&
+              function.phiIncoming[phi->incomings.start + 2u].value == rightValue,
+          "parallel critical-edge phi collapsed predecessor occurrences");
+    verify_promoted_function(
+            &function, "parallel critical-edge promotion produced invalid SSA");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_tracks_definitions_across_split_invoke_edges(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry, invoke, normal, exception, merge;
+    TZrExecIrBlockId invokeSuccessors[2], mergePredecessors[2];
+    TZrExecIrValueId place, initial, invoked, loaded;
+    TZrExecIrValueId storeOperands[2];
+    const SZrExecIrPhi *phi;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 107u;
+    entry = add_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    invoke = add_block(&function, 0u);
+    normal = add_block(&function, 0u);
+    exception = add_block(&function, ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION);
+    merge = add_block(&function, 0u);
+    invokeSuccessors[0] = normal;
+    invokeSuccessors[1] = exception;
+    mergePredecessors[0] = normal;
+    mergePredecessors[1] = exception;
+    append_successors(&function, entry, &invoke, 1u);
+    append_successors(&function, invoke, invokeSuccessors, 2u);
+    append_successors(&function, normal, &merge, 1u);
+    append_successors(&function, exception, &merge, 1u);
+    append_predecessors(&function, invoke, &entry, 1u);
+    append_predecessors(&function, normal, &invoke, 1u);
+    append_predecessors(&function, exception, &invoke, 1u);
+    append_predecessors(&function, merge, mergePredecessors, 2u);
+
+    place = append_place_base(&function, ZR_TRUE);
+    initial = add_value(&function);
+    invoked = add_value(&function);
+    loaded = add_value(&function);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT, initial,
+                       NULL, 0u, (SZrExecIrRange){0u, 0u});
+    storeOperands[0] = place;
+    storeOperands[1] = initial;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, NULL, 0u,
+                       function.blocks[entry - 1u].successorRange);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_INVOKE, invoked,
+                       NULL, 0u,
+                       function.blocks[invoke - 1u].successorRange);
+    storeOperands[1] = invoked;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, NULL, 0u,
+                       function.blocks[normal - 1u].successorRange);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, NULL, 0u,
+                       function.blocks[exception - 1u].successorRange);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_LOAD, loaded,
+                       &place, 1u, (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, &loaded, 1u,
+                       (SZrExecIrRange){0u, 0u});
+    set_block_instructions(&function, entry, 0u, 4u);
+    set_block_instructions(&function, invoke, 4u, 1u);
+    set_block_instructions(&function, normal, 5u, 2u);
+    set_block_instructions(&function, exception, 7u, 1u);
+    set_block_instructions(&function, merge, 8u, 2u);
+
+    check(ZrParser_ExecIr_ComputeDominators(&function, &diagnostic),
+          "compute split-invoke dominators");
+    build_ssa(&function, &diagnostic,
+              "promote definitions across split invoke edges");
+    check(function.blocks[merge - 1u].phis.count == 1u,
+          "split-invoke merge did not receive one phi");
+    phi = &function.phiPool[function.blocks[merge - 1u].phis.start];
+    check(phi->incomings.count == 2u &&
+              function.phiIncoming[phi->incomings.start].predecessor == normal &&
+              function.phiIncoming[phi->incomings.start].value == invoked &&
+              function.phiIncoming[phi->incomings.start + 1u].predecessor == exception &&
+              function.phiIncoming[phi->incomings.start + 1u].value == initial,
+          "split-invoke phi confused normal and exceptional definitions");
+    verify_promoted_function(
+            &function, "split-invoke promotion produced invalid SSA");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_promotes_straight_line_and_is_repeatable();
     test_ineligible_place_stays_in_memory();
     test_read_before_definition_is_transactional();
     test_inserts_diamond_phi();
     test_inserts_loop_carried_phi();
+    test_preserves_parallel_critical_edge_occurrences();
+    test_tracks_definitions_across_split_invoke_edges();
     puts("ssa place promotion PASS");
     return EXIT_SUCCESS;
 }
