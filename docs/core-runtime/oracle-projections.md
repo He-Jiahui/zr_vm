@@ -30,6 +30,7 @@ tests:
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-oracle-parallel-edges.md
+  - tests/acceptance/ssa-projection-parallel-edges.md
 doc_type: module-detail
 ---
 
@@ -65,9 +66,9 @@ same block. A missing or inconsistent edge occurrence reports
 `PHI_PREDECESSOR_MISMATCH` rather than silently reading another arm's value.
 The oracle's own preflight no longer rejects repeated predecessor IDs when
 their phi incoming positions match the predecessor range. See
-`tests/acceptance/ssa-oracle-parallel-edges.md` for the focused regression;
-the projection-layer handling of repeated predecessors remains a separate
-unverified 01.05 gate.
+`tests/acceptance/ssa-oracle-parallel-edges.md` for the oracle regression;
+projection-layer evidence for the same edge pattern is recorded separately
+in `tests/acceptance/ssa-projection-parallel-edges.md`.
 
 The edge-occurrence lookup and two-phase phi entry live in
 `exec_ir_interpreter_phi.c`; `exec_ir_interpreter.c` remains responsible for
@@ -99,7 +100,14 @@ value receives a distinct slot while optimization is disabled. Phi incoming
 assignments are emitted as edge-tagged parallel-copy records; cyclic swaps set
 `temporarySlotCount` so a later emitter can use a temporary slot. Critical CFG
 edges are split into synthetic empty blocks in the projection, preserving the
-source function and keeping phi copies on an edge-local block.
+source function and keeping phi copies on an edge-local block. Parallel CFG
+edges are paired by their occurrence number in the source successor and
+destination predecessor rows. Each critical occurrence gets its own split
+block; phi incoming predecessors are rewritten to the projected predecessor
+row, and each nontrivial copy is tagged with that edge's projected block ID.
+Mismatched adjacency multiplicities fail preflight without replacing a
+previously published projection. This is projection metadata, not executable
+bytecode or emitted AOT code.
 
 Allocation instructions are transported with the same stable opcode, ranges,
 and source identity. This does not enable execution: the lowerer carries the

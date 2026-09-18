@@ -158,15 +158,21 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
             TZrExecIrBlockId successor = f->successors[b->successorRange.start + j];
             const SZrExecIrBlock *target = &f->blocks[successor - 1u];
             TZrUInt32 k;
-            TZrUInt32 occurrences = 0u;
-            for (k = 0u; k < target->predecessorRange.count; ++k) {
-                if (f->predecessors[target->predecessorRange.start + k] == b->id) {
-                    ++occurrences;
+            TZrUInt32 outgoingOccurrence = 0u;
+            TZrUInt32 incomingOccurrences = 0u;
+            for (k = 0u; k <= j; ++k) {
+                if (f->successors[b->successorRange.start + k] == successor) {
+                    ++outgoingOccurrence;
                 }
             }
-            if (occurrences != 1u) {
+            for (k = 0u; k < target->predecessorRange.count; ++k) {
+                if (f->predecessors[target->predecessorRange.start + k] == b->id) {
+                    ++incomingOccurrences;
+                }
+            }
+            if (outgoingOccurrence > incomingOccurrences) {
                 zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
-                                   b->id, 0u, 1u, occurrences);
+                                   b->id, 0u, outgoingOccurrence, incomingOccurrences);
                 return ZR_FALSE;
             }
         }
@@ -174,15 +180,21 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
             TZrExecIrBlockId predecessor = f->predecessors[b->predecessorRange.start + j];
             const SZrExecIrBlock *source = &f->blocks[predecessor - 1u];
             TZrUInt32 k;
-            TZrUInt32 occurrences = 0u;
-            for (k = 0u; k < source->successorRange.count; ++k) {
-                if (f->successors[source->successorRange.start + k] == b->id) {
-                    ++occurrences;
+            TZrUInt32 incomingOccurrence = 0u;
+            TZrUInt32 outgoingOccurrences = 0u;
+            for (k = 0u; k <= j; ++k) {
+                if (f->predecessors[b->predecessorRange.start + k] == predecessor) {
+                    ++incomingOccurrence;
                 }
             }
-            if (occurrences != 1u) {
+            for (k = 0u; k < source->successorRange.count; ++k) {
+                if (f->successors[source->successorRange.start + k] == b->id) {
+                    ++outgoingOccurrences;
+                }
+            }
+            if (incomingOccurrence > outgoingOccurrences) {
                 zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
-                                   b->id, 0u, 1u, occurrences);
+                                   b->id, 0u, incomingOccurrence, outgoingOccurrences);
                 return ZR_FALSE;
             }
         }
@@ -199,23 +211,11 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
     }
     for (i = 0u; i < f->phiCount; ++i) {
         const SZrExecIrPhi *phi = &f->phiPool[i];
-        TZrUInt32 j;
         if (!zr_projection_value_id_valid(f, phi->result) ||
             !zr_projection_range(phi->incomings, f->phiIncomingCount)) {
             zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, f, 0u, 0u,
                                f->phiIncomingCount, phi->incomings.start + phi->incomings.count);
             return ZR_FALSE;
-        }
-        for (j = 0u; j < phi->incomings.count; ++j) {
-            TZrExecIrBlockId predecessor = f->phiIncoming[phi->incomings.start + j].predecessor;
-            TZrUInt32 k;
-            for (k = j + 1u; k < phi->incomings.count; ++k) {
-                if (f->phiIncoming[phi->incomings.start + k].predecessor == predecessor) {
-                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
-                                       f, predecessor, 0u, 1u, k);
-                    return ZR_FALSE;
-                }
-            }
         }
     }
     for (i = 0u; i < f->instructionCount; ++i) {
@@ -327,8 +327,35 @@ static const SZrExecIrBlock *zr_projection_block(const SZrExecIrFunction *f,
 typedef struct SZrProjectionSplitEdge {
     TZrExecIrBlockId source;
     TZrExecIrBlockId destination;
+    TZrUInt32 sourceOrdinal;
+    TZrUInt32 destinationOrdinal;
     TZrExecIrBlockId syntheticBlock;
 } SZrProjectionSplitEdge;
+
+/* The nth source->destination successor is paired with the nth matching
+ * destination predecessor.  Both adjacency rows retain their own order. */
+static TZrUInt32 zr_projection_incoming_ordinal(const SZrExecIrFunction *f,
+                                                const SZrExecIrBlock *source,
+                                                TZrUInt32 sourceOrdinal) {
+    TZrExecIrBlockId destination =
+            f->successors[source->successorRange.start + sourceOrdinal];
+    const SZrExecIrBlock *target = &f->blocks[destination - 1u];
+    TZrUInt32 i, occurrence = 0u;
+    for (i = 0u; i <= sourceOrdinal; ++i) {
+        if (f->successors[source->successorRange.start + i] == destination) {
+            ++occurrence;
+        }
+    }
+    for (i = 0u; i < target->predecessorRange.count; ++i) {
+        if (f->predecessors[target->predecessorRange.start + i] == source->id &&
+            --occurrence == 0u) {
+            return i;
+        }
+    }
+    /* The bidirectional multiplicity check in zr_projection_validate
+     * ensures every source edge has a matching target predecessor. */
+    return UINT32_MAX;
+}
 
 static TZrBool zr_projection_count_critical_edges(const SZrExecIrFunction *f,
                                                   TZrUInt32 *outCount,
@@ -343,19 +370,6 @@ static TZrBool zr_projection_count_critical_edges(const SZrExecIrFunction *f,
             TZrExecIrBlockId successorId = f->successors[pred->successorRange.start + j];
             const SZrExecIrBlock *successor = zr_projection_block(f, successorId);
             if (successor != ZR_NULL && successor->predecessorRange.count > 1u) {
-                TZrUInt32 k;
-                TZrUInt32 occurrences = 0u;
-                for (k = 0u; k < successor->predecessorRange.count; ++k) {
-                    if (f->predecessors[successor->predecessorRange.start + k] == pred->id) {
-                        ++occurrences;
-                    }
-                }
-                if (occurrences != 1u) {
-                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
-                                       successor->id, pred->terminatorInstructionId,
-                                       1u, occurrences);
-                    return ZR_FALSE;
-                }
                 if (count == UINT32_MAX) {
                     zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, f,
                                        pred->id, pred->terminatorInstructionId,
@@ -372,32 +386,16 @@ static TZrBool zr_projection_count_critical_edges(const SZrExecIrFunction *f,
 
 static TZrExecIrBlockId zr_projection_split_id(
         const SZrProjectionSplitEdge *splits, TZrUInt32 count,
-        TZrExecIrBlockId source, TZrExecIrBlockId destination) {
+        TZrExecIrBlockId source, TZrExecIrBlockId destination,
+        TZrUInt32 ordinal, TZrBool outgoing) {
     TZrUInt32 i;
     for (i = 0u; i < count; ++i) {
-        if (splits[i].source == source && splits[i].destination == destination) {
+        if (splits[i].source == source && splits[i].destination == destination &&
+            (outgoing ? splits[i].sourceOrdinal : splits[i].destinationOrdinal) == ordinal) {
             return splits[i].syntheticBlock;
         }
     }
-    return source;
-}
-
-static TZrExecIrBlockId zr_projection_edge_id(const SZrExecBcProjection *p,
-                                              TZrExecIrBlockId source,
-                                              TZrExecIrBlockId destination) {
-    TZrUInt32 i;
-    if (p == ZR_NULL || p->blocks == ZR_NULL || p->syntheticBlockCount == 0u) {
-        return source;
-    }
-    for (i = p->blockCount - p->syntheticBlockCount; i < p->blockCount; ++i) {
-        const SZrExecBcBlock *block = &p->blocks[i];
-        if (block->predecessors.count == 1u && block->successors.count == 1u &&
-            p->predecessors[block->predecessors.start] == source &&
-            p->successors[block->successors.start] == destination) {
-            return block->id;
-        }
-    }
-    return source;
+    return outgoing ? destination : source;
 }
 
 static TZrBool zr_projection_edge_has_cycle(const SZrExecBcProjection *p,
@@ -448,24 +446,9 @@ static TZrBool zr_projection_append_phi_copies(SZrExecBcProjection *p,
                 return ZR_FALSE;
             }
             for (k = 0u; k < b->predecessorRange.count; ++k) {
-                TZrExecIrBlockId edge = f->predecessors[b->predecessorRange.start + k];
-                TZrUInt32 incomingIndex;
-                TZrUInt32 matches = 0u;
-                TZrExecIrValueId incomingValue = ZR_EXEC_IR_VALUE_ID_INVALID;
-                for (incomingIndex = 0u; incomingIndex < phi->incomings.count; ++incomingIndex) {
-                    const SZrExecIrPhiIncoming *incoming =
-                            &f->phiIncoming[phi->incomings.start + incomingIndex];
-                    if (incoming->predecessor == edge) {
-                        ++matches;
-                        incomingValue = incoming->value;
-                    }
-                }
-                if (matches != 1u) {
-                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
-                                       f, b->id, 0u, 1u, matches);
-                    return ZR_FALSE;
-                }
-                if (incomingValue != phi->result) {
+                const SZrExecIrPhiIncoming *incoming =
+                        &f->phiIncoming[phi->incomings.start + k];
+                if (incoming->value != phi->result) {
                     if (total == UINT32_MAX) {
                         zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
                                            f, b->id, 0u, UINT32_MAX, total);
@@ -501,21 +484,17 @@ static TZrBool zr_projection_append_phi_copies(SZrExecBcProjection *p,
     for (i = 0u; i < f->blockCount; ++i) {
         const SZrExecIrBlock *b = &f->blocks[i];
         for (k = 0u; k < b->predecessorRange.count; ++k) {
-            TZrExecIrBlockId edge = f->predecessors[b->predecessorRange.start + k];
+            TZrExecIrBlockId edge = p->predecessors[b->predecessorRange.start + k];
             TZrUInt32 edgeFirst = total;
             for (j = 0u; j < b->phis.count; ++j) {
                 const SZrExecIrPhi *phi = &f->phiPool[b->phis.start + j];
-                TZrUInt32 incomingIndex;
-                for (incomingIndex = 0u; incomingIndex < phi->incomings.count; ++incomingIndex) {
-                    const SZrExecIrPhiIncoming *incoming =
-                            &f->phiIncoming[phi->incomings.start + incomingIndex];
-                    if (incoming->predecessor == edge && incoming->value != phi->result) {
-                        p->phiCopySources[total] = incoming->value;
-                        p->phiCopyDestinations[total] = phi->result;
-                        p->phiCopyEdges[total] = zr_projection_edge_id(p, edge, b->id);
-                        ++total;
-                        break;
-                    }
+                const SZrExecIrPhiIncoming *incoming =
+                        &f->phiIncoming[phi->incomings.start + k];
+                if (incoming->value != phi->result) {
+                    p->phiCopySources[total] = incoming->value;
+                    p->phiCopyDestinations[total] = phi->result;
+                    p->phiCopyEdges[total] = edge;
+                    ++total;
                 }
             }
             if (total > edgeFirst &&
@@ -581,6 +560,9 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
                 if (successor != ZR_NULL && successor->predecessorRange.count > 1u) {
                     splits[splitCount].source = pred->id;
                     splits[splitCount].destination = destination;
+                    splits[splitCount].sourceOrdinal = j;
+                    splits[splitCount].destinationOrdinal =
+                            zr_projection_incoming_ordinal(f, pred, j);
                     splits[splitCount].syntheticBlock =
                             f->blockCount + splitCount + 1u;
                     ++splitCount;
@@ -718,15 +700,23 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
             TZrExecIrBlockId source =
                     f->predecessors[in->predecessorRange.start + j];
             p->predecessors[in->predecessorRange.start + j] =
-                    zr_projection_split_id(splits, splitCount, source, in->id);
+                    zr_projection_split_id(splits, splitCount, source, in->id, j, ZR_FALSE);
         }
         p->blocks[i].successors = in->successorRange;
         p->blocks[i].phis = in->phis;
+        for (j = 0u; j < in->phis.count; ++j) {
+            const SZrExecIrPhi *phi = &f->phiPool[in->phis.start + j];
+            TZrUInt32 k;
+            for (k = 0u; k < phi->incomings.count; ++k) {
+                p->phiIncomings[phi->incomings.start + k].predecessor =
+                        p->predecessors[in->predecessorRange.start + k];
+            }
+        }
         for (j = 0u; j < in->successorRange.count; ++j) {
             TZrExecIrBlockId destination =
                     f->successors[in->successorRange.start + j];
             p->successors[in->successorRange.start + j] =
-                    zr_projection_split_id(splits, splitCount, in->id, destination);
+                    zr_projection_split_id(splits, splitCount, in->id, destination, j, ZR_TRUE);
         }
         p->blocks[i].terminatorInstructionId = in->terminatorInstructionId;
     }

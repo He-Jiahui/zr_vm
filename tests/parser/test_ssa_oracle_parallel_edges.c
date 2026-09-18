@@ -1,4 +1,5 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
+#include "zr_vm_parser/exec_ir_projections.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -183,9 +184,87 @@ static void test_rejects_selected_edge_missing_from_source_adjacency(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_projections_preserve_parallel_phi_edges(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecBcProjection bytecode = {0};
+    SZrAotIrProjection aot = {0};
+
+    build_parallel_phi(&function);
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic),
+          "ExecBC projection rejected a valid parallel-edge phi");
+    check(bytecode.syntheticBlockCount == 2u && bytecode.blockCount == 4u &&
+              bytecode.phiCopyCount == 2u &&
+              bytecode.successors[bytecode.blocks[0].successors.start] == 3u &&
+              bytecode.successors[bytecode.blocks[0].successors.start + 1u] == 4u &&
+              bytecode.predecessors[bytecode.blocks[1].predecessors.start] == 3u &&
+              bytecode.predecessors[bytecode.blocks[1].predecessors.start + 1u] == 4u &&
+              bytecode.phiIncomings[0].predecessor == 3u &&
+              bytecode.phiIncomings[1].predecessor == 4u &&
+              bytecode.phiCopySources[0] == 1u &&
+              bytecode.phiCopySources[1] == 2u &&
+              bytecode.phiCopyDestinations[0] == 4u &&
+              bytecode.phiCopyDestinations[1] == 4u &&
+              bytecode.phiCopyEdges[0] == 3u &&
+              bytecode.phiCopyEdges[1] == 4u &&
+              bytecode.predecessors[bytecode.blocks[2].predecessors.start] == 1u &&
+              bytecode.predecessors[bytecode.blocks[3].predecessors.start] == 1u &&
+              bytecode.successors[bytecode.blocks[2].successors.start] == 2u &&
+              bytecode.successors[bytecode.blocks[3].successors.start] == 2u,
+          "ExecBC projection merged the two phi edge copies");
+    check(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic),
+          "AOTIR projection rejected a valid parallel-edge phi");
+    check(aot.syntheticBlockCount == 2u && aot.phiCopyCount == 2u &&
+              aot.phiCopyEdges[0] == 3u && aot.phiCopyEdges[1] == 4u &&
+              aot.phiCopySources[0] == 1u && aot.phiCopySources[1] == 2u &&
+              aot.predecessors[aot.blocks[1].predecessors.start] == 3u &&
+              aot.predecessors[aot.blocks[1].predecessors.start + 1u] == 4u &&
+              aot.phiIncomings[0].predecessor == 3u &&
+              aot.phiIncomings[1].predecessor == 4u &&
+              !aot.runnable,
+          "AOTIR projection discarded the parallel phi edge identities");
+    check(function.blockCount == 2u && function.predecessors[0] == 1u &&
+              function.predecessors[1] == 1u,
+          "projection modified the source ExecIR function");
+    ZrParser_AotIrProjection_Free(&aot);
+    ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_projections_reject_unpaired_edge_without_replacing_output(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecBcProjection bytecode = {0};
+    SZrAotIrProjection aot = {0};
+    TZrExecIrBlockId *originalEdges;
+
+    build_parallel_phi(&function);
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic),
+          "could not prepare valid projection for failure-atomicity test");
+    originalEdges = bytecode.phiCopyEdges;
+    function.blocks[0].successorRange.count = 1u;
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              bytecode.phiCopyEdges == originalEdges &&
+              bytecode.phiCopyCount == 2u,
+          "projection accepted an unmatched incoming duplicate or replaced output");
+    function.blocks[0].successorRange.count = 2u;
+    function.blocks[1].predecessorRange.count = 1u;
+    check(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              aot.phiCopyCount == 2u && aot.phiCopyEdges[1] == 4u,
+          "AOT projection accepted an unmatched outgoing duplicate or replaced output");
+    ZrParser_AotIrProjection_Free(&aot);
+    ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_branch_and_switch_parallel_edges_select_distinct_incomings();
     test_rejects_selected_edge_missing_from_source_adjacency();
+    test_projections_preserve_parallel_phi_edges();
+    test_projections_reject_unpaired_edge_without_replacing_output();
     puts("ssa oracle parallel edges PASS");
     return EXIT_SUCCESS;
 }

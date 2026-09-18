@@ -59,9 +59,9 @@ setup error, not evidence of a production verifier defect.
 
 ## Acceptance boundary
 
-Accepted only for the oracle's branch/switch phi selection by edge
-occurrence. The ExecBC/AOT projection code currently rejects duplicate
-predecessor blocks and tags phi copies with a block ID alone; it has **not**
-passed this edge-identity scenario. Complete 01.02/01.05 and M1 acceptance
-also need source SemIR lowering, true pruned phi construction, exception
-edges and four-backend differential behavior.
+Accepted for the oracle's branch/switch phi selection by edge occurrence.
+The separate ExecBC/AOT metadata projection regression is recorded in
+`ssa-projection-parallel-edges.md`; neither test establishes executable
+backend parity. Complete 01.02/01.05 and M1 acceptance also need source
+SemIR lowering, true pruned phi construction, exception edges and
+four-backend differential behavior.
