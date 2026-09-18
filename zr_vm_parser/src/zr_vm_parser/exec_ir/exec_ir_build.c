@@ -285,13 +285,25 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                      ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u)
                     x.successorRange = db->successorRange;
                 x.typeToken = (TZrExecIrTypeToken)in->typeId;
+                if (in->operandStart > s->valueOperands.length ||
+                    in->operandCount > s->valueOperands.length - in->operandStart) {
+                    diag_missing(diagnostic, output, db->id, in->id);
+                    if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                    ZrCore_ExecIr_FreeFunction(output);
+                    return ZR_FALSE;
+                }
                 if (in->resultValueId != ZR_VALUE_ID_INVALID) {
                     TZrExecIrValueId v = in->resultValueId;
                     if (!ZrCore_ExecIr_FunctionAppendResults(output, &v, 1u, &rr)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
                 }
-                if (in->operandCount != 0u && in->operandStart + in->operandCount <= s->valueOperands.length) {
+                if (in->operandCount != 0u) {
                     const TZrValueId *ops = (const TZrValueId *)ZrCore_Array_Get((SZrArray *)&s->valueOperands, in->operandStart);
-                    if (!ZrCore_ExecIr_FunctionAppendOperands(output, ops, in->operandCount, &orr)) { ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
+                    if (!ZrCore_ExecIr_FunctionAppendOperands(output, ops, in->operandCount, &orr)) {
+                        diag_missing(diagnostic, output, db->id, in->id);
+                        if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+                        ZrCore_ExecIr_FreeFunction(output);
+                        return ZR_FALSE;
+                    }
                 }
                 x.results = rr; x.operands = orr;
                 { TZrExecIrInstructionId execId = 0u;

@@ -2,6 +2,7 @@
 #include "zr_vm_parser/semantic_ir.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -340,6 +341,84 @@ static void test_builder_rejects_unbacked_canonical_fact_arrays(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_rejects_missing_variadic_operands(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction call = {0};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    call.id = 1u;
+    call.opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    call.resultValueId = ZR_VALUE_ID_INVALID;
+    call.operandCount = 1u;
+    semantic.instructions = input_array(&call, 1u, sizeof(call));
+    block.instructionCount = 1u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrCore_ExecIr_FunctionAddBlock(&output, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+          "could not prepare output for missing operand test");
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+              diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY &&
+              diagnostic.instructionId == 1u && output.blockCount == 1u,
+          "builder silently dropped a variadic call's missing operand");
+    {
+        TZrValueId operand = 1u;
+        semantic.valueOperands = input_array(&operand, 1u, sizeof(operand));
+        call.operandStart = UINT32_MAX;
+        check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+                  diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY &&
+                  diagnostic.instructionId == 1u && output.blockCount == 1u,
+              "builder accepted a wrapped semantic operand range");
+    }
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_copies_valid_variadic_operands(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue values[2] = {
+        {.id = 1u, .typeId = 1u}, {.id = 2u, .typeId = 1u}
+    };
+    TZrValueId operands[2] = {1u, 2u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    instructions[1].resultValueId = 2u;
+    instructions[1].operandCount = 1u;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[2].operandStart = 1u;
+    instructions[2].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.values = input_array(values, 2u, sizeof(*values));
+    semantic.valueOperands = input_array(operands, 2u, sizeof(*operands));
+    block.instructionCount = 3u;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic),
+          "builder rejected a backed variadic operand");
+    check(output.instructions[1].operands.count == 1u &&
+              output.operands[output.instructions[1].operands.start] == 1u &&
+              output.instructions[2].operands.count == 1u &&
+              output.operands[output.instructions[2].operands.start] == 2u,
+          "builder did not preserve the valid call operand");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(&output, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "valid variadic call and return did not produce structural ExecIR");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
@@ -351,6 +430,8 @@ int main(void) {
     test_module_builder_failure_does_not_append_partial_function();
     test_module_builder_preserves_assigned_identity();
     test_builder_rejects_unbacked_canonical_fact_arrays();
+    test_builder_rejects_missing_variadic_operands();
+    test_builder_copies_valid_variadic_operands();
     puts("ssa builder CFG PASS");
     return EXIT_SUCCESS;
 }

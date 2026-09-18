@@ -16,6 +16,7 @@ tests:
   - tests/acceptance/ssa-builder-module-transaction.md
   - tests/acceptance/ssa-builder-canonical-input-shape.md
   - tests/acceptance/ssa-builder-edge-capacity.md
+  - tests/acceptance/ssa-builder-operand-bounds.md
 doc_type: module-detail
 ---
 
@@ -73,6 +74,15 @@ have their declared element width. Bad shape reports `INVALID_RANGE` without
 touching caller output; it does not attempt to infer facts by reading raw
 memory or fall back to post-ExecBC decoding. See
 `tests/acceptance/ssa-builder-canonical-input-shape.md` for fault fixtures.
+
+Each instruction's operand range is checked against the logical operand
+side-pool length before copying. The check tests `start <= length` and then
+`count <= length - start`, so wraparound cannot make a missing range look
+valid. An invalid range reports `INVALID_RANGE` with the originating block
+and semantic instruction ID; it is never silently converted to a zero-operand
+variadic call. A valid constant/call/return fixture retains both the call
+operand and return value and passes structural ExecIR verification. See
+`tests/acceptance/ssa-builder-operand-bounds.md` for focused evidence.
 
 The module-level entry builds an isolated candidate before reserving the next
 published function slot. If canonical-fact lowering fails, the module's
