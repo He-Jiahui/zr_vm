@@ -89,8 +89,18 @@ has no remaining memory operations. Phi incoming rows preserve predecessor
 occurrences, including loop backedges, parallel predecessor entries, and
 critical edges. For an already split `INVOKE`, a pre-invoke definition is
 available on both successors while the invoke result is available only on the
-normal successor; the core verifier checks that boundary. This pass does not
-split unsplit throwing operations or invent exceptional edges.
+normal successor; the core verifier checks that boundary.
+
+Before SSA construction, the parser normalizes a canonical block whose final
+typed call already carries ordered normal/exception edges. Each earlier typed,
+virtual, dynamic, or meta call becomes the terminator of a new `INVOKE` block:
+its normal edge enters the next segment and its exception edge enters the same
+handler as the final call. Original block targets are remapped to the first
+segment of their destination, and predecessor occurrences are rebuilt after
+the transform. The input SemanticIR and caller-owned output remain unchanged
+if allocation or later verification fails. Operations that are schema-marked
+may-throw but cannot be represented by the current call-shaped `INVOKE` remain
+an explicit unsupported diagnostic rather than borrowing a later call's edge.
 
 `RETURN` accepts zero operands for a void function and one operand for a value
 return. The opcode metadata exposes this as a zero minimum and one maximum, so

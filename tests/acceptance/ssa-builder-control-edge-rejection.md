@@ -94,3 +94,33 @@ known schema effects; it does not establish complete canonical effect facts.
 After this guard, the same MSVC builder CTest selection passed 4/4 and the
 focused WSL GCC ASan/UBSan executable printed
 `ssa builder control edges PASS` (exit 0, no sanitizer report).
+
+## Typed-call block splitting follow-up (2026-09-19)
+
+The earlier fail-closed result is superseded for call-shaped operations. A RED
+fixture changed the first operation in a two-call block to `CALL_TYPED` and
+failed with `FAIL: throwing calls were not split into ordered INVOKE blocks`.
+The builder now transactionally normalizes that canonical block before SSA:
+the first call terminates a new block with normal continuation to the second
+call and the original exception destination; the final call retains the
+original normal/exception destinations. All old block targets are remapped,
+predecessors are rebuilt, and both call results keep normal-edge-only
+availability. Non-call may-throw/may-suspend operations still fail at their
+own source ID because the current `INVOKE` schema cannot encode them safely.
+
+Observed debug evidence on 2026-09-19:
+
+- MSVC 19.44.35228 passed the adjacent builder/value selection 7/7:
+  `ssa_builder_cfg`, `ssa_builder_dominance`,
+  `ssa_builder_control_edges`, `ssa_builder_fact_identity`,
+  `ssa_place_eligibility`, `ssa_place_promotion`, and
+  `ssa_value_validation`.
+- WSL GCC 11.4.0 and WSL Clang 14.0.0 each rebuilt and passed
+  `ssa_builder_control_edges` through CTest. The existing missing-braces
+  warnings in `exec_ir_build.c` were unchanged; the new normalizer emitted no
+  compiler warnings.
+
+This covers synthetic canonical typed-call splitting. Source-language
+try/finally production, cleanup dispatch, optional-call short circuit,
+effect-token construction, Oracle exception transfer, and the full 01.02 gate
+remain open.

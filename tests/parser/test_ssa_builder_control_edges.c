@@ -264,12 +264,43 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
           "typed call normal/exception edges were not preserved as INVOKE");
 
     instructions[0].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              output.blockCount == 4u &&
+              output.instructions[0].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+              output.blocks[0].instructionRange.count == 1u &&
+              output.blocks[1].instructionRange.count == 1u &&
+              output.instructions[0].successorRange.count == 2u &&
+              output.successors[output.instructions[0].successorRange.start] == 2u &&
+              output.successors[output.instructions[0].successorRange.start + 1u] == 4u &&
+              output.instructions[1].successorRange.count == 2u &&
+              output.successors[output.instructions[1].successorRange.start] == 3u &&
+              output.successors[output.instructions[1].successorRange.start + 1u] == 4u &&
+              output.blocks[1].predecessorRange.count == 1u &&
+              output.predecessors[output.blocks[1].predecessorRange.start] == 1u &&
+              output.blocks[3].predecessorRange.count == 2u &&
+              (output.blocks[3].flags & ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u,
+          "throwing calls were not split into ordered INVOKE blocks");
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+
+    instructions[2] = instructions[1];
+    instructions[2].id = 3u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_THROW;
+    instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
+    instructions[1].operandCount = 1u;
+    instructions[1].operandStart = 0u;
+    blocks[0].instructionCount = 3u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.valueOperands = input_array(&resultOperand, 1u, sizeof(resultOperand));
     check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
               diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
-              diagnostic.blockId == 1u && diagnostic.sourceId == 1u &&
-              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_INVOKE,
-          "earlier throwing call used the last call's exception edge without a split");
-    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+              diagnostic.blockId == 1u && diagnostic.sourceId == 2u,
+          "non-call throwing operation borrowed the final call's exception edge");
+    instructions[1] = instructions[2];
+    instructions[1].id = 2u;
+    blocks[0].instructionCount = 2u;
+    semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
+    semantic.valueOperands = input_array(NULL, 0u, sizeof(resultOperand));
 
     /* A call result does not exist on the exceptional continuation. */
     instructions[2].id = 3u;

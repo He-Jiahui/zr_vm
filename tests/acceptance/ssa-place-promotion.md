@@ -14,10 +14,11 @@ candidate, and publishes it only on success. A read without a reaching
 definition reports `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` and leaves the input
 unchanged. A repeated call does not append duplicate phis.
 
-This stage does not claim producer-side splitting for unsplit throwing
-operations, optional-chain semantics, or the full 01.02 exit gate. Existing
-split `INVOKE` normal/exception edges and critical/parallel predecessor
-occurrences are covered by the promotion fixture.
+This stage does not claim non-call throwing-operation splitting,
+optional-chain semantics, or the full 01.02 exit gate. Canonical typed-call
+blocks are normalized into an `INVOKE` chain before this pass; existing split
+`INVOKE` normal/exception edges and critical/parallel predecessor occurrences
+are covered by the promotion fixture.
 
 ## Focused evidence
 
@@ -44,6 +45,7 @@ normal/exception availability, and post-transform core SSA verification.
 
 ## Remaining 01.02 work
 
-The producer still needs canonical block splitting and definition availability
-at the throwing instruction for unsplit exceptional and cleanup predecessors.
-Optional access, try/finally, and the full 01.02 milestone gate remain open.
+Call-shaped exceptional blocks now split at every typed call and preserve
+normal-only result availability. Non-call exceptional and cleanup
+predecessors, optional access, try/finally, and the full 01.02 milestone gate
+remain open.

@@ -281,6 +281,45 @@ static TZrBool has_typed_invoke_edges(const SZrSemanticIrFunction *semantic,
                     tail->opcode == ZR_SEMANTIC_IR_CALL_META);
 }
 
+static TZrBool validate_no_unsplit_throwing_operations(
+        const SZrSemanticIrFunction *semantic,
+        SZrExecIrFunction *output,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 blockIndex;
+
+    for (blockIndex = 0u; blockIndex < output->blockCount; ++blockIndex) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&semantic->cfg.blocks, blockIndex);
+        TZrUInt32 instructionIndex;
+        if (!has_typed_invoke_edges(semantic, block)) {
+            continue;
+        }
+        for (instructionIndex = 0u;
+             instructionIndex + 1u < block->instructionCount;
+             ++instructionIndex) {
+            const SZrSemanticIrInstruction *instruction =
+                    (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                            (SZrArray *)&semantic->instructions,
+                            block->firstInstructionIndex + instructionIndex);
+            const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
+                    map_opcode(instruction->opcode));
+            if (info != ZR_NULL &&
+                (info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW |
+                                ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND)) != 0u) {
+                diag_missing(diagnostic, output, blockIndex + 1u,
+                             instruction->id);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+                    diagnostic->sourceId = instruction->id;
+                }
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic,
                                           SZrExecIrFunction *output,
                                           SZrExecIrDiagnostic *diagnostic) {
@@ -319,27 +358,6 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
                 return ZR_FALSE;
             }
             count = block->successorCount;
-        }
-        if (has_typed_invoke_edges(semantic, block)) {
-            TZrUInt32 prior;
-            for (prior = 0u; prior + 1u < block->instructionCount; ++prior) {
-                const SZrSemanticIrInstruction *instruction =
-                    (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
-                        (SZrArray *)&semantic->instructions,
-                        block->firstInstructionIndex + prior);
-                const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
-                    map_opcode(instruction->opcode));
-                if (info != ZR_NULL &&
-                    (info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW |
-                                    ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND)) != 0u) {
-                    diag_missing(diagnostic, output, i + 1u, instruction->id);
-                    if (diagnostic != ZR_NULL) {
-                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
-                        diagnostic->sourceId = instruction->id;
-                    }
-                    return ZR_FALSE;
-                }
-            }
         }
         for (j = 0u; j < count; ++j) {
             if (block->outgoingEdges.isValid) {
@@ -535,6 +553,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                               SZrExecIrFunction *output,
                               SZrExecIrDiagnostic *diagnostic) {
     const SZrSemanticIrFunction *s = semanticFunction;
+    SZrParserExecIrNormalizedCfg normalized;
     TZrExecIrValueId firstPlaceValue = ZR_EXEC_IR_VALUE_ID_INVALID;
     TZrExecIrValueId firstPlaceProvenance = ZR_EXEC_IR_VALUE_ID_INVALID;
     TZrUInt32 i;
@@ -594,6 +613,21 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     output->entryBlockId = s->cfg.entryBlockId < s->cfg.blocks.length
                                ? s->cfg.entryBlockId + 1u : ZR_EXEC_IR_BLOCK_ID_INVALID;
     if (!validate_semantic_cfg_edges(s, output, diagnostic)) return ZR_FALSE;
+    if (!zr_parser_exec_ir_normalize_exception_cfg(
+                s, &normalized, diagnostic)) {
+        return ZR_FALSE;
+    }
+    if (normalized.changed) {
+        TZrBool result;
+        ZrCore_ExecIr_FreeFunction(output);
+        result = build_impl(&normalized.semantic, options, output, diagnostic);
+        zr_parser_exec_ir_free_normalized_cfg(&normalized);
+        return result;
+    }
+    zr_parser_exec_ir_free_normalized_cfg(&normalized);
+    if (!validate_no_unsplit_throwing_operations(s, output, diagnostic)) {
+        return ZR_FALSE;
+    }
     for (i = 0u; i < (TZrUInt32)s->cfg.blocks.length; ++i) {
         const SZrParserCfgBlock *b = (const SZrParserCfgBlock *)ZrCore_Array_Get(
             (SZrArray *)&s->cfg.blocks, i);
