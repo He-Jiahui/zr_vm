@@ -44,8 +44,8 @@ static void make_semantic_function(SZrSemanticIrFunction *semantic,
 static void test_diamond_preserves_every_edge_and_predecessor(void) {
     SZrParserCfgBlock blocks[4];
     SZrParserCfgEdge entryEdges[2] = {{.toBlockId = 1u}, {.toBlockId = 2u}};
-    SZrParserCfgEdge leftEdge[1] = {{.toBlockId = 3u}};
-    SZrParserCfgEdge rightEdge[1] = {{.toBlockId = 3u}};
+    SZrParserCfgEdge leftEdge[1] = {{.fromBlockId = 1u, .toBlockId = 3u}};
+    SZrParserCfgEdge rightEdge[1] = {{.fromBlockId = 2u, .toBlockId = 3u}};
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
     SZrExecIrDiagnostic diagnostic;
@@ -90,6 +90,49 @@ static void test_rejects_out_of_range_semantic_target(void) {
           "invalid semantic edge diagnostic lost source and target");
     check(output.blockCount == 1u && output.successorCount == 0u,
           "rejected semantic edge changed the caller's existing output");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_rejects_edge_with_wrong_source_block(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrParserCfgEdge edge = {.fromBlockId = 0u, .toBlockId = 1u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    blocks[1].outgoingEdges = input_array(&edge, 1u, sizeof(edge));
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrCore_ExecIr_FunctionAddBlock(&output, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+          "could not prepare existing output for source-edge failure");
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.functionToken == 42u && diagnostic.blockId == 2u &&
+              diagnostic.expectedVersion == 2u && diagnostic.actualVersion == 1u &&
+              output.blockCount == 1u && output.successorCount == 0u,
+          "builder silently reattributed an edge from another semantic block");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_accepts_edge_with_matching_source_block(void) {
+    SZrParserCfgBlock blocks[2];
+    SZrParserCfgEdge edge = {.fromBlockId = 1u, .toBlockId = 1u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, blocks, 2u);
+    blocks[0].successorCount = 1u;
+    blocks[0].successors[0] = 1u;
+    blocks[1].outgoingEdges = input_array(&edge, 1u, sizeof(edge));
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              output.blocks[1].successorRange.count == 1u &&
+              output.predecessors[output.blocks[1].predecessorRange.start] == 1u &&
+              output.predecessors[output.blocks[1].predecessorRange.start + 1u] == 2u,
+          "builder rejected a valid non-entry self edge and its predecessors");
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
@@ -703,6 +746,8 @@ static void test_builder_accepts_out_of_order_instruction_slices(void) {
 int main(void) {
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
+    test_rejects_edge_with_wrong_source_block();
+    test_accepts_edge_with_matching_source_block();
     test_inline_successors_preserve_both_edges();
     test_rejects_malformed_outgoing_edge_storage();
     test_rejects_outgoing_edges_beyond_declared_capacity();

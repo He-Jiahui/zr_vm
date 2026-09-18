@@ -168,6 +168,20 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
             count = block->successorCount;
         }
         for (j = 0u; j < count; ++j) {
+            if (block->outgoingEdges.isValid) {
+                const SZrParserCfgEdge *edge = (const SZrParserCfgEdge *)
+                    ZrCore_Array_Get((SZrArray *)&block->outgoingEdges, j);
+                if (edge->fromBlockId != i) {
+                    diag_missing(diagnostic, output, i + 1u, 0u);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK;
+                        diagnostic->expectedVersion = i + 1u;
+                        diagnostic->actualVersion = edge->fromBlockId == UINT32_MAX
+                            ? UINT32_MAX : edge->fromBlockId + 1u;
+                    }
+                    return ZR_FALSE;
+                }
+            }
             TZrUInt32 destination = block->outgoingEdges.isValid
                 ? ((const SZrParserCfgEdge *)ZrCore_Array_Get(
                        (SZrArray *)&block->outgoingEdges, j))->toBlockId

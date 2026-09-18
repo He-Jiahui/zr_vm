@@ -20,6 +20,7 @@ tests:
   - tests/acceptance/ssa-builder-terminator-placement.md
   - tests/acceptance/ssa-builder-successor-arity.md
   - tests/acceptance/ssa-builder-instruction-partition.md
+  - tests/acceptance/ssa-builder-edge-source.md
 doc_type: module-detail
 ---
 
@@ -44,6 +45,15 @@ destination, and a second pass writes source IDs in source/edge order. A single
 side-pool append publishes those rows before dominator analysis. Duplicate
 source/destination edges remain distinct entries in both adjacency arrays;
 edge identity for phi construction is a separate outstanding milestone.
+
+For dynamic outgoing rows, each edge also names its zero-based source block.
+The builder checks that this `fromBlockId` matches the enclosing semantic
+block before adding predecessors; otherwise a malformed edge could be
+silently reattributed to another source. A mismatch reports `INVALID_BLOCK`
+with the enclosing one-based block and expected/actual one-based source IDs.
+The check does not apply to the legacy inline successor IDs, which contain
+only destinations. See `tests/acceptance/ssa-builder-edge-source.md` for
+the wrong-source and valid non-entry self-edge fixtures.
 
 The instruction pool uses zero-based range offsets while published
 `terminatorInstructionId` uses one-based instruction IDs. For each semantic
