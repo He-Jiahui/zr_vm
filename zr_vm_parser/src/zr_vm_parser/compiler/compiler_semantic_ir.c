@@ -1338,6 +1338,7 @@ void compiler_semantic_ir_init(SZrCompilerState *cs) {
     cs->preSemanticIrValidated = ZR_FALSE;
     cs->preSemanticIrCfgActive = ZR_FALSE;
     cs->preSemanticIrCfgStartupSuppressed = ZR_FALSE;
+    cs->preSemanticIrCfgStartupBlocked = ZR_FALSE;
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgStart = 0U;
     (void)ZrParser_SemanticIr_AddRegion(
@@ -1367,6 +1368,7 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     cs->preSemanticIrValidated = ZR_FALSE;
     cs->preSemanticIrCfgActive = ZR_FALSE;
     cs->preSemanticIrCfgStartupSuppressed = ZR_FALSE;
+    cs->preSemanticIrCfgStartupBlocked = ZR_FALSE;
 }
 
 const SZrSemanticIrFunction *ZrParser_Compiler_PreSemanticIr(

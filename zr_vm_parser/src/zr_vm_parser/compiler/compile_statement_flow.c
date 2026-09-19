@@ -1025,6 +1025,15 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
         return;
     }
 
+    if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to abandon unsupported exception CFG",
+                node->location);
+        return;
+    }
+    cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+
     stmt = &node->data.tryCatchFinallyStatement;
     catchClauseStartIndex = (TZrUInt32)cs->catchClauseInfos.length;
     hasFinally = (TZrBool)(stmt->finallyBlock != ZR_NULL);

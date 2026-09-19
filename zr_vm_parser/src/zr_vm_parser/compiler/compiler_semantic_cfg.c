@@ -48,7 +48,8 @@ static TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs) {
     if (cs->preSemanticIrCfgActive) {
         return ZR_TRUE;
     }
-    if (cs->preSemanticIrCfgStartupSuppressed) {
+    if (cs->preSemanticIrCfgStartupSuppressed ||
+        cs->preSemanticIrCfgStartupBlocked) {
         return ZR_FALSE;
     }
     cfg = &cs->preSemanticIr.cfg;

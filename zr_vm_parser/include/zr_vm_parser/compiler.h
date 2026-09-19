@@ -94,6 +94,7 @@ typedef struct SZrCompilerState {
     TZrBool preSemanticIrValidated;
     TZrBool preSemanticIrCfgActive;
     TZrBool preSemanticIrCfgStartupSuppressed;
+    TZrBool preSemanticIrCfgStartupBlocked;
     TZrUInt32 preSemanticIrCfgBlock;
     TZrUInt32 preSemanticIrCfgStart;
     

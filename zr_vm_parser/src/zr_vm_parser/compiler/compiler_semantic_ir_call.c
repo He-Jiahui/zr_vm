@@ -36,7 +36,8 @@ TZrBool compiler_semantic_ir_lower_call(
         return ZR_FALSE;
     }
     if (!cs->preSemanticIrCfgActive &&
-        cs->preSemanticIrCfgStartupSuppressed) {
+        (cs->preSemanticIrCfgStartupSuppressed ||
+         cs->preSemanticIrCfgStartupBlocked)) {
         return ZR_TRUE;
     }
     if (resultType == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {

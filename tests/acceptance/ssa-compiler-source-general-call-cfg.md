@@ -89,3 +89,6 @@ precise composition for those nested calls remains open. Spread and unresolved
 dynamic calls, edge-defined exception payloads and enclosing handlers,
 Weak/cleanup exits, and non-call exceptional operations also remain open for
 the full 01.02 exit gate.
+
+Unmodeled enclosing handler/finally scopes are kept conservative by
+[the exception-scope fallback checkpoint](ssa-compiler-source-exception-fallback.md).

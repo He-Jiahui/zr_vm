@@ -31,11 +31,13 @@ tests:
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
+  - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
+  - tests/acceptance/ssa-compiler-source-exception-fallback.md
 doc_type: module-detail
 ---
 
@@ -167,6 +169,17 @@ partial source graph. While an enclosing `if`, loop, or short-circuit construct
 is compiling after its own CFG preflight failed, inactive call-driven startup
 is suppressed; a nested call therefore cannot create a detached unconditional
 graph for a conditionally executed operation.
+
+Until handler payloads, catch selection, and finally cleanup edges are part of
+the source graph, `try`/`catch`/`finally` is also an explicit conservative
+boundary. Entering that scope abandons any partial source CFG, and all inactive
+CFG starters stay suppressed for the rest of the current SemanticIR function.
+This includes its protected, handler, cleanup, and trailing source regions: a
+later starter cannot absorb the earlier exception scope into a false linear
+prefix. This function-level block is separate from scoped fallback suppression,
+so an enclosing construct cannot clear it while restoring its own state. The
+legacy compiler still emits the executable exception machinery; ExecIR does
+not publish a detached graph that omits those transfers.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call

@@ -49,6 +49,7 @@ tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
+  - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -59,6 +60,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
+  - tests/acceptance/ssa-compiler-source-exception-fallback.md
 doc_type: module-detail
 ---
 
@@ -169,6 +171,17 @@ conservative fallback cases instead of being reconstructed from ExecBC. A call
 nested under an `if`, loop, or short-circuit expression whose CFG preflight
 already failed also remains on that enclosing legacy path; it cannot restart
 an inactive graph and falsely model conditional execution as unconditional.
+
+Unmodeled `try`/`catch`/`finally` scopes form the same conservative boundary.
+They abandon an earlier partial source CFG and suppress nested `if`, loop,
+short-circuit, optional-guard, and call-driven startup until all protected,
+handler, and finally blocks have compiled. Startup remains suppressed for the
+rest of that SemanticIR function as well, so a later source construct cannot
+treat the earlier exception scope as a linear prefix. This keeps the validated
+two-block legacy graph even when an enclosing fallback scope restores its own
+temporary suppression state. Canonical exception payload, handler, and cleanup
+edges must become available together before this function-level block can be
+removed.
 
 Nullable `receiver?.method(arguments)` chains publish ordered present-true and
 absent-false edges from the receiver ValueId. Argument and suffix facts are
