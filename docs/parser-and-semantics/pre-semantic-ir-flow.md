@@ -76,6 +76,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -203,15 +204,22 @@ in the same graph, including a later resolved call and its normal/exception
 edges. A naturally falling-through function still receives its separate
 synthetic zero-operand return in the final exit block.
 
-This conditional slice preflights the complete arm before publishing blocks.
-Both arms terminating, a nested abrupt transfer, a non-linear return/throw
-payload, reachable syntax after the transfer, or cleanup/finally context keeps
-the entire conditional on conservative legacy lowering and persistently
-blocks later CFG startup. Declared child callables still lack separately
-published semantic functions, so their statement-form `if` nodes compile in a
-disposable isolated SemanticIR state just like their loops; a child branch
-cannot add a barrier, instruction, value, Place, slot, or block to the entry
-body's sidecar.
+The arm-flow preflight composes this rule recursively. A nested statement-form
+`if` with one abrupt arm and one fall-through arm is itself fall-through for
+its enclosing arm: the inner abrupt block stays a sink, the inner join has one
+predecessor, and the surviving path may execute later linear statements before
+reaching the outer join. The outer join retains both of its reachable sibling
+paths. A nested conditional whose two arms both terminate has no supported
+fall-through continuation in this slice and keeps the entire outer
+conditional on conservative legacy lowering.
+
+Both direct arms terminating, non-linear return/throw payloads, reachable
+syntax after a direct transfer, expression-form nested conditionals, and
+cleanup/finally context likewise persistently block later CFG startup.
+Declared child callables still lack separately published semantic functions,
+so their statement-form `if` nodes compile in a disposable isolated SemanticIR
+state just like their loops; a child branch cannot add a barrier, instruction,
+value, Place, slot, or block to the entry body's sidecar.
 
 Resolved, non-spread function calls now own a source control boundary even when
 they are the first non-linear operation in an otherwise straight-line caller.

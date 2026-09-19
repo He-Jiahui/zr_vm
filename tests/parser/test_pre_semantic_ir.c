@@ -1333,6 +1333,8 @@ int main(void) {
     RUN_TEST(test_finally_return_remains_on_legacy_cfg);
     RUN_TEST(test_source_if_then_return_preserves_fallthrough_cfg);
     RUN_TEST(test_source_if_else_throw_excludes_interrupted_join);
+    RUN_TEST(test_nested_if_return_preserves_outer_fallthrough_cfg);
+    RUN_TEST(test_nested_if_throw_preserves_outer_fallthrough_cfg);
     RUN_TEST(test_source_if_two_abrupt_arms_remains_conservative);
     RUN_TEST(test_declared_child_if_exit_does_not_pollute_entry_cfg);
     RUN_TEST(test_source_if_lowers_place_provenance_to_exec_ir);

@@ -179,6 +179,25 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
                        ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
                        : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
     }
+    if (node->type == ZR_AST_IF_EXPRESSION) {
+        EZrCompilerSemanticCfgArmFlow thenFlow;
+        EZrCompilerSemanticCfgArmFlow elseFlow;
+
+        if (!node->data.ifExpression.isStatement) {
+            return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+        }
+        thenFlow = compiler_semantic_cfg_if_arm_flow(
+                node->data.ifExpression.thenExpr);
+        elseFlow = compiler_semantic_cfg_if_arm_flow(
+                node->data.ifExpression.elseExpr);
+        if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
+            elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
+            (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
+             elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES)) {
+            return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+        }
+        return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
+    }
     if (node->type != ZR_AST_BLOCK) {
         return compiler_semantic_cfg_arm_falls_through(node)
                        ? ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH

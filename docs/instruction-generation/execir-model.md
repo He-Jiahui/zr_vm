@@ -53,6 +53,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -247,12 +248,18 @@ an edge from the return/throw block to the join. A branch-local source return
 therefore appears alongside the final synthetic return, while a branch-local
 throw remains a distinct sink.
 
-The producer accepts only a fully preflighted shape with one direct final
-abrupt arm and a linear payload. Two abrupt arms, nested abrupt control,
-trailing reachable statements, non-linear payloads, and cleanup/finally
-transfers abandon the source graph and block detached restarts. Statement-form
-`if` compilation inside a declared child callable is isolated from the
-entry-body sidecar until child callables own independent published functions.
+The producer recursively composes fully preflighted statement-form
+conditionals. When an inner conditional has one abrupt arm and one
+fall-through arm, its single-predecessor join remains the active continuation
+and may feed the enclosing arm's join. The abrupt block is never listed as a
+predecessor of either join. An inner conditional with two abrupt arms remains
+unsupported because it has no continuation for the current nested lowering.
+Direct two-abrupt-arm shapes, trailing reachable statements after a direct
+transfer, non-linear payloads, expression-form nested conditionals, and
+cleanup/finally transfers abandon the source graph and block detached
+restarts. Statement-form `if` compilation inside a declared child callable is
+isolated from the entry-body sidecar until child callables own independent
+published functions.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call

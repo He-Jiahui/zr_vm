@@ -151,6 +151,151 @@ static void test_source_if_else_throw_excludes_interrupted_join(void) {
     free_return_cfg_fixture(&compiler, ast);
 }
 
+static void test_nested_if_return_preserves_outer_fallthrough_cfg(void) {
+    static const TZrChar source[] =
+            "fn identity(value: int): int { return value; }\n"
+            "var outer: bool = true;\n"
+            "var inner: bool = true;\n"
+            "var seed: int = 7;\n"
+            "if (outer) {\n"
+            "  if (inner) { return seed; }\n"
+            "  seed = 8;\n"
+            "} else { seed = 9; }\n"
+            "identity(seed);\n";
+    static TZrChar sourceName[] = "nested_if_return_cfg.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_return_cfg_fixture(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName, sizeof(sourceName) - 1U);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *returnBlock;
+    const SZrParserCfgBlock *outerJoin;
+    const SZrParserCfgBlock *innerJoin;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize valueReturnCount = 0U;
+    TZrSize implicitReturnCount = 0U;
+    TZrSize callCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(11U, function->cfg.blocks.length);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_RETURN) {
+            if (instruction->operandCount == 1U) {
+                valueReturnCount++;
+            } else {
+                TEST_ASSERT_EQUAL_UINT32(0U, instruction->operandCount);
+                implicitReturnCount++;
+            }
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(1U, valueReturnCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, implicitReturnCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, callCount);
+    returnBlock = branch_exit_cfg_block_for_opcode(
+            function, ZR_SEMANTIC_IR_RETURN);
+    outerJoin = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    innerJoin = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 6U);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_NOT_NULL(outerJoin);
+    TEST_ASSERT_NOT_NULL(innerJoin);
+    TEST_ASSERT_EQUAL_UINT32(0U, returnBlock->successorCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, outerJoin->kind);
+    TEST_ASSERT_EQUAL_UINT32(2U, outerJoin->predecessorCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, innerJoin->kind);
+    TEST_ASSERT_EQUAL_UINT32(1U, innerJoin->predecessorCount);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_return_cfg_fixture(&compiler, ast);
+}
+
+static void test_nested_if_throw_preserves_outer_fallthrough_cfg(void) {
+    static const TZrChar source[] =
+            "fn identity(value: int): int { return value; }\n"
+            "var outer: bool = true;\n"
+            "var inner: bool = true;\n"
+            "var seed: int = 7;\n"
+            "if (outer) { seed = 8; } else {\n"
+            "  if (inner) { seed = 9; } else { throw seed; }\n"
+            "  seed = 10;\n"
+            "}\n"
+            "identity(seed);\n";
+    static TZrChar sourceName[] = "nested_if_throw_cfg.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_return_cfg_fixture(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName, sizeof(sourceName) - 1U);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *throwBlock;
+    const SZrParserCfgBlock *outerJoin;
+    const SZrParserCfgBlock *innerJoin;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize throwCount = 0U;
+    TZrSize callCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(11U, function->cfg.blocks.length);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_THROW) {
+            throwCount++;
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(1U, throwCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, callCount);
+    throwBlock = branch_exit_cfg_block_for_opcode(
+            function, ZR_SEMANTIC_IR_THROW);
+    outerJoin = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    innerJoin = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 6U);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_NOT_NULL(outerJoin);
+    TEST_ASSERT_NOT_NULL(innerJoin);
+    TEST_ASSERT_EQUAL_UINT32(0U, throwBlock->successorCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, outerJoin->kind);
+    TEST_ASSERT_EQUAL_UINT32(2U, outerJoin->predecessorCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, innerJoin->kind);
+    TEST_ASSERT_EQUAL_UINT32(1U, innerJoin->predecessorCount);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_return_cfg_fixture(&compiler, ast);
+}
+
 static void test_source_if_two_abrupt_arms_remains_conservative(void) {
     static const TZrChar source[] =
             "fn identity(value: int): int { return value; }\n"
