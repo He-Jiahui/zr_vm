@@ -12,6 +12,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -19,6 +20,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
@@ -36,6 +38,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
@@ -44,6 +47,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
@@ -81,6 +85,7 @@ tests:
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_control_edges.c
+  - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_gvn_range.c
   - tests/parser/test_ssa_pass_manager_scalar.c
@@ -108,6 +113,7 @@ tests:
   - tests/acceptance/ssa-type-test-foundation.md
   - tests/acceptance/ssa-source-typed-catch-cfg.md
   - tests/acceptance/ssa-source-multiple-catch-cfg.md
+  - tests/acceptance/ssa-source-cleanup-cfg.md
 doc_type: module-detail
 ---
 
@@ -186,8 +192,18 @@ for an entry edge, a chain within cleanup, and a cleanup-to-continuation edge;
 the ordinary predecessor/successor pools retain the exact adjacency and the
 cleanup block retains its flag. A cleanup edge between two ordinary blocks,
 or any multi-successor `CLEANUP_DISPATCH`, remains `UNSUPPORTED` so pending
-return/throw/break/continue state is not silently erased. Source `try/finally`
-production and executable pending-state dispatch remain later milestones.
+return/throw/break/continue state is not silently erased.
+
+The source compiler publishes that representable cleanup subset for a
+preflighted `try/finally` with no catches, ownership cleanup, calls,
+declarations, or abrupt/nonlinear statements in either body. It closes the
+protected block with a cleanup edge, compiles the `finally` body in a cleanup
+block, and closes that block with a cleanup edge to one join. Both transfers
+are operand-free semantic `BRANCH` instructions. Preflight examines the
+complete protected and cleanup bodies before activating a graph; `return`,
+`throw`, calls, nested control flow, catch-plus-finally, and other unsupported
+shapes retain the legacy-CFG fail-closed path. Pending completion state and
+executable abrupt cleanup dispatch remain later milestones.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

@@ -1,0 +1,237 @@
+#include "unity.h"
+
+#include <string.h>
+
+#include "harness/runtime_support.h"
+#include "zr_vm_core/function.h"
+#include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_parser/cfg.h"
+#include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/exec_ir_builder.h"
+#include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_ir.h"
+
+ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(
+        SZrCompilerState *cs, SZrAstNodeArray *statements);
+
+static SZrState *g_state;
+
+void setUp(void) {
+    g_state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(g_state);
+}
+
+void tearDown(void) {
+    if (g_state != ZR_NULL) {
+        ZrTests_Runtime_State_Destroy(g_state);
+        g_state = ZR_NULL;
+    }
+}
+
+static SZrAstNode *compile_source(SZrCompilerState *compiler,
+                                  const TZrChar *source,
+                                  TZrSize sourceLength,
+                                  TZrChar *sourceName) {
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, sourceName);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sourceLength, name);
+    TZrSize index;
+
+    if (ast == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrParser_CompilerState_Init(compiler, g_state);
+    compiler->currentAst = ast;
+    compiler->currentFunction = ZrCore_Function_New(g_state);
+    if (compiler->currentFunction == ZR_NULL) {
+        return ast;
+    }
+    ZrParser_Compiler_PredeclareFunctionBindings(
+            compiler, ast->data.script.statements);
+    for (index = 0U;
+         !compiler->hasError &&
+         index < ast->data.script.statements->count;
+         index++) {
+        ZrParser_Statement_Compile(
+                compiler, ast->data.script.statements->nodes[index]);
+    }
+    return ast;
+}
+
+static void free_source(SZrCompilerState *compiler, SZrAstNode *ast) {
+    if (compiler->currentFunction != ZR_NULL) {
+        ZrCore_Function_Free(g_state, compiler->currentFunction);
+        compiler->currentFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(compiler);
+    if (ast != ZR_NULL) {
+        ZrParser_Ast_Free(g_state, ast);
+    }
+}
+
+static const SZrParserCfgBlock *find_block_kind(
+        const SZrSemanticIrFunction *function,
+        EZrParserCfgBlockKind kind) {
+    TZrSize index;
+
+    for (index = 0U; index < function->cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        if (block != ZR_NULL && block->kind == kind) {
+            return block;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void assert_single_edge(
+        const SZrParserCfgBlock *block,
+        EZrParserCfgEdgeKind kind,
+        TZrUInt32 target) {
+    const SZrParserCfgEdge *edge;
+
+    TEST_ASSERT_NOT_NULL(block);
+    TEST_ASSERT_EQUAL_UINT32(1U, block->successorCount);
+    edge = ZrParser_Cfg_BlockEdgeAt(block, 0U);
+    TEST_ASSERT_NOT_NULL(edge);
+    TEST_ASSERT_EQUAL_INT(kind, edge->kind);
+    TEST_ASSERT_EQUAL_UINT32(target, edge->toBlockId);
+}
+
+static TZrBool block_has_source_line(
+        const SZrSemanticIrFunction *function,
+        const SZrParserCfgBlock *block,
+        TZrInt32 line) {
+    TZrUInt32 index;
+
+    for (index = block->firstInstructionIndex;
+         index < block->firstInstructionIndex + block->instructionCount;
+         index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        if (instruction != ZR_NULL &&
+            instruction->sourceRange.start.line == line) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static void test_linear_try_finally_emits_cleanup_region(void) {
+    static const TZrChar source[] =
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  seed = 8;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] = "linear_try_finally_cleanup.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *join;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(4U, function->cfg.blocks.length);
+
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            function->cfg.entryBlockId);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    join = find_block_kind(function, ZR_PARSER_CFG_BLOCK_JOIN);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, entry->terminatorKind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, cleanup->terminatorKind);
+    assert_single_edge(entry, ZR_PARSER_CFG_EDGE_CLEANUP, cleanup->id);
+    assert_single_edge(cleanup, ZR_PARSER_CFG_EDGE_CLEANUP, join->id);
+    TEST_ASSERT_TRUE(block_has_source_line(function, entry, 3U));
+    TEST_ASSERT_FALSE(block_has_source_line(function, cleanup, 3U));
+    TEST_ASSERT_TRUE(block_has_source_line(function, cleanup, 5U));
+    TEST_ASSERT_TRUE(block_has_source_line(function, join, 7U));
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(
+            (output.blocks[cleanup->id].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0U);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    free_source(&compiler, ast);
+}
+
+static void test_abrupt_try_finally_stays_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "var seed: int = 7;\n"
+            "try { return seed; } finally { seed = 9; }\n";
+    static TZrChar sourceName[] = "abrupt_try_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_NULL(find_block_kind(
+            function, ZR_PARSER_CFG_BLOCK_CLEANUP));
+
+    free_source(&compiler, ast);
+}
+
+static void test_try_catch_finally_stays_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "var seed: int = 7;\n"
+            "try { seed = 8; } catch (error) {} finally { seed = 9; }\n";
+    static TZrChar sourceName[] = "try_catch_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_NULL(find_block_kind(
+            function, ZR_PARSER_CFG_BLOCK_CLEANUP));
+
+    free_source(&compiler, ast);
+}
+
+int main(void) {
+    UNITY_BEGIN();
+    RUN_TEST(test_linear_try_finally_emits_cleanup_region);
+    RUN_TEST(test_abrupt_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
+    return UNITY_END();
+}

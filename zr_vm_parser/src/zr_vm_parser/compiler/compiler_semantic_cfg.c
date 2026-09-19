@@ -110,8 +110,9 @@ TZrBool compiler_semantic_cfg_short_circuit_is_supported(
                     node->data.logicalExpression.right));
 }
 
-/* Until cleanup and suspension edges are represented here, publish only a
- * deliberately small straight-line subset. */
+/* Pending-completion cleanup and suspension edges are not represented here;
+ * publish only the deliberately small source subsets preflighted by each
+ * control-flow producer. */
 TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
     TZrSize index;
     if (node == ZR_NULL) {
@@ -685,14 +686,26 @@ TZrBool compiler_semantic_cfg_branch_for(SZrCompilerState *cs,
 TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                   TZrUInt32 target,
                                   SZrFileRange range) {
+    return compiler_semantic_cfg_jump_edge(
+            cs, target, ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL, range);
+}
+
+TZrBool compiler_semantic_cfg_jump_edge(
+        SZrCompilerState *cs,
+        TZrUInt32 target,
+        EZrParserCfgEdgeKind edgeKind,
+        SZrAstNode *sourceNode,
+        SZrFileRange range) {
     if (cs == ZR_NULL || !cs->preSemanticIrCfgActive ||
+        (edgeKind != ZR_PARSER_CFG_EDGE_NORMAL &&
+         edgeKind != ZR_PARSER_CFG_EDGE_CLEANUP) ||
         !compiler_semantic_cfg_emit_branch(cs, target, ZR_VALUE_ID_INVALID, range) ||
         !compiler_semantic_cfg_bind_current(cs, ZR_PARSER_CFG_TERMINATOR_BRANCH)) {
         return ZR_FALSE;
     }
     return ZrParser_Cfg_Connect(&cs->preSemanticIr.cfg,
                                 cs->preSemanticIrCfgBlock, target,
-                                ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL);
+                                edgeKind, sourceNode);
 }
 
 TZrBool compiler_semantic_cfg_jump_abrupt(SZrCompilerState *cs,

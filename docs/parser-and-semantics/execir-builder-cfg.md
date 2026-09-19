@@ -5,7 +5,9 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
@@ -21,6 +23,7 @@ tests:
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_fact_identity.c
   - tests/parser/test_ssa_place_eligibility.c
+  - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/cmake/ssa-tests.cmake
   - tests/cmake/ssa-builder-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
@@ -41,6 +44,7 @@ tests:
   - tests/acceptance/ssa-builder-fact-identity.md
   - tests/acceptance/ssa-builder-test-registration.md
   - tests/acceptance/ssa-source-branch-slot-isolation.md
+  - tests/acceptance/ssa-source-cleanup-cfg.md
 doc_type: module-detail
 ---
 
@@ -121,10 +125,22 @@ and passes the graph through structural and SSA verification. This covers a
 single cleanup path or chain; it does not encode pending completion state.
 Cleanup edges outside a cleanup region, return, suspend, and resume edges remain
 unsupported rather than becoming ordinary successors. Normal, true/false, and
-switch edges retain their order. This is not yet production compiler CFG or
-effect-token generation; see
+switch edges retain their order.
+
+The production source compiler now emits this bounded shape for a no-catch
+`try/finally` only when both bodies preflight as nested blocks containing no
+statements except linear expression statements and no enclosing ownership
+cleanup is active. The protected block branches over a cleanup edge to a
+`ZR_PARSER_CFG_BLOCK_CLEANUP`; that block branches over a second cleanup edge
+to one join, where following source statements continue. A source return,
+throw, call, declaration, nonlinear statement, catch-plus-finally, active
+catch target, or ownership cleanup rejects the entire shape before graph
+construction and keeps the legacy path. This does not yet model exceptional
+entry into `finally` or pending abrupt completion.
+
+This is not yet effect-token generation; see
 `tests/acceptance/ssa-builder-control-edge-rejection.md` and
-`tests/acceptance/ssa-builder-iterator-invokes.md`.
+`tests/acceptance/ssa-source-cleanup-cfg.md`.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
 split the block rather than attribute that operation's exceptional exit to

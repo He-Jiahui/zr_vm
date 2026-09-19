@@ -144,6 +144,13 @@ typedef struct SZrCompilerSemanticCatchPlan {
     TZrBool dispatchEmitted;
 } SZrCompilerSemanticCatchPlan;
 
+typedef struct SZrCompilerSemanticFinallyPlan {
+    TZrUInt32 cleanupBlock;
+    TZrUInt32 joinBlock;
+    TZrBool initialized;
+    TZrBool cleanupEntered;
+} SZrCompilerSemanticFinallyPlan;
+
 void compiler_semantic_ir_init(SZrCompilerState *cs);
 void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
@@ -255,6 +262,12 @@ TZrBool compiler_semantic_cfg_branch_for(SZrCompilerState *cs,
 TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                    TZrUInt32 target,
                                    SZrFileRange range);
+TZrBool compiler_semantic_cfg_jump_edge(
+        SZrCompilerState *cs,
+        TZrUInt32 target,
+        EZrParserCfgEdgeKind edgeKind,
+        SZrAstNode *sourceNode,
+        SZrFileRange range);
 TZrBool compiler_semantic_cfg_jump_abrupt(SZrCompilerState *cs,
                                           TZrUInt32 target,
                                           SZrFileRange range);
@@ -308,6 +321,21 @@ TZrBool compiler_semantic_cfg_complete_try_catch(
         TZrSize catchIndex,
         TZrBool handlerTerminates,
         SZrArray *entrySlots);
+TZrBool compiler_semantic_cfg_try_finally_is_supported(
+        SZrCompilerState *cs,
+        const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_begin_try_finally(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrCompilerSemanticFinallyPlan *plan);
+TZrBool compiler_semantic_cfg_enter_try_finally_cleanup(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrCompilerSemanticFinallyPlan *plan);
+TZrBool compiler_semantic_cfg_complete_try_finally(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrCompilerSemanticFinallyPlan *plan);
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
