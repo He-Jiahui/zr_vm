@@ -55,6 +55,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-for-cfg.md
+  - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -181,11 +182,15 @@ dedicated step block. After a falling-through initializer, the prefix jumps
 to the condition. Its ordered true/body and false/join edges are followed by
 body-to-step and step-to-condition normal edges. Restoring the pre-loop slot
 snapshot at the join keeps body and step temporaries off the false path, while
-the explicit backedge remains available to dominance and phi placement.
-This initial slice requires a condition, linear condition and step
-expressions, and falling-through initializer and body. Infinite loops,
-`break`/`continue`, nonlinear forms, cleanup, and `foreach` remain on the
-legacy-CFG fallback instead of publishing an incomplete graph.
+the explicit backedge remains available to dominance and phi placement. A
+direct terminal, unvalued `continue`, optionally after a linear statement
+prefix, also closes the body at the step. Separate legacy condition and
+`continue` labels make the ExecBC transfer execute the step before returning
+to the condition. This bounded slice requires a condition, linear condition
+and step expressions, and a falling-through initializer. Infinite loops,
+`break`, valued or nonterminal `continue`, nonlinear forms, cleanup, and
+`foreach` remain on the legacy-CFG fallback instead of publishing an
+incomplete graph.
 
 Source `&&` and `||` expressions with linear operands also publish their
 short-circuit topology directly. `&&` sends the true edge to the RHS and the

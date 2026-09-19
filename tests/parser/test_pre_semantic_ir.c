@@ -1302,9 +1302,12 @@ int main(void) {
     RUN_TEST(test_source_while_continue_targets_loop_header);
     RUN_TEST(test_source_while_linear_prefix_can_continue);
     RUN_TEST(test_source_for_emits_typed_condition_body_step_cfg);
+    RUN_TEST(test_source_for_continue_targets_step_cfg);
     RUN_TEST(test_unreachable_after_loop_exit_blocks_later_cfg_startup);
     RUN_TEST(test_suppressed_loop_exit_blocks_later_call_cfg);
     RUN_TEST(test_unmodeled_for_exit_blocks_later_call_cfg);
+    RUN_TEST(test_conditioned_for_break_keeps_fallback);
+    RUN_TEST(test_conditioned_for_nonterminal_continue_keeps_fallback);
     RUN_TEST(test_unmodeled_for_exit_abandons_active_call_cfg);
     RUN_TEST(test_unmodeled_foreach_exit_blocks_later_call_cfg);
     RUN_TEST(test_declared_child_loops_do_not_pollute_entry_cfg);

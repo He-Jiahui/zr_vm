@@ -78,6 +78,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-for-cfg.md
+  - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -201,16 +202,19 @@ or a fallback barrier cannot mutate the entry body's graph.
 A condition-bearing statement-form `for` now publishes its four structural
 regions explicitly after compiling a supported initializer: condition, body,
 step, and join. The prefix jumps to the condition; its ordered true/false
-edges select the body or join; a falling-through body jumps to the step; and
-the step closes the backedge to the condition. The compiler restores the
-pre-loop semantic slot snapshot before entering the join, so iteration-only
-temporaries do not become values on the false path. This slice accepts only a
-linear condition, optional falling-through initializer, optional linear step,
-and falling-through body. Missing conditions, `break`/`continue`, nonlinear
-expressions, cleanup, and `foreach` retain the persistent conservative
-fallback. The implementation lives in `compile_statement_for.c`, separated
-from the general statement-flow unit while preserving the existing ExecBC
-label path.
+edges select the body or join; a falling-through body or direct terminal,
+unvalued `continue` jumps to the step; and the step closes the backedge to the
+condition. The compiler restores the pre-loop semantic slot snapshot before
+entering the join, so iteration-only temporaries do not become values on the
+false path. The legacy ExecBC path uses distinct condition and `continue`
+labels as well: `continue` reaches the step before the step's jump returns to
+the condition. This slice accepts only a linear condition, optional
+falling-through initializer, optional linear step, and a falling-through body
+or linear statement prefix ending in an unvalued `continue`. Missing
+conditions, `break`, valued or nonterminal `continue`, nonlinear expressions,
+cleanup, and `foreach` retain the persistent conservative fallback. The
+implementation lives in `compile_statement_for.c`, separated from the general
+statement-flow unit while preserving the existing ExecBC label path.
 
 A supported source `if` may now end exactly one direct arm with a linear-value
 `return` or `throw` while the other arm falls through. The abrupt arm emits its

@@ -17,7 +17,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrUInt32 joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     SZrForLoop *forLoop;
     SZrLoopLabel loopLabel;
-    TZrSize loopStartLabelId;
+    TZrSize conditionLabelId;
     TZrSize loopEndLabelId;
 
     ZrCore_Array_Construct(&semanticSlotSnapshot);
@@ -40,6 +40,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     loopLabel.semanticContinueBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
     pushedLoopLabel = ZR_TRUE;
+    conditionLabelId = create_label(cs);
 
     if (forLoop->init != ZR_NULL) {
         ZrParser_Statement_Compile(cs, forLoop->init);
@@ -48,9 +49,8 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
-    loopStartLabelId = loopLabel.continueLabelId;
     loopEndLabelId = loopLabel.breakLabelId;
-    resolve_label(cs, loopStartLabelId);
+    resolve_label(cs, conditionLabelId);
 
     hasSemanticCfg = compiler_semantic_cfg_begin_for(
             cs, node, &conditionBlock, &bodyBlock, &stepBlock, &joinBlock);
@@ -136,6 +136,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_semantic_cfg_enter(cs, stepBlock);
     }
 
+    resolve_label(cs, loopLabel.continueLabelId);
     if (forLoop->step != ZR_NULL) {
         ZrParser_Expression_Compile(cs, forLoop->step);
         if (cs->hasError) {
@@ -155,7 +156,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
         TZrSize jumpIndex = cs->instructionCount;
         emit_instruction(cs, jumpInstruction);
-        add_pending_jump(cs, jumpIndex, loopStartLabelId);
+        add_pending_jump(cs, jumpIndex, conditionLabelId);
     }
     resolve_label(cs, loopEndLabelId);
 

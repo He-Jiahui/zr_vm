@@ -235,14 +235,20 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
     return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
 }
 
-static TZrBool compiler_semantic_cfg_while_body_is_supported(
-        const SZrAstNode *node) {
+static TZrBool compiler_semantic_cfg_loop_body_is_supported(
+        const SZrAstNode *node, TZrBool allowBreak,
+        TZrBool allowContinue) {
     TZrSize index;
+
     if (node == ZR_NULL) {
         return ZR_TRUE;
     }
     if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
-        return (TZrBool)(node->data.breakContinueStatement.expr == ZR_NULL);
+        return (TZrBool)(
+                node->data.breakContinueStatement.expr == ZR_NULL &&
+                (node->data.breakContinueStatement.isBreak
+                         ? allowBreak
+                         : allowContinue));
     }
     if (node->type != ZR_AST_BLOCK) {
         return compiler_semantic_cfg_arm_falls_through(node);
@@ -253,9 +259,13 @@ static TZrBool compiler_semantic_cfg_while_body_is_supported(
     for (index = 0U; index < node->data.block.body->count; index++) {
         const SZrAstNode *statement = node->data.block.body->nodes[index];
         TZrSize trailingIndex;
+
         if (statement != ZR_NULL &&
             statement->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
-            if (statement->data.breakContinueStatement.expr != ZR_NULL) {
+            if (statement->data.breakContinueStatement.expr != ZR_NULL ||
+                (statement->data.breakContinueStatement.isBreak
+                         ? !allowBreak
+                         : !allowContinue)) {
                 return ZR_FALSE;
             }
             for (trailingIndex = index + 1U;
@@ -291,7 +301,8 @@ static TZrBool compiler_semantic_cfg_for_is_supported(
              compiler_semantic_cfg_expression_is_linear(loop->init)) &&
             (loop->step == ZR_NULL ||
              compiler_semantic_cfg_expression_is_linear(loop->step)) &&
-            compiler_semantic_cfg_arm_falls_through(loop->block));
+            compiler_semantic_cfg_loop_body_is_supported(
+                    loop->block, ZR_FALSE, ZR_TRUE));
 }
 
 static TZrUInt32 compiler_semantic_cfg_retained_before(
@@ -489,8 +500,8 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     }
     if (!compiler_semantic_cfg_expression_is_linear(
                 node->data.whileLoop.cond) ||
-        !compiler_semantic_cfg_while_body_is_supported(
-                node->data.whileLoop.block)) {
+        !compiler_semantic_cfg_loop_body_is_supported(
+                node->data.whileLoop.block, ZR_TRUE, ZR_TRUE)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
