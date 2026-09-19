@@ -86,6 +86,7 @@ tests:
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/parser/test_ssa_builder_cleanup_dispatch.c
+  - tests/parser/test_ssa_cleanup_exception_state.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_gvn_range.c
@@ -115,6 +116,7 @@ tests:
   - tests/acceptance/ssa-source-typed-catch-cfg.md
   - tests/acceptance/ssa-source-multiple-catch-cfg.md
   - tests/acceptance/ssa-source-cleanup-cfg.md
+  - tests/acceptance/ssa-cleanup-exception-state.md
 doc_type: module-detail
 ---
 
@@ -204,6 +206,14 @@ exists and dominates the cleanup dispatch. Missing selectors, inline successor
 rows, ordinary source blocks, and unordered cases fail transactionally. This is
 the representation for a pending-completion discriminator, not yet a source
 producer or a definition of return/throw payload storage.
+
+An INVOKE result remains unavailable along the transitive closure of its
+exceptional successor, including ordinary branches into cleanup and later
+cleanup dispatch successors. Therefore a pending-state selector defined before
+the INVOKE may be read in shared cleanup, while substituting the INVOKE result
+is rejected with `EXCEPTION_EDGE` even though the INVOKE's block dominates the
+cleanup block. This is the interrupted-assignment gate required before source
+exceptional `finally` entry can be published.
 
 The source compiler publishes that representable cleanup subset for a
 preflighted `try/finally` with no catches, ownership cleanup, calls,

@@ -21,6 +21,7 @@ tests:
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/parser/test_ssa_builder_cleanup_dispatch.c
+  - tests/parser/test_ssa_cleanup_exception_state.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_fact_identity.c
   - tests/parser/test_ssa_place_eligibility.c
@@ -46,6 +47,7 @@ tests:
   - tests/acceptance/ssa-builder-test-registration.md
   - tests/acceptance/ssa-source-branch-slot-isolation.md
   - tests/acceptance/ssa-source-cleanup-cfg.md
+  - tests/acceptance/ssa-cleanup-exception-state.md
 doc_type: module-detail
 ---
 
@@ -137,6 +139,14 @@ the selector is defined and dominates the dispatch. It rejects missing
 selectors, inline compatibility rows, non-cleanup sources, or unordered cases
 without publishing partial output. This contract does not itself define the
 selector's language enum, abrupt payload storage, or cleanup effects.
+
+The SSA verifier also carries INVOKE result unavailability through every block
+reachable from the exceptional successor. A shared cleanup block may consume a
+pending selector defined before the INVOKE, but it cannot consume the INVOKE
+result: exceptional entry reaches that same use without the result being
+committed. The rejection is reported as `EXCEPTION_EDGE` at the cleanup use,
+closing the interrupted-assignment boundary without relying on block dominance
+alone.
 
 The production source compiler now emits this bounded shape for a no-catch
 `try/finally` only when both bodies preflight as nested blocks containing no
