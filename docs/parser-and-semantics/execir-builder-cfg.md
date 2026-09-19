@@ -152,8 +152,10 @@ The production source compiler now emits this bounded shape for a no-catch
 `try/finally` when the cleanup body contains only nested blocks and linear
 expression statements, the protected body contains the same subset plus at
 most one linear return or throw under statement-form conditionals or one
-resolved zero-argument direct call outside conditional control, and no enclosing
-ownership cleanup is active. Normal completion branches through the cleanup
+resolved direct call outside conditional control. That call may take no
+arguments or one exact, ownership/reference/GC-neutral `int` identifier by
+value, and no enclosing ownership cleanup may be active. Normal completion
+branches through the cleanup
 block to a join. A terminal return or throw still captures its ValueId and uses
 one direct cleanup edge to a dedicated abrupt block. If a sibling path falls
 through, compiler-private selector and payload Places are created before the
@@ -168,10 +170,11 @@ selector, and enters cleanup; the normal continuation retains the pre-call
 normal join as `SWITCH_DEFAULT`. The abrupt block reloads the private payload
 after cleanup and rethrows it, so neither a cleanup assignment nor the
 uncommitted INVOKE result can replace the exception. Nonlinear payloads,
-argument-bearing, conditional, or multiple calls, declarations, more than one
-abrupt site, mixed explicit and exceptional completion, catch-plus-finally,
-active catch targets, or ownership cleanup reject the entire shape and keep the
-legacy path. Additional pending completion kinds remain unsupported.
+literal, converting, non-value, multiple, or conditional arguments,
+conditional or multiple calls, declarations, more than one abrupt site, mixed
+explicit and exceptional completion, catch-plus-finally, active catch targets,
+or ownership cleanup reject the entire shape and keep the legacy path.
+Additional pending completion kinds remain unsupported.
 
 This is not yet effect-token generation; see
 `tests/acceptance/ssa-builder-control-edge-rejection.md` and

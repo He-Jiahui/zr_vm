@@ -83,8 +83,9 @@ block or normal join. Nonlinear throw payloads remain fail-closed.
 
 ## Boundary
 
-Later cleanup milestones model exceptional entry for one zero-argument direct
-call, but this checkpoint still does not combine it with multiple completion
+Later cleanup milestones model exceptional entry for one direct call with no
+argument or one exact `int` identifier, but this checkpoint still does not
+combine it with multiple completion
 kinds. Except for the bounded terminal, normal-versus-throw, and direct-call
 cleanup paths, a throw inside an unmodeled `try`/`catch`/`finally` scope or a
 control-flow shape whose source CFG preflight has already fallen back remains

@@ -10,8 +10,9 @@ accepted by the SemanticIR-to-ExecIR builder.
   is activated.
 - The `finally` body contains only nested blocks and linear expression
   statements. The protected body may additionally contain one linear `return`
-  or `throw` under statement-form conditionals, or one resolved zero-argument
-  direct call outside conditional control.
+  or `throw` under statement-form conditionals, or one resolved direct call
+  outside conditional control. The call may take no arguments or one exact,
+  ownership/reference/GC-neutral `int` identifier by value.
 - No enclosing ownership cleanup or active catch target is present.
 - The protected block ends in an operand-free `BRANCH` over one cleanup edge to
   a `ZR_PARSER_CFG_BLOCK_CLEANUP`.
@@ -42,10 +43,11 @@ accepted by the SemanticIR-to-ExecIR builder.
 
 The same test keeps nonlinear return/throw payloads, two abrupt sites, two
 protected calls, and a combined catch-plus-finally statement on the legacy
-path. Argument-bearing or conditional calls, declarations, nested nonlinear
-control flow, ownership cleanup, and mixed explicit/exceptional completion are
-also outside this slice. Those shapes must not publish a partial cleanup graph
-or restart a detached CFG after rejection.
+path. Literal, converting, non-value, multiple, or conditional arguments,
+conditional calls, declarations, nested nonlinear control flow, ownership
+cleanup, and mixed explicit/exceptional completion are also outside this
+slice. Those shapes must not publish a partial cleanup graph or restart a
+detached CFG after rejection.
 
 The source producer now uses the builder's `CLEANUP_DISPATCH` contract for one
 normal-versus-return, normal-versus-throw, or normal-versus-call-exception
@@ -56,7 +58,7 @@ later source milestones.
 
 ## Validation evidence (2026-09-19)
 
-- The focused source cleanup suite passes 11/11 on Windows MSVC and WSL GCC and
+- The focused source cleanup suite passes 13/13 on Windows MSVC and WSL GCC and
   Clang; the 100-test pre-SemanticIR producer suite passes on all three
   toolchains.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.

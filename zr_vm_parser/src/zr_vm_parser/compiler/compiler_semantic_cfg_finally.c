@@ -46,20 +46,13 @@ typedef struct SZrCompilerSemanticFinallyFlowInfo {
     const SZrAstNode *exceptionExpression;
 } SZrCompilerSemanticFinallyFlowInfo;
 
-static TZrBool compiler_semantic_cfg_finally_is_direct_zero_argument_call(
+static TZrBool compiler_semantic_cfg_finally_is_supported_direct_call(
         const SZrAstNode *node) {
     const SZrAstNode *callNode =
             compiler_semantic_cfg_supported_direct_call(node);
-    const SZrFunctionCall *call;
 
-    if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
-        return ZR_FALSE;
-    }
-    call = &callNode->data.functionCall;
-    return (TZrBool)(
-            (call->args == ZR_NULL || call->args->count == 0U) &&
-            (call->argumentMarkers == ZR_NULL ||
-             call->argumentMarkers->length == 0U));
+    return (TZrBool)(callNode != ZR_NULL &&
+                    callNode->type == ZR_AST_FUNCTION_CALL);
 }
 
 static TZrBool compiler_semantic_cfg_finally_call_is_resolved(
@@ -131,7 +124,7 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
             }
         }
     } else if (node->type == ZR_AST_EXPRESSION_STATEMENT) {
-        if (compiler_semantic_cfg_finally_is_direct_zero_argument_call(
+        if (compiler_semantic_cfg_finally_is_supported_direct_call(
                     node->data.expressionStatement.expr)) {
             info.exceptionalSiteCount = 1U;
             info.exceptionExpression =

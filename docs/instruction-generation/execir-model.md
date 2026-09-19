@@ -230,8 +230,10 @@ before the branch. The abrupt path stores its converted payload and `true`,
 while the normal path retains the dominating `false`; both enter the same
 cleanup block.
 
-The same private state also models one resolved zero-argument direct call in
-the protected body. Its `INVOKE` normal edge retains `false`; its direct
+The same private state also models one resolved direct call with either no
+arguments or one exact, ownership/reference/GC-neutral `int` identifier passed
+by value. The argument ValueId is captured before `INVOKE`; its normal edge
+retains `false`, while its direct
 exception landing block defines `EXCEPTION_PAYLOAD`, stores that payload plus
 `true`, and enters the shared cleanup without reading the interrupted call
 result. After the `finally` body, cleanup loads the selector and emits an
@@ -240,9 +242,10 @@ operand is reloaded from the private payload Place and rethrown, while final
 `SWITCH_DEFAULT` reaches the normal join. This preserves source evaluation
 order even when `finally` mutates source locals. Preflight examines the complete
 protected and cleanup bodies before activating a graph. Nonlinear abrupt
-payloads, argument-bearing, conditional, or multiple calls, declarations, more
-than one abrupt site, mixed explicit and exceptional completion, catch-plus-
-finally, and other unsupported shapes retain the legacy-CFG fail-closed path.
+payloads, literal, converting, non-value, multiple, or conditional call
+arguments, conditional or multiple calls, declarations, more than one abrupt
+site, mixed explicit and exceptional completion, catch-plus-finally, and other
+unsupported shapes retain the legacy-CFG fail-closed path.
 Break/continue completion remains a later source milestone.
 
 The SemanticIR builder preserves the original semantic value IDs and appends

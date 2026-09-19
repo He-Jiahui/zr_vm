@@ -55,9 +55,11 @@ private pending selector and payload followed by cleanup dispatch to abrupt or
 normal continuation. Nonlinear abrupt payloads, catch-plus-finally, multiple
 abrupt sites or kinds, and most exceptional cleanup entry still use this
 persistent fallback and cannot restart a detached graph. One later bounded
-shape admits a resolved zero-argument direct call: its exceptional edge defines
-and stores `EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after
-cleanup dispatch; multiple, conditional, or argument-bearing calls remain here.
+shape admits a resolved direct call with no argument or one exact `int`
+identifier passed by value: its exceptional edge defines and stores
+`EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after cleanup
+dispatch. Multiple or conditional calls and literal, converting, non-value, or
+multiple arguments remain here.
 
 ## Validation evidence (2026-09-18)
 
