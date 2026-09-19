@@ -27,13 +27,16 @@ executable backend contract: Oracle, ExecBC, and AOT projections continue to
 reject `TYPE_TEST` transactionally until canonical runtime subtype evaluation
 is connected.
 
-## Conservative boundary
+## Phase boundary
 
-Multiple catches, `finally`, unresolved annotations, and structurally richer
-annotations remain on the persistent legacy CFG path. Unsupported handler
-bodies and protected-call shapes also retain their existing fallback. The
-preflight checks resolvability before canonical conversion, so an unsupported
-annotation cannot leave a speculative diagnostic or partial dispatch graph.
+At this checkpoint, multiple catches remained on the persistent legacy CFG
+path. The later
+`tests/acceptance/ssa-source-multiple-catch-cfg.md` checkpoint expands the same
+canonical dispatch contract to ordered catch chains. `finally`, unresolved or
+structurally richer annotations, unsupported handler bodies, and unsupported
+protected-call shapes still retain their existing fallback. Preflight checks
+resolvability before canonical conversion, so an unsupported annotation cannot
+leave a speculative diagnostic or partial dispatch graph.
 
 ## Focused coverage
 

@@ -11,6 +11,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -32,6 +33,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
@@ -65,6 +67,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
+  - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
@@ -99,6 +102,7 @@ tests:
   - tests/acceptance/ssa-source-catch-cfg.md
   - tests/acceptance/ssa-type-test-foundation.md
   - tests/acceptance/ssa-source-typed-catch-cfg.md
+  - tests/acceptance/ssa-source-multiple-catch-cfg.md
 doc_type: module-detail
 ---
 
@@ -337,13 +341,15 @@ is compiling after its own CFG preflight failed, inactive call-driven startup
 is suppressed; a nested call therefore cannot create a detached unconditional
 graph for a conditionally executed operation.
 
-The first source catch selection is intentionally narrow: one catch parameter,
-optionally annotated with one simple already-resolvable canonical type, no
-`finally`, one resolved direct protected call with either no
+Source catch selection is intentionally narrow: one or more catch parameters,
+each annotated with one simple already-resolvable canonical type, optionally
+followed by one terminal catch-all, no `finally`, one resolved direct protected
+call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work,
-and either an empty catch body, one expression statement that reads the catch
-binding, the exact cleanup-free sequence `var local = binding; local;`, a
+and for every handler either an empty catch body, one expression statement that
+reads the catch binding, the exact cleanup-free sequence
+`var local = binding; local;`, a
 direct `return` whose result is void, a literal, or the catch binding, or an
 exact `throw binding;` rethrow.
 Direct catch returns are supported only in the compiler-owned entry body;
@@ -355,21 +361,21 @@ overwrite an outer binding.
 The argument's `LOAD` is defined before the dedicated call block, so it
 dominates the call and does not appear in the handler instructions' explicit
 value-operand arrays.
-For a catch-all, the call's `INVOKE` exceptional successor enters a dedicated
-handler block that defines `EXCEPTION_PAYLOAD`. The handler initializes a
-source-local Place for the catch parameter from that payload before lowering
-the optional read. For an annotated catch, the exceptional successor instead
-enters a dispatch block that defines the payload once, emits
-`TYPE_TEST(payload, matchTypeId)`, and conditionally branches to the handler or
-an unmatched zero-successor `THROW` of the original payload. The matching
-handler initializes its source-local Place with the resolved catch TypeId; only
-the dispatch block carries the exception-block flag.
+The call's `INVOKE` exceptional successor enters the first dispatch block and
+defines `EXCEPTION_PAYLOAD` once. Annotated catches emit
+`TYPE_TEST(payload, matchTypeId)` in source order; a true edge selects that
+handler and a false edge continues to the next dispatch. A terminal catch-all
+receives the final false edge directly. When every clause is annotated, the
+last false edge reaches an unmatched zero-successor `THROW` of the original
+payload. Matching handlers initialize their source-local Place with the
+resolved catch TypeId, while the catch-all uses the payload TypeId. Only the
+first dispatch block carries the exception-block flag.
 For the local-flow form, that read feeds the temporary-to-local `CONVERT`, the
 new local Place initialization, and its final `LOAD`, all in the handler block.
 A falling-through handler and the normal continuation both branch to one join.
-A direct return or binding rethrow instead closes the handler as a zero-
-successor abrupt sink; only the normal continuation reaches the join and any
-later call. The payload
+A direct return or binding rethrow instead closes only that handler as a zero-
+successor abrupt sink; later catch clauses remain independently selectable and
+any other falling-through path can reach the join and a later call. The payload
 is not fabricated as an entry value, and the invoke result is never made
 available on the handler path. The compiler clears the active handler target
 before compiling the catch body, so a call introduced by a later phase cannot
@@ -380,11 +386,13 @@ graph into the entry sidecar; direct child catch returns preflight to fallback
 because child returns do not publish entry-sidecar terminators. If the
 syntactic shape passes preflight but the
 protected call later lacks canonical call facts, the compiler abandons the
-partial graph and compiles the catch body inside disposable SemanticIR
-isolation; only legacy exception bytecode survives that fallback.
+partial graph and compiles every catch body, including later siblings, inside
+disposable SemanticIR isolation; only legacy exception bytecode survives that
+fallback.
 
-Multiple catches; unresolved, generic, qualified, array, ownership-qualified,
-or reference-qualified catch annotations; catch bodies other than the empty,
+A catch-all followed by another clause; unresolved, generic, qualified, array,
+ownership-qualified, or reference-qualified catch annotations; catch bodies
+other than the empty,
 single binding read, exact nonshadowing inferred-local propagation, canonical
 direct return, or exact binding-rethrow shapes;
 protected calls with multiple, named, marked, generic, member, literal,

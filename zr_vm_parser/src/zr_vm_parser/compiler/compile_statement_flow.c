@@ -772,12 +772,9 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     TZrBool hasFinally;
     TZrBool pushedTryContext = ZR_FALSE;
     TZrBool hasSemanticCatch = ZR_FALSE;
+    TZrBool isolateSemanticCatchBodies = ZR_FALSE;
     TZrBool semanticCatchHandlerTerminates = ZR_FALSE;
-    TZrUInt32 semanticExceptionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    TZrUInt32 semanticHandlerBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    TZrUInt32 semanticUnmatchedBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    TZrUInt32 semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    TZrTypeId semanticMatchTypeId = ZR_SEMANTIC_ID_INVALID;
+    SZrCompilerSemanticCatchPlan semanticCatchPlan;
     SZrArray semanticEntrySlots;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -789,18 +786,11 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
         return;
     }
 
+    memset(&semanticCatchPlan, 0, sizeof(semanticCatchPlan));
     memset(&semanticEntrySlots, 0, sizeof(semanticEntrySlots));
     if (compiler_semantic_cfg_try_catch_is_supported(cs, node)) {
-        semanticCatchHandlerTerminates =
-                compiler_semantic_cfg_try_catch_handler_terminates(node);
         hasSemanticCatch = compiler_semantic_cfg_begin_try_catch(
-                cs, node,
-                &semanticExceptionBlock,
-                &semanticHandlerBlock,
-                &semanticUnmatchedBlock,
-                &semanticJoinBlock,
-                &semanticMatchTypeId,
-                &semanticEntrySlots);
+                cs, node, &semanticCatchPlan, &semanticEntrySlots);
     }
     if (!hasSemanticCatch) {
         if (cs->preSemanticIrCfgActive &&
@@ -812,6 +802,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
             return;
         }
         cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+        isolateSemanticCatchBodies = ZR_TRUE;
     }
 
     stmt = &node->data.tryCatchFinallyStatement;
@@ -886,14 +877,14 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
             if (hasSemanticCatch) {
                 TZrBool enteredSemanticHandler = ZR_FALSE;
 
+                semanticCatchHandlerTerminates =
+                        compiler_semantic_cfg_try_catch_handler_terminates(
+                                node, index);
                 if (!compiler_semantic_cfg_enter_try_catch_handler(
                             cs,
                             node,
-                            semanticExceptionBlock,
-                            semanticHandlerBlock,
-                            semanticUnmatchedBlock,
-                            semanticJoinBlock,
-                            semanticMatchTypeId,
+                            &semanticCatchPlan,
+                            index,
                             bindingSlot,
                             &semanticEntrySlots,
                             &enteredSemanticHandler)) {
@@ -904,6 +895,8 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                     return;
                 }
                 hasSemanticCatch = enteredSemanticHandler;
+                isolateSemanticCatchBodies =
+                        (TZrBool)!enteredSemanticHandler;
                 if (enteredSemanticHandler &&
                     semanticCatchHandlerTerminates) {
                     previousSemanticCfgAbruptIsLocal =
@@ -911,17 +904,17 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                     cs->preSemanticIrCfgAbruptIsLocal = ZR_TRUE;
                     restoreSemanticCfgAbruptMode = ZR_TRUE;
                 }
-                if (!enteredSemanticHandler) {
-                    if (!compiler_semantic_ir_isolation_begin(
-                                cs, &semanticCatchBodyIsolation)) {
-                        ZrParser_Compiler_Error(
-                                cs,
-                                "Failed to isolate fallback catch body Semantic IR",
-                                catchClauseNode->location);
-                        return;
-                    }
-                    hasSemanticCatchBodyIsolation = ZR_TRUE;
+            }
+            if (isolateSemanticCatchBodies) {
+                if (!compiler_semantic_ir_isolation_begin(
+                            cs, &semanticCatchBodyIsolation)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to isolate fallback catch body Semantic IR",
+                            catchClauseNode->location);
+                    return;
                 }
+                hasSemanticCatchBodyIsolation = ZR_TRUE;
             }
             if (!cs->hasError && catch_clause_block(catchClauseNode) != ZR_NULL) {
                 ZrParser_Statement_Compile(cs, catch_clause_block(catchClauseNode));
@@ -938,8 +931,8 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                 if (!compiler_semantic_cfg_complete_try_catch(
                             cs,
                             node,
-                            semanticHandlerBlock,
-                            semanticJoinBlock,
+                            &semanticCatchPlan,
+                            index,
                             semanticCatchHandlerTerminates,
                             &semanticEntrySlots)) {
                     ZrParser_Compiler_Error(
@@ -948,7 +941,8 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                             catchClauseNode->location);
                     return;
                 }
-                hasSemanticCatch = ZR_FALSE;
+                hasSemanticCatch = (TZrBool)(
+                        index + 1U < stmt->catchClauses->count);
             }
             exit_scope(cs);
             emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_TRY), (TZrUInt16)handlerIndex));

@@ -1338,6 +1338,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
 #include "test_pre_semantic_ir_typed_catch.inc"
+#include "test_pre_semantic_ir_multi_catch.inc"
 #include "test_pre_semantic_ir_catch_name_preflight.inc"
 #include "test_pre_semantic_ir_catch_abrupt.inc"
 #include "test_pre_semantic_ir_throw_cfg.inc"
@@ -1398,6 +1399,11 @@ int main(void) {
     RUN_TEST(test_source_single_catch_all_emits_exception_handler_cfg);
     RUN_TEST(test_source_single_typed_catch_emits_type_dispatch_cfg);
     RUN_TEST(test_source_named_typed_catch_uses_type_dispatch_cfg);
+    RUN_TEST(test_source_multiple_typed_catches_emit_ordered_dispatch);
+    RUN_TEST(test_source_terminal_catch_all_closes_ordered_dispatch);
+    RUN_TEST(test_source_nonterminal_catch_all_keeps_legacy_cfg);
+    RUN_TEST(test_source_multiple_catches_discard_all_handlers_after_late_fallback);
+    RUN_TEST(test_source_multiple_catches_preserve_local_abrupt_handler);
     RUN_TEST(test_source_catch_payload_initializes_readable_binding);
     RUN_TEST(test_source_catch_flows_payload_through_handler_local);
     RUN_TEST(test_source_catch_captures_simple_argument_before_invoke);

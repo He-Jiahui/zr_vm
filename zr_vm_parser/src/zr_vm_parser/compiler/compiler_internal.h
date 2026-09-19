@@ -126,6 +126,24 @@ typedef struct SZrCompilerSemanticIrIsolation {
     TZrBool isActive;
 } SZrCompilerSemanticIrIsolation;
 
+typedef struct SZrCompilerSemanticCatchPlanEntry {
+    const SZrAstNode *catchClause;
+    TZrUInt32 dispatchBlock;
+    TZrUInt32 handlerBlock;
+    TZrTypeId matchTypeId;
+} SZrCompilerSemanticCatchPlanEntry;
+
+typedef struct SZrCompilerSemanticCatchPlan {
+    SZrArray entries;
+    TZrUInt32 exceptionBlock;
+    TZrUInt32 unmatchedBlock;
+    TZrUInt32 joinBlock;
+    TZrTypeId payloadTypeId;
+    TZrValueId payloadValueId;
+    TZrBool initialized;
+    TZrBool dispatchEmitted;
+} SZrCompilerSemanticCatchPlan;
+
 void compiler_semantic_ir_init(SZrCompilerState *cs);
 void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
@@ -260,7 +278,11 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_try_catch_handler_terminates(
-        const SZrAstNode *node);
+        const SZrAstNode *node,
+        TZrSize catchIndex);
+TZrBool compiler_semantic_cfg_catch_type_is_resolvable(
+        SZrCompilerState *cs,
+        const SZrType *typeInfo);
 TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
         SZrCompilerState *cs,
         const SZrFunctionCall *call,
@@ -269,28 +291,21 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
 TZrBool compiler_semantic_cfg_begin_try_catch(
         SZrCompilerState *cs,
         SZrAstNode *node,
-        TZrUInt32 *exceptionBlock,
-        TZrUInt32 *handlerBlock,
-        TZrUInt32 *unmatchedBlock,
-        TZrUInt32 *joinBlock,
-        TZrTypeId *matchTypeId,
+        SZrCompilerSemanticCatchPlan *plan,
         SZrArray *entrySlots);
 TZrBool compiler_semantic_cfg_enter_try_catch_handler(
         SZrCompilerState *cs,
         SZrAstNode *node,
-        TZrUInt32 exceptionBlock,
-        TZrUInt32 handlerBlock,
-        TZrUInt32 unmatchedBlock,
-        TZrUInt32 joinBlock,
-        TZrTypeId matchTypeId,
+        SZrCompilerSemanticCatchPlan *plan,
+        TZrSize catchIndex,
         TZrUInt32 bindingSlot,
         SZrArray *entrySlots,
         TZrBool *outEntered);
 TZrBool compiler_semantic_cfg_complete_try_catch(
         SZrCompilerState *cs,
         SZrAstNode *node,
-        TZrUInt32 handlerBlock,
-        TZrUInt32 joinBlock,
+        SZrCompilerSemanticCatchPlan *plan,
+        TZrSize catchIndex,
         TZrBool handlerTerminates,
         SZrArray *entrySlots);
 TZrBool compiler_semantic_cfg_terminate_throw(

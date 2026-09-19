@@ -24,6 +24,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
@@ -54,6 +55,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
@@ -69,6 +71,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
+  - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
@@ -97,6 +100,7 @@ tests:
   - tests/acceptance/ssa-exception-payload.md
   - tests/acceptance/ssa-source-catch-cfg.md
   - tests/acceptance/ssa-source-typed-catch-cfg.md
+  - tests/acceptance/ssa-source-multiple-catch-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -330,24 +334,26 @@ already failed also remains on that enclosing legacy path; it cannot restart
 an inactive graph and falsely model conditional execution as unconditional.
 
 A deliberately bounded source `try`/`catch` form now owns an exceptional CFG:
-one catch parameter that is either a catch-all or has one simple,
-already-resolvable canonical type annotation, no `finally`, one resolved direct
-call with either no
+one or more catch parameters, each with one simple already-resolvable canonical
+type annotation, optionally followed by one terminal catch-all, no `finally`,
+one resolved direct call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work in
-the protected block, and either an empty catch body, one expression that reads
-the catch binding, the exact cleanup-free sequence
+the protected block, and for every handler either an empty catch body, one
+expression that reads the catch binding, the exact cleanup-free sequence
 `var local = binding; local;`, a direct `return` whose result is void, a
 literal, or the catch binding, or an exact `throw binding;` rethrow. A
 supported argument is loaded before the
 dedicated invoke block and therefore dominates the call without being consumed
-by any handler explicit value operand. A catch-all exceptional successor enters
-the handler directly. A typed exceptional successor enters a dispatch block,
-defines `EXCEPTION_PAYLOAD` once, evaluates
-`TYPE_TEST(payload, resolvedMatchTypeId)`, and branches true to the handler and
-false to a zero-successor `THROW` of the original payload. The typed handler
-Place records the resolved annotation TypeId; it does not compare or retain a
-source type-name string.
+by any handler explicit value operand. The exceptional successor enters the
+first dispatch block and defines `EXCEPTION_PAYLOAD` exactly once. Typed catches
+then evaluate `TYPE_TEST(payload, resolvedMatchTypeId)` in source order, branch
+true to their handler, and branch false to the next dispatch block. A terminal
+catch-all receives the last false edge directly; if every catch is typed, the
+last false edge reaches a zero-successor `THROW` of the original payload. Each
+typed handler Place records its resolved annotation TypeId, while a catch-all
+uses the payload TypeId. No dispatch compares or retains a source type-name
+string, and only the first dispatch block carries the exception-block flag.
 The local-flow form also requires both the catch name and new local name to be
 absent from variable, runtime/compile-time callable, and type-prototype lookup.
 This prevents inference from reading an outer homonym while runtime lowering
@@ -358,27 +364,30 @@ The two direct abrupt forms additionally require no active ownership or
 legacy path until cleanup edges are explicit.
 Direct catch returns are published only for the compiler-owned entry body;
 declared-child returns remain inside the child's disposable legacy isolation.
-That handler defines one typed `EXCEPTION_PAYLOAD`, initializes a
-source-local catch Place from it, and optionally loads that Place. In the
+The selected handler initializes its source-local catch Place from the shared
+payload and optionally loads that Place. In the
 local-flow form the catch load feeds the temporary-to-local `CONVERT`, local
-Place initialization, and final local `LOAD`. A falling-through handler then
-branches to the same join as the normal continuation. A direct return or
-rethrow instead binds the handler block as a zero-successor abrupt sink; only
-the protected call's normal path reaches the join, so later source continues
-without falsely reviving the handler path or terminating the whole function.
+Place initialization, and final local `LOAD`. A falling-through handler branches
+to the same join as the normal continuation and every other falling-through
+handler. A direct return or rethrow instead binds only that handler block as a
+zero-successor abrupt sink; later handlers remain independently selectable,
+and later source continues without falsely reviving the abrupt path or
+terminating the whole function.
 The compiler restores the pre-try
 slot bridge before constructing the handler and at the join, so the invoke
 result remains normal-path-only and the catch binding remains handler-local.
 The handler target is cleared before the body is compiled; the completed catch
 cannot capture later calls, which receive their ordinary propagation sink.
 If call lowering discovers missing canonical facts after this source form
-passed syntax preflight, it abandons the partial graph and compiles the catch
-body through disposable SemanticIR isolation. That late fallback therefore
-cannot leak an unbound catch read into the entry sidecar.
+passed syntax preflight, it abandons the partial graph and compiles every catch
+body, including later siblings, through disposable SemanticIR isolation. That
+late fallback therefore cannot leak an unbound catch read into the entry
+sidecar.
 
 All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
-multiple catches; unresolved, generic, qualified, array, ownership-qualified,
-or reference-qualified catch annotations; a catch body other than the empty,
+a catch-all followed by another clause; unresolved, generic, qualified, array,
+ownership-qualified, or reference-qualified catch annotations; a catch body
+other than the empty,
 single binding read, exact nonshadowing inferred-local propagation, canonical
 direct return, or exact binding-rethrow shapes; a
 protected body without the single resolved direct call, multiple/named/marked/
@@ -390,8 +399,8 @@ Declared callable bodies compile their try graph inside disposable SemanticIR
 isolation, with direct catch returns preflighted to fallback, and cannot pollute
 the entry sidecar. This keeps the legacy exception
 machinery authoritative until general catch-body control/effect flow, general
-argument effects, ordered multiple-handler type dispatch, arbitrary
-handled-throw routing, and cleanup edges are modeled. TYPE_TEST-bearing graphs
+argument effects, arbitrary handled-throw routing, and cleanup edges are
+modeled. TYPE_TEST-bearing graphs
 also remain non-executable until backend subtype projection is implemented.
 
 An explicit `throw` outside that boundary now consumes its source expression's
