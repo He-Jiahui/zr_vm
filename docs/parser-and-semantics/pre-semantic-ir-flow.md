@@ -324,14 +324,22 @@ A deliberately bounded source `try`/`catch` form now owns an exceptional CFG:
 one catch-all parameter, no `finally`, one resolved direct call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work in
-the protected block, and either an empty catch body or one expression that
-reads the catch binding. A supported argument is loaded before the dedicated
-invoke block and therefore dominates the call without being consumed by any
-handler explicit value operand. The call's exceptional successor enters the
-handler directly.
+the protected block, and either an empty catch body, one expression that reads
+the catch binding, or the exact cleanup-free sequence
+`var local = binding; local;`. A supported argument is loaded before the
+dedicated invoke block and therefore dominates the call without being consumed
+by any handler explicit value operand. The call's exceptional successor enters
+the handler directly.
+The local-flow form also requires both the catch name and new local name to be
+absent from variable, runtime/compile-time callable, and type-prototype lookup.
+This prevents inference from reading an outer homonym while runtime lowering
+reads the handler catch slot, and prevents the declaration from replacing an
+outer binding.
 That handler defines one typed `EXCEPTION_PAYLOAD`, initializes a
-source-local catch Place from it, optionally loads that Place, and branches to
-the same join as the normal continuation. The compiler restores the pre-try
+source-local catch Place from it, and optionally loads that Place. In the
+local-flow form the catch load feeds the temporary-to-local `CONVERT`, local
+Place initialization, and final local `LOAD`; the handler then branches to the
+same join as the normal continuation. The compiler restores the pre-try
 slot bridge before constructing the handler and at the join, so the invoke
 result remains normal-path-only and the catch binding remains handler-local.
 The handler target is cleared before the body is compiled; the completed catch
@@ -342,15 +350,17 @@ body through disposable SemanticIR isolation. That late fallback therefore
 cannot leak an unbound catch read into the entry sidecar.
 
 All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
-typed or multiple catches, a catch body other than the single binding read, a
+typed or multiple catches, a catch body other than the empty, single binding
+read, or exact nonshadowing inferred-local propagation shapes, a
 protected body without the single resolved direct call, multiple/named/marked/
 generic arguments, argument expressions other than the simple identifier,
 type-converting or non-value arguments, nested control, and every `finally`
 shape abandon an earlier partial source CFG and suppress later startup.
 Declared callable bodies compile their try graph inside disposable SemanticIR
 isolation and cannot pollute the entry sidecar. This keeps the legacy exception
-machinery authoritative until general catch-body value flow, general argument
-effects, type dispatch, explicit throw routing, and cleanup edges are modeled.
+machinery authoritative until general catch-body control/effect flow, general
+argument effects, type dispatch, explicit throw routing, and cleanup edges are
+modeled.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler

@@ -1299,6 +1299,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_optional_value.inc"
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
+#include "test_pre_semantic_ir_catch_name_preflight.inc"
 #include "test_pre_semantic_ir_throw_cfg.inc"
 #include "test_pre_semantic_ir_return_cfg.inc"
 #include "test_pre_semantic_ir_branch_exit_cfg.inc"
@@ -1355,7 +1356,9 @@ int main(void) {
     RUN_TEST(test_nested_calls_do_not_restart_abandoned_source_cfg);
     RUN_TEST(test_source_single_catch_all_emits_exception_handler_cfg);
     RUN_TEST(test_source_catch_payload_initializes_readable_binding);
+    RUN_TEST(test_source_catch_flows_payload_through_handler_local);
     RUN_TEST(test_source_catch_captures_simple_argument_before_invoke);
+    RUN_TEST(test_source_catch_local_flow_rejects_hidden_name_bindings);
     RUN_TEST(test_declared_child_try_does_not_pollute_entry_cfg);
     RUN_TEST(test_late_call_fallback_discards_catch_binding_read);
     RUN_TEST(test_unmodeled_try_scope_does_not_start_detached_call_cfg);

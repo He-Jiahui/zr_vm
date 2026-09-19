@@ -250,6 +250,7 @@ TZrBool compiler_semantic_cfg_split_invoke(
         SZrFileRange range);
 TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_try_catch_is_supported(
+        SZrCompilerState *cs,
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
         SZrCompilerState *cs,

@@ -318,13 +318,20 @@ The first source catch selection is intentionally narrow: one untyped
 catch-all, no `finally`, one resolved direct protected call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work,
-and either an empty catch body or one expression statement that reads the catch
-binding. The argument's `LOAD` is defined before the dedicated call block, so it
+and either an empty catch body, one expression statement that reads the catch
+binding, or the exact cleanup-free sequence `var local = binding; local;`.
+That local-flow sequence is admitted only when neither identifier conflicts
+with an existing variable, runtime/compile-time callable, or type prototype,
+so inference cannot resolve the catch read through an outer declaration or
+overwrite an outer binding.
+The argument's `LOAD` is defined before the dedicated call block, so it
 dominates the call and does not appear in the handler instructions' explicit
 value-operand arrays.
 The call's `INVOKE` exceptional successor enters a dedicated handler block
 that defines `EXCEPTION_PAYLOAD`. The handler initializes a source-local Place
-for the catch parameter from that payload before lowering the optional read;
+for the catch parameter from that payload before lowering the optional read.
+For the local-flow form, that read feeds the temporary-to-local `CONVERT`, the
+new local Place initialization, and its final `LOAD`, all in the handler block;
 both the normal continuation and handler then branch to one join. The payload
 is not fabricated as an entry value, and the invoke result is never made
 available on the handler path. The compiler clears the active handler target
@@ -337,7 +344,8 @@ protected call later lacks canonical call facts, the compiler abandons the
 partial graph and compiles the catch body inside disposable SemanticIR
 isolation; only legacy exception bytecode survives that fallback.
 
-Typed or multiple catches, catch bodies other than the single binding read,
+Typed or multiple catches, catch bodies other than the empty, single binding
+read, or exact nonshadowing inferred-local propagation shapes,
 protected calls with multiple, named, marked, generic, member, literal,
 computed, type-converting, or non-value arguments, protected bodies with other
 control or effects, and all `finally` cleanup shapes remain an explicit

@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "type_inference_internal.h"
 
 static const SZrAstNode *compiler_semantic_cfg_single_catch(
         const SZrAstNode *node) {
@@ -24,11 +25,30 @@ static TZrBool compiler_semantic_cfg_is_empty_block(
                      node->data.block.body->count == 0U));
 }
 
+static SZrString *compiler_semantic_cfg_simple_identifier_name(
+        const SZrAstNode *node) {
+    const SZrAstNode *identifier = node;
+
+    if (identifier != ZR_NULL &&
+        identifier->type == ZR_AST_PRIMARY_EXPRESSION) {
+        if (identifier->data.primaryExpression.members != ZR_NULL &&
+            identifier->data.primaryExpression.members->count != 0U) {
+            return ZR_NULL;
+        }
+        identifier = identifier->data.primaryExpression.property;
+    }
+    if (identifier == ZR_NULL ||
+        identifier->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_NULL;
+    }
+    return identifier->data.identifier.name;
+}
+
 static TZrBool compiler_semantic_cfg_is_catch_binding_read(
         const SZrAstNode *node,
         SZrString *bindingName) {
     const SZrAstNode *expression;
-    const SZrAstNode *identifier;
+    SZrString *identifierName;
 
     if (node == ZR_NULL || node->type != ZR_AST_EXPRESSION_STATEMENT ||
         bindingName == ZR_NULL) {
@@ -38,34 +58,90 @@ static TZrBool compiler_semantic_cfg_is_catch_binding_read(
     if (expression == ZR_NULL) {
         return ZR_FALSE;
     }
-    identifier = expression;
-    if (expression->type == ZR_AST_PRIMARY_EXPRESSION) {
-        if (expression->data.primaryExpression.members != ZR_NULL &&
-            expression->data.primaryExpression.members->count != 0U) {
-            return ZR_FALSE;
-        }
-        identifier = expression->data.primaryExpression.property;
+    identifierName = compiler_semantic_cfg_simple_identifier_name(expression);
+    return (TZrBool)(identifierName != ZR_NULL &&
+                    ZrCore_String_Equal(identifierName, bindingName));
+}
+
+static TZrBool compiler_semantic_cfg_identifier_name_is_unbound(
+        SZrCompilerState *cs,
+        SZrString *name) {
+    SZrFunctionTypeInfo *functionInfo = ZR_NULL;
+
+    if (cs == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL ||
+        ZrParser_TypeEnvironment_FindVariableBinding(
+                cs->typeEnv, name) != ZR_NULL ||
+        ZrParser_TypeEnvironment_LookupFunction(
+                cs->typeEnv, name, &functionInfo)) {
+        return ZR_FALSE;
     }
-    return (TZrBool)(identifier != ZR_NULL &&
-                    identifier->type == ZR_AST_IDENTIFIER_LITERAL &&
-                    identifier->data.identifier.name != ZR_NULL &&
-                    ZrCore_String_Equal(
-                            identifier->data.identifier.name,
-                            bindingName));
+    functionInfo = ZR_NULL;
+    if (cs->compileTimeTypeEnv != ZR_NULL &&
+        ZrParser_TypeEnvironment_LookupFunction(
+                cs->compileTimeTypeEnv, name, &functionInfo)) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(find_compiler_type_prototype_inference(cs, name) ==
+                    ZR_NULL);
+}
+
+static TZrBool compiler_semantic_cfg_is_catch_local_flow(
+        SZrCompilerState *cs,
+        const SZrAstNode *node,
+        SZrString *bindingName) {
+    const SZrVariableDeclaration *declaration;
+    SZrString *localName;
+    SZrString *initializerName;
+
+    if (cs == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        node == ZR_NULL || node->type != ZR_AST_BLOCK ||
+        node->data.block.body == ZR_NULL ||
+        node->data.block.body->count != 2U ||
+        bindingName == ZR_NULL ||
+        node->data.block.body->nodes[0] == ZR_NULL ||
+        node->data.block.body->nodes[0]->type !=
+                ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+    declaration =
+            &node->data.block.body->nodes[0]->data.variableDeclaration;
+    if (declaration->pattern == ZR_NULL ||
+        declaration->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        declaration->typeInfo != ZR_NULL || declaration->value == ZR_NULL ||
+        declaration->isConst ||
+        declaration->accessModifier != ZR_ACCESS_PRIVATE) {
+        return ZR_FALSE;
+    }
+    localName = declaration->pattern->data.identifier.name;
+    initializerName = compiler_semantic_cfg_simple_identifier_name(
+            declaration->value);
+    return (TZrBool)(localName != ZR_NULL && initializerName != ZR_NULL &&
+                    !ZrCore_String_Equal(localName, bindingName) &&
+                    compiler_semantic_cfg_identifier_name_is_unbound(
+                            cs, bindingName) &&
+                    compiler_semantic_cfg_identifier_name_is_unbound(
+                            cs, localName) &&
+                    ZrCore_String_Equal(initializerName, bindingName) &&
+                    compiler_semantic_cfg_is_catch_binding_read(
+                            node->data.block.body->nodes[1], localName));
 }
 
 static TZrBool compiler_semantic_cfg_is_supported_catch_block(
+        SZrCompilerState *cs,
         const SZrAstNode *node,
         SZrString *bindingName) {
     if (compiler_semantic_cfg_is_empty_block(node)) {
         return ZR_TRUE;
     }
-    return (TZrBool)(node != ZR_NULL && node->type == ZR_AST_BLOCK &&
-                    node->data.block.body != ZR_NULL &&
-                    node->data.block.body->count == 1U &&
-                    compiler_semantic_cfg_is_catch_binding_read(
-                            node->data.block.body->nodes[0],
-                            bindingName));
+    if (node != ZR_NULL && node->type == ZR_AST_BLOCK &&
+        node->data.block.body != ZR_NULL &&
+        node->data.block.body->count == 1U &&
+        compiler_semantic_cfg_is_catch_binding_read(
+                node->data.block.body->nodes[0], bindingName)) {
+        return ZR_TRUE;
+    }
+    return compiler_semantic_cfg_is_catch_local_flow(
+            cs, node, bindingName);
 }
 
 static TZrBool compiler_semantic_cfg_is_simple_value_argument(
@@ -140,12 +216,16 @@ static const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
 }
 
 TZrBool compiler_semantic_cfg_try_catch_is_supported(
+        SZrCompilerState *cs,
         const SZrAstNode *node) {
     const SZrTryCatchFinallyStatement *statement;
     const SZrAstNode *catchClause;
     const SZrAstNode *parameter;
     const SZrAstNode *protectedStatement;
 
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
     catchClause = compiler_semantic_cfg_single_catch(node);
     if (catchClause == ZR_NULL || catchClause->type != ZR_AST_CATCH_CLAUSE) {
         return ZR_FALSE;
@@ -176,6 +256,7 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
                     parameter->data.parameter.name->name != ZR_NULL &&
                     parameter->data.parameter.typeInfo == ZR_NULL &&
                     compiler_semantic_cfg_is_supported_catch_block(
+                            cs,
                             catchClause->data.catchClause.block,
                             parameter->data.parameter.name->name));
 }
@@ -265,7 +346,7 @@ TZrBool compiler_semantic_cfg_begin_try_catch(
 
     if (cs == ZR_NULL || node == ZR_NULL || handlerBlock == ZR_NULL ||
         joinBlock == ZR_NULL || entrySlots == ZR_NULL ||
-        !compiler_semantic_cfg_try_catch_is_supported(node) ||
+        !compiler_semantic_cfg_try_catch_is_supported(cs, node) ||
         cs->preSemanticIrCfgCatchBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         !compiler_semantic_cfg_ensure_active(cs)) {
         return ZR_FALSE;

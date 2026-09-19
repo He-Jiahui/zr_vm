@@ -786,7 +786,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     }
 
     memset(&semanticEntrySlots, 0, sizeof(semanticEntrySlots));
-    if (compiler_semantic_cfg_try_catch_is_supported(node)) {
+    if (compiler_semantic_cfg_try_catch_is_supported(cs, node)) {
         hasSemanticCatch = compiler_semantic_cfg_begin_try_catch(
                 cs, node, &semanticHandlerBlock, &semanticJoinBlock,
                 &semanticEntrySlots);
