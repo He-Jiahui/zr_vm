@@ -90,6 +90,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-infinite-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-infinite-for-cycle-cfg.md
   - tests/acceptance/ssa-source-foreach-cfg.md
+  - tests/acceptance/ssa-exception-payload.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -106,7 +107,7 @@ M3 introduces a semantic function that exists before final ExecBC assembly. It g
 
 ## Instruction Contract
 
-The public opcode set covers constants and conversions; Place construction and projection; load/store/initialize/move/copy/drop; borrow/reborrow/end-loan/dereference; typed, virtual, dynamic, and meta calls; iterator initialization, advance, and current-value retrieval; control flow; scope and cleanup; distinct value, aggregate, field, union, GC, and ownership construction; resolved property operations; and evaluate-once destructuring operations.
+The public opcode set covers constants and conversions; Place construction and projection; load/store/initialize/move/copy/drop; borrow/reborrow/end-loan/dereference; typed, virtual, dynamic, and meta calls; iterator initialization, advance, and current-value retrieval; an explicit handler-local exception payload definition; control flow; scope and cleanup; distinct value, aggregate, field, union, GC, and ownership construction; resolved property operations; and evaluate-once destructuring operations.
 
 Value construction, ordinary/meta calls, GC allocation, and ownership construction have different opcodes. Ownership construction additionally records explicit unique/share/degrade/wake operations; move, drop, shared borrow, and mutable borrow remain their own opcodes. No generic construct flag or default fallback opcode is used to reinterpret one family as another. Golden formatting is stable and includes instruction ID, opcode name, TypeId, PlaceId, input ValueId, and result ValueId.
 
@@ -323,9 +324,9 @@ handler, and finally blocks have compiled. Startup remains suppressed for the
 rest of that SemanticIR function as well, so a later source construct cannot
 treat the earlier exception scope as a linear prefix. This keeps the validated
 two-block legacy graph even when an enclosing fallback scope restores its own
-temporary suppression state. Canonical exception payload, handler, and cleanup
-edges must become available together before this function-level block can be
-removed.
+temporary suppression state. The low-level `EXCEPTION_PAYLOAD` operation is
+now available, but source catch selection and cleanup edges must be connected
+before this function-level block can be removed.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler
@@ -371,9 +372,10 @@ uses a typed temporary Place: the normal block converts and stores the call
 result, the dedicated absent block stores a typed null constant, and the join
 restores the pre-branch slot snapshot and loads one merged ValueId. The
 exception continuation is an explicit zero-instruction propagation sink and
-does not reach that merge. The current model has no edge-defined exception
-payload value, so the producer does not invent a normal-entry value for
-`THROW`. Ownership results remain bound to their result slots so an explicitly
+does not reach that merge. SemanticIR can represent an edge-defined exception
+payload for a real handler, but this propagation-only producer does not invent
+or consume one as a normal-entry value for `THROW`. Ownership results remain
+bound to their result slots so an explicitly
 awakened nullable receiver can be the branch operand. Weak-wake guard frames
 and calls missing a canonical result type, symbol, callable, or explicit
 argument value remain outside this subset; after a source graph has started,

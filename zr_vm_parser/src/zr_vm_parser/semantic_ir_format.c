@@ -55,6 +55,7 @@ const TZrChar *ZrParser_SemanticIr_OpcodeName(EZrSemanticIrOpcode opcode) {
         "iter.init",
         "iter.move_next",
         "iter.current",
+        "exception.payload",
     };
 
     if (opcode < ZR_SEMANTIC_IR_INVALID || opcode >= ZR_SEMANTIC_IR_ENUM_MAX) {

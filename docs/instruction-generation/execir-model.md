@@ -1,7 +1,12 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
@@ -18,7 +23,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 implementation_files:
+  - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
@@ -37,6 +45,11 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/01-core-model.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
@@ -56,6 +69,8 @@ tests:
   - tests/parser/test_pre_semantic_ir_branch_exit_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
+  - tests/parser/test_ssa_builder_control_edges.c
+  - tests/parser/test_ssa_oracle_projections.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
@@ -74,6 +89,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
   - tests/acceptance/ssa-builder-iterator-invokes.md
   - tests/acceptance/ssa-source-foreach-cfg.md
+  - tests/acceptance/ssa-exception-payload.md
 doc_type: module-detail
 ---
 
@@ -115,6 +131,16 @@ Iterator initialization, advance, and current-value retrieval are distinct
 one-operand/one-result invoke terminators. Each conservatively declares managed
 heap and native-FFI reads/writes plus throw/allocation effects; lowering must not
 disguise protocol dispatch as a generic callable symbol.
+
+`EXCEPTION_PAYLOAD` is the explicit handler-entry value operation. It has one
+result, no operands, no memory/effect token, and is not a terminator. Structural
+verification accepts it only in a non-entry, exception-marked block whose every
+incoming edge is the direct exceptional successor of a may-throw terminator,
+with at most one payload definition per handler block. Although it has no
+observable effect, the value is handler-local state rather than a freely
+interchangeable zero-operand constant; the current GVN whitelist does not
+common it across blocks. The oracle, ExecBC projection, and AOT projection
+reject it transactionally until their exception ABI carries the active payload.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address
@@ -285,10 +311,11 @@ is compiling after its own CFG preflight failed, inactive call-driven startup
 is suppressed; a nested call therefore cannot create a detached unconditional
 graph for a conditionally executed operation.
 
-Until handler payloads, catch selection, and finally cleanup edges are part of
-the source graph, `try`/`catch`/`finally` is also an explicit conservative
-boundary. Entering that scope abandons any partial source CFG, and all inactive
-CFG starters stay suppressed for the rest of the current SemanticIR function.
+Although the low-level IR can now name a handler payload, catch selection and
+finally cleanup edges are not yet part of the source graph. Consequently,
+`try`/`catch`/`finally` remains an explicit conservative boundary. Entering
+that scope abandons any partial source CFG, and all inactive CFG starters stay
+suppressed for the rest of the current SemanticIR function.
 This includes its protected, handler, cleanup, and trailing source regions: a
 later starter cannot absorb the earlier exception scope into a false linear
 prefix. This function-level block is separate from scoped fallback suppression,
@@ -372,8 +399,9 @@ block stores a typed null constant into the same Place; and the join loads one
 merged ValueId. The call's exception edge instead enters an explicit
 propagation sink and cannot reach the merge. Isolating the call prevents
 earlier present-path stores from being attributed to its exceptional transfer.
-The sink has no fabricated `THROW` operand because edge-defined exception
-payload values are not yet part of the model. Weak-wake guards, calls that lack
+The sink still has no fabricated `THROW` operand: the low-level payload
+operation exists, but this propagation-only source path neither binds a catch
+value nor consumes the active exception. Weak-wake guards, calls that lack
 required canonical facts, and cleanup suffixes still abandon an active partial
 graph and use the legacy two-block path, so this checkpoint does not claim the
 complete optional-chain exit gate.

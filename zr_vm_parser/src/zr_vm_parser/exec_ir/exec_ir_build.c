@@ -65,6 +65,8 @@ static EZrExecIrOpcode map_opcode(const SZrSemanticIrInstruction *instruction) {
             return ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT;
         case ZR_SEMANTIC_IR_ITER_CURRENT:
             return ZR_EXEC_IR_OPCODE_ITER_CURRENT;
+        case ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD:
+            return ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD;
         default: return ZR_EXEC_IR_OPCODE_INVALID;
     }
 }
@@ -655,7 +657,11 @@ static TZrBool verify_unpublished_ssa(SZrExecIrFunction *output,
      * verification so BuildModule can assign the real contract. */
     if (savedId == ZR_EXEC_IR_FUNCTION_ID_INVALID) output->id = 1u;
     if (savedToken == 0u) output->functionToken = 1u;
-    valid = ZrCore_ExecIr_VerifyFunction(output, ZR_EXEC_IR_VERIFY_SSA, diagnostic);
+    valid = ZrCore_ExecIr_VerifyFunction(
+            output,
+            (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                   ZR_EXEC_IR_VERIFY_SSA),
+            diagnostic);
     output->id = savedId;
     output->functionToken = savedToken;
     return valid;

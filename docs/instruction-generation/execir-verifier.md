@@ -1,12 +1,14 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_licm.c
 implementation_files:
+  - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
@@ -18,8 +20,10 @@ tests:
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_core_model.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
+  - tests/parser/test_ssa_builder_control_edges.c
   - tests/acceptance/ssa-effect-chain-continuity.md
   - tests/acceptance/ssa-cfg-edge-symmetry.md
+  - tests/acceptance/ssa-exception-payload.md
   - tests/parser/test_ssa_loops_specialization.c
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/cmake/ssa-tests.cmake
@@ -96,6 +100,19 @@ successor one must carry `ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION`; instruction-owned
 and block-owned successor rows must agree. A missing or misplaced exception
 marker therefore fails closed before SSA reachability can mistake the
 exceptional continuation for a normal one.
+
+`EXCEPTION_PAYLOAD` defines the value delivered at a handler entry without
+pretending it is an operand of the throwing instruction. The structural phase
+requires its containing block to carry the exception flag, not be the function
+entry, and be the direct exceptional target of every predecessor's may-throw
+terminator. A normal or implicit function entry into the same block is invalid
+because no active payload exists on that path.
+A handler block may contain at most one such definition. Violations use
+`EXCEPTION_EDGE` and retain the
+payload instruction's block, instruction, and source identity. The parser
+builder runs structure and SSA verification together before publishing its
+transactional result, so a hand-built payload in an ordinary block cannot
+escape through the former SSA-only publication gate.
 
 Dominators use a reachable-block bit set and an iterative predecessor
 intersection.  Unreachable rows are kept empty, so a definition from an

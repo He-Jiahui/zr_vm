@@ -323,9 +323,9 @@ facts are owned only by the present path. A supported known member call occupies
 a separate terminal block and publishes a typed `CALL_*` fact with canonical
 receiver/callee, explicit argument, symbol, and result identities. Its ordered
 normal and exception edges become one ExecIR `INVOKE`; the exception
-continuation is an explicit propagation sink. The sink remains instruction-free
-until the IR can represent an edge-defined exception payload, so lowering does
-not fabricate a `THROW` input.
+continuation is an explicit propagation sink. The IR can now represent an
+edge-defined exception payload in a real handler, but this propagation-only
+sink remains instruction-free and lowering does not fabricate a `THROW` input.
 
 For `VOID_NOOP`, the absent edge skips directly to the join. For `NULLABLE`,
 the normal continuation converts and stores the call result into a typed
@@ -345,7 +345,7 @@ non-consuming ownership and borrow/view operations to `COPY`, release to
 `DROP`, and loan activation/end facts to source-mapped `NOP`. Producer-less
 SemanticIR inputs are carried as external-entry values; this closes the prior
 untyped resource-construction boundary for the nullable optional fixtures
-without claiming Weak, exception-payload/handler, or cleanup CFG support.
+without claiming Weak, source handler selection, or cleanup CFG support.
 
 Every guard-owned `OWN_WAKE` is immediately followed by
 `MARK_TO_BE_CLOSED` for the same destination slot. Normal completion closes

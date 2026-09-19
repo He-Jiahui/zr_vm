@@ -38,6 +38,147 @@ static void make_function(SZrSemanticIrFunction *semantic,
     blocks[0].outgoingEdges = input_array(edge, 1u, sizeof(*edge));
 }
 
+static void make_exception_payload_function(
+        SZrSemanticIrFunction *semantic,
+        SZrParserCfgBlock blocks[3],
+        SZrParserCfgEdge edges[2],
+        SZrSemanticIrInstruction instructions[6],
+        SZrSemanticIrValue values[4],
+        TZrValueId operands[2]) {
+    memset(semantic, 0, sizeof(*semantic));
+    memset(blocks, 0, sizeof(*blocks) * 3u);
+    memset(edges, 0, sizeof(*edges) * 2u);
+    memset(instructions, 0, sizeof(*instructions) * 6u);
+    memset(values, 0, sizeof(*values) * 4u);
+
+    semantic->symbolId = (TZrSymbolId)42u;
+    semantic->cfg.blocks = input_array(blocks, 3u, sizeof(*blocks));
+    semantic->cfg.entryBlockId = 0u;
+    semantic->cfg.exitBlockId = 1u;
+    semantic->instructions = input_array(
+            instructions, 5u, sizeof(*instructions));
+    semantic->values = input_array(values, 3u, sizeof(*values));
+    semantic->valueOperands = input_array(operands, 2u, sizeof(*operands));
+
+    for (TZrUInt32 index = 0u; index < 3u; ++index) {
+        blocks[index].id = index;
+        blocks[index].kind = index == 0u
+                ? ZR_PARSER_CFG_BLOCK_ENTRY
+                : ZR_PARSER_CFG_BLOCK_STATEMENT;
+        values[index].id = index + 1u;
+        values[index].typeId = 1u;
+    }
+    blocks[0].instructionCount = 1u;
+    blocks[0].outgoingEdges = input_array(edges, 2u, sizeof(*edges));
+    blocks[1].firstInstructionIndex = 1u;
+    blocks[1].instructionCount = 2u;
+    blocks[1].terminatorKind = ZR_PARSER_CFG_TERMINATOR_RETURN;
+    blocks[2].firstInstructionIndex = 3u;
+    blocks[2].instructionCount = 2u;
+    blocks[2].terminatorKind = ZR_PARSER_CFG_TERMINATOR_RETURN;
+
+    edges[0].fromBlockId = 0u;
+    edges[0].toBlockId = 1u;
+    edges[0].kind = ZR_PARSER_CFG_EDGE_NORMAL;
+    edges[1].fromBlockId = 0u;
+    edges[1].toBlockId = 2u;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_EXCEPTION;
+
+    for (TZrUInt32 index = 0u; index < 5u; ++index) {
+        instructions[index].id = index + 1u;
+        instructions[index].typeId = 1u;
+    }
+    instructions[0].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    instructions[0].resultValueId = 1u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[1].resultValueId = 2u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].operandStart = 0u;
+    instructions[2].operandCount = 1u;
+    instructions[3].opcode = ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD;
+    instructions[3].resultValueId = 3u;
+    instructions[4].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[4].operandStart = 1u;
+    instructions[4].operandCount = 1u;
+    values[0].definitionInstructionId = 1u;
+    values[1].definitionInstructionId = 2u;
+    values[2].definitionInstructionId = 4u;
+    operands[0] = 2u;
+    operands[1] = 3u;
+}
+
+static void make_mixed_predecessor_exception_payload_function(
+        SZrSemanticIrFunction *semantic,
+        SZrParserCfgBlock blocks[3],
+        SZrParserCfgEdge edges[3],
+        SZrSemanticIrInstruction instructions[4],
+        SZrSemanticIrValue values[2],
+        TZrValueId operands[1]) {
+    memset(semantic, 0, sizeof(*semantic));
+    memset(blocks, 0, sizeof(*blocks) * 3u);
+    memset(edges, 0, sizeof(*edges) * 3u);
+    memset(instructions, 0, sizeof(*instructions) * 4u);
+    memset(values, 0, sizeof(*values) * 2u);
+
+    semantic->symbolId = (TZrSymbolId)43u;
+    semantic->cfg.blocks = input_array(blocks, 3u, sizeof(*blocks));
+    semantic->cfg.entryBlockId = 0u;
+    semantic->cfg.exitBlockId = 2u;
+    semantic->instructions = input_array(
+            instructions, 4u, sizeof(*instructions));
+    semantic->values = input_array(values, 2u, sizeof(*values));
+    semantic->valueOperands = input_array(operands, 1u, sizeof(*operands));
+
+    for (TZrUInt32 index = 0u; index < 3u; ++index) {
+        blocks[index].id = index;
+        blocks[index].kind = index == 0u
+                ? ZR_PARSER_CFG_BLOCK_ENTRY
+                : ZR_PARSER_CFG_BLOCK_STATEMENT;
+    }
+    blocks[0].instructionCount = 1u;
+    blocks[0].outgoingEdges = input_array(edges, 2u, sizeof(*edges));
+    blocks[1].firstInstructionIndex = 1u;
+    blocks[1].instructionCount = 1u;
+    blocks[1].terminatorKind = ZR_PARSER_CFG_TERMINATOR_BRANCH;
+    blocks[1].outgoingEdges = input_array(&edges[2], 1u, sizeof(*edges));
+    blocks[2].firstInstructionIndex = 2u;
+    blocks[2].instructionCount = 2u;
+    blocks[2].terminatorKind = ZR_PARSER_CFG_TERMINATOR_RETURN;
+
+    edges[0].fromBlockId = 0u;
+    edges[0].toBlockId = 1u;
+    edges[0].kind = ZR_PARSER_CFG_EDGE_NORMAL;
+    edges[1].fromBlockId = 0u;
+    edges[1].toBlockId = 2u;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_EXCEPTION;
+    edges[2].fromBlockId = 1u;
+    edges[2].toBlockId = 2u;
+    edges[2].kind = ZR_PARSER_CFG_EDGE_NORMAL;
+
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    instructions[0].typeId = 1u;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_BRANCH;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD;
+    instructions[2].typeId = 1u;
+    instructions[2].resultValueId = 2u;
+    instructions[3].id = 4u;
+    instructions[3].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[3].typeId = 1u;
+    instructions[3].operandCount = 1u;
+
+    values[0].id = 1u;
+    values[0].typeId = 1u;
+    values[0].definitionInstructionId = 1u;
+    values[1].id = 2u;
+    values[1].typeId = 1u;
+    values[1].definitionInstructionId = 3u;
+    operands[0] = 2u;
+}
+
 static void test_rejects_unrepresentable_control_edges(void) {
     const EZrParserCfgEdgeKind kinds[] = {
         ZR_PARSER_CFG_EDGE_EXCEPTION, ZR_PARSER_CFG_EDGE_CLEANUP,
@@ -329,6 +470,124 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_exception_payload_is_defined_only_in_handler(void) {
+    SZrSemanticIrFunction semantic;
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[2];
+    SZrSemanticIrInstruction instructions[6];
+    SZrSemanticIrValue values[4];
+    TZrValueId operands[2];
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    const SZrExecIrOpcodeInfo *info;
+
+    make_exception_payload_function(
+            &semantic, blocks, edges, instructions, values, operands);
+    ZrCore_ExecIr_FunctionInit(&output);
+
+    check(ZrParser_ExecIr_Build(
+                  &semantic, ZR_NULL, &output, &diagnostic) &&
+                  output.blockCount == 3u &&
+                  output.instructions[0].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+                  output.instructions[3].opcode ==
+                          ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
+                  output.instructions[3].operands.count == 0u &&
+                  output.instructions[3].results.count == 1u &&
+                  (output.blocks[2].flags &
+                   ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u,
+          "exception handler payload was not lowered as a local definition");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(
+                  &output,
+                  (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                         ZR_EXEC_IR_VERIFY_SSA),
+                  &diagnostic),
+          "handler payload result failed structural or SSA verification");
+
+    info = ZrCore_ExecIr_OpcodeInfo(ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD);
+    check(info != ZR_NULL && info->resultArity == 1u &&
+                  info->minimumOperands == 0u &&
+                  info->maximumOperands == 0u &&
+                  (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE) != 0u &&
+                  (info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR |
+                                  ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW)) == 0u,
+          "exception payload schema lost its pure handler-local value contract");
+
+    semantic.cfg.entryBlockId = 2u;
+    check(!ZrParser_ExecIr_Build(
+                  &semantic, ZR_NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+                  diagnostic.blockId == 3u &&
+                  diagnostic.instructionId == 4u &&
+                  output.instructions[3].opcode ==
+                          ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD,
+          "builder accepted an exception payload in the function entry block");
+    semantic.cfg.entryBlockId = 0u;
+
+    instructions[1].opcode = ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD;
+    instructions[3].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    check(!ZrParser_ExecIr_Build(
+                  &semantic, ZR_NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+                  diagnostic.blockId == 2u &&
+                  diagnostic.instructionId == 2u &&
+                  output.instructions[3].opcode ==
+                          ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD,
+          "builder published an exception payload outside a handler block");
+
+    instructions[1].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[3].opcode = ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD;
+    instructions[4].opcode = ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD;
+    instructions[4].operandCount = 0u;
+    instructions[4].resultValueId = 4u;
+    instructions[5].id = 6u;
+    instructions[5].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[5].typeId = 1u;
+    instructions[5].operandStart = 1u;
+    instructions[5].operandCount = 1u;
+    values[3].id = 4u;
+    values[3].typeId = 1u;
+    values[3].definitionInstructionId = 5u;
+    operands[1] = 4u;
+    blocks[2].instructionCount = 3u;
+    semantic.instructions.length = 6u;
+    semantic.instructions.capacity = 6u;
+    semantic.values.length = 4u;
+    semantic.values.capacity = 4u;
+    check(!ZrParser_ExecIr_Build(
+                  &semantic, ZR_NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+                  diagnostic.blockId == 3u &&
+                  diagnostic.instructionId == 5u &&
+                  output.instructions[3].opcode ==
+                          ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD,
+          "builder published duplicate exception payloads in one handler");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_exception_payload_rejects_normal_handler_entry(void) {
+    SZrSemanticIrFunction semantic;
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[3];
+    SZrSemanticIrInstruction instructions[4];
+    SZrSemanticIrValue values[2];
+    TZrValueId operands[1];
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_mixed_predecessor_exception_payload_function(
+            &semantic, blocks, edges, instructions, values, operands);
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(
+                  &semantic, ZR_NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE &&
+                  diagnostic.blockId == 3u &&
+                  diagnostic.instructionId == 3u &&
+                  output.instructionCount == 0u,
+          "builder accepted a payload handler with a normal predecessor");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 int main(void) {
     test_rejects_unrepresentable_control_edges();
     test_exception_edge_reports_throw_source();
@@ -336,6 +595,8 @@ int main(void) {
     test_accepts_ordinary_dynamic_edge();
     test_conditional_branch_requires_ordered_typed_edges();
     test_typed_call_exception_edges_lower_to_invoke();
+    test_exception_payload_is_defined_only_in_handler();
+    test_exception_payload_rejects_normal_handler_entry();
     puts("ssa builder control edges PASS");
     return EXIT_SUCCESS;
 }

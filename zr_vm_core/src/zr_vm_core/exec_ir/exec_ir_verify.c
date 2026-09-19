@@ -99,6 +99,99 @@ static TZrBool zr_exec_ir_verify_exception_result_terminator(
     return ZR_TRUE;
 }
 
+static TZrBool zr_exec_ir_block_has_only_exception_predecessors(
+        const SZrExecIrFunction *function,
+        const SZrExecIrBlock *block) {
+    TZrUInt32 predecessorIndex;
+    TZrBool foundPredecessor = ZR_FALSE;
+
+    for (predecessorIndex = block->predecessorRange.start;
+         predecessorIndex < block->predecessorRange.start +
+                                    block->predecessorRange.count;
+         ++predecessorIndex) {
+        TZrExecIrBlockId predecessorId =
+                function->predecessors[predecessorIndex];
+        const SZrExecIrBlock *predecessor =
+                &function->blocks[predecessorId - 1u];
+        const SZrExecIrInstruction *terminator;
+        const SZrExecIrOpcodeInfo *info;
+        SZrExecIrRange edges;
+        TZrBool isExceptionPredecessor = ZR_FALSE;
+
+        if (predecessor->instructionRange.count == 0u) {
+            return ZR_FALSE;
+        }
+        terminator = &function->instructions[
+                predecessor->instructionRange.start +
+                predecessor->instructionRange.count - 1u];
+        info = ZrCore_ExecIr_OpcodeInfo(
+                (EZrExecIrOpcode)terminator->opcode);
+        if (info == ZR_NULL ||
+            (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) == 0u ||
+            (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW) == 0u) {
+            return ZR_FALSE;
+        }
+        edges = terminator->successorRange.count != 0u
+                        ? terminator->successorRange
+                        : predecessor->successorRange;
+        if (terminator->opcode == ZR_EXEC_IR_OPCODE_THROW) {
+            if (edges.count == 1u &&
+                function->successors[edges.start] == block->id) {
+                isExceptionPredecessor = ZR_TRUE;
+            }
+        } else if (edges.count == 2u &&
+                   function->successors[edges.start + 1u] == block->id) {
+            isExceptionPredecessor = ZR_TRUE;
+        }
+        if (!isExceptionPredecessor) {
+            return ZR_FALSE;
+        }
+        foundPredecessor = ZR_TRUE;
+    }
+    return foundPredecessor;
+}
+
+static TZrBool zr_exec_ir_verify_exception_payload(
+        const SZrExecIrFunction *function,
+        const SZrExecIrBlock *block,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 instructionIndex;
+    TZrUInt32 payloadCount = 0u;
+
+    for (instructionIndex = block->instructionRange.start;
+         instructionIndex < block->instructionRange.start +
+                                    block->instructionRange.count;
+         ++instructionIndex) {
+        const SZrExecIrInstruction *instruction =
+                &function->instructions[instructionIndex];
+        if (instruction->opcode != ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD) {
+            continue;
+        }
+        ++payloadCount;
+        if (function->entryBlockId == block->id ||
+            (block->flags & ZR_EXEC_IR_BLOCK_FLAG_ENTRY) != 0u ||
+            (block->flags & ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) == 0u ||
+            !zr_exec_ir_block_has_only_exception_predecessors(function, block) ||
+            payloadCount > 1u) {
+            zr_exec_ir_set_diagnostic(
+                    diagnostic,
+                    ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE,
+                    function,
+                    instructionIndex + 1u,
+                    block->id,
+                    payloadCount > 1u
+                            ? 1u
+                            : ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION,
+                    payloadCount > 1u ? payloadCount : block->flags);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->sourceId = instruction->sourceId;
+            }
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool zr_exec_ir_value_range_is_valid(const SZrExecIrFunction *function,
                                                SZrExecIrRange range,
                                                TZrUInt32 count,
@@ -541,6 +634,10 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                         return ZR_FALSE;
                     }
                 }
+            }
+            if (!zr_exec_ir_verify_exception_payload(
+                        function, block, diagnostic)) {
+                return ZR_FALSE;
             }
             if (block->instructionRange.count != 0u) {
                 TZrUInt32 lastIndex = block->instructionRange.start +
