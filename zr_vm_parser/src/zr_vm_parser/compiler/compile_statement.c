@@ -3811,6 +3811,8 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool hasSemanticSlotSnapshot = ZR_FALSE;
     TZrBool previousSemanticCfgStartupSuppressed = ZR_FALSE;
     TZrBool restoreSemanticCfgStartupSuppression = ZR_FALSE;
+    TZrBool previousSemanticCfgAbruptIsLocal = ZR_FALSE;
+    TZrBool restoreSemanticCfgAbruptMode = ZR_FALSE;
 
     ZrCore_Array_Construct(&semanticSlotSnapshot);
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -3857,6 +3859,10 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
                     cs, "Failed to snapshot semantic branch values", node->location);
             return;
         }
+        previousSemanticCfgAbruptIsLocal =
+                cs->preSemanticIrCfgAbruptIsLocal;
+        cs->preSemanticIrCfgAbruptIsLocal = ZR_TRUE;
+        restoreSemanticCfgAbruptMode = ZR_TRUE;
     }
     
     // 创建 else 标签
@@ -3880,6 +3886,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
         hasSemanticCfg = ZR_FALSE;
     }
     if (hasSemanticCfg &&
+        cs->preSemanticIrCfgBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
         !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
         ZrParser_Compiler_Error(cs, "Failed to record if true branch", node->location);
         goto cleanup;
@@ -3914,6 +3921,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
         hasSemanticCfg = ZR_FALSE;
     }
     if (hasSemanticCfg &&
+        cs->preSemanticIrCfgBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
         !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
         ZrParser_Compiler_Error(cs, "Failed to record if false branch", node->location);
         goto cleanup;
@@ -3932,6 +3940,10 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
 cleanup:
+    if (restoreSemanticCfgAbruptMode) {
+        cs->preSemanticIrCfgAbruptIsLocal =
+                previousSemanticCfgAbruptIsLocal;
+    }
     if (restoreSemanticCfgStartupSuppression) {
         cs->preSemanticIrCfgStartupSuppressed =
                 previousSemanticCfgStartupSuppressed;
@@ -3956,14 +3968,16 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
     compile_statement_trace("statement compile dispatch node=%p type=%d", (void *)node, (int)node->type);
 
     if (cs->currentFunctionNode != ZR_NULL &&
-        (node->type == ZR_AST_WHILE_LOOP ||
+        ((node->type == ZR_AST_IF_EXPRESSION &&
+          node->data.ifExpression.isStatement) ||
+         node->type == ZR_AST_WHILE_LOOP ||
          node->type == ZR_AST_FOR_LOOP ||
          node->type == ZR_AST_FOREACH_LOOP)) {
         if (!compiler_semantic_ir_isolation_begin(
                     cs, &semanticIrIsolation)) {
             ZrParser_Compiler_Error(
                     cs,
-                    "Failed to isolate declared callable loop Semantic IR",
+                    "Failed to isolate declared callable control-flow Semantic IR",
                     node->location);
             cs->currentAst = oldCurrentAst;
             return;

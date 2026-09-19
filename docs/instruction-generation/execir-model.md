@@ -42,6 +42,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
+  - tests/parser/test_pre_semantic_ir_branch_exit_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -51,6 +52,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -233,6 +235,24 @@ lack separately owned published pre-execution functions; their return bytecode
 therefore cannot close the entry body's graph. Child return expressions lower
 against a disposable isolated SemanticIR state, keeping their instructions,
 Values, Places, loans, slots, and CFG state off the entry-body sidecar.
+
+One direct branch-local `return` or `throw` can now coexist with a
+fall-through sibling arm. The producer binds the abrupt arm as a
+zero-successor terminator but treats that closure as local to the active
+conditional, so the function-level termination latch and exit ID remain
+available to the continuing path. Only the fall-through arm connects to the
+join; its single predecessor then continues into later blocks and the final
+synthetic exit. ExecIR construction preserves that topology without inventing
+an edge from the return/throw block to the join. A branch-local source return
+therefore appears alongside the final synthetic return, while a branch-local
+throw remains a distinct sink.
+
+The producer accepts only a fully preflighted shape with one direct final
+abrupt arm and a linear payload. Two abrupt arms, nested abrupt control,
+trailing reachable statements, non-linear payloads, and cleanup/finally
+transfers abandon the source graph and block detached restarts. Statement-form
+`if` compilation inside a declared child callable is isolated from the
+entry-body sidecar until child callables own independent published functions.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call

@@ -60,6 +60,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
+  - tests/parser/test_pre_semantic_ir_branch_exit_cfg.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -74,6 +75,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -189,6 +191,27 @@ omits the loop transfer. Declared child callables still do not publish their
 own semantic functions; their `while`, `for`, and `foreach` statements compile
 against a disposable isolated SemanticIR state so either a supported loop CFG
 or a fallback barrier cannot mutate the entry body's graph.
+
+A supported source `if` may now end exactly one direct arm with a linear-value
+`return` or `throw` while the other arm falls through. The abrupt arm emits its
+ordinary zero-successor terminator and invalidates only that arm's current
+block; it does not trip the whole-function termination latch or become the
+function CFG exit. The compiler therefore omits the abrupt arm's synthetic
+jump to the join, restores the pre-branch value snapshot for the other arm,
+and gives the join exactly one predecessor. Source after the conditional stays
+in the same graph, including a later resolved call and its normal/exception
+edges. A naturally falling-through function still receives its separate
+synthetic zero-operand return in the final exit block.
+
+This conditional slice preflights the complete arm before publishing blocks.
+Both arms terminating, a nested abrupt transfer, a non-linear return/throw
+payload, reachable syntax after the transfer, or cleanup/finally context keeps
+the entire conditional on conservative legacy lowering and persistently
+blocks later CFG startup. Declared child callables still lack separately
+published semantic functions, so their statement-form `if` nodes compile in a
+disposable isolated SemanticIR state just like their loops; a child branch
+cannot add a barrier, instruction, value, Place, slot, or block to the entry
+body's sidecar.
 
 Resolved, non-spread function calls now own a source control boundary even when
 they are the first non-linear operation in an otherwise straight-line caller.

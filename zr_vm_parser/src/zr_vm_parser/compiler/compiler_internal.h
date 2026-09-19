@@ -118,6 +118,7 @@ typedef struct SZrCompilerSemanticIrIsolation {
     TZrBool cfgStartupSuppressed;
     TZrBool cfgStartupBlocked;
     TZrBool cfgTerminated;
+    TZrBool cfgAbruptIsLocal;
     TZrUInt32 cfgBlock;
     TZrUInt32 cfgStart;
     TZrBool isActive;

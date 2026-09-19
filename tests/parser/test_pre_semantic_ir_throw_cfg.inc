@@ -197,7 +197,7 @@ static void test_conditional_source_throw_blocks_later_cfg_startup(void) {
     static const TZrChar source[] =
             "fn identity(value: int): int { return value; }\n"
             "var seed: int = 7;\n"
-            "if (true) { throw seed; }\n"
+            "if (true) { if (true) { throw seed; } }\n"
             "identity(seed);\n";
     static TZrChar sourceName[] = "conditional_source_throw_fallback.zr";
     SZrString *name = ZrCore_String_Create(

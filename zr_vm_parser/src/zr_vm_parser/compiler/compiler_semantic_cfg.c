@@ -153,6 +153,67 @@ static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
     }
 }
 
+typedef enum EZrCompilerSemanticCfgArmFlow {
+    ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED = 0,
+    ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH,
+    ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
+} EZrCompilerSemanticCfgArmFlow;
+
+static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
+        const SZrAstNode *node) {
+    TZrSize index;
+
+    if (node == ZR_NULL) {
+        return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
+    }
+    if (node->type == ZR_AST_RETURN_STATEMENT) {
+        return compiler_semantic_cfg_expression_is_linear(
+                       node->data.returnStatement.expr)
+                       ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
+                       : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+    }
+    if (node->type == ZR_AST_THROW_STATEMENT) {
+        return node->data.throwStatement.expr != ZR_NULL &&
+                       compiler_semantic_cfg_expression_is_linear(
+                               node->data.throwStatement.expr)
+                       ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
+                       : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+    }
+    if (node->type != ZR_AST_BLOCK) {
+        return compiler_semantic_cfg_arm_falls_through(node)
+                       ? ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH
+                       : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+    }
+    if (node->data.block.body == ZR_NULL) {
+        return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
+    }
+    for (index = 0U; index < node->data.block.body->count; index++) {
+        const SZrAstNode *statement = node->data.block.body->nodes[index];
+        EZrCompilerSemanticCfgArmFlow flow;
+        TZrSize trailingIndex;
+
+        if (statement == ZR_NULL) {
+            continue;
+        }
+        flow = compiler_semantic_cfg_if_arm_flow(statement);
+        if (flow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
+            return flow;
+        }
+        if (flow != ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES) {
+            continue;
+        }
+        for (trailingIndex = index + 1U;
+             trailingIndex < node->data.block.body->count;
+             trailingIndex++) {
+            if (node->data.block.body->nodes[trailingIndex] != ZR_NULL) {
+                return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+            }
+        }
+        return ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES;
+    }
+    return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
+}
+
 static TZrBool compiler_semantic_cfg_while_body_is_supported(
         const SZrAstNode *node) {
     TZrSize index;
@@ -304,6 +365,8 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
     TZrValueId condition;
+    EZrCompilerSemanticCfgArmFlow thenFlow;
+    EZrCompilerSemanticCfgArmFlow elseFlow;
     if (cs == ZR_NULL || node == ZR_NULL || thenBlock == ZR_NULL ||
         elseBlock == ZR_NULL || joinBlock == ZR_NULL) {
         return ZR_FALSE;
@@ -311,13 +374,18 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     if (cs->preSemanticIrCfgTerminated) {
         return ZR_FALSE;
     }
-    if (!compiler_semantic_cfg_arm_falls_through(
-                node->data.ifExpression.thenExpr) ||
-        !compiler_semantic_cfg_arm_falls_through(
-                node->data.ifExpression.elseExpr)) {
+    thenFlow = compiler_semantic_cfg_if_arm_flow(
+            node->data.ifExpression.thenExpr);
+    elseFlow = compiler_semantic_cfg_if_arm_flow(
+            node->data.ifExpression.elseExpr);
+    if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
+        elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
+        (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
+         elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
+        cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
         return ZR_FALSE;
     }
     condition = compiler_semantic_ir_slot_value(cs, conditionSlot);
@@ -689,9 +757,13 @@ static TZrBool compiler_semantic_cfg_terminate_value(
         return ZR_FALSE;
     }
 
-    cs->preSemanticIr.cfg.exitBlockId = cs->preSemanticIrCfgBlock;
+    if (!cs->preSemanticIrCfgAbruptIsLocal) {
+        cs->preSemanticIr.cfg.exitBlockId = cs->preSemanticIrCfgBlock;
+        cs->preSemanticIrCfgTerminated = ZR_TRUE;
+    }
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    cs->preSemanticIrCfgTerminated = ZR_TRUE;
+    cs->preSemanticIrCfgStart =
+            (TZrUInt32)cs->preSemanticIr.instructions.length;
     return ZR_TRUE;
 }
 

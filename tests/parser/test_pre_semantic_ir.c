@@ -1288,6 +1288,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_exception_fallback.inc"
 #include "test_pre_semantic_ir_throw_cfg.inc"
 #include "test_pre_semantic_ir_return_cfg.inc"
+#include "test_pre_semantic_ir_branch_exit_cfg.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1330,6 +1331,10 @@ int main(void) {
     RUN_TEST(test_conditional_source_return_blocks_later_cfg_startup);
     RUN_TEST(test_unmodeled_return_payload_blocks_later_cfg_startup);
     RUN_TEST(test_finally_return_remains_on_legacy_cfg);
+    RUN_TEST(test_source_if_then_return_preserves_fallthrough_cfg);
+    RUN_TEST(test_source_if_else_throw_excludes_interrupted_join);
+    RUN_TEST(test_source_if_two_abrupt_arms_remains_conservative);
+    RUN_TEST(test_declared_child_if_exit_does_not_pollute_entry_cfg);
     RUN_TEST(test_source_if_lowers_place_provenance_to_exec_ir);
     RUN_TEST(test_source_if_isolates_sibling_temporary_values);
     RUN_TEST(test_field_initialization_tracks_partial_parent_and_cleanup_bitmap);
