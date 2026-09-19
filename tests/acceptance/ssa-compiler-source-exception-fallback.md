@@ -47,14 +47,19 @@ also failed with one detached call. Splitting scoped suppression from the
 function-level block exposed and fixed the same failure for the nested case.
 The active-prefix case protects the abandonment path.
 
+`test_finally_return_remains_on_legacy_cfg` adds the return-specific boundary:
+a return routed through `finally` must not publish a direct SemanticIR
+`RETURN`, and a trailing call must not restart a graph that omits the pending
+return and cleanup transfer.
+
 ## Validation evidence (2026-09-18)
 
 - MSVC 19.44.35228 rebuilt and passed the focused pre-execution SemanticIR
-  suite 29/29.
+  suite 40/40.
 - WSL GCC 11.4.0 and Clang 14.0.0 each rebuilt and passed the same focused
-  suite 29/29.
+  suite 40/40.
 - GCC 11.4.0 with AddressSanitizer and UndefinedBehaviorSanitizer passed the
-  focused suite 29/29 with leak detection enabled and halt-on-error behavior.
+  focused suite 40/40 with leak detection enabled and halt-on-error behavior.
 - The adjacent SSA builder, dominance, control-edge, fact-identity,
   Place-eligibility, Place-promotion, and ValueId-validation gate passed 7/7
   under MSVC, WSL GCC, and WSL Clang.

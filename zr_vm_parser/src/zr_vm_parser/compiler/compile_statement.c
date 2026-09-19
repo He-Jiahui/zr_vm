@@ -3512,6 +3512,8 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrUInt32 resultCount = 0;
     TZrBool oldTailCallContext;
     TZrBool hasOwnershipCleanupContext;
+    SZrCompilerSemanticIrIsolation semanticIrIsolation;
+    TZrBool hasSemanticIrIsolation = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -3540,12 +3542,38 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
     hasOwnershipCleanupContext = compiler_has_active_scope_ownership_cleanups(cs);
 
+    if (cs->currentFunctionNode == ZR_NULL &&
+        (hasFinallyContext || hasOwnershipCleanupContext)) {
+        if (cs->preSemanticIrCfgActive &&
+            !compiler_semantic_cfg_abandon(cs)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to abandon unsupported return cleanup CFG",
+                    node->location);
+            return;
+        }
+        cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+    }
+
     oldTailCallContext = cs->isInTailCallContext;
     cs->isInTailCallContext = (hasFinallyContext || hasOwnershipCleanupContext) ? ZR_FALSE : ZR_TRUE;
 
     if (stmt->expr != ZR_NULL) {
         TZrSize exprInstBefore = cs->instructions.length;
         TZrSize exprInstAfter;
+
+        if (cs->currentFunctionNode != ZR_NULL) {
+            if (!compiler_semantic_ir_isolation_begin(
+                        cs, &semanticIrIsolation)) {
+                cs->isInTailCallContext = oldTailCallContext;
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to isolate declared callable return Semantic IR",
+                        stmt->expr->location);
+                return;
+            }
+            hasSemanticIrIsolation = ZR_TRUE;
+        }
 
         if (stmt->isReferenceReturn &&
             cs->currentFunctionNode != ZR_NULL &&
@@ -3571,6 +3599,10 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         } else if (!stmt->isReferenceReturn) {
             resultSlot = cs->lastExpressionSlot;
         }
+        if (hasSemanticIrIsolation) {
+            compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+            hasSemanticIrIsolation = ZR_FALSE;
+        }
         if (!cs->hasError && resultSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs, "Return expression did not produce a value", stmt->expr->location);
             return;
@@ -3583,14 +3615,41 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         resultSlot = allocate_stack_slot(cs);
         ZrCore_Value_ResetAsNull(&nullValue);
         constantIndex = add_constant(cs, &nullValue);
-        emit_instruction(cs,
-                         create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
-                                              (TZrUInt16)resultSlot,
-                                              (TZrInt32)constantIndex));
+        if (cs->currentFunctionNode == ZR_NULL) {
+            if (!compiler_semantic_ir_lower_literal(
+                        cs,
+                        resultSlot,
+                        constantIndex,
+                        ZR_VALUE_TYPE_NULL,
+                        node->location)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to lower void return value through pre-execution Semantic IR",
+                        node->location);
+                return;
+            }
+        } else {
+            emit_instruction(
+                    cs,
+                    create_instruction_1(
+                            ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                            (TZrUInt16)resultSlot,
+                            (TZrInt32)constantIndex));
+        }
         resultCount = 1;
     }
 
     cs->isInTailCallContext = oldTailCallContext;
+
+    if (cs->currentFunctionNode == ZR_NULL &&
+        !compiler_semantic_cfg_terminate_return(
+                cs, resultSlot, node->location)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to terminate semantic CFG for return",
+                node->location);
+        return;
+    }
 
     if (hasFinallyContext) {
         TZrSize resumeLabelId = create_label(cs);

@@ -1376,6 +1376,56 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     cs->preSemanticIrCfgTerminated = ZR_FALSE;
 }
 
+TZrBool compiler_semantic_ir_isolation_begin(
+        SZrCompilerState *cs,
+        SZrCompilerSemanticIrIsolation *isolation) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || isolation == ZR_NULL ||
+        !cs->preSemanticIrInitialized) {
+        return ZR_FALSE;
+    }
+
+    memset(isolation, 0, sizeof(*isolation));
+    isolation->function = cs->preSemanticIr;
+    isolation->slots = cs->preSemanticIrSlots;
+    isolation->receiverLoanIds = cs->preSemanticIrReceiverLoanIds;
+    isolation->initialized = cs->preSemanticIrInitialized;
+    isolation->validated = cs->preSemanticIrValidated;
+    isolation->cfgActive = cs->preSemanticIrCfgActive;
+    isolation->cfgStartupSuppressed =
+            cs->preSemanticIrCfgStartupSuppressed;
+    isolation->cfgStartupBlocked = cs->preSemanticIrCfgStartupBlocked;
+    isolation->cfgTerminated = cs->preSemanticIrCfgTerminated;
+    isolation->cfgBlock = cs->preSemanticIrCfgBlock;
+    isolation->cfgStart = cs->preSemanticIrCfgStart;
+    isolation->isActive = ZR_TRUE;
+
+    compiler_semantic_ir_init(cs);
+    return cs->preSemanticIrInitialized;
+}
+
+void compiler_semantic_ir_isolation_end(
+        SZrCompilerState *cs,
+        SZrCompilerSemanticIrIsolation *isolation) {
+    if (cs == ZR_NULL || isolation == ZR_NULL || !isolation->isActive) {
+        return;
+    }
+
+    compiler_semantic_ir_free(cs);
+    cs->preSemanticIr = isolation->function;
+    cs->preSemanticIrSlots = isolation->slots;
+    cs->preSemanticIrReceiverLoanIds = isolation->receiverLoanIds;
+    cs->preSemanticIrInitialized = isolation->initialized;
+    cs->preSemanticIrValidated = isolation->validated;
+    cs->preSemanticIrCfgActive = isolation->cfgActive;
+    cs->preSemanticIrCfgStartupSuppressed =
+            isolation->cfgStartupSuppressed;
+    cs->preSemanticIrCfgStartupBlocked = isolation->cfgStartupBlocked;
+    cs->preSemanticIrCfgTerminated = isolation->cfgTerminated;
+    cs->preSemanticIrCfgBlock = isolation->cfgBlock;
+    cs->preSemanticIrCfgStart = isolation->cfgStart;
+    memset(isolation, 0, sizeof(*isolation));
+}
+
 const SZrSemanticIrFunction *ZrParser_Compiler_PreSemanticIr(
         const SZrCompilerState *cs) {
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized) {

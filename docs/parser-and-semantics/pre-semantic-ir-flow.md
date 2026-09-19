@@ -15,6 +15,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -36,6 +37,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -51,6 +53,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
+  - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -63,6 +66,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
+  - tests/acceptance/ssa-compiler-source-return-cfg.md
 doc_type: module-detail
 ---
 
@@ -91,9 +95,10 @@ remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
 surface for `if`, straight-line `while`, linear-operand `&&`/`||`, and known
 nullable optional calls with either `void`/no-op or nullable value results.
-Return, general loop control, Weak optional access, cleanup, suspension, and
-other unmodeled control still use the conservative legacy graph rather than
-publishing partial facts.
+Non-fallthrough returns nested in an unsupported control arm, general loop
+control, Weak optional access, cleanup, suspension, and other unmodeled
+control still use the conservative legacy graph rather than publishing
+partial facts.
 
 ## Compiler Bridge
 
@@ -196,6 +201,23 @@ startup; unreachable source still follows the existing ExecBC compilation
 path. Nested throws in an unsupported branch/loop shape and handled throws in
 `try`/`catch`/`finally` stay on legacy lowering until the full handler-payload
 and cleanup-edge contract exists.
+
+An explicit return from the compiler-owned entry body now closes the graph by
+the same value-terminator path. A value return consumes the expression's
+canonical ValueId; `return;` first materializes the language's null result as
+a typed `CONSTANT`. Both forms emit a one-operand SemanticIR `RETURN`, bind a
+zero-successor return terminator, and make that block the CFG exit. The return
+can establish a single entry/exit block or close the normal continuation of an
+existing `INVOKE`. Later unreachable source remains on ExecBC compatibility
+lowering without adding SemanticIR or restarting a graph. A return whose value
+has no canonical producer, or which appears under scoped fallback, promotes
+the conservative startup barrier instead. Returns that cross finally or
+ownership cleanup also remain legacy-only. Declared child callables do not yet
+own independent published pre-execution functions, so their returns cannot
+terminate the entry body's graph. Their return expressions use a disposable
+isolated SemanticIR state and retain their existing ExecBC output without
+appending instructions, Values, Places, loans, slots, or CFG state to the
+entry-body function.
 
 Nullable `receiver?.method(arguments)` chains publish ordered present-true and
 absent-false edges from the receiver ValueId. Argument and suffix facts are

@@ -590,10 +590,12 @@ TZrBool compiler_semantic_cfg_split_invoke(
     return ZR_TRUE;
 }
 
-TZrBool compiler_semantic_cfg_terminate_throw(
+static TZrBool compiler_semantic_cfg_terminate_value(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
-        SZrFileRange range) {
+        SZrFileRange range,
+        EZrSemanticIrOpcode opcode,
+        EZrParserCfgTerminatorKind terminatorKind) {
     SZrSemanticIrInstructionSpec spec;
     const SZrSemanticIrValue *value;
     TZrValueId valueId;
@@ -624,15 +626,14 @@ TZrBool compiler_semantic_cfg_terminate_throw(
     }
 
     memset(&spec, 0, sizeof(spec));
-    spec.opcode = ZR_SEMANTIC_IR_THROW;
+    spec.opcode = opcode;
     spec.typeId = value->typeId;
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.operands = &valueId;
     spec.operandCount = 1U;
     spec.sourceRange = range;
     if (!compiler_semantic_ir_emit(cs, &spec) ||
-        !compiler_semantic_cfg_bind_current(
-                cs, ZR_PARSER_CFG_TERMINATOR_THROW)) {
+        !compiler_semantic_cfg_bind_current(cs, terminatorKind)) {
         return ZR_FALSE;
     }
 
@@ -640,6 +641,26 @@ TZrBool compiler_semantic_cfg_terminate_throw(
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgTerminated = ZR_TRUE;
     return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_terminate_throw(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_terminate_value(
+            cs, valueSlot, range,
+            ZR_SEMANTIC_IR_THROW,
+            ZR_PARSER_CFG_TERMINATOR_THROW);
+}
+
+TZrBool compiler_semantic_cfg_terminate_return(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_terminate_value(
+            cs, valueSlot, range,
+            ZR_SEMANTIC_IR_RETURN,
+            ZR_PARSER_CFG_TERMINATOR_RETURN);
 }
 
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block) {

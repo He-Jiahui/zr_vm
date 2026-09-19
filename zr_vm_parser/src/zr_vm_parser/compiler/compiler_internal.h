@@ -108,9 +108,30 @@ typedef struct SZrCompilerSemanticIrSlot {
     TZrRegionId regionId;
 } SZrCompilerSemanticIrSlot;
 
+typedef struct SZrCompilerSemanticIrIsolation {
+    SZrSemanticIrFunction function;
+    SZrArray slots;
+    SZrArray receiverLoanIds;
+    TZrBool initialized;
+    TZrBool validated;
+    TZrBool cfgActive;
+    TZrBool cfgStartupSuppressed;
+    TZrBool cfgStartupBlocked;
+    TZrBool cfgTerminated;
+    TZrUInt32 cfgBlock;
+    TZrUInt32 cfgStart;
+    TZrBool isActive;
+} SZrCompilerSemanticIrIsolation;
+
 void compiler_semantic_ir_init(SZrCompilerState *cs);
 void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
+TZrBool compiler_semantic_ir_isolation_begin(
+        SZrCompilerState *cs,
+        SZrCompilerSemanticIrIsolation *isolation);
+void compiler_semantic_ir_isolation_end(
+        SZrCompilerState *cs,
+        SZrCompilerSemanticIrIsolation *isolation);
 SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot);
@@ -185,6 +206,10 @@ TZrBool compiler_semantic_cfg_split_invoke(
         SZrAstNode *callNode,
         SZrFileRange range);
 TZrBool compiler_semantic_cfg_terminate_throw(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_terminate_return(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
         SZrFileRange range);

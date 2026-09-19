@@ -5,6 +5,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -16,6 +17,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -35,6 +37,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
+  - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -42,6 +45,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
+  - tests/acceptance/ssa-compiler-source-return-cfg.md
 doc_type: module-detail
 ---
 
@@ -198,6 +202,22 @@ emission continues for compatibility. Throws nested inside control-flow whose
 source CFG preflight already fell back, and throws inside `try`/`catch`/
 `finally`, remain on the conservative legacy path until handler and cleanup
 edges are modeled together.
+
+The compiler-owned entry body now publishes explicit source `return` through
+the same value-terminator machinery. A value return consumes its canonical
+ValueId; bare `return;` materializes the language null result as a typed
+constant. The resulting one-operand SemanticIR `RETURN` closes the current
+block with `ZR_PARSER_CFG_TERMINATOR_RETURN`, has no successors, and becomes
+the CFG exit. It can either create a single entry/exit block or terminate an
+existing call's normal `INVOKE` continuation. The termination latch keeps
+later unreachable source on ExecBC compatibility lowering without allowing a
+detached CFG restart. Unmodeled return expressions, fallback branch arms,
+finally transfers, and ownership cleanup transfers block further CFG startup
+instead of publishing a false direct return. Declared child callables still
+lack separately owned published pre-execution functions; their return bytecode
+therefore cannot close the entry body's graph. Child return expressions lower
+against a disposable isolated SemanticIR state, keeping their instructions,
+Values, Places, loans, slots, and CFG state off the entry-body sidecar.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call
