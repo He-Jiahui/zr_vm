@@ -16,6 +16,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -41,6 +42,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -75,6 +77,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-for-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -104,7 +107,8 @@ and oracle use that same true/false order. Reversed or untyped inline edges
 fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
-surface for `if`, straight-line `while`, direct terminal loop exits,
+surface for `if`, straight-line `while`, condition-bearing linear `for`,
+direct terminal `while` exits,
 linear-operand `&&`/`||`, and known
 nullable optional calls with either `void`/no-op or nullable value results.
 Non-fallthrough returns nested in an unsupported control arm, general loop
@@ -193,6 +197,20 @@ omits the loop transfer. Declared child callables still do not publish their
 own semantic functions; their `while`, `for`, and `foreach` statements compile
 against a disposable isolated SemanticIR state so either a supported loop CFG
 or a fallback barrier cannot mutate the entry body's graph.
+
+A condition-bearing statement-form `for` now publishes its four structural
+regions explicitly after compiling a supported initializer: condition, body,
+step, and join. The prefix jumps to the condition; its ordered true/false
+edges select the body or join; a falling-through body jumps to the step; and
+the step closes the backedge to the condition. The compiler restores the
+pre-loop semantic slot snapshot before entering the join, so iteration-only
+temporaries do not become values on the false path. This slice accepts only a
+linear condition, optional falling-through initializer, optional linear step,
+and falling-through body. Missing conditions, `break`/`continue`, nonlinear
+expressions, cleanup, and `foreach` retain the persistent conservative
+fallback. The implementation lives in `compile_statement_for.c`, separated
+from the general statement-flow unit while preserving the existing ExecBC
+label path.
 
 A supported source `if` may now end exactly one direct arm with a linear-value
 `return` or `throw` while the other arm falls through. The abrupt arm emits its

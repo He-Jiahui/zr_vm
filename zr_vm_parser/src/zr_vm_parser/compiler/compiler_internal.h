@@ -176,6 +176,12 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
                                           TZrUInt32 *conditionBlock,
                                           TZrUInt32 *bodyBlock,
                                           TZrUInt32 *joinBlock);
+TZrBool compiler_semantic_cfg_begin_for(SZrCompilerState *cs,
+                                        SZrAstNode *node,
+                                        TZrUInt32 *conditionBlock,
+                                        TZrUInt32 *bodyBlock,
+                                        TZrUInt32 *stepBlock,
+                                        TZrUInt32 *joinBlock);
 TZrBool compiler_semantic_cfg_begin_short_circuit(
         SZrCompilerState *cs,
         TZrUInt32 conditionSlot,
@@ -195,6 +201,11 @@ TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
                                            SZrAstNode *node,
                                            TZrUInt32 bodyBlock,
                                            TZrUInt32 joinBlock);
+TZrBool compiler_semantic_cfg_branch_for(SZrCompilerState *cs,
+                                         TZrUInt32 conditionSlot,
+                                         SZrAstNode *node,
+                                         TZrUInt32 bodyBlock,
+                                         TZrUInt32 joinBlock);
 TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
                                    TZrUInt32 target,
                                    SZrFileRange range);

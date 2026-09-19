@@ -6,6 +6,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
@@ -19,6 +20,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
@@ -52,6 +54,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
   - tests/acceptance/ssa-compiler-source-return-cfg.md
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-for-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -172,6 +175,17 @@ Loops compiled inside a declared child callable use a disposable isolated
 SemanticIR state because child functions do not yet publish independent
 pre-execution functions; their loop edges and fallback barriers therefore do
 not mutate the entry-body graph.
+
+A supported statement-form `for` extends that canonical loop path with a
+dedicated step block. After a falling-through initializer, the prefix jumps
+to the condition. Its ordered true/body and false/join edges are followed by
+body-to-step and step-to-condition normal edges. Restoring the pre-loop slot
+snapshot at the join keeps body and step temporaries off the false path, while
+the explicit backedge remains available to dominance and phi placement.
+This initial slice requires a condition, linear condition and step
+expressions, and falling-through initializer and body. Infinite loops,
+`break`/`continue`, nonlinear forms, cleanup, and `foreach` remain on the
+legacy-CFG fallback instead of publishing an incomplete graph.
 
 Source `&&` and `||` expressions with linear operands also publish their
 short-circuit topology directly. `&&` sends the true edge to the RHS and the
