@@ -48,10 +48,12 @@ function-level block exposed and fixed the same failure for the nested case.
 The active-prefix case protects the abandonment path.
 
 The later source-cleanup milestones narrow this historical boundary: one
-preflighted terminal linear return or throw now publishes an explicit
-protected-to-cleanup-to-abrupt path while retaining its pre-cleanup operand.
-Nonlinear abrupt payloads, catch-plus-finally, and multiple completion kinds
-still use this persistent fallback and cannot restart a detached graph.
+preflighted linear return or throw now publishes either a direct
+protected-to-cleanup-to-abrupt path or, when a sibling path falls through, a
+private pending selector and payload followed by cleanup dispatch to abrupt or
+normal continuation. Nonlinear abrupt payloads, catch-plus-finally, multiple
+abrupt sites or kinds, and exceptional cleanup entry still use this persistent
+fallback and cannot restart a detached graph.
 
 ## Validation evidence (2026-09-18)
 

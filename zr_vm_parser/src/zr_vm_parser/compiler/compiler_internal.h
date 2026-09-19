@@ -152,6 +152,9 @@ typedef struct SZrCompilerSemanticFinallyPlan {
     TZrValueId completionValueId;
     SZrFileRange completionRange;
     EZrSemanticIrOpcode completionOpcode;
+    TZrUInt32 completionSelectorSlot;
+    TZrUInt32 completionPayloadSlot;
+    TZrBool hasFallthrough;
     TZrBool completionPending;
     TZrBool initialized;
     TZrBool cleanupEntered;
@@ -282,6 +285,13 @@ TZrBool compiler_semantic_cfg_branch_value(
         TZrValueId condition,
         TZrUInt32 trueBlock,
         TZrUInt32 falseBlock,
+        SZrAstNode *sourceNode,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_cleanup_dispatch(
+        SZrCompilerState *cs,
+        TZrValueId selector,
+        TZrUInt32 completionBlock,
+        TZrUInt32 joinBlock,
         SZrAstNode *sourceNode,
         SZrFileRange range);
 TZrBool compiler_semantic_cfg_begin_invoke(

@@ -149,18 +149,23 @@ closing the interrupted-assignment boundary without relying on block dominance
 alone.
 
 The production source compiler now emits this bounded shape for a no-catch
-`try/finally` when the cleanup body and the protected prefix contain only
-nested blocks and linear expression statements and no enclosing ownership
-cleanup is active. Normal completion branches through the cleanup block to a
-join. Alternatively, one terminal linear source return or throw captures its
-operand ValueId before cleanup, branches through cleanup, and resumes in a
-dedicated zero-successor RETURN or THROW block. A cleanup assignment therefore
-cannot replace the already evaluated abrupt payload. Nonlinear or nonterminal
-abrupt completion, call, declaration, nonlinear control, catch-plus-finally,
-active catch target, or ownership cleanup rejects the entire shape before
-graph construction and keeps the legacy path. This single-outcome transfer
-needs no selector; exceptional entry and multiple pending completion kinds
-still require cleanup dispatch.
+`try/finally` when the cleanup body contains only nested blocks and linear
+expression statements, the protected body contains the same subset plus at
+most one linear return or throw under statement-form conditionals, and no
+enclosing ownership cleanup is active. Normal completion branches through the
+cleanup block to a join. A terminal return or throw still captures its ValueId
+and uses one direct cleanup edge to a dedicated abrupt block. If a sibling path
+falls through, compiler-private selector and payload Places are created before
+the protected branch. The abrupt path stores its payload and selects `true`;
+the normal path retains `false`; both enter cleanup. Cleanup then loads the
+selector and emits `CLEANUP_DISPATCH`, ordering the abrupt destination as
+`SWITCH_CASE` and the normal join as `SWITCH_DEFAULT`. The abrupt block reloads
+the private payload after cleanup, so a cleanup assignment cannot replace the
+already evaluated value. Nonlinear payloads, calls, declarations, more than one
+abrupt site, mixed return/throw kinds, catch-plus-finally, active catch targets,
+or ownership cleanup reject the entire shape before graph construction and
+keep the legacy path. Exceptional cleanup entry and additional pending
+completion kinds remain unsupported.
 
 This is not yet effect-token generation; see
 `tests/acceptance/ssa-builder-control-edge-rejection.md` and

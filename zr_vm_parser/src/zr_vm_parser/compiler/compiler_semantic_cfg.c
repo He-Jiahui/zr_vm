@@ -751,6 +751,52 @@ TZrBool compiler_semantic_cfg_branch_value(
     return ZR_TRUE;
 }
 
+TZrBool compiler_semantic_cfg_cleanup_dispatch(
+        SZrCompilerState *cs,
+        TZrValueId selector,
+        TZrUInt32 completionBlock,
+        TZrUInt32 joinBlock,
+        SZrAstNode *sourceNode,
+        SZrFileRange range) {
+    SZrSemanticIrInstructionSpec spec;
+    const SZrSemanticIrValue *selectorValue;
+    SZrParserCfg *cfg;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive ||
+        selector == ZR_VALUE_ID_INVALID ||
+        completionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
+    selectorValue = ZrParser_SemanticIr_Value(
+            &cs->preSemanticIr, selector);
+    if (selectorValue == ZR_NULL ||
+        selectorValue->definitionInstructionId ==
+                ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_SWITCH;
+    spec.typeId = selectorValue->typeId;
+    spec.operands = &selector;
+    spec.operandCount = 1U;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = range;
+    cfg = &cs->preSemanticIr.cfg;
+    if (!compiler_semantic_ir_emit(cs, &spec) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, completionBlock,
+                ZR_PARSER_CFG_EDGE_SWITCH_CASE, sourceNode) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, joinBlock,
+                ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT, sourceNode) ||
+        !compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH)) {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool compiler_semantic_cfg_begin_invoke(
         SZrCompilerState *cs,
         SZrAstNode *callNode,

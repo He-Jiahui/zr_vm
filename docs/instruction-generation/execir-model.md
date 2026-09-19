@@ -203,9 +203,10 @@ list must contain at least one ordered `SWITCH_CASE` followed by exactly one
 terminal `SWITCH_DEFAULT`; the builder preserves that selector and adjacency as
 an ExecIR `SWITCH`, then structural and SSA verification prove that the selector
 exists and dominates the cleanup dispatch. Missing selectors, inline successor
-rows, ordinary source blocks, and unordered cases fail transactionally. This is
-the representation for a pending-completion discriminator, not yet a source
-producer or a definition of return/throw payload storage.
+rows, ordinary source blocks, and unordered cases fail transactionally. The
+bounded source `try/finally` producer now uses this representation for one
+normal-versus-abrupt pending-completion discriminator; it remains independent
+of exceptional cleanup entry and multiple completion kinds.
 
 An INVOKE result remains unavailable along the transitive closure of its
 exceptional successor, including ordinary branches into cleanup and later
@@ -218,18 +219,23 @@ exceptional `finally` entry can be published.
 The source compiler publishes that representable cleanup subset for a
 preflighted `try/finally` with no catches, ownership cleanup, calls, or
 declarations. A normally completing protected block enters the cleanup block
-and cleanup exits to one join. A protected block may instead end in exactly one
-linear `return` or `throw`: its operand ValueId is captured before cleanup, the
-protected block enters cleanup, and cleanup exits to a dedicated zero-successor
-RETURN or THROW block that consumes the captured value. This preserves source
-evaluation order when `finally` mutates the returned or thrown local. Every
-transfer into or out of cleanup is an operand-free semantic `BRANCH`; the final
-abrupt terminator remains the only value-bearing control instruction. Preflight
+and cleanup exits to one join. A protected block may instead contain exactly
+one linear `return` or `throw`. When every path reaches it, the operand ValueId
+is captured before cleanup and cleanup exits directly to a dedicated
+zero-successor RETURN or THROW block. When a statement-form conditional leaves
+a normal sibling path, the producer allocates compiler-private boolean-selector
+and payload Places before the branch. The abrupt path stores its converted
+payload and `true`, while the normal path retains the dominating `false`; both
+enter the same cleanup block. After the `finally` body, cleanup loads the
+selector and emits an ordered `CLEANUP_DISPATCH`: `SWITCH_CASE` reaches the
+abrupt block, whose operand is reloaded from the private payload Place, and
+final `SWITCH_DEFAULT` reaches the normal join. This preserves source evaluation
+order even when `finally` mutates the returned or thrown local. Preflight
 examines the complete protected and cleanup bodies before activating a graph.
-Nonlinear abrupt payloads, calls, nested control flow, catch-plus-finally, and
-other unsupported shapes retain the legacy-CFG fail-closed path. Multiple
-pending completion kinds, selector dispatch, and exceptional entry remain
-later source milestones.
+Nonlinear abrupt payloads, calls, declarations, more than one abrupt site,
+mixed return/throw kinds, catch-plus-finally, and other unsupported shapes
+retain the legacy-CFG fail-closed path. Exceptional entry and break/continue
+completion remain later source milestones.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

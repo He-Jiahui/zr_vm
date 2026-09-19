@@ -60,7 +60,10 @@ The later `test_throw_try_finally_preserves_precleanup_value` milestone covers
 one terminal linear throw inside a preflighted no-catch `try/finally`. Its
 payload is loaded before cleanup, cleanup reaches a dedicated THROW block, and
 the final terminator consumes that original ValueId even when `finally`
-overwrites the source local. Nonlinear throw payloads remain fail-closed.
+overwrites the source local. The subsequent conditional fixture covers one
+branch-local throw with a normal sibling: a private selector and payload route
+both paths through shared cleanup, then cleanup dispatch selects the THROW
+block or normal join. Nonlinear throw payloads remain fail-closed.
 
 ## Validation evidence (2026-09-18)
 
@@ -80,10 +83,10 @@ overwrites the source local. Nonlinear throw payloads remain fail-closed.
 
 ## Boundary
 
-This checkpoint does not model exceptional entry into cleanup, mixed completion
-selection, or interrupted assignment state. Except for the later bounded
-terminal-linear throw path above, a throw inside an unmodeled
-`try`/`catch`/`finally` scope or a control-flow shape whose source CFG preflight
-has already fallen back remains on legacy lowering. Those handler-aware paths
-must be introduced as one coherent exception-region contract rather than
-connected to this unhandled zero-successor sink.
+This checkpoint does not model exceptional entry into cleanup, multiple
+completion kinds, or interrupted assignment state. Except for the later
+bounded terminal or normal-versus-throw cleanup paths above, a throw inside an
+unmodeled `try`/`catch`/`finally` scope or a control-flow shape whose source CFG
+preflight has already fallen back remains on legacy lowering. Those
+handler-aware paths must be introduced as one coherent exception-region
+contract rather than connected to this unhandled zero-successor sink.

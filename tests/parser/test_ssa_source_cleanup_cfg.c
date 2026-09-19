@@ -131,6 +131,23 @@ static const SZrSemanticIrInstruction *block_tail(
             block->firstInstructionIndex + block->instructionCount - 1U);
 }
 
+static const SZrParserCfgBlock *find_block_terminator(
+        const SZrSemanticIrFunction *function,
+        EZrParserCfgTerminatorKind terminatorKind) {
+    TZrSize index;
+
+    for (index = 0U; index < function->cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        if (block != ZR_NULL &&
+            block->terminatorKind == terminatorKind) {
+            return block;
+        }
+    }
+    return ZR_NULL;
+}
+
 static void test_linear_try_finally_emits_cleanup_region(void) {
     static const TZrChar source[] =
             "var seed: int = 7;\n"
@@ -423,6 +440,204 @@ static void test_nonlinear_throw_try_finally_stays_on_legacy_path(void) {
     free_source(&compiler, ast);
 }
 
+static void test_conditional_return_try_finally_dispatches_pending_state(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { return seed; }\n"
+            "  seed = 8;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] = "conditional_return_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *returnBlock;
+    const SZrParserCfgBlock *joinBlock;
+    const SZrParserCfgEdge *returnEdge;
+    const SZrParserCfgEdge *joinEdge;
+    const SZrSemanticIrInstruction *dispatch;
+    const SZrSemanticIrInstruction *returnInstruction;
+    const SZrSemanticIrInstruction *returnDefinition;
+    const SZrSemanticIrValue *returnValue;
+    const SZrParserPlace *pendingPlace;
+    const TZrValueId *returnOperand;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    returnBlock = find_block_terminator(
+            function, ZR_PARSER_CFG_TERMINATOR_RETURN);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+            cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(2U, cleanup->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(2U, cleanup->successorCount);
+    returnEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    joinEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 1U);
+    TEST_ASSERT_NOT_NULL(returnEdge);
+    TEST_ASSERT_NOT_NULL(joinEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_CASE, returnEdge->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT, joinEdge->kind);
+    TEST_ASSERT_EQUAL_UINT32(returnBlock->id, returnEdge->toBlockId);
+    joinBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, joinEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(joinBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, joinBlock->kind);
+    TEST_ASSERT_TRUE(block_has_source_line(function, cleanup, 7U));
+    TEST_ASSERT_TRUE(block_has_source_line(function, joinBlock, 9U));
+
+    dispatch = block_tail(function, cleanup);
+    TEST_ASSERT_NOT_NULL(dispatch);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_SWITCH, dispatch->opcode);
+    TEST_ASSERT_EQUAL_UINT32(1U, dispatch->operandCount);
+
+    returnInstruction = block_tail(function, returnBlock);
+    TEST_ASSERT_NOT_NULL(returnInstruction);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_IR_RETURN, returnInstruction->opcode);
+    TEST_ASSERT_EQUAL_UINT32(1U, returnInstruction->operandCount);
+    returnOperand = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands,
+            returnInstruction->operandStart);
+    TEST_ASSERT_NOT_NULL(returnOperand);
+    returnValue = ZrParser_SemanticIr_Value(function, *returnOperand);
+    TEST_ASSERT_NOT_NULL(returnValue);
+    returnDefinition = ZrParser_SemanticIr_InstructionAt(
+            function, returnValue->definitionInstructionId - 1U);
+    TEST_ASSERT_NOT_NULL(returnDefinition);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_LOAD, returnDefinition->opcode);
+    TEST_ASSERT_EQUAL_INT(4, returnDefinition->sourceRange.start.line);
+    pendingPlace = ZrParser_PlaceGraph_Get(
+            &function->places, returnDefinition->placeId);
+    TEST_ASSERT_NOT_NULL(pendingPlace);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_PLACE_BASE_TEMPORARY,
+            pendingPlace->base.kind);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(
+            (output.blocks[cleanup->id].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0U);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_EXEC_IR_OPCODE_SWITCH,
+            output.instructions[output.blocks[cleanup->id]
+                                        .instructionRange.start +
+                                output.blocks[cleanup->id]
+                                        .instructionRange.count - 1U]
+                    .opcode);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    free_source(&compiler, ast);
+}
+
+static void test_two_return_sites_try_finally_stays_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { return seed; }\n"
+            "  return 8;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n";
+    static TZrChar sourceName[] =
+            "two_return_sites_try_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_NULL(find_block_kind(
+            function, ZR_PARSER_CFG_BLOCK_CLEANUP));
+
+    free_source(&compiler, ast);
+}
+
+static void test_conditional_throw_try_finally_dispatches_pending_state(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { throw seed; }\n"
+            "  seed = 8;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] =
+            "conditional_throw_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *throwBlock;
+    const SZrParserCfgEdge *throwEdge;
+    const SZrParserCfgEdge *joinEdge;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    throwBlock = find_block_terminator(
+            function, ZR_PARSER_CFG_TERMINATOR_THROW);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+            cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(2U, cleanup->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(2U, cleanup->successorCount);
+    throwEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    joinEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 1U);
+    TEST_ASSERT_NOT_NULL(throwEdge);
+    TEST_ASSERT_NOT_NULL(joinEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_CASE, throwEdge->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT, joinEdge->kind);
+    TEST_ASSERT_EQUAL_UINT32(throwBlock->id, throwEdge->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_IR_SWITCH, block_tail(function, cleanup)->opcode);
+
+    free_source(&compiler, ast);
+}
+
 static void test_try_catch_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "var seed: int = 7;\n"
@@ -453,6 +668,9 @@ int main(void) {
     RUN_TEST(test_nonlinear_return_try_finally_stays_on_legacy_path);
     RUN_TEST(test_throw_try_finally_preserves_precleanup_value);
     RUN_TEST(test_nonlinear_throw_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_conditional_return_try_finally_dispatches_pending_state);
+    RUN_TEST(test_two_return_sites_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_conditional_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
     return UNITY_END();
 }
