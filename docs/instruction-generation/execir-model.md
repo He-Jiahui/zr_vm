@@ -219,16 +219,17 @@ The source compiler publishes that representable cleanup subset for a
 preflighted `try/finally` with no catches, ownership cleanup, calls, or
 declarations. A normally completing protected block enters the cleanup block
 and cleanup exits to one join. A protected block may instead end in exactly one
-linear `return`: its operand ValueId is captured before cleanup, the protected
-block enters cleanup, and cleanup exits to a dedicated zero-successor RETURN
-block that consumes the captured value. This preserves source evaluation order
-when `finally` mutates the returned local. Every transfer into or out of cleanup
-is an operand-free semantic `BRANCH`; the return remains the only value-bearing
-terminator. Preflight examines the complete protected and cleanup bodies before
-activating a graph. `throw`, nonlinear returns, calls, nested control flow,
-catch-plus-finally, and other unsupported shapes retain the legacy-CFG
-fail-closed path. Multiple pending completion kinds, selector dispatch, and
-exceptional entry remain later source milestones.
+linear `return` or `throw`: its operand ValueId is captured before cleanup, the
+protected block enters cleanup, and cleanup exits to a dedicated zero-successor
+RETURN or THROW block that consumes the captured value. This preserves source
+evaluation order when `finally` mutates the returned or thrown local. Every
+transfer into or out of cleanup is an operand-free semantic `BRANCH`; the final
+abrupt terminator remains the only value-bearing control instruction. Preflight
+examines the complete protected and cleanup bodies before activating a graph.
+Nonlinear abrupt payloads, calls, nested control flow, catch-plus-finally, and
+other unsupported shapes retain the legacy-CFG fail-closed path. Multiple
+pending completion kinds, selector dispatch, and exceptional entry remain
+later source milestones.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

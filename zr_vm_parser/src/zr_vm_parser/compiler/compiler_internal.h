@@ -148,11 +148,11 @@ typedef struct SZrCompilerSemanticCatchPlan {
 typedef struct SZrCompilerSemanticFinallyPlan {
     TZrUInt32 cleanupBlock;
     TZrUInt32 joinBlock;
-    TZrUInt32 returnBlock;
-    TZrValueId returnValueId;
-    SZrFileRange returnRange;
-    TZrBool expectsReturn;
-    TZrBool returnPending;
+    TZrUInt32 completionBlock;
+    TZrValueId completionValueId;
+    SZrFileRange completionRange;
+    EZrSemanticIrOpcode completionOpcode;
+    TZrBool completionPending;
     TZrBool initialized;
     TZrBool cleanupEntered;
 } SZrCompilerSemanticFinallyPlan;
@@ -345,6 +345,12 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
 TZrBool compiler_semantic_cfg_return_through_finally_is_active(
         const SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_redirect_return_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_throw_through_finally_is_active(
+        const SZrCompilerState *cs);
+TZrBool compiler_semantic_cfg_redirect_throw_through_finally(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
         SZrFileRange range);

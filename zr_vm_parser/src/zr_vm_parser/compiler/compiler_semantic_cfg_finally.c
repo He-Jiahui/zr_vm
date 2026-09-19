@@ -33,32 +33,33 @@ static TZrBool compiler_semantic_cfg_finally_block_is_linear(
 
 static TZrBool compiler_semantic_cfg_finally_protected_block_flow(
         const SZrAstNode *node,
-        TZrBool *outReturns) {
-    TZrBool returns = ZR_FALSE;
+        EZrSemanticIrOpcode *outCompletionOpcode) {
+    EZrSemanticIrOpcode completionOpcode = ZR_SEMANTIC_IR_INVALID;
     TZrSize index;
 
     if (node == ZR_NULL || node->type != ZR_AST_BLOCK ||
-        outReturns == ZR_NULL) {
+        outCompletionOpcode == ZR_NULL) {
         return ZR_FALSE;
     }
     if (node->data.block.body == ZR_NULL) {
-        *outReturns = ZR_FALSE;
+        *outCompletionOpcode = ZR_SEMANTIC_IR_INVALID;
         return ZR_TRUE;
     }
     for (index = 0U; index < node->data.block.body->count; index++) {
         const SZrAstNode *statement = node->data.block.body->nodes[index];
-        TZrBool statementReturns = ZR_FALSE;
+        EZrSemanticIrOpcode statementCompletionOpcode =
+                ZR_SEMANTIC_IR_INVALID;
         TZrSize trailingIndex;
 
         if (statement == ZR_NULL) {
             continue;
         }
-        if (returns) {
+        if (completionOpcode != ZR_SEMANTIC_IR_INVALID) {
             return ZR_FALSE;
         }
         if (statement->type == ZR_AST_BLOCK) {
             if (!compiler_semantic_cfg_finally_protected_block_flow(
-                        statement, &statementReturns)) {
+                        statement, &statementCompletionOpcode)) {
                 return ZR_FALSE;
             }
         } else if (statement->type == ZR_AST_EXPRESSION_STATEMENT) {
@@ -71,11 +72,17 @@ static TZrBool compiler_semantic_cfg_finally_protected_block_flow(
                         statement->data.returnStatement.expr)) {
                 return ZR_FALSE;
             }
-            statementReturns = ZR_TRUE;
+            statementCompletionOpcode = ZR_SEMANTIC_IR_RETURN;
+        } else if (statement->type == ZR_AST_THROW_STATEMENT) {
+            if (!compiler_semantic_cfg_expression_is_linear(
+                        statement->data.throwStatement.expr)) {
+                return ZR_FALSE;
+            }
+            statementCompletionOpcode = ZR_SEMANTIC_IR_THROW;
         } else {
             return ZR_FALSE;
         }
-        if (!statementReturns) {
+        if (statementCompletionOpcode == ZR_SEMANTIC_IR_INVALID) {
             continue;
         }
         for (trailingIndex = index + 1U;
@@ -85,9 +92,9 @@ static TZrBool compiler_semantic_cfg_finally_protected_block_flow(
                 return ZR_FALSE;
             }
         }
-        returns = ZR_TRUE;
+        completionOpcode = statementCompletionOpcode;
     }
-    *outReturns = returns;
+    *outCompletionOpcode = completionOpcode;
     return ZR_TRUE;
 }
 
@@ -95,7 +102,7 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node) {
     const SZrTryCatchFinallyStatement *statement;
-    TZrBool protectedReturns = ZR_FALSE;
+    EZrSemanticIrOpcode completionOpcode = ZR_SEMANTIC_IR_INVALID;
 
     if (cs == ZR_NULL || node == ZR_NULL ||
         node->type != ZR_AST_TRY_CATCH_FINALLY_STATEMENT ||
@@ -115,7 +122,7 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
             (statement->catchClauses == ZR_NULL ||
              statement->catchClauses->count == 0U) &&
             compiler_semantic_cfg_finally_protected_block_flow(
-                    statement->block, &protectedReturns) &&
+                    statement->block, &completionOpcode) &&
             compiler_semantic_cfg_finally_block_is_linear(
                     statement->finallyBlock));
 }
@@ -136,8 +143,8 @@ static void compiler_semantic_cfg_finally_fail(
         memset(plan, 0, sizeof(*plan));
         plan->cleanupBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         plan->joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-        plan->returnBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-        plan->returnValueId = ZR_VALUE_ID_INVALID;
+        plan->completionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        plan->completionValueId = ZR_VALUE_ID_INVALID;
     }
 }
 
@@ -146,7 +153,7 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
         SZrAstNode *node,
         SZrCompilerSemanticFinallyPlan *plan) {
     SZrParserCfg *cfg;
-    TZrBool protectedReturns = ZR_FALSE;
+    EZrSemanticIrOpcode completionOpcode = ZR_SEMANTIC_IR_INVALID;
 
     if (cs == ZR_NULL || node == ZR_NULL || plan == ZR_NULL ||
         !compiler_semantic_cfg_try_finally_is_supported(cs, node)) {
@@ -155,14 +162,14 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
     memset(plan, 0, sizeof(*plan));
     plan->cleanupBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    plan->returnBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    plan->returnValueId = ZR_VALUE_ID_INVALID;
+    plan->completionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    plan->completionValueId = ZR_VALUE_ID_INVALID;
     if (!compiler_semantic_cfg_finally_protected_block_flow(
                 node->data.tryCatchFinallyStatement.block,
-                &protectedReturns)) {
+                &completionOpcode)) {
         return ZR_FALSE;
     }
-    plan->expectsReturn = protectedReturns;
+    plan->completionOpcode = completionOpcode;
     if (!compiler_semantic_cfg_ensure_active(cs)) {
         return ZR_FALSE;
     }
@@ -170,16 +177,16 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
     plan->cleanupBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_CLEANUP,
             node->data.tryCatchFinallyStatement.finallyBlock);
-    if (plan->expectsReturn) {
-        plan->returnBlock = ZrParser_Cfg_AppendBlock(
+    if (plan->completionOpcode != ZR_SEMANTIC_IR_INVALID) {
+        plan->completionBlock = ZrParser_Cfg_AppendBlock(
                 cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, node);
     } else {
         plan->joinBlock = ZrParser_Cfg_AppendBlock(
                 cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
     }
     if (plan->cleanupBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-        (plan->expectsReturn
-                 ? plan->returnBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID
+        (plan->completionOpcode != ZR_SEMANTIC_IR_INVALID
+                 ? plan->completionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID
                  : plan->joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID)) {
         compiler_semantic_cfg_finally_fail(cs, plan);
         return ZR_FALSE;
@@ -189,24 +196,30 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
     return ZR_TRUE;
 }
 
-TZrBool compiler_semantic_cfg_return_through_finally_is_active(
-        const SZrCompilerState *cs) {
+static TZrBool compiler_semantic_cfg_completion_through_finally_is_active(
+        const SZrCompilerState *cs,
+        EZrSemanticIrOpcode completionOpcode) {
     const SZrCompilerSemanticFinallyPlan *plan =
             cs != ZR_NULL ? cs->preSemanticIrCfgFinallyPlan : ZR_NULL;
 
-    return (TZrBool)(plan != ZR_NULL && plan->initialized &&
-                     plan->expectsReturn && !plan->returnPending &&
+    return (TZrBool)((completionOpcode == ZR_SEMANTIC_IR_RETURN ||
+                      completionOpcode == ZR_SEMANTIC_IR_THROW) &&
+                     plan != ZR_NULL && plan->initialized &&
+                     plan->completionOpcode == completionOpcode &&
+                     !plan->completionPending &&
                      !plan->cleanupEntered);
 }
 
-TZrBool compiler_semantic_cfg_redirect_return_through_finally(
+static TZrBool compiler_semantic_cfg_redirect_completion_through_finally(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
-        SZrFileRange range) {
+        SZrFileRange range,
+        EZrSemanticIrOpcode completionOpcode) {
     SZrCompilerSemanticFinallyPlan *plan;
     TZrValueId valueId;
 
-    if (!compiler_semantic_cfg_return_through_finally_is_active(cs)) {
+    if (!compiler_semantic_cfg_completion_through_finally_is_active(
+                cs, completionOpcode)) {
         return ZR_FALSE;
     }
     plan = cs->preSemanticIrCfgFinallyPlan;
@@ -217,13 +230,41 @@ TZrBool compiler_semantic_cfg_redirect_return_through_finally(
                 cs->currentAst, range)) {
         return ZR_FALSE;
     }
-    plan->returnValueId = valueId;
-    plan->returnRange = range;
-    plan->returnPending = ZR_TRUE;
+    plan->completionValueId = valueId;
+    plan->completionRange = range;
+    plan->completionPending = ZR_TRUE;
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgStart =
             (TZrUInt32)cs->preSemanticIr.instructions.length;
     return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_return_through_finally_is_active(
+        const SZrCompilerState *cs) {
+    return compiler_semantic_cfg_completion_through_finally_is_active(
+            cs, ZR_SEMANTIC_IR_RETURN);
+}
+
+TZrBool compiler_semantic_cfg_redirect_return_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_redirect_completion_through_finally(
+            cs, valueSlot, range, ZR_SEMANTIC_IR_RETURN);
+}
+
+TZrBool compiler_semantic_cfg_throw_through_finally_is_active(
+        const SZrCompilerState *cs) {
+    return compiler_semantic_cfg_completion_through_finally_is_active(
+            cs, ZR_SEMANTIC_IR_THROW);
+}
+
+TZrBool compiler_semantic_cfg_redirect_throw_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_redirect_completion_through_finally(
+            cs, valueSlot, range, ZR_SEMANTIC_IR_THROW);
 }
 
 TZrBool compiler_semantic_cfg_enter_try_finally_cleanup(
@@ -233,8 +274,8 @@ TZrBool compiler_semantic_cfg_enter_try_finally_cleanup(
     if (cs == ZR_NULL || node == ZR_NULL || plan == ZR_NULL ||
         !plan->initialized || plan->cleanupEntered ||
         !cs->preSemanticIrCfgActive ||
-        (plan->expectsReturn
-                 ? (!plan->returnPending ||
+        (plan->completionOpcode != ZR_SEMANTIC_IR_INVALID
+                 ? (!plan->completionPending ||
                     cs->preSemanticIrCfgBlock !=
                             ZR_PARSER_CFG_INVALID_BLOCK_ID)
                  : (cs->preSemanticIrCfgBlock ==
@@ -262,19 +303,31 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
         compiler_semantic_cfg_finally_fail(cs, plan);
         return ZR_FALSE;
     }
-    if (plan->expectsReturn) {
-        if (!plan->returnPending ||
-            plan->returnValueId == ZR_VALUE_ID_INVALID ||
+    if (plan->completionOpcode != ZR_SEMANTIC_IR_INVALID) {
+        TZrBool terminated;
+
+        if (!plan->completionPending ||
+            plan->completionValueId == ZR_VALUE_ID_INVALID ||
             !compiler_semantic_cfg_jump_edge(
-                    cs, plan->returnBlock, ZR_PARSER_CFG_EDGE_CLEANUP,
+                    cs, plan->completionBlock, ZR_PARSER_CFG_EDGE_CLEANUP,
                     node, node->location)) {
             compiler_semantic_cfg_finally_fail(cs, plan);
             return ZR_FALSE;
         }
-        compiler_semantic_cfg_enter(cs, plan->returnBlock);
+        compiler_semantic_cfg_enter(cs, plan->completionBlock);
         cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
-        if (!compiler_semantic_cfg_terminate_return_value(
-                    cs, plan->returnValueId, plan->returnRange)) {
+        if (plan->completionOpcode == ZR_SEMANTIC_IR_RETURN) {
+            terminated = compiler_semantic_cfg_terminate_return_value(
+                    cs, plan->completionValueId,
+                    plan->completionRange);
+        } else if (plan->completionOpcode == ZR_SEMANTIC_IR_THROW) {
+            terminated = compiler_semantic_cfg_terminate_throw_value(
+                    cs, plan->completionValueId,
+                    plan->completionRange);
+        } else {
+            terminated = ZR_FALSE;
+        }
+        if (!terminated) {
             compiler_semantic_cfg_finally_fail(cs, plan);
             return ZR_FALSE;
         }
@@ -291,7 +344,7 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
     memset(plan, 0, sizeof(*plan));
     plan->cleanupBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    plan->returnBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-    plan->returnValueId = ZR_VALUE_ID_INVALID;
+    plan->completionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    plan->completionValueId = ZR_VALUE_ID_INVALID;
     return ZR_TRUE;
 }

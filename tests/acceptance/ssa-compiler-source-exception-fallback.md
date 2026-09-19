@@ -47,11 +47,11 @@ also failed with one detached call. Splitting scoped suppression from the
 function-level block exposed and fixed the same failure for the nested case.
 The active-prefix case protects the abandonment path.
 
-The later `test_finally_return_preserves_precleanup_value` milestone narrows
-this historical boundary: one preflighted terminal linear return now publishes
-an explicit protected-to-cleanup-to-return path while retaining its pre-cleanup
-operand. Nonlinear returns, throw, catch-plus-finally, and multiple completion
-kinds still use this persistent fallback and cannot restart a detached graph.
+The later source-cleanup milestones narrow this historical boundary: one
+preflighted terminal linear return or throw now publishes an explicit
+protected-to-cleanup-to-abrupt path while retaining its pre-cleanup operand.
+Nonlinear abrupt payloads, catch-plus-finally, and multiple completion kinds
+still use this persistent fallback and cannot restart a detached graph.
 
 ## Validation evidence (2026-09-18)
 

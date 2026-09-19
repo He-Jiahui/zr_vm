@@ -56,6 +56,12 @@ barrier, and prevents a trailing resolved call from publishing an incomplete
 graph. The modeled post-throw fixture also compiles unreachable store,
 `while`, and logical operations to protect their legacy-only path.
 
+The later `test_throw_try_finally_preserves_precleanup_value` milestone covers
+one terminal linear throw inside a preflighted no-catch `try/finally`. Its
+payload is loaded before cleanup, cleanup reaches a dedicated THROW block, and
+the final terminator consumes that original ValueId even when `finally`
+overwrites the source local. Nonlinear throw payloads remain fail-closed.
+
 ## Validation evidence (2026-09-18)
 
 - MSVC 19.44.35228 rebuilt and passed the focused pre-execution SemanticIR
@@ -74,9 +80,10 @@ graph. The modeled post-throw fixture also compiles unreachable store,
 
 ## Boundary
 
-This checkpoint does not model edge-defined exception payloads, catch
-selection, finally cleanup, or interrupted assignment state. A throw inside an
-unmodeled `try`/`catch`/`finally` scope, or inside a control-flow shape whose
-source CFG preflight has already fallen back, remains on legacy lowering.
-Those handler-aware paths must be introduced as one coherent exception-region
-contract rather than connected to this unhandled zero-successor sink.
+This checkpoint does not model exceptional entry into cleanup, mixed completion
+selection, or interrupted assignment state. Except for the later bounded
+terminal-linear throw path above, a throw inside an unmodeled
+`try`/`catch`/`finally` scope or a control-flow shape whose source CFG preflight
+has already fallen back remains on legacy lowering. Those handler-aware paths
+must be introduced as one coherent exception-region contract rather than
+connected to this unhandled zero-successor sink.

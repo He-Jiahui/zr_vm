@@ -308,11 +308,102 @@ static void test_nonlinear_return_try_finally_stays_on_legacy_path(void) {
     free_source(&compiler, ast);
 }
 
-static void test_throw_try_finally_stays_on_legacy_path(void) {
+static void test_throw_try_finally_preserves_precleanup_value(void) {
     static const TZrChar source[] =
             "var seed: int = 7;\n"
-            "try { throw seed; } finally { seed = 9; }\n";
-    static TZrChar sourceName[] = "throw_try_finally_fallback.zr";
+            "try {\n"
+            "  throw seed;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n";
+    static TZrChar sourceName[] = "throw_try_finally_cleanup.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *throwBlock;
+    const SZrSemanticIrInstruction *throwInstruction;
+    const SZrSemanticIrInstruction *throwValueDefinition;
+    const SZrSemanticIrValue *throwValue;
+    const TZrValueId *throwOperand;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(3U, function->cfg.blocks.length);
+
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            function->cfg.entryBlockId);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    throwBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            function->cfg.exitBlockId);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, entry->terminatorKind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_THROW, throwBlock->terminatorKind);
+    assert_single_edge(entry, ZR_PARSER_CFG_EDGE_CLEANUP, cleanup->id);
+    assert_single_edge(
+            cleanup, ZR_PARSER_CFG_EDGE_CLEANUP, throwBlock->id);
+    TEST_ASSERT_TRUE(block_has_source_line(function, entry, 3U));
+    TEST_ASSERT_TRUE(block_has_source_line(function, cleanup, 5U));
+
+    throwInstruction = block_tail(function, throwBlock);
+    TEST_ASSERT_NOT_NULL(throwInstruction);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_IR_THROW, throwInstruction->opcode);
+    TEST_ASSERT_EQUAL_UINT32(1U, throwInstruction->operandCount);
+    TEST_ASSERT_EQUAL_INT(3, throwInstruction->sourceRange.start.line);
+    throwOperand = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands,
+            throwInstruction->operandStart);
+    TEST_ASSERT_NOT_NULL(throwOperand);
+    throwValue = ZrParser_SemanticIr_Value(function, *throwOperand);
+    TEST_ASSERT_NOT_NULL(throwValue);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+            throwValue->definitionInstructionId);
+    throwValueDefinition = ZrParser_SemanticIr_InstructionAt(
+            function, throwValue->definitionInstructionId - 1U);
+    TEST_ASSERT_NOT_NULL(throwValueDefinition);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_IR_LOAD, throwValueDefinition->opcode);
+    TEST_ASSERT_EQUAL_INT(
+            3, throwValueDefinition->sourceRange.start.line);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(
+            (output.blocks[cleanup->id].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0U);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    free_source(&compiler, ast);
+}
+
+static void test_nonlinear_throw_try_finally_stays_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "var seed: int = 7;\n"
+            "try { throw seed + 1; } finally { seed = 9; }\n";
+    static TZrChar sourceName[] = "nonlinear_throw_try_finally_fallback.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(
             &compiler, source, sizeof(source) - 1U,
@@ -360,7 +451,8 @@ int main(void) {
     RUN_TEST(test_linear_try_finally_emits_cleanup_region);
     RUN_TEST(test_return_try_finally_preserves_precleanup_value);
     RUN_TEST(test_nonlinear_return_try_finally_stays_on_legacy_path);
-    RUN_TEST(test_throw_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_throw_try_finally_preserves_precleanup_value);
+    RUN_TEST(test_nonlinear_throw_try_finally_stays_on_legacy_path);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
     return UNITY_END();
 }
