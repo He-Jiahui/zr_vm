@@ -205,37 +205,45 @@ an ExecIR `SWITCH`, then structural and SSA verification prove that the selector
 exists and dominates the cleanup dispatch. Missing selectors, inline successor
 rows, ordinary source blocks, and unordered cases fail transactionally. The
 bounded source `try/finally` producer now uses this representation for one
-normal-versus-abrupt pending-completion discriminator; it remains independent
-of exceptional cleanup entry and multiple completion kinds.
+normal-versus-abrupt pending-completion discriminator, including one direct
+call's normal-versus-exceptional completion. Multiple completion kinds remain
+outside this bounded producer.
 
 An INVOKE result remains unavailable along the transitive closure of its
 exceptional successor, including ordinary branches into cleanup and later
 cleanup dispatch successors. Therefore a pending-state selector defined before
 the INVOKE may be read in shared cleanup, while substituting the INVOKE result
 is rejected with `EXCEPTION_EDGE` even though the INVOKE's block dominates the
-cleanup block. This is the interrupted-assignment gate required before source
-exceptional `finally` entry can be published.
+cleanup block. The source exceptional-`finally` producer relies on exactly this
+gate: its selector is initialized before the INVOKE and its exceptional payload
+is defined only in the exception landing block.
 
 The source compiler publishes that representable cleanup subset for a
-preflighted `try/finally` with no catches, ownership cleanup, calls, or
-declarations. A normally completing protected block enters the cleanup block
-and cleanup exits to one join. A protected block may instead contain exactly
-one linear `return` or `throw`. When every path reaches it, the operand ValueId
-is captured before cleanup and cleanup exits directly to a dedicated
-zero-successor RETURN or THROW block. When a statement-form conditional leaves
-a normal sibling path, the producer allocates compiler-private boolean-selector
-and payload Places before the branch. The abrupt path stores its converted
-payload and `true`, while the normal path retains the dominating `false`; both
-enter the same cleanup block. After the `finally` body, cleanup loads the
-selector and emits an ordered `CLEANUP_DISPATCH`: `SWITCH_CASE` reaches the
-abrupt block, whose operand is reloaded from the private payload Place, and
-final `SWITCH_DEFAULT` reaches the normal join. This preserves source evaluation
-order even when `finally` mutates the returned or thrown local. Preflight
-examines the complete protected and cleanup bodies before activating a graph.
-Nonlinear abrupt payloads, calls, declarations, more than one abrupt site,
-mixed return/throw kinds, catch-plus-finally, and other unsupported shapes
-retain the legacy-CFG fail-closed path. Exceptional entry and break/continue
-completion remain later source milestones.
+preflighted `try/finally` with no catches, ownership cleanup, or declarations.
+A normally completing protected block enters the cleanup block and cleanup
+exits to one join. A protected block may instead contain exactly one linear
+`return` or `throw`. When every path reaches it, the operand ValueId is captured
+before cleanup and cleanup exits directly to a dedicated zero-successor RETURN
+or THROW block. When a statement-form conditional leaves a normal sibling path,
+the producer allocates compiler-private boolean-selector and payload Places
+before the branch. The abrupt path stores its converted payload and `true`,
+while the normal path retains the dominating `false`; both enter the same
+cleanup block.
+
+The same private state also models one resolved zero-argument direct call in
+the protected body. Its `INVOKE` normal edge retains `false`; its direct
+exception landing block defines `EXCEPTION_PAYLOAD`, stores that payload plus
+`true`, and enters the shared cleanup without reading the interrupted call
+result. After the `finally` body, cleanup loads the selector and emits an
+ordered `CLEANUP_DISPATCH`: `SWITCH_CASE` reaches the abrupt block, whose
+operand is reloaded from the private payload Place and rethrown, while final
+`SWITCH_DEFAULT` reaches the normal join. This preserves source evaluation
+order even when `finally` mutates source locals. Preflight examines the complete
+protected and cleanup bodies before activating a graph. Nonlinear abrupt
+payloads, argument-bearing, conditional, or multiple calls, declarations, more
+than one abrupt site, mixed explicit and exceptional completion, catch-plus-
+finally, and other unsupported shapes retain the legacy-CFG fail-closed path.
+Break/continue completion remains a later source milestone.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address
@@ -462,9 +470,9 @@ single binding read, exact nonshadowing inferred-local propagation, canonical
 direct return, or exact binding-rethrow shapes;
 protected calls with multiple, named, marked, generic, member, literal,
 computed, type-converting, or non-value arguments, protected bodies with other
-control or effects, direct handler exits under active ownership/`@close`
-cleanup, and all `finally` cleanup shapes remain an explicit conservative
-boundary. Such a scope
+  control or effects, direct handler exits under active ownership/`@close`
+  cleanup, and `finally` cleanup shapes other than the bounded no-catch cases
+  above remain an explicit conservative boundary. Such a scope
 abandons any partial source CFG and keeps
 inactive starters suppressed for the rest of the SemanticIR function. The
 legacy compiler remains authoritative for these executable exception paths;
@@ -481,8 +489,9 @@ Afterward a function-level termination latch prevents later source text from
 adding SemanticIR instructions or starting another CFG, while legacy ExecBC
 emission continues for compatibility. Throws nested inside control-flow whose
 source CFG preflight already fell back, and throws inside `try`/`catch`/
-`finally` other than the bounded catch-binding rethrow, remain on the
-conservative legacy path until handler and cleanup edges are modeled together.
+`finally` other than the bounded catch-binding rethrow and no-catch cleanup
+cases above, remain on the conservative legacy path until their handler and
+cleanup edges are modeled together.
 
 The compiler-owned entry body now publishes explicit source `return` through
 the same value-terminator machinery. A value return consumes its canonical

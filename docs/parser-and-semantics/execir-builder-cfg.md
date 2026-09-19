@@ -151,21 +151,27 @@ alone.
 The production source compiler now emits this bounded shape for a no-catch
 `try/finally` when the cleanup body contains only nested blocks and linear
 expression statements, the protected body contains the same subset plus at
-most one linear return or throw under statement-form conditionals, and no
-enclosing ownership cleanup is active. Normal completion branches through the
-cleanup block to a join. A terminal return or throw still captures its ValueId
-and uses one direct cleanup edge to a dedicated abrupt block. If a sibling path
-falls through, compiler-private selector and payload Places are created before
-the protected branch. The abrupt path stores its payload and selects `true`;
-the normal path retains `false`; both enter cleanup. Cleanup then loads the
-selector and emits `CLEANUP_DISPATCH`, ordering the abrupt destination as
-`SWITCH_CASE` and the normal join as `SWITCH_DEFAULT`. The abrupt block reloads
-the private payload after cleanup, so a cleanup assignment cannot replace the
-already evaluated value. Nonlinear payloads, calls, declarations, more than one
-abrupt site, mixed return/throw kinds, catch-plus-finally, active catch targets,
-or ownership cleanup reject the entire shape before graph construction and
-keep the legacy path. Exceptional cleanup entry and additional pending
-completion kinds remain unsupported.
+most one linear return or throw under statement-form conditionals or one
+resolved zero-argument direct call outside conditional control, and no enclosing
+ownership cleanup is active. Normal completion branches through the cleanup
+block to a join. A terminal return or throw still captures its ValueId and uses
+one direct cleanup edge to a dedicated abrupt block. If a sibling path falls
+through, compiler-private selector and payload Places are created before the
+protected branch. The abrupt path stores its payload and selects `true`; the
+normal path retains `false`; both enter cleanup.
+
+For the call shape, the `INVOKE` exceptional edge reaches a dedicated landing
+block. That block defines `EXCEPTION_PAYLOAD`, stores it plus the `true`
+selector, and enters cleanup; the normal continuation retains the pre-call
+`false` and enters the same block. Cleanup loads the selector and emits
+`CLEANUP_DISPATCH`, ordering the abrupt destination as `SWITCH_CASE` and the
+normal join as `SWITCH_DEFAULT`. The abrupt block reloads the private payload
+after cleanup and rethrows it, so neither a cleanup assignment nor the
+uncommitted INVOKE result can replace the exception. Nonlinear payloads,
+argument-bearing, conditional, or multiple calls, declarations, more than one
+abrupt site, mixed explicit and exceptional completion, catch-plus-finally,
+active catch targets, or ownership cleanup reject the entire shape and keep the
+legacy path. Additional pending completion kinds remain unsupported.
 
 This is not yet effect-token generation; see
 `tests/acceptance/ssa-builder-control-edge-rejection.md` and

@@ -83,12 +83,13 @@ graph.
 
 This checkpoint covers resolved direct/callable function targets that have a
 canonical symbol and fixed explicit argument range. Calls nested in source
-constructs whose syntactic CFG preflight still excludes call expressions
-stay on the conservative legacy path without restarting a detached graph;
-precise composition for those nested calls remains open. Spread and unresolved
-dynamic calls, edge-defined exception payloads and enclosing handlers,
-Weak/cleanup exits, and non-call exceptional operations also remain open for
-the full 01.02 exit gate.
+constructs whose syntactic CFG preflight still excludes call expressions stay
+on the conservative legacy path without restarting a detached graph. One later
+no-catch `try/finally` shape admits a resolved zero-argument direct call, routes
+its exceptional edge through an `EXCEPTION_PAYLOAD` landing and shared cleanup,
+then rethrows after cleanup dispatch. Spread and unresolved dynamic calls,
+other enclosing-handler shapes, Weak/ownership cleanup exits, and non-call
+exceptional operations remain open for the full 01.02 exit gate.
 
 Unmodeled enclosing handler/finally scopes are kept conservative by
 [the exception-scope fallback checkpoint](ssa-compiler-source-exception-fallback.md).

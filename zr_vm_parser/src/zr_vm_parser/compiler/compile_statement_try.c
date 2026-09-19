@@ -182,13 +182,15 @@ void compile_try_catch_finally_statement(
     if (stmt->block != ZR_NULL) {
         ZrParser_Statement_Compile(cs, stmt->block);
     }
-    if (hasSemanticFinally &&
-        !compiler_semantic_cfg_enter_try_finally_cleanup(
-                cs, node, &semanticFinallyPlan)) {
-        ZrParser_Compiler_Error(
-                cs, "Failed to enter semantic finally cleanup",
-                node->location);
-        return;
+    if (hasSemanticFinally) {
+        if (!compiler_semantic_cfg_enter_try_finally_cleanup(
+                    cs, node, &semanticFinallyPlan)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to enter semantic finally cleanup",
+                    node->location);
+            return;
+        }
+        hasSemanticFinally = semanticFinallyPlan.initialized;
     }
 
     emit_instruction(

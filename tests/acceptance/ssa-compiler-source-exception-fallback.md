@@ -17,13 +17,14 @@ status: partial
 
 ## Scope
 
-Source `try`/`catch`/`finally` does not yet publish canonical handler payload,
-catch-selection, or finally-cleanup edges. Compiling such a scope now abandons
-any earlier partial source CFG and suppresses every inactive CFG starter while
-the protected block, catches, and finally block compile. Existing ExecBC
-exception machinery remains unchanged. Startup stays suppressed through the
-remainder of the current SemanticIR function so a later call cannot absorb the
-earlier exception scope into a false linear prefix.
+This original checkpoint established the fallback used whenever a source
+`try`/`catch`/`finally` shape does not belong to a later bounded handler or
+cleanup producer. Compiling such a scope abandons any earlier partial source
+CFG and suppresses every inactive CFG starter while the protected block,
+catches, and finally block compile. Existing ExecBC exception machinery remains
+unchanged. Startup stays suppressed through the remainder of the current
+SemanticIR function so a later call cannot absorb the earlier exception scope
+into a false linear prefix.
 
 This prevents a resolved call or nested supported control-flow construct from
 creating a detached graph that incorrectly omits the enclosing exception and
@@ -52,8 +53,11 @@ preflighted linear return or throw now publishes either a direct
 protected-to-cleanup-to-abrupt path or, when a sibling path falls through, a
 private pending selector and payload followed by cleanup dispatch to abrupt or
 normal continuation. Nonlinear abrupt payloads, catch-plus-finally, multiple
-abrupt sites or kinds, and exceptional cleanup entry still use this persistent
-fallback and cannot restart a detached graph.
+abrupt sites or kinds, and most exceptional cleanup entry still use this
+persistent fallback and cannot restart a detached graph. One later bounded
+shape admits a resolved zero-argument direct call: its exceptional edge defines
+and stores `EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after
+cleanup dispatch; multiple, conditional, or argument-bearing calls remain here.
 
 ## Validation evidence (2026-09-18)
 
@@ -73,10 +77,11 @@ fallback and cannot restart a detached graph.
 
 ## Boundary
 
-This checkpoint is deliberately conservative. It does not claim source-owned
-exception payloads, catch dispatch, finally cleanup edges, interrupted
-assignment state, or handled non-call throwable operations. Straight-line
-unhandled source `throw` is covered by
+This checkpoint is deliberately conservative. Later bounded milestones now
+claim source-owned catch payload/dispatch, no-catch finally cleanup edges, the
+interrupted-assignment guard, and one direct-call exceptional cleanup path.
+Other handler/finally combinations and handled non-call throwable operations
+remain outside that subset. Straight-line unhandled source `throw` is covered by
 [the explicit throw CFG checkpoint](ssa-compiler-source-throw-cfg.md). The
 remaining handler-aware work is still required for the full 01.02 exit gate;
 this slice ensures it cannot be bypassed by a partially modeled nested graph

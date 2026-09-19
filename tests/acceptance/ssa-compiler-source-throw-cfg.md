@@ -83,10 +83,11 @@ block or normal join. Nonlinear throw payloads remain fail-closed.
 
 ## Boundary
 
-This checkpoint does not model exceptional entry into cleanup, multiple
-completion kinds, or interrupted assignment state. Except for the later
-bounded terminal or normal-versus-throw cleanup paths above, a throw inside an
-unmodeled `try`/`catch`/`finally` scope or a control-flow shape whose source CFG
-preflight has already fallen back remains on legacy lowering. Those
-handler-aware paths must be introduced as one coherent exception-region
-contract rather than connected to this unhandled zero-successor sink.
+Later cleanup milestones model exceptional entry for one zero-argument direct
+call, but this checkpoint still does not combine it with multiple completion
+kinds. Except for the bounded terminal, normal-versus-throw, and direct-call
+cleanup paths, a throw inside an unmodeled `try`/`catch`/`finally` scope or a
+control-flow shape whose source CFG preflight has already fallen back remains
+on legacy lowering. Those handler-aware paths must be introduced as one
+coherent exception-region contract rather than connected to this unhandled
+zero-successor sink.

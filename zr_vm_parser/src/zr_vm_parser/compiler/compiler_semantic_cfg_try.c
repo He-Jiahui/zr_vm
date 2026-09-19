@@ -296,7 +296,7 @@ static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
                     syntax->marker == ZR_CALL_ARGUMENT_MARKER_NONE);
 }
 
-static const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
+const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
         const SZrAstNode *node) {
     const SZrAstNode *callNode;
     const SZrFunctionCall *call;

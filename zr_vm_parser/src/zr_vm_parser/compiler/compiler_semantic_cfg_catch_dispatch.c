@@ -80,8 +80,8 @@ static void compiler_semantic_cfg_catch_plan_free(SZrCompilerState *cs, SZrCompi
     memset(plan, 0, sizeof(*plan));
 }
 
-static TZrBool compiler_semantic_cfg_emit_exception_payload(SZrCompilerState *cs, SZrFileRange sourceRange,
-                                                            TZrTypeId *outTypeId, TZrValueId *outValueId) {
+TZrBool compiler_semantic_cfg_emit_exception_payload(SZrCompilerState *cs, SZrFileRange sourceRange,
+                                                      TZrTypeId *outTypeId, TZrValueId *outValueId) {
     SZrInferredType payloadType;
     SZrSemanticIrInstructionSpec spec;
     TZrTypeId typeId;
