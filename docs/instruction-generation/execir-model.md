@@ -26,6 +26,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
@@ -53,6 +55,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/01-core-model.md
@@ -100,6 +104,7 @@ tests:
   - tests/acceptance/ssa-source-foreach-cfg.md
   - tests/acceptance/ssa-exception-payload.md
   - tests/acceptance/ssa-source-catch-cfg.md
+  - tests/acceptance/ssa-builder-control-edge-rejection.md
   - tests/acceptance/ssa-type-test-foundation.md
   - tests/acceptance/ssa-source-typed-catch-cfg.md
   - tests/acceptance/ssa-source-multiple-catch-cfg.md
@@ -171,6 +176,18 @@ projection, and AOT projection reject it transactionally until runtime subtype
 testing is connected to canonical type metadata. A bounded source typed-catch
 producer now uses this operation in SemanticIR/ExecIR; it never substitutes a
 type-name string comparison or claims an executable projection.
+
+Cleanup identity currently lives on both sides of the CFG boundary: SemanticIR
+uses `ZR_PARSER_CFG_EDGE_CLEANUP` and `ZR_PARSER_CFG_BLOCK_CLEANUP`, while
+ExecIR preserves cleanup regions with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`. The
+builder accepts a cleanup edge only when it is the sole successor of an
+operand-free `BRANCH` and either endpoint is a cleanup block. This is sufficient
+for an entry edge, a chain within cleanup, and a cleanup-to-continuation edge;
+the ordinary predecessor/successor pools retain the exact adjacency and the
+cleanup block retains its flag. A cleanup edge between two ordinary blocks,
+or any multi-successor `CLEANUP_DISPATCH`, remains `UNSUPPORTED` so pending
+return/throw/break/continue state is not silently erased. Source `try/finally`
+production and executable pending-state dispatch remain later milestones.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

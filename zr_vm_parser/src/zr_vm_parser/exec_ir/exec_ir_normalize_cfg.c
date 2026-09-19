@@ -42,36 +42,13 @@ static const SZrParserCfgEdge *block_edge_at(
             : ZR_NULL;
 }
 
-static TZrBool block_has_typed_invoke_edges(
-        const SZrSemanticIrFunction *semantic,
-        const SZrParserCfgBlock *block) {
-    const SZrParserCfgEdge *normal;
-    const SZrParserCfgEdge *exception;
-    const SZrSemanticIrInstruction *tail;
-
-    if (!block->outgoingEdges.isValid ||
-        block->outgoingEdges.length != 2u ||
-        block->instructionCount == 0u) {
-        return ZR_FALSE;
-    }
-    normal = block_edge_at(block, 0u);
-    exception = block_edge_at(block, 1u);
-    tail = (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
-            (SZrArray *)&semantic->instructions,
-            block->firstInstructionIndex + block->instructionCount - 1u);
-    return (TZrBool)(normal->kind == ZR_PARSER_CFG_EDGE_NORMAL &&
-                    exception->kind == ZR_PARSER_CFG_EDGE_EXCEPTION &&
-                    normal->toBlockId != exception->toBlockId &&
-                    semantic_operation_can_invoke(tail->opcode));
-}
-
 static TZrUInt32 block_prior_invoke_count(
         const SZrSemanticIrFunction *semantic,
         const SZrParserCfgBlock *block) {
     TZrUInt32 count = 0u;
     TZrUInt32 index;
 
-    if (!block_has_typed_invoke_edges(semantic, block)) {
+    if (!zr_parser_exec_ir_has_typed_invoke_edges(semantic, block)) {
         return 0u;
     }
     for (index = 0u; index + 1u < block->instructionCount; ++index) {
@@ -204,7 +181,7 @@ TZrBool zr_parser_exec_ir_normalize_exception_cfg(
                 (const SZrParserCfgBlock *)ZrCore_Array_Get(
                         (SZrArray *)&semantic->cfg.blocks, blockIndex);
         const SZrParserCfgEdge *exception =
-                block_has_typed_invoke_edges(semantic, source)
+                zr_parser_exec_ir_has_typed_invoke_edges(semantic, source)
                         ? block_edge_at(source, 1u)
                         : ZR_NULL;
         TZrUInt32 destinationId = firstBlocks[blockIndex];

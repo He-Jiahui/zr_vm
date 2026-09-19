@@ -179,11 +179,75 @@ static void make_mixed_predecessor_exception_payload_function(
     operands[0] = 2u;
 }
 
+static void make_cleanup_branch_function(
+        SZrSemanticIrFunction *semantic,
+        SZrParserCfgBlock blocks[3],
+        SZrParserCfgEdge edges[2],
+        SZrSemanticIrInstruction instructions[4],
+        SZrSemanticIrValue values[1],
+        TZrValueId operands[1]) {
+    memset(semantic, 0, sizeof(*semantic));
+    memset(blocks, 0, sizeof(*blocks) * 3u);
+    memset(edges, 0, sizeof(*edges) * 2u);
+    memset(instructions, 0, sizeof(*instructions) * 4u);
+    memset(values, 0, sizeof(*values));
+
+    semantic->symbolId = (TZrSymbolId)44u;
+    semantic->cfg.blocks = input_array(blocks, 3u, sizeof(*blocks));
+    semantic->cfg.entryBlockId = 0u;
+    semantic->cfg.exitBlockId = 2u;
+    semantic->instructions = input_array(
+            instructions, 4u, sizeof(*instructions));
+    semantic->values = input_array(values, 1u, sizeof(*values));
+    semantic->valueOperands = input_array(operands, 1u, sizeof(*operands));
+
+    blocks[0].id = 0u;
+    blocks[0].kind = ZR_PARSER_CFG_BLOCK_ENTRY;
+    blocks[0].instructionCount = 1u;
+    blocks[0].terminatorKind = ZR_PARSER_CFG_TERMINATOR_BRANCH;
+    blocks[0].outgoingEdges = input_array(&edges[0], 1u, sizeof(*edges));
+    blocks[1].id = 1u;
+    blocks[1].kind = ZR_PARSER_CFG_BLOCK_CLEANUP;
+    blocks[1].firstInstructionIndex = 1u;
+    blocks[1].instructionCount = 1u;
+    blocks[1].terminatorKind = ZR_PARSER_CFG_TERMINATOR_BRANCH;
+    blocks[1].outgoingEdges = input_array(&edges[1], 1u, sizeof(*edges));
+    blocks[2].id = 2u;
+    blocks[2].kind = ZR_PARSER_CFG_BLOCK_STATEMENT;
+    blocks[2].firstInstructionIndex = 2u;
+    blocks[2].instructionCount = 2u;
+    blocks[2].terminatorKind = ZR_PARSER_CFG_TERMINATOR_RETURN;
+
+    edges[0].fromBlockId = 0u;
+    edges[0].toBlockId = 1u;
+    edges[0].kind = ZR_PARSER_CFG_EDGE_CLEANUP;
+    edges[1].fromBlockId = 1u;
+    edges[1].toBlockId = 2u;
+    edges[1].kind = ZR_PARSER_CFG_EDGE_CLEANUP;
+
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_BRANCH;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_BRANCH;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[2].typeId = 1u;
+    instructions[2].resultValueId = 1u;
+    instructions[3].id = 4u;
+    instructions[3].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[3].typeId = 1u;
+    instructions[3].operandCount = 1u;
+
+    values[0].id = 1u;
+    values[0].typeId = 1u;
+    values[0].definitionInstructionId = 3u;
+    operands[0] = 1u;
+}
+
 static void test_rejects_unrepresentable_control_edges(void) {
     const EZrParserCfgEdgeKind kinds[] = {
-        ZR_PARSER_CFG_EDGE_EXCEPTION, ZR_PARSER_CFG_EDGE_CLEANUP,
-        ZR_PARSER_CFG_EDGE_RETURN, ZR_PARSER_CFG_EDGE_SUSPEND,
-        ZR_PARSER_CFG_EDGE_RESUME
+        ZR_PARSER_CFG_EDGE_EXCEPTION, ZR_PARSER_CFG_EDGE_RETURN,
+        ZR_PARSER_CFG_EDGE_SUSPEND, ZR_PARSER_CFG_EDGE_RESUME
     };
     TZrSize i;
 
@@ -210,6 +274,102 @@ static void test_rejects_unrepresentable_control_edges(void) {
               "builder lowered a semantic control edge as an ordinary successor");
         ZrCore_ExecIr_FreeFunction(&output);
     }
+}
+
+static void test_cleanup_branches_preserve_cleanup_region(void) {
+    SZrSemanticIrFunction semantic;
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[2];
+    SZrSemanticIrInstruction instructions[4];
+    SZrSemanticIrValue values[1];
+    TZrValueId operands[1];
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_cleanup_branch_function(
+            &semantic, blocks, edges, instructions, values, operands);
+    ZrCore_ExecIr_FunctionInit(&output);
+
+    check(ZrParser_ExecIr_Build(
+                  &semantic, NULL, &output, &diagnostic) &&
+                  output.blockCount == 3u &&
+                  (output.blocks[0].flags & ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) == 0u &&
+                  (output.blocks[1].flags & ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0u &&
+                  (output.blocks[2].flags & ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) == 0u &&
+                  output.instructions[0].opcode == ZR_EXEC_IR_OPCODE_BRANCH &&
+                  output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_BRANCH &&
+                  output.blocks[0].successorRange.count == 1u &&
+                  output.successors[output.blocks[0].successorRange.start] == 2u &&
+                  output.blocks[1].successorRange.count == 1u &&
+                  output.successors[output.blocks[1].successorRange.start] == 3u &&
+                  output.blocks[1].predecessorRange.count == 1u &&
+                  output.predecessors[output.blocks[1].predecessorRange.start] == 1u &&
+                  output.blocks[2].predecessorRange.count == 1u &&
+                  output.predecessors[output.blocks[2].predecessorRange.start] == 2u,
+          "builder did not preserve the cleanup branch region");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(
+                  &output,
+                  (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
+                                         ZR_EXEC_IR_VERIFY_SSA),
+                  &diagnostic),
+          "cleanup branch graph failed structural or SSA verification");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_rejects_cleanup_edge_outside_cleanup_region(void) {
+    SZrSemanticIrFunction semantic;
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[2];
+    SZrSemanticIrInstruction instructions[4];
+    SZrSemanticIrValue values[1];
+    TZrValueId operands[1];
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_cleanup_branch_function(
+            &semantic, blocks, edges, instructions, values, operands);
+    blocks[1].kind = ZR_PARSER_CFG_BLOCK_STATEMENT;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(
+                  &semantic, NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+                  diagnostic.functionToken == 44u &&
+                  diagnostic.blockId == 1u &&
+                  diagnostic.instructionId == 1u &&
+                  diagnostic.expectedVersion == ZR_PARSER_CFG_BLOCK_CLEANUP &&
+                  diagnostic.actualVersion == ZR_PARSER_CFG_BLOCK_STATEMENT &&
+                  output.blockCount == 0u,
+          "builder accepted a cleanup edge with no cleanup endpoint");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_rejects_cleanup_dispatch_without_pending_state(void) {
+    SZrSemanticIrFunction semantic;
+    SZrParserCfgBlock blocks[3];
+    SZrParserCfgEdge edges[2];
+    SZrSemanticIrInstruction instructions[4];
+    SZrSemanticIrValue values[1];
+    TZrValueId operands[1];
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_cleanup_branch_function(
+            &semantic, blocks, edges, instructions, values, operands);
+    blocks[1].terminatorKind = ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH;
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(
+                  &semantic, NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+                  diagnostic.functionToken == 44u &&
+                  diagnostic.blockId == 2u &&
+                  diagnostic.instructionId == 2u &&
+                  diagnostic.expectedVersion == ZR_PARSER_CFG_TERMINATOR_BRANCH &&
+                  diagnostic.actualVersion ==
+                          ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH &&
+                  output.blockCount == 0u,
+          "builder accepted cleanup dispatch without pending-control state");
+    ZrCore_ExecIr_FreeFunction(&output);
 }
 
 static void test_exception_edge_reports_throw_source(void) {
@@ -590,6 +750,9 @@ static void test_exception_payload_rejects_normal_handler_entry(void) {
 
 int main(void) {
     test_rejects_unrepresentable_control_edges();
+    test_cleanup_branches_preserve_cleanup_region();
+    test_rejects_cleanup_edge_outside_cleanup_region();
+    test_rejects_cleanup_dispatch_without_pending_state();
     test_exception_edge_reports_throw_source();
     test_rejects_typed_control_in_inline_successors();
     test_accepts_ordinary_dynamic_edge();

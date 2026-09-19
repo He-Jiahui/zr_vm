@@ -7,6 +7,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
@@ -111,10 +113,17 @@ rejects use of that result there. Consecutive invoke-capable operations are
 split into individual blocks before lowering, preserving one exceptional exit
 per operation. Reversing the edge order, omitting its kind, or putting an
 exception edge on a throw still reports source-located `UNSUPPORTED` and leaves
-the caller's output unchanged. Cleanup, return, suspend, and resume edges remain
-unsupported, not ordinary successors. Normal, true/false, and switch edges
-retain their order. This is not yet production compiler CFG or effect-token
-generation; see `tests/acceptance/ssa-builder-control-edge-rejection.md` and
+the caller's output unchanged. A cleanup edge is representable only as the sole
+successor of an operand-free semantic `BRANCH`, with either its source or its
+destination declared `ZR_PARSER_CFG_BLOCK_CLEANUP`. The builder preserves that
+block as `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`, retains both entry and exit adjacency,
+and passes the graph through structural and SSA verification. This covers a
+single cleanup path or chain; it does not encode pending completion state.
+Cleanup edges outside a cleanup region, return, suspend, and resume edges remain
+unsupported rather than becoming ordinary successors. Normal, true/false, and
+switch edges retain their order. This is not yet production compiler CFG or
+effect-token generation; see
+`tests/acceptance/ssa-builder-control-edge-rejection.md` and
 `tests/acceptance/ssa-builder-iterator-invokes.md`.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
@@ -124,7 +133,10 @@ work before full exception/effect correctness can be claimed.
 For legacy inline successor rows without edge kinds, a nonempty row paired
 with `RETURN`, `THROW`, `SUSPEND`, `CLEANUP_DISPATCH`, or `EXIT` terminator
 metadata is rejected the same way; a typed control transfer must not evade
-the dynamic-edge guard by using the inline compatibility representation.
+the dynamic-edge guard by using the inline compatibility representation. A
+nonempty `CLEANUP_DISPATCH` also remains rejected: choosing among normal,
+return, throw, break, or continue completions requires an explicit pending-state
+operation that the current ExecIR schema does not yet provide.
 
 The instruction pool uses zero-based range offsets while published
 `terminatorInstructionId` uses one-based instruction IDs. For each semantic

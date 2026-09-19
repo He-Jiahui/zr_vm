@@ -3,20 +3,22 @@
 ## Failure and success fixtures
 
 An independent `ssa_builder_control_edges` target supplies dynamic CFG edges
-with exception, cleanup, return, suspend and resume kinds. Previously the
+with exception, cleanup, return, suspend and resume kinds. At the original
+fail-closed checkpoint the
 builder silently copied the first such edge as a normal successor; the MSVC
 red run failed with `builder lowered a semantic control edge as an ordinary
 successor`. It now reports `UNSUPPORTED`, function token 42, source block 1,
-highest currently representable edge kind and the actual kind. A throwing
+highest then-representable edge kind and the actual kind. A throwing
 block with a real constant/throw pair reports the source instruction and
 source-map ID 2. Caller-owned output is unchanged on failure. A normal
 dynamic edge still builds and retains its destination.
 
 The directly interpreted Oracle does not currently implement the `INVOKE`
-exceptional transfer, nor is a cleanup/resume edge lowered into a distinct
-ExecIR control operation here. These edges must not be silently treated as
-ordinary successors. This is deliberately a temporary rejection gate, not
-completion of exceptional/suspension semantics.
+exceptional transfer. Cleanup branches gained a bounded representation in the
+2026-09-19 follow-up below; resume and multi-way cleanup dispatch still have no
+distinct ExecIR control operation. Typed edges must not be silently treated as
+ordinary successors. The remaining rejection is deliberately a temporary gate,
+not completion of exceptional/suspension semantics.
 
 ## Inline-row follow-up
 
@@ -54,9 +56,9 @@ printed the same PASS (exit 0). Full CTest on Linux remains outstanding.
 
 ## Remaining gates
 
-Explicit exceptional-result availability, handler/cleanup entry, suspend
-resume maps, loop phi insertion, and source-language parity are still
-outstanding. The unrelated dirty `test_ssa_construction.c` was not edited.
+Executable handler payload projection, pending-state cleanup dispatch, suspend
+resume maps, and source-language `try/finally` parity are still outstanding.
+The unrelated dirty `test_ssa_construction.c` was not edited.
 
 ## Typed call exception-edge follow-up (2026-09-18)
 
@@ -124,3 +126,40 @@ This covers synthetic canonical typed-call splitting. Source-language
 try/finally production, cleanup dispatch, optional-call short circuit,
 effect-token construction, Oracle exception transfer, and the full 01.02 gate
 remain open.
+
+## Cleanup branch foundation follow-up (2026-09-19)
+
+A focused RED fixture built `entry -> cleanup -> continuation` with two explicit
+`ZR_PARSER_CFG_EDGE_CLEANUP` rows. MSVC first failed with
+`builder did not preserve the cleanup branch region`, confirming the old
+fail-closed guard rejected the first edge. The builder now accepts only a
+cleanup edge that is the sole successor of an operand-free semantic `BRANCH`
+and has a cleanup block at either endpoint. It preserves the cleanup block flag,
+both successor rows, both predecessor rows, and passes the resulting function
+through structural plus SSA verification. A paired negative fixture changes the
+only cleanup block into a statement block and receives source-located
+`UNSUPPORTED` at block 1/instruction 1 without publishing output. A second
+negative fixture changes the cleanup block terminator to `CLEANUP_DISPATCH` and
+is rejected at block 2/instruction 2 because no pending-control selector exists.
+
+The control-edge validation and typed-invoke predicate moved from the 1086-line
+`exec_ir_build.c` into the dedicated 329-line
+`exec_ir_build_control_edges.c`; the main builder is now 888 lines. The new
+module is compiled by every focused builder target. MSVC 19.44.35228, WSL GCC
+11.4.0, and WSL Clang 14.0.0 each rebuilt and passed the same seven-test
+selection: builder CFG, dominance, control edges, fact identity, iterator
+invokes, Place eligibility, and Place promotion. GCC and Clang retained only
+the pre-existing missing-braces warnings in `exec_ir_build.c`; the new module
+emitted none. A fresh GCC ASan+UBSan build at
+`/home/hejiahui/codex-validation/zr-vm-ssa-cleanup-asan-phase74` also passed the
+focused control-edge test with leak detection and halt-on-error enabled. The
+production parser target compiled the new module as MSVC static and GCC/Clang
+shared libraries. The final adjacent SSA selection passed 11/11 on all three
+toolchains: core model, effects verifier, dominators, builder CFG/control
+edges/iterator invokes, Place eligibility/promotion, value validation, Oracle
+projections, and scalar pass manager.
+
+This is a representation-layer foundation, not source `try/finally` completion.
+`CLEANUP_DISPATCH`, pending return/throw/break/continue state, cleanup effects,
+source production, Oracle/ExecBC/AOT execution, and the plan's interrupted
+assignment case remain open.

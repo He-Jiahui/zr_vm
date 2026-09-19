@@ -11,6 +11,15 @@ typedef struct SZrParserExecIrNormalizedCfg {
     TZrBool changed;
 } SZrParserExecIrNormalizedCfg;
 
+TZrBool zr_parser_exec_ir_has_typed_invoke_edges(
+        const SZrSemanticIrFunction *semantic,
+        const SZrParserCfgBlock *block);
+
+TZrBool zr_parser_exec_ir_validate_cfg_edges(
+        const SZrSemanticIrFunction *semantic,
+        SZrExecIrFunction *output,
+        SZrExecIrDiagnostic *diagnostic);
+
 TZrBool zr_parser_exec_ir_normalize_exception_cfg(
         const SZrSemanticIrFunction *semantic,
         SZrParserExecIrNormalizedCfg *normalized,
