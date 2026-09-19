@@ -85,12 +85,39 @@ TZrBool compiler_semantic_cfg_for_is_supported(
         (loop->step != ZR_NULL &&
          !compiler_semantic_cfg_expression_is_linear(loop->step)) ||
         !compiler_semantic_cfg_loop_body_analyze(
-                loop->block, ZR_TRUE, ZR_TRUE, &endsWithBreak) ||
-        (loop->cond == ZR_NULL && !endsWithBreak)) {
+                loop->block, ZR_TRUE, ZR_TRUE, &endsWithBreak)) {
         return ZR_FALSE;
     }
     if (bodyEndsWithBreak != ZR_NULL) {
         *bodyEndsWithBreak = endsWithBreak;
     }
+    return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_close_infinite_loop(
+        SZrCompilerState *cs,
+        TZrUInt32 exitBlock) {
+    SZrSemanticIrFunction *function;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive ||
+        exitBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
+    function = &cs->preSemanticIr;
+    if (exitBlock >= function->cfg.blocks.length ||
+        !ZrParser_SemanticIr_BindBlockRange(
+                function,
+                &function->cfg,
+                exitBlock,
+                (TZrUInt32)function->instructions.length,
+                0U,
+                ZR_PARSER_CFG_TERMINATOR_EXIT)) {
+        return ZR_FALSE;
+    }
+    function->cfg.exitBlockId = exitBlock;
+    cs->preSemanticIrCfgTerminated = ZR_TRUE;
+    cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgStart =
+            (TZrUInt32)function->instructions.length;
     return ZR_TRUE;
 }

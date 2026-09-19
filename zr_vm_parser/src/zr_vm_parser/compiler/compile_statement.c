@@ -3960,6 +3960,7 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
     SZrAstNode *oldCurrentAst;
     SZrCompilerSemanticIrIsolation semanticIrIsolation;
     TZrBool hasSemanticIrIsolation = ZR_FALSE;
+    TZrBool isolateTerminatedSemanticIr;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -3969,17 +3970,21 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
     cs->currentAst = node;
     compile_statement_trace("statement compile dispatch node=%p type=%d", (void *)node, (int)node->type);
 
-    if (cs->currentFunctionNode != ZR_NULL &&
-        ((node->type == ZR_AST_IF_EXPRESSION &&
-          node->data.ifExpression.isStatement) ||
-         node->type == ZR_AST_WHILE_LOOP ||
-         node->type == ZR_AST_FOR_LOOP ||
-         node->type == ZR_AST_FOREACH_LOOP)) {
+    isolateTerminatedSemanticIr = cs->preSemanticIrCfgTerminated;
+    if (isolateTerminatedSemanticIr ||
+        (cs->currentFunctionNode != ZR_NULL &&
+         ((node->type == ZR_AST_IF_EXPRESSION &&
+           node->data.ifExpression.isStatement) ||
+          node->type == ZR_AST_WHILE_LOOP ||
+          node->type == ZR_AST_FOR_LOOP ||
+          node->type == ZR_AST_FOREACH_LOOP))) {
         if (!compiler_semantic_ir_isolation_begin(
                     cs, &semanticIrIsolation)) {
             ZrParser_Compiler_Error(
                     cs,
-                    "Failed to isolate declared callable control-flow Semantic IR",
+                    isolateTerminatedSemanticIr
+                            ? "Failed to isolate unreachable statement Semantic IR"
+                            : "Failed to isolate declared callable control-flow Semantic IR",
                     node->location);
             cs->currentAst = oldCurrentAst;
             return;
@@ -4147,7 +4152,7 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                         typeName, node->type, 
                         node->location.start.line, node->location.start.column);
                 ZrParser_Compiler_Error(cs, errorMsg, node->location);
-                return;
+                break;
             }
             
             // 其他类型尝试作为表达式编译

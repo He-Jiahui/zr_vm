@@ -208,6 +208,9 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
 TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,
         TZrBool *bodyEndsWithBreak);
+TZrBool compiler_semantic_cfg_close_infinite_loop(
+        SZrCompilerState *cs,
+        TZrUInt32 exitBlock);
 TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
                                            TZrUInt32 conditionSlot,
                                            SZrAstNode *node,

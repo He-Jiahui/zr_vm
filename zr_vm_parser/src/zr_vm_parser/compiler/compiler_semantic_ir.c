@@ -1586,6 +1586,9 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
         stackSlot == ZR_PARSER_SLOT_NONE || !cs->preSemanticIrInitialized) {
         return ZR_FALSE;
     }
+    if (cs->preSemanticIrCfgTerminated) {
+        return ZR_TRUE;
+    }
     binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
     if (binding == ZR_NULL || binding->typeId == ZR_SEMANTIC_ID_INVALID ||
         binding->symbolId == ZR_SEMANTIC_ID_INVALID) {

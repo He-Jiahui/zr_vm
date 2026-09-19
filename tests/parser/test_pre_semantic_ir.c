@@ -1283,6 +1283,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 
 #include "test_pre_semantic_ir_source_cfg.inc"
 #include "test_pre_semantic_ir_loop_exit_cfg.inc"
+#include "test_pre_semantic_ir_infinite_for_cfg.inc"
 #include "test_pre_semantic_ir_optional_value.inc"
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
@@ -1310,8 +1311,12 @@ int main(void) {
     RUN_TEST(test_conditioned_for_nonterminal_continue_keeps_fallback);
     RUN_TEST(test_conditioned_for_nonterminal_break_keeps_fallback);
     RUN_TEST(test_source_infinite_for_break_preserves_active_call_cfg);
-    RUN_TEST(test_infinite_for_continue_keeps_fallback);
-    RUN_TEST(test_infinite_for_continue_abandons_active_call_cfg);
+    RUN_TEST(test_source_infinite_for_continue_closes_cycle_cfg);
+    RUN_TEST(test_source_infinite_for_fallthrough_closes_cycle_cfg);
+    RUN_TEST(test_infinite_for_suffix_variable_keeps_semantic_state_frozen);
+    RUN_TEST(test_infinite_for_ownership_suffix_uses_legacy_only_lowering);
+    RUN_TEST(test_infinite_for_invalid_declaration_suffix_restores_semantic_ir);
+    RUN_TEST(test_infinite_for_nonterminal_continue_abandons_active_call_cfg);
     RUN_TEST(test_unmodeled_foreach_exit_blocks_later_call_cfg);
     RUN_TEST(test_declared_child_loops_do_not_pollute_entry_cfg);
     RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);

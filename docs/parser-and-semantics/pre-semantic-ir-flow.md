@@ -83,6 +83,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
   - tests/acceptance/ssa-compiler-source-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-infinite-for-break-cfg.md
+  - tests/acceptance/ssa-compiler-source-infinite-for-cycle-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -113,7 +114,7 @@ fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
 surface for `if`, straight-line `while`, condition-bearing linear `for`,
-conditionless `for` with a direct terminal break,
+conditionless linear `for`,
 direct terminal `while` exits,
 linear-operand `&&`/`||`, and known
 nullable optional calls with either `void`/no-op or nullable value results.
@@ -224,11 +225,19 @@ statement `for` is also supported when its body ends directly in an unvalued
 `break`: the header uses one unconditional edge to the body, the body closes
 at the join, and the source graph contains neither a false edge nor a
 step/backedge. The unreachable legacy backedge remains immediately before the
-break target. A missing condition without that terminal break, valued or
-nonterminal exits, nonlinear expressions, cleanup, and `foreach` retain the
-persistent conservative fallback. The implementation
-lives in `compile_statement_for.c`, separated from the general statement-flow
-unit while preserving the existing ExecBC label path. Loop preflight and exit
+break target. A conditionless loop whose body falls through or ends in a
+direct, unvalued `continue` instead publishes the exact infinite cycle:
+header-to-body, body-to-step, and step-to-header. It has no false edge or
+reachable join. A separate zero-predecessor EXIT block satisfies the function
+CFG schema without inventing an exit path, and the compiler latches semantic
+termination after closing the backedge so unreachable suffix source cannot
+restart CFG construction. The statement dispatcher compiles each such suffix
+statement in disposable SemanticIR isolation, preserving legacy instructions,
+locals, and type bindings while discarding all isolated semantic metadata.
+Valued or nonterminal exits, nonlinear expressions, cleanup, and `foreach`
+retain the persistent conservative fallback. The implementation lives in
+`compile_statement_for.c`, separated from the general statement-flow unit
+while preserving the existing ExecBC label path. Loop preflight and exit
 classification live in the focused `compiler_semantic_cfg_loop.c` module.
 
 A supported source `if` may now end exactly one direct arm with a linear-value

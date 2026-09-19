@@ -503,7 +503,11 @@ TZrBool compiler_semantic_cfg_begin_for(SZrCompilerState *cs,
                                    ZR_PARSER_CFG_BLOCK_STATEMENT,
                                    loop->step);
     *joinBlock = ZrParser_Cfg_AppendBlock(
-            cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
+            cs->state, cfg,
+            loop->cond == ZR_NULL && !bodyEndsWithBreak
+                    ? ZR_PARSER_CFG_BLOCK_EXIT
+                    : ZR_PARSER_CFG_BLOCK_JOIN,
+            node);
     if (*conditionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         *bodyBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         (!bodyEndsWithBreak &&

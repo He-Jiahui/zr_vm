@@ -10,6 +10,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool previousSemanticCfgStartupSuppressed = ZR_FALSE;
     TZrBool restoreSemanticCfgStartupSuppression = ZR_FALSE;
     TZrBool restoreSemanticCfgTermination = ZR_FALSE;
+    TZrBool closesInfiniteSemanticCycle = ZR_FALSE;
     TZrBool enteredScope = ZR_FALSE;
     TZrBool pushedLoopLabel = ZR_FALSE;
     TZrUInt32 conditionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
@@ -179,6 +180,9 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     resolve_label(cs, loopEndLabelId);
 
     if (hasSemanticCfg) {
+        closesInfiniteSemanticCycle = (TZrBool)(
+                forLoop->cond == ZR_NULL &&
+                stepBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID);
         if (!compiler_semantic_cfg_restore_slots(
                     cs, &semanticSlotSnapshot)) {
             ZrParser_Compiler_Error(
@@ -186,7 +190,17 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
                     node->location);
             goto cleanup;
         }
-        compiler_semantic_cfg_enter(cs, joinBlock);
+        if (closesInfiniteSemanticCycle) {
+            if (!compiler_semantic_cfg_close_infinite_loop(
+                        cs, joinBlock)) {
+                ZrParser_Compiler_Error(
+                        cs, "Failed to close semantic infinite for CFG",
+                        node->location);
+                goto cleanup;
+            }
+        } else {
+            compiler_semantic_cfg_enter(cs, joinBlock);
+        }
     }
 
 cleanup:

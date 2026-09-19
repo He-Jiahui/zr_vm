@@ -60,6 +60,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
   - tests/acceptance/ssa-compiler-source-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-infinite-for-break-cfg.md
+  - tests/acceptance/ssa-compiler-source-infinite-for-cycle-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -199,9 +200,22 @@ a falling-through initializer. It additionally accepts a conditionless loop
 whose body ends in a direct, unvalued `break`: the header has one normal edge
 to the body and the body one normal edge to the join, with no conditional edge
 or semantic step/backedge. The legacy break skips the still-emitted,
-unreachable backedge. Conditionless loops without that terminal break, valued
-or nonterminal loop exits, nonlinear forms, cleanup, and `foreach` remain on
-the legacy-CFG fallback instead of publishing an incomplete graph.
+unreachable backedge. Valued or nonterminal loop exits, nonlinear forms,
+cleanup, and `foreach` remain on the legacy-CFG fallback instead of publishing
+an incomplete graph.
+
+The conditionless subset also models loops that cannot exit: a falling-through
+body or direct terminal, unvalued `continue` reaches the step, and the step
+returns to the header. The reachable graph has no false edge or join. Its
+function-level `exitBlockId` names a zero-predecessor EXIT block, preserving
+the current SemanticIR schema without adding a fabricated reachable edge.
+After binding that block, the compiler latches semantic termination so source
+after the infinite loop remains ExecBC-only. Each unreachable suffix statement
+uses disposable SemanticIR isolation: its legacy instructions, locals, and
+type bindings are retained, while instructions, Values, Places, loans, operand
+rows, slots, and any detached CFG are discarded. Nonterminal exits and
+otherwise unsupported bodies still abandon a partial active graph and keep
+suffix CFG startup blocked.
 
 Source `&&` and `||` expressions with linear operands also publish their
 short-circuit topology directly. `&&` sends the true edge to the RHS and the
