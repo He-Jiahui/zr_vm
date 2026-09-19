@@ -9,6 +9,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool hasSemanticCfg;
     TZrBool previousSemanticCfgStartupSuppressed = ZR_FALSE;
     TZrBool restoreSemanticCfgStartupSuppression = ZR_FALSE;
+    TZrBool restoreSemanticCfgTermination = ZR_FALSE;
     TZrBool enteredScope = ZR_FALSE;
     TZrBool pushedLoopLabel = ZR_FALSE;
     TZrUInt32 conditionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
@@ -124,7 +125,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (hasSemanticCfg && !cs->preSemanticIrCfgActive) {
         hasSemanticCfg = ZR_FALSE;
     }
-    if (hasSemanticCfg &&
+    if (hasSemanticCfg && stepBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
         cs->preSemanticIrCfgBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
         !compiler_semantic_cfg_jump(cs, stepBlock, node->location)) {
         ZrParser_Compiler_Error(
@@ -132,18 +133,27 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 node->location);
         goto cleanup;
     }
-    if (hasSemanticCfg) {
+    if (hasSemanticCfg && stepBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         compiler_semantic_cfg_enter(cs, stepBlock);
     }
 
     resolve_label(cs, loopLabel.continueLabelId);
+    if (hasSemanticCfg && stepBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        cs->preSemanticIrCfgTerminated = ZR_TRUE;
+        restoreSemanticCfgTermination = ZR_TRUE;
+    }
     if (forLoop->step != ZR_NULL) {
         ZrParser_Expression_Compile(cs, forLoop->step);
         if (cs->hasError) {
             goto cleanup;
         }
     }
-    if (hasSemanticCfg && !compiler_semantic_cfg_jump(
+    if (restoreSemanticCfgTermination) {
+        cs->preSemanticIrCfgTerminated = ZR_FALSE;
+        restoreSemanticCfgTermination = ZR_FALSE;
+    }
+    if (hasSemanticCfg && stepBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        !compiler_semantic_cfg_jump(
                 cs, conditionBlock, node->location)) {
         ZrParser_Compiler_Error(
                 cs, "Failed to record semantic for backedge",
@@ -172,6 +182,9 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
 cleanup:
+    if (restoreSemanticCfgTermination) {
+        cs->preSemanticIrCfgTerminated = ZR_FALSE;
+    }
     if (restoreSemanticCfgStartupSuppression) {
         cs->preSemanticIrCfgStartupSuppressed =
                 previousSemanticCfgStartupSuppressed;

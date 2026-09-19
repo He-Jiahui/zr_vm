@@ -3,6 +3,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
@@ -16,6 +17,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -56,6 +58,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-for-cfg.md
   - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
+  - tests/acceptance/ssa-compiler-source-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -186,11 +189,14 @@ the explicit backedge remains available to dominance and phi placement. A
 direct terminal, unvalued `continue`, optionally after a linear statement
 prefix, also closes the body at the step. Separate legacy condition and
 `continue` labels make the ExecBC transfer execute the step before returning
-to the condition. This bounded slice requires a condition, linear condition
-and step expressions, and a falling-through initializer. Infinite loops,
-`break`, valued or nonterminal `continue`, nonlinear forms, cleanup, and
-`foreach` remain on the legacy-CFG fallback instead of publishing an
-incomplete graph.
+to the condition. A direct terminal, unvalued `break`, optionally after a
+linear prefix, instead closes the body at the join. Since that shape has no
+path to the step, its source graph omits the step block and backedge; the
+unreachable ExecBC step is compiled without publishing SemanticIR. This
+bounded slice requires a condition, linear condition and step expressions,
+and a falling-through initializer. Infinite loops, valued or nonterminal loop
+exits, nonlinear forms, cleanup, and `foreach` remain on the legacy-CFG
+fallback instead of publishing an incomplete graph.
 
 Source `&&` and `||` expressions with linear operands also publish their
 short-circuit topology directly. `&&` sends the true edge to the RHS and the

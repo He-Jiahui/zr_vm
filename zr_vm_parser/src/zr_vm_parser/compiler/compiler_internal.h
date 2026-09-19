@@ -196,6 +196,18 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
         TZrUInt32 *absentBlock,
         TZrUInt32 *joinBlock);
 TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs);
+TZrBool compiler_semantic_cfg_expression_is_linear(
+        const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_arm_falls_through(
+        const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_loop_body_analyze(
+        const SZrAstNode *node,
+        TZrBool allowBreak,
+        TZrBool allowContinue,
+        TZrBool *endsWithBreak);
+TZrBool compiler_semantic_cfg_for_is_supported(
+        const SZrAstNode *node,
+        TZrBool *bodyEndsWithBreak);
 TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
                                            TZrUInt32 conditionSlot,
                                            SZrAstNode *node,

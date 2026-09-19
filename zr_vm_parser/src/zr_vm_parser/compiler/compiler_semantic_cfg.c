@@ -68,7 +68,7 @@ static TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs) {
     return ZR_TRUE;
 }
 
-static TZrBool compiler_semantic_cfg_expression_is_linear(
+TZrBool compiler_semantic_cfg_expression_is_linear(
         const SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_TRUE;
@@ -112,7 +112,7 @@ static TZrBool compiler_semantic_cfg_short_circuit_is_supported(
 
 /* Until cleanup and suspension edges are represented here, publish only a
  * deliberately small straight-line subset. */
-static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
+TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
     TZrSize index;
     if (node == ZR_NULL) {
         return ZR_TRUE;
@@ -233,76 +233,6 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
         return ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES;
     }
     return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
-}
-
-static TZrBool compiler_semantic_cfg_loop_body_is_supported(
-        const SZrAstNode *node, TZrBool allowBreak,
-        TZrBool allowContinue) {
-    TZrSize index;
-
-    if (node == ZR_NULL) {
-        return ZR_TRUE;
-    }
-    if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
-        return (TZrBool)(
-                node->data.breakContinueStatement.expr == ZR_NULL &&
-                (node->data.breakContinueStatement.isBreak
-                         ? allowBreak
-                         : allowContinue));
-    }
-    if (node->type != ZR_AST_BLOCK) {
-        return compiler_semantic_cfg_arm_falls_through(node);
-    }
-    if (node->data.block.body == ZR_NULL) {
-        return ZR_TRUE;
-    }
-    for (index = 0U; index < node->data.block.body->count; index++) {
-        const SZrAstNode *statement = node->data.block.body->nodes[index];
-        TZrSize trailingIndex;
-
-        if (statement != ZR_NULL &&
-            statement->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
-            if (statement->data.breakContinueStatement.expr != ZR_NULL ||
-                (statement->data.breakContinueStatement.isBreak
-                         ? !allowBreak
-                         : !allowContinue)) {
-                return ZR_FALSE;
-            }
-            for (trailingIndex = index + 1U;
-                 trailingIndex < node->data.block.body->count;
-                 trailingIndex++) {
-                if (node->data.block.body->nodes[trailingIndex] != ZR_NULL) {
-                    return ZR_FALSE;
-                }
-            }
-            return ZR_TRUE;
-        }
-        if (!compiler_semantic_cfg_arm_falls_through(statement)) {
-            return ZR_FALSE;
-        }
-    }
-    return ZR_TRUE;
-}
-
-static TZrBool compiler_semantic_cfg_for_is_supported(
-        const SZrAstNode *node) {
-    const SZrForLoop *loop;
-
-    if (node == ZR_NULL || node->type != ZR_AST_FOR_LOOP) {
-        return ZR_FALSE;
-    }
-    loop = &node->data.forLoop;
-    return (TZrBool)(
-            loop->isStatement &&
-            loop->cond != ZR_NULL &&
-            compiler_semantic_cfg_expression_is_linear(loop->cond) &&
-            (loop->init == ZR_NULL ||
-             compiler_semantic_cfg_arm_falls_through(loop->init) ||
-             compiler_semantic_cfg_expression_is_linear(loop->init)) &&
-            (loop->step == ZR_NULL ||
-             compiler_semantic_cfg_expression_is_linear(loop->step)) &&
-            compiler_semantic_cfg_loop_body_is_supported(
-                    loop->block, ZR_FALSE, ZR_TRUE));
 }
 
 static TZrUInt32 compiler_semantic_cfg_retained_before(
@@ -500,8 +430,9 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     }
     if (!compiler_semantic_cfg_expression_is_linear(
                 node->data.whileLoop.cond) ||
-        !compiler_semantic_cfg_loop_body_is_supported(
-                node->data.whileLoop.block, ZR_TRUE, ZR_TRUE)) {
+        !compiler_semantic_cfg_loop_body_analyze(
+                node->data.whileLoop.block, ZR_TRUE, ZR_TRUE,
+                ZR_NULL)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
@@ -538,6 +469,7 @@ TZrBool compiler_semantic_cfg_begin_for(SZrCompilerState *cs,
                                         TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
     const SZrForLoop *loop;
+    TZrBool bodyEndsWithBreak = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || conditionBlock == ZR_NULL ||
         bodyBlock == ZR_NULL || stepBlock == ZR_NULL ||
@@ -547,7 +479,8 @@ TZrBool compiler_semantic_cfg_begin_for(SZrCompilerState *cs,
     if (cs->preSemanticIrCfgTerminated) {
         return ZR_FALSE;
     }
-    if (!compiler_semantic_cfg_for_is_supported(node)) {
+    if (!compiler_semantic_cfg_for_is_supported(
+                node, &bodyEndsWithBreak)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
@@ -563,13 +496,18 @@ TZrBool compiler_semantic_cfg_begin_for(SZrCompilerState *cs,
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, loop->cond);
     *bodyBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, loop->block);
-    *stepBlock = ZrParser_Cfg_AppendBlock(
-            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, loop->step);
+    *stepBlock = bodyEndsWithBreak
+                         ? ZR_PARSER_CFG_INVALID_BLOCK_ID
+                         : ZrParser_Cfg_AppendBlock(
+                                   cs->state, cfg,
+                                   ZR_PARSER_CFG_BLOCK_STATEMENT,
+                                   loop->step);
     *joinBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
     if (*conditionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         *bodyBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-        *stepBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        (!bodyEndsWithBreak &&
+         *stepBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) ||
         *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         !compiler_semantic_cfg_jump(cs, *conditionBlock, node->location)) {
         return ZR_FALSE;

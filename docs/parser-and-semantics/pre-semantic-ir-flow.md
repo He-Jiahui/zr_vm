@@ -21,6 +21,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -47,6 +48,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -79,6 +81,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-for-cfg.md
   - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
+  - tests/acceptance/ssa-compiler-source-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -210,11 +213,16 @@ false path. The legacy ExecBC path uses distinct condition and `continue`
 labels as well: `continue` reaches the step before the step's jump returns to
 the condition. This slice accepts only a linear condition, optional
 falling-through initializer, optional linear step, and a falling-through body
-or linear statement prefix ending in an unvalued `continue`. Missing
-conditions, `break`, valued or nonterminal `continue`, nonlinear expressions,
-cleanup, and `foreach` retain the persistent conservative fallback. The
-implementation lives in `compile_statement_for.c`, separated from the general
-statement-flow unit while preserving the existing ExecBC label path.
+or linear statement prefix ending in an unvalued `continue` or `break`. A
+terminal `break` closes the body directly at the join; because no iteration
+can reach the step, the source graph omits both the step block and backedge.
+The unreachable legacy step still compiles for ExecBC layout, but semantic
+emission is suppressed and the break label resolves after it. Missing
+conditions, valued or nonterminal exits, nonlinear expressions, cleanup, and
+`foreach` retain the persistent conservative fallback. The implementation
+lives in `compile_statement_for.c`, separated from the general statement-flow
+unit while preserving the existing ExecBC label path. Loop preflight and exit
+classification live in the focused `compiler_semantic_cfg_loop.c` module.
 
 A supported source `if` may now end exactly one direct arm with a linear-value
 `return` or `throw` while the other arm falls through. The abrupt arm emits its
