@@ -1354,7 +1354,9 @@ int main(void) {
     RUN_TEST(test_source_resolved_function_call_emits_typed_invoke_cfg);
     RUN_TEST(test_nested_calls_do_not_restart_abandoned_source_cfg);
     RUN_TEST(test_source_single_catch_all_emits_exception_handler_cfg);
+    RUN_TEST(test_source_catch_payload_initializes_readable_binding);
     RUN_TEST(test_declared_child_try_does_not_pollute_entry_cfg);
+    RUN_TEST(test_late_call_fallback_discards_catch_binding_read);
     RUN_TEST(test_unmodeled_try_scope_does_not_start_detached_call_cfg);
     RUN_TEST(test_source_throw_terminates_cfg_and_blocks_unreachable_restart);
     RUN_TEST(test_source_throw_terminates_existing_invoke_cfg);

@@ -316,18 +316,26 @@ graph for a conditionally executed operation.
 
 The first source catch selection is intentionally narrow: one untyped
 catch-all, no `finally`, one resolved zero-argument direct protected call, and
-an empty catch body. Its `INVOKE` exceptional successor enters a dedicated
-handler block that defines `EXCEPTION_PAYLOAD`; both the normal continuation
-and handler then branch to one join. The payload is not fabricated as an entry
-value, and the invoke result is never made available on the handler path. The
-compiler clears the active handler target before compiling past the join, so a
-later call uses its independent propagation sink. Declared callable bodies use
-disposable SemanticIR isolation for this control form and cannot publish their
-handler graph into the entry sidecar.
+either an empty catch body or one expression statement that reads the catch
+binding. Its `INVOKE` exceptional successor enters a dedicated handler block
+that defines `EXCEPTION_PAYLOAD`. The handler initializes a source-local Place
+for the catch parameter from that payload before lowering the optional read;
+both the normal continuation and handler then branch to one join. The payload
+is not fabricated as an entry value, and the invoke result is never made
+available on the handler path. The compiler clears the active handler target
+before compiling the catch body, so a call introduced by a later phase cannot
+recursively target the same handler; after the join, a later call uses its
+independent propagation sink. Declared callable bodies use disposable
+SemanticIR isolation for this control form and cannot publish their handler
+graph into the entry sidecar. If the syntactic shape passes preflight but the
+protected call later lacks canonical call facts, the compiler abandons the
+partial graph and compiles the catch body inside disposable SemanticIR
+isolation; only legacy exception bytecode survives that fallback.
 
-Typed or multiple catches, nonempty catch bodies, protected calls with any
-arguments, protected bodies with other control or effects, and all `finally`
-cleanup shapes remain an explicit conservative boundary. Such a scope
+Typed or multiple catches, catch bodies other than the single binding read,
+protected calls with any arguments, protected bodies with other control or
+effects, and all `finally` cleanup shapes remain an explicit conservative
+boundary. Such a scope
 abandons any partial source CFG and keeps
 inactive starters suppressed for the rest of the SemanticIR function. The
 legacy compiler remains authoritative for these executable exception paths;

@@ -165,6 +165,117 @@ static void test_source_single_catch_all_emits_exception_handler_cfg(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_catch_payload_initializes_readable_binding(void) {
+    static const TZrChar source[] =
+            "fn identity(): int { return 7; }\n"
+            "try { identity(); }\n"
+            "catch (error) { error; }\n"
+            "identity();\n";
+    static TZrChar sourceName[] = "source_catch_payload_binding.zr";
+    SZrString *name = ZrCore_String_Create(
+            g_state, sourceName, sizeof(sourceName) - 1U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *payload = ZR_NULL;
+    const SZrSemanticIrInstruction *initialize = ZR_NULL;
+    const SZrSemanticIrInstruction *load = ZR_NULL;
+    const SZrParserCfgBlock *handlerBlock = ZR_NULL;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize callCount = 0U;
+    TZrSize payloadCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    ZrParser_Compiler_PredeclareFunctionBindings(
+            &compiler, ast->data.script.statements);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        if (ast->data.script.statements->nodes[index]->type ==
+            ZR_AST_FUNCTION_DECLARATION) {
+            continue;
+        }
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callCount++;
+        } else if (instruction->opcode ==
+                   ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD) {
+            payload = instruction;
+            payloadCount++;
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE &&
+                   payload != ZR_NULL &&
+                   instruction->valueId == payload->resultValueId) {
+            initialize = instruction;
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_LOAD &&
+                   initialize != ZR_NULL &&
+                   instruction->placeId == initialize->placeId) {
+            load = instruction;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(2U, callCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, payloadCount);
+    TEST_ASSERT_NOT_NULL(payload);
+    TEST_ASSERT_NOT_NULL(initialize);
+    TEST_ASSERT_NOT_NULL(load);
+    TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, initialize->placeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, initialize->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(initialize->typeId, load->typeId);
+
+    for (index = 0U; index < function->cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        TEST_ASSERT_NOT_NULL(block);
+        if (payload->id - 1U >= block->firstInstructionIndex &&
+            payload->id - 1U <
+                    block->firstInstructionIndex + block->instructionCount) {
+            handlerBlock = block;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(handlerBlock);
+    TEST_ASSERT_TRUE(initialize->id - 1U >= handlerBlock->firstInstructionIndex);
+    TEST_ASSERT_TRUE(
+            initialize->id - 1U <
+            handlerBlock->firstInstructionIndex + handlerBlock->instructionCount);
+    TEST_ASSERT_TRUE(load->id - 1U >= handlerBlock->firstInstructionIndex);
+    TEST_ASSERT_TRUE(
+            load->id - 1U <
+            handlerBlock->firstInstructionIndex + handlerBlock->instructionCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH,
+            handlerBlock->terminatorKind);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_declared_child_try_does_not_pollute_entry_cfg(void) {
     static const TZrChar source[] =
             "fn identity(): int { return 7; }\n"
@@ -234,6 +345,64 @@ static void test_declared_child_try_does_not_pollute_entry_cfg(void) {
     }
     TEST_ASSERT_EQUAL_UINT64(1U, callCount);
     TEST_ASSERT_EQUAL_UINT64(0U, payloadCount);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_late_call_fallback_discards_catch_binding_read(void) {
+    static const TZrChar source[] =
+            "try { unresolved(); }\n"
+            "catch (error) { error; }\n";
+    static TZrChar sourceName[] = "late_call_fallback_catch_read.zr";
+    SZrString *name = ZrCore_String_Create(
+            g_state, sourceName, sizeof(sourceName) - 1U);
+    SZrString *callableName = ZrCore_String_CreateFromNative(
+            g_state, "unresolved");
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    TZrSize payloadCount = 0U;
+    TZrSize catchLoadCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_PARSER_SLOT_NONE,
+            allocate_local_var(&compiler, callableName));
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD) {
+            payloadCount++;
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_LOAD &&
+                   instruction->sourceRange.start.line == 2U) {
+            catchLoadCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(0U, payloadCount);
+    TEST_ASSERT_EQUAL_UINT64(0U, catchLoadCount);
+    TEST_ASSERT_EQUAL_UINT64(2U, function->cfg.blocks.length);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_PARSER_CFG_INVALID_BLOCK_ID,
+            compiler.preSemanticIrCfgCatchBlock);
 
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;

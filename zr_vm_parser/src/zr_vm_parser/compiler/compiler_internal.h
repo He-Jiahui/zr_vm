@@ -257,6 +257,14 @@ TZrBool compiler_semantic_cfg_begin_try_catch(
         TZrUInt32 *handlerBlock,
         TZrUInt32 *joinBlock,
         SZrArray *entrySlots);
+TZrBool compiler_semantic_cfg_enter_try_catch_handler(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrUInt32 handlerBlock,
+        TZrUInt32 joinBlock,
+        TZrUInt32 bindingSlot,
+        SZrArray *entrySlots,
+        TZrBool *outEntered);
 TZrBool compiler_semantic_cfg_complete_try_catch(
         SZrCompilerState *cs,
         SZrAstNode *node,

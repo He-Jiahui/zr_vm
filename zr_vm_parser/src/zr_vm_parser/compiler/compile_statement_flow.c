@@ -847,16 +847,6 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     if (stmt->block != ZR_NULL) {
         ZrParser_Statement_Compile(cs, stmt->block);
     }
-    if (hasSemanticCatch &&
-        !compiler_semantic_cfg_complete_try_catch(
-                cs, node, semanticHandlerBlock, semanticJoinBlock,
-                &semanticEntrySlots)) {
-        ZrParser_Compiler_Error(
-                cs,
-                "Failed to complete semantic catch CFG",
-                node->location);
-        return;
-    }
 
     emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_TRY), (TZrUInt16)handlerIndex));
     emit_jump_to_label(cs, hasFinally ? finallyLabelId : afterFinallyLabelId);
@@ -867,6 +857,8 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
             SZrCompilerCatchClauseInfo *catchInfo =
                     (SZrCompilerCatchClauseInfo *)ZrCore_Array_Get(&cs->catchClauseInfos,
                                                                    catchClauseStartIndex + index);
+            SZrCompilerSemanticIrIsolation semanticCatchBodyIsolation;
+            TZrBool hasSemanticCatchBodyIsolation = ZR_FALSE;
             TZrUInt32 bindingSlot;
 
             if (catchClauseNode == ZR_NULL || catchInfo == ZR_NULL) {
@@ -878,8 +870,57 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
             bindingSlot = catch_clause_binding_slot(cs, catchClauseNode);
             emit_instruction(cs,
                              create_instruction_0(ZR_INSTRUCTION_ENUM(CATCH), (TZrUInt16)bindingSlot));
+            if (hasSemanticCatch) {
+                TZrBool enteredSemanticHandler = ZR_FALSE;
+
+                if (!compiler_semantic_cfg_enter_try_catch_handler(
+                            cs,
+                            node,
+                            semanticHandlerBlock,
+                            semanticJoinBlock,
+                            bindingSlot,
+                            &semanticEntrySlots,
+                            &enteredSemanticHandler)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to enter semantic catch handler",
+                            catchClauseNode->location);
+                    return;
+                }
+                hasSemanticCatch = enteredSemanticHandler;
+                if (!enteredSemanticHandler) {
+                    if (!compiler_semantic_ir_isolation_begin(
+                                cs, &semanticCatchBodyIsolation)) {
+                        ZrParser_Compiler_Error(
+                                cs,
+                                "Failed to isolate fallback catch body Semantic IR",
+                                catchClauseNode->location);
+                        return;
+                    }
+                    hasSemanticCatchBodyIsolation = ZR_TRUE;
+                }
+            }
             if (!cs->hasError && catch_clause_block(catchClauseNode) != ZR_NULL) {
                 ZrParser_Statement_Compile(cs, catch_clause_block(catchClauseNode));
+            }
+            if (hasSemanticCatchBodyIsolation) {
+                compiler_semantic_ir_isolation_end(
+                        cs, &semanticCatchBodyIsolation);
+            }
+            if (hasSemanticCatch) {
+                if (!compiler_semantic_cfg_complete_try_catch(
+                            cs,
+                            node,
+                            semanticHandlerBlock,
+                            semanticJoinBlock,
+                            &semanticEntrySlots)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to complete semantic catch CFG",
+                            catchClauseNode->location);
+                    return;
+                }
+                hasSemanticCatch = ZR_FALSE;
             }
             exit_scope(cs);
             emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_TRY), (TZrUInt16)handlerIndex));
