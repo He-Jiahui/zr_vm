@@ -1344,8 +1344,10 @@ void compiler_semantic_ir_init(SZrCompilerState *cs) {
     cs->preSemanticIrCfgStartupBlocked = ZR_FALSE;
     cs->preSemanticIrCfgTerminated = ZR_FALSE;
     cs->preSemanticIrCfgAbruptIsLocal = ZR_FALSE;
+    cs->preSemanticIrCfgCatchUsed = ZR_FALSE;
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgStart = 0U;
+    cs->preSemanticIrCfgCatchBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     (void)ZrParser_SemanticIr_AddRegion(
             &cs->preSemanticIr,
             ZR_SEMANTIC_REGION_ID_INVALID,
@@ -1376,6 +1378,8 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     cs->preSemanticIrCfgStartupBlocked = ZR_FALSE;
     cs->preSemanticIrCfgTerminated = ZR_FALSE;
     cs->preSemanticIrCfgAbruptIsLocal = ZR_FALSE;
+    cs->preSemanticIrCfgCatchUsed = ZR_FALSE;
+    cs->preSemanticIrCfgCatchBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
 }
 
 TZrBool compiler_semantic_ir_isolation_begin(
@@ -1398,8 +1402,10 @@ TZrBool compiler_semantic_ir_isolation_begin(
     isolation->cfgStartupBlocked = cs->preSemanticIrCfgStartupBlocked;
     isolation->cfgTerminated = cs->preSemanticIrCfgTerminated;
     isolation->cfgAbruptIsLocal = cs->preSemanticIrCfgAbruptIsLocal;
+    isolation->cfgCatchUsed = cs->preSemanticIrCfgCatchUsed;
     isolation->cfgBlock = cs->preSemanticIrCfgBlock;
     isolation->cfgStart = cs->preSemanticIrCfgStart;
+    isolation->cfgCatchBlock = cs->preSemanticIrCfgCatchBlock;
     isolation->isActive = ZR_TRUE;
 
     compiler_semantic_ir_init(cs);
@@ -1425,8 +1431,10 @@ void compiler_semantic_ir_isolation_end(
     cs->preSemanticIrCfgStartupBlocked = isolation->cfgStartupBlocked;
     cs->preSemanticIrCfgTerminated = isolation->cfgTerminated;
     cs->preSemanticIrCfgAbruptIsLocal = isolation->cfgAbruptIsLocal;
+    cs->preSemanticIrCfgCatchUsed = isolation->cfgCatchUsed;
     cs->preSemanticIrCfgBlock = isolation->cfgBlock;
     cs->preSemanticIrCfgStart = isolation->cfgStart;
+    cs->preSemanticIrCfgCatchBlock = isolation->cfgCatchBlock;
     memset(isolation, 0, sizeof(*isolation));
 }
 

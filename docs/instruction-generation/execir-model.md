@@ -11,6 +11,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
@@ -31,6 +32,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -90,6 +92,7 @@ tests:
   - tests/acceptance/ssa-builder-iterator-invokes.md
   - tests/acceptance/ssa-source-foreach-cfg.md
   - tests/acceptance/ssa-exception-payload.md
+  - tests/acceptance/ssa-source-catch-cfg.md
 doc_type: module-detail
 ---
 
@@ -311,17 +314,24 @@ is compiling after its own CFG preflight failed, inactive call-driven startup
 is suppressed; a nested call therefore cannot create a detached unconditional
 graph for a conditionally executed operation.
 
-Although the low-level IR can now name a handler payload, catch selection and
-finally cleanup edges are not yet part of the source graph. Consequently,
-`try`/`catch`/`finally` remains an explicit conservative boundary. Entering
-that scope abandons any partial source CFG, and all inactive CFG starters stay
-suppressed for the rest of the current SemanticIR function.
-This includes its protected, handler, cleanup, and trailing source regions: a
-later starter cannot absorb the earlier exception scope into a false linear
-prefix. This function-level block is separate from scoped fallback suppression,
-so an enclosing construct cannot clear it while restoring its own state. The
-legacy compiler still emits the executable exception machinery; ExecIR does
-not publish a detached graph that omits those transfers.
+The first source catch selection is intentionally narrow: one untyped
+catch-all, no `finally`, one resolved zero-argument direct protected call, and
+an empty catch body. Its `INVOKE` exceptional successor enters a dedicated
+handler block that defines `EXCEPTION_PAYLOAD`; both the normal continuation
+and handler then branch to one join. The payload is not fabricated as an entry
+value, and the invoke result is never made available on the handler path. The
+compiler clears the active handler target before compiling past the join, so a
+later call uses its independent propagation sink. Declared callable bodies use
+disposable SemanticIR isolation for this control form and cannot publish their
+handler graph into the entry sidecar.
+
+Typed or multiple catches, nonempty catch bodies, protected calls with any
+arguments, protected bodies with other control or effects, and all `finally`
+cleanup shapes remain an explicit conservative boundary. Such a scope
+abandons any partial source CFG and keeps
+inactive starters suppressed for the rest of the SemanticIR function. The
+legacy compiler remains authoritative for these executable exception paths;
+ExecIR does not publish a detached or partially selected handler graph.
 
 Outside an unmodeled handler scope, an explicit source `throw` is a real
 non-call exceptional terminator. It consumes the expression's canonical

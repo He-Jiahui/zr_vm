@@ -3977,7 +3977,8 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
            node->data.ifExpression.isStatement) ||
           node->type == ZR_AST_WHILE_LOOP ||
           node->type == ZR_AST_FOR_LOOP ||
-          node->type == ZR_AST_FOREACH_LOOP))) {
+          node->type == ZR_AST_FOREACH_LOOP ||
+          node->type == ZR_AST_TRY_CATCH_FINALLY_STATEMENT))) {
         if (!compiler_semantic_ir_isolation_begin(
                     cs, &semanticIrIsolation)) {
             ZrParser_Compiler_Error(

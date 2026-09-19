@@ -119,8 +119,10 @@ typedef struct SZrCompilerSemanticIrIsolation {
     TZrBool cfgStartupBlocked;
     TZrBool cfgTerminated;
     TZrBool cfgAbruptIsLocal;
+    TZrBool cfgCatchUsed;
     TZrUInt32 cfgBlock;
     TZrUInt32 cfgStart;
+    TZrUInt32 cfgCatchBlock;
     TZrBool isActive;
 } SZrCompilerSemanticIrIsolation;
 
@@ -246,6 +248,21 @@ TZrBool compiler_semantic_cfg_split_invoke(
         SZrCompilerState *cs,
         SZrAstNode *callNode,
         SZrFileRange range);
+TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs);
+TZrBool compiler_semantic_cfg_try_catch_is_supported(
+        const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_begin_try_catch(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrUInt32 *handlerBlock,
+        TZrUInt32 *joinBlock,
+        SZrArray *entrySlots);
+TZrBool compiler_semantic_cfg_complete_try_catch(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrUInt32 handlerBlock,
+        TZrUInt32 joinBlock,
+        SZrArray *entrySlots);
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,

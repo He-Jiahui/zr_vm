@@ -97,8 +97,10 @@ typedef struct SZrCompilerState {
     TZrBool preSemanticIrCfgStartupBlocked;
     TZrBool preSemanticIrCfgTerminated;
     TZrBool preSemanticIrCfgAbruptIsLocal;
+    TZrBool preSemanticIrCfgCatchUsed;
     TZrUInt32 preSemanticIrCfgBlock;
     TZrUInt32 preSemanticIrCfgStart;
+    TZrUInt32 preSemanticIrCfgCatchBlock;
     
     // 常量池管理
     SZrArray constants;                 // 常量值数组（SZrTypeValue）

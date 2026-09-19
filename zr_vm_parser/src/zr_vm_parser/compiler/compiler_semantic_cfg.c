@@ -38,7 +38,7 @@ static TZrBool compiler_semantic_cfg_bind_current(
                     cs->preSemanticIrCfgStart, kind);
 }
 
-static TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs) {
+TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs) {
     SZrParserCfg *cfg;
     TZrUInt32 entry;
 
@@ -336,6 +336,8 @@ TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs) {
     cs->preSemanticIrCfgActive = ZR_FALSE;
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgStart = 0U;
+    cs->preSemanticIrCfgCatchBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgCatchUsed = ZR_FALSE;
     return ZR_TRUE;
 }
 
@@ -746,8 +748,11 @@ TZrBool compiler_semantic_cfg_split_invoke(
     cfg = &cs->preSemanticIr.cfg;
     normalBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, callNode);
-    exceptionBlock = ZrParser_Cfg_AppendBlock(
-            cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, callNode);
+    exceptionBlock = cs->preSemanticIrCfgCatchBlock !=
+                             ZR_PARSER_CFG_INVALID_BLOCK_ID
+            ? cs->preSemanticIrCfgCatchBlock
+            : ZrParser_Cfg_AppendBlock(
+                    cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, callNode);
     if (normalBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         exceptionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         !compiler_semantic_cfg_bind_current(
@@ -761,10 +766,14 @@ TZrBool compiler_semantic_cfg_split_invoke(
         return ZR_FALSE;
     }
 
+    if (exceptionBlock == cs->preSemanticIrCfgCatchBlock) {
+        cs->preSemanticIrCfgCatchUsed = ZR_TRUE;
+        compiler_semantic_cfg_enter(cs, normalBlock);
+        return ZR_TRUE;
+    }
     compiler_semantic_cfg_enter(cs, exceptionBlock);
-    /* The current ExecIR model has no edge-defined exception payload value.
-     * Keep propagation as an explicit exceptional sink until that value
-     * contract is added; do not fabricate a normal-entry external value. */
+    /* Calls outside a modeled catch still propagate through an explicit
+     * exceptional sink. Handled calls are redirected above. */
     if (!compiler_semantic_cfg_bind_current(
                 cs, ZR_PARSER_CFG_TERMINATOR_THROW)) {
         return ZR_FALSE;

@@ -771,6 +771,10 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     TZrSize afterFinallyLabelId;
     TZrBool hasFinally;
     TZrBool pushedTryContext = ZR_FALSE;
+    TZrBool hasSemanticCatch = ZR_FALSE;
+    TZrUInt32 semanticHandlerBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrUInt32 semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    SZrArray semanticEntrySlots;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -781,14 +785,23 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
         return;
     }
 
-    if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
-        ZrParser_Compiler_Error(
-                cs,
-                "Failed to abandon unsupported exception CFG",
-                node->location);
-        return;
+    memset(&semanticEntrySlots, 0, sizeof(semanticEntrySlots));
+    if (compiler_semantic_cfg_try_catch_is_supported(node)) {
+        hasSemanticCatch = compiler_semantic_cfg_begin_try_catch(
+                cs, node, &semanticHandlerBlock, &semanticJoinBlock,
+                &semanticEntrySlots);
     }
-    cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+    if (!hasSemanticCatch) {
+        if (cs->preSemanticIrCfgActive &&
+            !compiler_semantic_cfg_abandon(cs)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to abandon unsupported exception CFG",
+                    node->location);
+            return;
+        }
+        cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+    }
 
     stmt = &node->data.tryCatchFinallyStatement;
     catchClauseStartIndex = (TZrUInt32)cs->catchClauseInfos.length;
@@ -833,6 +846,16 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
 
     if (stmt->block != ZR_NULL) {
         ZrParser_Statement_Compile(cs, stmt->block);
+    }
+    if (hasSemanticCatch &&
+        !compiler_semantic_cfg_complete_try_catch(
+                cs, node, semanticHandlerBlock, semanticJoinBlock,
+                &semanticEntrySlots)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to complete semantic catch CFG",
+                node->location);
+        return;
     }
 
     emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_TRY), (TZrUInt16)handlerIndex));

@@ -24,6 +24,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -53,6 +54,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
@@ -91,6 +93,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-infinite-for-cycle-cfg.md
   - tests/acceptance/ssa-source-foreach-cfg.md
   - tests/acceptance/ssa-exception-payload.md
+  - tests/acceptance/ssa-source-catch-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -317,16 +320,26 @@ nested under an `if`, loop, or short-circuit expression whose CFG preflight
 already failed also remains on that enclosing legacy path; it cannot restart
 an inactive graph and falsely model conditional execution as unconditional.
 
-Unmodeled `try`/`catch`/`finally` scopes form the same conservative boundary.
-They abandon an earlier partial source CFG and suppress nested `if`, loop,
-short-circuit, optional-guard, and call-driven startup until all protected,
-handler, and finally blocks have compiled. Startup remains suppressed for the
-rest of that SemanticIR function as well, so a later source construct cannot
-treat the earlier exception scope as a linear prefix. This keeps the validated
-two-block legacy graph even when an enclosing fallback scope restores its own
-temporary suppression state. The low-level `EXCEPTION_PAYLOAD` operation is
-now available, but source catch selection and cleanup edges must be connected
-before this function-level block can be removed.
+A deliberately bounded source `try`/`catch` form now owns an exceptional CFG:
+one catch-all parameter, no `finally`, one resolved zero-argument direct call
+in the protected block, and an empty catch body. The call's exceptional
+successor enters the handler directly. That handler defines one typed
+`EXCEPTION_PAYLOAD` and branches to the same join as the normal continuation.
+The compiler restores the pre-try slot bridge before constructing the handler
+and at the join, so the invoke result remains normal-path-only and the payload
+remains handler-local. The handler target is cleared before the join; a later
+call receives its ordinary propagation sink instead of being captured by the
+completed catch.
+
+All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
+typed or multiple catches, a nonempty catch body, a protected body without the
+single resolved zero-argument call, call arguments, nested control, and every
+`finally` shape abandon an earlier partial source CFG and suppress later
+startup. Declared callable bodies compile their try graph inside disposable
+SemanticIR isolation and cannot pollute the entry sidecar. This keeps the
+legacy exception machinery authoritative until argument effects, catch-body
+value flow, type dispatch, explicit throw routing, and cleanup edges are
+modeled.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler
