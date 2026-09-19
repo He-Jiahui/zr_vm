@@ -2,8 +2,9 @@
 
 ## Scope
 
-This phase introduces a reusable canonical type-membership fact without yet
-claiming executable subtype dispatch or source typed-catch support.
+This phase introduced a reusable canonical type-membership fact without
+claiming executable subtype dispatch. The later bounded source producer is
+recorded in `ssa-source-typed-catch-cfg.md`.
 
 - SemanticIR appends `TYPE_TEST` without renumbering existing opcodes.
 - `typeId` is the result type; `matchTypeId` is the resolved type being tested.
@@ -34,9 +35,10 @@ not textual type-name comparison:
   cover typed catch clauses.
 
 The resulting zr_vm foundation therefore carries one canonical match token.
-Future catch lowering must evaluate handlers in source order, take the first
-canonical subtype match, represent catch-all explicitly, and rethrow when no
-handler matches.
+The bounded single-handler producer now takes the canonical match edge and
+rethrows when it misses. Future multiple-catch lowering must extend this in
+source order, take the first canonical subtype match, and represent catch-all
+explicitly.
 
 ## Focused coverage
 
@@ -54,10 +56,9 @@ handler matches.
 
 ## Deliberate boundary
 
-No source typed catch emits `TYPE_TEST` yet. No backend interprets it, and no
-string-based fallback is permitted. The next producer phase must first connect
-resolved catch type identities and an unmatched-exception propagation path to
-the canonical operation defined here.
+A bounded single source typed catch now emits `TYPE_TEST`; no backend interprets
+it, and no string-based fallback is permitted. Multiple catches, rich or
+unresolved annotations, `finally`, and runtime projection remain out of scope.
 
 ## Validation
 

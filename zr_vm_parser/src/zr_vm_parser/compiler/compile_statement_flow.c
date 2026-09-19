@@ -773,8 +773,11 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     TZrBool pushedTryContext = ZR_FALSE;
     TZrBool hasSemanticCatch = ZR_FALSE;
     TZrBool semanticCatchHandlerTerminates = ZR_FALSE;
+    TZrUInt32 semanticExceptionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrUInt32 semanticHandlerBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrUInt32 semanticUnmatchedBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrUInt32 semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrTypeId semanticMatchTypeId = ZR_SEMANTIC_ID_INVALID;
     SZrArray semanticEntrySlots;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -791,7 +794,12 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
         semanticCatchHandlerTerminates =
                 compiler_semantic_cfg_try_catch_handler_terminates(node);
         hasSemanticCatch = compiler_semantic_cfg_begin_try_catch(
-                cs, node, &semanticHandlerBlock, &semanticJoinBlock,
+                cs, node,
+                &semanticExceptionBlock,
+                &semanticHandlerBlock,
+                &semanticUnmatchedBlock,
+                &semanticJoinBlock,
+                &semanticMatchTypeId,
                 &semanticEntrySlots);
     }
     if (!hasSemanticCatch) {
@@ -881,8 +889,11 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                 if (!compiler_semantic_cfg_enter_try_catch_handler(
                             cs,
                             node,
+                            semanticExceptionBlock,
                             semanticHandlerBlock,
+                            semanticUnmatchedBlock,
                             semanticJoinBlock,
+                            semanticMatchTypeId,
                             bindingSlot,
                             &semanticEntrySlots,
                             &enteredSemanticHandler)) {

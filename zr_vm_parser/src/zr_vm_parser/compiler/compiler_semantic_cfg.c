@@ -707,6 +707,37 @@ TZrBool compiler_semantic_cfg_jump_abrupt(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+TZrBool compiler_semantic_cfg_branch_value(
+        SZrCompilerState *cs,
+        TZrValueId condition,
+        TZrUInt32 trueBlock,
+        TZrUInt32 falseBlock,
+        SZrAstNode *sourceNode,
+        SZrFileRange range) {
+    SZrParserCfg *cfg;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive ||
+        condition == ZR_VALUE_ID_INVALID ||
+        trueBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        falseBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
+    cfg = &cs->preSemanticIr.cfg;
+    if (!compiler_semantic_cfg_emit_branch(
+                cs, trueBlock, condition, range) ||
+        !compiler_semantic_cfg_bind_current(
+                cs, ZR_PARSER_CFG_TERMINATOR_BRANCH) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, trueBlock,
+                ZR_PARSER_CFG_EDGE_TRUE_BRANCH, sourceNode) ||
+        !ZrParser_Cfg_Connect(
+                cfg, cs->preSemanticIrCfgBlock, falseBlock,
+                ZR_PARSER_CFG_EDGE_FALSE_BRANCH, sourceNode)) {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool compiler_semantic_cfg_begin_invoke(
         SZrCompilerState *cs,
         SZrAstNode *callNode,
@@ -782,15 +813,14 @@ TZrBool compiler_semantic_cfg_split_invoke(
     return ZR_TRUE;
 }
 
-static TZrBool compiler_semantic_cfg_terminate_value(
+static TZrBool compiler_semantic_cfg_terminate_value_id(
         SZrCompilerState *cs,
-        TZrUInt32 valueSlot,
+        TZrValueId valueId,
         SZrFileRange range,
         EZrSemanticIrOpcode opcode,
         EZrParserCfgTerminatorKind terminatorKind) {
     SZrSemanticIrInstructionSpec spec;
     const SZrSemanticIrValue *value;
-    TZrValueId valueId;
 
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized) {
         return ZR_FALSE;
@@ -803,7 +833,6 @@ static TZrBool compiler_semantic_cfg_terminate_value(
         cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
         return ZR_TRUE;
     }
-    valueId = compiler_semantic_ir_slot_value(cs, valueSlot);
     value = ZrParser_SemanticIr_Value(&cs->preSemanticIr, valueId);
     if (value == ZR_NULL) {
         if (cs->preSemanticIrCfgActive &&
@@ -839,12 +868,36 @@ static TZrBool compiler_semantic_cfg_terminate_value(
     return ZR_TRUE;
 }
 
+static TZrBool compiler_semantic_cfg_terminate_value(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range,
+        EZrSemanticIrOpcode opcode,
+        EZrParserCfgTerminatorKind terminatorKind) {
+    return compiler_semantic_cfg_terminate_value_id(
+            cs,
+            compiler_semantic_ir_slot_value(cs, valueSlot),
+            range,
+            opcode,
+            terminatorKind);
+}
+
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
         SZrFileRange range) {
     return compiler_semantic_cfg_terminate_value(
             cs, valueSlot, range,
+            ZR_SEMANTIC_IR_THROW,
+            ZR_PARSER_CFG_TERMINATOR_THROW);
+}
+
+TZrBool compiler_semantic_cfg_terminate_throw_value(
+        SZrCompilerState *cs,
+        TZrValueId valueId,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_terminate_value_id(
+            cs, valueId, range,
             ZR_SEMANTIC_IR_THROW,
             ZR_PARSER_CFG_TERMINATOR_THROW);
 }

@@ -761,10 +761,26 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             "fn identity(value: int): int { return value; }\n"
             "var seed: int = 7;\n"
             "try { identity(seed); }\n"
-            "catch (error: object) {}\n"
+            "catch (error: object) { seed = 8; }\n"
             "identity(seed);\n";
     static TZrChar typedCatchSourceName[] =
             "typed_catch_cfg_fallback.zr";
+    static const TZrChar unresolvedTypedCatchSource[] =
+            "fn identity(value: int): int { return value; }\n"
+            "var seed: int = 7;\n"
+            "try { identity(seed); }\n"
+            "catch (error: MissingCatchType) {}\n"
+            "identity(seed);\n";
+    static TZrChar unresolvedTypedCatchSourceName[] =
+            "unresolved_typed_catch_cfg_fallback.zr";
+    static const TZrChar arrayTypedCatchSource[] =
+            "fn identity(value: int): int { return value; }\n"
+            "var seed: int = 7;\n"
+            "try { identity(seed); }\n"
+            "catch (error: string[]) {}\n"
+            "identity(seed);\n";
+    static TZrChar arrayTypedCatchSourceName[] =
+            "array_typed_catch_cfg_fallback.zr";
     static const TZrChar multipleCatchSource[] =
             "fn identity(value: int): int { return value; }\n"
             "var seed: int = 7;\n"
@@ -898,6 +914,16 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             sizeof(typedCatchSource) - 1U,
             typedCatchSourceName,
             sizeof(typedCatchSourceName) - 1U);
+    assert_nested_call_keeps_legacy_cfg(
+            unresolvedTypedCatchSource,
+            sizeof(unresolvedTypedCatchSource) - 1U,
+            unresolvedTypedCatchSourceName,
+            sizeof(unresolvedTypedCatchSourceName) - 1U);
+    assert_nested_call_keeps_legacy_cfg(
+            arrayTypedCatchSource,
+            sizeof(arrayTypedCatchSource) - 1U,
+            arrayTypedCatchSourceName,
+            sizeof(arrayTypedCatchSourceName) - 1U);
     assert_nested_call_keeps_legacy_cfg(
             multipleCatchSource,
             sizeof(multipleCatchSource) - 1U,

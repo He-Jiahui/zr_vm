@@ -64,6 +64,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
@@ -97,6 +98,7 @@ tests:
   - tests/acceptance/ssa-exception-payload.md
   - tests/acceptance/ssa-source-catch-cfg.md
   - tests/acceptance/ssa-type-test-foundation.md
+  - tests/acceptance/ssa-source-typed-catch-cfg.md
 doc_type: module-detail
 ---
 
@@ -162,9 +164,9 @@ opcode is appended to the schema.
 
 `TYPE_TEST` is deliberately not executable in this phase. The oracle, ExecBC
 projection, and AOT projection reject it transactionally until runtime subtype
-testing is connected to canonical type metadata. Source typed-catch routing is
-also a later producer phase; no type-name string comparison or speculative
-catch edge is introduced by the foundation operation.
+testing is connected to canonical type metadata. A bounded source typed-catch
+producer now uses this operation in SemanticIR/ExecIR; it never substitutes a
+type-name string comparison or claims an executable projection.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address
@@ -335,8 +337,9 @@ is compiling after its own CFG preflight failed, inactive call-driven startup
 is suppressed; a nested call therefore cannot create a detached unconditional
 graph for a conditionally executed operation.
 
-The first source catch selection is intentionally narrow: one untyped
-catch-all, no `finally`, one resolved direct protected call with either no
+The first source catch selection is intentionally narrow: one catch parameter,
+optionally annotated with one simple already-resolvable canonical type, no
+`finally`, one resolved direct protected call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work,
 and either an empty catch body, one expression statement that reads the catch
@@ -352,9 +355,15 @@ overwrite an outer binding.
 The argument's `LOAD` is defined before the dedicated call block, so it
 dominates the call and does not appear in the handler instructions' explicit
 value-operand arrays.
-The call's `INVOKE` exceptional successor enters a dedicated handler block
-that defines `EXCEPTION_PAYLOAD`. The handler initializes a source-local Place
-for the catch parameter from that payload before lowering the optional read.
+For a catch-all, the call's `INVOKE` exceptional successor enters a dedicated
+handler block that defines `EXCEPTION_PAYLOAD`. The handler initializes a
+source-local Place for the catch parameter from that payload before lowering
+the optional read. For an annotated catch, the exceptional successor instead
+enters a dispatch block that defines the payload once, emits
+`TYPE_TEST(payload, matchTypeId)`, and conditionally branches to the handler or
+an unmatched zero-successor `THROW` of the original payload. The matching
+handler initializes its source-local Place with the resolved catch TypeId; only
+the dispatch block carries the exception-block flag.
 For the local-flow form, that read feeds the temporary-to-local `CONVERT`, the
 new local Place initialization, and its final `LOAD`, all in the handler block.
 A falling-through handler and the normal continuation both branch to one join.
@@ -374,9 +383,10 @@ protected call later lacks canonical call facts, the compiler abandons the
 partial graph and compiles the catch body inside disposable SemanticIR
 isolation; only legacy exception bytecode survives that fallback.
 
-Typed or multiple catches, catch bodies other than the empty, single binding
-read, exact nonshadowing inferred-local propagation, canonical direct return,
-or exact binding-rethrow shapes,
+Multiple catches; unresolved, generic, qualified, array, ownership-qualified,
+or reference-qualified catch annotations; catch bodies other than the empty,
+single binding read, exact nonshadowing inferred-local propagation, canonical
+direct return, or exact binding-rethrow shapes;
 protected calls with multiple, named, marked, generic, member, literal,
 computed, type-converting, or non-value arguments, protected bodies with other
 control or effects, direct handler exits under active ownership/`@close`

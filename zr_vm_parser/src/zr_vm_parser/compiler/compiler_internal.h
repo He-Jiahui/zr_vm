@@ -240,6 +240,13 @@ TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
 TZrBool compiler_semantic_cfg_jump_abrupt(SZrCompilerState *cs,
                                           TZrUInt32 target,
                                           SZrFileRange range);
+TZrBool compiler_semantic_cfg_branch_value(
+        SZrCompilerState *cs,
+        TZrValueId condition,
+        TZrUInt32 trueBlock,
+        TZrUInt32 falseBlock,
+        SZrAstNode *sourceNode,
+        SZrFileRange range);
 TZrBool compiler_semantic_cfg_begin_invoke(
         SZrCompilerState *cs,
         SZrAstNode *callNode,
@@ -262,14 +269,20 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
 TZrBool compiler_semantic_cfg_begin_try_catch(
         SZrCompilerState *cs,
         SZrAstNode *node,
+        TZrUInt32 *exceptionBlock,
         TZrUInt32 *handlerBlock,
+        TZrUInt32 *unmatchedBlock,
         TZrUInt32 *joinBlock,
+        TZrTypeId *matchTypeId,
         SZrArray *entrySlots);
 TZrBool compiler_semantic_cfg_enter_try_catch_handler(
         SZrCompilerState *cs,
         SZrAstNode *node,
+        TZrUInt32 exceptionBlock,
         TZrUInt32 handlerBlock,
+        TZrUInt32 unmatchedBlock,
         TZrUInt32 joinBlock,
+        TZrTypeId matchTypeId,
         TZrUInt32 bindingSlot,
         SZrArray *entrySlots,
         TZrBool *outEntered);
@@ -283,6 +296,10 @@ TZrBool compiler_semantic_cfg_complete_try_catch(
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_terminate_throw_value(
+        SZrCompilerState *cs,
+        TZrValueId valueId,
         SZrFileRange range);
 TZrBool compiler_semantic_cfg_terminate_return(
         SZrCompilerState *cs,

@@ -18,6 +18,96 @@ static const SZrAstNode *compiler_semantic_cfg_single_catch(
     return statement->catchClauses->nodes[0];
 }
 
+static const SZrAstNode *compiler_semantic_cfg_catch_parameter(
+        const SZrAstNode *catchClause) {
+    if (catchClause == ZR_NULL ||
+        catchClause->type != ZR_AST_CATCH_CLAUSE ||
+        catchClause->data.catchClause.pattern == ZR_NULL ||
+        catchClause->data.catchClause.pattern->count != 1U) {
+        return ZR_NULL;
+    }
+    return catchClause->data.catchClause.pattern->nodes[0];
+}
+
+static TZrBool compiler_semantic_cfg_simple_catch_type_is_resolvable(
+        SZrCompilerState *cs,
+        const SZrType *typeInfo) {
+    const SZrAstNode *nameNode;
+    SZrString *typeName;
+    TZrNativeString nativeName;
+    TZrSize nativeNameLength;
+    EZrValueType primitiveType;
+
+    if (typeInfo == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (cs == ZR_NULL || typeInfo->name == ZR_NULL ||
+        typeInfo->subType != ZR_NULL || typeInfo->dimensions != 0 ||
+        typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
+        typeInfo->referenceAccess != ZR_REFERENCE_ACCESS_NONE ||
+        typeInfo->isScopedReference || typeInfo->isReadonlyView) {
+        return ZR_FALSE;
+    }
+    nameNode = typeInfo->name;
+    if (nameNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+        nameNode->data.identifier.name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    typeName = nameNode->data.identifier.name;
+    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        nativeName = ZrCore_String_GetNativeStringShort(typeName);
+        nativeNameLength = typeName->shortStringLength;
+    } else {
+        nativeName = ZrCore_String_GetNativeString(typeName);
+        nativeNameLength = typeName->longStringLength;
+    }
+    if (nativeName != ZR_NULL &&
+        inferred_type_try_map_primitive_name(
+                nativeName, nativeNameLength, &primitiveType)) {
+        return ZR_TRUE;
+    }
+    return type_name_is_explicitly_available_in_context_inference(
+            cs, typeName);
+}
+
+static TZrBool compiler_semantic_cfg_resolve_catch_match_type(
+        SZrCompilerState *cs,
+        const SZrAstNode *catchClause,
+        TZrTypeId *outMatchTypeId) {
+    const SZrAstNode *parameter =
+            compiler_semantic_cfg_catch_parameter(catchClause);
+    SZrInferredType inferredType;
+    TZrTypeId typeId;
+
+    if (cs == ZR_NULL || parameter == ZR_NULL ||
+        parameter->type != ZR_AST_PARAMETER ||
+        outMatchTypeId == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outMatchTypeId = ZR_SEMANTIC_ID_INVALID;
+    if (parameter->data.parameter.typeInfo == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!compiler_semantic_cfg_simple_catch_type_is_resolvable(
+                cs, parameter->data.parameter.typeInfo) ||
+        !ZrParser_AstTypeToInferredType_Convert(
+                cs, parameter->data.parameter.typeInfo, &inferredType)) {
+        return ZR_FALSE;
+    }
+    typeId = ZrParser_Semantic_RegisterInferredType(
+            cs->semanticContext,
+            &inferredType,
+            ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+            ZR_NULL,
+            ZR_NULL);
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    *outMatchTypeId = typeId;
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_semantic_cfg_is_empty_block(
         const SZrAstNode *node) {
     return (TZrBool)(node != ZR_NULL && node->type == ZR_AST_BLOCK &&
@@ -353,12 +443,13 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
         catchClause->data.catchClause.pattern->count != 1U) {
         return ZR_FALSE;
     }
-    parameter = catchClause->data.catchClause.pattern->nodes[0];
+    parameter = compiler_semantic_cfg_catch_parameter(catchClause);
     return (TZrBool)(parameter != ZR_NULL &&
                     parameter->type == ZR_AST_PARAMETER &&
                     parameter->data.parameter.name != ZR_NULL &&
                     parameter->data.parameter.name->name != ZR_NULL &&
-                    parameter->data.parameter.typeInfo == ZR_NULL &&
+                    compiler_semantic_cfg_simple_catch_type_is_resolvable(
+                            cs, parameter->data.parameter.typeInfo) &&
                     compiler_semantic_cfg_is_supported_catch_block(
                             cs,
                             catchClause->data.catchClause.block,
@@ -443,26 +534,50 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
 TZrBool compiler_semantic_cfg_begin_try_catch(
         SZrCompilerState *cs,
         SZrAstNode *node,
+        TZrUInt32 *exceptionBlock,
         TZrUInt32 *handlerBlock,
+        TZrUInt32 *unmatchedBlock,
         TZrUInt32 *joinBlock,
+        TZrTypeId *matchTypeId,
         SZrArray *entrySlots) {
+    const SZrAstNode *catchClause;
     SZrParserCfg *cfg;
 
-    if (cs == ZR_NULL || node == ZR_NULL || handlerBlock == ZR_NULL ||
-        joinBlock == ZR_NULL || entrySlots == ZR_NULL ||
+    if (cs == ZR_NULL || node == ZR_NULL || exceptionBlock == ZR_NULL ||
+        handlerBlock == ZR_NULL || unmatchedBlock == ZR_NULL ||
+        joinBlock == ZR_NULL || matchTypeId == ZR_NULL ||
+        entrySlots == ZR_NULL ||
         !compiler_semantic_cfg_try_catch_is_supported(cs, node) ||
-        cs->preSemanticIrCfgCatchBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-        !compiler_semantic_cfg_ensure_active(cs)) {
+        cs->preSemanticIrCfgCatchBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         return ZR_FALSE;
     }
     memset(entrySlots, 0, sizeof(*entrySlots));
+    catchClause = compiler_semantic_cfg_single_catch(node);
+    if (!compiler_semantic_cfg_resolve_catch_match_type(
+                cs, catchClause, matchTypeId) ||
+        !compiler_semantic_cfg_ensure_active(cs)) {
+        return ZR_FALSE;
+    }
     cfg = &cs->preSemanticIr.cfg;
-    *handlerBlock = ZrParser_Cfg_AppendBlock(
+    *exceptionBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
-            node->data.tryCatchFinallyStatement.catchClauses->nodes[0]);
+            (SZrAstNode *)catchClause);
+    *handlerBlock = *matchTypeId == ZR_SEMANTIC_ID_INVALID
+            ? *exceptionBlock
+            : ZrParser_Cfg_AppendBlock(
+                    cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
+                    (SZrAstNode *)catchClause);
+    *unmatchedBlock = *matchTypeId == ZR_SEMANTIC_ID_INVALID
+            ? ZR_PARSER_CFG_INVALID_BLOCK_ID
+            : ZrParser_Cfg_AppendBlock(
+                    cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
+                    (SZrAstNode *)catchClause);
     *joinBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
-    if (*handlerBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+    if (*exceptionBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        *handlerBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        (*matchTypeId != ZR_SEMANTIC_ID_INVALID &&
+         *unmatchedBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) ||
         *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         !compiler_semantic_cfg_capture_slots(cs, entrySlots)) {
         if (entrySlots->isValid) {
@@ -471,7 +586,7 @@ TZrBool compiler_semantic_cfg_begin_try_catch(
         (void)compiler_semantic_cfg_abandon(cs);
         return ZR_FALSE;
     }
-    cs->preSemanticIrCfgCatchBlock = *handlerBlock;
+    cs->preSemanticIrCfgCatchBlock = *exceptionBlock;
     cs->preSemanticIrCfgCatchUsed = ZR_FALSE;
     return ZR_TRUE;
 }
@@ -517,31 +632,71 @@ static TZrBool compiler_semantic_cfg_emit_exception_payload(
     return ZR_TRUE;
 }
 
+static TZrBool compiler_semantic_cfg_emit_type_test(
+        SZrCompilerState *cs,
+        TZrValueId payloadValueId,
+        TZrTypeId matchTypeId,
+        SZrFileRange sourceRange,
+        TZrValueId *outResultValueId) {
+    SZrSemanticIrInstructionSpec spec;
+    TZrTypeId boolTypeId;
+    TZrValueId resultValueId;
+
+    if (cs == ZR_NULL || payloadValueId == ZR_VALUE_ID_INVALID ||
+        matchTypeId == ZR_SEMANTIC_ID_INVALID ||
+        outResultValueId == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    boolTypeId = ZrParser_CanonicalType_InternPrimitive(
+            cs->semanticContext, ZR_VALUE_TYPE_BOOL);
+    if (boolTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    resultValueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, boolTypeId, sourceRange);
+    if (resultValueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_TYPE_TEST;
+    spec.typeId = boolTypeId;
+    spec.matchTypeId = matchTypeId;
+    spec.valueId = payloadValueId;
+    spec.resultValueId = resultValueId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+    *outResultValueId = resultValueId;
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_semantic_cfg_bind_catch_payload(
         SZrCompilerState *cs,
         const SZrAstNode *catchClause,
-        TZrUInt32 bindingSlot) {
+        TZrUInt32 bindingSlot,
+        TZrTypeId typeId,
+        TZrValueId valueId) {
     const SZrAstNode *parameter;
     SZrString *bindingName;
     SZrCompilerSemanticIrSlot slot;
     SZrParserPlaceBase base;
     SZrSemanticIrInstructionSpec spec;
-    TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
-    TZrValueId valueId = ZR_VALUE_ID_INVALID;
 
     if (cs == ZR_NULL || catchClause == ZR_NULL ||
         catchClause->type != ZR_AST_CATCH_CLAUSE ||
         catchClause->data.catchClause.pattern == ZR_NULL ||
         catchClause->data.catchClause.pattern->count != 1U ||
-        bindingSlot == ZR_PARSER_SLOT_NONE) {
+        bindingSlot == ZR_PARSER_SLOT_NONE ||
+        typeId == ZR_SEMANTIC_ID_INVALID ||
+        valueId == ZR_VALUE_ID_INVALID) {
         return ZR_FALSE;
     }
     parameter = catchClause->data.catchClause.pattern->nodes[0];
     if (parameter == ZR_NULL || parameter->type != ZR_AST_PARAMETER ||
         parameter->data.parameter.name == ZR_NULL ||
-        parameter->data.parameter.name->name == ZR_NULL ||
-        !compiler_semantic_cfg_emit_exception_payload(
-                cs, catchClause->location, &typeId, &valueId)) {
+        parameter->data.parameter.name->name == ZR_NULL) {
         return ZR_FALSE;
     }
     bindingName = parameter->data.parameter.name->name;
@@ -600,12 +755,19 @@ static TZrBool compiler_semantic_cfg_bind_catch_payload(
 TZrBool compiler_semantic_cfg_enter_try_catch_handler(
         SZrCompilerState *cs,
         SZrAstNode *node,
+        TZrUInt32 exceptionBlock,
         TZrUInt32 handlerBlock,
+        TZrUInt32 unmatchedBlock,
         TZrUInt32 joinBlock,
+        TZrTypeId matchTypeId,
         TZrUInt32 bindingSlot,
         SZrArray *entrySlots,
         TZrBool *outEntered) {
     const SZrAstNode *catchClause;
+    TZrTypeId payloadTypeId = ZR_SEMANTIC_ID_INVALID;
+    TZrValueId payloadValueId = ZR_VALUE_ID_INVALID;
+    TZrValueId typeTestValueId = ZR_VALUE_ID_INVALID;
+    TZrBool previousAbruptIsLocal;
 
     if (outEntered != ZR_NULL) {
         *outEntered = ZR_FALSE;
@@ -616,7 +778,7 @@ TZrBool compiler_semantic_cfg_enter_try_catch_handler(
     }
     catchClause = compiler_semantic_cfg_single_catch(node);
     if (!cs->preSemanticIrCfgActive || !cs->preSemanticIrCfgCatchUsed ||
-        cs->preSemanticIrCfgCatchBlock != handlerBlock) {
+        cs->preSemanticIrCfgCatchBlock != exceptionBlock) {
         if (cs->preSemanticIrCfgActive &&
             !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
@@ -638,9 +800,54 @@ TZrBool compiler_semantic_cfg_enter_try_catch_handler(
     if (!compiler_semantic_cfg_restore_slots(cs, entrySlots)) {
         goto fail;
     }
-    compiler_semantic_cfg_enter(cs, handlerBlock);
+    compiler_semantic_cfg_enter(cs, exceptionBlock);
+    if (!compiler_semantic_cfg_emit_exception_payload(
+                cs,
+                catchClause->location,
+                &payloadTypeId,
+                &payloadValueId)) {
+        goto fail;
+    }
+    if (matchTypeId != ZR_SEMANTIC_ID_INVALID) {
+        if (unmatchedBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+            exceptionBlock == handlerBlock ||
+            !compiler_semantic_cfg_emit_type_test(
+                    cs,
+                    payloadValueId,
+                    matchTypeId,
+                    catchClause->location,
+                    &typeTestValueId) ||
+            !compiler_semantic_cfg_branch_value(
+                    cs,
+                    typeTestValueId,
+                    handlerBlock,
+                    unmatchedBlock,
+                    (SZrAstNode *)catchClause,
+                    catchClause->location)) {
+            goto fail;
+        }
+        compiler_semantic_cfg_enter(cs, unmatchedBlock);
+        previousAbruptIsLocal = cs->preSemanticIrCfgAbruptIsLocal;
+        cs->preSemanticIrCfgAbruptIsLocal = ZR_TRUE;
+        if (!compiler_semantic_cfg_terminate_throw_value(
+                    cs, payloadValueId, catchClause->location)) {
+            cs->preSemanticIrCfgAbruptIsLocal = previousAbruptIsLocal;
+            goto fail;
+        }
+        cs->preSemanticIrCfgAbruptIsLocal = previousAbruptIsLocal;
+        compiler_semantic_cfg_enter(cs, handlerBlock);
+    } else if (unmatchedBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+               exceptionBlock != handlerBlock) {
+        goto fail;
+    }
     if (!compiler_semantic_cfg_bind_catch_payload(
-                cs, catchClause, bindingSlot)) {
+                cs,
+                catchClause,
+                bindingSlot,
+                matchTypeId == ZR_SEMANTIC_ID_INVALID
+                        ? payloadTypeId
+                        : matchTypeId,
+                payloadValueId)) {
         goto fail;
     }
     *outEntered = ZR_TRUE;

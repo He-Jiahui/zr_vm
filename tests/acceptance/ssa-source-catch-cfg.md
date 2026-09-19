@@ -37,8 +37,10 @@ handler and the catch binding local to the exceptional block. The active handler
 cleared before the catch body is compiled, so a later call receives a separate
 propagation sink.
 
-The legacy exception bytecode remains in place. Typed and multiple catches,
-catch bodies other than the empty, single binding-read, exact inferred-local
+The legacy exception bytecode remains in place. One simple, resolved typed
+catch is covered separately by `ssa-source-typed-catch-cfg.md`. Multiple
+catches and unresolved or structurally richer annotations, plus catch bodies
+other than the empty, single binding-read, exact inferred-local
 propagation, canonical direct-return, or exact binding-rethrow shapes, inferred
 locals whose catch/local names collide with an
 existing variable, callable, or type prototype,
@@ -73,7 +75,8 @@ publish a partial source exception graph.
   fallback; and
 - fallback coverage for literal, multiple, nested/computed, and type-converting
   arguments, plus typed, nonpropagating, variable-shadowing, or callable-
-  shadowing handler locals, general nonempty bodies, typed/multiple catches,
+  shadowing handler locals, general nonempty bodies, unsupported typed or
+  multiple catches,
   no-call, nested, and `finally` boundaries; and
 - direct preflight rejection for compile-time callable and type-prototype name
   collisions.

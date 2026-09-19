@@ -68,6 +68,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
@@ -95,6 +96,7 @@ tests:
   - tests/acceptance/ssa-source-foreach-cfg.md
   - tests/acceptance/ssa-exception-payload.md
   - tests/acceptance/ssa-source-catch-cfg.md
+  - tests/acceptance/ssa-source-typed-catch-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -116,11 +118,10 @@ The public opcode set covers constants and conversions; a canonical type-members
 Value construction, ordinary/meta calls, GC allocation, and ownership construction have different opcodes. Ownership construction additionally records explicit unique/share/degrade/wake operations; move, drop, shared borrow, and mutable borrow remain their own opcodes. No generic construct flag or default fallback opcode is used to reinterpret one family as another. Golden formatting is stable and includes instruction ID, opcode name, TypeId, PlaceId, input ValueId, and result ValueId. `TYPE_TEST` additionally records `matchTypeId`: `typeId` describes the boolean result, while `matchTypeId` is the independently resolved canonical target identity. Semantic emission and validation require that field exactly for `TYPE_TEST`; no source type name is retained as a comparison fallback.
 
 The SemIR-to-ExecIR builder lowers `TYPE_TEST(valueId, matchTypeId)` to the
-same one-operand fact with `matchTypeToken == matchTypeId`. This establishes
-the reusable bottom-up operation required by future typed-catch dispatch, but
-the current source catch producer still admits only its documented catch-all
-shape. Runtime subtype evaluation and the source-ordered match/rethrow CFG are
-explicit later milestones.
+same one-operand fact with `matchTypeToken == matchTypeId`. A bounded source
+typed catch now consumes that identity to form a match/rethrow CFG. Runtime
+subtype evaluation and source-ordered multiple-handler selection remain later
+milestones.
 
 `ZrParser_SemanticIr_Validate` rejects dangling Place/Value/Loan/Region/Cleanup references, malformed operand spans, non-sequential instruction/source-map identities, and invalid owned CFG ranges or edges. Empty CFG storage is valid during straight-line compiler emission; once blocks exist, entry/exit IDs, instruction ranges, terminators, and typed edges are checked.
 
@@ -329,7 +330,9 @@ already failed also remains on that enclosing legacy path; it cannot restart
 an inactive graph and falsely model conditional execution as unconditional.
 
 A deliberately bounded source `try`/`catch` form now owns an exceptional CFG:
-one catch-all parameter, no `finally`, one resolved direct call with either no
+one catch parameter that is either a catch-all or has one simple,
+already-resolvable canonical type annotation, no `finally`, one resolved direct
+call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work in
 the protected block, and either an empty catch body, one expression that reads
@@ -338,8 +341,13 @@ the catch binding, the exact cleanup-free sequence
 literal, or the catch binding, or an exact `throw binding;` rethrow. A
 supported argument is loaded before the
 dedicated invoke block and therefore dominates the call without being consumed
-by any handler explicit value operand. The call's exceptional successor enters
-the handler directly.
+by any handler explicit value operand. A catch-all exceptional successor enters
+the handler directly. A typed exceptional successor enters a dispatch block,
+defines `EXCEPTION_PAYLOAD` once, evaluates
+`TYPE_TEST(payload, resolvedMatchTypeId)`, and branches true to the handler and
+false to a zero-successor `THROW` of the original payload. The typed handler
+Place records the resolved annotation TypeId; it does not compare or retain a
+source type-name string.
 The local-flow form also requires both the catch name and new local name to be
 absent from variable, runtime/compile-time callable, and type-prototype lookup.
 This prevents inference from reading an outer homonym while runtime lowering
@@ -369,9 +377,10 @@ body through disposable SemanticIR isolation. That late fallback therefore
 cannot leak an unbound catch read into the entry sidecar.
 
 All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
-typed or multiple catches, a catch body other than the empty, single binding
-read, exact nonshadowing inferred-local propagation, canonical direct return,
-or exact binding-rethrow shapes, a
+multiple catches; unresolved, generic, qualified, array, ownership-qualified,
+or reference-qualified catch annotations; a catch body other than the empty,
+single binding read, exact nonshadowing inferred-local propagation, canonical
+direct return, or exact binding-rethrow shapes; a
 protected body without the single resolved direct call, multiple/named/marked/
 generic arguments, argument expressions other than the simple identifier,
 type-converting or non-value arguments, nested control, every `finally` shape,
@@ -381,8 +390,9 @@ Declared callable bodies compile their try graph inside disposable SemanticIR
 isolation, with direct catch returns preflighted to fallback, and cannot pollute
 the entry sidecar. This keeps the legacy exception
 machinery authoritative until general catch-body control/effect flow, general
-argument effects, type dispatch, arbitrary handled-throw routing, and cleanup
-edges are modeled.
+argument effects, ordered multiple-handler type dispatch, arbitrary
+handled-throw routing, and cleanup edges are modeled. TYPE_TEST-bearing graphs
+also remain non-executable until backend subtype projection is implemented.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler
