@@ -86,7 +86,8 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     hasSemanticCfg = compiler_semantic_cfg_begin_while(
             cs, node, &conditionBlock, &bodyBlock, &joinBlock);
-    if (!hasSemanticCfg && cs->preSemanticIrCfgActive) {
+    if (!hasSemanticCfg && cs->preSemanticIrCfgActive &&
+        !cs->preSemanticIrCfgTerminated) {
         ZrParser_Compiler_Error(
                 cs, "Failed to start semantic while CFG", node->location);
         goto cleanup;

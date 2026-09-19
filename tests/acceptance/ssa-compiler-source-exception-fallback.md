@@ -67,6 +67,9 @@ The active-prefix case protects the abandonment path.
 
 This checkpoint is deliberately conservative. It does not claim source-owned
 exception payloads, catch dispatch, finally cleanup edges, interrupted
-assignment state, or non-call throwable operations. Those remain required for
-the full 01.02 exit gate; this slice ensures they cannot be bypassed by a
-partially modeled nested graph in the meantime.
+assignment state, or handled non-call throwable operations. Straight-line
+unhandled source `throw` is covered by
+[the explicit throw CFG checkpoint](ssa-compiler-source-throw-cfg.md). The
+remaining handler-aware work is still required for the full 01.02 exit gate;
+this slice ensures it cannot be bypassed by a partially modeled nested graph
+in the meantime.

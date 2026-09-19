@@ -50,6 +50,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -61,6 +62,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
+  - tests/acceptance/ssa-compiler-source-throw-cfg.md
 doc_type: module-detail
 ---
 
@@ -182,6 +184,18 @@ two-block legacy graph even when an enclosing fallback scope restores its own
 temporary suppression state. Canonical exception payload, handler, and cleanup
 edges must become available together before this function-level block can be
 removed.
+
+An explicit `throw` outside that boundary now consumes its source expression's
+canonical ValueId and terminates the source-owned graph directly. The compiler
+emits one-operand `THROW`, marks the current block with the matching zero-
+successor terminator, and makes that block the CFG exit. This works both when
+the throw establishes the first source CFG block and when it closes the normal
+continuation of an existing call/invoke graph. Once closed, the function keeps
+its validated graph but suppresses subsequent SemanticIR instruction and CFG
+startup; unreachable source still follows the existing ExecBC compilation
+path. Nested throws in an unsupported branch/loop shape and handled throws in
+`try`/`catch`/`finally` stay on legacy lowering until the full handler-payload
+and cleanup-edge contract exists.
 
 Nullable `receiver?.method(arguments)` chains publish ordered present-true and
 absent-false edges from the receiver ValueId. Argument and suffix facts are

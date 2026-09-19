@@ -184,6 +184,10 @@ TZrBool compiler_semantic_cfg_split_invoke(
         SZrCompilerState *cs,
         SZrAstNode *callNode,
         SZrFileRange range);
+TZrBool compiler_semantic_cfg_terminate_throw(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range);
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block);
 TZrBool compiler_semantic_cfg_capture_slots(SZrCompilerState *cs,
                                             SZrArray *snapshot);

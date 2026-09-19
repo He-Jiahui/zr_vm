@@ -4,6 +4,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -12,6 +13,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
@@ -32,12 +34,14 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
+  - tests/acceptance/ssa-compiler-source-throw-cfg.md
 doc_type: module-detail
 ---
 
@@ -180,6 +184,20 @@ prefix. This function-level block is separate from scoped fallback suppression,
 so an enclosing construct cannot clear it while restoring its own state. The
 legacy compiler still emits the executable exception machinery; ExecIR does
 not publish a detached graph that omits those transfers.
+
+Outside an unmodeled handler scope, an explicit source `throw` is a real
+non-call exceptional terminator. It consumes the expression's canonical
+ValueId, emits a one-operand SemanticIR `THROW`, binds the current block with
+`ZR_PARSER_CFG_TERMINATOR_THROW`, and publishes no successors. That block is
+also the function CFG exit; when no earlier source boundary exists, the
+straight-line prefix becomes the single entry/exit block. The same operation
+can terminate the normal continuation of an already split `INVOKE` graph.
+Afterward a function-level termination latch prevents later source text from
+adding SemanticIR instructions or starting another CFG, while legacy ExecBC
+emission continues for compatibility. Throws nested inside control-flow whose
+source CFG preflight already fell back, and throws inside `try`/`catch`/
+`finally`, remain on the conservative legacy path until handler and cleanup
+edges are modeled together.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call

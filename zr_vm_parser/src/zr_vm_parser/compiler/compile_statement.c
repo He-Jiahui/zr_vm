@@ -3779,7 +3779,8 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrUInt32 joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrBool hasSemanticCfg = compiler_semantic_cfg_begin_if(
             cs, condSlot, node, &thenBlock, &elseBlock, &joinBlock);
-    if (!hasSemanticCfg && cs->preSemanticIrCfgActive) {
+    if (!hasSemanticCfg && cs->preSemanticIrCfgActive &&
+        !cs->preSemanticIrCfgTerminated) {
         ZrParser_Compiler_Error(cs, "If condition lacks a semantic value", node->location);
         return;
     }

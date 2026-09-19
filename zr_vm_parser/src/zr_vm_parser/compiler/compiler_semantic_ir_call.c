@@ -35,6 +35,9 @@ TZrBool compiler_semantic_ir_lower_call(
          opcode != ZR_SEMANTIC_IR_CALL_META)) {
         return ZR_FALSE;
     }
+    if (cs->preSemanticIrCfgTerminated) {
+        return ZR_TRUE;
+    }
     if (!cs->preSemanticIrCfgActive &&
         (cs->preSemanticIrCfgStartupSuppressed ||
          cs->preSemanticIrCfgStartupBlocked)) {

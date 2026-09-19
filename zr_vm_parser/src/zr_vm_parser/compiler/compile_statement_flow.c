@@ -998,6 +998,14 @@ void compile_throw_statement(SZrCompilerState *cs, SZrAstNode *node) {
             ZrParser_Compiler_Error(cs, "Throw expression did not produce a value", stmt->expr->location);
             return;
         }
+        if (!compiler_semantic_cfg_terminate_throw(
+                    cs, exceptionSlot, node->location)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to terminate semantic CFG for throw",
+                    node->location);
+            return;
+        }
         
         // 生成 THROW 指令
         TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(THROW), (TZrUInt16)exceptionSlot, 0);

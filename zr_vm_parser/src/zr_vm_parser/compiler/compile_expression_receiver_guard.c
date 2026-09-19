@@ -515,7 +515,8 @@ TZrBool compiler_receiver_guard_begin_segment(
                             ? &frame.semanticAbsentBlock
                             : ZR_NULL,
                     &frame.semanticJoinBlock);
-            if (!frame.hasSemanticCfg && cs->preSemanticIrCfgActive) {
+            if (!frame.hasSemanticCfg && cs->preSemanticIrCfgActive &&
+                !cs->preSemanticIrCfgTerminated) {
                 ZrParser_Compiler_Error(
                         cs,
                         "Failed to start semantic optional receiver CFG",

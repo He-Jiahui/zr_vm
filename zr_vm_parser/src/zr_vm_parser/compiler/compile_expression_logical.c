@@ -99,7 +99,8 @@ void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
     hasSemanticCfg = compiler_semantic_cfg_begin_short_circuit(
             cs, leftSlot, node, &rightBlock, &joinBlock);
-    if (!hasSemanticCfg && cs->preSemanticIrCfgActive) {
+    if (!hasSemanticCfg && cs->preSemanticIrCfgActive &&
+        !cs->preSemanticIrCfgTerminated) {
         ZrParser_Compiler_Error(
                 cs, "Failed to start semantic short-circuit CFG", node->location);
         return;

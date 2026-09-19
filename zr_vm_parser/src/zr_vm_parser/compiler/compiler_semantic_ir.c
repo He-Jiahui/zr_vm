@@ -156,6 +156,9 @@ TZrBool compiler_semantic_ir_emit(
     if (cs == ZR_NULL || spec == ZR_NULL || !cs->preSemanticIrInitialized) {
         return ZR_FALSE;
     }
+    if (cs->preSemanticIrCfgTerminated) {
+        return ZR_TRUE;
+    }
     cs->preSemanticIrValidated = ZR_FALSE;
     return (TZrBool)(ZrParser_SemanticIr_Emit(&cs->preSemanticIr, spec) !=
                      ZR_SEMANTIC_INSTRUCTION_ID_INVALID);
@@ -1339,6 +1342,7 @@ void compiler_semantic_ir_init(SZrCompilerState *cs) {
     cs->preSemanticIrCfgActive = ZR_FALSE;
     cs->preSemanticIrCfgStartupSuppressed = ZR_FALSE;
     cs->preSemanticIrCfgStartupBlocked = ZR_FALSE;
+    cs->preSemanticIrCfgTerminated = ZR_FALSE;
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgStart = 0U;
     (void)ZrParser_SemanticIr_AddRegion(
@@ -1369,6 +1373,7 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     cs->preSemanticIrCfgActive = ZR_FALSE;
     cs->preSemanticIrCfgStartupSuppressed = ZR_FALSE;
     cs->preSemanticIrCfgStartupBlocked = ZR_FALSE;
+    cs->preSemanticIrCfgTerminated = ZR_FALSE;
 }
 
 const SZrSemanticIrFunction *ZrParser_Compiler_PreSemanticIr(
@@ -1864,6 +1869,15 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
     const SZrSemanticIrInstruction *instruction;
     EZrInstructionCode opcode;
 
+    if (cs != ZR_NULL && cs->preSemanticIrCfgTerminated) {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(GET_STACK),
+                        (TZrUInt16)resultSlot,
+                        (TZrInt32)stackSlot));
+        return ZR_TRUE;
+    }
     if (!compiler_semantic_ir_emit_load(cs, stackSlot, sourceRange)) {
         return ZR_FALSE;
     }
@@ -1909,6 +1923,15 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
         !cs->preSemanticIrInitialized ||
         resultSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
+    }
+    if (cs->preSemanticIrCfgTerminated) {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                        (TZrUInt16)resultSlot,
+                        (TZrInt32)constantPoolIndex));
+        return ZR_TRUE;
     }
     ZrParser_InferredType_Init(cs->state, &literalType, valueType);
     typeId = ZrParser_Semantic_RegisterInferredType(
@@ -1956,6 +1979,9 @@ TZrBool compiler_semantic_ir_transfer_expression_result(
     if (cs == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (cs->preSemanticIrCfgTerminated) {
+        return ZR_TRUE;
+    }
     if (sourceSlot == destinationSlot ||
         sourceSlot == ZR_PARSER_SLOT_NONE ||
         destinationSlot == ZR_PARSER_SLOT_NONE) {
@@ -1977,6 +2003,15 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
     const SZrSemanticIrInstruction *instruction;
     EZrInstructionCode opcode;
 
+    if (cs != ZR_NULL && cs->preSemanticIrCfgTerminated) {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(SET_STACK),
+                        (TZrUInt16)stackSlot,
+                        (TZrInt32)valueSlot));
+        return ZR_TRUE;
+    }
     if (!compiler_semantic_ir_emit_store(
                 cs, stackSlot, valueSlot, sourceRange)) {
         return ZR_FALSE;

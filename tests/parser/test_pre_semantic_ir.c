@@ -1285,6 +1285,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_optional_value.inc"
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
+#include "test_pre_semantic_ir_throw_cfg.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1307,6 +1308,10 @@ int main(void) {
     RUN_TEST(test_source_resolved_function_call_emits_typed_invoke_cfg);
     RUN_TEST(test_nested_calls_do_not_restart_abandoned_source_cfg);
     RUN_TEST(test_unmodeled_try_scope_does_not_start_detached_call_cfg);
+    RUN_TEST(test_source_throw_terminates_cfg_and_blocks_unreachable_restart);
+    RUN_TEST(test_source_throw_terminates_existing_invoke_cfg);
+    RUN_TEST(test_conditional_source_throw_blocks_later_cfg_startup);
+    RUN_TEST(test_unmodeled_throw_payload_blocks_later_cfg_startup);
     RUN_TEST(test_source_if_lowers_place_provenance_to_exec_ir);
     RUN_TEST(test_source_if_isolates_sibling_temporary_values);
     RUN_TEST(test_field_initialization_tracks_partial_parent_and_cleanup_bitmap);
