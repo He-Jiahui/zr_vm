@@ -85,6 +85,7 @@ tests:
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_control_edges.c
+  - tests/parser/test_ssa_builder_cleanup_dispatch.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_gvn_range.c
@@ -190,9 +191,19 @@ builder accepts a cleanup edge only when it is the sole successor of an
 operand-free `BRANCH` and either endpoint is a cleanup block. This is sufficient
 for an entry edge, a chain within cleanup, and a cleanup-to-continuation edge;
 the ordinary predecessor/successor pools retain the exact adjacency and the
-cleanup block retains its flag. A cleanup edge between two ordinary blocks,
-or any multi-successor `CLEANUP_DISPATCH`, remains `UNSUPPORTED` so pending
-return/throw/break/continue state is not silently erased.
+cleanup block retains its flag. A cleanup edge between two ordinary blocks
+remains `UNSUPPORTED`.
+
+A multi-successor cleanup block may use
+`ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH` only when its last SemanticIR
+instruction is a `SWITCH` consuming exactly one SSA selector. The dynamic edge
+list must contain at least one ordered `SWITCH_CASE` followed by exactly one
+terminal `SWITCH_DEFAULT`; the builder preserves that selector and adjacency as
+an ExecIR `SWITCH`, then structural and SSA verification prove that the selector
+exists and dominates the cleanup dispatch. Missing selectors, inline successor
+rows, ordinary source blocks, and unordered cases fail transactionally. This is
+the representation for a pending-completion discriminator, not yet a source
+producer or a definition of return/throw payload storage.
 
 The source compiler publishes that representable cleanup subset for a
 preflighted `try/finally` with no catches, ownership cleanup, calls,
@@ -202,8 +213,8 @@ block, and closes that block with a cleanup edge to one join. Both transfers
 are operand-free semantic `BRANCH` instructions. Preflight examines the
 complete protected and cleanup bodies before activating a graph; `return`,
 `throw`, calls, nested control flow, catch-plus-finally, and other unsupported
-shapes retain the legacy-CFG fail-closed path. Pending completion state and
-executable abrupt cleanup dispatch remain later milestones.
+shapes retain the legacy-CFG fail-closed path. Source production of pending
+completion state and abrupt cleanup dispatch remain later milestones.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

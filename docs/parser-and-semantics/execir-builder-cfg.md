@@ -20,6 +20,7 @@ tests:
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
+  - tests/parser/test_ssa_builder_cleanup_dispatch.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_fact_identity.c
   - tests/parser/test_ssa_place_eligibility.c
@@ -122,10 +123,20 @@ successor of an operand-free semantic `BRANCH`, with either its source or its
 destination declared `ZR_PARSER_CFG_BLOCK_CLEANUP`. The builder preserves that
 block as `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`, retains both entry and exit adjacency,
 and passes the graph through structural and SSA verification. This covers a
-single cleanup path or chain; it does not encode pending completion state.
-Cleanup edges outside a cleanup region, return, suspend, and resume edges remain
-unsupported rather than becoming ordinary successors. Normal, true/false, and
-switch edges retain their order.
+single cleanup path or chain. Cleanup edges outside a cleanup region, return,
+suspend, and resume edges remain unsupported rather than becoming ordinary
+successors. Normal, true/false, and switch edges retain their order.
+
+An explicit pending-completion discriminator is representable as a cleanup
+block ending in `ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH` plus a SemanticIR
+`SWITCH` with exactly one operand. It must use a dynamic edge row with two or
+more successors, ordered as one or more `SWITCH_CASE` entries and one final
+`SWITCH_DEFAULT`. The builder lowers it to an ExecIR `SWITCH`, preserves the
+selector operand, and relies on structural plus SSA verification to prove that
+the selector is defined and dominates the dispatch. It rejects missing
+selectors, inline compatibility rows, non-cleanup sources, or unordered cases
+without publishing partial output. This contract does not itself define the
+selector's language enum, abrupt payload storage, or cleanup effects.
 
 The production source compiler now emits this bounded shape for a no-catch
 `try/finally` only when both bodies preflight as nested blocks containing no
@@ -149,10 +160,7 @@ work before full exception/effect correctness can be claimed.
 For legacy inline successor rows without edge kinds, a nonempty row paired
 with `RETURN`, `THROW`, `SUSPEND`, `CLEANUP_DISPATCH`, or `EXIT` terminator
 metadata is rejected the same way; a typed control transfer must not evade
-the dynamic-edge guard by using the inline compatibility representation. A
-nonempty `CLEANUP_DISPATCH` also remains rejected: choosing among normal,
-return, throw, break, or continue completions requires an explicit pending-state
-operation that the current ExecIR schema does not yet provide.
+the dynamic-edge guard by using the inline compatibility representation.
 
 The instruction pool uses zero-based range offsets while published
 `terminatorInstructionId` uses one-based instruction IDs. For each semantic

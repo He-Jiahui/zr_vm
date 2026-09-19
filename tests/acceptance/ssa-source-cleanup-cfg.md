@@ -27,6 +27,8 @@ nested nonlinear control flow, ownership cleanup, and pending completion state
 are also outside this slice. Those shapes must not publish a partial cleanup
 graph or restart a detached CFG after rejection.
 
-The next cleanup milestone must introduce explicit pending completion state
-before accepting exceptional entry, return/throw propagation, break/continue,
-or `CLEANUP_DISPATCH`.
+The builder now accepts a separately tested `CLEANUP_DISPATCH` only when a
+cleanup block carries one explicit SSA selector and an ordered switch case/default
+edge list. This source producer still does not create that selector or abrupt
+payload state. A later source milestone must do so before accepting exceptional
+entry, return/throw propagation, or break/continue.

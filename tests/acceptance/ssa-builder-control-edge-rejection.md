@@ -163,3 +163,39 @@ This is a representation-layer foundation, not source `try/finally` completion.
 `CLEANUP_DISPATCH`, pending return/throw/break/continue state, cleanup effects,
 source production, Oracle/ExecBC/AOT execution, and the plan's interrupted
 assignment case remain open.
+
+## Explicit cleanup dispatch follow-up (2026-09-19)
+
+The builder now admits the previously rejected multi-successor cleanup shape
+only when the cleanup block ends in a SemanticIR `SWITCH` that consumes exactly
+one SSA selector. Its dynamic successors must be one or more ordered
+`SWITCH_CASE` entries followed by one terminal `SWITCH_DEFAULT`. Lowering
+preserves the selector as the ExecIR `SWITCH` operand, both successor order and
+predecessor multiplicity, and the cleanup block flag; core structural plus SSA
+verification then proves selector availability and dominance.
+
+The focused RED first failed with
+`builder did not preserve explicit cleanup dispatch successors`. Paired
+negative fixtures reject a missing selector and a default-before-case edge list
+with source-located `UNSUPPORTED` diagnostics and no published output. The old
+operand-free cleanup branch, cleanup-outside-region, selector-free dispatch,
+and inline typed-control rejection fixtures remain in the original control-edge
+test. The dispatch fixtures moved into
+`tests/parser/test_ssa_builder_cleanup_dispatch.c` so the general control-edge
+test stays below the repository's large-file threshold.
+
+This is an IR representation contract only. The source compiler does not yet
+create pending normal/return/throw/break/continue discriminators or abrupt
+payload state, exceptional entry into `finally`, cleanup effect tokens, or the
+interrupted-assignment fixture.
+
+MSVC 19.44.35228, WSL GCC 11.4.0, and WSL Clang 14.0.0 each rebuilt and passed
+the focused control-edge plus cleanup-dispatch tests. The adjacent SSA matrix
+passed 13/13 on all three toolchains. A fresh WSL-native GCC ASan+UBSan build at
+`/home/hejiahui/codex-validation/zr-vm-ssa-cleanup-dispatch-gcc-asan-phase76`
+passed the dispatch test five consecutive times with leak detection and
+halt-on-error enabled. Clang 14 ASan was excluded from the success claim after
+intermittent, report-free startup segfaults reproduced in both this binary and
+the previously passing phase-75 source-cleanup binary. Wiki validation passed
+for 116 Markdown files, 115 manifest pages, and 644 local links; its unit tests
+passed 5/5.

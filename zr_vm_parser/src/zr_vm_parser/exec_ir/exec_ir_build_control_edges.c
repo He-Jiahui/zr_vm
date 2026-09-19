@@ -95,6 +95,107 @@ static TZrBool cleanup_edge_is_representable(
                     tail->operandCount == 0u);
 }
 
+static TZrBool cleanup_dispatch_is_representable(
+        const SZrSemanticIrFunction *semantic,
+        const SZrParserCfgBlock *source,
+        TZrUInt32 edgeCount) {
+    const SZrSemanticIrInstruction *tail;
+    TZrUInt32 edgeIndex;
+
+    if (source->kind != ZR_PARSER_CFG_BLOCK_CLEANUP ||
+        source->terminatorKind != ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH ||
+        !source->outgoingEdges.isValid || edgeCount < 2u ||
+        source->instructionCount == 0u) {
+        return ZR_FALSE;
+    }
+    tail = (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+            (SZrArray *)&semantic->instructions,
+            source->firstInstructionIndex + source->instructionCount - 1u);
+    if (tail->opcode != ZR_SEMANTIC_IR_SWITCH ||
+        tail->operandCount != 1u) {
+        return ZR_FALSE;
+    }
+    for (edgeIndex = 0u; edgeIndex < edgeCount; edgeIndex++) {
+        const SZrParserCfgEdge *edge =
+                (const SZrParserCfgEdge *)ZrCore_Array_Get(
+                        (SZrArray *)&source->outgoingEdges, edgeIndex);
+        EZrParserCfgEdgeKind expected = edgeIndex + 1u == edgeCount
+                ? ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT
+                : ZR_PARSER_CFG_EDGE_SWITCH_CASE;
+
+        if (edge == ZR_NULL || edge->kind != expected) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool reject_cleanup_dispatch(
+        const SZrSemanticIrFunction *semantic,
+        SZrExecIrFunction *output,
+        SZrExecIrDiagnostic *diagnostic,
+        TZrUInt32 sourceIndex,
+        const SZrParserCfgBlock *source,
+        TZrUInt32 edgeCount) {
+    TZrSemanticInstructionId site = control_edge_site(semantic, source);
+
+    control_edge_diagnostic(diagnostic, output, sourceIndex + 1u, site);
+    if (diagnostic != ZR_NULL) {
+        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+        diagnostic->sourceId = site;
+        if (!source->outgoingEdges.isValid) {
+            diagnostic->expectedVersion = ZR_PARSER_CFG_TERMINATOR_NONE;
+            diagnostic->actualVersion =
+                    ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH;
+        } else if (source->kind != ZR_PARSER_CFG_BLOCK_CLEANUP) {
+            diagnostic->expectedVersion = ZR_PARSER_CFG_BLOCK_CLEANUP;
+            diagnostic->actualVersion = (TZrUInt32)source->kind;
+        } else if (edgeCount < 2u) {
+            diagnostic->expectedVersion = 2u;
+            diagnostic->actualVersion = edgeCount;
+        } else if (source->instructionCount == 0u) {
+            diagnostic->expectedVersion = 1u;
+            diagnostic->actualVersion = 0u;
+        } else {
+            const SZrSemanticIrInstruction *tail =
+                    (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                            (SZrArray *)&semantic->instructions,
+                            source->firstInstructionIndex +
+                                    source->instructionCount - 1u);
+
+            if (tail->opcode != ZR_SEMANTIC_IR_SWITCH) {
+                diagnostic->expectedVersion = ZR_SEMANTIC_IR_SWITCH;
+                diagnostic->actualVersion = (TZrUInt32)tail->opcode;
+            } else if (tail->operandCount != 1u) {
+                diagnostic->expectedVersion = 1u;
+                diagnostic->actualVersion = tail->operandCount;
+            } else {
+                TZrUInt32 edgeIndex;
+
+                for (edgeIndex = 0u; edgeIndex < edgeCount; edgeIndex++) {
+                    const SZrParserCfgEdge *edge =
+                            (const SZrParserCfgEdge *)ZrCore_Array_Get(
+                                    (SZrArray *)&source->outgoingEdges,
+                                    edgeIndex);
+                    EZrParserCfgEdgeKind expected =
+                            edgeIndex + 1u == edgeCount
+                            ? ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT
+                            : ZR_PARSER_CFG_EDGE_SWITCH_CASE;
+
+                    if (edge == ZR_NULL || edge->kind != expected) {
+                        diagnostic->expectedVersion = (TZrUInt32)expected;
+                        diagnostic->actualVersion = edge == ZR_NULL
+                                ? UINT32_MAX
+                                : (TZrUInt32)edge->kind;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool reject_control_edge(
         const SZrSemanticIrFunction *semantic,
         SZrExecIrFunction *output,
@@ -304,12 +405,18 @@ TZrBool zr_parser_exec_ir_validate_cfg_edges(
                         block, destination, edge, edgeCount);
             }
         }
+        if (block->terminatorKind ==
+                    ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH &&
+            !cleanup_dispatch_is_representable(
+                    semantic, block, edgeCount)) {
+            return reject_cleanup_dispatch(
+                    semantic, output, diagnostic, sourceIndex,
+                    block, edgeCount);
+        }
         if (edgeCount != 0u &&
             (block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_RETURN ||
              block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_THROW ||
              block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_SUSPEND ||
-             block->terminatorKind ==
-                     ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH ||
              block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_EXIT)) {
             TZrSemanticInstructionId site = control_edge_site(semantic, block);
 
