@@ -63,6 +63,80 @@ static TZrBool compiler_semantic_cfg_is_catch_binding_read(
                     ZrCore_String_Equal(identifierName, bindingName));
 }
 
+static TZrBool compiler_semantic_cfg_is_canonical_catch_return(
+        const SZrAstNode *expression,
+        SZrString *bindingName) {
+    SZrString *identifierName;
+
+    if (expression == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    switch (expression->type) {
+        case ZR_AST_BOOLEAN_LITERAL:
+        case ZR_AST_INTEGER_LITERAL:
+        case ZR_AST_FLOAT_LITERAL:
+        case ZR_AST_STRING_LITERAL:
+        case ZR_AST_CHAR_LITERAL:
+        case ZR_AST_NULL_LITERAL:
+            return ZR_TRUE;
+        default:
+            break;
+    }
+    identifierName = compiler_semantic_cfg_simple_identifier_name(
+            expression);
+    return (TZrBool)(identifierName != ZR_NULL &&
+                    bindingName != ZR_NULL &&
+                    ZrCore_String_Equal(identifierName, bindingName));
+}
+
+static TZrBool compiler_semantic_cfg_is_direct_catch_return(
+        const SZrAstNode *node,
+        SZrString *bindingName) {
+    const SZrAstNode *statement;
+
+    if (node == ZR_NULL || node->type != ZR_AST_BLOCK ||
+        node->data.block.body == ZR_NULL ||
+        node->data.block.body->count != 1U) {
+        return ZR_FALSE;
+    }
+    statement = node->data.block.body->nodes[0];
+    return (TZrBool)(statement != ZR_NULL &&
+                    statement->type == ZR_AST_RETURN_STATEMENT &&
+                    compiler_semantic_cfg_is_canonical_catch_return(
+                            statement->data.returnStatement.expr,
+                            bindingName));
+}
+
+static TZrBool compiler_semantic_cfg_is_direct_catch_abrupt(
+        const SZrAstNode *node,
+        SZrString *bindingName) {
+    const SZrAstNode *statement;
+    SZrString *identifierName;
+
+    if (node == ZR_NULL || node->type != ZR_AST_BLOCK ||
+        node->data.block.body == ZR_NULL ||
+        node->data.block.body->count != 1U) {
+        return ZR_FALSE;
+    }
+    statement = node->data.block.body->nodes[0];
+    if (statement == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (compiler_semantic_cfg_is_direct_catch_return(
+                node, bindingName)) {
+        return ZR_TRUE;
+    }
+    if (statement->type != ZR_AST_THROW_STATEMENT ||
+        statement->data.throwStatement.expr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    identifierName = compiler_semantic_cfg_simple_identifier_name(
+            statement->data.throwStatement.expr);
+    return (TZrBool)(identifierName != ZR_NULL &&
+                    bindingName != ZR_NULL &&
+                    ZrCore_String_Equal(identifierName, bindingName));
+}
+
 static TZrBool compiler_semantic_cfg_identifier_name_is_unbound(
         SZrCompilerState *cs,
         SZrString *name) {
@@ -140,8 +214,38 @@ static TZrBool compiler_semantic_cfg_is_supported_catch_block(
                 node->data.block.body->nodes[0], bindingName)) {
         return ZR_TRUE;
     }
+    if (compiler_semantic_cfg_is_direct_catch_abrupt(
+                node, bindingName)) {
+        return (TZrBool)(
+                !compiler_has_active_scope_ownership_cleanups(cs) &&
+                !(cs->currentFunctionNode != ZR_NULL &&
+                  compiler_semantic_cfg_is_direct_catch_return(
+                          node, bindingName)));
+    }
     return compiler_semantic_cfg_is_catch_local_flow(
             cs, node, bindingName);
+}
+
+TZrBool compiler_semantic_cfg_try_catch_handler_terminates(
+        const SZrAstNode *node) {
+    const SZrAstNode *catchClause =
+            compiler_semantic_cfg_single_catch(node);
+    const SZrAstNode *parameter;
+
+    if (catchClause == ZR_NULL ||
+        catchClause->type != ZR_AST_CATCH_CLAUSE ||
+        catchClause->data.catchClause.pattern == ZR_NULL ||
+        catchClause->data.catchClause.pattern->count != 1U) {
+        return ZR_FALSE;
+    }
+    parameter = catchClause->data.catchClause.pattern->nodes[0];
+    return (TZrBool)(parameter != ZR_NULL &&
+                    parameter->type == ZR_AST_PARAMETER &&
+                    parameter->data.parameter.name != ZR_NULL &&
+                    parameter->data.parameter.name->name != ZR_NULL &&
+                    compiler_semantic_cfg_is_direct_catch_abrupt(
+                            catchClause->data.catchClause.block,
+                            parameter->data.parameter.name->name));
 }
 
 static TZrBool compiler_semantic_cfg_is_simple_value_argument(
@@ -560,6 +664,7 @@ TZrBool compiler_semantic_cfg_complete_try_catch(
         SZrAstNode *node,
         TZrUInt32 handlerBlock,
         TZrUInt32 joinBlock,
+        TZrBool handlerTerminates,
         SZrArray *entrySlots) {
     TZrBool completed = ZR_FALSE;
 
@@ -567,8 +672,14 @@ TZrBool compiler_semantic_cfg_complete_try_catch(
         return ZR_FALSE;
     }
     if (!cs->preSemanticIrCfgActive ||
-        cs->preSemanticIrCfgBlock != handlerBlock ||
         cs->preSemanticIrCfgCatchBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        (handlerTerminates
+                 ? cs->preSemanticIrCfgBlock !=
+                           ZR_PARSER_CFG_INVALID_BLOCK_ID
+                 : cs->preSemanticIrCfgBlock != handlerBlock)) {
+        goto cleanup;
+    }
+    if (!handlerTerminates &&
         !compiler_semantic_cfg_jump(cs, joinBlock, node->location)) {
         goto cleanup;
     }

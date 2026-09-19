@@ -252,6 +252,8 @@ TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_try_catch_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_try_catch_handler_terminates(
+        const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
         SZrCompilerState *cs,
         const SZrFunctionCall *call,
@@ -276,6 +278,7 @@ TZrBool compiler_semantic_cfg_complete_try_catch(
         SZrAstNode *node,
         TZrUInt32 handlerBlock,
         TZrUInt32 joinBlock,
+        TZrBool handlerTerminates,
         SZrArray *entrySlots);
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,

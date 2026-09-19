@@ -64,6 +64,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
@@ -319,7 +320,11 @@ catch-all, no `finally`, one resolved direct protected call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work,
 and either an empty catch body, one expression statement that reads the catch
-binding, or the exact cleanup-free sequence `var local = binding; local;`.
+binding, the exact cleanup-free sequence `var local = binding; local;`, a
+direct `return` whose result is void, a literal, or the catch binding, or an
+exact `throw binding;` rethrow.
+Direct catch returns are supported only in the compiler-owned entry body;
+declared-child catch returns stay on their disposable legacy path.
 That local-flow sequence is admitted only when neither identifier conflicts
 with an existing variable, runtime/compile-time callable, or type prototype,
 so inference cannot resolve the catch read through an outer declaration or
@@ -331,25 +336,32 @@ The call's `INVOKE` exceptional successor enters a dedicated handler block
 that defines `EXCEPTION_PAYLOAD`. The handler initializes a source-local Place
 for the catch parameter from that payload before lowering the optional read.
 For the local-flow form, that read feeds the temporary-to-local `CONVERT`, the
-new local Place initialization, and its final `LOAD`, all in the handler block;
-both the normal continuation and handler then branch to one join. The payload
+new local Place initialization, and its final `LOAD`, all in the handler block.
+A falling-through handler and the normal continuation both branch to one join.
+A direct return or binding rethrow instead closes the handler as a zero-
+successor abrupt sink; only the normal continuation reaches the join and any
+later call. The payload
 is not fabricated as an entry value, and the invoke result is never made
 available on the handler path. The compiler clears the active handler target
 before compiling the catch body, so a call introduced by a later phase cannot
 recursively target the same handler; after the join, a later call uses its
 independent propagation sink. Declared callable bodies use disposable
 SemanticIR isolation for this control form and cannot publish their handler
-graph into the entry sidecar. If the syntactic shape passes preflight but the
+graph into the entry sidecar; direct child catch returns preflight to fallback
+because child returns do not publish entry-sidecar terminators. If the
+syntactic shape passes preflight but the
 protected call later lacks canonical call facts, the compiler abandons the
 partial graph and compiles the catch body inside disposable SemanticIR
 isolation; only legacy exception bytecode survives that fallback.
 
 Typed or multiple catches, catch bodies other than the empty, single binding
-read, or exact nonshadowing inferred-local propagation shapes,
+read, exact nonshadowing inferred-local propagation, canonical direct return,
+or exact binding-rethrow shapes,
 protected calls with multiple, named, marked, generic, member, literal,
 computed, type-converting, or non-value arguments, protected bodies with other
-control or effects, and all `finally` cleanup shapes remain an explicit
-conservative boundary. Such a scope
+control or effects, direct handler exits under active ownership/`@close`
+cleanup, and all `finally` cleanup shapes remain an explicit conservative
+boundary. Such a scope
 abandons any partial source CFG and keeps
 inactive starters suppressed for the rest of the SemanticIR function. The
 legacy compiler remains authoritative for these executable exception paths;
@@ -366,8 +378,8 @@ Afterward a function-level termination latch prevents later source text from
 adding SemanticIR instructions or starting another CFG, while legacy ExecBC
 emission continues for compatibility. Throws nested inside control-flow whose
 source CFG preflight already fell back, and throws inside `try`/`catch`/
-`finally`, remain on the conservative legacy path until handler and cleanup
-edges are modeled together.
+`finally` other than the bounded catch-binding rethrow, remain on the
+conservative legacy path until handler and cleanup edges are modeled together.
 
 The compiler-owned entry body now publishes explicit source `return` through
 the same value-terminator machinery. A value return consumes its canonical

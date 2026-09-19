@@ -68,6 +68,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
@@ -325,8 +326,10 @@ one catch-all parameter, no `finally`, one resolved direct call with either no
 arguments or one unmarked positional `int` identifier that exactly matches one
 value parameter without conversion, ownership, reference, or GC-bridge work in
 the protected block, and either an empty catch body, one expression that reads
-the catch binding, or the exact cleanup-free sequence
-`var local = binding; local;`. A supported argument is loaded before the
+the catch binding, the exact cleanup-free sequence
+`var local = binding; local;`, a direct `return` whose result is void, a
+literal, or the catch binding, or an exact `throw binding;` rethrow. A
+supported argument is loaded before the
 dedicated invoke block and therefore dominates the call without being consumed
 by any handler explicit value operand. The call's exceptional successor enters
 the handler directly.
@@ -335,11 +338,20 @@ absent from variable, runtime/compile-time callable, and type-prototype lookup.
 This prevents inference from reading an outer homonym while runtime lowering
 reads the handler catch slot, and prevents the declaration from replacing an
 outer binding.
+The two direct abrupt forms additionally require no active ownership or
+`@close` cleanup registration in an enclosing scope; those exits remain on the
+legacy path until cleanup edges are explicit.
+Direct catch returns are published only for the compiler-owned entry body;
+declared-child returns remain inside the child's disposable legacy isolation.
 That handler defines one typed `EXCEPTION_PAYLOAD`, initializes a
 source-local catch Place from it, and optionally loads that Place. In the
 local-flow form the catch load feeds the temporary-to-local `CONVERT`, local
-Place initialization, and final local `LOAD`; the handler then branches to the
-same join as the normal continuation. The compiler restores the pre-try
+Place initialization, and final local `LOAD`. A falling-through handler then
+branches to the same join as the normal continuation. A direct return or
+rethrow instead binds the handler block as a zero-successor abrupt sink; only
+the protected call's normal path reaches the join, so later source continues
+without falsely reviving the handler path or terminating the whole function.
+The compiler restores the pre-try
 slot bridge before constructing the handler and at the join, so the invoke
 result remains normal-path-only and the catch binding remains handler-local.
 The handler target is cleared before the body is compiled; the completed catch
@@ -351,16 +363,19 @@ cannot leak an unbound catch read into the entry sidecar.
 
 All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
 typed or multiple catches, a catch body other than the empty, single binding
-read, or exact nonshadowing inferred-local propagation shapes, a
+read, exact nonshadowing inferred-local propagation, canonical direct return,
+or exact binding-rethrow shapes, a
 protected body without the single resolved direct call, multiple/named/marked/
 generic arguments, argument expressions other than the simple identifier,
-type-converting or non-value arguments, nested control, and every `finally`
-shape abandon an earlier partial source CFG and suppress later startup.
+type-converting or non-value arguments, nested control, every `finally` shape,
+and direct handler exits under active ownership cleanup abandon an earlier
+partial source CFG and suppress later startup.
 Declared callable bodies compile their try graph inside disposable SemanticIR
-isolation and cannot pollute the entry sidecar. This keeps the legacy exception
+isolation, with direct catch returns preflighted to fallback, and cannot pollute
+the entry sidecar. This keeps the legacy exception
 machinery authoritative until general catch-body control/effect flow, general
-argument effects, type dispatch, explicit throw routing, and cleanup edges are
-modeled.
+argument effects, type dispatch, arbitrary handled-throw routing, and cleanup
+edges are modeled.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler
@@ -371,8 +386,9 @@ continuation of an existing call/invoke graph. Once closed, the function keeps
 its validated graph but suppresses subsequent SemanticIR instruction and CFG
 startup; unreachable source still follows the existing ExecBC compilation
 path. Nested throws in an unsupported branch/loop shape and handled throws in
-`try`/`catch`/`finally` stay on legacy lowering until the full handler-payload
-and cleanup-edge contract exists.
+`try`/`catch`/`finally` other than the bounded catch-binding rethrow stay on
+legacy lowering until the full handler-payload and cleanup-edge contract
+exists.
 
 An explicit return from the compiler-owned entry body now closes the graph by
 the same value-terminator path. A value return consumes the expression's

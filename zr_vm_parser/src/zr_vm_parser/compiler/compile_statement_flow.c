@@ -772,6 +772,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     TZrBool hasFinally;
     TZrBool pushedTryContext = ZR_FALSE;
     TZrBool hasSemanticCatch = ZR_FALSE;
+    TZrBool semanticCatchHandlerTerminates = ZR_FALSE;
     TZrUInt32 semanticHandlerBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrUInt32 semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     SZrArray semanticEntrySlots;
@@ -787,6 +788,8 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
 
     memset(&semanticEntrySlots, 0, sizeof(semanticEntrySlots));
     if (compiler_semantic_cfg_try_catch_is_supported(cs, node)) {
+        semanticCatchHandlerTerminates =
+                compiler_semantic_cfg_try_catch_handler_terminates(node);
         hasSemanticCatch = compiler_semantic_cfg_begin_try_catch(
                 cs, node, &semanticHandlerBlock, &semanticJoinBlock,
                 &semanticEntrySlots);
@@ -859,6 +862,8 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                                                                    catchClauseStartIndex + index);
             SZrCompilerSemanticIrIsolation semanticCatchBodyIsolation;
             TZrBool hasSemanticCatchBodyIsolation = ZR_FALSE;
+            TZrBool previousSemanticCfgAbruptIsLocal = ZR_FALSE;
+            TZrBool restoreSemanticCfgAbruptMode = ZR_FALSE;
             TZrUInt32 bindingSlot;
 
             if (catchClauseNode == ZR_NULL || catchInfo == ZR_NULL) {
@@ -888,6 +893,13 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                     return;
                 }
                 hasSemanticCatch = enteredSemanticHandler;
+                if (enteredSemanticHandler &&
+                    semanticCatchHandlerTerminates) {
+                    previousSemanticCfgAbruptIsLocal =
+                            cs->preSemanticIrCfgAbruptIsLocal;
+                    cs->preSemanticIrCfgAbruptIsLocal = ZR_TRUE;
+                    restoreSemanticCfgAbruptMode = ZR_TRUE;
+                }
                 if (!enteredSemanticHandler) {
                     if (!compiler_semantic_ir_isolation_begin(
                                 cs, &semanticCatchBodyIsolation)) {
@@ -903,6 +915,10 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
             if (!cs->hasError && catch_clause_block(catchClauseNode) != ZR_NULL) {
                 ZrParser_Statement_Compile(cs, catch_clause_block(catchClauseNode));
             }
+            if (restoreSemanticCfgAbruptMode) {
+                cs->preSemanticIrCfgAbruptIsLocal =
+                        previousSemanticCfgAbruptIsLocal;
+            }
             if (hasSemanticCatchBodyIsolation) {
                 compiler_semantic_ir_isolation_end(
                         cs, &semanticCatchBodyIsolation);
@@ -913,6 +929,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                             node,
                             semanticHandlerBlock,
                             semanticJoinBlock,
+                            semanticCatchHandlerTerminates,
                             &semanticEntrySlots)) {
                     ZrParser_Compiler_Error(
                             cs,

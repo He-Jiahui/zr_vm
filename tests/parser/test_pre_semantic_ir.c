@@ -1300,6 +1300,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
 #include "test_pre_semantic_ir_catch_name_preflight.inc"
+#include "test_pre_semantic_ir_catch_abrupt.inc"
 #include "test_pre_semantic_ir_throw_cfg.inc"
 #include "test_pre_semantic_ir_return_cfg.inc"
 #include "test_pre_semantic_ir_branch_exit_cfg.inc"
@@ -1359,6 +1360,14 @@ int main(void) {
     RUN_TEST(test_source_catch_flows_payload_through_handler_local);
     RUN_TEST(test_source_catch_captures_simple_argument_before_invoke);
     RUN_TEST(test_source_catch_local_flow_rejects_hidden_name_bindings);
+    RUN_TEST(test_source_catch_direct_rethrow_keeps_normal_continuation);
+    RUN_TEST(test_source_catch_direct_return_keeps_normal_continuation);
+    RUN_TEST(test_source_catch_binding_return_keeps_normal_continuation);
+    RUN_TEST(test_source_catch_abrupt_with_trailing_syntax_keeps_fallback);
+    RUN_TEST(test_source_catch_noncanonical_return_keeps_fallback);
+    RUN_TEST(test_source_catch_direct_return_with_outer_cleanup_keeps_fallback);
+    RUN_TEST(test_source_catch_rethrow_with_outer_cleanup_keeps_fallback);
+    RUN_TEST(test_declared_child_catch_return_uses_disposable_fallback);
     RUN_TEST(test_declared_child_try_does_not_pollute_entry_cfg);
     RUN_TEST(test_late_call_fallback_discards_catch_binding_read);
     RUN_TEST(test_unmodeled_try_scope_does_not_start_detached_call_cfg);
