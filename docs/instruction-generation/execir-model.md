@@ -315,9 +315,14 @@ is suppressed; a nested call therefore cannot create a detached unconditional
 graph for a conditionally executed operation.
 
 The first source catch selection is intentionally narrow: one untyped
-catch-all, no `finally`, one resolved zero-argument direct protected call, and
-either an empty catch body or one expression statement that reads the catch
-binding. Its `INVOKE` exceptional successor enters a dedicated handler block
+catch-all, no `finally`, one resolved direct protected call with either no
+arguments or one unmarked positional `int` identifier that exactly matches one
+value parameter without conversion, ownership, reference, or GC-bridge work,
+and either an empty catch body or one expression statement that reads the catch
+binding. The argument's `LOAD` is defined before the dedicated call block, so it
+dominates the call and does not appear in the handler instructions' explicit
+value-operand arrays.
+The call's `INVOKE` exceptional successor enters a dedicated handler block
 that defines `EXCEPTION_PAYLOAD`. The handler initializes a source-local Place
 for the catch parameter from that payload before lowering the optional read;
 both the normal continuation and handler then branch to one join. The payload
@@ -333,9 +338,10 @@ partial graph and compiles the catch body inside disposable SemanticIR
 isolation; only legacy exception bytecode survives that fallback.
 
 Typed or multiple catches, catch bodies other than the single binding read,
-protected calls with any arguments, protected bodies with other control or
-effects, and all `finally` cleanup shapes remain an explicit conservative
-boundary. Such a scope
+protected calls with multiple, named, marked, generic, member, literal,
+computed, type-converting, or non-value arguments, protected bodies with other
+control or effects, and all `finally` cleanup shapes remain an explicit
+conservative boundary. Such a scope
 abandons any partial source CFG and keeps
 inactive starters suppressed for the rest of the SemanticIR function. The
 legacy compiler remains authoritative for these executable exception paths;

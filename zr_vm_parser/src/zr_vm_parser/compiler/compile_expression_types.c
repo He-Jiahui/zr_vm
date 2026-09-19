@@ -4462,6 +4462,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         semanticArgumentCount > 0U) {
                         semanticArgumentCount--;
                     }
+                    if (semanticCallSupported &&
+                        !compiler_semantic_cfg_try_call_arguments_are_exact(
+                                cs,
+                                call,
+                                hasResolvedFunctionSignature
+                                        ? &resolvedFunctionSignature
+                                        : ZR_NULL,
+                                argBaseSlot)) {
+                        semanticCallSupported = ZR_FALSE;
+                    }
                     if (!semanticCallSupported) {
                         if (cs->preSemanticIrCfgActive &&
                             !compiler_semantic_cfg_abandon(cs)) {

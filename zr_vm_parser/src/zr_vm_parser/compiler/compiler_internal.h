@@ -251,6 +251,11 @@ TZrBool compiler_semantic_cfg_split_invoke(
 TZrBool compiler_semantic_cfg_ensure_active(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_try_catch_is_supported(
         const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        const SZrResolvedCallSignature *resolvedSignature,
+        TZrUInt32 firstArgumentSlot);
 TZrBool compiler_semantic_cfg_begin_try_catch(
         SZrCompilerState *cs,
         SZrAstNode *node,

@@ -321,10 +321,15 @@ already failed also remains on that enclosing legacy path; it cannot restart
 an inactive graph and falsely model conditional execution as unconditional.
 
 A deliberately bounded source `try`/`catch` form now owns an exceptional CFG:
-one catch-all parameter, no `finally`, one resolved zero-argument direct call
-in the protected block, and either an empty catch body or one expression that
-reads the catch binding. The call's exceptional successor enters the handler
-directly. That handler defines one typed `EXCEPTION_PAYLOAD`, initializes a
+one catch-all parameter, no `finally`, one resolved direct call with either no
+arguments or one unmarked positional `int` identifier that exactly matches one
+value parameter without conversion, ownership, reference, or GC-bridge work in
+the protected block, and either an empty catch body or one expression that
+reads the catch binding. A supported argument is loaded before the dedicated
+invoke block and therefore dominates the call without being consumed by any
+handler explicit value operand. The call's exceptional successor enters the
+handler directly.
+That handler defines one typed `EXCEPTION_PAYLOAD`, initializes a
 source-local catch Place from it, optionally loads that Place, and branches to
 the same join as the normal continuation. The compiler restores the pre-try
 slot bridge before constructing the handler and at the join, so the invoke
@@ -338,13 +343,14 @@ cannot leak an unbound catch read into the entry sidecar.
 
 All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
 typed or multiple catches, a catch body other than the single binding read, a
-protected body without the single resolved zero-argument call, call arguments,
-nested control, and every `finally` shape abandon an earlier partial source CFG
-and suppress later startup. Declared callable bodies compile their try graph
-inside disposable SemanticIR isolation and cannot pollute the entry sidecar.
-This keeps the legacy exception machinery authoritative until general
-catch-body value flow, argument effects, type dispatch, explicit throw routing,
-and cleanup edges are modeled.
+protected body without the single resolved direct call, multiple/named/marked/
+generic arguments, argument expressions other than the simple identifier,
+type-converting or non-value arguments, nested control, and every `finally`
+shape abandon an earlier partial source CFG and suppress later startup.
+Declared callable bodies compile their try graph inside disposable SemanticIR
+isolation and cannot pollute the entry sidecar. This keeps the legacy exception
+machinery authoritative until general catch-body value flow, general argument
+effects, type dispatch, explicit throw routing, and cleanup edges are modeled.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler

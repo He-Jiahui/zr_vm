@@ -276,6 +276,157 @@ static void test_source_catch_payload_initializes_readable_binding(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_catch_captures_simple_argument_before_invoke(void) {
+    static const TZrChar source[] =
+            "fn identity(value: int): int { return value; }\n"
+            "var seed: int = 7;\n"
+            "try { identity(seed); }\n"
+            "catch (error) { error; }\n";
+    static TZrChar sourceName[] = "source_catch_argument_state.zr";
+    SZrString *name = ZrCore_String_Create(
+            g_state, sourceName, sizeof(sourceName) - 1U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *call = ZR_NULL;
+    const SZrSemanticIrInstruction *argumentDefinition = ZR_NULL;
+    const SZrSemanticIrInstruction *payload = ZR_NULL;
+    const SZrParserCfgBlock *argumentBlock = ZR_NULL;
+    const SZrParserCfgBlock *invokeBlock = ZR_NULL;
+    const SZrParserCfgBlock *handlerBlock = ZR_NULL;
+    const TZrValueId *argumentValueId;
+    TZrBool handlerHasArgumentOperand = ZR_FALSE;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    ZrParser_Compiler_PredeclareFunctionBindings(
+            &compiler, ast->data.script.statements);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        if (ast->data.script.statements->nodes[index]->type ==
+            ZR_AST_FUNCTION_DECLARATION) {
+            continue;
+        }
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED &&
+            instruction->sourceRange.start.line == 3U) {
+            call = instruction;
+        } else if (instruction->opcode ==
+                   ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD) {
+            payload = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(call);
+    TEST_ASSERT_NOT_NULL(payload);
+    TEST_ASSERT_EQUAL_UINT32(2U, call->operandCount);
+    argumentValueId = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands, call->operandStart + 1U);
+    TEST_ASSERT_NOT_NULL(argumentValueId);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->resultValueId == *argumentValueId) {
+            argumentDefinition = instruction;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(argumentDefinition);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_LOAD, argumentDefinition->opcode);
+    TEST_ASSERT_TRUE(argumentDefinition->id < call->id);
+
+    for (index = 0U; index < function->cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        TEST_ASSERT_NOT_NULL(block);
+        if (call->id - 1U >= block->firstInstructionIndex &&
+            call->id - 1U <
+                    block->firstInstructionIndex + block->instructionCount) {
+            invokeBlock = block;
+        }
+        if (argumentDefinition->id - 1U >= block->firstInstructionIndex &&
+            argumentDefinition->id - 1U <
+                    block->firstInstructionIndex + block->instructionCount) {
+            argumentBlock = block;
+        }
+        if (payload->id - 1U >= block->firstInstructionIndex &&
+            payload->id - 1U <
+                    block->firstInstructionIndex + block->instructionCount) {
+            handlerBlock = block;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(argumentBlock);
+    TEST_ASSERT_NOT_NULL(invokeBlock);
+    TEST_ASSERT_NOT_NULL(handlerBlock);
+    TEST_ASSERT_NOT_EQUAL(argumentBlock->id, invokeBlock->id);
+    TEST_ASSERT_NOT_EQUAL(invokeBlock->id, handlerBlock->id);
+    TEST_ASSERT_EQUAL_UINT32(1U, argumentBlock->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(argumentBlock, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            invokeBlock->id,
+            ZrParser_Cfg_BlockEdgeAt(argumentBlock, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, invokeBlock->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            handlerBlock->id,
+            ZrParser_Cfg_BlockEdgeAt(invokeBlock, 1U)->toBlockId);
+    for (index = handlerBlock->firstInstructionIndex;
+         index < handlerBlock->firstInstructionIndex +
+                         handlerBlock->instructionCount;
+         index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TZrSize operandIndex;
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        for (operandIndex = 0U;
+             operandIndex < instruction->operandCount;
+             operandIndex++) {
+            const TZrValueId *operand =
+                    (const TZrValueId *)ZrCore_Array_Get(
+                            (SZrArray *)&function->valueOperands,
+                            instruction->operandStart + operandIndex);
+            TEST_ASSERT_NOT_NULL(operand);
+            if (*operand == *argumentValueId) {
+                handlerHasArgumentOperand = ZR_TRUE;
+            }
+        }
+    }
+    TEST_ASSERT_FALSE(handlerHasArgumentOperand);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_declared_child_try_does_not_pollute_entry_cfg(void) {
     static const TZrChar source[] =
             "fn identity(): int { return 7; }\n"
@@ -484,6 +635,26 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             "identity(seed);\n";
     static TZrChar nestedArgumentCallSourceName[] =
             "nested_argument_call_cfg_fallback.zr";
+    static const TZrChar literalArgumentCallSource[] =
+            "fn identity(value: int): int { return value; }\n"
+            "try { identity(7); }\n"
+            "catch (error) {}\n";
+    static TZrChar literalArgumentCallSourceName[] =
+            "literal_argument_call_cfg_fallback.zr";
+    static const TZrChar multipleArgumentCallSource[] =
+            "fn first(left: int, right: int): int { return left; }\n"
+            "var seed: int = 7;\n"
+            "try { first(seed, seed); }\n"
+            "catch (error) {}\n";
+    static TZrChar multipleArgumentCallSourceName[] =
+            "multiple_argument_call_cfg_fallback.zr";
+    static const TZrChar convertedArgumentCallSource[] =
+            "fn widen(value: float): float { return value; }\n"
+            "var seed: int = 7;\n"
+            "try { widen(seed); }\n"
+            "catch (error) {}\n";
+    static TZrChar convertedArgumentCallSourceName[] =
+            "converted_argument_call_cfg_fallback.zr";
 
     assert_nested_call_keeps_legacy_cfg(
             inactiveSource,
@@ -530,4 +701,19 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             sizeof(nestedArgumentCallSource) - 1U,
             nestedArgumentCallSourceName,
             sizeof(nestedArgumentCallSourceName) - 1U);
+    assert_nested_call_keeps_legacy_cfg(
+            literalArgumentCallSource,
+            sizeof(literalArgumentCallSource) - 1U,
+            literalArgumentCallSourceName,
+            sizeof(literalArgumentCallSourceName) - 1U);
+    assert_nested_call_keeps_legacy_cfg(
+            multipleArgumentCallSource,
+            sizeof(multipleArgumentCallSource) - 1U,
+            multipleArgumentCallSourceName,
+            sizeof(multipleArgumentCallSourceName) - 1U);
+    assert_nested_call_keeps_legacy_cfg(
+            convertedArgumentCallSource,
+            sizeof(convertedArgumentCallSource) - 1U,
+            convertedArgumentCallSourceName,
+            sizeof(convertedArgumentCallSourceName) - 1U);
 }

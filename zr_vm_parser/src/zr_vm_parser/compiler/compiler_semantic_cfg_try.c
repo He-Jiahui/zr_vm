@@ -68,7 +68,50 @@ static TZrBool compiler_semantic_cfg_is_supported_catch_block(
                             bindingName));
 }
 
-static const SZrAstNode *compiler_semantic_cfg_zero_argument_direct_call(
+static TZrBool compiler_semantic_cfg_is_simple_value_argument(
+        const SZrAstNode *node) {
+    const SZrAstNode *value = node;
+
+    if (value != ZR_NULL && value->type == ZR_AST_PRIMARY_EXPRESSION) {
+        if (value->data.primaryExpression.members != ZR_NULL &&
+            value->data.primaryExpression.members->count != 0U) {
+            return ZR_FALSE;
+        }
+        value = value->data.primaryExpression.property;
+    }
+    return (TZrBool)(value != ZR_NULL &&
+                    value->type == ZR_AST_IDENTIFIER_LITERAL);
+}
+
+static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
+        const SZrFunctionCall *call) {
+    const SZrCallArgumentSyntax *syntax;
+
+    if (call == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (call->args == ZR_NULL || call->args->count == 0U) {
+        return (TZrBool)(call->argumentMarkers == ZR_NULL ||
+                        call->argumentMarkers->length == 0U);
+    }
+    if (call->args->count != 1U ||
+        !compiler_semantic_cfg_is_simple_value_argument(
+                call->args->nodes[0])) {
+        return ZR_FALSE;
+    }
+    if (call->argumentMarkers == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (call->argumentMarkers->length != 1U) {
+        return ZR_FALSE;
+    }
+    syntax = (const SZrCallArgumentSyntax *)ZrCore_Array_Get(
+            call->argumentMarkers, 0U);
+    return (TZrBool)(syntax != ZR_NULL &&
+                    syntax->marker == ZR_CALL_ARGUMENT_MARKER_NONE);
+}
+
+static const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
         const SZrAstNode *node) {
     const SZrAstNode *callNode;
     const SZrFunctionCall *call;
@@ -86,11 +129,9 @@ static const SZrAstNode *compiler_semantic_cfg_zero_argument_direct_call(
         return ZR_NULL;
     }
     call = &callNode->data.functionCall;
-    if ((call->args != ZR_NULL && call->args->count != 0U) ||
+    if (!compiler_semantic_cfg_call_has_supported_arguments(call) ||
         (call->genericArguments != ZR_NULL &&
          call->genericArguments->count != 0U) ||
-        (call->argumentMarkers != ZR_NULL &&
-         call->argumentMarkers->length != 0U) ||
         call->hasNamedArgs ||
         call->accessMode != ZR_POSTFIX_ACCESS_DIRECT) {
         return ZR_NULL;
@@ -119,7 +160,7 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
     if (protectedStatement == ZR_NULL ||
         protectedStatement->type != ZR_AST_EXPRESSION_STATEMENT ||
         protectedStatement->data.expressionStatement.expr == ZR_NULL ||
-        compiler_semantic_cfg_zero_argument_direct_call(
+        compiler_semantic_cfg_supported_direct_call(
                 protectedStatement->data.expressionStatement.expr) ==
                 ZR_NULL) {
         return ZR_FALSE;
@@ -137,6 +178,81 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
                     compiler_semantic_cfg_is_supported_catch_block(
                             catchClause->data.catchClause.block,
                             parameter->data.parameter.name->name));
+}
+
+TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        const SZrResolvedCallSignature *resolvedSignature,
+        TZrUInt32 firstArgumentSlot) {
+    const SZrInferredType *expectedType;
+    const EZrParameterPassingMode *passingMode;
+    const SZrSemanticIrValue *argumentValue;
+    const SZrSemanticIrInstruction *argumentDefinition;
+    SZrInferredType actualType;
+    TZrValueId argumentValueId;
+    TZrBool supported = ZR_FALSE;
+
+    if (cs == ZR_NULL || call == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (cs->preSemanticIrCfgCatchBlock ==
+        ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_TRUE;
+    }
+    if (call->args == ZR_NULL || call->args->count == 0U) {
+        return ZR_TRUE;
+    }
+    if (call->args->count != 1U || resolvedSignature == ZR_NULL ||
+        resolvedSignature->parameterTypes.length != 1U ||
+        resolvedSignature->parameterPassingModes.length != 1U ||
+        firstArgumentSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    expectedType = (const SZrInferredType *)ZrCore_Array_Get(
+            (SZrArray *)&resolvedSignature->parameterTypes, 0U);
+    passingMode = (const EZrParameterPassingMode *)ZrCore_Array_Get(
+            (SZrArray *)&resolvedSignature->parameterPassingModes, 0U);
+    if (expectedType == ZR_NULL || passingMode == ZR_NULL ||
+        *passingMode != ZR_PARAMETER_PASSING_MODE_VALUE) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &actualType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(
+                cs, call->args->nodes[0], &actualType)) {
+        ZrParser_InferredType_Free(cs->state, &actualType);
+        return ZR_FALSE;
+    }
+    if (actualType.baseType != ZR_VALUE_TYPE_INT64 ||
+        actualType.isNullable ||
+        actualType.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
+        actualType.gcBridgeKind != ZR_GC_BRIDGE_NONE ||
+        actualType.referenceAccess != ZR_REFERENCE_ACCESS_NONE ||
+        !ZrParser_InferredType_Equal(&actualType, expectedType)) {
+        ZrParser_InferredType_Free(cs->state, &actualType);
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Free(cs->state, &actualType);
+
+    argumentValueId = compiler_semantic_ir_slot_value(
+            cs, firstArgumentSlot);
+    argumentValue = ZrParser_SemanticIr_Value(
+            &cs->preSemanticIr, argumentValueId);
+    if (argumentValue == ZR_NULL ||
+        argumentValue->definitionInstructionId ==
+                ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    argumentDefinition = ZrParser_SemanticIr_InstructionAt(
+            &cs->preSemanticIr,
+            argumentValue->definitionInstructionId - 1U);
+    if (argumentDefinition != ZR_NULL &&
+        argumentDefinition->opcode == ZR_SEMANTIC_IR_LOAD &&
+        argumentDefinition->resultValueId == argumentValueId) {
+        supported = ZR_TRUE;
+    }
+    return supported;
 }
 
 TZrBool compiler_semantic_cfg_begin_try_catch(
