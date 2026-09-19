@@ -37,7 +37,10 @@ accepted by the SemanticIR-to-ExecIR builder.
 - ExecIR construction preserves both adjacencies and marks the cleanup block
   with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`.
 
-`tests/parser/test_ssa_source_cleanup_cfg.c` covers this source-to-ExecIR path.
+`tests/parser/test_ssa_source_cleanup_cfg.c` covers this source-to-ExecIR path;
+its focused exceptional-call cases live in
+`tests/parser/test_ssa_source_cleanup_cfg_exceptional.inc` so the shared test
+harness and individual case family remain bounded.
 
 ## Fail-closed boundary
 
