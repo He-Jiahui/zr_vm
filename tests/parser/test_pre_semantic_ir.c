@@ -11,6 +11,9 @@
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_ir.h"
+#define emit_instruction compiler_internal_emit_instruction
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#undef emit_instruction
 
 ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(
         SZrCompilerState *cs, SZrAstNodeArray *statements);
@@ -1289,6 +1292,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 
 #include "test_pre_semantic_ir_source_cfg.inc"
 #include "test_pre_semantic_ir_loop_exit_cfg.inc"
+#include "test_pre_semantic_ir_foreach_cfg.inc"
 #include "test_pre_semantic_ir_infinite_for_cfg.inc"
 #include "test_pre_semantic_ir_optional_value.inc"
 #include "test_pre_semantic_ir_general_call.inc"
@@ -1323,6 +1327,16 @@ int main(void) {
     RUN_TEST(test_infinite_for_ownership_suffix_uses_legacy_only_lowering);
     RUN_TEST(test_infinite_for_invalid_declaration_suffix_restores_semantic_ir);
     RUN_TEST(test_infinite_for_nonterminal_continue_abandons_active_call_cfg);
+    RUN_TEST(test_source_foreach_emits_iterator_invoke_cycle);
+    RUN_TEST(test_source_foreach_binding_flows_through_body);
+    RUN_TEST(test_source_foreach_restores_outer_slot_snapshot);
+    RUN_TEST(test_source_foreach_preserves_iterable_assignment);
+    RUN_TEST(test_source_foreach_break_targets_iterator_join);
+    RUN_TEST(test_destructuring_foreach_keeps_legacy_cfg);
+    RUN_TEST(test_foreach_nested_unmodeled_condition_keeps_legacy_cfg);
+    RUN_TEST(test_foreach_cleanup_exit_rolls_back_iterator_cfg);
+    RUN_TEST(test_foreach_inferred_body_declaration_keeps_legacy_cfg);
+    RUN_TEST(test_foreach_close_contract_keeps_legacy_cfg);
     RUN_TEST(test_unmodeled_foreach_exit_blocks_later_call_cfg);
     RUN_TEST(test_declared_child_loops_do_not_pollute_entry_cfg);
     RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);

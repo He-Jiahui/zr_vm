@@ -198,6 +198,8 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
 TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_expression_is_linear(
         const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_short_circuit_is_supported(
+        const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_arm_falls_through(
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_loop_body_analyze(
@@ -208,6 +210,15 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
 TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,
         TZrBool *bodyEndsWithBreak);
+TZrBool compiler_semantic_cfg_foreach_is_supported(
+        SZrCompilerState *cs,
+        const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_branch_foreach(
+        SZrCompilerState *cs,
+        TZrUInt32 conditionSlot,
+        SZrAstNode *node,
+        TZrUInt32 *currentBlock,
+        TZrUInt32 *joinBlock);
 TZrBool compiler_semantic_cfg_close_infinite_loop(
         SZrCompilerState *cs,
         TZrUInt32 exitBlock);
@@ -928,6 +939,10 @@ ZR_PARSER_API void enter_scope(SZrCompilerState *cs) ;
 ZR_PARSER_API void exit_scope(SZrCompilerState *cs) ;
 
 TZrBool compiler_has_active_scope_ownership_cleanups(SZrCompilerState *cs) ;
+
+TZrBool compiler_inferred_type_requires_scope_cleanup(
+        SZrCompilerState *cs,
+        const SZrInferredType *typeInfo);
 
 void compiler_emit_active_scope_ownership_cleanups(SZrCompilerState *cs) ;
 

@@ -642,7 +642,7 @@ static void test_unmodeled_foreach_exit_blocks_later_call_cfg(void) {
     static const TZrChar source[] =
             "fn identity(value: bool): bool { return value; }\n"
             "var values = [true];\n"
-            "for (var item in values) { continue; }\n"
+            "for (var item in values) { continue; item; }\n"
             "identity(true);\n";
     static TZrChar sourceName[] = "unmodeled_foreach_exit_fallback.zr";
     SZrCompilerState compiler;
@@ -669,6 +669,12 @@ static void test_unmodeled_foreach_exit_blocks_later_call_cfg(void) {
         }
     }
     TEST_ASSERT_EQUAL_UINT64(0U, callCount);
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_ITER_INIT));
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_ITER_MOVE_NEXT));
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_ITER_CURRENT));
     free_loop_exit_cfg_fixture(&compiler, ast);
 }
 
@@ -677,6 +683,8 @@ static void test_declared_child_loops_do_not_pollute_entry_cfg(void) {
             "fn child(flag: bool): bool {\n"
             "  while (flag) { break; }\n"
             "  for (;;) { break; }\n"
+            "  var values = [flag];\n"
+            "  for (var item in values) { continue; }\n"
             "  return flag;\n"
             "}\n"
             "var flag: bool = true;\n"
@@ -706,5 +714,11 @@ static void test_declared_child_loops_do_not_pollute_entry_cfg(void) {
         }
     }
     TEST_ASSERT_EQUAL_UINT64(1U, callCount);
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_ITER_INIT));
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_ITER_MOVE_NEXT));
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_ITER_CURRENT));
     free_loop_exit_cfg_fixture(&compiler, ast);
 }

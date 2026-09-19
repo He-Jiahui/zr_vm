@@ -2,12 +2,15 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
@@ -16,6 +19,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -23,6 +28,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
@@ -46,6 +52,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
   - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
+  - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_branch_exit_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
@@ -66,6 +73,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
   - tests/acceptance/ssa-builder-iterator-invokes.md
+  - tests/acceptance/ssa-source-foreach-cfg.md
 doc_type: module-detail
 ---
 
@@ -211,9 +219,34 @@ a falling-through initializer. It additionally accepts a conditionless loop
 whose body ends in a direct, unvalued `break`: the header has one normal edge
 to the body and the body one normal edge to the join, with no conditional edge
 or semantic step/backedge. The legacy break skips the still-emitted,
-unreachable backedge. Valued or nonterminal loop exits, nonlinear forms,
-cleanup, and `foreach` remain on the legacy-CFG fallback instead of publishing
-an incomplete graph.
+unreachable backedge. Valued or nonterminal loop exits, nonlinear forms, and
+cleanup remain on the legacy-CFG fallback instead of publishing an incomplete
+graph.
+
+A bounded source `foreach` path now consumes the canonical iterator invoke
+contract. For a static, protocol-resolved iterable with an identifier binding,
+`ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` each terminate their own
+SemanticIR block with ordered normal/exception successors. Move-next's normal
+continuation branches true to current-value retrieval and false to the join.
+Current-value retrieval initializes the binding Place only in its normal body
+continuation, so the exceptional path cannot observe that result. Body
+fallthrough and direct `continue;` close the cycle at move-next; direct
+`break;` reaches the same join as iterator exhaustion. The compiler captures
+the pre-iteration slot shape and refreshes its surviving facts after the
+one-time iterable evaluation. The join restores that snapshot before later
+source is compiled, preserving iterable assignments while truncating the
+iterable result, iterator, guard, binding, and body temporary slots. ExecIR
+therefore receives three explicit may-throw/may-allocate iterator operations
+and an ordinary loop backedge, without recovering either fact from ExecBC
+offsets.
+Dynamic dispatch, destructuring, unresolved element types, nonlinear iterable
+expressions, nonterminal exits, cleanup-sensitive bodies, and body declarations
+whose inferred cleanup cannot be resolved during preflight remain fail-closed
+on the legacy CFG. Nested branch conditions must also pass the complete
+linear/short-circuit preflight. Explicit ownership, close contracts, and
+unsupported nested conditions are checked before the iterable or any
+canonical iterator operation is emitted. Their
+`DYN_ITER_*`/`ITER_*` bytecode behavior is unchanged.
 
 The conditionless subset also models loops that cannot exit: a falling-through
 body or direct terminal, unvalued `continue` reaches the step, and the step

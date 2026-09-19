@@ -89,25 +89,26 @@ void compiler_register_typed_owner_cleanup_slot(
     compiler_register_owner_cleanup_slot(cs, slot, ownershipQualifier);
 }
 
-void compiler_register_inferred_close_cleanup_slot(
+TZrBool compiler_inferred_type_requires_scope_cleanup(
         SZrCompilerState *cs,
-        TZrUInt32 slot,
         const SZrInferredType *typeInfo) {
     SZrTypePrototypeInfo *prototype;
-    TZrBool hasCloseContract;
 
-    if (cs == ZR_NULL || typeInfo == ZR_NULL || typeInfo->typeName == ZR_NULL ||
-        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+    if (cs == ZR_NULL || typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
         typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
         typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
-        return;
+        return ZR_TRUE;
+    }
+    if (typeInfo->typeName == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    hasCloseContract = ZR_FALSE;
     prototype = find_compiler_type_prototype(cs, typeInfo->typeName);
     for (TZrSize index = 0u;
-         !hasCloseContract && prototype != ZR_NULL &&
-         index < prototype->members.length;
+         prototype != ZR_NULL && index < prototype->members.length;
          index++) {
         const SZrTypeMemberInfo *member =
                 (const SZrTypeMemberInfo *)ZrCore_Array_Get(
@@ -116,10 +117,24 @@ void compiler_register_inferred_close_cleanup_slot(
         if (member != ZR_NULL &&
             ((member->isMetaMethod && member->metaType == ZR_META_CLOSE) ||
              member->contractRole == ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE)) {
-            hasCloseContract = ZR_TRUE;
+            return ZR_TRUE;
         }
     }
-    if (hasCloseContract) {
+    return ZR_FALSE;
+}
+
+void compiler_register_inferred_close_cleanup_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 slot,
+        const SZrInferredType *typeInfo) {
+    if (cs == ZR_NULL || typeInfo == ZR_NULL || typeInfo->typeName == ZR_NULL ||
+        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+        return;
+    }
+
+    if (compiler_inferred_type_requires_scope_cleanup(cs, typeInfo)) {
         compiler_register_scope_cleanup_slot(
                 cs,
                 slot,

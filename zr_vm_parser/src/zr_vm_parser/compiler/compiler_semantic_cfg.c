@@ -93,7 +93,7 @@ TZrBool compiler_semantic_cfg_expression_is_linear(
     }
 }
 
-static TZrBool compiler_semantic_cfg_short_circuit_is_supported(
+TZrBool compiler_semantic_cfg_short_circuit_is_supported(
         const SZrAstNode *node) {
     const TZrChar *op;
 

@@ -21,6 +21,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -49,6 +50,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -60,6 +62,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
@@ -86,6 +89,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-infinite-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-infinite-for-cycle-cfg.md
+  - tests/acceptance/ssa-source-foreach-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -236,18 +240,37 @@ termination after closing the backedge so unreachable suffix source cannot
 restart CFG construction. The statement dispatcher compiles each such suffix
 statement in disposable SemanticIR isolation, preserving legacy instructions,
 locals, and type bindings while discarding all isolated semantic metadata.
-Valued or nonterminal exits, nonlinear expressions, cleanup, and `foreach`
-retain the persistent conservative fallback. The implementation lives in
+Valued or nonterminal exits, nonlinear expressions, and cleanup retain the
+persistent conservative fallback. The implementation lives in
 `compile_statement_for.c`, separated from the general statement-flow unit
 while preserving the existing ExecBC label path. Loop preflight and exit
 classification live in the focused `compiler_semantic_cfg_loop.c` module.
 The established `foreach` iterator-contract bytecode lowering likewise lives
-in `compile_statement_foreach.c`. SemanticIR and ExecIR now reserve distinct
-`ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` operations with normal and
-exception continuations; the source `foreach` producer still uses the
-conservative SemanticIR fallback until it emits that canonical CFG. Keeping
-the legacy lowering focused here prevents the general statement-flow unit from
-absorbing the transition work.
+in `compile_statement_foreach.c`. A static, protocol-resolved iterable with a
+single identifier binding and a supported linear body now publishes distinct
+`ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` operations. Each operation
+is the final instruction of its block and owns ordered normal and exception
+continuations. The exception continuation is an explicit zero-instruction
+propagation sink. `ITER_MOVE_NEXT`'s normal continuation branches on its bool
+result: true reaches `ITER_CURRENT`, while false reaches the loop join.
+`ITER_CURRENT`'s result exists only on its normal edge; that edge initializes
+the binding Place before the body reads it. A falling-through body and direct
+`continue;` return to the move-next block, while direct `break;` reaches the
+join. The compiler captures the pre-iteration slot shape, then refreshes the
+surviving slot facts after the one-time iterable evaluation. Restoring that
+snapshot at the join therefore preserves iterable assignments while preventing
+the iterable result, iterator, guard, binding, and body temporaries from
+leaking onto the exhausted path.
+Dynamic iterator dispatch, destructuring bindings, unresolved element types,
+nonlinear iterables, nonterminal exits, and cleanup-sensitive bodies still
+keep the conservative fallback barrier. Cleanup-aware preflight resolves
+explicit ownership and close contracts before iterator emission; body
+declarations whose inferred cleanup cannot yet be proven absent also remain
+on the legacy path. Nested branch conditions must likewise be completely
+supported by the linear/short-circuit preflight. These gates run before the
+iterable is compiled, so neither late cleanup nor expression fallback can
+strand partial iterator operations in SemanticIR.
+The legacy `ITER_*`/`DYN_ITER_*` bytecode sequence is unchanged.
 
 A supported source `if` may now end exactly one direct arm with a linear-value
 `return` or `throw` while the other arm falls through. The abrupt arm emits its
