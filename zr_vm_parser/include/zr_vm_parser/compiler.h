@@ -81,6 +81,8 @@ typedef struct SZrCompilerAttributeSchemaBinding {
     SZrFileRange sourceRange;
 } SZrCompilerAttributeSchemaBinding;
 
+struct SZrCompilerSemanticFinallyPlan;
+
 typedef struct SZrCompilerState {
     SZrState *state;                    // VM 状态
     SZrFunction *currentFunction;       // 当前编译的函数
@@ -101,6 +103,7 @@ typedef struct SZrCompilerState {
     TZrUInt32 preSemanticIrCfgBlock;
     TZrUInt32 preSemanticIrCfgStart;
     TZrUInt32 preSemanticIrCfgCatchBlock;
+    struct SZrCompilerSemanticFinallyPlan *preSemanticIrCfgFinallyPlan;
     
     // 常量池管理
     SZrArray constants;                 // 常量值数组（SZrTypeValue）

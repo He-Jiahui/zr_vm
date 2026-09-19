@@ -149,15 +149,17 @@ closing the interrupted-assignment boundary without relying on block dominance
 alone.
 
 The production source compiler now emits this bounded shape for a no-catch
-`try/finally` only when both bodies preflight as nested blocks containing no
-statements except linear expression statements and no enclosing ownership
-cleanup is active. The protected block branches over a cleanup edge to a
-`ZR_PARSER_CFG_BLOCK_CLEANUP`; that block branches over a second cleanup edge
-to one join, where following source statements continue. A source return,
-throw, call, declaration, nonlinear statement, catch-plus-finally, active
-catch target, or ownership cleanup rejects the entire shape before graph
-construction and keeps the legacy path. This does not yet model exceptional
-entry into `finally` or pending abrupt completion.
+`try/finally` when the cleanup body and the protected prefix contain only
+nested blocks and linear expression statements and no enclosing ownership
+cleanup is active. Normal completion branches through the cleanup block to a
+join. Alternatively, one terminal linear source return captures its operand
+ValueId before cleanup, branches through cleanup, and resumes in a dedicated
+zero-successor RETURN block. A cleanup assignment therefore cannot replace the
+already evaluated return value. Throw, nonlinear or nonterminal return, call,
+declaration, nonlinear control, catch-plus-finally, active catch target, or
+ownership cleanup rejects the entire shape before graph construction and keeps
+the legacy path. This single-outcome transfer needs no selector; exceptional
+entry and multiple pending completion kinds still require cleanup dispatch.
 
 This is not yet effect-token generation; see
 `tests/acceptance/ssa-builder-control-edge-rejection.md` and

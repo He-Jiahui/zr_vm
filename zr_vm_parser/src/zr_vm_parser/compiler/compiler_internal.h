@@ -123,6 +123,7 @@ typedef struct SZrCompilerSemanticIrIsolation {
     TZrUInt32 cfgBlock;
     TZrUInt32 cfgStart;
     TZrUInt32 cfgCatchBlock;
+    struct SZrCompilerSemanticFinallyPlan *cfgFinallyPlan;
     TZrBool isActive;
 } SZrCompilerSemanticIrIsolation;
 
@@ -147,6 +148,11 @@ typedef struct SZrCompilerSemanticCatchPlan {
 typedef struct SZrCompilerSemanticFinallyPlan {
     TZrUInt32 cleanupBlock;
     TZrUInt32 joinBlock;
+    TZrUInt32 returnBlock;
+    TZrValueId returnValueId;
+    SZrFileRange returnRange;
+    TZrBool expectsReturn;
+    TZrBool returnPending;
     TZrBool initialized;
     TZrBool cleanupEntered;
 } SZrCompilerSemanticFinallyPlan;
@@ -336,6 +342,12 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
         SZrCompilerState *cs,
         SZrAstNode *node,
         SZrCompilerSemanticFinallyPlan *plan);
+TZrBool compiler_semantic_cfg_return_through_finally_is_active(
+        const SZrCompilerState *cs);
+TZrBool compiler_semantic_cfg_redirect_return_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 valueSlot,
+        SZrFileRange range);
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
@@ -347,6 +359,10 @@ TZrBool compiler_semantic_cfg_terminate_throw_value(
 TZrBool compiler_semantic_cfg_terminate_return(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_terminate_return_value(
+        SZrCompilerState *cs,
+        TZrValueId valueId,
         SZrFileRange range);
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block);
 TZrBool compiler_semantic_cfg_capture_slots(SZrCompilerState *cs,

@@ -3514,6 +3514,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool hasOwnershipCleanupContext;
     SZrCompilerSemanticIrIsolation semanticIrIsolation;
     TZrBool hasSemanticIrIsolation = ZR_FALSE;
+    TZrBool hasSemanticFinallyReturn = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -3541,9 +3542,13 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
     hasOwnershipCleanupContext = compiler_has_active_scope_ownership_cleanups(cs);
+    hasSemanticFinallyReturn = (TZrBool)(
+            cs->currentFunctionNode == ZR_NULL &&
+            compiler_semantic_cfg_return_through_finally_is_active(cs));
 
     if (cs->currentFunctionNode == ZR_NULL &&
-        (hasFinallyContext || hasOwnershipCleanupContext)) {
+        (hasFinallyContext || hasOwnershipCleanupContext) &&
+        !hasSemanticFinallyReturn) {
         if (cs->preSemanticIrCfgActive &&
             !compiler_semantic_cfg_abandon(cs)) {
             ZrParser_Compiler_Error(
@@ -3641,14 +3646,22 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     cs->isInTailCallContext = oldTailCallContext;
 
-    if (cs->currentFunctionNode == ZR_NULL &&
-        !compiler_semantic_cfg_terminate_return(
-                cs, resultSlot, node->location)) {
-        ZrParser_Compiler_Error(
-                cs,
-                "Failed to terminate semantic CFG for return",
-                node->location);
-        return;
+    if (cs->currentFunctionNode == ZR_NULL) {
+        TZrBool semanticReturnSucceeded = hasSemanticFinallyReturn
+                ? compiler_semantic_cfg_redirect_return_through_finally(
+                          cs, resultSlot, node->location)
+                : compiler_semantic_cfg_terminate_return(
+                          cs, resultSlot, node->location);
+
+        if (!semanticReturnSucceeded) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    hasSemanticFinallyReturn
+                            ? "Failed to route semantic return through finally"
+                            : "Failed to terminate semantic CFG for return",
+                    node->location);
+            return;
+        }
     }
 
     if (hasFinallyContext) {

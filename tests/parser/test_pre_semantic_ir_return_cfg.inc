@@ -511,18 +511,29 @@ static void test_unmodeled_return_payload_blocks_later_cfg_startup(void) {
     free_return_cfg_fixture(&compiler, ast);
 }
 
-static void test_finally_return_remains_on_legacy_cfg(void) {
+static void test_finally_return_preserves_precleanup_value(void) {
     static const TZrChar source[] =
             "fn identity(value: int): int { return value; }\n"
             "var seed: int = 7;\n"
-            "try { return seed; } finally { seed = 9; }\n"
+            "try {\n"
+            "  return seed;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
             "identity(seed);\n";
-    static TZrChar sourceName[] = "finally_return_cfg_fallback.zr";
+    static TZrChar sourceName[] = "finally_return_cfg.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_return_cfg_fixture(
             &compiler, source, sizeof(source) - 1U,
             sourceName, sizeof(sourceName) - 1U);
     const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *returnInstruction = ZR_NULL;
+    const SZrSemanticIrInstruction *returnDefinition;
+    const SZrSemanticIrValue *returnValue;
+    const SZrParserCfgBlock *cleanupBlock = ZR_NULL;
+    const SZrParserCfgBlock *returnBlock;
+    const SZrParserCfgEdge *edge;
+    const TZrValueId *returnOperand;
     TZrSize callCount = 0U;
     TZrSize returnCount = 0U;
     TZrSize index;
@@ -530,7 +541,7 @@ static void test_finally_return_remains_on_legacy_cfg(void) {
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_NOT_NULL(compiler.currentFunction);
     TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
-    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_NOT_NULL(function);
@@ -542,10 +553,47 @@ static void test_finally_return_remains_on_legacy_cfg(void) {
             callCount++;
         } else if (instruction->opcode == ZR_SEMANTIC_IR_RETURN) {
             returnCount++;
+            returnInstruction = instruction;
         }
     }
     TEST_ASSERT_EQUAL_UINT64(0U, callCount);
-    TEST_ASSERT_EQUAL_UINT64(0U, returnCount);
-    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_EQUAL_UINT64(1U, returnCount);
+    TEST_ASSERT_EQUAL_UINT32(3U, function->cfg.blocks.length);
+    TEST_ASSERT_NOT_NULL(returnInstruction);
+    TEST_ASSERT_EQUAL_UINT32(1U, returnInstruction->operandCount);
+    TEST_ASSERT_EQUAL_INT(4, returnInstruction->sourceRange.start.line);
+    returnBlock = return_cfg_block_for_instruction(
+            function, returnInstruction->id);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_EQUAL_UINT32(function->cfg.exitBlockId, returnBlock->id);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_RETURN, returnBlock->terminatorKind);
+    returnOperand = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands,
+            returnInstruction->operandStart);
+    TEST_ASSERT_NOT_NULL(returnOperand);
+    returnValue = ZrParser_SemanticIr_Value(function, *returnOperand);
+    TEST_ASSERT_NOT_NULL(returnValue);
+    returnDefinition = ZrParser_SemanticIr_InstructionAt(
+            function, returnValue->definitionInstructionId - 1U);
+    TEST_ASSERT_NOT_NULL(returnDefinition);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_LOAD, returnDefinition->opcode);
+    TEST_ASSERT_EQUAL_INT(4, returnDefinition->sourceRange.start.line);
+    for (index = 0U; index < function->cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        if (block != ZR_NULL &&
+            block->kind == ZR_PARSER_CFG_BLOCK_CLEANUP) {
+            cleanupBlock = block;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(cleanupBlock);
+    TEST_ASSERT_EQUAL_UINT32(1U, cleanupBlock->successorCount);
+    edge = ZrParser_Cfg_BlockEdgeAt(cleanupBlock, 0U);
+    TEST_ASSERT_NOT_NULL(edge);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_CLEANUP, edge->kind);
+    TEST_ASSERT_EQUAL_UINT32(returnBlock->id, edge->toBlockId);
     free_return_cfg_fixture(&compiler, ast);
 }

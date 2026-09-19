@@ -1429,7 +1429,7 @@ int main(void) {
     RUN_TEST(test_declared_child_return_does_not_pollute_entry_cfg);
     RUN_TEST(test_nested_two_return_arms_preserve_outer_fallthrough_cfg);
     RUN_TEST(test_unmodeled_return_payload_blocks_later_cfg_startup);
-    RUN_TEST(test_finally_return_remains_on_legacy_cfg);
+    RUN_TEST(test_finally_return_preserves_precleanup_value);
     RUN_TEST(test_source_if_then_return_preserves_fallthrough_cfg);
     RUN_TEST(test_source_if_else_throw_excludes_interrupted_join);
     RUN_TEST(test_nested_if_return_preserves_outer_fallthrough_cfg);

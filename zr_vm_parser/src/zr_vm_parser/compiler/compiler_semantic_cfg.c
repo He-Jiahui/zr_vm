@@ -925,6 +925,16 @@ TZrBool compiler_semantic_cfg_terminate_return(
             ZR_PARSER_CFG_TERMINATOR_RETURN);
 }
 
+TZrBool compiler_semantic_cfg_terminate_return_value(
+        SZrCompilerState *cs,
+        TZrValueId valueId,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_terminate_value_id(
+            cs, valueId, range,
+            ZR_SEMANTIC_IR_RETURN,
+            ZR_PARSER_CFG_TERMINATOR_RETURN);
+}
+
 void compiler_semantic_cfg_enter(SZrCompilerState *cs, TZrUInt32 block) {
     cs->preSemanticIrCfgBlock = block;
     cs->preSemanticIrCfgStart = (TZrUInt32)cs->preSemanticIr.instructions.length;

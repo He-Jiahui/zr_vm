@@ -1348,6 +1348,7 @@ void compiler_semantic_ir_init(SZrCompilerState *cs) {
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cs->preSemanticIrCfgStart = 0U;
     cs->preSemanticIrCfgCatchBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
     (void)ZrParser_SemanticIr_AddRegion(
             &cs->preSemanticIr,
             ZR_SEMANTIC_REGION_ID_INVALID,
@@ -1380,6 +1381,7 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     cs->preSemanticIrCfgAbruptIsLocal = ZR_FALSE;
     cs->preSemanticIrCfgCatchUsed = ZR_FALSE;
     cs->preSemanticIrCfgCatchBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
 }
 
 TZrBool compiler_semantic_ir_isolation_begin(
@@ -1406,6 +1408,7 @@ TZrBool compiler_semantic_ir_isolation_begin(
     isolation->cfgBlock = cs->preSemanticIrCfgBlock;
     isolation->cfgStart = cs->preSemanticIrCfgStart;
     isolation->cfgCatchBlock = cs->preSemanticIrCfgCatchBlock;
+    isolation->cfgFinallyPlan = cs->preSemanticIrCfgFinallyPlan;
     isolation->isActive = ZR_TRUE;
 
     compiler_semantic_ir_init(cs);
@@ -1435,6 +1438,7 @@ void compiler_semantic_ir_isolation_end(
     cs->preSemanticIrCfgBlock = isolation->cfgBlock;
     cs->preSemanticIrCfgStart = isolation->cfgStart;
     cs->preSemanticIrCfgCatchBlock = isolation->cfgCatchBlock;
+    cs->preSemanticIrCfgFinallyPlan = isolation->cfgFinallyPlan;
     memset(isolation, 0, sizeof(*isolation));
 }
 

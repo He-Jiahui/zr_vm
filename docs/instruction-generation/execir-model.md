@@ -216,15 +216,19 @@ cleanup block. This is the interrupted-assignment gate required before source
 exceptional `finally` entry can be published.
 
 The source compiler publishes that representable cleanup subset for a
-preflighted `try/finally` with no catches, ownership cleanup, calls,
-declarations, or abrupt/nonlinear statements in either body. It closes the
-protected block with a cleanup edge, compiles the `finally` body in a cleanup
-block, and closes that block with a cleanup edge to one join. Both transfers
-are operand-free semantic `BRANCH` instructions. Preflight examines the
-complete protected and cleanup bodies before activating a graph; `return`,
-`throw`, calls, nested control flow, catch-plus-finally, and other unsupported
-shapes retain the legacy-CFG fail-closed path. Source production of pending
-completion state and abrupt cleanup dispatch remain later milestones.
+preflighted `try/finally` with no catches, ownership cleanup, calls, or
+declarations. A normally completing protected block enters the cleanup block
+and cleanup exits to one join. A protected block may instead end in exactly one
+linear `return`: its operand ValueId is captured before cleanup, the protected
+block enters cleanup, and cleanup exits to a dedicated zero-successor RETURN
+block that consumes the captured value. This preserves source evaluation order
+when `finally` mutates the returned local. Every transfer into or out of cleanup
+is an operand-free semantic `BRANCH`; the return remains the only value-bearing
+terminator. Preflight examines the complete protected and cleanup bodies before
+activating a graph. `throw`, nonlinear returns, calls, nested control flow,
+catch-plus-finally, and other unsupported shapes retain the legacy-CFG
+fail-closed path. Multiple pending completion kinds, selector dispatch, and
+exceptional entry remain later source milestones.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

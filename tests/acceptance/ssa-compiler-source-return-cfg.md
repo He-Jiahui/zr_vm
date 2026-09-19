@@ -53,9 +53,11 @@ graph that omits the conditional exit.
 return value without a canonical producer ValueId. It remains legacy-only and
 blocks the same detached restart.
 
-`test_finally_return_remains_on_legacy_cfg` verifies that a return routed
-through `finally` does not become a false direct SemanticIR terminator and that
-later calls cannot bypass the pending-return/cleanup transfer.
+`test_finally_return_preserves_precleanup_value` verifies the bounded
+single-outcome `try/finally` path: the return operand is loaded before cleanup,
+cleanup reaches a dedicated SemanticIR `RETURN` block, and unreachable later
+calls remain absent. Nonlinear returns and multiple completion kinds remain
+fail-closed.
 
 `test_declared_child_return_does_not_pollute_entry_cfg` compiles the ownership
 expression `return own Value()` in a declared child before the entry return.
