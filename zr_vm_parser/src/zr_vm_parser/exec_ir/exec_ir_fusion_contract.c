@@ -211,6 +211,7 @@ static TZrUInt64 zr_fusion_hash_instruction(TZrUInt64 hash,
     hash = zr_fusion_hash_u32(hash, instruction->successorRange.start);
     hash = zr_fusion_hash_u32(hash, instruction->successorRange.count);
     hash = zr_fusion_hash_u32(hash, instruction->typeToken);
+    hash = zr_fusion_hash_u32(hash, instruction->matchTypeToken);
     hash = zr_fusion_hash_u32(hash, instruction->layoutId);
     hash = zr_fusion_hash_u32(hash, instruction->memoryIn.start);
     hash = zr_fusion_hash_u32(hash, instruction->memoryIn.count);

@@ -47,6 +47,7 @@ static TZrUInt64 vectorize_function_hash(const SZrExecIrFunction *function) {
         vectorize_hash_u32(&hash, instruction->opcode);
         vectorize_hash_u32(&hash, instruction->flags);
         vectorize_hash_u32(&hash, instruction->typeToken);
+        vectorize_hash_u32(&hash, instruction->matchTypeToken);
         vectorize_hash_u32(&hash, instruction->layoutId);
         vectorize_hash_u32(&hash, instruction->sourceId);
         vectorize_hash_u32(&hash, instruction->operandRange.start);

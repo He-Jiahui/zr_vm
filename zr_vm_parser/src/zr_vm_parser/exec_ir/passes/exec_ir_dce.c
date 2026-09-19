@@ -159,6 +159,7 @@ static TZrBool zr_dce_pure(EZrExecIrOpcode opcode) {
     switch (opcode) {
         case ZR_EXEC_IR_OPCODE_CONSTANT:
         case ZR_EXEC_IR_OPCODE_CONVERT:
+        case ZR_EXEC_IR_OPCODE_TYPE_TEST:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC:
         case ZR_EXEC_IR_OPCODE_COPY:
         case ZR_EXEC_IR_OPCODE_MOVE:
@@ -306,6 +307,7 @@ static void zr_dce_nop(SZrExecIrInstruction *instruction) {
     instruction->memoryOut = zr_dce_empty_range();
     instruction->effectIn = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
     instruction->effectOut = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+    instruction->matchTypeToken = 0u;
     instruction->layoutId = 0u;
 }
 

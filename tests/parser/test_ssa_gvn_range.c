@@ -214,6 +214,73 @@ static void test_gvn_rewrites_only_duplicate_pure_definitions(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_gvn_keys_type_tests_by_canonical_match_type(void) {
+    SZrExecIrFunction function;
+    SZrExecIrRemarkSink remarks;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId values[4];
+    SZrExecIrRange sourceResult, operandRange, resultRange, returnOperands;
+    SZrExecIrInstruction instruction;
+    TZrExecIrInstructionId id;
+    TZrExecIrBlockId block;
+    TZrUInt32 index;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 1u;
+    block = ZrCore_ExecIr_FunctionAddBlock(
+            &function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    function.entryBlockId = block;
+    for (index = 0u; index < 4u; ++index) {
+        values[index] = ZrCore_ExecIr_FunctionAddValue(
+                &function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+                ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+        assert(values[index] != 0u);
+    }
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            &function, &values[0], 1u, &sourceResult));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.results = sourceResult;
+    instruction.layoutId = 1u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            &function, &values[0], 1u, &operandRange));
+    for (index = 1u; index < 4u; ++index) {
+        assert(ZrCore_ExecIr_FunctionAppendResults(
+                &function, &values[index], 1u, &resultRange));
+        memset(&instruction, 0, sizeof(instruction));
+        instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_TYPE_TEST;
+        instruction.operands = operandRange;
+        instruction.results = resultRange;
+        instruction.typeToken = 1u;
+        instruction.matchTypeToken = index == 2u ? 8u : 7u;
+        assert(ZrCore_ExecIr_FunctionAppendInstruction(
+                &function, &instruction, &id));
+    }
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            &function, &values[3], 1u, &returnOperands));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returnOperands;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(
+            &function, &instruction, &id));
+    function.blocks[0].instructionRange.start = 0u;
+    function.blocks[0].instructionRange.count = function.instructionCount;
+
+    memset(&remarks, 0, sizeof(remarks));
+    assert(ZrParser_ExecIr_RunGvnCse(
+            &function, ZR_NULL, &remarks, &diagnostic));
+    assert(function.instructions[1].opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST);
+    assert(function.instructions[2].opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST);
+    assert(function.instructions[3].opcode == ZR_EXEC_IR_OPCODE_COPY);
+    assert(function.instructions[3].matchTypeToken == 0u);
+    assert(ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    free(remarks.items);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_identical_locations_must_alias();
     test_distinct_stable_allocations_are_disjoint();
@@ -226,5 +293,6 @@ int main(void) {
     test_nullability_fact_is_generation_scoped();
     test_bounds_check_api_is_conservative();
     test_gvn_rewrites_only_duplicate_pure_definitions();
+    test_gvn_keys_type_tests_by_canonical_match_type();
     return 0;
 }

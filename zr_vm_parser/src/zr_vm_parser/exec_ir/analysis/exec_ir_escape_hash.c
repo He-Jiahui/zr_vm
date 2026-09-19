@@ -88,6 +88,7 @@ static TZrUInt64 zr_escape_hash_function(const SZrExecIrFunction *function) {
         hash = zr_escape_hash_u64(hash, instruction->successorRange.start);
         hash = zr_escape_hash_u64(hash, instruction->successorRange.count);
         hash = zr_escape_hash_u64(hash, instruction->typeToken);
+        hash = zr_escape_hash_u64(hash, instruction->matchTypeToken);
         hash = zr_escape_hash_u64(hash, instruction->layoutId);
         hash = zr_escape_hash_u64(hash, instruction->memoryIn.start);
         hash = zr_escape_hash_u64(hash, instruction->memoryIn.count);

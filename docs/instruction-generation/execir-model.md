@@ -74,6 +74,8 @@ tests:
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_gvn_range.c
+  - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
@@ -94,6 +96,7 @@ tests:
   - tests/acceptance/ssa-source-foreach-cfg.md
   - tests/acceptance/ssa-exception-payload.md
   - tests/acceptance/ssa-source-catch-cfg.md
+  - tests/acceptance/ssa-type-test-foundation.md
 doc_type: module-detail
 ---
 
@@ -145,6 +148,23 @@ observable effect, the value is handler-local state rather than a freely
 interchangeable zero-operand constant; the current GVN whitelist does not
 common it across blocks. The oracle, ExecBC projection, and AOT projection
 reject it transactionally until their exception ABI carries the active payload.
+
+`TYPE_TEST` is the canonical, pure one-operand/one-result type-membership fact.
+The ordinary `typeToken` remains the result value's type (normally the language
+boolean type); the separate `matchTypeToken` names the resolved target type.
+The verifier requires a nonzero match token exactly for `TYPE_TEST` and rejects
+the field on every other opcode. This prevents a result type, source spelling,
+or layout token from being reused as the match identity. The builder copies the
+resolved SemanticIR `matchTypeId` directly, and all structural hashes, GVN keys,
+clone-compatible instruction storage, and DCE cleanup preserve or clear that
+identity consistently. Existing opcode numbers remain stable because the new
+opcode is appended to the schema.
+
+`TYPE_TEST` is deliberately not executable in this phase. The oracle, ExecBC
+projection, and AOT projection reject it transactionally until runtime subtype
+testing is connected to canonical type metadata. Source typed-catch routing is
+also a later producer phase; no type-name string comparison or speculative
+catch edge is introduced by the foundation operation.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

@@ -111,9 +111,16 @@ M3 introduces a semantic function that exists before final ExecBC assembly. It g
 
 ## Instruction Contract
 
-The public opcode set covers constants and conversions; Place construction and projection; load/store/initialize/move/copy/drop; borrow/reborrow/end-loan/dereference; typed, virtual, dynamic, and meta calls; iterator initialization, advance, and current-value retrieval; an explicit handler-local exception payload definition; control flow; scope and cleanup; distinct value, aggregate, field, union, GC, and ownership construction; resolved property operations; and evaluate-once destructuring operations.
+The public opcode set covers constants and conversions; a canonical type-membership test; Place construction and projection; load/store/initialize/move/copy/drop; borrow/reborrow/end-loan/dereference; typed, virtual, dynamic, and meta calls; iterator initialization, advance, and current-value retrieval; an explicit handler-local exception payload definition; control flow; scope and cleanup; distinct value, aggregate, field, union, GC, and ownership construction; resolved property operations; and evaluate-once destructuring operations.
 
-Value construction, ordinary/meta calls, GC allocation, and ownership construction have different opcodes. Ownership construction additionally records explicit unique/share/degrade/wake operations; move, drop, shared borrow, and mutable borrow remain their own opcodes. No generic construct flag or default fallback opcode is used to reinterpret one family as another. Golden formatting is stable and includes instruction ID, opcode name, TypeId, PlaceId, input ValueId, and result ValueId.
+Value construction, ordinary/meta calls, GC allocation, and ownership construction have different opcodes. Ownership construction additionally records explicit unique/share/degrade/wake operations; move, drop, shared borrow, and mutable borrow remain their own opcodes. No generic construct flag or default fallback opcode is used to reinterpret one family as another. Golden formatting is stable and includes instruction ID, opcode name, TypeId, PlaceId, input ValueId, and result ValueId. `TYPE_TEST` additionally records `matchTypeId`: `typeId` describes the boolean result, while `matchTypeId` is the independently resolved canonical target identity. Semantic emission and validation require that field exactly for `TYPE_TEST`; no source type name is retained as a comparison fallback.
+
+The SemIR-to-ExecIR builder lowers `TYPE_TEST(valueId, matchTypeId)` to the
+same one-operand fact with `matchTypeToken == matchTypeId`. This establishes
+the reusable bottom-up operation required by future typed-catch dispatch, but
+the current source catch producer still admits only its documented catch-all
+shape. Runtime subtype evaluation and the source-ordered match/rethrow CFG are
+explicit later milestones.
 
 `ZrParser_SemanticIr_Validate` rejects dangling Place/Value/Loan/Region/Cleanup references, malformed operand spans, non-sequential instruction/source-map identities, and invalid owned CFG ranges or edges. Empty CFG storage is valid during straight-line compiler emission; once blocks exist, entry/exit IDs, instruction ranges, terminators, and typed edges are checked.
 

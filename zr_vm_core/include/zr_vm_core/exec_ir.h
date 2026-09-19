@@ -196,6 +196,7 @@ typedef struct SZrExecIrInstruction {
     SZrExecIrRange phiRange;
     SZrExecIrRange successorRange;
     TZrExecIrTypeToken typeToken;
+    TZrExecIrTypeToken matchTypeToken;
     TZrUInt32 layoutId;
     SZrExecIrRange memoryIn;
     SZrExecIrRange memoryOut;

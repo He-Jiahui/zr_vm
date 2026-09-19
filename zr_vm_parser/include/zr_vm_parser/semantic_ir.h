@@ -71,6 +71,7 @@ typedef enum EZrSemanticIrOpcode {
     ZR_SEMANTIC_IR_ITER_MOVE_NEXT,
     ZR_SEMANTIC_IR_ITER_CURRENT,
     ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD,
+    ZR_SEMANTIC_IR_TYPE_TEST,
     ZR_SEMANTIC_IR_ENUM_MAX
 } EZrSemanticIrOpcode;
 
@@ -219,6 +220,7 @@ typedef struct SZrSemanticIrInstruction {
     TZrSemanticInstructionId id;
     EZrSemanticIrOpcode opcode;
     TZrTypeId typeId;
+    TZrTypeId matchTypeId;
     TZrPlaceId placeId;
     TZrValueId valueId;
     TZrValueId resultValueId;
@@ -242,6 +244,7 @@ typedef struct SZrSemanticIrInstruction {
 typedef struct SZrSemanticIrInstructionSpec {
     EZrSemanticIrOpcode opcode;
     TZrTypeId typeId;
+    TZrTypeId matchTypeId;
     TZrPlaceId placeId;
     TZrValueId valueId;
     TZrValueId resultValueId;

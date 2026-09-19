@@ -976,8 +976,26 @@ static void test_unsupported_and_transactional_failures(void) {
            diagnostic.instructionId == 1u &&
            diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
            aot.instructionCount == oldAotCount);
+    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_TYPE_TEST;
+    function.instructions[0].operands = range(0u, 1u);
+    function.instructions[0].matchTypeToken = 7u;
+    assert(!ZrCore_ExecIr_RunOracle(&function, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_TYPE_TEST);
+    assert(!ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_TYPE_TEST &&
+           bc.instructions == oldInstructions && bc.instructionCount == oldCount);
+    assert(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_TYPE_TEST &&
+           aot.instructionCount == oldAotCount);
     function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
     function.instructions[0].operands = range(0u, 0u);
+    function.instructions[0].matchTypeToken = 0u;
     function.instructions[2].operands = range(UINT32_MAX, 1u);
     assert(!ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&

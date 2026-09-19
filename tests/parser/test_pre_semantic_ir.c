@@ -114,6 +114,7 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         ZR_SEMANTIC_IR_ITER_MOVE_NEXT,
         ZR_SEMANTIC_IR_ITER_CURRENT,
         ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD,
+        ZR_SEMANTIC_IR_TYPE_TEST,
     };
     static const char expected[] =
         "1 constant type=5 place=1 value=1 result=2\n"
@@ -160,7 +161,8 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         "42 iter.init type=5 place=1 value=1 result=2\n"
         "43 iter.move_next type=5 place=1 value=1 result=2\n"
         "44 iter.current type=5 place=1 value=1 result=2\n"
-        "45 exception.payload type=5 place=1 value=1 result=2\n";
+        "45 exception.payload type=5 place=1 value=1 result=2\n"
+        "46 type.test type=5 match_type=6 place=1 value=1 result=2\n";
     SZrSemanticIrFunction function;
     SZrParserPlaceBase base;
     SZrSemanticIrInstructionSpec spec;
@@ -187,6 +189,9 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
                 opcodes[index], placeId, sourceValueId, resultValueId, 5U);
         if (opcodes[index] == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
             spec.constructorId = 0x06000042U;
+        }
+        if (opcodes[index] == ZR_SEMANTIC_IR_TYPE_TEST) {
+            spec.matchTypeId = 6U;
         }
         emit_instruction(&function, spec);
     }
@@ -254,6 +259,39 @@ static void test_value_construct_requires_destination_place_and_constructor_iden
             5U);
     emit_instruction(&function, spec);
     TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+}
+
+static void test_type_test_requires_canonical_match_type_identity(void) {
+    SZrSemanticIrFunction function;
+    SZrSemanticIrInstructionSpec spec;
+    TZrValueId sourceValueId;
+    TZrValueId resultValueId;
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 33U, 34U);
+    sourceValueId = ZrParser_SemanticIr_AddValue(&function, 5U, empty_range());
+    resultValueId = ZrParser_SemanticIr_AddValue(&function, 1U, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, sourceValueId);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, resultValueId);
+
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_TYPE_TEST,
+            ZR_PLACE_ID_INVALID,
+            sourceValueId,
+            resultValueId,
+            1U);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+            ZrParser_SemanticIr_Emit(&function, &spec));
+
+    spec.matchTypeId = 6U;
+    emit_instruction(&function, spec);
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+
+    spec.opcode = ZR_SEMANTIC_IR_CONVERT;
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+            ZrParser_SemanticIr_Emit(&function, &spec));
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
@@ -1309,6 +1347,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pre_semantic_ir_opcode_golden_covers_supported_families);
     RUN_TEST(test_value_construct_requires_destination_place_and_constructor_identity);
+    RUN_TEST(test_type_test_requires_canonical_match_type_identity);
     RUN_TEST(test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar);
     RUN_TEST(test_source_if_emits_typed_semantic_control_flow);
     RUN_TEST(test_nested_source_if_covers_each_instruction_once);

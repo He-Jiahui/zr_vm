@@ -56,6 +56,7 @@ const TZrChar *ZrParser_SemanticIr_OpcodeName(EZrSemanticIrOpcode opcode) {
         "iter.move_next",
         "iter.current",
         "exception.payload",
+        "type.test",
     };
 
     if (opcode < ZR_SEMANTIC_IR_INVALID || opcode >= ZR_SEMANTIC_IR_ENUM_MAX) {
@@ -88,7 +89,19 @@ TZrBool ZrParser_SemanticIr_FormatGolden(
             buffer[0] = '\0';
             return ZR_FALSE;
         }
-        if (instruction->opcode == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
+        if (instruction->opcode == ZR_SEMANTIC_IR_TYPE_TEST) {
+            written = snprintf(
+                    buffer + offset,
+                    bufferSize - offset,
+                    "%u %s type=%u match_type=%u place=%u value=%u result=%u\n",
+                    (unsigned int)instruction->id,
+                    ZrParser_SemanticIr_OpcodeName(instruction->opcode),
+                    (unsigned int)instruction->typeId,
+                    (unsigned int)instruction->matchTypeId,
+                    (unsigned int)instruction->placeId,
+                    (unsigned int)instruction->valueId,
+                    (unsigned int)instruction->resultValueId);
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
             written = snprintf(
                     buffer + offset,
                     bufferSize - offset,

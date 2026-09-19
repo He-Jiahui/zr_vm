@@ -238,6 +238,7 @@ static TZrUInt64 zr_function_body_hash(const SZrExecIrFunction *function) {
         zr_hash_range(&hash, instruction->phiRange);
         zr_hash_range(&hash, instruction->successorRange);
         zr_hash_u32(&hash, instruction->typeToken);
+        zr_hash_u32(&hash, instruction->matchTypeToken);
         zr_hash_u32(&hash, instruction->layoutId);
         zr_hash_range(&hash, instruction->memoryIn);
         zr_hash_range(&hash, instruction->memoryOut);

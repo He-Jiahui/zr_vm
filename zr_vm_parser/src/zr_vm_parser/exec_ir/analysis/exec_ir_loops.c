@@ -181,6 +181,7 @@ static TZrUInt64 zr_loop_function_hash(const SZrExecIrFunction *function) {
         const SZrExecIrInstruction *instruction = &function->instructions[index];
         zr_loop_hash_u32(&hash, instruction->opcode);
         zr_loop_hash_u32(&hash, instruction->flags);
+        zr_loop_hash_u32(&hash, instruction->matchTypeToken);
         zr_loop_hash_u32(&hash, instruction->layoutId);
         zr_loop_hash_u32(&hash, instruction->sourceId);
         zr_loop_hash_u32(&hash, instruction->operands.start);

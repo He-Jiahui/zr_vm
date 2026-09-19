@@ -24,6 +24,7 @@ static EZrExecIrOpcode map_opcode(const SZrSemanticIrInstruction *instruction) {
     switch (instruction->opcode) {
         case ZR_SEMANTIC_IR_CONSTANT: return ZR_EXEC_IR_OPCODE_CONSTANT;
         case ZR_SEMANTIC_IR_CONVERT: return ZR_EXEC_IR_OPCODE_CONVERT;
+        case ZR_SEMANTIC_IR_TYPE_TEST: return ZR_EXEC_IR_OPCODE_TYPE_TEST;
         case ZR_SEMANTIC_IR_PLACE_BASE: return ZR_EXEC_IR_OPCODE_PLACE_BASE;
         case ZR_SEMANTIC_IR_PLACE_PROJECT: return ZR_EXEC_IR_OPCODE_PLACE_PROJECT;
         case ZR_SEMANTIC_IR_LOAD: return ZR_EXEC_IR_OPCODE_LOAD;
@@ -819,6 +820,21 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 isTerminator = (TZrBool)(info != ZR_NULL &&
                     (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u);
                 x.typeToken = (TZrExecIrTypeToken)in->typeId;
+                x.matchTypeToken = (TZrExecIrTypeToken)in->matchTypeId;
+                if ((in->opcode == ZR_SEMANTIC_IR_TYPE_TEST &&
+                     in->matchTypeId == ZR_SEMANTIC_ID_INVALID) ||
+                    (in->opcode != ZR_SEMANTIC_IR_TYPE_TEST &&
+                     in->matchTypeId != ZR_SEMANTIC_ID_INVALID)) {
+                    diag_missing(diagnostic, output, db->id, in->id);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+                        diagnostic->expectedVersion =
+                                in->opcode == ZR_SEMANTIC_IR_TYPE_TEST ? 1u : 0u;
+                        diagnostic->actualVersion = in->matchTypeId;
+                    }
+                    ZrCore_ExecIr_FreeFunction(output);
+                    return ZR_FALSE;
+                }
                 if (in->operandStart > s->valueOperands.length ||
                     in->operandCount > s->valueOperands.length - in->operandStart) {
                     diag_missing(diagnostic, output, db->id, in->id);
@@ -883,6 +899,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                         }
                         break;
                     case ZR_SEMANTIC_IR_CONVERT:
+                    case ZR_SEMANTIC_IR_TYPE_TEST:
                     case ZR_SEMANTIC_IR_MOVE:
                     case ZR_SEMANTIC_IR_COPY:
                     case ZR_SEMANTIC_IR_DROP:

@@ -365,6 +365,7 @@ static TZrUInt64 zr_container_function_hash(const SZrExecIrFunction *function) {
         zr_container_hash_u32(&hash, instruction->opcode);
         zr_container_hash_u32(&hash, instruction->flags);
         zr_container_hash_u32(&hash, instruction->typeToken);
+        zr_container_hash_u32(&hash, instruction->matchTypeToken);
         zr_container_hash_u32(&hash, instruction->layoutId);
         zr_container_hash_u32(&hash, instruction->effectIn);
         zr_container_hash_u32(&hash, instruction->effectOut);

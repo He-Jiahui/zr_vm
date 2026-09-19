@@ -529,6 +529,111 @@ static void test_builder_rejects_nonterminal_tail(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_builder_preserves_canonical_type_test_target(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue values[2] = {
+        {.id = 1u, .typeId = 11u},
+        {.id = 2u, .typeId = 22u},
+    };
+    TZrValueId operands[2] = {1u, 2u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].typeId = 11u;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_TYPE_TEST;
+    instructions[1].typeId = 22u;
+    instructions[1].matchTypeId = 77u;
+    instructions[1].resultValueId = 2u;
+    instructions[1].operandCount = 1u;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].operandStart = 1u;
+    instructions[2].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.values = input_array(values, 2u, sizeof(*values));
+    semantic.valueOperands = input_array(operands, 2u, sizeof(*operands));
+    block.instructionCount = 3u;
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic),
+          "builder rejected a canonical type-test instruction");
+    check(output.instructionCount == 3u &&
+              output.instructions[1].opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST &&
+              output.instructions[1].typeToken == 22u &&
+              output.instructions[1].matchTypeToken == 77u &&
+              output.instructions[1].operands.count == 1u &&
+              output.operands[output.instructions[1].operands.start] == 1u &&
+              output.instructions[1].results.count == 1u &&
+              output.results[output.instructions[1].results.start] == 2u,
+          "builder lost the type-test result, operand, or canonical match token");
+    output.id = 1u;
+    check(ZrCore_ExecIr_VerifyFunction(
+                  &output, ZR_EXEC_IR_VERIFY_ALL, &diagnostic),
+          "verifier rejected the canonical type-test instruction");
+    output.instructions[1].matchTypeToken = 0u;
+    check(!ZrCore_ExecIr_VerifyFunction(
+                  &output, ZR_EXEC_IR_VERIFY_ALL, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+              diagnostic.instructionId == 2u,
+          "verifier accepted a type test without a canonical match token");
+    output.instructions[1].matchTypeToken = 77u;
+    output.instructions[0].matchTypeToken = 77u;
+    check(!ZrCore_ExecIr_VerifyFunction(
+                  &output, ZR_EXEC_IR_VERIFY_ALL, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+              diagnostic.instructionId == 1u,
+          "verifier accepted hidden type-match metadata on another opcode");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
+static void test_builder_rejects_type_test_without_match_type(void) {
+    SZrParserCfgBlock block;
+    SZrSemanticIrInstruction instructions[3] = {0};
+    SZrSemanticIrValue values[2] = {
+        {.id = 1u, .typeId = 11u},
+        {.id = 2u, .typeId = 22u},
+    };
+    TZrValueId operands[2] = {1u, 2u};
+    SZrSemanticIrFunction semantic;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    make_semantic_function(&semantic, &block, 1u);
+    instructions[0].id = 1u;
+    instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
+    instructions[0].typeId = 11u;
+    instructions[0].resultValueId = 1u;
+    instructions[1].id = 2u;
+    instructions[1].opcode = ZR_SEMANTIC_IR_TYPE_TEST;
+    instructions[1].typeId = 22u;
+    instructions[1].resultValueId = 2u;
+    instructions[1].operandCount = 1u;
+    instructions[2].id = 3u;
+    instructions[2].opcode = ZR_SEMANTIC_IR_RETURN;
+    instructions[2].operandStart = 1u;
+    instructions[2].operandCount = 1u;
+    semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
+    semantic.values = input_array(values, 2u, sizeof(*values));
+    semantic.valueOperands = input_array(operands, 2u, sizeof(*operands));
+    block.instructionCount = 3u;
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              diagnostic.expectedVersion == 1u &&
+              diagnostic.actualVersion == 0u,
+          "builder accepted a type test without a canonical match type");
+    ZrCore_ExecIr_FreeFunction(&output);
+}
+
 static void test_builder_rejects_premature_terminator(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
@@ -852,6 +957,8 @@ int main(void) {
     test_rejects_outgoing_edges_beyond_declared_capacity();
     test_rejects_excess_inline_successors();
     test_builder_preserves_instruction_ranges_and_branch_successors();
+    test_builder_preserves_canonical_type_test_target();
+    test_builder_rejects_type_test_without_match_type();
     test_module_builder_failure_does_not_append_partial_function();
     test_module_builder_preserves_assigned_identity();
     test_builder_rejects_unbacked_canonical_fact_arrays();

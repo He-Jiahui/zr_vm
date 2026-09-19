@@ -38,6 +38,7 @@ static TZrBool pure_instruction(const SZrExecIrFunction *function,
     switch ((EZrExecIrOpcode)instruction->opcode) {
         case ZR_EXEC_IR_OPCODE_CONSTANT:
         case ZR_EXEC_IR_OPCODE_CONVERT:
+        case ZR_EXEC_IR_OPCODE_TYPE_TEST:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC:
         case ZR_EXEC_IR_OPCODE_COPY:
         case ZR_EXEC_IR_OPCODE_MOVE:
@@ -63,7 +64,9 @@ static TZrBool same_key(const SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     if (left->opcode != right->opcode || left->flags != right->flags ||
-        left->typeToken != right->typeToken || left->layoutId != right->layoutId ||
+        left->typeToken != right->typeToken ||
+        left->matchTypeToken != right->matchTypeToken ||
+        left->layoutId != right->layoutId ||
         left->operandRange.count != right->operandRange.count ||
         left->resultRange.count != 1u || right->resultRange.count != 1u) {
         return ZR_FALSE;
@@ -198,6 +201,7 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
              * existing use remains valid without assuming instruction-array
              * order is a dominance order. */
             current->opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_COPY;
+            current->matchTypeToken = 0u;
             current->operandRange.count = 1u;
             current->operandRange.start = function->operandCount;
             function->operandPool[function->operandCount++] = newValue;

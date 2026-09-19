@@ -77,6 +77,7 @@ static TZrBool semantic_ir_opcode_requires_result(EZrSemanticIrOpcode opcode) {
     switch (opcode) {
         case ZR_SEMANTIC_IR_CONSTANT:
         case ZR_SEMANTIC_IR_CONVERT:
+        case ZR_SEMANTIC_IR_TYPE_TEST:
         case ZR_SEMANTIC_IR_LOAD:
         case ZR_SEMANTIC_IR_MOVE:
         case ZR_SEMANTIC_IR_COPY:
@@ -577,6 +578,10 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
     if (!semantic_ir_function_is_valid(function) || spec == ZR_NULL ||
         spec->opcode <= ZR_SEMANTIC_IR_INVALID ||
         spec->opcode >= ZR_SEMANTIC_IR_ENUM_MAX ||
+        (spec->opcode == ZR_SEMANTIC_IR_TYPE_TEST &&
+         spec->matchTypeId == ZR_SEMANTIC_ID_INVALID) ||
+        (spec->opcode != ZR_SEMANTIC_IR_TYPE_TEST &&
+         spec->matchTypeId != ZR_SEMANTIC_ID_INVALID) ||
         (spec->placeId != ZR_PLACE_ID_INVALID &&
          ZrParser_PlaceGraph_Get(&function->places, spec->placeId) == ZR_NULL) ||
         (spec->valueId != ZR_VALUE_ID_INVALID &&
@@ -594,6 +599,7 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
             (TZrSemanticInstructionId)(function->instructions.length + 1U);
     instruction.opcode = spec->opcode;
     instruction.typeId = spec->typeId;
+    instruction.matchTypeId = spec->matchTypeId;
     instruction.placeId = spec->placeId;
     instruction.valueId = spec->valueId;
     instruction.resultValueId = spec->resultValueId;
@@ -786,6 +792,10 @@ TZrBool ZrParser_SemanticIr_Validate(
             instruction->id != (TZrSemanticInstructionId)(index + 1U) ||
             instruction->opcode <= ZR_SEMANTIC_IR_INVALID ||
              instruction->opcode >= ZR_SEMANTIC_IR_ENUM_MAX ||
+            (instruction->opcode == ZR_SEMANTIC_IR_TYPE_TEST &&
+             instruction->matchTypeId == ZR_SEMANTIC_ID_INVALID) ||
+            (instruction->opcode != ZR_SEMANTIC_IR_TYPE_TEST &&
+             instruction->matchTypeId != ZR_SEMANTIC_ID_INVALID) ||
             instruction->ownershipOperation < ZR_SEMANTIC_OWNERSHIP_NONE ||
             instruction->ownershipOperation >= ZR_SEMANTIC_OWNERSHIP_ENUM_MAX ||
             (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&

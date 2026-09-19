@@ -417,6 +417,22 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
                                       (TZrUInt32)instruction->opcode);
             return ZR_FALSE;
         }
+        if ((instruction->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST &&
+             instruction->matchTypeToken == 0u) ||
+            (instruction->opcode != ZR_EXEC_IR_OPCODE_TYPE_TEST &&
+             instruction->matchTypeToken != 0u)) {
+            zr_exec_ir_set_diagnostic(
+                    diagnostic,
+                    ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                    function,
+                    index + 1u,
+                    0u,
+                    instruction->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST
+                            ? 1u
+                            : 0u,
+                    instruction->matchTypeToken);
+            return ZR_FALSE;
+        }
         if ((instruction->flags & ~ZR_EXEC_IR_INSTRUCTION_FLAG_KNOWN_MASK) != 0u ||
             !zr_exec_ir_range_is_valid(instruction->operandRange, function->operandCount) ||
             !zr_exec_ir_range_is_valid(instruction->resultRange, function->resultCount) ||

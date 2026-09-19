@@ -167,6 +167,7 @@ static TZrUInt64 zr_profile_function_hash(const SZrExecIrFunction *function) {
         zr_profile_hash_u32(&hash, instruction->opcode);
         zr_profile_hash_u32(&hash, instruction->flags);
         zr_profile_hash_u32(&hash, instruction->typeToken);
+        zr_profile_hash_u32(&hash, instruction->matchTypeToken);
         zr_profile_hash_u32(&hash, instruction->layoutId);
         zr_profile_hash_u32(&hash, instruction->sourceId);
         zr_profile_hash_u32(&hash, instruction->operands.count);

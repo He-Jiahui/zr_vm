@@ -253,6 +253,54 @@ static void test_dead_source_mapping_is_removed(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_type_test_identity_survives_hash_and_dead_code_cleanup(void) {
+    SZrExecIrFunction function;
+    SZrExecIrRemarkSink remarks;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrRange sourceResult, testOperands, testResult;
+    TZrExecIrValueId sourceValue, resultValue;
+    TZrExecIrInstructionId id = 0u;
+    TZrUInt64 originalHash, changedHash;
+
+    init_function(&function);
+    sourceValue = add_value(&function);
+    resultValue = add_value(&function);
+    assert(sourceValue != 0u && resultValue != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            &function, &sourceValue, 1u, &sourceResult));
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), sourceResult, 9u, 0u, 0u, 0u, 404u);
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            &function, &sourceValue, 1u, &testOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            &function, &resultValue, 1u, &testResult));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_TYPE_TEST;
+    instruction.operands = testOperands;
+    instruction.results = testResult;
+    instruction.typeToken = 1u;
+    instruction.matchTypeToken = 7u;
+    instruction.sourceId = 405u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, &id));
+
+    originalHash = ZrParser_ExecIr_FunctionHash(&function);
+    function.instructions[1].matchTypeToken = 8u;
+    changedHash = ZrParser_ExecIr_FunctionHash(&function);
+    assert(originalHash != changedHash);
+    function.instructions[1].matchTypeToken = 7u;
+
+    ZrParser_ExecIr_RemarkSinkInit(&remarks);
+    assert(ZrParser_ExecIr_OptimizeScalar(
+            &function, ZR_NULL, &remarks, &diagnostic));
+    assert(function.instructions[1].opcode == ZR_EXEC_IR_OPCODE_NOP);
+    assert(function.instructions[1].matchTypeToken == 0u);
+    assert(ZrParser_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    ZrParser_ExecIr_RemarkSinkFree(&remarks);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_direct_pass_rejects_malformed_storage(void) {
     SZrExecIrFunction function;
     SZrExecIrAnalysisCache cache;
@@ -351,6 +399,7 @@ int main(void) {
     test_checked_overflow_is_not_folded();
     test_unused_call_is_preserved();
     test_dead_source_mapping_is_removed();
+    test_type_test_identity_survives_hash_and_dead_code_cleanup();
     test_direct_pass_rejects_malformed_storage();
     test_failed_pass_rolls_back();
     test_budget_is_bounded();

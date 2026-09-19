@@ -44,6 +44,7 @@ static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
         case ZR_EXEC_IR_OPCODE_PLACE_BASE:
         case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
+        case ZR_EXEC_IR_OPCODE_TYPE_TEST:
         case ZR_EXEC_IR_OPCODE_INVOKE:
         case ZR_EXEC_IR_OPCODE_ITER_INIT:
         case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
