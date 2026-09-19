@@ -3944,6 +3944,8 @@ cleanup:
 // 编译 while 语句
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node) {
     SZrAstNode *oldCurrentAst;
+    SZrCompilerSemanticIrIsolation semanticIrIsolation;
+    TZrBool hasSemanticIrIsolation = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -3952,6 +3954,22 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
     oldCurrentAst = cs->currentAst;
     cs->currentAst = node;
     compile_statement_trace("statement compile dispatch node=%p type=%d", (void *)node, (int)node->type);
+
+    if (cs->currentFunctionNode != ZR_NULL &&
+        (node->type == ZR_AST_WHILE_LOOP ||
+         node->type == ZR_AST_FOR_LOOP ||
+         node->type == ZR_AST_FOREACH_LOOP)) {
+        if (!compiler_semantic_ir_isolation_begin(
+                    cs, &semanticIrIsolation)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to isolate declared callable loop Semantic IR",
+                    node->location);
+            cs->currentAst = oldCurrentAst;
+            return;
+        }
+        hasSemanticIrIsolation = ZR_TRUE;
+    }
     
     switch (node->type) {
         case ZR_AST_VARIABLE_DECLARATION:
@@ -4121,6 +4139,9 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
             break;
     }
 
+    if (hasSemanticIrIsolation) {
+        compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+    }
     cs->currentAst = oldCurrentAst;
     compile_statement_trace("statement compile dispatch done node=%p type=%d hasError=%d",
                             (void *)node,

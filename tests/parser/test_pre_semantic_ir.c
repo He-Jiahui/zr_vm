@@ -1282,6 +1282,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 }
 
 #include "test_pre_semantic_ir_source_cfg.inc"
+#include "test_pre_semantic_ir_loop_exit_cfg.inc"
 #include "test_pre_semantic_ir_optional_value.inc"
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
@@ -1296,6 +1297,15 @@ int main(void) {
     RUN_TEST(test_source_if_emits_typed_semantic_control_flow);
     RUN_TEST(test_nested_source_if_covers_each_instruction_once);
     RUN_TEST(test_source_while_emits_typed_backedge_cfg);
+    RUN_TEST(test_source_while_break_targets_loop_join);
+    RUN_TEST(test_source_while_continue_targets_loop_header);
+    RUN_TEST(test_source_while_linear_prefix_can_continue);
+    RUN_TEST(test_unreachable_after_loop_exit_blocks_later_cfg_startup);
+    RUN_TEST(test_suppressed_loop_exit_blocks_later_call_cfg);
+    RUN_TEST(test_unmodeled_for_exit_blocks_later_call_cfg);
+    RUN_TEST(test_unmodeled_for_exit_abandons_active_call_cfg);
+    RUN_TEST(test_unmodeled_foreach_exit_blocks_later_call_cfg);
+    RUN_TEST(test_declared_child_loops_do_not_pollute_entry_cfg);
     RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);
     RUN_TEST(test_late_unmodeled_arm_abandons_partial_source_cfg);
     RUN_TEST(test_nested_untracked_condition_abandons_outer_source_cfg);

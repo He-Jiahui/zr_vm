@@ -1,15 +1,16 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
@@ -18,6 +19,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_logical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
@@ -38,6 +41,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
+  - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -46,6 +50,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
   - tests/acceptance/ssa-compiler-source-return-cfg.md
+  - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -147,12 +152,22 @@ temporaries cannot leak into later source lowering. This graph is independent
 of ExecBC label offsets and reaches the existing dominator/frontier promotion
 path, which inserts the loop-carried Place phi.
 
-The source-loop subset intentionally accepts only linear conditions and
-fall-through bodies whose nested statements are already modeled. `break`,
-`continue`, return/throw, calls, cleanup, suspension, and short-circuit loop
-conditions still trigger the legacy-CFG fallback. If an unsupported loop
-appears after a source CFG has started, the compiler abandons that partial
-graph and removes its synthetic branch instructions before validation.
+The source-loop subset intentionally accepts only linear conditions and body
+statements whose nested control is already modeled. A direct terminal
+`break;` emits the body's normal edge to the loop join; a direct terminal
+`continue;` emits it to the condition header. Either abrupt edge consumes the
+current semantic block, so the loop compiler does not add the fall-through
+backedge afterward. Linear statements may precede that final exit. Exits with
+trailing reachable statements, exits hidden by an enclosing fallback shape,
+return/throw, calls, cleanup, suspension, and short-circuit loop conditions
+still trigger the legacy-CFG fallback. If an unsupported loop appears after a
+source CFG has started, the compiler abandons that partial graph and removes
+its synthetic branch instructions before validation; it also blocks later CFG
+startup so subsequent source cannot publish a detached suffix graph.
+Loops compiled inside a declared child callable use a disposable isolated
+SemanticIR state because child functions do not yet publish independent
+pre-execution functions; their loop edges and fallback barriers therefore do
+not mutate the entry-body graph.
 
 Source `&&` and `||` expressions with linear operands also publish their
 short-circuit topology directly. `&&` sends the true edge to the RHS and the

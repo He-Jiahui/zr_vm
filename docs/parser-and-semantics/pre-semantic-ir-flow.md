@@ -16,6 +16,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -25,6 +27,7 @@ related_code:
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/bound_expression.h
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
@@ -38,6 +41,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -54,6 +59,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
   - tests/parser/test_pre_semantic_ir_return_cfg.inc
+  - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
   - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
@@ -67,6 +73,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
   - tests/acceptance/ssa-compiler-source-return-cfg.md
+  - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -93,7 +100,8 @@ and oracle use that same true/false order. Reversed or untyped inline edges
 fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
-surface for `if`, straight-line `while`, linear-operand `&&`/`||`, and known
+surface for `if`, straight-line `while`, direct terminal loop exits,
+linear-operand `&&`/`||`, and known
 nullable optional calls with either `void`/no-op or nullable value results.
 Non-fallthrough returns nested in an unsupported control arm, general loop
 control, Weak optional access, cleanup, suspension, and other unmodeled
@@ -165,6 +173,22 @@ defined ValueId while the skipped path never owns the RHS side effects. `&&`
 uses true-to-RHS/false-to-join edges; `||` uses true-to-join/false-to-RHS.
 This temporary is not a scalar source local and is intentionally not eligible
 for local Place promotion.
+
+A source-owned `while` may now end its direct body with `break;` or
+`continue;`. The active loop label carries semantic block targets alongside
+the existing ExecBC label IDs. `break` closes the current body block with one
+normal edge to the loop join; `continue` closes it with one normal edge to the
+condition header. Because either statement invalidates the current semantic
+block, the loop compiler does not append the ordinary fall-through backedge.
+The subset also accepts already-modeled linear statements before the terminal
+exit. An exit followed by reachable syntax, nested under a CFG shape that has
+already fallen back, or crossing `finally` or ownership cleanup remains
+legacy-only. These cases abandon any partial source graph and keep later CFG
+starters blocked, so a trailing call cannot publish a detached graph that
+omits the loop transfer. Declared child callables still do not publish their
+own semantic functions; their `while`, `for`, and `foreach` statements compile
+against a disposable isolated SemanticIR state so either a supported loop CFG
+or a fallback barrier cannot mutate the entry body's graph.
 
 Resolved, non-spread function calls now own a source control boundary even when
 they are the first non-linear operation in an otherwise straight-line caller.

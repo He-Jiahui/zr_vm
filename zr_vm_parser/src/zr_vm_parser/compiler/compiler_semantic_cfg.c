@@ -110,8 +110,8 @@ static TZrBool compiler_semantic_cfg_short_circuit_is_supported(
                     node->data.logicalExpression.right));
 }
 
-/* Until return, calls, cleanup and suspension edges are
- * represented here, publish only a deliberately small straight-line subset. */
+/* Until cleanup and suspension edges are represented here, publish only a
+ * deliberately small straight-line subset. */
 static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
     TZrSize index;
     if (node == ZR_NULL) {
@@ -151,6 +151,45 @@ static TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
         default:
             return ZR_FALSE;
     }
+}
+
+static TZrBool compiler_semantic_cfg_while_body_is_supported(
+        const SZrAstNode *node) {
+    TZrSize index;
+    if (node == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
+        return (TZrBool)(node->data.breakContinueStatement.expr == ZR_NULL);
+    }
+    if (node->type != ZR_AST_BLOCK) {
+        return compiler_semantic_cfg_arm_falls_through(node);
+    }
+    if (node->data.block.body == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index < node->data.block.body->count; index++) {
+        const SZrAstNode *statement = node->data.block.body->nodes[index];
+        TZrSize trailingIndex;
+        if (statement != ZR_NULL &&
+            statement->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
+            if (statement->data.breakContinueStatement.expr != ZR_NULL) {
+                return ZR_FALSE;
+            }
+            for (trailingIndex = index + 1U;
+                 trailingIndex < node->data.block.body->count;
+                 trailingIndex++) {
+                if (node->data.block.body->nodes[trailingIndex] != ZR_NULL) {
+                    return ZR_FALSE;
+                }
+            }
+            return ZR_TRUE;
+        }
+        if (!compiler_semantic_cfg_arm_falls_through(statement)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrUInt32 compiler_semantic_cfg_retained_before(
@@ -332,11 +371,12 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     }
     if (!compiler_semantic_cfg_expression_is_linear(
                 node->data.whileLoop.cond) ||
-        !compiler_semantic_cfg_arm_falls_through(
+        !compiler_semantic_cfg_while_body_is_supported(
                 node->data.whileLoop.block)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
+        cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
         return ZR_FALSE;
     }
     cfg = &cs->preSemanticIr.cfg;
@@ -520,6 +560,18 @@ TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
     return ZrParser_Cfg_Connect(&cs->preSemanticIr.cfg,
                                 cs->preSemanticIrCfgBlock, target,
                                 ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL);
+}
+
+TZrBool compiler_semantic_cfg_jump_abrupt(SZrCompilerState *cs,
+                                          TZrUInt32 target,
+                                          SZrFileRange range) {
+    if (!compiler_semantic_cfg_jump(cs, target, range)) {
+        return ZR_FALSE;
+    }
+    cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgStart =
+            (TZrUInt32)cs->preSemanticIr.instructions.length;
+    return ZR_TRUE;
 }
 
 TZrBool compiler_semantic_cfg_begin_invoke(

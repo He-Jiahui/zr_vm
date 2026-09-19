@@ -80,6 +80,8 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     loopLabel.breakLabelId = create_label(cs);
     loopLabel.continueLabelId = create_label(cs);
     loopLabel.targetScopeStackDepth = cs->scopeStack.length;
+    loopLabel.semanticBreakBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    loopLabel.semanticContinueBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
     loopStartLabelId = loopLabel.continueLabelId;
     loopStartInstructionIndex = cs->instructionCount;
@@ -99,6 +101,18 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
         restoreSemanticCfgStartupSuppression = ZR_TRUE;
     }
     if (hasSemanticCfg) {
+        SZrLoopLabel *activeLoopLabel =
+                (SZrLoopLabel *)ZrCore_Array_Get(
+                        &cs->loopLabelStack,
+                        cs->loopLabelStack.length - 1U);
+        if (activeLoopLabel == ZR_NULL) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to bind semantic while loop targets",
+                    node->location);
+            goto cleanup;
+        }
+        activeLoopLabel->semanticBreakBlockId = joinBlock;
+        activeLoopLabel->semanticContinueBlockId = conditionBlock;
         hasSemanticSlotSnapshot = compiler_semantic_cfg_capture_slots(
                 cs, &semanticSlotSnapshot);
         if (!hasSemanticSlotSnapshot) {
@@ -140,8 +154,9 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (hasSemanticCfg && !cs->preSemanticIrCfgActive) {
         hasSemanticCfg = ZR_FALSE;
     }
-    if (hasSemanticCfg && !compiler_semantic_cfg_jump(
-                cs, conditionBlock, node->location)) {
+    if (hasSemanticCfg &&
+        cs->preSemanticIrCfgBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        !compiler_semantic_cfg_jump(cs, conditionBlock, node->location)) {
         ZrParser_Compiler_Error(
                 cs, "Failed to record semantic while backedge",
                 node->location);

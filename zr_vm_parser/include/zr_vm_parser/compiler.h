@@ -314,6 +314,8 @@ typedef struct SZrLoopLabel {
     TZrSize breakLabelId;               // break 目标标签 ID
     TZrSize continueLabelId;            // continue 目标标签 ID
     TZrSize targetScopeStackDepth;      // 跳转目标保留的作用域栈深度
+    TZrUInt32 semanticBreakBlockId;     // pre-Semantic IR break 目标
+    TZrUInt32 semanticContinueBlockId;  // pre-Semantic IR continue 目标
 } SZrLoopLabel;
 
 typedef struct SZrCompilerCatchClauseInfo {

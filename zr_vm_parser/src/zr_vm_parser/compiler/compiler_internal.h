@@ -195,8 +195,11 @@ TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
                                            TZrUInt32 bodyBlock,
                                            TZrUInt32 joinBlock);
 TZrBool compiler_semantic_cfg_jump(SZrCompilerState *cs,
-                                  TZrUInt32 target,
-                                  SZrFileRange range);
+                                   TZrUInt32 target,
+                                   SZrFileRange range);
+TZrBool compiler_semantic_cfg_jump_abrupt(SZrCompilerState *cs,
+                                          TZrUInt32 target,
+                                          SZrFileRange range);
 TZrBool compiler_semantic_cfg_begin_invoke(
         SZrCompilerState *cs,
         SZrAstNode *callNode,

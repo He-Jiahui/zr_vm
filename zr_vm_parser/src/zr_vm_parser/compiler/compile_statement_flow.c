@@ -223,6 +223,8 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     loopLabel.breakLabelId = create_label(cs);
     loopLabel.continueLabelId = create_label(cs);
     loopLabel.targetScopeStackDepth = cs->scopeStack.length;
+    loopLabel.semanticBreakBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    loopLabel.semanticContinueBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
     
     // 编译初始化表达式
@@ -334,6 +336,8 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     loopLabel.breakLabelId = create_label(cs);
     loopLabel.continueLabelId = create_label(cs);
     loopLabel.targetScopeStackDepth = cs->scopeStack.length;
+    loopLabel.semanticBreakBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    loopLabel.semanticContinueBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
 
     if (foreachLoop->typeInfo != ZR_NULL) {
@@ -878,6 +882,8 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrBreakContinueStatement *stmt;
     SZrLoopLabel *loopLabel;
     TZrSize targetLabelId;
+    TZrUInt32 semanticTargetBlockId;
+    TZrBool hasOwnershipCleanupContext;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -904,6 +910,9 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     targetLabelId = stmt->isBreak ? loopLabel->breakLabelId : loopLabel->continueLabelId;
+    semanticTargetBlockId = stmt->isBreak
+            ? loopLabel->semanticBreakBlockId
+            : loopLabel->semanticContinueBlockId;
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
     if (hasFinallyContext && loopLabel->targetScopeStackDepth > finallyContext.scopeStackDepth) {
         hasFinallyContext = ZR_FALSE;
@@ -917,7 +926,42 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (compiler_has_scope_ownership_cleanups_above_depth(cs, loopLabel->targetScopeStackDepth)) {
+    hasOwnershipCleanupContext =
+            compiler_has_scope_ownership_cleanups_above_depth(
+                    cs, loopLabel->targetScopeStackDepth);
+    if (semanticTargetBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        if (cs->preSemanticIrCfgActive &&
+            !compiler_semantic_cfg_abandon(cs)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to abandon unmodeled loop exit CFG",
+                    node->location);
+            return;
+        }
+        cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+    }
+    if (semanticTargetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        cs->preSemanticIrCfgActive) {
+        if (hasFinallyContext || hasOwnershipCleanupContext) {
+            if (!compiler_semantic_cfg_abandon(cs)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to abandon unsupported loop cleanup CFG",
+                        node->location);
+                return;
+            }
+            cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
+        } else if (!compiler_semantic_cfg_jump_abrupt(
+                           cs, semanticTargetBlockId, node->location)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to record semantic break/continue edge",
+                    node->location);
+            return;
+        }
+    }
+
+    if (hasOwnershipCleanupContext) {
         compiler_emit_scope_ownership_cleanups_above_depth(cs, loopLabel->targetScopeStackDepth);
         if (cs->hasError) {
             return;
