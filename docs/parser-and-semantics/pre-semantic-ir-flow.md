@@ -17,6 +17,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -44,6 +45,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_while.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -239,6 +241,10 @@ retain the persistent conservative fallback. The implementation lives in
 `compile_statement_for.c`, separated from the general statement-flow unit
 while preserving the existing ExecBC label path. Loop preflight and exit
 classification live in the focused `compiler_semantic_cfg_loop.c` module.
+The established `foreach` iterator-contract bytecode lowering likewise lives
+in `compile_statement_foreach.c`; this keeps future canonical iterator CFG
+work out of the still-large general statement-flow unit while preserving the
+current conservative SemanticIR fallback.
 
 A supported source `if` may now end exactly one direct arm with a linear-value
 `return` or `throw` while the other arm falls through. The abrupt arm emits its
