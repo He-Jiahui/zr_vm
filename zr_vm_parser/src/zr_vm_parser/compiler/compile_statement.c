@@ -3929,7 +3929,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 解析 end 标签
     resolve_label(cs, endLabelId);
-    if (hasSemanticCfg) {
+    if (hasSemanticCfg && joinBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         if (!compiler_semantic_cfg_restore_slots(
                     cs, &semanticSlotSnapshot)) {
             ZrParser_Compiler_Error(
@@ -3937,6 +3937,8 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
             goto cleanup;
         }
         compiler_semantic_cfg_enter(cs, joinBlock);
+    } else if (hasSemanticCfg && !previousSemanticCfgAbruptIsLocal) {
+        cs->preSemanticIrCfgTerminated = ZR_TRUE;
     }
 
 cleanup:

@@ -54,6 +54,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -252,14 +253,20 @@ The producer recursively composes fully preflighted statement-form
 conditionals. When an inner conditional has one abrupt arm and one
 fall-through arm, its single-predecessor join remains the active continuation
 and may feed the enclosing arm's join. The abrupt block is never listed as a
-predecessor of either join. An inner conditional with two abrupt arms remains
-unsupported because it has no continuation for the current nested lowering.
-Direct two-abrupt-arm shapes, trailing reachable statements after a direct
-transfer, non-linear payloads, expression-form nested conditionals, and
-cleanup/finally transfers abandon the source graph and block detached
-restarts. Statement-form `if` compilation inside a declared child callable is
-isolated from the entry-body sidecar until child callables own independent
-published functions.
+predecessor of either join. When both inner arms terminate, the conditional
+has no join and is itself an abrupt arm for its parent. An enclosing sibling
+may still provide the sole path to the outer join. When both top-level arms
+terminate, the function termination latch prevents unreachable source from
+starting a detached graph; the most recently emitted abrupt sink supplies the
+CFG's required representative exit ID while every return/throw block remains
+zero-successor.
+
+Trailing syntax after a transfer or no-fall-through nested conditional,
+non-linear payloads, expression-form nested conditionals, and cleanup/finally
+transfers abandon the source graph and block detached restarts.
+Statement-form `if` compilation inside a declared child callable is isolated
+from the entry-body sidecar until child callables own independent published
+functions.
 
 The same producer owns a bounded optional-access slice. A canonical nullable
 receiver guard emits ordered present-true and absent-false edges, and call

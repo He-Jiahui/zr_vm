@@ -77,6 +77,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-loop-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
+  - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
 doc_type: module-detail
 ---
 
@@ -209,13 +210,16 @@ The arm-flow preflight composes this rule recursively. A nested statement-form
 its enclosing arm: the inner abrupt block stays a sink, the inner join has one
 predecessor, and the surviving path may execute later linear statements before
 reaching the outer join. The outer join retains both of its reachable sibling
-paths. A nested conditional whose two arms both terminate has no supported
-fall-through continuation in this slice and keeps the entire outer
-conditional on conservative legacy lowering.
+paths. A nested conditional whose two arms both terminate publishes no inner
+join and is classified as a terminating arm. If the enclosing sibling falls
+through, it becomes the outer join's sole predecessor. If both outer arms also
+terminate, no outer join is published, the function termination latch blocks
+unreachable later starters, and the last source-order abrupt sink is the
+required representative CFG exit while all abrupt blocks keep zero successors.
 
-Both direct arms terminating, non-linear return/throw payloads, reachable
-syntax after a direct transfer, expression-form nested conditionals, and
-cleanup/finally context likewise persistently block later CFG startup.
+Non-linear return/throw payloads, reachable syntax after a direct transfer or
+no-fall-through nested conditional, expression-form nested conditionals, and
+cleanup/finally context still persistently block later CFG startup.
 Declared child callables still lack separately published semantic functions,
 so their statement-form `if` nodes compile in a disposable isolated SemanticIR
 state just like their loops; a child branch cannot add a barrier, instruction,

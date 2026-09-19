@@ -191,10 +191,12 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
         elseFlow = compiler_semantic_cfg_if_arm_flow(
                 node->data.ifExpression.elseExpr);
         if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
-            elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
-            (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
-             elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES)) {
+            elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
             return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+        }
+        if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
+            elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES) {
+            return ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES;
         }
         return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
     }
@@ -386,6 +388,7 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     TZrValueId condition;
     EZrCompilerSemanticCfgArmFlow thenFlow;
     EZrCompilerSemanticCfgArmFlow elseFlow;
+    TZrBool bothTerminate;
     if (cs == ZR_NULL || node == ZR_NULL || thenBlock == ZR_NULL ||
         elseBlock == ZR_NULL || joinBlock == ZR_NULL) {
         return ZR_FALSE;
@@ -398,15 +401,20 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     elseFlow = compiler_semantic_cfg_if_arm_flow(
             node->data.ifExpression.elseExpr);
     if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
-        elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
-        (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
-         elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES)) {
+        elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
         cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
         return ZR_FALSE;
     }
+    /* Declared callable control flow is compiled in a disposable SemanticIR
+     * isolation, but its returns intentionally stay on the legacy callable
+     * path. Keep an internal join there so an unclosed arm never targets the
+     * entry sidecar's no-continuation sentinel. */
+    bothTerminate = (TZrBool)(cs->currentFunctionNode == ZR_NULL &&
+            thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
+            elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES);
     condition = compiler_semantic_ir_slot_value(cs, conditionSlot);
     if (condition == ZR_VALUE_ID_INVALID) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
@@ -424,11 +432,14 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     *elseBlock = ZrParser_Cfg_AppendBlock(
             cs->state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT,
             node->data.ifExpression.elseExpr);
-    *joinBlock = ZrParser_Cfg_AppendBlock(
-            cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
+    *joinBlock = bothTerminate
+            ? ZR_PARSER_CFG_INVALID_BLOCK_ID
+            : ZrParser_Cfg_AppendBlock(
+                    cs->state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, node);
     if (*thenBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
         *elseBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-        *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        (!bothTerminate &&
+         *joinBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) ||
         !compiler_semantic_cfg_emit_branch(cs, *thenBlock,
                                            condition, node->location) ||
         !compiler_semantic_cfg_bind_current(cs, ZR_PARSER_CFG_TERMINATOR_BRANCH) ||
@@ -776,8 +787,8 @@ static TZrBool compiler_semantic_cfg_terminate_value(
         return ZR_FALSE;
     }
 
+    cs->preSemanticIr.cfg.exitBlockId = cs->preSemanticIrCfgBlock;
     if (!cs->preSemanticIrCfgAbruptIsLocal) {
-        cs->preSemanticIr.cfg.exitBlockId = cs->preSemanticIrCfgBlock;
         cs->preSemanticIrCfgTerminated = ZR_TRUE;
     }
     cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;

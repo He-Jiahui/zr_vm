@@ -296,14 +296,84 @@ static void test_nested_if_throw_preserves_outer_fallthrough_cfg(void) {
     free_return_cfg_fixture(&compiler, ast);
 }
 
-static void test_source_if_two_abrupt_arms_remains_conservative(void) {
+static void test_source_if_two_abrupt_arms_terminate_cfg(void) {
     static const TZrChar source[] =
             "fn identity(value: int): int { return value; }\n"
             "var flag: bool = true;\n"
             "var seed: int = 7;\n"
             "if (flag) { return seed; } else { throw seed; }\n"
             "identity(seed);\n";
-    static TZrChar sourceName[] = "source_if_two_abrupt_fallback.zr";
+    static TZrChar sourceName[] = "source_if_two_abrupt_cfg.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_return_cfg_fixture(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName, sizeof(sourceName) - 1U);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *returnBlock;
+    const SZrParserCfgBlock *throwBlock;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize returnCount = 0U;
+    TZrSize throwCount = 0U;
+    TZrSize callCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgTerminated);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(3U, function->cfg.blocks.length);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_RETURN) {
+            returnCount++;
+            TEST_ASSERT_EQUAL_UINT32(1U, instruction->operandCount);
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_THROW) {
+            throwCount++;
+            TEST_ASSERT_EQUAL_UINT32(1U, instruction->operandCount);
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(1U, returnCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, throwCount);
+    TEST_ASSERT_EQUAL_UINT64(0U, callCount);
+    returnBlock = branch_exit_cfg_block_for_opcode(
+            function, ZR_SEMANTIC_IR_RETURN);
+    throwBlock = branch_exit_cfg_block_for_opcode(
+            function, ZR_SEMANTIC_IR_THROW);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_EQUAL_UINT32(0U, returnBlock->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(0U, throwBlock->successorCount);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_return_cfg_fixture(&compiler, ast);
+}
+
+static void test_nested_total_exit_with_trailing_statement_remains_conservative(
+        void) {
+    static const TZrChar source[] =
+            "fn identity(value: int): int { return value; }\n"
+            "var outer: bool = true;\n"
+            "var inner: bool = true;\n"
+            "var seed: int = 7;\n"
+            "if (outer) {\n"
+            "  if (inner) { return seed; } else { throw seed; }\n"
+            "  seed = 8;\n"
+            "} else { seed = 9; }\n"
+            "identity(seed);\n";
+    static TZrChar sourceName[] = "nested_total_exit_trailing_fallback.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_return_cfg_fixture(
             &compiler, source, sizeof(source) - 1U,
@@ -339,8 +409,7 @@ static void test_source_if_two_abrupt_arms_remains_conservative(void) {
 static void test_declared_child_if_exit_does_not_pollute_entry_cfg(void) {
     static const TZrChar source[] =
             "fn child(flag: bool): int {\n"
-            "  if (flag) { return 1; }\n"
-            "  return 2;\n"
+            "  if (flag) { return 1; } else { return 2; }\n"
             "}\n"
             "var flag: bool = true;\n"
             "child(flag);\n";
