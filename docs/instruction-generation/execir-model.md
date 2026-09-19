@@ -48,6 +48,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_loop_exit_cfg.inc
   - tests/parser/test_pre_semantic_ir_branch_exit_cfg.inc
   - tests/parser/test_ssa_effects_verifier.c
+  - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
@@ -64,6 +65,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
+  - tests/acceptance/ssa-builder-iterator-invokes.md
 doc_type: module-detail
 ---
 
@@ -100,7 +102,11 @@ its `PLACE_BASE`, `LOAD`, and `STORE` instructions remain authoritative.
 `exec_ir_opcode.def` is the single opcode schema source for the enum and
 metadata table.  It records operand bounds, terminator/value flags, and effect
 classes for arithmetic, place, memory, call, allocation, ownership/drop,
-control-flow, exception, suspension, and phi operations.
+control-flow, exception, suspension, iterator protocol, and phi operations.
+Iterator initialization, advance, and current-value retrieval are distinct
+one-operand/one-result invoke terminators. Each conservatively declares managed
+heap and native-FFI reads/writes plus throw/allocation effects; lowering must not
+disguise protocol dispatch as a generic callable symbol.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address
@@ -151,9 +157,14 @@ any reaching definition reports `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` without
 changing the input. Repeating the pass is a no-op because the promoted Place
 has no remaining memory operations. Phi incoming rows preserve predecessor
 occurrences, including loop backedges, parallel predecessor entries, and
-critical edges. For an already split `INVOKE`, a pre-invoke definition is
-available on both successors while the invoke result is available only on the
-normal successor; the core verifier checks that boundary.
+critical edges. For an already split generic or iterator invoke, a pre-invoke
+definition is available on both successors while the invoke result is available
+only on the normal successor; the core verifier checks that boundary.
+
+ExecBC and AOT projections currently reject all three iterator invoke opcodes
+with `UNSUPPORTED`, transactionally preserving any previously published
+projection. This is a deliberate backend boundary until iterator ABI lowering
+exists; the canonical opcodes are not silently copied into a runnable artifact.
 
 The source compiler supplies a canonical loop path directly for a
 straight-line `while`. Before compiling the condition it closes the current

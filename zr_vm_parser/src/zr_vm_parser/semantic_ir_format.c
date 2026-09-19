@@ -52,6 +52,9 @@ const TZrChar *ZrParser_SemanticIr_OpcodeName(EZrSemanticIrOpcode opcode) {
         "yield.suspend",
         "yield.resume",
         "iterator.complete",
+        "iter.init",
+        "iter.move_next",
+        "iter.current",
     };
 
     if (opcode < ZR_SEMANTIC_IR_INVALID || opcode >= ZR_SEMANTIC_IR_ENUM_MAX) {

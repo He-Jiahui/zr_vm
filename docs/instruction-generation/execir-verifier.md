@@ -17,6 +17,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_core_model.c
+  - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/acceptance/ssa-effect-chain-continuity.md
   - tests/acceptance/ssa-cfg-edge-symmetry.md
   - tests/parser/test_ssa_loops_specialization.c
@@ -79,12 +80,22 @@ enforces one incoming per predecessor *edge occurrence* and exact range order.
 Two distinct incoming slots may name the same source block when it has two
 parallel edges to the destination; source-block uniqueness is not an invariant.
 
-An `INVOKE` result is committed only on a normal continuation.  If an operand
-or PHI incoming reaches a successor marked `ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION`,
-or any block reachable from that successor, the SSA phase reports
+The result of any value-producing terminator that may throw is committed only
+on a normal continuation. This covers generic `INVOKE` plus iterator init,
+advance, and current-value retrieval without hard-coding one opcode. If an
+operand or PHI incoming reaches a successor marked
+`ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION`, or any block reachable from that successor,
+the SSA phase reports
 `ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE` with the use site and defining
 instruction identity; block dominance by itself is not treated as proof that
 the result exists on that path.
+
+Structural verification first requires this terminator family to own exactly
+two ordered, distinct successors. Successor zero must be an ordinary block and
+successor one must carry `ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION`; instruction-owned
+and block-owned successor rows must agree. A missing or misplaced exception
+marker therefore fails closed before SSA reachability can mistake the
+exceptional continuation for a normal one.
 
 Dominators use a reachable-block bit set and an iterative predecessor
 intersection.  Unreachable rows are kept empty, so a definition from an
@@ -112,7 +123,10 @@ being incorrectly discarded.
 `ssa_effects_verifier` covers linear use-before-definition, cross-branch
 non-dominating uses, valid PHI edge definitions, and wrong-edge diagnostics in
 addition to direct, cleanup-path, and PHI-input exceptional-edge `INVOKE`
-result negatives, matching parallel-edge PHI incoming slots, and the existing
+result negatives. `ssa_builder_iterator_invokes` applies the same result
+availability rule to the three iterator invoke terminators and directly
+rejects missing or misplaced exception markers at the core structure boundary.
+Coverage also includes matching parallel-edge PHI incoming slots and the existing
 effect-token negatives. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.

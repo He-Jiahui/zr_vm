@@ -60,8 +60,38 @@ static EZrExecIrOpcode map_opcode(const SZrSemanticIrInstruction *instruction) {
         case ZR_SEMANTIC_IR_YIELD_SUSPEND: return ZR_EXEC_IR_OPCODE_SUSPEND;
         case ZR_SEMANTIC_IR_GC_NEW: return ZR_EXEC_IR_OPCODE_ALLOC;
         case ZR_SEMANTIC_IR_INITIALIZE: return ZR_EXEC_IR_OPCODE_STORE;
+        case ZR_SEMANTIC_IR_ITER_INIT: return ZR_EXEC_IR_OPCODE_ITER_INIT;
+        case ZR_SEMANTIC_IR_ITER_MOVE_NEXT:
+            return ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT;
+        case ZR_SEMANTIC_IR_ITER_CURRENT:
+            return ZR_EXEC_IR_OPCODE_ITER_CURRENT;
         default: return ZR_EXEC_IR_OPCODE_INVALID;
     }
+}
+
+static TZrBool semantic_opcode_can_invoke(EZrSemanticIrOpcode opcode) {
+    return (TZrBool)(opcode == ZR_SEMANTIC_IR_CALL_TYPED ||
+                    opcode == ZR_SEMANTIC_IR_CALL_VIRTUAL ||
+                    opcode == ZR_SEMANTIC_IR_CALL_DYNAMIC ||
+                    opcode == ZR_SEMANTIC_IR_CALL_META ||
+                    opcode == ZR_SEMANTIC_IR_ITER_INIT ||
+                    opcode == ZR_SEMANTIC_IR_ITER_MOVE_NEXT ||
+                    opcode == ZR_SEMANTIC_IR_ITER_CURRENT);
+}
+
+static TZrBool semantic_opcode_requires_invoke_edges(
+        EZrSemanticIrOpcode opcode) {
+    return (TZrBool)(opcode == ZR_SEMANTIC_IR_ITER_INIT ||
+                    opcode == ZR_SEMANTIC_IR_ITER_MOVE_NEXT ||
+                    opcode == ZR_SEMANTIC_IR_ITER_CURRENT);
+}
+
+static TZrBool exec_ir_opcode_has_invoke_successors(
+        EZrExecIrOpcode opcode) {
+    return (TZrBool)(opcode == ZR_EXEC_IR_OPCODE_INVOKE ||
+                    opcode == ZR_EXEC_IR_OPCODE_ITER_INIT ||
+                    opcode == ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT ||
+                    opcode == ZR_EXEC_IR_OPCODE_ITER_CURRENT);
 }
 
 static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize) {
@@ -325,10 +355,7 @@ static TZrBool has_typed_invoke_edges(const SZrSemanticIrFunction *semantic,
     tail = (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
         (SZrArray *)&semantic->instructions,
         block->firstInstructionIndex + block->instructionCount - 1u);
-    return (TZrBool)(tail->opcode == ZR_SEMANTIC_IR_CALL_TYPED ||
-                    tail->opcode == ZR_SEMANTIC_IR_CALL_VIRTUAL ||
-                    tail->opcode == ZR_SEMANTIC_IR_CALL_DYNAMIC ||
-                    tail->opcode == ZR_SEMANTIC_IR_CALL_META);
+    return semantic_opcode_can_invoke(tail->opcode);
 }
 
 static TZrBool validate_no_unsplit_throwing_operations(
@@ -408,6 +435,42 @@ static TZrBool validate_semantic_cfg_edges(const SZrSemanticIrFunction *semantic
                 return ZR_FALSE;
             }
             count = block->successorCount;
+        }
+        if (block->instructionCount != 0u) {
+            TZrUInt32 instructionIndex;
+            TZrSemanticInstructionId iteratorSite = 0u;
+            for (instructionIndex = 0u;
+                 instructionIndex < block->instructionCount;
+                 ++instructionIndex) {
+                const SZrSemanticIrInstruction *instruction =
+                        (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                                (SZrArray *)&semantic->instructions,
+                                block->firstInstructionIndex +
+                                        instructionIndex);
+                if (semantic_opcode_requires_invoke_edges(
+                            instruction->opcode)) {
+                    iteratorSite = instruction->id;
+                }
+            }
+            if (iteratorSite != 0u &&
+                !has_typed_invoke_edges(semantic, block)) {
+                TZrUInt32 actualKind = UINT32_MAX;
+                if (block->outgoingEdges.isValid && count > 1u) {
+                    const SZrParserCfgEdge *edge =
+                            (const SZrParserCfgEdge *)ZrCore_Array_Get(
+                                    (SZrArray *)&block->outgoingEdges, 1u);
+                    actualKind = (TZrUInt32)edge->kind;
+                }
+                diag_missing(diagnostic, output, i + 1u, iteratorSite);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+                    diagnostic->sourceId = iteratorSite;
+                    diagnostic->expectedVersion =
+                            ZR_PARSER_CFG_EDGE_EXCEPTION;
+                    diagnostic->actualVersion = actualKind;
+                }
+                return ZR_FALSE;
+            }
         }
         for (j = 0u; j < count; ++j) {
             if (block->outgoingEdges.isValid) {
@@ -866,7 +929,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 if ((x.opcode == ZR_EXEC_IR_OPCODE_BRANCH && db->successorRange.count != 1u) ||
                     (x.opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
                      db->successorRange.count != 2u) ||
-                    (x.opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+                    (exec_ir_opcode_has_invoke_successors(
+                             (EZrExecIrOpcode)x.opcode) &&
                      db->successorRange.count != 2u) ||
                     (x.opcode == ZR_EXEC_IR_OPCODE_SWITCH && db->successorRange.count == 0u) ||
                     (x.opcode == ZR_EXEC_IR_OPCODE_RETURN && db->successorRange.count != 0u)) {
@@ -875,7 +939,9 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                         diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
                         diagnostic->expectedVersion = x.opcode == ZR_EXEC_IR_OPCODE_RETURN
                             ? 0u : x.opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH ||
-                                   x.opcode == ZR_EXEC_IR_OPCODE_INVOKE ? 2u : 1u;
+                                   exec_ir_opcode_has_invoke_successors(
+                                           (EZrExecIrOpcode)x.opcode)
+                                ? 2u : 1u;
                         diagnostic->actualVersion = db->successorRange.count;
                     }
                     ZrCore_ExecIr_FreeFunction(output);

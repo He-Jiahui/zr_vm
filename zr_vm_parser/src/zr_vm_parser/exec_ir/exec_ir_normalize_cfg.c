@@ -17,11 +17,14 @@ static void normalize_diagnostic(SZrExecIrDiagnostic *diagnostic,
             : 0u;
 }
 
-static TZrBool semantic_call_can_invoke(EZrSemanticIrOpcode opcode) {
+static TZrBool semantic_operation_can_invoke(EZrSemanticIrOpcode opcode) {
     return (TZrBool)(opcode == ZR_SEMANTIC_IR_CALL_TYPED ||
                     opcode == ZR_SEMANTIC_IR_CALL_VIRTUAL ||
                     opcode == ZR_SEMANTIC_IR_CALL_DYNAMIC ||
-                    opcode == ZR_SEMANTIC_IR_CALL_META);
+                    opcode == ZR_SEMANTIC_IR_CALL_META ||
+                    opcode == ZR_SEMANTIC_IR_ITER_INIT ||
+                    opcode == ZR_SEMANTIC_IR_ITER_MOVE_NEXT ||
+                    opcode == ZR_SEMANTIC_IR_ITER_CURRENT);
 }
 
 static TZrUInt32 block_edge_count(const SZrParserCfgBlock *block) {
@@ -59,7 +62,7 @@ static TZrBool block_has_typed_invoke_edges(
     return (TZrBool)(normal->kind == ZR_PARSER_CFG_EDGE_NORMAL &&
                     exception->kind == ZR_PARSER_CFG_EDGE_EXCEPTION &&
                     normal->toBlockId != exception->toBlockId &&
-                    semantic_call_can_invoke(tail->opcode));
+                    semantic_operation_can_invoke(tail->opcode));
 }
 
 static TZrUInt32 block_prior_invoke_count(
@@ -76,7 +79,7 @@ static TZrUInt32 block_prior_invoke_count(
                 (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
                         (SZrArray *)&semantic->instructions,
                         block->firstInstructionIndex + index);
-        if (semantic_call_can_invoke(instruction->opcode)) {
+        if (semantic_operation_can_invoke(instruction->opcode)) {
             ++count;
         }
     }
@@ -218,7 +221,7 @@ TZrBool zr_parser_exec_ir_normalize_exception_cfg(
                             (SZrArray *)&semantic->instructions, absoluteIndex);
             SZrParserCfgBlock *destination;
             SZrParserCfgEdge *edges;
-            if (!semantic_call_can_invoke(instruction->opcode)) {
+            if (!semantic_operation_can_invoke(instruction->opcode)) {
                 continue;
             }
             destination = &normalized->blocks[destinationId];

@@ -66,6 +66,19 @@ if (NOT TARGET zr_vm_ssa_builder_fact_identity_test)
     set_tests_properties(ssa_builder_fact_identity PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_builder_iterator_invokes_test)
+    add_executable(zr_vm_ssa_builder_iterator_invokes_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_builder_iterator_invokes.c
+            ${_zr_vm_ssa_builder_sources})
+    target_include_directories(zr_vm_ssa_builder_iterator_invokes_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_builder_iterator_invokes_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_test(NAME ssa_builder_iterator_invokes COMMAND zr_vm_ssa_builder_iterator_invokes_test)
+    set_tests_properties(ssa_builder_iterator_invokes PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_place_eligibility_test)
     add_executable(zr_vm_ssa_place_eligibility_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_place_eligibility.c

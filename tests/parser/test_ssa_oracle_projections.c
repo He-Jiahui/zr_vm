@@ -916,6 +916,11 @@ static void test_phi_copy_and_critical_edge_split(void) {
 }
 
 static void test_unsupported_and_transactional_failures(void) {
+    static const EZrExecIrOpcode iteratorOpcodes[] = {
+        ZR_EXEC_IR_OPCODE_ITER_INIT,
+        ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT,
+        ZR_EXEC_IR_OPCODE_ITER_CURRENT,
+    };
     SZrExecIrFunction function;
     SZrExecBcProjection bc = {0};
     SZrAotIrProjection aot = {0};
@@ -938,6 +943,23 @@ static void test_unsupported_and_transactional_failures(void) {
            bc.instructions == oldInstructions && bc.instructionCount == oldCount);
     assert(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
     assert(aot.instructionCount == oldAotCount);
+    function.instructions[0].operands = range(0u, 1u);
+    for (TZrUInt32 index = 0u;
+         index < sizeof(iteratorOpcodes) / sizeof(iteratorOpcodes[0]);
+         ++index) {
+        function.instructions[0].opcode = iteratorOpcodes[index];
+        assert(!ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+               diagnostic.instructionId == 1u &&
+               diagnostic.actualVersion == (TZrUInt32)iteratorOpcodes[index] &&
+               bc.instructions == oldInstructions &&
+               bc.instructionCount == oldCount);
+        assert(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+               diagnostic.instructionId == 1u &&
+               diagnostic.actualVersion == (TZrUInt32)iteratorOpcodes[index] &&
+               aot.instructionCount == oldAotCount);
+    }
     function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
     function.instructions[0].operands = range(0u, 0u);
     function.instructions[2].operands = range(UINT32_MAX, 1u);

@@ -102,7 +102,7 @@ M3 introduces a semantic function that exists before final ExecBC assembly. It g
 
 ## Instruction Contract
 
-The public opcode set covers constants and conversions; Place construction and projection; load/store/initialize/move/copy/drop; borrow/reborrow/end-loan/dereference; typed, virtual, dynamic, and meta calls; control flow; scope and cleanup; distinct value, aggregate, field, union, GC, and ownership construction; resolved property operations; and evaluate-once destructuring operations.
+The public opcode set covers constants and conversions; Place construction and projection; load/store/initialize/move/copy/drop; borrow/reborrow/end-loan/dereference; typed, virtual, dynamic, and meta calls; iterator initialization, advance, and current-value retrieval; control flow; scope and cleanup; distinct value, aggregate, field, union, GC, and ownership construction; resolved property operations; and evaluate-once destructuring operations.
 
 Value construction, ordinary/meta calls, GC allocation, and ownership construction have different opcodes. Ownership construction additionally records explicit unique/share/degrade/wake operations; move, drop, shared borrow, and mutable borrow remain their own opcodes. No generic construct flag or default fallback opcode is used to reinterpret one family as another. Golden formatting is stable and includes instruction ID, opcode name, TypeId, PlaceId, input ValueId, and result ValueId.
 
@@ -242,9 +242,12 @@ retain the persistent conservative fallback. The implementation lives in
 while preserving the existing ExecBC label path. Loop preflight and exit
 classification live in the focused `compiler_semantic_cfg_loop.c` module.
 The established `foreach` iterator-contract bytecode lowering likewise lives
-in `compile_statement_foreach.c`; this keeps future canonical iterator CFG
-work out of the still-large general statement-flow unit while preserving the
-current conservative SemanticIR fallback.
+in `compile_statement_foreach.c`. SemanticIR and ExecIR now reserve distinct
+`ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` operations with normal and
+exception continuations; the source `foreach` producer still uses the
+conservative SemanticIR fallback until it emits that canonical CFG. Keeping
+the legacy lowering focused here prevents the general statement-flow unit from
+absorbing the transition work.
 
 A supported source `if` may now end exactly one direct arm with a linear-value
 `return` or `throw` while the other arm falls through. The abrupt arm emits its

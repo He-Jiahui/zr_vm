@@ -45,6 +45,60 @@ static TZrBool zr_exec_ir_edge_contains(const TZrExecIrBlockId *edges,
     return ZR_FALSE;
 }
 
+static TZrBool zr_exec_ir_verify_exception_result_terminator(
+        const SZrExecIrFunction *function,
+        const SZrExecIrBlock *block,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOpcodeInfo *info,
+        TZrExecIrInstructionId instructionId,
+        SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrRange instructionEdges;
+    TZrExecIrBlockId normalTarget;
+    TZrExecIrBlockId exceptionTarget;
+
+    if (info == ZR_NULL ||
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) == 0u ||
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW) == 0u ||
+        instruction->resultRange.count == 0u) {
+        return ZR_TRUE;
+    }
+
+    instructionEdges = instruction->successorRange.count != 0u
+                               ? instruction->successorRange
+                               : block->successorRange;
+    if (block->successorRange.count != 2u || instructionEdges.count != 2u) {
+        zr_exec_ir_set_diagnostic(diagnostic,
+                                  ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE,
+                                  function,
+                                  instructionId,
+                                  block->id,
+                                  2u,
+                                  instructionEdges.count);
+        return ZR_FALSE;
+    }
+
+    normalTarget = function->successors[instructionEdges.start];
+    exceptionTarget = function->successors[instructionEdges.start + 1u];
+    if (function->successors[block->successorRange.start] != normalTarget ||
+        function->successors[block->successorRange.start + 1u] !=
+                exceptionTarget ||
+        normalTarget == exceptionTarget ||
+        (function->blocks[normalTarget - 1u].flags &
+         ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u ||
+        (function->blocks[exceptionTarget - 1u].flags &
+         ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) == 0u) {
+        zr_exec_ir_set_diagnostic(diagnostic,
+                                  ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE,
+                                  function,
+                                  instructionId,
+                                  block->id,
+                                  ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION,
+                                  function->blocks[exceptionTarget - 1u].flags);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool zr_exec_ir_value_range_is_valid(const SZrExecIrFunction *function,
                                                SZrExecIrRange range,
                                                TZrUInt32 count,
@@ -501,6 +555,15 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                               block->id,
                                               1u,
                                               0u);
+                    return ZR_FALSE;
+                }
+                if (!zr_exec_ir_verify_exception_result_terminator(
+                            function,
+                            block,
+                            terminator,
+                            info,
+                            lastIndex + 1u,
+                            diagnostic)) {
                     return ZR_FALSE;
                 }
                 if (block->terminatorInstructionId != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&

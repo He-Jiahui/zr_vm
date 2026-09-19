@@ -344,11 +344,11 @@ static TZrBool zr_exec_ir_ssa_report_dominance(
     return ZR_FALSE;
 }
 
-/* An INVOKE publishes its result only after the call has completed normally.
- * The exceptional successor is entered without that result in the value
- * environment.  Keep this edge check here, next to the dominance check,
- * because a block-level dominance relation alone cannot express the
- * instruction-level split at a throwing terminator. */
+/* A value-producing throwing terminator publishes its result only after the
+ * operation has completed normally.  The exceptional successor is entered
+ * without that result in the value environment.  Keep this edge check here,
+ * next to the dominance check, because a block-level dominance relation alone
+ * cannot express the instruction-level split at a throwing terminator. */
 static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
         const SZrExecIrFunction *function,
         const SZrExecIrSsaDominance *dominance,
@@ -356,6 +356,7 @@ static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
         TZrExecIrBlockId useBlock,
         TZrBool *outOfMemory) {
     const SZrExecIrInstruction *definition;
+    const SZrExecIrOpcodeInfo *definitionInfo;
     TZrExecIrBlockId definitionBlock;
     const SZrExecIrBlock *definitionContainer;
     SZrExecIrRange edgeRange;
@@ -378,7 +379,12 @@ static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
         return ZR_FALSE;
     }
     definition = &function->instructions[definitionInstruction - 1u];
-    if ((EZrExecIrOpcode)definition->opcode != ZR_EXEC_IR_OPCODE_INVOKE) {
+    definitionInfo = ZrCore_ExecIr_OpcodeInfo(
+            (EZrExecIrOpcode)definition->opcode);
+    if (definitionInfo == ZR_NULL ||
+        (definitionInfo->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) == 0u ||
+        (definitionInfo->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW) == 0u ||
+        definition->results.count == 0u) {
         return ZR_FALSE;
     }
     definitionBlock = dominance->instructionBlocks[definitionInstruction - 1u];

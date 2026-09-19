@@ -90,6 +90,9 @@ static TZrBool semantic_ir_opcode_requires_result(EZrSemanticIrOpcode opcode) {
         case ZR_SEMANTIC_IR_UNION_CONSTRUCT:
         case ZR_SEMANTIC_IR_GC_NEW:
         case ZR_SEMANTIC_IR_OWN_CONSTRUCT:
+        case ZR_SEMANTIC_IR_ITER_INIT:
+        case ZR_SEMANTIC_IR_ITER_MOVE_NEXT:
+        case ZR_SEMANTIC_IR_ITER_CURRENT:
         case ZR_SEMANTIC_IR_PROPERTY_GET:
         case ZR_SEMANTIC_IR_PROPERTY_REF_GET:
         case ZR_SEMANTIC_IR_DESTRUCTURE_EVALUATE:

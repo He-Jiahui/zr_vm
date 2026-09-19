@@ -107,6 +107,9 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         ZR_SEMANTIC_IR_DESTRUCTURE_LEAF_ASSIGN,
         ZR_SEMANTIC_IR_DESTRUCTURE_LEAF_BIND,
         ZR_SEMANTIC_IR_DESTRUCTURE_REST,
+        ZR_SEMANTIC_IR_ITER_INIT,
+        ZR_SEMANTIC_IR_ITER_MOVE_NEXT,
+        ZR_SEMANTIC_IR_ITER_CURRENT,
     };
     static const char expected[] =
         "1 constant type=5 place=1 value=1 result=2\n"
@@ -149,7 +152,10 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         "38 destructure.project type=5 place=1 value=1 result=2\n"
         "39 destructure.leaf_assign type=5 place=1 value=1 result=2\n"
         "40 destructure.leaf_bind type=5 place=1 value=1 result=2\n"
-        "41 destructure.rest type=5 place=1 value=1 result=2\n";
+        "41 destructure.rest type=5 place=1 value=1 result=2\n"
+        "42 iter.init type=5 place=1 value=1 result=2\n"
+        "43 iter.move_next type=5 place=1 value=1 result=2\n"
+        "44 iter.current type=5 place=1 value=1 result=2\n";
     SZrSemanticIrFunction function;
     SZrParserPlaceBase base;
     SZrSemanticIrInstructionSpec spec;

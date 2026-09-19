@@ -16,6 +16,7 @@ tests:
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
+  - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_fact_identity.c
   - tests/parser/test_ssa_place_eligibility.c
   - tests/cmake/ssa-tests.cmake
@@ -34,6 +35,7 @@ tests:
   - tests/acceptance/ssa-builder-ssa-dominance.md
   - tests/acceptance/ssa-builder-opcode-arity.md
   - tests/acceptance/ssa-builder-control-edge-rejection.md
+  - tests/acceptance/ssa-builder-iterator-invokes.md
   - tests/acceptance/ssa-builder-fact-identity.md
   - tests/acceptance/ssa-builder-test-registration.md
   - tests/acceptance/ssa-source-branch-slot-isolation.md
@@ -99,16 +101,21 @@ silently accepting malformed CFG facts. They do not lower edge kinds into
 ExecIR exceptional/resume semantics; see
 `tests/acceptance/ssa-builder-cfg-fact-identity.md`.
 
-The builder lowers one explicit exceptional shape: a call at the end of a
-semantic block with exactly two dynamic edges, ordered normal then exception
-and targeting distinct blocks, becomes an `INVOKE` terminator. Its exceptional
-destination is marked as such in ExecIR, so the SSA verifier rejects use of
-the call result there. Reversing the edge order, omitting its kind, or putting
-an exception edge on a throw still reports source-located `UNSUPPORTED` and
-leaves the caller's output unchanged. Cleanup, return, suspend, and resume
-edges remain unsupported, not ordinary successors. Normal, true/false, and
-switch edges retain their order. This is not yet production compiler CFG or
-effect-token generation; see `tests/acceptance/ssa-builder-control-edge-rejection.md`.
+The builder lowers explicit invoke shapes at the end of a semantic block with
+exactly two dynamic edges, ordered normal then exception and targeting distinct
+blocks. Typed/virtual/dynamic/meta calls become `INVOKE`; `ITER_INIT`,
+`ITER_MOVE_NEXT`, and `ITER_CURRENT` retain distinct ExecIR opcodes while using
+the same two-successor terminator contract. The normal continuation owns the
+result and the exception destination is marked in ExecIR, so the SSA verifier
+rejects use of that result there. Consecutive invoke-capable operations are
+split into individual blocks before lowering, preserving one exceptional exit
+per operation. Reversing the edge order, omitting its kind, or putting an
+exception edge on a throw still reports source-located `UNSUPPORTED` and leaves
+the caller's output unchanged. Cleanup, return, suspend, and resume edges remain
+unsupported, not ordinary successors. Normal, true/false, and switch edges
+retain their order. This is not yet production compiler CFG or effect-token
+generation; see `tests/acceptance/ssa-builder-control-edge-rejection.md` and
+`tests/acceptance/ssa-builder-iterator-invokes.md`.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
 split the block rather than attribute that operation's exceptional exit to
@@ -150,7 +157,8 @@ focused negative and positive boundaries.
 
 For terminators with fixed normal-edge meaning, the builder checks successor
 arity before publishing their ranges: `BRANCH` needs exactly one target,
-`INVOKE` needs two typed targets, `SWITCH` needs at least one, and `RETURN`
+`INVOKE` and each iterator invoke need two typed targets, `SWITCH` needs at
+least one, and `RETURN`
 needs none. A mismatched count
 reports `INVALID_RANGE` with the source block/instruction and the expected
 boundary versus actual count. `THROW` and `SUSPEND` are intentionally not
