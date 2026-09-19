@@ -67,6 +67,7 @@ TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,
         TZrBool *bodyEndsWithBreak) {
     const SZrForLoop *loop;
+    TZrBool endsWithBreak = ZR_FALSE;
 
     if (bodyEndsWithBreak != ZR_NULL) {
         *bodyEndsWithBreak = ZR_FALSE;
@@ -75,16 +76,21 @@ TZrBool compiler_semantic_cfg_for_is_supported(
         return ZR_FALSE;
     }
     loop = &node->data.forLoop;
-    return (TZrBool)(
-            loop->isStatement &&
-            loop->cond != ZR_NULL &&
-            compiler_semantic_cfg_expression_is_linear(loop->cond) &&
-            (loop->init == ZR_NULL ||
-             compiler_semantic_cfg_arm_falls_through(loop->init) ||
-             compiler_semantic_cfg_expression_is_linear(loop->init)) &&
-            (loop->step == ZR_NULL ||
-             compiler_semantic_cfg_expression_is_linear(loop->step)) &&
-            compiler_semantic_cfg_loop_body_analyze(
-                    loop->block, ZR_TRUE, ZR_TRUE,
-                    bodyEndsWithBreak));
+    if (!loop->isStatement ||
+        (loop->cond != ZR_NULL &&
+         !compiler_semantic_cfg_expression_is_linear(loop->cond)) ||
+        (loop->init != ZR_NULL &&
+         !compiler_semantic_cfg_arm_falls_through(loop->init) &&
+         !compiler_semantic_cfg_expression_is_linear(loop->init)) ||
+        (loop->step != ZR_NULL &&
+         !compiler_semantic_cfg_expression_is_linear(loop->step)) ||
+        !compiler_semantic_cfg_loop_body_analyze(
+                loop->block, ZR_TRUE, ZR_TRUE, &endsWithBreak) ||
+        (loop->cond == ZR_NULL && !endsWithBreak)) {
+        return ZR_FALSE;
+    }
+    if (bodyEndsWithBreak != ZR_NULL) {
+        *bodyEndsWithBreak = endsWithBreak;
+    }
+    return ZR_TRUE;
 }

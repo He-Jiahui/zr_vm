@@ -502,36 +502,101 @@ static void test_suppressed_loop_exit_blocks_later_call_cfg(void) {
     free_loop_exit_cfg_fixture(&compiler, ast);
 }
 
-static void test_unmodeled_for_exit_blocks_later_call_cfg(void) {
+static void test_source_infinite_for_break_targets_join_cfg(void) {
     static const TZrChar source[] =
             "fn identity(value: bool): bool { return value; }\n"
             "for (;;) { break; }\n"
             "identity(true);\n";
-    static TZrChar sourceName[] = "unmodeled_for_exit_fallback.zr";
+    static TZrChar sourceName[] = "source_infinite_for_break_cfg.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_loop_exit_cfg_fixture(
             &compiler, source, sizeof(source) - 1U,
             sourceName, sizeof(sourceName) - 1U);
     const SZrSemanticIrFunction *function;
-    TZrSize callCount = 0U;
+    const SZrParserCfgBlock *header;
+    const SZrParserCfgBlock *body;
+    const SZrParserCfgBlock *join;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize breakTargetInstructionIndex = compiler.instructions.length;
+    TZrSize forwardJumpCount = 0U;
     TZrSize index;
 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
-    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
-    for (index = 0U; index < function->instructions.length; index++) {
-        const SZrSemanticIrInstruction *instruction =
-                ZrParser_SemanticIr_InstructionAt(function, index);
-        TEST_ASSERT_NOT_NULL(instruction);
-        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
-            callCount++;
+    TEST_ASSERT_EQUAL_UINT32(8U, function->cfg.blocks.length);
+    header = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    body = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 2U);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    TEST_ASSERT_NOT_NULL(header);
+    TEST_ASSERT_NOT_NULL(body);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(1U, header->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, header->successorCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(header, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(
+            body->id, ZrParser_Cfg_BlockEdgeAt(header, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, body->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, body->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            join->id, ZrParser_Cfg_BlockEdgeAt(body, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(1U, join->predecessorCount);
+
+    for (index = 0U; index < compiler.pendingJumps.length; index++) {
+        const SZrPendingJump *pending =
+                (const SZrPendingJump *)ZrCore_Array_Get(
+                        &compiler.pendingJumps, index);
+        const SZrLabel *label;
+        const TZrInstruction *instruction;
+
+        if (pending == ZR_NULL ||
+            pending->instructionIndex >= compiler.instructions.length ||
+            pending->labelId >= compiler.labels.length) {
+            continue;
+        }
+        label = (const SZrLabel *)ZrCore_Array_Get(
+                &compiler.labels, pending->labelId);
+        instruction = (const TZrInstruction *)ZrCore_Array_Get(
+                &compiler.instructions, pending->instructionIndex);
+        if (label != ZR_NULL && label->isResolved &&
+            instruction != ZR_NULL &&
+            instruction->instruction.operationCode ==
+                    ZR_INSTRUCTION_ENUM(JUMP) &&
+            label->instructionIndex > pending->instructionIndex) {
+            forwardJumpCount++;
+            breakTargetInstructionIndex = label->instructionIndex;
         }
     }
-    TEST_ASSERT_EQUAL_UINT64(0U, callCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, forwardJumpCount);
+    TEST_ASSERT_TRUE(breakTargetInstructionIndex >= 1U);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_INSTRUCTION_ENUM(JUMP),
+            ((const TZrInstruction *)ZrCore_Array_Get(
+                     &compiler.instructions,
+                     breakTargetInstructionIndex - 1U))
+                    ->instruction.operationCode);
+    TEST_ASSERT_TRUE(
+            ((const TZrInstruction *)ZrCore_Array_Get(
+                     &compiler.instructions,
+                     breakTargetInstructionIndex - 1U))
+                    ->instruction.operand.operand2[0] < 0);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_EQUAL_UINT32(8U, output.blockCount);
+    ZrCore_ExecIr_FreeFunction(&output);
     free_loop_exit_cfg_fixture(&compiler, ast);
 }
 
@@ -671,12 +736,61 @@ static void test_conditioned_for_nonterminal_break_keeps_fallback(void) {
             sourceName, sizeof(sourceName) - 1U);
 }
 
-static void test_unmodeled_for_exit_abandons_active_call_cfg(void) {
+static void test_source_infinite_for_break_preserves_active_call_cfg(void) {
     static const TZrChar source[] =
             "fn identity(value: bool): bool { return value; }\n"
             "identity(true);\n"
-            "for (;;) { break; }\n";
-    static TZrChar sourceName[] = "unmodeled_for_exit_active_fallback.zr";
+            "for (;;) { break; }\n"
+            "identity(true);\n";
+    static TZrChar sourceName[] = "source_infinite_for_break_active_cfg.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_loop_exit_cfg_fixture(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName, sizeof(sourceName) - 1U);
+    const SZrSemanticIrFunction *function;
+    TZrSize callCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(11U, function->cfg.blocks.length);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64(2U, callCount);
+    free_loop_exit_cfg_fixture(&compiler, ast);
+}
+
+static void test_infinite_for_continue_keeps_fallback(void) {
+    static const TZrChar source[] =
+            "fn identity(value: bool): bool { return value; }\n"
+            "for (;;) { continue; }\n"
+            "identity(true);\n";
+    static TZrChar sourceName[] = "infinite_for_continue_fallback.zr";
+
+    assert_for_cfg_fallback_blocks_later_call(
+            source, sizeof(source) - 1U,
+            sourceName, sizeof(sourceName) - 1U);
+}
+
+static void test_infinite_for_continue_abandons_active_call_cfg(void) {
+    static const TZrChar source[] =
+            "fn identity(value: bool): bool { return value; }\n"
+            "identity(true);\n"
+            "for (;;) { continue; }\n"
+            "identity(true);\n";
+    static TZrChar sourceName[] =
+            "infinite_for_continue_active_fallback.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_loop_exit_cfg_fixture(
             &compiler, source, sizeof(source) - 1U,

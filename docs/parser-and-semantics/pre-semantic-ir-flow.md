@@ -82,6 +82,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-for-cfg.md
   - tests/acceptance/ssa-compiler-source-for-continue-cfg.md
   - tests/acceptance/ssa-compiler-source-for-break-cfg.md
+  - tests/acceptance/ssa-compiler-source-infinite-for-break-cfg.md
   - tests/acceptance/ssa-compiler-source-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-nested-branch-exit-cfg.md
   - tests/acceptance/ssa-compiler-source-total-branch-exit-cfg.md
@@ -112,6 +113,7 @@ fail with a source-located unsupported-edge diagnostic; a zero-operand branch
 remains an unconditional branch with exactly one successor. This is a builder
 boundary. The compiler producer now emits a deliberately bounded source CFG
 surface for `if`, straight-line `while`, condition-bearing linear `for`,
+conditionless `for` with a direct terminal break,
 direct terminal `while` exits,
 linear-operand `&&`/`||`, and known
 nullable optional calls with either `void`/no-op or nullable value results.
@@ -217,9 +219,14 @@ or linear statement prefix ending in an unvalued `continue` or `break`. A
 terminal `break` closes the body directly at the join; because no iteration
 can reach the step, the source graph omits both the step block and backedge.
 The unreachable legacy step still compiles for ExecBC layout, but semantic
-emission is suppressed and the break label resolves after it. Missing
-conditions, valued or nonterminal exits, nonlinear expressions, cleanup, and
-`foreach` retain the persistent conservative fallback. The implementation
+emission is suppressed and the break label resolves after it. A conditionless
+statement `for` is also supported when its body ends directly in an unvalued
+`break`: the header uses one unconditional edge to the body, the body closes
+at the join, and the source graph contains neither a false edge nor a
+step/backedge. The unreachable legacy backedge remains immediately before the
+break target. A missing condition without that terminal break, valued or
+nonterminal exits, nonlinear expressions, cleanup, and `foreach` retain the
+persistent conservative fallback. The implementation
 lives in `compile_statement_for.c`, separated from the general statement-flow
 unit while preserving the existing ExecBC label path. Loop preflight and exit
 classification live in the focused `compiler_semantic_cfg_loop.c` module.

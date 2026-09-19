@@ -114,6 +114,14 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
         jumpIfIndex = cs->instructionCount;
         emit_instruction(cs, jumpIfInstruction);
         add_pending_jump(cs, jumpIfIndex, loopEndLabelId);
+    } else if (hasSemanticCfg) {
+        if (!compiler_semantic_cfg_jump(cs, bodyBlock, node->location)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to record semantic for body edge",
+                    node->location);
+            goto cleanup;
+        }
+        compiler_semantic_cfg_enter(cs, bodyBlock);
     }
 
     if (forLoop->block != ZR_NULL) {
