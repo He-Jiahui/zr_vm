@@ -245,7 +245,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,
         TZrBool allowContinue,
-        TZrBool allowFinallyBreak,
+        TZrBool allowFinallyTransfer,
         TZrBool *endsWithBreak);
 TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,

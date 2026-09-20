@@ -108,7 +108,7 @@ TZrBool compiler_semantic_cfg_for_is_supported(
         (loop->step != ZR_NULL &&
          !compiler_semantic_cfg_expression_is_linear(loop->step)) ||
         !compiler_semantic_cfg_loop_body_analyze(
-                loop->block, ZR_TRUE, ZR_TRUE, ZR_FALSE,
+                loop->block, ZR_TRUE, ZR_TRUE, ZR_TRUE,
                 &endsWithBreak)) {
         return ZR_FALSE;
     }

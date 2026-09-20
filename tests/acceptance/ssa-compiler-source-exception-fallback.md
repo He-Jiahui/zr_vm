@@ -60,9 +60,10 @@ identifier passed by value: its exceptional edge defines and stores
 `EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after cleanup
 dispatch. Multiple or conditional calls and literal, converting, non-value, or
 multiple arguments remain here. One operand-free `break` from a supported
-`while` is also claimed by the cleanup producer: terminal and conditional
-forms reach the existing loop join only after `finally`. One operand-free
-`continue` reaches the existing `while` condition block by the same route.
+`while` or linear statement-form `for` is also claimed by the cleanup
+producer: terminal and conditional forms reach the existing loop join only
+after `finally`. One operand-free `continue` reaches the existing `while`
+condition block or `for` step block by the same route.
 Multiple break/continue sites and mixed loop-transfer/completion kinds retain
 this fallback boundary.
 
@@ -87,7 +88,7 @@ this fallback boundary.
 This checkpoint is deliberately conservative. Later bounded milestones now
 claim source-owned catch payload/dispatch, no-catch finally cleanup edges, the
 interrupted-assignment guard, one direct-call exceptional cleanup path, and one
-pending `break` or `continue` destination from a supported `while`.
+pending `break` or `continue` destination from a supported `while` or `for`.
 Other handler/finally combinations and handled non-call throwable operations
 remain outside that subset. Straight-line unhandled source `throw` is covered by
 [the explicit throw CFG checkpoint](ssa-compiler-source-throw-cfg.md). The

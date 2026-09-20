@@ -660,6 +660,10 @@ int main(void) {
     RUN_TEST(test_conditional_break_try_finally_dispatches_to_loop_join);
     RUN_TEST(test_terminal_continue_try_finally_routes_to_condition);
     RUN_TEST(test_conditional_continue_try_finally_dispatches_to_condition);
+    RUN_TEST(test_for_break_try_finally_routes_to_loop_join);
+    RUN_TEST(test_conditional_for_break_try_finally_dispatches_to_loop_join);
+    RUN_TEST(test_for_continue_try_finally_routes_to_step);
+    RUN_TEST(test_conditional_for_continue_try_finally_dispatches_to_step);
     RUN_TEST(test_two_continue_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_break_sites_try_finally_stay_on_legacy_path);
     return UNITY_END();
