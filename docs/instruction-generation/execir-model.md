@@ -199,6 +199,11 @@ non-runnable until a backend call/landing-pad ABI exists. The direct Oracle
 also keeps invoke execution explicitly unsupported; transporting its CFG does
 not claim that an exception object or active payload can be reconstructed.
 
+`PLACE_BASE` and `PLACE_PROJECT` likewise retain their pointer-free operand,
+result, type, layout, and source metadata in both projections while forcing
+`runnable == false`. Their physical address and layout semantics belong to a
+later backend bridge, so the direct Oracle does not manufacture a host pointer.
+
 Cleanup identity currently lives on both sides of the CFG boundary: SemanticIR
 uses `ZR_PARSER_CFG_EDGE_CLEANUP` and `ZR_PARSER_CFG_BLOCK_CLEANUP`, while
 ExecIR preserves cleanup regions with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`. The

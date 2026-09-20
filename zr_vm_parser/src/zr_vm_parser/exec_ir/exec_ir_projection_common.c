@@ -38,12 +38,11 @@ static TZrBool zr_projection_bytes(TZrUInt32 count, size_t element, size_t *byte
 /* The first projection is intentionally a no-optimization scalar/control
  * slice.  Operations whose physical representation needs a runtime layout or
  * iterator ABI stay explicit unsupported until their dedicated lowering stage
- * is present.  ALLOC and INVOKE are copied as metadata; executable allocation
- * and invoke/landing-pad handling remain separate backend concerns. */
+ * is present.  PLACE_BASE/PLACE_PROJECT, ALLOC, and INVOKE are copied as
+ * metadata; executable layout, allocation, and invoke/landing-pad handling
+ * remain separate backend concerns. */
 static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
-        case ZR_EXEC_IR_OPCODE_PLACE_BASE:
-        case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
         case ZR_EXEC_IR_OPCODE_ITER_INIT:
         case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
         case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
@@ -693,7 +692,9 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].sourceId = in->sourceId;
         p->instructions[i].deoptId = in->deoptId;
         p->instructions[i].bindingRow = in->bindingRow;
-        if (in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST ||
+        if (in->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE ||
+            in->opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT ||
+            in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST ||
             in->opcode == ZR_EXEC_IR_OPCODE_INVOKE ||
             in->opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD) {
             /* The projection preserves canonical instruction metadata, but
