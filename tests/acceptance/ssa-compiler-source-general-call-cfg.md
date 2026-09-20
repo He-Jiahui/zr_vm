@@ -89,7 +89,9 @@ no-catch `try/finally` shape admits one or more resolved direct calls in linear
 statement-form conditional control, with no argument or one exact `int`
 identifier or integer literal passed by value. It routes every exceptional
 edge through one `EXCEPTION_PAYLOAD` landing and shared cleanup, then rethrows
-after cleanup dispatch. Spread and unresolved dynamic calls,
+after cleanup dispatch. One exact non-null `object` throw may share that
+pending `THROW` cleanup completion with the direct call. Spread and unresolved
+dynamic calls,
 other enclosing-handler shapes, Weak/ownership cleanup exits, and non-call
 exceptional operations remain open for the full 01.02 exit gate.
 

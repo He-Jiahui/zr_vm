@@ -580,6 +580,108 @@ static void test_dynamic_conditional_invoke_try_finally_stays_on_legacy_path(voi
     free_source(&compiler, ast);
 }
 
+static void test_conditional_invoke_and_throw_try_finally_routes_shared_cleanup(void) {
+    static const TZrChar source[] =
+            "fn identity(): int { return 7; }\n"
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "var payload: object = 0;\n"
+            "try {\n"
+            "  if (choose) { identity(); } else { throw payload; }\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] =
+            "conditional_invoke_and_throw_try_finally_cleanup.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *throwBlock;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize callCount = 0U;
+    TZrSize payloadCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    throwBlock = find_block_terminator(
+            function, ZR_PARSER_CFG_TERMINATOR_THROW);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+            cleanup->terminatorKind);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callCount += 1U;
+        } else if (instruction->opcode ==
+                   ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD) {
+            payloadCount += 1U;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(1U, callCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, payloadCount);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(
+            (output.blocks[cleanup->id].flags &
+             ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0U);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    free_source(&compiler, ast);
+}
+
+static void test_conditional_invoke_and_int_throw_try_finally_stays_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "fn identity(): int { return 7; }\n"
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { identity(); } else { throw seed; }\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] =
+            "conditional_invoke_and_int_throw_try_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_NULL(find_block_kind(
+            function, ZR_PARSER_CFG_BLOCK_CLEANUP));
+
+    free_source(&compiler, ast);
+}
+
 static void test_try_catch_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "var seed: int = 7;\n"

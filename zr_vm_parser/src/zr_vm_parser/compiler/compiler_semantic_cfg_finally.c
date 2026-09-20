@@ -112,6 +112,29 @@ static TZrBool compiler_semantic_cfg_finally_calls_are_resolved(
     return ZR_TRUE;
 }
 
+static TZrBool compiler_semantic_cfg_finally_throw_payload_is_object(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression) {
+    SZrInferredType payloadType;
+    TZrBool supported;
+
+    if (cs == ZR_NULL || expression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Init(
+            cs->state, &payloadType, ZR_VALUE_TYPE_OBJECT);
+    supported = (TZrBool)(
+            ZrParser_ExpressionType_Infer(
+                    cs, (SZrAstNode *)expression, &payloadType) &&
+            payloadType.baseType == ZR_VALUE_TYPE_OBJECT &&
+            !payloadType.isNullable &&
+            payloadType.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+            payloadType.gcBridgeKind == ZR_GC_BRIDGE_NONE &&
+            payloadType.referenceAccess == ZR_REFERENCE_ACCESS_NONE);
+    ZrParser_InferredType_Free(cs->state, &payloadType);
+    return supported;
+}
+
 static TZrBool compiler_semantic_cfg_finally_protected_flow(
         const SZrAstNode *node,
         SZrCompilerSemanticFinallyFlowInfo *outInfo) {
@@ -237,7 +260,9 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
     if ((info.abruptSiteCount > 1U && !multipleLoopTransfer &&
          !multiplePayloadCompletion) ||
         (info.exceptionalSiteCount != 0U &&
-         info.abruptSiteCount != 0U) ||
+         info.abruptSiteCount != 0U &&
+         (info.abruptSiteCount != 1U ||
+          completionFlow != ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW)) ||
         ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN) != 0U &&
          (info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW |
                        ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
@@ -326,6 +351,10 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
             (flowInfo.exceptionalSiteCount == 0U ||
              compiler_semantic_cfg_finally_calls_are_resolved(
                      cs, statement->block)) &&
+            (flowInfo.exceptionalSiteCount == 0U ||
+             flowInfo.abruptSiteCount == 0U ||
+             compiler_semantic_cfg_finally_throw_payload_is_object(
+                     cs, flowInfo.completionExpression)) &&
             compiler_semantic_cfg_finally_block_is_linear(
                     statement->finallyBlock));
 }
