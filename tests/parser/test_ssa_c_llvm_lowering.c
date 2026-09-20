@@ -24,12 +24,15 @@ int main(void) {
         {1u, ZR_EXEC_IR_OPCODE_ADD, 0u, {0u, 1u}, {0u, 2u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 4u, 0u, 0u, 0u},
         {2u, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH, 0u, {0u, 0u}, {0u, 1u}, {0u, 2u}, {0u, 0u}, 0u, 0u, 5u, 0u, 0u, 0u},
         {3u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE, {0u, 1u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 6u, 0u, 0u, 9u},
-        {4u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 7u, 1u, 0u, 0u}
+        {4u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 7u, 1u, 0u, 0u},
+        /* NOP is deliberately retained as a runtime bridge in the shared
+         * lowering so its accounting cannot be hidden by an adapter. */
+        {5u, ZR_EXEC_IR_OPCODE_NOP, 0u, {0u, 0u}, {0u, 0u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 8u, 0u, 0u, 0u}
     };
-    const SZrAotIrBlock block = {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 4u}, {0u, 0u}, {0u, 0u}, 2u};
+    const SZrAotIrBlock block = {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 5u}, {0u, 0u}, {0u, 0u}, 2u};
     SZrAotIrFunction function;
     SZrAotIrModule module;
-    SZrAotIrLoweringRecord records[4];
+    SZrAotIrLoweringRecord records[5];
     SZrAotIrLoweringResult result;
     SZrAotIrEmitOptions cOptions;
     SZrAotIrEmitOptions llvmOptions;
@@ -47,7 +50,7 @@ int main(void) {
     function.blocks = &block;
     function.blockCount = 1u;
     function.instructions = instructions;
-    function.instructionCount = 4u;
+    function.instructionCount = 5u;
     function.operandPool = operands;
     function.operandCount = 2u;
     function.resultPool = results;
@@ -65,18 +68,19 @@ int main(void) {
     module.target.pointerSize = (TZrUInt32)sizeof(void *);
     module.target.abiHash = 66u;
     result.records = records;
-    result.capacity = 4u;
+    result.capacity = 5u;
     if (!ZrParser_AotIr_LowerShared(&module, &result, &diagnostic)) {
         fprintf(stderr, "status=%d fn=%u block=%u ins=%u idx=%u exp=%llu act=%llu\\n", (int)diagnostic.status,
                 diagnostic.functionId, diagnostic.blockId, diagnostic.instructionId, diagnostic.index,
                 (unsigned long long)diagnostic.expected, (unsigned long long)diagnostic.actual);
         return 1;
     }
-    assert(result.count == 4u);
+    assert(result.count == 5u);
     assert(result.records[0].kind == ZR_AOT_IR_LOWERING_TYPED_SCALAR);
     assert(result.records[1].kind == ZR_AOT_IR_LOWERING_CONTROL);
     assert(result.records[2].kind == ZR_AOT_IR_LOWERING_CALL);
     assert(result.records[3].kind == ZR_AOT_IR_LOWERING_ASYNC_BOUNDARY);
+    assert(result.records[4].kind == ZR_AOT_IR_LOWERING_RUNTIME_BRIDGE);
     assert(result.sourceHash != 0u && result.loweringHash != 0u);
     assert(ZrParser_AotIr_LoweringIsPointerFree(&result));
     memset(&cOptions, 0, sizeof(cOptions));
@@ -84,6 +88,8 @@ int main(void) {
     cOptions.strictFloatingPoint = ZR_TRUE;
     cOptions.allowRuntimeBridge = ZR_TRUE;
     assert(ZrParser_AotIr_EmitC(&module, &cOptions, &cResult, &diagnostic));
+    assert(cResult.nativeCount == 3u);
+    assert(cResult.runtimeBridgeCount == 2u);
     llvmOptions = cOptions;
     llvmOptions.target = ZR_AOT_IR_EMITTER_LLVM;
     assert(ZrParser_AotIr_EmitLlvm(&module, &llvmOptions, &llvmResult, &diagnostic));

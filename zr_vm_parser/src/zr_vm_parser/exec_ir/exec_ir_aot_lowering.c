@@ -162,7 +162,11 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
     }
     result->target = target;
     result->sourceHash = lowering.sourceHash;
-    result->runtimeBridgeCount = lowering.runtimeBridgeCount;
+    /* Count every bridge class exactly once below.  The shared lowering
+     * result only tracks the generic runtime-bridge kind; copying that value
+     * here would double-count those records when the target walk accounts for
+     * async/container bridges as well. */
+    result->runtimeBridgeCount = 0u;
     result->unsupportedCount = lowering.unsupportedCount;
     for (TZrUInt32 i = 0u; i < lowering.count; ++i) {
         const SZrAotIrLoweringRecord *record = &records[i];
