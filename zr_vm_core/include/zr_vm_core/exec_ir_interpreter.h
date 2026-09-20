@@ -86,6 +86,17 @@ typedef TZrBool (*FZrExecIrOracleAllocate)(
         TZrUInt32 operandCount,
         SZrExecIrOracleValue *result);
 
+/* Runtime subtype identity stays outside the pointer-free oracle value.  The
+ * caller supplies the canonical membership operation and returns only the
+ * boolean result; a rejected query is reported distinctly from a false
+ * membership result. */
+typedef TZrBool (*FZrExecIrOracleTypeTest)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *value,
+        TZrExecIrTypeToken matchTypeToken,
+        TZrBool *result);
+
 typedef struct SZrExecIrOracleInput {
     const SZrExecIrFunction *function;
     /* Initial values are indexed by valueId - 1. */
@@ -101,6 +112,8 @@ typedef struct SZrExecIrOracleInput {
     void *memoryUserData;
     FZrExecIrOracleAllocate allocate;
     void *allocateUserData;
+    FZrExecIrOracleTypeTest typeTest;
+    void *typeTestUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {

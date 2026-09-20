@@ -88,7 +88,9 @@ typedef enum EZrExecutionDiagnosticCode {
     /* A reference-oracle memory provider rejected a load/store operation. */
     ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR,
     /* A reference-oracle allocation provider rejected an allocation. */
-    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ALLOCATION_ERROR
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ALLOCATION_ERROR,
+    /* A reference-oracle type-test provider rejected a membership query. */
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR
 } EZrExecutionDiagnosticCode;
 
 /*

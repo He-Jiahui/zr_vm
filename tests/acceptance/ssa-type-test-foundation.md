@@ -16,8 +16,10 @@ recorded in `ssa-source-typed-catch-cfg.md`.
 - Structural and analysis hashes include the target. GVN may common equal tests
   but never tests with different targets. DCE clears the target when replacing
   a dead test with `NOP`.
-- Oracle, ExecBC, and AOT projections reject `TYPE_TEST` transactionally until
-  runtime canonical subtype evaluation is implemented.
+- The direct Oracle executes `TYPE_TEST` through an explicit
+  `FZrExecIrOracleTypeTest` provider; missing providers remain unsupported and
+  provider rejection has a dedicated diagnostic. ExecBC and AOT projections
+  still reject it transactionally until their executable subtype ABI exists.
 
 ## Language evidence
 
@@ -50,15 +52,17 @@ explicitly.
   different-target tests remain distinct.
 - `test_ssa_pass_manager_scalar.c` proves the target participates in structural
   hashing and is cleared by dead-code elimination.
-- `test_ssa_oracle_projections.c` proves the Oracle, ExecBC, and AOT paths fail
-  closed; the materialized ExecBC and AOT projections also preserve their
+- `test_ssa_oracle_projections.c` proves missing-provider rejection, successful
+  true/false Oracle membership, and provider-error diagnostics. The ExecBC and
+  AOT paths remain fail-closed; their materialized projections preserve their
   existing output on rejection.
 
 ## Deliberate boundary
 
-A bounded single source typed catch now emits `TYPE_TEST`; no backend interprets
-it, and no string-based fallback is permitted. Multiple catches, rich or
-unresolved annotations, `finally`, and runtime projection remain out of scope.
+A bounded single source typed catch now emits `TYPE_TEST`; only the direct
+Oracle provider seam interprets it, and no string-based fallback is permitted.
+Multiple catches, rich or unresolved annotations, `finally`, and executable
+backend projection remain out of scope.
 
 ## Validation
 
@@ -74,3 +78,22 @@ unresolved annotations, `finally`, and runtime projection remain out of scope.
   projection tests pass on all three toolchains.
 - WSL GCC 11.4 ASan+UBSan with leak detection and halt-on-error passes the same
   93 producer cases and four ExecIR focused tests without a sanitizer report.
+
+## Oracle provider follow-up
+
+The direct Oracle now has a caller-owned `FZrExecIrOracleTypeTest` seam for
+canonical subtype membership. The callback receives the pointer-free operand
+and the instruction's `matchTypeToken`; returning `false` in the output slot
+is a successful non-match, while returning failure publishes
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`. Without a callback, the
+operation remains `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. This keeps runtime type
+identity out of the Oracle scalar value model and leaves executable ExecBC/AOT
+subtype lowering for a later backend contract.
+
+TDD first added the missing-provider and true/false/rejection assertions; the
+pre-change build failed because the callback fields and diagnostic did not
+exist. The implementation then passed the focused projection test on Windows
+MSVC 19.44, WSL GCC 11.4, and WSL Clang 14 (1/1 each). GCC ASan+UBSan with
+leak detection passed the same focused test five consecutive times. Wiki
+validation passed 116 Markdown files, 115 manifest pages, and 644 local links;
+the validator unit suite passed 5/5.

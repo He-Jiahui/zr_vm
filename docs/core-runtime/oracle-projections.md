@@ -47,13 +47,18 @@ The oracle currently executes the scalar/control subset (constants, copies and
 conversions, checked integer/floating arithmetic, comparisons, branches,
 switches, phi entry, return, throw, suspend, and callback-backed calls). Store,
 load, drop, barrier, call, throw, suspend, and provider-backed allocation
-operations append bounded operand snapshots to the observable event stream. Calls,
-loads, and allocations require explicit caller providers; place projection and
-invoke/landing-pad operations remain unsupported. Provider failures preserve a
-specific oracle diagnostic and instruction/source identity, while missing
-providers return `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and
-infinite control flow have separate diagnostics and a caller-configurable step
-limit.
+operations append bounded operand snapshots to the observable event stream.
+`TYPE_TEST` is also executable when the caller supplies the explicit
+`FZrExecIrOracleTypeTest` provider. The provider receives the pointer-free
+operand snapshot and canonical `matchTypeToken`, and returns either a boolean
+membership result or a rejection; false membership is a successful result,
+while rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`.
+Calls, loads, allocations, and type tests require explicit caller providers;
+place projection and invoke/landing-pad operations remain unsupported.
+Provider failures preserve a specific oracle diagnostic and instruction/source
+identity, while missing providers return
+`ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and infinite control
+flow have separate diagnostics and a caller-configurable step limit.
 
 At block entry, value phis are evaluated together against the predecessor
 **edge slot**, not merely the predecessor block ID. The terminator records the

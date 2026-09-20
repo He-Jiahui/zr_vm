@@ -893,6 +893,110 @@ static void test_call_event_oracle(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+typedef struct SZrOracleTypeTestFixture {
+    TZrExecIrTypeToken expectedMatchType;
+    TZrUInt32 callCount;
+    TZrBool result;
+    TZrBool reject;
+} SZrOracleTypeTestFixture;
+
+static TZrBool oracle_type_test_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *value,
+        TZrExecIrTypeToken matchTypeToken, TZrBool *result) {
+    SZrOracleTypeTestFixture *fixture =
+            (SZrOracleTypeTestFixture *)userData;
+    assert(fixture != ZR_NULL && instruction != ZR_NULL &&
+           instruction->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST &&
+           value != ZR_NULL && result != ZR_NULL);
+    if (fixture->reject != ZR_FALSE ||
+        matchTypeToken != fixture->expectedMatchType) {
+        return ZR_FALSE;
+    }
+    ++fixture->callCount;
+    *result = fixture->result;
+    return ZR_TRUE;
+}
+
+static void build_type_test_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId payload, matched;
+    SZrExecIrRange matchedResult, testOperands,
+            returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    payload = ZrCore_ExecIr_FunctionAddValue(
+            function, 41u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    matched = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(payload != 0u && matched != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &matched, 1u, &matchedResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &payload, 1u, &testOperands));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &matched, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_TYPE_TEST,
+                       testOperands, matchedResult, range(0u, 0u),
+                       0u, 801u);
+    function->instructions[0].matchTypeToken = 41u;
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 802u);
+}
+
+static void test_type_test_oracle_provider(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOracleValue initial;
+    SZrOracleTypeTestFixture fixture;
+
+    build_type_test_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    initial.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    initial.as.signedInteger = 7;
+    input.initialValues = &initial;
+    input.initialValueCount = 1u;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_TYPE_TEST);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.expectedMatchType = 41u;
+    fixture.result = ZR_TRUE;
+    input.typeTest = oracle_type_test_callback;
+    input.typeTestUserData = &fixture;
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(fixture.callCount == 1u && execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_BOOL &&
+           execution.returnValue.as.boolean == ZR_TRUE);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    fixture.result = ZR_FALSE;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(fixture.callCount == 2u && execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_BOOL &&
+           execution.returnValue.as.boolean == ZR_FALSE);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    fixture.reject = ZR_TRUE;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR &&
+           diagnostic.instructionId == 1u && execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_phi_copy_and_critical_edge_split(void) {
     SZrExecIrFunction phiFunction, criticalFunction;
     SZrExecBcProjection bc = {0};
@@ -1034,6 +1138,7 @@ int main(void) {
     test_scalar_oracle_and_projection();
     test_branch_phi_oracle();
     test_call_event_oracle();
+    test_type_test_oracle_provider();
     test_phi_copy_and_critical_edge_split();
     test_unsupported_and_transactional_failures();
     test_malformed_input();

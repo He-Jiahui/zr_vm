@@ -180,11 +180,15 @@ clone-compatible instruction storage, and DCE cleanup preserve or clear that
 identity consistently. Existing opcode numbers remain stable because the new
 opcode is appended to the schema.
 
-`TYPE_TEST` is deliberately not executable in this phase. The oracle, ExecBC
-projection, and AOT projection reject it transactionally until runtime subtype
-testing is connected to canonical type metadata. A bounded source typed-catch
-producer now uses this operation in SemanticIR/ExecIR; it never substitutes a
-type-name string comparison or claims an executable projection.
+The direct oracle executes `TYPE_TEST` when its caller supplies the explicit
+`FZrExecIrOracleTypeTest` provider. That provider is the runtime seam for
+canonical subtype membership: it receives the operand snapshot and
+`matchTypeToken`, and must distinguish a successful false membership result
+from a rejected query. ExecBC and AOT projections still reject the operation
+transactionally because their executable subtype ABI is not yet connected.
+A bounded source typed-catch producer uses this operation in SemanticIR/ExecIR;
+it never substitutes a type-name string comparison or claims an executable
+projection.
 
 Cleanup identity currently lives on both sides of the CFG boundary: SemanticIR
 uses `ZR_PARSER_CFG_EDGE_CLEANUP` and `ZR_PARSER_CFG_BLOCK_CLEANUP`, while
