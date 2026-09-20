@@ -151,8 +151,8 @@ alone.
 The production source compiler now emits this bounded shape for a no-catch
 `try/finally` when the cleanup body contains only nested blocks and linear
 expression statements, the protected body contains the same subset plus one or
-more same-kind linear return or throw sites under statement-form conditionals
-when a normal sibling remains, or one resolved direct call outside conditional
+more same-kind linear return or throw sites under statement-form conditionals,
+or one resolved direct call outside conditional
 control. That call may take no
 arguments or one exact, ownership/reference/GC-neutral `int` identifier by
 value, and no enclosing ownership cleanup may be active. Normal completion
@@ -186,10 +186,9 @@ normal join as `SWITCH_DEFAULT`. The abrupt block reloads the private payload
 after cleanup and rethrows it, so neither a cleanup assignment nor the
 uncommitted INVOKE result can replace the exception. Nonlinear payloads,
 literal, converting, non-value, multiple, or conditional arguments,
-conditional or multiple calls, declarations, multiple return/throw sites
-without a normal sibling, mixed return/throw sites, mixed explicit and
-exceptional completion, catch-plus-finally, active catch targets, or ownership
-cleanup reject the entire shape and keep the legacy path. Mixed
+conditional or multiple calls, declarations, mixed return/throw sites, mixed
+explicit and exceptional completion, catch-plus-finally, active catch targets,
+or ownership cleanup reject the entire shape and keep the legacy path. Mixed
 break/continue sites, dynamic/unresolved `foreach` iteration, binding cleanup,
 and combinations of a loop transfer with another completion kind remain
 unsupported.

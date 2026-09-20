@@ -614,18 +614,120 @@ static void test_repeated_return_try_finally_dispatches_pending_state(void) {
     free_source(&compiler, ast);
 }
 
-static void test_two_return_sites_try_finally_stays_on_legacy_path(void) {
+static void test_terminal_repeated_return_try_finally_merges_payload(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { return seed; } else { return 8; }\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n";
+    static TZrChar sourceName[] =
+            "terminal_repeated_return_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *returnBlock;
+    const SZrParserCfgEdge *completionEdge;
+    const SZrSemanticIrInstruction *returnInstruction;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(1U, cleanup->successorCount);
+    completionEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    TEST_ASSERT_NOT_NULL(completionEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_CLEANUP, completionEdge->kind);
+    returnBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            completionEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_RETURN,
+            returnBlock->terminatorKind);
+    returnInstruction = block_tail(function, returnBlock);
+    TEST_ASSERT_NOT_NULL(returnInstruction);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_RETURN, returnInstruction->opcode);
+    TEST_ASSERT_EQUAL_UINT32(1U, returnInstruction->operandCount);
+
+    free_source(&compiler, ast);
+}
+
+static void test_terminal_repeated_throw_try_finally_merges_payload(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { throw seed; } else { throw seed; }\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n";
+    static TZrChar sourceName[] =
+            "terminal_repeated_throw_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *throwBlock;
+    const SZrParserCfgEdge *completionEdge;
+    const SZrSemanticIrInstruction *throwInstruction;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(1U, cleanup->successorCount);
+    completionEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    TEST_ASSERT_NOT_NULL(completionEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_CLEANUP, completionEdge->kind);
+    throwBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            completionEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_THROW,
+            throwBlock->terminatorKind);
+    throwInstruction = block_tail(function, throwBlock);
+    TEST_ASSERT_NOT_NULL(throwInstruction);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_THROW, throwInstruction->opcode);
+    TEST_ASSERT_EQUAL_UINT32(1U, throwInstruction->operandCount);
+
+    free_source(&compiler, ast);
+}
+
+static void test_mixed_return_throw_try_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "var choose: bool = true;\n"
             "var seed: int = 7;\n"
             "try {\n"
             "  if (choose) { return seed; }\n"
-            "  return 8;\n"
+            "  throw seed;\n"
             "} finally {\n"
             "  seed = 9;\n"
             "}\n";
     static TZrChar sourceName[] =
-            "two_return_sites_try_finally_fallback.zr";
+            "mixed_return_throw_try_finally_fallback.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(
             &compiler, source, sizeof(source) - 1U,
@@ -766,7 +868,9 @@ int main(void) {
     RUN_TEST(test_nonlinear_throw_try_finally_stays_on_legacy_path);
     RUN_TEST(test_conditional_return_try_finally_dispatches_pending_state);
     RUN_TEST(test_repeated_return_try_finally_dispatches_pending_state);
-    RUN_TEST(test_two_return_sites_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_terminal_repeated_return_try_finally_merges_payload);
+    RUN_TEST(test_terminal_repeated_throw_try_finally_merges_payload);
+    RUN_TEST(test_mixed_return_throw_try_finally_stays_on_legacy_path);
     RUN_TEST(test_conditional_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_repeated_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_invoke_try_finally_rethrows_exception_after_cleanup);

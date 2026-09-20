@@ -233,8 +233,8 @@ while the normal path retains the dominating `false`; both enter the same
 cleanup block.
 
 A protected block in a no-catch `try/finally` may contain one or more same-kind
-linear `return` or `throw` sites under statement-form conditionals when a
-normal sibling remains. A protected block nested directly in a supported source
+linear `return` or `throw` sites under statement-form conditionals. A protected
+block nested directly in a supported source
 `while`, linear statement-form `for`, or statically typed `foreach` may instead
 contain one or more same-kind, operand-free `break` or `continue` transfers.
 The pending plan
@@ -261,8 +261,8 @@ operand is reloaded from the private payload Place and rethrown, while final
 order even when `finally` mutates source locals. Preflight examines the complete
 protected and cleanup bodies before activating a graph. Nonlinear abrupt
 payloads, literal, converting, non-value, multiple, or conditional call
-arguments, conditional or multiple calls, declarations, multiple return/throw
-sites without a normal sibling, mixed return/throw sites, mixed explicit and
+arguments, conditional or multiple calls, declarations, mixed return/throw
+sites, mixed explicit and
 exceptional completion, catch-plus-finally, and other unsupported shapes retain
 the legacy-CFG fail-closed path.
 Mixed `break`/`continue` loop-transfer completions remain unsupported;
