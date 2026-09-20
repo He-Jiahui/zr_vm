@@ -14,7 +14,7 @@ accepted by the SemanticIR-to-ExecIR builder.
   outside conditional control. The call may take no arguments or one exact,
   ownership/reference/GC-neutral `int` identifier by value. When the statement
   is directly nested in a supported `while`, the protected body may instead
-  contain one operand-free `break`.
+  contain one operand-free `break` or `continue`.
 - No enclosing ownership cleanup or active catch target is present.
 - The protected block ends in an operand-free `BRANCH` over one cleanup edge to
   a `ZR_PARSER_CFG_BLOCK_CLEANUP`.
@@ -36,11 +36,12 @@ accepted by the SemanticIR-to-ExecIR builder.
   the pre-call `false` selector and enters the same cleanup. Dispatch then
   rethrows the reloaded payload or reaches the normal join without using the
   interrupted call result.
-- For the break shape, the pending destination is the existing loop join. A
-  terminal break goes from cleanup through a completion block and then follows
-  one normal edge to that join. A conditional break uses a selector-only
-  private Place and cleanup dispatch; it does not allocate a meaningless
-  payload Place.
+- For the loop-transfer shape, the pending destination is the existing loop
+  join for `break` or the existing `while` condition block for `continue`. A
+  terminal transfer goes from cleanup through a completion block and then
+  follows one normal edge to that target. A conditional transfer uses a
+  selector-only private Place and cleanup dispatch; it does not allocate a
+  meaningless payload Place.
 - ExecIR construction preserves both adjacencies and marks the cleanup block
   with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`.
 
@@ -58,24 +59,27 @@ path. Literal, converting, non-value, multiple, or conditional arguments,
 conditional calls, declarations, nested nonlinear control flow, ownership
 cleanup, and mixed explicit/exceptional completion are also outside this
 slice. Those shapes must not publish a partial cleanup graph or restart a
-detached CFG after rejection. `continue`, multiple break sites, non-`while`
-loop cleanup, and break combined with another completion kind remain on that
-same fail-closed path.
+detached CFG after rejection. Multiple break sites, non-`while` loop cleanup,
+and break combined with another completion kind remain on that same fail-closed
+path. Multiple `continue` sites and mixed `break`/`continue` sites are also
+rejected.
 
 The source producer now uses the builder's `CLEANUP_DISPATCH` contract for one
 normal-versus-return, normal-versus-throw, or normal-versus-call-exception
 decision. A terminal abrupt shape still has only one post-cleanup destination
-and therefore retains its direct cleanup edge. Multiple abrupt sites or kinds,
-combined explicit/exceptional completion, and `continue` still require later
-source milestones.
+and therefore retains its direct cleanup edge. A single operand-free
+`break`/`continue` transfer from a supported `while` is dispatched to its
+existing loop target after cleanup; multiple abrupt sites or kinds and
+combined explicit/exceptional completion still require later source
+milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 17/17 on Windows MSVC and WSL GCC and
-  Clang. It includes terminal and conditional `break`, plus explicit
-  multi-break and `continue` fail-closed cases.
+- The focused source cleanup suite passes 19/19 on Windows MSVC and WSL GCC and
+  Clang. It includes terminal and conditional `break`/`continue`, plus
+  explicit multi-exit fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 17/17 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 19/19 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.

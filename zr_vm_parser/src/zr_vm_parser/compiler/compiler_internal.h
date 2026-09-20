@@ -382,6 +382,13 @@ TZrBool compiler_semantic_cfg_redirect_break_through_finally(
         SZrCompilerState *cs,
         TZrUInt32 targetBlock,
         SZrFileRange range);
+TZrBool compiler_semantic_cfg_continue_through_finally_is_active(
+        const SZrCompilerState *cs,
+        TZrUInt32 targetBlock);
+TZrBool compiler_semantic_cfg_redirect_continue_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 targetBlock,
+        SZrFileRange range);
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,

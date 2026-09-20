@@ -206,8 +206,9 @@ exists and dominates the cleanup dispatch. Missing selectors, inline successor
 rows, ordinary source blocks, and unordered cases fail transactionally. The
 bounded source `try/finally` producer now uses this representation for one
 normal-versus-abrupt pending-completion discriminator, including one direct
-call's normal-versus-exceptional completion and one `break` from a supported
-`while`. Multiple completion kinds remain outside this bounded producer.
+call's normal-versus-exceptional completion and one operand-free `break` or
+`continue` from a supported `while`. Multiple completion kinds remain outside
+this bounded producer.
 
 An INVOKE result remains unavailable along the transitive closure of its
 exceptional successor, including ordinary branches into cleanup and later
@@ -231,12 +232,13 @@ while the normal path retains the dominating `false`; both enter the same
 cleanup block.
 
 A protected block nested directly in a supported source `while` may instead
-contain one operand-free `break`. The pending plan captures the loop join block
-as its target. A terminal break takes a direct cleanup edge to a small
-completion block and then a normal edge to that loop join. If another protected
-path falls through, the producer allocates only the private boolean selector:
-cleanup dispatch selects the break completion block or the normal
-post-`finally` join, with no synthetic payload Place.
+contain one operand-free `break` or `continue`. The pending plan captures the
+loop join for `break` or the `while` condition block for `continue` as its
+target. A terminal transfer takes a direct cleanup edge to a small completion
+block and then a normal edge to that target. If another protected path falls
+through, the producer allocates only the private boolean selector: cleanup
+dispatch selects the loop-transfer completion block or the normal post-
+`finally` join, with no synthetic payload Place.
 
 The same private state also models one resolved direct call with either no
 arguments or one exact, ownership/reference/GC-neutral `int` identifier passed
@@ -254,7 +256,8 @@ payloads, literal, converting, non-value, multiple, or conditional call
 arguments, conditional or multiple calls, declarations, more than one abrupt
 site, mixed explicit and exceptional completion, catch-plus-finally, and other
 unsupported shapes retain the legacy-CFG fail-closed path.
-Break/continue completion remains a later source milestone.
+Multiple or mixed loop-transfer completions remain a later source milestone;
+the single-transfer `while` subset is represented above.
 
 The SemanticIR builder preserves the original semantic value IDs and appends
 two stable ranges for each canonical Place. The first range contains address

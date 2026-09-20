@@ -4,7 +4,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,
         TZrBool allowContinue,
-        TZrBool allowFinallyBreak,
+        TZrBool allowFinallyTransfer,
         TZrBool *endsWithBreak) {
     TZrSize index;
 
@@ -31,7 +31,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
                 &node->data.tryCatchFinallyStatement;
 
         return (TZrBool)(
-                allowFinallyBreak && statement->finallyBlock != ZR_NULL &&
+                allowFinallyTransfer && statement->finallyBlock != ZR_NULL &&
                 (statement->catchClauses == ZR_NULL ||
                  statement->catchClauses->count == 0U));
     }
@@ -71,7 +71,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
             const SZrTryCatchFinallyStatement *tryStatement =
                     &statement->data.tryCatchFinallyStatement;
 
-            if (!allowFinallyBreak ||
+            if (!allowFinallyTransfer ||
                 tryStatement->finallyBlock == ZR_NULL ||
                 (tryStatement->catchClauses != ZR_NULL &&
                  tryStatement->catchClauses->count != 0U)) {

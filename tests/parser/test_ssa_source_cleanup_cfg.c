@@ -658,7 +658,9 @@ int main(void) {
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
     RUN_TEST(test_terminal_break_try_finally_routes_to_loop_join);
     RUN_TEST(test_conditional_break_try_finally_dispatches_to_loop_join);
-    RUN_TEST(test_continue_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_terminal_continue_try_finally_routes_to_condition);
+    RUN_TEST(test_conditional_continue_try_finally_dispatches_to_condition);
+    RUN_TEST(test_two_continue_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_break_sites_try_finally_stay_on_legacy_path);
     return UNITY_END();
 }

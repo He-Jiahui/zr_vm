@@ -36,7 +36,8 @@ typedef enum EZrCompilerSemanticFinallyFlow {
     ZR_COMPILER_SEMANTIC_FINALLY_FLOW_FALLTHROUGH = 1,
     ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN = 2,
     ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW = 4,
-    ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK = 8
+    ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK = 8,
+    ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE = 16
 } EZrCompilerSemanticFinallyFlow;
 
 typedef struct SZrCompilerSemanticFinallyFlowInfo {
@@ -175,11 +176,12 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
         info.abruptSiteCount = 1U;
         info.completionExpression = node->data.throwStatement.expr;
     } else if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
-        if (!node->data.breakContinueStatement.isBreak ||
-            node->data.breakContinueStatement.expr != ZR_NULL) {
+        if (node->data.breakContinueStatement.expr != ZR_NULL) {
             return ZR_FALSE;
         }
-        info.flow = ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK;
+        info.flow = node->data.breakContinueStatement.isBreak
+                ? ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK
+                : ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE;
         info.abruptSiteCount = 1U;
     } else {
         return ZR_FALSE;
@@ -190,9 +192,13 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
          info.abruptSiteCount != 0U) ||
         ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN) != 0U &&
          (info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW |
-                       ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK)) != 0U) ||
+                       ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
+                       ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE)) != 0U) ||
         ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW) != 0U &&
-         (info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) != 0U)) {
+         (info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
+                       ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE)) != 0U) ||
+        ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) != 0U &&
+         (info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE) != 0U)) {
         return ZR_FALSE;
     }
     *outInfo = info;
@@ -207,18 +213,20 @@ static EZrSemanticIrOpcode compiler_semantic_cfg_finally_completion_opcode(
     if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW) != 0U) {
         return ZR_SEMANTIC_IR_THROW;
     }
-    if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) != 0U) {
+    if ((flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
+                 ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE)) != 0U) {
         return ZR_SEMANTIC_IR_BRANCH;
     }
     return ZR_SEMANTIC_IR_INVALID;
 }
 
-static TZrBool compiler_semantic_cfg_finally_break_target_is_supported(
+static TZrBool compiler_semantic_cfg_finally_loop_target_is_supported(
         SZrCompilerState *cs,
         TZrUInt32 flow) {
     SZrLoopLabel *loopLabel;
 
-    if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) == 0U) {
+    if ((flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
+                 ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE)) == 0U) {
         return ZR_TRUE;
     }
     if (cs == ZR_NULL || cs->loopLabelStack.length == 0U) {
@@ -226,9 +234,17 @@ static TZrBool compiler_semantic_cfg_finally_break_target_is_supported(
     }
     loopLabel = (SZrLoopLabel *)ZrCore_Array_Get(
             &cs->loopLabelStack, cs->loopLabelStack.length - 1U);
+    if (loopLabel == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) != 0U &&
+        loopLabel->semanticBreakBlockId ==
+                ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
     return (TZrBool)(
-            loopLabel != ZR_NULL &&
-            loopLabel->semanticBreakBlockId !=
+            (flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE) == 0U ||
+            loopLabel->semanticContinueBlockId !=
                     ZR_PARSER_CFG_INVALID_BLOCK_ID);
 }
 
@@ -257,7 +273,7 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
              statement->catchClauses->count == 0U) &&
             compiler_semantic_cfg_finally_protected_flow(
                     statement->block, &flowInfo) &&
-            compiler_semantic_cfg_finally_break_target_is_supported(
+            compiler_semantic_cfg_finally_loop_target_is_supported(
                     cs, flowInfo.flow) &&
             (flowInfo.exceptionalSiteCount == 0U ||
              compiler_semantic_cfg_finally_call_is_resolved(
@@ -656,6 +672,21 @@ TZrBool compiler_semantic_cfg_redirect_break_through_finally(
     cs->preSemanticIrCfgStart =
             (TZrUInt32)cs->preSemanticIr.instructions.length;
     return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_cfg_continue_through_finally_is_active(
+        const SZrCompilerState *cs,
+        TZrUInt32 targetBlock) {
+    return compiler_semantic_cfg_break_through_finally_is_active(
+            cs, targetBlock);
+}
+
+TZrBool compiler_semantic_cfg_redirect_continue_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 targetBlock,
+        SZrFileRange range) {
+    return compiler_semantic_cfg_redirect_break_through_finally(
+            cs, targetBlock, range);
 }
 
 static TZrBool compiler_semantic_cfg_finally_capture_exception(

@@ -162,11 +162,12 @@ through, compiler-private selector and payload Places are created before the
 protected branch. The abrupt path stores its payload and selects `true`; the
 normal path retains `false`; both enter cleanup.
 
-One operand-free `break` in a no-catch `try/finally` directly nested in a
-supported `while` is also represented. The compiler records the existing loop
-join as the pending target. Terminal cleanup branches through a completion
-block to that target; a conditional break uses the same ordered cleanup
-dispatch with a selector-only private Place, because this completion carries no
+One operand-free `break` or `continue` in a no-catch `try/finally` directly
+nested in a supported `while` is also represented. The compiler records the
+existing loop join for `break` or the `while` condition block for `continue` as
+the pending target. Terminal cleanup branches through a completion block to
+that target; a conditional transfer uses the same ordered cleanup dispatch
+with a selector-only private Place, because this completion carries no
 payload. The completion block's outgoing edge is ordinary control flow rather
 than a cleanup edge: neither endpoint is itself a cleanup block.
 
@@ -181,9 +182,9 @@ uncommitted INVOKE result can replace the exception. Nonlinear payloads,
 literal, converting, non-value, multiple, or conditional arguments,
 conditional or multiple calls, declarations, more than one abrupt site, mixed
 explicit and exceptional completion, catch-plus-finally, active catch targets,
-or ownership cleanup reject the entire shape and keep the legacy path. A
-`continue`, multiple break sites, and combinations of break with another
-completion kind remain unsupported.
+or ownership cleanup reject the entire shape and keep the legacy path. Multiple
+break or continue sites, mixed break/continue sites, and combinations of a loop
+transfer with another completion kind remain unsupported.
 
 This is not yet effect-token generation; see
 `tests/acceptance/ssa-builder-control-edge-rejection.md` and
