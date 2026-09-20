@@ -22,6 +22,7 @@ static void fill_contract(SZrExecutionContract *contract,
 int main(void) {
     const TZrUInt32 operandPool[] = {1u};
     const TZrUInt32 resultPool[] = {2u};
+    const TZrUInt32 successorPool[] = {1u};
     const SZrAotIrStateMapEntry stateMaps[] = {
         {1u, 1u, UINT64_C(77)}
     };
@@ -31,7 +32,7 @@ int main(void) {
     };
     const SZrAotIrBlock blocks[] = {
         {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 0u},
-         {0u, 0u}, 1u}
+         {0u, 1u}, 1u}
     };
     SZrAotIrFunction function;
     SZrAotIrModule module;
@@ -55,6 +56,8 @@ int main(void) {
     function.operandCount = 1u;
     function.resultPool = resultPool;
     function.resultCount = 1u;
+    function.successorPool = successorPool;
+    function.successorCount = 1u;
     function.stateMaps = stateMaps;
     function.stateMapCount = 1u;
     fill_contract(&function.contract, function.functionToken, UINT64_C(33),
@@ -97,6 +100,35 @@ int main(void) {
                ZR_AOT_IR_INVALID_ID);
         assert(diagnostic.functionId == function.id);
         assert(diagnostic.instructionId == malformedState.instructionId);
+    }
+    {
+        const TZrUInt32 malformedSuccessor[] = {99u};
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.successorPool = malformedSuccessor;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.blockId == blocks[0].id);
+        assert(diagnostic.actual == malformedSuccessor[0]);
+    }
+    {
+        const TZrUInt32 malformedSuccessor[] = {99u};
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrBlock malformedBlock = blocks[0];
+        SZrAotIrInstruction malformedInstruction = instructions[0];
+        malformedBlock.successors.count = 0u;
+        malformedInstruction.successors.count = 1u;
+        malformedFunction.blocks = &malformedBlock;
+        malformedFunction.instructions = &malformedInstruction;
+        malformedFunction.successorPool = malformedSuccessor;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.instructionId == malformedInstruction.id);
+        assert(diagnostic.actual == malformedSuccessor[0]);
     }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));

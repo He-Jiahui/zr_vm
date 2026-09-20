@@ -36,6 +36,16 @@ static TZrBool aot_ir_alignment_valid(TZrUInt32 alignment) {
     return (TZrBool)(alignment != 0u && (alignment & (alignment - 1u)) == 0u);
 }
 
+static TZrBool aot_ir_block_id_exists(const SZrAotIrFunction *function,
+                                      TZrUInt32 blockId) {
+    for (TZrUInt32 index = 0u; index < function->blockCount; ++index) {
+        if (function->blocks[index].id == blockId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrUInt64 aot_ir_hash_byte(TZrUInt64 hash, TZrUInt8 byte) {
     return (hash ^ byte) * UINT64_C(1099511628211);
 }
@@ -128,6 +138,22 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                    block->terminatorInstructionId, i, 1u, 0u);
             }
         }
+        for (TZrUInt32 j = 0u; j < block->successors.count; ++j) {
+            TZrUInt32 target = function->successorPool[
+                    block->successors.offset + j];
+            if (!aot_ir_block_id_exists(function, target)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
+                                   block->id, 0u, j, function->blockCount, target);
+            }
+        }
+        for (TZrUInt32 j = 0u; j < block->predecessors.count; ++j) {
+            TZrUInt32 source = function->successorPool[
+                    block->predecessors.offset + j];
+            if (!aot_ir_block_id_exists(function, source)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
+                                   block->id, 0u, j, function->blockCount, source);
+            }
+        }
     }
     for (TZrUInt32 i = 0u; i < function->instructionCount; ++i) {
         const SZrAotIrInstruction *instruction = &function->instructions[i];
@@ -145,6 +171,15 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id, 0u,
                                instruction->id, i, function->phiIncomingCount,
                                instruction->phiIncoming.offset);
+        }
+        for (TZrUInt32 j = 0u; j < instruction->successors.count; ++j) {
+            TZrUInt32 target = function->successorPool[
+                    instruction->successors.offset + j];
+            if (!aot_ir_block_id_exists(function, target)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG,
+                                   function->id, 0u, instruction->id, j,
+                                   function->blockCount, target);
+            }
         }
         for (TZrUInt32 j = 0u; j < i; ++j) {
             if (function->instructions[j].id == instruction->id) {

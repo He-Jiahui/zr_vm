@@ -10,9 +10,9 @@ The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the
 canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
 identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
-contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator
-membership, state-map instruction membership, effect pairing, frame layout, and
-module/function hash identity.
+contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator and
+edge-target membership, state-map instruction membership, effect pairing, frame
+layout, and module/function hash identity.
 
 `ZrCore_AotIr_IsRelocationFree` rejects module or function relocation rows.
 Unimplemented operation families should be reported by a lowering diagnostic;
