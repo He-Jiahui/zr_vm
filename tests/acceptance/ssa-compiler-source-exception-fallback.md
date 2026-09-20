@@ -56,11 +56,11 @@ abrupt or normal continuation. Nonlinear abrupt payloads, catch-plus-finally,
 mixed return/throw kinds, and most
 exceptional cleanup entry still use this
 persistent fallback and cannot restart a detached graph. One later bounded
-shape admits a resolved direct call with no argument or one exact `int`
-identifier or integer literal passed by value: each exceptional edge reaches
+shape admits a resolved direct call with no argument or up to two exact `int`
+identifiers or integer literals passed by value: each exceptional edge reaches
 one shared landing that defines and stores `EXCEPTION_PAYLOAD`, enters shared
 cleanup, and rethrows only after cleanup dispatch. Dynamic or unresolved calls
-and converting, non-value, or multiple arguments remain here. One or more same-kind,
+and converting, non-value, or more-than-two arguments remain here. One or more same-kind,
 operand-free `break`
 transfers from a supported `while`, linear statement-form `for`, or statically
 typed `foreach` are also claimed by the cleanup producer: terminal and

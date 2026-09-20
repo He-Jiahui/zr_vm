@@ -876,6 +876,8 @@ int main(void) {
     RUN_TEST(test_invoke_try_finally_rethrows_exception_after_cleanup);
     RUN_TEST(test_invoke_argument_is_captured_before_exception_cleanup);
     RUN_TEST(test_literal_argument_is_captured_before_exception_cleanup);
+    RUN_TEST(test_two_arguments_are_captured_before_exception_cleanup);
+    RUN_TEST(test_two_arguments_with_conversion_stay_on_legacy_path);
     RUN_TEST(test_converted_argument_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_invoke_try_finally_routes_both_exceptions);
     RUN_TEST(test_dynamic_then_direct_invoke_try_finally_stays_on_legacy_path);

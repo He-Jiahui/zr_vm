@@ -12,8 +12,8 @@ accepted by the SemanticIR-to-ExecIR builder.
   statements. The protected body may additionally contain one or more
   same-kind linear `return` or `throw` sites under statement-form conditionals,
   or one or more resolved direct calls in linear statement-form conditional
-  control. Each call may take no arguments or one exact,
-  ownership/reference/GC-neutral `int` identifier or integer literal by value.
+  control. Each call may take no arguments or up to two exact,
+  ownership/reference/GC-neutral `int` identifiers or integer literals by value.
   When directly nested in a supported `while`,
   linear statement-form `for`, or statically typed `foreach`, it may instead
   contain one or more operand-free `break` sites or one or more operand-free
@@ -41,7 +41,7 @@ accepted by the SemanticIR-to-ExecIR builder.
   edges retain the pre-call `false` selector and enter the same cleanup.
   Dispatch then rethrows the reloaded payload or reaches the normal join
   without using an interrupted call result. A conditional call branch and a
-  linear non-call sibling both join this same cleanup path. One explicit
+  linear non-call sibling both join this same cleanup path. One or more explicit
   `throw` sites may share that path when every explicit payload is an exact
   non-null, ownership-neutral `object`; the explicit payloads and exceptional
   payload then use the same pending `THROW` completion.
@@ -89,14 +89,14 @@ outside the all-exact object-throw case still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 41/41 on Windows MSVC and WSL GCC and
+- The focused source cleanup suite passes 43/43 on Windows MSVC and WSL GCC and
   Clang. It includes repeated and conditional protected invokes sharing one
   exception landing, linear sibling cleanup joins, dynamic-call fail-closed
   guards, terminal and conditional
   `break`/`continue`, repeated same-kind transfers across
   `while`/`for`/`foreach`, and explicit mixed-kind fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 41/41 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 43/43 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.

@@ -267,6 +267,72 @@ static void test_literal_argument_is_captured_before_exception_cleanup(void) {
     free_source(&compiler, ast);
 }
 
+static void test_two_arguments_are_captured_before_exception_cleanup(void) {
+    static const TZrChar source[] =
+            "fn pair(first: int, second: int): int { return first; }\n"
+            "var seed: int = 7;\n"
+            "try { pair(seed, 8); } finally { seed = 9; }\n";
+    static TZrChar sourceName[] =
+            "two_arguments_try_finally_cleanup.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *callInstruction = ZR_NULL;
+    const SZrParserCfgBlock *cleanup;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callInstruction = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(callInstruction);
+    TEST_ASSERT_EQUAL_UINT32(3U, callInstruction->operandCount);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+            cleanup->terminatorKind);
+
+    free_source(&compiler, ast);
+}
+
+static void test_two_arguments_with_conversion_stay_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "fn pair(first: int, second: float): int { return first; }\n"
+            "var seed: int = 7;\n"
+            "try { pair(seed, seed); } finally { seed = 9; }\n";
+    static TZrChar sourceName[] =
+            "two_arguments_conversion_try_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_NULL(find_block_kind(
+            function, ZR_PARSER_CFG_BLOCK_CLEANUP));
+
+    free_source(&compiler, ast);
+}
+
 static void test_converted_argument_try_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "fn widen(value: float): float { return value; }\n"
