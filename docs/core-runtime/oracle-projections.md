@@ -43,19 +43,18 @@ and commits the result only after a normal return, throw, or suspend. The
 legacy `ZrCore_ExecIr_RunOracle` entry remains a compatibility counter for
 callers that only need instruction coverage.
 
-The oracle currently executes the scalar/control subset (constants, copies and
+The oracle executes the scalar/control subset (constants, copies and
 conversions, checked integer/floating arithmetic, comparisons, branches,
-switches, phi entry, return, throw, suspend, and callback-backed calls). Store,
-load, drop, barrier, call, throw, suspend, and provider-backed allocation
-operations append bounded operand snapshots to the observable event stream.
-`TYPE_TEST` is also executable when the caller supplies the explicit
-`FZrExecIrOracleTypeTest` provider. The provider receives the pointer-free
-operand snapshot and canonical `matchTypeToken`, and returns either a boolean
-membership result or a rejection; false membership is a successful result,
-while rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`.
-Calls, invokes, iterator steps, loads, allocations, type tests, and exception
-payload reads require explicit caller providers. Executable place projection
-and landing-pad handling remain unsupported.
+switches, phi entry, return, throw, and suspend) directly. Store, load, drop,
+barrier, call, invoke, iterator, place, allocation, type-test, and exception
+payload operations use explicit caller providers whenever their semantics
+depend on runtime state. Provider-backed operations receive only pointer-free
+operand/value records, and observable operations append bounded operand
+snapshots to the event stream. `TYPE_TEST` receives the canonical
+`matchTypeToken` and returns either a boolean membership result or a rejection;
+false membership is a successful result, while rejection reports
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`. Landing-pad entry and resume
+after a caught exception remain outside the direct oracle.
 
 `CALL` appends a bounded call event only after its provider returns a defined
 value; provider rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR`
