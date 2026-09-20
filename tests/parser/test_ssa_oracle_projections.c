@@ -324,7 +324,7 @@ static void test_allocate_requires_and_uses_provider(void) {
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructionCount == 3u &&
            bc.instructions[1u].opcode == ZR_EXEC_IR_OPCODE_ALLOC &&
-           bc.opcodes[1u] == ZR_EXEC_IR_OPCODE_ALLOC);
+           bc.opcodes[1u] == ZR_EXEC_IR_OPCODE_ALLOC && !bc.runnable);
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
     assert(aot.instructionCount == 3u &&
            aot.instructions[1u].opcode == ZR_EXEC_IR_OPCODE_ALLOC &&

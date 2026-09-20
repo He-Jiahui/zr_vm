@@ -207,6 +207,10 @@ provider reports a dedicated diagnostic, and a selected exception edge can then
 use `FZrExecIrOracleExceptionPayload`; no runtime exception object is
 reconstructed inside the Oracle.
 
+`ALLOC` records its constructor operands and result in both projections but
+forces `runnable == false` until the executable allocator/GC ABI is available;
+the pointer-free Oracle allocation provider remains a reference-only seam.
+
 `PLACE_BASE` and `PLACE_PROJECT` likewise retain their pointer-free operand,
 result, type, layout, and source metadata in both projections while forcing
 `runnable == false`. Their physical address and layout semantics belong to a

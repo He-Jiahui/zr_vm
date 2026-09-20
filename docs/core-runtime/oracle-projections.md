@@ -139,6 +139,11 @@ later backend adapter, but the projections set `runnable` to false whenever a
 type test is present; they do not invent an executable subtype ABI. The direct
 Oracle provider described above remains the only executable reference seam.
 
+`ALLOC` likewise remains metadata-only in ExecBC and AOT projections: a
+projection containing allocation is marked non-runnable until the backend
+allocator/GC ABI is connected. The direct Oracle's pointer-free allocation
+provider does not change that projection boundary.
+
 `EXCEPTION_PAYLOAD` is likewise transported by both initial projections with
 its stable opcode, ranges, and source identity. The lowerers mark any
 projection containing the operation non-runnable because the executable

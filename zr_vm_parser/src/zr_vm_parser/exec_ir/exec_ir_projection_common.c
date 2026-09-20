@@ -688,6 +688,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].bindingRow = in->bindingRow;
         if (in->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE ||
             in->opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT ||
+            in->opcode == ZR_EXEC_IR_OPCODE_ALLOC ||
             in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST ||
             in->opcode == ZR_EXEC_IR_OPCODE_INVOKE ||
             in->opcode == ZR_EXEC_IR_OPCODE_ITER_INIT ||
