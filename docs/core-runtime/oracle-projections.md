@@ -53,9 +53,9 @@ operations append bounded operand snapshots to the observable event stream.
 operand snapshot and canonical `matchTypeToken`, and returns either a boolean
 membership result or a rejection; false membership is a successful result,
 while rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`.
-Calls, loads, allocations, type tests, and exception payload reads require
-explicit caller providers. Executable place projection and landing-pad handling
-remain unsupported.
+Calls, invokes, loads, allocations, type tests, and exception payload reads
+require explicit caller providers. Executable place projection and landing-pad
+handling remain unsupported.
 
 `EXCEPTION_PAYLOAD` is executable at a handler-entry instruction when the
 caller supplies `FZrExecIrOracleExceptionPayload`. The provider returns one
@@ -144,8 +144,11 @@ provider remains the only executable reference seam.
 `INVOKE` is transported with its result, operand, and ordered normal/exception
 successor ranges. Both lowerers mark a projection containing an invoke
 non-runnable until the backend call/landing-pad ABI can select the exceptional
-continuation and publish an active payload. The initial direct Oracle still
-reports `UNSUPPORTED` for invoke execution.
+continuation and publish an active payload. The direct Oracle executes invoke
+through `FZrExecIrOracleInvoke`: the callback supplies a pointer-free result
+and explicitly selects the normal or exceptional successor. A rejected query
+reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR`; an exceptional path may
+then consume the separate payload provider described above.
 
 `PLACE_BASE` and `PLACE_PROJECT` are transported with their stable operand,
 result, type, layout, and source metadata. The projections mark these place

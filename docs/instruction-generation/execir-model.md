@@ -196,8 +196,11 @@ type-name string comparison or claims an executable projection.
 `INVOKE` retains its pointer-free result, operand, and ordered normal/exception
 successor ranges in both initial projections, but those projections are marked
 non-runnable until a backend call/landing-pad ABI exists. The direct Oracle
-also keeps invoke execution explicitly unsupported; transporting its CFG does
-not claim that an exception object or active payload can be reconstructed.
+executes it only through `FZrExecIrOracleInvoke`: the callback supplies a
+pointer-free result and chooses the normal or exceptional successor. A rejected
+provider reports a dedicated diagnostic, and a selected exception edge can then
+use `FZrExecIrOracleExceptionPayload`; no runtime exception object is
+reconstructed inside the Oracle.
 
 `PLACE_BASE` and `PLACE_PROJECT` likewise retain their pointer-free operand,
 result, type, layout, and source metadata in both projections while forcing

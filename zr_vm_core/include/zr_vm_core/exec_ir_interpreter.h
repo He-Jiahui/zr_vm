@@ -67,6 +67,17 @@ typedef TZrBool (*FZrExecIrOracleCall)(
         TZrUInt32 operandCount,
         SZrExecIrOracleValue *result);
 
+/* INVOKE has two ordered successors: normal first and exceptional second.
+ * The callback supplies a pointer-free result and explicitly selects the
+ * exceptional continuation without exposing a runtime exception object. */
+typedef TZrBool (*FZrExecIrOracleInvoke)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands,
+        TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result,
+        TZrBool *threw);
+
 typedef TZrBool (*FZrExecIrOracleMemory)(
         void *userData,
         const SZrExecIrInstruction *instruction,
@@ -123,6 +134,8 @@ typedef struct SZrExecIrOracleInput {
     void *typeTestUserData;
     FZrExecIrOracleExceptionPayload exceptionPayload;
     void *exceptionPayloadUserData;
+    FZrExecIrOracleInvoke invoke;
+    void *invokeUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {
