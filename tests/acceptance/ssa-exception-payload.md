@@ -16,8 +16,9 @@ direct reference oracle now accepts the operation through an explicit
 `FZrExecIrOracleExceptionPayload` provider; missing providers remain
 `UNSUPPORTED`, and provider rejection reports
 `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR`. ExecBC/AOT projections
-still reject the operation until their executable exception ABI carries an
-active payload.
+now transport the opcode and its ranges transactionally, but mark the
+projection non-runnable until their executable exception ABI carries an active
+payload.
 
 This checkpoint deliberately does not publish source `try`/`catch`/`finally`
 CFG. Existing propagation-only exception sinks remain instruction-free; the
@@ -42,8 +43,8 @@ payload, then verifies:
 
 `tests/parser/test_ssa_oracle_projections.c` verifies missing-provider failure,
 successful provider payload transfer, provider rejection diagnostics, and the
-continued transactional rejection of the ExecBC/AOT projections. The
-SemanticIR formatting golden also fixes the appended opcode name and numeric
+transactional ExecBC/AOT metadata transport with a non-runnable projection.
+The SemanticIR formatting golden also fixes the appended opcode name and numeric
 position without renumbering the existing opcode set.
 
 ## Validation
@@ -71,3 +72,12 @@ on Windows MSVC 19.44, WSL GCC 11.4, and WSL Clang 14. GCC ASan+UBSan with
 leak detection passed the same focused test five consecutive times. The direct
 Oracle result remains transactional: a rejected provider publishes no return
 or partial event state.
+
+## Projection payload follow-up
+
+TDD first changed the projection assertions to require a copied
+`EXCEPTION_PAYLOAD` opcode, then the focused test failed because the lowerers
+still treated the opcode as unsupported. The projection whitelist now carries
+the pointer-free instruction record through both ExecBC and AOT while setting
+`runnable` to false. This preserves the handler-entry metadata without
+inventing an executable runtime exception ABI.

@@ -48,7 +48,6 @@ static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_ITER_INIT:
         case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
         case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
-        case ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD:
             return ZR_FALSE;
         default:
             return ZR_TRUE;
@@ -695,10 +694,11 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].sourceId = in->sourceId;
         p->instructions[i].deoptId = in->deoptId;
         p->instructions[i].bindingRow = in->bindingRow;
-        if (in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST) {
-            /* The projection preserves the canonical target identity, but
-             * executable subtype dispatch still belongs to a later backend
-             * ABI.  Do not advertise this projection as runnable. */
+        if (in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST ||
+            in->opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD) {
+            /* The projection preserves canonical instruction metadata, but
+             * executable subtype/exception dispatch still belongs to a later
+             * backend ABI.  Do not advertise this projection as runnable. */
             p->runnable = ZR_FALSE;
         }
     }

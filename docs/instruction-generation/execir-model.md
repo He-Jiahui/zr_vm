@@ -167,9 +167,10 @@ with at most one payload definition per handler block. Although it has no
 observable effect, the value is handler-local state rather than a freely
 interchangeable zero-operand constant; the current GVN whitelist does not
 common it across blocks. The direct oracle accepts it through an explicit
-`FZrExecIrOracleExceptionPayload` provider, while both projections reject it
-transactionally until their executable exception ABI carries the active
-payload.
+`FZrExecIrOracleExceptionPayload` provider. ExecBC and AOT projections carry
+the pointer-free instruction record transactionally, but mark any projection
+containing it non-runnable until their executable exception ABI carries the
+active payload.
 
 `TYPE_TEST` is the canonical, pure one-operand/one-result type-membership fact.
 The ordinary `typeToken` remains the result value's type (normally the language

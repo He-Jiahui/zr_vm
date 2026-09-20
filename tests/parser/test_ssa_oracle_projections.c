@@ -1152,16 +1152,16 @@ static void test_unsupported_and_transactional_failures(void) {
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
            diagnostic.instructionId == 1u &&
            diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD);
-    assert(!ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
-    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
-           diagnostic.instructionId == 1u &&
-           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
-           bc.instructions == oldInstructions && bc.instructionCount == oldCount);
-    assert(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
-    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
-           diagnostic.instructionId == 1u &&
-           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
-           aot.instructionCount == oldAotCount);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
+           !bc.runnable);
+    oldInstructions = bc.instructions;
+    oldCount = bc.instructionCount;
+    assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(aot.instructions[0u].opcode ==
+                   ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
+           !aot.runnable);
+    oldAotCount = aot.instructionCount;
     function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_TYPE_TEST;
     function.instructions[0].operands = range(0u, 1u);
     function.instructions[0].matchTypeToken = 7u;
