@@ -12,9 +12,12 @@ the function entry, is marked exceptional, and every predecessor enters through
 a may-throw terminator's direct exceptional successor. A handler block may
 define at most one payload. The parser builder runs structural and SSA
 verification before publishing, preserving the prior output on failure. The
-reference oracle and both ExecBC/AOT projections reject the operation with
-`UNSUPPORTED` until those execution boundaries carry an active exception
-payload.
+direct reference oracle now accepts the operation through an explicit
+`FZrExecIrOracleExceptionPayload` provider; missing providers remain
+`UNSUPPORTED`, and provider rejection reports
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR`. ExecBC/AOT projections
+still reject the operation until their executable exception ABI carries an
+active payload.
 
 This checkpoint deliberately does not publish source `try`/`catch`/`finally`
 CFG. Existing propagation-only exception sinks remain instruction-free; the
@@ -37,11 +40,11 @@ payload, then verifies:
 - source-identified `EXCEPTION_EDGE` diagnostics and transactional output
   preservation.
 
-`tests/parser/test_ssa_oracle_projections.c` verifies that the oracle, ExecBC
-projection, and AOT projection all fail closed with the exact opcode while
-retaining previously published projections. The SemanticIR formatting golden
-also fixes the appended opcode name and numeric position without renumbering
-the existing opcode set.
+`tests/parser/test_ssa_oracle_projections.c` verifies missing-provider failure,
+successful provider payload transfer, provider rejection diagnostics, and the
+continued transactional rejection of the ExecBC/AOT projections. The
+SemanticIR formatting golden also fixes the appended opcode name and numeric
+position without renumbering the existing opcode set.
 
 ## Validation
 
@@ -58,3 +61,13 @@ the existing opcode set.
 - `python scripts/validate_wiki.py --root .` passed for 116 Markdown files,
   115 manifest pages, and 644 local links.
 - `python -m unittest tests.scripts.test_validate_wiki -v` passed 5/5.
+
+## Oracle payload follow-up
+
+TDD first added the missing-provider, successful payload, and provider-error
+assertions; the pre-change build failed because the callback fields and
+diagnostic did not exist. The focused `ssa_oracle_projections` test passed 1/1
+on Windows MSVC 19.44, WSL GCC 11.4, and WSL Clang 14. GCC ASan+UBSan with
+leak detection passed the same focused test five consecutive times. The direct
+Oracle result remains transactional: a rejected provider publishes no return
+or partial event state.

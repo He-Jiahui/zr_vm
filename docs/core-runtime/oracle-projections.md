@@ -55,6 +55,14 @@ membership result or a rejection; false membership is a successful result,
 while rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`.
 Calls, loads, allocations, and type tests require explicit caller providers;
 place projection and invoke/landing-pad operations remain unsupported.
+
+`EXCEPTION_PAYLOAD` is executable at a handler-entry instruction when the
+caller supplies `FZrExecIrOracleExceptionPayload`. The provider returns one
+defined pointer-free value; a rejected read reports
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR`, and a missing provider
+remains `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. This resolves the active payload
+without making the reference interpreter own a runtime exception object or
+pretending that it can enter a landing pad by itself.
 Provider failures preserve a specific oracle diagnostic and instruction/source
 identity, while missing providers return
 `ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED`. Arithmetic faults and infinite control
@@ -85,9 +93,10 @@ THROW and SUSPEND are observable termination boundaries in reference mode. The
 oracle publishes their event into its prepared result, stops before any later
 instruction, and commits `terminatedByThrow` or `suspended` respectively. The
 payload-bearing SUSPEND form additionally copies its first operand to the
-result slot and return-value snapshot. This is not a landing-pad, handler, or
-resume implementation: those paths remain deliberately outside the direct
-oracle until their runtime ABI is specified.
+result slot and return-value snapshot. This is not a landing-pad or resume
+implementation: selecting a handler block from a runtime exception and
+resuming after a catch remain outside the direct oracle until their runtime ABI
+is specified.
 
 DROP also consumes its oracle operand slot after publishing the event; a later
 use is rejected as `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE`. This is the

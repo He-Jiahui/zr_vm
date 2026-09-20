@@ -166,8 +166,10 @@ incoming edge is the direct exceptional successor of a may-throw terminator,
 with at most one payload definition per handler block. Although it has no
 observable effect, the value is handler-local state rather than a freely
 interchangeable zero-operand constant; the current GVN whitelist does not
-common it across blocks. The oracle, ExecBC projection, and AOT projection
-reject it transactionally until their exception ABI carries the active payload.
+common it across blocks. The direct oracle accepts it through an explicit
+`FZrExecIrOracleExceptionPayload` provider, while both projections reject it
+transactionally until their executable exception ABI carries the active
+payload.
 
 `TYPE_TEST` is the canonical, pure one-operand/one-result type-membership fact.
 The ordinary `typeToken` remains the result value's type (normally the language

@@ -997,6 +997,88 @@ static void test_type_test_oracle_provider(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+typedef struct SZrOracleExceptionPayloadFixture {
+    SZrExecIrOracleValue payload;
+    TZrUInt32 callCount;
+    TZrBool reject;
+} SZrOracleExceptionPayloadFixture;
+
+static TZrBool oracle_exception_payload_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        SZrExecIrOracleValue *result) {
+    SZrOracleExceptionPayloadFixture *fixture =
+            (SZrOracleExceptionPayloadFixture *)userData;
+    assert(fixture != ZR_NULL && instruction != ZR_NULL &&
+           instruction->opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
+           result != ZR_NULL);
+    if (fixture->reject != ZR_FALSE) {
+        return ZR_FALSE;
+    }
+    ++fixture->callCount;
+    *result = fixture->payload;
+    return ZR_TRUE;
+}
+
+static void build_exception_payload_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId payload;
+    SZrExecIrRange payloadResult, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    payload = ZrCore_ExecIr_FunctionAddValue(
+            function, 41u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(payload != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &payload, 1u, &payloadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &payload, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD,
+                       range(0u, 0u), payloadResult, range(0u, 0u),
+                       0u, 811u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 812u);
+}
+
+static void test_exception_payload_oracle_provider(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+    SZrOracleExceptionPayloadFixture fixture;
+
+    build_exception_payload_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.payload.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    fixture.payload.as.signedInteger = -17;
+    input.exceptionPayload = oracle_exception_payload_callback;
+    input.exceptionPayloadUserData = &fixture;
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(fixture.callCount == 1u && execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.returnValue.as.signedInteger == -17);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    fixture.reject = ZR_TRUE;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code ==
+                   ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR &&
+           diagnostic.instructionId == 1u && execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_phi_copy_and_critical_edge_split(void) {
     SZrExecIrFunction phiFunction, criticalFunction;
     SZrExecBcProjection bc = {0};
@@ -1138,6 +1220,7 @@ int main(void) {
     test_branch_phi_oracle();
     test_call_event_oracle();
     test_type_test_oracle_provider();
+    test_exception_payload_oracle_provider();
     test_phi_copy_and_critical_edge_split();
     test_unsupported_and_transactional_failures();
     test_malformed_input();

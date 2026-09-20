@@ -97,6 +97,13 @@ typedef TZrBool (*FZrExecIrOracleTypeTest)(
         TZrExecIrTypeToken matchTypeToken,
         TZrBool *result);
 
+/* The active exception payload is supplied by the caller's handler context;
+ * the pointer-free Oracle never reaches into a VM exception object. */
+typedef TZrBool (*FZrExecIrOracleExceptionPayload)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        SZrExecIrOracleValue *result);
+
 typedef struct SZrExecIrOracleInput {
     const SZrExecIrFunction *function;
     /* Initial values are indexed by valueId - 1. */
@@ -114,6 +121,8 @@ typedef struct SZrExecIrOracleInput {
     void *allocateUserData;
     FZrExecIrOracleTypeTest typeTest;
     void *typeTestUserData;
+    FZrExecIrOracleExceptionPayload exceptionPayload;
+    void *exceptionPayloadUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {

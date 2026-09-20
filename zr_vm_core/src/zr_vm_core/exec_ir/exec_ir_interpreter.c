@@ -460,6 +460,9 @@ static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInpu
     if (op == ZR_EXEC_IR_OPCODE_TYPE_TEST) {
         return (TZrBool)(input != ZR_NULL && input->typeTest != ZR_NULL);
     }
+    if (op == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD) {
+        return (TZrBool)(input != ZR_NULL && input->exceptionPayload != ZR_NULL);
+    }
     switch (op) {
         case ZR_EXEC_IR_OPCODE_NOP: case ZR_EXEC_IR_OPCODE_CONSTANT: case ZR_EXEC_IR_OPCODE_CONVERT:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC: case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE:
@@ -673,6 +676,27 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
                 goto fail;
             }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
+            break;
+        case ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD:
+            zr_oracle_undefined(&callback);
+            if (n != 0u || input->exceptionPayload == ZR_NULL ||
+                !input->exceptionPayload(input->exceptionPayloadUserData, ins,
+                                         &callback)) {
+                zr_oracle_diag(
+                        d,
+                        ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR,
+                        f, block, id, ins->sourceId, 0u, n);
+                goto fail;
+            }
+            if (!zr_oracle_value_kind_valid(callback.kind) ||
+                callback.kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f,
+                               block, id, ins->sourceId,
+                               ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT,
+                               (TZrUInt32)callback.kind);
+                goto fail;
+            }
+            if (!zr_oracle_assign(f, ins, r, &callback, block, id, d)) goto fail;
             break;
         case ZR_EXEC_IR_OPCODE_BRANCH:
             if (ins->successorRange.count < 1u) goto invalid;

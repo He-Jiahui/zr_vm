@@ -90,7 +90,9 @@ typedef enum EZrExecutionDiagnosticCode {
     /* A reference-oracle allocation provider rejected an allocation. */
     ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ALLOCATION_ERROR,
     /* A reference-oracle type-test provider rejected a membership query. */
-    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR,
+    /* A reference-oracle exception-payload provider rejected a read. */
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR
 } EZrExecutionDiagnosticCode;
 
 /*
