@@ -358,7 +358,8 @@ their operand/result and ordered normal/exception successor ranges, but mark
 the containing projection non-runnable. This remains a deliberate backend
 boundary until iterator protocol and exception ABI lowering exists; the
 canonical opcodes are not silently advertised as executable. The direct Oracle
-continues to report iterator protocol operations as `UNSUPPORTED`.
+executes iterator protocol operations only through the explicit
+`FZrExecIrOracleIterator` provider described above.
 
 The source compiler supplies a canonical loop path directly for a
 straight-line `while`. Before compiling the condition it closes the current
