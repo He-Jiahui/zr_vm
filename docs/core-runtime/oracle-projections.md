@@ -153,7 +153,10 @@ then consume the separate payload provider described above.
 `PLACE_BASE` and `PLACE_PROJECT` are transported with their stable operand,
 result, type, layout, and source metadata. The projections mark these place
 operations non-runnable until a backend supplies the layout/address ABI; the
-direct Oracle likewise keeps physical place evaluation unsupported.
+direct Oracle evaluates them through `FZrExecIrOraclePlace`, whose caller-owned
+pointer-free result is the address token consumed by later memory providers.
+Provider rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR`; the
+Oracle never manufactures a host pointer.
 
 `ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` are transported with their
 stable operand/result and ordered successor ranges. The projections mark the

@@ -454,6 +454,10 @@ static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInpu
         op == ZR_EXEC_IR_OPCODE_ITER_CURRENT) {
         return (TZrBool)(input != ZR_NULL && input->iterator != ZR_NULL);
     }
+    if (op == ZR_EXEC_IR_OPCODE_PLACE_BASE ||
+        op == ZR_EXEC_IR_OPCODE_PLACE_PROJECT) {
+        return (TZrBool)(input != ZR_NULL && input->place != ZR_NULL);
+    }
     /* A load has no meaningful default value.  Require an explicit provider
      * so an oracle run cannot accidentally turn an unmodelled heap read into
      * a successful constant.  Stores retain the historical event-only mode
@@ -587,6 +591,30 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
                 }
             }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
+            break;
+        case ZR_EXEC_IR_OPCODE_PLACE_BASE:
+        case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
+            zr_oracle_undefined(&callback);
+            if (input->place == ZR_NULL ||
+                !input->place(input->placeUserData, ins, ops, n,
+                              &callback)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR,
+                               f, block, id, ins->sourceId,
+                               op == ZR_EXEC_IR_OPCODE_PLACE_BASE ? 1u : 2u,
+                               n);
+                goto fail;
+            }
+            if (!zr_oracle_value_kind_valid(callback.kind) ||
+                callback.kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f,
+                               block, id, ins->sourceId,
+                               ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT,
+                               (TZrUInt32)callback.kind);
+                goto fail;
+            }
+            if (!zr_oracle_assign(f, ins, r, &callback, block, id, d)) {
+                goto fail;
+            }
             break;
         case ZR_EXEC_IR_OPCODE_ALLOC:
             zr_oracle_undefined(&callback);

@@ -89,6 +89,15 @@ typedef TZrBool (*FZrExecIrOracleIterator)(
         SZrExecIrOracleValue *result,
         TZrBool *threw);
 
+/* Place construction remains pointer-free: the provider maps the stable
+ * operand/descriptor tokens to a caller-owned address token. */
+typedef TZrBool (*FZrExecIrOraclePlace)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands,
+        TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result);
+
 typedef TZrBool (*FZrExecIrOracleMemory)(
         void *userData,
         const SZrExecIrInstruction *instruction,
@@ -149,6 +158,8 @@ typedef struct SZrExecIrOracleInput {
     void *invokeUserData;
     FZrExecIrOracleIterator iterator;
     void *iteratorUserData;
+    FZrExecIrOraclePlace place;
+    void *placeUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {

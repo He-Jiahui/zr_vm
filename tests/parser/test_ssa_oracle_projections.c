@@ -1291,6 +1291,165 @@ static void test_iterator_oracle_provider(void) {
     }
 }
 
+static void build_place_oracle_function(
+        SZrExecIrFunction *function, EZrExecIrOpcode opcode) {
+    TZrExecIrValueId first, second, result;
+    TZrExecIrBlockId entry, normal, predecessor;
+    SZrExecIrRange operandRange, resultRange, returnOperands;
+    SZrExecIrInstruction instruction;
+    TZrExecIrValueId operands[2];
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    first = ZrCore_ExecIr_FunctionAddValue(
+            function, 5u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    second = ZrCore_ExecIr_FunctionAddValue(
+            function, 9u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    result = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(first != 0u && second != 0u && result != 0u);
+    entry = ZrCore_ExecIr_FunctionAddBlock(function,
+                                            ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    normal = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    assert(entry == 1u && normal == 2u);
+    function->entryBlockId = entry;
+    predecessor = entry;
+    assert(ZrCore_ExecIr_FunctionAppendSuccessors(
+            function, &normal, 1u,
+            &function->blocks[entry - 1u].successorRange));
+    assert(ZrCore_ExecIr_FunctionAppendPredecessors(
+            function, &predecessor, 1u,
+            &function->blocks[normal - 1u].predecessorRange));
+    operands[0] = first;
+    operands[1] = second;
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, operands, opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT
+                    ? 2u : 1u, &operandRange));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &result, 1u, &resultRange));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = opcode;
+    instruction.operands = operandRange;
+    instruction.results = resultRange;
+    instruction.sourceId = 341u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                   ZR_NULL));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &result, 1u, &returnOperands));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returnOperands;
+    instruction.sourceId = 342u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                   ZR_NULL));
+    function->blocks[entry - 1u].instructionRange = range(0u, 1u);
+    function->blocks[entry - 1u].terminatorInstructionId = 1u;
+    function->blocks[normal - 1u].instructionRange = range(1u, 1u);
+    function->blocks[normal - 1u].terminatorInstructionId = 2u;
+}
+
+typedef struct SZrOraclePlaceFixture {
+    SZrExecIrOracleValue result;
+    TZrUInt32 callCount;
+    TZrBool reject;
+    TZrBool returnUndefined;
+} SZrOraclePlaceFixture;
+
+static TZrBool oracle_place_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result) {
+    SZrOraclePlaceFixture *fixture = (SZrOraclePlaceFixture *)userData;
+    assert(fixture != ZR_NULL && instruction != ZR_NULL &&
+           (instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE ||
+            instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT) &&
+           operands != ZR_NULL && result != ZR_NULL &&
+           operandCount == (instruction->opcode ==
+                                    ZR_EXEC_IR_OPCODE_PLACE_PROJECT
+                                    ? 2u : 1u) &&
+           operands[0].kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           operands[0].as.signedInteger == (TZrInt64)5);
+    if (instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT) {
+        assert(operands[1].kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+               operands[1].as.signedInteger == (TZrInt64)9);
+    }
+    if (fixture->reject != ZR_FALSE) {
+        return ZR_FALSE;
+    }
+    ++fixture->callCount;
+    if (fixture->returnUndefined != ZR_FALSE) {
+        result->kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+    } else {
+        *result = fixture->result;
+    }
+    return ZR_TRUE;
+}
+
+static void test_place_oracle_provider(void) {
+    static const EZrExecIrOpcode opcodes[] = {
+        ZR_EXEC_IR_OPCODE_PLACE_BASE,
+        ZR_EXEC_IR_OPCODE_PLACE_PROJECT,
+    };
+    TZrUInt32 index;
+    for (index = 0u; index < sizeof(opcodes) / sizeof(opcodes[0]); ++index) {
+        SZrExecIrFunction function;
+        SZrExecIrOracleInput input;
+        SZrExecIrOracleExecutionResult execution;
+        SZrExecIrDiagnostic diagnostic;
+        SZrOraclePlaceFixture place;
+        SZrExecIrOracleValue initial[2];
+
+        build_place_oracle_function(&function, opcodes[index]);
+        memset(&input, 0, sizeof(input));
+        input.function = &function;
+        initial[0].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        initial[0].as.signedInteger = 5;
+        initial[1].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        initial[1].as.signedInteger = 9;
+        input.initialValues = initial;
+        input.initialValueCount = 2u;
+        memset(&execution, 0, sizeof(execution));
+        assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+               diagnostic.instructionId == 1u &&
+               diagnostic.actualVersion == (TZrUInt32)opcodes[index]);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        memset(&place, 0, sizeof(place));
+        place.result.kind = ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED;
+        place.result.as.unsignedInteger = (TZrUInt64)0xcafeu;
+        input.place = oracle_place_callback;
+        input.placeUserData = &place;
+        memset(&execution, 0, sizeof(execution));
+        assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(place.callCount == 1u && execution.returned &&
+               execution.currentBlock == 2u &&
+               execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED &&
+               execution.returnValue.as.unsignedInteger == (TZrUInt64)0xcafeu &&
+               execution.eventCount == 0u);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        place.reject = ZR_TRUE;
+        memset(&execution, 0, sizeof(execution));
+        assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR &&
+               diagnostic.instructionId == 1u && execution.eventCount == 0u);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        place.reject = ZR_FALSE;
+        place.returnUndefined = ZR_TRUE;
+        memset(&execution, 0, sizeof(execution));
+        assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+               diagnostic.instructionId == 1u && execution.eventCount == 0u);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+        ZrCore_ExecIr_FreeFunction(&function);
+    }
+}
+
 typedef struct SZrOracleTypeTestFixture {
     TZrExecIrTypeToken expectedMatchType;
     TZrUInt32 callCount;
@@ -1660,6 +1819,7 @@ int main(void) {
     test_call_event_oracle();
     test_invoke_oracle_provider();
     test_iterator_oracle_provider();
+    test_place_oracle_provider();
     test_type_test_oracle_provider();
     test_exception_payload_oracle_provider();
     test_phi_copy_and_critical_edge_split();

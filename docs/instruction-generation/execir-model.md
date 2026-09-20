@@ -205,7 +205,10 @@ reconstructed inside the Oracle.
 `PLACE_BASE` and `PLACE_PROJECT` likewise retain their pointer-free operand,
 result, type, layout, and source metadata in both projections while forcing
 `runnable == false`. Their physical address and layout semantics belong to a
-later backend bridge, so the direct Oracle does not manufacture a host pointer.
+later backend bridge. The direct Oracle can evaluate them only through
+`FZrExecIrOraclePlace`, which returns a caller-owned pointer-free address token
+and reports provider rejection with a dedicated diagnostic; it never
+manufactures a host pointer.
 
 The direct Oracle executes `ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT`
 only through `FZrExecIrOracleIterator`. The provider returns the pointer-free
