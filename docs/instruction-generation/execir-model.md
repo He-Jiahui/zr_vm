@@ -207,6 +207,14 @@ result, type, layout, and source metadata in both projections while forcing
 `runnable == false`. Their physical address and layout semantics belong to a
 later backend bridge, so the direct Oracle does not manufacture a host pointer.
 
+The direct Oracle executes `ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT`
+only through `FZrExecIrOracleIterator`. The provider returns the pointer-free
+result and selects the ordered normal or exceptional successor; rejection uses
+the dedicated iterator diagnostic, and a selected exception can read the
+payload provider without reconstructing a runtime exception object. Both
+projection backends continue to mark iterator-containing functions
+`runnable == false` until their protocol ABI is connected.
+
 Cleanup identity currently lives on both sides of the CFG boundary: SemanticIR
 uses `ZR_PARSER_CFG_EDGE_CLEANUP` and `ZR_PARSER_CFG_BLOCK_CLEANUP`, while
 ExecIR preserves cleanup regions with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`. The

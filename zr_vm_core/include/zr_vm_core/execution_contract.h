@@ -94,7 +94,9 @@ typedef enum EZrExecutionDiagnosticCode {
     /* A reference-oracle exception-payload provider rejected a read. */
     ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR,
     /* A reference-oracle invoke provider rejected a call or branch result. */
-    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR,
+    /* A reference-oracle iterator provider rejected a step or branch result. */
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ITERATOR_ERROR
 } EZrExecutionDiagnosticCode;
 
 /*

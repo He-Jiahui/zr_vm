@@ -46,6 +46,7 @@ typedef enum EZrExecIrOracleEventKind {
     ZR_EXEC_IR_ORACLE_EVENT_SUSPEND,
     ZR_EXEC_IR_ORACLE_EVENT_LOAD,
     ZR_EXEC_IR_ORACLE_EVENT_ALLOCATE,
+    ZR_EXEC_IR_ORACLE_EVENT_ITERATOR,
     ZR_EXEC_IR_ORACLE_EVENT_KIND_COUNT
 } EZrExecIrOracleEventKind;
 
@@ -71,6 +72,16 @@ typedef TZrBool (*FZrExecIrOracleCall)(
  * The callback supplies a pointer-free result and explicitly selects the
  * exceptional continuation without exposing a runtime exception object. */
 typedef TZrBool (*FZrExecIrOracleInvoke)(
+        void *userData,
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands,
+        TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result,
+        TZrBool *threw);
+
+/* Iterator operations have the same ordered normal/exception edge shape as
+ * INVOKE, but remain a distinct event/provider family for differential tests. */
+typedef TZrBool (*FZrExecIrOracleIterator)(
         void *userData,
         const SZrExecIrInstruction *instruction,
         const SZrExecIrOracleValue *operands,
@@ -136,6 +147,8 @@ typedef struct SZrExecIrOracleInput {
     void *exceptionPayloadUserData;
     FZrExecIrOracleInvoke invoke;
     void *invokeUserData;
+    FZrExecIrOracleIterator iterator;
+    void *iteratorUserData;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {

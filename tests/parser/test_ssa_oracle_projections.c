@@ -1086,6 +1086,211 @@ static void test_invoke_oracle_provider(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void build_iterator_oracle_function(
+        SZrExecIrFunction *function, EZrExecIrOpcode opcode) {
+    TZrExecIrValueId operand, result, payload;
+    TZrExecIrBlockId entry, normal, exception, successors[2], predecessor;
+    SZrExecIrRange operandRange, resultRange, payloadResultRange;
+    SZrExecIrRange normalReturnOperands, exceptionReturnOperands;
+    SZrExecIrInstruction instruction;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    operand = ZrCore_ExecIr_FunctionAddValue(
+            function, 7u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    result = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    payload = ZrCore_ExecIr_FunctionAddValue(
+            function, 41u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(operand != 0u && result != 0u && payload != 0u);
+    entry = ZrCore_ExecIr_FunctionAddBlock(function,
+                                            ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    normal = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    exception = ZrCore_ExecIr_FunctionAddBlock(
+            function, ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION);
+    assert(entry == 1u && normal == 2u && exception == 3u);
+    function->entryBlockId = entry;
+    successors[0] = normal;
+    successors[1] = exception;
+    assert(ZrCore_ExecIr_FunctionAppendSuccessors(
+            function, successors, 2u,
+            &function->blocks[entry - 1u].successorRange));
+    predecessor = entry;
+    assert(ZrCore_ExecIr_FunctionAppendPredecessors(
+            function, &predecessor, 1u,
+            &function->blocks[normal - 1u].predecessorRange));
+    assert(ZrCore_ExecIr_FunctionAppendPredecessors(
+            function, &predecessor, 1u,
+            &function->blocks[exception - 1u].predecessorRange));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &operand, 1u, &operandRange));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &result, 1u, &resultRange));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = opcode;
+    instruction.flags = (TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_THROW |
+                                    ZR_EXEC_IR_FLAG_MAY_ALLOCATE);
+    instruction.operands = operandRange;
+    instruction.results = resultRange;
+    instruction.successorRange = function->blocks[entry - 1u].successorRange;
+    instruction.sourceId = 331u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                   ZR_NULL));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &result, 1u, &normalReturnOperands));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = normalReturnOperands;
+    instruction.sourceId = 332u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                   ZR_NULL));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &payload, 1u, &payloadResultRange));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD;
+    instruction.results = payloadResultRange;
+    instruction.sourceId = 333u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                   ZR_NULL));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &payload, 1u, &exceptionReturnOperands));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = exceptionReturnOperands;
+    instruction.sourceId = 334u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                   ZR_NULL));
+    function->blocks[entry - 1u].instructionRange = range(0u, 1u);
+    function->blocks[entry - 1u].terminatorInstructionId = 1u;
+    function->blocks[normal - 1u].instructionRange = range(1u, 1u);
+    function->blocks[normal - 1u].terminatorInstructionId = 2u;
+    function->blocks[exception - 1u].instructionRange = range(2u, 2u);
+    function->blocks[exception - 1u].terminatorInstructionId = 4u;
+}
+
+typedef struct SZrOracleIteratorFixture {
+    SZrExecIrOracleValue result;
+    TZrUInt32 callCount;
+    TZrBool reject;
+    TZrBool throwResult;
+    TZrBool returnUndefined;
+} SZrOracleIteratorFixture;
+
+static TZrBool oracle_iterator_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result, TZrBool *threw) {
+    SZrOracleIteratorFixture *fixture =
+            (SZrOracleIteratorFixture *)userData;
+    assert(fixture != ZR_NULL && instruction != ZR_NULL &&
+           (instruction->opcode == ZR_EXEC_IR_OPCODE_ITER_INIT ||
+            instruction->opcode == ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT ||
+            instruction->opcode == ZR_EXEC_IR_OPCODE_ITER_CURRENT) &&
+           operands != ZR_NULL && operandCount == 1u && result != ZR_NULL &&
+           threw != ZR_NULL &&
+           operands[0].kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           operands[0].as.signedInteger == (TZrInt64)7);
+    if (fixture->reject != ZR_FALSE) {
+        return ZR_FALSE;
+    }
+    ++fixture->callCount;
+    *threw = fixture->throwResult;
+    if (fixture->returnUndefined != ZR_FALSE) {
+        result->kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+    } else {
+        *result = fixture->result;
+    }
+    return ZR_TRUE;
+}
+
+static void test_iterator_oracle_provider(void) {
+    static const EZrExecIrOpcode opcodes[] = {
+        ZR_EXEC_IR_OPCODE_ITER_INIT,
+        ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT,
+        ZR_EXEC_IR_OPCODE_ITER_CURRENT,
+    };
+    TZrUInt32 index;
+    for (index = 0u; index < sizeof(opcodes) / sizeof(opcodes[0]); ++index) {
+        SZrExecIrFunction function;
+        SZrExecIrOracleInput input;
+        SZrExecIrOracleExecutionResult execution;
+        SZrExecIrDiagnostic diagnostic;
+        SZrOracleIteratorFixture iterator;
+        SZrOracleInvokePayloadFixture payload;
+        SZrExecIrOracleValue initial;
+
+        build_iterator_oracle_function(&function, opcodes[index]);
+        memset(&input, 0, sizeof(input));
+        input.function = &function;
+        initial.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        initial.as.signedInteger = 7;
+        input.initialValues = &initial;
+        input.initialValueCount = 1u;
+        memset(&execution, 0, sizeof(execution));
+        assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+               diagnostic.instructionId == 1u &&
+               diagnostic.actualVersion == (TZrUInt32)opcodes[index]);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        memset(&iterator, 0, sizeof(iterator));
+        iterator.result.kind =
+                opcodes[index] == ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT
+                        ? ZR_EXEC_IR_ORACLE_VALUE_BOOL
+                        : ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        if (opcodes[index] == ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT) {
+            iterator.result.as.boolean = ZR_TRUE;
+        } else {
+            iterator.result.as.signedInteger = 23;
+        }
+        input.iterator = oracle_iterator_callback;
+        input.iteratorUserData = &iterator;
+        memset(&execution, 0, sizeof(execution));
+        assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(iterator.callCount == 1u && execution.returned &&
+               execution.currentBlock == 2u && execution.eventCount == 1u &&
+               execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_ITERATOR &&
+               execution.events[0].instructionId == 1u);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        memset(&payload, 0, sizeof(payload));
+        payload.payload.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        payload.payload.as.signedInteger = -31;
+        input.exceptionPayload = oracle_invoke_payload_callback;
+        input.exceptionPayloadUserData = &payload;
+        iterator.throwResult = ZR_TRUE;
+        memset(&execution, 0, sizeof(execution));
+        assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(iterator.callCount == 2u && payload.callCount == 1u &&
+               execution.returned && execution.currentBlock == 3u &&
+               execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+               execution.returnValue.as.signedInteger == -31 &&
+               execution.eventCount == 1u &&
+               execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_ITERATOR);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        iterator.throwResult = ZR_FALSE;
+        iterator.reject = ZR_TRUE;
+        memset(&execution, 0, sizeof(execution));
+        assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ITERATOR_ERROR &&
+               diagnostic.instructionId == 1u && execution.eventCount == 0u);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+
+        iterator.reject = ZR_FALSE;
+        iterator.returnUndefined = ZR_TRUE;
+        memset(&execution, 0, sizeof(execution));
+        assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+               diagnostic.instructionId == 1u && execution.eventCount == 0u);
+        ZrCore_ExecIr_OracleResultFree(&execution);
+        ZrCore_ExecIr_FreeFunction(&function);
+    }
+}
+
 typedef struct SZrOracleTypeTestFixture {
     TZrExecIrTypeToken expectedMatchType;
     TZrUInt32 callCount;
@@ -1454,6 +1659,7 @@ int main(void) {
     test_branch_phi_oracle();
     test_call_event_oracle();
     test_invoke_oracle_provider();
+    test_iterator_oracle_provider();
     test_type_test_oracle_provider();
     test_exception_payload_oracle_provider();
     test_phi_copy_and_critical_edge_split();

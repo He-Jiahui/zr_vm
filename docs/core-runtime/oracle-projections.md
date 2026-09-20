@@ -53,9 +53,9 @@ operations append bounded operand snapshots to the observable event stream.
 operand snapshot and canonical `matchTypeToken`, and returns either a boolean
 membership result or a rejection; false membership is a successful result,
 while rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`.
-Calls, invokes, loads, allocations, type tests, and exception payload reads
-require explicit caller providers. Executable place projection and landing-pad
-handling remain unsupported.
+Calls, invokes, iterator steps, loads, allocations, type tests, and exception
+payload reads require explicit caller providers. Executable place projection
+and landing-pad handling remain unsupported.
 
 `EXCEPTION_PAYLOAD` is executable at a handler-entry instruction when the
 caller supplies `FZrExecIrOracleExceptionPayload`. The provider returns one
@@ -158,7 +158,10 @@ direct Oracle likewise keeps physical place evaluation unsupported.
 `ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` are transported with their
 stable operand/result and ordered successor ranges. The projections mark the
 iterator family non-runnable until the protocol and exception ABI is connected;
-the direct Oracle still reports these protocol operations as `UNSUPPORTED`.
+the direct Oracle executes them through `FZrExecIrOracleIterator`. The callback
+returns a pointer-free iterator result and selects the normal or exceptional
+edge; provider rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ITERATOR_ERROR`,
+and an exceptional edge may consume the payload provider above.
 
 `ZrParser_ExecIr_LowerAot` uses the same builder and transfers ownership of the
 projection arrays, adding the function token, signature hash, and execution

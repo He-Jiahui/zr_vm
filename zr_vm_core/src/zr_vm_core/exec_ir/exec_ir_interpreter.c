@@ -449,6 +449,11 @@ static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInpu
     if (op == ZR_EXEC_IR_OPCODE_INVOKE) {
         return (TZrBool)(input != ZR_NULL && input->invoke != ZR_NULL);
     }
+    if (op == ZR_EXEC_IR_OPCODE_ITER_INIT ||
+        op == ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT ||
+        op == ZR_EXEC_IR_OPCODE_ITER_CURRENT) {
+        return (TZrBool)(input != ZR_NULL && input->iterator != ZR_NULL);
+    }
     /* A load has no meaningful default value.  Require an explicit provider
      * so an oracle run cannot accidentally turn an unmodelled heap read into
      * a successful constant.  Stores retain the historical event-only mode
@@ -699,6 +704,47 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_CALL,
                                         id, ins->sourceId, ops, n, f, block,
                                         d) ||
+                !zr_oracle_assign(f, ins, r, &callback, block, id, d)) {
+                goto fail;
+            }
+            *nextOrdinal = 0u;
+            *next = f->successors[ins->successorRange.start];
+            *terminated = ZR_TRUE;
+            break;
+        case ZR_EXEC_IR_OPCODE_ITER_INIT:
+        case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
+        case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
+            zr_oracle_undefined(&callback);
+            if (ins->successorRange.count != 2u || input->iterator == ZR_NULL ||
+                !input->iterator(input->iteratorUserData, ins, ops, n,
+                                  &callback, &threw)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ITERATOR_ERROR,
+                               f, block, id, ins->sourceId, 2u,
+                               ins->successorRange.count);
+                goto fail;
+            }
+            if (threw != ZR_FALSE) {
+                if (!zr_oracle_append_event(
+                            r, ZR_EXEC_IR_ORACLE_EVENT_ITERATOR, id,
+                            ins->sourceId, ops, n, f, block, d)) {
+                    goto fail;
+                }
+                *nextOrdinal = 1u;
+                *next = f->successors[ins->successorRange.start + 1u];
+                *terminated = ZR_TRUE;
+                break;
+            }
+            if (!zr_oracle_value_kind_valid(callback.kind) ||
+                callback.kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f,
+                               block, id, ins->sourceId,
+                               ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT,
+                               (TZrUInt32)callback.kind);
+                goto fail;
+            }
+            if (!zr_oracle_append_event(
+                        r, ZR_EXEC_IR_ORACLE_EVENT_ITERATOR, id,
+                        ins->sourceId, ops, n, f, block, d) ||
                 !zr_oracle_assign(f, ins, r, &callback, block, id, d)) {
                 goto fail;
             }
