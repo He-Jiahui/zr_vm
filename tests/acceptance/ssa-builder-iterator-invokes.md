@@ -17,9 +17,22 @@ The result exists only on the normal edge. The SSA verifier applies this rule to
 all value-producing, may-throw terminators, so consuming `ITER_CURRENT`'s result
 from its exceptional path reports `ZR_EXEC_IR_DIAGNOSTIC_EXCEPTION_EDGE`.
 
-ExecBC and AOT projections reject these opcodes with
-`ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED` and retain any earlier published projection.
-Backend execution is deliberately outside this contract slice.
+ExecBC and AOT projections transport these opcodes with their pointer-free
+operand/result and ordered successor metadata, but mark any containing
+projection non-runnable until the iterator protocol and exception ABI is
+connected. Backend execution is deliberately outside this contract slice, and
+the direct Oracle continues to report iterator protocol operations as
+`UNSUPPORTED`.
+
+## Projection metadata follow-up
+
+TDD first changed the projection assertions to require copied iterator opcodes,
+operand/result ranges, and non-runnable flags; with the old whitelist the
+focused test failed at the first `ITER_INIT` projection. The common lowerer now
+transports all three iterator records transactionally through ExecBC and AOT,
+while preserving the explicit backend ABI boundary. The focused
+`ssa_oracle_projections` test passes on MSVC, GCC, and Clang, and GCC
+ASan+UBSan with leak detection passes it five consecutive times.
 
 ## Focused coverage
 

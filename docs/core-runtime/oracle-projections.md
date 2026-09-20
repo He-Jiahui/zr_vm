@@ -152,6 +152,11 @@ result, type, layout, and source metadata. The projections mark these place
 operations non-runnable until a backend supplies the layout/address ABI; the
 direct Oracle likewise keeps physical place evaluation unsupported.
 
+`ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` are transported with their
+stable operand/result and ordered successor ranges. The projections mark the
+iterator family non-runnable until the protocol and exception ABI is connected;
+the direct Oracle still reports these protocol operations as `UNSUPPORTED`.
+
 `ZrParser_ExecIr_LowerAot` uses the same builder and transfers ownership of the
 projection arrays, adding the function token, signature hash, and execution
 contract. It is an AOTIR seam only: `runnable` is deliberately false until the

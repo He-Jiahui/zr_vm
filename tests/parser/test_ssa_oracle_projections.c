@@ -1124,17 +1124,19 @@ static void test_unsupported_and_transactional_failures(void) {
          index < sizeof(iteratorOpcodes) / sizeof(iteratorOpcodes[0]);
          ++index) {
         function.instructions[0].opcode = iteratorOpcodes[index];
-        assert(!ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+        assert(!ZrCore_ExecIr_RunOracle(&function, ZR_NULL, &diagnostic));
         assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
                diagnostic.instructionId == 1u &&
-               diagnostic.actualVersion == (TZrUInt32)iteratorOpcodes[index] &&
-               bc.instructions == oldInstructions &&
-               bc.instructionCount == oldCount);
-        assert(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
-        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
-               diagnostic.instructionId == 1u &&
-               diagnostic.actualVersion == (TZrUInt32)iteratorOpcodes[index] &&
-               aot.instructionCount == oldAotCount);
+               diagnostic.actualVersion == (TZrUInt32)iteratorOpcodes[index]);
+        assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+        assert(bc.instructions[0u].opcode == iteratorOpcodes[index] &&
+               bc.instructions[0u].operands.count == 1u && !bc.runnable);
+        oldInstructions = bc.instructions;
+        oldCount = bc.instructionCount;
+        assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+        assert(aot.instructions[0u].opcode == iteratorOpcodes[index] &&
+               aot.instructions[0u].operands.count == 1u && !aot.runnable);
+        oldAotCount = aot.instructionCount;
     }
     function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD;
     function.instructions[0].operands = range(0u, 0u);
@@ -1221,6 +1223,9 @@ static void test_unsupported_and_transactional_failures(void) {
     assert(!ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
            bc.instructions == oldInstructions && bc.instructionCount == oldCount);
+    assert(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+           aot.instructionCount == oldAotCount);
     ZrParser_ExecBcProjection_Free(&bc);
     ZrParser_AotIrProjection_Free(&aot);
     ZrCore_ExecIr_FreeFunction(&function);

@@ -339,10 +339,12 @@ critical edges. For an already split generic or iterator invoke, a pre-invoke
 definition is available on both successors while the invoke result is available
 only on the normal successor; the core verifier checks that boundary.
 
-ExecBC and AOT projections currently reject all three iterator invoke opcodes
-with `UNSUPPORTED`, transactionally preserving any previously published
-projection. This is a deliberate backend boundary until iterator ABI lowering
-exists; the canonical opcodes are not silently copied into a runnable artifact.
+ExecBC and AOT projections now retain all three iterator invoke opcodes with
+their operand/result and ordered normal/exception successor ranges, but mark
+the containing projection non-runnable. This remains a deliberate backend
+boundary until iterator protocol and exception ABI lowering exists; the
+canonical opcodes are not silently advertised as executable. The direct Oracle
+continues to report iterator protocol operations as `UNSUPPORTED`.
 
 The source compiler supplies a canonical loop path directly for a
 straight-line `while`. Before compiling the condition it closes the current
