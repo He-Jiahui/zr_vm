@@ -83,7 +83,9 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
         SZrCompilerSemanticFinallyFlowInfo *outInfo) {
     SZrCompilerSemanticFinallyFlowInfo info;
     TZrUInt32 loopFlow;
+    TZrUInt32 completionFlow;
     TZrBool multipleLoopTransfer;
+    TZrBool multipleFallthroughCompletion;
 
     if (outInfo == ZR_NULL) {
         return ZR_FALSE;
@@ -190,11 +192,22 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
     }
     loopFlow = info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
                             ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE);
+    completionFlow = info.flow &
+            (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN |
+             ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW |
+             ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
+             ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE);
     multipleLoopTransfer = (TZrBool)(
             info.abruptSiteCount > 1U &&
             (loopFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK ||
              loopFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE));
-    if ((info.abruptSiteCount > 1U && !multipleLoopTransfer) ||
+    multipleFallthroughCompletion = (TZrBool)(
+            info.abruptSiteCount > 1U &&
+            (info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_FALLTHROUGH) != 0U &&
+            (completionFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN ||
+             completionFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW));
+    if ((info.abruptSiteCount > 1U && !multipleLoopTransfer &&
+         !multipleFallthroughCompletion) ||
         info.exceptionalSiteCount > 1U ||
         (info.exceptionalSiteCount != 0U &&
          info.abruptSiteCount != 0U) ||
@@ -568,8 +581,11 @@ static TZrBool compiler_semantic_cfg_completion_through_finally_is_active(
                       completionOpcode == ZR_SEMANTIC_IR_BRANCH) &&
                      plan != ZR_NULL && plan->initialized &&
                      plan->completionOpcode == completionOpcode &&
-                     !plan->completionPending &&
-                     !plan->cleanupEntered);
+                     !plan->cleanupEntered &&
+                     (!plan->completionPending ||
+                      (plan->hasFallthrough &&
+                       (completionOpcode == ZR_SEMANTIC_IR_RETURN ||
+                        completionOpcode == ZR_SEMANTIC_IR_THROW))));
 }
 
 static TZrBool compiler_semantic_cfg_loop_transfer_through_finally_is_active(
@@ -578,8 +594,8 @@ static TZrBool compiler_semantic_cfg_loop_transfer_through_finally_is_active(
     const SZrCompilerSemanticFinallyPlan *plan =
             cs != ZR_NULL ? cs->preSemanticIrCfgFinallyPlan : ZR_NULL;
 
-    /* Same-kind loop transfers may revisit the pending completion. Return and
-     * throw keep the one-shot payload contract because their ValueIds differ. */
+    /* Same-kind transfers may revisit only the preflighted pending state;
+     * return/throw repeats require the existing fallthrough payload merge. */
     return (TZrBool)(
             targetBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
             plan != ZR_NULL && plan->initialized &&

@@ -553,6 +553,67 @@ static void test_conditional_return_try_finally_dispatches_pending_state(void) {
     free_source(&compiler, ast);
 }
 
+static void test_repeated_return_try_finally_dispatches_pending_state(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var again: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { return seed; }\n"
+            "  if (again) { return 8; }\n"
+            "  seed = 10;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] = "repeated_return_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *returnBlock;
+    const SZrParserCfgBlock *joinBlock;
+    const SZrParserCfgEdge *returnEdge;
+    const SZrParserCfgEdge *joinEdge;
+    const SZrSemanticIrInstruction *dispatch;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    returnBlock = find_block_terminator(
+            function, ZR_PARSER_CFG_TERMINATOR_RETURN);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+            cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(2U, cleanup->successorCount);
+    returnEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    joinEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 1U);
+    TEST_ASSERT_NOT_NULL(returnEdge);
+    TEST_ASSERT_NOT_NULL(joinEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_CASE, returnEdge->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT, joinEdge->kind);
+    TEST_ASSERT_EQUAL_UINT32(returnBlock->id, returnEdge->toBlockId);
+    joinBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, joinEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(joinBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, joinBlock->kind);
+    dispatch = block_tail(function, cleanup);
+    TEST_ASSERT_NOT_NULL(dispatch);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_SWITCH, dispatch->opcode);
+
+    free_source(&compiler, ast);
+}
+
 static void test_two_return_sites_try_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "var choose: bool = true;\n"
@@ -638,6 +699,61 @@ static void test_conditional_throw_try_finally_dispatches_pending_state(void) {
     free_source(&compiler, ast);
 }
 
+static void test_repeated_throw_try_finally_dispatches_pending_state(void) {
+    static const TZrChar source[] =
+            "var choose: bool = true;\n"
+            "var again: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try {\n"
+            "  if (choose) { throw seed; }\n"
+            "  if (again) { throw seed; }\n"
+            "  seed = 8;\n"
+            "} finally {\n"
+            "  seed = 9;\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] =
+            "repeated_throw_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U,
+            sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *throwBlock;
+    const SZrParserCfgEdge *throwEdge;
+    const SZrParserCfgEdge *joinEdge;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    throwBlock = find_block_terminator(
+            function, ZR_PARSER_CFG_TERMINATOR_THROW);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(throwBlock);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_CLEANUP_DISPATCH,
+            cleanup->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(2U, cleanup->successorCount);
+    throwEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    joinEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 1U);
+    TEST_ASSERT_NOT_NULL(throwEdge);
+    TEST_ASSERT_NOT_NULL(joinEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_CASE, throwEdge->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT, joinEdge->kind);
+    TEST_ASSERT_EQUAL_UINT32(throwBlock->id, throwEdge->toBlockId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_IR_SWITCH, block_tail(function, cleanup)->opcode);
+
+    free_source(&compiler, ast);
+}
+
 #include "test_ssa_source_cleanup_cfg_exceptional.inc"
 #include "test_ssa_source_cleanup_cfg_loop.inc"
 
@@ -649,8 +765,10 @@ int main(void) {
     RUN_TEST(test_throw_try_finally_preserves_precleanup_value);
     RUN_TEST(test_nonlinear_throw_try_finally_stays_on_legacy_path);
     RUN_TEST(test_conditional_return_try_finally_dispatches_pending_state);
+    RUN_TEST(test_repeated_return_try_finally_dispatches_pending_state);
     RUN_TEST(test_two_return_sites_try_finally_stays_on_legacy_path);
     RUN_TEST(test_conditional_throw_try_finally_dispatches_pending_state);
+    RUN_TEST(test_repeated_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_invoke_try_finally_rethrows_exception_after_cleanup);
     RUN_TEST(test_invoke_argument_is_captured_before_exception_cleanup);
     RUN_TEST(test_literal_argument_try_finally_stays_on_legacy_path);

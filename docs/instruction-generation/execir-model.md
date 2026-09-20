@@ -232,9 +232,12 @@ before the branch. The abrupt path stores its converted payload and `true`,
 while the normal path retains the dominating `false`; both enter the same
 cleanup block.
 
-A protected block nested directly in a supported source `while`, linear
-statement-form `for`, or statically typed `foreach` may instead contain one or
-more same-kind, operand-free `break` or `continue` transfers. The pending plan
+A protected block in a no-catch `try/finally` may contain one or more same-kind
+linear `return` or `throw` sites under statement-form conditionals when a
+normal sibling remains. A protected block nested directly in a supported source
+`while`, linear statement-form `for`, or statically typed `foreach` may instead
+contain one or more same-kind, operand-free `break` or `continue` transfers.
+The pending plan
 captures the loop join
 for `break`, the `while` condition block for a `while` `continue`, the `for`
 step block for a `for` `continue`, or the foreach move-next block for a
@@ -258,9 +261,10 @@ operand is reloaded from the private payload Place and rethrown, while final
 order even when `finally` mutates source locals. Preflight examines the complete
 protected and cleanup bodies before activating a graph. Nonlinear abrupt
 payloads, literal, converting, non-value, multiple, or conditional call
-arguments, conditional or multiple calls, declarations, more than one
-return/throw site, mixed explicit and exceptional completion, catch-plus-
-finally, and other unsupported shapes retain the legacy-CFG fail-closed path.
+arguments, conditional or multiple calls, declarations, multiple return/throw
+sites without a normal sibling, mixed return/throw sites, mixed explicit and
+exceptional completion, catch-plus-finally, and other unsupported shapes retain
+the legacy-CFG fail-closed path.
 Mixed `break`/`continue` loop-transfer completions remain unsupported;
 same-kind repeated transfers are represented above.
 

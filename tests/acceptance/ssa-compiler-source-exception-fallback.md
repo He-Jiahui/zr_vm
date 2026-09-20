@@ -48,12 +48,14 @@ also failed with one detached call. Splitting scoped suppression from the
 function-level block exposed and fixed the same failure for the nested case.
 The active-prefix case protects the abandonment path.
 
-The later source-cleanup milestones narrow this historical boundary: one
-preflighted linear return or throw now publishes either a direct
+The later source-cleanup milestones narrow this historical boundary: one or
+more same-kind preflighted linear return or throw sites with a normal sibling
+now publish either a direct
 protected-to-cleanup-to-abrupt path or, when a sibling path falls through, a
 private pending selector and payload followed by cleanup dispatch to abrupt or
 normal continuation. Nonlinear abrupt payloads, catch-plus-finally, multiple
-abrupt sites or kinds, and most exceptional cleanup entry still use this
+return/throw sites without a normal sibling, mixed abrupt kinds, and most
+exceptional cleanup entry still use this
 persistent fallback and cannot restart a detached graph. One later bounded
 shape admits a resolved direct call with no argument or one exact `int`
 identifier passed by value: its exceptional edge defines and stores
