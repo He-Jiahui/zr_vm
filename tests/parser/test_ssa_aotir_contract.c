@@ -22,6 +22,9 @@ static void fill_contract(SZrExecutionContract *contract,
 int main(void) {
     const TZrUInt32 operandPool[] = {1u};
     const TZrUInt32 resultPool[] = {2u};
+    const SZrAotIrStateMapEntry stateMaps[] = {
+        {1u, 1u, UINT64_C(77)}
+    };
     const SZrAotIrInstruction instructions[] = {
         {1u, ZR_EXEC_IR_OPCODE_RETURN, 0u, {0u, 0u}, {0u, 1u},
          {0u, 0u}, {0u, 0u}, 0u, 0u, 1u, 0u, 0u, 0u}
@@ -52,6 +55,8 @@ int main(void) {
     function.operandCount = 1u;
     function.resultPool = resultPool;
     function.resultCount = 1u;
+    function.stateMaps = stateMaps;
+    function.stateMapCount = 1u;
     fill_contract(&function.contract, function.functionToken, UINT64_C(33),
                   function.signatureHash, function.frameLayout.layoutHash);
 
@@ -80,6 +85,18 @@ int main(void) {
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) != ZR_AOT_IR_OK);
         assert(diagnostic.status == ZR_AOT_IR_INVALID_OPCODE ||
                diagnostic.status == ZR_AOT_IR_INVALID_RANGE);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrStateMapEntry malformedState = stateMaps[0];
+        malformedState.instructionId = 99u;
+        malformedFunction.stateMaps = &malformedState;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.instructionId == malformedState.instructionId);
     }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));

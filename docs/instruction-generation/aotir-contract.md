@@ -11,7 +11,8 @@ arrays.  Semantic references are numeric IDs and bounded ranges, so the
 canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
 identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
 contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator
-membership, effect pairing, frame layout, and module/function hash identity.
+membership, state-map instruction membership, effect pairing, frame layout, and
+module/function hash identity.
 
 `ZrCore_AotIr_IsRelocationFree` rejects module or function relocation rows.
 Unimplemented operation families should be reported by a lowering diagnostic;
@@ -19,14 +20,10 @@ they must not silently fall back to semantic decoding of `SZrInstruction`.
 
 The focused fixture is
 `tests/parser/test_ssa_aotir_contract.c`.  It exercises deterministic hashing,
-contract validation, and relocation rejection.  The source is intentionally
-not added to shared CMake by this slice; temporary validation can compile it
-with:
+contract validation (including state-map instruction references), and
+relocation rejection.  CMake registers it as `ssa_aotir_contract`; run it with:
 
 ```text
-gcc -std=c11 -Wall -Wextra -Wpedantic -Wstrict-prototypes \
-  -Wmissing-prototypes -Werror \
-  -Izr_vm_common/include -Izr_vm_core/include \
-  zr_vm_core/src/zr_vm_core/aot_ir.c \
-  tests/parser/test_ssa_aotir_contract.c
+ctest --test-dir build/ssa-gcc-debug -R '^ssa_aotir_contract$' \
+  --output-on-failure --no-tests=error
 ```
