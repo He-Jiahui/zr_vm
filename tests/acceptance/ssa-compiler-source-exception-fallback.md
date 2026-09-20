@@ -57,10 +57,10 @@ mixed return/throw kinds, and most
 exceptional cleanup entry still use this
 persistent fallback and cannot restart a detached graph. One later bounded
 shape admits a resolved direct call with no argument or one exact `int`
-identifier passed by value: its exceptional edge defines and stores
+identifier or integer literal passed by value: its exceptional edge defines and stores
 `EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after cleanup
-dispatch. Multiple or conditional calls and literal, converting, non-value, or
-multiple arguments remain here. One or more same-kind, operand-free `break`
+dispatch. Multiple or conditional calls and converting, non-value, or multiple
+arguments remain here. One or more same-kind, operand-free `break`
 transfers from a supported `while`, linear statement-form `for`, or statically
 typed `foreach` are also claimed by the cleanup producer: terminal and
 conditional forms reach the existing loop join only after `finally`. One or

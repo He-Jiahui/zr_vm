@@ -875,7 +875,8 @@ int main(void) {
     RUN_TEST(test_repeated_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_invoke_try_finally_rethrows_exception_after_cleanup);
     RUN_TEST(test_invoke_argument_is_captured_before_exception_cleanup);
-    RUN_TEST(test_literal_argument_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_literal_argument_is_captured_before_exception_cleanup);
+    RUN_TEST(test_converted_argument_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_invoke_try_finally_stays_on_legacy_path);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
     RUN_TEST(test_terminal_break_try_finally_routes_to_loop_join);

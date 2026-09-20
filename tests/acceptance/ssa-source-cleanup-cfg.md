@@ -13,8 +13,8 @@ accepted by the SemanticIR-to-ExecIR builder.
   same-kind linear `return` or `throw` sites under statement-form conditionals,
   or one resolved direct call outside
   conditional control. The call may take no arguments or one exact,
-  ownership/reference/GC-neutral `int` identifier by value. When directly nested
-  in a supported `while`,
+  ownership/reference/GC-neutral `int` identifier or integer literal by value.
+  When directly nested in a supported `while`,
   linear statement-form `for`, or statically typed `foreach`, it may instead
   contain one or more operand-free `break` sites or one or more operand-free
   `continue` sites, provided every transfer has the same loop target and
@@ -61,8 +61,7 @@ cases live in `tests/parser/test_ssa_source_cleanup_cfg_loop.inc`.
 
 The same test keeps nonlinear return/throw payloads, mixed return/throw sites,
 two protected calls, and a combined catch-plus-finally statement on the legacy
-path. Literal, converting, non-value,
-multiple, or conditional arguments,
+path. Converting, non-value, multiple, or conditional arguments,
 conditional calls, declarations, nested nonlinear control flow, ownership
 cleanup, and mixed explicit/exceptional completion are also outside this
 slice. Those shapes must not publish a partial cleanup graph or restart a
@@ -84,12 +83,12 @@ still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 33/33 on Windows MSVC and WSL GCC and
+- The focused source cleanup suite passes 34/34 on Windows MSVC and WSL GCC and
   Clang. It includes terminal and conditional `break`/`continue`, repeated
   same-kind transfers across `while`/`for`/`foreach`, and explicit mixed-kind
   fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 33/33 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 34/34 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.

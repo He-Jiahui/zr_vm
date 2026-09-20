@@ -154,8 +154,8 @@ expression statements, the protected body contains the same subset plus one or
 more same-kind linear return or throw sites under statement-form conditionals,
 or one resolved direct call outside conditional
 control. That call may take no
-arguments or one exact, ownership/reference/GC-neutral `int` identifier by
-value, and no enclosing ownership cleanup may be active. Normal completion
+arguments or one exact, ownership/reference/GC-neutral `int` identifier or
+integer literal by value, and no enclosing ownership cleanup may be active. Normal completion
 branches through the cleanup
 block to a join. A terminal return or throw still captures its ValueId and uses
 one direct cleanup edge to a dedicated abrupt block. If a sibling path falls
@@ -185,7 +185,7 @@ selector, and enters cleanup; the normal continuation retains the pre-call
 normal join as `SWITCH_DEFAULT`. The abrupt block reloads the private payload
 after cleanup and rethrows it, so neither a cleanup assignment nor the
 uncommitted INVOKE result can replace the exception. Nonlinear payloads,
-literal, converting, non-value, multiple, or conditional arguments,
+converting, non-value, multiple, or conditional arguments,
 conditional or multiple calls, declarations, mixed return/throw sites, mixed
 explicit and exceptional completion, catch-plus-finally, active catch targets,
 or ownership cleanup reject the entire shape and keep the legacy path. Mixed

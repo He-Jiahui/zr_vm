@@ -264,8 +264,10 @@ static TZrBool compiler_semantic_cfg_is_simple_value_argument(
         }
         value = value->data.primaryExpression.property;
     }
-    return (TZrBool)(value != ZR_NULL &&
-                    value->type == ZR_AST_IDENTIFIER_LITERAL);
+    return (TZrBool)(
+            value != ZR_NULL &&
+            (value->type == ZR_AST_IDENTIFIER_LITERAL ||
+             value->type == ZR_AST_INTEGER_LITERAL));
 }
 
 static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
@@ -446,7 +448,8 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
             &cs->preSemanticIr,
             argumentValue->definitionInstructionId - 1U);
     if (argumentDefinition != ZR_NULL &&
-        argumentDefinition->opcode == ZR_SEMANTIC_IR_LOAD &&
+        (argumentDefinition->opcode == ZR_SEMANTIC_IR_LOAD ||
+         argumentDefinition->opcode == ZR_SEMANTIC_IR_CONSTANT) &&
         argumentDefinition->resultValueId == argumentValueId) {
         supported = ZR_TRUE;
     }

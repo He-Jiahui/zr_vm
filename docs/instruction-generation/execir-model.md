@@ -249,8 +249,8 @@ selector: cleanup dispatch selects the loop-transfer completion block or the
 normal post-`finally` join, with no synthetic payload Place.
 
 The same private state also models one resolved direct call with either no
-arguments or one exact, ownership/reference/GC-neutral `int` identifier passed
-by value. The argument ValueId is captured before `INVOKE`; its normal edge
+arguments or one exact, ownership/reference/GC-neutral `int` identifier or
+integer literal passed by value. The argument ValueId is captured before `INVOKE`; its normal edge
 retains `false`, while its direct
 exception landing block defines `EXCEPTION_PAYLOAD`, stores that payload plus
 `true`, and enters the shared cleanup without reading the interrupted call
@@ -260,7 +260,7 @@ operand is reloaded from the private payload Place and rethrown, while final
 `SWITCH_DEFAULT` reaches the normal join. This preserves source evaluation
 order even when `finally` mutates source locals. Preflight examines the complete
 protected and cleanup bodies before activating a graph. Nonlinear abrupt
-payloads, literal, converting, non-value, multiple, or conditional call
+payloads, converting, non-value, multiple, or conditional call
 arguments, conditional or multiple calls, declarations, mixed return/throw
 sites, mixed explicit and
 exceptional completion, catch-plus-finally, and other unsupported shapes retain
