@@ -268,7 +268,8 @@ static TZrBool compiler_semantic_cfg_is_simple_value_argument(
             value != ZR_NULL &&
             (value->type == ZR_AST_IDENTIFIER_LITERAL ||
              value->type == ZR_AST_INTEGER_LITERAL ||
-             value->type == ZR_AST_BOOLEAN_LITERAL));
+             value->type == ZR_AST_BOOLEAN_LITERAL ||
+             value->type == ZR_AST_FLOAT_LITERAL));
 }
 
 static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
@@ -443,7 +444,8 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
         if (!ZrParser_ExpressionType_Infer(
                     cs, call->args->nodes[index], &actualType) ||
             (actualType.baseType != ZR_VALUE_TYPE_INT64 &&
-             actualType.baseType != ZR_VALUE_TYPE_BOOL) ||
+             actualType.baseType != ZR_VALUE_TYPE_BOOL &&
+             !ZR_VALUE_IS_TYPE_FLOAT(actualType.baseType)) ||
             actualType.isNullable ||
             actualType.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
             actualType.gcBridgeKind != ZR_GC_BRIDGE_NONE ||
