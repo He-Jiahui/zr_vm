@@ -1468,6 +1468,94 @@ static void test_place_oracle_provider(void) {
     }
 }
 
+static void build_place_load_oracle_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId base, address, loaded;
+    SZrExecIrRange placeOperands, addressResult;
+    SZrExecIrRange loadOperands, loadResult, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    base = ZrCore_ExecIr_FunctionAddValue(
+            function, 5u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    address = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    loaded = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(base != 0u && address != 0u && loaded != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &base, 1u, &placeOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &address, 1u, &addressResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &address, 1u, &loadOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &loaded, 1u, &loadResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &loaded, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_PLACE_BASE,
+                       placeOperands, addressResult, range(0u, 0u),
+                       0u, 851u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_LOAD,
+                       loadOperands, loadResult, range(0u, 0u),
+                       0u, 852u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 853u);
+}
+
+static void test_place_token_composes_with_memory_provider(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+    SZrOraclePlaceFixture place;
+    SZrOracleMemoryFixture memory;
+    SZrExecIrOracleValue initial;
+
+    build_place_load_oracle_function(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    initial.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    initial.as.signedInteger = 5;
+    input.initialValues = &initial;
+    input.initialValueCount = 1u;
+
+    memset(&place, 0, sizeof(place));
+    place.result.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    place.result.as.signedInteger = 7;
+    input.place = oracle_place_callback;
+    input.placeUserData = &place;
+
+    memset(&memory, 0, sizeof(memory));
+    memory.address = 7;
+    memory.value.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    memory.value.as.signedInteger = 99;
+    input.memory = oracle_memory_callback;
+    input.memoryUserData = &memory;
+
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(place.callCount == 1u && memory.loadCount == 1u &&
+           execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.returnValue.as.signedInteger == 99 &&
+           execution.eventCount == 1u &&
+           execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_LOAD &&
+           execution.events[0].instructionId == 2u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    memory.reject = ZR_TRUE;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR &&
+           diagnostic.instructionId == 2u && execution.eventCount == 0u);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 typedef struct SZrOracleTypeTestFixture {
     TZrExecIrTypeToken expectedMatchType;
     TZrUInt32 callCount;
@@ -1838,6 +1926,7 @@ int main(void) {
     test_invoke_oracle_provider();
     test_iterator_oracle_provider();
     test_place_oracle_provider();
+    test_place_token_composes_with_memory_provider();
     test_type_test_oracle_provider();
     test_exception_payload_oracle_provider();
     test_phi_copy_and_critical_edge_split();
