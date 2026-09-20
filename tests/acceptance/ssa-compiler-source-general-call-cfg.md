@@ -86,7 +86,8 @@ canonical symbol and fixed explicit argument range. Calls nested in source
 constructs whose syntactic CFG preflight still excludes call expressions stay
 on the conservative legacy path without restarting a detached graph. One later
 no-catch `try/finally` shape admits a resolved direct call with no argument or
-one exact `int` identifier passed by value, routes its exceptional edge through
+one exact `int` identifier or integer literal passed by value, routes its
+exceptional edge through
 an `EXCEPTION_PAYLOAD` landing and shared cleanup, then rethrows after cleanup
 dispatch. Spread and unresolved dynamic calls,
 other enclosing-handler shapes, Weak/ownership cleanup exits, and non-call

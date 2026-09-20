@@ -1407,6 +1407,7 @@ int main(void) {
     RUN_TEST(test_source_catch_payload_initializes_readable_binding);
     RUN_TEST(test_source_catch_flows_payload_through_handler_local);
     RUN_TEST(test_source_catch_captures_simple_argument_before_invoke);
+    RUN_TEST(test_source_catch_captures_literal_argument_before_invoke);
     RUN_TEST(test_source_catch_local_flow_rejects_hidden_name_bindings);
     RUN_TEST(test_source_catch_direct_rethrow_keeps_normal_continuation);
     RUN_TEST(test_source_catch_direct_return_keeps_normal_continuation);

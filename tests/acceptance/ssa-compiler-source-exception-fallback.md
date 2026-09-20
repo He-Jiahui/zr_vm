@@ -89,7 +89,8 @@ same-kind transfers use the same cleanup completion target.
 ## Boundary
 
 This checkpoint is deliberately conservative. Later bounded milestones now
-claim source-owned catch payload/dispatch, no-catch finally cleanup edges, the
+claim source-owned catch payload/dispatch (including a single exact `int`
+integer-literal argument), no-catch finally cleanup edges, the
 interrupted-assignment guard, one direct-call exceptional cleanup path, and one
 pending `break` or `continue` destination from a supported `while`, `for`, or
 `foreach`.

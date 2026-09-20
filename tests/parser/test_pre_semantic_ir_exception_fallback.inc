@@ -582,6 +582,83 @@ static void test_source_catch_captures_simple_argument_before_invoke(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_catch_captures_literal_argument_before_invoke(void) {
+    static const TZrChar source[] =
+            "fn identity(value: int): int { return value; }\n"
+            "try { identity(7); }\n"
+            "catch (error) { error; }\n";
+    static TZrChar sourceName[] = "source_catch_literal_argument.zr";
+    SZrString *name = ZrCore_String_Create(
+            g_state, sourceName, sizeof(sourceName) - 1U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *call = ZR_NULL;
+    const SZrSemanticIrInstruction *argumentDefinition = ZR_NULL;
+    const SZrSemanticIrInstruction *payload = ZR_NULL;
+    const TZrValueId *argumentValueId;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    ZrParser_Compiler_PredeclareFunctionBindings(
+            &compiler, ast->data.script.statements);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        if (ast->data.script.statements->nodes[index]->type ==
+            ZR_AST_FUNCTION_DECLARATION) {
+            continue;
+        }
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED &&
+            instruction->sourceRange.start.line == 2U) {
+            call = instruction;
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD) {
+            payload = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(call);
+    TEST_ASSERT_NOT_NULL(payload);
+    TEST_ASSERT_EQUAL_UINT32(2U, call->operandCount);
+    argumentValueId = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands, call->operandStart + 1U);
+    TEST_ASSERT_NOT_NULL(argumentValueId);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->resultValueId == *argumentValueId) {
+            argumentDefinition = instruction;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(argumentDefinition);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_CONSTANT, argumentDefinition->opcode);
+    TEST_ASSERT_TRUE(argumentDefinition->id < call->id);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_declared_child_try_does_not_pollute_entry_cfg(void) {
     static const TZrChar source[] =
             "fn identity(): int { return 7; }\n"
@@ -806,12 +883,6 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             "identity(seed);\n";
     static TZrChar nestedArgumentCallSourceName[] =
             "nested_argument_call_cfg_fallback.zr";
-    static const TZrChar literalArgumentCallSource[] =
-            "fn identity(value: int): int { return value; }\n"
-            "try { identity(7); }\n"
-            "catch (error) {}\n";
-    static TZrChar literalArgumentCallSourceName[] =
-            "literal_argument_call_cfg_fallback.zr";
     static const TZrChar multipleArgumentCallSource[] =
             "fn first(left: int, right: int): int { return left; }\n"
             "var seed: int = 7;\n"
@@ -939,11 +1010,6 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             sizeof(nestedArgumentCallSource) - 1U,
             nestedArgumentCallSourceName,
             sizeof(nestedArgumentCallSourceName) - 1U);
-    assert_nested_call_keeps_legacy_cfg(
-            literalArgumentCallSource,
-            sizeof(literalArgumentCallSource) - 1U,
-            literalArgumentCallSourceName,
-            sizeof(literalArgumentCallSourceName) - 1U);
     assert_nested_call_keeps_legacy_cfg(
             multipleArgumentCallSource,
             sizeof(multipleArgumentCallSource) - 1U,
