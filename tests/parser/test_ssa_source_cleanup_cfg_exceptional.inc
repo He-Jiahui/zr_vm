@@ -551,6 +551,31 @@ static void test_three_scalar_arguments_are_captured_before_exception_cleanup(
     free_source(&compiler, ast);
 }
 
+static void test_four_arguments_stay_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "fn quartet(first: int, second: int, third: int, fourth: int): int { return first; }\n"
+            "var seed: int = 7;\n"
+            "try { quartet(seed, seed, seed, seed); } finally { seed = 9; }\n";
+    static TZrChar sourceName[] =
+            "four_arguments_try_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_NULL(find_block_kind(
+            function, ZR_PARSER_CFG_BLOCK_CLEANUP));
+
+    free_source(&compiler, ast);
+}
+
 static void test_converted_argument_try_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "fn widen(value: float): float { return value; }\n"

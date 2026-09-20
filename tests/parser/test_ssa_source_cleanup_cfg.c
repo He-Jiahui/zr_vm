@@ -884,6 +884,7 @@ int main(void) {
     RUN_TEST(test_float_literal_argument_is_captured_before_exception_cleanup);
     RUN_TEST(test_uint_argument_is_captured_before_exception_cleanup);
     RUN_TEST(test_three_scalar_arguments_are_captured_before_exception_cleanup);
+    RUN_TEST(test_four_arguments_stay_on_legacy_path);
     RUN_TEST(test_converted_argument_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_invoke_try_finally_routes_both_exceptions);
     RUN_TEST(test_dynamic_then_direct_invoke_try_finally_stays_on_legacy_path);
