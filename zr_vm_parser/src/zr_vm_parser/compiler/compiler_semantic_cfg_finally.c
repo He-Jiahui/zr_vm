@@ -135,6 +135,38 @@ static TZrBool compiler_semantic_cfg_finally_throw_payload_is_object(
     return supported;
 }
 
+static TZrBool compiler_semantic_cfg_finally_throw_payloads_are_objects(
+        SZrCompilerState *cs,
+        const SZrAstNode *node) {
+    TZrSize index;
+
+    if (node == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (node->type == ZR_AST_THROW_STATEMENT) {
+        return compiler_semantic_cfg_finally_throw_payload_is_object(
+                cs, node->data.throwStatement.expr);
+    }
+    if (node->type == ZR_AST_BLOCK) {
+        if (node->data.block.body == ZR_NULL) {
+            return ZR_TRUE;
+        }
+        for (index = 0U; index < node->data.block.body->count; index++) {
+            if (!compiler_semantic_cfg_finally_throw_payloads_are_objects(
+                        cs, node->data.block.body->nodes[index])) {
+                return ZR_FALSE;
+            }
+        }
+    } else if (node->type == ZR_AST_IF_EXPRESSION) {
+        return (TZrBool)(
+                compiler_semantic_cfg_finally_throw_payloads_are_objects(
+                        cs, node->data.ifExpression.thenExpr) &&
+                compiler_semantic_cfg_finally_throw_payloads_are_objects(
+                        cs, node->data.ifExpression.elseExpr));
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_semantic_cfg_finally_protected_flow(
         const SZrAstNode *node,
         SZrCompilerSemanticFinallyFlowInfo *outInfo) {
@@ -261,8 +293,7 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
          !multiplePayloadCompletion) ||
         (info.exceptionalSiteCount != 0U &&
          info.abruptSiteCount != 0U &&
-         (info.abruptSiteCount != 1U ||
-          completionFlow != ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW)) ||
+         completionFlow != ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW) ||
         ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN) != 0U &&
          (info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW |
                        ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
@@ -353,8 +384,8 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
                      cs, statement->block)) &&
             (flowInfo.exceptionalSiteCount == 0U ||
              flowInfo.abruptSiteCount == 0U ||
-             compiler_semantic_cfg_finally_throw_payload_is_object(
-                     cs, flowInfo.completionExpression)) &&
+             compiler_semantic_cfg_finally_throw_payloads_are_objects(
+                     cs, statement->block)) &&
             compiler_semantic_cfg_finally_block_is_linear(
                     statement->finallyBlock));
 }

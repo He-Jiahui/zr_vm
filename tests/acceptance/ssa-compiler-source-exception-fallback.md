@@ -67,9 +67,9 @@ typed `foreach` are also claimed by the cleanup producer: terminal and
 conditional forms reach the existing loop join only after `finally`. One or
 more same-kind, operand-free `continue` transfers reach the existing `while`
 condition block, `for` step block, or foreach move-next block by the same route.
-A further bounded cleanup shape permits one explicit, exact non-null `object`
-throw to share the pending `THROW` payload with resolved direct-call
-exceptional entry; integer or multiple explicit throws remain here. Mixed
+A further bounded cleanup shape permits one or more explicit, exact non-null
+`object` throws to share the pending `THROW` payload with resolved direct-call
+exceptional entry; integer or otherwise incompatible throws remain here. Mixed
 `break`/`continue` sites and mixed
 loop-transfer/completion kinds retain this fallback boundary; repeated
 same-kind transfers use the same cleanup completion target.

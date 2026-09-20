@@ -884,6 +884,7 @@ int main(void) {
     RUN_TEST(test_dynamic_conditional_invoke_try_finally_stays_on_legacy_path);
     RUN_TEST(test_conditional_invoke_and_throw_try_finally_routes_shared_cleanup);
     RUN_TEST(test_conditional_invoke_and_int_throw_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_repeated_conditional_invokes_and_object_throws_share_cleanup);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
     RUN_TEST(test_terminal_break_try_finally_routes_to_loop_join);
     RUN_TEST(test_conditional_break_try_finally_dispatches_to_loop_join);

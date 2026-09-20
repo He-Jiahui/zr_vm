@@ -42,9 +42,9 @@ accepted by the SemanticIR-to-ExecIR builder.
   Dispatch then rethrows the reloaded payload or reaches the normal join
   without using an interrupted call result. A conditional call branch and a
   linear non-call sibling both join this same cleanup path. One explicit
-  `throw` may share that path when it is the only abrupt site and its payload
-  is an exact non-null, ownership-neutral `object`; the explicit payload and
-  exceptional payload then use the same pending `THROW` completion.
+  `throw` sites may share that path when every explicit payload is an exact
+  non-null, ownership-neutral `object`; the explicit payloads and exceptional
+  payload then use the same pending `THROW` completion.
 - For the loop-transfer shape, the pending destination is the existing loop
   join for `break`, the `while` condition block for a `while` `continue`, the
   `for` step block for a `for` `continue`, or the foreach move-next block for a
@@ -67,11 +67,10 @@ The same test keeps nonlinear return/throw payloads, mixed return/throw sites,
 and a combined catch-plus-finally statement on the legacy path. Converting,
 non-value, multiple, or conditional arguments, dynamic or unresolved calls,
 declarations, nested nonlinear control flow, ownership cleanup, and mixed
-explicit/exceptional completion other than the one exact `object` throw are
-also outside this slice. Integer or otherwise incompatible explicit throws,
-multiple explicit throws combined with calls, and other mixed completion kinds
-must not publish a partial cleanup graph or restart a detached CFG after
-rejection.
+explicit/exceptional completion other than all-exact `object` throws are also
+outside this slice. Integer or otherwise incompatible explicit throws and
+other mixed completion kinds must not publish a partial cleanup graph or
+restart a detached CFG after rejection.
 Mixed `break`/`continue` sites,
 dynamic/unresolved `foreach` iteration, binding cleanup, unsupported loop
 cleanup, and a loop transfer combined with another completion kind remain on
@@ -86,18 +85,18 @@ the pending selector. One or more same-kind,
 operand-free `break`/`continue` transfers from a supported
 `while`/`for`/`foreach` are dispatched to their existing loop target after
 cleanup; mixed transfer kinds and combined explicit/exceptional completion
-outside the exact object-throw case still require later source milestones.
+outside the all-exact object-throw case still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 40/40 on Windows MSVC and WSL GCC and
+- The focused source cleanup suite passes 41/41 on Windows MSVC and WSL GCC and
   Clang. It includes repeated and conditional protected invokes sharing one
   exception landing, linear sibling cleanup joins, dynamic-call fail-closed
   guards, terminal and conditional
   `break`/`continue`, repeated same-kind transfers across
   `while`/`for`/`foreach`, and explicit mixed-kind fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 40/40 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 41/41 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.
