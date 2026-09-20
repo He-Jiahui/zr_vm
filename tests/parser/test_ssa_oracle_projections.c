@@ -802,6 +802,16 @@ static TZrBool call_callback(void *userData, const SZrExecIrInstruction *instruc
     return ZR_TRUE;
 }
 
+static TZrBool rejecting_call_callback(
+        void *userData, const SZrExecIrInstruction *instruction,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result) {
+    (void)userData;
+    assert(instruction != ZR_NULL && operands != ZR_NULL &&
+           operandCount == 1u && result != ZR_NULL);
+    return ZR_FALSE;
+}
+
 static void build_call_function(SZrExecIrFunction *function) {
     TZrExecIrValueId argument, result;
     SZrExecIrRange argumentResult, callOperands, resultRange, returnOperands;
@@ -889,6 +899,14 @@ static void test_call_event_oracle(void) {
     assert(execution.events[0].kind == ZR_EXEC_IR_ORACLE_EVENT_CALL &&
            execution.events[0].instructionId == 2u);
     assert(execution.returnValue.as.signedInteger == 15);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    input.call = rejecting_call_callback;
+    input.userData = ZR_NULL;
+    memset(&execution, 0, sizeof(execution));
+    assert(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR &&
+           diagnostic.instructionId == 2u && execution.eventCount == 0u);
     ZrCore_ExecIr_OracleResultFree(&execution);
     ZrCore_ExecIr_FreeFunction(&function);
 }

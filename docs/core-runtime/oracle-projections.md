@@ -57,6 +57,10 @@ Calls, invokes, iterator steps, loads, allocations, type tests, and exception
 payload reads require explicit caller providers. Executable place projection
 and landing-pad handling remain unsupported.
 
+`CALL` appends a bounded call event only after its provider returns a defined
+value; provider rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR`
+instead of returning a false result with an empty diagnostic.
+
 `EXCEPTION_PAYLOAD` is executable at a handler-entry instruction when the
 caller supplies `FZrExecIrOracleExceptionPayload`. The provider returns one
 defined pointer-free value; a rejected read reports

@@ -98,7 +98,9 @@ typedef enum EZrExecutionDiagnosticCode {
     /* A reference-oracle iterator provider rejected a step or branch result. */
     ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ITERATOR_ERROR,
     /* A reference-oracle place provider rejected address construction. */
-    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR,
+    /* A reference-oracle call provider rejected a call result. */
+    ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR
 } EZrExecutionDiagnosticCode;
 
 /*

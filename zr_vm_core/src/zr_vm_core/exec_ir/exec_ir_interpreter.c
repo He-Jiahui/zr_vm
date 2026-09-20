@@ -689,7 +689,12 @@ static TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             break;
         case ZR_EXEC_IR_OPCODE_CALL:
             zr_oracle_undefined(&callback);
-            if (!input->call(input->userData, ins, ops, n, &callback)) goto fail;
+            if (input->call == ZR_NULL ||
+                !input->call(input->userData, ins, ops, n, &callback)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR,
+                               f, block, id, ins->sourceId, 1u, n);
+                goto fail;
+            }
             if (!zr_oracle_value_kind_valid(callback.kind) ||
                 callback.kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
                 zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, block,

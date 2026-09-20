@@ -172,6 +172,11 @@ the pointer-free instruction record transactionally, but mark any projection
 containing it non-runnable until their executable exception ABI carries the
 active payload.
 
+Ordinary `CALL` also requires its explicit Oracle provider to accept the query
+and return a defined pointer-free value. A rejected provider is reported with
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR`; the call event is not appended on
+that failure path.
+
 `TYPE_TEST` is the canonical, pure one-operand/one-result type-membership fact.
 The ordinary `typeToken` remains the result value's type (normally the language
 boolean type); the separate `matchTypeToken` names the resolved target type.
