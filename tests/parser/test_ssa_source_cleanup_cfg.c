@@ -879,6 +879,9 @@ int main(void) {
     RUN_TEST(test_converted_argument_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_invoke_try_finally_routes_both_exceptions);
     RUN_TEST(test_dynamic_then_direct_invoke_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_conditional_invokes_try_finally_share_exception_landing);
+    RUN_TEST(test_conditional_invoke_else_path_reaches_shared_cleanup);
+    RUN_TEST(test_dynamic_conditional_invoke_try_finally_stays_on_legacy_path);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
     RUN_TEST(test_terminal_break_try_finally_routes_to_loop_join);
     RUN_TEST(test_conditional_break_try_finally_dispatches_to_loop_join);

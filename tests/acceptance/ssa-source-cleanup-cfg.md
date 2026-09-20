@@ -11,8 +11,8 @@ accepted by the SemanticIR-to-ExecIR builder.
 - The `finally` body contains only nested blocks and linear expression
   statements. The protected body may additionally contain one or more
   same-kind linear `return` or `throw` sites under statement-form conditionals,
-  or one or more resolved direct calls outside
-  conditional control. Each call may take no arguments or one exact,
+  or one or more resolved direct calls in linear statement-form conditional
+  control. Each call may take no arguments or one exact,
   ownership/reference/GC-neutral `int` identifier or integer literal by value.
   When directly nested in a supported `while`,
   linear statement-form `for`, or statically typed `foreach`, it may instead
@@ -40,7 +40,8 @@ accepted by the SemanticIR-to-ExecIR builder.
   it in the private payload Place, selects `true`, and enters cleanup. Normal
   edges retain the pre-call `false` selector and enter the same cleanup.
   Dispatch then rethrows the reloaded payload or reaches the normal join
-  without using an interrupted call result.
+  without using an interrupted call result. A conditional call branch and a
+  linear non-call sibling both join this same cleanup path.
 - For the loop-transfer shape, the pending destination is the existing loop
   join for `break`, the `while` condition block for a `while` `continue`, the
   `for` step block for a `for` `continue`, or the foreach move-next block for a
@@ -61,11 +62,11 @@ cases live in `tests/parser/test_ssa_source_cleanup_cfg_loop.inc`.
 
 The same test keeps nonlinear return/throw payloads, mixed return/throw sites,
 and a combined catch-plus-finally statement on the legacy path. Converting,
-non-value, multiple, or conditional arguments,
-conditional calls, declarations, nested nonlinear control flow, ownership
-cleanup, and mixed explicit/exceptional completion are also outside this
-slice. Those shapes must not publish a partial cleanup graph or restart a
-detached CFG after rejection. Mixed `break`/`continue` sites,
+non-value, multiple, or conditional arguments, dynamic or unresolved calls,
+declarations, nested nonlinear control flow, ownership cleanup, and mixed
+explicit/exceptional completion are also outside this slice. Those shapes must
+not publish a partial cleanup graph or restart a detached CFG after rejection.
+Mixed `break`/`continue` sites,
 dynamic/unresolved `foreach` iteration, binding cleanup, unsupported loop
 cleanup, and a loop transfer combined with another completion kind remain on
 that same fail-closed path.
@@ -83,13 +84,14 @@ still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 35/35 on Windows MSVC and WSL GCC and
-  Clang. It includes repeated protected invokes sharing one exception landing,
-  the dynamic-call fail-closed guard, terminal and conditional
+- The focused source cleanup suite passes 38/38 on Windows MSVC and WSL GCC and
+  Clang. It includes repeated and conditional protected invokes sharing one
+  exception landing, linear sibling cleanup joins, dynamic-call fail-closed
+  guards, terminal and conditional
   `break`/`continue`, repeated same-kind transfers across
   `while`/`for`/`foreach`, and explicit mixed-kind fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 35/35 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 38/38 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.

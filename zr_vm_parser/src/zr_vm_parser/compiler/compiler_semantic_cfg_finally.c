@@ -178,14 +178,15 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
             !compiler_semantic_cfg_finally_protected_flow(
                     node->data.ifExpression.thenExpr, &thenInfo) ||
             !compiler_semantic_cfg_finally_protected_flow(
-                    node->data.ifExpression.elseExpr, &elseInfo) ||
-            thenInfo.exceptionalSiteCount != 0U ||
-            elseInfo.exceptionalSiteCount != 0U) {
+                    node->data.ifExpression.elseExpr, &elseInfo)) {
             return ZR_FALSE;
         }
         info.flow = thenInfo.flow | elseInfo.flow;
         info.abruptSiteCount =
                 thenInfo.abruptSiteCount + elseInfo.abruptSiteCount;
+        info.exceptionalSiteCount =
+                thenInfo.exceptionalSiteCount +
+                elseInfo.exceptionalSiteCount;
         info.completionExpression =
                 thenInfo.completionExpression != ZR_NULL
                         ? thenInfo.completionExpression
