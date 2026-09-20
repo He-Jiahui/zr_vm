@@ -664,6 +664,8 @@ int main(void) {
     RUN_TEST(test_conditional_for_break_try_finally_dispatches_to_loop_join);
     RUN_TEST(test_for_continue_try_finally_routes_to_step);
     RUN_TEST(test_conditional_for_continue_try_finally_dispatches_to_step);
+    RUN_TEST(test_foreach_continue_try_finally_routes_to_move_next);
+    RUN_TEST(test_conditional_foreach_break_try_finally_dispatches_to_join);
     RUN_TEST(test_two_continue_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_break_sites_try_finally_stay_on_legacy_path);
     return UNITY_END();

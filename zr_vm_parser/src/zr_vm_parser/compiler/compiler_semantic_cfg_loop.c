@@ -245,7 +245,7 @@ TZrBool compiler_semantic_cfg_foreach_is_supported(
             loop->pattern->data.identifier.name != ZR_NULL &&
             compiler_semantic_cfg_expression_is_linear(loop->expr) &&
             compiler_semantic_cfg_loop_body_analyze(
-                    loop->block, ZR_TRUE, ZR_TRUE, ZR_FALSE,
+                    loop->block, ZR_TRUE, ZR_TRUE, ZR_TRUE,
                     ZR_NULL) &&
             compiler_semantic_cfg_foreach_conditions_are_supported(
                     loop->block) &&

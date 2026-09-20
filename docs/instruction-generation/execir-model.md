@@ -207,8 +207,9 @@ rows, ordinary source blocks, and unordered cases fail transactionally. The
 bounded source `try/finally` producer now uses this representation for one
 normal-versus-abrupt pending-completion discriminator, including one direct
 call's normal-versus-exceptional completion and one operand-free `break` or
-`continue` from a supported `while` or linear statement-form `for`. Multiple
-completion kinds remain outside this bounded producer.
+`continue` from a supported `while`, linear statement-form `for`, or statically
+typed `foreach`. Multiple completion kinds remain outside this bounded
+producer.
 
 An INVOKE result remains unavailable along the transitive closure of its
 exceptional successor, including ordinary branches into cleanup and later
@@ -231,15 +232,16 @@ before the branch. The abrupt path stores its converted payload and `true`,
 while the normal path retains the dominating `false`; both enter the same
 cleanup block.
 
-A protected block nested directly in a supported source `while` or linear
-statement-form `for` may instead contain one operand-free `break` or
-`continue`. The pending plan captures the loop join for `break`, the `while`
-condition block for a `while` `continue`, or the `for` step block for a `for`
-`continue` as its target. A terminal transfer takes a direct cleanup edge to a
-small completion block and then a normal edge to that target. If another
-protected path falls through, the producer allocates only the private boolean
-selector: cleanup dispatch selects the loop-transfer completion block or the
-normal post-`finally` join, with no synthetic payload Place.
+A protected block nested directly in a supported source `while`, linear
+statement-form `for`, or statically typed `foreach` may instead contain one
+operand-free `break` or `continue`. The pending plan captures the loop join
+for `break`, the `while` condition block for a `while` `continue`, the `for`
+step block for a `for` `continue`, or the foreach move-next block for a
+`foreach` `continue` as its target. A terminal transfer takes a direct cleanup
+edge to a small completion block and then a normal edge to that target. If
+another protected path falls through, the producer allocates only the private
+boolean selector: cleanup dispatch selects the loop-transfer completion block
+or the normal post-`finally` join, with no synthetic payload Place.
 
 The same private state also models one resolved direct call with either no
 arguments or one exact, ownership/reference/GC-neutral `int` identifier passed
