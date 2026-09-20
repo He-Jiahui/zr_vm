@@ -13,8 +13,9 @@ accepted by the SemanticIR-to-ExecIR builder.
   same-kind linear `return` or `throw` sites under statement-form conditionals,
   or one or more resolved direct calls in linear statement-form conditional
   control. Each call may take no arguments or up to two exact,
-  ownership/reference/GC-neutral `int`, `bool`, or `float` identifiers or
-  literals by value.
+  ownership/reference/GC-neutral integer, `bool`, or `float` identifiers or
+  literals by value; integer arguments must match the resolved parameter type
+  exactly.
   When directly nested in a supported `while`,
   linear statement-form `for`, or statically typed `foreach`, it may instead
   contain one or more operand-free `break` sites or one or more operand-free
@@ -90,14 +91,14 @@ outside the all-exact object-throw case still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 47/47 on Windows MSVC and WSL GCC and
+- The focused source cleanup suite passes 48/48 on Windows MSVC and WSL GCC and
   Clang. It includes repeated and conditional protected invokes sharing one
   exception landing, linear sibling cleanup joins, dynamic-call fail-closed
   guards, terminal and conditional
   `break`/`continue`, repeated same-kind transfers across
   `while`/`for`/`foreach`, and explicit mixed-kind fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 47/47 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 48/48 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.

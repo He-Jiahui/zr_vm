@@ -443,7 +443,7 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
                 cs->state, &actualType, ZR_VALUE_TYPE_OBJECT);
         if (!ZrParser_ExpressionType_Infer(
                     cs, call->args->nodes[index], &actualType) ||
-            (actualType.baseType != ZR_VALUE_TYPE_INT64 &&
+            (!ZR_VALUE_IS_TYPE_INT(actualType.baseType) &&
              actualType.baseType != ZR_VALUE_TYPE_BOOL &&
              !ZR_VALUE_IS_TYPE_FLOAT(actualType.baseType)) ||
             actualType.isNullable ||
