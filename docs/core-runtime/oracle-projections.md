@@ -128,11 +128,6 @@ Mismatched adjacency multiplicities fail preflight without replacing a
 previously published projection. This is projection metadata, not executable
 bytecode or emitted AOT code.
 
-Allocation instructions are transported with the same stable opcode, ranges,
-and source identity. This does not enable execution: the lowerer carries the
-metadata while the runtime allocator and GC protocol remain a backend-owned
-follow-up.
-
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
 later backend adapter, but the projections set `runnable` to false whenever a
