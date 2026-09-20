@@ -662,9 +662,11 @@ int main(void) {
     RUN_TEST(test_conditional_continue_try_finally_dispatches_to_condition);
     RUN_TEST(test_for_break_try_finally_routes_to_loop_join);
     RUN_TEST(test_conditional_for_break_try_finally_dispatches_to_loop_join);
+    RUN_TEST(test_repeated_for_break_try_finally_routes_to_loop_join);
     RUN_TEST(test_for_continue_try_finally_routes_to_step);
     RUN_TEST(test_conditional_for_continue_try_finally_dispatches_to_step);
     RUN_TEST(test_foreach_continue_try_finally_routes_to_move_next);
+    RUN_TEST(test_repeated_foreach_continue_try_finally_routes_to_move_next);
     RUN_TEST(test_conditional_foreach_break_try_finally_dispatches_to_join);
     RUN_TEST(test_two_break_sites_try_finally_dispatches_to_loop_join);
     RUN_TEST(test_two_continue_sites_try_finally_dispatch_to_condition);

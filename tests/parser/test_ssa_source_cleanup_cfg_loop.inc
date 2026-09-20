@@ -404,6 +404,57 @@ static void test_conditional_for_break_try_finally_dispatches_to_loop_join(void)
     free_source(&compiler, ast);
 }
 
+static void test_repeated_for_break_try_finally_routes_to_loop_join(void) {
+    static const TZrChar source[] =
+            "var keep: bool = true;\n"
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "var index: int = 0;\n"
+            "for (index = 0; keep; index = 1) {\n"
+            "  try {\n"
+            "    if (choose) { break; }\n"
+            "    break;\n"
+            "  } finally {\n"
+            "    seed = 9;\n"
+            "  }\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] = "repeated_for_break_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *completion;
+    const SZrParserCfgBlock *loopJoin;
+    const SZrParserCfgEdge *completionEdge;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    loopJoin = find_block_source_line(function, 13);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_NOT_NULL(loopJoin);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, cleanup->terminatorKind);
+    completionEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    TEST_ASSERT_NOT_NULL(completionEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_CLEANUP, completionEdge->kind);
+    completion = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            completionEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(completion);
+    assert_single_edge(
+            completion, ZR_PARSER_CFG_EDGE_NORMAL, loopJoin->id);
+
+    free_source(&compiler, ast);
+}
+
 static void test_for_continue_try_finally_routes_to_step(void) {
     static const TZrChar source[] =
             "var keep: bool = true;\n"
@@ -569,6 +620,60 @@ static void test_foreach_continue_try_finally_routes_to_move_next(void) {
     TEST_ASSERT_NOT_NULL(function);
     cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
     TEST_ASSERT_NOT_NULL(cleanup);
+    completionEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
+    TEST_ASSERT_NOT_NULL(completionEdge);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_CLEANUP, completionEdge->kind);
+    completion = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            completionEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(completion);
+    moveNext = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            ZrParser_Cfg_BlockEdgeAt(completion, 0U)->toBlockId);
+    TEST_ASSERT_NOT_NULL(moveNext);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            ZrParser_Cfg_BlockEdgeAt(completion, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(2U, moveNext->successorCount);
+
+    free_source(&compiler, ast);
+}
+
+static void test_repeated_foreach_continue_try_finally_routes_to_move_next(void) {
+    static const TZrChar source[] =
+            "var values = [true];\n"
+            "var choose: bool = true;\n"
+            "var seed: int = 7;\n"
+            "for (var item in values) {\n"
+            "  try {\n"
+            "    if (choose) { continue; }\n"
+            "    continue;\n"
+            "  } finally {\n"
+            "    seed = 9;\n"
+            "  }\n"
+            "}\n"
+            "seed;\n";
+    static TZrChar sourceName[] = "repeated_foreach_continue_try_finally.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *completion;
+    const SZrParserCfgBlock *moveNext;
+    const SZrParserCfgEdge *completionEdge;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_CFG_TERMINATOR_BRANCH, cleanup->terminatorKind);
     completionEdge = ZrParser_Cfg_BlockEdgeAt(cleanup, 0U);
     TEST_ASSERT_NOT_NULL(completionEdge);
     TEST_ASSERT_EQUAL_INT(

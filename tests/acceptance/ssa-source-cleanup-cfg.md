@@ -78,11 +78,12 @@ still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 26/26 on Windows MSVC and WSL GCC and
-  Clang. It includes terminal and conditional `break`/`continue`, plus
-  repeated same-kind transfers and explicit mixed-kind fail-closed cases.
+- The focused source cleanup suite passes 29/29 on Windows MSVC and WSL GCC and
+  Clang. It includes terminal and conditional `break`/`continue`, repeated
+  same-kind transfers across `while`/`for`/`foreach`, and explicit mixed-kind
+  fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 26/26 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 29/29 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.
