@@ -193,6 +193,12 @@ their executable subtype ABI is not yet connected. A bounded source typed-catch
 producer uses this operation in SemanticIR/ExecIR; it never substitutes a
 type-name string comparison or claims an executable projection.
 
+`INVOKE` retains its pointer-free result, operand, and ordered normal/exception
+successor ranges in both initial projections, but those projections are marked
+non-runnable until a backend call/landing-pad ABI exists. The direct Oracle
+also keeps invoke execution explicitly unsupported; transporting its CFG does
+not claim that an exception object or active payload can be reconstructed.
+
 Cleanup identity currently lives on both sides of the CFG boundary: SemanticIR
 uses `ZR_PARSER_CFG_EDGE_CLEANUP` and `ZR_PARSER_CFG_BLOCK_CLEANUP`, while
 ExecIR preserves cleanup regions with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`. The

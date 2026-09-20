@@ -37,14 +37,13 @@ static TZrBool zr_projection_bytes(TZrUInt32 count, size_t element, size_t *byte
 
 /* The first projection is intentionally a no-optimization scalar/control
  * slice.  Operations whose physical representation needs a runtime layout or
- * invoke/landing-pad ABI stay explicit unsupported until their dedicated
- * lowering stage is present.  ALLOC is copied as metadata; an executable
- * allocator is still a separate backend concern. */
+ * iterator ABI stay explicit unsupported until their dedicated lowering stage
+ * is present.  ALLOC and INVOKE are copied as metadata; executable allocation
+ * and invoke/landing-pad handling remain separate backend concerns. */
 static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
         case ZR_EXEC_IR_OPCODE_PLACE_BASE:
         case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
-        case ZR_EXEC_IR_OPCODE_INVOKE:
         case ZR_EXEC_IR_OPCODE_ITER_INIT:
         case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
         case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
@@ -695,10 +694,12 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].deoptId = in->deoptId;
         p->instructions[i].bindingRow = in->bindingRow;
         if (in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST ||
+            in->opcode == ZR_EXEC_IR_OPCODE_INVOKE ||
             in->opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD) {
             /* The projection preserves canonical instruction metadata, but
-             * executable subtype/exception dispatch still belongs to a later
-             * backend ABI.  Do not advertise this projection as runnable. */
+             * executable subtype/invoke/exception dispatch still belongs to a
+             * later backend ABI.  Do not advertise this projection as
+             * runnable. */
             p->runnable = ZR_FALSE;
         }
     }

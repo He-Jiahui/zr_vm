@@ -54,8 +54,8 @@ operand snapshot and canonical `matchTypeToken`, and returns either a boolean
 membership result or a rejection; false membership is a successful result,
 while rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`.
 Calls, loads, allocations, type tests, and exception payload reads require
-explicit caller providers; place projection and invoke/landing-pad operations
-remain unsupported.
+explicit caller providers; place projection and executable landing-pad
+handling remain unsupported.
 
 `EXCEPTION_PAYLOAD` is executable at a handler-entry instruction when the
 caller supplies `FZrExecIrOracleExceptionPayload`. The provider returns one
@@ -140,6 +140,12 @@ its stable opcode, ranges, and source identity. The lowerers mark any
 projection containing the operation non-runnable because the executable
 backends do not yet expose an active exception-payload ABI; the direct Oracle
 provider remains the only executable reference seam.
+
+`INVOKE` is transported with its result, operand, and ordered normal/exception
+successor ranges. Both lowerers mark a projection containing an invoke
+non-runnable until the backend call/landing-pad ABI can select the exceptional
+continuation and publish an active payload. The initial direct Oracle still
+reports `UNSUPPORTED` for invoke execution.
 
 `ZrParser_ExecIr_LowerAot` uses the same builder and transfers ownership of the
 projection arrays, adding the function token, signature hash, and execution

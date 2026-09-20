@@ -1162,6 +1162,22 @@ static void test_unsupported_and_transactional_failures(void) {
                    ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
            !aot.runnable);
     oldAotCount = aot.instructionCount;
+    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_INVOKE;
+    function.instructions[0].operands = range(0u, 0u);
+    function.instructions[0].successorRange = range(0u, 0u);
+    assert(!ZrCore_ExecIr_RunOracle(&function, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_INVOKE);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+           !bc.runnable);
+    oldInstructions = bc.instructions;
+    oldCount = bc.instructionCount;
+    assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(aot.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+           !aot.runnable);
+    oldAotCount = aot.instructionCount;
     function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_TYPE_TEST;
     function.instructions[0].operands = range(0u, 1u);
     function.instructions[0].matchTypeToken = 7u;
