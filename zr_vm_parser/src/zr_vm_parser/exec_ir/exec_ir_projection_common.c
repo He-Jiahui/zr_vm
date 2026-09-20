@@ -44,7 +44,6 @@ static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
         case ZR_EXEC_IR_OPCODE_PLACE_BASE:
         case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
-        case ZR_EXEC_IR_OPCODE_TYPE_TEST:
         case ZR_EXEC_IR_OPCODE_INVOKE:
         case ZR_EXEC_IR_OPCODE_ITER_INIT:
         case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
@@ -691,10 +690,17 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].effectIn = in->effectIn;
         p->instructions[i].effectOut = in->effectOut;
         p->instructions[i].typeToken = in->typeToken;
+        p->instructions[i].matchTypeToken = in->matchTypeToken;
         p->instructions[i].layoutId = in->layoutId;
         p->instructions[i].sourceId = in->sourceId;
         p->instructions[i].deoptId = in->deoptId;
         p->instructions[i].bindingRow = in->bindingRow;
+        if (in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST) {
+            /* The projection preserves the canonical target identity, but
+             * executable subtype dispatch still belongs to a later backend
+             * ABI.  Do not advertise this projection as runnable. */
+            p->runnable = ZR_FALSE;
+        }
     }
     for (i = 0u; i < f->blockCount; ++i) {
         const SZrExecIrBlock *in = &f->blocks[i];

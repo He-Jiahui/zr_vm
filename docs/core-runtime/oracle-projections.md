@@ -119,6 +119,12 @@ and source identity. This does not enable execution: the lowerer carries the
 metadata while the runtime allocator and GC protocol remain a backend-owned
 follow-up.
 
+`TYPE_TEST` is also transported by both initial projections with its separate
+`matchTypeToken` side field. This preserves canonical subtype identity for a
+later backend adapter, but the projections set `runnable` to false whenever a
+type test is present; they do not invent an executable subtype ABI. The direct
+Oracle provider described above remains the only executable reference seam.
+
 `ZrParser_ExecIr_LowerAot` uses the same builder and transfers ownership of the
 projection arrays, adding the function token, signature hash, and execution
 contract. It is an AOTIR seam only: `runnable` is deliberately false until the

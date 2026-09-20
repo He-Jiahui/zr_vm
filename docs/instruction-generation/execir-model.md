@@ -184,11 +184,11 @@ The direct oracle executes `TYPE_TEST` when its caller supplies the explicit
 `FZrExecIrOracleTypeTest` provider. That provider is the runtime seam for
 canonical subtype membership: it receives the operand snapshot and
 `matchTypeToken`, and must distinguish a successful false membership result
-from a rejected query. ExecBC and AOT projections still reject the operation
-transactionally because their executable subtype ABI is not yet connected.
-A bounded source typed-catch producer uses this operation in SemanticIR/ExecIR;
-it never substitutes a type-name string comparison or claims an executable
-projection.
+from a rejected query. ExecBC and AOT projections preserve the token in their
+pointer-free instruction records but mark the result non-runnable because
+their executable subtype ABI is not yet connected. A bounded source typed-catch
+producer uses this operation in SemanticIR/ExecIR; it never substitutes a
+type-name string comparison or claims an executable projection.
 
 Cleanup identity currently lives on both sides of the CFG boundary: SemanticIR
 uses `ZR_PARSER_CFG_EDGE_CLEANUP` and `ZR_PARSER_CFG_BLOCK_CLEANUP`, while

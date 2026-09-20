@@ -19,6 +19,7 @@ typedef struct SZrExecBcInstruction {
     TZrExecIrEffectTokenId effectIn;
     TZrExecIrEffectTokenId effectOut;
     TZrExecIrTypeToken typeToken;
+    TZrExecIrTypeToken matchTypeToken;
     TZrUInt32 layoutId;
     TZrExecIrSourceId sourceId;
     TZrExecIrDeoptId deoptId;
