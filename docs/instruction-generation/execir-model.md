@@ -206,8 +206,8 @@ exists and dominates the cleanup dispatch. Missing selectors, inline successor
 rows, ordinary source blocks, and unordered cases fail transactionally. The
 bounded source `try/finally` producer now uses this representation for one
 normal-versus-abrupt pending-completion discriminator, including one direct
-call's normal-versus-exceptional completion. Multiple completion kinds remain
-outside this bounded producer.
+call's normal-versus-exceptional completion and one `break` from a supported
+`while`. Multiple completion kinds remain outside this bounded producer.
 
 An INVOKE result remains unavailable along the transitive closure of its
 exceptional successor, including ordinary branches into cleanup and later
@@ -229,6 +229,14 @@ the producer allocates compiler-private boolean-selector and payload Places
 before the branch. The abrupt path stores its converted payload and `true`,
 while the normal path retains the dominating `false`; both enter the same
 cleanup block.
+
+A protected block nested directly in a supported source `while` may instead
+contain one operand-free `break`. The pending plan captures the loop join block
+as its target. A terminal break takes a direct cleanup edge to a small
+completion block and then a normal edge to that loop join. If another protected
+path falls through, the producer allocates only the private boolean selector:
+cleanup dispatch selects the break completion block or the normal
+post-`finally` join, with no synthetic payload Place.
 
 The same private state also models one resolved direct call with either no
 arguments or one exact, ownership/reference/GC-neutral `int` identifier passed

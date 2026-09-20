@@ -161,7 +161,8 @@ typedef enum EZrCompilerSemanticCfgArmFlow {
 } EZrCompilerSemanticCfgArmFlow;
 
 static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
-        const SZrAstNode *node) {
+        const SZrAstNode *node,
+        TZrBool allowPendingBreak) {
     TZrSize index;
 
     if (node == ZR_NULL) {
@@ -180,6 +181,13 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
                        ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
                        : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
     }
+    if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
+        return allowPendingBreak &&
+                       node->data.breakContinueStatement.isBreak &&
+                       node->data.breakContinueStatement.expr == ZR_NULL
+                       ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
+                       : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
+    }
     if (node->type == ZR_AST_IF_EXPRESSION) {
         EZrCompilerSemanticCfgArmFlow thenFlow;
         EZrCompilerSemanticCfgArmFlow elseFlow;
@@ -188,9 +196,11 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
             return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
         }
         thenFlow = compiler_semantic_cfg_if_arm_flow(
-                node->data.ifExpression.thenExpr);
+                node->data.ifExpression.thenExpr,
+                allowPendingBreak);
         elseFlow = compiler_semantic_cfg_if_arm_flow(
-                node->data.ifExpression.elseExpr);
+                node->data.ifExpression.elseExpr,
+                allowPendingBreak);
         if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
             elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
             return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
@@ -217,7 +227,8 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
         if (statement == ZR_NULL) {
             continue;
         }
-        flow = compiler_semantic_cfg_if_arm_flow(statement);
+        flow = compiler_semantic_cfg_if_arm_flow(
+                statement, allowPendingBreak);
         if (flow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
             return flow;
         }
@@ -353,6 +364,7 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     EZrCompilerSemanticCfgArmFlow thenFlow;
     EZrCompilerSemanticCfgArmFlow elseFlow;
     TZrBool bothTerminate;
+    TZrBool allowPendingBreak = ZR_FALSE;
     if (cs == ZR_NULL || node == ZR_NULL || thenBlock == ZR_NULL ||
         elseBlock == ZR_NULL || joinBlock == ZR_NULL) {
         return ZR_FALSE;
@@ -360,10 +372,20 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     if (cs->preSemanticIrCfgTerminated) {
         return ZR_FALSE;
     }
+    if (cs->loopLabelStack.length != 0U) {
+        SZrLoopLabel *loopLabel = (SZrLoopLabel *)ZrCore_Array_Get(
+                &cs->loopLabelStack,
+                cs->loopLabelStack.length - 1U);
+
+        allowPendingBreak = (TZrBool)(
+                loopLabel != ZR_NULL &&
+                compiler_semantic_cfg_break_through_finally_is_active(
+                        cs, loopLabel->semanticBreakBlockId));
+    }
     thenFlow = compiler_semantic_cfg_if_arm_flow(
-            node->data.ifExpression.thenExpr);
+            node->data.ifExpression.thenExpr, allowPendingBreak);
     elseFlow = compiler_semantic_cfg_if_arm_flow(
-            node->data.ifExpression.elseExpr);
+            node->data.ifExpression.elseExpr, allowPendingBreak);
     if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
         elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
@@ -434,7 +456,7 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     if (!compiler_semantic_cfg_expression_is_linear(
                 node->data.whileLoop.cond) ||
         !compiler_semantic_cfg_loop_body_analyze(
-                node->data.whileLoop.block, ZR_TRUE, ZR_TRUE,
+                node->data.whileLoop.block, ZR_TRUE, ZR_TRUE, ZR_TRUE,
                 ZR_NULL)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;

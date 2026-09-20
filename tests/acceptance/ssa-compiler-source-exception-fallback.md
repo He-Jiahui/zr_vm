@@ -59,7 +59,10 @@ shape admits a resolved direct call with no argument or one exact `int`
 identifier passed by value: its exceptional edge defines and stores
 `EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after cleanup
 dispatch. Multiple or conditional calls and literal, converting, non-value, or
-multiple arguments remain here.
+multiple arguments remain here. One operand-free `break` from a supported
+`while` is also claimed by the cleanup producer: terminal and conditional
+forms reach the existing loop join only after `finally`. `continue`, multiple
+break sites, and mixed break/completion kinds retain this fallback boundary.
 
 ## Validation evidence (2026-09-18)
 
@@ -81,7 +84,8 @@ multiple arguments remain here.
 
 This checkpoint is deliberately conservative. Later bounded milestones now
 claim source-owned catch payload/dispatch, no-catch finally cleanup edges, the
-interrupted-assignment guard, and one direct-call exceptional cleanup path.
+interrupted-assignment guard, one direct-call exceptional cleanup path, and one
+pending `break` destination from a supported `while`.
 Other handler/finally combinations and handled non-call throwable operations
 remain outside that subset. Straight-line unhandled source `throw` is covered by
 [the explicit throw CFG checkpoint](ssa-compiler-source-throw-cfg.md). The

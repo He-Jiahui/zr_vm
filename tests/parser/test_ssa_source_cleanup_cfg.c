@@ -639,6 +639,7 @@ static void test_conditional_throw_try_finally_dispatches_pending_state(void) {
 }
 
 #include "test_ssa_source_cleanup_cfg_exceptional.inc"
+#include "test_ssa_source_cleanup_cfg_loop.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -655,5 +656,9 @@ int main(void) {
     RUN_TEST(test_literal_argument_try_finally_stays_on_legacy_path);
     RUN_TEST(test_two_invoke_try_finally_stays_on_legacy_path);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
+    RUN_TEST(test_terminal_break_try_finally_routes_to_loop_join);
+    RUN_TEST(test_conditional_break_try_finally_dispatches_to_loop_join);
+    RUN_TEST(test_continue_try_finally_stays_on_legacy_path);
+    RUN_TEST(test_two_break_sites_try_finally_stay_on_legacy_path);
     return UNITY_END();
 }

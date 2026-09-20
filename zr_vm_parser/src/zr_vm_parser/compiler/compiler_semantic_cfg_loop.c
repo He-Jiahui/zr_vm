@@ -4,6 +4,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,
         TZrBool allowContinue,
+        TZrBool allowFinallyBreak,
         TZrBool *endsWithBreak) {
     TZrSize index;
 
@@ -24,6 +25,15 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
             *endsWithBreak = node->data.breakContinueStatement.isBreak;
         }
         return ZR_TRUE;
+    }
+    if (node->type == ZR_AST_TRY_CATCH_FINALLY_STATEMENT) {
+        const SZrTryCatchFinallyStatement *statement =
+                &node->data.tryCatchFinallyStatement;
+
+        return (TZrBool)(
+                allowFinallyBreak && statement->finallyBlock != ZR_NULL &&
+                (statement->catchClauses == ZR_NULL ||
+                 statement->catchClauses->count == 0U));
     }
     if (node->type != ZR_AST_BLOCK) {
         return compiler_semantic_cfg_arm_falls_through(node);
@@ -56,6 +66,19 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
             }
             return ZR_TRUE;
         }
+        if (statement != ZR_NULL &&
+            statement->type == ZR_AST_TRY_CATCH_FINALLY_STATEMENT) {
+            const SZrTryCatchFinallyStatement *tryStatement =
+                    &statement->data.tryCatchFinallyStatement;
+
+            if (!allowFinallyBreak ||
+                tryStatement->finallyBlock == ZR_NULL ||
+                (tryStatement->catchClauses != ZR_NULL &&
+                 tryStatement->catchClauses->count != 0U)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
         if (!compiler_semantic_cfg_arm_falls_through(statement)) {
             return ZR_FALSE;
         }
@@ -85,7 +108,8 @@ TZrBool compiler_semantic_cfg_for_is_supported(
         (loop->step != ZR_NULL &&
          !compiler_semantic_cfg_expression_is_linear(loop->step)) ||
         !compiler_semantic_cfg_loop_body_analyze(
-                loop->block, ZR_TRUE, ZR_TRUE, &endsWithBreak)) {
+                loop->block, ZR_TRUE, ZR_TRUE, ZR_FALSE,
+                &endsWithBreak)) {
         return ZR_FALSE;
     }
     if (bodyEndsWithBreak != ZR_NULL) {
@@ -221,7 +245,8 @@ TZrBool compiler_semantic_cfg_foreach_is_supported(
             loop->pattern->data.identifier.name != ZR_NULL &&
             compiler_semantic_cfg_expression_is_linear(loop->expr) &&
             compiler_semantic_cfg_loop_body_analyze(
-                    loop->block, ZR_TRUE, ZR_TRUE, ZR_NULL) &&
+                    loop->block, ZR_TRUE, ZR_TRUE, ZR_FALSE,
+                    ZR_NULL) &&
             compiler_semantic_cfg_foreach_conditions_are_supported(
                     loop->block) &&
             !compiler_semantic_cfg_body_requires_cleanup(

@@ -509,6 +509,7 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize targetLabelId;
     TZrUInt32 semanticTargetBlockId;
     TZrBool hasOwnershipCleanupContext;
+    TZrBool hasSemanticFinallyBreak = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -554,6 +555,11 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
     hasOwnershipCleanupContext =
             compiler_has_scope_ownership_cleanups_above_depth(
                     cs, loopLabel->targetScopeStackDepth);
+    hasSemanticFinallyBreak = (TZrBool)(
+            hasFinallyContext && stmt->isBreak &&
+            !hasOwnershipCleanupContext &&
+            compiler_semantic_cfg_break_through_finally_is_active(
+                    cs, semanticTargetBlockId));
     if (semanticTargetBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         if (cs->preSemanticIrCfgActive &&
             !compiler_semantic_cfg_abandon(cs)) {
@@ -567,7 +573,16 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
     if (semanticTargetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
         cs->preSemanticIrCfgActive) {
-        if (hasFinallyContext || hasOwnershipCleanupContext) {
+        if (hasSemanticFinallyBreak) {
+            if (!compiler_semantic_cfg_redirect_break_through_finally(
+                        cs, semanticTargetBlockId, node->location)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to route semantic break through finally",
+                        node->location);
+                return;
+            }
+        } else if (hasFinallyContext || hasOwnershipCleanupContext) {
             if (!compiler_semantic_cfg_abandon(cs)) {
                 ZrParser_Compiler_Error(
                         cs,

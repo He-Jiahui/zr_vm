@@ -149,6 +149,7 @@ typedef struct SZrCompilerSemanticFinallyPlan {
     TZrUInt32 cleanupBlock;
     TZrUInt32 joinBlock;
     TZrUInt32 completionBlock;
+    TZrUInt32 completionTargetBlock;
     TZrUInt32 exceptionBlock;
     TZrValueId completionValueId;
     SZrFileRange completionRange;
@@ -244,6 +245,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,
         TZrBool allowContinue,
+        TZrBool allowFinallyBreak,
         TZrBool *endsWithBreak);
 TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,
@@ -372,6 +374,13 @@ TZrBool compiler_semantic_cfg_throw_through_finally_is_active(
 TZrBool compiler_semantic_cfg_redirect_throw_through_finally(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
+        SZrFileRange range);
+TZrBool compiler_semantic_cfg_break_through_finally_is_active(
+        const SZrCompilerState *cs,
+        TZrUInt32 targetBlock);
+TZrBool compiler_semantic_cfg_redirect_break_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 targetBlock,
         SZrFileRange range);
 TZrBool compiler_semantic_cfg_terminate_throw(
         SZrCompilerState *cs,

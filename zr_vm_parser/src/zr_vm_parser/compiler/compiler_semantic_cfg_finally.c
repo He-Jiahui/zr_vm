@@ -35,7 +35,8 @@ typedef enum EZrCompilerSemanticFinallyFlow {
     ZR_COMPILER_SEMANTIC_FINALLY_FLOW_UNSUPPORTED = 0,
     ZR_COMPILER_SEMANTIC_FINALLY_FLOW_FALLTHROUGH = 1,
     ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN = 2,
-    ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW = 4
+    ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW = 4,
+    ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK = 8
 } EZrCompilerSemanticFinallyFlow;
 
 typedef struct SZrCompilerSemanticFinallyFlowInfo {
@@ -173,6 +174,13 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
         info.flow = ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW;
         info.abruptSiteCount = 1U;
         info.completionExpression = node->data.throwStatement.expr;
+    } else if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
+        if (!node->data.breakContinueStatement.isBreak ||
+            node->data.breakContinueStatement.expr != ZR_NULL) {
+            return ZR_FALSE;
+        }
+        info.flow = ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK;
+        info.abruptSiteCount = 1U;
     } else {
         return ZR_FALSE;
     }
@@ -181,7 +189,10 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
         (info.exceptionalSiteCount != 0U &&
          info.abruptSiteCount != 0U) ||
         ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN) != 0U &&
-         (info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW) != 0U)) {
+         (info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW |
+                       ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK)) != 0U) ||
+        ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW) != 0U &&
+         (info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) != 0U)) {
         return ZR_FALSE;
     }
     *outInfo = info;
@@ -196,7 +207,29 @@ static EZrSemanticIrOpcode compiler_semantic_cfg_finally_completion_opcode(
     if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW) != 0U) {
         return ZR_SEMANTIC_IR_THROW;
     }
+    if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) != 0U) {
+        return ZR_SEMANTIC_IR_BRANCH;
+    }
     return ZR_SEMANTIC_IR_INVALID;
+}
+
+static TZrBool compiler_semantic_cfg_finally_break_target_is_supported(
+        SZrCompilerState *cs,
+        TZrUInt32 flow) {
+    SZrLoopLabel *loopLabel;
+
+    if ((flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK) == 0U) {
+        return ZR_TRUE;
+    }
+    if (cs == ZR_NULL || cs->loopLabelStack.length == 0U) {
+        return ZR_FALSE;
+    }
+    loopLabel = (SZrLoopLabel *)ZrCore_Array_Get(
+            &cs->loopLabelStack, cs->loopLabelStack.length - 1U);
+    return (TZrBool)(
+            loopLabel != ZR_NULL &&
+            loopLabel->semanticBreakBlockId !=
+                    ZR_PARSER_CFG_INVALID_BLOCK_ID);
 }
 
 TZrBool compiler_semantic_cfg_try_finally_is_supported(
@@ -224,6 +257,8 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
              statement->catchClauses->count == 0U) &&
             compiler_semantic_cfg_finally_protected_flow(
                     statement->block, &flowInfo) &&
+            compiler_semantic_cfg_finally_break_target_is_supported(
+                    cs, flowInfo.flow) &&
             (flowInfo.exceptionalSiteCount == 0U ||
              compiler_semantic_cfg_finally_call_is_resolved(
                      cs, flowInfo.exceptionExpression)) &&
@@ -254,6 +289,7 @@ static void compiler_semantic_cfg_finally_fail(
         plan->cleanupBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         plan->joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         plan->completionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        plan->completionTargetBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         plan->exceptionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         plan->completionValueId = ZR_VALUE_ID_INVALID;
         plan->completionSelectorSlot = ZR_PARSER_SLOT_NONE;
@@ -346,34 +382,44 @@ static TZrBool compiler_semantic_cfg_finally_store_value(
     return ZR_TRUE;
 }
 
-static TZrBool compiler_semantic_cfg_finally_prepare_pending_type(
+static TZrBool compiler_semantic_cfg_finally_prepare_pending_selector(
         SZrCompilerState *cs,
         SZrCompilerSemanticFinallyPlan *plan,
-        const SZrInferredType *payloadType,
         SZrFileRange range) {
     SZrInferredType selectorType;
     TZrBool prepared;
 
-    if (cs == ZR_NULL || plan == ZR_NULL || payloadType == ZR_NULL) {
+    if (cs == ZR_NULL || plan == ZR_NULL) {
         return ZR_FALSE;
     }
     compiler_advance_stack_to_fresh_slot(cs);
     plan->completionSelectorSlot = allocate_stack_slot(cs);
-    plan->completionPayloadSlot = allocate_stack_slot(cs);
     ZrParser_InferredType_Init(
             cs->state, &selectorType, ZR_VALUE_TYPE_BOOL);
     prepared = (TZrBool)(
             compiler_semantic_ir_prepare_optional_merge(
                     cs, plan->completionSelectorSlot,
                     &selectorType, range) &&
-            compiler_semantic_ir_prepare_optional_merge(
-                    cs, plan->completionPayloadSlot,
-                    payloadType, range) &&
             compiler_semantic_cfg_finally_store_bool(
                     cs, plan->completionSelectorSlot,
                     ZR_FALSE, range));
     ZrParser_InferredType_Free(cs->state, &selectorType);
     return prepared;
+}
+
+static TZrBool compiler_semantic_cfg_finally_prepare_pending_type(
+        SZrCompilerState *cs,
+        SZrCompilerSemanticFinallyPlan *plan,
+        const SZrInferredType *payloadType,
+        SZrFileRange range) {
+    if (cs == ZR_NULL || plan == ZR_NULL || payloadType == ZR_NULL ||
+        !compiler_semantic_cfg_finally_prepare_pending_selector(
+                cs, plan, range)) {
+        return ZR_FALSE;
+    }
+    plan->completionPayloadSlot = allocate_stack_slot(cs);
+    return compiler_semantic_ir_prepare_optional_merge(
+            cs, plan->completionPayloadSlot, payloadType, range);
 }
 
 static TZrBool compiler_semantic_cfg_finally_prepare_pending_state(
@@ -417,6 +463,7 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
     plan->cleanupBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->completionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    plan->completionTargetBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->exceptionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->completionValueId = ZR_VALUE_ID_INVALID;
     plan->completionSelectorSlot = ZR_PARSER_SLOT_NONE;
@@ -439,10 +486,13 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
     }
     if (plan->completionOpcode != ZR_SEMANTIC_IR_INVALID &&
         plan->hasFallthrough &&
-        !compiler_semantic_cfg_finally_prepare_pending_state(
-                cs, plan, flowInfo.completionExpression,
-                plan->hasExceptionalEntry,
-                node->location)) {
+        !(plan->completionOpcode == ZR_SEMANTIC_IR_BRANCH
+                  ? compiler_semantic_cfg_finally_prepare_pending_selector(
+                            cs, plan, node->location)
+                  : compiler_semantic_cfg_finally_prepare_pending_state(
+                            cs, plan, flowInfo.completionExpression,
+                            plan->hasExceptionalEntry,
+                            node->location))) {
         compiler_semantic_cfg_finally_fail(cs, plan);
         return ZR_FALSE;
     }
@@ -490,7 +540,8 @@ static TZrBool compiler_semantic_cfg_completion_through_finally_is_active(
             cs != ZR_NULL ? cs->preSemanticIrCfgFinallyPlan : ZR_NULL;
 
     return (TZrBool)((completionOpcode == ZR_SEMANTIC_IR_RETURN ||
-                      completionOpcode == ZR_SEMANTIC_IR_THROW) &&
+                      completionOpcode == ZR_SEMANTIC_IR_THROW ||
+                      completionOpcode == ZR_SEMANTIC_IR_BRANCH) &&
                      plan != ZR_NULL && plan->initialized &&
                      plan->completionOpcode == completionOpcode &&
                      !plan->completionPending &&
@@ -565,6 +616,46 @@ TZrBool compiler_semantic_cfg_redirect_throw_through_finally(
         SZrFileRange range) {
     return compiler_semantic_cfg_redirect_completion_through_finally(
             cs, valueSlot, range, ZR_SEMANTIC_IR_THROW);
+}
+
+TZrBool compiler_semantic_cfg_break_through_finally_is_active(
+        const SZrCompilerState *cs,
+        TZrUInt32 targetBlock) {
+    return (TZrBool)(
+            targetBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+            compiler_semantic_cfg_completion_through_finally_is_active(
+                    cs, ZR_SEMANTIC_IR_BRANCH));
+}
+
+TZrBool compiler_semantic_cfg_redirect_break_through_finally(
+        SZrCompilerState *cs,
+        TZrUInt32 targetBlock,
+        SZrFileRange range) {
+    SZrCompilerSemanticFinallyPlan *plan;
+
+    if (!compiler_semantic_cfg_break_through_finally_is_active(
+                cs, targetBlock)) {
+        return ZR_FALSE;
+    }
+    plan = cs->preSemanticIrCfgFinallyPlan;
+    if (plan->hasFallthrough &&
+        !compiler_semantic_cfg_finally_store_bool(
+                cs, plan->completionSelectorSlot,
+                ZR_TRUE, range)) {
+        return ZR_FALSE;
+    }
+    if (!compiler_semantic_cfg_jump_edge(
+                cs, plan->cleanupBlock, ZR_PARSER_CFG_EDGE_CLEANUP,
+                cs->currentAst, range)) {
+        return ZR_FALSE;
+    }
+    plan->completionTargetBlock = targetBlock;
+    plan->completionRange = range;
+    plan->completionPending = ZR_TRUE;
+    cs->preSemanticIrCfgBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    cs->preSemanticIrCfgStart =
+            (TZrUInt32)cs->preSemanticIr.instructions.length;
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_semantic_cfg_finally_capture_exception(
@@ -672,8 +763,6 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
         }
         if (plan->hasFallthrough) {
             TZrValueId selectorValueId;
-            TZrValueId payloadValueId;
-            TZrBool previousAbruptIsLocal;
 
             if (!compiler_semantic_ir_load_optional_merge(
                         cs, plan->completionSelectorSlot,
@@ -692,40 +781,59 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
                 return ZR_FALSE;
             }
             compiler_semantic_cfg_enter(cs, plan->completionBlock);
-            if (!compiler_semantic_ir_load_optional_merge(
-                        cs, plan->completionPayloadSlot,
-                        plan->completionRange)) {
-                compiler_semantic_cfg_finally_fail(cs, plan);
-                return ZR_FALSE;
-            }
-            payloadValueId = compiler_semantic_ir_slot_value(
-                    cs, plan->completionPayloadSlot);
-            if (payloadValueId == ZR_VALUE_ID_INVALID) {
-                compiler_semantic_cfg_finally_fail(cs, plan);
-                return ZR_FALSE;
-            }
-            cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
-            previousAbruptIsLocal = cs->preSemanticIrCfgAbruptIsLocal;
-            cs->preSemanticIrCfgAbruptIsLocal = ZR_TRUE;
-            if (plan->completionOpcode == ZR_SEMANTIC_IR_RETURN) {
-                terminated = compiler_semantic_cfg_terminate_return_value(
-                        cs, payloadValueId,
-                        plan->completionRange);
-            } else if (plan->completionOpcode == ZR_SEMANTIC_IR_THROW) {
-                terminated = compiler_semantic_cfg_terminate_throw_value(
-                        cs, payloadValueId,
-                        plan->completionRange);
+            if (plan->completionOpcode == ZR_SEMANTIC_IR_BRANCH) {
+                cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
+                terminated = (TZrBool)(
+                        plan->completionTargetBlock !=
+                                ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+                        compiler_semantic_cfg_jump_abrupt(
+                                cs, plan->completionTargetBlock,
+                                plan->completionRange));
             } else {
-                terminated = ZR_FALSE;
+                TZrValueId payloadValueId;
+                TZrBool previousAbruptIsLocal;
+
+                if (!compiler_semantic_ir_load_optional_merge(
+                            cs, plan->completionPayloadSlot,
+                            plan->completionRange)) {
+                    compiler_semantic_cfg_finally_fail(cs, plan);
+                    return ZR_FALSE;
+                }
+                payloadValueId = compiler_semantic_ir_slot_value(
+                        cs, plan->completionPayloadSlot);
+                if (payloadValueId == ZR_VALUE_ID_INVALID) {
+                    compiler_semantic_cfg_finally_fail(cs, plan);
+                    return ZR_FALSE;
+                }
+                cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
+                previousAbruptIsLocal =
+                        cs->preSemanticIrCfgAbruptIsLocal;
+                cs->preSemanticIrCfgAbruptIsLocal = ZR_TRUE;
+                if (plan->completionOpcode == ZR_SEMANTIC_IR_RETURN) {
+                    terminated =
+                            compiler_semantic_cfg_terminate_return_value(
+                                    cs, payloadValueId,
+                                    plan->completionRange);
+                } else if (plan->completionOpcode ==
+                                   ZR_SEMANTIC_IR_THROW) {
+                    terminated =
+                            compiler_semantic_cfg_terminate_throw_value(
+                                    cs, payloadValueId,
+                                    plan->completionRange);
+                } else {
+                    terminated = ZR_FALSE;
+                }
+                cs->preSemanticIrCfgAbruptIsLocal =
+                        previousAbruptIsLocal;
             }
-            cs->preSemanticIrCfgAbruptIsLocal = previousAbruptIsLocal;
             if (!terminated) {
                 compiler_semantic_cfg_finally_fail(cs, plan);
                 return ZR_FALSE;
             }
             compiler_semantic_cfg_enter(cs, plan->joinBlock);
         } else {
-            if (plan->completionValueId == ZR_VALUE_ID_INVALID ||
+            if ((plan->completionOpcode != ZR_SEMANTIC_IR_BRANCH &&
+                 plan->completionValueId == ZR_VALUE_ID_INVALID) ||
                 !compiler_semantic_cfg_jump_edge(
                         cs, plan->completionBlock,
                         ZR_PARSER_CFG_EDGE_CLEANUP,
@@ -735,7 +843,14 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
             }
             compiler_semantic_cfg_enter(cs, plan->completionBlock);
             cs->preSemanticIrCfgFinallyPlan = ZR_NULL;
-            if (plan->completionOpcode == ZR_SEMANTIC_IR_RETURN) {
+            if (plan->completionOpcode == ZR_SEMANTIC_IR_BRANCH) {
+                terminated = (TZrBool)(
+                        plan->completionTargetBlock !=
+                                ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+                        compiler_semantic_cfg_jump_abrupt(
+                                cs, plan->completionTargetBlock,
+                                plan->completionRange));
+            } else if (plan->completionOpcode == ZR_SEMANTIC_IR_RETURN) {
                 terminated = compiler_semantic_cfg_terminate_return_value(
                         cs, plan->completionValueId,
                         plan->completionRange);
@@ -765,6 +880,7 @@ TZrBool compiler_semantic_cfg_complete_try_finally(
     plan->cleanupBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->completionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    plan->completionTargetBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->exceptionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     plan->completionValueId = ZR_VALUE_ID_INVALID;
     plan->completionSelectorSlot = ZR_PARSER_SLOT_NONE;
