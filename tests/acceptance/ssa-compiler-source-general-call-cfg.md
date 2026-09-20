@@ -86,7 +86,7 @@ canonical symbol and fixed explicit argument range. Calls nested in source
 constructs whose syntactic CFG preflight still excludes call expressions stay
 on the conservative legacy path without restarting a detached graph. One later
 no-catch `try/finally` shape admits one or more resolved direct calls in linear
-statement-form conditional control, with no argument or up to two exact integer,
+statement-form conditional control, with no argument or up to three exact integer,
 `bool`, or `float` identifiers or literals passed by value; integer arguments
 must match the resolved parameter type exactly. It routes every exceptional edge
 through one `EXCEPTION_PAYLOAD` landing and shared cleanup,

@@ -283,7 +283,7 @@ static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
         return (TZrBool)(call->argumentMarkers == ZR_NULL ||
                         call->argumentMarkers->length == 0U);
     }
-    if (call->args->count > 2U ||
+    if (call->args->count > 3U ||
         (call->argumentMarkers != ZR_NULL &&
          call->argumentMarkers->length != call->args->count)) {
         return ZR_FALSE;
@@ -416,7 +416,7 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
     if (call->args == ZR_NULL || call->args->count == 0U) {
         return ZR_TRUE;
     }
-    if (call->args->count > 2U || resolvedSignature == ZR_NULL ||
+    if (call->args->count > 3U || resolvedSignature == ZR_NULL ||
         resolvedSignature->parameterTypes.length != call->args->count ||
         resolvedSignature->parameterPassingModes.length != call->args->count ||
         firstArgumentSlot == ZR_PARSER_SLOT_NONE) {
