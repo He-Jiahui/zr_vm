@@ -82,6 +82,8 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
         const SZrAstNode *node,
         SZrCompilerSemanticFinallyFlowInfo *outInfo) {
     SZrCompilerSemanticFinallyFlowInfo info;
+    TZrUInt32 loopFlow;
+    TZrBool multipleLoopTransfer;
 
     if (outInfo == ZR_NULL) {
         return ZR_FALSE;
@@ -186,7 +188,13 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
     } else {
         return ZR_FALSE;
     }
-    if (info.abruptSiteCount > 1U ||
+    loopFlow = info.flow & (ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK |
+                            ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE);
+    multipleLoopTransfer = (TZrBool)(
+            info.abruptSiteCount > 1U &&
+            (loopFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_BREAK ||
+             loopFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_CONTINUE));
+    if ((info.abruptSiteCount > 1U && !multipleLoopTransfer) ||
         info.exceptionalSiteCount > 1U ||
         (info.exceptionalSiteCount != 0U &&
          info.abruptSiteCount != 0U) ||
@@ -564,6 +572,23 @@ static TZrBool compiler_semantic_cfg_completion_through_finally_is_active(
                      !plan->cleanupEntered);
 }
 
+static TZrBool compiler_semantic_cfg_loop_transfer_through_finally_is_active(
+        const SZrCompilerState *cs,
+        TZrUInt32 targetBlock) {
+    const SZrCompilerSemanticFinallyPlan *plan =
+            cs != ZR_NULL ? cs->preSemanticIrCfgFinallyPlan : ZR_NULL;
+
+    /* Same-kind loop transfers may revisit the pending completion. Return and
+     * throw keep the one-shot payload contract because their ValueIds differ. */
+    return (TZrBool)(
+            targetBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+            plan != ZR_NULL && plan->initialized &&
+            plan->completionOpcode == ZR_SEMANTIC_IR_BRANCH &&
+            !plan->cleanupEntered &&
+            (!plan->completionPending ||
+             plan->completionTargetBlock == targetBlock));
+}
+
 static TZrBool compiler_semantic_cfg_redirect_completion_through_finally(
         SZrCompilerState *cs,
         TZrUInt32 valueSlot,
@@ -637,10 +662,8 @@ TZrBool compiler_semantic_cfg_redirect_throw_through_finally(
 TZrBool compiler_semantic_cfg_break_through_finally_is_active(
         const SZrCompilerState *cs,
         TZrUInt32 targetBlock) {
-    return (TZrBool)(
-            targetBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
-            compiler_semantic_cfg_completion_through_finally_is_active(
-                    cs, ZR_SEMANTIC_IR_BRANCH));
+    return compiler_semantic_cfg_loop_transfer_through_finally_is_active(
+            cs, targetBlock);
 }
 
 TZrBool compiler_semantic_cfg_redirect_break_through_finally(

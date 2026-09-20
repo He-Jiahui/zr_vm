@@ -59,14 +59,15 @@ shape admits a resolved direct call with no argument or one exact `int`
 identifier passed by value: its exceptional edge defines and stores
 `EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after cleanup
 dispatch. Multiple or conditional calls and literal, converting, non-value, or
-multiple arguments remain here. One operand-free `break` from a supported
-`while`, linear statement-form `for`, or statically typed `foreach` is also
-claimed by the cleanup producer: terminal and conditional forms reach the
-existing loop join only after `finally`. One operand-free `continue` reaches
-the existing `while` condition block, `for` step block, or foreach move-next
-block by the same route.
-Multiple break/continue sites and mixed loop-transfer/completion kinds retain
-this fallback boundary.
+multiple arguments remain here. One or more same-kind, operand-free `break`
+transfers from a supported `while`, linear statement-form `for`, or statically
+typed `foreach` are also claimed by the cleanup producer: terminal and
+conditional forms reach the existing loop join only after `finally`. One or
+more same-kind, operand-free `continue` transfers reach the existing `while`
+condition block, `for` step block, or foreach move-next block by the same route.
+Mixed `break`/`continue` sites and mixed
+loop-transfer/completion kinds retain this fallback boundary; repeated
+same-kind transfers use the same cleanup completion target.
 
 ## Validation evidence (2026-09-18)
 

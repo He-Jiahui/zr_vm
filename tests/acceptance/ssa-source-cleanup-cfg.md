@@ -14,8 +14,9 @@ accepted by the SemanticIR-to-ExecIR builder.
   outside conditional control. The call may take no arguments or one exact,
   ownership/reference/GC-neutral `int` identifier by value. When the statement
   is directly nested in a supported `while`, linear statement-form `for`, or
-  statically typed `foreach`, the protected body may instead contain one
-  operand-free `break` or `continue`.
+  statically typed `foreach`, the protected body may instead contain one or
+  more operand-free `break` sites or one or more operand-free `continue` sites,
+  provided every transfer has the same loop target and transfer kind.
 - No enclosing ownership cleanup or active catch target is present.
 - The protected block ends in an operand-free `BRANCH` over one cleanup edge to
   a `ZR_PARSER_CFG_BLOCK_CLEANUP`.
@@ -40,10 +41,10 @@ accepted by the SemanticIR-to-ExecIR builder.
 - For the loop-transfer shape, the pending destination is the existing loop
   join for `break`, the `while` condition block for a `while` `continue`, the
   `for` step block for a `for` `continue`, or the foreach move-next block for a
-  `foreach` `continue`. A terminal transfer goes from cleanup through a
-  completion block and then follows one normal edge to that target. A
-  conditional transfer uses a selector-only private Place and cleanup
-  dispatch; it does not allocate a meaningless payload Place.
+  `foreach` `continue`. One or more transfers of that same kind go from
+  cleanup through one completion block and then follow a normal edge to that
+  target. A conditional transfer uses a selector-only private Place and
+  cleanup dispatch; it does not allocate a meaningless payload Place.
 - ExecIR construction preserves both adjacencies and marks the cleanup block
   with `ZR_EXEC_IR_BLOCK_FLAG_CLEANUP`.
 
@@ -61,28 +62,27 @@ path. Literal, converting, non-value, multiple, or conditional arguments,
 conditional calls, declarations, nested nonlinear control flow, ownership
 cleanup, and mixed explicit/exceptional completion are also outside this
 slice. Those shapes must not publish a partial cleanup graph or restart a
-detached CFG after rejection. Multiple break sites, dynamic/unresolved
-foreach iteration, binding cleanup, or unsupported loop cleanup, and break
-combined with another completion kind remain on that same fail-closed path.
-Multiple `continue` sites and mixed `break`/`continue` sites are also
-rejected.
+detached CFG after rejection. Mixed `break`/`continue` sites,
+dynamic/unresolved `foreach` iteration, binding cleanup, unsupported loop
+cleanup, and a loop transfer combined with another completion kind remain on
+that same fail-closed path.
 
 The source producer now uses the builder's `CLEANUP_DISPATCH` contract for one
 normal-versus-return, normal-versus-throw, or normal-versus-call-exception
 decision. A terminal abrupt shape still has only one post-cleanup destination
-and therefore retains its direct cleanup edge. A single operand-free
-`break`/`continue` transfer from a supported `while`/`for`/`foreach` is
-dispatched to its existing loop target after cleanup; multiple abrupt sites or
-kinds and combined explicit/exceptional completion still require later source
-milestones.
+and therefore retains its direct cleanup edge. One or more same-kind,
+operand-free `break`/`continue` transfers from a supported
+`while`/`for`/`foreach` are dispatched to their existing loop target after
+cleanup; mixed transfer kinds and combined explicit/exceptional completion
+still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 25/25 on Windows MSVC and WSL GCC and
+- The focused source cleanup suite passes 26/26 on Windows MSVC and WSL GCC and
   Clang. It includes terminal and conditional `break`/`continue`, plus
-  explicit multi-exit fail-closed cases.
+  repeated same-kind transfers and explicit mixed-kind fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 25/25 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 26/26 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.
