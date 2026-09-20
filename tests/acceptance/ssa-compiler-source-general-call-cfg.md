@@ -85,11 +85,11 @@ This checkpoint covers resolved direct/callable function targets that have a
 canonical symbol and fixed explicit argument range. Calls nested in source
 constructs whose syntactic CFG preflight still excludes call expressions stay
 on the conservative legacy path without restarting a detached graph. One later
-no-catch `try/finally` shape admits a resolved direct call with no argument or
-one exact `int` identifier or integer literal passed by value, routes its
-exceptional edge through
-an `EXCEPTION_PAYLOAD` landing and shared cleanup, then rethrows after cleanup
-dispatch. Spread and unresolved dynamic calls,
+no-catch `try/finally` shape admits one or more resolved direct calls with no
+argument or one exact `int` identifier or integer literal passed by value,
+routes every exceptional edge through one `EXCEPTION_PAYLOAD` landing and
+shared cleanup, then rethrows after cleanup dispatch. Spread and unresolved
+dynamic calls,
 other enclosing-handler shapes, Weak/ownership cleanup exits, and non-call
 exceptional operations remain open for the full 01.02 exit gate.
 

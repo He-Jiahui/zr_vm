@@ -291,19 +291,111 @@ static void test_converted_argument_try_finally_stays_on_legacy_path(void) {
     free_source(&compiler, ast);
 }
 
-static void test_two_invoke_try_finally_stays_on_legacy_path(void) {
+static void test_two_invoke_try_finally_routes_both_exceptions(void) {
     static const TZrChar source[] =
             "fn identity(): int { return 7; }\n"
             "var seed: int = 7;\n"
             "try { identity(); identity(); } finally { seed = 9; }\n"
             "seed;\n";
     static TZrChar sourceName[] =
-            "two_invoke_try_finally_fallback.zr";
+            "two_invoke_try_finally_cleanup.zr";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(
             &compiler, source, sizeof(source) - 1U, sourceName);
     const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *cleanup;
+    const SZrParserCfgBlock *exceptionBlock = ZR_NULL;
+    TZrSize invokeCount = 0U;
+    TZrSize routedExceptionCount = 0U;
+    TZrSize exceptionPayloadCount = 0U;
     TZrSize index;
+    TZrSize blockIndex;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    cleanup = find_block_kind(function, ZR_PARSER_CFG_BLOCK_CLEANUP);
+    TEST_ASSERT_NOT_NULL(cleanup);
+    for (blockIndex = 0U; blockIndex < function->cfg.blocks.length;
+         blockIndex++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, blockIndex);
+
+        TEST_ASSERT_NOT_NULL(block);
+        for (index = block->firstInstructionIndex;
+             index < block->firstInstructionIndex + block->instructionCount;
+             index++) {
+            const SZrSemanticIrInstruction *instruction =
+                    ZrParser_SemanticIr_InstructionAt(function, index);
+
+            TEST_ASSERT_NOT_NULL(instruction);
+            if (instruction->opcode == ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD) {
+                exceptionPayloadCount += 1U;
+                exceptionBlock = block;
+            }
+        }
+    }
+    TEST_ASSERT_NOT_NULL(exceptionBlock);
+    for (blockIndex = 0U; blockIndex < function->cfg.blocks.length;
+         blockIndex++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, blockIndex);
+        TZrBool hasInvoke = ZR_FALSE;
+
+        TEST_ASSERT_NOT_NULL(block);
+        for (index = block->firstInstructionIndex;
+             index < block->firstInstructionIndex + block->instructionCount;
+             index++) {
+            const SZrSemanticIrInstruction *instruction =
+                    ZrParser_SemanticIr_InstructionAt(function, index);
+
+            TEST_ASSERT_NOT_NULL(instruction);
+            if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+                hasInvoke = ZR_TRUE;
+            }
+        }
+        if (hasInvoke) {
+            TZrSize edgeIndex;
+
+            invokeCount += 1U;
+            for (edgeIndex = 0U; edgeIndex < block->successorCount;
+                 edgeIndex++) {
+                const SZrParserCfgEdge *edge =
+                        ZrParser_Cfg_BlockEdgeAt(block, edgeIndex);
+
+                TEST_ASSERT_NOT_NULL(edge);
+                if (edge->kind == ZR_PARSER_CFG_EDGE_EXCEPTION &&
+                    edge->toBlockId == exceptionBlock->id) {
+                    routedExceptionCount += 1U;
+                }
+            }
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(1U, exceptionPayloadCount);
+    TEST_ASSERT_EQUAL_UINT32(2U, invokeCount);
+    TEST_ASSERT_EQUAL_UINT32(2U, routedExceptionCount);
+
+    free_source(&compiler, ast);
+}
+
+static void test_dynamic_then_direct_invoke_try_finally_stays_on_legacy_path(void) {
+    static const TZrChar source[] =
+            "fn identity(): int { return 7; }\n"
+            "var callback: fn()->int = identity;\n"
+            "var seed: int = 7;\n"
+            "try { callback(); identity(); } finally { seed = 9; }\n"
+            "seed;\n";
+    static TZrChar sourceName[] =
+            "dynamic_then_direct_invoke_try_finally_fallback.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
@@ -313,15 +405,6 @@ static void test_two_invoke_try_finally_stays_on_legacy_path(void) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NULL(find_block_kind(
             function, ZR_PARSER_CFG_BLOCK_CLEANUP));
-    for (index = 0U; index < function->instructions.length; index++) {
-        const SZrSemanticIrInstruction *instruction =
-                ZrParser_SemanticIr_InstructionAt(function, index);
-
-        TEST_ASSERT_NOT_NULL(instruction);
-        TEST_ASSERT_NOT_EQUAL(
-                ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD,
-                instruction->opcode);
-    }
 
     free_source(&compiler, ast);
 }

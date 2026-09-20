@@ -57,10 +57,11 @@ mixed return/throw kinds, and most
 exceptional cleanup entry still use this
 persistent fallback and cannot restart a detached graph. One later bounded
 shape admits a resolved direct call with no argument or one exact `int`
-identifier or integer literal passed by value: its exceptional edge defines and stores
-`EXCEPTION_PAYLOAD`, enters shared cleanup, and rethrows only after cleanup
-dispatch. Multiple or conditional calls and converting, non-value, or multiple
-arguments remain here. One or more same-kind, operand-free `break`
+identifier or integer literal passed by value: each exceptional edge reaches
+one shared landing that defines and stores `EXCEPTION_PAYLOAD`, enters shared
+cleanup, and rethrows only after cleanup dispatch. Conditional calls and
+converting, non-value, or multiple arguments remain here. One or more same-kind,
+operand-free `break`
 transfers from a supported `while`, linear statement-form `for`, or statically
 typed `foreach` are also claimed by the cleanup producer: terminal and
 conditional forms reach the existing loop join only after `finally`. One or
@@ -89,9 +90,9 @@ same-kind transfers use the same cleanup completion target.
 ## Boundary
 
 This checkpoint is deliberately conservative. Later bounded milestones now
-claim source-owned catch payload/dispatch (including a single exact `int`
+claim source-owned catch payload/dispatch (including an exact `int`
 integer-literal argument), no-catch finally cleanup edges, the
-interrupted-assignment guard, one direct-call exceptional cleanup path, and one
+interrupted-assignment guard, repeated direct-call exceptional cleanup paths, and one
 pending `break` or `continue` destination from a supported `while`, `for`, or
 `foreach`.
 Other handler/finally combinations and handled non-call throwable operations

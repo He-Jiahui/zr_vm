@@ -11,8 +11,8 @@ accepted by the SemanticIR-to-ExecIR builder.
 - The `finally` body contains only nested blocks and linear expression
   statements. The protected body may additionally contain one or more
   same-kind linear `return` or `throw` sites under statement-form conditionals,
-  or one resolved direct call outside
-  conditional control. The call may take no arguments or one exact,
+  or one or more resolved direct calls outside
+  conditional control. Each call may take no arguments or one exact,
   ownership/reference/GC-neutral `int` identifier or integer literal by value.
   When directly nested in a supported `while`,
   linear statement-form `for`, or statically typed `foreach`, it may instead
@@ -35,12 +35,12 @@ accepted by the SemanticIR-to-ExecIR builder.
   Cleanup loads the selector and ends in `CLEANUP_DISPATCH`, with an ordered
   `SWITCH_CASE` to the abrupt block and `SWITCH_DEFAULT` to the normal join.
   The abrupt block reloads the preserved payload Place after cleanup.
-- For the protected-call shape, the `INVOKE` exception edge reaches a dedicated
-  landing block that defines `EXCEPTION_PAYLOAD`, stores it in the private
-  payload Place, selects `true`, and enters cleanup. The normal edge retains
-  the pre-call `false` selector and enters the same cleanup. Dispatch then
-  rethrows the reloaded payload or reaches the normal join without using the
-  interrupted call result.
+- For the protected-call shape, each `INVOKE` exception edge reaches the same
+  dedicated landing block. That block defines one `EXCEPTION_PAYLOAD`, stores
+  it in the private payload Place, selects `true`, and enters cleanup. Normal
+  edges retain the pre-call `false` selector and enter the same cleanup.
+  Dispatch then rethrows the reloaded payload or reaches the normal join
+  without using an interrupted call result.
 - For the loop-transfer shape, the pending destination is the existing loop
   join for `break`, the `while` condition block for a `while` `continue`, the
   `for` step block for a `for` `continue`, or the foreach move-next block for a
@@ -60,8 +60,8 @@ cases live in `tests/parser/test_ssa_source_cleanup_cfg_loop.inc`.
 ## Fail-closed boundary
 
 The same test keeps nonlinear return/throw payloads, mixed return/throw sites,
-two protected calls, and a combined catch-plus-finally statement on the legacy
-path. Converting, non-value, multiple, or conditional arguments,
+and a combined catch-plus-finally statement on the legacy path. Converting,
+non-value, multiple, or conditional arguments,
 conditional calls, declarations, nested nonlinear control flow, ownership
 cleanup, and mixed explicit/exceptional completion are also outside this
 slice. Those shapes must not publish a partial cleanup graph or restart a
@@ -83,12 +83,13 @@ still require later source milestones.
 
 ## Validation evidence (2026-09-20)
 
-- The focused source cleanup suite passes 34/34 on Windows MSVC and WSL GCC and
-  Clang. It includes terminal and conditional `break`/`continue`, repeated
-  same-kind transfers across `while`/`for`/`foreach`, and explicit mixed-kind
-  fail-closed cases.
+- The focused source cleanup suite passes 35/35 on Windows MSVC and WSL GCC and
+  Clang. It includes repeated protected invokes sharing one exception landing,
+  the dynamic-call fail-closed guard, terminal and conditional
+  `break`/`continue`, repeated same-kind transfers across
+  `while`/`for`/`foreach`, and explicit mixed-kind fail-closed cases.
 - The adjacent 14-test SSA matrix passes 14/14 on all three toolchains.
-- GCC ASan+UBSan passes the focused suite 34/34 five consecutive times, with
+- GCC ASan+UBSan passes the focused suite 35/35 five consecutive times, with
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.

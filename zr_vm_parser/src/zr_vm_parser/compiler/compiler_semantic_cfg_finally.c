@@ -45,7 +45,6 @@ typedef struct SZrCompilerSemanticFinallyFlowInfo {
     TZrUInt32 abruptSiteCount;
     TZrUInt32 exceptionalSiteCount;
     const SZrAstNode *completionExpression;
-    const SZrAstNode *exceptionExpression;
 } SZrCompilerSemanticFinallyFlowInfo;
 
 static TZrBool compiler_semantic_cfg_finally_is_supported_direct_call(
@@ -76,6 +75,41 @@ static TZrBool compiler_semantic_cfg_finally_call_is_resolved(
     }
     return ZrParser_TypeEnvironment_LookupFunction(
             cs->typeEnv, target->data.identifier.name, &functionInfo);
+}
+
+static TZrBool compiler_semantic_cfg_finally_calls_are_resolved(
+        SZrCompilerState *cs,
+        const SZrAstNode *node) {
+    TZrSize index;
+
+    if (node == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (node->type == ZR_AST_EXPRESSION_STATEMENT) {
+        return (TZrBool)(
+                !compiler_semantic_cfg_finally_is_supported_direct_call(
+                        node->data.expressionStatement.expr) ||
+                compiler_semantic_cfg_finally_call_is_resolved(
+                        cs, node->data.expressionStatement.expr));
+    }
+    if (node->type == ZR_AST_BLOCK) {
+        if (node->data.block.body == ZR_NULL) {
+            return ZR_TRUE;
+        }
+        for (index = 0U; index < node->data.block.body->count; index++) {
+            if (!compiler_semantic_cfg_finally_calls_are_resolved(
+                        cs, node->data.block.body->nodes[index])) {
+                return ZR_FALSE;
+            }
+        }
+    } else if (node->type == ZR_AST_IF_EXPRESSION) {
+        return (TZrBool)(
+                compiler_semantic_cfg_finally_calls_are_resolved(
+                        cs, node->data.ifExpression.thenExpr) &&
+                compiler_semantic_cfg_finally_calls_are_resolved(
+                        cs, node->data.ifExpression.elseExpr));
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_semantic_cfg_finally_protected_flow(
@@ -123,18 +157,12 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
                     info.completionExpression =
                             statementInfo.completionExpression;
                 }
-                if (statementInfo.exceptionExpression != ZR_NULL) {
-                    info.exceptionExpression =
-                            statementInfo.exceptionExpression;
-                }
             }
         }
     } else if (node->type == ZR_AST_EXPRESSION_STATEMENT) {
         if (compiler_semantic_cfg_finally_is_supported_direct_call(
                     node->data.expressionStatement.expr)) {
             info.exceptionalSiteCount = 1U;
-            info.exceptionExpression =
-                    node->data.expressionStatement.expr;
         } else if (!compiler_semantic_cfg_expression_is_linear(
                            node->data.expressionStatement.expr)) {
             return ZR_FALSE;
@@ -207,7 +235,6 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
              completionFlow == ZR_COMPILER_SEMANTIC_FINALLY_FLOW_THROW));
     if ((info.abruptSiteCount > 1U && !multipleLoopTransfer &&
          !multiplePayloadCompletion) ||
-        info.exceptionalSiteCount > 1U ||
         (info.exceptionalSiteCount != 0U &&
          info.abruptSiteCount != 0U) ||
         ((info.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN) != 0U &&
@@ -296,8 +323,8 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
             compiler_semantic_cfg_finally_loop_target_is_supported(
                     cs, flowInfo.flow) &&
             (flowInfo.exceptionalSiteCount == 0U ||
-             compiler_semantic_cfg_finally_call_is_resolved(
-                     cs, flowInfo.exceptionExpression)) &&
+             compiler_semantic_cfg_finally_calls_are_resolved(
+                     cs, statement->block)) &&
             compiler_semantic_cfg_finally_block_is_linear(
                     statement->finallyBlock));
 }
