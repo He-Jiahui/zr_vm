@@ -333,6 +333,78 @@ static void test_two_arguments_with_conversion_stay_on_legacy_path(void) {
     free_source(&compiler, ast);
 }
 
+static void test_boolean_argument_is_captured_before_exception_cleanup(void) {
+    static const TZrChar source[] =
+            "fn choose(flag: bool): int { return 1; }\n"
+            "var enabled: bool = true;\n"
+            "var seed: int = 7;\n"
+            "try { choose(enabled); } finally { seed = 9; }\n";
+    static TZrChar sourceName[] =
+            "boolean_argument_try_finally_cleanup.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *callInstruction = ZR_NULL;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callInstruction = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(callInstruction);
+    TEST_ASSERT_EQUAL_UINT32(2U, callInstruction->operandCount);
+
+    free_source(&compiler, ast);
+}
+
+static void test_boolean_literal_argument_is_captured_before_exception_cleanup(
+        void) {
+    static const TZrChar source[] =
+            "fn choose(flag: bool): int { return 1; }\n"
+            "var seed: int = 7;\n"
+            "try { choose(false); } finally { seed = 9; }\n";
+    static TZrChar sourceName[] =
+            "boolean_literal_argument_try_finally_cleanup.zr";
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(
+            &compiler, source, sizeof(source) - 1U, sourceName);
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *callInstruction = ZR_NULL;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            callInstruction = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(callInstruction);
+    TEST_ASSERT_EQUAL_UINT32(2U, callInstruction->operandCount);
+
+    free_source(&compiler, ast);
+}
+
 static void test_converted_argument_try_finally_stays_on_legacy_path(void) {
     static const TZrChar source[] =
             "fn widen(value: float): float { return value; }\n"
