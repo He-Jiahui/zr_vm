@@ -34,6 +34,12 @@ int main(void) {
         values[0].flags = 0u;
         assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
         assert(layout.frame.layoutHash == originalLayoutHash);
+        values[1].typeToken = 99u;
+        assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+        assert(layout.frame.layoutHash != originalLayoutHash);
+        values[1].typeToken = 12u;
+        assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+        assert(layout.frame.layoutHash == originalLayoutHash);
         request.returnBufferSize = 9u;
         assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
         assert(layout.frame.frameByteSize % layout.frame.frameByteAlign == 0u);
