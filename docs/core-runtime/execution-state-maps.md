@@ -67,6 +67,11 @@ source. Sharing is checked as a full capacity-sized byte-range overlap, not only
 as equal base pointers, so an interior pool pointer also fails before either map
 is changed or freed.
 
+The same storage-shape contract applies inside each map: entries, live values,
+roots, and owner states are four independently owned, pairwise-disjoint ranges.
+Clone and materialization reject internal base or interior overlap before
+copying data or publishing state.
+
 ## Current limitations
 
 The initial implementation is deliberately a logical contract rather than a

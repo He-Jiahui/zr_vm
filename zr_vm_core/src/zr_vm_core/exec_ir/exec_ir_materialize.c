@@ -108,19 +108,6 @@ static TZrBool zr_state_map_copy_array(void **destination,
     return ZR_TRUE;
 }
 
-static TZrBool zr_state_map_storage_shape_valid(const SZrExecIrStateMap *map) {
-    return (TZrBool)(map != ZR_NULL &&
-                     map->entryCount <= map->entryCapacity &&
-                     map->valueCount <= map->valueCapacity &&
-                     map->rootCount <= map->rootCapacity &&
-                     map->ownerStateCount <= map->ownerStateCapacity &&
-                     ((map->entryCapacity == 0u) == (map->entries == ZR_NULL)) &&
-                     ((map->valueCapacity == 0u) == (map->valuePool == ZR_NULL)) &&
-                     ((map->rootCapacity == 0u) == (map->rootPool == ZR_NULL)) &&
-                     ((map->ownerStateCapacity == 0u) ==
-                          (map->ownerStatePool == ZR_NULL)));
-}
-
 typedef struct SZrStateMapStorageSpan {
     const void *storage;
     TZrUInt32 capacity;
@@ -158,6 +145,45 @@ static TZrBool zr_state_map_storage_spans_overlap(
     leftEnd = leftStart + (uintptr_t)leftBytes;
     rightEnd = rightStart + (uintptr_t)rightBytes;
     return (TZrBool)(leftStart < rightEnd && rightStart < leftEnd);
+}
+
+static TZrBool zr_state_map_storage_shape_valid(const SZrExecIrStateMap *map) {
+    SZrStateMapStorageSpan storage[4];
+    TZrUInt32 index;
+    TZrUInt32 other;
+
+    if (map == ZR_NULL || map->entryCount > map->entryCapacity ||
+        map->valueCount > map->valueCapacity ||
+        map->rootCount > map->rootCapacity ||
+        map->ownerStateCount > map->ownerStateCapacity ||
+        ((map->entryCapacity == 0u) != (map->entries == ZR_NULL)) ||
+        ((map->valueCapacity == 0u) != (map->valuePool == ZR_NULL)) ||
+        ((map->rootCapacity == 0u) != (map->rootPool == ZR_NULL)) ||
+        ((map->ownerStateCapacity == 0u) !=
+             (map->ownerStatePool == ZR_NULL))) {
+        return ZR_FALSE;
+    }
+    storage[0].storage = map->entries;
+    storage[0].capacity = map->entryCapacity;
+    storage[0].elementSize = sizeof(*map->entries);
+    storage[1].storage = map->valuePool;
+    storage[1].capacity = map->valueCapacity;
+    storage[1].elementSize = sizeof(*map->valuePool);
+    storage[2].storage = map->rootPool;
+    storage[2].capacity = map->rootCapacity;
+    storage[2].elementSize = sizeof(*map->rootPool);
+    storage[3].storage = map->ownerStatePool;
+    storage[3].capacity = map->ownerStateCapacity;
+    storage[3].elementSize = sizeof(*map->ownerStatePool);
+    for (index = 0u; index < 4u; ++index) {
+        for (other = index + 1u; other < 4u; ++other) {
+            if (zr_state_map_storage_spans_overlap(&storage[index],
+                                                   &storage[other])) {
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool zr_state_map_storage_is_shared(const SZrExecIrStateMap *left,
@@ -707,14 +733,8 @@ static TZrBool zr_state_map_validate(const SZrExecIrFunction *function,
     TZrUInt32 index;
     TZrUInt32 other;
 
-    if (!zr_state_map_function_values_valid(function, diagnostic) || map == ZR_NULL ||
-        map->entryCount > map->entryCapacity || map->valueCount > map->valueCapacity ||
-        map->rootCount > map->rootCapacity ||
-        map->ownerStateCount > map->ownerStateCapacity ||
-        (map->entryCount != 0u && map->entries == ZR_NULL) ||
-        (map->valueCount != 0u && map->valuePool == ZR_NULL) ||
-        (map->rootCount != 0u && map->rootPool == ZR_NULL) ||
-        (map->ownerStateCount != 0u && map->ownerStatePool == ZR_NULL) ||
+    if (!zr_state_map_function_values_valid(function, diagnostic) ||
+        !zr_state_map_storage_shape_valid(map) ||
         map->functionToken == 0u || map->functionToken != function->functionToken ||
         map->signatureHash != function->signatureHash ||
         map->generation != function->contract.generation) {
