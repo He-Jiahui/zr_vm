@@ -34,6 +34,10 @@ precise metadata is an error, not a whole-frame or whole-heap scan fallback.
 Runtime GC integration and native pin lifetimes remain owned by later core
 adapters.
 
+Observation rejects malformed slot count/capacity and storage-count
+relationships before changing frame bytes, writeback values, or invalidation
+state.
+
 The core adapter exposes the same boundary to runtime-neutral ExecBC, AOT and
 JIT consumers through `ZrCore_ExecutionFrameRootMap_Build` and
 `ZrCore_Execution_VisitFrameRoots`. Root-map validation checks the layout hash

@@ -38,12 +38,20 @@ int main(void) {
     map.roots[0].kind = ZR_EXEC_IR_FRAME_ROOT_MANAGED;
     {
         TZrUInt64 writeback[2] = {11u, 22u};
-        TZrUInt32 invalidated[1] = {UINT32_MAX};
+        TZrUInt32 invalidated[2] = {UINT32_MAX, UINT32_MAX};
         SZrExecIrFrameObservation observation = {
             &layout, frame, ZR_NULL, 0u, writeback, 2u,
-            invalidated, 1u, 77u
+            invalidated, 2u, 77u
         };
         assert(layout.frame.storageSlotCount == 2u);
+        layout.frame.slotCapacity = layout.frame.slotCount - 1u;
+        assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+        assert(writeback[0] == 11u && writeback[1] == 22u);
+        assert(invalidated[0] == UINT32_MAX && invalidated[1] == UINT32_MAX);
+        assert(observation.invalidatedCount == 77u);
+        layout.frame.slotCapacity = layout.frame.slotCount;
+        observation.invalidatedCapacity = 1u;
         assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
         assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
         assert(writeback[0] == 11u && writeback[1] == 22u);
