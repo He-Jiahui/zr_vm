@@ -342,6 +342,10 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
     contractHash = backend_aot_ir_adapter_hash_u32(
             contractHash, (TZrUInt32)options->strictFloatingPoint);
     contractHash = backend_aot_ir_adapter_hash_u32(
+            contractHash, (TZrUInt32)options->allowRuntimeBridge);
+    contractHash = backend_aot_ir_adapter_hash_u32(
+            contractHash, (TZrUInt32)options->allowInterpreterFallback);
+    contractHash = backend_aot_ir_adapter_hash_u32(
             contractHash, outFacts->nativeLoweredCount);
     contractHash = backend_aot_ir_adapter_hash_u32(
             contractHash, outFacts->runtimeBridgeCount);

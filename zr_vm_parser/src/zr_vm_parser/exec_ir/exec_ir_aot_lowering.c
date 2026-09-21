@@ -228,6 +228,9 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
     contractHash = emit_hash_mix(UINT64_C(1469598103934665603), module->moduleHash);
     contractHash = emit_hash_mix(contractHash, target);
     contractHash = emit_hash_mix(contractHash, options->strictFloatingPoint ? 1u : 0u);
+    contractHash = emit_hash_mix(contractHash, options->allowRuntimeBridge ? 1u : 0u);
+    contractHash = emit_hash_mix(contractHash,
+                                 options->allowInterpreterFallback ? 1u : 0u);
     contractHash = emit_hash_mix(contractHash, result->sourceHash);
     contractHash = emit_hash_mix(contractHash, result->nativeCount);
     contractHash = emit_hash_mix(contractHash, result->runtimeBridgeCount);

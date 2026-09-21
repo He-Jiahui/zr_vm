@@ -41,6 +41,9 @@ block.
 `ZrCore_AotIr_IsRelocationFree` rejects module or function relocation rows.
 Unimplemented operation families should be reported by a lowering diagnostic;
 they must not silently fall back to semantic decoding of `SZrInstruction`.
+Emitter contract hashes include the target, strict-floating mode, and both
+runtime-bridge and interpreter-fallback policies, so changing a permitted
+degradation path cannot reuse an artifact identity from another policy.
 
 The focused fixture is
 `tests/parser/test_ssa_aotir_contract.c`.  It exercises deterministic hashing,

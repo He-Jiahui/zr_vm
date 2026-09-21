@@ -127,6 +127,15 @@ static void adapter_and_backend_facts_are_shared(void) {
     assert(llvmFacts.runtimeBridgeCount == cFacts.runtimeBridgeCount);
     assert(llvmFacts.sourceHash == cFacts.sourceHash);
     assert(llvmFacts.contractHash != cFacts.contractHash);
+    {
+        SZrAotIrEmitOptions policyOptions = options;
+        SZrBackendAotIrFacts policyFacts;
+        policyOptions.target = ZR_AOT_IR_EMITTER_C;
+        policyOptions.allowInterpreterFallback = ZR_FALSE;
+        assert(backend_aot_ir_c_emit(&module, &policyOptions, &policyFacts,
+                                     &diagnostic));
+        assert(policyFacts.contractHash != cFacts.contractHash);
+    }
     assert(ZrCore_AotIr_ValidateModule(&module, &irDiagnostic) == ZR_AOT_IR_OK);
 
     /* A caller cannot smuggle a dangling lowering array into the facts

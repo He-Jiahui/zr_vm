@@ -96,6 +96,7 @@ int main(void) {
     cOptions.target = ZR_AOT_IR_EMITTER_C;
     cOptions.strictFloatingPoint = ZR_TRUE;
     cOptions.allowRuntimeBridge = ZR_TRUE;
+    cOptions.allowInterpreterFallback = ZR_TRUE;
     assert(ZrParser_AotIr_EmitC(&module, &cOptions, &cResult, &diagnostic));
     assert(cResult.nativeCount == 3u);
     assert(cResult.runtimeBridgeCount == 2u);
@@ -106,6 +107,14 @@ int main(void) {
     assert(cResult.runtimeBridgeCount == llvmResult.runtimeBridgeCount);
     assert(cResult.sourceHash == llvmResult.sourceHash);
     assert(cResult.contractHash != llvmResult.contractHash);
+    {
+        SZrAotIrEmitOptions policyOptions = cOptions;
+        SZrAotIrEmitResult policyResult;
+        policyOptions.allowInterpreterFallback = ZR_FALSE;
+        assert(ZrParser_AotIr_EmitC(&module, &policyOptions, &policyResult,
+                                    &diagnostic));
+        assert(policyResult.contractHash != cResult.contractHash);
+    }
     cOptions.allowRuntimeBridge = ZR_FALSE;
     assert(!ZrParser_AotIr_EmitC(&module, &cOptions, &cResult, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_UNSUPPORTED);
