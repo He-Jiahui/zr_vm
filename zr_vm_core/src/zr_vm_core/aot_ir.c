@@ -82,6 +82,9 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                                const SZrAotIrFunction *function,
                                                TZrUInt32 functionIndex,
                                                SZrAotIrDiagnostic *diagnostic) {
+    const TZrUInt32 knownBlockFlags =
+            ZR_EXEC_IR_BLOCK_FLAG_ENTRY | ZR_EXEC_IR_BLOCK_FLAG_COLD |
+            ZR_EXEC_IR_BLOCK_FLAG_CLEANUP | ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION;
     if (function->id == ZR_AOT_IR_ID_INVALID || function->functionToken == 0u ||
         function->signatureHash == 0u || function->frameLayout.layoutHash == 0u ||
         !aot_ir_alignment_valid(function->frameLayout.frameByteAlign) ||
@@ -112,11 +115,21 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     for (TZrUInt32 i = 0u; i < function->blockCount; ++i) {
         const SZrAotIrBlock *block = &function->blocks[i];
         if (block->id == ZR_AOT_IR_ID_INVALID ||
+            (block->flags & ~knownBlockFlags) != 0u ||
             !aot_ir_range_valid(block->instructions, function->instructionCount) ||
             !aot_ir_range_valid(block->predecessors, function->successorCount) ||
             !aot_ir_range_valid(block->successors, function->successorCount)) {
-            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id, block->id, 0u,
-                               i, function->instructionCount, block->instructions.offset);
+            return aot_ir_fail(diagnostic,
+                               (block->flags & ~knownBlockFlags) != 0u
+                                   ? ZR_AOT_IR_INVALID_CFG
+                                   : ZR_AOT_IR_INVALID_RANGE,
+                               function->id, block->id, 0u, i,
+                               (block->flags & ~knownBlockFlags) != 0u
+                                   ? knownBlockFlags
+                                   : function->instructionCount,
+                               (block->flags & ~knownBlockFlags) != 0u
+                                   ? block->flags
+                                   : block->instructions.offset);
         }
         for (TZrUInt32 j = 0u; j < i; ++j) {
             if (function->blocks[j].id == block->id) {

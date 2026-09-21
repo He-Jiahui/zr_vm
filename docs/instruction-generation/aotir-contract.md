@@ -14,6 +14,8 @@ contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator and
 edge-target membership, state-map instruction membership, effect pairing, frame
 layout, phi predecessor membership, and module/function hash identity. A
 non-PHI instruction carrying phi incoming rows is rejected.
+Block flags are likewise limited to the canonical entry/cold/cleanup/exception
+bits.
 
 Block predecessor and successor ranges are views over the same numeric edge
 pool; their bounds use that pool's count, so parallel edges remain representable

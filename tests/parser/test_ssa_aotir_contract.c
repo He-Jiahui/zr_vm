@@ -161,6 +161,18 @@ int main(void) {
         assert(diagnostic.instructionId == malformedInstruction.id);
         assert(diagnostic.actual == malformedSuccessor[0]);
     }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrBlock malformedBlock = blocks[0];
+        malformedBlock.flags = (TZrUInt32)1u << 8u;
+        malformedFunction.blocks = &malformedBlock;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.blockId == malformedBlock.id);
+        assert(diagnostic.actual == malformedBlock.flags);
+    }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_RELOCATION);
