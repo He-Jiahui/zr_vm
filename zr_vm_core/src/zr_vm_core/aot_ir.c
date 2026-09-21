@@ -129,6 +129,18 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, function->id, 0u, 0u,
                            functionIndex, 0u, 0u);
     }
+    for (TZrUInt32 i = 0u; i < function->operandCount; ++i) {
+        if (function->operandPool[i] == ZR_AOT_IR_ID_INVALID) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u, 0u,
+                               i, 1u, function->operandPool[i]);
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->resultCount; ++i) {
+        if (function->resultPool[i] == ZR_AOT_IR_ID_INVALID) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u, 0u,
+                               i, 1u, function->resultPool[i]);
+        }
+    }
     for (TZrUInt32 i = 0u; i < function->blockCount; ++i) {
         const SZrAotIrBlock *block = &function->blocks[i];
         if (block->id == ZR_AOT_IR_ID_INVALID ||
