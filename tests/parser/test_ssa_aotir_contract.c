@@ -133,6 +133,24 @@ int main(void) {
         assert(diagnostic.actual == malformedOperands[0]);
     }
     {
+        const TZrUInt32 malformedSuccessors[] = {2u};
+        const SZrAotIrBlock malformedBlocks[] = {
+            {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 0u},
+             {0u, 1u}, 1u},
+            {2u, 0u, {0u, 0u}, {1u, 0u}, {0u, 0u}, 0u}
+        };
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.blocks = malformedBlocks;
+        malformedFunction.blockCount = 2u;
+        malformedFunction.successorPool = malformedSuccessors;
+        malformedFunction.successorCount = 1u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.functionId == function.id);
+    }
+    {
         const TZrUInt32 malformedSuccessor[] = {99u, 99u};
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;

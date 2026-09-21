@@ -46,6 +46,18 @@ static TZrBool aot_ir_block_id_exists(const SZrAotIrFunction *function,
     return ZR_FALSE;
 }
 
+static TZrUInt32 aot_ir_edge_occurrences(const SZrAotIrFunction *function,
+                                          SZrAotIrRange range,
+                                          TZrUInt32 targetBlockId) {
+    TZrUInt32 count = 0u;
+    for (TZrUInt32 index = 0u; index < range.count; ++index) {
+        if (function->successorPool[range.offset + index] == targetBlockId) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 static TZrUInt64 aot_ir_hash_byte(TZrUInt64 hash, TZrUInt8 byte) {
     return (hash ^ byte) * UINT64_C(1099511628211);
 }
@@ -198,6 +210,20 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
             if (!aot_ir_block_id_exists(function, source)) {
                 return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
                                    block->id, 0u, j, function->blockCount, source);
+            }
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->blockCount; ++i) {
+        const SZrAotIrBlock *source = &function->blocks[i];
+        for (TZrUInt32 j = 0u; j < function->blockCount; ++j) {
+            const SZrAotIrBlock *target = &function->blocks[j];
+            TZrUInt32 outgoing = aot_ir_edge_occurrences(
+                    function, source->successors, target->id);
+            TZrUInt32 incoming = aot_ir_edge_occurrences(
+                    function, target->predecessors, source->id);
+            if (outgoing != incoming) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
+                                   source->id, 0u, j, outgoing, incoming);
             }
         }
     }

@@ -28,7 +28,9 @@ zero value ID. Every function must publish exactly one entry block.
 
 Block predecessor and successor ranges are views over the same numeric edge
 pool; their bounds use that pool's count, so parallel edges remain representable
-without treating the block count as an edge-capacity limit.
+without treating the block count as an edge-capacity limit. Each source/target
+edge occurrence must have a matching predecessor occurrence in the target
+block.
 
 `ZrCore_AotIr_IsRelocationFree` rejects module or function relocation rows.
 Unimplemented operation families should be reported by a lowering diagnostic;
