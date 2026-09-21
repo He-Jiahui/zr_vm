@@ -23,6 +23,8 @@ Emitter options use the same strict boolean contract as the backend adapter;
 noncanonical `TZrBool` values are rejected as `ZR_AOT_IR_INVALID_ARGUMENT`.
 The pointer-free lowering view is valid only when its record count fits within
 the declared capacity and a nonzero count has a records array.
+`ZrParser_AotIr_LowerShared` reports `ZR_AOT_IR_INVALID_ARGUMENT` through its
+diagnostic for a missing result, module, records array, or zero capacity.
 
 The result is a target contract record, not generated source or LLVM bitcode.
 It carries the source hash, coverage counts and a deterministic contract hash

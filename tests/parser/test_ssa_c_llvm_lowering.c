@@ -68,6 +68,8 @@ int main(void) {
     module.target.pointerSize = (TZrUInt32)sizeof(void *);
     module.target.targetTripleHash = 67u;
     module.target.abiHash = 66u;
+    assert(!ZrParser_AotIr_LowerShared(&module, ZR_NULL, &diagnostic));
+    assert(diagnostic.status == ZR_AOT_IR_INVALID_ARGUMENT);
     result.records = records;
     result.capacity = 5u;
     if (!ZrParser_AotIr_LowerShared(&module, &result, &diagnostic)) {

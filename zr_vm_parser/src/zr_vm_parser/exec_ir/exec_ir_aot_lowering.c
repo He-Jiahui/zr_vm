@@ -65,6 +65,9 @@ TZrBool ZrParser_AotIr_LowerShared(const SZrAotIrModule *module,
         memset(diagnostic, 0, sizeof(*diagnostic));
     }
     if (result == ZR_NULL) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
+        }
         return ZR_FALSE;
     }
     result->count = 0u;
@@ -73,6 +76,9 @@ TZrBool ZrParser_AotIr_LowerShared(const SZrAotIrModule *module,
     result->sourceHash = 0u;
     result->loweringHash = 0u;
     if (module == ZR_NULL || result->records == ZR_NULL || result->capacity == 0u) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
+        }
         return ZR_FALSE;
     }
     if (ZrCore_AotIr_ValidateModule(module, diagnostic) != ZR_AOT_IR_OK ||
