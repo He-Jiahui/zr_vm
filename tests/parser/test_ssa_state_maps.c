@@ -18,6 +18,7 @@ void test_state_map_materialization_rejects_unknown_value_enums(void);
 void test_state_map_materialization_rejects_unreachable_handler(void);
 void test_state_map_materialization_requires_throw_boundary_for_handler(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
+void test_state_map_clone_rejects_aliased_destination(void);
 void test_state_map_materialization_successfully_copies_logical_values(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
 void test_state_map_rejects_borrowed_value_across_suspend(void);
@@ -407,6 +408,20 @@ void test_state_map_clone_copies_pools_and_lifecycle(void) {
     ZrCore_ExecIr_StateMapFree(&clone);
 }
 
+void test_state_map_clone_rejects_aliased_destination(void) {
+    SZrExecIrStateMap source;
+    SZrExecIrStateMap destination;
+
+    map_with_one_entry(&source, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    destination = source;
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_StateMapClone(&source, &destination));
+    memset(&destination, 0, sizeof(destination));
+    TEST_ASSERT_NOT_NULL(source.entries);
+    TEST_ASSERT_EQUAL(42u, source.entries[0].sourceId);
+    ZrCore_ExecIr_StateMapFree(&source);
+}
+
 void test_state_map_materialization_successfully_copies_logical_values(void) {
     SZrExecIrStateMap map;
     SZrExecIrFunction function;
@@ -693,6 +708,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_rejects_unreachable_handler);
     RUN_TEST(test_state_map_materialization_requires_throw_boundary_for_handler);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
+    RUN_TEST(test_state_map_clone_rejects_aliased_destination);
     RUN_TEST(test_state_map_materialization_successfully_copies_logical_values);
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);
     RUN_TEST(test_state_map_rejects_borrowed_value_across_suspend);

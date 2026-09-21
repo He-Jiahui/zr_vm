@@ -56,7 +56,9 @@ enum domains, including negative enum casts on compilers with signed enums.
 
 State-map cloning is deep: entries and both ID pools are independently owned.
 Lifecycle operations are safe for an empty map and can be used by function
-clone/free paths.
+clone/free paths. A distinct clone destination must already have a coherent
+initialized storage shape and must not share any side-table allocation with the
+source; otherwise cloning fails before either map is changed or freed.
 
 ## Current limitations
 

@@ -107,6 +107,48 @@ static TZrBool zr_state_map_copy_array(void **destination,
     return ZR_TRUE;
 }
 
+static TZrBool zr_state_map_storage_shape_valid(const SZrExecIrStateMap *map) {
+    return (TZrBool)(map != ZR_NULL &&
+                     map->entryCount <= map->entryCapacity &&
+                     map->valueCount <= map->valueCapacity &&
+                     map->rootCount <= map->rootCapacity &&
+                     map->ownerStateCount <= map->ownerStateCapacity &&
+                     ((map->entryCapacity == 0u) == (map->entries == ZR_NULL)) &&
+                     ((map->valueCapacity == 0u) == (map->valuePool == ZR_NULL)) &&
+                     ((map->rootCapacity == 0u) == (map->rootPool == ZR_NULL)) &&
+                     ((map->ownerStateCapacity == 0u) ==
+                          (map->ownerStatePool == ZR_NULL)));
+}
+
+static TZrBool zr_state_map_storage_is_shared(const SZrExecIrStateMap *left,
+                                               const SZrExecIrStateMap *right) {
+    const void *leftStorage[] = {
+        left->entries, left->valuePool, left->rootPool, left->ownerStatePool
+    };
+    const void *rightStorage[] = {
+        right->entries, right->valuePool, right->rootPool, right->ownerStatePool
+    };
+    TZrUInt32 leftIndex;
+    TZrUInt32 rightIndex;
+
+    for (leftIndex = 0u;
+         leftIndex < (TZrUInt32)(sizeof(leftStorage) / sizeof(leftStorage[0]));
+         ++leftIndex) {
+        if (leftStorage[leftIndex] == ZR_NULL) {
+            continue;
+        }
+        for (rightIndex = 0u;
+             rightIndex < (TZrUInt32)(sizeof(rightStorage) /
+                                      sizeof(rightStorage[0]));
+             ++rightIndex) {
+            if (leftStorage[leftIndex] == rightStorage[rightIndex]) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
 void ZrCore_ExecIr_StateMapInit(SZrExecIrStateMap *map) {
     if (map != ZR_NULL) {
         memset(map, 0, sizeof(*map));
@@ -133,14 +175,9 @@ TZrBool ZrCore_ExecIr_StateMapClone(const SZrExecIrStateMap *source,
     if (source == destination) {
         return ZR_TRUE;
     }
-    if (source->entryCount > source->entryCapacity ||
-        source->valueCount > source->valueCapacity ||
-        source->rootCount > source->rootCapacity ||
-        source->ownerStateCount > source->ownerStateCapacity ||
-        (source->entryCount != 0u && source->entries == ZR_NULL) ||
-        (source->valueCount != 0u && source->valuePool == ZR_NULL) ||
-        (source->rootCount != 0u && source->rootPool == ZR_NULL) ||
-        (source->ownerStateCount != 0u && source->ownerStatePool == ZR_NULL)) {
+    if (!zr_state_map_storage_shape_valid(source) ||
+        !zr_state_map_storage_shape_valid(destination) ||
+        zr_state_map_storage_is_shared(source, destination)) {
         return ZR_FALSE;
     }
 
