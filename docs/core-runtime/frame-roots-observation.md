@@ -19,6 +19,9 @@ slots are never scanned by accident. Derived entries retain their base slot and
 offset metadata for moving collectors and stack relocation.
 Root-map construction and visitation both reject unknown root kinds before an
 address is formed or a callback is invoked.
+Construction also validates slot count/capacity relationships and required
+physical and logical tables before allocating a candidate map; failure leaves
+the caller's existing map intact.
 
 `ZrParser_ExecIr_ObserveFrame` provides a bounded materialization/writeback
 boundary for debugger and deoptimization consumers. It validates the descriptor

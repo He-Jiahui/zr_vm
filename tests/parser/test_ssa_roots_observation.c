@@ -23,6 +23,10 @@ int main(void) {
     assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
     assert(ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d) && count == 2u);
+    layout.frame.slotCapacity = layout.frame.slotCount - 1u;
+    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && map.rootCount == 2u);
+    layout.frame.slotCapacity = layout.frame.slotCount;
     count = 0u;
     map.rootCapacity = map.rootCount - 1u;
     assert(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
