@@ -147,6 +147,9 @@ int main(void) {
         assert(observedRoot == rootValue && writeback[0] == rootValue);
         assert(writeback[2] == scalarValues[2]);
     }
+    specs[1].baseValueId = 3u;
+    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
+    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     specs[1].baseValueId = 99u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);

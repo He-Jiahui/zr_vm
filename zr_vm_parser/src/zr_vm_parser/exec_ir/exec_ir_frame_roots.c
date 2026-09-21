@@ -111,7 +111,7 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
     }
     for (i = 0u; i < specCount; ++i) {
         TZrUInt32 physical, basePhysical = UINT32_MAX, prior;
-        EZrExecIrPackedSlotClass slotClass;
+        EZrExecIrPackedSlotClass slotClass, baseSlotClass;
         const SZrExecIrFrameRootSpec *s = &specs[i];
         if (!find_physical(layout, s->valueId, &physical, &slotClass) ||
             !root_kind_valid(s->kind) ||
@@ -123,7 +123,10 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
              slotClass != ZR_EXEC_IR_PACKED_SLOT_INLINE_SPAN &&
              slotClass != ZR_EXEC_IR_PACKED_SLOT_BOXED) ||
             (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED &&
-             !find_physical(layout, s->baseValueId, &basePhysical, ZR_NULL)) ||
+             (!find_physical(layout, s->baseValueId, &basePhysical,
+                             &baseSlotClass) ||
+              (baseSlotClass != ZR_EXEC_IR_PACKED_SLOT_REF &&
+               baseSlotClass != ZR_EXEC_IR_PACKED_SLOT_BOXED))) ||
             (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED &&
              s->baseValueId == s->valueId)) {
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, s->valueId);

@@ -30,6 +30,7 @@ the caller's existing map intact.
 Managed and derived roots are accepted only for packed REF/BOXED values, while
 inline-field roots require INLINE_SPAN/BOXED storage. Scalar bit patterns are
 therefore never promoted to roots solely because they resemble an address.
+The base of a derived root must independently be REF/BOXED storage.
 
 `ZrParser_ExecIr_ObserveFrame` provides a bounded materialization/writeback
 boundary for debugger and deoptimization consumers. It validates the descriptor
