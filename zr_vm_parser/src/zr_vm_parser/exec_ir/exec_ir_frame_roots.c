@@ -117,7 +117,8 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
                                         SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 i;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
-    if (map == ZR_NULL || (map->rootCount != 0u && map->roots == ZR_NULL) ||
+    if (map == ZR_NULL || map->rootCount > map->rootCapacity ||
+        (map->rootCount != 0u && map->roots == ZR_NULL) ||
         frameBase == ZR_NULL || visitor == ZR_NULL) {
         root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u); return ZR_FALSE;
     }
