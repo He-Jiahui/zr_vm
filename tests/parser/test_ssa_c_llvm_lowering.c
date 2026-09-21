@@ -123,9 +123,12 @@ int main(void) {
     {
         SZrAotIrEmitOptions malformedOptions = cOptions;
         malformedOptions.strictFloatingPoint = (TZrBool)2u;
+        cResult.nativeCount = 99u;
         assert(!ZrParser_AotIr_EmitC(&module, &malformedOptions, &cResult,
                                      &diagnostic));
         assert(diagnostic.status == ZR_AOT_IR_INVALID_ARGUMENT);
+        assert(cResult.nativeCount == 0u);
+        assert(cResult.runtimeBridgeCount == 0u);
     }
     return 0;
 }

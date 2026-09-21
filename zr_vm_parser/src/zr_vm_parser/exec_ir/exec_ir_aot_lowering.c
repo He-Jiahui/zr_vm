@@ -146,6 +146,9 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
     SZrAotIrLoweringResult lowering;
     TZrUInt32 capacity = 0u;
     TZrUInt64 contractHash;
+    if (result != ZR_NULL) {
+        memset(result, 0, sizeof(*result));
+    }
     if (result == ZR_NULL || module == ZR_NULL || module->functions == ZR_NULL ||
         module->functionCount == 0u || options == ZR_NULL ||
         !lowering_bool_valid(options->strictFloatingPoint) ||
@@ -159,7 +162,6 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
         }
         return ZR_FALSE;
     }
-    memset(result, 0, sizeof(*result));
     for (TZrUInt32 f = 0u; f < module->functionCount; ++f) {
         if (module->functions[f].instructionCount > UINT32_MAX - capacity) {
             if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_RANGE;
