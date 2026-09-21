@@ -31,6 +31,11 @@ state map depend on a particular frame layout.
 materialization rejects entries whose exception state introduces or omits either
 bit instead of publishing contradictory recovery metadata.
 
+A nonzero handler block is valid only at a THROW boundary. It must name an
+exception or cleanup block that is an actual CFG successor of the block
+containing the checkpoint instruction; an in-range but unreachable block is not
+a resumable handler.
+
 ## Transactional materialization
 
 `ZrCore_ExecIr_MaterializeState` first validates the function token,
