@@ -15,10 +15,10 @@ The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the
 canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
 identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
-contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator and
-edge-target membership, state-map instruction membership, effect pairing, frame
-layout, phi predecessor membership in the containing block's predecessor edge
-range, nonzero state-map resume identity, and
+contract versions, target ABI, IDs, ranges, opcode bounds, CFG block instruction
+partition, terminator and edge-target membership, state-map instruction
+membership, effect pairing, frame layout, phi predecessor membership in the
+containing block's predecessor edge range, nonzero state-map resume identity, and
 module/function hash identity. Effect tokens must be present together or both
 be absent. A
 non-PHI instruction carrying phi incoming rows is rejected.

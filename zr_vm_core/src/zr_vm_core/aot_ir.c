@@ -243,6 +243,22 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id, 0u, 0u,
                            functionIndex, 1u, entryBlockCount);
     }
+    for (TZrUInt32 instructionIndex = 0u;
+         instructionIndex < function->instructionCount; ++instructionIndex) {
+        TZrUInt32 containingBlockCount = 0u;
+        for (TZrUInt32 blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+            const SZrAotIrBlock *block = &function->blocks[blockIndex];
+            if (instructionIndex >= block->instructions.offset &&
+                instructionIndex - block->instructions.offset < block->instructions.count) {
+                ++containingBlockCount;
+            }
+        }
+        if (containingBlockCount != 1u) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id, 0u,
+                               function->instructions[instructionIndex].id,
+                               instructionIndex, 1u, containingBlockCount);
+        }
+    }
     for (TZrUInt32 i = 0u; i < function->instructionCount; ++i) {
         const SZrAotIrInstruction *instruction = &function->instructions[i];
         const SZrAotIrBlock *containingBlock =
