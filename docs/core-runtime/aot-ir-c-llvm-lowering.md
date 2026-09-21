@@ -10,8 +10,9 @@ status: implemented
 # Shared AOTIR C and LLVM lowering contract
 
 `ZrParser_AotIr_EmitC` and `ZrParser_AotIr_EmitLlvm` consume the same validated,
-relocation-free AOTIR module and derive target-specific coverage from a common
-lowering record sequence. The facade distinguishes native lowering, runtime
+relocation-free AOTIR module. The shared lowering gate rejects both module and
+function relocation rows before it derives target-specific coverage from a
+common lowering record sequence. The facade distinguishes native lowering, runtime
 bridges, and interpreter fallback. A runtime bridge is never reported as native
 coverage; callers can disallow bridges or fallback and receive a source-linked
 `ZR_AOT_IR_UNSUPPORTED` diagnostic instead.

@@ -100,5 +100,9 @@ int main(void) {
     cOptions.allowRuntimeBridge = ZR_FALSE;
     assert(!ZrParser_AotIr_EmitC(&module, &cOptions, &cResult, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_UNSUPPORTED);
+    function.relocationCount = 1u;
+    cOptions.allowRuntimeBridge = ZR_TRUE;
+    assert(!ZrParser_AotIr_EmitC(&module, &cOptions, &cResult, &diagnostic));
+    assert(diagnostic.status == ZR_AOT_IR_RELOCATION);
     return 0;
 }

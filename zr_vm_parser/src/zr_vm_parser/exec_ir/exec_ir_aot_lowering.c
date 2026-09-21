@@ -68,8 +68,11 @@ TZrBool ZrParser_AotIr_LowerShared(const SZrAotIrModule *module,
     result->runtimeBridgeCount = 0u;
     result->sourceHash = 0u;
     result->loweringHash = 0u;
-    if (module == ZR_NULL || result->records == ZR_NULL || result->capacity == 0u ||
-        ZrCore_AotIr_ValidateModule(module, diagnostic) != ZR_AOT_IR_OK) {
+    if (module == ZR_NULL || result->records == ZR_NULL || result->capacity == 0u) {
+        return ZR_FALSE;
+    }
+    if (ZrCore_AotIr_ValidateModule(module, diagnostic) != ZR_AOT_IR_OK ||
+        !ZrCore_AotIr_IsRelocationFree(module, diagnostic)) {
         return ZR_FALSE;
     }
     sourceHash = ZrCore_AotIr_HashModule(module);
