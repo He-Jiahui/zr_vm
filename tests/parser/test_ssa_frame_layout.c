@@ -22,6 +22,8 @@ int main(void) {
     assert(layout.frame.localCount == 2u);
     assert(layout.logicalToPhysical[0] == layout.logicalToPhysical[1]);
     assert(layout.logicalToPhysical[2] != layout.logicalToPhysical[0]);
+    assert(layout.frame.slots[layout.logicalToPhysical[2]].kind ==
+           ZR_EXEC_IR_FRAME_SLOT_REFERENCE);
     assert(layout.frame.layoutHash != 0u);
 
     {

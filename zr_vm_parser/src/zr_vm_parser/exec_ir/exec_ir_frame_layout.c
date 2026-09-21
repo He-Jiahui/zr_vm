@@ -162,6 +162,10 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
                 candidate.frame.slots[physical].byteSize = v->byteSize;
                 candidate.frame.slots[physical].byteAlign = v->byteAlign;
                 candidate.frame.slots[physical].typeToken = v->typeToken;
+                candidate.frame.slots[physical].kind =
+                        v->slotClass == ZR_EXEC_IR_PACKED_SLOT_REF
+                            ? ZR_EXEC_IR_FRAME_SLOT_REFERENCE
+                            : ZR_EXEC_IR_FRAME_SLOT_VALUE;
                 if (v->byteAlign > maxAlign) maxAlign = v->byteAlign;
             }
             candidate.logicalToPhysical[order[i]] = physical;
@@ -215,6 +219,7 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
         hash = hash_mix(hash, ((TZrUInt64)s->slotId << 32u) | s->byteOffset);
         hash = hash_mix(hash, ((TZrUInt64)s->byteSize << 32u) | s->byteAlign);
         hash = hash_mix(hash, s->typeToken);
+        hash = hash_mix(hash, s->kind);
     }
     candidate.frame.layoutHash = hash;
     free(order);

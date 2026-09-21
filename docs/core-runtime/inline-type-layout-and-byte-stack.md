@@ -484,6 +484,7 @@ In Debug builds, the short-string major-root traversal uses the string hash-set 
 - The runtime-neutral packed-frame validator requires `frameByteSize` to be a multiple of `frameByteAlign`; the ExecIR packed-frame builder rounds an odd return span up to that boundary, and malformed total spans are rejected before slot/root access.
 - Packed-frame layout hashes cover the logical/storage counts, parameter prefix, return-area offset, total byte size, and frame alignment in addition to the slot mapping, so an ABI-sized return change cannot reuse an old layout identity.
 - The packed builder publishes `parameterCount` from the prefix and derives `localCount` from the remaining logical values; both counts participate in the layout hash consumed by analysis caches.
+- Physical slots created for packed reference values are marked `ZR_EXEC_IR_FRAME_SLOT_REFERENCE` in the shared descriptor; other packed storage remains a value slot, and the slot kind is included in the layout hash.
 - `frameSlotLayoutLength` matches the current `stackSize` for compiled functions.
 - `SZrFunctionFrameSlotLayout` maps each logical stack slot to `stackSlot`, `byteOffset`, `byteSize`, `byteAlign`, `slotKind`, `isParameter`, and `typeLayoutId`.
 
