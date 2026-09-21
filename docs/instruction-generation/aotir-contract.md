@@ -30,7 +30,10 @@ Block flags are likewise limited to the canonical entry/cold/cleanup/exception
 bits. Frame byte size must cover the return area and be a multiple of the
 declared frame alignment. Operand and result pools may not contain the invalid
 zero value ID. Every function must publish exactly one entry block. Paired
-effect tokens must advance strictly (`effectOut > effectIn`).
+effect tokens must advance strictly (`effectOut > effectIn`). Instruction flags
+must include the dynamic effects required by their opcode schema (allocation,
+throw, GC, or suspend); unknown flags and missing required effects are rejected
+before lowering.
 
 Block predecessor and successor ranges are views over the same numeric edge
 pool; their bounds use that pool's count, so parallel edges remain representable

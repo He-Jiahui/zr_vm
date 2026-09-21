@@ -54,6 +54,29 @@ static TZrBool aot_ir_opcode_is_terminator(TZrUInt32 opcode) {
     }
 }
 
+static TZrUInt32 aot_ir_required_instruction_flags(TZrUInt32 opcode) {
+    switch ((EZrExecIrOpcode)opcode) {
+        case ZR_EXEC_IR_OPCODE_DIV:
+        case ZR_EXEC_IR_OPCODE_STORE:
+        case ZR_EXEC_IR_OPCODE_THROW:
+            return ZR_EXEC_IR_FLAG_MAY_THROW;
+        case ZR_EXEC_IR_OPCODE_CALL:
+        case ZR_EXEC_IR_OPCODE_INVOKE:
+        case ZR_EXEC_IR_OPCODE_ITER_INIT:
+        case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
+        case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
+            return ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW;
+        case ZR_EXEC_IR_OPCODE_ALLOC:
+            return ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_GC;
+        case ZR_EXEC_IR_OPCODE_BARRIER:
+            return ZR_EXEC_IR_FLAG_MAY_GC;
+        case ZR_EXEC_IR_OPCODE_SUSPEND:
+            return ZR_EXEC_IR_FLAG_MAY_SUSPEND;
+        default:
+            return 0u;
+    }
+}
+
 static TZrBool aot_ir_block_id_exists(const SZrAotIrFunction *function,
                                       TZrUInt32 blockId) {
     for (TZrUInt32 index = 0u; index < function->blockCount; ++index) {
@@ -323,6 +346,8 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         const SZrAotIrInstruction *instruction = &function->instructions[i];
         const SZrAotIrBlock *containingBlock =
                 aot_ir_block_for_instruction(function, i);
+        TZrUInt32 requiredFlags =
+                aot_ir_required_instruction_flags(instruction->opcode);
         if (instruction->id == ZR_AOT_IR_ID_INVALID ||
             instruction->opcode == ZR_EXEC_IR_OPCODE_INVALID ||
             instruction->opcode >= ZR_EXEC_IR_OPCODE_COUNT ||
@@ -332,6 +357,11 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
             !aot_ir_range_valid(instruction->successors, function->successorCount)) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_OPCODE, function->id, 0u,
                                instruction->id, i, ZR_EXEC_IR_OPCODE_COUNT, instruction->opcode);
+        }
+        if ((instruction->flags & requiredFlags) != requiredFlags) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_EFFECT, function->id,
+                               containingBlock != ZR_NULL ? containingBlock->id : 0u,
+                               instruction->id, i, requiredFlags, instruction->flags);
         }
         if (!aot_ir_range_valid(instruction->phiIncoming, function->phiIncomingCount)) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id, 0u,
