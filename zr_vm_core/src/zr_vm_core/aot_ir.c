@@ -58,6 +58,18 @@ static TZrUInt32 aot_ir_edge_occurrences(const SZrAotIrFunction *function,
     return count;
 }
 
+static const SZrAotIrBlock *aot_ir_block_for_instruction(
+        const SZrAotIrFunction *function, TZrUInt32 instructionIndex) {
+    for (TZrUInt32 index = 0u; index < function->blockCount; ++index) {
+        const SZrAotIrBlock *block = &function->blocks[index];
+        if (instructionIndex >= block->instructions.offset &&
+            instructionIndex - block->instructions.offset < block->instructions.count) {
+            return block;
+        }
+    }
+    return ZR_NULL;
+}
+
 static TZrUInt64 aot_ir_hash_byte(TZrUInt64 hash, TZrUInt8 byte) {
     return (hash ^ byte) * UINT64_C(1099511628211);
 }
@@ -233,6 +245,8 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     }
     for (TZrUInt32 i = 0u; i < function->instructionCount; ++i) {
         const SZrAotIrInstruction *instruction = &function->instructions[i];
+        const SZrAotIrBlock *containingBlock =
+                aot_ir_block_for_instruction(function, i);
         if (instruction->id == ZR_AOT_IR_ID_INVALID ||
             instruction->opcode == ZR_EXEC_IR_OPCODE_INVALID ||
             instruction->opcode >= ZR_EXEC_IR_OPCODE_COUNT ||
@@ -259,8 +273,20 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                     instruction->phiIncoming.offset + j];
             if (!aot_ir_block_id_exists(function, incoming->predecessorBlockId)) {
                 return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG,
-                                   function->id, 0u, instruction->id, j,
+                                   function->id,
+                                   containingBlock != ZR_NULL ? containingBlock->id : 0u,
+                                   instruction->id, j,
                                    function->blockCount,
+                                   incoming->predecessorBlockId);
+            }
+            if (containingBlock == ZR_NULL ||
+                aot_ir_edge_occurrences(function, containingBlock->predecessors,
+                                         incoming->predecessorBlockId) == 0u) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG,
+                                   function->id,
+                                   containingBlock != ZR_NULL ? containingBlock->id : 0u,
+                                   instruction->id, j,
+                                   containingBlock != ZR_NULL ? containingBlock->predecessors.count : 0u,
                                    incoming->predecessorBlockId);
             }
             if (incoming->valueId == ZR_AOT_IR_ID_INVALID) {
