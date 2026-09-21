@@ -246,6 +246,20 @@ int main(void) {
     }
     {
         SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrInstruction malformedInstruction = instructions[0];
+        malformedInstruction.effectIn = 2u;
+        malformedInstruction.effectOut = 1u;
+        malformedFunction.instructions = &malformedInstruction;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_EFFECT);
+        assert(diagnostic.instructionId == malformedInstruction.id);
+        assert(diagnostic.expected == malformedInstruction.effectIn + 1u);
+        assert(diagnostic.actual == malformedInstruction.effectOut);
+    }
+    {
+        SZrAotIrModule malformed = module;
         malformed.target.targetTripleHash = 0u;
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
                ZR_AOT_IR_INVALID_TARGET);

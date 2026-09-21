@@ -289,6 +289,15 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_EFFECT, function->id, 0u,
                                instruction->id, i, instruction->effectIn, instruction->effectOut);
         }
+        if (instruction->effectIn != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
+            instruction->effectOut <= instruction->effectIn) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_EFFECT, function->id, 0u,
+                               instruction->id, i,
+                               instruction->effectIn == UINT32_MAX
+                                   ? instruction->effectIn
+                                   : instruction->effectIn + 1u,
+                               instruction->effectOut);
+        }
     }
     for (TZrUInt32 i = 0u; i < function->stateMapCount; ++i) {
         const SZrAotIrStateMapEntry *state = &function->stateMaps[i];
