@@ -195,6 +195,13 @@ TZrBool ZrCore_ExecutionFrameLayout_Validate(
                              layout->returnBufferOffset);
         return ZR_FALSE;
     }
+    if ((layout->frameByteSize & (layout->frameByteAlign - 1u)) != 0u) {
+        execution_frame_diag(diagnostic,
+                             ZR_EXECUTION_FRAME_DIAGNOSTIC_INVALID_ALIGNMENT,
+                             0u, 0u, layout->frameByteAlign,
+                             layout->frameByteSize);
+        return ZR_FALSE;
+    }
 
     for (index = 0u; index < layout->slotCount; ++index) {
         const SZrExecutionFrameSlot *slot = &layout->slots[index];
