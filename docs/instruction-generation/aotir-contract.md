@@ -16,8 +16,8 @@ arrays.  Semantic references are numeric IDs and bounded ranges, so the
 canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
 identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
 contract versions, target ABI, IDs, ranges, opcode bounds, CFG block instruction
-partition, terminator opcode and edge-target membership, state-map instruction
-membership, effect pairing, frame layout, phi incoming cardinality and ordered
+partition, last-in-block terminator opcode and edge-target membership,
+state-map instruction membership, effect pairing, frame layout, phi incoming cardinality and ordered
 predecessor-edge membership in the containing block's predecessor edge range,
 nonzero state-map resume identity, and
 module/function hash identity. Effect tokens must be present together or both

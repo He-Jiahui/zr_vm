@@ -239,11 +239,13 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         }
         if (block->terminatorInstructionId != ZR_AOT_IR_ID_INVALID) {
             TZrBool found = ZR_FALSE;
+            TZrUInt32 terminatorOffset = 0u;
             const SZrAotIrInstruction *terminator = ZR_NULL;
             for (TZrUInt32 j = 0u; j < block->instructions.count; ++j) {
                 if (function->instructions[block->instructions.offset + j].id ==
                     block->terminatorInstructionId) {
                     found = ZR_TRUE;
+                    terminatorOffset = j;
                     terminator = &function->instructions[block->instructions.offset + j];
                     break;
                 }
@@ -256,6 +258,14 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                 return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
                                    block->id, terminator->id, i, 1u,
                                    terminator->opcode);
+            }
+            if (terminatorOffset != block->instructions.count - 1u) {
+                const SZrAotIrInstruction *lastInstruction =
+                        &function->instructions[block->instructions.offset +
+                                                 block->instructions.count - 1u];
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
+                                   block->id, terminator->id, i, lastInstruction->id,
+                                   terminator->id);
             }
         }
         for (TZrUInt32 j = 0u; j < block->successors.count; ++j) {
