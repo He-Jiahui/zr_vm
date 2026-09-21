@@ -18,6 +18,8 @@ int main(void) {
     assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
     assert(layout.frame.logicalSlotCount == 3u);
     assert(layout.frame.storageSlotCount == 2u);
+    assert(layout.frame.parameterCount == 1u);
+    assert(layout.frame.localCount == 2u);
     assert(layout.logicalToPhysical[0] == layout.logicalToPhysical[1]);
     assert(layout.logicalToPhysical[2] != layout.logicalToPhysical[0]);
     assert(layout.frame.layoutHash != 0u);
