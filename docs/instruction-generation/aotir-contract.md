@@ -13,7 +13,8 @@ identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
 contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator and
 edge-target membership, state-map instruction membership, effect pairing, frame
 layout, phi predecessor membership, nonzero state-map resume identity, and
-module/function hash identity. A
+module/function hash identity. Effect tokens must be present together or both
+be absent. A
 non-PHI instruction carrying phi incoming rows is rejected.
 Block flags are likewise limited to the canonical entry/cold/cleanup/exception
 bits.

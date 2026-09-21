@@ -186,6 +186,20 @@ int main(void) {
         assert(diagnostic.blockId == malformedBlock.id);
         assert(diagnostic.actual == malformedBlock.flags);
     }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrInstruction malformedInstruction = instructions[0];
+        malformedInstruction.effectIn = 1u;
+        malformedInstruction.effectOut = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+        malformedFunction.instructions = &malformedInstruction;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_EFFECT);
+        assert(diagnostic.instructionId == malformedInstruction.id);
+        assert(diagnostic.expected == malformedInstruction.effectIn);
+        assert(diagnostic.actual == malformedInstruction.effectOut);
+    }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_RELOCATION);

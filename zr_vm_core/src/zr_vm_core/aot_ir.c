@@ -221,8 +221,8 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                    instruction->id, i, j, i);
             }
         }
-        if (instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
-            instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+        if ((instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) !=
+            (instruction->effectOut == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID)) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_EFFECT, function->id, 0u,
                                instruction->id, i, instruction->effectIn, instruction->effectOut);
         }
