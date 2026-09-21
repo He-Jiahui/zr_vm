@@ -27,6 +27,10 @@ deoptimization, or allocation). A suspend boundary cannot carry borrowed
 values across the suspension. This protects the lifetime rule without making a
 state map depend on a particular frame layout.
 
+`exceptionState` is the exact THROW/SUSPEND projection of those boundary flags;
+materialization rejects entries whose exception state introduces or omits either
+bit instead of publishing contradictory recovery metadata.
+
 ## Transactional materialization
 
 `ZrCore_ExecIr_MaterializeState` first validates the function token,

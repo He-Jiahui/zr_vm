@@ -12,6 +12,7 @@ void tearDown(void) {}
 
 void test_state_map_find_supports_each_logical_phase(void);
 void test_state_map_materialization_rejects_unknown_phase(void);
+void test_state_map_materialization_rejects_inconsistent_exception_state(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_materialization_successfully_copies_logical_values(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
@@ -185,6 +186,37 @@ void test_state_map_materialization_rejects_unknown_phase(void) {
     request.target = &target;
     TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
     TEST_ASSERT_EQUAL(ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, diagnostic.code);
+    TEST_ASSERT_EQUAL(0u, target.valueCount);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_materialization_rejects_inconsistent_exception_state(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    map.entries[0].exceptionState = ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW;
+    function_with_one_gc_value(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
     TEST_ASSERT_EQUAL(0u, target.valueCount);
     TEST_ASSERT_NULL(target.values);
     ZrCore_ExecIr_MaterializedStateFree(&target);
@@ -469,6 +501,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_state_map_find_supports_each_logical_phase);
     RUN_TEST(test_state_map_materialization_rejects_unknown_phase);
+    RUN_TEST(test_state_map_materialization_rejects_inconsistent_exception_state);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
     RUN_TEST(test_state_map_materialization_successfully_copies_logical_values);
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);

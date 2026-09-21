@@ -450,6 +450,8 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
         entry->resumeId == 0u ||
         entry->boundaryFlags == 0u ||
         (entry->boundaryFlags & ~ZR_EXEC_IR_STATE_MAP_BOUNDARY_KNOWN_MASK) != 0u ||
+        entry->exceptionState !=
+            (entry->boundaryFlags & ZR_EXEC_IR_STATE_MAP_EXCEPTION_MASK) ||
         entry->instructionId == 0u || entry->instructionId > function->instructionCount ||
         (entry->handlerBlockId != ZR_EXEC_IR_BLOCK_ID_INVALID &&
          entry->handlerBlockId > function->blockCount) ||

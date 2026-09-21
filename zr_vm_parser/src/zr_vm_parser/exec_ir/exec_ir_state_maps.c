@@ -431,8 +431,7 @@ static EZrStateMapBuildResult zr_state_map_add_checkpoint(
     entry.effectOut = instruction->effectOut;
     entry.handlerBlockId = zr_state_map_handler_block(function, instructionId,
                                                        boundaryFlags);
-    entry.exceptionState = boundaryFlags & (ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW |
-                                            ZR_EXEC_IR_STATE_MAP_BOUNDARY_SUSPEND);
+    entry.exceptionState = boundaryFlags & ZR_EXEC_IR_STATE_MAP_EXCEPTION_MASK;
     if (!zr_state_map_append_values(map, live, liveCount, &entry.liveValues, ZR_FALSE) ||
         !zr_state_map_append_values(map, roots, rootCount, &entry.rootValues, ZR_TRUE) ||
         !zr_state_map_append_owner_states(map, owners, ownerCount, &entry.ownerStates) ||
