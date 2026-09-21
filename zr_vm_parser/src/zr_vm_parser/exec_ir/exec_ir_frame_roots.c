@@ -21,6 +21,18 @@ static TZrBool root_kind_valid(EZrExecIrFrameRootKind kind) {
     }
 }
 
+static TZrBool slot_class_valid(EZrExecIrPackedSlotClass slotClass) {
+    switch (slotClass) {
+        case ZR_EXEC_IR_PACKED_SLOT_BOXED:
+        case ZR_EXEC_IR_PACKED_SLOT_SCALAR:
+        case ZR_EXEC_IR_PACKED_SLOT_INLINE_SPAN:
+        case ZR_EXEC_IR_PACKED_SLOT_REF:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool derived_pointer(TZrPtr base, TZrInt64 offset, TZrPtr *out) {
     uintptr_t bits;
     uintptr_t adjusted;
@@ -258,6 +270,11 @@ TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
     for (TZrUInt32 logical = 0u; logical < layout->frame.logicalSlotCount; ++logical) {
         TZrUInt32 physical = layout->logicalToPhysical[logical];
         TZrBool seenPhysical = ZR_FALSE;
+        if (!slot_class_valid(layout->slotClasses[logical])) {
+            root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                      logical + 1u);
+            return ZR_FALSE;
+        }
         if (physical >= layout->frame.slotCount) { root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, logical + 1u); return ZR_FALSE; }
         if (layout->frame.slots[physical].byteOffset > layout->frame.frameByteSize ||
             layout->frame.slots[physical].byteSize > layout->frame.frameByteSize - layout->frame.slots[physical].byteOffset) {

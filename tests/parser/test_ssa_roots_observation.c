@@ -116,6 +116,13 @@ int main(void) {
         assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
         assert(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
         assert(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
+        observation.invalidatedCapacity = 3u;
+        layout.slotClasses[0] = (EZrExecIrPackedSlotClass)99;
+        assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+        assert(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
+        assert(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
+        layout.slotClasses[0] = ZR_EXEC_IR_PACKED_SLOT_REF;
     }
     {
         TZrUInt64 rootValue = UINT64_C(0x123456789abcdef0);

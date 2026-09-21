@@ -44,7 +44,7 @@ adapters.
 
 Observation rejects malformed slot count/capacity and storage-count
 relationships before changing frame bytes, writeback values, or invalidation
-state.
+state. Unknown packed slot-class enum values fail in the same preflight.
 
 The core adapter exposes the same boundary to runtime-neutral ExecBC, AOT and
 JIT consumers through `ZrCore_ExecutionFrameRootMap_Build` and
