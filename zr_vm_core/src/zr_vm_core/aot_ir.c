@@ -490,6 +490,12 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
                                state->instructionId, i, 1u, state->resumeId);
         }
+        for (TZrUInt32 j = 0u; j < i; ++j) {
+            if (function->stateMaps[j].resumeId == state->resumeId) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_DUPLICATE_ID, function->id, 0u,
+                                   state->instructionId, i, j, i);
+            }
+        }
         if (state->instructionId == ZR_AOT_IR_ID_INVALID) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
                                state->instructionId, i, 1u, state->instructionId);

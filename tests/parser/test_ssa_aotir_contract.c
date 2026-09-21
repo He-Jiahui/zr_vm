@@ -133,6 +133,23 @@ int main(void) {
         assert(diagnostic.actual == malformedState.resumeId);
     }
     {
+        const SZrAotIrStateMapEntry duplicateStates[] = {
+            {1u, 1u, UINT64_C(77)},
+            {1u, 1u, UINT64_C(88)}
+        };
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.stateMaps = duplicateStates;
+        malformedFunction.stateMapCount = 2u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_DUPLICATE_ID);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.instructionId == duplicateStates[1].instructionId);
+        assert(diagnostic.expected == 0u);
+        assert(diagnostic.actual == 1u);
+    }
+    {
         const TZrUInt32 malformedOperands[] = {ZR_AOT_IR_ID_INVALID};
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
