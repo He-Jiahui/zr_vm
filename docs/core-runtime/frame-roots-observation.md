@@ -16,7 +16,9 @@ The parser-owned frame-root adapter projects packed logical values to physical
 frame offsets. Only explicitly classified managed, derived, or inline-field
 entries are visited; uninitialized entries are skipped and scalar slots are
 never scanned by accident. Derived entries retain their base slot and offset
-metadata for moving collectors and stack relocation.
+metadata for moving collectors and stack relocation. The visitor preflights all
+root metadata, then visits managed/inline roots before derived roots regardless
+of map order so a moving collector can update bases first.
 Root-map construction and visitation both reject unknown root kinds before an
 address is formed or a callback is invoked.
 Construction also validates slot count/capacity relationships and required

@@ -146,7 +146,7 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
                                         FZrExecIrFrameRootVisitor visitor,
                                         TZrPtr userData,
                                         SZrExecIrDiagnostic *diagnostic) {
-    TZrUInt32 i;
+    TZrUInt32 i, pass;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (map == ZR_NULL || map->rootCount > map->rootCapacity ||
         (map->rootCount != 0u && map->roots == ZR_NULL) ||
@@ -154,29 +154,44 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
         root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u); return ZR_FALSE;
     }
     for (i = 0u; i < map->rootCount; ++i) {
-        SZrExecIrFrameRoot *root = &map->roots[i];
-        TZrUInt32 addressOffset = root->frameByteOffset;
-        TZrPtr address;
-        if (!root_kind_valid(root->kind)) {
+        const SZrExecIrFrameRoot *root = &map->roots[i];
+        if (!root_kind_valid(root->kind) ||
+            (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED &&
+             root->basePhysicalSlot == UINT32_MAX)) {
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                       root->valueId);
             return ZR_FALSE;
         }
-        if (!root->initialized) continue;
-        if (root->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD) {
-            if (root->fieldByteOffset > UINT32_MAX - addressOffset) {
-                root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, root->valueId); return ZR_FALSE;
+        if (root->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD &&
+            root->fieldByteOffset > UINT32_MAX - root->frameByteOffset) {
+            root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                      root->valueId);
+            return ZR_FALSE;
+        }
+    }
+    for (pass = 0u; pass < 2u; ++pass) {
+        for (i = 0u; i < map->rootCount; ++i) {
+            SZrExecIrFrameRoot *root = &map->roots[i];
+            TZrUInt32 addressOffset = root->frameByteOffset;
+            TZrPtr address;
+            TZrPtr base = ZR_NULL;
+            if ((pass == 0u && root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) ||
+                (pass == 1u && root->kind != ZR_EXEC_IR_FRAME_ROOT_DERIVED) ||
+                !root->initialized) {
+                continue;
             }
-            addressOffset += root->fieldByteOffset;
-        }
-        address = root->initialized ? (TZrPtr)(frameBase + addressOffset) : ZR_NULL;
-        TZrPtr base = ZR_NULL;
-        if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) {
-            if (root->basePhysicalSlot == UINT32_MAX) { root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, root->valueId); return ZR_FALSE; }
-            base = (TZrPtr)(frameBase + root->baseFrameByteOffset);
-        }
-        if (!visitor(root, address, base, userData)) {
-            root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, root->valueId); return ZR_FALSE;
+            if (root->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD) {
+                addressOffset += root->fieldByteOffset;
+            }
+            address = (TZrPtr)(frameBase + addressOffset);
+            if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) {
+                base = (TZrPtr)(frameBase + root->baseFrameByteOffset);
+            }
+            if (!visitor(root, address, base, userData)) {
+                root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                          root->valueId);
+                return ZR_FALSE;
+            }
         }
     }
     return ZR_TRUE;

@@ -9,6 +9,20 @@ static TZrBool visit(SZrExecIrFrameRoot *root, TZrPtr slot, TZrPtr base, TZrPtr 
     ++*count; return ZR_TRUE;
 }
 
+typedef struct SVisitOrder {
+    EZrExecIrFrameRootKind kinds[2];
+    TZrUInt32 count;
+} SVisitOrder;
+
+static TZrBool visit_order(SZrExecIrFrameRoot *root, TZrPtr slot,
+                           TZrPtr base, TZrPtr data) {
+    SVisitOrder *order = (SVisitOrder *)data;
+    (void)slot;
+    (void)base;
+    order->kinds[order->count++] = root->kind;
+    return ZR_TRUE;
+}
+
 int main(void) {
     SZrExecIrPackedValue values[3] = {
         {1u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 3u, 0u},
@@ -24,6 +38,21 @@ int main(void) {
     assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
     assert(ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d) && count == 2u);
+    {
+        SZrExecIrFrameRoot first = map.roots[0];
+        SVisitOrder order = {{ZR_EXEC_IR_FRAME_ROOT_MANAGED,
+                              ZR_EXEC_IR_FRAME_ROOT_MANAGED}, 0u};
+        map.roots[0] = map.roots[1];
+        map.roots[1] = first;
+        assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_order,
+                                              &order, &d));
+        assert(order.count == 2u);
+        assert(order.kinds[0] == ZR_EXEC_IR_FRAME_ROOT_MANAGED);
+        assert(order.kinds[1] == ZR_EXEC_IR_FRAME_ROOT_DERIVED);
+        first = map.roots[0];
+        map.roots[0] = map.roots[1];
+        map.roots[1] = first;
+    }
     count = 0u;
     map.roots[0].initialized = ZR_FALSE;
     assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
