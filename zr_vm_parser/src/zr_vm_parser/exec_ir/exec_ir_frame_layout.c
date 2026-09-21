@@ -196,6 +196,12 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
     candidate.frame.slotCount = physicalCount;
     candidate.frame.slotCapacity = request->valueCount;
     hash = hash_mix(hash, request->functionToken);
+    hash = hash_mix(hash, candidate.frame.logicalSlotCount);
+    hash = hash_mix(hash, candidate.frame.storageSlotCount);
+    hash = hash_mix(hash, candidate.frame.parameterPrefixCount);
+    hash = hash_mix(hash, candidate.frame.returnBufferOffset);
+    hash = hash_mix(hash, candidate.frame.frameByteSize);
+    hash = hash_mix(hash, candidate.frame.frameByteAlign);
     for (i = 0u; i < request->valueCount; ++i) {
         hash = hash_mix(hash, candidate.logicalToPhysical[i]);
         hash = hash_mix(hash, candidate.slotClasses[i]);
