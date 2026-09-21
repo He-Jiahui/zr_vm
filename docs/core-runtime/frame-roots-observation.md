@@ -17,6 +17,8 @@ frame offsets. Only explicitly classified managed, derived, or inline-field
 entries are visited; uninitialized entries expose a null address and scalar
 slots are never scanned by accident. Derived entries retain their base slot and
 offset metadata for moving collectors and stack relocation.
+Root-map construction and visitation both reject unknown root kinds before an
+address is formed or a callback is invoked.
 
 `ZrParser_ExecIr_ObserveFrame` provides a bounded materialization/writeback
 boundary for debugger and deoptimization consumers. It validates the descriptor

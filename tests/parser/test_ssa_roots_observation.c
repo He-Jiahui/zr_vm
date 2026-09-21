@@ -28,6 +28,10 @@ int main(void) {
     assert(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && count == 0u);
     map.rootCapacity = map.rootCount;
+    map.roots[0].kind = (EZrExecIrFrameRootKind)99;
+    assert(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
+    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE && count == 0u);
+    map.roots[0].kind = ZR_EXEC_IR_FRAME_ROOT_MANAGED;
     {
         TZrUInt64 writeback[2] = {11u, 22u};
         TZrUInt32 invalidated[1] = {UINT32_MAX};
@@ -66,6 +70,9 @@ int main(void) {
     specs[1] = specs[0];
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION);
+    specs[0].kind = (EZrExecIrFrameRootKind)-1;
+    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD;
     specs[0].fieldByteOffset = 8u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));

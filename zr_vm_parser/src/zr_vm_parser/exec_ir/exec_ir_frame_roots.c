@@ -9,6 +9,17 @@ static void root_diag(SZrExecIrDiagnostic *d, EZrExecutionDiagnosticCode code,
     if (d != ZR_NULL) { memset(d, 0, sizeof(*d)); d->code = code; d->actualVersion = valueId; }
 }
 
+static TZrBool root_kind_valid(EZrExecIrFrameRootKind kind) {
+    switch (kind) {
+        case ZR_EXEC_IR_FRAME_ROOT_MANAGED:
+        case ZR_EXEC_IR_FRAME_ROOT_DERIVED:
+        case ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 void ZrParser_ExecIr_FrameRootMapInit(SZrExecIrFrameRootMap *map) {
     if (map != ZR_NULL) memset(map, 0, sizeof(*map));
 }
@@ -55,7 +66,8 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
     for (i = 0u; i < specCount; ++i) {
         TZrUInt32 physical, basePhysical = UINT32_MAX, prior;
         const SZrExecIrFrameRootSpec *s = &specs[i];
-        if (!find_physical(layout, s->valueId, &physical) || s->kind > ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD ||
+        if (!find_physical(layout, s->valueId, &physical) ||
+            !root_kind_valid(s->kind) ||
             (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED && !find_physical(layout, s->baseValueId, &basePhysical)) ||
             (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED && s->baseValueId == s->valueId)) {
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, s->valueId);
@@ -126,6 +138,11 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
         SZrExecIrFrameRoot *root = &map->roots[i];
         TZrUInt32 addressOffset = root->frameByteOffset;
         TZrPtr address;
+        if (!root_kind_valid(root->kind)) {
+            root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                      root->valueId);
+            return ZR_FALSE;
+        }
         if (root->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD) {
             if (root->fieldByteOffset > UINT32_MAX - addressOffset) {
                 root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, root->valueId); return ZR_FALSE;
