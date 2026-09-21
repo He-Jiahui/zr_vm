@@ -141,6 +141,21 @@ int main(void) {
         assert(diagnostic.expected == 1u);
         assert(diagnostic.actual == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID);
     }
+    {
+        SZrAotIrInstruction malformedInstructions[5];
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        memcpy(malformedInstructions, instructions, sizeof(malformedInstructions));
+        malformedInstructions[2].effectIn = 9u;
+        malformedInstructions[2].effectOut = 10u;
+        malformedFunction.instructions = malformedInstructions;
+        malformed.functions = &malformedFunction;
+        assert(!ZrParser_AotIr_LowerShared(&malformed, &result, &diagnostic));
+        assert(diagnostic.status == ZR_AOT_IR_INVALID_EFFECT);
+        assert(diagnostic.instructionId == malformedInstructions[2].id);
+        assert(diagnostic.expected == instructions[1].effectOut);
+        assert(diagnostic.actual == malformedInstructions[2].effectIn);
+    }
     memset(&cOptions, 0, sizeof(cOptions));
     cOptions.target = ZR_AOT_IR_EMITTER_C;
     cOptions.strictFloatingPoint = ZR_TRUE;

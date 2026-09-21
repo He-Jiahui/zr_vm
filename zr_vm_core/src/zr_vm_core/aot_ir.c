@@ -453,6 +453,25 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                instruction->effectOut);
         }
     }
+    for (TZrUInt32 blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrAotIrBlock *block = &function->blocks[blockIndex];
+        TZrUInt32 latestEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+        for (TZrUInt32 offset = 0u; offset < block->instructions.count; ++offset) {
+            TZrUInt32 instructionIndex = block->instructions.offset + offset;
+            const SZrAotIrInstruction *instruction =
+                    &function->instructions[instructionIndex];
+            if (aot_ir_required_instruction_flags(instruction->opcode) == 0u) {
+                continue;
+            }
+            if (latestEffect != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
+                instruction->effectIn != latestEffect) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_EFFECT, function->id,
+                                   block->id, instruction->id, instructionIndex,
+                                   latestEffect, instruction->effectIn);
+            }
+            latestEffect = instruction->effectOut;
+        }
+    }
     for (TZrUInt32 i = 0u; i < function->stateMapCount; ++i) {
         const SZrAotIrStateMapEntry *state = &function->stateMaps[i];
         TZrBool instructionFound = ZR_FALSE;
