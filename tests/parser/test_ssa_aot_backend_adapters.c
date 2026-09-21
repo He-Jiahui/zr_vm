@@ -75,9 +75,9 @@ static void adapter_and_backend_facts_are_shared(void) {
         {1u, ZR_EXEC_IR_OPCODE_ADD, 0u, {0u, 1u}, {0u, 1u},
          {0u, 0u}, {0u, 0u}, 0u, 0u, 7u, 0u, 0u, 0u},
         {2u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW, {0u, 0u}, {0u, 0u},
-         {0u, 0u}, {0u, 0u}, 0u, 0u, 8u, 0u, 0u, 0u},
+         {0u, 0u}, {0u, 0u}, 1u, 2u, 8u, 0u, 0u, 0u},
         {3u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 0u},
-         {0u, 0u}, {0u, 0u}, 0u, 0u, 9u, 0u, 0u, 0u}
+         {0u, 0u}, {0u, 0u}, 2u, 3u, 9u, 0u, 0u, 0u}
     };
     SZrAotIrFunction function;
     SZrAotIrBlock block;

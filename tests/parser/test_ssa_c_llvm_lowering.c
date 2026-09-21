@@ -22,8 +22,8 @@ int main(void) {
     const TZrUInt32 successors[] = {1u, 1u};
     const SZrAotIrInstruction instructions[] = {
         {1u, ZR_EXEC_IR_OPCODE_ADD, 0u, {0u, 1u}, {0u, 2u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 4u, 0u, 0u, 0u},
-        {2u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW, {0u, 1u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 6u, 0u, 0u, 9u},
-        {3u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 7u, 1u, 0u, 0u},
+        {2u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW, {0u, 1u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 1u, 2u, 6u, 0u, 0u, 9u},
+        {3u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 2u, 3u, 7u, 1u, 0u, 0u},
         /* NOP is deliberately retained as a runtime bridge in the shared
          * lowering so its accounting cannot be hidden by an adapter. */
         {4u, ZR_EXEC_IR_OPCODE_NOP, 0u, {0u, 0u}, {0u, 0u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 8u, 0u, 0u, 0u},
@@ -121,6 +121,25 @@ int main(void) {
         assert(diagnostic.instructionId == malformedInstruction.id);
         assert((diagnostic.expected & ZR_EXEC_IR_FLAG_MAY_THROW) != 0u);
         assert(diagnostic.actual == malformedInstruction.flags);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrInstruction malformedInstruction = instructions[1];
+        SZrAotIrBlock malformedBlock = block;
+        malformedInstruction.effectIn = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+        malformedInstruction.effectOut = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+        malformedBlock.instructions.count = 1u;
+        malformedBlock.terminatorInstructionId = ZR_AOT_IR_ID_INVALID;
+        malformedFunction.instructions = &malformedInstruction;
+        malformedFunction.instructionCount = 1u;
+        malformedFunction.blocks = &malformedBlock;
+        malformed.functions = &malformedFunction;
+        assert(!ZrParser_AotIr_LowerShared(&malformed, &result, &diagnostic));
+        assert(diagnostic.status == ZR_AOT_IR_INVALID_EFFECT);
+        assert(diagnostic.instructionId == malformedInstruction.id);
+        assert(diagnostic.expected == 1u);
+        assert(diagnostic.actual == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID);
     }
     memset(&cOptions, 0, sizeof(cOptions));
     cOptions.target = ZR_AOT_IR_EMITTER_C;

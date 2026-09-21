@@ -363,6 +363,16 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                containingBlock != ZR_NULL ? containingBlock->id : 0u,
                                instruction->id, i, requiredFlags, instruction->flags);
         }
+        if (requiredFlags != 0u &&
+            (instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+             instruction->effectOut == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID)) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_EFFECT, function->id,
+                               containingBlock != ZR_NULL ? containingBlock->id : 0u,
+                               instruction->id, i, 1u,
+                               instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID
+                                   ? instruction->effectIn
+                                   : instruction->effectOut);
+        }
         if (!aot_ir_range_valid(instruction->phiIncoming, function->phiIncomingCount)) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id, 0u,
                                instruction->id, i, function->phiIncomingCount,

@@ -33,7 +33,8 @@ zero value ID. Every function must publish exactly one entry block. Paired
 effect tokens must advance strictly (`effectOut > effectIn`). Instruction flags
 must include the dynamic effects required by their opcode schema (allocation,
 throw, GC, or suspend); unknown flags and missing required effects are rejected
-before lowering.
+before lowering. Any opcode with a required dynamic effect must also publish a
+nonzero paired effect-token range.
 
 Block predecessor and successor ranges are views over the same numeric edge
 pool; their bounds use that pool's count, so parallel edges remain representable
