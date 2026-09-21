@@ -19,6 +19,9 @@ bridges, and interpreter fallback. A runtime bridge is never reported as native
 coverage; callers can disallow bridges or fallback and receive a source-linked
 `ZR_AOT_IR_UNSUPPORTED` diagnostic instead.
 
+Emitter options use the same strict boolean contract as the backend adapter;
+noncanonical `TZrBool` values are rejected as `ZR_AOT_IR_INVALID_ARGUMENT`.
+
 The result is a target contract record, not generated source or LLVM bitcode.
 It carries the source hash, coverage counts and a deterministic contract hash
 that includes target and strict-floating-point policy. Existing backend AOT

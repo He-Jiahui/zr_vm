@@ -111,5 +111,13 @@ int main(void) {
         assert(!ZrParser_AotIr_EmitC(&malformed, &cOptions, &cResult, &diagnostic));
         assert(diagnostic.status == ZR_AOT_IR_INVALID_ARGUMENT);
     }
+    function.relocationCount = 0u;
+    {
+        SZrAotIrEmitOptions malformedOptions = cOptions;
+        malformedOptions.strictFloatingPoint = (TZrBool)2u;
+        assert(!ZrParser_AotIr_EmitC(&module, &malformedOptions, &cResult,
+                                     &diagnostic));
+        assert(diagnostic.status == ZR_AOT_IR_INVALID_ARGUMENT);
+    }
     return 0;
 }

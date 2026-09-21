@@ -10,6 +10,10 @@ static TZrUInt64 lowering_hash_u32(TZrUInt64 hash, TZrUInt32 value) {
     return hash;
 }
 
+static TZrBool lowering_bool_valid(TZrBool value) {
+    return (TZrBool)(value == ZR_FALSE || value == ZR_TRUE);
+}
+
 static EZrAotIrLoweringKind lowering_kind(TZrUInt32 opcode) {
     switch ((EZrExecIrOpcode)opcode) {
         case ZR_EXEC_IR_OPCODE_CONSTANT:
@@ -137,6 +141,9 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
     TZrUInt64 contractHash;
     if (result == ZR_NULL || module == ZR_NULL || module->functions == ZR_NULL ||
         module->functionCount == 0u || options == ZR_NULL ||
+        !lowering_bool_valid(options->strictFloatingPoint) ||
+        !lowering_bool_valid(options->allowRuntimeBridge) ||
+        !lowering_bool_valid(options->allowInterpreterFallback) ||
         options->target != target ||
         (target != ZR_AOT_IR_EMITTER_C && target != ZR_AOT_IR_EMITTER_LLVM)) {
         if (diagnostic != ZR_NULL) {
