@@ -27,9 +27,10 @@ Module and function contract identity failures report the specific canonical
 field and received value, so a signature, layout, target-token, module-hash, or
 version mismatch cannot be misdiagnosed as a different contract field.
 Block flags are likewise limited to the canonical entry/cold/cleanup/exception
-bits. Frame byte size must cover the return area and be a multiple of the
-declared frame alignment. Operand and result pools may not contain the invalid
-zero value ID. Every function must publish exactly one entry block. Paired
+bits. Storage slots may not outnumber logical slots, the parameter prefix must
+fit before the return area, and frame byte size must cover the return area and
+be a multiple of the declared frame alignment. Operand and result pools may not
+contain the invalid zero value ID. Every function must publish exactly one entry block. Paired
 effect tokens must advance strictly (`effectOut > effectIn`). Instruction flags
 must include the dynamic effects required by their opcode schema (allocation,
 throw, GC, or suspend); unknown flags and missing required effects are rejected

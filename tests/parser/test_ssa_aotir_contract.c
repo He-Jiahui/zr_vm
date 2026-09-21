@@ -435,6 +435,30 @@ int main(void) {
         assert(diagnostic.expected == function.frameLayout.frameByteAlign);
         assert(diagnostic.actual == malformedFunction.frameLayout.frameByteSize);
     }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.frameLayout.storageSlotCount =
+                malformedFunction.frameLayout.logicalSlotCount + 1u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_LAYOUT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == malformedFunction.frameLayout.logicalSlotCount);
+        assert(diagnostic.actual == malformedFunction.frameLayout.storageSlotCount);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.frameLayout.parameterPrefixBytes = 17u;
+        malformedFunction.frameLayout.returnAreaOffset = 16u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_LAYOUT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == malformedFunction.frameLayout.returnAreaOffset);
+        assert(diagnostic.actual == malformedFunction.frameLayout.parameterPrefixBytes);
+    }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_RELOCATION);

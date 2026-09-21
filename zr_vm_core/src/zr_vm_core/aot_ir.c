@@ -204,6 +204,17 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                            functionIndex, ZR_EXECUTION_EFFECT_KNOWN_MASK,
                            function->contract.declaredEffects);
     }
+    if (function->frameLayout.storageSlotCount > function->frameLayout.logicalSlotCount) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, function->id, 0u, 0u,
+                           functionIndex, function->frameLayout.logicalSlotCount,
+                           function->frameLayout.storageSlotCount);
+    }
+    if (function->frameLayout.parameterPrefixBytes >
+        function->frameLayout.returnAreaOffset) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, function->id, 0u, 0u,
+                           functionIndex, function->frameLayout.returnAreaOffset,
+                           function->frameLayout.parameterPrefixBytes);
+    }
     if (function->frameLayout.frameByteSize < function->frameLayout.returnAreaOffset ||
         (function->frameLayout.frameByteSize &
          (function->frameLayout.frameByteAlign - 1u)) != 0u) {
