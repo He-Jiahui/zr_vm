@@ -22,9 +22,15 @@ static TZrBool find_physical(const SZrExecIrPackedFrameLayout *layout,
                              TZrExecIrValueId valueId, TZrUInt32 *out) {
     TZrUInt32 i;
     if (layout == ZR_NULL || out == ZR_NULL || valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
-        layout->logicalToPhysical == ZR_NULL) return ZR_FALSE;
-    for (i = 0u; i < layout->frame.slotCount; ++i) {
-        if (layout->frame.slots[i].slotId == valueId) { *out = i; return ZR_TRUE; }
+        layout->logicalValueIds == ZR_NULL || layout->logicalToPhysical == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (i = 0u; i < layout->frame.logicalSlotCount; ++i) {
+        if (layout->logicalValueIds[i] == valueId &&
+            layout->logicalToPhysical[i] < layout->frame.storageSlotCount) {
+            *out = layout->logicalToPhysical[i];
+            return ZR_TRUE;
+        }
     }
     return ZR_FALSE;
 }

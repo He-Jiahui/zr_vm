@@ -41,6 +41,7 @@ typedef struct SZrExecIrPackedFrameRequest {
 
 typedef struct SZrExecIrPackedFrameLayout {
     SZrExecIrFrameLayout frame;
+    TZrExecIrValueId *logicalValueIds;
     TZrUInt32 *logicalToPhysical;
     EZrExecIrPackedSlotClass *slotClasses;
 } SZrExecIrPackedFrameLayout;

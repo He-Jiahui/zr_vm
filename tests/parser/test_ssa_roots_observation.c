@@ -26,5 +26,20 @@ int main(void) {
     specs[1].baseValueId = 99u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    {
+        SZrExecIrPackedValue reusedValues[2] = {
+            {10u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 1u, 0u},
+            {20u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 1u, 2u, 0u}
+        };
+        SZrExecIrFrameRootSpec reusedSpec =
+                {20u, ZR_EXEC_IR_FRAME_ROOT_MANAGED, 0u, 0u, 0, ZR_TRUE};
+        request.values = reusedValues;
+        request.valueCount = 2u;
+        assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
+        assert(layout.logicalToPhysical[0] == layout.logicalToPhysical[1]);
+        assert(ZrParser_ExecIr_BuildFrameRootMap(&layout, &reusedSpec, 1u,
+                                                &map, &d));
+        assert(map.roots[0].physicalSlot == layout.logicalToPhysical[1]);
+    }
     ZrParser_ExecIr_FrameRootMapFree(&map); ZrParser_ExecIr_PackedFrameLayoutFree(&layout); return 0;
 }

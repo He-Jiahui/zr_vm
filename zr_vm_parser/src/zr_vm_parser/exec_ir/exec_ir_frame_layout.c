@@ -57,6 +57,7 @@ void ZrParser_ExecIr_PackedFrameLayoutInit(SZrExecIrPackedFrameLayout *layout) {
 void ZrParser_ExecIr_PackedFrameLayoutFree(SZrExecIrPackedFrameLayout *layout) {
     if (layout == ZR_NULL) return;
     ZrCore_ExecIr_FrameLayoutFree(&layout->frame);
+    free(layout->logicalValueIds);
     free(layout->logicalToPhysical);
     free(layout->slotClasses);
     memset(layout, 0, sizeof(*layout));
@@ -89,9 +90,12 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
             return ZR_FALSE;
         }
         order = (TZrUInt32 *)malloc((size_t)request->valueCount * sizeof(*order));
+        candidate.logicalValueIds = (TZrExecIrValueId *)malloc(
+                (size_t)request->valueCount * sizeof(*candidate.logicalValueIds));
         candidate.logicalToPhysical = (TZrUInt32 *)malloc((size_t)request->valueCount * sizeof(TZrUInt32));
         candidate.slotClasses = (EZrExecIrPackedSlotClass *)malloc((size_t)request->valueCount * sizeof(*candidate.slotClasses));
-        if (order == ZR_NULL || candidate.logicalToPhysical == ZR_NULL || candidate.slotClasses == ZR_NULL) {
+        if (order == ZR_NULL || candidate.logicalValueIds == ZR_NULL ||
+            candidate.logicalToPhysical == ZR_NULL || candidate.slotClasses == ZR_NULL) {
             frame_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY, request->functionToken, 0u);
             free(order); ZrParser_ExecIr_PackedFrameLayoutFree(&candidate); return ZR_FALSE;
         }
@@ -111,6 +115,7 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
                 }
             }
             order[i] = i;
+            candidate.logicalValueIds[i] = v->valueId;
             candidate.logicalToPhysical[i] = ZR_EXEC_IR_VALUE_ID_INVALID;
             candidate.slotClasses[i] = v->slotClass;
         }
@@ -211,6 +216,7 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
     hash = hash_mix(hash, candidate.frame.parameterCount);
     hash = hash_mix(hash, candidate.frame.localCount);
     for (i = 0u; i < request->valueCount; ++i) {
+        hash = hash_mix(hash, candidate.logicalValueIds[i]);
         hash = hash_mix(hash, candidate.logicalToPhysical[i]);
         hash = hash_mix(hash, candidate.slotClasses[i]);
     }
