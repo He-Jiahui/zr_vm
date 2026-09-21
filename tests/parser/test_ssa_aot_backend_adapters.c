@@ -59,6 +59,7 @@ static SZrAotIrModule make_module(SZrAotIrFunction *function,
     module.schemaVersion = ZR_AOT_IR_SCHEMA_VERSION;
     module.target.abiVersion = ZR_AOT_IR_TARGET_ABI_VERSION;
     module.target.pointerSize = (TZrUInt32)sizeof(void *);
+    module.target.targetTripleHash = 142u;
     module.target.abiHash = 141u;
     module.moduleHash = 131u;
     module.functions = function;

@@ -5,6 +5,8 @@ consumed by C and LLVM AOT backends.  AOTIR is not a second language IR: its
 opcode, effect, CFG, state-map, signature, and frame identities originate in
 ExecIR.  Backend-specific code may legalize alignment and calling convention,
 but may not infer ownership, calls, or exceptions from quickened bytecode.
+The target contract requires a nonzero target-triple hash and ABI hash in
+addition to the supported ABI version, pointer size, and endianness.
 
 The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the

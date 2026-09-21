@@ -76,6 +76,7 @@ int main(void) {
     fill_contract(&module.contract, 0u, module.moduleHash, UINT64_C(44), UINT64_C(55));
     module.target.abiVersion = ZR_AOT_IR_TARGET_ABI_VERSION;
     module.target.pointerSize = (TZrUInt32)sizeof(void *);
+    module.target.targetTripleHash = UINT64_C(67);
     module.target.abiHash = UINT64_C(66);
 
     assert(ZrCore_AotIr_ValidateModule(&module, &diagnostic) == ZR_AOT_IR_OK);
@@ -199,6 +200,14 @@ int main(void) {
         assert(diagnostic.instructionId == malformedInstruction.id);
         assert(diagnostic.expected == malformedInstruction.effectIn);
         assert(diagnostic.actual == malformedInstruction.effectOut);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        malformed.target.targetTripleHash = 0u;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_TARGET);
+        assert(diagnostic.expected == 1u);
+        assert(diagnostic.actual == malformed.target.targetTripleHash);
     }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));

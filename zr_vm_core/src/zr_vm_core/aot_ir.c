@@ -261,9 +261,15 @@ EZrAotIrStatus ZrCore_AotIr_ValidateTarget(const SZrAotIrTargetContract *target,
     }
     if (target->abiVersion != ZR_AOT_IR_TARGET_ABI_VERSION ||
         (target->pointerSize != 4u && target->pointerSize != 8u) ||
-        target->endianness > 1u || target->abiHash == 0u) {
+        target->endianness > 1u) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_TARGET, 0u, 0u, 0u, 0u,
                            ZR_AOT_IR_TARGET_ABI_VERSION, target->abiVersion);
+    }
+    if (target->targetTripleHash == 0u || target->abiHash == 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_TARGET, 0u, 0u, 0u, 0u,
+                           1u, target->targetTripleHash == 0u
+                                       ? target->targetTripleHash
+                                       : target->abiHash);
     }
     return ZR_AOT_IR_OK;
 }

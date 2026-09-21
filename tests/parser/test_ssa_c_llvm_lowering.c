@@ -66,6 +66,7 @@ int main(void) {
     contract(&module.contract, 0u, 33u, 44u, 55u);
     module.target.abiVersion = ZR_AOT_IR_TARGET_ABI_VERSION;
     module.target.pointerSize = (TZrUInt32)sizeof(void *);
+    module.target.targetTripleHash = 67u;
     module.target.abiHash = 66u;
     result.records = records;
     result.capacity = 5u;
