@@ -169,47 +169,6 @@ static TZrBool zr_state_map_append_entry(SZrExecIrStateMap *map,
     return ZR_TRUE;
 }
 
-static TZrBool zr_state_map_is_boundary(const SZrExecIrInstruction *instruction,
-                                        const SZrExecIrOpcodeInfo *info,
-                                        TZrUInt32 *flags) {
-    TZrUInt32 boundary = 0u;
-
-    if (instruction == ZR_NULL || info == ZR_NULL || flags == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_ALLOCATE) != 0u ||
-        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE) != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_ALLOCATE;
-    }
-    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_GC) != 0u ||
-        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_GC) != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC;
-    }
-    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_THROW) != 0u ||
-        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW) != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW;
-    }
-    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_SUSPEND) != 0u ||
-        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND) != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_SUSPEND;
-    }
-    if ((instruction->flags & ZR_EXEC_IR_FLAG_DEBUG_POLL) != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_DEBUG_POLL;
-    }
-    if ((instruction->flags & ZR_EXEC_IR_FLAG_GUARD_EXIT) != 0u ||
-        instruction->deoptId != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_GUARD_EXIT;
-    }
-    if (instruction->deoptId != 0u) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_DEOPT;
-    }
-    if ((EZrExecIrOpcode)instruction->opcode == ZR_EXEC_IR_OPCODE_DROP) {
-        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_CLEANUP;
-    }
-    *flags = boundary;
-    return (TZrBool)(boundary != 0u);
-}
-
 static TZrBool zr_state_map_value_is_used(const SZrExecIrFunction *function,
                                           TZrExecIrValueId valueId,
                                           TZrUInt32 firstInstructionId) {
@@ -469,13 +428,11 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
     candidate.generation = function->contract.generation;
     for (instructionId = 1u; instructionId <= function->instructionCount; ++instructionId) {
         const SZrExecIrInstruction *instruction = &function->instructions[instructionId - 1u];
-        const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
-                (EZrExecIrOpcode)instruction->opcode);
         TZrUInt32 boundaryFlags = 0u;
         TZrUInt32 currentResume;
         EZrStateMapBuildResult result;
 
-        if (!zr_state_map_is_boundary(instruction, info, &boundaryFlags)) {
+        if (!ZrCore_ExecIr_StateMapBoundaryFlags(instruction, &boundaryFlags)) {
             continue;
         }
         if (resumeId == UINT32_MAX) {

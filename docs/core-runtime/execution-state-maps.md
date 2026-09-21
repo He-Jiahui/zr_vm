@@ -27,6 +27,11 @@ deoptimization, or allocation). A suspend boundary cannot carry borrowed
 values across the suspension. This protects the lifetime rule without making a
 state map depend on a particular frame layout.
 
+Boundary classification is shared by the parser producer and core consumer.
+Materialization recomputes the complete boundary mask from the instruction and
+opcode schema and requires an exact match, so a suspend/throw/GC property cannot
+be omitted or invented by serialized map metadata.
+
 `exceptionState` is the exact THROW/SUSPEND projection of those boundary flags;
 materialization rejects entries whose exception state introduces or omits either
 bit instead of publishing contradictory recovery metadata.

@@ -116,6 +116,9 @@ ZR_CORE_API void ZrCore_ExecIr_StateMapInit(SZrExecIrStateMap *map);
 ZR_CORE_API void ZrCore_ExecIr_StateMapFree(SZrExecIrStateMap *map);
 ZR_CORE_API TZrBool ZrCore_ExecIr_StateMapClone(const SZrExecIrStateMap *source,
                                                 SZrExecIrStateMap *destination);
+ZR_CORE_API TZrBool ZrCore_ExecIr_StateMapBoundaryFlags(
+        const SZrExecIrInstruction *instruction,
+        TZrUInt32 *flags);
 ZR_CORE_API const SZrExecIrStateMapEntry *ZrCore_ExecIr_StateMapFind(
         const SZrExecIrStateMap *map,
         TZrExecIrSourceId sourceId,

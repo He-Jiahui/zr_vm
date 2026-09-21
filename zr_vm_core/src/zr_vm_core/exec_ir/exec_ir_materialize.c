@@ -174,6 +174,53 @@ TZrBool ZrCore_ExecIr_StateMapClone(const SZrExecIrStateMap *source,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_ExecIr_StateMapBoundaryFlags(
+        const SZrExecIrInstruction *instruction,
+        TZrUInt32 *flags) {
+    const SZrExecIrOpcodeInfo *info;
+    TZrUInt32 boundary = 0u;
+
+    if (instruction == ZR_NULL || flags == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *flags = 0u;
+    info = ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)instruction->opcode);
+    if (info == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_ALLOCATE) != 0u ||
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE) != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_ALLOCATE;
+    }
+    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_GC) != 0u ||
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_GC) != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC;
+    }
+    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_THROW) != 0u ||
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW) != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW;
+    }
+    if ((instruction->flags & ZR_EXEC_IR_FLAG_MAY_SUSPEND) != 0u ||
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND) != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_SUSPEND;
+    }
+    if ((instruction->flags & ZR_EXEC_IR_FLAG_DEBUG_POLL) != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_DEBUG_POLL;
+    }
+    if ((instruction->flags & ZR_EXEC_IR_FLAG_GUARD_EXIT) != 0u ||
+        instruction->deoptId != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_GUARD_EXIT;
+    }
+    if (instruction->deoptId != 0u) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_DEOPT;
+    }
+    if ((EZrExecIrOpcode)instruction->opcode == ZR_EXEC_IR_OPCODE_DROP) {
+        boundary |= ZR_EXEC_IR_STATE_MAP_BOUNDARY_CLEANUP;
+    }
+    *flags = boundary;
+    return (TZrBool)(boundary != 0u);
+}
+
 const SZrExecIrStateMapEntry *ZrCore_ExecIr_StateMapFind(
         const SZrExecIrStateMap *map,
         TZrExecIrSourceId sourceId,
@@ -479,6 +526,21 @@ static TZrBool zr_state_map_entry_handler_valid(
     return ZR_FALSE;
 }
 
+static TZrBool zr_state_map_entry_boundary_valid(
+        const SZrExecIrFunction *function,
+        const SZrExecIrStateMapEntry *entry) {
+    TZrUInt32 expectedFlags;
+
+    if (entry->instructionId == 0u ||
+        entry->instructionId > function->instructionCount ||
+        !ZrCore_ExecIr_StateMapBoundaryFlags(
+                &function->instructions[entry->instructionId - 1u],
+                &expectedFlags)) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(entry->boundaryFlags == expectedFlags);
+}
+
 static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
                                         const SZrExecIrStateMap *map,
                                         const SZrExecIrStateMapEntry *entry,
@@ -491,6 +553,7 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
         entry->exceptionState !=
             (entry->boundaryFlags & ZR_EXEC_IR_STATE_MAP_EXCEPTION_MASK) ||
         entry->instructionId == 0u || entry->instructionId > function->instructionCount ||
+        !zr_state_map_entry_boundary_valid(function, entry) ||
         !zr_state_map_entry_handler_valid(function, entry) ||
         (entry->phase == ZR_EXEC_IR_STATE_CLEANUP_COMPLETE &&
          (entry->boundaryFlags & (ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW |
