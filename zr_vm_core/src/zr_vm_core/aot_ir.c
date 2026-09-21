@@ -304,6 +304,17 @@ EZrAotIrStatus ZrCore_AotIr_ValidateModule(const SZrAotIrModule *module,
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
                            module->moduleHash, module->contract.moduleHash);
     }
+    if ((module->contract.requiredCapabilities &
+         ~ZR_EXECUTION_CAPABILITY_KNOWN_MASK) != 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
+                           ZR_EXECUTION_CAPABILITY_KNOWN_MASK,
+                           module->contract.requiredCapabilities);
+    }
+    if ((module->contract.declaredEffects & ~ZR_EXECUTION_EFFECT_KNOWN_MASK) != 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
+                           ZR_EXECUTION_EFFECT_KNOWN_MASK,
+                           module->contract.declaredEffects);
+    }
     for (TZrUInt32 i = 0u; i < module->functionCount; ++i) {
         EZrAotIrStatus status = aot_ir_validate_function(module, &module->functions[i], i, diagnostic);
         if (status != ZR_AOT_IR_OK) {

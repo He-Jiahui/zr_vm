@@ -220,6 +220,15 @@ int main(void) {
     }
     {
         SZrAotIrModule malformed = module;
+        malformed.contract.requiredCapabilities =
+                ZR_EXECUTION_CAPABILITY_KNOWN_MASK | ((TZrUInt32)1u << 31u);
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CONTRACT);
+        assert(diagnostic.expected == ZR_EXECUTION_CAPABILITY_KNOWN_MASK);
+        assert(diagnostic.actual == malformed.contract.requiredCapabilities);
+    }
+    {
+        SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
         malformedFunction.frameLayout.frameByteSize = 10u;
         malformed.functions = &malformedFunction;
