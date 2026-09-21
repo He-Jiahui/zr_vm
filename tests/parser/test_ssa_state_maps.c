@@ -11,6 +11,7 @@ void setUp(void) {}
 void tearDown(void) {}
 
 void test_state_map_find_supports_each_logical_phase(void);
+void test_state_map_materialization_rejects_unknown_phase(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_materialization_successfully_copies_logical_values(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
@@ -156,6 +157,38 @@ void test_state_map_find_supports_each_logical_phase(void) {
     }
     TEST_ASSERT_NULL(ZrCore_ExecIr_StateMapFind(
         &map, 10u, 20u, ZR_EXEC_IR_STATE_PHASE_COUNT));
+    TEST_ASSERT_NULL(ZrCore_ExecIr_StateMapFind(
+        &map, 10u, 20u, (EZrExecIrStateMapPhase)-1));
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_materialization_rejects_unknown_phase(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, (EZrExecIrStateMapPhase)-1,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    function_with_one_gc_value(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = (EZrExecIrStateMapPhase)-1;
+    request.target = &target;
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, diagnostic.code);
+    TEST_ASSERT_EQUAL(0u, target.valueCount);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
     ZrCore_ExecIr_StateMapFree(&map);
 }
 
@@ -435,6 +468,7 @@ void test_state_map_function_clone_keeps_side_table_independent(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_state_map_find_supports_each_logical_phase);
+    RUN_TEST(test_state_map_materialization_rejects_unknown_phase);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
     RUN_TEST(test_state_map_materialization_successfully_copies_logical_values);
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);

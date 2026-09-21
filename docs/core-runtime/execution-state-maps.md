@@ -18,6 +18,10 @@ Entries can be recorded at three logical phases:
 - `AFTER_EFFECT`: the effect completed and its result/effect token is visible.
 - `CLEANUP_COMPLETE`: required ownership or exception cleanup has completed.
 
+Consumers treat this list as an explicit whitelist. Values outside these three
+phases, including negative enum casts, are rejected by lookup, validation, and
+materialization before any caller-owned state is changed.
+
 The boundary flags identify why the checkpoint exists (GC, throw, suspend,
 deoptimization, or allocation). A suspend boundary cannot carry borrowed
 values across the suspension. This protects the lifetime rule without making a

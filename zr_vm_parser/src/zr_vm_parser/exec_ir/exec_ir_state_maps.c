@@ -17,6 +17,17 @@ static TZrBool zr_state_map_allocation_size_valid(TZrUInt32 count,
                      (TZrUInt64)count <= (TZrUInt64)(SIZE_MAX / elementSize));
 }
 
+static TZrBool zr_state_map_phase_valid(EZrExecIrStateMapPhase phase) {
+    switch (phase) {
+        case ZR_EXEC_IR_STATE_BEFORE_EFFECT:
+        case ZR_EXEC_IR_STATE_AFTER_EFFECT:
+        case ZR_EXEC_IR_STATE_CLEANUP_COMPLETE:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static void zr_state_map_clear_diagnostic(SZrExecIrDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
@@ -346,7 +357,7 @@ static EZrStateMapBuildResult zr_state_map_add_checkpoint(
     SZrExecIrStateMapEntry entry;
 
     if (map == ZR_NULL || function == ZR_NULL || instruction == ZR_NULL ||
-        instructionId == 0u || resumeId == 0u || phase >= ZR_EXEC_IR_STATE_PHASE_COUNT) {
+        instructionId == 0u || resumeId == 0u || !zr_state_map_phase_valid(phase)) {
         return ZR_STATE_MAP_BUILD_INVALID;
     }
     if (function->valueCount != 0u) {

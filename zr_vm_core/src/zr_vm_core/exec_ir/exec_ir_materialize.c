@@ -72,6 +72,17 @@ static TZrBool zr_state_map_size_valid(TZrUInt32 count, size_t elementSize) {
                      (TZrUInt64)count <= (TZrUInt64)(SIZE_MAX / elementSize));
 }
 
+static TZrBool zr_state_map_phase_valid(EZrExecIrStateMapPhase phase) {
+    switch (phase) {
+        case ZR_EXEC_IR_STATE_BEFORE_EFFECT:
+        case ZR_EXEC_IR_STATE_AFTER_EFFECT:
+        case ZR_EXEC_IR_STATE_CLEANUP_COMPLETE:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool zr_state_map_copy_array(void **destination,
                                        TZrUInt32 *destinationCapacity,
                                        const void *source,
@@ -170,7 +181,7 @@ const SZrExecIrStateMapEntry *ZrCore_ExecIr_StateMapFind(
         EZrExecIrStateMapPhase phase) {
     TZrUInt32 index;
 
-    if (map == ZR_NULL || phase >= ZR_EXEC_IR_STATE_PHASE_COUNT ||
+    if (map == ZR_NULL || !zr_state_map_phase_valid(phase) ||
         resumeId == 0u || map->entryCount > map->entryCapacity ||
         (map->entryCount != 0u && map->entries == ZR_NULL)) {
         return ZR_NULL;
@@ -435,7 +446,7 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
                                         const SZrExecIrStateMapEntry *entry,
                                         SZrExecIrDiagnostic *diagnostic) {
     if (entry == ZR_NULL || entry->sourceId == 0u ||
-        entry->phase >= ZR_EXEC_IR_STATE_PHASE_COUNT ||
+        !zr_state_map_phase_valid(entry->phase) ||
         entry->resumeId == 0u ||
         entry->boundaryFlags == 0u ||
         (entry->boundaryFlags & ~ZR_EXEC_IR_STATE_MAP_BOUNDARY_KNOWN_MASK) != 0u ||
@@ -618,7 +629,7 @@ TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request,
 
     zr_state_map_clear_diagnostic(diagnostic);
     if (request == ZR_NULL || request->function == ZR_NULL ||
-        request->target == ZR_NULL || request->phase >= ZR_EXEC_IR_STATE_PHASE_COUNT) {
+        request->target == ZR_NULL || !zr_state_map_phase_valid(request->phase)) {
         zr_state_map_set_diagnostic(diagnostic,
                                     ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
                                     request != ZR_NULL ? request->function : ZR_NULL,
