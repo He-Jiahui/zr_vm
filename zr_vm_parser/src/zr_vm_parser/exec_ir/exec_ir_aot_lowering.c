@@ -135,7 +135,8 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
     SZrAotIrLoweringResult lowering;
     TZrUInt32 capacity = 0u;
     TZrUInt64 contractHash;
-    if (result == ZR_NULL || module == ZR_NULL || options == ZR_NULL ||
+    if (result == ZR_NULL || module == ZR_NULL || module->functions == ZR_NULL ||
+        module->functionCount == 0u || options == ZR_NULL ||
         options->target != target ||
         (target != ZR_AOT_IR_EMITTER_C && target != ZR_AOT_IR_EMITTER_LLVM)) {
         if (diagnostic != ZR_NULL) {

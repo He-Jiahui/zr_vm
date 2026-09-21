@@ -105,5 +105,11 @@ int main(void) {
     cOptions.allowRuntimeBridge = ZR_TRUE;
     assert(!ZrParser_AotIr_EmitC(&module, &cOptions, &cResult, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_RELOCATION);
+    {
+        SZrAotIrModule malformed = module;
+        malformed.functions = ZR_NULL;
+        assert(!ZrParser_AotIr_EmitC(&malformed, &cOptions, &cResult, &diagnostic));
+        assert(diagnostic.status == ZR_AOT_IR_INVALID_ARGUMENT);
+    }
     return 0;
 }
