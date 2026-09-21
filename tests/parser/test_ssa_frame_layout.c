@@ -22,6 +22,11 @@ int main(void) {
     assert(layout.logicalToPhysical[2] != layout.logicalToPhysical[0]);
     assert(layout.frame.layoutHash != 0u);
 
+    request.returnBufferSize = 3u;
+    assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+    assert(layout.frame.frameByteSize % layout.frame.frameByteAlign == 0u);
+    request.returnBufferSize = 4u;
+
     /* A and B do not overlap, while C overlaps B.  C must not be put back
      * into A's slot merely because A was the slot's first occupant. */
     {

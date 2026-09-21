@@ -174,11 +174,20 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
         free(order); ZrParser_ExecIr_PackedFrameLayoutFree(&candidate); return ZR_FALSE;
     }
     if (request->returnBufferAlign > maxAlign) maxAlign = request->returnBufferAlign;
-    if (!checked_align(cursor, request->returnBufferAlign == 0u ? maxAlign : request->returnBufferAlign, &candidate.frame.returnBufferOffset) ||
-        !checked_add(candidate.frame.returnBufferOffset, request->returnBufferSize, &candidate.frame.frameByteSize) ||
-        (request->frameByteLimit != 0u && candidate.frame.frameByteSize > request->frameByteLimit)) {
-        frame_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, request->functionToken, 0u);
-        free(order); ZrParser_ExecIr_PackedFrameLayoutFree(&candidate); return ZR_FALSE;
+    {
+        TZrUInt32 frameEnd;
+        if (!checked_align(cursor,
+                           request->returnBufferAlign == 0u ? maxAlign : request->returnBufferAlign,
+                           &candidate.frame.returnBufferOffset) ||
+            !checked_add(candidate.frame.returnBufferOffset, request->returnBufferSize,
+                         &frameEnd) ||
+            !checked_align(frameEnd, maxAlign, &candidate.frame.frameByteSize) ||
+            (request->frameByteLimit != 0u &&
+             candidate.frame.frameByteSize > request->frameByteLimit)) {
+            frame_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                       request->functionToken, 0u);
+            free(order); ZrParser_ExecIr_PackedFrameLayoutFree(&candidate); return ZR_FALSE;
+        }
     }
     candidate.frame.storageSlotCount = physicalCount;
     candidate.frame.logicalSlotCount = request->valueCount;
