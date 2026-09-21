@@ -191,6 +191,19 @@ int main(void) {
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
         SZrAotIrBlock malformedBlock = blocks[0];
+        malformedBlock.flags = 0u;
+        malformedFunction.blocks = &malformedBlock;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == 1u);
+        assert(diagnostic.actual == 0u);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrBlock malformedBlock = blocks[0];
         malformedBlock.flags = (TZrUInt32)1u << 8u;
         malformedFunction.blocks = &malformedBlock;
         malformed.functions = &malformedFunction;

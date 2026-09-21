@@ -24,7 +24,7 @@ non-PHI instruction carrying phi incoming rows is rejected.
 Block flags are likewise limited to the canonical entry/cold/cleanup/exception
 bits. Frame byte size must cover the return area and be a multiple of the
 declared frame alignment. Operand and result pools may not contain the invalid
-zero value ID.
+zero value ID. Every function must publish exactly one entry block.
 
 Block predecessor and successor ranges are views over the same numeric edge
 pool; their bounds use that pool's count, so parallel edges remain representable

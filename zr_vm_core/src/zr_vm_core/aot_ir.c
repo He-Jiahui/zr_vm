@@ -85,6 +85,7 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     const TZrUInt32 knownBlockFlags =
             ZR_EXEC_IR_BLOCK_FLAG_ENTRY | ZR_EXEC_IR_BLOCK_FLAG_COLD |
             ZR_EXEC_IR_BLOCK_FLAG_CLEANUP | ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION;
+    TZrUInt32 entryBlockCount = 0u;
     if (function->id == ZR_AOT_IR_ID_INVALID || function->functionToken == 0u ||
         function->signatureHash == 0u || function->frameLayout.layoutHash == 0u ||
         !aot_ir_alignment_valid(function->frameLayout.frameByteAlign) ||
@@ -143,6 +144,9 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     }
     for (TZrUInt32 i = 0u; i < function->blockCount; ++i) {
         const SZrAotIrBlock *block = &function->blocks[i];
+        if ((block->flags & ZR_EXEC_IR_BLOCK_FLAG_ENTRY) != 0u) {
+            ++entryBlockCount;
+        }
         if (block->id == ZR_AOT_IR_ID_INVALID ||
             (block->flags & ~knownBlockFlags) != 0u ||
             !aot_ir_range_valid(block->instructions, function->instructionCount) ||
@@ -196,6 +200,10 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                    block->id, 0u, j, function->blockCount, source);
             }
         }
+    }
+    if (entryBlockCount != 1u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id, 0u, 0u,
+                           functionIndex, 1u, entryBlockCount);
     }
     for (TZrUInt32 i = 0u; i < function->instructionCount; ++i) {
         const SZrAotIrInstruction *instruction = &function->instructions[i];
