@@ -59,6 +59,14 @@ int main(void) {
     values[0].liveEnd = UINT32_MAX;
     values[1].liveStart = 0u;
     assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+    values[1].valueId = values[0].valueId;
+    assert(!ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION);
+    values[1].valueId = 2u;
+    values[0].slotClass = (EZrExecIrPackedSlotClass)-1;
+    assert(!ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+    values[0].slotClass = ZR_EXEC_IR_PACKED_SLOT_SCALAR;
     values[0].byteAlign = 3u;
     assert(!ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);

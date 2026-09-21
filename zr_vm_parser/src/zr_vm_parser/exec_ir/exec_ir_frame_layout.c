@@ -50,6 +50,18 @@ static TZrBool frame_count_fits(TZrUInt32 count, size_t elementSize) {
 #endif
 }
 
+static TZrBool packed_slot_class_valid(EZrExecIrPackedSlotClass slotClass) {
+    switch (slotClass) {
+        case ZR_EXEC_IR_PACKED_SLOT_BOXED:
+        case ZR_EXEC_IR_PACKED_SLOT_SCALAR:
+        case ZR_EXEC_IR_PACKED_SLOT_INLINE_SPAN:
+        case ZR_EXEC_IR_PACKED_SLOT_REF:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 void ZrParser_ExecIr_PackedFrameLayoutInit(SZrExecIrPackedFrameLayout *layout) {
     if (layout != ZR_NULL) memset(layout, 0, sizeof(*layout));
 }
@@ -101,7 +113,8 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
         }
         for (i = 0u; i < request->valueCount; ++i) {
             const SZrExecIrPackedValue *v = &request->values[i];
-            if (v->valueId == ZR_EXEC_IR_VALUE_ID_INVALID || v->slotClass >= ZR_EXEC_IR_PACKED_SLOT_CLASS_COUNT ||
+            if (v->valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
+                !packed_slot_class_valid(v->slotClass) ||
                 v->byteSize == 0u || v->byteAlign == 0u || (v->byteAlign & (v->byteAlign - 1u)) != 0u ||
                 v->liveEnd < v->liveStart) {
                 frame_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, request->functionToken, i);
@@ -109,7 +122,8 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
             }
             for (TZrUInt32 prior = 0u; prior < i; ++prior) {
                 if (request->values[prior].valueId == v->valueId) {
-                    frame_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                    frame_diag(diagnostic,
+                               ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION,
                                request->functionToken, i);
                     free(order); ZrParser_ExecIr_PackedFrameLayoutFree(&candidate); return ZR_FALSE;
                 }

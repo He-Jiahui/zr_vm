@@ -486,6 +486,7 @@ In Debug builds, the short-string major-root traversal uses the string hash-set 
 - The packed builder publishes `parameterCount` from the prefix and derives `localCount` from the remaining logical values; both counts participate in the layout hash consumed by analysis caches.
 - Physical slots created for packed reference values are marked `ZR_EXEC_IR_FRAME_SLOT_REFERENCE` in the shared descriptor; other packed storage remains a value slot, and the slot kind is included in the layout hash.
 - Packed layouts retain an owned logical value-ID table beside `logicalToPhysical`. Root-map construction resolves every logical occupant through that table, so a later value that safely reuses an earlier physical slot remains addressable; every logical value ID also participates in the layout hash.
+- Packed-frame construction rejects duplicate logical value IDs with `ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION`; invalid slot classes, including negative enum representations, remain range errors.
 - Parser-side root-map construction validates managed/derived slot spans and requires an inline-field pointer to fit wholly inside its physical slot; malformed offsets fail before a visitor can form an out-of-frame address.
 - Parser-side root-map construction rejects duplicate entries for the same logical value, root kind, and inline-field offset, matching the shared runtime contract and preventing duplicate root visitation.
 - Parser-side root visitation rejects maps whose root count exceeds their declared capacity before invoking any callback.
