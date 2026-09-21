@@ -294,8 +294,8 @@ static TZrBool zr_state_map_function_values_valid(const SZrExecIrFunction *funct
     for (index = 0u; index < function->valueCount; ++index) {
         const SZrExecIrValue *value = &function->values[index];
         if (value->id != index + 1u ||
-            value->ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT ||
-            value->nullability >= ZR_EXEC_IR_NULLABILITY_COUNT) {
+            (TZrUInt32)value->ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT ||
+            (TZrUInt32)value->nullability >= ZR_EXEC_IR_NULLABILITY_COUNT) {
             zr_state_map_set_diagnostic(diagnostic,
                                         ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
                                         function, ZR_NULL, 0u, 0u,

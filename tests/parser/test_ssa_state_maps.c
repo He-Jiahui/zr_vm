@@ -14,6 +14,7 @@ void test_state_map_find_supports_each_logical_phase(void);
 void test_state_map_materialization_rejects_unknown_phase(void);
 void test_state_map_materialization_rejects_inconsistent_exception_state(void);
 void test_state_map_materialization_rejects_boundary_mismatch(void);
+void test_state_map_materialization_rejects_unknown_value_enums(void);
 void test_state_map_materialization_rejects_unreachable_handler(void);
 void test_state_map_materialization_requires_throw_boundary_for_handler(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
@@ -21,6 +22,7 @@ void test_state_map_materialization_successfully_copies_logical_values(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
 void test_state_map_rejects_borrowed_value_across_suspend(void);
 void test_state_map_builder_records_boundaries_and_is_liveness_conservative(void);
+void test_state_map_builder_rejects_unknown_value_enums(void);
 void test_state_map_builder_preserves_existing_map_on_verification_failure(void);
 void test_state_map_materialization_accepts_managed_owner_roots(void);
 void test_state_map_materialization_rejects_malformed_function_without_deref(void);
@@ -250,6 +252,45 @@ void test_state_map_materialization_rejects_boundary_mismatch(void) {
     request.resumeId = 7u;
     request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
     request.target = &target;
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_materialization_rejects_unknown_value_enums(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    map.entries[0].rootValues.count = 0u;
+    map.rootCount = 0u;
+    function_with_one_gc_value(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    function.values[0].ownership = (EZrExecIrOwnership)-1;
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(target.values);
+
+    function.values[0].ownership = ZR_EXEC_IR_OWNERSHIP_UNKNOWN;
+    function.values[0].nullability = (EZrExecIrNullability)-1;
     TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
     TEST_ASSERT_NULL(target.values);
@@ -512,6 +553,24 @@ void test_state_map_builder_records_boundaries_and_is_liveness_conservative(void
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+void test_state_map_builder_rejects_unknown_value_enums(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+
+    function_with_alloc_debug_boundary(&function);
+    function.values[0].ownership = (EZrExecIrOwnership)-1;
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, diagnostic.code);
+    TEST_ASSERT_NULL(function.stateMap);
+
+    function.values[0].ownership = ZR_EXEC_IR_OWNERSHIP_GC;
+    function.values[0].nullability = (EZrExecIrNullability)-1;
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, diagnostic.code);
+    TEST_ASSERT_NULL(function.stateMap);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 void test_state_map_builder_preserves_existing_map_on_verification_failure(void) {
     SZrExecIrFunction function;
     SZrExecIrDiagnostic diagnostic;
@@ -630,6 +689,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_rejects_unknown_phase);
     RUN_TEST(test_state_map_materialization_rejects_inconsistent_exception_state);
     RUN_TEST(test_state_map_materialization_rejects_boundary_mismatch);
+    RUN_TEST(test_state_map_materialization_rejects_unknown_value_enums);
     RUN_TEST(test_state_map_materialization_rejects_unreachable_handler);
     RUN_TEST(test_state_map_materialization_requires_throw_boundary_for_handler);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
@@ -637,6 +697,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);
     RUN_TEST(test_state_map_rejects_borrowed_value_across_suspend);
     RUN_TEST(test_state_map_builder_records_boundaries_and_is_liveness_conservative);
+    RUN_TEST(test_state_map_builder_rejects_unknown_value_enums);
     RUN_TEST(test_state_map_builder_preserves_existing_map_on_verification_failure);
     RUN_TEST(test_state_map_materialization_accepts_managed_owner_roots);
     RUN_TEST(test_state_map_materialization_rejects_malformed_function_without_deref);

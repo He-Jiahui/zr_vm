@@ -526,8 +526,10 @@ TZrExecIrValueId ZrCore_ExecIr_FunctionAddValue(SZrExecIrFunction *function,
     SZrExecIrValue *value;
     TZrExecIrValueId id;
 
-    if (function == ZR_NULL || function->sealed || ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT ||
-        nullability >= ZR_EXEC_IR_NULLABILITY_COUNT || function->valueCount == UINT32_MAX ||
+    if (function == ZR_NULL || function->sealed ||
+        (TZrUInt32)ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT ||
+        (TZrUInt32)nullability >= ZR_EXEC_IR_NULLABILITY_COUNT ||
+        function->valueCount == UINT32_MAX ||
         !zr_exec_ir_reserve((void **)&function->values,
                             &function->valueCapacity,
                             (TZrSize)function->valueCount + 1u,

@@ -288,8 +288,10 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
     }
     for (index = 0u; index < function->valueCount; ++index) {
         if (function->values[index].id != index + 1u ||
-            function->values[index].ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT ||
-            function->values[index].nullability >= ZR_EXEC_IR_NULLABILITY_COUNT ||
+            (TZrUInt32)function->values[index].ownership >=
+                ZR_EXEC_IR_OWNERSHIP_COUNT ||
+            (TZrUInt32)function->values[index].nullability >=
+                ZR_EXEC_IR_NULLABILITY_COUNT ||
             (function->values[index].flags &
              ~ZR_EXEC_IR_VALUE_FLAG_MASK) != 0u ||
             ((function->values[index].flags &

@@ -50,6 +50,10 @@ copy succeeds does it replace the caller-owned materialized target. A failed
 resume therefore leaves the previous target untouched and cannot replay an
 already committed effect.
 
+ExecIR value construction, structural verification, and state-map
+materialization all reject ownership or nullability values outside their named
+enum domains, including negative enum casts on compilers with signed enums.
+
 State-map cloning is deep: entries and both ID pools are independently owned.
 Lifecycle operations are safe for an empty map and can be used by function
 clone/free paths.

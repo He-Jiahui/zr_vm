@@ -34,6 +34,25 @@ static void test_empty_module_and_entry_block(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_value_builder_rejects_unknown_enums(void) {
+    SZrExecIrFunction function;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    expect_true(ZrCore_ExecIr_FunctionAddValue(
+                        &function, 1u, (EZrExecIrOwnership)-1,
+                        ZR_EXEC_IR_NULLABILITY_NONNULL) ==
+                    ZR_EXEC_IR_VALUE_ID_INVALID,
+                "negative ownership was accepted");
+    expect_true(ZrCore_ExecIr_FunctionAddValue(
+                        &function, 1u, ZR_EXEC_IR_OWNERSHIP_GC,
+                        (EZrExecIrNullability)-1) ==
+                    ZR_EXEC_IR_VALUE_ID_INVALID,
+                "negative nullability was accepted");
+    expect_true(function.valueCount == 0u,
+                "invalid value enum changed the function");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_side_arrays_clone_without_aliasing(void) {
     SZrExecIrModule source;
     SZrExecIrModule clone;
@@ -290,6 +309,7 @@ static void test_structure_requires_reciprocal_cfg_edges(void) {
 
 int main(void) {
     test_empty_module_and_entry_block();
+    test_value_builder_rejects_unknown_enums();
     test_side_arrays_clone_without_aliasing();
     test_invalid_opcode_and_overflow_fail_before_allocation();
     test_validation_rejects_null_operand_pool_without_dereference();
