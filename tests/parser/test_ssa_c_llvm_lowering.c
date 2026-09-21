@@ -84,6 +84,12 @@ int main(void) {
     assert(result.records[4].kind == ZR_AOT_IR_LOWERING_RUNTIME_BRIDGE);
     assert(result.sourceHash != 0u && result.loweringHash != 0u);
     assert(ZrParser_AotIr_LoweringIsPointerFree(&result));
+    {
+        SZrAotIrLoweringResult malformed = result;
+        malformed.count = 1u;
+        malformed.capacity = 0u;
+        assert(!ZrParser_AotIr_LoweringIsPointerFree(&malformed));
+    }
     memset(&cOptions, 0, sizeof(cOptions));
     cOptions.target = ZR_AOT_IR_EMITTER_C;
     cOptions.strictFloatingPoint = ZR_TRUE;

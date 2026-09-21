@@ -122,6 +122,7 @@ TZrBool ZrParser_AotIr_LowerShared(const SZrAotIrModule *module,
 
 TZrBool ZrParser_AotIr_LoweringIsPointerFree(const SZrAotIrLoweringResult *result) {
     return (TZrBool)(result != ZR_NULL &&
+                     result->count <= result->capacity &&
                      (result->count == 0u || result->records != ZR_NULL));
 }
 
