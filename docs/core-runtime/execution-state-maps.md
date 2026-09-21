@@ -50,6 +50,11 @@ copy succeeds does it replace the caller-owned materialized target. A failed
 resume therefore leaves the previous target untouched and cannot replay an
 already committed effect.
 
+The caller-owned target must have coherent pointer/capacity pairs. Its value,
+root, and owner-state storage ranges must neither overlap each other nor any
+capacity-sized state-map side-table range, including interior pointers. This is
+checked before preparation because commit releases every old target array.
+
 ExecIR value construction, structural verification, and state-map
 materialization all reject ownership or nullability values outside their named
 enum domains, including negative enum casts on compilers with signed enums.

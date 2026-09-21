@@ -21,6 +21,8 @@ void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_clone_rejects_aliased_destination(void);
 void test_state_map_clone_rejects_interior_pool_alias(void);
 void test_state_map_materialization_successfully_copies_logical_values(void);
+void test_state_map_materialization_rejects_interior_target_alias(void);
+void test_state_map_materialization_rejects_overlapping_target_arrays(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
 void test_state_map_rejects_borrowed_value_across_suspend(void);
 void test_state_map_builder_records_boundaries_and_is_liveness_conservative(void);
@@ -477,6 +479,87 @@ void test_state_map_materialization_successfully_copies_logical_values(void) {
     ZrCore_ExecIr_StateMapFree(&map);
 }
 
+void test_state_map_materialization_rejects_interior_target_alias(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId *expandedPool;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    expandedPool = (TZrExecIrValueId *)realloc(
+            map.valuePool, 2u * sizeof(*map.valuePool));
+    TEST_ASSERT_NOT_NULL(expandedPool);
+    map.valuePool = expandedPool;
+    map.valueCapacity = 2u;
+    function_with_one_gc_value(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    target.values = &map.valuePool[1];
+    target.valueCapacity = 1u;
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_MATERIALIZATION_FAILED,
+                      diagnostic.code);
+    target.values = ZR_NULL;
+    target.valueCapacity = 0u;
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_materialization_rejects_overlapping_target_arrays(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId *sharedStorage;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    function_with_one_gc_value(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    sharedStorage = (TZrExecIrValueId *)calloc(2u, sizeof(*sharedStorage));
+    TEST_ASSERT_NOT_NULL(sharedStorage);
+    target.values = sharedStorage;
+    target.valueCapacity = 2u;
+    target.roots = &sharedStorage[1];
+    target.rootCapacity = 1u;
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_MATERIALIZATION_FAILED,
+                      diagnostic.code);
+    TEST_ASSERT_EQUAL_PTR(sharedStorage, target.values);
+    target.values = ZR_NULL;
+    target.valueCapacity = 0u;
+    target.roots = ZR_NULL;
+    target.rootCapacity = 0u;
+    free(sharedStorage);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
 void test_state_map_materialization_is_transactional_on_failure(void) {
     SZrExecIrStateMap map;
     SZrExecIrFunction function;
@@ -735,6 +818,8 @@ int main(void) {
     RUN_TEST(test_state_map_clone_rejects_aliased_destination);
     RUN_TEST(test_state_map_clone_rejects_interior_pool_alias);
     RUN_TEST(test_state_map_materialization_successfully_copies_logical_values);
+    RUN_TEST(test_state_map_materialization_rejects_interior_target_alias);
+    RUN_TEST(test_state_map_materialization_rejects_overlapping_target_arrays);
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);
     RUN_TEST(test_state_map_rejects_borrowed_value_across_suspend);
     RUN_TEST(test_state_map_builder_records_boundaries_and_is_liveness_conservative);

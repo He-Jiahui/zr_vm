@@ -140,8 +140,10 @@ static TZrBool zr_state_map_storage_spans_overlap(
     if (left->capacity == 0u || right->capacity == 0u) {
         return ZR_FALSE;
     }
-    if (left->storage == ZR_NULL || right->storage == ZR_NULL ||
-        !zr_state_map_size_valid(left->capacity, left->elementSize) ||
+    if (left->storage == ZR_NULL || right->storage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!zr_state_map_size_valid(left->capacity, left->elementSize) ||
         !zr_state_map_size_valid(right->capacity, right->elementSize)) {
         return ZR_TRUE;
     }
@@ -771,15 +773,41 @@ static TZrBool zr_state_map_validate(const SZrExecIrFunction *function,
 
 static TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target,
                                          const SZrExecIrStateMap *map) {
+    const SZrStateMapStorageSpan targetStorage[] = {
+        {target != ZR_NULL ? target->values : ZR_NULL,
+         target != ZR_NULL ? target->valueCapacity : 0u,
+         sizeof(*target->values)},
+        {target != ZR_NULL ? target->roots : ZR_NULL,
+         target != ZR_NULL ? target->rootCapacity : 0u,
+         sizeof(*target->roots)},
+        {target != ZR_NULL ? target->ownerStates : ZR_NULL,
+         target != ZR_NULL ? target->ownerStateCapacity : 0u,
+         sizeof(*target->ownerStates)}
+    };
+    const SZrStateMapStorageSpan mapStorage[] = {
+        {map != ZR_NULL ? map->entries : ZR_NULL,
+         map != ZR_NULL ? map->entryCapacity : 0u,
+         sizeof(*map->entries)},
+        {map != ZR_NULL ? map->valuePool : ZR_NULL,
+         map != ZR_NULL ? map->valueCapacity : 0u,
+         sizeof(*map->valuePool)},
+        {map != ZR_NULL ? map->rootPool : ZR_NULL,
+         map != ZR_NULL ? map->rootCapacity : 0u,
+         sizeof(*map->rootPool)},
+        {map != ZR_NULL ? map->ownerStatePool : ZR_NULL,
+         map != ZR_NULL ? map->ownerStateCapacity : 0u,
+         sizeof(*map->ownerStatePool)}
+    };
+    TZrUInt32 index;
+    TZrUInt32 other;
+
     if (target == ZR_NULL || target->valueCount > target->valueCapacity ||
         target->rootCount > target->rootCapacity ||
         target->ownerStateCount > target->ownerStateCapacity ||
-        (target->valueCount != 0u && target->values == ZR_NULL) ||
-        (target->rootCount != 0u && target->roots == ZR_NULL) ||
-        (target->ownerStateCount != 0u && target->ownerStates == ZR_NULL) ||
-        (target->valueCapacity == 0u && target->values != ZR_NULL) ||
-        (target->rootCapacity == 0u && target->roots != ZR_NULL) ||
-        (target->ownerStateCapacity == 0u && target->ownerStates != ZR_NULL)) {
+        ((target->valueCapacity == 0u) == (target->values != ZR_NULL)) ||
+        ((target->rootCapacity == 0u) == (target->roots != ZR_NULL)) ||
+        ((target->ownerStateCapacity == 0u) ==
+             (target->ownerStates != ZR_NULL))) {
         return ZR_FALSE;
     }
     if ((target->values != ZR_NULL && target->values == target->roots) ||
@@ -787,19 +815,25 @@ static TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *targe
         (target->roots != ZR_NULL && target->roots == target->ownerStates)) {
         return ZR_FALSE;
     }
-    /* A target must not alias a map-owned pool: commit frees the old target. */
-    return (TZrBool)(!(target->values != ZR_NULL &&
-                       (target->values == map->valuePool ||
-                        target->values == map->rootPool ||
-                        target->values == map->ownerStatePool)) &&
-                     !(target->roots != ZR_NULL &&
-                       (target->roots == map->valuePool ||
-                        target->roots == map->rootPool ||
-                        target->roots == map->ownerStatePool)) &&
-                     !(target->ownerStates != ZR_NULL &&
-                       (target->ownerStates == map->valuePool ||
-                        target->ownerStates == map->rootPool ||
-                        target->ownerStates == map->ownerStatePool)));
+    for (index = 0u; index < (TZrUInt32)(sizeof(targetStorage) /
+                                         sizeof(targetStorage[0])); ++index) {
+        for (other = index + 1u;
+             other < (TZrUInt32)(sizeof(targetStorage) /
+                                 sizeof(targetStorage[0])); ++other) {
+            if (zr_state_map_storage_spans_overlap(&targetStorage[index],
+                                                   &targetStorage[other])) {
+                return ZR_FALSE;
+            }
+        }
+        for (other = 0u; other < (TZrUInt32)(sizeof(mapStorage) /
+                                             sizeof(mapStorage[0])); ++other) {
+            if (zr_state_map_storage_spans_overlap(&targetStorage[index],
+                                                   &mapStorage[other])) {
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request,
