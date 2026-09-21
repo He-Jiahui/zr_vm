@@ -1,6 +1,7 @@
 #include "zr_vm_core/exec_ir_state_map.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -120,13 +121,58 @@ static TZrBool zr_state_map_storage_shape_valid(const SZrExecIrStateMap *map) {
                           (map->ownerStatePool == ZR_NULL)));
 }
 
+typedef struct SZrStateMapStorageSpan {
+    const void *storage;
+    TZrUInt32 capacity;
+    size_t elementSize;
+} SZrStateMapStorageSpan;
+
+static TZrBool zr_state_map_storage_spans_overlap(
+        const SZrStateMapStorageSpan *left,
+        const SZrStateMapStorageSpan *right) {
+    size_t leftBytes;
+    size_t rightBytes;
+    uintptr_t leftStart;
+    uintptr_t rightStart;
+    uintptr_t leftEnd;
+    uintptr_t rightEnd;
+
+    if (left->capacity == 0u || right->capacity == 0u) {
+        return ZR_FALSE;
+    }
+    if (left->storage == ZR_NULL || right->storage == ZR_NULL ||
+        !zr_state_map_size_valid(left->capacity, left->elementSize) ||
+        !zr_state_map_size_valid(right->capacity, right->elementSize)) {
+        return ZR_TRUE;
+    }
+    leftBytes = (size_t)left->capacity * left->elementSize;
+    rightBytes = (size_t)right->capacity * right->elementSize;
+    leftStart = (uintptr_t)left->storage;
+    rightStart = (uintptr_t)right->storage;
+    if (leftBytes > (size_t)(UINTPTR_MAX - leftStart) ||
+        rightBytes > (size_t)(UINTPTR_MAX - rightStart)) {
+        return ZR_TRUE;
+    }
+    leftEnd = leftStart + (uintptr_t)leftBytes;
+    rightEnd = rightStart + (uintptr_t)rightBytes;
+    return (TZrBool)(leftStart < rightEnd && rightStart < leftEnd);
+}
+
 static TZrBool zr_state_map_storage_is_shared(const SZrExecIrStateMap *left,
                                                const SZrExecIrStateMap *right) {
-    const void *leftStorage[] = {
-        left->entries, left->valuePool, left->rootPool, left->ownerStatePool
+    const SZrStateMapStorageSpan leftStorage[] = {
+        {left->entries, left->entryCapacity, sizeof(*left->entries)},
+        {left->valuePool, left->valueCapacity, sizeof(*left->valuePool)},
+        {left->rootPool, left->rootCapacity, sizeof(*left->rootPool)},
+        {left->ownerStatePool, left->ownerStateCapacity,
+         sizeof(*left->ownerStatePool)}
     };
-    const void *rightStorage[] = {
-        right->entries, right->valuePool, right->rootPool, right->ownerStatePool
+    const SZrStateMapStorageSpan rightStorage[] = {
+        {right->entries, right->entryCapacity, sizeof(*right->entries)},
+        {right->valuePool, right->valueCapacity, sizeof(*right->valuePool)},
+        {right->rootPool, right->rootCapacity, sizeof(*right->rootPool)},
+        {right->ownerStatePool, right->ownerStateCapacity,
+         sizeof(*right->ownerStatePool)}
     };
     TZrUInt32 leftIndex;
     TZrUInt32 rightIndex;
@@ -134,14 +180,12 @@ static TZrBool zr_state_map_storage_is_shared(const SZrExecIrStateMap *left,
     for (leftIndex = 0u;
          leftIndex < (TZrUInt32)(sizeof(leftStorage) / sizeof(leftStorage[0]));
          ++leftIndex) {
-        if (leftStorage[leftIndex] == ZR_NULL) {
-            continue;
-        }
         for (rightIndex = 0u;
              rightIndex < (TZrUInt32)(sizeof(rightStorage) /
                                       sizeof(rightStorage[0]));
              ++rightIndex) {
-            if (leftStorage[leftIndex] == rightStorage[rightIndex]) {
+            if (zr_state_map_storage_spans_overlap(&leftStorage[leftIndex],
+                                                   &rightStorage[rightIndex])) {
                 return ZR_TRUE;
             }
         }

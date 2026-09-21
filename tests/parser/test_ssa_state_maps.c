@@ -19,6 +19,7 @@ void test_state_map_materialization_rejects_unreachable_handler(void);
 void test_state_map_materialization_requires_throw_boundary_for_handler(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_clone_rejects_aliased_destination(void);
+void test_state_map_clone_rejects_interior_pool_alias(void);
 void test_state_map_materialization_successfully_copies_logical_values(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
 void test_state_map_rejects_borrowed_value_across_suspend(void);
@@ -422,6 +423,29 @@ void test_state_map_clone_rejects_aliased_destination(void) {
     ZrCore_ExecIr_StateMapFree(&source);
 }
 
+void test_state_map_clone_rejects_interior_pool_alias(void) {
+    SZrExecIrStateMap source;
+    SZrExecIrStateMap destination;
+    TZrExecIrValueId *expandedPool;
+
+    map_with_one_entry(&source, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    expandedPool = (TZrExecIrValueId *)realloc(
+            source.valuePool, 2u * sizeof(*source.valuePool));
+    TEST_ASSERT_NOT_NULL(expandedPool);
+    source.valuePool = expandedPool;
+    source.valueCapacity = 2u;
+    ZrCore_ExecIr_StateMapInit(&destination);
+    destination.valuePool = &source.valuePool[1];
+    destination.valueCapacity = 1u;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_StateMapClone(&source, &destination));
+    destination.valuePool = ZR_NULL;
+    destination.valueCapacity = 0u;
+    TEST_ASSERT_EQUAL(1u, source.valuePool[0]);
+    ZrCore_ExecIr_StateMapFree(&source);
+}
+
 void test_state_map_materialization_successfully_copies_logical_values(void) {
     SZrExecIrStateMap map;
     SZrExecIrFunction function;
@@ -709,6 +733,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_requires_throw_boundary_for_handler);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
     RUN_TEST(test_state_map_clone_rejects_aliased_destination);
+    RUN_TEST(test_state_map_clone_rejects_interior_pool_alias);
     RUN_TEST(test_state_map_materialization_successfully_copies_logical_values);
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);
     RUN_TEST(test_state_map_rejects_borrowed_value_across_suspend);
