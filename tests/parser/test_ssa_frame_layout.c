@@ -67,6 +67,10 @@ int main(void) {
     assert(!ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
     values[0].slotClass = ZR_EXEC_IR_PACKED_SLOT_SCALAR;
+    values[0].flags = (TZrUInt32)1u << 31u;
+    assert(!ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+    values[0].flags = 0u;
     values[0].byteAlign = 3u;
     assert(!ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
     assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);

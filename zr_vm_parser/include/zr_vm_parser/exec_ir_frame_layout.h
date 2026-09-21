@@ -17,6 +17,10 @@ typedef enum EZrExecIrPackedSlotClass {
 #define ZR_EXEC_IR_PACKED_SLOT_ADDRESS_ESCAPED ((TZrUInt32)1u << 0u)
 #define ZR_EXEC_IR_PACKED_SLOT_MATERIALIZE ((TZrUInt32)1u << 1u)
 #define ZR_EXEC_IR_PACKED_SLOT_PARAMETER ((TZrUInt32)1u << 2u)
+#define ZR_EXEC_IR_PACKED_SLOT_KNOWN_FLAGS \
+    (ZR_EXEC_IR_PACKED_SLOT_ADDRESS_ESCAPED | \
+     ZR_EXEC_IR_PACKED_SLOT_MATERIALIZE | \
+     ZR_EXEC_IR_PACKED_SLOT_PARAMETER)
 
 typedef struct SZrExecIrPackedValue {
     TZrExecIrValueId valueId;

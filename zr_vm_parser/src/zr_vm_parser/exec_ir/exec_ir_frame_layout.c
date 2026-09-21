@@ -115,6 +115,7 @@ TZrBool ZrParser_ExecIr_LayoutPackedFrame(const SZrExecIrPackedFrameRequest *req
             const SZrExecIrPackedValue *v = &request->values[i];
             if (v->valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
                 !packed_slot_class_valid(v->slotClass) ||
+                (v->flags & ~ZR_EXEC_IR_PACKED_SLOT_KNOWN_FLAGS) != 0u ||
                 v->byteSize == 0u || v->byteAlign == 0u || (v->byteAlign & (v->byteAlign - 1u)) != 0u ||
                 v->liveEnd < v->liveStart) {
                 frame_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, request->functionToken, i);
