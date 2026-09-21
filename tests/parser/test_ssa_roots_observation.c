@@ -41,6 +41,25 @@ int main(void) {
         assert(writeback[0] == 11u && writeback[1] == 22u);
         assert(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
     }
+    {
+        TZrUInt64 rootValue = UINT64_C(0x123456789abcdef0);
+        TZrUInt64 observedRoot = 0u;
+        TZrUInt64 scalarValues[2] = {UINT64_C(0xffffffffffffffff), 42u};
+        TZrUInt64 writeback[2] = {0u, 0u};
+        TZrUInt32 invalidated[2] = {UINT32_MAX, UINT32_MAX};
+        SZrExecIrFrameObservation observation = {
+            &layout, frame, scalarValues, 2u, writeback, 2u,
+            invalidated, 2u, 0u
+        };
+        memcpy(frame + layout.frame.slots[layout.logicalToPhysical[0]].byteOffset,
+               &rootValue, sizeof(rootValue));
+        assert(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        memcpy(&observedRoot,
+               frame + layout.frame.slots[layout.logicalToPhysical[0]].byteOffset,
+               sizeof(observedRoot));
+        assert(observedRoot == rootValue && writeback[0] == rootValue);
+        assert(writeback[1] == scalarValues[1]);
+    }
     specs[1].baseValueId = 99u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);

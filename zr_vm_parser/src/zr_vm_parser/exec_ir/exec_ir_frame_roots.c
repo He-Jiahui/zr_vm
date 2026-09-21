@@ -151,7 +151,8 @@ TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
     TZrUInt32 uniquePhysicalCount = 0u;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (observation == ZR_NULL || (layout = observation->layout) == ZR_NULL ||
-        layout->logicalToPhysical == ZR_NULL || observation->frameBase == ZR_NULL ||
+        layout->logicalToPhysical == ZR_NULL || layout->slotClasses == ZR_NULL ||
+        observation->frameBase == ZR_NULL ||
         (layout->frame.slotCount != 0u && layout->frame.slots == ZR_NULL) ||
         observation->writebackValues == ZR_NULL ||
         observation->writebackCapacity < layout->frame.logicalSlotCount ||
@@ -187,7 +188,9 @@ TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
         TZrUInt32 byteSize;
         byteSize = layout->frame.slots[physical].byteSize < sizeof(TZrUInt64)
                        ? layout->frame.slots[physical].byteSize : sizeof(TZrUInt64);
-        if (observation->scalarValues != ZR_NULL && logical < observation->scalarValueCount) {
+        if (observation->scalarValues != ZR_NULL &&
+            logical < observation->scalarValueCount &&
+            layout->slotClasses[logical] == ZR_EXEC_IR_PACKED_SLOT_SCALAR) {
             memcpy(observation->frameBase + layout->frame.slots[physical].byteOffset,
                    &observation->scalarValues[logical], byteSize);
         }
