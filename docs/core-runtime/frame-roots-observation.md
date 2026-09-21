@@ -22,6 +22,9 @@ address is formed or a callback is invoked.
 Construction also validates slot count/capacity relationships and required
 physical and logical tables before allocating a candidate map; failure leaves
 the caller's existing map intact.
+Managed and derived roots are accepted only for packed REF/BOXED values, while
+inline-field roots require INLINE_SPAN/BOXED storage. Scalar bit patterns are
+therefore never promoted to roots solely because they resemble an address.
 
 `ZrParser_ExecIr_ObserveFrame` provides a bounded materialization/writeback
 boundary for debugger and deoptimization consumers. It validates the descriptor

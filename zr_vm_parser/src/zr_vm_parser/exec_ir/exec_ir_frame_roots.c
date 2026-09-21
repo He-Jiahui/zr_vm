@@ -30,7 +30,8 @@ void ZrParser_ExecIr_FrameRootMapFree(SZrExecIrFrameRootMap *map) {
 }
 
 static TZrBool find_physical(const SZrExecIrPackedFrameLayout *layout,
-                             TZrExecIrValueId valueId, TZrUInt32 *out) {
+                             TZrExecIrValueId valueId, TZrUInt32 *out,
+                             EZrExecIrPackedSlotClass *outClass) {
     TZrUInt32 i;
     if (layout == ZR_NULL || out == ZR_NULL || valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
         layout->logicalValueIds == ZR_NULL || layout->logicalToPhysical == ZR_NULL) {
@@ -40,6 +41,7 @@ static TZrBool find_physical(const SZrExecIrPackedFrameLayout *layout,
         if (layout->logicalValueIds[i] == valueId &&
             layout->logicalToPhysical[i] < layout->frame.storageSlotCount) {
             *out = layout->logicalToPhysical[i];
+            if (outClass != ZR_NULL) *outClass = layout->slotClasses[i];
             return ZR_TRUE;
         }
     }
@@ -61,7 +63,8 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
         (layout->frame.slotCount != 0u && layout->frame.slots == ZR_NULL) ||
         (layout->frame.logicalSlotCount != 0u &&
          (layout->logicalValueIds == ZR_NULL ||
-          layout->logicalToPhysical == ZR_NULL))) {
+          layout->logicalToPhysical == ZR_NULL ||
+          layout->slotClasses == ZR_NULL))) {
         root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u); return ZR_FALSE;
     }
     ZrParser_ExecIr_FrameRootMapInit(&candidate);
@@ -71,11 +74,21 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
     }
     for (i = 0u; i < specCount; ++i) {
         TZrUInt32 physical, basePhysical = UINT32_MAX, prior;
+        EZrExecIrPackedSlotClass slotClass;
         const SZrExecIrFrameRootSpec *s = &specs[i];
-        if (!find_physical(layout, s->valueId, &physical) ||
+        if (!find_physical(layout, s->valueId, &physical, &slotClass) ||
             !root_kind_valid(s->kind) ||
-            (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED && !find_physical(layout, s->baseValueId, &basePhysical)) ||
-            (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED && s->baseValueId == s->valueId)) {
+            ((s->kind == ZR_EXEC_IR_FRAME_ROOT_MANAGED ||
+              s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) &&
+             slotClass != ZR_EXEC_IR_PACKED_SLOT_REF &&
+             slotClass != ZR_EXEC_IR_PACKED_SLOT_BOXED) ||
+            (s->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD &&
+             slotClass != ZR_EXEC_IR_PACKED_SLOT_INLINE_SPAN &&
+             slotClass != ZR_EXEC_IR_PACKED_SLOT_BOXED) ||
+            (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED &&
+             !find_physical(layout, s->baseValueId, &basePhysical, ZR_NULL)) ||
+            (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED &&
+             s->baseValueId == s->valueId)) {
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, s->valueId);
             ZrParser_ExecIr_FrameRootMapFree(&candidate); return ZR_FALSE;
         }
