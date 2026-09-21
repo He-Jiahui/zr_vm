@@ -86,6 +86,16 @@ static void test_layout_rejects_unaligned_frame_size(void) {
     assert(diagnostic.actual == layout.frameByteSize);
 }
 
+static void test_layout_rejects_excess_storage_slots(void) {
+    SZrExecutionFrameLayout layout = make_layout(NULL, 0u, 1u, 8u);
+    SZrExecutionFrameDiagnostic diagnostic;
+
+    assert(!ZrCore_ExecutionFrameLayout_Validate(&layout, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_FRAME_DIAGNOSTIC_INVALID_SLOT);
+    assert(diagnostic.expected == layout.logicalSlotCount);
+    assert(diagnostic.actual == layout.storageSlotCount);
+}
+
 static void test_layout_hash_is_independent_of_producer_order(void) {
     SZrExecutionFrameSlot first[2] = {
         {7u, 0u, 0u, 8u, 8u, 0u, 1u, 1u,
@@ -107,6 +117,7 @@ int main(void) {
     test_layout_rejects_overlapping_reuse_and_escape();
     test_layout_rejects_bad_alignment_and_offset_overflow();
     test_layout_rejects_unaligned_frame_size();
+    test_layout_rejects_excess_storage_slots();
     test_layout_hash_is_independent_of_producer_order();
     return 0;
 }

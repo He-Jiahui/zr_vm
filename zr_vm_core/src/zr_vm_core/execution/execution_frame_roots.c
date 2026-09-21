@@ -177,6 +177,13 @@ TZrBool ZrCore_ExecutionFrameLayout_Validate(
                              layout->schemaVersion);
         return ZR_FALSE;
     }
+    if (layout->storageSlotCount > layout->logicalSlotCount) {
+        execution_frame_diag(diagnostic,
+                             ZR_EXECUTION_FRAME_DIAGNOSTIC_INVALID_SLOT,
+                             0u, 0u, layout->logicalSlotCount,
+                             layout->storageSlotCount);
+        return ZR_FALSE;
+    }
     if (layout->parameterPrefixCount > layout->logicalSlotCount ||
         layout->slotCount != layout->logicalSlotCount ||
         (layout->slotCount != 0u && layout->slots == ZR_NULL) ||

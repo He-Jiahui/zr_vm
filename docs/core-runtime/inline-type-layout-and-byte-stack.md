@@ -480,6 +480,7 @@ In Debug builds, the short-string major-root traversal uses the string hash-set 
 `SZrFunction` now carries a sidecar byte-frame description in addition to the existing fixed-slot execution ABI:
 
 - `frameByteSize` and `frameByteAlign` describe the contiguous byte region needed for the function frame.
+- The descriptor also requires `storageSlotCount <= logicalSlotCount`; impossible physical-slot counts are rejected before scanning slots.
 - The runtime-neutral packed-frame validator requires `frameByteSize` to be a multiple of `frameByteAlign`; the ExecIR packed-frame builder rounds an odd return span up to that boundary, and malformed total spans are rejected before slot/root access.
 - `frameSlotLayoutLength` matches the current `stackSize` for compiled functions.
 - `SZrFunctionFrameSlotLayout` maps each logical stack slot to `stackSlot`, `byteOffset`, `byteSize`, `byteAlign`, `slotKind`, `isParameter`, and `typeLayoutId`.
