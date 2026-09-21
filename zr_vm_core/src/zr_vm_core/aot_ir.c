@@ -36,6 +36,24 @@ static TZrBool aot_ir_alignment_valid(TZrUInt32 alignment) {
     return (TZrBool)(alignment != 0u && (alignment & (alignment - 1u)) == 0u);
 }
 
+static TZrBool aot_ir_opcode_is_terminator(TZrUInt32 opcode) {
+    switch ((EZrExecIrOpcode)opcode) {
+        case ZR_EXEC_IR_OPCODE_BRANCH:
+        case ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH:
+        case ZR_EXEC_IR_OPCODE_SWITCH:
+        case ZR_EXEC_IR_OPCODE_INVOKE:
+        case ZR_EXEC_IR_OPCODE_THROW:
+        case ZR_EXEC_IR_OPCODE_SUSPEND:
+        case ZR_EXEC_IR_OPCODE_RETURN:
+        case ZR_EXEC_IR_OPCODE_ITER_INIT:
+        case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
+        case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool aot_ir_block_id_exists(const SZrAotIrFunction *function,
                                       TZrUInt32 blockId) {
     for (TZrUInt32 index = 0u; index < function->blockCount; ++index) {
@@ -221,16 +239,23 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         }
         if (block->terminatorInstructionId != ZR_AOT_IR_ID_INVALID) {
             TZrBool found = ZR_FALSE;
+            const SZrAotIrInstruction *terminator = ZR_NULL;
             for (TZrUInt32 j = 0u; j < block->instructions.count; ++j) {
                 if (function->instructions[block->instructions.offset + j].id ==
                     block->terminatorInstructionId) {
                     found = ZR_TRUE;
+                    terminator = &function->instructions[block->instructions.offset + j];
                     break;
                 }
             }
             if (!found) {
                 return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id, block->id,
                                    block->terminatorInstructionId, i, 1u, 0u);
+            }
+            if (!aot_ir_opcode_is_terminator(terminator->opcode)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
+                                   block->id, terminator->id, i, 1u,
+                                   terminator->opcode);
             }
         }
         for (TZrUInt32 j = 0u; j < block->successors.count; ++j) {

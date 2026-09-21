@@ -76,7 +76,7 @@ static void adapter_and_backend_facts_are_shared(void) {
          {0u, 0u}, {0u, 0u}, 0u, 0u, 7u, 0u, 0u, 0u},
         {2u, ZR_EXEC_IR_OPCODE_CALL, 0u, {0u, 0u}, {0u, 0u},
          {0u, 0u}, {0u, 0u}, 0u, 0u, 8u, 0u, 0u, 0u},
-        {3u, ZR_EXEC_IR_OPCODE_NOP, 0u, {0u, 0u}, {0u, 0u},
+        {3u, ZR_EXEC_IR_OPCODE_SUSPEND, 0u, {0u, 0u}, {0u, 0u},
          {0u, 0u}, {0u, 0u}, 0u, 0u, 9u, 0u, 0u, 0u}
     };
     SZrAotIrFunction function;

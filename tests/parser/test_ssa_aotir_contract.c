@@ -35,7 +35,7 @@ int main(void) {
     };
     const SZrAotIrBlock blocks[] = {
         {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 1u},
-         {0u, 1u}, 1u}
+         {0u, 1u}, ZR_AOT_IR_ID_INVALID}
     };
     SZrAotIrFunction function;
     SZrAotIrModule module;
@@ -84,6 +84,18 @@ int main(void) {
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);
     assert(hash == ZrCore_AotIr_HashModule(&module));
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrBlock malformedBlock = blocks[0];
+        malformedBlock.terminatorInstructionId = instructions[0].id;
+        malformedFunction.blocks = &malformedBlock;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.blockId == malformedBlock.id);
+        assert(diagnostic.instructionId == instructions[0].id);
+    }
     {
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
@@ -181,7 +193,7 @@ int main(void) {
         const SZrAotIrBlock malformedBlocks[] = {
             {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 0u}, {0u, 0u},
              {0u, 1u}, 0u},
-            {2u, 0u, {0u, 1u}, {1u, 1u}, {0u, 0u}, 1u}
+            {2u, 0u, {0u, 1u}, {1u, 1u}, {0u, 0u}, 0u}
         };
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
