@@ -490,6 +490,7 @@ In Debug builds, the short-string major-root traversal uses the string hash-set 
 - Packed-frame requests reject flag bits outside `ZR_EXEC_IR_PACKED_SLOT_KNOWN_FLAGS`, so unsupported placement semantics cannot be silently ignored or omitted from the resulting ABI identity.
 - Every logical value's accepted packed-slot flags participate in the layout hash; toggling `MATERIALIZE` changes observation/deoptimization identity even when physical offsets stay unchanged.
 - Every logical value's type token, byte size, and byte alignment participate in the layout hash, including later occupants of a reused physical slot whose type is not stored in the slot descriptor.
+- `ZR_EXEC_IR_PACKED_SLOT_PARAMETER` is valid only inside `parameterPrefixCount`; a flagged value outside the prefix is rejected instead of being pinned while the descriptor publishes it as a local.
 - Parser-side root-map construction validates managed/derived slot spans and requires an inline-field pointer to fit wholly inside its physical slot; malformed offsets fail before a visitor can form an out-of-frame address.
 - Parser-side root-map construction rejects duplicate entries for the same logical value, root kind, and inline-field offset, matching the shared runtime contract and preventing duplicate root visitation.
 - Parser-side root visitation rejects maps whose root count exceeds their declared capacity before invoking any callback.
