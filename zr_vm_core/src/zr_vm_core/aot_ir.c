@@ -88,7 +88,6 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     if (function->id == ZR_AOT_IR_ID_INVALID || function->functionToken == 0u ||
         function->signatureHash == 0u || function->frameLayout.layoutHash == 0u ||
         !aot_ir_alignment_valid(function->frameLayout.frameByteAlign) ||
-        function->frameLayout.frameByteSize < function->frameLayout.returnAreaOffset ||
         function->blocks == ZR_NULL || function->instructions == ZR_NULL) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, function->id, 0u, 0u,
                            functionIndex, 1u, 0u);
@@ -102,6 +101,13 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         function->contract.moduleHash != module->contract.moduleHash) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
                            functionIndex, module->contract.moduleHash, function->contract.moduleHash);
+    }
+    if (function->frameLayout.frameByteSize < function->frameLayout.returnAreaOffset ||
+        (function->frameLayout.frameByteSize &
+         (function->frameLayout.frameByteAlign - 1u)) != 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, function->id, 0u, 0u,
+                           functionIndex, function->frameLayout.frameByteAlign,
+                           function->frameLayout.frameByteSize);
     }
     if (function->blockCount == 0u || function->instructionCount == 0u ||
         ((function->operandCount > 0u) && (function->operandPool == ZR_NULL)) ||

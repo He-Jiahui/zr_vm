@@ -209,6 +209,17 @@ int main(void) {
         assert(diagnostic.expected == 1u);
         assert(diagnostic.actual == malformed.target.targetTripleHash);
     }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.frameLayout.frameByteSize = 10u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_LAYOUT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == function.frameLayout.frameByteAlign);
+        assert(diagnostic.actual == malformedFunction.frameLayout.frameByteSize);
+    }
     module.relocationCount = 1u;
     assert(!ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));
     assert(diagnostic.status == ZR_AOT_IR_RELOCATION);
