@@ -284,6 +284,15 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                instruction->id, i, 0u,
                                instruction->phiIncoming.count);
         }
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_PHI &&
+            (containingBlock == ZR_NULL ||
+             instruction->phiIncoming.count != containingBlock->predecessors.count)) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id,
+                               containingBlock != ZR_NULL ? containingBlock->id : 0u,
+                               instruction->id, i,
+                               containingBlock != ZR_NULL ? containingBlock->predecessors.count : 0u,
+                               instruction->phiIncoming.count);
+        }
         for (TZrUInt32 j = 0u; j < instruction->phiIncoming.count; ++j) {
             const SZrAotIrPhiIncoming *incoming = &function->phiIncomingPool[
                     instruction->phiIncoming.offset + j];
@@ -296,13 +305,16 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                    incoming->predecessorBlockId);
             }
             if (containingBlock == ZR_NULL ||
-                aot_ir_edge_occurrences(function, containingBlock->predecessors,
-                                         incoming->predecessorBlockId) == 0u) {
+                function->successorPool[containingBlock->predecessors.offset + j] !=
+                        incoming->predecessorBlockId) {
                 return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG,
                                    function->id,
                                    containingBlock != ZR_NULL ? containingBlock->id : 0u,
                                    instruction->id, j,
-                                   containingBlock != ZR_NULL ? containingBlock->predecessors.count : 0u,
+                                   containingBlock != ZR_NULL
+                                       ? function->successorPool[
+                                                 containingBlock->predecessors.offset + j]
+                                       : 0u,
                                    incoming->predecessorBlockId);
             }
             if (incoming->valueId == ZR_AOT_IR_ID_INVALID) {

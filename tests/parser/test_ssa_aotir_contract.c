@@ -22,7 +22,7 @@ static void fill_contract(SZrExecutionContract *contract,
 int main(void) {
     const TZrUInt32 operandPool[] = {1u};
     const TZrUInt32 resultPool[] = {2u};
-    const TZrUInt32 successorPool[] = {1u, 1u};
+    const TZrUInt32 successorPool[] = {1u};
     const SZrAotIrPhiIncoming phiIncomingPool[] = {
         {1u, 1u}
     };
@@ -34,8 +34,8 @@ int main(void) {
          {0u, 0u}, {0u, 1u}, 0u, 0u, 1u, 0u, 0u, 0u}
     };
     const SZrAotIrBlock blocks[] = {
-        {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 2u},
-         {0u, 2u}, 1u}
+        {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 1u},
+         {0u, 1u}, 1u}
     };
     SZrAotIrFunction function;
     SZrAotIrModule module;
@@ -60,7 +60,7 @@ int main(void) {
     function.resultPool = resultPool;
     function.resultCount = 1u;
     function.successorPool = successorPool;
-    function.successorCount = 2u;
+    function.successorCount = 1u;
     function.phiIncomingPool = phiIncomingPool;
     function.phiIncomingCount = 1u;
     function.stateMaps = stateMaps;
@@ -179,9 +179,9 @@ int main(void) {
         const TZrUInt32 malformedSuccessors[] = {2u, 1u};
         const SZrAotIrPhiIncoming malformedPhi[] = {{2u, 1u}};
         const SZrAotIrBlock malformedBlocks[] = {
-            {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 0u},
-             {0u, 1u}, 1u},
-            {2u, 0u, {0u, 0u}, {1u, 1u}, {0u, 0u}, 0u}
+            {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 0u}, {0u, 0u},
+             {0u, 1u}, 0u},
+            {2u, 0u, {0u, 1u}, {1u, 1u}, {0u, 0u}, 1u}
         };
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
@@ -196,6 +196,22 @@ int main(void) {
         assert(diagnostic.functionId == function.id);
         assert(diagnostic.instructionId == instructions[0].id);
         assert(diagnostic.actual == malformedPhi[0].predecessorBlockId);
+    }
+    {
+        const SZrAotIrPhiIncoming malformedPhi[] = {{1u, 1u}, {1u, 1u}};
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrInstruction malformedInstruction = instructions[0];
+        malformedInstruction.phiIncoming.count = 2u;
+        malformedFunction.instructions = &malformedInstruction;
+        malformedFunction.phiIncomingPool = malformedPhi;
+        malformedFunction.phiIncomingCount = 2u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CFG);
+        assert(diagnostic.instructionId == malformedInstruction.id);
+        assert(diagnostic.expected == blocks[0].predecessors.count);
+        assert(diagnostic.actual == malformedInstruction.phiIncoming.count);
     }
     {
         SZrAotIrModule malformed = module;
