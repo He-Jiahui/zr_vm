@@ -230,6 +230,10 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     for (TZrUInt32 i = 0u; i < function->stateMapCount; ++i) {
         const SZrAotIrStateMapEntry *state = &function->stateMaps[i];
         TZrBool instructionFound = ZR_FALSE;
+        if (state->resumeId == ZR_AOT_IR_ID_INVALID) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
+                               state->instructionId, i, 1u, state->resumeId);
+        }
         if (state->instructionId == ZR_AOT_IR_ID_INVALID) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
                                state->instructionId, i, 1u, state->instructionId);

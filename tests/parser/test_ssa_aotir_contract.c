@@ -107,6 +107,19 @@ int main(void) {
         assert(diagnostic.instructionId == malformedState.instructionId);
     }
     {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        SZrAotIrStateMapEntry malformedState = stateMaps[0];
+        malformedState.resumeId = ZR_AOT_IR_ID_INVALID;
+        malformedFunction.stateMaps = &malformedState;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.instructionId == malformedState.instructionId);
+        assert(diagnostic.actual == malformedState.resumeId);
+    }
+    {
         const TZrUInt32 malformedSuccessor[] = {99u, 99u};
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
