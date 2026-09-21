@@ -277,6 +277,11 @@ EZrAotIrStatus ZrCore_AotIr_ValidateTarget(const SZrAotIrTargetContract *target,
                                        ? target->targetTripleHash
                                        : target->abiHash);
     }
+    if ((target->requiredCapabilities & ~ZR_EXECUTION_CAPABILITY_KNOWN_MASK) != 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_TARGET, 0u, 0u, 0u, 0u,
+                           ZR_EXECUTION_CAPABILITY_KNOWN_MASK,
+                           target->requiredCapabilities);
+    }
     return ZR_AOT_IR_OK;
 }
 
