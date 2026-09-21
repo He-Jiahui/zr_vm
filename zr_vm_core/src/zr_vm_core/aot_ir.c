@@ -113,7 +113,7 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         const SZrAotIrBlock *block = &function->blocks[i];
         if (block->id == ZR_AOT_IR_ID_INVALID ||
             !aot_ir_range_valid(block->instructions, function->instructionCount) ||
-            !aot_ir_range_valid(block->predecessors, function->blockCount) ||
+            !aot_ir_range_valid(block->predecessors, function->successorCount) ||
             !aot_ir_range_valid(block->successors, function->successorCount)) {
             return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id, block->id, 0u,
                                i, function->instructionCount, block->instructions.offset);

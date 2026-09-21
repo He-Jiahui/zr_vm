@@ -14,6 +14,10 @@ contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator and
 edge-target membership, state-map instruction membership, effect pairing, frame
 layout, and module/function hash identity.
 
+Block predecessor and successor ranges are views over the same numeric edge
+pool; their bounds use that pool's count, so parallel edges remain representable
+without treating the block count as an edge-capacity limit.
+
 `ZrCore_AotIr_IsRelocationFree` rejects module or function relocation rows.
 Unimplemented operation families should be reported by a lowering diagnostic;
 they must not silently fall back to semantic decoding of `SZrInstruction`.

@@ -22,7 +22,7 @@ static void fill_contract(SZrExecutionContract *contract,
 int main(void) {
     const TZrUInt32 operandPool[] = {1u};
     const TZrUInt32 resultPool[] = {2u};
-    const TZrUInt32 successorPool[] = {1u};
+    const TZrUInt32 successorPool[] = {1u, 1u};
     const SZrAotIrStateMapEntry stateMaps[] = {
         {1u, 1u, UINT64_C(77)}
     };
@@ -31,8 +31,8 @@ int main(void) {
          {0u, 0u}, {0u, 0u}, 0u, 0u, 1u, 0u, 0u, 0u}
     };
     const SZrAotIrBlock blocks[] = {
-        {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 0u},
-         {0u, 1u}, 1u}
+        {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 2u},
+         {0u, 2u}, 1u}
     };
     SZrAotIrFunction function;
     SZrAotIrModule module;
@@ -57,7 +57,7 @@ int main(void) {
     function.resultPool = resultPool;
     function.resultCount = 1u;
     function.successorPool = successorPool;
-    function.successorCount = 1u;
+    function.successorCount = 2u;
     function.stateMaps = stateMaps;
     function.stateMapCount = 1u;
     fill_contract(&function.contract, function.functionToken, UINT64_C(33),
@@ -102,7 +102,7 @@ int main(void) {
         assert(diagnostic.instructionId == malformedState.instructionId);
     }
     {
-        const TZrUInt32 malformedSuccessor[] = {99u};
+        const TZrUInt32 malformedSuccessor[] = {99u, 99u};
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
         malformedFunction.successorPool = malformedSuccessor;
@@ -114,12 +114,13 @@ int main(void) {
         assert(diagnostic.actual == malformedSuccessor[0]);
     }
     {
-        const TZrUInt32 malformedSuccessor[] = {99u};
+        const TZrUInt32 malformedSuccessor[] = {99u, 99u};
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
         SZrAotIrBlock malformedBlock = blocks[0];
         SZrAotIrInstruction malformedInstruction = instructions[0];
         malformedBlock.successors.count = 0u;
+        malformedBlock.predecessors.count = 0u;
         malformedInstruction.successors.count = 1u;
         malformedFunction.blocks = &malformedBlock;
         malformedFunction.instructions = &malformedInstruction;
