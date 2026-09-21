@@ -162,6 +162,7 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
                       root->valueId);
             return ZR_FALSE;
         }
+        if (!root->initialized) continue;
         if (root->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD) {
             if (root->fieldByteOffset > UINT32_MAX - addressOffset) {
                 root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, root->valueId); return ZR_FALSE;
