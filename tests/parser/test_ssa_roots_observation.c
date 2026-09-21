@@ -23,6 +23,19 @@ static TZrBool visit_order(SZrExecIrFrameRoot *root, TZrPtr slot,
     return ZR_TRUE;
 }
 
+static TZrBool visit_relocate(SZrExecIrFrameRoot *root, TZrPtr slot,
+                              TZrPtr base, TZrPtr data) {
+    TZrPtr newBase = data;
+    if (root->kind == ZR_EXEC_IR_FRAME_ROOT_MANAGED) {
+        memcpy(slot, &newBase, sizeof(newBase));
+    } else if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) {
+        TZrPtr observedBase = ZR_NULL;
+        memcpy(&observedBase, base, sizeof(observedBase));
+        assert(observedBase == newBase);
+    }
+    return ZR_TRUE;
+}
+
 int main(void) {
     SZrExecIrPackedValue values[3] = {
         {1u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 3u, 0u},
@@ -52,6 +65,17 @@ int main(void) {
         first = map.roots[0];
         map.roots[0] = map.roots[1];
         map.roots[1] = first;
+    }
+    {
+        TZrPtr newBase = (TZrPtr)(uintptr_t)0x1000u;
+        TZrPtr derived = ZR_NULL;
+        TZrPtr expected = (TZrPtr)(uintptr_t)0x1004u;
+        assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_relocate,
+                                              newBase, &d));
+        memcpy(&derived,
+               frame + layout.frame.slots[layout.logicalToPhysical[1]].byteOffset,
+               sizeof(derived));
+        assert(derived == expected);
     }
     count = 0u;
     map.roots[0].initialized = ZR_FALSE;

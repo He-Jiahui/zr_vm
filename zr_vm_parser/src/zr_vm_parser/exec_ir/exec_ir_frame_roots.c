@@ -1,6 +1,7 @@
 #include "zr_vm_parser/exec_ir_frame_roots.h"
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,6 +19,30 @@ static TZrBool root_kind_valid(EZrExecIrFrameRootKind kind) {
         default:
             return ZR_FALSE;
     }
+}
+
+static TZrBool derived_pointer(TZrPtr base, TZrInt64 offset, TZrPtr *out) {
+    uintptr_t bits;
+    uintptr_t adjusted;
+    if (out == ZR_NULL) return ZR_FALSE;
+    if (base == ZR_NULL) {
+        *out = ZR_NULL;
+        return ZR_TRUE;
+    }
+    bits = (uintptr_t)base;
+    if (offset >= 0) {
+        if ((uintmax_t)offset >
+            (uintmax_t)UINTPTR_MAX - (uintmax_t)bits) {
+            return ZR_FALSE;
+        }
+        adjusted = bits + (uintptr_t)offset;
+    } else {
+        uintmax_t magnitude = (uintmax_t)(-(offset + 1)) + 1u;
+        if (magnitude > (uintmax_t)bits) return ZR_FALSE;
+        adjusted = bits - (uintptr_t)magnitude;
+    }
+    *out = (TZrPtr)adjusted;
+    return ZR_TRUE;
 }
 
 void ZrParser_ExecIr_FrameRootMapInit(SZrExecIrFrameRootMap *map) {
@@ -97,6 +122,9 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
             layout->frame.slots[physical].byteSize >
                     layout->frame.frameByteSize -
                             layout->frame.slots[physical].byteOffset ||
+            ((s->kind == ZR_EXEC_IR_FRAME_ROOT_MANAGED ||
+              s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) &&
+             layout->frame.slots[physical].byteSize < sizeof(TZrPtr)) ||
             (s->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD &&
              (s->fieldByteOffset > layout->frame.slots[physical].byteSize ||
               sizeof(TZrPtr) >
@@ -108,7 +136,8 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
                       layout->frame.frameByteSize ||
               layout->frame.slots[basePhysical].byteSize >
                       layout->frame.frameByteSize -
-                              layout->frame.slots[basePhysical].byteOffset))) {
+                              layout->frame.slots[basePhysical].byteOffset ||
+              layout->frame.slots[basePhysical].byteSize < sizeof(TZrPtr)))) {
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
                       s->valueId);
             ZrParser_ExecIr_FrameRootMapFree(&candidate); return ZR_FALSE;
@@ -191,6 +220,18 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
                 root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                           root->valueId);
                 return ZR_FALSE;
+            }
+            if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) {
+                TZrPtr baseValue;
+                TZrPtr derived;
+                memcpy(&baseValue, base, sizeof(baseValue));
+                if (!derived_pointer(baseValue, root->derivedOffset, &derived)) {
+                    root_diag(diagnostic,
+                              ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                              root->valueId);
+                    return ZR_FALSE;
+                }
+                memcpy(address, &derived, sizeof(derived));
             }
         }
     }

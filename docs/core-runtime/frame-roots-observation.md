@@ -18,7 +18,10 @@ entries are visited; uninitialized entries are skipped and scalar slots are
 never scanned by accident. Derived entries retain their base slot and offset
 metadata for moving collectors and stack relocation. The visitor preflights all
 root metadata, then visits managed/inline roots before derived roots regardless
-of map order so a moving collector can update bases first.
+of map order so a moving collector can update bases first. After the derived
+callback, the adapter reloads the possibly moved base and checked-recomputes the
+derived slot as `base + derivedOffset`; managed/derived storage must be at least
+pointer-sized.
 Root-map construction and visitation both reject unknown root kinds before an
 address is formed or a callback is invoked.
 Construction also validates slot count/capacity relationships and required
