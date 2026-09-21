@@ -488,6 +488,7 @@ In Debug builds, the short-string major-root traversal uses the string hash-set 
 - Packed layouts retain an owned logical value-ID table beside `logicalToPhysical`. Root-map construction resolves every logical occupant through that table, so a later value that safely reuses an earlier physical slot remains addressable; every logical value ID also participates in the layout hash.
 - Packed-frame construction rejects duplicate logical value IDs with `ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION`; invalid slot classes, including negative enum representations, remain range errors.
 - Packed-frame requests reject flag bits outside `ZR_EXEC_IR_PACKED_SLOT_KNOWN_FLAGS`, so unsupported placement semantics cannot be silently ignored or omitted from the resulting ABI identity.
+- Every logical value's accepted packed-slot flags participate in the layout hash; toggling `MATERIALIZE` changes observation/deoptimization identity even when physical offsets stay unchanged.
 - Parser-side root-map construction validates managed/derived slot spans and requires an inline-field pointer to fit wholly inside its physical slot; malformed offsets fail before a visitor can form an out-of-frame address.
 - Parser-side root-map construction rejects duplicate entries for the same logical value, root kind, and inline-field offset, matching the shared runtime contract and preventing duplicate root visitation.
 - Parser-side root visitation rejects maps whose root count exceeds their declared capacity before invoking any callback.

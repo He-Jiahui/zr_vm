@@ -28,6 +28,12 @@ int main(void) {
 
     {
         TZrUInt64 originalLayoutHash = layout.frame.layoutHash;
+        values[0].flags = ZR_EXEC_IR_PACKED_SLOT_MATERIALIZE;
+        assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+        assert(layout.frame.layoutHash != originalLayoutHash);
+        values[0].flags = 0u;
+        assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
+        assert(layout.frame.layoutHash == originalLayoutHash);
         request.returnBufferSize = 9u;
         assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &diagnostic));
         assert(layout.frame.frameByteSize % layout.frame.frameByteAlign == 0u);
