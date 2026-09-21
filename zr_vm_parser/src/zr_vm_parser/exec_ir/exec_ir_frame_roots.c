@@ -61,6 +61,27 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, s->valueId);
             ZrParser_ExecIr_FrameRootMapFree(&candidate); return ZR_FALSE;
         }
+        if (physical >= layout->frame.slotCount ||
+            layout->frame.slots[physical].byteOffset > layout->frame.frameByteSize ||
+            layout->frame.slots[physical].byteSize >
+                    layout->frame.frameByteSize -
+                            layout->frame.slots[physical].byteOffset ||
+            (s->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD &&
+             (s->fieldByteOffset > layout->frame.slots[physical].byteSize ||
+              sizeof(TZrPtr) >
+                      layout->frame.slots[physical].byteSize -
+                              s->fieldByteOffset)) ||
+            (s->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED &&
+             (basePhysical >= layout->frame.slotCount ||
+              layout->frame.slots[basePhysical].byteOffset >
+                      layout->frame.frameByteSize ||
+              layout->frame.slots[basePhysical].byteSize >
+                      layout->frame.frameByteSize -
+                              layout->frame.slots[basePhysical].byteOffset))) {
+            root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                      s->valueId);
+            ZrParser_ExecIr_FrameRootMapFree(&candidate); return ZR_FALSE;
+        }
         candidate.roots[i].valueId = s->valueId;
         candidate.roots[i].physicalSlot = physical;
         candidate.roots[i].frameByteOffset = layout->frame.slots[physical].byteOffset;

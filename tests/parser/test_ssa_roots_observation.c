@@ -26,6 +26,12 @@ int main(void) {
     specs[1].baseValueId = 99u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD;
+    specs[0].fieldByteOffset = 8u;
+    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+    specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_MANAGED;
+    specs[0].fieldByteOffset = 0u;
     {
         SZrExecIrPackedValue reusedValues[2] = {
             {10u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 1u, 0u},
