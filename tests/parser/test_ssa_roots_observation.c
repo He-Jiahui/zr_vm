@@ -28,6 +28,19 @@ int main(void) {
     assert(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && count == 0u);
     map.rootCapacity = map.rootCount;
+    {
+        TZrUInt64 writeback[2] = {11u, 22u};
+        TZrUInt32 invalidated[1] = {UINT32_MAX};
+        SZrExecIrFrameObservation observation = {
+            &layout, frame, ZR_NULL, 0u, writeback, 2u,
+            invalidated, 1u, 77u
+        };
+        assert(layout.frame.storageSlotCount == 2u);
+        assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+        assert(writeback[0] == 11u && writeback[1] == 22u);
+        assert(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
+    }
     specs[1].baseValueId = 99u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
@@ -54,6 +67,18 @@ int main(void) {
         assert(ZrParser_ExecIr_BuildFrameRootMap(&layout, &reusedSpec, 1u,
                                                 &map, &d));
         assert(map.roots[0].physicalSlot == layout.logicalToPhysical[1]);
+        {
+            TZrUInt64 writeback[2] = {0u, 0u};
+            TZrUInt32 invalidated[2] = {UINT32_MAX, UINT32_MAX};
+            SZrExecIrFrameObservation observation = {
+                &layout, frame, ZR_NULL, 0u, writeback, 2u,
+                invalidated, 2u, 0u
+            };
+            assert(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+            assert(observation.invalidatedCount == 1u);
+            assert(invalidated[0] == layout.logicalToPhysical[0]);
+            assert(invalidated[1] == UINT32_MAX);
+        }
     }
     ZrParser_ExecIr_FrameRootMapFree(&map); ZrParser_ExecIr_PackedFrameLayoutFree(&layout); return 0;
 }

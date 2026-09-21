@@ -22,9 +22,10 @@ offset metadata for moving collectors and stack relocation.
 boundary for debugger and deoptimization consumers. It validates the descriptor
 before reading storage, copies scalar payloads into the frame when supplied,
 returns logical values, and records physical slots whose optimization facts must
-be invalidated. Missing precise metadata is an error, not a whole-frame or
-whole-heap scan fallback. Runtime GC integration and native pin lifetimes remain
-owned by later core adapters.
+be invalidated. Invalidation capacity is preflighted before any output changes,
+and reused logical values emit each physical slot only once. Missing precise
+metadata is an error, not a whole-frame or whole-heap scan fallback. Runtime GC
+integration and native pin lifetimes remain owned by later core adapters.
 
 The core adapter exposes the same boundary to runtime-neutral ExecBC, AOT and
 JIT consumers through `ZrCore_ExecutionFrameRootMap_Build` and

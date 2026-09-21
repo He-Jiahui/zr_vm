@@ -148,21 +148,43 @@ TZrBool ZrParser_ExecIr_VisitFrameRoots(const SZrExecIrFrameRootMap *map,
 TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
                                      SZrExecIrDiagnostic *diagnostic) {
     const SZrExecIrPackedFrameLayout *layout;
+    TZrUInt32 uniquePhysicalCount = 0u;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (observation == ZR_NULL || (layout = observation->layout) == ZR_NULL ||
         layout->logicalToPhysical == ZR_NULL || observation->frameBase == ZR_NULL ||
-        observation->writebackValues == ZR_NULL || observation->writebackCapacity < layout->frame.logicalSlotCount) {
+        (layout->frame.slotCount != 0u && layout->frame.slots == ZR_NULL) ||
+        observation->writebackValues == ZR_NULL ||
+        observation->writebackCapacity < layout->frame.logicalSlotCount ||
+        (observation->invalidatedPhysicalSlots == ZR_NULL &&
+         observation->invalidatedCapacity != 0u)) {
         root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u); return ZR_FALSE;
     }
-    observation->invalidatedCount = 0u;
     for (TZrUInt32 logical = 0u; logical < layout->frame.logicalSlotCount; ++logical) {
         TZrUInt32 physical = layout->logicalToPhysical[logical];
-        TZrUInt32 byteSize;
+        TZrBool seenPhysical = ZR_FALSE;
         if (physical >= layout->frame.slotCount) { root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, logical + 1u); return ZR_FALSE; }
         if (layout->frame.slots[physical].byteOffset > layout->frame.frameByteSize ||
             layout->frame.slots[physical].byteSize > layout->frame.frameByteSize - layout->frame.slots[physical].byteOffset) {
             root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, logical + 1u); return ZR_FALSE;
         }
+        for (TZrUInt32 prior = 0u; prior < logical; ++prior) {
+            if (layout->logicalToPhysical[prior] == physical) {
+                seenPhysical = ZR_TRUE;
+                break;
+            }
+        }
+        if (!seenPhysical) ++uniquePhysicalCount;
+    }
+    if (observation->invalidatedPhysicalSlots != ZR_NULL &&
+        observation->invalidatedCapacity < uniquePhysicalCount) {
+        root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                  uniquePhysicalCount);
+        return ZR_FALSE;
+    }
+    observation->invalidatedCount = 0u;
+    for (TZrUInt32 logical = 0u; logical < layout->frame.logicalSlotCount; ++logical) {
+        TZrUInt32 physical = layout->logicalToPhysical[logical];
+        TZrUInt32 byteSize;
         byteSize = layout->frame.slots[physical].byteSize < sizeof(TZrUInt64)
                        ? layout->frame.slots[physical].byteSize : sizeof(TZrUInt64);
         if (observation->scalarValues != ZR_NULL && logical < observation->scalarValueCount) {
@@ -173,8 +195,19 @@ TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
         memcpy(&observation->writebackValues[logical],
                observation->frameBase + layout->frame.slots[physical].byteOffset,
                byteSize);
-        if (observation->invalidatedPhysicalSlots != ZR_NULL && observation->invalidatedCount < observation->invalidatedCapacity)
-            observation->invalidatedPhysicalSlots[observation->invalidatedCount++] = physical;
+        if (observation->invalidatedPhysicalSlots != ZR_NULL) {
+            TZrBool seenPhysical = ZR_FALSE;
+            for (TZrUInt32 prior = 0u; prior < logical; ++prior) {
+                if (layout->logicalToPhysical[prior] == physical) {
+                    seenPhysical = ZR_TRUE;
+                    break;
+                }
+            }
+            if (!seenPhysical) {
+                observation->invalidatedPhysicalSlots[
+                        observation->invalidatedCount++] = physical;
+            }
+        }
     }
     return ZR_TRUE;
 }
