@@ -12,7 +12,8 @@ canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
 identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
 contract versions, target ABI, IDs, ranges, opcode bounds, CFG terminator and
 edge-target membership, state-map instruction membership, effect pairing, frame
-layout, and module/function hash identity.
+layout, phi predecessor membership, and module/function hash identity. A
+non-PHI instruction carrying phi incoming rows is rejected.
 
 Block predecessor and successor ranges are views over the same numeric edge
 pool; their bounds use that pool's count, so parallel edges remain representable

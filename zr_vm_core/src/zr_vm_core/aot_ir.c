@@ -172,6 +172,27 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                instruction->id, i, function->phiIncomingCount,
                                instruction->phiIncoming.offset);
         }
+        if (instruction->opcode != ZR_EXEC_IR_OPCODE_PHI &&
+            instruction->phiIncoming.count != 0u) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG, function->id, 0u,
+                               instruction->id, i, 0u,
+                               instruction->phiIncoming.count);
+        }
+        for (TZrUInt32 j = 0u; j < instruction->phiIncoming.count; ++j) {
+            const SZrAotIrPhiIncoming *incoming = &function->phiIncomingPool[
+                    instruction->phiIncoming.offset + j];
+            if (!aot_ir_block_id_exists(function, incoming->predecessorBlockId)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CFG,
+                                   function->id, 0u, instruction->id, j,
+                                   function->blockCount,
+                                   incoming->predecessorBlockId);
+            }
+            if (incoming->valueId == ZR_AOT_IR_ID_INVALID) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID,
+                                   function->id, 0u, instruction->id, j, 1u,
+                                   incoming->valueId);
+            }
+        }
         for (TZrUInt32 j = 0u; j < instruction->successors.count; ++j) {
             TZrUInt32 target = function->successorPool[
                     instruction->successors.offset + j];
