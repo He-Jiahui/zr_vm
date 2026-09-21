@@ -15,6 +15,8 @@ void test_state_map_materialization_rejects_unknown_phase(void);
 void test_state_map_materialization_rejects_inconsistent_exception_state(void);
 void test_state_map_materialization_rejects_boundary_mismatch(void);
 void test_state_map_materialization_rejects_forged_fallback_source(void);
+void test_state_map_materialization_rejects_split_resume_identity(void);
+void test_state_map_materialization_rejects_reused_resume_identity(void);
 void test_state_map_materialization_rejects_unknown_value_enums(void);
 void test_state_map_materialization_rejects_unreachable_handler(void);
 void test_state_map_materialization_requires_throw_boundary_for_handler(void);
@@ -85,6 +87,17 @@ static void function_with_one_gc_value(SZrExecIrFunction *function) {
     instruction.opcode = ZR_EXEC_IR_OPCODE_NOP;
     instruction.flags = ZR_EXEC_IR_FLAG_MAY_GC;
     instruction.sourceId = 42u;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL));
+}
+
+static void function_with_two_gc_boundaries(SZrExecIrFunction *function) {
+    SZrExecIrInstruction instruction;
+
+    function_with_one_gc_value(function);
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_NOP;
+    instruction.flags = ZR_EXEC_IR_FLAG_MAY_GC;
+    instruction.sourceId = 84u;
     TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL));
 }
 
@@ -294,6 +307,81 @@ void test_state_map_materialization_rejects_forged_fallback_source(void) {
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
     TEST_ASSERT_EQUAL(1u, diagnostic.expectedVersion);
     TEST_ASSERT_EQUAL(42u, diagnostic.actualVersion);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_materialization_rejects_split_resume_identity(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    map.entries = (SZrExecIrStateMapEntry *)realloc(
+        map.entries, 2u * sizeof(*map.entries));
+    TEST_ASSERT_NOT_NULL(map.entries);
+    map.entryCapacity = map.entryCount = 2u;
+    map.entries[1] = map.entries[0];
+    map.entries[1].phase = ZR_EXEC_IR_STATE_BEFORE_EFFECT;
+    map.entries[1].resumeId = 8u;
+    map.entries[1].cleanupState = 0u;
+    function_with_one_gc_value(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_materialization_rejects_reused_resume_identity(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC);
+    map.entries = (SZrExecIrStateMapEntry *)realloc(
+        map.entries, 2u * sizeof(*map.entries));
+    TEST_ASSERT_NOT_NULL(map.entries);
+    map.entryCapacity = map.entryCount = 2u;
+    map.entries[1] = map.entries[0];
+    map.entries[1].instructionId = 2u;
+    map.entries[1].sourceId = 84u;
+    function_with_two_gc_boundaries(&function);
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
     TEST_ASSERT_NULL(target.values);
     ZrCore_ExecIr_MaterializedStateFree(&target);
     ZrCore_ExecIr_FreeFunction(&function);
@@ -915,6 +1003,8 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_rejects_inconsistent_exception_state);
     RUN_TEST(test_state_map_materialization_rejects_boundary_mismatch);
     RUN_TEST(test_state_map_materialization_rejects_forged_fallback_source);
+    RUN_TEST(test_state_map_materialization_rejects_split_resume_identity);
+    RUN_TEST(test_state_map_materialization_rejects_reused_resume_identity);
     RUN_TEST(test_state_map_materialization_rejects_unknown_value_enums);
     RUN_TEST(test_state_map_materialization_rejects_unreachable_handler);
     RUN_TEST(test_state_map_materialization_requires_throw_boundary_for_handler);

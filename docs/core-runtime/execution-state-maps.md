@@ -15,6 +15,11 @@ instruction's explicit `sourceId` is used when present, otherwise its one-based
 instruction ID is the required fallback. Consumers recompute this identity and
 reject maps that substitute another nonzero source.
 
+All phases for one instruction/source checkpoint share one `resumeId`, and a
+`resumeId` identifies only one instruction/source checkpoint. Consumers reject
+maps that split a checkpoint across resume IDs or reuse one resume ID for a
+different instruction before materializing any state.
+
 ## Boundary phases
 
 Entries can be recorded at three logical phases:

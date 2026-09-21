@@ -779,6 +779,26 @@ static TZrBool zr_state_map_validate(const SZrExecIrFunction *function,
         }
         for (other = 0u; other < index; ++other) {
             const SZrExecIrStateMapEntry *prior = &map->entries[other];
+            if (prior->instructionId == entry->instructionId &&
+                (prior->sourceId != entry->sourceId ||
+                 prior->resumeId != entry->resumeId)) {
+                zr_state_map_set_diagnostic(diagnostic,
+                                            ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                                            function, entry, entry->instructionId,
+                                            entry->sourceId, prior->resumeId,
+                                            entry->resumeId);
+                return ZR_FALSE;
+            }
+            if (prior->resumeId == entry->resumeId &&
+                (prior->instructionId != entry->instructionId ||
+                 prior->sourceId != entry->sourceId)) {
+                zr_state_map_set_diagnostic(diagnostic,
+                                            ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                                            function, entry, entry->instructionId,
+                                            entry->sourceId, prior->instructionId,
+                                            entry->instructionId);
+                return ZR_FALSE;
+            }
             if (prior->sourceId == entry->sourceId &&
                 prior->resumeId == entry->resumeId && prior->phase == entry->phase) {
                 zr_state_map_set_diagnostic(diagnostic,
