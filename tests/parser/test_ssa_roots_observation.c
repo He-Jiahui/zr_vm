@@ -26,6 +26,9 @@ int main(void) {
     specs[1].baseValueId = 99u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
     assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    specs[1] = specs[0];
+    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
+    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION);
     specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD;
     specs[0].fieldByteOffset = 8u;
     assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
