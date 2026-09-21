@@ -704,12 +704,13 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
     }
     if (entry->instructionId != 0u && function->instructionCount != 0u) {
         const SZrExecIrInstruction *instruction = &function->instructions[entry->instructionId - 1u];
-        if (entry->sourceId != 0u && instruction->sourceId != 0u &&
-            entry->sourceId != instruction->sourceId) {
+        TZrExecIrSourceId expectedSource =
+            instruction->sourceId != 0u ? instruction->sourceId : entry->instructionId;
+        if (entry->sourceId != expectedSource) {
             zr_state_map_set_diagnostic(diagnostic,
                                         ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
                                         function, entry, entry->instructionId,
-                                        entry->sourceId, instruction->sourceId,
+                                        entry->sourceId, expectedSource,
                                         entry->sourceId);
             return ZR_FALSE;
         }

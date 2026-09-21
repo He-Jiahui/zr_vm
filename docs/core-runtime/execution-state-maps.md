@@ -10,6 +10,11 @@ pools of value IDs. Root values are the managed references that a collector or
 resumer must preserve; the physical storage for those values is selected later
 by the runtime.
 
+An entry's source identity is an exact projection of its instruction: the
+instruction's explicit `sourceId` is used when present, otherwise its one-based
+instruction ID is the required fallback. Consumers recompute this identity and
+reject maps that substitute another nonzero source.
+
 ## Boundary phases
 
 Entries can be recorded at three logical phases:
