@@ -8,8 +8,8 @@ but may not infer ownership, calls, or exceptions from quickened bytecode.
 The target contract requires a nonzero target-triple hash and ABI hash in
 addition to the supported ABI version, pointer size, and endianness; its
 required capability mask may contain only known execution capabilities.
-The module execution contract likewise rejects unknown capability and effect
-bits before any function lowering begins.
+The module and function execution contracts likewise reject unknown capability
+and effect bits before any backend lowering begins.
 
 The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the

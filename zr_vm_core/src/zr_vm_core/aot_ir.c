@@ -102,6 +102,17 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
                            functionIndex, module->contract.moduleHash, function->contract.moduleHash);
     }
+    if ((function->contract.requiredCapabilities &
+         ~ZR_EXECUTION_CAPABILITY_KNOWN_MASK) != 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, ZR_EXECUTION_CAPABILITY_KNOWN_MASK,
+                           function->contract.requiredCapabilities);
+    }
+    if ((function->contract.declaredEffects & ~ZR_EXECUTION_EFFECT_KNOWN_MASK) != 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, ZR_EXECUTION_EFFECT_KNOWN_MASK,
+                           function->contract.declaredEffects);
+    }
     if (function->frameLayout.frameByteSize < function->frameLayout.returnAreaOffset ||
         (function->frameLayout.frameByteSize &
          (function->frameLayout.frameByteAlign - 1u)) != 0u) {

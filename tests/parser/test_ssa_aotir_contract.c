@@ -230,6 +230,18 @@ int main(void) {
     {
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
+        malformedFunction.contract.declaredEffects =
+                ZR_EXECUTION_EFFECT_KNOWN_MASK | ((TZrUInt32)1u << 31u);
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CONTRACT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == ZR_EXECUTION_EFFECT_KNOWN_MASK);
+        assert(diagnostic.actual == malformedFunction.contract.declaredEffects);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
         malformedFunction.frameLayout.frameByteSize = 10u;
         malformed.functions = &malformedFunction;
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
