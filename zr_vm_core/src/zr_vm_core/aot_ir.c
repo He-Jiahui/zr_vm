@@ -117,15 +117,40 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, function->id, 0u, 0u,
                            functionIndex, 1u, 0u);
     }
-    if (function->contract.schemaVersion != ZR_EXECUTION_CONTRACT_SCHEMA_VERSION ||
-        function->contract.abiVersion != ZR_EXECUTION_CONTRACT_ABI_VERSION ||
-        function->contract.logicalVersion != ZR_EXECUTION_CONTRACT_LOGICAL_VERSION ||
-        function->contract.signatureHash != function->signatureHash ||
-        function->contract.layoutHash != function->frameLayout.layoutHash ||
-        function->contract.targetToken != function->functionToken ||
-        function->contract.moduleHash != module->contract.moduleHash) {
+    if (function->contract.schemaVersion != ZR_EXECUTION_CONTRACT_SCHEMA_VERSION) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
-                           functionIndex, module->contract.moduleHash, function->contract.moduleHash);
+                           functionIndex, ZR_EXECUTION_CONTRACT_SCHEMA_VERSION,
+                           function->contract.schemaVersion);
+    }
+    if (function->contract.abiVersion != ZR_EXECUTION_CONTRACT_ABI_VERSION) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, ZR_EXECUTION_CONTRACT_ABI_VERSION,
+                           function->contract.abiVersion);
+    }
+    if (function->contract.logicalVersion != ZR_EXECUTION_CONTRACT_LOGICAL_VERSION) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, ZR_EXECUTION_CONTRACT_LOGICAL_VERSION,
+                           function->contract.logicalVersion);
+    }
+    if (function->contract.signatureHash != function->signatureHash) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, function->signatureHash,
+                           function->contract.signatureHash);
+    }
+    if (function->contract.layoutHash != function->frameLayout.layoutHash) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, function->frameLayout.layoutHash,
+                           function->contract.layoutHash);
+    }
+    if (function->contract.targetToken != function->functionToken) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, function->functionToken,
+                           function->contract.targetToken);
+    }
+    if (function->contract.moduleHash != module->contract.moduleHash) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+                           functionIndex, module->contract.moduleHash,
+                           function->contract.moduleHash);
     }
     if ((function->contract.requiredCapabilities &
          ~ZR_EXECUTION_CAPABILITY_KNOWN_MASK) != 0u) {

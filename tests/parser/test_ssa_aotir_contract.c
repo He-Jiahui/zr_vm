@@ -363,6 +363,28 @@ int main(void) {
     }
     {
         SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.contract.moduleHash = 34u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CONTRACT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == module.contract.moduleHash);
+        assert(diagnostic.actual == malformedFunction.contract.moduleHash);
+    }
+    {
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedFunction.signatureHash = 12u;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CONTRACT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == malformedFunction.signatureHash);
+        assert(diagnostic.actual == malformedFunction.contract.signatureHash);
+    }
+    {
+        SZrAotIrModule malformed = module;
         malformed.contract.requiredCapabilities =
                 ZR_EXECUTION_CAPABILITY_KNOWN_MASK | ((TZrUInt32)1u << 31u);
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==

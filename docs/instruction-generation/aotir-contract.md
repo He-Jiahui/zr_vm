@@ -23,6 +23,9 @@ nonzero state-map resume identity, and
 module/function hash identity. Effect tokens must be present together or both
 be absent. A
 non-PHI instruction carrying phi incoming rows is rejected.
+Contract identity failures report the specific canonical field and received
+value, so a signature, layout, target-token, module-hash, or version mismatch
+cannot be misdiagnosed as a different contract field.
 Block flags are likewise limited to the canonical entry/cold/cleanup/exception
 bits. Frame byte size must cover the return area and be a multiple of the
 declared frame alignment. Operand and result pools may not contain the invalid
