@@ -385,6 +385,14 @@ int main(void) {
     }
     {
         SZrAotIrModule malformed = module;
+        malformed.contract.logicalVersion = 0u;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CONTRACT);
+        assert(diagnostic.expected == ZR_EXECUTION_CONTRACT_LOGICAL_VERSION);
+        assert(diagnostic.actual == malformed.contract.logicalVersion);
+    }
+    {
+        SZrAotIrModule malformed = module;
         malformed.contract.requiredCapabilities =
                 ZR_EXECUTION_CAPABILITY_KNOWN_MASK | ((TZrUInt32)1u << 31u);
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
