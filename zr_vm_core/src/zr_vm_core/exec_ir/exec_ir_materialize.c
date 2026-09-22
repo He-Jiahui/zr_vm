@@ -670,6 +670,8 @@ static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function,
                                               const SZrExecIrStateMapEntry *entry,
                                               SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
+    TZrUInt32 matchingStates = 0u;
+    const SZrExecIrDeoptState *matchingState = ZR_NULL;
 
     if (entry->deoptId == 0u) {
         return ZR_TRUE;
@@ -677,57 +679,56 @@ static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function,
     for (index = 0u; index < function->deoptStateCount; ++index) {
         const SZrExecIrDeoptState *state = &function->deoptStates[index];
         if (state->deoptId == entry->deoptId) {
-            if (state->sourceId != entry->sourceId || state->resumeId == 0u ||
-                state->resumeId != entry->resumeId) {
-                zr_state_map_set_diagnostic(
-                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
-                        function, entry, entry->instructionId, entry->sourceId,
-                        state->resumeId, entry->resumeId);
-                return ZR_FALSE;
-            }
-            if (!zr_state_map_range_valid(state->valueRange, function->deoptValueCount)) {
-                break;
-            }
-            if (state->valueRange.count != 0u && function->deoptValues == ZR_NULL) {
-                break;
-            }
-            {
-                TZrUInt32 valueIndex;
-                for (valueIndex = state->valueRange.start;
-                     valueIndex < state->valueRange.start + state->valueRange.count;
-                     ++valueIndex) {
-                    TZrUInt32 liveIndex;
-                    TZrBool live = ZR_FALSE;
-                    if (function->deoptValues[valueIndex] == ZR_EXEC_IR_VALUE_ID_INVALID ||
-                        function->deoptValues[valueIndex] > function->valueCount) {
-                        break;
-                    }
-                    if (!zr_state_map_range_valid(entry->liveValues,
-                                                  map->valueCount) ||
-                        (entry->liveValues.count != 0u &&
-                         map->valuePool == ZR_NULL)) {
-                        break;
-                    }
-                    for (liveIndex = entry->liveValues.start;
-                         liveIndex < entry->liveValues.start +
-                                          entry->liveValues.count;
-                         ++liveIndex) {
-                        if (map->valuePool[liveIndex] ==
-                            function->deoptValues[valueIndex]) {
-                            live = ZR_TRUE;
-                            break;
-                        }
-                    }
-                    if (!live) {
-                        break;
-                    }
-                }
-                if (valueIndex != state->valueRange.start + state->valueRange.count) {
-                    break;
-                }
-            }
-            return ZR_TRUE;
+            ++matchingStates;
+            matchingState = state;
         }
+    }
+    if (matchingStates != 1u) {
+        zr_state_map_set_diagnostic(
+                diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                function, entry, entry->instructionId, entry->sourceId,
+                1u, matchingStates);
+        return ZR_FALSE;
+    }
+    if (matchingState->sourceId != entry->sourceId ||
+        matchingState->resumeId == 0u ||
+        matchingState->resumeId != entry->resumeId ||
+        !zr_state_map_range_valid(matchingState->valueRange,
+                                  function->deoptValueCount) ||
+        (matchingState->valueRange.count != 0u &&
+         function->deoptValues == ZR_NULL) ||
+        !zr_state_map_range_valid(entry->liveValues, map->valueCount) ||
+        (entry->liveValues.count != 0u && map->valuePool == ZR_NULL)) {
+        zr_state_map_set_diagnostic(
+                diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                function, entry, entry->instructionId, entry->sourceId,
+                matchingState->resumeId, entry->resumeId);
+        return ZR_FALSE;
+    }
+    for (index = matchingState->valueRange.start;
+         index < matchingState->valueRange.start + matchingState->valueRange.count;
+         ++index) {
+        TZrUInt32 liveIndex;
+        TZrBool live = ZR_FALSE;
+        TZrExecIrValueId valueId = function->deoptValues[index];
+        if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
+            valueId > function->valueCount) {
+            break;
+        }
+        for (liveIndex = entry->liveValues.start;
+             liveIndex < entry->liveValues.start + entry->liveValues.count;
+             ++liveIndex) {
+            if (map->valuePool[liveIndex] == valueId) {
+                live = ZR_TRUE;
+                break;
+            }
+        }
+        if (!live) {
+            break;
+        }
+    }
+    if (index == matchingState->valueRange.start + matchingState->valueRange.count) {
+        return ZR_TRUE;
     }
     zr_state_map_set_diagnostic(diagnostic,
                                 ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,

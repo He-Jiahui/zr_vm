@@ -26,6 +26,7 @@ void test_state_map_materialization_rejects_mismatched_deopt_identity(void);
 void test_state_map_materialization_rejects_deopt_value_outside_live_state(void);
 void test_state_map_materialization_rejects_missing_managed_root(void);
 void test_state_map_materialization_rejects_malformed_owner_operand(void);
+void test_state_map_materialization_rejects_duplicate_deopt_identity(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_clone_rejects_aliased_destination(void);
 void test_state_map_clone_rejects_interior_pool_alias(void);
@@ -783,6 +784,46 @@ void test_state_map_materialization_rejects_malformed_owner_operand(void) {
     ZrCore_ExecIr_StateMapFree(&map);
 }
 
+void test_state_map_materialization_rejects_duplicate_deopt_identity(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC |
+                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_DEOPT |
+                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_GUARD_EXIT);
+    map.entries[0].deoptId = 91u;
+    map.entries[0].resumeId = 701u;
+    function_with_deopt_boundary(&function);
+    function.deoptStates = (SZrExecIrDeoptState *)realloc(
+            function.deoptStates, 2u * sizeof(*function.deoptStates));
+    TEST_ASSERT_NOT_NULL(function.deoptStates);
+    function.deoptStateCapacity = function.deoptStateCount = 2u;
+    function.deoptStates[1] = function.deoptStates[0];
+    function.deoptStates[1].resumeId = 702u;
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 701u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
 void test_state_map_builder_reuses_deopt_resume_identity(void) {
     SZrExecIrFunction function;
     SZrExecIrDiagnostic diagnostic;
@@ -1298,6 +1339,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_rejects_deopt_value_outside_live_state);
     RUN_TEST(test_state_map_materialization_rejects_missing_managed_root);
     RUN_TEST(test_state_map_materialization_rejects_malformed_owner_operand);
+    RUN_TEST(test_state_map_materialization_rejects_duplicate_deopt_identity);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
     RUN_TEST(test_state_map_clone_rejects_aliased_destination);
     RUN_TEST(test_state_map_clone_rejects_interior_pool_alias);
