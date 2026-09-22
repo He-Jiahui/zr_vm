@@ -39,6 +39,7 @@ void test_state_map_materialization_is_transactional_on_failure(void);
 void test_state_map_rejects_borrowed_value_across_suspend(void);
 void test_state_map_builder_records_boundaries_and_is_liveness_conservative(void);
 void test_state_map_builder_reuses_deopt_resume_identity(void);
+void test_state_map_builder_rejects_duplicate_deopt_identity(void);
 void test_state_map_builder_rejects_unknown_value_enums(void);
 void test_state_map_builder_preserves_existing_map_on_verification_failure(void);
 void test_state_map_materialization_accepts_managed_owner_roots(void);
@@ -844,6 +845,24 @@ void test_state_map_builder_reuses_deopt_resume_identity(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+void test_state_map_builder_rejects_duplicate_deopt_identity(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+
+    function_with_deopt_boundary(&function);
+    function.deoptStates = (SZrExecIrDeoptState *)realloc(
+            function.deoptStates, 2u * sizeof(*function.deoptStates));
+    TEST_ASSERT_NOT_NULL(function.deoptStates);
+    function.deoptStateCapacity = function.deoptStateCount = 2u;
+    function.deoptStates[1] = function.deoptStates[0];
+    function.deoptStates[1].resumeId = 702u;
+
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(function.stateMap);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 void test_state_map_clone_copies_pools_and_lifecycle(void) {
     SZrExecIrStateMap source;
     SZrExecIrStateMap clone;
@@ -1352,6 +1371,7 @@ int main(void) {
     RUN_TEST(test_state_map_rejects_borrowed_value_across_suspend);
     RUN_TEST(test_state_map_builder_records_boundaries_and_is_liveness_conservative);
     RUN_TEST(test_state_map_builder_reuses_deopt_resume_identity);
+    RUN_TEST(test_state_map_builder_rejects_duplicate_deopt_identity);
     RUN_TEST(test_state_map_builder_rejects_unknown_value_enums);
     RUN_TEST(test_state_map_builder_preserves_existing_map_on_verification_failure);
     RUN_TEST(test_state_map_materialization_accepts_managed_owner_roots);

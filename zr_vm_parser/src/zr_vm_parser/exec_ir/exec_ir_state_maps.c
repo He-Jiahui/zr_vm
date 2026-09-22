@@ -423,6 +423,8 @@ static TZrBool zr_state_map_deopt_resume_id(
         TZrExecIrSourceId sourceId,
         TZrUInt32 *resumeId) {
     TZrUInt32 index;
+    TZrUInt32 matchingStates = 0u;
+    const SZrExecIrDeoptState *matchingState = ZR_NULL;
 
     if (function == ZR_NULL || instruction == ZR_NULL || resumeId == ZR_NULL ||
         instruction->deoptId == 0u || function->deoptStates == ZR_NULL) {
@@ -431,14 +433,16 @@ static TZrBool zr_state_map_deopt_resume_id(
     for (index = 0u; index < function->deoptStateCount; ++index) {
         const SZrExecIrDeoptState *state = &function->deoptStates[index];
         if (state->id == instruction->deoptId) {
-            if (state->sourceId != sourceId || state->resumeId == 0u) {
-                return ZR_FALSE;
-            }
-            *resumeId = state->resumeId;
-            return ZR_TRUE;
+            ++matchingStates;
+            matchingState = state;
         }
     }
-    return ZR_FALSE;
+    if (matchingStates != 1u || matchingState->sourceId != sourceId ||
+        matchingState->resumeId == 0u) {
+        return ZR_FALSE;
+    }
+    *resumeId = matchingState->resumeId;
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
