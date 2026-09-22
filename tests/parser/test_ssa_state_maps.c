@@ -22,6 +22,7 @@ void test_state_map_materialization_rejects_unreachable_handler(void);
 void test_state_map_materialization_rejects_noncanonical_handler(void);
 void test_state_map_materialization_requires_throw_boundary_for_handler(void);
 void test_state_map_materialization_rejects_forged_owner_state(void);
+void test_state_map_materialization_rejects_mismatched_deopt_identity(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_clone_rejects_aliased_destination(void);
 void test_state_map_clone_rejects_interior_pool_alias(void);
@@ -33,6 +34,7 @@ void test_state_map_materialization_rejects_overlapping_target_arrays(void);
 void test_state_map_materialization_is_transactional_on_failure(void);
 void test_state_map_rejects_borrowed_value_across_suspend(void);
 void test_state_map_builder_records_boundaries_and_is_liveness_conservative(void);
+void test_state_map_builder_reuses_deopt_resume_identity(void);
 void test_state_map_builder_rejects_unknown_value_enums(void);
 void test_state_map_builder_preserves_existing_map_on_verification_failure(void);
 void test_state_map_materialization_accepts_managed_owner_roots(void);
@@ -620,6 +622,89 @@ void test_state_map_materialization_rejects_forged_owner_state(void) {
     ZrCore_ExecIr_StateMapFree(&map);
 }
 
+void test_state_map_materialization_rejects_mismatched_deopt_identity(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_GC |
+                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_DEOPT |
+                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_GUARD_EXIT);
+    map.entries[0].deoptId = 91u;
+    function_with_one_gc_value(&function);
+    function.instructions[0].deoptId = 91u;
+    function.deoptStates = (SZrExecIrDeoptState *)calloc(
+            1u, sizeof(*function.deoptStates));
+    function.deoptValues = (TZrExecIrValueId *)calloc(
+            1u, sizeof(*function.deoptValues));
+    TEST_ASSERT_NOT_NULL(function.deoptStates);
+    TEST_ASSERT_NOT_NULL(function.deoptValues);
+    function.deoptStateCount = function.deoptStateCapacity = 1u;
+    function.deoptValueCount = function.deoptValueCapacity = 1u;
+    function.deoptValues[0] = 1u;
+    function.deoptStates[0].id = 91u;
+    function.deoptStates[0].sourceId = 42u;
+    function.deoptStates[0].resumeId = 701u;
+    function.deoptStates[0].valueRange.start = 0u;
+    function.deoptStates[0].valueRange.count = 1u;
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 42u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
+void test_state_map_builder_reuses_deopt_resume_identity(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    const SZrExecIrStateMapEntry *before;
+    const SZrExecIrStateMapEntry *after;
+
+    function_with_one_gc_value(&function);
+    function.instructions[0].deoptId = 91u;
+    function.deoptStates = (SZrExecIrDeoptState *)calloc(
+            1u, sizeof(*function.deoptStates));
+    function.deoptValues = (TZrExecIrValueId *)calloc(
+            1u, sizeof(*function.deoptValues));
+    TEST_ASSERT_NOT_NULL(function.deoptStates);
+    TEST_ASSERT_NOT_NULL(function.deoptValues);
+    function.deoptStateCount = function.deoptStateCapacity = 1u;
+    function.deoptValueCount = function.deoptValueCapacity = 1u;
+    function.deoptValues[0] = 1u;
+    function.deoptStates[0].id = 91u;
+    function.deoptStates[0].sourceId = 42u;
+    function.deoptStates[0].resumeId = 701u;
+    function.deoptStates[0].valueRange.start = 0u;
+    function.deoptStates[0].valueRange.count = 1u;
+
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
+    before = ZrCore_ExecIr_StateMapFind(function.stateMap, 42u, 701u,
+                                         ZR_EXEC_IR_STATE_BEFORE_EFFECT);
+    after = ZrCore_ExecIr_StateMapFind(function.stateMap, 42u, 701u,
+                                        ZR_EXEC_IR_STATE_AFTER_EFFECT);
+    TEST_ASSERT_NOT_NULL(before);
+    TEST_ASSERT_NOT_NULL(after);
+    TEST_ASSERT_EQUAL(701u, before->resumeId);
+    TEST_ASSERT_EQUAL(701u, after->resumeId);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 void test_state_map_clone_copies_pools_and_lifecycle(void) {
     SZrExecIrStateMap source;
     SZrExecIrStateMap clone;
@@ -1111,6 +1196,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_rejects_noncanonical_handler);
     RUN_TEST(test_state_map_materialization_requires_throw_boundary_for_handler);
     RUN_TEST(test_state_map_materialization_rejects_forged_owner_state);
+    RUN_TEST(test_state_map_materialization_rejects_mismatched_deopt_identity);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
     RUN_TEST(test_state_map_clone_rejects_aliased_destination);
     RUN_TEST(test_state_map_clone_rejects_interior_pool_alias);
@@ -1122,6 +1208,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_is_transactional_on_failure);
     RUN_TEST(test_state_map_rejects_borrowed_value_across_suspend);
     RUN_TEST(test_state_map_builder_records_boundaries_and_is_liveness_conservative);
+    RUN_TEST(test_state_map_builder_reuses_deopt_resume_identity);
     RUN_TEST(test_state_map_builder_rejects_unknown_value_enums);
     RUN_TEST(test_state_map_builder_preserves_existing_map_on_verification_failure);
     RUN_TEST(test_state_map_materialization_accepts_managed_owner_roots);

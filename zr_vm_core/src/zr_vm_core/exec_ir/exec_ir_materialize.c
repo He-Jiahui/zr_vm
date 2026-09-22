@@ -641,6 +641,14 @@ static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function,
     for (index = 0u; index < function->deoptStateCount; ++index) {
         const SZrExecIrDeoptState *state = &function->deoptStates[index];
         if (state->deoptId == entry->deoptId) {
+            if (state->sourceId != entry->sourceId || state->resumeId == 0u ||
+                state->resumeId != entry->resumeId) {
+                zr_state_map_set_diagnostic(
+                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                        function, entry, entry->instructionId, entry->sourceId,
+                        state->resumeId, entry->resumeId);
+                return ZR_FALSE;
+            }
             if (!zr_state_map_range_valid(state->valueRange, function->deoptValueCount)) {
                 break;
             }

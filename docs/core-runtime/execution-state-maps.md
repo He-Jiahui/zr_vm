@@ -51,6 +51,12 @@ offset. Consumers recompute its initialized/unknown state and every preceding
 MOVE or DROP effect, including the current instruction only for post-effect
 phases; a serialized owner state that differs from that result is invalid.
 
+When an instruction carries a `deoptId`, its state-map phases reuse the matching
+deopt state's nonzero `resumeId` rather than inventing a second identity. The
+deopt state must also name the same source ID; materialization rejects a deopt
+ID whose source or resume identity differs, while separately validating its
+reconstruction value range.
+
 A nonzero handler block is valid only at a THROW boundary. The producer chooses
 the first exception or cleanup block in the source block's successor range;
 consumers recompute that same choice and require the exact block ID. An

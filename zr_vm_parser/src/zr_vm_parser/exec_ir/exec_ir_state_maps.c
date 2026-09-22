@@ -402,6 +402,45 @@ static EZrStateMapBuildResult zr_state_map_add_checkpoint(
     return ZR_STATE_MAP_BUILD_OK;
 }
 
+static TZrBool zr_state_map_resume_used(const SZrExecIrStateMap *map,
+                                        TZrUInt32 resumeId) {
+    TZrUInt32 index;
+
+    if (map == ZR_NULL || resumeId == 0u) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < map->entryCount; ++index) {
+        if (map->entries[index].resumeId == resumeId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool zr_state_map_deopt_resume_id(
+        const SZrExecIrFunction *function,
+        const SZrExecIrInstruction *instruction,
+        TZrExecIrSourceId sourceId,
+        TZrUInt32 *resumeId) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || instruction == ZR_NULL || resumeId == ZR_NULL ||
+        instruction->deoptId == 0u || function->deoptStates == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < function->deoptStateCount; ++index) {
+        const SZrExecIrDeoptState *state = &function->deoptStates[index];
+        if (state->id == instruction->deoptId) {
+            if (state->sourceId != sourceId || state->resumeId == 0u) {
+                return ZR_FALSE;
+            }
+            *resumeId = state->resumeId;
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                                        SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrStateMap candidate;
@@ -435,13 +474,40 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
         if (!ZrCore_ExecIr_StateMapBoundaryFlags(instruction, &boundaryFlags)) {
             continue;
         }
-        if (resumeId == UINT32_MAX) {
-            ZrCore_ExecIr_StateMapFree(&candidate);
-            zr_state_map_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
-                                        function, instructionId, instruction->sourceId);
-            return ZR_FALSE;
+        if (instruction->deoptId != 0u) {
+            TZrExecIrSourceId sourceId =
+                instruction->sourceId != 0u ? instruction->sourceId : instructionId;
+            if (!zr_state_map_deopt_resume_id(function, instruction, sourceId,
+                                              &currentResume)) {
+                ZrCore_ExecIr_StateMapFree(&candidate);
+                zr_state_map_set_diagnostic(
+                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                        function, instructionId, instruction->sourceId);
+                return ZR_FALSE;
+            }
+            if (zr_state_map_resume_used(&candidate, currentResume)) {
+                ZrCore_ExecIr_StateMapFree(&candidate);
+                zr_state_map_set_diagnostic(
+                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                        function, instructionId, instruction->sourceId);
+                return ZR_FALSE;
+            }
+            if (currentResume >= resumeId) {
+                if (currentResume == UINT32_MAX) {
+                    resumeId = UINT32_MAX;
+                } else {
+                    resumeId = currentResume + 1u;
+                }
+            }
+        } else {
+            if (resumeId == UINT32_MAX) {
+                ZrCore_ExecIr_StateMapFree(&candidate);
+                zr_state_map_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                            function, instructionId, instruction->sourceId);
+                return ZR_FALSE;
+            }
+            currentResume = resumeId++;
         }
-        currentResume = resumeId++;
         result = zr_state_map_add_checkpoint(&candidate, function, instruction,
                                              instructionId, boundaryFlags,
                                              ZR_EXEC_IR_STATE_BEFORE_EFFECT,
