@@ -597,42 +597,54 @@ static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function,
     return ZR_FALSE;
 }
 
-static TZrBool zr_state_map_entry_handler_valid(
+static TZrExecIrBlockId zr_state_map_expected_handler(
         const SZrExecIrFunction *function,
-        const SZrExecIrStateMapEntry *entry) {
+        TZrUInt32 instructionId,
+        TZrUInt32 boundaryFlags) {
     const SZrExecIrBlock *sourceBlock;
-    const SZrExecIrBlock *handlerBlock;
     TZrExecIrBlockId sourceBlockId;
     TZrUInt32 successorIndex;
 
-    if (entry->handlerBlockId == ZR_EXEC_IR_BLOCK_ID_INVALID) {
-        return ZR_TRUE;
+    if (function == ZR_NULL || instructionId == 0u ||
+        (boundaryFlags & ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW) == 0u) {
+        return ZR_EXEC_IR_BLOCK_ID_INVALID;
     }
-    if ((entry->boundaryFlags & ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW) == 0u) {
-        return ZR_FALSE;
-    }
-    sourceBlockId = zr_state_map_containing_block(function, entry->instructionId);
+    sourceBlockId = zr_state_map_containing_block(function, instructionId);
     sourceBlock = ZrCore_ExecIr_FunctionBlockAtConst(function, sourceBlockId);
-    handlerBlock = ZrCore_ExecIr_FunctionBlockAtConst(function,
-                                                       entry->handlerBlockId);
-    if (sourceBlock == ZR_NULL || handlerBlock == ZR_NULL ||
-        (handlerBlock->flags & (ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION |
-                                ZR_EXEC_IR_BLOCK_FLAG_CLEANUP)) == 0u ||
+    if (sourceBlock == ZR_NULL ||
         !zr_state_map_range_valid(sourceBlock->successorRange,
                                   function->successorCount) ||
         (sourceBlock->successorRange.count != 0u &&
          function->successors == ZR_NULL)) {
-        return ZR_FALSE;
+        return ZR_EXEC_IR_BLOCK_ID_INVALID;
     }
     for (successorIndex = sourceBlock->successorRange.start;
          successorIndex < sourceBlock->successorRange.start +
                               sourceBlock->successorRange.count;
          ++successorIndex) {
-        if (function->successors[successorIndex] == entry->handlerBlockId) {
-            return ZR_TRUE;
+        TZrExecIrBlockId successor = function->successors[successorIndex];
+        const SZrExecIrBlock *successorBlock =
+            ZrCore_ExecIr_FunctionBlockAtConst(function, successor);
+        if (successorBlock != ZR_NULL &&
+            (successorBlock->flags & (ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION |
+                                      ZR_EXEC_IR_BLOCK_FLAG_CLEANUP)) != 0u) {
+            return successor;
         }
     }
-    return ZR_FALSE;
+    return ZR_EXEC_IR_BLOCK_ID_INVALID;
+}
+
+static TZrBool zr_state_map_entry_handler_valid(
+        const SZrExecIrFunction *function,
+        const SZrExecIrStateMapEntry *entry) {
+    TZrExecIrBlockId expectedHandler;
+
+    if ((entry->boundaryFlags & ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW) == 0u) {
+        return (TZrBool)(entry->handlerBlockId == ZR_EXEC_IR_BLOCK_ID_INVALID);
+    }
+    expectedHandler = zr_state_map_expected_handler(
+            function, entry->instructionId, entry->boundaryFlags);
+    return (TZrBool)(entry->handlerBlockId == expectedHandler);
 }
 
 static TZrBool zr_state_map_entry_boundary_valid(
