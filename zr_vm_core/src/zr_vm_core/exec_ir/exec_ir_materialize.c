@@ -526,6 +526,62 @@ static TZrBool zr_state_map_roots_are_live(const SZrExecIrStateMap *map,
     return ZR_TRUE;
 }
 
+static EZrExecIrStateMapOwnerState zr_state_map_expected_owner_state(
+        const SZrExecIrFunction *function,
+        TZrExecIrValueId valueId,
+        TZrUInt32 instructionId,
+        EZrExecIrStateMapPhase phase,
+        TZrBool *valid) {
+    EZrExecIrStateMapOwnerState state;
+    TZrUInt32 end;
+    TZrUInt32 instructionIndex;
+
+    if (valid != ZR_NULL) {
+        *valid = ZR_FALSE;
+    }
+    if (function == ZR_NULL || valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        valueId > function->valueCount || instructionId == 0u ||
+        instructionId > function->instructionCount ||
+        !zr_state_map_phase_valid(phase)) {
+        return ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
+    }
+    state = function->values[valueId - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN
+                ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN
+                : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+    end = phase == ZR_EXEC_IR_STATE_BEFORE_EFFECT
+              ? instructionId - 1u
+              : instructionId;
+    for (instructionIndex = 0u; instructionIndex < end; ++instructionIndex) {
+        const SZrExecIrInstruction *instruction =
+            &function->instructions[instructionIndex];
+        TZrUInt32 operandIndex;
+        if ((EZrExecIrOpcode)instruction->opcode != ZR_EXEC_IR_OPCODE_DROP &&
+            (EZrExecIrOpcode)instruction->opcode != ZR_EXEC_IR_OPCODE_MOVE) {
+            continue;
+        }
+        if (!zr_state_map_range_valid(instruction->operandRange,
+                                      function->operandCount) ||
+            (instruction->operandRange.count != 0u &&
+             function->operandPool == ZR_NULL)) {
+            return state;
+        }
+        for (operandIndex = instruction->operandRange.start;
+             operandIndex < instruction->operandRange.start +
+                                 instruction->operandRange.count;
+             ++operandIndex) {
+            if (function->operandPool[operandIndex] == valueId) {
+                state = (EZrExecIrOpcode)instruction->opcode == ZR_EXEC_IR_OPCODE_DROP
+                            ? ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED
+                            : ZR_EXEC_IR_STATE_MAP_OWNER_MOVED;
+            }
+        }
+    }
+    if (valid != ZR_NULL) {
+        *valid = ZR_TRUE;
+    }
+    return state;
+}
+
 static TZrBool zr_state_map_owner_range_valid(const SZrExecIrFunction *function,
                                               const SZrExecIrStateMap *map,
                                               const SZrExecIrStateMapEntry *entry,
@@ -534,7 +590,9 @@ static TZrBool zr_state_map_owner_range_valid(const SZrExecIrFunction *function,
 
     if (!zr_state_map_range_valid(entry->ownerStates, map->ownerStateCount) ||
         entry->ownerStates.count != entry->liveValues.count ||
-        (entry->ownerStates.count != 0u && map->ownerStatePool == ZR_NULL)) {
+        (entry->ownerStates.count != 0u && map->ownerStatePool == ZR_NULL) ||
+        !zr_state_map_range_valid(entry->liveValues, map->valueCount) ||
+        (entry->liveValues.count != 0u && map->valuePool == ZR_NULL)) {
         zr_state_map_set_diagnostic(diagnostic,
                                     ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
                                     function, entry, entry->instructionId, entry->sourceId,
@@ -544,11 +602,27 @@ static TZrBool zr_state_map_owner_range_valid(const SZrExecIrFunction *function,
     for (index = entry->ownerStates.start;
          index < entry->ownerStates.start + entry->ownerStates.count;
          ++index) {
+        TZrUInt32 liveIndex = entry->liveValues.start +
+                              (index - entry->ownerStates.start);
+        TZrExecIrValueId valueId = map->valuePool[liveIndex];
+        TZrBool expectedValid;
+        EZrExecIrStateMapOwnerState expected =
+            zr_state_map_expected_owner_state(function, valueId,
+                                              entry->instructionId,
+                                              entry->phase, &expectedValid);
         if (map->ownerStatePool[index] >= ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT) {
             zr_state_map_set_diagnostic(diagnostic,
                                         ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
                                         function, entry, entry->instructionId, entry->sourceId,
                                         ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT,
+                                        map->ownerStatePool[index]);
+            return ZR_FALSE;
+        }
+        if (!expectedValid || map->ownerStatePool[index] != (TZrUInt32)expected) {
+            zr_state_map_set_diagnostic(diagnostic,
+                                        ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                                        function, entry, entry->instructionId,
+                                        entry->sourceId, (TZrUInt32)expected,
                                         map->ownerStatePool[index]);
             return ZR_FALSE;
         }

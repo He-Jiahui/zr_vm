@@ -46,6 +46,11 @@ be omitted or invented by serialized map metadata.
 materialization rejects entries whose exception state introduces or omits either
 bit instead of publishing contradictory recovery metadata.
 
+Each `ownerStates` item is paired with the value at the same `liveValues`
+offset. Consumers recompute its initialized/unknown state and every preceding
+MOVE or DROP effect, including the current instruction only for post-effect
+phases; a serialized owner state that differs from that result is invalid.
+
 A nonzero handler block is valid only at a THROW boundary. The producer chooses
 the first exception or cleanup block in the source block's successor range;
 consumers recompute that same choice and require the exact block ID. An
