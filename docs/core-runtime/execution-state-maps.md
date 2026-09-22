@@ -8,7 +8,9 @@ Each map entry identifies a source position, instruction, cleanup state, and
 resume ID. Its `liveValues` and `rootValues` fields are ranges into side-table
 pools of value IDs. Root values are the managed references that a collector or
 resumer must preserve; the physical storage for those values is selected later
-by the runtime.
+by the runtime. The root pool is an exact projection of the live pool: every
+live GC, unique, or shared value appears once as a root, and borrowed or plain
+values do not appear there. Consumers reject either omission or invention.
 
 An entry's source identity is an exact projection of its instruction: the
 instruction's explicit `sourceId` is used when present, otherwise its one-based

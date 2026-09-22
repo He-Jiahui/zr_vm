@@ -526,6 +526,36 @@ static TZrBool zr_state_map_roots_are_live(const SZrExecIrStateMap *map,
     return ZR_TRUE;
 }
 
+static TZrBool zr_state_map_roots_match_live(
+        const SZrExecIrFunction *function,
+        const SZrExecIrStateMap *map,
+        const SZrExecIrStateMapEntry *entry) {
+    TZrUInt32 liveIndex;
+
+    for (liveIndex = 0u;
+         liveIndex < entry->liveValues.count;
+         ++liveIndex) {
+        TZrExecIrValueId valueId = map->valuePool[entry->liveValues.start + liveIndex];
+        EZrExecIrOwnership ownership = function->values[valueId - 1u].ownership;
+        TZrBool managed = (TZrBool)(ownership == ZR_EXEC_IR_OWNERSHIP_GC ||
+                                    ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+                                    ownership == ZR_EXEC_IR_OWNERSHIP_SHARED);
+        TZrUInt32 rootIndex;
+        TZrBool found = ZR_FALSE;
+
+        for (rootIndex = 0u; rootIndex < entry->rootValues.count; ++rootIndex) {
+            if (map->rootPool[entry->rootValues.start + rootIndex] == valueId) {
+                found = ZR_TRUE;
+                break;
+            }
+        }
+        if (managed != found) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static EZrExecIrStateMapOwnerState zr_state_map_expected_owner_state(
         const SZrExecIrFunction *function,
         TZrExecIrValueId valueId,
@@ -811,7 +841,8 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
     }
     if (!zr_state_map_range_values_unique(map, entry->liveValues, ZR_FALSE) ||
         !zr_state_map_range_values_unique(map, entry->rootValues, ZR_TRUE) ||
-        !zr_state_map_roots_are_live(map, entry)) {
+        !zr_state_map_roots_are_live(map, entry) ||
+        !zr_state_map_roots_match_live(function, map, entry)) {
         zr_state_map_set_diagnostic(diagnostic,
                                     ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
                                     function, entry, entry->instructionId,
