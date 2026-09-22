@@ -52,6 +52,8 @@ Each `ownerStates` item is paired with the value at the same `liveValues`
 offset. Consumers recompute its initialized/unknown state and every preceding
 MOVE or DROP effect, including the current instruction only for post-effect
 phases; a serialized owner state that differs from that result is invalid.
+The recomputation also validates every preceding MOVE/DROP operand ID before
+using it, so a malformed owner transition cannot be hidden behind a valid map.
 
 When an instruction carries a `deoptId`, its state-map phases reuse the matching
 deopt state's nonzero `resumeId` rather than inventing a second identity. The

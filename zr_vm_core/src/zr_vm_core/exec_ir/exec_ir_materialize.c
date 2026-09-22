@@ -599,7 +599,12 @@ static EZrExecIrStateMapOwnerState zr_state_map_expected_owner_state(
              operandIndex < instruction->operandRange.start +
                                  instruction->operandRange.count;
              ++operandIndex) {
-            if (function->operandPool[operandIndex] == valueId) {
+            TZrExecIrValueId operand = function->operandPool[operandIndex];
+            if (operand == ZR_EXEC_IR_VALUE_ID_INVALID ||
+                operand > function->valueCount) {
+                return state;
+            }
+            if (operand == valueId) {
                 state = (EZrExecIrOpcode)instruction->opcode == ZR_EXEC_IR_OPCODE_DROP
                             ? ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED
                             : ZR_EXEC_IR_STATE_MAP_OWNER_MOVED;

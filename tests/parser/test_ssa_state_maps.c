@@ -25,6 +25,7 @@ void test_state_map_materialization_rejects_forged_owner_state(void);
 void test_state_map_materialization_rejects_mismatched_deopt_identity(void);
 void test_state_map_materialization_rejects_deopt_value_outside_live_state(void);
 void test_state_map_materialization_rejects_missing_managed_root(void);
+void test_state_map_materialization_rejects_malformed_owner_operand(void);
 void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_clone_rejects_aliased_destination(void);
 void test_state_map_clone_rejects_interior_pool_alias(void);
@@ -747,6 +748,41 @@ void test_state_map_materialization_rejects_missing_managed_root(void) {
     ZrCore_ExecIr_StateMapFree(&map);
 }
 
+void test_state_map_materialization_rejects_malformed_owner_operand(void) {
+    SZrExecIrStateMap map;
+    SZrExecIrFunction function;
+    SZrExecIrMaterializedState target;
+    SZrExecIrResumeRequest request;
+    SZrExecIrDiagnostic diagnostic;
+
+    map_with_one_entry(&map, ZR_EXEC_IR_STATE_AFTER_EFFECT,
+                       ZR_EXEC_IR_STATE_MAP_BOUNDARY_CLEANUP);
+    map.entries[0].sourceId = 84u;
+    map.entries[0].instructionId = 2u;
+    map.entries[0].ownerStates.offset = 0u;
+    map.ownerStatePool[0] = ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+    function_with_drop_boundary(&function);
+    function.operandPool[0] = 2u;
+    map.functionToken = function.functionToken;
+    map.signatureHash = function.signatureHash;
+    ZrCore_ExecIr_MaterializedStateInit(&target);
+    memset(&request, 0, sizeof(request));
+    request.function = &function;
+    request.map = &map;
+    request.generation = map.generation;
+    request.sourceId = 84u;
+    request.resumeId = 7u;
+    request.phase = ZR_EXEC_IR_STATE_AFTER_EFFECT;
+    request.target = &target;
+
+    TEST_ASSERT_FALSE(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
+    TEST_ASSERT_NULL(target.values);
+    ZrCore_ExecIr_MaterializedStateFree(&target);
+    ZrCore_ExecIr_FreeFunction(&function);
+    ZrCore_ExecIr_StateMapFree(&map);
+}
+
 void test_state_map_builder_reuses_deopt_resume_identity(void) {
     SZrExecIrFunction function;
     SZrExecIrDiagnostic diagnostic;
@@ -1261,6 +1297,7 @@ int main(void) {
     RUN_TEST(test_state_map_materialization_rejects_mismatched_deopt_identity);
     RUN_TEST(test_state_map_materialization_rejects_deopt_value_outside_live_state);
     RUN_TEST(test_state_map_materialization_rejects_missing_managed_root);
+    RUN_TEST(test_state_map_materialization_rejects_malformed_owner_operand);
     RUN_TEST(test_state_map_clone_copies_pools_and_lifecycle);
     RUN_TEST(test_state_map_clone_rejects_aliased_destination);
     RUN_TEST(test_state_map_clone_rejects_interior_pool_alias);
