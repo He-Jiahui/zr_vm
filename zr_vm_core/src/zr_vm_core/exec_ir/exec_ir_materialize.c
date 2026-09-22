@@ -631,6 +631,7 @@ static TZrBool zr_state_map_owner_range_valid(const SZrExecIrFunction *function,
 }
 
 static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function,
+                                              const SZrExecIrStateMap *map,
                                               const SZrExecIrStateMapEntry *entry,
                                               SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
@@ -660,8 +661,29 @@ static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function,
                 for (valueIndex = state->valueRange.start;
                      valueIndex < state->valueRange.start + state->valueRange.count;
                      ++valueIndex) {
+                    TZrUInt32 liveIndex;
+                    TZrBool live = ZR_FALSE;
                     if (function->deoptValues[valueIndex] == ZR_EXEC_IR_VALUE_ID_INVALID ||
                         function->deoptValues[valueIndex] > function->valueCount) {
+                        break;
+                    }
+                    if (!zr_state_map_range_valid(entry->liveValues,
+                                                  map->valueCount) ||
+                        (entry->liveValues.count != 0u &&
+                         map->valuePool == ZR_NULL)) {
+                        break;
+                    }
+                    for (liveIndex = entry->liveValues.start;
+                         liveIndex < entry->liveValues.start +
+                                          entry->liveValues.count;
+                         ++liveIndex) {
+                        if (map->valuePool[liveIndex] ==
+                            function->deoptValues[valueIndex]) {
+                            live = ZR_TRUE;
+                            break;
+                        }
+                    }
+                    if (!live) {
                         break;
                     }
                 }
@@ -770,7 +792,7 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
         !zr_state_map_range_valid(entry->liveValues, map->valueCount) ||
         !zr_state_map_range_valid(entry->rootValues, map->rootCount) ||
         !zr_state_map_owner_range_valid(function, map, entry, diagnostic) ||
-        !zr_state_map_entry_deopt_valid(function, entry, diagnostic) ||
+        !zr_state_map_entry_deopt_valid(function, map, entry, diagnostic) ||
         !zr_state_map_validate_value_range(
                 function, map, entry, entry->liveValues, ZR_FALSE,
                 (TZrBool)((entry->boundaryFlags & ZR_EXEC_IR_STATE_MAP_BOUNDARY_SUSPEND) != 0u),
