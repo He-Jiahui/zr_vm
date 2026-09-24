@@ -1,7 +1,7 @@
 #ifndef ZR_VM_CORE_EXEC_IR_INTERPRETER_H
 #define ZR_VM_CORE_EXEC_IR_INTERPRETER_H
 
-#include "zr_vm_core/exec_ir.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 
 /*
  * A deliberately small, pointer-free value model for the reference
@@ -135,6 +135,25 @@ typedef TZrBool (*FZrExecIrOracleExceptionPayload)(
         const SZrExecIrInstruction *instruction,
         SZrExecIrOracleValue *result);
 
+typedef struct SZrExecIrOracleCheckpoint {
+    TZrExecIrSourceId sourceId;
+    TZrUInt32 resumeId;
+    EZrExecIrStateMapPhase phase;
+} SZrExecIrOracleCheckpoint;
+
+/* Runtime cursor metadata contains stable identities, never frame addresses.
+ * The successor ordinal distinguishes parallel CFG edges with different phis. */
+typedef struct SZrExecIrOracleContinuation {
+    SZrExecIrOracleCheckpoint checkpoint;
+    TZrMetadataToken functionToken;
+    TZrUInt64 generation;
+    TZrUInt64 signatureHash;
+    TZrExecIrInstructionId instructionId;
+    TZrExecIrBlockId nextBlock;
+    TZrUInt32 successorOrdinal;
+    TZrBool terminated;
+} SZrExecIrOracleContinuation;
+
 typedef struct SZrExecIrOracleInput {
     const SZrExecIrFunction *function;
     /* Initial values are indexed by valueId - 1. */
@@ -160,6 +179,8 @@ typedef struct SZrExecIrOracleInput {
     void *iteratorUserData;
     FZrExecIrOraclePlace place;
     void *placeUserData;
+    /* Optional checkpoint at which to stop this invocation. */
+    const SZrExecIrOracleCheckpoint *stopAt;
 } SZrExecIrOracleInput;
 
 typedef struct SZrExecIrOracleExecutionResult {
@@ -181,6 +202,8 @@ typedef struct SZrExecIrOracleExecutionResult {
     /* Set by Init/RunOracleEx so Free and transactional replacement can
      * distinguish API-owned storage from a merely zeroed record. */
     TZrUInt32 ownershipTag;
+    TZrBool paused;
+    SZrExecIrOracleContinuation continuation;
 } SZrExecIrOracleExecutionResult;
 
 #define ZR_EXEC_IR_ORACLE_RESULT_TAG ((TZrUInt32)0x4f52434cu)
@@ -192,6 +215,13 @@ ZR_CORE_API void ZrCore_ExecIr_OracleResultFree(
 ZR_CORE_API TZrBool ZrCore_ExecIr_RunOracleEx(
         const SZrExecIrOracleInput *input,
         SZrExecIrOracleExecutionResult *result,
+        SZrExecIrDiagnostic *diagnostic);
+/* Consume a paused result and continue using its mapped live values. Failed
+ * preparation preserves it. Once execution starts, errors retain the partial
+ * execution state with the old pause consumed, preventing effect replay. */
+ZR_CORE_API TZrBool ZrCore_ExecIr_ResumeOracleEx(
+        const SZrExecIrOracleInput *input,
+        SZrExecIrOracleExecutionResult *state,
         SZrExecIrDiagnostic *diagnostic);
 
 #endif

@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/exec_ir_interpreter.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_run.c
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
   - zr_vm_core/include/zr_vm_core/exec_ir_owner_state.h
@@ -19,6 +22,8 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/parser/test_ssa_oracle_resume.c
+  - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_state_maps.c
   - tests/parser/test_ssa_deopt_validation.c
   - tests/parser/test_ssa_state_map_liveness.c
@@ -215,8 +220,10 @@ copying data or publishing state.
 
 ## Current limitations
 
-The initial implementation is deliberately a logical contract rather than a
-complete runtime resume engine. It does not yet allocate physical frame slots,
+The oracle now pauses and resumes actual reference execution using this logical
+contract; see [oracle checkpoint execution](oracle-projections.md#checkpoint-execution-and-resume).
+It validates identity, restores mapped live values, preserves effect history
+and consumes the saved pause before further execution. This does not yet allocate physical frame slots,
 rebuild native registers, or perform a runtime frame switch. Scalarized aggregate
 fields, inline frames and conditional cleanup flags remain pending. The current
 analysis validates checkpoint value availability; it does not replace full

@@ -4,6 +4,9 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir_interpreter.h
   - zr_vm_core/include/zr_vm_core/execution_contract.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_run.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_internal.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_oracle.h
@@ -14,6 +17,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_run.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_internal.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
@@ -23,9 +29,14 @@ implementation_files:
 plan_sources:
   - user: 2026-09-12 SSA plan implementation
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
+  - docs/plans/ssa/01-execir-ssa/04-state-maps.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
   - docs/plans/ssa/guides/E-projections-fusion-aot.md
 tests:
+  - tests/parser/test_ssa_oracle_resume.c
+  - tests/parser/ssa_oracle_resume_fault_allocator.c
+  - tests/parser/ssa_oracle_resume_fault_allocator.h
+  - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/cmake/ssa-tests.cmake
@@ -39,7 +50,8 @@ doc_type: module-detail
 01.05 provides a pointer-free reference execution seam and two transactional,
 no-optimization projections. `ZrCore_ExecIr_RunOracleEx` validates the complete
 function shape before reading pools, allocates an isolated value environment,
-and commits the result only after a normal return, throw, or suspend. The
+and commits the result after a normal return, throw, suspend or requested
+checkpoint pause. The
 legacy `ZrCore_ExecIr_RunOracle` entry remains a compatibility counter for
 callers that only need instruction coverage.
 
@@ -88,19 +100,72 @@ projection-layer evidence for the same edge pattern is recorded separately
 in `tests/acceptance/ssa-projection-parallel-edges.md`.
 
 The edge-occurrence lookup and two-phase phi entry live in
-`exec_ir_interpreter_phi.c`; `exec_ir_interpreter.c` remains responsible for
-instruction dispatch and tracking the selected successor ordinal. Their
-private header shares only diagnostic and checked-size helpers plus the block
-entry call; no new public core API or alternate execution path is introduced.
+`exec_ir_interpreter_phi.c`; `exec_ir_interpreter.c` owns instruction dispatch.
+`exec_ir_interpreter_validate.c` preflights the input graph, while
+`exec_ir_interpreter_run.c` owns result lifetime and the shared execution loop.
+`exec_ir_interpreter_resume.c` validates checkpoints, restores live values and
+reconstructs the cursor. Their private header exposes these module boundaries;
+fresh execution and resumed execution use the same instruction semantics.
+
+## Checkpoint execution and resume
+
+`SZrExecIrOracleInput.stopAt` optionally selects a state-map source ID, resume ID
+and phase. Its map is validated before execution. A matching dynamic occurrence
+returns a result with `paused` set. BEFORE_EFFECT stops before the instruction;
+AFTER_EFFECT and CLEANUP_COMPLETE stop after its committed value/effect update.
+If execution finishes on another path before reaching the selector, the result
+has its ordinary return/throw/suspend status. No map is needed for a run without
+a selector.
+
+`ZrCore_ExecIr_ResumeOracleEx` consumes an API-owned paused result in place. It
+validates the saved function/generation/signature and checkpoint identity,
+including exact zero-valued identities,
+prepares a new environment containing only the map's live values, and copies
+the existing event history. Initial input values never overwrite restored
+state. Missing or undefined live values fail with checkpoint source/instruction
+diagnostics. Preparation failures leave the old arrays and pause available for
+repair and retry.
+
+After preparation, the new environment replaces the old one and consumes the
+pause token before any provider executes. A later execution error retains its
+partial result with that pause consumed; repeating resume is rejected. This is
+essential for providers whose side effects cannot be rolled back. Result
+records must use Init/Free and must not be shallow-copied into independently
+owned or independently resumed states.
+
+The saved cursor retains a terminator's selected successor ordinal, so resumed
+parallel edges select the same phi input. A checkpoint already inside a block
+restores phi results directly and does not re-enter the block. Keeping the same
+BEFORE_EFFECT selector skips that paused occurrence once; a later loop visit
+can pause again. Each invocation has its own step budget, while instruction and
+event counts accumulate across successful resumes.
+
+An after-map includes values from both normal and exceptional successors. On
+an actual exceptional edge, the throwing terminator's normal result IDs are
+excluded from required/restored values; all other mapped live IDs remain
+required. The execution loop clears these result slots even without a pause,
+so an earlier iteration's result cannot survive a later throw. This matches
+the CFG ownership analysis's result availability rule and preserves the
+selected exception edge without calling the provider again.
+
+These values are pointer-free oracle scalars/tokens. This interface establishes
+reference execution recovery, not native frame switching, runtime GC object
+materialization, scheduler activation, or nested inline-frame reconstruction.
+The caller retains the function, constants and provider contexts throughout an
+invocation and must not mutate function metadata inside a provider.
 
 THROW and SUSPEND are observable termination boundaries in reference mode. The
 oracle publishes their event into its prepared result, stops before any later
 instruction, and commits `terminatedByThrow` or `suspended` respectively. The
 payload-bearing SUSPEND form additionally copies its first operand to the
-result slot and return-value snapshot. This is not a landing-pad or resume
-implementation: selecting a handler block from a runtime exception and
-resuming after a catch remain outside the direct oracle until their runtime ABI
-is specified.
+result slot and return-value snapshot. An explicit post-SUSPEND checkpoint can
+resume at the block's single continuation successor (or the next instruction
+in blockless form), without publishing a second suspend event. Consuming that
+checkpoint clears the old suspension's return-value snapshot, so a later void
+return or payloadless suspension cannot inherit it; mapped SSA values remain
+available independently. A normal suspend
+result without a requested checkpoint is not a resumable cursor. Selecting a
+handler block from a runtime exception remains a separate runtime ABI.
 
 DROP also consumes its oracle operand slot after publishing the event; a later
 use is rejected as `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE`. This is the
