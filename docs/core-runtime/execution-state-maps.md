@@ -1,3 +1,24 @@
+---
+related_code:
+  - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+plan_sources:
+  - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
+  - docs/plans/ssa/01-execir-ssa/04-state-maps.md
+tests:
+  - tests/parser/test_ssa_state_maps.c
+  - tests/parser/test_ssa_deopt_validation.c
+  - tests/acceptance/ssa-deopt-validation.md
+doc_type: module-detail
+---
+
 # ExecIR logical execution state maps
 
 State maps describe a resumable ExecIR position using logical IDs. They are
@@ -63,6 +84,19 @@ reconstruction value range and requiring every reconstructed value to be present
 in the checkpoint's live-value pool. A deopt ID must resolve to exactly one
 deopt-state record; duplicate definitions are rejected rather than resolved by
 array order.
+
+Before state-map construction, the core function verifier checks every deopt
+reconstruction range against the logical `deoptValueCount`, including records
+not referenced by an instruction. It checks the start before subtracting and
+the count against the remaining pool, so wrapped ranges and accesses into spare
+capacity fail without reading their elements. An empty range is valid at the
+pool end, but not beyond it. Each referenced reconstruction ID must be nonzero
+and within the function's value pool. A range failure reports `INVALID_RANGE`;
+an invalid value reports `INVALID_VALUE`, with the function token, deopt source,
+and first referring instruction (zero for an unreferenced record). This preflight
+runs before liveness scans and leaves an already published state map intact on
+failure. It does not yet establish that every reconstruction value dominates
+its resume point.
 
 A nonzero handler block is valid only at a THROW boundary. The producer chooses
 the first exception or cleanup block in the source block's successor range;

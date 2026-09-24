@@ -32,6 +32,64 @@ static TZrBool zr_exec_ir_range_is_valid(SZrExecIrRange range, TZrUInt32 count) 
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
 }
 
+/* Pool shapes have already been validated. Resolve the referring instruction
+ * only on failure; unreferenced side-table records still carry source context. */
+static void zr_exec_ir_set_deopt_diagnostic(
+        SZrExecIrDiagnostic *diagnostic,
+        EZrExecutionDiagnosticCode code,
+        const SZrExecIrFunction *function,
+        const SZrExecIrDeoptState *state,
+        TZrUInt32 expected,
+        TZrUInt32 actual) {
+    TZrUInt32 index;
+    zr_exec_ir_set_diagnostic(diagnostic, code, function, 0u, 0u,
+                              expected, actual);
+    if (diagnostic == ZR_NULL) {
+        return;
+    }
+    diagnostic->sourceId = state->sourceId;
+    if (state->id != 0u) {
+        for (index = 0u; index < function->instructionCount; ++index) {
+            if (function->instructions[index].deoptId == state->id) {
+                diagnostic->instructionId = index + 1u;
+                break;
+            }
+        }
+    }
+}
+
+static TZrBool zr_exec_ir_validate_deopt_values(
+        const SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 stateIndex;
+    for (stateIndex = 0u; stateIndex < function->deoptStateCount; ++stateIndex) {
+        const SZrExecIrDeoptState *state = &function->deoptStates[stateIndex];
+        SZrExecIrRange range = state->valueRange;
+        TZrUInt32 index;
+        if (!zr_exec_ir_range_is_valid(range, function->deoptValueCount)) {
+            TZrBool invalidStart = (TZrBool)(range.start > function->deoptValueCount);
+            zr_exec_ir_set_deopt_diagnostic(
+                    diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                    function, state,
+                    invalidStart ? function->deoptValueCount
+                                 : function->deoptValueCount - range.start,
+                    invalidStart ? range.start : range.count);
+            return ZR_FALSE;
+        }
+        for (index = range.start; index < range.start + range.count; ++index) {
+            TZrExecIrValueId valueId = function->deoptValues[index];
+            if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID ||
+                valueId > function->valueCount) {
+                zr_exec_ir_set_deopt_diagnostic(
+                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                        function, state, function->valueCount, valueId);
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
 /* Only call after validating both the side-pool range and every block ID. */
 static TZrBool zr_exec_ir_edge_contains(const TZrExecIrBlockId *edges,
                                         SZrExecIrRange range,
@@ -307,6 +365,9 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
                                       function->values[index].id);
             return ZR_FALSE;
         }
+    }
+    if (!zr_exec_ir_validate_deopt_values(function, diagnostic)) {
+        return ZR_FALSE;
     }
     for (index = 0u; index < function->predecessorCount; ++index) {
         if (function->predecessors[index] == ZR_EXEC_IR_BLOCK_ID_INVALID ||
