@@ -1,5 +1,7 @@
 #include "zr_vm_parser/exec_ir_state_maps.h"
 
+#include "exec_ir_state_map_liveness.h"
+
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -169,54 +171,6 @@ static TZrBool zr_state_map_append_entry(SZrExecIrStateMap *map,
     return ZR_TRUE;
 }
 
-static TZrBool zr_state_map_value_is_used(const SZrExecIrFunction *function,
-                                          TZrExecIrValueId valueId,
-                                          TZrUInt32 firstInstructionId) {
-    TZrUInt32 instructionIndex;
-
-    /* Instruction IDs are one-based while ranges are zero-based.  Iterating
-     * over the index keeps the UINT32_MAX case from wrapping the loop back to
-     * zero and accidentally indexing before the instruction pool. */
-    if (firstInstructionId == 0u) {
-        firstInstructionId = 1u;
-    }
-    for (instructionIndex = firstInstructionId - 1u;
-         instructionIndex < function->instructionCount;
-         ++instructionIndex) {
-        const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
-        TZrUInt32 index;
-        for (index = instruction->operandRange.start;
-             index < instruction->operandRange.start + instruction->operandRange.count;
-             ++index) {
-            if (function->operandPool[index] == valueId) {
-                return ZR_TRUE;
-            }
-        }
-    }
-    /* Phi inputs are edge uses and may be reached without a later linear use. */
-    for (instructionIndex = 0u;
-         instructionIndex < function->phiIncomingCount;
-         ++instructionIndex) {
-        if (function->phiIncoming[instructionIndex].value == valueId) {
-            return ZR_TRUE;
-        }
-    }
-    for (instructionIndex = 0u;
-         instructionIndex < function->deoptStateCount;
-         ++instructionIndex) {
-        const SZrExecIrDeoptState *state = &function->deoptStates[instructionIndex];
-        TZrUInt32 index;
-        for (index = state->valueRange.start;
-             index < state->valueRange.start + state->valueRange.count;
-             ++index) {
-            if (function->deoptValues[index] == valueId) {
-                return ZR_TRUE;
-            }
-        }
-    }
-    return ZR_FALSE;
-}
-
 static EZrExecIrStateMapOwnerState zr_state_map_owner_state_at(
         const SZrExecIrFunction *function,
         TZrExecIrValueId valueId,
@@ -299,6 +253,7 @@ static TZrExecIrBlockId zr_state_map_handler_block(const SZrExecIrFunction *func
 static EZrStateMapBuildResult zr_state_map_add_checkpoint(
         SZrExecIrStateMap *map,
         const SZrExecIrFunction *function,
+        const SZrStateMapLiveness *liveness,
         const SZrExecIrInstruction *instruction,
         TZrUInt32 instructionId,
         TZrUInt32 boundaryFlags,
@@ -334,20 +289,9 @@ static EZrStateMapBuildResult zr_state_map_add_checkpoint(
     }
     for (valueIndex = 0u; valueIndex < function->valueCount; ++valueIndex) {
         const SZrExecIrValue *value = &function->values[valueIndex];
-        TZrUInt32 definition = value->definition;
-        TZrUInt32 firstUse = instructionId;
         EZrExecIrStateMapOwnerState ownerState;
-        if (includeCurrent && instructionId != UINT32_MAX) {
-            /* Once the boundary has committed, the current instruction's
-             * operands are consumed.  Keep only later uses (plus edge/deopt
-             * uses discovered by the conservative side scans). */
-            firstUse = instructionId + 1u;
-        }
-        if (definition != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
-            (includeCurrent ? definition > instructionId : definition >= instructionId)) {
-            continue;
-        }
-        if (!zr_state_map_value_is_used(function, value->id, firstUse)) {
+        if (!zr_state_map_liveness_contains(liveness, instructionId,
+                                            value->id, includeCurrent)) {
             continue;
         }
         ownerState = zr_state_map_owner_state_at(
@@ -448,6 +392,8 @@ static TZrBool zr_state_map_deopt_resume_id(
 TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                                        SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrStateMap candidate;
+    SZrStateMapLiveness liveness;
+    EZrExecutionDiagnosticCode livenessResult;
     TZrUInt32 instructionId;
     TZrUInt32 resumeId = 1u;
 
@@ -463,6 +409,11 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     if (!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) {
+        return ZR_FALSE;
+    }
+    livenessResult = zr_state_map_liveness_build(function, &liveness);
+    if (livenessResult != ZR_EXECUTION_DIAGNOSTIC_NONE) {
+        zr_state_map_set_diagnostic(diagnostic, livenessResult, function, 0u, 0u);
         return ZR_FALSE;
     }
     ZrCore_ExecIr_StateMapInit(&candidate);
@@ -483,6 +434,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                 instruction->sourceId != 0u ? instruction->sourceId : instructionId;
             if (!zr_state_map_deopt_resume_id(function, instruction, sourceId,
                                               &currentResume)) {
+                zr_state_map_liveness_free(&liveness);
                 ZrCore_ExecIr_StateMapFree(&candidate);
                 zr_state_map_set_diagnostic(
                         diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
@@ -490,6 +442,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                 return ZR_FALSE;
             }
             if (zr_state_map_resume_used(&candidate, currentResume)) {
+                zr_state_map_liveness_free(&liveness);
                 ZrCore_ExecIr_StateMapFree(&candidate);
                 zr_state_map_set_diagnostic(
                         diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
@@ -505,6 +458,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             }
         } else {
             if (resumeId == UINT32_MAX) {
+                zr_state_map_liveness_free(&liveness);
                 ZrCore_ExecIr_StateMapFree(&candidate);
                 zr_state_map_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
                                             function, instructionId, instruction->sourceId);
@@ -512,12 +466,12 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             }
             currentResume = resumeId++;
         }
-        result = zr_state_map_add_checkpoint(&candidate, function, instruction,
+        result = zr_state_map_add_checkpoint(&candidate, function, &liveness, instruction,
                                              instructionId, boundaryFlags,
                                              ZR_EXEC_IR_STATE_BEFORE_EFFECT,
                                              currentResume, diagnostic);
         if (result == ZR_STATE_MAP_BUILD_OK) {
-            result = zr_state_map_add_checkpoint(&candidate, function, instruction,
+            result = zr_state_map_add_checkpoint(&candidate, function, &liveness, instruction,
                                                  instructionId, boundaryFlags,
                                                  ZR_EXEC_IR_STATE_AFTER_EFFECT,
                                                  currentResume, diagnostic);
@@ -526,12 +480,13 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             (boundaryFlags & (ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW |
                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_SUSPEND |
                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_CLEANUP)) != 0u) {
-            result = zr_state_map_add_checkpoint(&candidate, function, instruction,
+            result = zr_state_map_add_checkpoint(&candidate, function, &liveness, instruction,
                                                  instructionId, boundaryFlags,
                                                  ZR_EXEC_IR_STATE_CLEANUP_COMPLETE,
                                                  currentResume, diagnostic);
         }
         if (result != ZR_STATE_MAP_BUILD_OK) {
+            zr_state_map_liveness_free(&liveness);
             if (result == ZR_STATE_MAP_BUILD_OUT_OF_MEMORY) {
                 zr_state_map_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
                                             function, instructionId, instruction->sourceId);
@@ -543,6 +498,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             return ZR_FALSE;
         }
     }
+    zr_state_map_liveness_free(&liveness);
     {
         SZrExecIrStateMap *committed = (SZrExecIrStateMap *)malloc(sizeof(*committed));
         if (committed == ZR_NULL) {

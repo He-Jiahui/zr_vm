@@ -165,6 +165,28 @@ if (NOT TARGET zr_vm_ssa_value_validation_test)
     set_tests_properties(ssa_value_validation PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_state_map_liveness_test)
+    add_executable(zr_vm_ssa_state_map_liveness_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_state_map_liveness.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_state_map_liveness_test)
+    target_include_directories(zr_vm_ssa_state_map_liveness_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_state_map_liveness_test PRIVATE UNITY_INCLUDE_CONFIG_H)
+    zr_link_third_party_for_target(zr_vm_ssa_state_map_liveness_test "zr_unity")
+    add_test(NAME ssa_state_map_liveness COMMAND zr_vm_ssa_state_map_liveness_test)
+    set_tests_properties(ssa_state_map_liveness PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_deopt_validation_test)
     add_executable(zr_vm_ssa_deopt_validation_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_deopt_validation.c
@@ -174,7 +196,8 @@ if (NOT TARGET zr_vm_ssa_deopt_validation_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_deopt_validation_test)
     target_include_directories(zr_vm_ssa_deopt_validation_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -195,7 +218,8 @@ if (NOT TARGET zr_vm_ssa_state_maps_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_state_maps_test)
     target_include_directories(zr_vm_ssa_state_maps_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include

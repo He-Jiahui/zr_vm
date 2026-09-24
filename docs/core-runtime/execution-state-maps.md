@@ -5,17 +5,22 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.h
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
   - tests/parser/test_ssa_state_maps.c
   - tests/parser/test_ssa_deopt_validation.c
+  - tests/parser/test_ssa_state_map_liveness.c
   - tests/acceptance/ssa-deopt-validation.md
+  - tests/acceptance/ssa-state-map-liveness.md
 doc_type: module-detail
 ---
 
@@ -105,6 +110,36 @@ in-range but unreachable or non-canonical successor is not a resumable handler.
 When the source block has no exception/cleanup successor, an invalid handler ID
 represents an unhandled throw.
 
+## CFG liveness
+
+The producer computes backward live sets over verified CFG successors until
+the block inputs stop changing. Each instruction has separate before/after
+bitsets. Results are removed when crossing their definition backwards; operands
+are added before the instruction. Instruction numbering is storage order, not
+execution order: a definition in a later stored block can dominate an earlier
+stored use, and a use before a safepoint can keep a value alive through a loop
+backedge. Normal and exceptional successors both contribute to live-out sets.
+
+Block phi results are definitions at the destination entry. Their incoming
+values are uses only on the matching predecessor edges, so another predecessor's
+input is not kept alive at the current checkpoint. Ordinary SSA operands remain
+uses even when the consuming result is dead; removing dead computations belongs
+to DCE. An instruction's deopt reconstruction values are uses at both checkpoint
+phases, with definitions still excluded from the before phase. Unreferenced
+deopt records do not make values globally live. The verifier still checks their
+storage ranges, but their mere presence does not create a recovery edge.
+
+Managed live values feed the existing root projection; live borrowed values
+still reject suspension. The CFG analysis therefore catches borrows needed in
+the next loop iteration and avoids rejecting a borrow used only in a sibling
+branch. A blockless verified function is analyzed as one straight-line region.
+Analysis storage uses checked allocation sizes and is released before map
+publication or on failure. An existing map survives a failed rebuild.
+
+The old linear use scan and numeric definition-order filter have been removed.
+The private liveness module owns only this analysis; checkpoint identity,
+ownership projection, diagnostics, and publication remain in the builder.
+
 ## Transactional materialization
 
 `ZrCore_ExecIr_MaterializeState` first validates the function token,
@@ -140,7 +175,10 @@ copying data or publishing state.
 
 The initial implementation is deliberately a logical contract rather than a
 complete runtime resume engine. It does not yet allocate physical frame slots,
-rebuild native registers, encode handler tables, or perform CFG-sensitive liveness
-optimization. Later runtime stages may add richer cleanup and deoptimization
-metadata while preserving the stable source/resume IDs and transactional
-materialization boundary.
+rebuild native registers, or perform a runtime frame switch. Owner-state
+recomputation still scans preceding MOVE/DROP instructions in storage order;
+it needs CFG ownership analysis before path-dependent moves/drops can be fully
+represented. Scalarized aggregate fields and inline frames also remain pending.
+The liveness work does not prove deopt value dominance or replace borrow/alias
+analysis. Later stages must preserve stable source/resume IDs and transactional
+publication while completing those contracts.
