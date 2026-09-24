@@ -114,10 +114,87 @@ static void test_accepts_matching_canonical_ids(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_preserves_value_facts(TZrBool external) {
+    static const EZrExecIrOwnership expected[] = {
+        ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+        ZR_EXEC_IR_OWNERSHIP_BORROWED, ZR_EXEC_IR_OWNERSHIP_UNIQUE,
+        ZR_EXEC_IR_OWNERSHIP_SHARED, ZR_EXEC_IR_OWNERSHIP_SHARED,
+        ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_OWNERSHIP_GC
+    };
+    TZrUInt32 kind;
+    for (kind = 0u; kind < ZR_SEMANTIC_VALUE_OWNERSHIP_COUNT; ++kind) {
+        SZrParserCfgBlock block;
+        SZrSemanticIrInstruction instructions[2];
+        SZrSemanticIrValue value = {0};
+        TZrValueId operand;
+        SZrSemanticIrFunction semantic;
+        SZrExecIrFunction output;
+        SZrExecIrDiagnostic diagnostic;
+        make_function(&semantic, &block, instructions, &value, &operand);
+        value.facts.typeId = value.typeId;
+        value.facts.ownership = (EZrSemanticValueOwnership)kind;
+        value.facts.nullability = ZR_SEMANTIC_VALUE_NULLABILITY_NULLABLE;
+        if (external) {
+            semantic.instructions.head = (TZrBytePtr)&instructions[1];
+            semantic.instructions.length = 1u;
+            semantic.instructions.capacity = 1u;
+            block.instructionCount = 1u;
+            instructions[1].id = 1u;
+        }
+        ZrCore_ExecIr_FunctionInit(&output);
+        check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic),
+              "builder rejected valid value facts");
+        check(output.values[0].ownership == expected[kind] &&
+                  output.values[0].nullability == ZR_EXEC_IR_NULLABILITY_NULLABLE &&
+                  output.values[0].typeToken == value.typeId,
+              "builder lost canonical value facts");
+        ZrCore_ExecIr_FreeFunction(&output);
+    }
+}
+
+static void test_rejects_stale_or_invalid_facts(void) {
+    TZrUInt32 mode;
+    for (mode = 0u; mode < 6u; ++mode) {
+        SZrParserCfgBlock block;
+        SZrSemanticIrInstruction instructions[2];
+        SZrSemanticIrValue value = {0};
+        TZrValueId operand;
+        SZrSemanticIrFunction semantic;
+        SZrExecIrFunction output;
+        SZrExecIrDiagnostic diagnostic;
+        SZrExecIrBlock *originalBlocks;
+        make_function(&semantic, &block, instructions, &value, &operand);
+        value.facts.typeId = value.typeId;
+        value.facts.ownership = ZR_SEMANTIC_VALUE_OWNERSHIP_UNIQUE;
+        value.facts.nullability = ZR_SEMANTIC_VALUE_NULLABILITY_NONNULL;
+        switch (mode) {
+            case 0u: value.facts.typeId++; break;
+            case 1u: value.facts.typeId = 0u; break;
+            case 2u: value.facts.ownership = ZR_SEMANTIC_VALUE_OWNERSHIP_COUNT; break;
+            case 3u: value.facts.nullability = ZR_SEMANTIC_VALUE_NULLABILITY_COUNT; break;
+            case 4u: value.facts.ownership = (EZrSemanticValueOwnership)-1; break;
+            default: value.facts.nullability = (EZrSemanticValueNullability)-1; break;
+        }
+        ZrCore_ExecIr_FunctionInit(&output);
+        check(ZrCore_ExecIr_FunctionAddBlock(&output, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+              "could not prepare output for malformed fact test");
+        originalBlocks = output.blocks;
+        check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+                  output.blocks == originalBlocks && output.blockCount == 1u &&
+                  output.valueCount == 0u,
+              "invalid/stale value facts changed published output");
+        ZrCore_ExecIr_FreeFunction(&output);
+    }
+}
+
 int main(void) {
     test_rejects_value_id_mismatch();
     test_rejects_instruction_id_mismatch();
     test_accepts_matching_canonical_ids();
+    test_preserves_value_facts(ZR_FALSE);
+    test_preserves_value_facts(ZR_TRUE);
+    test_rejects_stale_or_invalid_facts();
     puts("ssa builder fact identity PASS");
     return EXIT_SUCCESS;
 }

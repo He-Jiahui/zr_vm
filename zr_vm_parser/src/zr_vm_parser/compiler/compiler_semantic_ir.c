@@ -1468,12 +1468,16 @@ TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
     }
     cs->preSemanticIrValidated = ZR_FALSE;
     if (!cs->preSemanticIrCfgActive &&
-        !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
+        (!ZrParser_SemanticIr_ResolveValueFacts(
+                 &cs->preSemanticIr, cs->semanticContext) ||
+         !ZrParser_SemanticIr_Validate(&cs->preSemanticIr))) {
         return ZR_FALSE;
     }
 
     if (cs->preSemanticIrCfgActive) {
         if (!compiler_semantic_cfg_finish(cs) ||
+            !ZrParser_SemanticIr_ResolveValueFacts(
+                    &cs->preSemanticIr, cs->semanticContext) ||
             !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
             return ZR_FALSE;
         }

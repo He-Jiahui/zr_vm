@@ -672,7 +672,8 @@ TZrBool ZrParser_SemanticIr_Validate(
                 (const SZrSemanticIrValue *)ZrCore_Array_Get(
                         (SZrArray *)&function->values, index);
         if (value == ZR_NULL || value->id != (TZrValueId)(index + 1U) ||
-            value->definitionInstructionId > function->instructions.length) {
+            value->definitionInstructionId > function->instructions.length ||
+            !ZrParser_SemanticValueFacts_Validate(&value->facts, value->typeId)) {
             return ZR_FALSE;
         }
     }

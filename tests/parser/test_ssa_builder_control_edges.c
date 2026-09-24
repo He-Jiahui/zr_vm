@@ -565,6 +565,12 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
           "typed call normal/exception edges were not preserved as INVOKE");
 
     instructions[0].opcode = ZR_SEMANTIC_IR_CALL_TYPED;
+    values[0].facts.typeId = values[0].typeId;
+    values[0].facts.ownership = ZR_SEMANTIC_VALUE_OWNERSHIP_SHARED;
+    values[0].facts.nullability = ZR_SEMANTIC_VALUE_NULLABILITY_NONNULL;
+    values[1].facts.typeId = values[1].typeId;
+    values[1].facts.ownership = ZR_SEMANTIC_VALUE_OWNERSHIP_BORROWED;
+    values[1].facts.nullability = ZR_SEMANTIC_VALUE_NULLABILITY_NULLABLE;
     check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
               output.blockCount == 4u &&
               output.instructions[0].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
@@ -582,6 +588,11 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
               output.blocks[3].predecessorRange.count == 2u &&
               (output.blocks[3].flags & ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u,
           "throwing calls were not split into ordered INVOKE blocks");
+    check(output.values[0].ownership == ZR_EXEC_IR_OWNERSHIP_SHARED &&
+              output.values[0].nullability == ZR_EXEC_IR_NULLABILITY_NONNULL &&
+              output.values[1].ownership == ZR_EXEC_IR_OWNERSHIP_BORROWED &&
+              output.values[1].nullability == ZR_EXEC_IR_NULLABILITY_NULLABLE,
+          "CFG normalization discarded canonical value facts");
     instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
 
     instructions[2] = instructions[1];

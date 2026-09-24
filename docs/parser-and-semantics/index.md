@@ -4,6 +4,8 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_value_facts.c
   - zr_vm_parser/include/zr_vm_parser/canonical_type.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
@@ -361,6 +363,10 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - `ref` / `ref readonly` 与五个 ownership intrinsic 的 ExecBC、SemIR、AOT 契约
   - ownership expression 与 statement `using` 的边界
   - 旧 ownership helper 不进入现行 artifact surface
+- `semantic-value-facts.md`
+  - 规范类型到 SemIR 所有权/可空性快照及 type-ID witness
+  - ExecIR 构建器保留事实，weak 与强所有者严格区分
+  - 源码生产链路、失败原子性和 owner-state 消费边界
 - `ownership-intrinsics-and-receiver-guards.md`
   - `share/degrade/wake/intoGc/drop` 的 reserved intrinsic、Place/Loan/effect facts
   - `.` / `?.` 的 nullable/Weak target guard、单次 wake、suffix skip 与 `NullReferenceError`

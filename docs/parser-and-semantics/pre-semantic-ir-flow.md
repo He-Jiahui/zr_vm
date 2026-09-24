@@ -3,6 +3,8 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/bound_expression.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_value_facts.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
@@ -31,6 +33,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_value_facts.c
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/bound_expression.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
@@ -65,6 +69,9 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
+  - tests/parser/test_semantic_value_facts.c
+  - tests/parser/test_ssa_source_value_facts.c
+  - tests/acceptance/ssa-value-facts.md
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
@@ -114,6 +121,14 @@ doc_type: module-detail
 M3 introduces a semantic function that exists before final ExecBC assembly. It gives reads, writes, initialization, moves, copies, drops, borrows, calls, construction, cleanup, properties, and destructuring explicit identities instead of recovering their meaning from execution bytecode.
 
 `SZrSemanticIrFunction` owns its canonical symbol/callable IDs, Place graph, CFG blocks, locals, values, instructions, flat operand storage, regions, cleanup scopes, source map, and loan facts. Instructions use `TypeId`, `PlaceId`, `ValueId`, `LoanId`, and block IDs. VM stack slots remain private to the compiler bridge and are not part of the public semantic instruction contract.
+
+Each value additionally carries a trailing pointer-free ownership/nullability
+snapshot. Compiler validation resolves reachable canonical types and publishes
+all snapshots atomically; SemIR validation checks their type-ID witnesses and
+enum ranges. The ExecIR builder consumes these facts rather than treating
+every value as unknown. Legacy zero snapshots remain valid, while stale
+nonzero witnesses fail closed. See `semantic-value-facts.md` for the producer,
+projection and weak/aggregate representation boundaries.
 
 ## Instruction Contract
 

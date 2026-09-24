@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
   - zr_vm_core/include/zr_vm_core/exec_ir.h
 implementation_files:
@@ -24,6 +25,8 @@ tests:
   - tests/parser/test_ssa_cleanup_exception_state.c
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_fact_identity.c
+  - tests/parser/test_ssa_source_value_facts.c
+  - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/cmake/ssa-tests.cmake
@@ -61,6 +64,13 @@ constructs SSA. It replaces the caller's function only after every stage
 succeeds. CFG block indices in SemanticIR are zero-based; emitted ExecIR block
 IDs are one-based. The producer uses `outgoingEdges` when that array is valid,
 otherwise the block's bounded inline `successors` array.
+
+Semantic values also carry canonical ownership/nullability snapshots. The
+builder validates their type-ID witnesses and enum ranges, projects both
+external and defined values, and preserves them through exception CFG
+normalization. Legacy zero snapshots remain unknown. Explicit `DROP` is not
+rewritten to guarded cleanup by this projection. See `semantic-value-facts.md`
+for producer, weak/atomic-shared mappings and transactional failure contracts.
 
 While the source compiler emits a diamond, each arm starts from a snapshot of
 the entry stack-slot-to-ValueId bridge. The producer restores that snapshot

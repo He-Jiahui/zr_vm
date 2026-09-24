@@ -88,6 +88,25 @@ static TZrBool canonical_array_shape(const SZrArray *array, TZrSize elementSize)
                        array->elementSize == elementSize)));
 }
 
+static EZrExecIrOwnership value_ownership(const SZrSemanticValueFacts *facts) {
+    switch (facts->ownership) {
+        case ZR_SEMANTIC_VALUE_OWNERSHIP_BORROWED: return ZR_EXEC_IR_OWNERSHIP_BORROWED;
+        case ZR_SEMANTIC_VALUE_OWNERSHIP_UNIQUE: return ZR_EXEC_IR_OWNERSHIP_UNIQUE;
+        case ZR_SEMANTIC_VALUE_OWNERSHIP_SHARED:
+        case ZR_SEMANTIC_VALUE_OWNERSHIP_ATOMIC_SHARED: return ZR_EXEC_IR_OWNERSHIP_SHARED;
+        case ZR_SEMANTIC_VALUE_OWNERSHIP_GC: return ZR_EXEC_IR_OWNERSHIP_GC;
+        default: return ZR_EXEC_IR_OWNERSHIP_UNKNOWN;
+    }
+}
+
+static EZrExecIrNullability value_nullability(const SZrSemanticValueFacts *facts) {
+    switch (facts->nullability) {
+        case ZR_SEMANTIC_VALUE_NULLABILITY_NONNULL: return ZR_EXEC_IR_NULLABILITY_NONNULL;
+        case ZR_SEMANTIC_VALUE_NULLABILITY_NULLABLE: return ZR_EXEC_IR_NULLABILITY_NULLABLE;
+        default: return ZR_EXEC_IR_NULLABILITY_UNKNOWN;
+    }
+}
+
 static TZrBool semantic_value_has_instruction_definition(
         const SZrSemanticIrFunction *semantic,
         const SZrSemanticIrValue *value) {
@@ -207,13 +226,32 @@ static TZrBool validate_semantic_ids(const SZrSemanticIrFunction *semantic,
     for (i = 0u; i < semantic->values.length; ++i) {
         const SZrSemanticIrValue *value = (const SZrSemanticIrValue *)
             ZrCore_Array_Get((SZrArray *)&semantic->values, i);
-        if (value->id != i + 1u) {
+        if (value->id != i + 1u ||
+            !ZrParser_SemanticValueFacts_Validate(&value->facts, value->typeId)) {
             diag_missing(diagnostic, ZR_NULL, 0u, 0u);
             if (diagnostic != ZR_NULL) {
                 diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
                 diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
-                diagnostic->expectedVersion = i + 1u;
-                diagnostic->actualVersion = value->id;
+                if (value->id != i + 1u) {
+                    diagnostic->expectedVersion = i + 1u;
+                    diagnostic->actualVersion = value->id;
+                } else if (value->facts.typeId != 0u &&
+                           value->facts.typeId != value->typeId) {
+                    diagnostic->expectedVersion = value->typeId;
+                    diagnostic->actualVersion = value->facts.typeId;
+                } else if ((TZrUInt32)value->facts.ownership >= ZR_SEMANTIC_VALUE_OWNERSHIP_COUNT) {
+                    diagnostic->expectedVersion = ZR_SEMANTIC_VALUE_OWNERSHIP_COUNT - 1u;
+                    diagnostic->actualVersion = (TZrUInt32)value->facts.ownership;
+                } else if ((TZrUInt32)value->facts.nullability >= ZR_SEMANTIC_VALUE_NULLABILITY_COUNT) {
+                    diagnostic->expectedVersion = ZR_SEMANTIC_VALUE_NULLABILITY_COUNT - 1u;
+                    diagnostic->actualVersion = (TZrUInt32)value->facts.nullability;
+                } else if (value->facts.ownership != ZR_SEMANTIC_VALUE_OWNERSHIP_UNKNOWN) {
+                    diagnostic->expectedVersion = ZR_SEMANTIC_VALUE_OWNERSHIP_UNKNOWN;
+                    diagnostic->actualVersion = (TZrUInt32)value->facts.ownership;
+                } else {
+                    diagnostic->expectedVersion = ZR_SEMANTIC_VALUE_NULLABILITY_UNKNOWN;
+                    diagnostic->actualVersion = (TZrUInt32)value->facts.nullability;
+                }
             }
             return ZR_FALSE;
         }
@@ -512,13 +550,13 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                         ? ZrCore_ExecIr_FunctionAddExternalValue(
                                   output,
                                   (TZrMetadataToken)v->typeId,
-                                  ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
-                                  ZR_EXEC_IR_NULLABILITY_UNKNOWN)
+                                  value_ownership(&v->facts),
+                                  value_nullability(&v->facts))
                         : ZrCore_ExecIr_FunctionAddValue(
                                   output,
                                   (TZrMetadataToken)v->typeId,
-                                  ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
-                                  ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+                                  value_ownership(&v->facts),
+                                  value_nullability(&v->facts));
         if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID) {
             diag_missing(diagnostic, output, 0u, 0u); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
         }

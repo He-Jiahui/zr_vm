@@ -4,6 +4,7 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_parser/cfg.h"
 #include "zr_vm_parser/place.h"
+#include "zr_vm_parser/semantic_value_facts.h"
 
 typedef TZrUInt32 TZrSemanticInstructionId;
 typedef TZrUInt32 TZrLoanId;
@@ -175,6 +176,7 @@ typedef struct SZrSemanticIrValue {
     TZrTypeId typeId;
     TZrSemanticInstructionId definitionInstructionId;
     SZrFileRange sourceRange;
+    SZrSemanticValueFacts facts;
 } SZrSemanticIrValue;
 
 typedef struct SZrSemanticIrLocal {
