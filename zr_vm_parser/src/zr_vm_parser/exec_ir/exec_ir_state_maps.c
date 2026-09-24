@@ -1,6 +1,7 @@
 #include "zr_vm_parser/exec_ir_state_maps.h"
 
 #include "exec_ir_state_map_liveness.h"
+#include "zr_vm_core/exec_ir_owner_state.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -171,49 +172,6 @@ static TZrBool zr_state_map_append_entry(SZrExecIrStateMap *map,
     return ZR_TRUE;
 }
 
-static EZrExecIrStateMapOwnerState zr_state_map_owner_state_at(
-        const SZrExecIrFunction *function,
-        TZrExecIrValueId valueId,
-        TZrUInt32 instructionId,
-        TZrBool includeCurrent) {
-    EZrExecIrStateMapOwnerState state = ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
-    TZrUInt32 end;
-    TZrUInt32 instructionIndex;
-
-    if (function->values[valueId - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN) {
-        state = ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
-    }
-    if (instructionId == 0u) {
-        return state;
-    }
-    end = includeCurrent ? instructionId : instructionId - 1u;
-    if (end == 0u) {
-        return state;
-    }
-    if (end > function->instructionCount) {
-        end = function->instructionCount;
-    }
-    for (instructionIndex = 0u;
-         instructionIndex < end;
-         ++instructionIndex) {
-        const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
-        TZrUInt32 index;
-        if ((EZrExecIrOpcode)instruction->opcode != ZR_EXEC_IR_OPCODE_DROP &&
-            (EZrExecIrOpcode)instruction->opcode != ZR_EXEC_IR_OPCODE_MOVE) {
-            continue;
-        }
-        for (index = instruction->operandRange.start;
-             index < instruction->operandRange.start + instruction->operandRange.count;
-             ++index) {
-            if (function->operandPool[index] == valueId) {
-                state = (EZrExecIrOpcode)instruction->opcode == ZR_EXEC_IR_OPCODE_DROP
-                            ? ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED
-                            : ZR_EXEC_IR_STATE_MAP_OWNER_MOVED;
-            }
-        }
-    }
-    return state;
-}
 
 static TZrExecIrBlockId zr_state_map_handler_block(const SZrExecIrFunction *function,
                                                    TZrUInt32 instructionId,
@@ -254,6 +212,7 @@ static EZrStateMapBuildResult zr_state_map_add_checkpoint(
         SZrExecIrStateMap *map,
         const SZrExecIrFunction *function,
         const SZrStateMapLiveness *liveness,
+        const SZrExecIrOwnerAnalysis *ownership,
         const SZrExecIrInstruction *instruction,
         TZrUInt32 instructionId,
         TZrUInt32 boundaryFlags,
@@ -294,14 +253,12 @@ static EZrStateMapBuildResult zr_state_map_add_checkpoint(
                                             value->id, includeCurrent)) {
             continue;
         }
-        ownerState = zr_state_map_owner_state_at(
-                function, value->id, instructionId, includeCurrent);
-        if (includeCurrent &&
-            (ownerState == ZR_EXEC_IR_STATE_MAP_OWNER_MOVED ||
-             ownerState == ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED)) {
-            /* A moved/dropped source is no longer a materializable live
-             * value after the ownership effect has committed. */
-            continue;
+        ownerState = ZrCore_ExecIr_OwnerStateAt(
+                ownership, instructionId, value->id, phase);
+        if (ownerState != ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED &&
+            ownerState != ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN) {
+            free(live); free(roots); free(owners);
+            return ZR_STATE_MAP_BUILD_INVALID;
         }
         live[liveCount] = value->id;
         owners[ownerCount++] = (TZrUInt32)ownerState;
@@ -393,6 +350,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                                        SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrStateMap candidate;
     SZrStateMapLiveness liveness;
+    SZrExecIrOwnerAnalysis ownership = {0};
     EZrExecutionDiagnosticCode livenessResult;
     TZrUInt32 instructionId;
     TZrUInt32 resumeId = 1u;
@@ -416,6 +374,11 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
         zr_state_map_set_diagnostic(diagnostic, livenessResult, function, 0u, 0u);
         return ZR_FALSE;
     }
+    if (!ZrCore_ExecIr_OwnerAnalysisBuild(function, &ownership, diagnostic)) {
+        ZrCore_ExecIr_OwnerAnalysisFree(&ownership);
+        zr_state_map_liveness_free(&liveness);
+        return ZR_FALSE;
+    }
     ZrCore_ExecIr_StateMapInit(&candidate);
     candidate.functionToken = function->functionToken;
     candidate.signatureHash = function->signatureHash;
@@ -426,6 +389,9 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
         TZrUInt32 currentResume;
         EZrStateMapBuildResult result;
 
+        if (!ownership.reachable[instructionId - 1u]) {
+            continue;
+        }
         if (!ZrCore_ExecIr_StateMapBoundaryFlags(instruction, &boundaryFlags)) {
             continue;
         }
@@ -434,6 +400,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                 instruction->sourceId != 0u ? instruction->sourceId : instructionId;
             if (!zr_state_map_deopt_resume_id(function, instruction, sourceId,
                                               &currentResume)) {
+                ZrCore_ExecIr_OwnerAnalysisFree(&ownership);
                 zr_state_map_liveness_free(&liveness);
                 ZrCore_ExecIr_StateMapFree(&candidate);
                 zr_state_map_set_diagnostic(
@@ -442,6 +409,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                 return ZR_FALSE;
             }
             if (zr_state_map_resume_used(&candidate, currentResume)) {
+                ZrCore_ExecIr_OwnerAnalysisFree(&ownership);
                 zr_state_map_liveness_free(&liveness);
                 ZrCore_ExecIr_StateMapFree(&candidate);
                 zr_state_map_set_diagnostic(
@@ -458,6 +426,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             }
         } else {
             if (resumeId == UINT32_MAX) {
+                ZrCore_ExecIr_OwnerAnalysisFree(&ownership);
                 zr_state_map_liveness_free(&liveness);
                 ZrCore_ExecIr_StateMapFree(&candidate);
                 zr_state_map_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
@@ -466,12 +435,12 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             }
             currentResume = resumeId++;
         }
-        result = zr_state_map_add_checkpoint(&candidate, function, &liveness, instruction,
+        result = zr_state_map_add_checkpoint(&candidate, function, &liveness, &ownership, instruction,
                                              instructionId, boundaryFlags,
                                              ZR_EXEC_IR_STATE_BEFORE_EFFECT,
                                              currentResume, diagnostic);
         if (result == ZR_STATE_MAP_BUILD_OK) {
-            result = zr_state_map_add_checkpoint(&candidate, function, &liveness, instruction,
+            result = zr_state_map_add_checkpoint(&candidate, function, &liveness, &ownership, instruction,
                                                  instructionId, boundaryFlags,
                                                  ZR_EXEC_IR_STATE_AFTER_EFFECT,
                                                  currentResume, diagnostic);
@@ -480,12 +449,13 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             (boundaryFlags & (ZR_EXEC_IR_STATE_MAP_BOUNDARY_THROW |
                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_SUSPEND |
                               ZR_EXEC_IR_STATE_MAP_BOUNDARY_CLEANUP)) != 0u) {
-            result = zr_state_map_add_checkpoint(&candidate, function, &liveness, instruction,
+            result = zr_state_map_add_checkpoint(&candidate, function, &liveness, &ownership, instruction,
                                                  instructionId, boundaryFlags,
                                                  ZR_EXEC_IR_STATE_CLEANUP_COMPLETE,
                                                  currentResume, diagnostic);
         }
         if (result != ZR_STATE_MAP_BUILD_OK) {
+            ZrCore_ExecIr_OwnerAnalysisFree(&ownership);
             zr_state_map_liveness_free(&liveness);
             if (result == ZR_STATE_MAP_BUILD_OUT_OF_MEMORY) {
                 zr_state_map_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
@@ -498,6 +468,7 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
             return ZR_FALSE;
         }
     }
+    ZrCore_ExecIr_OwnerAnalysisFree(&ownership);
     zr_state_map_liveness_free(&liveness);
     {
         SZrExecIrStateMap *committed = (SZrExecIrStateMap *)malloc(sizeof(*committed));

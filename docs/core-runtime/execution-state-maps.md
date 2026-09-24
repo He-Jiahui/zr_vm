@@ -2,12 +2,15 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
+  - zr_vm_core/include/zr_vm_core/exec_ir_owner_state.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.h
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
@@ -19,8 +22,12 @@ tests:
   - tests/parser/test_ssa_state_maps.c
   - tests/parser/test_ssa_deopt_validation.c
   - tests/parser/test_ssa_state_map_liveness.c
+  - tests/parser/test_ssa_state_map_ownership.c
+  - tests/parser/ssa_state_map_fixture.h
+  - tests/parser/ssa_owner_fault_allocator.c
   - tests/acceptance/ssa-deopt-validation.md
   - tests/acceptance/ssa-state-map-liveness.md
+  - tests/acceptance/ssa-state-map-ownership.md
 doc_type: module-detail
 ---
 
@@ -75,11 +82,11 @@ materialization rejects entries whose exception state introduces or omits either
 bit instead of publishing contradictory recovery metadata.
 
 Each `ownerStates` item is paired with the value at the same `liveValues`
-offset. Consumers recompute its initialized/unknown state and every preceding
-MOVE or DROP effect, including the current instruction only for post-effect
-phases; a serialized owner state that differs from that result is invalid.
-The recomputation also validates every preceding MOVE/DROP operand ID before
-using it, so a malformed owner transition cannot be hidden behind a valid map.
+offset. Producer and consumer use the same core CFG ownership analysis to
+recompute its state. The current instruction's transition is included only for
+post-effect phases; a serialized owner state that differs from that result is
+invalid. Unavailable or ambiguous live values are rejected, rather than silently
+omitted from the map. This includes values needed by deopt reconstruction.
 
 When an instruction carries a `deoptId`, its state-map phases reuse the matching
 deopt state's nonzero `resumeId` rather than inventing a second identity. The
@@ -100,8 +107,9 @@ and within the function's value pool. A range failure reports `INVALID_RANGE`;
 an invalid value reports `INVALID_VALUE`, with the function token, deopt source,
 and first referring instruction (zero for an unreferenced record). This preflight
 runs before liveness scans and leaves an already published state map intact on
-failure. It does not yet establish that every reconstruction value dominates
-its resume point.
+failure. Structural range/ID checks alone do not prove reconstruction value
+availability; the shared ownership analysis also checks initialization at each
+checkpoint before publication or materialization.
 
 A nonzero handler block is valid only at a THROW boundary. The producer chooses
 the first exception or cleanup block in the source block's successor range;
@@ -138,7 +146,41 @@ publication or on failure. An existing map survives a failed rebuild.
 
 The old linear use scan and numeric definition-order filter have been removed.
 The private liveness module owns only this analysis; checkpoint identity,
-ownership projection, diagnostics, and publication remain in the builder.
+diagnostics, and publication remain in the builder. Ownership projection uses
+the shared core analysis described below.
+
+## CFG ownership state
+
+`exec_ir_owner_state` propagates possible owner states forward from the function
+entry until block inputs stop changing. Explicit external-entry values begin
+available; reserved ordinary values begin uninitialized. Ordinary definitions
+initialize their results only from available operands. MOVE and DROP consume
+their source IDs, while a later dynamic execution of a definition establishes a
+new initialized result. A throwing terminator's result is unavailable on its
+exceptional successor.
+
+Phi results are assigned on incoming edges from the corresponding operands.
+All phi inputs are read from the same edge snapshot before any phi destination
+is assigned. An available input establishes the new logical result; a moved,
+dropped, or uninitialized input cannot become available merely by passing
+through a phi or a copy. This supports loop-carried ownership without carrying
+the previous iteration's moved state into a freshly defined phi result.
+
+At a join, possible states are combined. An initialized/moved or
+initialized/dropped mixture cannot be represented as one available live owner,
+so the checkpoint is rejected with `STATE_MAP_INVALID` and its source/instruction
+identity. `OWNER_UNKNOWN` describes an available value with unknown ownership
+classification; it never stands in for unknown initialization. Dead values need
+no live-state entry. Unreachable blocks do not emit checkpoints and consumers
+reject maps that claim an unreachable instruction is resumable.
+
+The core analysis validates the storage, ranges, and IDs it reads before
+traversal, including results, CFG successors and phi inputs. Its transient
+before/after arrays are not serialized. Both callers release the analysis on
+success and failure; failure-injection tests visit each analysis allocation in
+turn and check preservation of the old map/materialized target and zero leaked
+analysis allocations. This does not yet inject failures into physical frame or
+aggregate reconstruction, which is a later runtime stage.
 
 ## Transactional materialization
 
@@ -175,10 +217,9 @@ copying data or publishing state.
 
 The initial implementation is deliberately a logical contract rather than a
 complete runtime resume engine. It does not yet allocate physical frame slots,
-rebuild native registers, or perform a runtime frame switch. Owner-state
-recomputation still scans preceding MOVE/DROP instructions in storage order;
-it needs CFG ownership analysis before path-dependent moves/drops can be fully
-represented. Scalarized aggregate fields and inline frames also remain pending.
-The liveness work does not prove deopt value dominance or replace borrow/alias
-analysis. Later stages must preserve stable source/resume IDs and transactional
-publication while completing those contracts.
+rebuild native registers, or perform a runtime frame switch. Scalarized aggregate
+fields, inline frames and conditional cleanup flags remain pending. The current
+analysis validates checkpoint value availability; it does not replace full
+ownership/borrow/alias verification of every non-checkpoint operation or prove
+linear resource balance. Later stages must preserve stable source/resume IDs and
+transactional publication while completing those contracts.

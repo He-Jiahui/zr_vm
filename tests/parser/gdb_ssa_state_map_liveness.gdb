@@ -5,7 +5,7 @@ set confirm off
 break UnityFail
 commands
 silent
-print 'test_ssa_state_map_liveness.c'::diagnostic
+print 'ssa_state_map_fixture.h'::diagnostic
 bt 5
 quit 1
 end

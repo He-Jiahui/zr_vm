@@ -89,7 +89,7 @@ static void function_with_one_gc_value(SZrExecIrFunction *function) {
     function->functionToken = 99u;
     function->signatureHash = 123u;
     function->contract.generation = 7u;
-    TEST_ASSERT_EQUAL(1u, ZrCore_ExecIr_FunctionAddValue(
+    TEST_ASSERT_EQUAL(1u, ZrCore_ExecIr_FunctionAddExternalValue(
                                   function, 1u, ZR_EXEC_IR_OWNERSHIP_GC,
                                   ZR_EXEC_IR_NULLABILITY_NULLABLE));
     memset(&instruction, 0, sizeof(instruction));
