@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/exec_ir_runtime.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
@@ -17,6 +19,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.h
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
@@ -42,6 +45,10 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/core/test_ssa_runtime_objects.c
+  - tests/core/ssa_runtime_objects_faults.c
+  - tests/core/ssa_runtime_objects_concurrency.c
+  - tests/acceptance/ssa-runtime-objects.md
   - tests/parser/test_ssa_deopt_aggregates.c
   - tests/acceptance/ssa-deopt-aggregates.md
   - tests/parser/ssa_deopt_aggregate_fault_allocator.c
@@ -209,8 +216,8 @@ traversal, including results, CFG successors and phi inputs. Its transient
 before/after arrays are not serialized. Both callers release the analysis on
 success and failure; failure-injection tests visit each analysis allocation in
 turn and check preservation of the old map/materialized target and zero leaked
-analysis allocations. This does not yet inject failures into physical frame or
-aggregate reconstruction, which is a later runtime stage.
+analysis allocations. Runtime aggregate preparation has a separate failure
+suite described below; physical frame reconstruction remains a later stage.
 
 ## Transactional materialization
 
@@ -255,8 +262,8 @@ the function's recipe arrays, since replacement frees the old target.
 The existing SROA layout map describes physical field placement and remains a
 separate projection. These recipes supply the missing logical value bindings;
 they do not replace layout validation or authorize a scalarization pass before
-it can produce a complete recipe. Runtime object allocation and identity-table
-publication still need to consume the prepared graph.
+it can produce a complete recipe. The runtime object consumer below restores
+the graph through a separate runtime-only type/field binding.
 
 Optimization consumers retain recipe VALUE references just like other recovery
 uses: DCE preserves their definitions, place promotion and fusion preserve
@@ -270,6 +277,67 @@ tokens and each field's index/kind/binding. Pass-manager, fusion, escape,
 call-graph and container-plan identities include it, so changed recipes cannot
 reuse stale analysis. Invalid metadata has no usable hash. Current inlining
 continues to reject functions whose deopt state it cannot remap.
+
+### Runtime object preparation
+
+`ZrCore_ExecIr_MaterializeObjects` consumes the same resume request and privately
+prepares its logical snapshot. Its runtime bindings associate each logical
+type/layout pair with an existing prototype and expected layout generation;
+field indices map to instance-field descriptors. These pointers stay outside
+serialized ExecIR. Unknown/stale bindings, duplicate field destinations and
+insufficient or overlapping output storage fail before object allocation.
+
+The consumer creates one ordinary runtime object per recipe identity. It
+allocates every shell before restoring references and prepares native hash
+storage separately from movable objects. Restoring into reserved cells avoids
+ordinary value-struct copy semantics, so repeated references and cycles retain
+their exact identity. Constructors, field initializers, getters and setters do
+not run. Uninitialized fields remain absent; an initialized-null field is
+present with a null value.
+
+Temporary `LOCAL_ADDRESS` root frames protect live source values, resolved
+prototypes/field names, old output objects, new shells, ambient exception
+state and the caller's existing ignored-object registry. Every address used
+after allocation is obtained from its current root.
+The caller's value/prototype/output pointer payloads can therefore change due
+to GC relocation even when preparation fails; their logical identity remains
+unchanged. Allocation exceptions are caught inside the operation, and failure
+releases detached storage and temporary roots while preserving the old output
+and ambient exception. Failed work does not invoke user drops. Existing ignored
+registrations are restored after barriers, including indirect closure captures;
+the collector's remembered-object registry is reserved before field attachment.
+Caught allocation exceptions also preserve the caller's nested GC mutator and
+native scopes. Detached or critical native contexts cannot perform this
+safepoint operation and are rejected before heap work.
+After reserving storage, the transaction acquires a bounded collection pause
+before retaining raw addresses across field writes. It holds the pause and
+concurrent-marking lock through publication and heap cleanup, so nested write
+barriers cannot park for a competing moving collector. Failure to acquire the
+pause preserves the old graph. An existing caller-owned pause remains nested
+and is not released by this operation.
+The current collector reassigns ordinary object regions in place. Runtime tests
+force real collections and a competing collector pause, and assert graph
+identity and collection ordering; they do not demonstrate physical pointer
+relocation. The root protocol still obtains pointer payloads from registered
+storage after allocation or a safepoint.
+
+Successful preparation publishes object pointers in selected recipe order and
+then removes its temporary roots. Output storage belongs to the caller, which
+must put the published objects in its own roots before the next safepoint.
+Callers sharing a domain with other active threads must root their inputs
+before entering a GC-aware mutator scope, then retain that scope through this
+call and output-root publication. Inactive entry is supported only without
+other active mutators; roots alone do not protect cached pointers during
+preflight against a peer collector.
+The operation is synchronous; it has no separate asynchronous cancellation or
+pending handle. Repeating it creates another complete graph. Empty graphs
+publish count zero. This prepares objects only; the future frame transaction
+must publish new frame roots before releasing old frame roots.
+
+Plain GC/scalar fields and class/struct prototypes are supported. Resource
+prototypes and ownership-bearing values are rejected until owner transfer can
+commit together with the target frame. No implicit cloning, ownership
+conversion or drop is used to approximate that transfer.
 
 ### Preparation and publication
 
@@ -311,7 +379,7 @@ contract; see [oracle checkpoint execution](oracle-projections.md#checkpoint-exe
 It validates identity, restores mapped live values, preserves effect history
 and consumes the saved pause before further execution. This does not yet allocate physical frame slots,
 rebuild native registers, or perform a runtime frame switch. Aggregate field
-recipes are represented and validated, but actual object reconstruction,
+recipes support plain runtime object reconstruction; ownership transfer,
 automatic SROA recipe production, inline frames and conditional cleanup flags
 remain pending. The current
 analysis validates checkpoint value availability; it does not replace full

@@ -227,6 +227,31 @@ if (NOT TARGET zr_vm_ssa_state_map_liveness_test)
     set_tests_properties(ssa_state_map_liveness PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_runtime_objects_test)
+    zr_vm_add_unity_test_target(zr_vm_ssa_runtime_objects_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_runtime_objects.c
+            ${CMAKE_SOURCE_DIR}/tests/core/ssa_runtime_objects_concurrency.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c)
+    # The fault copy also calls private GC helpers. Keep it inside the DLL on
+    # Windows, where those helpers intentionally have no exported ABI.
+    if (WIN32 AND BUILD_SHARED_LIB)
+        target_sources(zr_vm_core_shared PRIVATE
+                ${CMAKE_SOURCE_DIR}/tests/core/ssa_runtime_objects_faults.c)
+    else ()
+        target_sources(zr_vm_ssa_runtime_objects_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/tests/core/ssa_runtime_objects_faults.c)
+    endif ()
+    target_include_directories(zr_vm_ssa_runtime_objects_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_vm_link_core(zr_vm_ssa_runtime_objects_test)
+    target_link_libraries(zr_vm_ssa_runtime_objects_test PRIVATE Threads::Threads)
+    add_test(NAME ssa_runtime_objects COMMAND zr_vm_ssa_runtime_objects_test)
+    set_tests_properties(ssa_runtime_objects PROPERTIES LABELS "ssa" TIMEOUT 30)
+endif ()
+
 if (NOT TARGET zr_vm_ssa_deopt_aggregates_test)
     add_executable(zr_vm_ssa_deopt_aggregates_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_deopt_aggregates.c
