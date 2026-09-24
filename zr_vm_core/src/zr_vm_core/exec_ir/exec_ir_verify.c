@@ -1,6 +1,7 @@
 #include "zr_vm_core/exec_ir.h"
 
 #include "exec_ir_verify_ssa.h"
+#include "exec_ir_deopt_aggregate.h"
 
 #include <string.h>
 
@@ -366,7 +367,8 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
             return ZR_FALSE;
         }
     }
-    if (!zr_exec_ir_validate_deopt_values(function, diagnostic)) {
+    if (!zr_exec_ir_validate_deopt_values(function, diagnostic) ||
+        !zr_exec_ir_deopt_aggregates_validate(function, diagnostic)) {
         return ZR_FALSE;
     }
     for (index = 0u; index < function->predecessorCount; ++index) {

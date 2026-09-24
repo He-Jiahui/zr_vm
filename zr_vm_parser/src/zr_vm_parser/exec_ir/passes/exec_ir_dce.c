@@ -229,6 +229,7 @@ static TZrBool zr_dce_mark_instruction_operands(const SZrExecIrFunction *functio
 static TZrBool zr_dce_mark_metadata(const SZrExecIrFunction *function, TZrUInt8 *used,
                                     SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
+    if (!ZrCore_ExecIr_ValidateDeoptAggregates(function, diagnostic)) return ZR_FALSE;
     if ((function->gcRootCount != 0u && function->gcRoots == ZR_NULL) ||
         (function->deoptValueCount != 0u && function->deoptValues == ZR_NULL)) {
         ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
@@ -248,6 +249,16 @@ static TZrBool zr_dce_mark_metadata(const SZrExecIrFunction *function, TZrUInt8 
             ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                            function, 0u, 0u, function->valueCount,
                                            function->deoptValues[index]);
+            return ZR_FALSE;
+        }
+    }
+    for (index = 0u; index < function->deoptAggregateFieldCount; ++index) {
+        const SZrExecIrDeoptAggregateField *field = &function->deoptAggregateFields[index];
+        if (field->kind == ZR_EXEC_IR_DEOPT_FIELD_VALUE &&
+            !zr_dce_mark_value(used, function->valueCount, field->valueId)) {
+            ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                           function, 0u, 0u, function->valueCount,
+                                           field->valueId);
             return ZR_FALSE;
         }
     }

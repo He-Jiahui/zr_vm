@@ -97,6 +97,12 @@ typedef struct SZrExecIrMaterializedState {
     TZrUInt32 exceptionState;
     TZrUInt32 boundaryFlags;
     TZrExecIrDeoptId deoptId;
+    SZrExecIrDeoptAggregate *aggregates;
+    TZrUInt32 aggregateCount;
+    TZrUInt32 aggregateCapacity;
+    SZrExecIrDeoptAggregateField *aggregateFields;
+    TZrUInt32 aggregateFieldCount;
+    TZrUInt32 aggregateFieldCapacity;
 } SZrExecIrMaterializedState;
 
 typedef struct SZrExecIrResumeRequest {

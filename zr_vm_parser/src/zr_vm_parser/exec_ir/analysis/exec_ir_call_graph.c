@@ -135,9 +135,10 @@ static TZrBool call_graph_storage_valid(const SZrExecIrCallGraph *graph) {
 
 static TZrUInt64 zr_function_body_hash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = ZR_EXEC_IR_HASH_OFFSET;
+    TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
     TZrUInt32 i;
 
-    if (function == ZR_NULL ||
+    if (aggregateHash == 0u ||
         !count_valid(function->valueCount, function->valueCapacity,
                      function->values) ||
         !count_valid(function->instructionCount, function->instructionCapacity,
@@ -187,6 +188,7 @@ static TZrUInt64 zr_function_body_hash(const SZrExecIrFunction *function) {
     zr_hash_u32(&hash, function->contract.declaredEffects);
     zr_hash_u32(&hash, function->sealed);
 
+    zr_hash_u64(&hash, aggregateHash);
     /* Frame layout is part of the ABI contract even though it is not an
      * instruction side table.  Omitting it would allow a stale summary to be
      * reused after a parameter/return-slot layout change. */
@@ -1676,12 +1678,15 @@ static void classify_inline_edges(SZrExecIrCallGraph *graph,
         } else if (caller->gcMap != ZR_NULL || caller->gcMapCount != 0u ||
                    caller->gcRootCount != 0u || caller->deoptStateCount != 0u ||
                    caller->deoptValueCount != 0u || caller->stateMap != ZR_NULL ||
+                   caller->deoptAggregateCount != 0u || caller->deoptAggregateFieldCount != 0u ||
                    caller->frameLayout != ZR_NULL ||
                    module->functions[edge->calleeId - 1u].gcMap != ZR_NULL ||
                    module->functions[edge->calleeId - 1u].gcMapCount != 0u ||
                    module->functions[edge->calleeId - 1u].gcRootCount != 0u ||
                    module->functions[edge->calleeId - 1u].deoptStateCount != 0u ||
                    module->functions[edge->calleeId - 1u].deoptValueCount != 0u ||
+                   module->functions[edge->calleeId - 1u].deoptAggregateCount != 0u ||
+                   module->functions[edge->calleeId - 1u].deoptAggregateFieldCount != 0u ||
                    has_instruction_deopt(caller) ||
                    has_instruction_deopt(&module->functions[edge->calleeId - 1u]) ||
                    !source_maps_well_formed(caller) ||

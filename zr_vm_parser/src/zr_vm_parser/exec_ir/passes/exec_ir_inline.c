@@ -457,6 +457,8 @@ static TZrBool inline_one(SZrExecIrFunction *caller,
         caller->gcRootCount != 0u || callee->gcRootCount != 0u ||
         caller->deoptStateCount != 0u || callee->deoptStateCount != 0u ||
         caller->deoptValueCount != 0u || callee->deoptValueCount != 0u ||
+        caller->deoptAggregateCount != 0u || callee->deoptAggregateCount != 0u ||
+        caller->deoptAggregateFieldCount != 0u || callee->deoptAggregateFieldCount != 0u ||
         has_instruction_deopt(caller) || has_instruction_deopt(callee) ||
         !source_maps_well_formed(caller) || !source_maps_well_formed(callee) ||
         has_non_linear_block_state(caller) || has_non_linear_block_state(callee)) {

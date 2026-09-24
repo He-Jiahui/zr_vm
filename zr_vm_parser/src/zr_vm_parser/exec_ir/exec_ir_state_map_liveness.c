@@ -34,7 +34,7 @@ TZrBool zr_state_map_liveness_contains(const SZrStateMapLiveness *liveness,
 
 static void zr_live_add_deopt(const SZrExecIrFunction *function,
                               const SZrExecIrInstruction *instruction,
-                              TZrUInt8 *row) {
+                              TZrUInt8 *row, TZrBool fieldsOnly) {
     TZrUInt32 stateIndex;
     if (instruction->deoptId == 0u) {
         return;
@@ -46,9 +46,26 @@ static void zr_live_add_deopt(const SZrExecIrFunction *function,
             continue;
         }
         for (index = state->valueRange.start;
-             index < state->valueRange.start + state->valueRange.count;
+             !fieldsOnly && index < state->valueRange.start + state->valueRange.count;
              ++index) {
             zr_live_add(row, function->deoptValues[index]);
+        }
+        /* A scalarized field is a recovery use even when optimized code no
+         * longer reads it. Object references use stable IDs, not SSA values;
+         * scan definitions once so aliases and cycles need no recursion. */
+        for (index = state->aggregates.start;
+             index < state->aggregates.start + state->aggregates.count;
+             ++index) {
+            const SZrExecIrDeoptAggregate *aggregate = &function->deoptAggregates[index];
+            TZrUInt32 field;
+            for (field = aggregate->fields.start;
+                 field < aggregate->fields.start + aggregate->fields.count; ++field) {
+                const SZrExecIrDeoptAggregateField *binding =
+                        &function->deoptAggregateFields[field];
+                if (binding->kind == ZR_EXEC_IR_DEOPT_FIELD_VALUE) {
+                    zr_live_add(row, binding->valueId);
+                }
+            }
         }
     }
 }
@@ -100,13 +117,17 @@ static void zr_live_scan_instructions(const SZrExecIrFunction *function,
         size_t offset = (size_t)index * liveness->rowBytes;
         /* Recovery may use the values at either phase of this checkpoint,
          * even when the optimized instruction itself has no ordinary uses. */
-        zr_live_add_deopt(function, instruction, row);
+        zr_live_add_deopt(function, instruction, row, ZR_FALSE);
         memcpy(liveness->after + offset, row, liveness->rowBytes);
         for (valueIndex = instruction->resultRange.start;
              valueIndex < instruction->resultRange.start + instruction->resultRange.count;
              ++valueIndex) {
             zr_live_remove(row, function->results[valueIndex]);
         }
+        /* One recipe is shared by all emitted phases. Preserve its demanded
+         * fields before the effect too, so ownership analysis rejects a field
+         * that only becomes available as this instruction's result. */
+        zr_live_add_deopt(function, instruction, row, ZR_TRUE);
         for (valueIndex = instruction->operandRange.start;
              valueIndex < instruction->operandRange.start + instruction->operandRange.count;
              ++valueIndex) {

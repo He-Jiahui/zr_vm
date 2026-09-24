@@ -162,6 +162,7 @@ static TZrBool zr_ownership_metadata_valid(
                           function, 0u, 0u);
         return ZR_FALSE;
     }
+    if (!ZrCore_ExecIr_ValidateDeoptAggregates(function, diagnostic)) return ZR_FALSE;
     for (index = 0u; index < function->deoptStateCount; ++index) {
         if (!zr_ownership_range_valid(function->deoptStates[index].reconstruction,
                                       function->deoptValueCount)) {
@@ -208,6 +209,7 @@ static TZrBool zr_ownership_metadata_references(
         const SZrExecIrFunction *function, TZrExecIrValueId valueId) {
     TZrUInt32 index;
     if (function == ZR_NULL) return ZR_TRUE;
+    if (ZrCore_ExecIr_DeoptAggregateValueReferenced(function, valueId)) return ZR_TRUE;
     for (index = 0u; index < function->gcRootCount; ++index) {
         if (function->gcRoots[index] == valueId) return ZR_TRUE;
     }

@@ -163,6 +163,8 @@ static void zr_exec_ir_free_function_arrays(SZrExecIrFunction *function) {
     free(function->gcRoots);
     free(function->deoptStates);
     free(function->deoptValues);
+    free(function->deoptAggregates);
+    free(function->deoptAggregateFields);
     free(function->sourceMaps);
     if (function->stateMap != ZR_NULL) {
         ZrCore_ExecIr_StateMapFree(function->stateMap);
@@ -349,6 +351,18 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
     if (!zr_exec_ir_clone_array((void **)&destination->deoptValues, &destination->deoptValueCapacity,
                                 source->deoptValues, source->deoptValueCount, sizeof(*source->deoptValues))) return ZR_FALSE;
     destination->deoptValueCount = source->deoptValueCount;
+    if (source->deoptAggregateCount > source->deoptAggregateCapacity ||
+        source->deoptAggregateFieldCount > source->deoptAggregateFieldCapacity) return ZR_FALSE;
+    if (!zr_exec_ir_clone_array((void **)&destination->deoptAggregates,
+                                &destination->deoptAggregateCapacity,
+                                source->deoptAggregates, source->deoptAggregateCount,
+                                sizeof(*source->deoptAggregates))) return ZR_FALSE;
+    destination->deoptAggregateCount = source->deoptAggregateCount;
+    if (!zr_exec_ir_clone_array((void **)&destination->deoptAggregateFields,
+                                &destination->deoptAggregateFieldCapacity,
+                                source->deoptAggregateFields, source->deoptAggregateFieldCount,
+                                sizeof(*source->deoptAggregateFields))) return ZR_FALSE;
+    destination->deoptAggregateFieldCount = source->deoptAggregateFieldCount;
     if (!zr_exec_ir_clone_array((void **)&destination->sourceMaps, &destination->sourceMapCapacity,
                                 source->sourceMaps, source->sourceMapCount, sizeof(*source->sourceMaps))) return ZR_FALSE;
     destination->sourceMapCount = source->sourceMapCount;

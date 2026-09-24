@@ -286,6 +286,28 @@ typedef struct SZrExecIrGcMap {
     SZrExecIrRange rootRange;
 } SZrExecIrGcMap;
 
+typedef enum EZrExecIrDeoptFieldKind {
+    ZR_EXEC_IR_DEOPT_FIELD_UNINITIALIZED = 0,
+    ZR_EXEC_IR_DEOPT_FIELD_VALUE,
+    ZR_EXEC_IR_DEOPT_FIELD_AGGREGATE,
+    ZR_EXEC_IR_DEOPT_FIELD_KIND_COUNT
+} EZrExecIrDeoptFieldKind;
+
+/* Aggregate references name logical identities, including aliases and cycles. */
+typedef struct SZrExecIrDeoptAggregateField {
+    TZrUInt32 fieldIndex;
+    EZrExecIrDeoptFieldKind kind;
+    TZrExecIrValueId valueId;
+    TZrUInt32 aggregateId;
+} SZrExecIrDeoptAggregateField;
+
+typedef struct SZrExecIrDeoptAggregate {
+    TZrUInt32 identityId;
+    TZrExecIrTypeToken typeToken;
+    TZrUInt32 layoutId;
+    SZrExecIrRange fields;
+} SZrExecIrDeoptAggregate;
+
 typedef struct SZrExecIrDeoptState {
     union {
         TZrExecIrDeoptId id;
@@ -301,6 +323,7 @@ typedef struct SZrExecIrDeoptState {
         SZrExecIrRange valueRange;
     };
     TZrUInt32 cleanupState;
+    SZrExecIrRange aggregates;
 } SZrExecIrDeoptState;
 
 typedef struct SZrExecIrSourceMap {
@@ -390,6 +413,12 @@ typedef struct SZrExecIrFunction {
     TZrExecIrValueId *deoptValues;
     TZrUInt32 deoptValueCount;
     TZrUInt32 deoptValueCapacity;
+    SZrExecIrDeoptAggregate *deoptAggregates;
+    TZrUInt32 deoptAggregateCount;
+    TZrUInt32 deoptAggregateCapacity;
+    SZrExecIrDeoptAggregateField *deoptAggregateFields;
+    TZrUInt32 deoptAggregateFieldCount;
+    TZrUInt32 deoptAggregateFieldCapacity;
     SZrExecIrSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
     TZrUInt32 sourceMapCapacity;
@@ -558,6 +587,20 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *functi
                                                  SZrExecIrDiagnostic *diagnostic);
 ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                                                 SZrExecIrDiagnostic *diagnostic);
+
+/* Recovery recipes are observable value uses even before a state map exists. */
+ZR_CORE_API TZrBool ZrCore_ExecIr_ValidateDeoptAggregates(
+        const SZrExecIrFunction *function, SZrExecIrDiagnostic *diagnostic);
+/* Invalid field storage conservatively reports a use; consumers validate first. */
+ZR_CORE_API TZrBool ZrCore_ExecIr_DeoptAggregateValueReferenced(
+        const SZrExecIrFunction *function, TZrExecIrValueId valueId);
+/* State-specific uses let analyses retain a value through its recovery site. */
+ZR_CORE_API TZrBool ZrCore_ExecIr_DeoptAggregateValueReferencedAt(
+        const SZrExecIrFunction *function, TZrExecIrDeoptId deoptId,
+        TZrExecIrValueId valueId);
+/* Deterministic recipe identity; zero denotes malformed aggregate metadata. */
+ZR_CORE_API TZrUInt64 ZrCore_ExecIr_DeoptAggregateHash(
+        const SZrExecIrFunction *function);
 
 /* Compatibility counter for the richer pointer-free oracle in
  * exec_ir_interpreter.h (01.05). */

@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.h
   - zr_vm_core/include/zr_vm_core/exec_ir_interpreter.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_run.c
@@ -13,15 +17,36 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.h
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_call_graph.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_escape.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_escape_hash.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_allocation.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_container_specialize.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_inline.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_ownership_elision.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/parser/test_ssa_deopt_aggregates.c
+  - tests/acceptance/ssa-deopt-aggregates.md
+  - tests/parser/ssa_deopt_aggregate_fault_allocator.c
+  - tests/parser/test_ssa_escape_ownership.c
+  - tests/parser/ssa_escape_aggregate_cases.h
   - tests/parser/test_ssa_oracle_resume.c
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_state_maps.c
@@ -189,6 +214,65 @@ aggregate reconstruction, which is a later runtime stage.
 
 ## Transactional materialization
 
+### Aggregate reconstruction recipes
+
+Each deopt state can select a range of function-owned aggregate recipes. A
+recipe names a nonzero object identity, type token and logical layout ID, then
+references a field range. Field indices describe the logical layout; they are
+independent of the order or offsets of physical storage. A field is explicitly
+uninitialized, bound to an SSA value, or bound to another aggregate identity.
+Unused IDs must be zero. Several fields may refer to the same identity;
+forward references and cycles are represented without recursion or duplicated
+object definitions. Identities are unique within the selected deopt graph.
+
+Structural verification checks every recipe range and scalar value ID before
+analysis, including unreferenced metadata. Object references must resolve in
+the selected graph. Duplicate identities and logical field indices are errors;
+unknown field kinds, contradictory IDs and unresolved references are rejected.
+These failures carry the deopt source and first referring instruction, or zero
+when no instruction refers to the state.
+
+SSA fields are recovery uses at the corresponding checkpoint. They enter the
+same CFG live sets, owner-state validation and managed-root projection as
+ordinary reconstruction values. A borrowed field therefore cannot cross a
+suspend boundary, and an unavailable field cannot be silently omitted. An
+unreferenced deopt graph does not keep values live globally. Aggregate identity
+references are metadata, not already allocated managed pointers.
+
+The same recipe currently applies to every emitted phase. Fields remain
+explicit demands in BEFORE_EFFECT even when the checkpoint instruction defines
+that SSA ID. The owner analysis then rejects an unavailable result before any
+map is published, rather than emitting a map that its consumer cannot restore.
+
+Materialization independently validates these recipes and requires every
+selected SSA field in the entry's live pool. It deep-copies only the selected
+graph, rebases field ranges into the prepared field pool, and retains stable
+identity IDs and uninitialized fields. This preparation commits with the other
+logical state arrays; failure leaves the previous target and its roots intact.
+Function cloning owns independent recipe pools. Target storage must not alias
+the function's recipe arrays, since replacement frees the old target.
+
+The existing SROA layout map describes physical field placement and remains a
+separate projection. These recipes supply the missing logical value bindings;
+they do not replace layout validation or authorize a scalarization pass before
+it can produce a complete recipe. Runtime object allocation and identity-table
+publication still need to consume the prepared graph.
+
+Optimization consumers retain recipe VALUE references just like other recovery
+uses: DCE preserves their definitions, place promotion and fusion preserve
+their observable values, and allocation/ownership plans account for recovery
+requirements. Escape analysis includes recovery checkpoints in the value's
+last-use boundary, including a checkpoint on the suspension itself. A recovery
+use before suspension does not by itself extend lifetime across that boundary.
+
+The shared aggregate hash serializes counts, ranges, identities, type/layout
+tokens and each field's index/kind/binding. Pass-manager, fusion, escape,
+call-graph and container-plan identities include it, so changed recipes cannot
+reuse stale analysis. Invalid metadata has no usable hash. Current inlining
+continues to reject functions whose deopt state it cannot remap.
+
+### Preparation and publication
+
 `ZrCore_ExecIr_MaterializeState` first validates the function token,
 generation, entry identity, ranges, and value ownership. It then copies the
 logical value and root IDs into temporary storage. Only after every check and
@@ -197,9 +281,11 @@ resume therefore leaves the previous target untouched and cannot replay an
 already committed effect.
 
 The caller-owned target must have coherent pointer/capacity pairs. Its value,
-root, and owner-state storage ranges must neither overlap each other nor any
-capacity-sized state-map side-table range, including interior pointers. This is
-checked before preparation because commit releases every old target array.
+root, owner-state and aggregate storage ranges must be mutually disjoint and
+must not overlap the function, its directly owned pools, its frame layout and
+slots, its GC map and pools, or either the supplied or function-owned state map
+and pools. Checks cover capacity-sized byte ranges, including interior pointers,
+before preparation because commit releases every old target array.
 
 ExecIR value construction, structural verification, and state-map
 materialization all reject ownership or nullability values outside their named
@@ -224,8 +310,10 @@ The oracle now pauses and resumes actual reference execution using this logical
 contract; see [oracle checkpoint execution](oracle-projections.md#checkpoint-execution-and-resume).
 It validates identity, restores mapped live values, preserves effect history
 and consumes the saved pause before further execution. This does not yet allocate physical frame slots,
-rebuild native registers, or perform a runtime frame switch. Scalarized aggregate
-fields, inline frames and conditional cleanup flags remain pending. The current
+rebuild native registers, or perform a runtime frame switch. Aggregate field
+recipes are represented and validated, but actual object reconstruction,
+automatic SROA recipe production, inline frames and conditional cleanup flags
+remain pending. The current
 analysis validates checkpoint value availability; it does not replace full
 ownership/borrow/alias verification of every non-checkpoint operation or prove
 linear resource balance. Later stages must preserve stable source/resume IDs and

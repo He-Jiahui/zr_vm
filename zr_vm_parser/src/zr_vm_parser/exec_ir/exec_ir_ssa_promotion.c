@@ -301,6 +301,14 @@ static void promotion_screen_uses(const SZrExecIrFunction *function,
                                        : UINT32_MAX;
         if (placeIndex != UINT32_MAX) promotion->active[placeIndex] = 0u;
     }
+    for (valueIndex = 0u; valueIndex < function->deoptAggregateFieldCount; ++valueIndex) {
+        const SZrExecIrDeoptAggregateField *field = &function->deoptAggregateFields[valueIndex];
+        TZrUInt32 placeIndex;
+        if (field->kind != ZR_EXEC_IR_DEOPT_FIELD_VALUE) continue;
+        placeIndex = field->valueId <= promotion->originalValueCount
+                             ? promotion->placeByValue[field->valueId] : UINT32_MAX;
+        if (placeIndex != UINT32_MAX) promotion->active[placeIndex] = 0u;
+    }
 }
 
 static TZrBool promotion_collect_local_facts(

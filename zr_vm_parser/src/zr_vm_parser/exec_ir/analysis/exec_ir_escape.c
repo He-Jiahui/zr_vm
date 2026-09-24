@@ -901,6 +901,24 @@ TZrBool ZrParser_ExecIr_AnalyzeEscape(
         }
     }
 
+    /* Recovery-only uses participate in the same lifetime as ordinary uses.
+     * Record their actual checkpoint so a recipe before a suspend does not
+     * unnecessarily keep the value alive across that boundary. */
+    for (instructionIndex = 0u; instructionIndex < function->instructionCount;
+         ++instructionIndex) {
+        const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
+        TZrExecIrInstructionId instructionId = instructionIndex + 1u;
+        if (instruction->deoptId == 0u) continue;
+        for (valueIndex = 0u; valueIndex < temporary.factCount; ++valueIndex) {
+            SZrExecIrEscapeFact *fact = &temporary.facts[valueIndex];
+            if (!ZrCore_ExecIr_DeoptAggregateValueReferencedAt(
+                        function, instruction->deoptId, fact->valueId)) continue;
+            if (instructionId > fact->lastUseInstructionId)
+                fact->lastUseInstructionId = instructionId;
+            zr_escape_extend_live_end(fact, instructionId);
+        }
+    }
+
     /* Values live through a suspend are escaping even when they are not an
      * explicit suspend operand (e.g. a later use reloads them).  External
      * entry values have definition id zero and are live from function entry.
@@ -921,12 +939,14 @@ TZrBool ZrParser_ExecIr_AnalyzeEscape(
             TZrExecIrInstructionId suspendId = instructionIndex + 1u;
             if ((fact->definitionInstructionId == 0u ||
                  fact->definitionInstructionId < suspendId) &&
-                /* A value with no ordinary use may still need to live in the
+                /* A value with no ordinary or recovery use may still live in the
                  * task/cleanup frame until the boundary.  Without an
                  * explicit DROP or state-map proof, treat that lifetime as
                  * potentially crossing suspend too; liveEnd is extended below
-                 * while lastUse remains the no-ordinary-use sentinel. */
+                 * while lastUse remains the no-use sentinel. */
                  (fact->lastUseInstructionId > suspendId ||
+                  ZrCore_ExecIr_DeoptAggregateValueReferencedAt(
+                          function, instruction->deoptId, fact->valueId) ||
                   (fact->lastUseInstructionId == 0u &&
                    fact->definitionInstructionId != 0u)) &&
                  !zr_escape_mark_sink(
@@ -964,6 +984,8 @@ TZrBool ZrParser_ExecIr_AnalyzeEscape(
                  * normal path has no later read.  Keep that path conservative
                  * until an explicit cleanup/state-map proof exists. */
                  (fact->lastUseInstructionId > throwId ||
+                  ZrCore_ExecIr_DeoptAggregateValueReferencedAt(
+                          function, instruction->deoptId, fact->valueId) ||
                   (fact->lastUseInstructionId == 0u &&
                    zr_escape_exception_can_observe_unread(
                            (EZrExecIrOpcode)instruction->opcode))) &&

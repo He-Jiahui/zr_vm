@@ -217,6 +217,11 @@ static TZrBool zr_allocation_value_in_metadata(
                            function, 0u, 0u);
         return ZR_FALSE;
     }
+    if (!ZrCore_ExecIr_ValidateDeoptAggregates(function, diagnostic)) return ZR_FALSE;
+    if (ZrCore_ExecIr_DeoptAggregateValueReferenced(function, valueId)) {
+        if (requiresMaterialization != ZR_NULL) *requiresMaterialization = ZR_TRUE;
+        return ZR_TRUE;
+    }
     for (index = 0u; index < function->gcRootCount; ++index) {
         if (function->gcRoots[index] == valueId) {
             if (requiresMaterialization != ZR_NULL) *requiresMaterialization = ZR_TRUE;

@@ -99,6 +99,7 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
         zr_projection_diag(d, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, f, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
     }
+    if (!ZrCore_ExecIr_ValidateDeoptAggregates(f, d)) return ZR_FALSE;
     for (i = 0u; i < f->operandCount; ++i) {
         if (!zr_projection_value_id_valid(f, f->operands[i])) {
             zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, 0u, 0u,

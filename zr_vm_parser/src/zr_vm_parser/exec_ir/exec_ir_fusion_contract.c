@@ -526,10 +526,12 @@ TZrBool zr_fusion_function_storage_is_valid(const SZrExecIrFunction *function) {
 
 TZrUInt64 ZrParser_ExecBcFusion_InputHash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = UINT64_C(1469598103934665603);
+    TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
     TZrUInt32 index;
-    if (!zr_fusion_function_storage_is_valid(function)) {
+    if (aggregateHash == 0u || !zr_fusion_function_storage_is_valid(function)) {
         return 0u;
     }
+    hash = zr_fusion_hash_u64(hash, aggregateHash);
     hash = zr_fusion_hash_u32(hash, function->id);
     hash = zr_fusion_hash_u32(hash, function->functionToken);
     hash = zr_fusion_hash_u64(hash, function->signatureHash);

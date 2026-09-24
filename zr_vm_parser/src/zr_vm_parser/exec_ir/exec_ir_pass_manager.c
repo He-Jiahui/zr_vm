@@ -75,8 +75,10 @@ static TZrUInt64 zr_module_hash(const SZrExecIrModule *module) {
 
 TZrUInt64 ZrParser_ExecIr_FunctionHash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = UINT64_C(1469598103934665603);
+    TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
     TZrUInt32 index;
-    if (function == ZR_NULL) return 0u;
+    if (aggregateHash == 0u) return 0u;
+    zr_hash_u64(&hash, aggregateHash);
     if ((function->valueCount != 0u && function->values == ZR_NULL) ||
         (function->instructionCount != 0u && function->instructions == ZR_NULL) ||
         (function->blockCount != 0u && function->blocks == ZR_NULL) ||

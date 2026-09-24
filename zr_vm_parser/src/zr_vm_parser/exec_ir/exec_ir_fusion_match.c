@@ -169,7 +169,7 @@ static TZrBool zr_fusion_result_at(const SZrExecIrFunction *function,
 
 static TZrUInt32 zr_fusion_use_count(const SZrExecIrFunction *function,
                                      TZrExecIrValueId value) {
-    TZrUInt32 count = 0u;
+    TZrUInt32 count = ZrCore_ExecIr_DeoptAggregateValueReferenced(function, value) ? 1u : 0u;
     TZrUInt32 instructionIndex;
     if (function == ZR_NULL || value == ZR_EXEC_IR_VALUE_ID_INVALID) {
         return 0u;

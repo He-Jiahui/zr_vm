@@ -328,8 +328,10 @@ static TZrBool zr_container_function_storage_valid(
 
 static TZrUInt64 zr_container_function_hash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = ZR_CONTAINER_SPECIALIZE_FNV_OFFSET;
+    TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
     TZrUInt32 index;
-    if (!zr_container_function_storage_valid(function)) return 0u;
+    if (aggregateHash == 0u || !zr_container_function_storage_valid(function)) return 0u;
+    zr_container_hash_u64(&hash, aggregateHash);
     zr_container_hash_u32(&hash, function->id);
     zr_container_hash_u32(&hash, function->functionToken);
     zr_container_hash_u64(&hash, function->signatureHash);

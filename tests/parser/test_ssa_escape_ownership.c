@@ -882,7 +882,10 @@ static void test_allocation_and_ownership_plans_are_hash_bound(void) {
     ZrCore_ExecIr_FreeFunction(&ownershipFunction);
 }
 
+#include "ssa_escape_aggregate_cases.h"
+
 int main(void) {
+    test_aggregate_recovery_lifetime_across_suspend();
     test_local_alloc_is_stack_candidate();
     test_alloc_without_concrete_layout_stays_on_heap();
     test_external_value_is_function_lifetime_parameter();
