@@ -1,4 +1,5 @@
 #include "zr_vm_core/exec_ir.h"
+#include "zr_vm_core/exec_ir_owner_state.h"
 
 #include "exec_ir_verify_ssa.h"
 #include "exec_ir_deopt_aggregate.h"
@@ -540,6 +541,13 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
                                       0u,
                                       info->resultArity,
                                       instruction->resultRange.count);
+            return ZR_FALSE;
+        }
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED &&
+            !ZrCore_ExecIr_ConditionalCleanupValid(function, index + 1u)) {
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                      function, index + 1u, 0u, 0u, 0u);
+            if (diagnostic != ZR_NULL) diagnostic->sourceId = instruction->sourceId;
             return ZR_FALSE;
         }
         for (TZrUInt32 resultIndex = instruction->resultRange.start;

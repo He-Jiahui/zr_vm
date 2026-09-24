@@ -204,6 +204,9 @@ typedef struct SZrExecIrOracleExecutionResult {
     TZrUInt32 ownershipTag;
     TZrBool paused;
     SZrExecIrOracleContinuation continuation;
+    TZrUInt32 *ownerStates; /* valueId - 1 indexed, always concrete */
+    TZrUInt32 ownerStateCount;
+    TZrUInt32 ownerStateCapacity;
 } SZrExecIrOracleExecutionResult;
 
 #define ZR_EXEC_IR_ORACLE_RESULT_TAG ((TZrUInt32)0x4f52434cu)
@@ -218,7 +221,10 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_RunOracleEx(
         SZrExecIrDiagnostic *diagnostic);
 /* Consume a paused result and continue using its mapped live values. Failed
  * preparation preserves it. Once execution starts, errors retain the partial
- * execution state with the old pause consumed, preventing effect replay. */
+ * execution state with the old pause consumed, preventing effect replay.
+ * The result record and its API-owned arrays must not overlap one another,
+ * function/map storage, input, constants, or stopAt. initialValues is ignored
+ * on resume and may alias the paused payload array. */
 ZR_CORE_API TZrBool ZrCore_ExecIr_ResumeOracleEx(
         const SZrExecIrOracleInput *input,
         SZrExecIrOracleExecutionResult *state,

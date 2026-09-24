@@ -580,7 +580,7 @@ TZrBool ZrParser_ExecIr_AnalyzeEscape(
                 fact->lastUseInstructionId = instructionId;
                 fact->liveEnd = zr_escape_instruction_after(instructionId);
             }
-            if (opcode == ZR_EXEC_IR_OPCODE_DROP) {
+            if (opcode == ZR_EXEC_IR_OPCODE_DROP || opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) {
                 if (!fact->dropObservable) {
                     fact->dropObservable = ZR_TRUE;
                     /* DROP is not an escape sink by itself, but it is a

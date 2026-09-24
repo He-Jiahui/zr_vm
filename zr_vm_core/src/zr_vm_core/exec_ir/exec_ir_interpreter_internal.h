@@ -2,6 +2,7 @@
 #define ZR_VM_CORE_EXEC_IR_INTERPRETER_INTERNAL_H
 
 #include "zr_vm_core/exec_ir_interpreter.h"
+#include "zr_vm_core/exec_ir_owner_state.h"
 
 #include <stddef.h>
 
@@ -40,6 +41,7 @@ typedef struct SZrOracleCursor {
 TZrBool zr_oracle_select_checkpoint(const SZrExecIrOracleInput *input,
                                     const SZrExecIrOracleCheckpoint *point,
                                     const SZrExecIrOracleContinuation *identity,
+                                    const SZrExecIrOracleExecutionResult *witness,
                                     SZrExecIrMaterializedState *state,
                                     SZrExecIrStateMapEntry *entry,
                                     SZrExecIrDiagnostic *diagnostic);

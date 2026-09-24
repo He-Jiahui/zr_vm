@@ -229,6 +229,9 @@ static TZrBool zr_objects_request_valid(const SZrExecIrObjectMaterializationRequ
         !zr_objects_size(request->valueCount, sizeof(*request->values)) ||
         !zr_objects_size(request->typeCount, sizeof(*request->types))) return ZR_FALSE;
     if (!zr_objects_target_disjoint(request, request, sizeof(*request)) ||
+        !zr_objects_array_disjoint(request, request->checkpoint.ownerStates,
+                                     request->checkpoint.ownerStateCount,
+                                     sizeof(*request->checkpoint.ownerStates)) ||
         !zr_objects_target_disjoint(request, request->values,
                                      (size_t)request->valueCount * sizeof(*request->values)) ||
         !zr_objects_target_disjoint(request, request->types,
@@ -384,6 +387,14 @@ static TZrBool zr_objects_graph_valid(SZrObjectPreparation *prepared) {
     if (request->target->capacity < logical->aggregateCount || !zr_objects_types_valid(request)) return ZR_FALSE;
     for (index = 0u; index < logical->valueCount; ++index) {
         TZrExecIrValueId id = logical->values[index];
+        TZrUInt32 owner = logical->ownerStates[index];
+        /* Inactive cleanup obligations have no source payload. Do not even
+         * inspect its tag: the caller may retain inaccessible/stale bytes. */
+        if (owner == ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED ||
+            owner == ZR_EXEC_IR_STATE_MAP_OWNER_MOVED || owner == ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED)
+            continue;
+        if (owner != ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED &&
+            owner != ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN) return ZR_FALSE;
         if (id == 0u || id > request->valueCount ||
             !zr_objects_value_valid(request->state, &request->values[id - 1u]) ||
             (request->checkpoint.function->values[id - 1u].nullability == ZR_EXEC_IR_NULLABILITY_NONNULL &&
@@ -479,6 +490,9 @@ static TZrBool zr_objects_register_roots(SZrObjectPreparation *prepared) {
     TZrUInt32 index, start = 0u;
     for (index = 0u; index < prepared->logical.valueCount; ++index) {
         TZrUInt32 valueIndex = prepared->logical.values[index] - 1u;
+        TZrUInt32 owner = prepared->logical.ownerStates[index];
+        if (owner != ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED &&
+            owner != ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN) continue;
         if (request->values[valueIndex].isGarbageCollectable)
             zr_objects_root_slot(prepared, (TZrUInt32)((size_t)valueIndex * sizeof(*request->values) +
                                                       offsetof(SZrTypeValue, value)));

@@ -16,8 +16,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_liveness.c
+  - zr_vm_core/include/zr_vm_core/exec_ir_state_map_liveness.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cleanup_drops.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
@@ -27,7 +29,9 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_map_liveness.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_liveness.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cleanup_drops.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
@@ -45,6 +49,8 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/parser/test_ssa_conditional_cleanup.c
+  - tests/acceptance/ssa-conditional-cleanup.md
   - tests/core/test_ssa_runtime_objects.c
   - tests/core/ssa_runtime_objects_faults.c
   - tests/core/ssa_runtime_objects_concurrency.c
@@ -79,8 +85,11 @@ resume ID. Its `liveValues` and `rootValues` fields are ranges into side-table
 pools of value IDs. Root values are the managed references that a collector or
 resumer must preserve; the physical storage for those values is selected later
 by the runtime. The root pool is an exact projection of the live pool: every
-live GC, unique, or shared value appears once as a root, and borrowed or plain
-values do not appear there. Consumers reject either omission or invention.
+live GC, unique, or shared value that can be initialized appears once as a
+candidate root, and borrowed
+or plain values do not appear there. Consumers reject either omission or
+invention. Concrete materialization removes inactive conditional-cleanup roots
+after validating the runtime initialization state.
 
 An entry's source identity is an exact projection of its instruction: the
 instruction's explicit `sourceId` is used when present, otherwise its one-based
@@ -122,8 +131,9 @@ Each `ownerStates` item is paired with the value at the same `liveValues`
 offset. Producer and consumer use the same core CFG ownership analysis to
 recompute its state. The current instruction's transition is included only for
 post-effect phases; a serialized owner state that differs from that result is
-invalid. Unavailable or ambiguous live values are rejected, rather than silently
-omitted from the map. This includes values needed by deopt reconstruction.
+invalid. Unavailable or ambiguous values needed by ordinary instructions or
+deopt reconstruction are rejected. A cleanup-only obligation can instead carry
+`OWNER_CONDITIONAL`, which requires a concrete runtime witness on recovery.
 
 When an instruction carries a `deoptId`, its state-map phases reuse the matching
 deopt state's nonzero `resumeId` rather than inventing a second identity. The
@@ -182,7 +192,7 @@ Analysis storage uses checked allocation sizes and is released before map
 publication or on failure. An existing map survives a failed rebuild.
 
 The old linear use scan and numeric definition-order filter have been removed.
-The private liveness module owns only this analysis; checkpoint identity,
+The shared core liveness module owns only this analysis; checkpoint identity,
 diagnostics, and publication remain in the builder. Ownership projection uses
 the shared core analysis described below.
 
@@ -204,9 +214,10 @@ through a phi or a copy. This supports loop-carried ownership without carrying
 the previous iteration's moved state into a freshly defined phi result.
 
 At a join, possible states are combined. An initialized/moved or
-initialized/dropped mixture cannot be represented as one available live owner,
-so the checkpoint is rejected with `STATE_MAP_INVALID` and its source/instruction
-identity. `OWNER_UNKNOWN` describes an available value with unknown ownership
+initialized/dropped mixture cannot be represented as one unconditionally
+available live owner. Ordinary semantic uses reject this mixture with
+`STATE_MAP_INVALID` and its source/instruction identity. `OWNER_UNKNOWN`
+describes an available value with unknown ownership
 classification; it never stands in for unknown initialization. Dead values need
 no live-state entry. Unreachable blocks do not emit checkpoints and consumers
 reject maps that claim an unreachable instruction is resumable.
@@ -218,6 +229,52 @@ success and failure; failure-injection tests visit each analysis allocation in
 turn and check preservation of the old map/materialized target and zero leaked
 analysis allocations. Runtime aggregate preparation has a separate failure
 suite described below; physical frame reconstruction remains a later stage.
+
+## Conditional cleanup
+
+`ZrParser_ExecIr_ElaborateCleanupDrops` explicitly lowers DROP obligations in
+cleanup blocks to `DROP_IF_INITIALIZED`. The guarded operation accepts unique
+or shared owners and checks initialization before reading the payload. It
+consumes an initialized owner once and skips an uninitialized, moved or already
+dropped owner. Ordinary DROP keeps its strict invalid-value behavior. The
+payload definition may be on only one incoming path; this exception to ordinary
+SSA dominance belongs only to the guarded operation in a cleanup block.
+
+The lowering pass prepares a cloned function, validates the resulting IR and
+rebuilds state maps before publication. An invalid or sealed function leaves
+the original function and map unchanged. Instruction IDs, source locations and
+effect/memory ordering remain attached to the cleanup operation.
+
+Shared liveness computes both all uses and semantic uses. Conditional cleanup
+adds an obligation to the former without requiring an initialized payload in
+the latter. This distinction applies across CFG successors and loop backedges;
+it never makes an ordinary read or aggregate reconstruction field optional.
+Producer and consumer independently use the same analysis when accepting
+conditional map entries.
+
+`SZrExecIrResumeRequest.ownerStates` supplies concrete states indexed by
+`valueId - 1`. The materializer verifies each conditional witness against the
+possible CFG states, preserves every live obligation and its concrete state,
+and emits roots only for initialized owners. A missing or impossible witness
+cannot publish a concrete target. Metadata-only validation with a null target
+does not require runtime state. `OWNER_CONDITIONAL` is a static classification,
+not a concrete runtime state.
+
+The oracle maintains a separate owner-state array through definitions, PHIs,
+MOVE, DROP and exceptional result edges. Checkpoint preparation copies that
+state transactionally, restores active live payloads and preserves inactive
+cleanup obligations. Continuing execution uses the same instruction dispatcher.
+Prior calls and drops are not replayed; a later loop definition initializes a
+fresh value before its next cleanup. These states are oracle execution data,
+not a claim that real VM frame initialization bitmaps have been installed.
+
+Resume frees the previous result buffers only after successful preparation.
+Before inspecting concrete states, it rejects full-capacity byte overlaps
+between the result record, its payload/event/owner arrays, function-owned
+pools, frame/GC/state-map storage and still-active input/constants/checkpoint
+records. Base and interior aliases fail even when the checkpoint has no live
+values. The input-span inventory is shared with logical materialization.
+`initialValues` is ignored during resume and can refer to paused payloads.
 
 ## Transactional materialization
 
@@ -380,7 +437,9 @@ It validates identity, restores mapped live values, preserves effect history
 and consumes the saved pause before further execution. This does not yet allocate physical frame slots,
 rebuild native registers, or perform a runtime frame switch. Aggregate field
 recipes support plain runtime object reconstruction; ownership transfer,
-automatic SROA recipe production, inline frames and conditional cleanup flags
+automatic SROA recipe production and inline frames remain pending. Conditional
+cleanup now has an explicit ExecIR producer and oracle recovery consumer;
+ordinary source compilation and physical-frame cleanup bitmap integration
 remain pending. The current
 analysis validates checkpoint value availability; it does not replace full
 ownership/borrow/alias verification of every non-checkpoint operation or prove

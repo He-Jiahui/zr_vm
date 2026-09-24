@@ -8,4 +8,9 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildStateMaps(
         SZrExecIrFunction *function,
         SZrExecIrDiagnostic *diagnostic);
 
+/* Explicitly elaborate cleanup-block obligations and rebuild their maps.
+ * Ordinary DROP instructions elsewhere retain strict semantics. */
+ZR_PARSER_API TZrBool ZrParser_ExecIr_ElaborateCleanupDrops(
+        SZrExecIrFunction *function, SZrExecIrDiagnostic *diagnostic);
+
 #endif

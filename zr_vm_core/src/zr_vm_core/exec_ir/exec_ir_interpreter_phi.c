@@ -49,7 +49,10 @@ TZrBool zr_oracle_enter(const SZrExecIrFunction *function,
                        SZrExecIrOracleExecutionResult *result,
                        SZrExecIrDiagnostic *diagnostic) {
     const SZrExecIrBlock *block = &function->blocks[blockId - 1u];
-    SZrExecIrOracleValue *pending;
+    struct SZrOraclePhiPending {
+        SZrExecIrOracleValue value;
+        TZrUInt32 ownerState;
+    } *pending;
     size_t bytes;
     TZrUInt32 index, edgeSlot;
     if (block->phis.count == 0u) return ZR_TRUE;
@@ -60,7 +63,7 @@ TZrBool zr_oracle_enter(const SZrExecIrFunction *function,
                        function, blockId, 0u, 0u, UINT32_MAX, block->phis.count);
         return ZR_FALSE;
     }
-    pending = (SZrExecIrOracleValue *)malloc(bytes);
+    pending = malloc(bytes);
     if (pending == ZR_NULL) {
         zr_oracle_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
                        function, blockId, 0u, 0u, block->phis.count, 0u);
@@ -75,12 +78,22 @@ TZrBool zr_oracle_enter(const SZrExecIrFunction *function,
                            phi->incomings.count);
             return ZR_FALSE;
         }
-        pending[index] = result->values[
-            function->phiIncoming[phi->incomings.start + edgeSlot].value - 1u];
+        {
+            TZrUInt32 input = function->phiIncoming[phi->incomings.start + edgeSlot].value - 1u;
+            pending[index].value = result->values[input];
+            pending[index].ownerState = result->ownerStates[input];
+            if (pending[index].ownerState == ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED ||
+                pending[index].ownerState == ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN) {
+                pending[index].ownerState = function->values[phi->result - 1u].ownership ==
+                        ZR_EXEC_IR_OWNERSHIP_UNKNOWN ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN
+                                                   : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+            }
+        }
     }
     for (index = 0u; index < block->phis.count; ++index) {
         const SZrExecIrPhi *phi = &function->phiPool[block->phis.start + index];
-        result->values[phi->result - 1u] = pending[index];
+        result->values[phi->result - 1u] = pending[index].value;
+        result->ownerStates[phi->result - 1u] = pending[index].ownerState;
     }
     free(pending);
     return ZR_TRUE;

@@ -1,4 +1,4 @@
-#include "exec_ir_state_map_liveness.h"
+#include "zr_vm_core/exec_ir_state_map_liveness.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -13,13 +13,15 @@ static void zr_live_remove(TZrUInt8 *row, TZrExecIrValueId value) {
     row[bit / 8u] &= (TZrUInt8)~(1u << (bit % 8u));
 }
 
-void zr_state_map_liveness_free(SZrStateMapLiveness *liveness) {
+void ZrCore_ExecIr_StateMapLivenessFree(SZrStateMapLiveness *liveness) {
     free(liveness->before);
     free(liveness->after);
+    free(liveness->semanticBefore);
+    free(liveness->semanticAfter);
     memset(liveness, 0, sizeof(*liveness));
 }
 
-TZrBool zr_state_map_liveness_contains(const SZrStateMapLiveness *liveness,
+TZrBool ZrCore_ExecIr_StateMapLivenessContains(const SZrStateMapLiveness *liveness,
                                         TZrExecIrInstructionId instruction,
                                         TZrExecIrValueId value,
                                         TZrBool after) {
@@ -108,7 +110,7 @@ static void zr_live_add_successors(const SZrExecIrFunction *function,
 static void zr_live_scan_instructions(const SZrExecIrFunction *function,
                                       SZrExecIrRange instructions,
                                       SZrStateMapLiveness *liveness,
-                                      TZrUInt8 *row) {
+                                      TZrUInt8 *row, TZrBool semanticOnly) {
     TZrUInt32 end = instructions.start + instructions.count;
     while (end > instructions.start) {
         TZrUInt32 index = --end;
@@ -129,6 +131,7 @@ static void zr_live_scan_instructions(const SZrExecIrFunction *function,
          * that only becomes available as this instruction's result. */
         zr_live_add_deopt(function, instruction, row, ZR_TRUE);
         for (valueIndex = instruction->operandRange.start;
+             (!semanticOnly || instruction->opcode != ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) &&
              valueIndex < instruction->operandRange.start + instruction->operandRange.count;
              ++valueIndex) {
             zr_live_add(row, function->operands[valueIndex]);
@@ -137,8 +140,9 @@ static void zr_live_scan_instructions(const SZrExecIrFunction *function,
     }
 }
 
-EZrExecutionDiagnosticCode zr_state_map_liveness_build(
-        const SZrExecIrFunction *function, SZrStateMapLiveness *liveness) {
+static EZrExecutionDiagnosticCode zr_live_build(
+        const SZrExecIrFunction *function, SZrStateMapLiveness *liveness,
+        TZrBool semanticOnly) {
     TZrUInt8 *liveIn;
     TZrUInt8 *row;
     TZrUInt32 blockCount = function->blockCount != 0u ? function->blockCount : 1u;
@@ -161,7 +165,7 @@ EZrExecutionDiagnosticCode zr_state_map_liveness_build(
         liveIn == ZR_NULL || row == ZR_NULL) {
         free(liveIn);
         free(row);
-        zr_state_map_liveness_free(liveness);
+        ZrCore_ExecIr_StateMapLivenessFree(liveness);
         return ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
     }
     do {
@@ -181,7 +185,7 @@ EZrExecutionDiagnosticCode zr_state_map_liveness_build(
                 /* The verified blockless form is one straight-line region. */
                 instructions.count = function->instructionCount;
             }
-            zr_live_scan_instructions(function, instructions, liveness, row);
+            zr_live_scan_instructions(function, instructions, liveness, row, semanticOnly);
             if (block != ZR_NULL) {
                 TZrUInt32 phiIndex;
                 for (phiIndex = block->phis.start;
@@ -199,4 +203,99 @@ EZrExecutionDiagnosticCode zr_state_map_liveness_build(
     free(liveIn);
     free(row);
     return ZR_EXECUTION_DIAGNOSTIC_NONE;
+}
+
+EZrExecutionDiagnosticCode ZrCore_ExecIr_StateMapLivenessBuild(
+        const SZrExecIrFunction *function, SZrStateMapLiveness *liveness) {
+    SZrStateMapLiveness semantic = {0};
+    TZrUInt32 index, at;
+    EZrExecutionDiagnosticCode code;
+    memset(liveness, 0, sizeof(*liveness));
+    /* OwnerAnalysis validates CFG and SSA pools before this helper is used.
+     * Recovery-only uses have their own pools and need independent checks. */
+    if (function->deoptStateCount > function->deoptStateCapacity ||
+        function->deoptValueCount > function->deoptValueCapacity ||
+        (function->deoptStateCount != 0u && function->deoptStates == ZR_NULL) ||
+        (function->deoptValueCount != 0u && function->deoptValues == ZR_NULL))
+        return ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID;
+    for (index = 0u; index < function->deoptStateCount; ++index) {
+        SZrExecIrRange range = function->deoptStates[index].valueRange;
+        if (range.start > function->deoptValueCount ||
+            range.count > function->deoptValueCount - range.start)
+            return ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID;
+        for (at = range.start; at < range.start + range.count; ++at)
+            if (function->deoptValues[at] == 0u || function->deoptValues[at] > function->valueCount)
+                return ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID;
+    }
+    code = zr_live_build(function, liveness, ZR_FALSE);
+    if (code != ZR_EXECUTION_DIAGNOSTIC_NONE) return code;
+    code = zr_live_build(function, &semantic, ZR_TRUE);
+    if (code != ZR_EXECUTION_DIAGNOSTIC_NONE) {
+        ZrCore_ExecIr_StateMapLivenessFree(liveness);
+        return code;
+    }
+    liveness->semanticBefore = semantic.before;
+    liveness->semanticAfter = semantic.after;
+    return ZR_EXECUTION_DIAGNOSTIC_NONE;
+}
+
+static TZrBool zr_live_semantic(const SZrStateMapLiveness *liveness,
+                                TZrExecIrInstructionId instruction,
+                                TZrExecIrValueId value, EZrExecIrStateMapPhase phase) {
+    SZrStateMapLiveness semantic = *liveness;
+    semantic.before = liveness->semanticBefore;
+    semantic.after = liveness->semanticAfter;
+    return ZrCore_ExecIr_StateMapLivenessContains(&semantic, instruction, value,
+            (TZrBool)(phase != ZR_EXEC_IR_STATE_BEFORE_EFFECT));
+}
+
+TZrUInt8 ZrCore_ExecIr_StateMapOwnerMaskAt(
+        const SZrExecIrFunction *function, const SZrExecIrOwnerAnalysis *ownership,
+        const SZrStateMapLiveness *liveness, TZrExecIrInstructionId instruction,
+        TZrExecIrValueId value, EZrExecIrStateMapPhase phase) {
+    TZrUInt8 mask = ZrCore_ExecIr_OwnerStateMaskAt(ownership, instruction, value, phase);
+    const SZrExecIrInstruction *ins;
+    const SZrExecIrOpcodeInfo *info;
+    TZrUInt32 index;
+    if (mask == 0u || phase == ZR_EXEC_IR_STATE_BEFORE_EFFECT ||
+        zr_live_semantic(liveness, instruction, value, phase)) return mask;
+    ins = &function->instructions[instruction - 1u];
+    info = ZrCore_ExecIr_OpcodeInfo(ins->opcode);
+    /* An after-effect checkpoint precedes edge selection. Cleanup-only
+     * results may be absent on the exceptional successor. Ordinary result
+     * uses retain the established normal-edge availability contract. */
+    if ((info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW)) ==
+        (ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW)) {
+        for (index = ins->resultRange.start;
+             index < ins->resultRange.start + ins->resultRange.count; ++index) {
+            if (function->results[index] == value)
+                mask |= ZR_EXEC_IR_OWNER_STATE_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED);
+        }
+    }
+    return mask;
+}
+
+EZrExecIrStateMapOwnerState ZrCore_ExecIr_StateMapOwnerAt(
+        const SZrExecIrFunction *function, const SZrExecIrOwnerAnalysis *ownership,
+        const SZrStateMapLiveness *liveness, TZrExecIrInstructionId instruction,
+        TZrExecIrValueId value, EZrExecIrStateMapPhase phase) {
+    TZrUInt8 mask = ZrCore_ExecIr_StateMapOwnerMaskAt(
+            function, ownership, liveness, instruction, value, phase);
+    TZrUInt32 state;
+    EZrExecIrOwnership kind;
+    if (mask == ZR_EXEC_IR_OWNER_STATE_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED))
+        return ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+    if (mask == ZR_EXEC_IR_OWNER_STATE_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN))
+        return ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
+    if (mask == 0u || zr_live_semantic(liveness, instruction, value, phase))
+        return ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT;
+    kind = function->values[value - 1u].ownership;
+    if ((kind != ZR_EXEC_IR_OWNERSHIP_UNIQUE && kind != ZR_EXEC_IR_OWNERSHIP_SHARED) ||
+        (mask & ZR_EXEC_IR_OWNER_STATE_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN)) != 0u)
+        return ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT;
+    for (state = ZR_EXEC_IR_STATE_MAP_OWNER_MOVED;
+         state < ZR_EXEC_IR_STATE_MAP_OWNER_CONDITIONAL; ++state) {
+        if (mask == ZR_EXEC_IR_OWNER_STATE_BIT(state)) return (EZrExecIrStateMapOwnerState)state;
+    }
+    return ZR_EXEC_IR_STATE_MAP_OWNER_CONDITIONAL;
 }

@@ -708,6 +708,11 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                 free(definitionBlocks);
                 return ZR_FALSE;
             }
+            /* A guarded cleanup observes the independently defined state
+             * flag. The payload need not dominate this cleanup join. The
+             * opcode's owner/cleanup shape was checked structurally above;
+             * the undefined-ID rejection still applies. */
+            if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) continue;
             if (kind == 1u) {
                 TZrBool exceptionTraversalOutOfMemory = ZR_FALSE;
                 if (zr_exec_ir_ssa_result_unavailable_on_exception_edge(

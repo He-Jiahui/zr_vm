@@ -202,6 +202,8 @@ static TZrBool zr_oracle_assign(const SZrExecIrFunction *f, const SZrExecIrInstr
         return ZR_FALSE;
     }
     r->values[valueId - 1u] = *v;
+    r->ownerStates[valueId - 1u] = f->values[valueId - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN
+            ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
     return ZR_TRUE;
 }
 
@@ -217,6 +219,8 @@ static void zr_oracle_consume_operands(const SZrExecIrFunction *f,
          * ownership transition into an out-of-bounds write. */
         if (valueId != ZR_EXEC_IR_VALUE_ID_INVALID && valueId <= r->valueCount) {
             zr_oracle_undefined(&r->values[valueId - 1u]);
+            r->ownerStates[valueId - 1u] = ins->opcode == ZR_EXEC_IR_OPCODE_MOVE
+                    ? ZR_EXEC_IR_STATE_MAP_OWNER_MOVED : ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED;
         }
     }
 }
@@ -260,6 +264,7 @@ static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInpu
         case ZR_EXEC_IR_OPCODE_ADD: case ZR_EXEC_IR_OPCODE_SUB: case ZR_EXEC_IR_OPCODE_MUL:
         case ZR_EXEC_IR_OPCODE_DIV: case ZR_EXEC_IR_OPCODE_NEG: case ZR_EXEC_IR_OPCODE_COMPARE:
         case ZR_EXEC_IR_OPCODE_STORE: case ZR_EXEC_IR_OPCODE_DROP: case ZR_EXEC_IR_OPCODE_BARRIER:
+        case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
         case ZR_EXEC_IR_OPCODE_BRANCH: case ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH: case ZR_EXEC_IR_OPCODE_SWITCH:
         case ZR_EXEC_IR_OPCODE_THROW: case ZR_EXEC_IR_OPCODE_SUSPEND: case ZR_EXEC_IR_OPCODE_RETURN:
         case ZR_EXEC_IR_OPCODE_PHI: return ZR_TRUE;
@@ -304,6 +309,20 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
                        ins->sourceId, 0u, op);
         return ZR_FALSE;
     }
+    if (op == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) {
+        TZrExecIrValueId owner = f->operands[ins->operands.start];
+        TZrUInt32 state = r->ownerStates[owner - 1u];
+        if (state == ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED ||
+            state == ZR_EXEC_IR_STATE_MAP_OWNER_MOVED || state == ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED) {
+            ++r->supportedInstructionCount;
+            return ZR_TRUE;
+        }
+        if (state != ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED) {
+            zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, block, id,
+                           ins->sourceId, ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED, state);
+            return ZR_FALSE;
+        }
+    }
     if (n > ZR_ORACLE_LOCAL_OPERAND_LIMIT) {
         if (!zr_oracle_bytes(n, sizeof(*ops), &bytes)) {
             zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, f, block, id, ins->sourceId, UINT32_MAX, n); return ZR_FALSE;
@@ -314,7 +333,10 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
     for (i = 0u; i < n; ++i) {
         TZrExecIrValueId valueId = f->operands[ins->operands.start + i];
         if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID || valueId > r->valueCount ||
-            r->values[valueId - 1u].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) {
+            r->values[valueId - 1u].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED ||
+            ((f->values[valueId - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+              f->values[valueId - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_SHARED) &&
+             r->ownerStates[valueId - 1u] != ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED)) {
             if (ops != local) free(ops);
             zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, block, id, ins->sourceId, r->valueCount, valueId); return ZR_FALSE;
         }
@@ -454,6 +476,7 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
             if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_STORE, id, ins->sourceId, ops, n, f, block, d)) goto fail;
             break;
         case ZR_EXEC_IR_OPCODE_DROP:
+        case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
             if (!zr_oracle_append_event(r, ZR_EXEC_IR_ORACLE_EVENT_DROP, id,
                                         ins->sourceId, ops, n, f, block, d)) {
                 goto fail;

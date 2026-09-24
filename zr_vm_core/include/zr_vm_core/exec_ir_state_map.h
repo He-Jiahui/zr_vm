@@ -33,6 +33,9 @@ typedef enum EZrExecIrStateMapOwnerState {
     ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED,
     ZR_EXEC_IR_STATE_MAP_OWNER_MOVED,
     ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED,
+    ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED,
+    /* Static classification only; concrete materialization resolves it. */
+    ZR_EXEC_IR_STATE_MAP_OWNER_CONDITIONAL,
     ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT
 } EZrExecIrStateMapOwnerState;
 
@@ -116,6 +119,10 @@ typedef struct SZrExecIrResumeRequest {
     TZrUInt32 resumeId;
     EZrExecIrStateMapPhase phase;
     SZrExecIrMaterializedState *target;
+    /* Optional concrete witness, indexed by valueId - 1. Required to
+     * materialize CONDITIONAL entries; NULL target validates metadata only. */
+    const TZrUInt32 *ownerStates;
+    TZrUInt32 ownerStateCount;
 } SZrExecIrResumeRequest;
 
 ZR_CORE_API void ZrCore_ExecIr_StateMapInit(SZrExecIrStateMap *map);

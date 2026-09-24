@@ -1070,7 +1070,8 @@ static void summary_local_effects(const SZrExecIrFunction *function,
             summary->receiverMutates = ZR_TRUE;
             summary->mayEscape = ZR_TRUE;
         }
-        if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP) {
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP ||
+            instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) {
             /* DROP is represented by the ownership memory class rather than
              * the five execution-contract effect bits.  Keep it visible in
              * the summary's mutation/escape lattice so it cannot be mistaken

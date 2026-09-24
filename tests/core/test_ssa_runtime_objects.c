@@ -689,6 +689,92 @@ static void test_reference_class_graph_preserves_identity(void) {
     TEST_ASSERT_EQUAL_PTR(objects[0], field(1u, 0u)->value.value.object);
 }
 
+static void test_inactive_cleanup_payload_is_neither_read_nor_rooted(void) {
+    SZrExecIrInstruction checkpointInstruction = function.instructions[0];
+    SZrExecIrInstruction instruction = {0};
+    SZrTypeValue extended[4];
+    TZrUInt32 owners[4] = {ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED,
+            ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN, ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN,
+            ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED};
+    TZrExecIrValueId owner, answer = 2u;
+    TZrExecIrMemoryTokenId token = 1u, next = 2u;
+    owner = ZrCore_ExecIr_FunctionAddExternalValue(&function, 1u,
+            ZR_EXEC_IR_OWNERSHIP_UNIQUE, ZR_EXEC_IR_NULLABILITY_NULLABLE);
+    TEST_ASSERT_EQUAL_UINT32(4u, owner);
+    TEST_ASSERT_EQUAL_UINT32(1u, ZrCore_ExecIr_FunctionAddBlock(&function,
+            ZR_EXEC_IR_BLOCK_FLAG_ENTRY | ZR_EXEC_IR_BLOCK_FLAG_CLEANUP));
+    function.instructionCount = 0u;
+    instruction.opcode = ZR_EXEC_IR_OPCODE_DROP;
+    instruction.sourceId = 41u;
+    instruction.effectIn = token;
+    instruction.effectOut = next;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendOperands(&function, &owner, 1u,
+            &instruction.operandRange));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(&function, &token, 1u,
+            &instruction.memoryIn));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(&function, &next, 1u,
+            &instruction.memoryOut));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, NULL));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(&function, &checkpointInstruction, NULL));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED;
+    instruction.sourceId = 43u;
+    token = 2u;
+    next = 3u;
+    instruction.effectIn = token;
+    instruction.effectOut = next;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(&function, &token, 1u,
+            &instruction.memoryIn));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(&function, &next, 1u,
+            &instruction.memoryOut));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, NULL));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.sourceId = 44u;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendOperands(&function, &answer, 1u,
+            &instruction.operandRange));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, NULL));
+    function.blocks[0].instructionRange.count = 4u;
+    function.blocks[0].terminatorInstructionId = 4u;
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
+    request.checkpoint.map = function.stateMap;
+    request.checkpoint.ownerStates = owners;
+    request.checkpoint.ownerStateCount = 4u;
+    memcpy(extended, values, sizeof(values));
+    /* A consumed slot may contain arbitrary bytes. Both payload validation
+     * and GC root registration must first consult the concrete owner state. */
+    memset(&extended[3], 0xff, sizeof(extended[3]));
+    request.values = extended;
+    request.valueCount = 4u;
+    ssa_runtime_objects_faults(0u, ZR_FALSE, ZR_TRUE, 0u);
+    TEST_ASSERT_TRUE(ssa_runtime_objects_materialize(&request, &diagnostic));
+    memcpy(values, extended, sizeof(values));
+    assert_graph();
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED, owners[3]);
+    TEST_ASSERT_EQUAL_UINT32(2u, ssa_runtime_objects_allocation_count());
+}
+
+static void test_output_storage_cannot_overwrite_concrete_owner_witness(void) {
+    union {
+        TZrUInt32 owners[4];
+        SZrObject *alignment[2];
+    } witness = {{ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED,
+                  ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN,
+                  ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN, 0u}};
+    TZrUInt32 original[4];
+    TZrBool ok;
+    memcpy(original, witness.owners, sizeof(original));
+    request.checkpoint.ownerStates = witness.owners;
+    request.checkpoint.ownerStateCount = 3u;
+    target.objects = (SZrObject **)(void *)witness.owners;
+    ok = ZrCore_ExecIr_MaterializeObjects(&request, &diagnostic);
+    /* The test owns the witness on the stack, never the normal heap target. */
+    target.objects = objects;
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, diagnostic.code);
+    TEST_ASSERT_EQUAL_UINT32(0u, target.count);
+    TEST_ASSERT_EQUAL_MEMORY(original, witness.owners, sizeof(original));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_real_struct_graph_preserves_aliases_cycle_and_initialization);
@@ -723,5 +809,7 @@ int main(void) {
     RUN_TEST(test_existing_ignore_registrations_survive_success_and_failure);
     RUN_TEST(test_output_storage_cannot_overlap_ir_or_prototype_metadata);
     RUN_TEST(test_reference_class_graph_preserves_identity);
+    RUN_TEST(test_inactive_cleanup_payload_is_neither_read_nor_rooted);
+    RUN_TEST(test_output_storage_cannot_overwrite_concrete_owner_witness);
     return UNITY_END();
 }

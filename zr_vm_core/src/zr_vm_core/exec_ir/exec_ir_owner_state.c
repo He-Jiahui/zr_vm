@@ -4,7 +4,67 @@
 #include <string.h>
 
 #define ZR_OWNER_BIT(state) ((TZrUInt8)(1u << (state)))
-#define ZR_OWNER_UNINITIALIZED ZR_OWNER_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT)
+#define ZR_OWNER_UNINITIALIZED ZR_OWNER_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED)
+
+static TZrBool zr_owner_has_definition(const SZrExecIrFunction *function,
+                                       TZrExecIrValueId value) {
+    TZrUInt32 index, at;
+    if ((function->values[value - 1u].flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u)
+        return ZR_TRUE;
+    if (function->resultCount > function->resultCapacity ||
+        function->phiCount > function->phiCapacity ||
+        (function->resultCount != 0u && function->results == ZR_NULL) ||
+        (function->phiCount != 0u && function->phiPool == ZR_NULL)) return ZR_FALSE;
+    for (index = 0u; index < function->instructionCount; ++index) {
+        SZrExecIrRange range = function->instructions[index].resultRange;
+        if (range.start > function->resultCount || range.count > function->resultCount - range.start)
+            return ZR_FALSE;
+        for (at = range.start; at < range.start + range.count; ++at)
+            if (function->results[at] == value) return ZR_TRUE;
+    }
+    for (index = 0u; index < function->blockCount; ++index) {
+        SZrExecIrRange range = function->blocks[index].phis;
+        if (range.start > function->phiCount || range.count > function->phiCount - range.start)
+            return ZR_FALSE;
+        for (at = range.start; at < range.start + range.count; ++at)
+            if (function->phiPool[at].result == value) return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrCore_ExecIr_ConditionalCleanupValid(
+        const SZrExecIrFunction *function, TZrExecIrInstructionId id) {
+    const SZrExecIrInstruction *instruction;
+    TZrUInt32 index;
+    TZrExecIrValueId value;
+    EZrExecIrOwnership ownership;
+    if (function == ZR_NULL || id == 0u || id > function->instructionCount ||
+        function->instructionCount > function->instructionCapacity ||
+        function->operandCount > function->operandCapacity ||
+        function->blockCount > function->blockCapacity ||
+        function->valueCount > function->valueCapacity ||
+        function->instructions == ZR_NULL || function->operands == ZR_NULL ||
+        function->values == ZR_NULL || function->blocks == ZR_NULL) return ZR_FALSE;
+    instruction = &function->instructions[id - 1u];
+    if (instruction->opcode != ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED ||
+        instruction->operandRange.count != 1u || instruction->resultRange.count != 0u ||
+        instruction->operandRange.start >= function->operandCount) return ZR_FALSE;
+    value = function->operands[instruction->operandRange.start];
+    if (value == 0u || value > function->valueCount) return ZR_FALSE;
+    ownership = function->values[value - 1u].ownership;
+    if (ownership != ZR_EXEC_IR_OWNERSHIP_UNIQUE &&
+        ownership != ZR_EXEC_IR_OWNERSHIP_SHARED) return ZR_FALSE;
+    /* A declared ID alone does not create a flag. Require an actual entry,
+     * instruction or PHI definition even when payload dominance is waived. */
+    if (!zr_owner_has_definition(function, value)) return ZR_FALSE;
+    for (index = 0u; index < function->blockCount; ++index) {
+        const SZrExecIrBlock *block = &function->blocks[index];
+        if (id - 1u >= block->instructionRange.start &&
+            id - 1u - block->instructionRange.start < block->instructionRange.count)
+            return (TZrBool)((block->flags & ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0u);
+    }
+    return ZR_FALSE;
+}
 
 static TZrBool zr_owner_fail(const SZrExecIrFunction *function,
                              SZrExecIrDiagnostic *diagnostic,
@@ -67,6 +127,8 @@ static TZrBool zr_owner_input_valid(const SZrExecIrFunction *function,
         const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(instruction->opcode);
         TZrUInt32 at;
         if (info == ZR_NULL ||
+            (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED &&
+             !ZrCore_ExecIr_ConditionalCleanupValid(function, index + 1u)) ||
             !zr_owner_range_valid(instruction->operandRange, function->operandCount) ||
             !zr_owner_range_valid(instruction->resultRange, function->resultCount) ||
             instruction->operandRange.count < info->minimumOperands ||
@@ -306,6 +368,14 @@ TZrBool ZrCore_ExecIr_OwnerAnalysisBuild(
                         row[function->operands[at] - 1u] = state;
                     }
                 }
+                if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) {
+                    TZrUInt8 *state = &row[function->operands[instruction->operandRange.start] - 1u];
+                    if ((*state & ZR_OWNER_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED)) != 0u) {
+                        *state = (TZrUInt8)((*state & (TZrUInt8)~ZR_OWNER_BIT(
+                                ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED)) |
+                                ZR_OWNER_BIT(ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED));
+                    }
+                }
                 zr_owner_define_results(function, instruction->resultRange, row,
                                         invalidInputs, canInitialize);
                 memcpy(analysis->after + (size_t)index * stride, row, stride);
@@ -350,27 +420,33 @@ TZrBool ZrCore_ExecIr_OwnerAnalysisBuild(
     return ZR_TRUE;
 }
 
-EZrExecIrStateMapOwnerState ZrCore_ExecIr_OwnerStateAt(
+TZrUInt8 ZrCore_ExecIr_OwnerStateMaskAt(
         const SZrExecIrOwnerAnalysis *analysis, TZrExecIrInstructionId instruction,
         TZrExecIrValueId value, EZrExecIrStateMapPhase phase) {
     const TZrUInt8 *rows;
-    TZrUInt8 mask;
-    TZrUInt32 state;
     if (analysis == ZR_NULL || instruction == 0u || instruction > analysis->instructionCount ||
         value == 0u || value > analysis->valueCount ||
         (TZrUInt32)phase >= ZR_EXEC_IR_STATE_PHASE_COUNT ||
         analysis->reachable == ZR_NULL || !analysis->reachable[instruction - 1u]) {
-        return ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT;
+        return 0u;
     }
     rows = phase == ZR_EXEC_IR_STATE_BEFORE_EFFECT ? analysis->before : analysis->after;
     if (rows == ZR_NULL) {
-        return ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT;
+        return 0u;
     }
-    mask = rows[(size_t)(instruction - 1u) * analysis->valueCount + value - 1u];
-    for (state = 0u; state < ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT; ++state) {
+    return rows[(size_t)(instruction - 1u) * analysis->valueCount + value - 1u];
+}
+
+EZrExecIrStateMapOwnerState ZrCore_ExecIr_OwnerStateAt(
+        const SZrExecIrOwnerAnalysis *analysis, TZrExecIrInstructionId instruction,
+        TZrExecIrValueId value, EZrExecIrStateMapPhase phase) {
+    TZrUInt8 mask = ZrCore_ExecIr_OwnerStateMaskAt(analysis, instruction, value, phase);
+    TZrUInt32 state;
+    for (state = 0u; state < ZR_EXEC_IR_STATE_MAP_OWNER_CONDITIONAL; ++state) {
         if (mask == ZR_OWNER_BIT(state)) {
             return (EZrExecIrStateMapOwnerState)state;
         }
     }
-    return ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT;
+    return mask != 0u ? ZR_EXEC_IR_STATE_MAP_OWNER_CONDITIONAL
+                      : ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT;
 }

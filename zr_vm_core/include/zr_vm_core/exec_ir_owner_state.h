@@ -17,9 +17,17 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_OwnerAnalysisBuild(
         const SZrExecIrFunction *function, SZrExecIrOwnerAnalysis *analysis,
         SZrExecIrDiagnostic *diagnostic);
 ZR_CORE_API void ZrCore_ExecIr_OwnerAnalysisFree(SZrExecIrOwnerAnalysis *analysis);
-/* COUNT means unreachable, uninitialized, ambiguous, or an invalid query. */
+/* COUNT means unreachable or invalid. Mixed concrete states are CONDITIONAL. */
 ZR_CORE_API EZrExecIrStateMapOwnerState ZrCore_ExecIr_OwnerStateAt(
         const SZrExecIrOwnerAnalysis *analysis, TZrExecIrInstructionId instruction,
         TZrExecIrValueId value, EZrExecIrStateMapPhase phase);
+
+#define ZR_EXEC_IR_OWNER_STATE_BIT(state) ((TZrUInt8)(1u << (state)))
+ZR_CORE_API TZrUInt8 ZrCore_ExecIr_OwnerStateMaskAt(
+        const SZrExecIrOwnerAnalysis *analysis, TZrExecIrInstructionId instruction,
+        TZrExecIrValueId value, EZrExecIrStateMapPhase phase);
+/* Shape check shared by structural verification, analysis and the oracle. */
+ZR_CORE_API TZrBool ZrCore_ExecIr_ConditionalCleanupValid(
+        const SZrExecIrFunction *function, TZrExecIrInstructionId instruction);
 
 #endif

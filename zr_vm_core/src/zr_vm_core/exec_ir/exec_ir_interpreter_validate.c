@@ -189,6 +189,12 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
                            ins->sourceId, info->minimumOperands, ins->operands.count);
             return ZR_FALSE;
         }
+        if (ins->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED &&
+            !ZrCore_ExecIr_ConditionalCleanupValid(f, i + 1u)) {
+            zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, 0u, i + 1u,
+                           ins->sourceId, 0u, 0u);
+            return ZR_FALSE;
+        }
         for (TZrUInt32 j = 0u; j < ins->results.count; ++j) {
             TZrExecIrValueId valueId = f->results[ins->results.start + j];
             if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID || valueId > f->valueCount) {

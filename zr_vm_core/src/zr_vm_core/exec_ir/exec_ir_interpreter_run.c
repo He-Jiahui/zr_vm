@@ -17,6 +17,7 @@ void ZrCore_ExecIr_OracleResultFree(SZrExecIrOracleExecutionResult *r) {
     if (r != ZR_NULL && r->ownershipTag == ZR_EXEC_IR_ORACLE_RESULT_TAG) {
         free(r->values);
         free(r->events);
+        free(r->ownerStates);
         memset(r, 0, sizeof(*r));
     }
 }
@@ -57,14 +58,11 @@ static TZrBool zr_oracle_input_valid(const SZrExecIrOracleInput *input,
 static TZrBool zr_oracle_stop_valid(const SZrExecIrOracleInput *input,
                                     SZrExecIrStateMapEntry *stop,
                                     SZrExecIrDiagnostic *diagnostic) {
-    SZrExecIrMaterializedState state;
     TZrBool ok;
     memset(stop, 0, sizeof(*stop));
     if (input->stopAt == ZR_NULL) return ZR_TRUE;
-    ZrCore_ExecIr_MaterializedStateInit(&state);
-    ok = zr_oracle_select_checkpoint(input, input->stopAt, ZR_NULL,
-                                     &state, stop, diagnostic);
-    ZrCore_ExecIr_MaterializedStateFree(&state);
+    ok = zr_oracle_select_checkpoint(input, input->stopAt, ZR_NULL, ZR_NULL,
+                                     ZR_NULL, stop, diagnostic);
     return ok;
 }
 
@@ -128,6 +126,7 @@ static TZrBool zr_oracle_run(const SZrExecIrOracleInput *input,
                 for (at = 0u; at < instruction->resultRange.count; ++at) {
                     TZrExecIrValueId value = f->results[instruction->resultRange.start + at];
                     zr_oracle_undefined(&result->values[value - 1u]);
+                    result->ownerStates[value - 1u] = ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED;
                 }
             }
             if (stop->instructionId == id && stop->phase != ZR_EXEC_IR_STATE_BEFORE_EFFECT) {
@@ -184,6 +183,7 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
     ZrCore_ExecIr_OracleResultInit(&prepared);
     prepared.instructionCount = f->instructionCount;
     prepared.valueCount = prepared.valueCapacity = f->valueCount;
+    prepared.ownerStateCount = prepared.ownerStateCapacity = f->valueCount;
     if (f->valueCount != 0u) {
         if (!zr_oracle_bytes(f->valueCount, sizeof(*prepared.values), &bytes)) {
             zr_oracle_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
@@ -191,14 +191,27 @@ TZrBool ZrCore_ExecIr_RunOracleEx(const SZrExecIrOracleInput *input,
             return ZR_FALSE;
         }
         prepared.values = (SZrExecIrOracleValue *)calloc(1u, bytes);
-        if (prepared.values == ZR_NULL) {
+        prepared.ownerStates = (TZrUInt32 *)calloc(f->valueCount, sizeof(*prepared.ownerStates));
+        if (prepared.values == ZR_NULL || prepared.ownerStates == ZR_NULL) {
             zr_oracle_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
                            f, 0u, 0u, 0u, f->valueCount, 0u);
+            ZrCore_ExecIr_OracleResultFree(&prepared);
             return ZR_FALSE;
         }
         if (input->initialValueCount != 0u) {
             memcpy(prepared.values, input->initialValues,
                    (size_t)input->initialValueCount * sizeof(*prepared.values));
+        }
+        for (TZrUInt32 index = 0u; index < f->valueCount; ++index) {
+            const SZrExecIrValue *value = &f->values[index];
+            prepared.ownerStates[index] = (value->flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u
+                    ? (value->ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN
+                        ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED)
+                    : ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED;
+            if ((value->flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) == 0u &&
+                (value->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+                 value->ownership == ZR_EXEC_IR_OWNERSHIP_SHARED))
+                zr_oracle_undefined(&prepared.values[index]);
         }
     }
     cursor.block = f->blockCount != 0u

@@ -228,35 +228,18 @@ void ZrCore_ExecIr_MaterializedStateFree(SZrExecIrMaterializedState *state) {
     }
 }
 
-TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target,
-                                    const SZrExecIrStateMap *map,
-                                    const SZrExecIrFunction *function) {
-    TZrUInt32 index, other;
-    if (target == ZR_NULL || map == ZR_NULL || function == ZR_NULL ||
-        target->valueCount > target->valueCapacity ||
-        target->rootCount > target->rootCapacity ||
-        target->ownerStateCount > target->ownerStateCapacity ||
-        target->aggregateCount > target->aggregateCapacity ||
-        target->aggregateFieldCount > target->aggregateFieldCapacity ||
-        ((target->valueCapacity == 0u) != (target->values == ZR_NULL)) ||
-        ((target->rootCapacity == 0u) != (target->roots == ZR_NULL)) ||
-        ((target->ownerStateCapacity == 0u) != (target->ownerStates == ZR_NULL)) ||
-        ((target->aggregateCapacity == 0u) != (target->aggregates == ZR_NULL)) ||
-        ((target->aggregateFieldCapacity == 0u) != (target->aggregateFields == ZR_NULL))) {
+
+TZrBool zr_state_map_input_span_disjoint(
+        const SZrExecIrFunction *function, const SZrExecIrStateMap *map,
+        const void *storage, size_t bytes) {
+    SZrStateMapStorageSpan candidate = {storage, bytes != 0u ? 1u : 0u, bytes};
+    TZrUInt32 index;
+    uintptr_t start = (uintptr_t)storage;
+    if (function == ZR_NULL || map == ZR_NULL ||
+        (bytes != 0u && (storage == ZR_NULL || start > UINTPTR_MAX - bytes)))
         return ZR_FALSE;
-    }
     {
-        const SZrStateMapStorageSpan targetStorage[] = {
-            {target->values, target->valueCapacity, sizeof(*target->values)},
-            {target->roots, target->rootCapacity, sizeof(*target->roots)},
-            {target->ownerStates, target->ownerStateCapacity, sizeof(*target->ownerStates)},
-            {target->aggregates, target->aggregateCapacity, sizeof(*target->aggregates)},
-            {target->aggregateFields, target->aggregateFieldCapacity, sizeof(*target->aggregateFields)}
-        };
-        /* Committing frees the old target. None of those allocations may own
-         * any part of the function, source map or their recipe side tables. */
         const SZrStateMapStorageSpan sourceStorage[] = {
-            {target, 1u, sizeof(*target)},
             {map, 1u, sizeof(*map)},
             {function, 1u, sizeof(*function)},
             {map->entries, map->entryCapacity, sizeof(*map->entries)},
@@ -308,6 +291,44 @@ TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target,
              function->stateMap != ZR_NULL ? function->stateMap->ownerStateCapacity : 0u,
              sizeof(TZrUInt32)}
         };
+        for (index = 0u; index < sizeof(sourceStorage) / sizeof(sourceStorage[0]); ++index) {
+            if (!zr_state_map_size_valid(sourceStorage[index].capacity,
+                                          sourceStorage[index].elementSize) ||
+                zr_state_map_storage_spans_overlap(&candidate, &sourceStorage[index]))
+                return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target,
+                                    const SZrExecIrStateMap *map,
+                                    const SZrExecIrFunction *function) {
+    TZrUInt32 index, other;
+    if (target == ZR_NULL || map == ZR_NULL || function == ZR_NULL ||
+        target->valueCount > target->valueCapacity ||
+        target->rootCount > target->rootCapacity ||
+        target->ownerStateCount > target->ownerStateCapacity ||
+        target->aggregateCount > target->aggregateCapacity ||
+        target->aggregateFieldCount > target->aggregateFieldCapacity ||
+        ((target->valueCapacity == 0u) != (target->values == ZR_NULL)) ||
+        ((target->rootCapacity == 0u) != (target->roots == ZR_NULL)) ||
+        ((target->ownerStateCapacity == 0u) != (target->ownerStates == ZR_NULL)) ||
+        ((target->aggregateCapacity == 0u) != (target->aggregates == ZR_NULL)) ||
+        ((target->aggregateFieldCapacity == 0u) != (target->aggregateFields == ZR_NULL))) {
+        return ZR_FALSE;
+    }
+    {
+        const SZrStateMapStorageSpan targetStorage[] = {
+            {target->values, target->valueCapacity, sizeof(*target->values)},
+            {target->roots, target->rootCapacity, sizeof(*target->roots)},
+            {target->ownerStates, target->ownerStateCapacity, sizeof(*target->ownerStates)},
+            {target->aggregates, target->aggregateCapacity, sizeof(*target->aggregates)},
+            {target->aggregateFields, target->aggregateFieldCapacity, sizeof(*target->aggregateFields)}
+        };
+        /* Committing frees the old target. None of those allocations may own
+         * any part of the function, source map or their recipe side tables. */
+        const SZrStateMapStorageSpan record = {target, 1u, sizeof(*target)};
         for (index = 0u; index < sizeof(targetStorage) / sizeof(targetStorage[0]); ++index) {
             if (!zr_state_map_size_valid(targetStorage[index].capacity,
                                           targetStorage[index].elementSize)) return ZR_FALSE;
@@ -316,11 +337,10 @@ TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target,
                     return ZR_FALSE;
                 }
             }
-            for (other = 0u; other < sizeof(sourceStorage) / sizeof(sourceStorage[0]); ++other) {
-                if (zr_state_map_storage_spans_overlap(&targetStorage[index], &sourceStorage[other])) {
-                    return ZR_FALSE;
-                }
-            }
+            if (zr_state_map_storage_spans_overlap(&targetStorage[index], &record) ||
+                !zr_state_map_input_span_disjoint(function, map, targetStorage[index].storage,
+                        (size_t)targetStorage[index].capacity * targetStorage[index].elementSize))
+                return ZR_FALSE;
         }
     }
     return ZR_TRUE;
