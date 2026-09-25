@@ -214,6 +214,61 @@ static void test_ineligible_place_stays_in_memory(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_tokenized_promotion_preserves_valid_effects(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry;
+    TZrExecIrValueId promoted, retained, stored, promotedLoad, retainedLoad;
+    TZrExecIrValueId storeOperands[2];
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 106u;
+    entry = add_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    promoted = append_place_base(&function, ZR_TRUE);
+    retained = append_place_base(&function, ZR_FALSE);
+    stored = add_value(&function);
+    retainedLoad = add_value(&function);
+    promotedLoad = add_value(&function);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT, stored,
+                       NULL, 0u, (SZrExecIrRange){0u, 0u});
+    storeOperands[0] = retained;
+    storeOperands[1] = stored;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    storeOperands[0] = promoted;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    storeOperands[0] = retained;
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_STORE,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, storeOperands, 2u,
+                       (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_LOAD, retainedLoad,
+                       &retained, 1u, (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_LOAD, promotedLoad,
+                       &promoted, 1u, (SZrExecIrRange){0u, 0u});
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN,
+                       ZR_EXEC_IR_VALUE_ID_INVALID, &promotedLoad, 1u,
+                       (SZrExecIrRange){0u, 0u});
+    set_block_instructions(&function, entry, 0u, 9u);
+
+    check(ZrParser_ExecIr_SynthesizeCfgEffects(&function, &diagnostic) &&
+              ZrCore_ExecIr_VerifyEffects(&function, &diagnostic),
+          "pre-promotion memory chain was invalid");
+    check(!ZrParser_ExecIr_BuildSsa(&function, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+              diagnostic.blockId == entry &&
+              diagnostic.instructionId == 6u,
+          "tokenized promotion did not reject an obsolete memory chain");
+    check(function.instructions[4].opcode == ZR_EXEC_IR_OPCODE_STORE &&
+              function.instructions[7].opcode == ZR_EXEC_IR_OPCODE_LOAD &&
+              ZrCore_ExecIr_VerifyEffects(&function, &diagnostic),
+          "failed tokenized promotion changed its input");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_read_before_definition_is_transactional(void) {
     SZrExecIrFunction function;
     SZrExecIrDiagnostic diagnostic;
@@ -607,6 +662,7 @@ static void test_tracks_definitions_across_split_invoke_edges(void) {
 int main(void) {
     test_promotes_straight_line_and_is_repeatable();
     test_ineligible_place_stays_in_memory();
+    test_tokenized_promotion_preserves_valid_effects();
     test_read_before_definition_is_transactional();
     test_inserts_diamond_phi();
     test_inserts_loop_carried_phi();

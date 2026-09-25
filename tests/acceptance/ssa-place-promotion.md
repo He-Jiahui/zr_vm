@@ -13,6 +13,12 @@ The transform is transactional: it rewrites a deep clone, verifies the
 candidate, and publishes it only on success. A read without a reaching
 definition reports `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` and leaves the input
 unchanged. A repeated call does not append duplicate phis.
+When an input already carries memory tokens, the pass also verifies effects
+before and after the clone rewrite. A tokenized promoted STORE between two
+retained STOREs would break their effect chain; the candidate is rejected with
+`ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN` at the later STORE, while the original
+opcodes and valid effect graph remain intact. The source builder synthesizes
+effects after promotion, so tokenless inputs keep their existing behavior.
 
 This stage does not claim non-call throwing-operation splitting,
 optional-chain semantics, or the full 01.02 exit gate. Canonical typed-call
@@ -42,6 +48,24 @@ diamond phi, a loop-header phi with entry and backedge values, repeated
 invocation, an ineligible Place, transactional read-before-definition failure,
 parallel predecessor occurrences through a critical edge, split `INVOKE`
 normal/exception availability, and post-transform core SSA verification.
+
+## Tokenized direct-call regression (2026-09-26)
+
+The new mixed-Place fixture first synthesizes and verifies a linear effect
+chain. With candidate effect verification disabled, `ssa_place_promotion`
+fails because `BuildSsa` publishes a rewrite that removes a middle STORE and
+leaves the later STORE consuming its obsolete effect token. Restoring the
+check reports `EFFECT_TOKEN` at instruction 6 without mutating the input;
+the original graph still passes effect verification.
+
+- WSL GCC: rebuilt the four affected targets (`ssa_place_promotion`,
+  `ssa_source_cleanup_cfg`, `ssa_builder_cfg`, `ssa_cfg_effects_builder`) and
+  passed 4/4; the SSA label sweep passed 80/80, with unrelated executables
+  left at their existing build revisions.
+- WSL Clang and Windows MSVC: rebuilt the same four targets and passed 4/4
+  each.
+- GCC ASan/UBSan: rebuilt and passed `ssa_place_promotion` 1/1 with leak
+  detection and halt-on-error enabled.
 
 ## Remaining 01.02 work
 

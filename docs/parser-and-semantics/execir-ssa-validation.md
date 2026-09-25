@@ -5,6 +5,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_call_graph.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_escape.c
@@ -13,6 +14,7 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 tests:
   - tests/parser/test_ssa_value_validation.c
+  - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_escape_ownership.c
@@ -20,6 +22,7 @@ tests:
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-value-validation.md
   - tests/acceptance/ssa-external-entry-values.md
+  - tests/acceptance/ssa-place-promotion.md
 doc_type: module-detail
 ---
 
@@ -27,11 +30,11 @@ doc_type: module-detail
 
 ## Scope and entry point
 
-`ZrParser_ExecIr_BuildSsa` currently verifies the stable definitions already
-assigned to values produced by SemanticIR. It does not insert pruned phi
-nodes, promote address-taken places, rename definitions across a dominance
-frontier, or prove exceptional-result availability. The builder invokes this
-step only after it emits CFG adjacency and computes immediate dominators.
+`ZrParser_ExecIr_BuildSsa` checks stable definitions assigned to SemanticIR
+values, then promotes eligible Places with pruned phis and dominator-tree
+renaming. Exceptional-result availability is checked by the core SSA verifier.
+The builder invokes this step after emitting CFG adjacency and computing
+immediate dominators, and before synthesizing memory/effect tokens.
 
 Before this check, source-produced canonical Places are assigned separate
 ExecIR address values. Place results are ordinary instruction definitions;
@@ -48,8 +51,15 @@ proved a canonical primitive representation and for which the function has no
 child projection, loan fact, or escape fact. The screen is fail-closed:
 parameters, aggregate or unknown representations, projected Places,
 address-taken locals, and escaped locals retain explicit load/store form. This
-metadata is the input contract for phi insertion and renaming; this stage does
-not remove memory operations yet.
+metadata is the input contract for phi insertion and renaming; the promotion
+pass replaces eligible stores with NOP and loads with COPY.
+
+When `BuildSsa` is called directly with pre-existing memory tokens, promotion
+validates both the input and its rewritten clone at the effect level as well
+as the structural and SSA levels. If the rewrite invalidates a token chain,
+the pass returns the effect diagnostic without publishing the clone. Inputs
+without existing tokens are checked for effects later by the builder, after
+effect synthesis; they are not required to carry token facts prematurely.
 
 The pass checks function-level storage consistency before reading instructions
 or operand/value side pools: counts may not exceed allocated capacities and a
@@ -59,7 +69,8 @@ the logical operand pool. The range comparison subtracts only after checking
 `start <= operandCount`, so a `UINT32_MAX` start cannot wrap around to a small
 index. Operand IDs must reference either a locally defined value or an
 explicit external entry value in the function's value pool. No input arrays
-or value definitions are modified on either path.
+or value definitions are modified by the initial validation; promotion only
+publishes a fully verified candidate.
 
 ## External entry values
 
@@ -91,9 +102,9 @@ opcode reports `UNKNOWN_OPCODE`; an invalid or undefined value reports
 `INVALID_VALUE`. Instruction-level diagnostics carry the function token and
 one-based instruction ID. Function-level malformed backing storage carries
 the function token and instruction ID zero. Null function input returns false
-without dereferencing the diagnostic target. The pass owns no allocations;
-the surrounding builder owns and releases its temporary ExecIR function if
-construction fails.
+without dereferencing the diagnostic target. Promotion allocates a temporary
+clone and releases it on failure; the surrounding builder similarly owns and
+releases its candidate if construction fails.
 
 ## Verification boundary
 
@@ -102,7 +113,8 @@ Its positive cases define an operand before its use and consume an explicit
 external entry. Failure cases cover an unflagged undefined operand, an
 external entry reused as an instruction result, unknown value flags, a
 logical out-of-range operand whose physical memory contains a valid value, a
-wrapped range, null backing storage, and an unknown opcode. Full CFG-aware SSA
-construction and differential language fixtures remain separate 01.02 work;
-see `tests/acceptance/ssa-value-validation.md` and
-`tests/acceptance/ssa-external-entry-values.md` for actual test runs.
+wrapped range, null backing storage, and an unknown opcode. Promotion's
+CFG-aware and tokenized-input coverage is recorded separately in
+`tests/acceptance/ssa-place-promotion.md`; the full 01.02 exit gate remains
+outside these focused fixtures. See `tests/acceptance/ssa-value-validation.md`
+and `tests/acceptance/ssa-external-entry-values.md` for earlier validation.

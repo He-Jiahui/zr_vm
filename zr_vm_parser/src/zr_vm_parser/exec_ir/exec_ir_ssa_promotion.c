@@ -116,7 +116,10 @@ static TZrBool promotion_verify_candidate(
     result = ZrCore_ExecIr_VerifyFunction(
             function,
             (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
-                                   ZR_EXEC_IR_VERIFY_SSA),
+                                   ZR_EXEC_IR_VERIFY_SSA |
+                                   (function->memoryTokenCount != 0u
+                                            ? ZR_EXEC_IR_VERIFY_EFFECT
+                                            : 0u)),
             diagnostic);
     function->id = savedId;
     function->functionToken = savedToken;
