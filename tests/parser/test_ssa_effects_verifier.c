@@ -264,6 +264,8 @@ static void test_loop_carried_effect_and_memory_phis(void) {
             ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u);
     TZrExecIrMemoryTokenId heap3 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
             ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 3u);
+    TZrExecIrMemoryTokenId heap4 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 4u);
     SZrExecIrPhiIncoming memoryIncoming[2] = {{entry, heap1}, {3u, heap3}};
     TZrExecIrBlockId predecessor;
     SZrExecIrRange ranges[4] = {0};
@@ -331,6 +333,22 @@ static void test_loop_carried_effect_and_memory_phis(void) {
            diagnostic.blockId == header && diagnostic.expectedVersion == 4u &&
            diagnostic.actualVersion == 3u,
        "stale loop effect diagnostic lost token identity");
+    function->phiIncoming[function->blocks[header - 1u].effectPhiIncomings.start + 1u]
+            .value = 4u;
+    function->predecessors[function->blocks[body - 1u].predecessors.start] = entry;
+    function->instructions[2].effectIn = 2u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "reverse-declared acyclic edge accepted as loop backedge");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN &&
+           diagnostic.blockId == header,
+       "non-dominating reverse predecessor lost memory phi diagnostic");
+    function->blocks[header - 1u].memoryPhiResults[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP] = heap4;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "reverse-declared acyclic effect edge accepted as loop backedge");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+           diagnostic.blockId == header,
+       "non-dominating reverse predecessor lost effect phi diagnostic");
     ZrCore_ExecIr_FreeModule(&module);
 }
 

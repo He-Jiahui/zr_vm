@@ -6,12 +6,14 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effect_backedges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_licm.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effect_backedges.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
@@ -49,7 +51,8 @@ entry/terminator shape.  The SSA phase is implemented in
 `exec_ir_verify_ssa.c`; it builds fresh CFG facts and then validates value
 definitions and uses.  The effect phase in `exec_ir_verify_effects.c` checks
 memory/effect token continuity and the stricter PHI predecessor count/order
-contract.
+contract. A private graph-analysis module classifies actual loop backedges
+without trusting block declaration order or serialized dominator hints.
 
 The structural phase requires every listed block successor to be listed as a
 predecessor of its destination, and every predecessor to list the block as a
@@ -92,7 +95,10 @@ without a memory phi are rejected. A first read of an untouched region
 establishes its initial version at the block exit, so a later join can
 distinguish that path from a sibling write. A declaration-order backedge may carry a
 later iteration's higher version, but a stale or wrong-region backedge still
-fails exact predecessor-terminal matching. Parser production handles single
+fails exact predecessor-terminal matching. A predecessor with a larger block
+ID counts as a backedge only when the header dominates that predecessor in
+the actual CFG; reverse-declared acyclic joins must still advance their phi
+results beyond every incoming version. Parser production handles single
 blocks, acyclic declaration-ordered CFGs, and one bounded single-latch loop
 shape; general cyclic CFG production remains a separate fixed-point task.
 

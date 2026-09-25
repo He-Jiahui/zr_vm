@@ -1,4 +1,5 @@
 #include "zr_vm_core/exec_ir.h"
+#include "exec_ir_verify_effect_backedges.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -185,19 +186,6 @@ static TZrBool zr_exec_ir_block_has_predecessor(const SZrExecIrFunction *functio
     return ZR_FALSE;
 }
 
-/* The first loop-aware verifier slice uses the stable declaration order that
- * the parser builder publishes: an edge to the same or an earlier block is a
- * backedge.  A later dominance-aware pass can replace this bounded predicate
- * without changing the token contract. */
-static TZrBool zr_exec_ir_is_declared_backedge(
-        const SZrExecIrFunction *function,
-        TZrExecIrBlockId target,
-        TZrExecIrBlockId predecessor) {
-    return (TZrBool)(function != ZR_NULL && target != 0u &&
-                     predecessor != 0u && predecessor <= function->blockCount &&
-                     predecessor >= target);
-}
-
 static TZrBool zr_exec_ir_verify_phi_predecessors(const SZrExecIrFunction *function,
                                                   SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 blockIndex;
@@ -304,6 +292,7 @@ static TZrBool *zr_exec_ir_memory_cfg_known_slot(
 
 static TZrBool zr_exec_ir_verify_memory_cfg(
         const SZrExecIrFunction *function,
+        const TZrBool *backedges,
         SZrExecIrDiagnostic *diagnostic) {
     TZrExecIrMemoryTokenId *terminal;
     TZrBool *known;
@@ -524,8 +513,8 @@ static TZrBool zr_exec_ir_verify_memory_cfg(
                             block->predecessors.start + predecessorIndex];
                     TZrExecIrMemoryTokenId expected = *zr_exec_ir_memory_cfg_slot(
                             terminal, predecessor - 1u, region);
-                    TZrBool backedge = zr_exec_ir_is_declared_backedge(
-                            function, block->id, predecessor);
+                    TZrBool backedge = backedges[
+                            block->predecessors.start + predecessorIndex];
                     if (incoming->predecessor != predecessor ||
                         !*zr_exec_ir_memory_cfg_known_slot(
                             known, predecessor - 1u, region) ||
@@ -622,6 +611,7 @@ static TZrBool zr_exec_ir_verify_memory_cfg(
 
 static TZrBool zr_exec_ir_verify_effect_cfg(
         const SZrExecIrFunction *function,
+        const TZrBool *backedges,
         SZrExecIrDiagnostic *diagnostic) {
     TZrExecIrEffectTokenId *terminal;
     TZrBool *known;
@@ -772,7 +762,7 @@ static TZrBool zr_exec_ir_verify_effect_cfg(
                     valid = ZR_FALSE;
                     break;
                 }
-                if (!zr_exec_ir_is_declared_backedge(function, block->id, predecessor) &&
+                if (!backedges[block->predecessors.start + predecessorIndex] &&
                     incoming->value > maximumIncoming) {
                     maximumIncoming = incoming->value;
                 }
@@ -833,6 +823,7 @@ static TZrBool zr_exec_ir_verify_effect_cfg(
 
 TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                                     SZrExecIrDiagnostic *diagnostic) {
+    TZrBool *backedges = ZR_NULL;
     TZrExecIrMemoryTokenId latestMemory = ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
     TZrExecIrMemoryTokenId latestMemoryByRegion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
     TZrExecIrBlockId latestMemoryBlock = ZR_EXEC_IR_BLOCK_ID_INVALID;
@@ -853,12 +844,18 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
     if (!zr_exec_ir_verify_phi_predecessors(function, diagnostic)) {
         return ZR_FALSE;
     }
-    if (!zr_exec_ir_verify_memory_cfg(function, diagnostic)) {
+    if (!zr_exec_ir_classify_backedges(function, &backedges, diagnostic)) {
         return ZR_FALSE;
     }
-    if (!zr_exec_ir_verify_effect_cfg(function, diagnostic)) {
+    if (!zr_exec_ir_verify_memory_cfg(function, backedges, diagnostic)) {
+        free(backedges);
         return ZR_FALSE;
     }
+    if (!zr_exec_ir_verify_effect_cfg(function, backedges, diagnostic)) {
+        free(backedges);
+        return ZR_FALSE;
+    }
+    free(backedges);
     for (index = 0u; index < function->instructionCount; ++index) {
         const SZrExecIrInstruction *instruction = &function->instructions[index];
         const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)instruction->opcode);
