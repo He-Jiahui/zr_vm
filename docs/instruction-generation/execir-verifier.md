@@ -65,28 +65,34 @@ not prove the chain. Pure instructions between observations leave this token
 unchanged. A block join may now publish an explicit `effectPhiResult` and an
 edge-ordered `effectPhiIncomings` range (reusing the `phiIncoming` pool). The
 effect verifier checks each incoming predecessor and terminal token, requires
-the merged result to advance beyond its inputs, and requires the first
+the merged result to advance beyond its forward inputs, and requires the first
 observable instruction in the block to consume that result. A join with
 distinct predecessor tokens is rejected when it omits this phi metadata;
 single-token forwarding through pure blocks remains valid. Tagged memory
-versions still use the region-local rule described below, while producer-side
-token generation and cross-block memory PHIs remain open.
+versions still use the region-local rule described below. The bounded
+declaration-ordered loop case also accepts a backedge token produced after
+the header phi, while requiring that it match that predecessor's terminal
+token exactly.
 
 Memory tokens now have a compatibility-preserving tagged form:
 `ZR_EXEC_IR_MEMORY_TOKEN_MAKE(region, version)`. Tagged tokens carry one of
 the eight declared memory regions (frame, managed heap, module global,
 native/FFI, GC, ownership, scheduler/task, or I/O) and are ordered by version
-within that region. Independent tagged regions therefore do not impose a
-false global order. The verifier rejects a tagged token whose region is not
+within that region and within each block. Independent tagged regions therefore
+do not impose a false global order, and sibling/loop-body blocks do not inherit
+one another's linear monotonicity state. The verifier rejects a tagged token whose region is not
 covered by the opcode's declared read/write mask, rejects zero versions, and
 continues to apply the legacy function-wide monotonic rule to untagged tokens
 so old artifacts remain readable during the migration. A join may publish one
 tagged `memoryPhiResult` and edge-ordered `memoryPhiIncomings` range per
 region. Each incoming must match the predecessor's terminal version and
-region, the result must advance beyond all incoming versions, and the first
+region, the result must advance beyond forward incoming versions, and the first
 tagged memory consumer must consume the result. Distinct region versions
-without a memory phi are rejected; producer-side token generation remains
-open.
+without a memory phi are rejected. A declaration-order backedge may carry a
+later iteration's higher version, but a stale or wrong-region backedge still
+fails exact predecessor-terminal matching. Parser production currently handles
+single blocks and acyclic declaration-ordered CFGs; cyclic CFG production
+remains a separate fixed-point task.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes
@@ -166,7 +172,8 @@ result negatives. `ssa_builder_iterator_invokes` applies the same result
 availability rule to the three iterator invoke terminators and directly
 rejects missing or misplaced exception markers at the core structure boundary.
 Coverage also includes matching parallel-edge PHI incoming slots, explicit
-cross-block effect-token joins, missing/stale effect-phi inputs, and the existing
+cross-block effect-token joins, missing/stale effect-phi inputs, loop-carried
+effect/memory phis with stale backedge negatives, and the existing
 effect-token negatives. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.

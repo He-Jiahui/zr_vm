@@ -247,6 +247,93 @@ static void test_memory_join_requires_region_phi(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_loop_carried_effect_and_memory_phis(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId header;
+    TZrExecIrBlockId body;
+    TZrExecIrBlockId exitBlock;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId headerPreds[2] = {entry, 3u};
+    SZrExecIrPhiIncoming effectIncoming[2] = {{entry, 2u}, {3u, 4u}};
+    TZrExecIrMemoryTokenId heap1 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u);
+    TZrExecIrMemoryTokenId heap2 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u);
+    TZrExecIrMemoryTokenId heap3 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 3u);
+    SZrExecIrPhiIncoming memoryIncoming[2] = {{entry, heap1}, {3u, heap3}};
+    TZrExecIrBlockId predecessor;
+    SZrExecIrRange ranges[4] = {0};
+    SZrExecIrInstruction instruction;
+
+    header = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    body = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    exitBlock = ZrCore_ExecIr_FunctionAddBlock(function, 0u);
+    ok(header == 2u && body == 3u && exitBlock == 4u, "loop phi blocks");
+    append_tagged_store(function, heap1, 1u, 2u);
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "loop header branch");
+    append_tagged_store(function, heap3, 3u, 4u);
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "loop exit return");
+    ranges[0].start = 0u; ranges[0].count = 1u;
+    ranges[1].start = 1u; ranges[1].count = 1u;
+    ranges[2].start = 2u; ranges[2].count = 1u;
+    ranges[3].start = 3u; ranges[3].count = 1u;
+    function->blocks[0].instructionRange = ranges[0];
+    function->blocks[1].instructionRange = ranges[1];
+    function->blocks[2].instructionRange = ranges[2];
+    function->blocks[3].instructionRange = ranges[3];
+    predecessor = header;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+                         function, &predecessor, 1u,
+                         &function->blocks[2].predecessorRange),
+                 "loop body predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+                         function, headerPreds, 2u,
+                         &function->blocks[1].predecessorRange),
+                 "loop header predecessors");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+                         function, &header, 1u,
+                         &function->blocks[3].predecessorRange),
+                 "loop exit predecessor");
+    ok(ZrCore_ExecIr_FunctionSetEffectPhi(
+                         function, header, 3u, effectIncoming, 2u),
+                 "set loop effect phi");
+    ok(ZrCore_ExecIr_FunctionSetMemoryPhi(
+                         function, header, ZR_EXEC_IR_MEMORY_MANAGED_HEAP,
+                         heap2, memoryIncoming, 2u),
+                 "set loop memory phi");
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "loop-carried effect and memory phis rejected");
+    function->phiIncoming[function->blocks[header - 1u].memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start + 1u].value = heap2;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "stale loop backedge memory token accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN &&
+           diagnostic.blockId == header && diagnostic.expectedVersion == heap3 &&
+           diagnostic.actualVersion == heap2,
+       "stale loop backedge diagnostic lost token identity");
+    function->phiIncoming[function->blocks[header - 1u].memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start + 1u].value = heap3;
+    function->phiIncoming[function->blocks[header - 1u].effectPhiIncomings.start + 1u]
+            .value = 3u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "stale loop backedge effect token accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+           diagnostic.blockId == header && diagnostic.expectedVersion == 4u &&
+           diagnostic.actualVersion == 3u,
+       "stale loop effect diagnostic lost token identity");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_throw_requires_flag(void) {
     SZrExecIrModule module;
     TZrExecIrFunctionId id;
@@ -1323,6 +1410,7 @@ int main(void) {
     test_effect_join_requires_phi_for_distinct_predecessors();
     test_memory_phi_joins_region_versions();
     test_memory_join_requires_region_phi();
+    test_loop_carried_effect_and_memory_phis();
     test_throw_requires_flag();
     test_memory_tokens_must_be_monotonic();
     test_phi_predecessor_set();
