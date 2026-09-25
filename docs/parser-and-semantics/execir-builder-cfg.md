@@ -236,12 +236,14 @@ control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
 The linear and CFG synthesizers live in separate source files and share only
 private diagnostics, opcode flags, and observable-operation classification.
-One bounded cycle is supported: a declaration-ordered header with a single
-adjacent latch whose only predecessor is that header. The producer scans the
-header/latch for written memory regions and observable operations, creates
-loop-carried phis before visiting the latch, and fills their backedge inputs
-from the latch's actual exit state. Self-loops, multiple latches and general
-cyclic graphs remain outside this producer's contract.
+Two bounded cycle shapes are supported: a declaration-ordered header with a
+single adjacent latch whose only predecessor is that header, or a header/body
+whose two adjacent latches each have the body as their sole predecessor.
+The header has exactly one forward entry in either shape. The producer scans
+the loop interval for written memory regions and observable operations,
+creates loop-carried phis before visiting the latches, and fills each backedge
+input from its actual latch exit. Self-loops, three or more latches, nested
+loops and general cyclic graphs remain outside this producer's contract.
 The CFG producer checks side-pool storage and capacity and requires block
 instruction ranges to partition the instruction array in declaration order
 before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.

@@ -99,8 +99,8 @@ fails exact predecessor-terminal matching. A predecessor with a larger block
 ID counts as a backedge only when the header dominates that predecessor in
 the actual CFG; reverse-declared acyclic joins must still advance their phi
 results beyond every incoming version. Parser production handles single
-blocks, acyclic declaration-ordered CFGs, and one bounded single-latch loop
-shape; general cyclic CFG production remains a separate fixed-point task.
+blocks, acyclic declaration-ordered CFGs, and bounded single-/two-latch loop
+shapes; general cyclic CFG production remains a separate fixed-point task.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes

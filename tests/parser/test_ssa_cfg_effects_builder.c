@@ -468,6 +468,76 @@ static void test_single_latch_loop_gets_carried_effect_phis(
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_two_latch_loop_tracks_both_backedges(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId header = 2u;
+    TZrExecIrBlockId body = 3u;
+    TZrExecIrBlockId leftLatch = 4u;
+    TZrExecIrBlockId rightLatch = 5u;
+    TZrExecIrBlockId exitBlock = 6u;
+    TZrExecIrBlockId headerPreds[3] = {entry, leftLatch, rightLatch};
+    const SZrExecIrBlock *loopHeader;
+    const SZrExecIrPhiIncoming *memoryIncoming;
+    const SZrExecIrPhiIncoming *effectIncoming;
+    TZrUInt32 blockIndex;
+
+    for (blockIndex = 2u; blockIndex <= 6u; ++blockIndex) {
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == blockIndex,
+                     "add two-latch loop block");
+    }
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[6] = {0u, 1u, 2u, 3u, 5u, 7u};
+        const TZrUInt32 counts[6] = {1u, 1u, 1u, 2u, 2u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, header, headerPreds, 3u);
+    append_predecessor(function, body, &header, 1u);
+    append_predecessor(function, leftLatch, &body, 1u);
+    append_predecessor(function, rightLatch, &body, 1u);
+    append_predecessor(function, exitBlock, &header, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize two-latch loop effects");
+    loopHeader = &function->blocks[header - 1u];
+    require_true(loopHeader->memoryPhiResults[ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u &&
+                     loopHeader->effectPhiResult != 0u,
+                 "two-latch header receives carried phis");
+    memoryIncoming = &function->phiIncoming[loopHeader->memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start];
+    effectIncoming = &function->phiIncoming[loopHeader->effectPhiIncomings.start];
+    require_true(loopHeader->memoryPhiIncomings[
+                         ZR_EXEC_IR_MEMORY_MANAGED_HEAP].count == 3u &&
+                     loopHeader->effectPhiIncomings.count == 3u &&
+                     memoryIncoming[0].predecessor == entry &&
+                     memoryIncoming[1].predecessor == leftLatch &&
+                     memoryIncoming[2].predecessor == rightLatch &&
+                     effectIncoming[0].predecessor == entry &&
+                     effectIncoming[1].predecessor == leftLatch &&
+                     effectIncoming[2].predecessor == rightLatch &&
+                     memoryIncoming[1].value == function->memoryTokenPool[
+                             function->instructions[3].memoryOut.start] &&
+                     memoryIncoming[2].value == function->memoryTokenPool[
+                             function->instructions[5].memoryOut.start] &&
+                     effectIncoming[1].value == function->instructions[3].effectOut &&
+                     effectIncoming[2].value == function->instructions[5].effectOut &&
+                     effectIncoming[1].value != effectIncoming[2].value,
+                 "both latch exits retain distinct edge-ordered tokens");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "two-latch loop effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
@@ -478,6 +548,7 @@ int main(void) {
     test_sibling_observable_operations_get_distinct_effects();
     test_single_latch_loop_gets_carried_effect_phis(ZR_TRUE);
     test_single_latch_loop_gets_carried_effect_phis(ZR_FALSE);
+    test_two_latch_loop_tracks_both_backedges();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

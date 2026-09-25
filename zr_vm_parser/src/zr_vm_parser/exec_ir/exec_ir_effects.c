@@ -30,7 +30,9 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     TZrUInt32 instructionIndex;
     TZrUInt32 nextInstruction = 0u;
     TZrExecIrBlockId loopHeader = ZR_EXEC_IR_BLOCK_ID_INVALID;
-    TZrExecIrBlockId loopLatch = ZR_EXEC_IR_BLOCK_ID_INVALID;
+    TZrExecIrBlockId loopLatches[2] = {0};
+    TZrExecIrBlockId loopMaxLatch = ZR_EXEC_IR_BLOCK_ID_INVALID;
+    TZrUInt32 loopLatchCount = 0u;
     TZrUInt32 loopWrites = 0u;
     TZrBool loopHasEffect = ZR_FALSE;
     TZrUInt32 region;
@@ -109,22 +111,49 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                 goto cleanup;
             }
             if (predecessor >= block->id) {
-                if (loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                if ((loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID &&
+                     loopHeader != block->id) ||
                     block->id == ZR_EXEC_IR_BLOCK_ID_ENTRY ||
-                    block->predecessors.count != 2u ||
-                    predecessor != block->id + 1u) {
+                    loopLatchCount >= 2u) {
                     goto cleanup;
                 }
                 loopHeader = block->id;
-                loopLatch = predecessor;
+                loopLatches[loopLatchCount++] = predecessor;
+                if (predecessor > loopMaxLatch) loopMaxLatch = predecessor;
             }
         }
     }
     if (loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID) {
-        const SZrExecIrBlock *latch = &function->blocks[loopLatch - 1u];
-        if (latch->predecessors.count != 1u ||
-            function->predecessors[latch->predecessors.start] != loopHeader) {
+        const SZrExecIrBlock *header = &function->blocks[loopHeader - 1u];
+        TZrUInt32 latchIndex;
+        if (header->predecessors.count != loopLatchCount + 1u) {
             goto cleanup;
+        }
+        if (loopLatchCount == 1u) {
+            const SZrExecIrBlock *latch = &function->blocks[loopLatches[0] - 1u];
+            if (loopLatches[0] != loopHeader + 1u ||
+                latch->predecessors.count != 1u ||
+                function->predecessors[latch->predecessors.start] != loopHeader) {
+                goto cleanup;
+            }
+        } else {
+            const SZrExecIrBlock *body = &function->blocks[loopHeader];
+            if (loopMaxLatch != loopHeader + 3u ||
+                body->predecessors.count != 1u ||
+                function->predecessors[body->predecessors.start] != loopHeader) {
+                goto cleanup;
+            }
+            for (latchIndex = 0u; latchIndex < loopLatchCount; ++latchIndex) {
+                const SZrExecIrBlock *latch = &function->blocks[
+                        loopLatches[latchIndex] - 1u];
+                if (loopLatches[latchIndex] <= loopHeader + 1u ||
+                    loopLatches[0] == loopLatches[1] ||
+                    latch->predecessors.count != 1u ||
+                    function->predecessors[latch->predecessors.start] !=
+                            loopHeader + 1u) {
+                    goto cleanup;
+                }
+            }
         }
     }
     if (nextInstruction != function->instructionCount) {
@@ -159,8 +188,8 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
         }
         if (loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID &&
             instructionIndex >= function->blocks[loopHeader - 1u].instructions.start &&
-            instructionIndex < function->blocks[loopLatch - 1u].instructions.start +
-                                       function->blocks[loopLatch - 1u].instructions.count) {
+            instructionIndex < function->blocks[loopMaxLatch - 1u].instructions.start +
+                                       function->blocks[loopMaxLatch - 1u].instructions.count) {
             loopWrites |= info->memoryWrites;
             if (zr_parser_exec_ir_is_observable(info)) loopHasEffect = ZR_TRUE;
         }
@@ -288,7 +317,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                  ++predecessorIndex) {
                 TZrExecIrBlockId predecessor = function->predecessors[predecessorIndex];
                 TZrUInt32 predecessorBlock = predecessor - 1u;
-                if (block->id == loopHeader && predecessor == loopLatch) continue;
+                if (block->id == loopHeader && predecessor >= loopHeader) continue;
                 for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
                     TZrExecIrMemoryTokenId token = terminalMemory[
                             (size_t)predecessorBlock * ZR_EXEC_IR_MEMORY_CLASS_COUNT +
