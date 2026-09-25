@@ -238,6 +238,8 @@ before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.
 For multi-block CFGs, memory version one denotes the untouched entry state
 on every path. A first write receives a later version, so a sibling's first
 read cannot alias that write; distinct states receive a phi at their join.
+When an arm has not touched a region, its zero terminal token remains an
+explicit incoming to a join phi rather than disabling CFG effect synthesis.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
 split the block rather than attribute that operation's exceptional exit to

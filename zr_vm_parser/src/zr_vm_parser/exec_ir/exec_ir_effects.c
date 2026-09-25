@@ -568,10 +568,6 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                         incomingMemory[region] = token;
                         haveMemory[region] = ZR_TRUE;
                     } else if (incomingMemory[region] != token) {
-                        if (incomingMemory[region] == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID ||
-                            token == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
-                            goto cleanup;
-                        }
                         if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token) >
                             maximumVersion[region]) {
                             maximumVersion[region] =

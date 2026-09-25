@@ -291,12 +291,68 @@ static void test_missing_predecessor_storage_is_rejected(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_untouched_branch_merges_with_written_memory(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId left = 2u;
+    TZrExecIrBlockId right = 3u;
+    TZrExecIrBlockId merge = 4u;
+    TZrExecIrBlockId mergePreds[2] = {left, right};
+    const SZrExecIrBlock *mergeBlock;
+    const SZrExecIrPhiIncoming *incoming;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == left,
+                 "add write arm");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == right,
+                 "add untouched arm");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == merge,
+                 "add write/untouched merge");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[4] = {0u, 1u, 2u, 3u};
+        const TZrUInt32 counts[4] = {1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, left, &entry, 1u);
+    append_predecessor(function, right, &entry, 1u);
+    append_predecessor(function, merge, mergePreds, 2u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize write/untouched CFG effects");
+    mergeBlock = &function->blocks[merge - 1u];
+    require_true(function->memoryTokenCount != 0u &&
+                     mergeBlock->memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u &&
+                     mergeBlock->effectPhiResult != 0u,
+                 "untouched arm does not suppress merge token production");
+    incoming = &function->phiIncoming[mergeBlock->memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start];
+    require_true(incoming[0].predecessor == left &&
+                     incoming[1].predecessor == right &&
+                     incoming[1].value == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID,
+                 "memory phi records untouched predecessor state");
+    incoming = &function->phiIncoming[mergeBlock->effectPhiIncomings.start];
+    require_true(incoming[0].predecessor == left &&
+                     incoming[1].predecessor == right &&
+                     incoming[1].value == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID,
+                 "effect phi records untouched predecessor state");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "write/untouched CFG effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
     test_branch_read_preserves_initial_memory_state();
     test_overlapping_block_ranges_are_rejected();
     test_missing_predecessor_storage_is_rejected();
+    test_untouched_branch_merges_with_written_memory();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }
