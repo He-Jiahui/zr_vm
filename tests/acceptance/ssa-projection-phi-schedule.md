@@ -34,9 +34,10 @@ a 3-cycle, a dependent tail, two independent 2-cycles, a self-copy, and two
 distinct parallel CFG edges. `ssa_oracle_projections` retains the existing
 oracle/projection checks. These fixtures are hand-built ExecIR and have no
 runtime effect, callback, or owner lease to balance.
-The cycle fixture checks scheduling algebra on a projected graph, not a
-verifier-valid loop with SSA definitions; a loop-backedge integration test and
-an actual ExecBC consumer remain subsequent 01.05 gates.
+The cycle fixture checks scheduling algebra on a projected graph, while
+`test_verified_loop_backedge_phi_swap` also verifies a two-block, external-entry
+loop with `STRUCTURE | SSA` before executing the entry and backedge move plans.
+An actual ExecBC consumer remains a subsequent 01.05 gate.
 
 ## Validation (2026-09-26)
 

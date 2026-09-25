@@ -261,6 +261,8 @@ static void test_projection_schedules_cycles_and_dependencies(void) {
     TZrUInt32 slots[8] = {11u, 22u, 33u, 44u, 55u, 66u, 77u, 0u};
 
     ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 7u;
+    function.functionToken = 701u;
     for (TZrUInt32 i = 0u; i < 7u; ++i) add_value(&function);
     check(ZrCore_ExecIr_FunctionAddBlock(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == source &&
               ZrCore_ExecIr_FunctionAddBlock(&function, 0u) == destination,
@@ -360,6 +362,84 @@ static void test_projection_schedules_cycles_and_dependencies(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_verified_loop_backedge_phi_swap(void) {
+    SZrExecIrFunction function;
+    SZrExecBcProjection bytecode = {0};
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrRange empty = {.start = 0u, .count = 0u};
+    SZrExecIrRange incomingRange;
+    SZrExecIrPhi phis[2];
+    SZrExecIrPhiIncoming incomings[4] = {
+        {1u, 1u}, {2u, 4u}, {1u, 2u}, {2u, 3u}
+    };
+    TZrExecIrBlockId entry = 1u, loop = 2u, predecessors[2] = {1u, 2u};
+    TZrUInt32 physical[5] = {11u, 22u, 0u, 0u, 0u};
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 8u;
+    function.functionToken = 702u;
+    for (TZrUInt32 i = 0u; i < 4u; ++i) add_value(&function);
+    function.values[0].flags |= ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY;
+    function.values[1].flags |= ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY;
+    check(ZrCore_ExecIr_FunctionAddBlock(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == entry &&
+              ZrCore_ExecIr_FunctionAddBlock(&function, 0u) == loop,
+          "could not construct verified phi loop blocks");
+    function.entryBlockId = entry;
+    check(ZrCore_ExecIr_FunctionAppendSuccessors(&function, &loop, 1u,
+                                                  &function.blocks[0].successorRange) &&
+              ZrCore_ExecIr_FunctionAppendPredecessors(&function, predecessors, 2u,
+                                                        &function.blocks[1].predecessorRange) &&
+              ZrCore_ExecIr_FunctionAppendSuccessors(&function, &loop, 1u,
+                                                      &function.blocks[1].successorRange),
+          "could not connect verified phi loop backedge");
+    check(append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH, empty, empty,
+                             function.blocks[0].successorRange, 0u) == 1u &&
+              append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH, empty, empty,
+                                 function.blocks[1].successorRange, 0u) == 2u,
+          "could not append verified loop terminators");
+    function.blocks[0].instructionRange.count = 1u;
+    function.blocks[0].terminatorInstructionId = 1u;
+    function.blocks[1].instructionRange.start = 1u;
+    function.blocks[1].instructionRange.count = 1u;
+    function.blocks[1].terminatorInstructionId = 2u;
+    check(ZrCore_ExecIr_FunctionAppendPhiIncoming(&function, incomings, 4u,
+                                                   &incomingRange),
+          "could not append verified loop phi incomings");
+    phis[0].result = 3u;
+    phis[0].incomings = (SZrExecIrRange){.start = incomingRange.start, .count = 2u};
+    phis[1].result = 4u;
+    phis[1].incomings = (SZrExecIrRange){.start = incomingRange.start + 2u, .count = 2u};
+    check(ZrCore_ExecIr_FunctionAppendPhis(&function, phis, 2u,
+                                            &function.blocks[1].phis),
+          "could not append verified loop phis");
+    if (!ZrCore_ExecIr_VerifyFunction(&function,
+            ZR_EXEC_IR_VERIFY_STRUCTURE | ZR_EXEC_IR_VERIFY_SSA, &diagnostic)) {
+        fprintf(stderr, "loop verifier: code=%u block=%u instruction=%u\n",
+                (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,
+                (unsigned)diagnostic.instructionId);
+        check(ZR_FALSE, "loop phi swap did not satisfy structural/SSA verification");
+    }
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              bytecode.phiCopyCount == 4u && bytecode.temporarySlotCount == 1u,
+          "could not lower verifier-valid loop phi copies");
+    for (TZrUInt32 i = 0u; i < bytecode.phiMoveCount; ++i) {
+        const SZrExecBcPhiMove *move = &bytecode.phiMoves[i];
+        if (move->edge == entry)
+            physical[move->destinationSlot] = physical[move->sourceSlot];
+    }
+    check(physical[2] == 11u && physical[3] == 22u,
+          "verified loop entry phi copies lost initial values");
+    for (TZrUInt32 i = 0u; i < bytecode.phiMoveCount; ++i) {
+        const SZrExecBcPhiMove *move = &bytecode.phiMoves[i];
+        if (move->edge == loop)
+            physical[move->destinationSlot] = physical[move->sourceSlot];
+    }
+    check(physical[2] == 22u && physical[3] == 11u,
+          "verified loop backedge phi copies did not swap values");
+    ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_branch_phi_moves_have_distinct_edge_blocks(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection bytecode = {0};
@@ -455,6 +535,7 @@ int main(void) {
     test_rejects_selected_edge_missing_from_source_adjacency();
     test_projections_preserve_parallel_phi_edges();
     test_projection_schedules_cycles_and_dependencies();
+    test_verified_loop_backedge_phi_swap();
     test_branch_phi_moves_have_distinct_edge_blocks();
     test_projections_reject_unpaired_edge_without_replacing_output();
     puts("ssa oracle parallel edges PASS");
