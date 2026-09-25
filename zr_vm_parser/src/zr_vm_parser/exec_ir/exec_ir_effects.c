@@ -14,6 +14,8 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     TZrBool *effectPhiNeeded = ZR_NULL;
     TZrUInt32 *loopWrites = ZR_NULL;
     TZrBool *loopHasEffect = ZR_NULL;
+    TZrExecIrBlockId *blockOrder = ZR_NULL;
+    TZrBool *backedges = ZR_NULL;
     SZrExecIrRange *memoryIns = ZR_NULL;
     SZrExecIrRange *memoryOuts = ZR_NULL;
     TZrExecIrEffectTokenId *effectIns = ZR_NULL;
@@ -168,6 +170,8 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                                          sizeof(*effectPhiNeeded));
     loopWrites = (TZrUInt32 *)calloc(function->blockCount, sizeof(*loopWrites));
     loopHasEffect = (TZrBool *)calloc(function->blockCount, sizeof(*loopHasEffect));
+    blockOrder = (TZrExecIrBlockId *)malloc((size_t)function->blockCount *
+                                          sizeof(*blockOrder));
     memoryIns = (SZrExecIrRange *)calloc(function->instructionCount,
                                           sizeof(*memoryIns));
     memoryOuts = (SZrExecIrRange *)calloc(function->instructionCount,
@@ -181,7 +185,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     if (entryMemory == ZR_NULL || terminalMemory == ZR_NULL ||
         entryEffects == ZR_NULL || terminalEffects == ZR_NULL ||
         memoryPhiNeeded == ZR_NULL || effectPhiNeeded == ZR_NULL ||
-        loopWrites == ZR_NULL || loopHasEffect == ZR_NULL ||
+        loopWrites == ZR_NULL || loopHasEffect == ZR_NULL || blockOrder == ZR_NULL ||
         memoryIns == ZR_NULL || memoryOuts == ZR_NULL ||
         effectIns == ZR_NULL || effectOuts == ZR_NULL ||
         requiredFlags == ZR_NULL) {
@@ -192,7 +196,8 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
         goto cleanup;
     }
     if (!zr_parser_exec_ir_collect_loop_effects(
-                function, loopWrites, loopHasEffect, &loopSupported, diagnostic)) {
+                function, loopWrites, loopHasEffect, blockOrder,
+                &backedges, &loopSupported, diagnostic)) {
         result = ZR_FALSE;
         goto cleanup;
     }
@@ -250,7 +255,8 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
         }
     }
 
-    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+    for (TZrUInt32 position = 0u; position < function->blockCount; ++position) {
+        blockIndex = blockOrder[position] - 1u;
         const SZrExecIrBlock *block = &function->blocks[blockIndex];
         TZrExecIrMemoryTokenId currentMemory[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
         TZrExecIrEffectTokenId currentEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
@@ -272,7 +278,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                  ++predecessorIndex) {
                 TZrExecIrBlockId predecessor = function->predecessors[predecessorIndex];
                 TZrUInt32 predecessorBlock = predecessor - 1u;
-                if (predecessor >= block->id) continue;
+                if (backedges[predecessorIndex]) continue;
                 for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
                     TZrExecIrMemoryTokenId token = terminalMemory[
                             (size_t)predecessorBlock * ZR_EXEC_IR_MEMORY_CLASS_COUNT +
@@ -599,6 +605,8 @@ cleanup:
     free(effectPhiNeeded);
     free(loopWrites);
     free(loopHasEffect);
+    free(blockOrder);
+    free(backedges);
     free(memoryIns);
     free(memoryOuts);
     free(effectIns);

@@ -227,11 +227,12 @@ unsupported.
 The builder now invokes the producer-side effect contract after CFG
 predecessors are attached. Single-block functions with empty token fields get
 schema-required instruction flags, region-tagged memory versions, and a
-contiguous effect chain. Acyclic, declaration-ordered multi-block CFGs also
+contiguous effect chain. Acyclic multi-block CFGs also
 receive explicit effect and per-region memory token phis at joins; generated
-consumers use those phi results. Reducible loops whose forward edges follow
-block declaration order also receive carried effect and memory phis. Reverse
-edges that do not target a dominating header, partially authored token facts,
+consumers use those phi results. Reducible loops also receive carried effect
+and memory phis: the producer processes blocks in topological order after
+removing dominance-checked backedges, regardless of declaration order. Cycles
+remaining after true backedges are removed, partially authored token facts,
 or otherwise unsupported graphs are conservatively left untouched. Overflow,
 unknown-opcode, and allocation failures are
 diagnosed before the candidate is published. The focused direct contracts are
@@ -246,8 +247,10 @@ written memory regions and observable operations per header, creates the
 needed loop-carried phis before visiting their latches, then fills each
 backedge input from its actual latch exit. Multiple disjoint, nested, and
 multi-latch reducible loops are supported; exit-only writes do not introduce
-loop phis. Loops without a forward entry and irreducible reverse edges remain
-outside this producer's declaration-ordered contract.
+loop phis. Loops without a forward entry and irreducible cycles remain outside
+this producer's contract. Reverse-declared acyclic predecessors are processed
+before their join; a forward edge inside a natural loop may likewise point to
+an earlier-declared block without being mistaken for a backedge.
 The CFG producer checks side-pool storage and capacity and requires block
 instruction ranges to partition the instruction array in declaration order
 before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.

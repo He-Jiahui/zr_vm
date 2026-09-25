@@ -732,6 +732,134 @@ static void test_three_latches_preserve_each_terminal_effect(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_reverse_declared_acyclic_join_waits_for_both_arms(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId mergePreds[2] = {2u, 4u};
+    const SZrExecIrBlock *merge;
+    const SZrExecIrPhiIncoming *effectIncoming;
+    const SZrExecIrPhiIncoming *memoryIncoming;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u &&
+                     ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 3u &&
+                     ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 4u,
+                 "add reverse-declared join blocks");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    append_store(function);
+    {
+        const TZrUInt32 starts[4] = {0u, 1u, 2u, 3u};
+        const TZrUInt32 counts[4] = {1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, &entry, 1u);
+    append_predecessor(function, 3u, mergePreds, 2u);
+    append_predecessor(function, 4u, &entry, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize reverse-declared acyclic join");
+    merge = &function->blocks[2];
+    require_true(merge->effectPhiResult != 0u &&
+                     merge->memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u,
+                 "reverse-declared join gets phis from both complete arms");
+    effectIncoming = &function->phiIncoming[merge->effectPhiIncomings.start];
+    memoryIncoming = &function->phiIncoming[merge->memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start];
+    require_true(effectIncoming[0].value == function->instructions[1].effectOut &&
+                     effectIncoming[1].value == function->instructions[3].effectOut &&
+                     memoryIncoming[0].value == function->memoryTokenPool[
+                             function->instructions[1].memoryOut.start] &&
+                     memoryIncoming[1].value == function->memoryTokenPool[
+                             function->instructions[3].memoryOut.start] &&
+                     function->instructions[2].effectIn == merge->effectPhiResult,
+                 "reverse-declared join uses exact predecessor terminals");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "reverse-declared acyclic effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_loop_body_with_reverse_declared_forward_edge(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId headerPreds[2] = {1u, 4u};
+    TZrExecIrBlockId predecessor;
+    TZrUInt32 index;
+
+    for (index = 2u; index <= 6u; ++index)
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == index,
+                     "add reverse-declared loop body block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[6] = {0u, 1u, 2u, 3u, 4u, 5u};
+        const TZrUInt32 counts[6] = {1u, 1u, 1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, headerPreds, 2u);
+    predecessor = 5u;
+    append_predecessor(function, 3u, &predecessor, 1u);
+    predecessor = 3u;
+    append_predecessor(function, 4u, &predecessor, 1u);
+    predecessor = 2u;
+    append_predecessor(function, 5u, &predecessor, 1u);
+    append_predecessor(function, 6u, &predecessor, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize reverse-declared loop body");
+    require_true(function->blocks[1].effectPhiResult != 0u &&
+                     function->blocks[1].memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u &&
+                     function->phiIncoming[
+                             function->blocks[1].effectPhiIncomings.start + 1u].value ==
+                             function->instructions[2].effectOut &&
+                     function->instructions[2].effectIn ==
+                             function->blocks[1].effectPhiResult,
+                 "reverse-declared forward edge retains loop-carried state");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "reverse-declared loop body passes effect verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_irreducible_two_entry_cycle_remains_unpublished(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId leftPreds[2] = {1u, 3u};
+    TZrExecIrBlockId rightPreds[2] = {1u, 2u};
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u &&
+                     ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 3u,
+                 "add irreducible cycle blocks");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_store(function);
+    {
+        const TZrUInt32 starts[3] = {0u, 1u, 2u};
+        const TZrUInt32 counts[3] = {1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, leftPreds, 2u);
+    append_predecessor(function, 3u, rightPreds, 2u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "unsupported irreducible cycle keeps conservative result");
+    require_true(function->memoryTokenCount == 0u &&
+                     function->phiIncomingCount == 0u &&
+                     function->instructions[1].effectOut == 0u &&
+                     function->instructions[2].effectOut == 0u,
+                 "irreducible cycle does not publish partial effect facts");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
@@ -747,6 +875,9 @@ int main(void) {
     test_nested_loops_carry_inner_writes_through_outer_header();
     test_exit_only_write_does_not_create_loop_phi();
     test_three_latches_preserve_each_terminal_effect();
+    test_reverse_declared_acyclic_join_waits_for_both_arms();
+    test_loop_body_with_reverse_declared_forward_edge();
+    test_irreducible_two_entry_cycle_remains_unpublished();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

@@ -100,9 +100,9 @@ fails exact predecessor-terminal matching. A predecessor with a larger block
 ID counts as a backedge only when the header dominates that predecessor in
 the actual CFG; reverse-declared acyclic joins must still advance their phi
 results beyond every incoming version. Parser production handles single
-blocks, acyclic declaration-ordered CFGs, and reducible declaration-ordered
-loops with multiple headers or latches. Irreducible and non-declaration-order
-CFG production still require a separate fixed-point construction.
+blocks, acyclic CFGs and reducible loops with multiple headers or latches,
+including reverse-declared non-backedge predecessors. Irreducible CFGs still
+require a separate fixed-point construction.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes
