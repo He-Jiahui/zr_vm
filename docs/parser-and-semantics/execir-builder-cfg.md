@@ -235,6 +235,9 @@ exceptional shapes.
 The CFG producer checks side-pool storage and capacity and requires block
 instruction ranges to partition the instruction array in declaration order
 before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.
+It assembles all required phi incomings before publishing instruction tokens
+or block phi metadata. An incoming-capacity failure leaves the direct caller's
+logical effect facts unchanged.
 For multi-block CFGs, memory version one denotes the untouched entry state
 on every path. A first write receives a later version, so a sibling's first
 read cannot alias that write; distinct states receive a phi at their join.

@@ -322,8 +322,13 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     TZrExecIrEffectTokenId *effectOuts = ZR_NULL;
     TZrUInt16 *requiredFlags = ZR_NULL;
     TZrExecIrMemoryTokenId *tokens = ZR_NULL;
+    SZrExecIrPhiIncoming *phiIncomings = ZR_NULL;
+    SZrExecIrRange appendedPhiRange;
     TZrUInt32 tokenCount = 0u;
     TZrUInt32 tokenCapacity = 0u;
+    TZrUInt32 phiIncomingCount = 0u;
+    TZrUInt32 phiCursor = 0u;
+    TZrUInt32 oldPhiIncomingCount;
     size_t blockRegionCount = 0u;
     TZrUInt32 blockIndex;
     TZrUInt32 instructionIndex;
@@ -730,8 +735,97 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
         result = ZR_FALSE;
         goto cleanup;
     }
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrUInt32 predecessorCount = block->predecessors.count;
+        TZrUInt32 phiCount = effectPhiNeeded[blockIndex]
+                ? predecessorCount : 0u;
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            if (memoryPhiNeeded[(size_t)blockIndex *
+                                ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) {
+                if (phiCount > UINT32_MAX - predecessorCount) {
+                    zr_parser_exec_ir_effect_diag(
+                            diagnostic, function,
+                            ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                            block->id, UINT32_MAX, phiCount);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                phiCount += predecessorCount;
+            }
+        }
+        if (phiCount > UINT32_MAX - phiIncomingCount ||
+            phiCount > UINT32_MAX - function->phiIncomingCount -
+                               phiIncomingCount) {
+            zr_parser_exec_ir_effect_diag(
+                    diagnostic, function,
+                    ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                    block->id, UINT32_MAX, phiCount);
+            result = ZR_FALSE;
+            goto cleanup;
+        }
+        phiIncomingCount += phiCount;
+    }
+    if (phiIncomingCount != 0u) {
+#if SIZE_MAX <= UINT32_MAX
+        if ((size_t)phiIncomingCount > SIZE_MAX / sizeof(*phiIncomings)) {
+            zr_parser_exec_ir_effect_diag(
+                    diagnostic, function,
+                    ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                    0u, UINT32_MAX, phiIncomingCount);
+            result = ZR_FALSE;
+            goto cleanup;
+        }
+#endif
+        phiIncomings = (SZrExecIrPhiIncoming *)malloc(
+                (size_t)phiIncomingCount * sizeof(*phiIncomings));
+        if (phiIncomings == ZR_NULL) {
+            zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                          ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                          0u, 0u, 0u);
+            result = ZR_FALSE;
+            goto cleanup;
+        }
+        for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+            const SZrExecIrBlock *block = &function->blocks[blockIndex];
+            TZrUInt32 i;
+            if (effectPhiNeeded[blockIndex]) {
+                for (i = 0u; i < block->predecessors.count; ++i) {
+                    TZrExecIrBlockId predecessor =
+                            function->predecessors[block->predecessors.start + i];
+                    phiIncomings[phiCursor].predecessor = predecessor;
+                    phiIncomings[phiCursor++].value = terminalEffects[predecessor - 1u];
+                }
+            }
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                if (!memoryPhiNeeded[(size_t)blockIndex *
+                                     ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) continue;
+                for (i = 0u; i < block->predecessors.count; ++i) {
+                    TZrExecIrBlockId predecessor =
+                            function->predecessors[block->predecessors.start + i];
+                    phiIncomings[phiCursor].predecessor = predecessor;
+                    phiIncomings[phiCursor++].value = terminalMemory[
+                            (size_t)(predecessor - 1u) *
+                            ZR_EXEC_IR_MEMORY_CLASS_COUNT + region];
+                }
+            }
+        }
+    }
+
+    oldPhiIncomingCount = function->phiIncomingCount;
+    appendedPhiRange.start = oldPhiIncomingCount;
+    if (phiIncomingCount != 0u &&
+        !ZrCore_ExecIr_FunctionAppendPhiIncoming(
+                function, phiIncomings, phiIncomingCount, &appendedPhiRange)) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      0u, 0u, 0u);
+        result = ZR_FALSE;
+        goto cleanup;
+    }
     if (tokenCount != 0u && !ZrCore_ExecIr_FunctionAppendMemoryTokens(
                 function, tokens, tokenCount, ZR_NULL)) {
+        function->phiIncomingCount = oldPhiIncomingCount;
         zr_parser_exec_ir_effect_diag(diagnostic, function,
                                       ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
                                       0u, 0u, 0u);
@@ -749,72 +843,23 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                 (TZrUInt16)(function->instructions[instructionIndex].flags |
                             requiredFlags[instructionIndex]);
     }
+    phiCursor = appendedPhiRange.start;
     for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
-        const SZrExecIrBlock *block = &function->blocks[blockIndex];
-        TZrUInt32 predecessorCount = block->predecessors.count;
+        SZrExecIrBlock *block = &function->blocks[blockIndex];
         if (effectPhiNeeded[blockIndex]) {
-            SZrExecIrPhiIncoming *incoming = (SZrExecIrPhiIncoming *)calloc(
-                    predecessorCount, sizeof(*incoming));
-            TZrUInt32 i;
-            if (incoming == ZR_NULL) {
-                zr_parser_exec_ir_effect_diag(diagnostic, function,
-                                              ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
-                                              block->id, 0u, 0u);
-                result = ZR_FALSE;
-                goto cleanup;
-            }
-            for (i = 0u; i < predecessorCount; ++i) {
-                TZrExecIrBlockId predecessor =
-                        function->predecessors[block->predecessors.start + i];
-                incoming[i].predecessor = predecessor;
-                incoming[i].value = terminalEffects[predecessor - 1u];
-            }
-            if (!ZrCore_ExecIr_FunctionSetEffectPhi(
-                        function, block->id, entryEffects[blockIndex], incoming,
-                        predecessorCount)) {
-                free(incoming);
-                zr_parser_exec_ir_effect_diag(diagnostic, function,
-                                              ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
-                                              block->id, 0u, 0u);
-                result = ZR_FALSE;
-                goto cleanup;
-            }
-            free(incoming);
+            block->effectPhiResult = entryEffects[blockIndex];
+            block->effectPhiIncomings.start = phiCursor;
+            block->effectPhiIncomings.count = block->predecessors.count;
+            phiCursor += block->predecessors.count;
         }
         for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
-            if (memoryPhiNeeded[(size_t)blockIndex *
-                                ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) {
-                SZrExecIrPhiIncoming *incoming = (SZrExecIrPhiIncoming *)calloc(
-                        predecessorCount, sizeof(*incoming));
-                TZrUInt32 i;
-                if (incoming == ZR_NULL) {
-                    zr_parser_exec_ir_effect_diag(diagnostic, function,
-                                                  ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
-                                                  block->id, 0u, 0u);
-                    result = ZR_FALSE;
-                    goto cleanup;
-                }
-                for (i = 0u; i < predecessorCount; ++i) {
-                    TZrExecIrBlockId predecessor =
-                            function->predecessors[block->predecessors.start + i];
-                    incoming[i].predecessor = predecessor;
-                    incoming[i].value = terminalMemory[(size_t)(predecessor - 1u) *
-                            ZR_EXEC_IR_MEMORY_CLASS_COUNT + region];
-                }
-                if (!ZrCore_ExecIr_FunctionSetMemoryPhi(
-                            function, block->id, (EZrExecIrMemoryClass)region,
-                            entryMemory[(size_t)blockIndex *
-                                        ZR_EXEC_IR_MEMORY_CLASS_COUNT + region],
-                            incoming, predecessorCount)) {
-                    free(incoming);
-                    zr_parser_exec_ir_effect_diag(diagnostic, function,
-                                                  ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
-                                                  block->id, 0u, 0u);
-                    result = ZR_FALSE;
-                    goto cleanup;
-                }
-                free(incoming);
-            }
+            if (!memoryPhiNeeded[(size_t)blockIndex *
+                                 ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) continue;
+            block->memoryPhiResults[region] = entryMemory[
+                    (size_t)blockIndex * ZR_EXEC_IR_MEMORY_CLASS_COUNT + region];
+            block->memoryPhiIncomings[region].start = phiCursor;
+            block->memoryPhiIncomings[region].count = block->predecessors.count;
+            phiCursor += block->predecessors.count;
         }
     }
 
@@ -830,6 +875,7 @@ cleanup:
     free(effectIns);
     free(effectOuts);
     free(requiredFlags);
+    free(phiIncomings);
     free(tokens);
     return result;
 }

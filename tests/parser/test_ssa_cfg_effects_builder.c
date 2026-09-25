@@ -106,6 +106,18 @@ static void test_acyclic_cfg_gets_effect_and_memory_phis(void) {
     append_predecessor(function, right, &entryPred, 1u);
     append_predecessor(function, merge, mergePreds, 2u);
 
+    function->phiIncomingCount = UINT32_MAX;
+    function->phiIncomingCapacity = UINT32_MAX;
+    require_true(!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "CFG phi incoming overflow rejected");
+    require_true(function->memoryTokenCount == 0u &&
+                     function->instructions[1].memoryOut.count == 0u &&
+                     function->instructions[1].effectOut == 0u &&
+                     function->blocks[merge - 1u].effectPhiResult == 0u,
+                 "CFG phi overflow leaves all effect facts unpublished");
+    function->phiIncomingCount = 0u;
+    function->phiIncomingCapacity = 0u;
+
     require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
                  "synthesize acyclic CFG effects");
     require_true(function->memoryTokenCount == 7u,
