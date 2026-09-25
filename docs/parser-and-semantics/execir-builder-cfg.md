@@ -258,7 +258,9 @@ loop phis. Effectful loops without a forward entry and irreducible cycles are
 diagnosed, not published as tokenless success. Reverse-declared acyclic
 predecessors are processed
 before their join; a forward edge inside a natural loop may likewise point to
-an earlier-declared block without being mistaken for a backedge.
+an earlier-declared block without being mistaken for a backedge. Conversely,
+a loop header declared after its latch still receives carried memory/effect
+phis; the shared classifier does not use ID order as a backedge prerequisite.
 The CFG producer checks side-pool storage and capacity and requires block
 instruction ranges to partition the instruction array in declaration order
 before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.

@@ -105,6 +105,27 @@ passed the same four CTests each. GCC ASan/UBSan rebuilt and passed the focused
 verifier test with leak detection and halt-on-error enabled. This does not
 claim full M1 effect acceptance or irreducible CFG synthesis.
 
+## Natural backedges independent of declaration order (2026-09-26)
+
+The shared CFG classifier previously skipped every predecessor with an ID
+smaller than its destination, even if that destination dominated the
+predecessor. A focused four-block fixture now declares the latch as block 2
+and its loop header as block 3, with entry and latch edges entering the
+header. Before the fix, the classifier failed to mark latch-to-header as a
+backedge. It now classifies that edge by reachability and dominance, allowing
+the producer to synthesize both carried heap-memory and effect phis; the
+verifier accepts the edge-ordered latch terminal tokens. The existing
+reverse-declared acyclic predecessor and effectful irreducible two-entry
+cycle cases still exercise the non-backedge boundaries.
+
+WSL GCC and Clang rebuilt `ssa_cfg_effects_builder`, `ssa_effects_verifier`,
+and `ssa_source_cleanup_cfg` and passed 3/3 each. Windows MSVC rebuilt and
+passed the same 3/3. GCC ASan/UBSan rebuilt and passed the CFG effects target
+1/1 with leak detection and halt-on-error enabled. GCC's SSA label sweep
+passed 80/80, though unrelated binaries were not rebuilt for this slice.
+This accepts the declaration-order correction only; effectful irreducible CFG
+synthesis and full 01.03 gates remain open.
+
 ## Cross-block effect-token merge slice
 
 The verifier now accepts an explicit CFG effect merge without changing the

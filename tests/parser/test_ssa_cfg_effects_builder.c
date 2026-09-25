@@ -831,6 +831,65 @@ static void test_loop_body_with_reverse_declared_forward_edge(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_loop_header_declared_after_latch(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId latch = 2u;
+    TZrExecIrBlockId header = 3u;
+    TZrExecIrBlockId headerPreds[2] = {entry, latch};
+    TZrBool *backedges = ZR_NULL;
+    const SZrExecIrBlock *loopHeader;
+    const SZrExecIrPhiIncoming *memoryIncoming;
+    const SZrExecIrPhiIncoming *effectIncoming;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == latch &&
+                     ZrCore_ExecIr_FunctionAddBlock(function, 0u) == header &&
+                     ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 4u,
+                 "add reverse-declared loop header and exit");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN);
+    {
+        const TZrUInt32 starts[4] = {0u, 1u, 2u, 3u};
+        const TZrUInt32 counts[4] = {1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, latch, &header, 1u);
+    append_predecessor(function, header, headerPreds, 2u);
+    append_predecessor(function, 4u, &header, 1u);
+
+    require_true(ZrCore_ExecIr_ClassifyBackedges(function, &backedges,
+                                                  &diagnostic),
+                 "classify reverse-declared loop backedge");
+    require_true(backedges != ZR_NULL &&
+                     backedges[function->blocks[header - 1u].predecessors.start + 1u],
+                 "latch with smaller ID was not recognized as a backedge");
+    free(backedges);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize reverse-declared loop header effects");
+    loopHeader = &function->blocks[header - 1u];
+    require_true(loopHeader->effectPhiResult != 0u &&
+                     loopHeader->memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u,
+                 "reverse-declared header lacks carried token phis");
+    memoryIncoming = &function->phiIncoming[loopHeader->memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start];
+    effectIncoming = &function->phiIncoming[loopHeader->effectPhiIncomings.start];
+    require_true(memoryIncoming[1].predecessor == latch &&
+                     memoryIncoming[1].value == function->memoryTokenPool[
+                             function->instructions[1].memoryOut.start] &&
+                     effectIncoming[1].predecessor == latch &&
+                     effectIncoming[1].value == function->instructions[1].effectOut,
+                 "reverse-declared latch token was lost at header phi");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "reverse-declared loop effects fail verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_irreducible_two_entry_cycle_remains_unpublished(
         TZrBool writesMemory) {
     SZrExecIrModule module;
@@ -894,6 +953,7 @@ int main(void) {
     test_three_latches_preserve_each_terminal_effect();
     test_reverse_declared_acyclic_join_waits_for_both_arms();
     test_loop_body_with_reverse_declared_forward_edge();
+    test_loop_header_declared_after_latch();
     test_irreducible_two_entry_cycle_remains_unpublished(ZR_TRUE);
     test_irreducible_two_entry_cycle_remains_unpublished(ZR_FALSE);
     puts("ssa CFG effects builder PASS");

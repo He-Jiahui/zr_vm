@@ -100,12 +100,13 @@ without a memory phi are rejected. A first read of an untouched region
 establishes its initial version at the block exit, so a later join can
 distinguish that path from a sibling write. A declaration-order backedge may carry a
 later iteration's higher version, but a stale or wrong-region backedge still
-fails exact predecessor-terminal matching. A predecessor with a larger block
-ID counts as a backedge only when the header dominates that predecessor in
-the actual CFG; reverse-declared acyclic joins must still advance their phi
+fails exact predecessor-terminal matching. A reachable predecessor counts as
+a backedge only when the header dominates it in the actual CFG, regardless of
+either block's ID; reverse-declared acyclic joins must still advance their phi
 results beyond every incoming version. Parser production handles single
 blocks, acyclic CFGs and reducible loops with multiple headers or latches,
-including reverse-declared non-backedge predecessors. Irreducible CFGs still
+including a header declared after its latch and reverse-declared non-backedge
+predecessors. Irreducible CFGs still
 require a separate fixed-point construction: the effectful producer now
 reports `UNSUPPORTED` instead of silently publishing empty token fields;
 pure graphs do not require token synthesis.

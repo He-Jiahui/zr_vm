@@ -25,9 +25,9 @@ static void zr_exec_ir_backedge_diag(SZrExecIrDiagnostic *diagnostic,
     diagnostic->actualVersion = actual;
 }
 
-/* A reverse-declared edge is loop-carried only when its target dominates its
- * reachable predecessor. Search backward while excluding the target to find
- * any entry path that bypasses it. */
+/* An edge is loop-carried only when its target dominates its reachable
+ * predecessor. Search backward while excluding the target to find any entry
+ * path that bypasses it, regardless of block declaration order. */
 TZrBool zr_exec_ir_classify_backedges(
         const SZrExecIrFunction *function,
         TZrBool **outBackedges,
@@ -105,7 +105,7 @@ TZrBool zr_exec_ir_classify_backedges(
             TZrExecIrBlockId predecessor = function->predecessors[edgeIndex];
             TZrUInt32 count = 0u;
             TZrBool bypass = ZR_FALSE;
-            if (predecessor < block->id || !reachable[predecessor - 1u]) continue;
+            if (!reachable[predecessor - 1u]) continue;
             if (predecessor == block->id) {
                 backedges[edgeIndex] = ZR_TRUE;
                 continue;
