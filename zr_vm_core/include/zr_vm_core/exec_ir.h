@@ -32,6 +32,36 @@ typedef struct SZrExecIrStateMap SZrExecIrStateMap;
 #define ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID ((TZrExecIrMemoryTokenId)0u)
 #define ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ((TZrExecIrEffectTokenId)0u)
 
+/*
+ * Memory tokens may carry an explicit region in their high bits.  The
+ * untagged form remains valid for artifacts produced by the first ExecIR
+ * model and is checked with the legacy function-wide ordering rule.  Tagged
+ * tokens are region-local versions, so independent regions do not impose a
+ * false ordering on one another.
+ */
+#define ZR_EXEC_IR_MEMORY_TOKEN_TAG_MASK ((TZrExecIrMemoryTokenId)0xF0000000u)
+#define ZR_EXEC_IR_MEMORY_TOKEN_REGION_TAG ((TZrExecIrMemoryTokenId)0xA0000000u)
+#define ZR_EXEC_IR_MEMORY_TOKEN_REGION_SHIFT 25u
+#define ZR_EXEC_IR_MEMORY_TOKEN_REGION_MASK ((TZrExecIrMemoryTokenId)7u)
+#define ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK \
+    ((TZrExecIrMemoryTokenId)((((TZrExecIrMemoryTokenId)1u << \
+                                ZR_EXEC_IR_MEMORY_TOKEN_REGION_SHIFT) - 1u)))
+#define ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token) \
+    (((token) & ZR_EXEC_IR_MEMORY_TOKEN_TAG_MASK) == \
+     ZR_EXEC_IR_MEMORY_TOKEN_REGION_TAG)
+#define ZR_EXEC_IR_MEMORY_TOKEN_REGION(token) \
+    ((EZrExecIrMemoryClass)(((token) >> ZR_EXEC_IR_MEMORY_TOKEN_REGION_SHIFT) & \
+                            ZR_EXEC_IR_MEMORY_TOKEN_REGION_MASK))
+#define ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token) \
+    ((TZrExecIrMemoryTokenId)((token) & ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK))
+#define ZR_EXEC_IR_MEMORY_TOKEN_MAKE(region, version) \
+    ((TZrExecIrMemoryTokenId)(ZR_EXEC_IR_MEMORY_TOKEN_REGION_TAG | \
+                              (((TZrExecIrMemoryTokenId)(region) & \
+                                ZR_EXEC_IR_MEMORY_TOKEN_REGION_MASK) << \
+                               ZR_EXEC_IR_MEMORY_TOKEN_REGION_SHIFT) | \
+                              ((TZrExecIrMemoryTokenId)(version) & \
+                               ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK)))
+
 typedef struct SZrExecIrRange {
     union {
         TZrUInt32 offset;

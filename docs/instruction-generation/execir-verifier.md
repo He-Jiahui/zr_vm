@@ -66,6 +66,18 @@ unchanged. Across blocks the current verifier still checks monotonic token
 order only; predecessor-edge effect PHIs and region-specific memory version
 proofs remain open M1 work, not a consequence of this local check.
 
+Memory tokens now have a compatibility-preserving tagged form:
+`ZR_EXEC_IR_MEMORY_TOKEN_MAKE(region, version)`. Tagged tokens carry one of
+the eight declared memory regions (frame, managed heap, module global,
+native/FFI, GC, ownership, scheduler/task, or I/O) and are ordered by version
+within that region. Independent tagged regions therefore do not impose a
+false global order. The verifier rejects a tagged token whose region is not
+covered by the opcode's declared read/write mask, rejects zero versions, and
+continues to apply the legacy function-wide monotonic rule to untagged tokens
+so old artifacts remain readable during the migration. This is the first
+region-aware slice; cross-block memory/effect PHIs and producer-side token
+generation remain open.
+
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes
 reachability and dominator sets from predecessor ranges for every invocation.

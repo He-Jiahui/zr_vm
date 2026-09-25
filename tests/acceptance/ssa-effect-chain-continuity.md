@@ -74,6 +74,21 @@ SSA-plan acceptance is claimed. The next verifier slice must check CFG edges,
 token PHIs and per-region memory versions before proving optimizer reordering
 safe across branches.
 
+## Region-local memory token slice (2026-09-25)
+
+The verifier now accepts the tagged token form
+`ZR_EXEC_IR_MEMORY_TOKEN_MAKE(region, version)`. A managed-heap chain and an
+independent native/FFI chain may advance in the same block without a false
+function-wide ordering failure. A tagged token with a region absent from the
+opcode schema is rejected, while a store's tagged version can be consumed by
+the following load in that same region. Untagged tokens retain the legacy
+global ordering contract for compatibility with existing artifacts.
+
+GCC 11.4 Debug, Clang 14 Debug, and GCC ASan/UBSan all rebuilt and ran
+`ssa_effects_verifier`; each reported `ssa effects verifier PASS` and the
+corresponding CTest passed. This evidence covers region-local validation only;
+producer-side token generation and cross-block region PHIs remain open.
+
 ## Parallel-edge PHI follow-up (2026-09-18)
 
 Before the fix, the new `ssa_effects_verifier` case exited 1 on MSVC with
