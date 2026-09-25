@@ -87,7 +87,22 @@ global ordering contract for compatibility with existing artifacts.
 GCC 11.4 Debug, Clang 14 Debug, and GCC ASan/UBSan all rebuilt and ran
 `ssa_effects_verifier`; each reported `ssa effects verifier PASS` and the
 corresponding CTest passed. This evidence covers region-local validation only;
-producer-side token generation and cross-block region PHIs remain open.
+Producer-side token generation and cross-block region PHIs remain open.
+
+## Cross-block effect-token merge slice
+
+The verifier now accepts an explicit CFG effect merge without changing the
+value-SSA PHI pool. `SZrExecIrBlock.effectPhiResult` names the merged effect
+token, while `effectPhiIncomings` reuses the existing edge-ordered
+`SZrExecIrPhiIncoming` storage; each `value` is interpreted as an effect-token
+ID for that range. Every incoming predecessor must match the block's
+predecessor edge occurrence and its terminal observable `effectOut`. The merge
+result must be newer than every incoming token, and the first observable
+instruction in the join block must consume it. Distinct predecessor chains
+without this metadata are rejected with `ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN`.
+
+This is intentionally a verifier-side contract. Producer-side effect-token
+allocation and region-specific memory-token PHIs remain follow-up work.
 
 ## Parallel-edge PHI follow-up (2026-09-18)
 
@@ -103,4 +118,5 @@ MSVC 19.44 rebuilt `zr_vm_ssa_effects_verifier_test` and
 both standalone executables exited 0. WSL GCC 11.4 rebuilt the focused effect
 verifier with ASan/UBSan and ran
 `/mnt/d/zr-ssa-verify-871bc234/ssa_effects_gcc_asan`: exit 0, no sanitizer
-report. Full cross-block token PHIs and M1 acceptance remain open.
+report. Cross-block memory-token PHIs, producer-side token generation, and
+full M1 acceptance remain open.

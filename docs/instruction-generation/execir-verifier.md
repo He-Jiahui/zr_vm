@@ -62,9 +62,15 @@ successors and the containing block; these remain separate CFG obligations.
 Within one block, successive observable instructions must consume exactly the
 preceding observable instruction's `effectOut`: numerical growth alone does
 not prove the chain. Pure instructions between observations leave this token
-unchanged. Across blocks the current verifier still checks monotonic token
-order only; predecessor-edge effect PHIs and region-specific memory version
-proofs remain open M1 work, not a consequence of this local check.
+unchanged. A block join may now publish an explicit `effectPhiResult` and an
+edge-ordered `effectPhiIncomings` range (reusing the `phiIncoming` pool). The
+effect verifier checks each incoming predecessor and terminal token, requires
+the merged result to advance beyond its inputs, and requires the first
+observable instruction in the block to consume that result. A join with
+distinct predecessor tokens is rejected when it omits this phi metadata;
+single-token forwarding through pure blocks remains valid. Tagged memory
+versions still use the region-local rule described below, while producer-side
+token generation and cross-block memory PHIs remain open.
 
 Memory tokens now have a compatibility-preserving tagged form:
 `ZR_EXEC_IR_MEMORY_TOKEN_MAKE(region, version)`. Tagged tokens carry one of
@@ -155,7 +161,8 @@ addition to direct, cleanup-path, and PHI-input exceptional-edge `INVOKE`
 result negatives. `ssa_builder_iterator_invokes` applies the same result
 availability rule to the three iterator invoke terminators and directly
 rejects missing or misplaced exception markers at the core structure boundary.
-Coverage also includes matching parallel-edge PHI incoming slots and the existing
+Coverage also includes matching parallel-edge PHI incoming slots, explicit
+cross-block effect-token joins, missing/stale effect-phi inputs, and the existing
 effect-token negatives. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.

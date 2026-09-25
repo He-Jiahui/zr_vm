@@ -4,6 +4,22 @@ static TZrBool zr_oracle_range(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
 }
 
+static TZrBool zr_oracle_is_effect_phi_incoming(
+        const SZrExecIrFunction *function,
+        TZrUInt32 incomingIndex) {
+    TZrUInt32 blockIndex;
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        if (block->effectPhiResult != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
+            incomingIndex >= block->effectPhiIncomings.start &&
+            incomingIndex - block->effectPhiIncomings.start <
+                block->effectPhiIncomings.count) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool zr_oracle_block_has_successor(const SZrExecIrFunction *f,
                                               const SZrExecIrBlock *block,
                                               TZrExecIrBlockId id) {
@@ -97,8 +113,12 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         if (f->phiIncoming[i].predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
             f->phiIncoming[i].predecessor > f->blockCount ||
             f->phiIncoming[i].value == ZR_EXEC_IR_VALUE_ID_INVALID ||
-            f->phiIncoming[i].value > f->valueCount) {
-            zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f,
+            (!zr_oracle_is_effect_phi_incoming(f, i) &&
+             f->phiIncoming[i].value > f->valueCount)) {
+            zr_oracle_diag(d, zr_oracle_is_effect_phi_incoming(f, i)
+                                  ? ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN
+                                  : ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                           f,
                            f->phiIncoming[i].predecessor, 0u, 0u, f->valueCount,
                            f->phiIncoming[i].value);
             return ZR_FALSE;
@@ -118,7 +138,8 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         if (b->id != i + 1u || !zr_oracle_range(b->instructionRange, f->instructionCount) ||
             !zr_oracle_range(b->predecessorRange, f->predecessorCount) ||
             !zr_oracle_range(b->successorRange, f->successorCount) ||
-            !zr_oracle_range(b->phis, f->phiCount)) {
+            !zr_oracle_range(b->phis, f->phiCount) ||
+            !zr_oracle_range(b->effectPhiIncomings, f->phiIncomingCount)) {
             zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f, b->id, 0u, 0u, i + 1u, b->id);
             return ZR_FALSE;
         }

@@ -19,6 +19,108 @@ static SZrExecIrFunction *new_function(SZrExecIrModule *module, TZrExecIrFunctio
     return function;
 }
 
+static void append_effect_call(SZrExecIrFunction *function,
+                               TZrExecIrMemoryTokenId memoryIn,
+                               TZrExecIrMemoryTokenId memoryOut,
+                               TZrExecIrEffectTokenId effectIn,
+                               TZrExecIrEffectTokenId effectOut) {
+    SZrExecIrInstruction instruction;
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CALL;
+    instruction.flags = ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW;
+    instruction.effectIn = effectIn;
+    instruction.effectOut = effectOut;
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &memoryIn, 1u,
+                                                 &instruction.memoryIn),
+       "append effect call input");
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &memoryOut, 1u,
+                                                 &instruction.memoryOut),
+       "append effect call output");
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "append effect call");
+}
+
+static void build_effect_diamond(SZrExecIrFunction *function) {
+    TZrExecIrBlockId predecessor;
+    TZrExecIrBlockId mergePredecessors[2] = {2u, 3u};
+    TZrUInt32 blockIndex;
+
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+       "effect diamond left block");
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 3u,
+       "effect diamond right block");
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 4u,
+       "effect diamond merge block");
+    append_effect_call(function, 1u, 2u, 1u, 2u);
+    append_effect_call(function, 2u, 3u, 2u, 3u);
+    append_effect_call(function, 3u, 4u, 2u, 4u);
+    append_effect_call(function, 4u, 5u, 5u, 6u);
+    for (blockIndex = 0u; blockIndex < 4u; ++blockIndex) {
+        function->blocks[blockIndex].instructions.start = blockIndex;
+        function->blocks[blockIndex].instructions.count = 1u;
+    }
+    predecessor = 1u;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[1].predecessorRange),
+       "effect diamond left predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[2].predecessorRange),
+       "effect diamond right predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, mergePredecessors, 2u,
+               &function->blocks[3].predecessorRange),
+       "effect diamond merge predecessors");
+}
+
+static void test_effect_phi_joins_distinct_cfg_chains(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrPhiIncoming incoming[2] = {{2u, 3u}, {3u, 4u}};
+
+    build_effect_diamond(function);
+    ok(ZrCore_ExecIr_FunctionSetEffectPhi(function, 4u, 5u, incoming, 2u),
+       "set effect phi");
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "distinct CFG effect chains rejected at explicit phi");
+
+    function->phiIncoming[function->blocks[3].effectPhiIncomings.start + 1u].value = 3u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "stale effect phi incoming accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+           diagnostic.expectedVersion == 4u && diagnostic.actualVersion == 3u,
+       "stale effect phi diagnostic lost edge token versions");
+    function->phiIncoming[function->blocks[3].effectPhiIncomings.start + 1u].value = 4u;
+    function->instructions[3].effectIn = 4u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "effect instruction bypassed merge token accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+           diagnostic.expectedVersion == 5u && diagnostic.actualVersion == 4u,
+       "merge token diagnostic lost first consumer");
+    function->instructions[3].effectIn = 5u;
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "valid effect phi chain rejected after repair");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_effect_join_requires_phi_for_distinct_predecessors(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+
+    build_effect_diamond(function);
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "distinct CFG effect chains joined without phi");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN &&
+           diagnostic.blockId == 4u && diagnostic.instructionId == 4u,
+       "missing effect phi diagnostic lost merge location");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_throw_requires_flag(void) {
     SZrExecIrModule module;
     TZrExecIrFunctionId id;
@@ -1091,6 +1193,8 @@ static void test_ssa_rejects_invoke_result_in_exception_phi(void) {
 }
 
 int main(void) {
+    test_effect_phi_joins_distinct_cfg_chains();
+    test_effect_join_requires_phi_for_distinct_predecessors();
     test_throw_requires_flag();
     test_memory_tokens_must_be_monotonic();
     test_phi_predecessor_set();

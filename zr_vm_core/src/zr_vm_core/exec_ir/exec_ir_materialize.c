@@ -213,7 +213,9 @@ static TZrBool zr_state_map_function_values_valid(const SZrExecIrFunction *funct
                                       function->predecessorCount) ||
             !zr_state_map_range_valid(block->successorRange,
                                       function->successorCount) ||
-            !zr_state_map_range_valid(block->phis, function->phiCount)) {
+            !zr_state_map_range_valid(block->phis, function->phiCount) ||
+            !zr_state_map_range_valid(block->effectPhiIncomings,
+                                      function->phiIncomingCount)) {
             zr_state_map_set_diagnostic(diagnostic,
                                         ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
                                         function, ZR_NULL, 0u, block->id,

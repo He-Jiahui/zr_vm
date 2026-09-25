@@ -623,6 +623,35 @@ TZrBool ZrCore_ExecIr_FunctionAppendPhiIncoming(SZrExecIrFunction *function,
                              outRange);
 }
 
+TZrBool ZrCore_ExecIr_FunctionSetEffectPhi(
+        SZrExecIrFunction *function,
+        TZrExecIrBlockId blockId,
+        TZrExecIrEffectTokenId result,
+        const SZrExecIrPhiIncoming *incoming,
+        TZrSize count) {
+    SZrExecIrRange range;
+
+    if (function == ZR_NULL || function->sealed || blockId == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+        blockId > function->blockCount || (result == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) !=
+                                             (count == 0u) ||
+        (count != 0u && incoming == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    if (function->blocks[blockId - 1u].effectPhiResult !=
+        ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (result == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+        return ZR_TRUE;
+    }
+    if (!ZrCore_ExecIr_FunctionAppendPhiIncoming(function, incoming, count, &range)) {
+        return ZR_FALSE;
+    }
+    function->blocks[blockId - 1u].effectPhiResult = result;
+    function->blocks[blockId - 1u].effectPhiIncomings = range;
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_ExecIr_FunctionAppendInstruction(SZrExecIrFunction *function,
                                                  const SZrExecIrInstruction *instruction,
                                                  TZrExecIrInstructionId *outId) {

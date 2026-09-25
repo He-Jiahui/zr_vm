@@ -258,6 +258,14 @@ typedef struct SZrExecIrBlock {
         SZrExecIrRange successorRange;
     };
     SZrExecIrRange phis;
+    /*
+     * Effect tokens are not value SSA nodes.  A block with multiple incoming
+     * effect chains records their edge tokens in this side range and names
+     * the merged token explicitly.  The range reuses phiIncoming storage;
+     * its value field is interpreted as TZrExecIrEffectTokenId here.
+     */
+    TZrExecIrEffectTokenId effectPhiResult;
+    SZrExecIrRange effectPhiIncomings;
     TZrExecIrBlockId immediateDominator;
     TZrExecIrInstructionId terminatorInstructionId;
 } SZrExecIrBlock;
@@ -570,6 +578,12 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionAppendPhiIncoming(
         const SZrExecIrPhiIncoming *incoming,
         TZrSize count,
         SZrExecIrRange *outRange);
+ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionSetEffectPhi(
+        SZrExecIrFunction *function,
+        TZrExecIrBlockId blockId,
+        TZrExecIrEffectTokenId result,
+        const SZrExecIrPhiIncoming *incoming,
+        TZrSize count);
 ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionAppendInstruction(
         SZrExecIrFunction *function,
         const SZrExecIrInstruction *instruction,

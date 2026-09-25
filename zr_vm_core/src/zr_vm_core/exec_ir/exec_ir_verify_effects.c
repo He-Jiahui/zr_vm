@@ -1,5 +1,6 @@
 #include "zr_vm_core/exec_ir.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static void zr_exec_ir_effect_diag(SZrExecIrDiagnostic *diagnostic,
@@ -111,7 +112,10 @@ static TZrBool zr_exec_ir_effect_storage_valid(const SZrExecIrFunction *function
                                     function->successors) ||
             !zr_exec_ir_range_valid(block->phis,
                                     function->phiCount,
-                                    function->phiPool)) {
+                                    function->phiPool) ||
+            !zr_exec_ir_range_valid(block->effectPhiIncomings,
+                                    function->phiIncomingCount,
+                                    function->phiIncoming)) {
             zr_exec_ir_effect_diag(diagnostic,
                                    ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
                                    function,
@@ -119,6 +123,15 @@ static TZrBool zr_exec_ir_effect_storage_valid(const SZrExecIrFunction *function
                                    0u,
                                    0u,
                                    0u);
+            return ZR_FALSE;
+        }
+        if ((block->effectPhiResult == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) !=
+            (block->effectPhiIncomings.count == 0u)) {
+            zr_exec_ir_effect_diag(diagnostic,
+                                   ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
+                                   function, block->id, 0u,
+                                   block->effectPhiResult,
+                                   block->effectPhiIncomings.count);
             return ZR_FALSE;
         }
     }
@@ -219,6 +232,224 @@ static TZrUInt16 zr_exec_ir_required_flags(const SZrExecIrOpcodeInfo *info,
     return required;
 }
 
+static TZrBool zr_exec_ir_instruction_observable(
+        const SZrExecIrInstruction *instruction,
+        const SZrExecIrOpcodeInfo *info) {
+    TZrUInt16 required;
+    if (info == ZR_NULL) return ZR_FALSE;
+    required = zr_exec_ir_required_flags(info, instruction);
+    return (TZrBool)(info->memoryWrites != 0u || required != 0u ||
+                     (info->effects & ZR_EXEC_IR_EFFECT_DROP) != 0u);
+}
+
+static TZrBool zr_exec_ir_verify_effect_cfg(
+        const SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrExecIrEffectTokenId *terminal;
+    TZrBool *known;
+    TZrUInt32 blockIndex;
+    TZrUInt32 iteration;
+    TZrBool valid = ZR_TRUE;
+
+    if (function->blockCount == 0u) return ZR_TRUE;
+    terminal = (TZrExecIrEffectTokenId *)calloc(function->blockCount,
+                                                  sizeof(*terminal));
+    known = (TZrBool *)calloc(function->blockCount, sizeof(*known));
+    if (terminal == ZR_NULL || known == ZR_NULL) {
+        free(terminal);
+        free(known);
+        zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                               function, ZR_EXEC_IR_BLOCK_ID_INVALID, 0u, 0u, 0u);
+        return ZR_FALSE;
+    }
+
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrUInt32 edgeIndex;
+        for (edgeIndex = block->predecessors.start;
+             edgeIndex < block->predecessors.start + block->predecessors.count;
+             ++edgeIndex) {
+            if (function->predecessors[edgeIndex] == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                function->predecessors[edgeIndex] > function->blockCount) {
+                zr_exec_ir_effect_diag(diagnostic,
+                                       ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                                       function, block->id, 0u,
+                                       function->blockCount,
+                                       function->predecessors[edgeIndex]);
+                free(terminal);
+                free(known);
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    /* A small fixed-point pass propagates an effect chain through pure blocks
+     * before checking joins.  This also handles cleanup/exception blocks that
+     * only forward the incoming token. */
+    for (iteration = 0u; iteration <= function->blockCount; ++iteration) {
+        TZrBool changed = ZR_FALSE;
+        for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+            const SZrExecIrBlock *block = &function->blocks[blockIndex];
+            TZrExecIrEffectTokenId current = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+            TZrBool currentKnown = ZR_FALSE;
+            TZrUInt32 instructionIndex;
+
+            if (block->effectPhiResult != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+                current = block->effectPhiResult;
+                currentKnown = ZR_TRUE;
+            } else if (block->predecessors.count == 0u) {
+                currentKnown = ZR_TRUE;
+            } else {
+                TZrUInt32 predecessorIndex;
+                TZrExecIrEffectTokenId incoming = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+                currentKnown = ZR_TRUE;
+                for (predecessorIndex = block->predecessors.start;
+                     predecessorIndex < block->predecessors.start + block->predecessors.count;
+                     ++predecessorIndex) {
+                    TZrExecIrBlockId predecessor = function->predecessors[predecessorIndex];
+                    if (!known[predecessor - 1u]) {
+                        currentKnown = ZR_FALSE;
+                        break;
+                    }
+                    if (predecessorIndex == block->predecessors.start) {
+                        incoming = terminal[predecessor - 1u];
+                    } else if (incoming != terminal[predecessor - 1u]) {
+                        currentKnown = ZR_FALSE;
+                        break;
+                    }
+                }
+                if (currentKnown) current = incoming;
+            }
+            for (instructionIndex = block->instructions.start;
+                 instructionIndex < block->instructions.start + block->instructions.count;
+                 ++instructionIndex) {
+                const SZrExecIrInstruction *instruction =
+                        &function->instructions[instructionIndex];
+                const SZrExecIrOpcodeInfo *info =
+                        ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)instruction->opcode);
+                if (zr_exec_ir_instruction_observable(instruction, info)) {
+                    current = instruction->effectOut;
+                    currentKnown = ZR_TRUE;
+                }
+            }
+            if (terminal[blockIndex] != current || known[blockIndex] != currentKnown) {
+                terminal[blockIndex] = current;
+                known[blockIndex] = currentKnown;
+                changed = ZR_TRUE;
+            }
+        }
+        if (!changed) break;
+    }
+
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrExecIrEffectTokenId firstEffectIn = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+        TZrExecIrInstructionId firstInstruction = ZR_EXEC_IR_INSTRUCTION_ID_INVALID;
+        TZrUInt32 instructionIndex;
+        TZrUInt32 predecessorIndex;
+
+        for (instructionIndex = block->instructions.start;
+             instructionIndex < block->instructions.start + block->instructions.count;
+             ++instructionIndex) {
+            const SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
+            const SZrExecIrOpcodeInfo *info =
+                    ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)instruction->opcode);
+            if (zr_exec_ir_instruction_observable(instruction, info)) {
+                firstEffectIn = instruction->effectIn;
+                firstInstruction = instructionIndex + 1u;
+                break;
+            }
+        }
+
+        if (block->effectPhiResult != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+            TZrExecIrEffectTokenId maximumIncoming = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+            if (!zr_exec_ir_range_valid(block->effectPhiIncomings,
+                                        function->phiIncomingCount,
+                                        function->phiIncoming) ||
+                block->effectPhiIncomings.count != block->predecessors.count) {
+                zr_exec_ir_effect_diag(diagnostic,
+                                       ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
+                                       function, block->id, firstInstruction,
+                                       block->predecessors.count,
+                                       block->effectPhiIncomings.count);
+                valid = ZR_FALSE;
+                break;
+            }
+            for (predecessorIndex = 0u;
+                 predecessorIndex < block->predecessors.count;
+                 ++predecessorIndex) {
+                const SZrExecIrPhiIncoming *incoming =
+                        &function->phiIncoming[block->effectPhiIncomings.start + predecessorIndex];
+                TZrExecIrBlockId predecessor =
+                        function->predecessors[block->predecessors.start + predecessorIndex];
+                TZrExecIrEffectTokenId expected = terminal[predecessor - 1u];
+                if (!known[predecessor - 1u] || incoming->predecessor != predecessor ||
+                    incoming->value != expected) {
+                    zr_exec_ir_effect_diag(diagnostic,
+                                           incoming->predecessor != predecessor
+                                               ? ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH
+                                               : ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
+                                           function, block->id, firstInstruction,
+                                           expected, incoming->value);
+                    valid = ZR_FALSE;
+                    break;
+                }
+                if (incoming->value > maximumIncoming) maximumIncoming = incoming->value;
+            }
+            if (!valid) break;
+            if (block->effectPhiResult <= maximumIncoming ||
+                (firstInstruction != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+                 firstEffectIn != block->effectPhiResult)) {
+                zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
+                                       function, block->id, firstInstruction,
+                                       block->effectPhiResult,
+                                       firstInstruction != ZR_EXEC_IR_INSTRUCTION_ID_INVALID
+                                           ? firstEffectIn
+                                           : maximumIncoming);
+                valid = ZR_FALSE;
+                break;
+            }
+        } else if (block->predecessors.count != 0u &&
+                   firstInstruction != ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+            TZrExecIrEffectTokenId expected = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+            TZrBool haveExpected = ZR_FALSE;
+            for (predecessorIndex = 0u;
+                 predecessorIndex < block->predecessors.count;
+                 ++predecessorIndex) {
+                TZrExecIrBlockId predecessor =
+                        function->predecessors[block->predecessors.start + predecessorIndex];
+                if (!known[predecessor - 1u]) {
+                    haveExpected = ZR_FALSE;
+                    break;
+                }
+                if (!haveExpected) {
+                    expected = terminal[predecessor - 1u];
+                    haveExpected = ZR_TRUE;
+                } else if (expected != terminal[predecessor - 1u]) {
+                    zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
+                                           function, block->id, firstInstruction,
+                                           expected, terminal[predecessor - 1u]);
+                    valid = ZR_FALSE;
+                    break;
+                }
+            }
+            if (!valid) break;
+            if (haveExpected && expected != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
+                firstEffectIn != expected) {
+                zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
+                                       function, block->id, firstInstruction,
+                                       expected, firstEffectIn);
+                valid = ZR_FALSE;
+                break;
+            }
+        }
+    }
+
+    free(terminal);
+    free(known);
+    return valid;
+}
+
 TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                                     SZrExecIrDiagnostic *diagnostic) {
     TZrExecIrMemoryTokenId latestMemory = ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
@@ -238,6 +469,9 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     if (!zr_exec_ir_verify_phi_predecessors(function, diagnostic)) {
+        return ZR_FALSE;
+    }
+    if (!zr_exec_ir_verify_effect_cfg(function, diagnostic)) {
         return ZR_FALSE;
     }
     for (index = 0u; index < function->instructionCount; ++index) {
@@ -360,13 +594,21 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
         observable = (TZrBool)(info->memoryWrites != 0u || required != 0u ||
                                (info->effects & ZR_EXEC_IR_EFFECT_DROP) != 0u);
         if (observable) {
+            TZrBool effectOrderInvalid = ZR_FALSE;
+            if (latestEffect != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+                if (blockId != ZR_EXEC_IR_BLOCK_ID_INVALID &&
+                    latestEffectBlock != ZR_EXEC_IR_BLOCK_ID_INVALID &&
+                    blockId == latestEffectBlock) {
+                    effectOrderInvalid = (TZrBool)(instruction->effectIn != latestEffect);
+                } else if (blockId == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                           latestEffectBlock == ZR_EXEC_IR_BLOCK_ID_INVALID) {
+                    effectOrderInvalid = (TZrBool)(instruction->effectIn < latestEffect);
+                }
+            }
             if (instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
                 instruction->effectOut == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
                 instruction->effectOut <= instruction->effectIn ||
-                (latestEffect != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
-                 (blockId == latestEffectBlock
-                      ? instruction->effectIn != latestEffect
-                      : instruction->effectIn < latestEffect))) {
+                effectOrderInvalid) {
                 zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN,
                                        function, blockId, index + 1u, latestEffect,
                                        instruction->effectIn);
