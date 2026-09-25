@@ -13,6 +13,8 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 implementation_files:
@@ -42,6 +44,7 @@ tests:
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-oracle-parallel-edges.md
   - tests/acceptance/ssa-projection-parallel-edges.md
+  - tests/acceptance/ssa-projection-phi-schedule.md
 doc_type: module-detail
 ---
 
@@ -180,17 +183,32 @@ state-map moved-owner boundary without adding a runtime ownership action.
 `ZrParser_ExecIr_LowerExecBc` copies instruction, operand/result, CFG, source,
 state-map, GC/deopt counts, and value-slot metadata into owned arrays. Every
 value receives a distinct slot while optimization is disabled. Phi incoming
-assignments are emitted as edge-tagged parallel-copy records; cyclic swaps set
-`temporarySlotCount` so a later emitter can use a temporary slot. Critical CFG
-edges are split into synthetic empty blocks in the projection, preserving the
-source function and keeping phi copies on an edge-local block. Parallel CFG
+assignments retain edge-tagged parallel-copy records. The `phiMoves` array
+also orders physical-slot moves per projected predecessor edge, so executing
+only moves for the selected edge reproduces simultaneous phi assignment.
+Dependency moves precede the overwrites they depend on; cycles save one
+destination into a reusable `phiTemporarySlot` before rotating the values.
+`temporarySlotCount` is zero without cycles and one otherwise. The temporary
+slot follows both the largest mapped physical slot and the reserved frame
+storage range. A no-reuse packed frame maps logical value IDs to the physical
+slot positions in its slot array; a packed frame that reuses slots and a
+custom frame whose mapped value slots alias are rejected until liveness-aware
+lowering exists. Self-copies are omitted. Capacity overflow or allocation
+failure rejects the candidate without replacing an earlier projection.
+Critical CFG edges and phi-bearing edges leaving a branching block are split
+into synthetic empty blocks in the projection, preserving the source function
+and keeping phi copies on an identifiable edge-local block. Parallel CFG
 edges are paired by their occurrence number in the source successor and
 destination predecessor rows. Each critical occurrence gets its own split
 block; phi incoming predecessors are rewritten to the projected predecessor
 row, and each nontrivial copy is tagged with that edge's projected block ID.
+When a terminator refers to a distinct successor pool range, that range is
+rewritten by the same target-occurrence identity as the source block's range.
 Mismatched adjacency multiplicities fail preflight without replacing a
-previously published projection. This is projection metadata, not executable
-bytecode or emitted AOT code.
+previously published projection. AOTIR owns the same move plan, but remains
+non-runnable. The move plan is executable by a slot consumer; no ExecBC
+instruction dispatcher or C/LLVM code generator consumes it yet, so this does
+not establish backend execution or oracle/ExecBC differential parity.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a

@@ -19,6 +19,7 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->phiCopySources);
     free(projection->phiCopyDestinations);
     free(projection->phiCopyEdges);
+    free(projection->phiMoves);
     free(projection->sourceMaps);
     memset(projection, 0, sizeof(*projection));
 }

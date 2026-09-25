@@ -1,4 +1,5 @@
 #include "zr_vm_parser/exec_ir_projections.h"
+#include "exec_ir_projection_phi.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -353,6 +354,26 @@ static TZrUInt32 zr_projection_incoming_ordinal(const SZrExecIrFunction *f,
     return UINT32_MAX;
 }
 
+/* Instruction successor ranges may be separate copies of the block's CFG
+ * row. Match each repeated target by occurrence before rewriting that range. */
+static TZrUInt32 zr_projection_outgoing_ordinal(const SZrExecIrFunction *f,
+                                                const SZrExecIrBlock *block,
+                                                const SZrExecIrInstruction *instruction,
+                                                TZrUInt32 index) {
+    TZrExecIrBlockId target =
+            f->successors[instruction->successorRange.start + index];
+    TZrUInt32 occurrence = 0u;
+    for (TZrUInt32 i = 0u; i <= index; ++i) {
+        if (f->successors[instruction->successorRange.start + i] == target)
+            ++occurrence;
+    }
+    for (TZrUInt32 i = 0u; i < block->successorRange.count; ++i) {
+        if (f->successors[block->successorRange.start + i] == target &&
+            --occurrence == 0u) return i;
+    }
+    return UINT32_MAX;
+}
+
 static TZrBool zr_projection_count_critical_edges(const SZrExecIrFunction *f,
                                                   TZrUInt32 *outCount,
                                                   SZrExecIrDiagnostic *d) {
@@ -365,7 +386,8 @@ static TZrBool zr_projection_count_critical_edges(const SZrExecIrFunction *f,
         for (j = 0u; j < pred->successorRange.count; ++j) {
             TZrExecIrBlockId successorId = f->successors[pred->successorRange.start + j];
             const SZrExecIrBlock *successor = zr_projection_block(f, successorId);
-            if (successor != ZR_NULL && successor->predecessorRange.count > 1u) {
+            if (successor != ZR_NULL &&
+                (successor->predecessorRange.count > 1u || successor->phis.count != 0u)) {
                 if (count == UINT32_MAX) {
                     zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, f,
                                        pred->id, pred->terminatorInstructionId,
@@ -392,30 +414,6 @@ static TZrExecIrBlockId zr_projection_split_id(
         }
     }
     return outgoing ? destination : source;
-}
-
-static TZrBool zr_projection_edge_has_cycle(const SZrExecBcProjection *p,
-                                            TZrUInt32 first,
-                                            TZrUInt32 count) {
-    TZrUInt32 start;
-    for (start = 0u; start < count; ++start) {
-        TZrExecIrValueId value = p->phiCopyDestinations[first + start];
-        TZrUInt32 steps;
-        for (steps = 0u; steps < count; ++steps) {
-            TZrUInt32 i;
-            TZrBool advanced = ZR_FALSE;
-            for (i = 0u; i < count; ++i) {
-                if (p->phiCopySources[first + i] == value) {
-                    value = p->phiCopyDestinations[first + i];
-                    advanced = ZR_TRUE;
-                    if (value == p->phiCopyDestinations[first + start]) return ZR_TRUE;
-                    break;
-                }
-            }
-            if (!advanced) break;
-        }
-    }
-    return ZR_FALSE;
 }
 
 static TZrBool zr_projection_append_phi_copies(SZrExecBcProjection *p,
@@ -481,7 +479,6 @@ static TZrBool zr_projection_append_phi_copies(SZrExecBcProjection *p,
         const SZrExecIrBlock *b = &f->blocks[i];
         for (k = 0u; k < b->predecessorRange.count; ++k) {
             TZrExecIrBlockId edge = p->predecessors[b->predecessorRange.start + k];
-            TZrUInt32 edgeFirst = total;
             for (j = 0u; j < b->phis.count; ++j) {
                 const SZrExecIrPhi *phi = &f->phiPool[b->phis.start + j];
                 const SZrExecIrPhiIncoming *incoming =
@@ -492,10 +489,6 @@ static TZrBool zr_projection_append_phi_copies(SZrExecBcProjection *p,
                     p->phiCopyEdges[total] = edge;
                     ++total;
                 }
-            }
-            if (total > edgeFirst &&
-                zr_projection_edge_has_cycle(p, edgeFirst, total - edgeFirst)) {
-                p->temporarySlotCount = 1u;
             }
         }
     }
@@ -518,6 +511,7 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->phiCopySources);
     free(p->phiCopyDestinations);
     free(p->phiCopyEdges);
+    free(p->phiMoves);
     free(p->sourceMaps);
     memset(p, 0, sizeof(*p));
 }
@@ -553,7 +547,8 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
                         f->successors[pred->successorRange.start + j];
                 const SZrExecIrBlock *successor =
                         zr_projection_block(f, destination);
-                if (successor != ZR_NULL && successor->predecessorRange.count > 1u) {
+                if (successor != ZR_NULL &&
+                    (successor->predecessorRange.count > 1u || successor->phis.count != 0u)) {
                     splits[splitCount].source = pred->id;
                     splits[splitCount].destination = destination;
                     splits[splitCount].sourceOrdinal = j;
@@ -619,18 +614,41 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     if (p->valueSlotCount != 0u) {
         p->valueSlots = (TZrUInt32 *)malloc(bytes);
         if (p->valueSlots == ZR_NULL) goto oom;
-        for (i = 0u; i < p->valueSlotCount; ++i) {
-            p->valueSlots[i] = f->frameLayout != ZR_NULL &&
-                                       i < f->frameLayout->slotCount
-                                   ? f->frameLayout->slots[i].slotId
-                                   : i;
-        }
         if (f->frameLayout != ZR_NULL &&
             f->frameLayout->slotCount < f->valueCount) {
             zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
                                f, 0u, 0u, f->valueCount,
                                f->frameLayout->slotCount);
             goto fail;
+        }
+        if (f->frameLayout != ZR_NULL && f->frameLayout->logicalSlotCount != 0u) {
+            /* Packed-frame slotId identifies a logical value, while its
+             * array position is the physical slot. Reuse needs liveness-
+             * aware lowering and is outside this no-optimization projection. */
+            if (f->frameLayout->logicalSlotCount != f->valueCount ||
+                f->frameLayout->slotCount != f->valueCount ||
+                f->frameLayout->storageSlotCount != f->valueCount) {
+                zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                                   f, 0u, 0u, f->valueCount,
+                                   f->frameLayout->storageSlotCount);
+                goto fail;
+            }
+            for (i = 0u; i < p->valueSlotCount; ++i) p->valueSlots[i] = UINT32_MAX;
+            for (i = 0u; i < p->valueSlotCount; ++i) {
+                TZrUInt32 logical = f->frameLayout->slots[i].slotId;
+                if (logical == 0u || logical > p->valueSlotCount ||
+                    p->valueSlots[logical - 1u] != UINT32_MAX) {
+                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                                       f, 0u, 0u, p->valueSlotCount, logical);
+                    goto fail;
+                }
+                p->valueSlots[logical - 1u] = i;
+            }
+        } else {
+            for (i = 0u; i < p->valueSlotCount; ++i) {
+                p->valueSlots[i] = f->frameLayout != ZR_NULL
+                    ? f->frameLayout->slots[i].slotId : i;
+            }
         }
     }
     if (!zr_projection_bytes(p->blockCount, sizeof(*p->blocks), &bytes)) goto overflow;
@@ -731,6 +749,24 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
             p->successors[in->successorRange.start + j] =
                     zr_projection_split_id(splits, splitCount, in->id, destination, j, ZR_TRUE);
         }
+        for (j = 0u; j < in->instructionRange.count; ++j) {
+            TZrUInt32 instructionIndex = in->instructionRange.start + j;
+            const SZrExecIrInstruction *instruction = &f->instructions[instructionIndex];
+            for (TZrUInt32 k = 0u; k < instruction->successorRange.count; ++k) {
+                TZrUInt32 ordinal = zr_projection_outgoing_ordinal(f, in, instruction, k);
+                TZrExecIrBlockId destination =
+                        f->successors[instruction->successorRange.start + k];
+                if (ordinal == UINT32_MAX) {
+                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                                       f, in->id, instructionIndex + 1u,
+                                       in->successorRange.count, k + 1u);
+                    goto fail;
+                }
+                p->successors[instruction->successorRange.start + k] =
+                        zr_projection_split_id(splits, splitCount, in->id,
+                                               destination, ordinal, ZR_TRUE);
+            }
+        }
         p->blocks[i].terminatorInstructionId = in->terminatorInstructionId;
     }
     for (i = 0u; i < splitCount; ++i) {
@@ -753,6 +789,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->sourceMaps[i].pc = f->sourceMaps[i].instructionId == 0u ? 0u : f->sourceMaps[i].instructionId - 1u;
     }
     if (!zr_projection_append_phi_copies(p, f, d)) goto fail;
+    if (!zr_projection_schedule_phi_copies(p, f, d)) goto fail;
     free(splits);
     return ZR_TRUE;
 overflow:
@@ -800,6 +837,9 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->phiCopyDestinations = source->phiCopyDestinations;
     destination->phiCopyEdges = source->phiCopyEdges;
     destination->temporarySlotCount = source->temporarySlotCount;
+    destination->phiTemporarySlot = source->phiTemporarySlot;
+    destination->phiMoveCount = source->phiMoveCount;
+    destination->phiMoves = source->phiMoves;
     destination->sourceMaps = source->sourceMaps;
     destination->sourceMapCount = source->sourceMapCount;
     destination->gcMapCount = source->gcMapCount;
@@ -822,6 +862,7 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->phiCopySources = ZR_NULL;
     source->phiCopyDestinations = ZR_NULL;
     source->phiCopyEdges = ZR_NULL;
+    source->phiMoves = ZR_NULL;
     source->sourceMaps = ZR_NULL;
     source->ownershipTag = 0u;
 }

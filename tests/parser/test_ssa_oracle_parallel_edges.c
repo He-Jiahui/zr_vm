@@ -2,6 +2,7 @@
 #include "zr_vm_parser/exec_ir_projections.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -226,7 +227,196 @@ static void test_projections_preserve_parallel_phi_edges(void) {
     check(function.blockCount == 2u && function.predecessors[0] == 1u &&
               function.predecessors[1] == 1u,
           "projection modified the source ExecIR function");
+    check(bytecode.phiMoveCount == 2u && aot.phiMoveCount == 2u &&
+              bytecode.phiMoves[0].edge == 3u &&
+              bytecode.phiMoves[1].edge == 4u &&
+              aot.phiMoves[0].edge == 3u && aot.phiMoves[1].edge == 4u,
+          "parallel CFG edges lost their separate executable copy plans");
+    for (TZrUInt32 branch = 0u; branch < 2u; ++branch) {
+        TZrUInt32 slots[4] = {11u, 22u, 0u, 0u};
+        TZrExecIrBlockId edge = branch == 0u ? 3u : 4u;
+        for (TZrUInt32 move = 0u; move < bytecode.phiMoveCount; ++move) {
+            if (bytecode.phiMoves[move].edge == edge) {
+                slots[bytecode.phiMoves[move].destinationSlot] =
+                    slots[bytecode.phiMoves[move].sourceSlot];
+            }
+        }
+        check(slots[3] == (branch == 0u ? 11u : 22u),
+              "copy plan executed the wrong parallel edge");
+    }
     ZrParser_AotIrProjection_Free(&aot);
+    ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_projection_schedules_cycles_and_dependencies(void) {
+    static const TZrExecIrValueId sources[7] = {2u, 3u, 1u, 1u, 5u, 7u, 6u};
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecBcProjection bytecode = {0};
+    SZrExecIrPhi phis[7];
+    SZrExecIrPhiIncoming incomings[7];
+    SZrExecBcPhiMove *publishedMoves;
+    TZrExecIrBlockId source = 1u, destination = 2u;
+    TZrUInt32 slots[8] = {11u, 22u, 33u, 44u, 55u, 66u, 77u, 0u};
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    for (TZrUInt32 i = 0u; i < 7u; ++i) add_value(&function);
+    check(ZrCore_ExecIr_FunctionAddBlock(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == source &&
+              ZrCore_ExecIr_FunctionAddBlock(&function, 0u) == destination,
+          "could not construct phi cycle blocks");
+    function.entryBlockId = source;
+    check(ZrCore_ExecIr_FunctionAppendSuccessors(&function, &destination, 1u,
+                                                  &function.blocks[0].successorRange) &&
+              ZrCore_ExecIr_FunctionAppendPredecessors(&function, &source, 1u,
+                                                        &function.blocks[1].predecessorRange),
+          "could not connect phi cycle blocks");
+    for (TZrUInt32 i = 0u; i < 7u; ++i) {
+        phis[i].result = i + 1u;
+        phis[i].incomings.start = i;
+        phis[i].incomings.count = 1u;
+        incomings[i].predecessor = source;
+        incomings[i].value = sources[i];
+    }
+    check(ZrCore_ExecIr_FunctionAppendPhiIncoming(&function, incomings, 7u,
+                                                   &function.blocks[1].phis) &&
+              ZrCore_ExecIr_FunctionAppendPhis(&function, phis, 7u,
+                                                &function.blocks[1].phis),
+          "could not append phi cycle inputs");
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic),
+          "could not project phi cycles");
+    check(bytecode.phiCopyCount == 6u && bytecode.temporarySlotCount == 1u &&
+              bytecode.phiMoveCount == 8u && bytecode.phiTemporarySlot == 7u,
+          "phi cycles did not reserve one reusable temporary slot per edge");
+    for (TZrUInt32 i = 0u; i < bytecode.phiMoveCount; ++i) {
+        const SZrExecBcPhiMove *move = &bytecode.phiMoves[i];
+        check(move->edge == source && move->sourceSlot < 8u &&
+                  move->destinationSlot < 8u,
+              "phi schedule referenced an invalid edge or slot");
+        slots[move->destinationSlot] = slots[move->sourceSlot];
+    }
+    check(slots[0] == 22u && slots[1] == 33u && slots[2] == 11u &&
+              slots[3] == 11u && slots[4] == 55u && slots[5] == 77u &&
+              slots[6] == 66u,
+          "sequential execution of scheduled phi moves broke simultaneous copies");
+    publishedMoves = bytecode.phiMoves;
+    function.frameLayout = (SZrExecIrFrameLayout *)calloc(1u, sizeof(*function.frameLayout));
+    check(function.frameLayout != NULL, "could not allocate sparse frame layout");
+    function.frameLayout->slots = (SZrExecIrFrameSlot *)calloc(7u, sizeof(*function.frameLayout->slots));
+    check(function.frameLayout->slots != NULL, "could not allocate frame slots");
+    function.frameLayout->slotCount = function.frameLayout->slotCapacity = 7u;
+    function.frameLayout->storageSlotCount = 20u;
+    for (TZrUInt32 i = 0u; i < 7u; ++i)
+        function.frameLayout->slots[i].slotId = i;
+    function.frameLayout->slots[6].slotId = UINT32_MAX;
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW &&
+              diagnostic.blockId == source && bytecode.phiMoves == publishedMoves &&
+              bytecode.phiMoveCount == 8u,
+          "overflowing a phi temporary clobbered the previously published schedule");
+    function.frameLayout->slots[6].slotId = UINT32_MAX - 1u;
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW &&
+              bytecode.phiMoves == publishedMoves,
+          "phi temporary at the largest slot ID cannot fit a slot count");
+    function.frameLayout->slots[6].slotId = 6u;
+    function.frameLayout->slots[5].slotId = 0u;
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+              bytecode.phiMoves == publishedMoves,
+          "aliased physical value slots cannot implement simultaneous phi copies");
+    function.frameLayout->slots[5].slotId = 5u;
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              bytecode.phiTemporarySlot == 20u && bytecode.phiMoveCount == 8u,
+          "phi temporary overlapped a reserved frame slot");
+    function.frameLayout->logicalSlotCount = 7u;
+    function.frameLayout->storageSlotCount = 7u;
+    for (TZrUInt32 i = 0u; i < 7u; ++i)
+        function.frameLayout->slots[i].slotId = i + 1u;
+    function.frameLayout->slots[0].slotId = 2u;
+    function.frameLayout->slots[1].slotId = 1u;
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              bytecode.valueSlots[0] == 1u && bytecode.valueSlots[1] == 0u &&
+              bytecode.phiTemporarySlot == 7u,
+          "non-reusing packed frame confused logical value IDs with physical slots");
+    {
+        TZrUInt32 physical[8] = {22u, 11u, 33u, 44u, 55u, 66u, 77u, 0u};
+        for (TZrUInt32 i = 0u; i < bytecode.phiMoveCount; ++i) {
+            const SZrExecBcPhiMove *move = &bytecode.phiMoves[i];
+            physical[move->destinationSlot] = physical[move->sourceSlot];
+        }
+        check(physical[0] == 33u && physical[1] == 22u &&
+                  physical[2] == 11u && physical[3] == 11u &&
+                  physical[5] == 77u && physical[6] == 66u,
+              "packed physical move order changed simultaneous phi values");
+    }
+    publishedMoves = bytecode.phiMoves;
+    function.frameLayout->slotCount = function.frameLayout->storageSlotCount = 6u;
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+              bytecode.phiMoves == publishedMoves,
+          "slot-reusing packed frame replaced an executable phi move plan");
+    ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_branch_phi_moves_have_distinct_edge_blocks(void) {
+    SZrExecIrFunction function;
+    SZrExecBcProjection bytecode = {0};
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId destinations[2] = {2u, 3u}, source = 1u;
+    SZrExecIrPhiIncoming incoming;
+    SZrExecIrPhi phi;
+    SZrExecIrRange incomingRange, operandRange = {0}, instructionSuccessors = {0};
+    SZrExecIrRange empty = {.start = 0u, .count = 0u};
+    TZrExecIrValueId condition = 3u;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    add_value(&function);
+    add_value(&function);
+    add_value(&function);
+    for (TZrUInt32 i = 0u; i < 3u; ++i)
+        check(ZrCore_ExecIr_FunctionAddBlock(&function,
+                  i == 0u ? ZR_EXEC_IR_BLOCK_FLAG_ENTRY : 0u) == i + 1u,
+              "could not build branching phi fixture");
+    function.entryBlockId = source;
+    check(ZrCore_ExecIr_FunctionAppendSuccessors(&function, destinations, 2u,
+                                                  &function.blocks[0].successorRange),
+          "could not append branching phi successors");
+    check(ZrCore_ExecIr_FunctionAppendSuccessors(&function, destinations, 2u,
+                                                  &instructionSuccessors) &&
+              ZrCore_ExecIr_FunctionAppendOperands(&function, &condition, 1u,
+                                                    &operandRange),
+          "could not append distinct terminator successors");
+    function.blocks[0].instructionRange.start = 0u;
+    function.blocks[0].instructionRange.count = 1u;
+    function.blocks[0].terminatorInstructionId = append_instruction(
+        &function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+        operandRange, empty, instructionSuccessors, 0u);
+    for (TZrUInt32 i = 1u; i < 3u; ++i) {
+        check(ZrCore_ExecIr_FunctionAppendPredecessors(&function, &source, 1u,
+                                                        &function.blocks[i].predecessorRange),
+              "could not append branching phi predecessor");
+        incoming.predecessor = source;
+        incoming.value = i == 1u ? 2u : 1u;
+        check(ZrCore_ExecIr_FunctionAppendPhiIncoming(&function, &incoming, 1u,
+                                                       &incomingRange),
+              "could not append branching phi input");
+        phi.result = i;
+        phi.incomings = incomingRange;
+        check(ZrCore_ExecIr_FunctionAppendPhis(&function, &phi, 1u,
+                                                &function.blocks[i].phis),
+              "could not append branching phi");
+    }
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic),
+          "could not project branching phi edges");
+    check(bytecode.syntheticBlockCount == 2u && bytecode.phiMoveCount == 2u &&
+              bytecode.phiMoves[0].edge == 4u && bytecode.phiMoves[1].edge == 5u &&
+              bytecode.successors[bytecode.blocks[0].successors.start] == 4u &&
+              bytecode.successors[bytecode.blocks[0].successors.start + 1u] == 5u &&
+              bytecode.successors[bytecode.instructions[0].successorRange.start] == 4u &&
+              bytecode.successors[bytecode.instructions[0].successorRange.start + 1u] == 5u,
+          "branch-local phi moves share a predecessor without an edge discriminator");
     ZrParser_ExecBcProjection_Free(&bytecode);
     ZrCore_ExecIr_FreeFunction(&function);
 }
@@ -264,6 +454,8 @@ int main(void) {
     test_branch_and_switch_parallel_edges_select_distinct_incomings();
     test_rejects_selected_edge_missing_from_source_adjacency();
     test_projections_preserve_parallel_phi_edges();
+    test_projection_schedules_cycles_and_dependencies();
+    test_branch_phi_moves_have_distinct_edge_blocks();
     test_projections_reject_unpaired_edge_without_replacing_output();
     puts("ssa oracle parallel edges PASS");
     return EXIT_SUCCESS;

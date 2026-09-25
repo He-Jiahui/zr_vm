@@ -40,6 +40,14 @@ typedef struct SZrExecIrProjectionSourceMap {
     TZrUInt32 pc;
 } SZrExecIrProjectionSourceMap;
 
+/* Ordered physical-slot move performed when entering the successor of edge.
+ * A split critical edge uses its synthetic predecessor block as edge. */
+typedef struct SZrExecBcPhiMove {
+    TZrExecIrBlockId edge;
+    TZrUInt32 sourceSlot;
+    TZrUInt32 destinationSlot;
+} SZrExecBcPhiMove;
+
 typedef struct SZrExecBcProjection {
     TZrMetadataToken functionToken;
     TZrUInt64 signatureHash;
@@ -73,6 +81,9 @@ typedef struct SZrExecBcProjection {
     TZrExecIrValueId *phiCopyDestinations;
     TZrExecIrBlockId *phiCopyEdges;
     TZrUInt32 temporarySlotCount;
+    TZrUInt32 phiTemporarySlot;
+    TZrUInt32 phiMoveCount;
+    SZrExecBcPhiMove *phiMoves;
     SZrExecIrProjectionSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
     TZrUInt32 gcMapCount;
@@ -116,6 +127,9 @@ typedef struct SZrAotIrProjection {
     TZrExecIrValueId *phiCopyDestinations;
     TZrExecIrBlockId *phiCopyEdges;
     TZrUInt32 temporarySlotCount;
+    TZrUInt32 phiTemporarySlot;
+    TZrUInt32 phiMoveCount;
+    SZrExecBcPhiMove *phiMoves;
     SZrExecutionContract contract;
     SZrExecIrProjectionSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
