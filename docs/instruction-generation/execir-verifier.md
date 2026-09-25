@@ -80,9 +80,13 @@ within that region. Independent tagged regions therefore do not impose a
 false global order. The verifier rejects a tagged token whose region is not
 covered by the opcode's declared read/write mask, rejects zero versions, and
 continues to apply the legacy function-wide monotonic rule to untagged tokens
-so old artifacts remain readable during the migration. This is the first
-region-aware slice; cross-block memory/effect PHIs and producer-side token
-generation remain open.
+so old artifacts remain readable during the migration. A join may publish one
+tagged `memoryPhiResult` and edge-ordered `memoryPhiIncomings` range per
+region. Each incoming must match the predecessor's terminal version and
+region, the result must advance beyond all incoming versions, and the first
+tagged memory consumer must consume the result. Distinct region versions
+without a memory phi are rejected; producer-side token generation remains
+open.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes

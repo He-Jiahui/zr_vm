@@ -222,6 +222,20 @@ static TZrBool zr_state_map_function_values_valid(const SZrExecIrFunction *funct
                                         index + 1u, block->id);
             return ZR_FALSE;
         }
+        {
+            TZrUInt32 region;
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                if (!zr_state_map_range_valid(block->memoryPhiIncomings[region],
+                                              function->phiIncomingCount)) {
+                    zr_state_map_set_diagnostic(
+                            diagnostic, ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID,
+                            function, ZR_NULL, 0u, block->id,
+                            index + 1u,
+                            block->memoryPhiIncomings[region].count);
+                    return ZR_FALSE;
+                }
+            }
+        }
     }
     return ZR_TRUE;
 }

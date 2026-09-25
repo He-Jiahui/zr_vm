@@ -102,7 +102,18 @@ instruction in the join block must consume it. Distinct predecessor chains
 without this metadata are rejected with `ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN`.
 
 This is intentionally a verifier-side contract. Producer-side effect-token
-allocation and region-specific memory-token PHIs remain follow-up work.
+allocation remains follow-up work.
+
+## Cross-block memory-token merge slice
+
+Tagged memory regions now have the same explicit CFG join contract. A block may
+set one `memoryPhiResult[region]` and an edge-ordered `memoryPhiIncomings[region]`
+range for each region. The verifier requires each incoming to match the
+predecessor's terminal tagged version, requires the merged version to advance,
+and requires the first tagged memory consumer to use the merged token. A
+diamond with heap versions 2 and 3 therefore needs heap version 4 at the join;
+stale inputs, a stale consumer, or a missing phi are rejected with the memory
+token diagnostic. Untagged memory tokens retain their legacy global ordering.
 
 ## Parallel-edge PHI follow-up (2026-09-18)
 
@@ -118,5 +129,4 @@ MSVC 19.44 rebuilt `zr_vm_ssa_effects_verifier_test` and
 both standalone executables exited 0. WSL GCC 11.4 rebuilt the focused effect
 verifier with ASan/UBSan and ran
 `/mnt/d/zr-ssa-verify-871bc234/ssa_effects_gcc_asan`: exit 0, no sanitizer
-report. Cross-block memory-token PHIs, producer-side token generation, and
-full M1 acceptance remain open.
+report. Producer-side token generation and full M1 acceptance remain open.

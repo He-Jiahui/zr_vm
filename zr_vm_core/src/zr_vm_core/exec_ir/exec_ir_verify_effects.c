@@ -134,6 +134,39 @@ static TZrBool zr_exec_ir_effect_storage_valid(const SZrExecIrFunction *function
                                    block->effectPhiIncomings.count);
             return ZR_FALSE;
         }
+        {
+            TZrUInt32 region;
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                if (!zr_exec_ir_range_valid(block->memoryPhiIncomings[region],
+                                            function->phiIncomingCount,
+                                            function->phiIncoming) ||
+                    ((block->memoryPhiResults[region] ==
+                      ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) !=
+                     (block->memoryPhiIncomings[region].count == 0u))) {
+                    zr_exec_ir_effect_diag(diagnostic,
+                                           ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                                           function, block->id, 0u,
+                                           function->phiIncomingCount,
+                                           block->memoryPhiIncomings[region].count);
+                    return ZR_FALSE;
+                }
+                if (block->memoryPhiResults[region] !=
+                        ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
+                    (!ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(
+                             block->memoryPhiResults[region]) ||
+                     ZR_EXEC_IR_MEMORY_TOKEN_REGION(
+                             block->memoryPhiResults[region]) !=
+                        (EZrExecIrMemoryClass)region ||
+                     ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                             block->memoryPhiResults[region]) == 0u)) {
+                    zr_exec_ir_effect_diag(diagnostic,
+                                           ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                                           function, block->id, 0u, region,
+                                           block->memoryPhiResults[region]);
+                    return ZR_FALSE;
+                }
+            }
+        }
     }
     return ZR_TRUE;
 }
@@ -240,6 +273,313 @@ static TZrBool zr_exec_ir_instruction_observable(
     required = zr_exec_ir_required_flags(info, instruction);
     return (TZrBool)(info->memoryWrites != 0u || required != 0u ||
                      (info->effects & ZR_EXEC_IR_EFFECT_DROP) != 0u);
+}
+
+static TZrExecIrMemoryTokenId *zr_exec_ir_memory_cfg_slot(
+        TZrExecIrMemoryTokenId *storage,
+        TZrUInt32 blockIndex,
+        TZrUInt32 region) {
+    return &storage[(size_t)blockIndex * ZR_EXEC_IR_MEMORY_CLASS_COUNT + region];
+}
+
+static TZrBool *zr_exec_ir_memory_cfg_known_slot(
+        TZrBool *storage,
+        TZrUInt32 blockIndex,
+        TZrUInt32 region) {
+    return &storage[(size_t)blockIndex * ZR_EXEC_IR_MEMORY_CLASS_COUNT + region];
+}
+
+static TZrBool zr_exec_ir_verify_memory_cfg(
+        const SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrExecIrMemoryTokenId *terminal;
+    TZrBool *known;
+    size_t slotCount;
+    TZrUInt32 blockIndex;
+    TZrUInt32 iteration;
+    TZrBool valid = ZR_TRUE;
+
+    if (function->blockCount == 0u) return ZR_TRUE;
+#if SIZE_MAX <= UINT32_MAX
+    if ((size_t)function->blockCount >
+            SIZE_MAX / ZR_EXEC_IR_MEMORY_CLASS_COUNT / sizeof(*terminal)) {
+        zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                               function, ZR_EXEC_IR_BLOCK_ID_INVALID, 0u, 0u, 0u);
+        return ZR_FALSE;
+    }
+#endif
+    slotCount = (size_t)function->blockCount * ZR_EXEC_IR_MEMORY_CLASS_COUNT;
+    terminal = (TZrExecIrMemoryTokenId *)calloc(slotCount, sizeof(*terminal));
+    known = (TZrBool *)calloc(slotCount, sizeof(*known));
+    if (terminal == ZR_NULL || known == ZR_NULL) {
+        free(terminal);
+        free(known);
+        zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                               function, ZR_EXEC_IR_BLOCK_ID_INVALID, 0u, 0u, 0u);
+        return ZR_FALSE;
+    }
+
+    for (iteration = 0u; iteration <= function->blockCount; ++iteration) {
+        TZrBool changed = ZR_FALSE;
+        for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+            const SZrExecIrBlock *block = &function->blocks[blockIndex];
+            TZrExecIrMemoryTokenId current[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+            TZrBool currentKnown[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+            TZrUInt32 region;
+            TZrUInt32 instructionIndex;
+
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                if (block->memoryPhiResults[region] !=
+                        ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
+                    current[region] = block->memoryPhiResults[region];
+                    currentKnown[region] = ZR_TRUE;
+                } else if (block->predecessors.count == 0u) {
+                    currentKnown[region] = ZR_TRUE;
+                } else {
+                    TZrBool haveIncoming = ZR_FALSE;
+                    TZrExecIrMemoryTokenId incoming =
+                            ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
+                    TZrUInt32 predecessorIndex;
+                    currentKnown[region] = ZR_TRUE;
+                    for (predecessorIndex = block->predecessors.start;
+                         predecessorIndex < block->predecessors.start +
+                                               block->predecessors.count;
+                         ++predecessorIndex) {
+                        TZrExecIrBlockId predecessor =
+                                function->predecessors[predecessorIndex];
+                        if (!*zr_exec_ir_memory_cfg_known_slot(
+                                    known, predecessor - 1u, region)) {
+                            currentKnown[region] = ZR_FALSE;
+                            break;
+                        }
+                        if (!haveIncoming) {
+                            incoming = *zr_exec_ir_memory_cfg_slot(
+                                    terminal, predecessor - 1u, region);
+                            haveIncoming = ZR_TRUE;
+                        } else if (incoming != *zr_exec_ir_memory_cfg_slot(
+                                               terminal, predecessor - 1u, region)) {
+                            currentKnown[region] = ZR_FALSE;
+                            break;
+                        }
+                    }
+                    if (currentKnown[region]) current[region] = incoming;
+                }
+            }
+            for (instructionIndex = block->instructions.start;
+                 instructionIndex < block->instructions.start +
+                                       block->instructions.count;
+                 ++instructionIndex) {
+                const SZrExecIrInstruction *instruction =
+                        &function->instructions[instructionIndex];
+                TZrUInt32 tokenIndex;
+                if (!zr_exec_ir_range_valid(instruction->memoryOut,
+                                             function->memoryTokenCount,
+                                             function->memoryTokenPool)) {
+                    continue;
+                }
+                for (tokenIndex = instruction->memoryOut.start;
+                     tokenIndex < instruction->memoryOut.start +
+                                       instruction->memoryOut.count;
+                     ++tokenIndex) {
+                    TZrExecIrMemoryTokenId token =
+                            function->memoryTokenPool[tokenIndex];
+                    if (zr_exec_ir_memory_token_valid(token)) {
+                        region = (TZrUInt32)ZR_EXEC_IR_MEMORY_TOKEN_REGION(token);
+                        if (ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token)) {
+                            current[region] = token;
+                            currentKnown[region] = ZR_TRUE;
+                        }
+                    }
+                }
+            }
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                TZrExecIrMemoryTokenId *oldToken =
+                        zr_exec_ir_memory_cfg_slot(terminal, blockIndex, region);
+                TZrBool *oldKnown =
+                        zr_exec_ir_memory_cfg_known_slot(known, blockIndex, region);
+                if (*oldToken != current[region] || *oldKnown != currentKnown[region]) {
+                    *oldToken = current[region];
+                    *oldKnown = currentKnown[region];
+                    changed = ZR_TRUE;
+                }
+            }
+        }
+        if (!changed) break;
+    }
+
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrUInt32 region;
+        TZrUInt32 instructionIndex;
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            TZrExecIrMemoryTokenId phiResult = block->memoryPhiResults[region];
+            TZrExecIrMemoryTokenId firstInput =
+                    ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
+            TZrExecIrMemoryTokenId firstOutput =
+                    ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
+            TZrBool hasMemoryTouch = ZR_FALSE;
+            TZrBool hasMemoryInput = ZR_FALSE;
+            TZrUInt32 firstInstruction = 0u;
+            TZrUInt32 predecessorIndex;
+
+            for (instructionIndex = block->instructions.start;
+                 instructionIndex < block->instructions.start +
+                                       block->instructions.count;
+                 ++instructionIndex) {
+                const SZrExecIrInstruction *instruction =
+                        &function->instructions[instructionIndex];
+                TZrUInt32 tokenIndex;
+                if (zr_exec_ir_range_valid(instruction->memoryIn,
+                                           function->memoryTokenCount,
+                                           function->memoryTokenPool)) {
+                    for (tokenIndex = instruction->memoryIn.start;
+                         tokenIndex < instruction->memoryIn.start +
+                                           instruction->memoryIn.count;
+                         ++tokenIndex) {
+                    TZrExecIrMemoryTokenId token =
+                            function->memoryTokenPool[tokenIndex];
+                    if (ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token) &&
+                        ZR_EXEC_IR_MEMORY_TOKEN_REGION(token) ==
+                            (EZrExecIrMemoryClass)region &&
+                        !hasMemoryTouch) {
+                        firstInput = token;
+                        hasMemoryInput = ZR_TRUE;
+                        hasMemoryTouch = ZR_TRUE;
+                        firstInstruction = instructionIndex + 1u;
+                    }
+                }
+                }
+                if (zr_exec_ir_range_valid(instruction->memoryOut,
+                                           function->memoryTokenCount,
+                                           function->memoryTokenPool)) {
+                    for (tokenIndex = instruction->memoryOut.start;
+                         tokenIndex < instruction->memoryOut.start +
+                                           instruction->memoryOut.count;
+                         ++tokenIndex) {
+                    TZrExecIrMemoryTokenId token =
+                            function->memoryTokenPool[tokenIndex];
+                    if (ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token) &&
+                        ZR_EXEC_IR_MEMORY_TOKEN_REGION(token) ==
+                            (EZrExecIrMemoryClass)region &&
+                        !hasMemoryTouch) {
+                        firstOutput = token;
+                        hasMemoryTouch = ZR_TRUE;
+                        firstInstruction = instructionIndex + 1u;
+                    }
+                }
+                }
+            }
+
+            if (phiResult != ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
+                TZrUInt32 maximumVersion = 0u;
+                if (block->memoryPhiIncomings[region].count !=
+                    block->predecessors.count) {
+                    zr_exec_ir_effect_diag(
+                            diagnostic,
+                            ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
+                            function, block->id, firstInstruction,
+                            block->predecessors.count,
+                            block->memoryPhiIncomings[region].count);
+                    valid = ZR_FALSE;
+                    break;
+                }
+                for (predecessorIndex = 0u;
+                     predecessorIndex < block->predecessors.count;
+                     ++predecessorIndex) {
+                    const SZrExecIrPhiIncoming *incoming = &function->phiIncoming[
+                            block->memoryPhiIncomings[region].start + predecessorIndex];
+                    TZrExecIrBlockId predecessor = function->predecessors[
+                            block->predecessors.start + predecessorIndex];
+                    TZrExecIrMemoryTokenId expected = *zr_exec_ir_memory_cfg_slot(
+                            terminal, predecessor - 1u, region);
+                    if (incoming->predecessor != predecessor ||
+                        !*zr_exec_ir_memory_cfg_known_slot(
+                                known, predecessor - 1u, region) ||
+                        incoming->value != expected ||
+                        !ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(incoming->value) ||
+                        ZR_EXEC_IR_MEMORY_TOKEN_REGION(incoming->value) !=
+                            (EZrExecIrMemoryClass)region) {
+                        zr_exec_ir_effect_diag(
+                                diagnostic,
+                                incoming->predecessor != predecessor
+                                    ? ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH
+                                    : ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                                function, block->id, firstInstruction,
+                                expected, incoming->value);
+                        valid = ZR_FALSE;
+                        break;
+                    }
+                    if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(incoming->value) >
+                        maximumVersion) {
+                        maximumVersion = ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                                incoming->value);
+                    }
+                }
+                if (!valid) break;
+                if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(phiResult) <= maximumVersion ||
+                    (hasMemoryTouch &&
+                     ((hasMemoryInput && firstInput != phiResult) ||
+                      (!hasMemoryInput &&
+                       ZR_EXEC_IR_MEMORY_TOKEN_VERSION(firstOutput) <=
+                           ZR_EXEC_IR_MEMORY_TOKEN_VERSION(phiResult))))) {
+                    zr_exec_ir_effect_diag(
+                            diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                            function, block->id, firstInstruction,
+                            phiResult,
+                            hasMemoryInput ? firstInput : firstOutput);
+                    valid = ZR_FALSE;
+                    break;
+                }
+            } else if (block->predecessors.count != 0u && hasMemoryTouch) {
+                TZrExecIrMemoryTokenId expected =
+                        ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
+                TZrBool haveExpected = ZR_FALSE;
+                for (predecessorIndex = 0u;
+                     predecessorIndex < block->predecessors.count;
+                     ++predecessorIndex) {
+                    TZrExecIrBlockId predecessor = function->predecessors[
+                            block->predecessors.start + predecessorIndex];
+                    TZrExecIrMemoryTokenId incoming = *zr_exec_ir_memory_cfg_slot(
+                            terminal, predecessor - 1u, region);
+                    if (!*zr_exec_ir_memory_cfg_known_slot(
+                                known, predecessor - 1u, region)) {
+                        haveExpected = ZR_FALSE;
+                        break;
+                    }
+                    if (!haveExpected) {
+                        expected = incoming;
+                        haveExpected = ZR_TRUE;
+                    } else if (expected != incoming) {
+                        zr_exec_ir_effect_diag(
+                                diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                                function, block->id, firstInstruction,
+                                expected, incoming);
+                        valid = ZR_FALSE;
+                        break;
+                    }
+                }
+                if (!valid) break;
+                if (haveExpected && expected != ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
+                    ((hasMemoryInput && firstInput != expected) ||
+                     (!hasMemoryInput &&
+                      ZR_EXEC_IR_MEMORY_TOKEN_VERSION(firstOutput) <=
+                          ZR_EXEC_IR_MEMORY_TOKEN_VERSION(expected)))) {
+                    zr_exec_ir_effect_diag(
+                            diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                            function, block->id, firstInstruction,
+                            expected,
+                            hasMemoryInput ? firstInput : firstOutput);
+                    valid = ZR_FALSE;
+                    break;
+                }
+            }
+        }
+        if (!valid) break;
+    }
+
+    free(terminal);
+    free(known);
+    return valid;
 }
 
 static TZrBool zr_exec_ir_verify_effect_cfg(
@@ -469,6 +809,9 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     if (!zr_exec_ir_verify_phi_predecessors(function, diagnostic)) {
+        return ZR_FALSE;
+    }
+    if (!zr_exec_ir_verify_memory_cfg(function, diagnostic)) {
         return ZR_FALSE;
     }
     if (!zr_exec_ir_verify_effect_cfg(function, diagnostic)) {

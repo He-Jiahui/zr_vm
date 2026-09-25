@@ -121,6 +121,132 @@ static void test_effect_join_requires_phi_for_distinct_predecessors(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void append_tagged_store(SZrExecIrFunction *function,
+                                TZrExecIrMemoryTokenId output,
+                                TZrExecIrEffectTokenId effectIn,
+                                TZrExecIrEffectTokenId effectOut) {
+    SZrExecIrInstruction instruction;
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_STORE;
+    instruction.flags = ZR_EXEC_IR_FLAG_MAY_THROW;
+    instruction.effectIn = effectIn;
+    instruction.effectOut = effectOut;
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &output, 1u,
+                                                 &instruction.memoryOut),
+       "append tagged store output");
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "append tagged store instruction");
+}
+
+static void append_tagged_load(SZrExecIrFunction *function,
+                               TZrExecIrMemoryTokenId input) {
+    SZrExecIrInstruction instruction;
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_LOAD;
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &input, 1u,
+                                                 &instruction.memoryIn),
+       "append tagged load input");
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "append tagged load instruction");
+}
+
+static void build_memory_diamond(SZrExecIrFunction *function) {
+    TZrExecIrBlockId predecessor;
+    TZrExecIrBlockId mergePredecessors[2] = {2u, 3u};
+    TZrUInt32 blockIndex;
+    TZrExecIrMemoryTokenId heap1 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u);
+    TZrExecIrMemoryTokenId heap2 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u);
+    TZrExecIrMemoryTokenId heap3 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 3u);
+    TZrExecIrMemoryTokenId heap4 = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 4u);
+
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+       "memory diamond left block");
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 3u,
+       "memory diamond right block");
+    ok(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 4u,
+       "memory diamond merge block");
+    append_tagged_store(function, heap1, 1u, 2u);
+    append_tagged_store(function, heap2, 2u, 3u);
+    append_tagged_store(function, heap3, 2u, 4u);
+    append_tagged_load(function, heap4);
+    for (blockIndex = 0u; blockIndex < 4u; ++blockIndex) {
+        function->blocks[blockIndex].instructions.start = blockIndex;
+        function->blocks[blockIndex].instructions.count = 1u;
+    }
+    predecessor = 1u;
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[1].predecessorRange),
+       "memory diamond left predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, &predecessor, 1u,
+               &function->blocks[2].predecessorRange),
+       "memory diamond right predecessor");
+    ok(ZrCore_ExecIr_FunctionAppendPredecessors(
+               function, mergePredecessors, 2u,
+               &function->blocks[3].predecessorRange),
+       "memory diamond merge predecessors");
+}
+
+static void test_memory_phi_joins_region_versions(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrPhiIncoming incoming[2] = {
+        {2u, ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u)},
+        {3u, ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 3u)}};
+    TZrExecIrMemoryTokenId merged = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 4u);
+    TZrExecIrMemoryTokenId stale = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u);
+
+    build_memory_diamond(function);
+    ok(ZrCore_ExecIr_FunctionSetMemoryPhi(
+               function, 4u, ZR_EXEC_IR_MEMORY_MANAGED_HEAP,
+               merged, incoming, 2u),
+       "set managed-heap memory phi");
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "region memory phi rejected");
+
+    function->phiIncoming[function->blocks[3].memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start + 1u].value = stale;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "stale region memory phi incoming accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+       "stale region memory phi lost memory diagnostic");
+    function->phiIncoming[function->blocks[3].memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start + 1u].value = incoming[1].value;
+    function->memoryTokenPool[function->instructions[3].memoryIn.start] = stale;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "region memory consumer bypassed phi accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+       "region memory consumer diagnostic lost code");
+    function->memoryTokenPool[function->instructions[3].memoryIn.start] = merged;
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "repaired region memory phi rejected");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_memory_join_requires_region_phi(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+
+    build_memory_diamond(function);
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "distinct region versions joined without memory phi");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN &&
+           diagnostic.blockId == 4u && diagnostic.instructionId == 4u,
+       "missing region memory phi lost merge location");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_throw_requires_flag(void) {
     SZrExecIrModule module;
     TZrExecIrFunctionId id;
@@ -1195,6 +1321,8 @@ static void test_ssa_rejects_invoke_result_in_exception_phi(void) {
 int main(void) {
     test_effect_phi_joins_distinct_cfg_chains();
     test_effect_join_requires_phi_for_distinct_predecessors();
+    test_memory_phi_joins_region_versions();
+    test_memory_join_requires_region_phi();
     test_throw_requires_flag();
     test_memory_tokens_must_be_monotonic();
     test_phi_predecessor_set();

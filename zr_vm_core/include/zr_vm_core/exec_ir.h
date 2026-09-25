@@ -266,6 +266,11 @@ typedef struct SZrExecIrBlock {
      */
     TZrExecIrEffectTokenId effectPhiResult;
     SZrExecIrRange effectPhiIncomings;
+    /* One memory-token merge may be described for each declared region.  The
+     * incoming ranges reuse phiIncoming storage; their value fields carry
+     * memory-token IDs rather than ValueIds. */
+    TZrExecIrMemoryTokenId memoryPhiResults[ZR_EXEC_IR_MEMORY_CLASS_COUNT];
+    SZrExecIrRange memoryPhiIncomings[ZR_EXEC_IR_MEMORY_CLASS_COUNT];
     TZrExecIrBlockId immediateDominator;
     TZrExecIrInstructionId terminatorInstructionId;
 } SZrExecIrBlock;
@@ -582,6 +587,13 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionSetEffectPhi(
         SZrExecIrFunction *function,
         TZrExecIrBlockId blockId,
         TZrExecIrEffectTokenId result,
+        const SZrExecIrPhiIncoming *incoming,
+        TZrSize count);
+ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionSetMemoryPhi(
+        SZrExecIrFunction *function,
+        TZrExecIrBlockId blockId,
+        EZrExecIrMemoryClass region,
+        TZrExecIrMemoryTokenId result,
         const SZrExecIrPhiIncoming *incoming,
         TZrSize count);
 ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionAppendInstruction(

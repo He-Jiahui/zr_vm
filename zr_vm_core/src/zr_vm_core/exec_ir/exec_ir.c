@@ -652,6 +652,34 @@ TZrBool ZrCore_ExecIr_FunctionSetEffectPhi(
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_ExecIr_FunctionSetMemoryPhi(
+        SZrExecIrFunction *function,
+        TZrExecIrBlockId blockId,
+        EZrExecIrMemoryClass region,
+        TZrExecIrMemoryTokenId result,
+        const SZrExecIrPhiIncoming *incoming,
+        TZrSize count) {
+    SZrExecIrRange range;
+
+    if (function == ZR_NULL || function->sealed || blockId == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+        blockId > function->blockCount || (TZrUInt32)region >= ZR_EXEC_IR_MEMORY_CLASS_COUNT ||
+        result == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID ||
+        !ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(result) ||
+        ZR_EXEC_IR_MEMORY_TOKEN_REGION(result) != region || count == 0u || incoming == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (function->blocks[blockId - 1u].memoryPhiResults[region] !=
+        ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (!ZrCore_ExecIr_FunctionAppendPhiIncoming(function, incoming, count, &range)) {
+        return ZR_FALSE;
+    }
+    function->blocks[blockId - 1u].memoryPhiResults[region] = result;
+    function->blocks[blockId - 1u].memoryPhiIncomings[region] = range;
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_ExecIr_FunctionAppendInstruction(SZrExecIrFunction *function,
                                                  const SZrExecIrInstruction *instruction,
                                                  TZrExecIrInstructionId *outId) {

@@ -20,6 +20,25 @@ static TZrBool zr_oracle_is_effect_phi_incoming(
     return ZR_FALSE;
 }
 
+static TZrBool zr_oracle_is_memory_phi_incoming(
+        const SZrExecIrFunction *function,
+        TZrUInt32 incomingIndex) {
+    TZrUInt32 blockIndex;
+    TZrUInt32 region;
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            if (block->memoryPhiResults[region] != ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
+                incomingIndex >= block->memoryPhiIncomings[region].start &&
+                incomingIndex - block->memoryPhiIncomings[region].start <
+                    block->memoryPhiIncomings[region].count) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool zr_oracle_block_has_successor(const SZrExecIrFunction *f,
                                               const SZrExecIrBlock *block,
                                               TZrExecIrBlockId id) {
@@ -114,10 +133,13 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
             f->phiIncoming[i].predecessor > f->blockCount ||
             f->phiIncoming[i].value == ZR_EXEC_IR_VALUE_ID_INVALID ||
             (!zr_oracle_is_effect_phi_incoming(f, i) &&
+             !zr_oracle_is_memory_phi_incoming(f, i) &&
              f->phiIncoming[i].value > f->valueCount)) {
-            zr_oracle_diag(d, zr_oracle_is_effect_phi_incoming(f, i)
-                                  ? ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN
-                                  : ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+            zr_oracle_diag(d, zr_oracle_is_memory_phi_incoming(f, i)
+                                  ? ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN
+                                  : (zr_oracle_is_effect_phi_incoming(f, i)
+                                         ? ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN
+                                         : ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE),
                            f,
                            f->phiIncoming[i].predecessor, 0u, 0u, f->valueCount,
                            f->phiIncoming[i].value);
@@ -142,6 +164,34 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
             !zr_oracle_range(b->effectPhiIncomings, f->phiIncomingCount)) {
             zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f, b->id, 0u, 0u, i + 1u, b->id);
             return ZR_FALSE;
+        }
+        {
+            TZrUInt32 region;
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                if (!zr_oracle_range(b->memoryPhiIncomings[region],
+                                     f->phiIncomingCount) ||
+                    ((b->memoryPhiResults[region] ==
+                      ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) !=
+                     (b->memoryPhiIncomings[region].count == 0u))) {
+                    zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN, f,
+                                   b->id, 0u, 0u, f->phiIncomingCount,
+                                   b->memoryPhiIncomings[region].count);
+                    return ZR_FALSE;
+                }
+                if (b->memoryPhiResults[region] !=
+                        ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
+                    (!ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(
+                             b->memoryPhiResults[region]) ||
+                     ZR_EXEC_IR_MEMORY_TOKEN_REGION(
+                             b->memoryPhiResults[region]) != region ||
+                     ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                             b->memoryPhiResults[region]) == 0u)) {
+                    zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN, f,
+                                   b->id, 0u, 0u, region,
+                                   b->memoryPhiResults[region]);
+                    return ZR_FALSE;
+                }
+            }
         }
         {
             TZrUInt32 j;
