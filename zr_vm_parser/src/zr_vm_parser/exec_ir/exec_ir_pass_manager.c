@@ -143,12 +143,19 @@ TZrUInt64 ZrParser_ExecIr_FunctionHash(const SZrExecIrFunction *function) {
     }
     for (index = 0u; index < function->blockCount; ++index) {
         const SZrExecIrBlock *block = &function->blocks[index];
+        TZrUInt32 region;
         zr_hash_u32(&hash, block->id);
         zr_hash_u32(&hash, block->flags);
         zr_hash_range(&hash, block->instructions);
         zr_hash_range(&hash, block->predecessors);
         zr_hash_range(&hash, block->successors);
         zr_hash_range(&hash, block->phis);
+        zr_hash_u32(&hash, block->effectPhiResult);
+        zr_hash_range(&hash, block->effectPhiIncomings);
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            zr_hash_u32(&hash, block->memoryPhiResults[region]);
+            zr_hash_range(&hash, block->memoryPhiIncomings[region]);
+        }
         /* immediateDominator is a derived analysis fact, not part of the IR
          * identity used for cache/revision checks. */
         zr_hash_u32(&hash, block->terminatorInstructionId);

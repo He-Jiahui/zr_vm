@@ -1,8 +1,23 @@
 ---
+related_code:
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_pass_manager.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+  - tests/cmake/ssa-tests.cmake
+implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+plan_sources:
+  - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
+  - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
+tests:
+  - tests/parser/test_ssa_pass_manager_scalar.c
+  - tests/parser/test_ssa_deopt_aggregates.c
+  - tests/acceptance/ssa-pass-manager-token-phi-hash.md
 doc_type: implementation
 status: active
-related_plan: docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
-test: ssa_pass_manager_scalar
 ---
 
 # ExecIR scalar pass pipeline
@@ -21,7 +36,11 @@ invalidated analyses.  SCCP requires dominators when a function has blocks;
 its rewrite invalidates its own lattice.  DCE invalidates all current
 analyses.  A cache carries an IR/input hash as well as a revision, so callers
 that reuse a cache cannot accidentally consume facts computed for an older
-operand or constant pool.
+operand or constant pool.  The function hash includes each block's effect
+phi result and incoming range, and every memory region's phi result and
+incoming range.  Changing only a token phi therefore invalidates cached
+analyses and is visible to pass-change accounting.  The hash excludes the
+derived immediate dominator, which is an analysis result rather than IR.
 
 SCCP uses `unknown`, `constant`, `overdefined`, and `must-throw` states.  Add,
 subtract, multiply, negate, and divide use checked signed-64-bit helpers;
@@ -69,4 +88,5 @@ ctest --test-dir build/ssa-clang-debug -R '^ssa_pass_manager_scalar$' --output-o
 
 The focused fixture covers fixed-point idempotence, checked division and
 overflow, preservation of an unused call, source-map cleanup, malformed input
-diagnostics, failed-pass rollback, and bounded execution.
+diagnostics, failed-pass rollback, bounded execution, and hash sensitivity to
+effect and per-region memory phi results and range coordinates.

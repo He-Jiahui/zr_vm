@@ -301,6 +301,45 @@ static void test_type_test_identity_survives_hash_and_dead_code_cleanup(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_token_phi_metadata_participates_in_hash(void) {
+    SZrExecIrFunction function;
+    SZrExecIrBlock *block;
+    TZrUInt64 baseline;
+    TZrUInt32 region;
+
+    init_function(&function);
+    assert(ZrCore_ExecIr_FunctionAddBlock(&function,
+                                         ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u);
+    block = &function.blocks[0];
+    baseline = ZrParser_ExecIr_FunctionHash(&function);
+    assert(baseline != 0u);
+
+    block->effectPhiResult = 2u;
+    assert(ZrParser_ExecIr_FunctionHash(&function) != baseline);
+    block->effectPhiResult = 0u;
+    block->effectPhiIncomings.count = 1u;
+    assert(ZrParser_ExecIr_FunctionHash(&function) != baseline);
+    block->effectPhiIncomings.count = 0u;
+    block->effectPhiIncomings.start = 1u;
+    assert(ZrParser_ExecIr_FunctionHash(&function) != baseline);
+    block->effectPhiIncomings.start = 0u;
+
+    for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+        block->memoryPhiResults[region] = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+                (EZrExecIrMemoryClass)region, 2u);
+        assert(ZrParser_ExecIr_FunctionHash(&function) != baseline);
+        block->memoryPhiResults[region] = 0u;
+        block->memoryPhiIncomings[region].count = 1u;
+        assert(ZrParser_ExecIr_FunctionHash(&function) != baseline);
+        block->memoryPhiIncomings[region].count = 0u;
+        block->memoryPhiIncomings[region].start = 1u;
+        assert(ZrParser_ExecIr_FunctionHash(&function) != baseline);
+        block->memoryPhiIncomings[region].start = 0u;
+    }
+    assert(ZrParser_ExecIr_FunctionHash(&function) == baseline);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_direct_pass_rejects_malformed_storage(void) {
     SZrExecIrFunction function;
     SZrExecIrAnalysisCache cache;
@@ -400,6 +439,7 @@ int main(void) {
     test_unused_call_is_preserved();
     test_dead_source_mapping_is_removed();
     test_type_test_identity_survives_hash_and_dead_code_cleanup();
+    test_token_phi_metadata_participates_in_hash();
     test_direct_pass_rejects_malformed_storage();
     test_failed_pass_rolls_back();
     test_budget_is_bounded();
