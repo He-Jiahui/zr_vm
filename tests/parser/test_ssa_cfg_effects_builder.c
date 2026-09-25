@@ -358,6 +358,53 @@ static void test_untouched_branch_merges_with_written_memory(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_sibling_observable_operations_get_distinct_effects(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId left = 2u;
+    TZrExecIrBlockId right = 3u;
+    TZrExecIrBlockId merge = 4u;
+    TZrExecIrBlockId mergePreds[2] = {left, right};
+    const SZrExecIrBlock *mergeBlock;
+    const SZrExecIrPhiIncoming *incoming;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == left,
+                 "add sibling-effect left block");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == right,
+                 "add sibling-effect right block");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == merge,
+                 "add sibling-effect merge block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[4] = {0u, 1u, 2u, 3u};
+        const TZrUInt32 counts[4] = {1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, left, &entry, 1u);
+    append_predecessor(function, right, &entry, 1u);
+    append_predecessor(function, merge, mergePreds, 2u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize sibling effect chains");
+    mergeBlock = &function->blocks[merge - 1u];
+    require_true(function->instructions[1].effectOut !=
+                     function->instructions[2].effectOut &&
+                     mergeBlock->effectPhiResult != 0u,
+                 "sibling effects require separate versions and merge phi");
+    incoming = &function->phiIncoming[mergeBlock->effectPhiIncomings.start];
+    require_true(incoming[0].value == function->instructions[1].effectOut &&
+                     incoming[1].value == function->instructions[2].effectOut,
+                 "effect phi retains exact sibling exit versions");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "distinct sibling effect versions pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
@@ -365,6 +412,7 @@ int main(void) {
     test_overlapping_block_ranges_are_rejected();
     test_missing_predecessor_storage_is_rejected();
     test_untouched_branch_merges_with_written_memory();
+    test_sibling_observable_operations_get_distinct_effects();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

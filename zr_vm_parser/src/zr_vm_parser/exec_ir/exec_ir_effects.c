@@ -336,6 +336,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     TZrUInt32 region;
     TZrBool result = ZR_TRUE;
     TZrUInt32 lastVersion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+    TZrExecIrEffectTokenId lastEffect = 1u;
 
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (function == ZR_NULL) {
@@ -627,6 +628,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                 }
             }
             if (effectPhiNeeded[blockIndex]) {
+                if (maximumEffect < lastEffect) maximumEffect = lastEffect;
                 if (maximumEffect == UINT32_MAX) {
                     zr_parser_exec_ir_effect_diag(
                             diagnostic, function,
@@ -636,6 +638,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                     goto cleanup;
                 }
                 currentEffect = maximumEffect + 1u;
+                lastEffect = currentEffect;
             } else {
                 currentEffect = incomingEffect;
             }
@@ -707,18 +710,21 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
             memoryOuts[instructionIndex].count = outputCount;
             if (zr_parser_exec_ir_is_observable(info)) {
                 TZrExecIrEffectTokenId input = currentEffect;
+                TZrExecIrEffectTokenId outputBase;
                 if (input == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) input = 1u;
-                if (input == UINT32_MAX) {
+                outputBase = input > lastEffect ? input : lastEffect;
+                if (outputBase == UINT32_MAX) {
                     zr_parser_exec_ir_effect_diag(
                             diagnostic, function,
                             ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
-                            instructionIndex + 1u, UINT32_MAX, input);
+                            instructionIndex + 1u, UINT32_MAX, outputBase);
                     result = ZR_FALSE;
                     goto cleanup;
                 }
                 effectIns[instructionIndex] = input;
-                effectOuts[instructionIndex] = input + 1u;
-                currentEffect = input + 1u;
+                effectOuts[instructionIndex] = outputBase + 1u;
+                currentEffect = outputBase + 1u;
+                lastEffect = currentEffect;
             }
         }
         for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
