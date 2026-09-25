@@ -874,7 +874,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
         }
     }
     if (!append_cfg_predecessors(s, output, diagnostic) ||
-        !ZrParser_ExecIr_SynthesizeLinearEffects(output, diagnostic)) {
+        !ZrParser_ExecIr_SynthesizeCfgEffects(output, diagnostic)) {
         return ZR_FALSE;
     }
     return ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&

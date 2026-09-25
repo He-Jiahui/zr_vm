@@ -40,6 +40,13 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildSsa(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_SynthesizeLinearEffects(
         SZrExecIrFunction *function,
         SZrExecIrDiagnostic *diagnostic);
+/* Populate effect/memory token chains and explicit token phis for an
+ * acyclic, declaration-ordered CFG.  Cyclic or otherwise unsupported CFGs
+ * are deliberately left untouched so a later loop-aware producer can own
+ * their fixed-point construction. */
+ZR_PARSER_API TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
+        SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_VerifyFunction(
         const SZrExecIrFunction *function,
         EZrExecIrVerifyLevel level,

@@ -221,15 +221,16 @@ and combinations of a loop transfer with another completion kind remain
 unsupported.
 
 The builder now invokes the producer-side effect contract after CFG
-predecessors are attached. For a single-block function with empty token
-fields, it derives schema-required instruction flags, emits region-tagged
-memory versions, and links observable instructions with a contiguous effect
-chain. The producer is intentionally a no-op for multi-block functions and
-for functions that already carry token/range facts; those cases remain owned
-by the CFG-aware producer and its token phis. Overflow, unknown-opcode, and
-allocation failures are diagnosed before the candidate is published. The
-focused direct contract is `ssa_linear_effects_builder`; the existing control
-edge rejection and source cleanup fixtures still cover the unsupported
+predecessors are attached. Single-block functions with empty token fields get
+schema-required instruction flags, region-tagged memory versions, and a
+contiguous effect chain. Acyclic, declaration-ordered multi-block CFGs also
+receive explicit effect and per-region memory token phis at joins; generated
+consumers use those phi results. Cyclic, forward-edge, partially authored, or
+otherwise unsupported graphs are conservatively left untouched for a later
+loop-aware producer. Overflow, unknown-opcode, and allocation failures are
+diagnosed before the candidate is published. The focused direct contracts are
+`ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
+control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
@@ -370,7 +371,8 @@ The nested edge-capacity regression is recorded in
 
 `tests/cmake/ssa-tests.cmake` remains the one SSA suite entry point and
 includes a small builder-specific registration module for the focused CFG,
-dominance, typed-control, canonical-ID, Place-eligibility, and linear-effects
+dominance, typed-control, canonical-ID, Place-eligibility, linear-effects, and
+CFG-effects
 fixtures.
 They share the
 same real builder/core source list and retain their CTest names; this moves

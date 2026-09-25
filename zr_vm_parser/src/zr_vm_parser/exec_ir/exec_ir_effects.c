@@ -307,6 +307,511 @@ TZrBool ZrParser_ExecIr_SynthesizeLinearEffects(
     return ZR_TRUE;
 }
 
+TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
+        SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrExecIrMemoryTokenId *entryMemory = ZR_NULL;
+    TZrExecIrMemoryTokenId *terminalMemory = ZR_NULL;
+    TZrExecIrEffectTokenId *entryEffects = ZR_NULL;
+    TZrExecIrEffectTokenId *terminalEffects = ZR_NULL;
+    TZrBool *memoryPhiNeeded = ZR_NULL;
+    TZrBool *effectPhiNeeded = ZR_NULL;
+    SZrExecIrRange *memoryIns = ZR_NULL;
+    SZrExecIrRange *memoryOuts = ZR_NULL;
+    TZrExecIrEffectTokenId *effectIns = ZR_NULL;
+    TZrExecIrEffectTokenId *effectOuts = ZR_NULL;
+    TZrUInt16 *requiredFlags = ZR_NULL;
+    TZrExecIrMemoryTokenId *tokens = ZR_NULL;
+    TZrUInt32 tokenCount = 0u;
+    TZrUInt32 tokenCapacity = 0u;
+    size_t blockRegionCount = 0u;
+    TZrUInt32 blockIndex;
+    TZrUInt32 instructionIndex;
+    TZrUInt32 region;
+    TZrBool result = ZR_TRUE;
+    TZrUInt32 lastVersion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+
+    if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
+    if (function == ZR_NULL) {
+        zr_parser_exec_ir_effect_diag(diagnostic, ZR_NULL,
+                                      ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                      0u, 0u, 0u);
+        return ZR_FALSE;
+    }
+    if (function->blockCount <= 1u) {
+        return ZrParser_ExecIr_SynthesizeLinearEffects(function, diagnostic);
+    }
+    if (function->memoryTokenCount != 0u || function->blocks == ZR_NULL ||
+        function->instructions == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    /* Existing token facts, including an explicitly authored CFG phi, belong
+     * to the producer that authored them.  Do not partially overwrite them. */
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        if (block->id != blockIndex + 1u ||
+            block->instructions.start > function->instructionCount ||
+            block->instructions.count > function->instructionCount -
+                                         block->instructions.start ||
+            block->predecessors.start > function->predecessorCount ||
+            block->predecessors.count > function->predecessorCount -
+                                         block->predecessors.start) {
+            zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                          ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                                          block->id, 0u, 0u);
+            result = ZR_FALSE;
+            goto cleanup;
+        }
+        if (block->effectPhiResult != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+            block->effectPhiIncomings.count != 0u) {
+            goto cleanup;
+        }
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            if (block->memoryPhiResults[region] !=
+                        ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID ||
+                block->memoryPhiIncomings[region].count != 0u) {
+                goto cleanup;
+            }
+        }
+        for (instructionIndex = block->predecessors.start;
+             instructionIndex < block->predecessors.start +
+                                   block->predecessors.count;
+             ++instructionIndex) {
+            TZrExecIrBlockId predecessor = function->predecessors[instructionIndex];
+            /* The bounded producer is declaration-ordered and acyclic.  A
+             * backedge or forward predecessor is left for the loop-aware
+             * fixed-point producer rather than receiving guessed tokens. */
+            if (predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                predecessor > function->blockCount ||
+                predecessor >= block->id) {
+                goto cleanup;
+            }
+        }
+    }
+    for (instructionIndex = 0u;
+         instructionIndex < function->instructionCount;
+         ++instructionIndex) {
+        const SZrExecIrInstruction *instruction =
+                &function->instructions[instructionIndex];
+        if (instruction->memoryIn.start != 0u || instruction->memoryIn.count != 0u ||
+            instruction->memoryOut.start != 0u || instruction->memoryOut.count != 0u ||
+            instruction->effectIn != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+            instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
+            goto cleanup;
+        }
+        if (ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)instruction->opcode) == ZR_NULL) {
+            zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                          ZR_EXEC_IR_DIAGNOSTIC_UNKNOWN_OPCODE,
+                                          instructionIndex + 1u, 0u,
+                                          instruction->opcode);
+            result = ZR_FALSE;
+            goto cleanup;
+        }
+    }
+
+    blockRegionCount = (size_t)function->blockCount *
+                       ZR_EXEC_IR_MEMORY_CLASS_COUNT;
+#if SIZE_MAX <= UINT32_MAX
+    if (function->blockCount > SIZE_MAX / ZR_EXEC_IR_MEMORY_CLASS_COUNT ||
+        blockRegionCount > SIZE_MAX / sizeof(*entryMemory) ||
+        function->instructionCount > SIZE_MAX / sizeof(*memoryIns)) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                      0u, UINT32_MAX, function->blockCount);
+        result = ZR_FALSE;
+        goto cleanup;
+    }
+#endif
+    entryMemory = (TZrExecIrMemoryTokenId *)calloc(blockRegionCount,
+                                                   sizeof(*entryMemory));
+    terminalMemory = (TZrExecIrMemoryTokenId *)calloc(blockRegionCount,
+                                                       sizeof(*terminalMemory));
+    entryEffects = (TZrExecIrEffectTokenId *)calloc(function->blockCount,
+                                                     sizeof(*entryEffects));
+    terminalEffects = (TZrExecIrEffectTokenId *)calloc(function->blockCount,
+                                                        sizeof(*terminalEffects));
+    memoryPhiNeeded = (TZrBool *)calloc(blockRegionCount,
+                                        sizeof(*memoryPhiNeeded));
+    effectPhiNeeded = (TZrBool *)calloc(function->blockCount,
+                                         sizeof(*effectPhiNeeded));
+    memoryIns = (SZrExecIrRange *)calloc(function->instructionCount,
+                                          sizeof(*memoryIns));
+    memoryOuts = (SZrExecIrRange *)calloc(function->instructionCount,
+                                           sizeof(*memoryOuts));
+    effectIns = (TZrExecIrEffectTokenId *)calloc(function->instructionCount,
+                                                  sizeof(*effectIns));
+    effectOuts = (TZrExecIrEffectTokenId *)calloc(function->instructionCount,
+                                                   sizeof(*effectOuts));
+    requiredFlags = (TZrUInt16 *)calloc(function->instructionCount,
+                                         sizeof(*requiredFlags));
+    if (entryMemory == ZR_NULL || terminalMemory == ZR_NULL ||
+        entryEffects == ZR_NULL || terminalEffects == ZR_NULL ||
+        memoryPhiNeeded == ZR_NULL || effectPhiNeeded == ZR_NULL ||
+        memoryIns == ZR_NULL || memoryOuts == ZR_NULL ||
+        effectIns == ZR_NULL || effectOuts == ZR_NULL ||
+        requiredFlags == ZR_NULL) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      0u, 0u, 0u);
+        result = ZR_FALSE;
+        goto cleanup;
+    }
+
+    for (instructionIndex = 0u;
+         instructionIndex < function->instructionCount;
+         ++instructionIndex) {
+        const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
+                (EZrExecIrOpcode)function->instructions[instructionIndex].opcode);
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            TZrUInt32 bit = (TZrUInt32)1u << region;
+            if ((info->memoryReads & bit) != 0u) {
+                if (tokenCapacity == UINT32_MAX) {
+                    zr_parser_exec_ir_effect_diag(
+                            diagnostic, function,
+                            ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                            instructionIndex + 1u, UINT32_MAX, tokenCapacity);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                ++tokenCapacity;
+            }
+            if ((info->memoryWrites & bit) != 0u) {
+                if (tokenCapacity == UINT32_MAX) {
+                    zr_parser_exec_ir_effect_diag(
+                            diagnostic, function,
+                            ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                            instructionIndex + 1u, UINT32_MAX, tokenCapacity);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                ++tokenCapacity;
+            }
+        }
+    }
+#if SIZE_MAX <= UINT32_MAX
+    if (tokenCapacity != 0u && tokenCapacity > SIZE_MAX / sizeof(*tokens)) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                      0u, UINT32_MAX, tokenCapacity);
+        result = ZR_FALSE;
+        goto cleanup;
+    }
+#endif
+    if (tokenCapacity != 0u) {
+        tokens = (TZrExecIrMemoryTokenId *)malloc(
+                (size_t)tokenCapacity * sizeof(*tokens));
+        if (tokens == ZR_NULL) {
+            zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                          ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                          0u, 0u, 0u);
+            result = ZR_FALSE;
+            goto cleanup;
+        }
+    }
+
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrExecIrMemoryTokenId currentMemory[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+        TZrExecIrEffectTokenId currentEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+        TZrUInt32 predecessorIndex;
+
+        if (block->predecessors.count != 0u) {
+            TZrBool haveMemory[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+            TZrBool haveEffect = ZR_FALSE;
+            TZrExecIrMemoryTokenId incomingMemory[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+            TZrExecIrEffectTokenId incomingEffect =
+                    ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+            TZrUInt32 maximumVersion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
+            TZrExecIrEffectTokenId maximumEffect =
+                    ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+
+            for (predecessorIndex = block->predecessors.start;
+                 predecessorIndex < block->predecessors.start +
+                                       block->predecessors.count;
+                 ++predecessorIndex) {
+                TZrExecIrBlockId predecessor = function->predecessors[predecessorIndex];
+                TZrUInt32 predecessorBlock = predecessor - 1u;
+                for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                    TZrExecIrMemoryTokenId token = terminalMemory[
+                            (size_t)predecessorBlock * ZR_EXEC_IR_MEMORY_CLASS_COUNT +
+                            region];
+                    if (!haveMemory[region]) {
+                        incomingMemory[region] = token;
+                        haveMemory[region] = ZR_TRUE;
+                    } else if (incomingMemory[region] != token) {
+                        if (incomingMemory[region] == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID ||
+                            token == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
+                            goto cleanup;
+                        }
+                        if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token) >
+                            maximumVersion[region]) {
+                            maximumVersion[region] =
+                                    ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token);
+                        }
+                        if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(incomingMemory[region]) >
+                            maximumVersion[region]) {
+                            maximumVersion[region] =
+                                    ZR_EXEC_IR_MEMORY_TOKEN_VERSION(incomingMemory[region]);
+                        }
+                        memoryPhiNeeded[(size_t)blockIndex *
+                                        ZR_EXEC_IR_MEMORY_CLASS_COUNT + region] = ZR_TRUE;
+                    }
+                }
+                if (!haveEffect) {
+                    incomingEffect = terminalEffects[predecessorBlock];
+                    haveEffect = ZR_TRUE;
+                } else if (incomingEffect != terminalEffects[predecessorBlock]) {
+                    if (terminalEffects[predecessorBlock] > maximumEffect)
+                        maximumEffect = terminalEffects[predecessorBlock];
+                    if (incomingEffect > maximumEffect)
+                        maximumEffect = incomingEffect;
+                    effectPhiNeeded[blockIndex] = ZR_TRUE;
+                }
+            }
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                if (memoryPhiNeeded[(size_t)blockIndex *
+                                    ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) {
+                    TZrUInt32 version = maximumVersion[region] + 1u;
+                    if (version == 0u || version > ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK) {
+                        zr_parser_exec_ir_effect_diag(
+                                diagnostic, function,
+                                ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                block->id,
+                                ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK, version);
+                        result = ZR_FALSE;
+                        goto cleanup;
+                    }
+                    currentMemory[region] = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+                            (EZrExecIrMemoryClass)region, version);
+                    entryMemory[(size_t)blockIndex *
+                                ZR_EXEC_IR_MEMORY_CLASS_COUNT + region] =
+                            currentMemory[region];
+                    if (version > lastVersion[region]) lastVersion[region] = version;
+                } else {
+                    currentMemory[region] = incomingMemory[region];
+                    entryMemory[(size_t)blockIndex *
+                                ZR_EXEC_IR_MEMORY_CLASS_COUNT + region] =
+                            currentMemory[region];
+                }
+            }
+            if (effectPhiNeeded[blockIndex]) {
+                if (maximumEffect == UINT32_MAX) {
+                    zr_parser_exec_ir_effect_diag(
+                            diagnostic, function,
+                            ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                            block->id, UINT32_MAX, maximumEffect);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                currentEffect = maximumEffect + 1u;
+            } else {
+                currentEffect = incomingEffect;
+            }
+            entryEffects[blockIndex] = currentEffect;
+        }
+
+        for (instructionIndex = block->instructions.start;
+             instructionIndex < block->instructions.start +
+                                   block->instructions.count;
+             ++instructionIndex) {
+            const SZrExecIrInstruction *instruction =
+                    &function->instructions[instructionIndex];
+            const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
+                    (EZrExecIrOpcode)instruction->opcode);
+            TZrUInt32 inputCount = 0u;
+            TZrUInt32 outputCount = 0u;
+            TZrUInt32 inputStart = tokenCount;
+
+            requiredFlags[instructionIndex] = zr_parser_exec_ir_required_flags(info);
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                TZrUInt32 bit = (TZrUInt32)1u << region;
+                if ((info->memoryReads & bit) != 0u) {
+                    if (currentMemory[region] ==
+                            ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
+                        currentMemory[region] = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+                                (EZrExecIrMemoryClass)region, 1u);
+                    }
+                    if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(currentMemory[region]) <
+                            lastVersion[region]) {
+                        goto cleanup;
+                    }
+                    if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(currentMemory[region]) >
+                            lastVersion[region]) {
+                        lastVersion[region] = ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                                currentMemory[region]);
+                    }
+                    tokens[tokenCount] = currentMemory[region];
+                    ++tokenCount;
+                    ++inputCount;
+                }
+            }
+            memoryIns[instructionIndex].start = inputStart;
+            memoryIns[instructionIndex].count = inputCount;
+            memoryOuts[instructionIndex].start = tokenCount;
+            for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                TZrUInt32 bit = (TZrUInt32)1u << region;
+                if ((info->memoryWrites & bit) != 0u) {
+                    TZrUInt32 currentVersion =
+                            ZR_EXEC_IR_MEMORY_TOKEN_VERSION(currentMemory[region]);
+                    TZrUInt32 nextVersion = currentVersion + 1u;
+                    if (nextVersion <= lastVersion[region])
+                        nextVersion = lastVersion[region] + 1u;
+                    if (currentVersion >= ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK ||
+                        nextVersion == 0u ||
+                        nextVersion > ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK) {
+                        zr_parser_exec_ir_effect_diag(
+                                diagnostic, function,
+                                ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                instructionIndex + 1u,
+                                ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK,
+                                nextVersion);
+                        result = ZR_FALSE;
+                        goto cleanup;
+                    }
+                    currentMemory[region] = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+                            (EZrExecIrMemoryClass)region, nextVersion);
+                    lastVersion[region] = nextVersion;
+                    tokens[tokenCount] = currentMemory[region];
+                    ++tokenCount;
+                    ++outputCount;
+                }
+            }
+            memoryOuts[instructionIndex].count = outputCount;
+            if (zr_parser_exec_ir_is_observable(info)) {
+                TZrExecIrEffectTokenId input = currentEffect;
+                if (input == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) input = 1u;
+                if (input == UINT32_MAX) {
+                    zr_parser_exec_ir_effect_diag(
+                            diagnostic, function,
+                            ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                            instructionIndex + 1u, UINT32_MAX, input);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                effectIns[instructionIndex] = input;
+                effectOuts[instructionIndex] = input + 1u;
+                currentEffect = input + 1u;
+            }
+        }
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            terminalMemory[(size_t)blockIndex * ZR_EXEC_IR_MEMORY_CLASS_COUNT +
+                           region] = currentMemory[region];
+        }
+        terminalEffects[blockIndex] = currentEffect;
+    }
+
+    if (tokenCount != tokenCapacity) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                      0u, tokenCapacity, tokenCount);
+        result = ZR_FALSE;
+        goto cleanup;
+    }
+    if (tokenCount != 0u && !ZrCore_ExecIr_FunctionAppendMemoryTokens(
+                function, tokens, tokenCount, ZR_NULL)) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      0u, 0u, 0u);
+        result = ZR_FALSE;
+        goto cleanup;
+    }
+    for (instructionIndex = 0u;
+         instructionIndex < function->instructionCount;
+         ++instructionIndex) {
+        function->instructions[instructionIndex].memoryIn = memoryIns[instructionIndex];
+        function->instructions[instructionIndex].memoryOut = memoryOuts[instructionIndex];
+        function->instructions[instructionIndex].effectIn = effectIns[instructionIndex];
+        function->instructions[instructionIndex].effectOut = effectOuts[instructionIndex];
+        function->instructions[instructionIndex].flags =
+                (TZrUInt16)(function->instructions[instructionIndex].flags |
+                            requiredFlags[instructionIndex]);
+    }
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        TZrUInt32 predecessorCount = block->predecessors.count;
+        if (effectPhiNeeded[blockIndex]) {
+            SZrExecIrPhiIncoming *incoming = (SZrExecIrPhiIncoming *)calloc(
+                    predecessorCount, sizeof(*incoming));
+            TZrUInt32 i;
+            if (incoming == ZR_NULL) {
+                zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                              ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                              block->id, 0u, 0u);
+                result = ZR_FALSE;
+                goto cleanup;
+            }
+            for (i = 0u; i < predecessorCount; ++i) {
+                TZrExecIrBlockId predecessor =
+                        function->predecessors[block->predecessors.start + i];
+                incoming[i].predecessor = predecessor;
+                incoming[i].value = terminalEffects[predecessor - 1u];
+            }
+            if (!ZrCore_ExecIr_FunctionSetEffectPhi(
+                        function, block->id, entryEffects[blockIndex], incoming,
+                        predecessorCount)) {
+                free(incoming);
+                zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                              ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                              block->id, 0u, 0u);
+                result = ZR_FALSE;
+                goto cleanup;
+            }
+            free(incoming);
+        }
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            if (memoryPhiNeeded[(size_t)blockIndex *
+                                ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) {
+                SZrExecIrPhiIncoming *incoming = (SZrExecIrPhiIncoming *)calloc(
+                        predecessorCount, sizeof(*incoming));
+                TZrUInt32 i;
+                if (incoming == ZR_NULL) {
+                    zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                                  ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                                  block->id, 0u, 0u);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                for (i = 0u; i < predecessorCount; ++i) {
+                    TZrExecIrBlockId predecessor =
+                            function->predecessors[block->predecessors.start + i];
+                    incoming[i].predecessor = predecessor;
+                    incoming[i].value = terminalMemory[(size_t)(predecessor - 1u) *
+                            ZR_EXEC_IR_MEMORY_CLASS_COUNT + region];
+                }
+                if (!ZrCore_ExecIr_FunctionSetMemoryPhi(
+                            function, block->id, (EZrExecIrMemoryClass)region,
+                            entryMemory[(size_t)blockIndex *
+                                        ZR_EXEC_IR_MEMORY_CLASS_COUNT + region],
+                            incoming, predecessorCount)) {
+                    free(incoming);
+                    zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                                  ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                                  block->id, 0u, 0u);
+                    result = ZR_FALSE;
+                    goto cleanup;
+                }
+                free(incoming);
+            }
+        }
+    }
+
+cleanup:
+    free(entryMemory);
+    free(terminalMemory);
+    free(entryEffects);
+    free(terminalEffects);
+    free(memoryPhiNeeded);
+    free(effectPhiNeeded);
+    free(memoryIns);
+    free(memoryOuts);
+    free(effectIns);
+    free(effectOuts);
+    free(requiredFlags);
+    free(tokens);
+    return result;
+}
+
 TZrBool ZrParser_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                        EZrExecIrVerifyLevel level,
                                        SZrExecIrDiagnostic *diagnostic) {
