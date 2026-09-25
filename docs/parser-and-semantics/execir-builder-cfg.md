@@ -14,6 +14,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
@@ -46,6 +47,7 @@ tests:
   - tests/acceptance/ssa-builder-operand-bounds.md
   - tests/acceptance/ssa-builder-terminator-placement.md
   - tests/acceptance/ssa-builder-successor-arity.md
+  - tests/acceptance/ssa-effect-producer-diagnostics.md
   - tests/acceptance/ssa-builder-instruction-partition.md
   - tests/acceptance/ssa-builder-edge-source.md
   - tests/acceptance/ssa-builder-cfg-fact-identity.md
@@ -246,6 +248,10 @@ diagnosed before the candidate is published. The focused direct contracts are
 `ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
 control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
+The shared producer diagnostic reports the source and owning CFG block for a
+valid instruction ID only when both instruction and block storage are within
+declared capacities.  Malformed storage and out-of-range IDs retain the
+error code without following an invalid pointer or inventing a source.
 The linear and CFG synthesizers live in separate source files and share only
 private diagnostics, opcode flags, and observable-operation classification.
 The CFG producer reuses core's dominance-based backedge classification and

@@ -305,6 +305,30 @@ static void test_missing_predecessor_storage_is_rejected(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_unknown_opcode_reports_owning_block_and_source(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    const TZrUInt32 starts[2] = {0u, 1u};
+    const TZrUInt32 counts[2] = {1u, 1u};
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+                 "add malformed-opcode block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    set_block_ranges(function, starts, counts);
+    append_predecessor(function, 2u, &entry, 1u);
+    function->instructions[1].opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_COUNT;
+    function->instructions[1].sourceId = 951u;
+    require_true(!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic) &&
+                     diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNKNOWN_OPCODE &&
+                     diagnostic.blockId == 2u && diagnostic.instructionId == 2u &&
+                     diagnostic.sourceId == 951u,
+                 "unknown opcode reports CFG block and source");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_untouched_branch_merges_with_written_memory(void) {
     SZrExecIrModule module;
     SZrExecIrFunction *function = new_function(&module);
@@ -942,6 +966,7 @@ int main(void) {
     test_branch_read_preserves_initial_memory_state();
     test_overlapping_block_ranges_are_rejected();
     test_missing_predecessor_storage_is_rejected();
+    test_unknown_opcode_reports_owning_block_and_source();
     test_untouched_branch_merges_with_written_memory();
     test_sibling_observable_operations_get_distinct_effects();
     test_single_latch_loop_gets_carried_effect_phis(ZR_TRUE);

@@ -16,14 +16,32 @@ static void zr_parser_exec_ir_effect_diag(SZrExecIrDiagnostic *diagnostic,
                                            TZrUInt32 instructionId,
                                            TZrUInt32 expected,
                                            TZrUInt32 actual) {
+    TZrUInt32 blockIndex;
     if (diagnostic == ZR_NULL) return;
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->code = code;
     diagnostic->functionToken = function != ZR_NULL ? function->functionToken : 0u;
-    diagnostic->blockId = ZR_EXEC_IR_BLOCK_ID_ENTRY;
+    diagnostic->blockId = function != ZR_NULL &&
+                          function->entryBlockId != ZR_EXEC_IR_BLOCK_ID_INVALID
+                              ? function->entryBlockId : ZR_EXEC_IR_BLOCK_ID_ENTRY;
     diagnostic->instructionId = instructionId;
     diagnostic->expectedVersion = expected;
     diagnostic->actualVersion = actual;
+    if (function == ZR_NULL || function->instructions == ZR_NULL ||
+        instructionId == 0u || instructionId > function->instructionCount ||
+        function->instructionCount > function->instructionCapacity) return;
+    diagnostic->sourceId = function->instructions[instructionId - 1u].sourceId;
+    if (function->blocks == ZR_NULL ||
+        function->blockCount > function->blockCapacity) return;
+    for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
+        const SZrExecIrBlock *block = &function->blocks[blockIndex];
+        if (block->instructions.start <= instructionId - 1u &&
+            instructionId - 1u - block->instructions.start <
+                    block->instructions.count) {
+            diagnostic->blockId = block->id;
+            break;
+        }
+    }
 }
 
 static TZrUInt16 zr_parser_exec_ir_required_flags(
