@@ -649,6 +649,8 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 const SZrExecIrOpcodeInfo *info;
                 TZrBool isTerminator;
                 memset(&x, 0, sizeof(x)); x.opcode = (TZrUInt16)map_opcode(in); x.sourceId = in->id;
+                if (in->opcode == ZR_SEMANTIC_IR_CONSTANT && in->hasConstantPoolIndex)
+                    x.layoutId = in->constantPoolIndex;
                 if (in->opcode == ZR_SEMANTIC_IR_BRANCH && in->operandCount != 0u)
                     x.opcode = ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH;
                 if (x.opcode == ZR_EXEC_IR_OPCODE_CALL &&

@@ -17,6 +17,8 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/parser/test_ssa_source_straight_line_cfg.c
+  - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_source_value_facts.c
   - tests/parser/test_ssa_builder_fact_identity.c
@@ -102,17 +104,20 @@ they address.
 
 ## Consumers and limits
 
-Source `own`, `share`, borrow, `degrade` and `wake` results exercise the normal
-compiler/validation/builder path. Owner-state analysis can now observe an
-initialized unique owner before an explicit drop and a dropped owner after it.
-Explicit semantic `DROP` still maps to strict `DROP`, never automatically to
-guarded cleanup.
+Canonical type snapshots for source `own`, `share`, borrow, `degrade` and `wake`
+remain available after normal compiler validation. Hand-built and otherwise
+complete SemIR exercises the builder projection and owner-state analysis:
+an initialized unique owner is seen before an explicit drop and as dropped
+after it. Explicit semantic `DROP` maps to strict `DROP`, never automatically
+to guarded cleanup.
 
-The end-to-end fixtures include a source `if (true) {}` continuation, which
-activates the compiler's existing CFG producer. A separate straight-line
-fixture verifies fact publication without claiming its legacy synthetic
-return edge is lowerable. Pure straight-line fallback CFG lowering remains
-an existing gap; the tests do not edit or synthesize the compiler's IR.
+The source fixtures no longer add a dummy branch. Supported scalar bodies
+obtain real terminal instructions through the source CFG finalizer. The
+`own Value()` resource-construction fixtures instead retain analysis-only
+graphs and assert builder rejection: their legacy instance seed, close marker
+and optional constructor call still lack complete canonical producers. Their
+ownership/nullability metadata is validated without editing or synthesizing
+the compiler's IR. See `source-cfg-finalization.md` and its acceptance record.
 
 This closes a prerequisite in 01.02, not the entire SSA construction or state
 map milestones. It does not generate memory/effect token chains, synthesize

@@ -188,6 +188,35 @@ static void test_rejects_stale_or_invalid_facts(void) {
     }
 }
 
+static void test_preserves_explicit_constant_pool_indices(void) {
+    static const TZrUInt32 indices[] = {0u, 9u, UINT32_MAX};
+    TZrUInt32 index;
+    for (index = 0u; index < sizeof(indices) / sizeof(indices[0]); ++index) {
+        SZrParserCfgBlock block;
+        SZrSemanticIrInstruction instructions[2];
+        SZrSemanticIrValue value = {0};
+        TZrValueId operand;
+        SZrSemanticIrFunction semantic;
+        SZrExecIrFunction output;
+        SZrExecIrDiagnostic diagnostic;
+        make_function(&semantic, &block, instructions, &value, &operand);
+        instructions[0].hasConstantPoolIndex = ZR_TRUE;
+        instructions[0].constantPoolIndex = indices[index];
+        ZrCore_ExecIr_FunctionInit(&output);
+        check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+                  output.instructions[0].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+                  output.instructions[0].layoutId == indices[index],
+              "builder lost explicit source constant pool index");
+        ZrCore_ExecIr_FreeFunction(&output);
+        instructions[0].hasConstantPoolIndex = ZR_FALSE;
+        ZrCore_ExecIr_FunctionInit(&output);
+        check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+                  output.instructions[0].layoutId == 0u,
+              "builder interpreted absent constant pool metadata as an index");
+        ZrCore_ExecIr_FreeFunction(&output);
+    }
+}
+
 int main(void) {
     test_rejects_value_id_mismatch();
     test_rejects_instruction_id_mismatch();
@@ -195,6 +224,7 @@ int main(void) {
     test_preserves_value_facts(ZR_FALSE);
     test_preserves_value_facts(ZR_TRUE);
     test_rejects_stale_or_invalid_facts();
+    test_preserves_explicit_constant_pool_indices();
     puts("ssa builder fact identity PASS");
     return EXIT_SUCCESS;
 }

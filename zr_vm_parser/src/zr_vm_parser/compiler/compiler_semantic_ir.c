@@ -1458,8 +1458,6 @@ TZrBool ZrParser_Compiler_PreSemanticIrIsValidated(
 
 TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
     SZrSemanticFlowResult flowResult;
-    TZrUInt32 entryBlock;
-    TZrUInt32 exitBlock;
     TZrBool analyzed;
     TZrBool hasTrackedLoanConflict = ZR_FALSE;
 
@@ -1474,54 +1472,11 @@ TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
         return ZR_FALSE;
     }
 
-    if (cs->preSemanticIrCfgActive) {
-        if (!compiler_semantic_cfg_finish(cs) ||
-            !ZrParser_SemanticIr_ResolveValueFacts(
-                    &cs->preSemanticIr, cs->semanticContext) ||
-            !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
-            return ZR_FALSE;
-        }
-    } else {
-    ZrParser_Cfg_Free(cs->state, &cs->preSemanticIr.cfg);
-    ZrParser_Cfg_Init(cs->state, &cs->preSemanticIr.cfg);
-    entryBlock = ZrParser_Cfg_AppendBlock(
-            cs->state,
-            &cs->preSemanticIr.cfg,
-            ZR_PARSER_CFG_BLOCK_ENTRY,
-            ZR_NULL);
-    exitBlock = ZrParser_Cfg_AppendBlock(
-            cs->state,
-            &cs->preSemanticIr.cfg,
-            ZR_PARSER_CFG_BLOCK_EXIT,
-            ZR_NULL);
-    if (entryBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-        exitBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+    if (!compiler_semantic_cfg_finalize(cs) ||
+        !ZrParser_SemanticIr_ResolveValueFacts(
+                &cs->preSemanticIr, cs->semanticContext) ||
+        !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
         return ZR_FALSE;
-    }
-    cs->preSemanticIr.cfg.entryBlockId = entryBlock;
-    cs->preSemanticIr.cfg.exitBlockId = exitBlock;
-    if (!ZrParser_Cfg_Connect(
-                &cs->preSemanticIr.cfg,
-                entryBlock,
-                exitBlock,
-                ZR_PARSER_CFG_EDGE_RETURN,
-                ZR_NULL) ||
-        !ZrParser_SemanticIr_BindBlockRange(
-                &cs->preSemanticIr,
-                &cs->preSemanticIr.cfg,
-                entryBlock,
-                0U,
-                (TZrUInt32)cs->preSemanticIr.instructions.length,
-                ZR_PARSER_CFG_TERMINATOR_RETURN) ||
-        !ZrParser_SemanticIr_BindBlockRange(
-                &cs->preSemanticIr,
-                &cs->preSemanticIr.cfg,
-                exitBlock,
-                (TZrUInt32)cs->preSemanticIr.instructions.length,
-                0U,
-                ZR_PARSER_CFG_TERMINATOR_EXIT)) {
-        return ZR_FALSE;
-    }
     }
 
     ZrParser_SemanticFlowResult_Init(cs->state, &flowResult);

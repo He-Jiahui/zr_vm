@@ -8,6 +8,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
@@ -26,12 +27,14 @@ tests:
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_fact_identity.c
   - tests/parser/test_ssa_source_value_facts.c
+  - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/cmake/ssa-tests.cmake
   - tests/cmake/ssa-builder-tests.cmake
   - tests/acceptance/ssa-builder-cfg.md
+  - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
   - tests/acceptance/ssa-builder-module-transaction.md
   - tests/acceptance/ssa-builder-canonical-input-shape.md
@@ -64,6 +67,20 @@ constructs SSA. It replaces the caller's function only after every stage
 succeeds. CFG block indices in SemanticIR are zero-based; emitted ExecIR block
 IDs are one-based. The producer uses `outgoingEdges` when that array is valid,
 otherwise the block's bounded inline `successors` array.
+
+Supported straight-line source bodies now reach this builder through actual
+producer-emitted terminal instructions, without a dummy source branch.
+The compiler's conservative analysis-only fallback is still not executable
+input: its synthetic RETURN edge remains rejected. No verifier rule is relaxed
+and no missing source operation is reconstructed from ExecBC. See
+`source-cfg-finalization.md` for producer completeness and repeat-validation
+contracts.
+
+For a SemanticIR CONSTANT with `hasConstantPoolIndex`, the builder retains
+`constantPoolIndex` in the existing ExecIR CONSTANT `layoutId` field. Oracle
+input supplies the corresponding value table; the IR contains only the stable
+index. The source assignment regression compares the actual returned value
+after selecting two distinct entries, not just instruction shape.
 
 Semantic values also carry canonical ownership/nullability snapshots. The
 builder validates their type-ID witnesses and enum ranges, projects both

@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - scripts/syntax_migration_inventory.py
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
@@ -333,6 +334,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - failure-atomic cached idoms for diamond, loop and unreachable block cases
 - `execir-builder-cfg.md`
   - contiguous builder successor/predecessor side pools and malformed-edge diagnostics
+- `source-cfg-finalization.md`
+  - real terminal instructions for supported straight-line source entry bodies
+  - idempotent finalization and explicit analysis-only fallback boundaries
 - `execir-ssa-validation.md`
   - conservative operand/value validation and precise SSA diagnostic locations
 - `iterator-yield-suspension.md`

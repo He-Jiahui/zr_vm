@@ -146,6 +146,8 @@ endif ()
 
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-builder-tests.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-value-facts-tests.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-source-straight-line-tests.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-source-cfg-fault-tests.cmake)
 
 if (NOT TARGET zr_vm_ssa_source_cleanup_cfg_test)
     zr_vm_add_unity_test_target(

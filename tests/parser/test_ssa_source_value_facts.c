@@ -1,11 +1,9 @@
 #include "unity.h"
 
 #include <string.h>
-#include <stdio.h>
 
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
-#include "zr_vm_core/exec_ir_owner_state.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/canonical_type.h"
@@ -54,126 +52,111 @@ static void free_source(SZrCompilerState *compiler, SZrAstNode *ast) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
-static void build_source(const SZrSemanticIrFunction *semantic,
-                         SZrExecIrFunction *output, SZrExecIrDiagnostic *diagnostic) {
-    TZrBool built = ZrParser_ExecIr_Build(semantic, ZR_NULL, output, diagnostic);
-    if (!built) {
-        fprintf(stderr, "builder diagnostic=%u block=%u instruction=%u source=%u expected=%u actual=%u\n",
-                (unsigned)diagnostic->code, (unsigned)diagnostic->blockId,
-                (unsigned)diagnostic->instructionId, (unsigned)diagnostic->sourceId,
-                (unsigned)diagnostic->expectedVersion, (unsigned)diagnostic->actualVersion);
-    }
-    TEST_ASSERT_TRUE(built);
+static void assert_construct_requires_canonical_producer(
+        const SZrCompilerState *compiler) {
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TEST_ASSERT_FALSE(compiler->preSemanticIrCfgActive);
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_Build(
+            &compiler->preSemanticIr, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
 }
 
-static void test_source_ownership_and_borrow_reach_execir(void) {
+static void test_source_ownership_and_borrow_facts_survive_rejected_constructor(void) {
     const char *source =
         "resource class Value {}\n"
         "var owner = own Value();\n"
         "var shared = share(owner);\n"
-        "var borrowed: ref readonly Value = ref shared;\n"
-        "if (true) {}\n";
+        "var borrowed: ref readonly Value = ref shared;\n";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler, source);
     const SZrSemanticIrFunction *semantic = ZrParser_Compiler_PreSemanticIr(&compiler);
-    SZrExecIrFunction output;
-    SZrExecIrDiagnostic diagnostic;
     TZrSize index;
     TZrUInt32 uniqueCount = 0u, sharedCount = 0u, borrowedCount = 0u;
-    ZrCore_ExecIr_FunctionInit(&output);
-    build_source(semantic, &output, &diagnostic);
+    assert_construct_requires_canonical_producer(&compiler);
     for (index = 0u; index < semantic->values.length; ++index) {
         const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(semantic, (TZrValueId)index + 1u);
         const SZrCanonicalTypeNode *type = ZrParser_CanonicalType_Find(compiler.semanticContext, value->typeId);
-        EZrExecIrOwnership expected = ZR_EXEC_IR_OWNERSHIP_UNKNOWN;
+        EZrSemanticValueOwnership expected = ZR_SEMANTIC_VALUE_OWNERSHIP_UNKNOWN;
         if (type == ZR_NULL) continue;
         if (type->kind == ZR_CANONICAL_TYPE_REF) {
-            expected = ZR_EXEC_IR_OWNERSHIP_BORROWED;
+            expected = ZR_SEMANTIC_VALUE_OWNERSHIP_BORROWED;
             ++borrowedCount;
         } else if (type->kind == ZR_CANONICAL_TYPE_OWNER && type->data.owner.ownerKind == ZR_CANONICAL_OWNER_UNIQUE) {
-            expected = ZR_EXEC_IR_OWNERSHIP_UNIQUE;
+            expected = ZR_SEMANTIC_VALUE_OWNERSHIP_UNIQUE;
             ++uniqueCount;
         } else if (type->kind == ZR_CANONICAL_TYPE_OWNER && type->data.owner.ownerKind == ZR_CANONICAL_OWNER_SHARED) {
-            expected = ZR_EXEC_IR_OWNERSHIP_SHARED;
+            expected = ZR_SEMANTIC_VALUE_OWNERSHIP_SHARED;
             ++sharedCount;
         } else continue;
-        TEST_ASSERT_EQUAL_INT(expected, output.values[index].ownership);
-        TEST_ASSERT_EQUAL_UINT32(value->typeId, output.values[index].typeToken);
-        TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_NULLABILITY_NONNULL, output.values[index].nullability);
+        TEST_ASSERT_EQUAL_INT(expected, value->facts.ownership);
+        TEST_ASSERT_EQUAL_UINT32(value->typeId, value->facts.typeId);
+        TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_NULLABILITY_NONNULL,
+                              value->facts.nullability);
     }
     TEST_ASSERT_GREATER_THAN_UINT32(0u, uniqueCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, sharedCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, borrowedCount);
-    ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
 }
 
-static void test_explicit_source_drop_stays_strict(void) {
-    const char *source = "resource class Value {}\nvar owner = own Value();\ndrop(owner);\nif (true) {}\n";
+static void test_explicit_source_drop_fact_stays_strict_but_constructor_is_rejected(void) {
+    const char *source = "resource class Value {}\nvar owner = own Value();\ndrop(owner);\n";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler, source);
-    SZrExecIrFunction output;
-    SZrExecIrDiagnostic diagnostic;
-    TZrUInt32 index, drops = 0u;
-    SZrExecIrOwnerAnalysis owners = {0};
-    ZrCore_ExecIr_FunctionInit(&output);
-    build_source(ZrParser_Compiler_PreSemanticIr(&compiler), &output, &diagnostic);
-    TEST_ASSERT_TRUE(ZrCore_ExecIr_OwnerAnalysisBuild(&output, &owners, &diagnostic));
-    for (index = 0u; index < output.instructionCount; ++index) {
-        const SZrExecIrInstruction *instruction = &output.instructions[index];
-        TEST_ASSERT_NOT_EQUAL(ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED, instruction->opcode);
-        if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP) {
-            TZrExecIrValueId owner;
-            TEST_ASSERT_EQUAL_UINT32(1u, instruction->operandRange.count);
-            owner = output.operandPool[instruction->operandRange.start];
-            TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_OWNERSHIP_UNIQUE, output.values[owner - 1u].ownership);
-            TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED,
-                    ZrCore_ExecIr_OwnerStateAt(&owners, index + 1u, owner,
-                            ZR_EXEC_IR_STATE_BEFORE_EFFECT));
-            TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED,
-                    ZrCore_ExecIr_OwnerStateAt(&owners, index + 1u, owner,
-                            ZR_EXEC_IR_STATE_AFTER_EFFECT));
+    const SZrSemanticIrFunction *semantic = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TZrSize index;
+    TZrUInt32 drops = 0u;
+    assert_construct_requires_canonical_producer(&compiler);
+    for (index = 0u; index < semantic->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(semantic, index);
+        if (instruction->opcode == ZR_SEMANTIC_IR_DROP) {
+            const SZrSemanticIrValue *owner =
+                    ZrParser_SemanticIr_Value(semantic, instruction->valueId);
+            TEST_ASSERT_NOT_NULL(owner);
+            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_OWNERSHIP_UNIQUE,
+                                  owner->facts.ownership);
             ++drops;
         }
     }
     TEST_ASSERT_EQUAL_UINT32(1u, drops);
-    ZrCore_ExecIr_OwnerAnalysisFree(&owners);
-    ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
 }
 
 static void test_weak_and_nullable_wake_remain_distinct(void) {
     const char *source = "resource class Value {}\n"
         "var owner = own Value();\nvar shared = share(owner);\n"
-        "var weak = degrade(shared);\nvar revived = wake(weak);\nif (true) {}\n";
+        "var weak = degrade(shared);\nvar revived = wake(weak);\n";
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler, source);
     const SZrSemanticIrFunction *semantic = ZrParser_Compiler_PreSemanticIr(&compiler);
-    SZrExecIrFunction output;
-    SZrExecIrDiagnostic diagnostic;
     TZrSize index;
     TZrUInt32 weakCount = 0u, nullableCount = 0u;
-    ZrCore_ExecIr_FunctionInit(&output);
-    build_source(semantic, &output, &diagnostic);
+    assert_construct_requires_canonical_producer(&compiler);
     for (index = 0u; index < semantic->values.length; ++index) {
         const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(semantic, (TZrValueId)index + 1u);
         const SZrCanonicalTypeNode *type = ZrParser_CanonicalType_Find(compiler.semanticContext, value->typeId);
         if (type == ZR_NULL) continue;
         if (type->kind == ZR_CANONICAL_TYPE_OWNER && type->data.owner.ownerKind == ZR_CANONICAL_OWNER_WEAK) {
-            TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_OWNERSHIP_UNKNOWN, output.values[index].ownership);
+            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_OWNERSHIP_WEAK,
+                                  value->facts.ownership);
             ++weakCount;
         } else if (type->kind == ZR_CANONICAL_TYPE_NULLABLE) {
             type = ZrParser_CanonicalType_Find(compiler.semanticContext, type->data.target.targetTypeId);
             if (type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_OWNER && type->data.owner.ownerKind == ZR_CANONICAL_OWNER_SHARED) {
-                TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_OWNERSHIP_SHARED, output.values[index].ownership);
-                TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_NULLABILITY_NULLABLE, output.values[index].nullability);
+                TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_OWNERSHIP_SHARED,
+                                      value->facts.ownership);
+                TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_NULLABILITY_NULLABLE,
+                                      value->facts.nullability);
                 ++nullableCount;
             }
         }
     }
     TEST_ASSERT_GREATER_THAN_UINT32(0u, weakCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, nullableCount);
-    ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
 }
 
@@ -201,8 +184,8 @@ static void test_straight_line_compiler_publishes_facts_before_cfg_lowering(void
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_source_ownership_and_borrow_reach_execir);
-    RUN_TEST(test_explicit_source_drop_stays_strict);
+    RUN_TEST(test_source_ownership_and_borrow_facts_survive_rejected_constructor);
+    RUN_TEST(test_explicit_source_drop_fact_stays_strict_but_constructor_is_rejected);
     RUN_TEST(test_weak_and_nullable_wake_remain_distinct);
     RUN_TEST(test_straight_line_compiler_publishes_facts_before_cfg_lowering);
     return UNITY_END();

@@ -370,6 +370,7 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
     TEST_ASSERT_FALSE(compiler.hasError);
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     TEST_ASSERT_TRUE(ZrParser_Compiler_PreSemanticIrIsValidated(&compiler));
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
     function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_EQUAL_UINT64(

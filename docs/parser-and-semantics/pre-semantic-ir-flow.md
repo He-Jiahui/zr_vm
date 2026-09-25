@@ -25,6 +25,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
@@ -33,6 +34,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_value_facts.c
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -69,6 +71,8 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
+  - tests/parser/test_ssa_source_straight_line_cfg.c
+  - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_source_value_facts.c
   - tests/acceptance/ssa-value-facts.md
@@ -143,6 +147,13 @@ subtype evaluation and source-ordered multiple-handler selection remain later
 milestones.
 
 `ZrParser_SemanticIr_Validate` rejects dangling Place/Value/Loan/Region/Cleanup references, malformed operand spans, non-sequential instruction/source-map identities, and invalid owned CFG ranges or edges. Empty CFG storage is valid during straight-line compiler emission; once blocks exist, entry/exit IDs, instruction ranges, terminators, and typed edges are checked.
+
+Compiler finalization promotes supported, unblocked straight-line entry bodies
+to the same explicit branch/return shape as the active source CFG producer.
+Repeated validation does not append duplicate terminal instructions. Inactive
+source bodies without complete canonical producers, or with a startup barrier,
+retain an analysis-only graph and cannot be lowered as executable SSA. See
+`source-cfg-finalization.md` for the capability and isolation boundary.
 
 The experimental SemIR-to-ExecIR builder consumes a `BRANCH` with one value
 operand as `CONDITIONAL_BRANCH` only when its two explicit outgoing CFG edges
