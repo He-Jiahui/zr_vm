@@ -25,6 +25,9 @@ static void zr_exec_ir_set_diagnostic(SZrExecIrDiagnostic *diagnostic,
     diagnostic->code = code;
     diagnostic->functionToken = function != ZR_NULL ? function->functionToken : 0u;
     diagnostic->instructionId = instructionId;
+    diagnostic->sourceId = function != ZR_NULL && function->instructions != ZR_NULL &&
+                           instructionId != 0u && instructionId <= function->instructionCount
+                               ? function->instructions[instructionId - 1u].sourceId : 0u;
     diagnostic->blockId = blockId;
     diagnostic->expectedVersion = expected;
     diagnostic->actualVersion = actual;

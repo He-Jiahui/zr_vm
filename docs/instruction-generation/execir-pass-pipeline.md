@@ -16,6 +16,7 @@ tests:
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/parser/test_ssa_deopt_aggregates.c
   - tests/acceptance/ssa-pass-manager-token-phi-hash.md
+  - tests/acceptance/ssa-pass-failure-snapshot.md
 doc_type: implementation
 status: active
 ---
@@ -71,6 +72,15 @@ pass, malformed range, or remark allocation restores the original function,
 analysis cache, diagnostics context, and remark count.  A work budget emits a
 `BLOCKED` remark and keeps the last valid IR; budget exhaustion is not reported
 as a compiler error.  Remark sinks are append-only and owned by the caller.
+Callers may provide an initialized `SZrExecIrPassFailure` in the pass context
+or module optimization options.  On a named pass failure, the manager transfers
+that function's failed IR, a copy of the pass name, and its diagnostic into
+the record before restoring the original function/module.  This is the
+smallest self-contained replayable unit; the caller owns it and frees it with
+`ZrParser_ExecIr_PassFailureFree`.  The next pipeline call clears an older
+record.  Invalid input rejected before a pass starts has a diagnostic but no
+pass-failure record.  Allocation failure while copying the name cannot
+prevent rollback and leaves the failure record empty.
 
 `ZrParser_ExecIr_Optimize` applies the same registry to every module function,
 shares the compile budget across functions, supplies the module constant view,
@@ -89,4 +99,6 @@ ctest --test-dir build/ssa-clang-debug -R '^ssa_pass_manager_scalar$' --output-o
 The focused fixture covers fixed-point idempotence, checked division and
 overflow, preservation of an unused call, source-map cleanup, malformed input
 diagnostics, failed-pass rollback, bounded execution, and hash sensitivity to
-effect and per-region memory phi results and range coordinates.
+effect and per-region memory phi results and range coordinates.  The failed
+pass fixture also checks that the captured function reproduces the verifier
+diagnostic after rollback and that its pass name survives caller mutation.

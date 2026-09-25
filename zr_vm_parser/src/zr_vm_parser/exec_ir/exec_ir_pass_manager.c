@@ -257,6 +257,36 @@ void ZrParser_ExecIr_AnalysisCacheFree(SZrExecIrAnalysisCache *cache) {
     }
 }
 
+void ZrParser_ExecIr_PassFailureInit(SZrExecIrPassFailure *failure) {
+    if (failure != ZR_NULL) memset(failure, 0, sizeof(*failure));
+}
+
+void ZrParser_ExecIr_PassFailureFree(SZrExecIrPassFailure *failure) {
+    if (failure == ZR_NULL) return;
+    free(failure->passName);
+    ZrCore_ExecIr_FreeFunction(&failure->function);
+    ZrParser_ExecIr_PassFailureInit(failure);
+}
+
+static void zr_capture_pass_failure(SZrExecIrPassFailure *failure,
+                                    SZrExecIrFunction *function,
+                                    const TZrChar *name,
+                                    const SZrExecIrDiagnostic *diagnostic) {
+    TZrChar *copy;
+    size_t length;
+    if (failure == ZR_NULL || name == ZR_NULL) return;
+    length = strlen(name);
+    if (length == SIZE_MAX) return;
+    copy = (TZrChar *)malloc(length + 1u);
+    if (copy == ZR_NULL) return;
+    memcpy(copy, name, length + 1u);
+    ZrParser_ExecIr_PassFailureFree(failure);
+    failure->passName = copy;
+    failure->function = *function;
+    ZrCore_ExecIr_FunctionInit(function);
+    if (diagnostic != ZR_NULL) failure->diagnostic = *diagnostic;
+}
+
 void ZrParser_ExecIr_RemarkSinkInit(SZrExecIrRemarkSink *sink) {
     if (sink != ZR_NULL) memset(sink, 0, sizeof(*sink));
 }
@@ -449,6 +479,7 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
                                        function, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
     }
+    ZrParser_ExecIr_PassFailureFree(context->failure);
     if (function->sealed) {
         ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_SEALED,
                                        function, 0u, 0u, 0u, 0u);
@@ -553,6 +584,9 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
     return ZR_TRUE;
 
 rollback:
+    if (index < passCount)
+        zr_capture_pass_failure(context->failure, function,
+                                passes[index].name, diagnostic);
     if (passSnapshotReady) {
         ZrCore_ExecIr_FreeFunction(&passSnapshot);
         passSnapshotReady = ZR_FALSE;
@@ -642,6 +676,7 @@ TZrBool ZrParser_ExecIr_Optimize(SZrExecIrModule *module,
         if (options != ZR_NULL) {
             context.budget = options->budget;
             context.remarks = options->remarks;
+            context.failure = options->failure;
         }
         if (!ZrParser_ExecIr_RunPassPipeline(&module->functions[index], selected,
                                              selectedCount, &context, diagnostic)) {

@@ -28,6 +28,7 @@ tests:
   - tests/acceptance/ssa-exception-payload.md
   - tests/parser/test_ssa_loops_specialization.c
   - tests/parser/test_ssa_pass_manager_scalar.c
+  - tests/acceptance/ssa-pass-failure-snapshot.md
   - tests/cmake/ssa-tests.cmake
 doc_type: module-detail
 ---
@@ -42,6 +43,11 @@ checks control-flow structure, value SSA, and observable effect tokens in a
 fixed dependency order.  Parser passes call the same entry point before and
 after transformations, while the parser-facing wrapper remains a thin
 delegation layer.
+
+Instruction-specific structural diagnostics also carry the instruction's
+`sourceId` when its storage and ID are available.  Malformed storage and
+out-of-range IDs remain safe to report without dereferencing the instruction
+pool; those diagnostics have no source position.
 
 ## Verification phases
 

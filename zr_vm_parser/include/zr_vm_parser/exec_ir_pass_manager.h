@@ -72,9 +72,20 @@ typedef struct SZrExecIrRemarkSink {
     TZrUInt32 capacity;
 } SZrExecIrRemarkSink;
 
+/* Optional owner of the failed function, its pass name, and verifier result.
+ * Initialize before use and free when done. The next pipeline call clears
+ * the previous record. The function is the smallest self-contained ExecIR
+ * unit for replay; no module-wide snapshot is retained here. */
+typedef struct SZrExecIrPassFailure {
+    TZrChar *passName;
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+} SZrExecIrPassFailure;
+
 typedef struct SZrExecIrPassContext {
     SZrExecIrAnalysisCache *cache;
     SZrExecIrRemarkSink *remarks;
+    SZrExecIrPassFailure *failure;
     const SZrExecIrPassBudget *budget;
     TZrUInt64 workUsed;
     void *scratchArena;
@@ -112,6 +123,7 @@ typedef struct SZrExecIrOptimizeOptions {
     TZrUInt32 disabledPassMask;
     const SZrExecIrPassBudget *budget;
     SZrExecIrRemarkSink *remarks;
+    SZrExecIrPassFailure *failure;
 } SZrExecIrOptimizeOptions;
 
 typedef struct SZrExecIrOptimizationResult {
@@ -137,6 +149,8 @@ ZR_PARSER_API void ZrParser_ExecIr_AnalysisCacheInit(SZrExecIrAnalysisCache *cac
 ZR_PARSER_API void ZrParser_ExecIr_AnalysisCacheFree(SZrExecIrAnalysisCache *cache);
 ZR_PARSER_API void ZrParser_ExecIr_RemarkSinkInit(SZrExecIrRemarkSink *sink);
 ZR_PARSER_API void ZrParser_ExecIr_RemarkSinkFree(SZrExecIrRemarkSink *sink);
+ZR_PARSER_API void ZrParser_ExecIr_PassFailureInit(SZrExecIrPassFailure *failure);
+ZR_PARSER_API void ZrParser_ExecIr_PassFailureFree(SZrExecIrPassFailure *failure);
 ZR_PARSER_API TZrUInt64 ZrParser_ExecIr_FunctionHash(
         const SZrExecIrFunction *function);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_EmitRemark(
