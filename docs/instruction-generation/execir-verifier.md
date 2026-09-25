@@ -51,8 +51,9 @@ entry/terminator shape.  The SSA phase is implemented in
 `exec_ir_verify_ssa.c`; it builds fresh CFG facts and then validates value
 definitions and uses.  The effect phase in `exec_ir_verify_effects.c` checks
 memory/effect token continuity and the stricter PHI predecessor count/order
-contract. A private graph-analysis module classifies actual loop backedges
-without trusting block declaration order or serialized dominator hints.
+contract. A graph-analysis module shared with parser effect synthesis
+classifies actual loop backedges without trusting block declaration order or
+serialized dominator hints.
 
 The structural phase requires every listed block successor to be listed as a
 predecessor of its destination, and every predecessor to list the block as a
@@ -72,8 +73,8 @@ the merged result to advance beyond its forward inputs, and requires the first
 observable instruction in the block to consume that result. A join with
 distinct predecessor tokens is rejected when it omits this phi metadata;
 single-token forwarding through pure blocks remains valid. Tagged memory
-versions still use the region-local rule described below. The bounded
-declaration-ordered loop case also accepts a backedge token produced after
+versions still use the region-local rule described below. Reducible
+declaration-ordered loops also accept a backedge token produced after
 the header phi, while requiring that it match that predecessor's terminal
 token exactly.
 
@@ -99,8 +100,9 @@ fails exact predecessor-terminal matching. A predecessor with a larger block
 ID counts as a backedge only when the header dominates that predecessor in
 the actual CFG; reverse-declared acyclic joins must still advance their phi
 results beyond every incoming version. Parser production handles single
-blocks, acyclic declaration-ordered CFGs, and bounded single-/two-latch loop
-shapes; general cyclic CFG production remains a separate fixed-point task.
+blocks, acyclic declaration-ordered CFGs, and reducible declaration-ordered
+loops with multiple headers or latches. Irreducible and non-declaration-order
+CFG production still require a separate fixed-point construction.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes

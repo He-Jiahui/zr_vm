@@ -538,6 +538,200 @@ static void test_two_latch_loop_tracks_both_backedges(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_sequential_loops_keep_distinct_carried_phis(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId firstPreds[2] = {1u, 3u};
+    TZrExecIrBlockId secondPreds[2] = {2u, 5u};
+    TZrExecIrBlockId predecessor;
+    TZrUInt32 index;
+
+    for (index = 2u; index <= 6u; ++index)
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == index,
+                     "add sequential-loop block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[6] = {0u, 1u, 2u, 3u, 4u, 5u};
+        const TZrUInt32 counts[6] = {1u, 1u, 1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, firstPreds, 2u);
+    predecessor = 2u;
+    append_predecessor(function, 3u, &predecessor, 1u);
+    append_predecessor(function, 4u, secondPreds, 2u);
+    predecessor = 4u;
+    append_predecessor(function, 5u, &predecessor, 1u);
+    append_predecessor(function, 6u, &predecessor, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize sequential loops");
+    require_true(function->blocks[1].effectPhiResult != 0u &&
+                     function->blocks[3].effectPhiResult != 0u &&
+                     function->blocks[1].memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u &&
+                     function->blocks[3].memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u,
+                 "each sequential loop gets independent carried phis");
+    require_true(function->phiIncoming[
+                         function->blocks[1].effectPhiIncomings.start + 1u].value ==
+                         function->instructions[2].effectOut &&
+                     function->phiIncoming[
+                         function->blocks[3].effectPhiIncomings.start + 1u].value ==
+                         function->instructions[4].effectOut,
+                 "sequential loop phis refer to their own latches");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "sequential loop effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_nested_loops_carry_inner_writes_through_outer_header(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId outerPreds[2] = {1u, 5u};
+    TZrExecIrBlockId innerPreds[2] = {2u, 4u};
+    TZrExecIrBlockId predecessor;
+    TZrUInt32 index;
+
+    for (index = 2u; index <= 6u; ++index)
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == index,
+                     "add nested-loop block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[6] = {0u, 1u, 2u, 3u, 4u, 5u};
+        const TZrUInt32 counts[6] = {1u, 1u, 1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, outerPreds, 2u);
+    append_predecessor(function, 3u, innerPreds, 2u);
+    predecessor = 3u;
+    append_predecessor(function, 4u, &predecessor, 1u);
+    append_predecessor(function, 5u, &predecessor, 1u);
+    predecessor = 2u;
+    append_predecessor(function, 6u, &predecessor, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize nested loops");
+    require_true(function->blocks[1].effectPhiResult != 0u &&
+                     function->blocks[2].effectPhiResult != 0u &&
+                     function->blocks[1].memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u &&
+                     function->blocks[2].memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] != 0u,
+                 "inner write reaches both loop headers");
+    require_true(function->phiIncoming[
+                         function->blocks[2].effectPhiIncomings.start + 1u].value ==
+                         function->instructions[3].effectOut &&
+                     function->phiIncoming[
+                         function->blocks[1].effectPhiIncomings.start + 1u].value ==
+                         function->blocks[2].effectPhiResult,
+                 "nested loop backedges carry the inner exit token");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "nested loop effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_exit_only_write_does_not_create_loop_phi(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId headerPreds[2] = {1u, 4u};
+    TZrExecIrBlockId predecessor;
+    TZrUInt32 index;
+
+    for (index = 2u; index <= 5u; ++index)
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == index,
+                     "add exit-only write loop block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[5] = {0u, 1u, 2u, 3u, 4u};
+        const TZrUInt32 counts[5] = {1u, 1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, headerPreds, 2u);
+    predecessor = 2u;
+    append_predecessor(function, 3u, &predecessor, 1u);
+    append_predecessor(function, 4u, &predecessor, 1u);
+    predecessor = 3u;
+    append_predecessor(function, 5u, &predecessor, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize loop with exit-only store");
+    require_true(function->blocks[1].effectPhiResult == 0u &&
+                     function->blocks[1].memoryPhiResults[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP] == 0u &&
+                     function->instructions[2].effectOut != 0u,
+                 "exit-only write is not carried around loop");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "exit-only write loop effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_three_latches_preserve_each_terminal_effect(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId headerPreds[4] = {1u, 4u, 5u, 6u};
+    TZrExecIrBlockId predecessor;
+    const SZrExecIrBlock *header;
+    const SZrExecIrPhiIncoming *incoming;
+    TZrUInt32 index;
+
+    for (index = 2u; index <= 7u; ++index)
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == index,
+                     "add three-latch loop block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    for (index = 0u; index < 3u; ++index) append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[7] = {0u, 1u, 2u, 3u, 4u, 5u, 6u};
+        const TZrUInt32 counts[7] = {1u, 1u, 1u, 1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, headerPreds, 4u);
+    predecessor = 2u;
+    append_predecessor(function, 3u, &predecessor, 1u);
+    predecessor = 3u;
+    for (index = 4u; index <= 6u; ++index)
+        append_predecessor(function, index, &predecessor, 1u);
+    predecessor = 2u;
+    append_predecessor(function, 7u, &predecessor, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize three-latch loop");
+    header = &function->blocks[1];
+    require_true(header->effectPhiIncomings.count == 4u &&
+                     header->memoryPhiIncomings[
+                             ZR_EXEC_IR_MEMORY_MANAGED_HEAP].count == 4u,
+                 "three-latch loop carries all edges");
+    incoming = &function->phiIncoming[header->effectPhiIncomings.start];
+    for (index = 0u; index < 3u; ++index)
+        require_true(incoming[index + 1u].predecessor == index + 4u &&
+                             incoming[index + 1u].value ==
+                                     function->instructions[index + 3u].effectOut,
+                     "three-latch effect phi retains each latch exit");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "three-latch effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
@@ -549,6 +743,10 @@ int main(void) {
     test_single_latch_loop_gets_carried_effect_phis(ZR_TRUE);
     test_single_latch_loop_gets_carried_effect_phis(ZR_FALSE);
     test_two_latch_loop_tracks_both_backedges();
+    test_sequential_loops_keep_distinct_carried_phis();
+    test_nested_loops_carry_inner_writes_through_outer_header();
+    test_exit_only_write_does_not_create_loop_phi();
+    test_three_latches_preserve_each_terminal_effect();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

@@ -13,6 +13,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
@@ -32,6 +33,7 @@ tests:
   - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_place_eligibility.c
+  - tests/parser/test_ssa_cfg_effects_builder.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/cmake/ssa-tests.cmake
   - tests/cmake/ssa-builder-tests.cmake
@@ -227,23 +229,25 @@ predecessors are attached. Single-block functions with empty token fields get
 schema-required instruction flags, region-tagged memory versions, and a
 contiguous effect chain. Acyclic, declaration-ordered multi-block CFGs also
 receive explicit effect and per-region memory token phis at joins; generated
-consumers use those phi results. Other cyclic, forward-edge, partially authored, or
-otherwise unsupported graphs are conservatively left untouched for a later
-loop-aware producer. Overflow, unknown-opcode, and allocation failures are
+consumers use those phi results. Reducible loops whose forward edges follow
+block declaration order also receive carried effect and memory phis. Reverse
+edges that do not target a dominating header, partially authored token facts,
+or otherwise unsupported graphs are conservatively left untouched. Overflow,
+unknown-opcode, and allocation failures are
 diagnosed before the candidate is published. The focused direct contracts are
 `ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
 control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
 The linear and CFG synthesizers live in separate source files and share only
 private diagnostics, opcode flags, and observable-operation classification.
-Two bounded cycle shapes are supported: a declaration-ordered header with a
-single adjacent latch whose only predecessor is that header, or a header/body
-whose two adjacent latches each have the body as their sole predecessor.
-The header has exactly one forward entry in either shape. The producer scans
-the loop interval for written memory regions and observable operations,
-creates loop-carried phis before visiting the latches, and fills each backedge
-input from its actual latch exit. Self-loops, three or more latches, nested
-loops and general cyclic graphs remain outside this producer's contract.
+The CFG producer reuses core's dominance-based backedge classification and
+walks backward from each latch to find natural-loop members. It collects
+written memory regions and observable operations per header, creates the
+needed loop-carried phis before visiting their latches, then fills each
+backedge input from its actual latch exit. Multiple disjoint, nested, and
+multi-latch reducible loops are supported; exit-only writes do not introduce
+loop phis. Loops without a forward entry and irreducible reverse edges remain
+outside this producer's declaration-ordered contract.
 The CFG producer checks side-pool storage and capacity and requires block
 instruction ranges to partition the instruction array in declaration order
 before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.

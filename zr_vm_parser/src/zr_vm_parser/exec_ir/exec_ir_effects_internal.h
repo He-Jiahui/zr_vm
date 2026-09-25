@@ -4,6 +4,11 @@
 #include "zr_vm_parser/exec_ir_builder.h"
 #include <string.h>
 
+TZrBool zr_parser_exec_ir_collect_loop_effects(
+        const SZrExecIrFunction *function, TZrUInt32 *loopWrites,
+        TZrBool *loopEffects, TZrBool *supported,
+        SZrExecIrDiagnostic *diagnostic);
+
 static void zr_parser_exec_ir_effect_diag(SZrExecIrDiagnostic *diagnostic,
                                            const SZrExecIrFunction *function,
                                            EZrExecutionDiagnosticCode code,

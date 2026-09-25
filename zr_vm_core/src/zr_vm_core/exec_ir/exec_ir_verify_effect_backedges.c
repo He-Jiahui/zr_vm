@@ -144,3 +144,9 @@ cleanup:
     else free(backedges);
     return valid;
 }
+
+TZrBool ZrCore_ExecIr_ClassifyBackedges(
+        const SZrExecIrFunction *function, TZrBool **outBackedges,
+        SZrExecIrDiagnostic *diagnostic) {
+    return zr_exec_ir_classify_backedges(function, outBackedges, diagnostic);
+}

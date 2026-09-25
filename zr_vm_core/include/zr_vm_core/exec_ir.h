@@ -643,6 +643,12 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *functi
                                                  SZrExecIrDiagnostic *diagnostic);
 ZR_CORE_API TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                                                 SZrExecIrDiagnostic *diagnostic);
+/* Caller validates CFG storage/ranges and frees the edge-indexed result;
+ * reverse edges are marked only when their target dominates their reachable
+ * predecessor. */
+ZR_CORE_API TZrBool ZrCore_ExecIr_ClassifyBackedges(
+        const SZrExecIrFunction *function, TZrBool **outBackedges,
+        SZrExecIrDiagnostic *diagnostic);
 
 /* Recovery recipes are observable value uses even before a state map exists. */
 ZR_CORE_API TZrBool ZrCore_ExecIr_ValidateDeoptAggregates(
