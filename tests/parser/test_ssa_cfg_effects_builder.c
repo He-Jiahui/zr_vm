@@ -124,12 +124,12 @@ static void test_acyclic_cfg_gets_effect_and_memory_phis(void) {
             ZR_EXEC_IR_MEMORY_MANAGED_HEAP];
     effectPhi = function->blocks[merge - 1u].effectPhiResult;
     require_true(ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
-                         function->memoryTokenPool[leftStore->memoryOut.start]) == 1u,
-                 "left CFG store starts at heap version one");
+                         function->memoryTokenPool[leftStore->memoryOut.start]) == 2u,
+                 "left CFG store advances past the initial heap state");
     require_true(ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
-                         function->memoryTokenPool[rightStore1->memoryOut.start]) == 2u &&
+                         function->memoryTokenPool[rightStore1->memoryOut.start]) == 3u &&
                      ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
-                         function->memoryTokenPool[rightStore2->memoryOut.start]) == 3u,
+                         function->memoryTokenPool[rightStore2->memoryOut.start]) == 4u,
                  "right CFG stores advance heap versions");
     require_true(function->memoryTokenPool[mergeStore->memoryIn.start] == heapPhi &&
                      mergeStore->effectIn == effectPhi,
@@ -177,9 +177,73 @@ static void test_loop_cfg_is_left_for_loop_aware_producer(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_branch_read_preserves_initial_memory_state(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId left = 2u;
+    TZrExecIrBlockId right = 3u;
+    TZrExecIrBlockId merge = 4u;
+    TZrExecIrBlockId mergePreds[2] = {left, right};
+    TZrExecIrMemoryTokenId heapPhi;
+    const SZrExecIrInstruction *leftStore;
+    const SZrExecIrInstruction *rightLoad;
+    const SZrExecIrInstruction *mergeCall;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == left,
+                 "add branch-read left block");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == right,
+                 "add branch-read right block");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == merge,
+                 "add branch-read merge block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_LOAD);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[4] = {0u, 1u, 2u, 3u};
+        const TZrUInt32 counts[4] = {1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, left, &entry, 1u);
+    append_predecessor(function, right, &entry, 1u);
+    append_predecessor(function, merge, mergePreds, 2u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize branch-read CFG effects");
+    leftStore = &function->instructions[1];
+    rightLoad = &function->instructions[2];
+    mergeCall = &function->instructions[3];
+    require_true(function->memoryTokenCount != 0u &&
+                     leftStore->memoryOut.count == 1u &&
+                     rightLoad->memoryIn.count == 1u,
+                 "both branch memory operations receive tokens");
+    require_true(ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                         function->memoryTokenPool[rightLoad->memoryIn.start]) == 1u &&
+                     ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                         function->memoryTokenPool[leftStore->memoryOut.start]) > 1u,
+                 "branch read uses initial heap state, distinct from sibling write");
+    heapPhi = function->blocks[merge - 1u].memoryPhiResults[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP];
+    require_true(heapPhi != ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
+                     function->memoryTokenPool[mergeCall->memoryIn.start] == heapPhi,
+                 "merge call consumes the distinct branch memory states");
+    if (!ZrCore_ExecIr_VerifyEffects(function, &diagnostic)) {
+        fprintf(stderr, "branch-read verifier: code=%u block=%u instruction=%u expected=%u actual=%u\n",
+                (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,
+                (unsigned)diagnostic.instructionId,
+                (unsigned)diagnostic.expectedVersion,
+                (unsigned)diagnostic.actualVersion);
+        require_true(ZR_FALSE, "branch-read CFG effects pass verifier");
+    }
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
+    test_branch_read_preserves_initial_memory_state();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

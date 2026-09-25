@@ -88,7 +88,9 @@ tagged `memoryPhiResult` and edge-ordered `memoryPhiIncomings` range per
 region. Each incoming must match the predecessor's terminal version and
 region, the result must advance beyond forward incoming versions, and the first
 tagged memory consumer must consume the result. Distinct region versions
-without a memory phi are rejected. A declaration-order backedge may carry a
+without a memory phi are rejected. A first read of an untouched region
+establishes its initial version at the block exit, so a later join can
+distinguish that path from a sibling write. A declaration-order backedge may carry a
 later iteration's higher version, but a stale or wrong-region backedge still
 fails exact predecessor-terminal matching. Parser production currently handles
 single blocks and acyclic declaration-ordered CFGs; cyclic CFG production

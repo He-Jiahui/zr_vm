@@ -346,6 +346,11 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
         return ZR_TRUE;
     }
 
+    /* Version one represents the untouched entry state on every path. */
+    for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+        lastVersion[region] = 1u;
+    }
+
     /* Existing token facts, including an explicitly authored CFG phi, belong
      * to the producer that authored them.  Do not partially overwrite them. */
     for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
@@ -573,6 +578,8 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                 if (memoryPhiNeeded[(size_t)blockIndex *
                                     ZR_EXEC_IR_MEMORY_CLASS_COUNT + region]) {
                     TZrUInt32 version = maximumVersion[region] + 1u;
+                    if (version <= lastVersion[region])
+                        version = lastVersion[region] + 1u;
                     if (version == 0u || version > ZR_EXEC_IR_MEMORY_TOKEN_VERSION_MASK) {
                         zr_parser_exec_ir_effect_diag(
                                 diagnostic, function,
@@ -631,10 +638,6 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                             ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
                         currentMemory[region] = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
                                 (EZrExecIrMemoryClass)region, 1u);
-                    }
-                    if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(currentMemory[region]) <
-                            lastVersion[region]) {
-                        goto cleanup;
                     }
                     if (ZR_EXEC_IR_MEMORY_TOKEN_VERSION(currentMemory[region]) >
                             lastVersion[region]) {

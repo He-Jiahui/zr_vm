@@ -385,6 +385,25 @@ static TZrBool zr_exec_ir_verify_memory_cfg(
                 const SZrExecIrInstruction *instruction =
                         &function->instructions[instructionIndex];
                 TZrUInt32 tokenIndex;
+                if (zr_exec_ir_range_valid(instruction->memoryIn,
+                                            function->memoryTokenCount,
+                                            function->memoryTokenPool)) {
+                    for (tokenIndex = instruction->memoryIn.start;
+                         tokenIndex < instruction->memoryIn.start +
+                                           instruction->memoryIn.count;
+                         ++tokenIndex) {
+                        TZrExecIrMemoryTokenId token =
+                                function->memoryTokenPool[tokenIndex];
+                        if (zr_exec_ir_memory_token_valid(token) &&
+                            ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token)) {
+                            region = (TZrUInt32)ZR_EXEC_IR_MEMORY_TOKEN_REGION(token);
+                            if (current[region] == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) {
+                                current[region] = token;
+                                currentKnown[region] = ZR_TRUE;
+                            }
+                        }
+                    }
+                }
                 if (!zr_exec_ir_range_valid(instruction->memoryOut,
                                              function->memoryTokenCount,
                                              function->memoryTokenPool)) {

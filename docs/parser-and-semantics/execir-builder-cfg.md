@@ -232,6 +232,9 @@ diagnosed before the candidate is published. The focused direct contracts are
 `ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
 control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
+For multi-block CFGs, memory version one denotes the untouched entry state
+on every path. A first write receives a later version, so a sibling's first
+read cannot alias that write; distinct states receive a phi at their join.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
 split the block rather than attribute that operation's exceptional exit to
