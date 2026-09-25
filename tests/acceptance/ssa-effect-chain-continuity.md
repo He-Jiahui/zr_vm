@@ -130,3 +130,19 @@ both standalone executables exited 0. WSL GCC 11.4 rebuilt the focused effect
 verifier with ASan/UBSan and ran
 `/mnt/d/zr-ssa-verify-871bc234/ssa_effects_gcc_asan`: exit 0, no sanitizer
 report. Producer-side token generation and full M1 acceptance remain open.
+
+## Scalar conversion oracle slice (2026-09-25)
+
+The direct ExecIR oracle now gives `CONVERT` its declared scalar meaning when
+the instruction/result type token is one of the shared `ZR_VALUE_TYPE_*`
+numeric types. Signed and unsigned integer conversions preserve the oracle's
+integer kind, integer-to-floating conversions produce a floating value, and
+floating-to-integer conversions truncate toward zero after rejecting NaN,
+infinity, and out-of-range inputs. Boolean targets use the source numeric
+truthiness. Unknown or non-scalar target tokens retain the pre-existing
+copy-compatible behavior until their runtime type contract is published.
+
+The focused `ssa_oracle_projections` fixture covers signed `int64` to
+`double` and `double` to `int64` through a returned ExecIR value. This slice
+does not claim C/LLVM parity or a complete conversion matrix; those remain
+part of the later backend and numeric-profile milestones.

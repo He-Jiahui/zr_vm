@@ -1,6 +1,7 @@
 #include "exec_ir_interpreter_internal.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +54,66 @@ static TZrFloat64 zr_oracle_float(const SZrExecIrOracleValue *v) {
     if (v->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) return v->as.floating;
     return v->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED
                ? (TZrFloat64)v->as.unsignedInteger : (TZrFloat64)zr_oracle_signed(v);
+}
+
+/* ExecIR type tokens produced by the parser use the shared scalar type
+ * numbers.  Keep the oracle's pointer-free value model, but honor those
+ * scalar conversion boundaries instead of treating CONVERT as an alias. */
+static TZrBool zr_oracle_convert_scalar(const SZrExecIrOracleValue *source,
+                                        TZrExecIrTypeToken targetType,
+                                        SZrExecIrOracleValue *out) {
+    long double numeric;
+
+    if (source == ZR_NULL || out == ZR_NULL || !zr_oracle_numeric(source)) {
+        return ZR_FALSE;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(targetType)) {
+        out->kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
+        if (source->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) {
+            out->as.boolean = (TZrBool)(source->as.floating != 0.0);
+        } else if (source->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED) {
+            out->as.boolean = (TZrBool)(source->as.unsignedInteger != 0u);
+        } else if (source->kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED) {
+            out->as.boolean = (TZrBool)(source->as.signedInteger != 0);
+        } else {
+            out->as.boolean = source->as.boolean != ZR_FALSE;
+        }
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(targetType)) {
+        if (source->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) {
+            numeric = (long double)source->as.floating;
+            if (!isfinite(numeric) || numeric < (long double)INT64_MIN ||
+                numeric >= 9223372036854775808.0L) {
+                return ZR_FALSE;
+            }
+            out->as.signedInteger = (TZrInt64)numeric;
+        } else {
+            out->as.signedInteger = zr_oracle_signed(source);
+        }
+        out->kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(targetType)) {
+        if (source->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) {
+            numeric = (long double)source->as.floating;
+            if (!isfinite(numeric) || numeric < 0.0L ||
+                numeric >= 18446744073709551616.0L) {
+                return ZR_FALSE;
+            }
+            out->as.unsignedInteger = (TZrUInt64)numeric;
+        } else {
+            out->as.unsignedInteger = zr_oracle_unsigned(source);
+        }
+        out->kind = ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_FLOAT(targetType)) {
+        out->kind = ZR_EXEC_IR_ORACLE_VALUE_FLOAT;
+        out->as.floating = zr_oracle_float(source);
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
 }
 
 static int zr_oracle_compare_values(const SZrExecIrOracleValue *left,
@@ -354,6 +415,22 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
         case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_CONVERT:
             if (n != 1u) goto invalid;
             v = ops[0];
+            if (op == ZR_EXEC_IR_OPCODE_CONVERT) {
+                TZrExecIrTypeToken targetType = ins->typeToken;
+                if (targetType == 0u && ins->results.count != 0u) {
+                    TZrExecIrValueId resultId = f->results[ins->results.start];
+                    if (resultId != ZR_EXEC_IR_VALUE_ID_INVALID &&
+                        resultId <= f->valueCount) {
+                        targetType = f->values[resultId - 1u].typeToken;
+                    }
+                }
+                if ((targetType != 0u &&
+                     (ZR_VALUE_IS_TYPE_BOOL(targetType) ||
+                      ZR_VALUE_IS_TYPE_NUMBER(targetType))) &&
+                    !zr_oracle_convert_scalar(&ops[0], targetType, &v)) {
+                    goto arithmetic;
+                }
+            }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
             break;
         case ZR_EXEC_IR_OPCODE_MOVE:

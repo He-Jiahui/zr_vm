@@ -2,6 +2,7 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_projections.h"
 #include "zr_vm_parser/exec_ir_oracle.h"
+#include "zr_vm_common/zr_type_conf.h"
 
 #include <assert.h>
 #include <limits.h>
@@ -64,6 +65,76 @@ static void build_scalar_function(SZrExecIrFunction *function) {
                        range(0u, 0u), 0u, 103u);
     append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN, returnOperands,
                        range(0u, 0u), range(0u, 0u), 0u, 104u);
+}
+
+static void build_convert_function(SZrExecIrFunction *function,
+                                   TZrExecIrTypeToken sourceType,
+                                   TZrExecIrTypeToken targetType) {
+    TZrExecIrValueId source, result;
+    SZrExecIrRange sourceOperands, resultRange, returnOperands;
+
+    memset(function, 0, sizeof(*function));
+    ZrCore_ExecIr_FunctionInit(function);
+    source = ZrCore_ExecIr_FunctionAddExternalValue(
+            function, sourceType, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    result = ZrCore_ExecIr_FunctionAddValue(
+            function, targetType, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(source != 0u && result != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &source, 1u, &sourceOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            function, &result, 1u, &resultRange));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &result, 1u, &returnOperands));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONVERT,
+                       sourceOperands, resultRange, range(0u, 0u),
+                       0u, 901u);
+    function->instructions[0].typeToken = targetType;
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
+                       returnOperands, range(0u, 0u), range(0u, 0u),
+                       0u, 902u);
+}
+
+static void test_numeric_convert_oracle(void) {
+    SZrExecIrFunction function;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOracleValue initial;
+
+    build_convert_function(&function, ZR_VALUE_TYPE_INT64,
+                            ZR_VALUE_TYPE_DOUBLE);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    initial.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    initial.as.signedInteger = -7;
+    input.initialValues = &initial;
+    input.initialValueCount = 1u;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT &&
+           execution.returnValue.as.floating == -7.0);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+
+    build_convert_function(&function, ZR_VALUE_TYPE_DOUBLE,
+                            ZR_VALUE_TYPE_INT64);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    initial.kind = ZR_EXEC_IR_ORACLE_VALUE_FLOAT;
+    initial.as.floating = -7.75;
+    input.initialValues = &initial;
+    input.initialValueCount = 1u;
+    memset(&execution, 0, sizeof(execution));
+    assert(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic));
+    assert(execution.returned &&
+           execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           execution.returnValue.as.signedInteger == -7);
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
 }
 
 /* A small caller-owned memory fixture keeps LOAD/STORE replay deterministic
@@ -1921,6 +1992,7 @@ int main(void) {
     test_throw_and_suspend_publish_boundary();
     test_memory_projection_preserves_load_and_token_pool();
     test_scalar_oracle_and_projection();
+    test_numeric_convert_oracle();
     test_branch_phi_oracle();
     test_call_event_oracle();
     test_invoke_oracle_provider();
