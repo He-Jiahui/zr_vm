@@ -84,7 +84,11 @@ the eight declared memory regions (frame, managed heap, module global,
 native/FFI, GC, ownership, scheduler/task, or I/O) and are ordered by version
 within that region and within each block. Independent tagged regions therefore
 do not impose a false global order, and sibling/loop-body blocks do not inherit
-one another's linear monotonicity state. The verifier rejects a tagged token whose region is not
+one another's linear monotonicity state. After the first tagged touch of a
+region in a block, a read must consume exactly its current version; a later
+version cannot appear without an intervening write. Writes still advance
+their region, and the first touch remains subject to CFG entry and phi checks.
+The verifier rejects a tagged token whose region is not
 covered by the opcode's declared read/write mask, rejects zero versions, and
 continues to apply the legacy function-wide monotonic rule to untagged tokens
 so old artifacts remain readable during the migration. A join may publish one
@@ -186,7 +190,9 @@ rejects missing or misplaced exception markers at the core structure boundary.
 Coverage also includes matching parallel-edge PHI incoming slots, explicit
 cross-block effect-token joins, missing/stale effect-phi inputs, loop-carried
 effect/memory phis with stale backedge negatives, and the existing
-effect-token negatives. A skipped effect
+effect-token negatives. A tagged read that skips ahead of the current
+same-block memory version reports its source, block, instruction, expected
+and actual versions. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.
 The standalone SSA consumer targets compile the split verifier source through

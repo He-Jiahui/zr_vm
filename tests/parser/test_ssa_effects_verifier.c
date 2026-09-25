@@ -533,6 +533,8 @@ static void test_tagged_store_and_load_share_region_version(void) {
     SZrExecIrInstruction load;
     TZrExecIrMemoryTokenId heapToken = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
             ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u);
+    TZrExecIrMemoryTokenId futureToken = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u);
 
     memset(&store, 0, sizeof(store));
     store.opcode = ZR_EXEC_IR_OPCODE_STORE;
@@ -556,6 +558,25 @@ static void test_tagged_store_and_load_share_region_version(void) {
 
     ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
        "tagged load did not consume the store's region version");
+
+    memset(&load, 0, sizeof(load));
+    load.opcode = ZR_EXEC_IR_OPCODE_LOAD;
+    load.sourceId = 903u;
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &futureToken, 1u,
+                                                 &load.memoryIn),
+       "append future tagged load input");
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &load, NULL),
+       "append future tagged load");
+    function->blocks[0].instructions.count = function->instructionCount;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "read skipped a tagged region version without a write");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN &&
+           diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY &&
+           diagnostic.instructionId == 3u &&
+           diagnostic.sourceId == 903u &&
+           diagnostic.expectedVersion == 1u &&
+           diagnostic.actualVersion == 2u,
+       "future tagged read lost its exact memory diagnostic");
     ZrCore_ExecIr_FreeModule(&module);
 }
 

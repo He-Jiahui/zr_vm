@@ -925,7 +925,7 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                 EZrExecIrMemoryClass region = ZR_EXEC_IR_MEMORY_TOKEN_REGION(token);
                 TZrExecIrMemoryTokenId version = ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token);
                 if (latestMemoryByRegion[region] != 0u &&
-                    version < latestMemoryByRegion[region]) {
+                    version != latestMemoryByRegion[region]) {
                     zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
                                            function, blockId, index + 1u,
                                            latestMemoryByRegion[region], version);

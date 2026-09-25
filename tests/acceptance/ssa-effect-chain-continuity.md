@@ -89,6 +89,22 @@ GCC 11.4 Debug, Clang 14 Debug, and GCC ASan/UBSan all rebuilt and ran
 corresponding CTest passed. This evidence covers region-local validation only;
 Producer-side token generation and cross-block region PHIs remain open.
 
+## Tagged read continuity (2026-09-26)
+
+An already established tagged region version cannot advance at a LOAD with
+no intervening write. The focused fixture first accepts a STORE at heap
+version 1 followed by a LOAD at version 1, then appends a LOAD at version 2.
+Before the verifier change it incorrectly accepted the future read; afterward
+it reports `MEMORY_TOKEN` with block 1, instruction 3, source 903, expected
+version 1 and actual version 2. Untagged token compatibility remains unchanged.
+
+GCC rebuilt the affected verifier, CFG producer, promotion, and source cleanup
+targets and passed all four CTests; the existing SSA label sweep passed 80/80
+(other targets were not rebuilt for this slice). Clang and MSVC rebuilt and
+passed the same four CTests each. GCC ASan/UBSan rebuilt and passed the focused
+verifier test with leak detection and halt-on-error enabled. This does not
+claim full M1 effect acceptance or irreducible CFG synthesis.
+
 ## Cross-block effect-token merge slice
 
 The verifier now accepts an explicit CFG effect merge without changing the
