@@ -11,6 +11,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
@@ -232,6 +234,8 @@ diagnosed before the candidate is published. The focused direct contracts are
 `ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
 control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
+The linear and CFG synthesizers live in separate source files and share only
+private diagnostics, opcode flags, and observable-operation classification.
 One bounded cycle is supported: a declaration-ordered header with a single
 adjacent latch whose only predecessor is that header. The producer scans the
 header/latch for written memory regions and observable operations, creates
