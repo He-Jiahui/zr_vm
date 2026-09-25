@@ -3,12 +3,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void zr_parser_exec_ir_unsupported_effect_graph(
+        const SZrExecIrFunction *function, const SZrExecIrBlock *block,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 instructionId = block->instructions.count != 0u
+            ? block->instructions.start + 1u : 0u;
+    zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                  ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                                  instructionId, 0u, 0u);
+    if (diagnostic != ZR_NULL) {
+        diagnostic->blockId = block->id;
+        diagnostic->sourceId = instructionId != 0u
+                ? function->instructions[instructionId - 1u].sourceId : 0u;
+    }
+}
+
 /* Walk predecessors from each latch up to its dominating header. The union
  * of those paths is the natural loop, including nested loops and side paths. */
 TZrBool zr_parser_exec_ir_collect_loop_effects(
         const SZrExecIrFunction *function, TZrUInt32 *loopWrites,
         TZrBool *loopEffects, TZrExecIrBlockId *blockOrder,
-        TZrBool **outBackedges, TZrBool *supported,
+        TZrBool **outBackedges,
         SZrExecIrDiagnostic *diagnostic) {
     TZrBool *backedges = ZR_NULL;
     TZrBool *visited = ZR_NULL;
@@ -17,7 +32,6 @@ TZrBool zr_parser_exec_ir_collect_loop_effects(
     TZrBool result = ZR_TRUE;
 
     *outBackedges = ZR_NULL;
-    *supported = ZR_TRUE;
     if (!ZrCore_ExecIr_ClassifyBackedges(function, &backedges, diagnostic))
         return ZR_FALSE;
     visited = (TZrBool *)calloc(function->blockCount, sizeof(*visited));
@@ -41,7 +55,9 @@ TZrBool zr_parser_exec_ir_collect_loop_effects(
             TZrBool hasForward = ZR_FALSE;
             if (!backedges[edgeIndex]) continue;
             if (header->id == function->entryBlockId) {
-                *supported = ZR_FALSE;
+                zr_parser_exec_ir_unsupported_effect_graph(function, header,
+                                                             diagnostic);
+                result = ZR_FALSE;
                 goto cleanup;
             }
             for (forwardIndex = header->predecessors.start;
@@ -51,7 +67,9 @@ TZrBool zr_parser_exec_ir_collect_loop_effects(
                     hasForward = ZR_TRUE;
             }
             if (!hasForward) {
-                *supported = ZR_FALSE;
+                zr_parser_exec_ir_unsupported_effect_graph(function, header,
+                                                             diagnostic);
+                result = ZR_FALSE;
                 goto cleanup;
             }
             for (forwardIndex = header->instructions.start;
@@ -125,13 +143,17 @@ TZrBool zr_parser_exec_ir_collect_loop_effects(
             }
         }
         if (!found) {
-            *supported = ZR_FALSE;
+            TZrUInt32 unresolved = 0u;
+            while (visited[unresolved]) ++unresolved;
+            zr_parser_exec_ir_unsupported_effect_graph(
+                    function, &function->blocks[unresolved], diagnostic);
+            result = ZR_FALSE;
             goto cleanup;
         }
     }
 
 cleanup:
-    if (result && *supported) *outBackedges = backedges;
+    if (result) *outBackedges = backedges;
     else free(backedges);
     free(visited);
     free(stack);

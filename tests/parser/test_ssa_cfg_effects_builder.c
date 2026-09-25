@@ -159,7 +159,7 @@ static void test_acyclic_cfg_gets_effect_and_memory_phis(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
-static void test_loop_cfg_is_left_for_loop_aware_producer(void) {
+static void test_loop_without_forward_entry_is_diagnosed(void) {
     SZrExecIrModule module;
     SZrExecIrFunction *function = new_function(&module);
     SZrExecIrDiagnostic diagnostic;
@@ -179,13 +179,15 @@ static void test_loop_cfg_is_left_for_loop_aware_producer(void) {
     append_predecessor(function, body, &entry, 1u);
     append_predecessor(function, body, &body, 1u);
 
-    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
-                 "loop CFG producer preserves conservative fallback");
+    require_true(!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic) &&
+                     diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+                     diagnostic.blockId == body && diagnostic.instructionId == 2u,
+                 "loop without forward entry is diagnosed at its first instruction");
     require_true(function->memoryTokenCount == 0u &&
                      function->instructions[1].memoryOut.count == 0u &&
                      function->instructions[1].effectIn == 0u &&
                      function->instructions[1].effectOut == 0u,
-                 "loop CFG producer does not invent non-phi facts");
+                 "unsupported loop keeps effect facts unpublished");
     ZrCore_ExecIr_FreeModule(&module);
 }
 
@@ -829,7 +831,8 @@ static void test_loop_body_with_reverse_declared_forward_edge(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
-static void test_irreducible_two_entry_cycle_remains_unpublished(void) {
+static void test_irreducible_two_entry_cycle_remains_unpublished(
+        TZrBool writesMemory) {
     SZrExecIrModule module;
     SZrExecIrFunction *function = new_function(&module);
     SZrExecIrDiagnostic diagnostic;
@@ -840,8 +843,13 @@ static void test_irreducible_two_entry_cycle_remains_unpublished(void) {
                      ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 3u,
                  "add irreducible cycle blocks");
     append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
-    append_store(function);
-    append_store(function);
+    if (writesMemory) {
+        append_store(function);
+        append_store(function);
+    } else {
+        append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+        append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    }
     {
         const TZrUInt32 starts[3] = {0u, 1u, 2u};
         const TZrUInt32 counts[3] = {1u, 1u, 1u};
@@ -850,8 +858,17 @@ static void test_irreducible_two_entry_cycle_remains_unpublished(void) {
     append_predecessor(function, 2u, leftPreds, 2u);
     append_predecessor(function, 3u, rightPreds, 2u);
 
-    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
-                 "unsupported irreducible cycle keeps conservative result");
+    if (writesMemory) {
+        require_true(!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic) &&
+                         diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+                         diagnostic.blockId == 2u && diagnostic.instructionId == 2u,
+                     "effectful irreducible cycle reports unresolved block");
+    } else {
+        require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic) &&
+                         diagnostic.code == 0u &&
+                         ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                     "pure irreducible cycle needs no effect synthesis");
+    }
     require_true(function->memoryTokenCount == 0u &&
                      function->phiIncomingCount == 0u &&
                      function->instructions[1].effectOut == 0u &&
@@ -862,7 +879,7 @@ static void test_irreducible_two_entry_cycle_remains_unpublished(void) {
 
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
-    test_loop_cfg_is_left_for_loop_aware_producer();
+    test_loop_without_forward_entry_is_diagnosed();
     test_branch_read_preserves_initial_memory_state();
     test_overlapping_block_ranges_are_rejected();
     test_missing_predecessor_storage_is_rejected();
@@ -877,7 +894,8 @@ int main(void) {
     test_three_latches_preserve_each_terminal_effect();
     test_reverse_declared_acyclic_join_waits_for_both_arms();
     test_loop_body_with_reverse_declared_forward_edge();
-    test_irreducible_two_entry_cycle_remains_unpublished();
+    test_irreducible_two_entry_cycle_remains_unpublished(ZR_TRUE);
+    test_irreducible_two_entry_cycle_remains_unpublished(ZR_FALSE);
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

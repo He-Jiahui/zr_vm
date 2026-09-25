@@ -33,9 +33,9 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     TZrUInt32 blockIndex;
     TZrUInt32 instructionIndex;
     TZrUInt32 nextInstruction = 0u;
-    TZrBool loopSupported = ZR_TRUE;
     TZrUInt32 region;
     TZrBool result = ZR_TRUE;
+    TZrBool needsEffectSynthesis = ZR_FALSE;
     TZrUInt32 lastVersion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
     TZrExecIrEffectTokenId lastEffect = 1u;
 
@@ -141,7 +141,10 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
             result = ZR_FALSE;
             goto cleanup;
         }
+        if (info->memoryReads != 0u || zr_parser_exec_ir_is_observable(info))
+            needsEffectSynthesis = ZR_TRUE;
     }
+    if (!needsEffectSynthesis) goto cleanup;
 
     blockRegionCount = (size_t)function->blockCount *
                        ZR_EXEC_IR_MEMORY_CLASS_COUNT;
@@ -197,11 +200,10 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     }
     if (!zr_parser_exec_ir_collect_loop_effects(
                 function, loopWrites, loopHasEffect, blockOrder,
-                &backedges, &loopSupported, diagnostic)) {
+                &backedges, diagnostic)) {
         result = ZR_FALSE;
         goto cleanup;
     }
-    if (!loopSupported) goto cleanup;
 
     for (instructionIndex = 0u;
          instructionIndex < function->instructionCount;

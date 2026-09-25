@@ -7,7 +7,7 @@
 TZrBool zr_parser_exec_ir_collect_loop_effects(
         const SZrExecIrFunction *function, TZrUInt32 *loopWrites,
         TZrBool *loopEffects, TZrExecIrBlockId *blockOrder,
-        TZrBool **outBackedges, TZrBool *supported,
+        TZrBool **outBackedges,
         SZrExecIrDiagnostic *diagnostic);
 
 static void zr_parser_exec_ir_effect_diag(SZrExecIrDiagnostic *diagnostic,

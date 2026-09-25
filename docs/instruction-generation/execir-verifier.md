@@ -102,7 +102,9 @@ the actual CFG; reverse-declared acyclic joins must still advance their phi
 results beyond every incoming version. Parser production handles single
 blocks, acyclic CFGs and reducible loops with multiple headers or latches,
 including reverse-declared non-backedge predecessors. Irreducible CFGs still
-require a separate fixed-point construction.
+require a separate fixed-point construction: the effectful producer now
+reports `UNSUPPORTED` instead of silently publishing empty token fields;
+pure graphs do not require token synthesis.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes

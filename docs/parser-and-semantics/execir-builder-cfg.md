@@ -231,9 +231,11 @@ contiguous effect chain. Acyclic multi-block CFGs also
 receive explicit effect and per-region memory token phis at joins; generated
 consumers use those phi results. Reducible loops also receive carried effect
 and memory phis: the producer processes blocks in topological order after
-removing dominance-checked backedges, regardless of declaration order. Cycles
-remaining after true backedges are removed, partially authored token facts,
-or otherwise unsupported graphs are conservatively left untouched. Overflow,
+removing dominance-checked backedges, regardless of declaration order. When
+effect synthesis is needed, cycles remaining after true backedges are removed
+and loops without a forward entry fail with `UNSUPPORTED` at the unresolved
+block's first instruction; a pure CFG needs no tokens and can pass unchanged.
+Partially authored token facts remain owned by their producer. Overflow,
 unknown-opcode, and allocation failures are
 diagnosed before the candidate is published. The focused direct contracts are
 `ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
@@ -247,8 +249,9 @@ written memory regions and observable operations per header, creates the
 needed loop-carried phis before visiting their latches, then fills each
 backedge input from its actual latch exit. Multiple disjoint, nested, and
 multi-latch reducible loops are supported; exit-only writes do not introduce
-loop phis. Loops without a forward entry and irreducible cycles remain outside
-this producer's contract. Reverse-declared acyclic predecessors are processed
+loop phis. Effectful loops without a forward entry and irreducible cycles are
+diagnosed, not published as tokenless success. Reverse-declared acyclic
+predecessors are processed
 before their join; a forward edge inside a natural loop may likewise point to
 an earlier-declared block without being mistaken for a backedge.
 The CFG producer checks side-pool storage and capacity and requires block
