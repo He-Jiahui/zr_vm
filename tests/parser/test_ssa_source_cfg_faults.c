@@ -13,12 +13,14 @@ static SZrState *g_state;
 
 void setUp(void) {
     ssa_source_cfg_fail_allocation(0u);
+    ssa_source_cfg_fail_promotion(SSA_SOURCE_CFG_PROMOTION_NO_FAULT);
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
 void tearDown(void) {
     ssa_source_cfg_fail_allocation(0u);
+    ssa_source_cfg_fail_promotion(SSA_SOURCE_CFG_PROMOTION_NO_FAULT);
     if (g_state != ZR_NULL) ZrTests_Runtime_State_Destroy(g_state);
     g_state = ZR_NULL;
     TEST_ASSERT_EQUAL_UINT64(0u, ssa_source_cfg_outstanding_allocations());
@@ -131,10 +133,69 @@ static void test_invalid_compiler_is_rejected_without_allocation(void) {
     TEST_ASSERT_FALSE(ssa_source_cfg_allocation_failed());
 }
 
+static void assert_promotion_failure_restores_graph(
+        TZrBool startWithAnalysisGraph,
+        ESsaSourceCfgPromotionFault fault) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_many_statements(&compiler);
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    SZrParserCfg previous;
+    TZrSize instructionCount, sourceMapCount, operandCount;
+    TZrUInt32 block, start;
+    TZrBool validated;
+    if (startWithAnalysisGraph) {
+        compiler.preSemanticIrCfgStartupSuppressed = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+        compiler.preSemanticIrCfgStartupSuppressed = ZR_FALSE;
+    }
+    previous = compiler.preSemanticIr.cfg;
+    instructionCount = compiler.preSemanticIr.instructions.length;
+    sourceMapCount = compiler.preSemanticIr.sourceMap.length;
+    operandCount = compiler.preSemanticIr.valueOperands.length;
+    block = compiler.preSemanticIrCfgBlock;
+    start = compiler.preSemanticIrCfgStart;
+    validated = compiler.preSemanticIrValidated;
+    ssa_source_cfg_fail_promotion(fault);
+    TEST_ASSERT_FALSE(ssa_source_cfg_finalize(&compiler));
+    ssa_source_cfg_fail_promotion(SSA_SOURCE_CFG_PROMOTION_NO_FAULT);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
+    TEST_ASSERT_EQUAL_MEMORY(&previous, &compiler.preSemanticIr.cfg,
+                             sizeof(previous));
+    TEST_ASSERT_EQUAL_UINT64(instructionCount,
+                            compiler.preSemanticIr.instructions.length);
+    TEST_ASSERT_EQUAL_UINT64(sourceMapCount,
+                            compiler.preSemanticIr.sourceMap.length);
+    TEST_ASSERT_EQUAL_UINT64(operandCount,
+                            compiler.preSemanticIr.valueOperands.length);
+    TEST_ASSERT_EQUAL_UINT32(block, compiler.preSemanticIrCfgBlock);
+    TEST_ASSERT_EQUAL_UINT32(start, compiler.preSemanticIrCfgStart);
+    TEST_ASSERT_EQUAL_INT(validated, compiler.preSemanticIrValidated);
+    TEST_ASSERT_TRUE(ssa_source_cfg_finalize(&compiler));
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(&compiler.preSemanticIr, ZR_NULL,
+                                         &output, &diagnostic));
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
+}
+
+static void test_promotion_failures_preserve_old_graph_and_retry(void) {
+    assert_promotion_failure_restores_graph(
+            ZR_FALSE, SSA_SOURCE_CFG_PROMOTION_AFTER_ACTIVATION);
+    assert_promotion_failure_restores_graph(
+            ZR_TRUE, SSA_SOURCE_CFG_PROMOTION_AFTER_ACTIVATION);
+    assert_promotion_failure_restores_graph(
+            ZR_FALSE, SSA_SOURCE_CFG_PROMOTION_AFTER_FINISH);
+    assert_promotion_failure_restores_graph(
+            ZR_TRUE, SSA_SOURCE_CFG_PROMOTION_AFTER_FINISH);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_initial_and_growth_failures_preserve_unpublished_graph);
     RUN_TEST(test_scratch_failure_preserves_existing_analysis_graph);
     RUN_TEST(test_invalid_compiler_is_rejected_without_allocation);
+    RUN_TEST(test_promotion_failures_preserve_old_graph_and_retry);
     return UNITY_END();
 }

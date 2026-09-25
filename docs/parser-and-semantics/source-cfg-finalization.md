@@ -19,6 +19,7 @@ tests:
   - tests/parser/test_ssa_source_value_facts.c
   - tests/parser/test_pre_semantic_ir.c
   - tests/acceptance/ssa-source-straight-line-cfg.md
+  - tests/acceptance/ssa-source-cfg-promotion-recovery.md
 doc_type: module-detail
 ---
 
@@ -102,8 +103,16 @@ failure before replacing the graph; allocation failure is not treated as an
 unsupported source form. The failure suite enumerates every scratch allocation
 for 256 source read statements, both before first graph publication and with
 an existing analysis graph, then retries successfully. This covers preflight
-scratch allocation, not the pre-existing CFG/IR allocator's rollback after
-graph promotion starts.
+scratch allocation, not the pre-existing CFG/IR allocator's behavior.
+
+Straight-line promotion now retains the previous graph until both activation
+and finalization succeed. A recoverable failure in either helper frees the
+temporary CFG, restores instruction/source-map/operand lengths and compiler
+CFG cursors, and leaves the prior analysis graph available for retry. Fault
+injection also covers failures immediately after activation and finish, both
+before any analysis graph and after one was previously published. This does
+not claim recovery from the core array allocator's exception or process-level
+out-of-memory behavior; those operations do not return failure to this helper.
 
 ## Constant identity
 

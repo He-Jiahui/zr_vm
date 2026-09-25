@@ -282,6 +282,34 @@ static TZrBool compiler_semantic_cfg_build_analysis_graph(SZrCompilerState *cs) 
                 ZR_PARSER_CFG_TERMINATOR_EXIT));
 }
 
+static TZrBool compiler_semantic_cfg_promote_straight_line(SZrCompilerState *cs) {
+    SZrSemanticIrFunction *function = &cs->preSemanticIr;
+    SZrParserCfg previousCfg = function->cfg;
+    TZrSize previousInstructions = function->instructions.length;
+    TZrSize previousSourceMap = function->sourceMap.length;
+    TZrSize previousOperands = function->valueOperands.length;
+    TZrUInt32 previousBlock = cs->preSemanticIrCfgBlock;
+    TZrUInt32 previousStart = cs->preSemanticIrCfgStart;
+    TZrBool previousValidated = cs->preSemanticIrValidated;
+
+    ZrParser_Cfg_Init(cs->state, &function->cfg);
+    if (!compiler_semantic_cfg_ensure_active(cs) ||
+        !compiler_semantic_cfg_finish(cs)) {
+        ZrParser_Cfg_Free(cs->state, &function->cfg);
+        function->cfg = previousCfg;
+        function->instructions.length = previousInstructions;
+        function->sourceMap.length = previousSourceMap;
+        function->valueOperands.length = previousOperands;
+        cs->preSemanticIrCfgBlock = previousBlock;
+        cs->preSemanticIrCfgStart = previousStart;
+        cs->preSemanticIrCfgActive = ZR_FALSE;
+        cs->preSemanticIrValidated = previousValidated;
+        return ZR_FALSE;
+    }
+    ZrParser_Cfg_Free(cs->state, &previousCfg);
+    return ZR_TRUE;
+}
+
 TZrBool compiler_semantic_cfg_finalize(SZrCompilerState *cs) {
     TZrBool supported = ZR_FALSE;
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized) return ZR_FALSE;
@@ -293,11 +321,7 @@ TZrBool compiler_semantic_cfg_finalize(SZrCompilerState *cs) {
             return ZR_FALSE;
     }
     if (supported) {
-        /* A prior analysis-only validation may already have created blocks. */
-        ZrParser_Cfg_Free(cs->state, &cs->preSemanticIr.cfg);
-        ZrParser_Cfg_Init(cs->state, &cs->preSemanticIr.cfg);
-        return (TZrBool)(compiler_semantic_cfg_ensure_active(cs) &&
-                         compiler_semantic_cfg_finish(cs));
+        return compiler_semantic_cfg_promote_straight_line(cs);
     }
     return compiler_semantic_cfg_build_analysis_graph(cs);
 }
