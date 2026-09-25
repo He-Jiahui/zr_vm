@@ -15,6 +15,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 implementation_files:
@@ -195,6 +196,12 @@ slot positions in its slot array; a packed frame that reuses slots and a
 custom frame whose mapped value slots alias are rejected until liveness-aware
 lowering exists. Self-copies are omitted. Capacity overflow or allocation
 failure rejects the candidate without replacing an earlier projection.
+`ZrParser_ExecBcProjection_ExecutePhiMoves` is the first production consumer
+of this plan. It validates the selected projected edge and every source/
+destination slot before calling the backend's slot-copy callback. A bad range
+therefore cannot begin a partial copy; if a callback rejects after earlier
+moves, the callback owns any external rollback policy and the diagnostic
+identifies the failing move.
 Critical CFG edges and phi-bearing edges leaving a branching block are split
 into synthetic empty blocks in the projection, preserving the source function
 and keeping phi copies on an identifiable edge-local block. Parallel CFG

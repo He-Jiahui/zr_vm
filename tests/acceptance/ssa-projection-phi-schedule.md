@@ -7,6 +7,11 @@ addition to their original parallel-copy records. A cycle uses one temporary
 slot reused after the cycle has drained. Copies on different predecessor
 occurrences carry distinct projected edge IDs; a branching source also splits
 phi-bearing edges even when each destination has only one predecessor.
+`ZrParser_ExecBcProjection_ExecutePhiMoves` consumes one selected edge through
+a slot-copy callback after preflighting every move. Short slot arrays fail
+before any callback; callback rejection reports the failing move, while any
+rollback of earlier callback side effects remains the backend consumer's
+responsibility.
 
 ## Red and green evidence
 
@@ -37,7 +42,9 @@ runtime effect, callback, or owner lease to balance.
 The cycle fixture checks scheduling algebra on a projected graph, while
 `test_verified_loop_backedge_phi_swap` also verifies a two-block, external-entry
 loop with `STRUCTURE | SSA` before executing the entry and backedge move plans.
-An actual ExecBC consumer remains a subsequent 01.05 gate.
+The production phi consumer is now exercised for both edges and for missing
+callback and undersized-slot failures. A scalar instruction dispatcher and
+full oracle/ExecBC event differential remain subsequent 01.05 gates.
 
 ## Validation (2026-09-26)
 

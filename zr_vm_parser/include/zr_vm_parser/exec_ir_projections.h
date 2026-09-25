@@ -48,6 +48,10 @@ typedef struct SZrExecBcPhiMove {
     TZrUInt32 destinationSlot;
 } SZrExecBcPhiMove;
 
+typedef TZrBool (*FZrExecBcPhiMoveConsumer)(void *userData,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 sourceSlot);
+
 typedef struct SZrExecBcProjection {
     TZrMetadataToken functionToken;
     TZrUInt64 signatureHash;
@@ -144,6 +148,11 @@ typedef struct SZrAotIrProjection {
 #define ZR_EXEC_IR_PROJECTION_TAG ((TZrUInt32)0x50524a31u)
 
 ZR_PARSER_API void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *projection);
+ZR_PARSER_API TZrBool ZrParser_ExecBcProjection_ExecutePhiMoves(
+        const SZrExecBcProjection *projection, TZrExecIrBlockId edge,
+        TZrUInt32 *slots, TZrUInt32 slotCount,
+        FZrExecBcPhiMoveConsumer consumer, void *userData,
+        SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerExecBc(
         const SZrExecIrFunction *function, SZrExecBcProjection *output,

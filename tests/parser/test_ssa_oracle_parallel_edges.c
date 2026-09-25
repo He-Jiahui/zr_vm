@@ -13,6 +13,21 @@ static void check(TZrBool condition, const char *message) {
     }
 }
 
+static TZrBool copy_slot(void *userData, TZrUInt32 destinationSlot,
+                         TZrUInt32 sourceSlot) {
+    TZrUInt32 *slots = (TZrUInt32 *)userData;
+    slots[destinationSlot] = slots[sourceSlot];
+    return ZR_TRUE;
+}
+
+static TZrBool reject_slot(void *userData, TZrUInt32 destinationSlot,
+                           TZrUInt32 sourceSlot) {
+    (void)userData;
+    (void)destinationSlot;
+    (void)sourceSlot;
+    return ZR_FALSE;
+}
+
 static TZrExecIrValueId add_value(SZrExecIrFunction *function) {
     TZrExecIrValueId id = ZrCore_ExecIr_FunctionAddValue(
         function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
@@ -422,20 +437,38 @@ static void test_verified_loop_backedge_phi_swap(void) {
     check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
               bytecode.phiCopyCount == 4u && bytecode.temporarySlotCount == 1u,
           "could not lower verifier-valid loop phi copies");
-    for (TZrUInt32 i = 0u; i < bytecode.phiMoveCount; ++i) {
-        const SZrExecBcPhiMove *move = &bytecode.phiMoves[i];
-        if (move->edge == entry)
-            physical[move->destinationSlot] = physical[move->sourceSlot];
-    }
+    check(ZrParser_ExecBcProjection_ExecutePhiMoves(
+              &bytecode, entry, physical, 5u, copy_slot, physical, &diagnostic),
+          "ExecBC phi consumer rejected the loop entry edge");
     check(physical[2] == 11u && physical[3] == 22u,
           "verified loop entry phi copies lost initial values");
-    for (TZrUInt32 i = 0u; i < bytecode.phiMoveCount; ++i) {
-        const SZrExecBcPhiMove *move = &bytecode.phiMoves[i];
-        if (move->edge == loop)
-            physical[move->destinationSlot] = physical[move->sourceSlot];
-    }
+    check(ZrParser_ExecBcProjection_ExecutePhiMoves(
+              &bytecode, loop, physical, 5u, copy_slot, physical, &diagnostic),
+          "ExecBC phi consumer rejected the loop backedge");
     check(physical[2] == 22u && physical[3] == 11u,
           "verified loop backedge phi copies did not swap values");
+    {
+        TZrUInt32 before[5];
+        memcpy(before, physical, sizeof(before));
+        check(!ZrParser_ExecBcProjection_ExecutePhiMoves(
+                  &bytecode, loop, physical, 5u, ZR_NULL, physical,
+                  &diagnostic) &&
+                  diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+                  memcmp(before, physical, sizeof(before)) == 0,
+              "phi consumer accepted a missing slot-copy callback");
+        check(!ZrParser_ExecBcProjection_ExecutePhiMoves(
+                  &bytecode, loop, physical, 2u, copy_slot, physical,
+                  &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+                  memcmp(before, physical, sizeof(before)) == 0,
+              "phi consumer partially wrote slots before range validation");
+        check(!ZrParser_ExecBcProjection_ExecutePhiMoves(
+                  &bytecode, loop, physical, 5u, reject_slot, physical,
+                  &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+                  diagnostic.blockId == loop && diagnostic.actualVersion < bytecode.phiMoveCount,
+              "phi consumer swallowed a slot-copy callback rejection");
+    }
     ZrParser_ExecBcProjection_Free(&bytecode);
     ZrCore_ExecIr_FreeFunction(&function);
 }
