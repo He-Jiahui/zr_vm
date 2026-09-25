@@ -92,9 +92,9 @@ without a memory phi are rejected. A first read of an untouched region
 establishes its initial version at the block exit, so a later join can
 distinguish that path from a sibling write. A declaration-order backedge may carry a
 later iteration's higher version, but a stale or wrong-region backedge still
-fails exact predecessor-terminal matching. Parser production currently handles
-single blocks and acyclic declaration-ordered CFGs; cyclic CFG production
-remains a separate fixed-point task.
+fails exact predecessor-terminal matching. Parser production handles single
+blocks, acyclic declaration-ordered CFGs, and one bounded single-latch loop
+shape; general cyclic CFG production remains a separate fixed-point task.
 
 The phases deliberately do not mutate cached analysis fields.  In particular,
 `immediateDominator` is only a serialized hint: SSA verification recomputes

@@ -333,6 +333,10 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     TZrUInt32 blockIndex;
     TZrUInt32 instructionIndex;
     TZrUInt32 nextInstruction = 0u;
+    TZrExecIrBlockId loopHeader = ZR_EXEC_IR_BLOCK_ID_INVALID;
+    TZrExecIrBlockId loopLatch = ZR_EXEC_IR_BLOCK_ID_INVALID;
+    TZrUInt32 loopWrites = 0u;
+    TZrBool loopHasEffect = ZR_FALSE;
     TZrUInt32 region;
     TZrBool result = ZR_TRUE;
     TZrUInt32 lastVersion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
@@ -404,14 +408,27 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                                    block->predecessors.count;
              ++instructionIndex) {
             TZrExecIrBlockId predecessor = function->predecessors[instructionIndex];
-            /* The bounded producer is declaration-ordered and acyclic.  A
-             * backedge or forward predecessor is left for the loop-aware
-             * fixed-point producer rather than receiving guessed tokens. */
             if (predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
-                predecessor > function->blockCount ||
-                predecessor >= block->id) {
+                predecessor > function->blockCount) {
                 goto cleanup;
             }
+            if (predecessor >= block->id) {
+                if (loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                    block->id == ZR_EXEC_IR_BLOCK_ID_ENTRY ||
+                    block->predecessors.count != 2u ||
+                    predecessor != block->id + 1u) {
+                    goto cleanup;
+                }
+                loopHeader = block->id;
+                loopLatch = predecessor;
+            }
+        }
+    }
+    if (loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID) {
+        const SZrExecIrBlock *latch = &function->blocks[loopLatch - 1u];
+        if (latch->predecessors.count != 1u ||
+            function->predecessors[latch->predecessors.start] != loopHeader) {
+            goto cleanup;
         }
     }
     if (nextInstruction != function->instructionCount) {
@@ -434,13 +451,22 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
             instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) {
             goto cleanup;
         }
-        if (ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)instruction->opcode) == ZR_NULL) {
+        const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(
+                (EZrExecIrOpcode)instruction->opcode);
+        if (info == ZR_NULL) {
             zr_parser_exec_ir_effect_diag(diagnostic, function,
                                           ZR_EXEC_IR_DIAGNOSTIC_UNKNOWN_OPCODE,
                                           instructionIndex + 1u, 0u,
                                           instruction->opcode);
             result = ZR_FALSE;
             goto cleanup;
+        }
+        if (loopHeader != ZR_EXEC_IR_BLOCK_ID_INVALID &&
+            instructionIndex >= function->blocks[loopHeader - 1u].instructions.start &&
+            instructionIndex < function->blocks[loopLatch - 1u].instructions.start +
+                                       function->blocks[loopLatch - 1u].instructions.count) {
+            loopWrites |= info->memoryWrites;
+            if (zr_parser_exec_ir_is_observable(info)) loopHasEffect = ZR_TRUE;
         }
     }
 
@@ -566,6 +592,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                  ++predecessorIndex) {
                 TZrExecIrBlockId predecessor = function->predecessors[predecessorIndex];
                 TZrUInt32 predecessorBlock = predecessor - 1u;
+                if (block->id == loopHeader && predecessor == loopLatch) continue;
                 for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
                     TZrExecIrMemoryTokenId token = terminalMemory[
                             (size_t)predecessorBlock * ZR_EXEC_IR_MEMORY_CLASS_COUNT +
@@ -596,6 +623,22 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                         maximumEffect = terminalEffects[predecessorBlock];
                     if (incomingEffect > maximumEffect)
                         maximumEffect = incomingEffect;
+                    effectPhiNeeded[blockIndex] = ZR_TRUE;
+                }
+            }
+            if (block->id == loopHeader) {
+                for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                    if ((loopWrites & ((TZrUInt32)1u << region)) != 0u) {
+                        TZrUInt32 forwardVersion = ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
+                                incomingMemory[region]);
+                        if (forwardVersion > maximumVersion[region])
+                            maximumVersion[region] = forwardVersion;
+                        memoryPhiNeeded[(size_t)blockIndex *
+                                        ZR_EXEC_IR_MEMORY_CLASS_COUNT + region] = ZR_TRUE;
+                    }
+                }
+                if (loopHasEffect) {
+                    if (incomingEffect > maximumEffect) maximumEffect = incomingEffect;
                     effectPhiNeeded[blockIndex] = ZR_TRUE;
                 }
             }

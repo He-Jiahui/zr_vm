@@ -405,6 +405,69 @@ static void test_sibling_observable_operations_get_distinct_effects(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_single_latch_loop_gets_carried_effect_phis(
+        TZrBool preheaderWrites) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId header = 2u;
+    TZrExecIrBlockId latch = 3u;
+    TZrExecIrBlockId exitBlock = 4u;
+    TZrExecIrBlockId headerPreds[2] = {entry, latch};
+    const SZrExecIrBlock *loopHeader;
+    const SZrExecIrPhiIncoming *memoryIncoming;
+    const SZrExecIrPhiIncoming *effectIncoming;
+    TZrExecIrMemoryTokenId heapPhi;
+    TZrExecIrEffectTokenId effectPhi;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == header,
+                 "add loop header");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == latch,
+                 "add loop latch");
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == exitBlock,
+                 "add loop exit");
+    if (preheaderWrites) append_store(function);
+    else append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
+    append_store(function);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CALL);
+    {
+        const TZrUInt32 starts[4] = {0u, 1u, 2u, 3u};
+        const TZrUInt32 counts[4] = {1u, 1u, 1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, header, headerPreds, 2u);
+    append_predecessor(function, latch, &header, 1u);
+    append_predecessor(function, exitBlock, &header, 1u);
+
+    require_true(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "synthesize single-latch loop effects");
+    loopHeader = &function->blocks[header - 1u];
+    heapPhi = loopHeader->memoryPhiResults[ZR_EXEC_IR_MEMORY_MANAGED_HEAP];
+    effectPhi = loopHeader->effectPhiResult;
+    require_true(heapPhi != 0u && effectPhi != 0u,
+                 "loop header receives memory and effect phis");
+    memoryIncoming = &function->phiIncoming[loopHeader->memoryPhiIncomings[
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP].start];
+    effectIncoming = &function->phiIncoming[loopHeader->effectPhiIncomings.start];
+    require_true(memoryIncoming[0].value == (preheaderWrites
+                         ? function->memoryTokenPool[function->instructions[0].memoryOut.start]
+                         : ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) &&
+                     memoryIncoming[1].value ==
+                         function->memoryTokenPool[function->instructions[2].memoryOut.start] &&
+                     effectIncoming[0].value == function->instructions[0].effectOut &&
+                     effectIncoming[1].value == function->instructions[2].effectOut,
+                 "loop phis record exact forward and backedge exits");
+    require_true(function->instructions[2].effectIn == effectPhi &&
+                     function->memoryTokenPool[function->instructions[3].memoryIn.start] ==
+                             heapPhi,
+                 "loop body and exit consume header state");
+    require_true(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+                 "single-latch loop effects pass verifier");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
@@ -413,6 +476,8 @@ int main(void) {
     test_missing_predecessor_storage_is_rejected();
     test_untouched_branch_merges_with_written_memory();
     test_sibling_observable_operations_get_distinct_effects();
+    test_single_latch_loop_gets_carried_effect_phis(ZR_TRUE);
+    test_single_latch_loop_gets_carried_effect_phis(ZR_FALSE);
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }

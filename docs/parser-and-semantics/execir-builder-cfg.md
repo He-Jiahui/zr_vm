@@ -225,13 +225,19 @@ predecessors are attached. Single-block functions with empty token fields get
 schema-required instruction flags, region-tagged memory versions, and a
 contiguous effect chain. Acyclic, declaration-ordered multi-block CFGs also
 receive explicit effect and per-region memory token phis at joins; generated
-consumers use those phi results. Cyclic, forward-edge, partially authored, or
+consumers use those phi results. Other cyclic, forward-edge, partially authored, or
 otherwise unsupported graphs are conservatively left untouched for a later
 loop-aware producer. Overflow, unknown-opcode, and allocation failures are
 diagnosed before the candidate is published. The focused direct contracts are
 `ssa_linear_effects_builder` and `ssa_cfg_effects_builder`; the existing
 control-edge rejection and source cleanup fixtures still cover unsupported
 exceptional shapes.
+One bounded cycle is supported: a declaration-ordered header with a single
+adjacent latch whose only predecessor is that header. The producer scans the
+header/latch for written memory regions and observable operations, creates
+loop-carried phis before visiting the latch, and fills their backedge inputs
+from the latch's actual exit state. Self-loops, multiple latches and general
+cyclic graphs remain outside this producer's contract.
 The CFG producer checks side-pool storage and capacity and requires block
 instruction ranges to partition the instruction array in declaration order
 before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.
