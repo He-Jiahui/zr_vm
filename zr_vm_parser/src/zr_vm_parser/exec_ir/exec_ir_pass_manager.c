@@ -455,6 +455,20 @@ const SZrExecIrPassInfo *ZrParser_ExecIr_GetScalarPasses(TZrUInt32 *count) {
     return zr_scalar_passes;
 }
 
+static TZrBool zr_verify_pass_boundary(const SZrExecIrFunction *function,
+                                      SZrExecIrDiagnostic *diagnostic,
+                                      TZrUInt64 *ticks) {
+    clock_t started = clock();
+    TZrBool valid = ZrParser_ExecIr_VerifyFunction(
+            function, ZR_EXEC_IR_VERIFY_ALL, diagnostic);
+    clock_t ended = clock();
+    if (started != (clock_t)-1 && ended != (clock_t)-1 && ended >= started) {
+        TZrUInt64 delta = (TZrUInt64)(ended - started);
+        *ticks = delta > UINT64_MAX - *ticks ? UINT64_MAX : *ticks + delta;
+    }
+    return valid;
+}
+
 TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
                                         const SZrExecIrPassInfo *passes,
                                         TZrUInt32 passCount,
@@ -508,6 +522,8 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
         TZrBool changed = ZR_FALSE;
         TZrUInt64 before;
         TZrUInt64 after;
+        TZrUInt64 verifierTicks = 0u;
+        TZrUInt32 verifierChecks = 0u;
         clock_t started;
         clock_t ended;
         SZrExecIrOptimizationRemark remark;
@@ -524,7 +540,8 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
                                            function, 0u, 0u, index, 0u);
             goto rollback;
         }
-        if (!ZrParser_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL, diagnostic))
+        ++verifierChecks;
+        if (!zr_verify_pass_boundary(function, diagnostic, &verifierTicks))
             goto rollback;
         before = ZrParser_ExecIr_FunctionHash(function);
         context->budgetExhausted = ZR_FALSE;
@@ -539,7 +556,8 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
             !passes[index].run(function, context, &changed, diagnostic))
             goto rollback;
         ended = clock();
-        if (!ZrParser_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) {
+        ++verifierChecks;
+        if (!zr_verify_pass_boundary(function, diagnostic, &verifierTicks)) {
             context->lastReasonCode = ZR_EXEC_IR_PASS_REASON_VERIFIER;
             goto rollback;
         }
@@ -571,6 +589,8 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
         remark.elapsedTicks =
                 started == (clock_t)-1 || ended == (clock_t)-1 || ended < started
                     ? 0u : (TZrUInt64)(ended - started);
+        remark.verifierTicks = verifierTicks;
+        remark.verifierChecks = verifierChecks;
         if (!ZrParser_ExecIr_EmitRemark(context->remarks, &remark, diagnostic))
             goto rollback;
         ZrCore_ExecIr_FreeFunction(&passSnapshot);

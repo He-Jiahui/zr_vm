@@ -17,6 +17,7 @@ tests:
   - tests/parser/test_ssa_deopt_aggregates.c
   - tests/acceptance/ssa-pass-manager-token-phi-hash.md
   - tests/acceptance/ssa-pass-failure-snapshot.md
+  - tests/acceptance/ssa-pass-verifier-timing.md
 doc_type: implementation
 status: active
 ---
@@ -81,6 +82,11 @@ smallest self-contained replayable unit; the caller owns it and frees it with
 record.  Invalid input rejected before a pass starts has a diagnostic but no
 pass-failure record.  Allocation failure while copying the name cannot
 prevent rollback and leaves the failure record empty.
+Each successful pass remark separately records `verifierChecks=2` and their
+total `verifierTicks` (CPU ticks from `clock()`).  The pipeline preflight check
+is not charged to an individual pass.  `elapsedTicks` still measures only the
+pass execution; verifier timing is diagnostic, may round down to zero, and
+does not affect work budgets or optimization decisions.
 
 `ZrParser_ExecIr_Optimize` applies the same registry to every module function,
 shares the compile budget across functions, supplies the module constant view,
@@ -102,3 +108,4 @@ diagnostics, failed-pass rollback, bounded execution, and hash sensitivity to
 effect and per-region memory phi results and range coordinates.  The failed
 pass fixture also checks that the captured function reproduces the verifier
 diagnostic after rollback and that its pass name survives caller mutation.
+Every successful scalar pass remark is checked for two verifier boundaries.

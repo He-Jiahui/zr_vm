@@ -172,6 +172,7 @@ static void test_scalar_pipeline_and_fixed_point(void) {
     SZrExecIrRemarkSink remarks;
     SZrExecIrDiagnostic diagnostic;
     TZrUInt64 firstHash, secondHash;
+    TZrUInt32 index;
     ZrParser_ExecIr_RemarkSinkInit(&remarks);
     build_constant_copy_function(&function);
     assert(ZrParser_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
@@ -184,6 +185,8 @@ static void test_scalar_pipeline_and_fixed_point(void) {
     secondHash = ZrParser_ExecIr_FunctionHash(&function);
     assert(firstHash == secondHash);
     assert(remarks.count >= 4u);
+    for (index = 0u; index < remarks.count; ++index)
+        assert(remarks.items[index].verifierChecks == 2u);
     ZrParser_ExecIr_RemarkSinkFree(&remarks);
     ZrCore_ExecIr_FreeFunction(&function);
 }

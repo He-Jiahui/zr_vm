@@ -64,6 +64,10 @@ typedef struct SZrExecIrOptimizationRemark {
     /* clock() ticks spent in this pass.  It is a diagnostic metric, not a
      * wall-clock deadline or a source of optimization decisions. */
     TZrUInt64 elapsedTicks;
+    /* CPU ticks spent in the two per-pass verifier boundary checks.  The
+     * preflight verifier is excluded; a fast check may round down to zero. */
+    TZrUInt64 verifierTicks;
+    TZrUInt32 verifierChecks;
 } SZrExecIrOptimizationRemark;
 
 typedef struct SZrExecIrRemarkSink {
