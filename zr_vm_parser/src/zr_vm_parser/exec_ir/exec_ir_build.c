@@ -873,8 +873,11 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             db->terminatorInstructionId = db->instructionRange.start + db->instructionRange.count;
         }
     }
-    return append_cfg_predecessors(s, output, diagnostic) &&
-           ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
+    if (!append_cfg_predecessors(s, output, diagnostic) ||
+        !ZrParser_ExecIr_SynthesizeLinearEffects(output, diagnostic)) {
+        return ZR_FALSE;
+    }
+    return ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
            ZrParser_ExecIr_BuildSsa(output, diagnostic) &&
            verify_unpublished_ssa(output, diagnostic);
 }

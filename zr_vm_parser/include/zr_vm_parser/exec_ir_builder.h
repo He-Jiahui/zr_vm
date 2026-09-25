@@ -33,6 +33,13 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildModule(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildSsa(
         SZrExecIrFunction *function,
         SZrExecIrDiagnostic *diagnostic);
+/* Populate the producer-side effect contract for a single-block function
+ * that does not already carry memory/effect tokens.  Multi-block functions
+ * and functions with pre-existing token fields are intentionally left alone;
+ * their CFG-aware producer is responsible for phi construction. */
+ZR_PARSER_API TZrBool ZrParser_ExecIr_SynthesizeLinearEffects(
+        SZrExecIrFunction *function,
+        SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_VerifyFunction(
         const SZrExecIrFunction *function,
         EZrExecIrVerifyLevel level,

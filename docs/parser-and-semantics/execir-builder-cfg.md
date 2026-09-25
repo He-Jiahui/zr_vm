@@ -220,9 +220,17 @@ break/continue sites, dynamic/unresolved `foreach` iteration, binding cleanup,
 and combinations of a loop transfer with another completion kind remain
 unsupported.
 
-This is not yet effect-token generation; see
-`tests/acceptance/ssa-builder-control-edge-rejection.md` and
-`tests/acceptance/ssa-source-cleanup-cfg.md`.
+The builder now invokes the producer-side effect contract after CFG
+predecessors are attached. For a single-block function with empty token
+fields, it derives schema-required instruction flags, emits region-tagged
+memory versions, and links observable instructions with a contiguous effect
+chain. The producer is intentionally a no-op for multi-block functions and
+for functions that already carry token/range facts; those cases remain owned
+by the CFG-aware producer and its token phis. Overflow, unknown-opcode, and
+allocation failures are diagnosed before the candidate is published. The
+focused direct contract is `ssa_linear_effects_builder`; the existing control
+edge rejection and source cleanup fixtures still cover the unsupported
+exceptional shapes.
 An earlier schema-declared throwing or suspending operation in the same block
 also reports `UNSUPPORTED` at its own source instruction: the producer must
 split the block rather than attribute that operation's exceptional exit to
@@ -361,8 +369,9 @@ The nested edge-capacity regression is recorded in
 ## Regression boundary
 
 `tests/cmake/ssa-tests.cmake` remains the one SSA suite entry point and
-includes a small builder-specific registration module for the five focused
-CFG, dominance, typed-control, canonical-ID and Place-eligibility fixtures.
+includes a small builder-specific registration module for the focused CFG,
+dominance, typed-control, canonical-ID, Place-eligibility, and linear-effects
+fixtures.
 They share the
 same real builder/core source list and retain their CTest names; this moves
 test-target ownership out of the growing central SSA registration file,
