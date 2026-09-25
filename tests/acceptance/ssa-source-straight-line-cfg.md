@@ -19,11 +19,13 @@ four cases: builder diagnostic 28, block 1, expected edge 4, actual edge 7.
 The plain-line facts-only case still passed. The defect is CFG production,
 not the new canonical ownership facts and not an overly strict verifier.
 
-Code inspection also found that binary-expression compilation emits ExecBC
+Code inspection also found that binary-expression compilation emitted ExecBC
 without a canonical binary-expression producer. Activating every inactive
 body without checking completeness could silently omit an expression. The
 regression scope therefore includes unsupported source forms as well as
-successful fallthrough.
+successful fallthrough. This stage adds a deliberately narrow producer subset
+for typed signed/unsigned/float `+`, `-`, and `*`; unsupported forms continue
+to exercise the analysis-only boundary.
 
 The initial focused suite reproduced four missing-activation failures out of
 14 cases: empty source, scalar prefix, repeated validation, and isolated child
@@ -71,7 +73,10 @@ int-to-float initialization emits a generic SemanticIR CONVERT but its current
 oracle execution copies the input; numeric int-to-float assignment emits a
 legacy TO_FLOAT and a SemanticIR STORE of the original RHS. Both valid source
 regressions failed against the earlier preflight (29 cases / 2 failures).
-Cross-type CONVERT/STORE now retains the analysis-only graph. The local read
+Cross-type CONVERT/STORE now retains the analysis-only graph. Typed arithmetic
+producer tests cover a direct sum, nested subtraction/multiplication, strict
+builder lowering, and oracle execution; mixed-type arithmetic remains
+analysis-only. The local read
 preflight also uses a checked scratch bitmap indexed by PlaceId and a single
 instruction cursor, rather than rescanning all preceding instructions for
 each of 256 repeated reads. Its allocation participates in fault injection.

@@ -421,11 +421,127 @@ static void assert_analysis_only(const char *source, TZrBool suppress,
     free_source(&compiler, ast);
 }
 
-static void test_binary_initializer_without_semantic_producer_stays_analysis_only(void) {
-    assert_analysis_only("var value: int = 1 + 2;\nvalue;\n", ZR_FALSE, ZR_FALSE);
+static void test_cross_type_binary_without_canonical_conversion_stays_analysis_only(void) {
+    assert_analysis_only("var value: float = 1 + 2;\nvalue;\n", ZR_FALSE, ZR_FALSE);
+}
+
+static void test_typed_addition_has_semantic_producer(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler,
+            "var value: int = 1 + 2;\nvalue;\n");
+    const SZrSemanticIrFunction *function;
+    SZrExecIrFunction output;
+    TZrSize index;
+    TZrBool found = ZR_FALSE;
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = &compiler.preSemanticIr;
+    for (index = 0u; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        if (instruction->opcode == ZR_SEMANTIC_IR_ADD) {
+            const TZrValueId *operands = (const TZrValueId *)ZrCore_Array_Get(
+                    (SZrArray *)&function->valueOperands,
+                    instruction->operandStart);
+            TEST_ASSERT_EQUAL_UINT32(2u, instruction->operandCount);
+            TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID,
+                    instruction->resultValueId);
+            TEST_ASSERT_NOT_NULL(operands);
+            TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, operands[0]);
+            TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, operands[1]);
+            found = ZR_TRUE;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(found);
+    build_source(function, &output);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
+}
+
+static void test_typed_addition_oracle_returns_sum(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler, "return 1 + 2;\n");
+    SZrExecIrFunction output;
+    SZrExecIrOracleInput input = {0};
+    SZrExecIrOracleExecutionResult result;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOracleValue constants[8] = {{0}};
+    SZrExecIrOracleValue initial[32] = {{0}};
+    SZrStraightLineOracleMemory memory = {0};
+    TZrSize index;
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.constants.length <= ZR_ARRAY_COUNT(constants));
+    for (index = 0u; index < compiler.constants.length; ++index) {
+        const SZrTypeValue *constant = (const SZrTypeValue *)ZrCore_Array_Get(
+                &compiler.constants, index);
+        if (ZR_VALUE_IS_TYPE_SIGNED_INT(constant->type)) {
+            constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+            constants[index].as.signedInteger =
+                    constant->value.nativeObject.nativeInt64;
+        }
+    }
+    build_source(&compiler.preSemanticIr, &output);
+    for (index = 0u; index < output.valueCount; ++index) {
+        if (output.values[index].definition == ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+            initial[index].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+            initial[index].as.signedInteger = (TZrInt64)index + 1;
+        }
+    }
+    memory.semantic = &compiler.preSemanticIr;
+    input.function = &output;
+    input.constants = constants;
+    input.constantCount = (TZrUInt32)compiler.constants.length;
+    input.initialValues = initial;
+    input.initialValueCount = output.valueCount;
+    input.place = source_place_provider;
+    input.placeUserData = &memory;
+    input.memory = source_memory_provider;
+    input.memoryUserData = &memory;
+    ZrCore_ExecIr_OracleResultInit(&result);
+    {
+        TZrBool interpreted = ZrParser_ExecIr_Interpret(
+                &input, &result, &diagnostic);
+        TEST_ASSERT_TRUE(interpreted);
+    }
+    TEST_ASSERT_TRUE(result.returned);
+    TEST_ASSERT_FALSE(result.terminatedByThrow);
+    TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_ORACLE_VALUE_SIGNED, result.returnValue.kind);
+    TEST_ASSERT_EQUAL_INT64(3, result.returnValue.as.signedInteger);
+    ZrCore_ExecIr_OracleResultFree(&result);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
+}
+
+static void test_nested_typed_arithmetic_preserves_producers(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler,
+            "var value: int = 8 - 3 * 2;\nvalue;\n");
+    const SZrSemanticIrFunction *function;
+    SZrExecIrFunction output;
+    TZrSize index;
+    TZrUInt32 subCount = 0u;
+    TZrUInt32 mulCount = 0u;
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = &compiler.preSemanticIr;
+    for (index = 0u; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        if (instruction->opcode == ZR_SEMANTIC_IR_SUB) ++subCount;
+        if (instruction->opcode == ZR_SEMANTIC_IR_MUL) ++mulCount;
+    }
+    TEST_ASSERT_EQUAL_UINT32(1u, subCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, mulCount);
+    build_source(function, &output);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
 }
 static void test_discarded_binary_without_semantic_producer_stays_analysis_only(void) {
-    assert_analysis_only("var value: int = 1;\nvalue + 2;\n", ZR_FALSE, ZR_FALSE);
+    assert_analysis_only("var value: float = 1.0;\nvalue + 2;\n", ZR_FALSE, ZR_FALSE);
 }
 static void test_compound_assignment_without_semantic_producer_stays_analysis_only(void) {
     assert_analysis_only("var value: int = 1;\nvalue += 2;\n", ZR_FALSE, ZR_FALSE);
@@ -519,7 +635,10 @@ int main(void) {
     RUN_TEST(test_explicit_throw_keeps_value);
     RUN_TEST(test_child_body_does_not_block_or_pollute_parent);
     RUN_TEST(test_source_assignment_oracle_returns_second_constant);
-    RUN_TEST(test_binary_initializer_without_semantic_producer_stays_analysis_only);
+    RUN_TEST(test_cross_type_binary_without_canonical_conversion_stays_analysis_only);
+    RUN_TEST(test_typed_addition_has_semantic_producer);
+    RUN_TEST(test_typed_addition_oracle_returns_sum);
+    RUN_TEST(test_nested_typed_arithmetic_preserves_producers);
     RUN_TEST(test_discarded_binary_without_semantic_producer_stays_analysis_only);
     RUN_TEST(test_compound_assignment_without_semantic_producer_stays_analysis_only);
     RUN_TEST(test_unary_without_semantic_producer_stays_analysis_only);

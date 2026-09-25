@@ -701,12 +701,16 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    TZrInstruction inst = create_instruction_2(
-            opcode,
-            ZR_COMPILE_SLOT_U16(destSlot),
-            ZR_COMPILE_SLOT_U16(leftSlot),
-            ZR_COMPILE_SLOT_U16(rightSlot));
-    emit_instruction(cs, inst);
+    if (!compiler_semantic_ir_lower_binary(
+                cs, opcode, leftSlot, rightSlot, destSlot,
+                hasTypeInfo ? &resultType : ZR_NULL, node->location)) {
+        TZrInstruction inst = create_instruction_2(
+                opcode,
+                ZR_COMPILE_SLOT_U16(destSlot),
+                ZR_COMPILE_SLOT_U16(leftSlot),
+                ZR_COMPILE_SLOT_U16(rightSlot));
+        emit_instruction(cs, inst);
+    }
     collapse_stack_to_slot(cs, destSlot);
     
     // 清理类型信息

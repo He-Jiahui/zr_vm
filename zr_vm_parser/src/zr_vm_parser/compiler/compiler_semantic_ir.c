@@ -1997,6 +1997,89 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static EZrSemanticIrOpcode compiler_semantic_ir_binary_opcode(
+        EZrInstructionCode opcode) {
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+            return ZR_SEMANTIC_IR_ADD;
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+            return ZR_SEMANTIC_IR_SUB;
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+            return ZR_SEMANTIC_IR_MUL;
+        default:
+            return ZR_SEMANTIC_IR_INVALID;
+    }
+}
+
+TZrBool compiler_semantic_ir_lower_binary(
+        SZrCompilerState *cs,
+        EZrInstructionCode opcode,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot,
+        TZrUInt32 resultSlot,
+        const SZrInferredType *resultType,
+        SZrFileRange sourceRange) {
+    EZrSemanticIrOpcode semanticOpcode;
+    const SZrCompilerSemanticIrSlot *left;
+    const SZrCompilerSemanticIrSlot *right;
+    SZrSemanticIrInstructionSpec spec;
+    TZrTypeId resultTypeId;
+    TZrValueId resultValueId;
+    TZrValueId operands[2];
+    const SZrSemanticIrValue *leftValue;
+    const SZrSemanticIrValue *rightValue;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        resultType == ZR_NULL || resultSlot == ZR_PARSER_SLOT_NONE ||
+        leftSlot == ZR_PARSER_SLOT_NONE || rightSlot == ZR_PARSER_SLOT_NONE ||
+        cs->preSemanticIrCfgTerminated) {
+        return ZR_FALSE;
+    }
+    semanticOpcode = compiler_semantic_ir_binary_opcode(opcode);
+    if (semanticOpcode == ZR_SEMANTIC_IR_INVALID) return ZR_FALSE;
+    left = compiler_semantic_ir_find_slot(cs, leftSlot);
+    right = compiler_semantic_ir_find_slot(cs, rightSlot);
+    if (left == ZR_NULL || right == ZR_NULL ||
+        left->valueId == ZR_VALUE_ID_INVALID ||
+        right->valueId == ZR_VALUE_ID_INVALID) return ZR_FALSE;
+    leftValue = ZrParser_SemanticIr_Value(&cs->preSemanticIr, left->valueId);
+    rightValue = ZrParser_SemanticIr_Value(&cs->preSemanticIr, right->valueId);
+    if (leftValue == ZR_NULL || rightValue == ZR_NULL ||
+        leftValue->typeId != rightValue->typeId) return ZR_FALSE;
+    resultTypeId = ZrParser_Semantic_RegisterInferredType(
+            cs->semanticContext, resultType, ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+            ZR_NULL, ZR_NULL);
+    if (resultTypeId == ZR_SEMANTIC_ID_INVALID ||
+        resultTypeId != leftValue->typeId) return ZR_FALSE;
+    resultValueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, resultTypeId, sourceRange);
+    if (resultValueId == ZR_VALUE_ID_INVALID) return ZR_FALSE;
+    operands[0] = left->valueId;
+    operands[1] = right->valueId;
+    if (!compiler_semantic_ir_bind_result_value(
+                cs, resultSlot, resultTypeId, resultValueId, sourceRange))
+        return ZR_FALSE;
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = semanticOpcode;
+    spec.typeId = resultTypeId;
+    spec.resultValueId = resultValueId;
+    spec.operands = operands;
+    spec.operandCount = ZR_ARRAY_COUNT(operands);
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) return ZR_FALSE;
+    emit_instruction(cs, create_instruction_2(
+            opcode, (TZrUInt16)resultSlot,
+            (TZrUInt16)leftSlot, (TZrUInt16)rightSlot));
+    return ZR_TRUE;
+}
+
 TZrBool compiler_semantic_ir_transfer_expression_result(
         SZrCompilerState *cs,
         TZrUInt32 sourceSlot,

@@ -68,6 +68,10 @@ static EZrExecIrOpcode map_opcode(const SZrSemanticIrInstruction *instruction) {
             return ZR_EXEC_IR_OPCODE_ITER_CURRENT;
         case ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD:
             return ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD;
+        case ZR_SEMANTIC_IR_ADD: return ZR_EXEC_IR_OPCODE_ADD;
+        case ZR_SEMANTIC_IR_SUB: return ZR_EXEC_IR_OPCODE_SUB;
+        case ZR_SEMANTIC_IR_MUL: return ZR_EXEC_IR_OPCODE_MUL;
+        case ZR_SEMANTIC_IR_DIV: return ZR_EXEC_IR_OPCODE_DIV;
         default: return ZR_EXEC_IR_OPCODE_INVALID;
     }
 }
@@ -757,6 +761,11 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                             operandValues = loweredOperands;
                             operandCount = 1u;
                         }
+                        break;
+                    case ZR_SEMANTIC_IR_ADD:
+                    case ZR_SEMANTIC_IR_SUB:
+                    case ZR_SEMANTIC_IR_MUL:
+                    case ZR_SEMANTIC_IR_DIV:
                         break;
                     default:
                         break;

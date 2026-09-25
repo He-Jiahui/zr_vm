@@ -295,7 +295,7 @@ static void test_unmodeled_throw_payload_blocks_later_cfg_startup(void) {
     static const TZrChar source[] =
             "fn identity(value: int): int { return value; }\n"
             "var seed: int = 7;\n"
-            "throw seed + 1;\n"
+            "throw seed % 1;\n"
             "identity(seed);\n";
     static TZrChar sourceName[] = "unmodeled_throw_payload_fallback.zr";
     SZrString *name = ZrCore_String_Create(

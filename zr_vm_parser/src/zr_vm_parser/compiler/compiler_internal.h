@@ -432,6 +432,14 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
                                            TZrUInt32 constantPoolIndex,
                                            EZrValueType valueType,
                                            SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_binary(
+        SZrCompilerState *cs,
+        EZrInstructionCode opcode,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot,
+        TZrUInt32 resultSlot,
+        const SZrInferredType *resultType,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_transfer_expression_result(
         SZrCompilerState *cs,
         TZrUInt32 sourceSlot,

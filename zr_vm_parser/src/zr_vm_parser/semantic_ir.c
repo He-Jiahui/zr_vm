@@ -98,6 +98,10 @@ static TZrBool semantic_ir_opcode_requires_result(EZrSemanticIrOpcode opcode) {
         case ZR_SEMANTIC_IR_PROPERTY_GET:
         case ZR_SEMANTIC_IR_PROPERTY_REF_GET:
         case ZR_SEMANTIC_IR_DESTRUCTURE_EVALUATE:
+        case ZR_SEMANTIC_IR_ADD:
+        case ZR_SEMANTIC_IR_SUB:
+        case ZR_SEMANTIC_IR_MUL:
+        case ZR_SEMANTIC_IR_DIV:
             return ZR_TRUE;
         default:
             return ZR_FALSE;

@@ -138,6 +138,37 @@ static TZrBool compiler_semantic_cfg_has_source_load(
     return ZR_FALSE;
 }
 
+static EZrSemanticIrOpcode compiler_semantic_cfg_binary_opcode(
+        const SZrAstNode *node) {
+    const TZrChar *op;
+    if (node == ZR_NULL || node->type != ZR_AST_BINARY_EXPRESSION) {
+        return ZR_SEMANTIC_IR_INVALID;
+    }
+    op = node->data.binaryExpression.op.op;
+    if (op == ZR_NULL) return ZR_SEMANTIC_IR_INVALID;
+    if (strcmp(op, "+") == 0) return ZR_SEMANTIC_IR_ADD;
+    if (strcmp(op, "-") == 0) return ZR_SEMANTIC_IR_SUB;
+    if (strcmp(op, "*") == 0) return ZR_SEMANTIC_IR_MUL;
+    return ZR_SEMANTIC_IR_INVALID;
+}
+
+static TZrBool compiler_semantic_cfg_has_source_binary(
+        const SZrCompilerState *cs, const SZrAstNode *node) {
+    EZrSemanticIrOpcode opcode = compiler_semantic_cfg_binary_opcode(node);
+    TZrSize index;
+    if (opcode == ZR_SEMANTIC_IR_INVALID) return ZR_FALSE;
+    for (index = 0U; index < cs->preSemanticIr.instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(&cs->preSemanticIr, index);
+        if (instruction != ZR_NULL && instruction->opcode == opcode &&
+            compiler_semantic_cfg_same_source(instruction, node)) {
+            return (TZrBool)(instruction->operandCount == 2U &&
+                             instruction->resultValueId != ZR_VALUE_ID_INVALID);
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool compiler_semantic_cfg_straight_line_is_supported(
         SZrCompilerState *cs, TZrBool *outSupported) {
     SZrSemanticCfgSourceWorklist pending = {0};
@@ -188,7 +219,15 @@ static TZrBool compiler_semantic_cfg_straight_line_is_supported(
                  * Global, closure, child-function and type identifier reads
                  * currently emit legacy bytecode without a SemanticIR load. */
                 supported = compiler_semantic_cfg_has_source_load(
-                        cs, node, &nextReadInstruction, &pending);
+                    cs, node, &nextReadInstruction, &pending);
+                break;
+            case ZR_AST_BINARY_EXPRESSION:
+                supported = compiler_semantic_cfg_has_source_binary(
+                        cs, node);
+                compiler_semantic_cfg_queue_node(
+                        cs, &pending, node->data.binaryExpression.right);
+                compiler_semantic_cfg_queue_node(
+                        cs, &pending, node->data.binaryExpression.left);
                 break;
             case ZR_AST_PRIMARY_EXPRESSION:
                 supported = compiler_semantic_cfg_empty_nodes(

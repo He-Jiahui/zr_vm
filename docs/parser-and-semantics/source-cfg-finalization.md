@@ -4,10 +4,15 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
@@ -76,8 +81,8 @@ existing identifier places. Empty undecorated nongeneric class declarations
 have no entry initializer to skip. Global/closure/function/type reads,
 global assignments, named child function declarations, new/resource instance
 construction, class members/initializers, uninitialized local defaults,
-cross-type numeric conversions, binary/unary expressions, compound assignment
-and block/object expressions
+cross-type numeric conversions, unsupported binary operators, unary expressions,
+compound assignment and block/object expressions
 retain analysis-only status until their producer contracts are complete.
 An isolated child body does not justify skipping the declaration's parent
 CREATE_CLOSURE/SET_STACK operations. `own Value()` must not silently skip its
@@ -90,6 +95,19 @@ control-flow producers retain their own preflight checks; this stage does not
 prove that every source expression supported by the legacy compiler has a
 canonical producer. Broader producer completeness is still required before
 the normal compiler pipeline can rely exclusively on ExecIR.
+
+Typed numeric `+`, `-`, and `*` are now a supported producer subset. When type
+inference selects a signed, unsigned, or floating-point operation and both
+operand values already have the same canonical `TypeId` as the result, the
+compiler emits a canonical `add`, `sub`, or `mul` SemanticIR instruction with
+two value operands and a result value. The existing ExecBC instruction remains
+as a compatibility sidecar, while the strict builder maps the canonical
+instruction to the corresponding ExecIR arithmetic opcode. Nested expressions
+are matched by source range, so source traversal does not infer a producer from
+the legacy instruction stream. Division remains analysis-only until its
+exception-edge contract is represented; modulo, implicit numeric conversion,
+string/dynamic arithmetic, comparison, unary, and compound assignment forms
+likewise remain outside this producer subset.
 
 The capability walk uses an explicit, checked worklist rather than recursive
 AST descent. Identifier reads follow source order and require corresponding

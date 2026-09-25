@@ -115,6 +115,10 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         ZR_SEMANTIC_IR_ITER_CURRENT,
         ZR_SEMANTIC_IR_EXCEPTION_PAYLOAD,
         ZR_SEMANTIC_IR_TYPE_TEST,
+        ZR_SEMANTIC_IR_ADD,
+        ZR_SEMANTIC_IR_SUB,
+        ZR_SEMANTIC_IR_MUL,
+        ZR_SEMANTIC_IR_DIV,
     };
     static const char expected[] =
         "1 constant type=5 place=1 value=1 result=2\n"
@@ -162,7 +166,11 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         "43 iter.move_next type=5 place=1 value=1 result=2\n"
         "44 iter.current type=5 place=1 value=1 result=2\n"
         "45 exception.payload type=5 place=1 value=1 result=2\n"
-        "46 type.test type=5 match_type=6 place=1 value=1 result=2\n";
+        "46 type.test type=5 match_type=6 place=1 value=1 result=2\n"
+        "47 add type=5 place=1 value=1 result=2\n"
+        "48 sub type=5 place=1 value=1 result=2\n"
+        "49 mul type=5 place=1 value=1 result=2\n"
+        "50 div type=5 place=1 value=1 result=2\n";
     SZrSemanticIrFunction function;
     SZrParserPlaceBase base;
     SZrSemanticIrInstructionSpec spec;
