@@ -327,6 +327,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     size_t blockRegionCount = 0u;
     TZrUInt32 blockIndex;
     TZrUInt32 instructionIndex;
+    TZrUInt32 nextInstruction = 0u;
     TZrUInt32 region;
     TZrBool result = ZR_TRUE;
     TZrUInt32 lastVersion[ZR_EXEC_IR_MEMORY_CLASS_COUNT] = {0};
@@ -341,10 +342,21 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     if (function->blockCount <= 1u) {
         return ZrParser_ExecIr_SynthesizeLinearEffects(function, diagnostic);
     }
-    if (function->memoryTokenCount != 0u || function->blocks == ZR_NULL ||
-        function->instructions == ZR_NULL) {
+    if (function->memoryTokenCount != 0u) {
         return ZR_TRUE;
     }
+    if (function->blockCount > function->blockCapacity ||
+        function->instructionCount > function->instructionCapacity ||
+        function->predecessorCount > function->predecessorCapacity ||
+        function->blocks == ZR_NULL ||
+        (function->instructionCount != 0u && function->instructions == ZR_NULL) ||
+        (function->predecessorCount != 0u && function->predecessors == ZR_NULL)) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                                      0u, 0u, 0u);
+        return ZR_FALSE;
+    }
+    if (function->instructionCount == 0u) return ZR_TRUE;
 
     /* Version one represents the untouched entry state on every path. */
     for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
@@ -356,6 +368,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
     for (blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
         const SZrExecIrBlock *block = &function->blocks[blockIndex];
         if (block->id != blockIndex + 1u ||
+            block->instructions.start != nextInstruction ||
             block->instructions.start > function->instructionCount ||
             block->instructions.count > function->instructionCount -
                                          block->instructions.start ||
@@ -368,6 +381,7 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
             result = ZR_FALSE;
             goto cleanup;
         }
+        nextInstruction += block->instructions.count;
         if (block->effectPhiResult != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
             block->effectPhiIncomings.count != 0u) {
             goto cleanup;
@@ -393,6 +407,15 @@ TZrBool ZrParser_ExecIr_SynthesizeCfgEffects(
                 goto cleanup;
             }
         }
+    }
+    if (nextInstruction != function->instructionCount) {
+        zr_parser_exec_ir_effect_diag(diagnostic, function,
+                                      ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                                      function->blockCount,
+                                      function->instructionCount,
+                                      nextInstruction);
+        result = ZR_FALSE;
+        goto cleanup;
     }
     for (instructionIndex = 0u;
          instructionIndex < function->instructionCount;

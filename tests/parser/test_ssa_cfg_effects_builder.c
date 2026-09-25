@@ -240,10 +240,63 @@ static void test_branch_read_preserves_initial_memory_state(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_overlapping_block_ranges_are_rejected(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+                 "add overlapping-range block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    {
+        const TZrUInt32 starts[2] = {0u, 0u};
+        const TZrUInt32 counts[2] = {1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    require_true(!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "overlapping CFG ranges rejected");
+    require_true(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+                     diagnostic.instructionId == 2u &&
+                     function->memoryTokenCount == 0u &&
+                     function->instructions[0].effectIn == 0u,
+                 "overlapping CFG range diagnostic preserves function");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_missing_predecessor_storage_is_rejected(void) {
+    SZrExecIrModule module;
+    SZrExecIrFunction *function = new_function(&module);
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry = 1u;
+    TZrExecIrBlockId *savedPredecessors;
+
+    require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+                 "add missing-predecessor block");
+    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN);
+    {
+        const TZrUInt32 starts[2] = {0u, 1u};
+        const TZrUInt32 counts[2] = {1u, 1u};
+        set_block_ranges(function, starts, counts);
+    }
+    append_predecessor(function, 2u, &entry, 1u);
+    savedPredecessors = function->predecessors;
+    function->predecessors = ZR_NULL;
+    require_true(!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic),
+                 "missing CFG predecessor storage rejected");
+    require_true(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+                     function->memoryTokenCount == 0u,
+                 "missing predecessor diagnostic preserves function");
+    function->predecessors = savedPredecessors;
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_acyclic_cfg_gets_effect_and_memory_phis();
     test_loop_cfg_is_left_for_loop_aware_producer();
     test_branch_read_preserves_initial_memory_state();
+    test_overlapping_block_ranges_are_rejected();
+    test_missing_predecessor_storage_is_rejected();
     puts("ssa CFG effects builder PASS");
     return EXIT_SUCCESS;
 }
