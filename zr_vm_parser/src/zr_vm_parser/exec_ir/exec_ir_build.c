@@ -505,7 +505,8 @@ static TZrBool verify_unpublished_ssa(SZrExecIrFunction *output,
     valid = ZrCore_ExecIr_VerifyFunction(
             output,
             (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
-                                   ZR_EXEC_IR_VERIFY_SSA),
+                                   ZR_EXEC_IR_VERIFY_SSA |
+                                   ZR_EXEC_IR_VERIFY_EFFECT),
             diagnostic);
     output->id = savedId;
     output->functionToken = savedToken;
@@ -873,12 +874,10 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
             db->terminatorInstructionId = db->instructionRange.start + db->instructionRange.count;
         }
     }
-    if (!append_cfg_predecessors(s, output, diagnostic) ||
-        !ZrParser_ExecIr_SynthesizeCfgEffects(output, diagnostic)) {
-        return ZR_FALSE;
-    }
+    if (!append_cfg_predecessors(s, output, diagnostic)) return ZR_FALSE;
     return ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
            ZrParser_ExecIr_BuildSsa(output, diagnostic) &&
+           ZrParser_ExecIr_SynthesizeCfgEffects(output, diagnostic) &&
            verify_unpublished_ssa(output, diagnostic);
 }
 

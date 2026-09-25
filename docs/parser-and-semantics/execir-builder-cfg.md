@@ -224,8 +224,13 @@ break/continue sites, dynamic/unresolved `foreach` iteration, binding cleanup,
 and combinations of a loop transfer with another completion kind remain
 unsupported.
 
-The builder now invokes the producer-side effect contract after CFG
-predecessors are attached. Single-block functions with empty token fields get
+The builder invokes the producer-side effect contract after CFG predecessors,
+dominators, and SSA place promotion are complete. Promotion can replace a
+local STORE with NOP or a LOAD with COPY; synthesizing tokens before that
+rewrite would leave surviving memory consumers and join phis pointing at
+versions from removed writes. The unpublished candidate must pass structural,
+SSA, and effect verification before the caller's function is replaced.
+Single-block functions with empty token fields get
 schema-required instruction flags, region-tagged memory versions, and a
 contiguous effect chain. Acyclic multi-block CFGs also
 receive explicit effect and per-region memory token phis at joins; generated

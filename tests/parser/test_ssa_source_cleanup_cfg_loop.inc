@@ -79,6 +79,7 @@ static void test_terminal_break_try_finally_routes_to_loop_join(void) {
             function, ZR_NULL, &output, &diagnostic));
     TEST_ASSERT_EQUAL_INT(
             ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyEffects(&output, &diagnostic));
     TEST_ASSERT_TRUE(
             (output.blocks[cleanup->id].flags &
              ZR_EXEC_IR_BLOCK_FLAG_CLEANUP) != 0U);

@@ -133,6 +133,7 @@ static void test_invoke_try_finally_rethrows_exception_after_cleanup(void) {
             function, ZR_NULL, &output, &diagnostic));
     TEST_ASSERT_EQUAL_INT(
             ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyEffects(&output, &diagnostic));
     TEST_ASSERT_TRUE(
             (output.blocks[exceptionBlock->id].flags &
              ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0U);

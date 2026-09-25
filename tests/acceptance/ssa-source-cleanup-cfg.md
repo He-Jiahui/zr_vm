@@ -62,6 +62,10 @@ its focused exceptional-call cases live in
 `tests/parser/test_ssa_source_cleanup_cfg_exceptional.inc` so the shared test
 harness and individual case family remain bounded. Focused loop-completion
 cases live in `tests/parser/test_ssa_source_cleanup_cfg_loop.inc`.
+The terminal `break` through `finally` and protected `INVOKE` rethrow cases
+also assert that the resulting ExecIR passes the effect verifier. They cover
+the interaction between private cleanup Place promotion and surviving heap
+memory operations on loop and exceptional edges.
 
 ## Fail-closed boundary
 
@@ -102,3 +106,18 @@ outside the all-exact object-throw case still require later source milestones.
   leak detection and halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.
+
+## Effect synthesis ordering regression (2026-09-26)
+
+Before the fix, the two new source-level effect assertions failed: a promoted
+cleanup STORE had become NOP after tokens were generated, leaving a surviving
+heap operation or join phi dependent on its obsolete memory version. The
+builder now promotes Places before synthesizing CFG effects and verifies the
+resulting effect graph before publishing the candidate.
+
+- WSL GCC: rebuilt `ssa_source_cleanup_cfg`, `ssa_cfg_effects_builder`,
+  `ssa_effects_verifier`, and `ssa_builder_cfg`; all four passed. The complete
+  `ctest --test-dir build/ssa-gcc-debug -L ssa` run passed 80/80 (other targets
+  were not rebuilt as part of this slice).
+- WSL Clang: rebuilt the same four targets and passed 4/4.
+- Windows MSVC: rebuilt the same four targets and passed 4/4.
