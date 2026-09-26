@@ -48,6 +48,7 @@ tests:
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
+  - tests/parser/test_ssa_oracle_invoke_differential.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
@@ -82,8 +83,8 @@ operand/value records, and observable operations append bounded operand
 snapshots to the event stream. `TYPE_TEST` receives the canonical
 `matchTypeToken` and returns either a boolean membership result or a rejection;
 false membership is a successful result, while rejection reports
-`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`. Landing-pad entry and resume
-after a caught exception remain outside the direct oracle.
+`ZR_EXEC_IR_DIAGNOSTIC_ORACLE_TYPE_TEST_ERROR`. Native landing-pad state and
+resume after a caught exception remain outside the pointer-free oracle.
 
 `CALL` appends a bounded call event only after its provider returns a defined
 value; provider rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR`
@@ -313,14 +314,14 @@ the event. Verifier-valid one- and five-operand fixtures compare the terminal
 state, payload, result slot and bounded event snapshots against the oracle.
 This is a terminal observation only, not checkpoint/resume execution.
 Only projections whose opcodes have a runner implementation are marked
-`runnable`; exception-handler flow, suspend/resume restoration, and production
-runtime callback wiring still require a later backend ABI.
+`runnable`; suspend/resume restoration and production runtime callback wiring
+still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
 bytecode for it, and establishes no C/LLVM or full effect-event parity. The
 direct differential currently covers scalar/control returns, pointer-free
 LOAD/STORE memory providers, provider-backed ordinary CALL, and ownership
-MOVE/DROP/conditional cleanup, BARRIER observations, terminal THROW, and
-terminal SUSPEND.
+MOVE/DROP/conditional cleanup, BARRIER observations, terminal THROW, terminal
+SUSPEND, and provider-backed INVOKE with a pointer-free handler payload.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
@@ -333,20 +334,20 @@ projection containing allocation is marked non-runnable until the backend
 allocator/GC ABI is connected. The direct Oracle's pointer-free allocation
 provider does not change that projection boundary.
 
-`EXCEPTION_PAYLOAD` is likewise transported by both initial projections with
-its stable opcode, ranges, and source identity. The lowerers mark any
-projection containing the operation non-runnable because the executable
-backends do not yet expose an active exception-payload ABI; the direct Oracle
-provider remains the only executable reference seam.
+`EXCEPTION_PAYLOAD` retains its stable opcode, ranges, and source identity in
+both projections. The ExecBC projection runner accepts a caller-owned
+`FZrExecBcExceptionPayload` for a defined pointer-free handler result; a
+missing provider is explicitly unsupported. This is not a VM exception object
+or a native landing-pad ABI. AOTIR remains non-runnable.
 
-`INVOKE` is transported with its result, operand, and ordered normal/exception
-successor ranges. Both lowerers mark a projection containing an invoke
-non-runnable until the backend call/landing-pad ABI can select the exceptional
-continuation and publish an active payload. The direct Oracle executes invoke
-through `FZrExecIrOracleInvoke`: the callback supplies a pointer-free result
-and explicitly selects the normal or exceptional successor. A rejected query
-reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR`; an exceptional path may
-then consume the separate payload provider described above.
+`INVOKE` retains its result, operands, and ordered normal/exception successors.
+The ExecBC projection runner accepts `FZrExecBcInvoke`, snapshots an ordered
+CALL event, then selects the supplied edge. The exceptional edge clears any
+normal result and can read a separate handler payload; a missing callback is
+unsupported, a rejected invocation reports ORACLE_INVOKE_ERROR, and an
+undefined normal result reports INVALID_VALUE. A malformed zero-successor
+INVOKE remains non-runnable. The direct Oracle has equivalent pointer-free
+providers; neither projection implements a native landing pad or resume.
 
 `PLACE_BASE` and `PLACE_PROJECT` are transported with their stable operand,
 result, type, layout, and source metadata. The projections mark these place

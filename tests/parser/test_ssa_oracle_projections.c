@@ -1997,7 +1997,7 @@ static void test_unsupported_and_transactional_failures(void) {
            diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD);
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
-           !bc.runnable);
+           bc.runnable);
     ZrParser_ExecBcExecutionResult_Init(&bcExecution);
     assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
                                            &diagnostic));
@@ -2117,6 +2117,7 @@ void test_oracle_execbc_drop_differential(void);
 void test_oracle_execbc_barrier_differential(void);
 void test_oracle_execbc_throw_differential(void);
 void test_oracle_execbc_suspend_differential(void);
+void test_oracle_execbc_invoke_differential(void);
 
 int main(void) {
     test_load_requires_and_uses_memory_provider();
@@ -2126,6 +2127,7 @@ int main(void) {
     test_oracle_execbc_barrier_differential();
     test_oracle_execbc_throw_differential();
     test_oracle_execbc_suspend_differential();
+    test_oracle_execbc_invoke_differential();
     test_allocate_requires_and_uses_provider();
     test_drop_consumes_value_and_rejects_reuse();
     test_move_consumes_source_and_rejects_reuse();

@@ -5,6 +5,7 @@ related_code:
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
+  - tests/parser/test_ssa_oracle_invoke_differential.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
 implementation_files:
@@ -103,3 +104,12 @@ one- and five-operand verifier-valid functions. A fifth invalid operand
 reports INVALID_VALUE with source identity and preserves the published
 result even though it is not present in the four-value event snapshot.
 Checkpoint capture and resume are not covered by this projected runner.
+
+The verifier-valid INVOKE fixture compares normal and exceptional CFG edges,
+CALL event operand/source identity, instruction count, return block, and
+handler payload across the direct oracle and projected ExecBC. Mutating the
+event snapshot fails differential comparison. Missing or rejecting providers,
+and an undefined normal result, leave the last published projection intact;
+the exceptional edge does not define a normal result. This fixture exercises
+pointer-free handler entry, not production exception state, checkpoint/resume,
+or AOT execution.

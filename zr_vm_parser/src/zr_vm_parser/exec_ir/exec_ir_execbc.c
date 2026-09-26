@@ -422,6 +422,90 @@ done:
     return success;
 }
 
+static TZrBool zr_execbc_invoke(const SZrExecBcProjection *projection,
+                               const SZrExecBcExecutionInput *input,
+                               SZrExecBcExecutionResult *candidate,
+                               const SZrExecBcInstruction *instruction,
+                               TZrExecIrBlockId block, TZrExecIrInstructionId id,
+                               TZrUInt32 *ordinal, SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrOracleValue local[8], value = {0};
+    SZrExecIrOracleValue *operands = local;
+    TZrUInt32 count = instruction->operands.count;
+    TZrBool threw = ZR_FALSE, success = ZR_FALSE;
+    if (input == ZR_NULL || input->invoke == ZR_NULL) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                       projection, block, id, instruction->opcode);
+        return ZR_FALSE;
+    }
+    if (instruction->successorRange.count != 2u ||
+        instruction->operands.start > projection->operandCount ||
+        count > projection->operandCount - instruction->operands.start) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                       projection, block, id, count);
+        return ZR_FALSE;
+    }
+    if (count > (TZrUInt32)(sizeof(local) / sizeof(local[0]))) {
+        if (sizeof(*operands) > SIZE_MAX / (size_t)count) {
+            zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                           projection, block, id, count);
+            return ZR_FALSE;
+        }
+        operands = (SZrExecIrOracleValue *)malloc((size_t)count * sizeof(*operands));
+        if (operands == ZR_NULL) {
+            zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                           projection, block, id, count);
+            return ZR_FALSE;
+        }
+    }
+    for (TZrUInt32 i = 0u; i < count; ++i) {
+        if (!zr_execbc_operand(projection, instruction, candidate, i, &operands[i])) {
+            zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                           projection, block, id, i);
+            goto done;
+        }
+    }
+    if (!zr_execbc_reserve_event(candidate, projection, block, id, diagnostic))
+        goto done;
+    if (!input->invoke(input->invokeUserData, instruction, operands, count,
+                       &value, &threw)) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR,
+                       projection, block, id, count);
+        goto done;
+    }
+    if (!threw && (value.kind <= ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED ||
+                   value.kind >= ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT)) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                       projection, block, id, (TZrUInt32)value.kind);
+        goto done;
+    }
+    zr_execbc_record_event(candidate, instruction, id, ZR_EXEC_IR_ORACLE_EVENT_CALL,
+                           operands, count);
+    if (!threw && !zr_execbc_assign(projection, instruction, candidate, &value)) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                       projection, block, id, count);
+        goto done;
+    }
+    if (threw) {
+        for (TZrUInt32 i = 0u; i < instruction->results.count; ++i) {
+            TZrExecIrValueId resultId = projection->results[instruction->results.start + i];
+            TZrUInt32 slot;
+            if (resultId == 0u || resultId > projection->valueSlotCount) {
+                zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                               projection, block, id, resultId);
+                goto done;
+            }
+            slot = projection->valueSlots[resultId - 1u];
+            candidate->slots[slot].kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+            candidate->ownerStates[slot] = ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED;
+        }
+    }
+    *ordinal = threw ? 1u : 0u;
+    success = ZR_TRUE;
+done:
+    if (operands != local) free(operands);
+    return success;
+}
+
 TZrBool ZrParser_ExecBcProjection_Run(
         const SZrExecBcProjection *projection,
         const SZrExecBcExecutionInput *input,
@@ -661,6 +745,37 @@ TZrBool ZrParser_ExecBcProjection_Run(
                 case ZR_EXEC_IR_OPCODE_CALL:
                     if (!zr_execbc_call(projection, input, &candidate, instruction,
                                         block, index + 1u, diagnostic)) goto fail;
+                    break;
+                case ZR_EXEC_IR_OPCODE_INVOKE:
+                    if (!zr_execbc_invoke(projection, input, &candidate, instruction,
+                                          block, index + 1u, &ordinal, diagnostic)) goto fail;
+                    terminated = ZR_TRUE;
+                    goto select_successor;
+                case ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD:
+                    if (input == ZR_NULL || input->exceptionPayload == ZR_NULL) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                                       projection, block, index + 1u,
+                                       instruction->opcode);
+                        goto fail;
+                    }
+                    if (instruction->operands.count != 0u ||
+                        !input->exceptionPayload(input->exceptionPayloadUserData,
+                                                 instruction, &value)) {
+                        zr_execbc_diag(diagnostic,
+                                       ZR_EXEC_IR_DIAGNOSTIC_ORACLE_EXCEPTION_PAYLOAD_ERROR,
+                                       projection, block, index + 1u,
+                                       instruction->operands.count);
+                        goto fail;
+                    }
+                    if (value.kind <= ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED ||
+                        value.kind >= ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u,
+                                       (TZrUInt32)value.kind);
+                        goto fail;
+                    }
+                    if (!zr_execbc_assign(projection, instruction, &candidate, &value))
+                        goto invalid;
                     break;
                 case ZR_EXEC_IR_OPCODE_BARRIER:
                     if (instruction->operands.count != 1u) goto invalid;

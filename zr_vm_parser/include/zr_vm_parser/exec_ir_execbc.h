@@ -15,6 +15,15 @@ typedef TZrBool (*FZrExecBcCall)(
         const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
         SZrExecIrOracleValue *result);
 
+typedef TZrBool (*FZrExecBcInvoke)(
+        void *userData, const SZrExecBcInstruction *instruction,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result, TZrBool *threw);
+
+typedef TZrBool (*FZrExecBcExceptionPayload)(
+        void *userData, const SZrExecBcInstruction *instruction,
+        SZrExecIrOracleValue *result);
+
 typedef struct SZrExecBcExecutionInput {
     const SZrExecIrOracleValue *initialValues;
     TZrUInt32 initialValueCount;
@@ -25,6 +34,10 @@ typedef struct SZrExecBcExecutionInput {
     void *memoryUserData;
     FZrExecBcCall call;
     void *callUserData;
+    FZrExecBcInvoke invoke;
+    void *invokeUserData;
+    FZrExecBcExceptionPayload exceptionPayload;
+    void *exceptionPayloadUserData;
 } SZrExecBcExecutionInput;
 
 typedef struct SZrExecBcExecutionResult {

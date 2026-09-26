@@ -63,6 +63,8 @@ static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_DROP: case ZR_EXEC_IR_OPCODE_THROW:
         case ZR_EXEC_IR_OPCODE_SUSPEND:
         case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
+        case ZR_EXEC_IR_OPCODE_INVOKE:
+        case ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD:
             return ZR_TRUE;
         default: return ZR_FALSE;
     }
@@ -745,9 +747,11 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].sourceId = in->sourceId;
         p->instructions[i].deoptId = in->deoptId;
         p->instructions[i].bindingRow = in->bindingRow;
-        if (!zr_projection_opcode_runnable((EZrExecIrOpcode)in->opcode)) {
+        if (!zr_projection_opcode_runnable((EZrExecIrOpcode)in->opcode) ||
+            (in->opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
+             in->successorRange.count != 2u)) {
             /* Preserve metadata for later backends while advertising only
-             * the scalar/control instructions this runner can dispatch. */
+             * instructions the pointer-free runner can dispatch. */
             p->runnable = ZR_FALSE;
         }
     }
