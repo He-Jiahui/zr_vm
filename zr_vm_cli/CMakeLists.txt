@@ -12,6 +12,8 @@ target_include_directories(${zr_curr_module_exec} PRIVATE
 target_compile_definitions(${zr_curr_module_exec} PRIVATE
         ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
 )
+# TODO: 当前 CLI 首方源码未读取 SOURCE_ROOT 或下面的 HOST_* 编译定义；
+# 核查嵌入/外部构建消费者后，再决定是否保留这组主机环境注入。
 
 find_package(Threads REQUIRED)
 target_link_libraries(${zr_curr_module_exec} Threads::Threads)

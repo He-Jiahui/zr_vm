@@ -14,6 +14,8 @@
 #include <stdio.h>
 
 static int zr_cli_app_maybe_run_interactive_tail(const SZrCliCommand *command, int result) {
+    /* --interactive 在命令成功后启动独立 REPL 会话；项目/inline VM 已由运行器释放，
+     * 因而此入口不承诺延续刚执行的状态。失败状态也必须原样返回给脚本调用方。 */
     if (result != 0 || command == ZR_NULL || !command->interactiveAfterRun) {
         return result;
     }
@@ -80,6 +82,8 @@ int ZrCli_App_Run(int argc, char **argv) {
              * route deliberately starts with an empty, valid sink until a
              * compile/run command supplies a snapshot through the public
              * embedding API; it must never invent remarks from source text. */
+            /* TODO: 独立子命令当前只读取本地新建的空 store，实际返回 0/0；核查命令
+             * 契约是否需要接受持久化报告或接入编译产物，再以 CLI 集成测试验证。 */
             ZrCore_OptimizationRemarks_StoreInit(&store);
             result = ZrCli_ExplainOptimize_RunStore(
                     &store, &command.explainOptimize, stdout, stderr);
