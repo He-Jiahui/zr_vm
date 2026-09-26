@@ -8,6 +8,7 @@
 #include "zr_vm_lib_debug/profile.h"
 #include "zr_vm_parser.h"
 
+/* 保留来源名，供 profile 结果按函数身份和源码位置回查。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceLabel) {
     SZrString *sourceName;
 
@@ -20,6 +21,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 固定调用图保护函数计数、inclusive/self 时间关系及停止后的 hook 恢复。 */
 static void test_deterministic_profile_counts_calls_and_returns(void) {
     const char *source =
             "fn leaf(value: int): int {\n"
@@ -67,6 +69,7 @@ static void test_deterministic_profile_counts_calls_and_returns(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* COUNT 采样应把热函数聚合到具体源码行，并在 Stop 后释放 debug hook。 */
 static void test_sampling_profile_records_hot_function_lines(void) {
     const char *source =
             "fn leaf(value: int): int {\n"

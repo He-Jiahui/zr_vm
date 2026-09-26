@@ -8,6 +8,7 @@
 #include "zr_vm_lib_debug/coverage.h"
 #include "zr_vm_parser.h"
 
+/* 给编译结果绑定可辨认的来源名，使 coverage 行快照能对应测试中的源代码行。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceLabel) {
     SZrString *sourceName;
 
@@ -20,6 +21,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 借用编译后函数树中的嵌套函数；返回指针只在根函数释放前有效。 */
 static SZrFunction *find_child_function_by_name(SZrFunction *function, const char *name) {
     TZrUInt32 index;
 
@@ -56,6 +58,7 @@ static TZrBool has_active_line(const TZrUInt32 *lines, TZrSize count, TZrUInt32 
     return ZR_FALSE;
 }
 
+/* 先验证 core 提供的可执行行集合，避免把 coverage 注册遗漏误归因于 hook。 */
 static void test_core_active_lines_extract_unique_executable_lines(void) {
     const char *source =
             "fn choose(flag: bool): int {\n"
@@ -77,6 +80,8 @@ static void test_core_active_lines_extract_unique_executable_lines(void) {
     chooseFunction = find_child_function_by_name(function, "choose");
     TEST_ASSERT_NOT_NULL(chooseFunction);
 
+    /* TODO: 若测试源码扩展到超过 lines 容量，下面的 membership 检查会读取数组外；
+     * 增加容量断言或按返回行数动态分配，再验证去重和排序契约。 */
     count = ZrCore_Debug_GetActiveLines(chooseFunction, ZR_NULL, 0u);
     TEST_ASSERT_TRUE(count >= 3u);
     TEST_ASSERT_EQUAL_UINT64(count, ZrCore_Debug_GetActiveLines(chooseFunction, lines, 16u));
@@ -88,6 +93,7 @@ static void test_core_active_lines_extract_unique_executable_lines(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 未命中的 return 必须仍列为可执行但未覆盖；Stop 后不得占用 VM debug hook。 */
 static void test_coverage_records_executed_and_uncovered_lines(void) {
     const char *source =
             "fn choose(flag: bool): int {\n"

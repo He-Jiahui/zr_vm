@@ -47,5 +47,6 @@ doc_type: category-index
 | CLI 构建与程序入口 | [27 项](coverage/zr_vm_cli_entry.tsv) | 6 个文件的 11 个宏、4 个 C 定义、2 个接口及分发块完成审查；差异仅新增注释，现有 MSVC Debug CLI 的版本和空优化记录查询均正常退出，未重新构建。 |
 | 项目清单、导入与依赖锁 | [275 项](coverage/zr_vm_library_project.tsv) | 16 个文件完成调用链审查，193 个 C 定义及公开声明均登记；GCC/Clang 语法检查通过，定向测试目标构建停在 Ninja glob 复查，运行测试未执行。 |
 | 可选 JIT 后端与状态映射 | [122 项](coverage/zr_vm_jit.tsv) | 4 个文件完成调用链审查；GCC/Clang 严格语法和直接链接的可选 JIT 测试通过，JIT ON 配置通过；完整目标构建停在 glob 复查，CTest 未执行。 |
+| coverage 与 profile 回归用例 | [15 项](coverage/tests_profile.tsv) | 2 个测试文件完成调用链审查；Clang C11 语法和非注释 token 核对通过，GCC 检查受共享 WSL I/O 阻塞而中断，测试目标未构建；固定行数组容量疑问已标 TODO。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
