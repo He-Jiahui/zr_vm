@@ -54,6 +54,7 @@ static TZrBool module_specifier_is_segment_separator(TZrChar value) {
     return value == '.' || value == '/';
 }
 
+/* manifest 与 parser 共用标识符分段语法，将点和斜线写法折叠为同一身份。 */
 static TZrBool module_specifier_copy_segments(const TZrChar *text,
                                                TZrChar *buffer,
                                                TZrSize bufferSize) {
@@ -95,6 +96,7 @@ static TZrBool module_specifier_copy_segments(const TZrChar *text,
     return ZR_TRUE;
 }
 
+/* alias 与 package 的根和可空子段在绑定前分开，供重写时保留请求后缀。 */
 static TZrBool module_specifier_split_root(const TZrChar *segments,
                                            TZrChar *root,
                                            TZrSize rootSize,
@@ -118,10 +120,12 @@ static TZrBool module_specifier_split_root(const TZrChar *segments,
     return module_specifier_copy_text(separator == ZR_NULL ? "" : separator + 1, suffix, suffixSize);
 }
 
+/* zr 官方命名空间优先分类，防止 registered native 字面量抢占。 */
 static TZrBool module_specifier_is_official_native_literal(const TZrChar *literal) {
     return strcmp(literal, "zr") == 0 || strncmp(literal, "zr.", 3u) == 0 || strncmp(literal, "zr/", 3u) == 0;
 }
 
+/* file: 只保留定位符外形，裸磁盘路径不能混作规范模块身份。 */
 static TZrBool module_specifier_is_file_locator(const TZrChar *literal) {
     const TZrChar *locator;
     const TZrChar *authorityEnd;
@@ -143,6 +147,7 @@ static TZrBool module_specifier_is_file_locator(const TZrChar *literal) {
            authorityEnd[1] != '/';
 }
 
+/* 身份比较及相对解析前验证域与包名，拒绝未建立的身份状态。 */
 static TZrBool module_specifier_identity_is_valid(const SZrLibrary_ModuleIdentity *identity) {
     if (identity == ZR_NULL) {
         return ZR_FALSE;
@@ -160,6 +165,7 @@ static TZrBool module_specifier_identity_is_valid(const SZrLibrary_ModuleIdentit
     }
 }
 
+/* 相对请求先保存父层级，实际目标需等到已有当前模块身份时再求值。 */
 static TZrBool module_specifier_parse_relative(const TZrChar *literal,
                                                SZrLibrary_ModuleSpecifier *outSpecifier) {
     const TZrChar *segments = literal;
@@ -191,6 +197,7 @@ static TZrBool module_specifier_parse_relative(const TZrChar *literal,
                                           sizeof(outSpecifier->identity.segments));
 }
 
+/* 保留 # 根及子段，不在语法解析时查项目别名目标。 */
 static TZrBool module_specifier_parse_alias(const TZrChar *literal,
                                             SZrLibrary_ModuleSpecifier *outSpecifier) {
     TZrChar segments[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -208,6 +215,7 @@ static TZrBool module_specifier_parse_alias(const TZrChar *literal,
     return ZR_TRUE;
 }
 
+/* 保留 @ 包根及子段，不在语法解析时决定实际 provider。 */
 static TZrBool module_specifier_parse_package(const TZrChar *literal,
                                               SZrLibrary_ModuleSpecifier *outSpecifier) {
     TZrChar segments[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -226,6 +234,7 @@ static TZrBool module_specifier_parse_package(const TZrChar *literal,
     return ZR_TRUE;
 }
 
+/* parser 与 manifest 的统一字面量分类入口；失败后的输出可能含部分字段，不得继续使用。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_ModuleSpecifier_Parse(const TZrChar *literal,
                                                         SZrLibrary_ModuleSpecifier *outSpecifier,
                                                         TZrChar *errorBuffer,
@@ -306,6 +315,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ModuleSpecifier_Parse(const TZrChar *literal,
     return ZR_TRUE;
 }
 
+/* 包锁和 provider 去重比较域、模块段与包名，避免同名跨域身份混淆。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_ModuleIdentity_Equals(const SZrLibrary_ModuleIdentity *lhs,
                                                         const SZrLibrary_ModuleIdentity *rhs) {
     return module_specifier_identity_is_valid(lhs) && module_specifier_identity_is_valid(rhs) &&
@@ -313,6 +323,8 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ModuleIdentity_Equals(const SZrLibrary_ModuleId
            strcmp(lhs->packageName, rhs->packageName) == 0;
 }
 
+/* 相对请求只能从工作区或包内非根模块求值，越过所属根则失败。
+ * TODO: 当前直接调用仅库测试；需核对生产相对 import 仍走旧 resolver 时两套身份规则的收敛关系。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_ModuleSpecifier_ResolveRelative(
         const SZrLibrary_ModuleIdentity *currentIdentity,
         const SZrLibrary_ModuleSpecifier *relativeSpecifier,

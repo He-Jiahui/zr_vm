@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* 旧版项目可选字符串统一转为 VM 字符串；调用方必须自行决定缺失字段是否允许。 */
 #define ZR_JSON_READ_STRING(STATE, OBJECT, NAME)                                                                       \
     SZrString *NAME = ZR_NULL;                                                                                         \
     {                                                                                                                  \
@@ -42,12 +43,14 @@
         }                                                                                                              \
     }
 
+/* TryRun 回调与外层 Run 的交接状态；栈结果只在异常屏障结束前读取。 */
 typedef struct ZrLibraryProjectExecuteRequest {
     SZrFunction *function;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrLibraryProjectExecuteRequest;
 
+/* ZRM 解压字节的 Io 所有者；close 回调负责归还字节及 reader。 */
 typedef struct SZrLibrary_ProjectMemoryReader {
     TZrByte *bytes;
     TZrSize byteCount;
@@ -86,6 +89,7 @@ static const TZrChar *library_project_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 同名依赖边去重时，空字段代表双方均未声明；不能把缺省值与任意文本视为相等。 */
 static TZrBool library_project_optional_string_matches(SZrString *value, const TZrChar *text) {
     const TZrChar *valueText = library_project_string_text(value);
 
@@ -96,6 +100,7 @@ static TZrBool library_project_optional_string_matches(SZrString *value, const T
     return text != ZR_NULL && strcmp(valueText, text) == 0;
 }
 
+/* 运行入口的环境变量诊断开关只影响观察输出，不参与项目语义。 */
 static TZrBool zr_library_project_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -109,6 +114,7 @@ static TZrBool zr_library_project_trace_enabled(void) {
     return enabled;
 }
 
+/* 入口编译、模块建立和执行阶段共用这一诊断通道，便于在异常屏障外追踪失败。 */
 static void zr_library_project_trace(const TZrChar *format, ...) {
     va_list arguments;
 
@@ -124,6 +130,7 @@ static void zr_library_project_trace(const TZrChar *format, ...) {
     va_end(arguments);
 }
 
+/* 项目根与依赖包的别名数组由原生分配器持有；GC 字符串由 VM 自行管理。 */
 static void library_project_free_path_alias_array(SZrGlobalState *global,
                                                   SZrLibrary_ProjectPathAlias *aliases,
                                                   TZrSize aliasCount) {
@@ -137,6 +144,7 @@ static void library_project_free_path_alias_array(SZrGlobalState *global,
     ZrCore_Memory_RawFreeWithType(global, aliases, aliasBytes, ZR_MEMORY_NATIVE_TYPE_PROJECT);
 }
 
+/* 依赖边可能在解析途中部分构建，释放时必须使用已分配容量。 */
 static void library_project_free_dependency_ref_array(SZrGlobalState *global,
                                                       SZrLibrary_ProjectDependencyReference *refs,
                                                       TZrSize capacity) {
@@ -150,6 +158,7 @@ static void library_project_free_dependency_ref_array(SZrGlobalState *global,
                                   ZR_MEMORY_NATIVE_TYPE_PROJECT);
 }
 
+/* 项目析构和构造失败共用此清理入口，使旧版别名不泄漏。 */
 static void library_project_free_path_aliases(SZrGlobalState *global, SZrLibrary_Project *project) {
     if (project == ZR_NULL) {
         return;
@@ -160,6 +169,7 @@ static void library_project_free_path_aliases(SZrGlobalState *global, SZrLibrary
     project->pathAliasCount = 0;
 }
 
+/* 资源列表由原生分配器持有；项目构造失败时即使只写入部分条目也要释放整块。 */
 static void library_project_free_resources(SZrGlobalState *global, SZrLibrary_Project *project) {
     if (global == ZR_NULL || project == ZR_NULL) {
         return;
@@ -176,6 +186,7 @@ static void library_project_free_resources(SZrGlobalState *global, SZrLibrary_Pr
     project->resourceCapacity = 0;
 }
 
+/* 先关闭包归档再释放依赖图数组，确保归档条目借用指针不越过项目生命周期。 */
 static void library_project_free_dependencies(SZrGlobalState *global, SZrLibrary_Project *project) {
     if (global == ZR_NULL || project == ZR_NULL) {
         return;
@@ -216,6 +227,7 @@ static void library_project_free_dependencies(SZrGlobalState *global, SZrLibrary
     project->dependencyRefCapacity = 0;
 }
 
+/* 旧版 @ 别名只能作为导入前缀，阻止相对段和路径分隔符混入键域。 */
 static TZrBool library_project_validate_alias_key(const TZrChar *aliasKey) {
     TZrSize index;
 
@@ -234,6 +246,7 @@ static TZrBool library_project_validate_alias_key(const TZrChar *aliasKey) {
     return ZR_TRUE;
 }
 
+/* 别名目标须是可规范化的模块前缀，后续 import 才能安全拼接子模块名。 */
 static TZrBool library_project_validate_alias_module_prefix(const TZrChar *modulePrefix) {
     TZrSize segmentLength = 0;
     TZrSize index = 0;
@@ -265,6 +278,7 @@ static TZrBool library_project_validate_alias_module_prefix(const TZrChar *modul
     }
 }
 
+/* 根项目和依赖包共用的旧版别名解析；先登记数组归属，使中途失败仍可清理。 */
 static TZrBool library_project_parse_path_alias_map(SZrState *state,
                                                     cJSON *pathAliasesJson,
                                                     SZrLibrary_ProjectPathAlias **outAliases,
@@ -347,6 +361,7 @@ static TZrBool library_project_parse_path_alias_map(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 将旧版 pathAliases 装入项目，供 import 解析保留根项目的简写语义。 */
 static TZrBool library_project_parse_path_aliases(SZrState *state, SZrLibrary_Project *project, cJSON *projectJson) {
     cJSON *pathAliasesJson;
 
@@ -374,6 +389,7 @@ static TZrBool library_project_has_suffix(const TZrChar *text, const TZrChar *su
            memcmp(text + textLength - suffixLength, suffix, suffixLength) == 0;
 }
 
+/* 资源配置允许简写或对象形式，统一给打包器逻辑名、源路径及压缩选择。 */
 static TZrBool library_project_parse_resource_entry_value(cJSON *resourceEntry,
                                                           const TZrChar **outSourcePath,
                                                           TZrBool *outCompress) {
@@ -415,6 +431,7 @@ static TZrBool library_project_parse_resource_entry_value(cJSON *resourceEntry,
     return ZR_TRUE;
 }
 
+/* manifest 资源声明在项目构造时固化，数组由项目析构清理。 */
 static TZrBool library_project_parse_resources(SZrState *state, SZrLibrary_Project *project, cJSON *projectJson) {
     cJSON *resourcesJson;
     cJSON *resourceEntry;
@@ -485,6 +502,7 @@ static TZrBool library_project_parse_resources(SZrState *state, SZrLibrary_Proje
     return ZR_TRUE;
 }
 
+/* 显式程序集输出只接受非空的 .zrm 路径；绝对路径仍由后续路径解析器处理。 */
 static TZrBool library_project_get_manifest_assembly_output(cJSON *manifestJson, const TZrChar **outOutput) {
     cJSON *assemblyJson;
     cJSON *outputJson;
@@ -518,6 +536,7 @@ static TZrBool library_project_get_manifest_assembly_output(cJSON *manifestJson,
     return ZR_TRUE;
 }
 
+/* 依赖名字将成为 $ 包键的一部分，需要与文件路径和模块子段分开。 */
 static TZrBool library_project_validate_dependency_name(const TZrChar *dependencyName) {
     TZrSize index;
 
@@ -541,6 +560,7 @@ static TZrBool library_project_validate_dependency_key(const TZrChar *dependency
            library_project_validate_dependency_name(dependencyKey + 1);
 }
 
+/* 旧版依赖版本文本仅过基础字符门禁；严格三段数字比较在候选选择阶段执行。 */
 static TZrBool library_project_validate_dependency_version(const TZrChar *version) {
     TZrSize index;
 
@@ -559,6 +579,8 @@ static TZrBool library_project_validate_dependency_version(const TZrChar *versio
     return ZR_TRUE;
 }
 
+/* 候选版本排序需要三段数字值，不能用字典序比较版本文本。
+ * BUG: 十进制累加未查 UINT64 溢出；例如 18446744073709551616.0.0 回绕成 0.0.0，使候选排序和区间判断错误。 */
 static TZrBool library_project_parse_semver3(const TZrChar *version, TZrUInt64 outParts[3]) {
     const TZrChar *cursor;
 
@@ -592,6 +614,7 @@ static TZrBool library_project_parse_semver3(const TZrChar *version, TZrUInt64 o
     return ZR_TRUE;
 }
 
+/* 引用候选与声明区间统一使用三段数值版本；不可解析文本应由调用者处理为无效。 */
 static TZrBool library_project_compare_semver3(const TZrChar *lhs,
                                                const TZrChar *rhs,
                                                TZrInt32 *outCompare) {
@@ -636,6 +659,8 @@ static TZrInt32 library_project_compare_semver3_parts(const TZrUInt64 lhsParts[3
     return 0;
 }
 
+/* 引用候选只应满足 minInclusive/maxExclusive 的区间才可入选。
+ * BUG: compare_semver3 返回失败时条件直接跳过；声明 bad 之类非三段数字边界可绕过区间过滤，且前置 validate_dependency_version 不要求三段数字。 */
 static TZrBool library_project_version_satisfies_declared_range(const TZrChar *version,
                                                                 const TZrChar *minVersionInclusive,
                                                                 const TZrChar *maxVersionExclusive) {
@@ -667,6 +692,7 @@ static TZrBool library_project_version_satisfies_declared_range(const TZrChar *v
     return ZR_TRUE;
 }
 
+/* 程序集身份用于候选与锁定引用匹配，不能含路径语义。 */
 static TZrBool library_project_validate_assembly_name(const TZrChar *assemblyName) {
     TZrSize index;
     TZrBool previousWasDot = ZR_TRUE;
@@ -694,6 +720,7 @@ static TZrBool library_project_validate_assembly_name(const TZrChar *assemblyNam
     return !previousWasDot;
 }
 
+/* 程序集 token 在身份比较前统一大小写，以免相同密钥被当成不同候选。 */
 static TZrBool library_project_normalize_public_key_token(TZrChar *publicKeyToken) {
     TZrSize index;
 
@@ -719,6 +746,7 @@ static TZrBool library_project_normalize_public_key_token(TZrChar *publicKeyToke
     return ZR_TRUE;
 }
 
+/* 根和候选清单共用程序集身份读取，兼容旧顶层字段与 assembly 块。 */
 static TZrBool library_project_get_manifest_assembly_identity(cJSON *manifestJson,
                                                               const TZrChar **outName,
                                                               const TZrChar **outVersion,
@@ -822,6 +850,7 @@ static TZrBool library_project_get_manifest_assembly_identity(cJSON *manifestJso
     return ZR_TRUE;
 }
 
+/* 依赖声明路径相对于所属项目目录而非进程工作目录解析，以保持递归依赖稳定。 */
 static TZrBool library_project_resolve_manifest_path(const TZrChar *ownerDirectory,
                                                      const TZrChar *declaredPath,
                                                      TZrChar *buffer,
@@ -841,6 +870,7 @@ static TZrBool library_project_resolve_manifest_path(const TZrChar *ownerDirecto
     return joinedPath[0] != '\0' && ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 把旧版依赖的简写和对象格式投影为路径、身份及范围，供递归构图使用。 */
 static TZrBool library_project_get_dependency_declaration(cJSON *dependencyEntry,
                                                           const TZrChar **outAssemblyName,
                                                           const TZrChar **outPath,
@@ -935,6 +965,7 @@ static TZrBool library_project_get_dependency_declaration(cJSON *dependencyEntry
     return ZR_TRUE;
 }
 
+/* 将依赖包索引挂到当前 owner 的有向边上；同名等价边合并，供 import 作用域查询。 */
 static TZrBool library_project_append_dependency_ref(SZrState *state,
                                                      SZrLibrary_Project *project,
                                                      TZrSize ownerPackageIndex,
@@ -1034,6 +1065,7 @@ static TZrBool library_project_append_dependency_ref(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 依赖图通过名字与版本复用已占位的包节点，供循环引用和重复边共享索引。 */
 static TZrBool library_project_find_dependency_package(const SZrLibrary_Project *project,
                                                        const TZrChar *name,
                                                        const TZrChar *version,
@@ -1060,6 +1092,8 @@ static TZrBool library_project_find_dependency_package(const SZrLibrary_Project 
     return ZR_FALSE;
 }
 
+/* 先登记包节点再递归解析其依赖，令循环依赖能引用同一个包索引。
+ * TODO: 去重只按名字和版本，未比较路径或程序集身份；需用同名同版本不同来源的清单核对预期冲突策略。 */
 static TZrBool library_project_append_dependency_package(SZrState *state,
                                                          SZrLibrary_Project *project,
                                                          TZrSize *outIndex) {
@@ -1099,6 +1133,7 @@ static TZrBool library_project_append_dependency_package(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 将源码项目清单固化为包节点；包级别别名和依赖边随后参与 import 解析。 */
 static TZrBool library_project_parse_dependency_package_fields(SZrState *state,
                                                                SZrLibrary_ProjectDependencyPackage *package,
                                                                cJSON *manifestJson,
@@ -1171,6 +1206,7 @@ static TZrBool library_project_parse_dependency_package_fields(SZrState *state,
                                                 &package->pathAliasCount);
 }
 
+/* 从归档元数据建立包节点，并将已打开的 ZRM 句柄转移给项目析构管理。 */
 static TZrBool library_project_parse_zrm_package_fields(SZrState *state,
                                                         SZrLibrary_ProjectDependencyPackage *package,
                                                         SZrLibrary_ZrmArchive *archive,
@@ -1220,6 +1256,7 @@ static TZrBool library_project_parse_zrm_package_fields(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 根或包内的 $ 依赖均先建立包节点再写 owner 引用边，支持递归与循环。 */
 static TZrBool library_project_parse_dependency_entry(SZrState *state,
                                                       SZrLibrary_Project *project,
                                                       cJSON *dependencyEntry,
@@ -1359,6 +1396,7 @@ cleanup_text:
     return success;
 }
 
+/* 旧版依赖段按 owner 展开，根项目与嵌套包沿用同一作用域规则。 */
 static TZrBool library_project_parse_dependencies(SZrState *state,
                                                   SZrLibrary_Project *project,
                                                   cJSON *projectJson,
@@ -1394,6 +1432,7 @@ static TZrBool library_project_parse_dependencies(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 把 assembly 引用声明归一为候选选择参数，区分名字、版本范围和别名要求。 */
 static TZrBool library_project_get_reference_declaration(cJSON *referenceEntry,
                                                          const TZrChar **outAssemblyName,
                                                          const TZrChar **outPath,
@@ -1486,6 +1525,7 @@ static TZrBool library_project_get_reference_declaration(cJSON *referenceEntry,
     return ZR_TRUE;
 }
 
+/* 候选文件路径与可选版本先解析为统一形式，供后续读取真实清单核对。 */
 static TZrBool library_project_get_reference_candidate_declaration(cJSON *candidateEntry,
                                                                    const TZrChar **outPath,
                                                                    const TZrChar **outVersion) {
@@ -1530,6 +1570,7 @@ static TZrBool library_project_get_reference_candidate_declaration(cJSON *candid
     return ZR_TRUE;
 }
 
+/* 候选必须以实际 JSON/ZRM 元数据匹配程序集身份及版本，不能只信声明路径。 */
 static TZrBool library_project_reference_candidate_matches(SZrState *state,
                                                            const TZrChar *ownerDirectory,
                                                            const TZrChar *candidatePath,
@@ -1633,6 +1674,8 @@ cleanup_text:
     return success;
 }
 
+/* 符合区间的候选取最高版本，平手维持清单顺序。
+ * TODO: 某个候选文件缺失会使整个搜索失败而不尝试后续候选；需核对候选列表是否允许失效路径并补场景测试。 */
 static TZrBool library_project_select_reference_candidate(SZrState *state,
                                                           const TZrChar *ownerDirectory,
                                                           cJSON *candidatesJson,
@@ -1709,6 +1752,7 @@ static TZrBool library_project_select_reference_candidate(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 非 $ assembly 引用选择一个可用包，再将其挂入当前 owner 的导入边。 */
 static TZrBool library_project_parse_reference_entry(SZrState *state,
                                                      SZrLibrary_Project *project,
                                                      cJSON *referenceEntry,
@@ -1913,6 +1957,7 @@ cleanup_text:
     return success;
 }
 
+/* 根项目与嵌套依赖共享 assembly 引用解析，ZRM 归档所有权转给依赖包节点。 */
 static TZrBool library_project_parse_references(SZrState *state,
                                                 SZrLibrary_Project *project,
                                                 cJSON *projectJson,
@@ -1948,6 +1993,8 @@ static TZrBool library_project_parse_references(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 公共项目构造入口把 v1 依赖图与 v2 声明、AOT 选项及资源统一装入运行时视图；失败回收原生数组。
+ * BUG: project->file 和 directory 的 GC 字符串创建结果未检查，短暂分配失败后仍可能交付项目；CLI runtime 会读取 file，import 解析会读取 directory。用字符串分配故障注入验证。 */
 SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project =
@@ -2197,6 +2244,7 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
     return project;
 }
 
+/* 由全局状态析构调用；先清 AOT 状态与归档，再释放项目原生数组，GC 字符串不逐个释放。 */
 void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
     if (project == ZR_NULL) {
         return;
@@ -2223,6 +2271,7 @@ static TZrBool library_project_resolve_binary_path(const SZrLibrary_Project *pro
     return ZrLibrary_Project_ResolveBinaryPath(project, modulePath, resolvedPath, ZR_LIBRARY_MAX_PATH_LENGTH);
 }
 
+/* 把文件读者交给 VM 的 Io 生命周期，由模块加载器在消费结束时关闭。 */
 static TZrBool library_project_load_resolved_file(SZrState *state, TZrNativeString filePath, TZrBool isBinary, SZrIo *io) {
     SZrLibrary_File_Reader *reader = ZrLibrary_File_OpenRead(state->global, filePath, isBinary);
     if (reader == ZR_NULL) {
@@ -2234,6 +2283,7 @@ static TZrBool library_project_load_resolved_file(SZrState *state, TZrNativeStri
     return ZR_TRUE;
 }
 
+/* ZRM 条目解压后作为只读 Io 输入，读取视图只在对应 reader 关闭前有效。 */
 static TZrBytePtr library_project_memory_read_implementation(SZrState *state,
                                                              TZrPtr reader,
                                                              ZR_OUT TZrSize *size) {
@@ -2251,6 +2301,7 @@ static TZrBytePtr library_project_memory_read_implementation(SZrState *state,
     return memoryReader->bytes + (memoryReader->byteCount - remaining);
 }
 
+/* 关闭内存 Io 时一并释放归档解压字节，避免模块加载结束后滞留。 */
 static void library_project_memory_close_implementation(SZrState *state, TZrPtr reader) {
     SZrLibrary_ProjectMemoryReader *memoryReader = (SZrLibrary_ProjectMemoryReader *)reader;
 
@@ -2267,6 +2318,7 @@ static void library_project_memory_close_implementation(SZrState *state, TZrPtr 
                                   ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
 }
 
+/* 只允许 runtime phase 的依赖归档参与普通模块加载，解压结果交 Io 持有。 */
 static TZrBool library_project_load_zrm_module_entry(SZrState *state,
                                                      const SZrLibrary_Project *project,
                                                      const TZrChar *moduleName,
@@ -2316,6 +2368,7 @@ static TZrBool library_project_load_zrm_module_entry(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 加载失败诊断统一路径分隔写法，便于 CLI 和测试比较跨平台错误位置。 */
 static TZrBool library_project_copy_diagnostic_path(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize index;
 
@@ -2334,6 +2387,7 @@ static TZrBool library_project_copy_diagnostic_path(const TZrChar *path, TZrChar
     return ZR_TRUE;
 }
 
+/* 将 VM 异常与线程状态收敛为项目运行入口可返回的错误状态和诊断。 */
 static EZrThreadStatus library_project_normalize_failure(SZrState *state, EZrThreadStatus status) {
     EZrThreadStatus effectiveStatus;
 
@@ -2356,6 +2410,7 @@ static EZrThreadStatus library_project_normalize_failure(SZrState *state, EZrThr
     return effectiveStatus;
 }
 
+/* 项目入口在 TryRun 异常屏障内调用，并以栈锚保持结果基点稳定。 */
 static void library_project_execute_body(SZrState *state, TZrPtr arguments) {
     ZrLibraryProjectExecuteRequest *request = (ZrLibraryProjectExecuteRequest *)arguments;
     TZrStackValuePointer base;
@@ -2402,6 +2457,7 @@ static void library_project_execute_body(SZrState *state, TZrPtr arguments) {
     request->callCompleted = (TZrBool)(state->threadStatus == ZR_THREAD_STATUS_FINE);
 }
 
+/* 为 Run 安装异常屏障并复制结果，避免 VM 异常越过 C 公共入口。 */
 static EZrThreadStatus library_project_execute_function(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
     ZrLibraryProjectExecuteRequest request;
     EZrThreadStatus status;
@@ -2434,6 +2490,8 @@ static EZrThreadStatus library_project_execute_function(SZrState *state, SZrFunc
     return ZR_THREAD_STATUS_FINE;
 }
 
+/* CLI 与回归测试从此入口编译项目 entry、准备模块元数据并执行，返回线程状态和结果。
+ * BUG: Module_Create 失败时仍进入 execute_function，后者先把失败线程状态重置为 FINE；分配故障可能被吞掉且函数缺少项目模块上下文。 */
 EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     if (state == ZR_NULL || state->global == ZR_NULL || result == ZR_NULL) {
         return ZR_THREAD_STATUS_RUNTIME_ERROR;
@@ -2514,6 +2572,7 @@ void ZrLibrary_Project_Do(SZrState *state) {
     ZrLibrary_Project_Run(state, &ignoredResult);
 }
 
+/* 作为 global->sourceLoader 回调，按项目键依次查源、二进制和运行期 ZRM 条目；全部失败才设置模块加载诊断。 */
 TZrBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];

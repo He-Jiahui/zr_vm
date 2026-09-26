@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+/* 导出目标用于后续声明查找；拒绝文件路径与保留分隔符，实际声明有效性由 AOT 导出收集器核对。 */
 static TZrBool library_project_export_validate_target(const TZrChar *target) {
     TZrSize index;
     TZrBool previousWasDot = ZR_TRUE;
@@ -55,6 +56,7 @@ static TZrBool library_project_export_parse_kind(const TZrChar *text,
     return ZR_FALSE;
 }
 
+/* 导出表以 kind 与 target 的组合去重，同名的不同声明种类仍分别保留。 */
 static TZrBool library_project_export_declaration_exists(const SZrLibrary_Project *project,
                                                          TZrSize declarationCount,
                                                          EZrLibrary_ProjectExportDeclarationKind kind,
@@ -78,6 +80,7 @@ static TZrBool library_project_export_declaration_exists(const SZrLibrary_Projec
     return ZR_FALSE;
 }
 
+/* project 清理可在解析中途调用，因此依据分配容量而非已提交数量释放数组。 */
 void library_project_free_export_declarations(SZrGlobalState *global, SZrLibrary_Project *project) {
     if (global == ZR_NULL || project == ZR_NULL) {
         return;
@@ -94,6 +97,7 @@ void library_project_free_export_declarations(SZrGlobalState *global, SZrLibrary
     project->exportDeclarationCapacity = 0;
 }
 
+/* manifest 导出根转为项目声明，随后由 CLI AOT exports 选择保留的公开符号。 */
 TZrBool library_project_parse_export_declarations(SZrState *state, SZrLibrary_Project *project, cJSON *projectJson) {
     cJSON *exportsJson;
     cJSON *exportJson;

@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+/* preserve 目标用于后续声明查找；此处只排除路径和保留分隔符，实际声明有效性由 AOT 根收集器核对。 */
 static TZrBool library_project_preserve_validate_target(const TZrChar *target) {
     TZrSize index;
     TZrBool previousWasDot = ZR_TRUE;
@@ -77,6 +78,7 @@ static TZrBool library_project_preserve_parse_members(const TZrChar *text,
     return ZR_FALSE;
 }
 
+/* generic 保留规则的实参是非空声明名列表，后续 CLI 会按该列表构造具体实例根。 */
 static TZrBool library_project_preserve_parse_generic_arguments(SZrState *state,
                                                                 SZrLibrary_ProjectPreserveRule *rule,
                                                                 cJSON *argumentsJson) {
@@ -128,6 +130,7 @@ static TZrBool library_project_preserve_parse_generic_arguments(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 已分配但尚未提交的规则可能仍持有 genericArguments；按容量逐项释放以覆盖解析失败。 */
 void library_project_free_preserve_rules(SZrGlobalState *global, SZrLibrary_Project *project) {
     TZrSize ruleIndex;
 
@@ -161,6 +164,7 @@ void library_project_free_preserve_rules(SZrGlobalState *global, SZrLibrary_Proj
     project->preserveRuleCapacity = 0;
 }
 
+/* manifest preserve 规则经项目对象传给 CLI AOT roots；feature/featureValue 成对限定规则是否启用。 */
 TZrBool library_project_parse_preserve_rules(SZrState *state, SZrLibrary_Project *project, cJSON *projectJson) {
     cJSON *preserveJson;
     cJSON *ruleJson;

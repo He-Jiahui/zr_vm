@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/* 项目构造阶段固定 AOT 模式的默认值，再让 CLI 编译选项选择是否要求完整 AOT。 */
 TZrBool library_project_parse_aot_options(SZrLibrary_Project *project, cJSON *projectJson) {
     cJSON *aotModeJson;
 

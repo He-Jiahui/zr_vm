@@ -27,6 +27,7 @@ static void library_project_manifest_v2_lock_set_error(
     va_end(arguments);
 }
 
+/* cJSON 查找仅取首个同名字段，严格计数才能拒绝重复键和混入的协议字段。 */
 static TZrSize library_project_manifest_v2_lock_field_count(
         const cJSON *object,
         const TZrChar *fieldName) {
@@ -44,6 +45,7 @@ static TZrSize library_project_manifest_v2_lock_field_count(
     return count;
 }
 
+/* 锁项必须在对应 phase 的 manifest 依赖段中有唯一声明，避免把重复身份当有效。 */
 static const SZrLibrary_ProjectManifestDependency *
 library_project_manifest_v2_lock_find_dependency(
         const SZrLibrary_ProjectManifestDependency *dependencies,
@@ -64,6 +66,7 @@ library_project_manifest_v2_lock_find_dependency(
     return match;
 }
 
+/* 锁定来源类型须与 manifest 来源一致，不能用 registry 锁替代 path 声明。 */
 static TZrBool library_project_manifest_v2_lock_parse_provider(
         const TZrChar *text,
         EZrLibrary_ProjectManifestDependencySourceKind *outProvider) {
@@ -85,6 +88,8 @@ static TZrBool library_project_manifest_v2_lock_parse_provider(
     return ZR_FALSE;
 }
 
+/* 锁项协议固定四个非空字段，拒绝缺项、额外项和重复项。
+ * TODO: 此处不验证 semver、哈希格式或版本约束满足；编译工具消费链另做校验，需核对 runtime 消费是否同样落实。 */
 static TZrBool library_project_manifest_v2_lock_parse_entry(
         const cJSON *entryJson,
         const TZrChar **outVersion,
@@ -137,6 +142,7 @@ static TZrBool library_project_manifest_v2_lock_parse_entry(
     return ZR_TRUE;
 }
 
+/* 深拷贝前按所属依赖集合核对包身份、来源和存储大小，防止部分锁状态进入项目。 */
 static TZrBool library_project_manifest_v2_lock_validate_collection(
         const cJSON *collectionJson,
         const SZrLibrary_ProjectManifestDependency *dependencies,
@@ -205,6 +211,7 @@ static TZrBool library_project_manifest_v2_lock_validate_collection(
     return (TZrBool)(entryCount == dependencyCount);
 }
 
+/* 验证后将 JSON 借用文本复制到项目持有的连续块；rawLock 可在返回后释放。 */
 static TZrBool library_project_manifest_v2_lock_copy_collection(
         const cJSON *collectionJson,
         EZrLibrary_ProviderPhase providerPhase,
@@ -256,6 +263,7 @@ static TZrBool library_project_manifest_v2_lock_copy_collection(
     return ZR_TRUE;
 }
 
+/* 锁读入成功才原子替换旧块；失败保留原锁，借出的文本在下一次成功读入或项目释放后失效。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_ReadDependencyLock(
         SZrState *state,
         SZrLibrary_Project *project,
@@ -403,6 +411,7 @@ cleanup:
     return ok;
 }
 
+/* 同名包可跨 runtime/build phase 出现，锁选择必须同时匹配身份与 phase 且唯一。 */
 static const SZrLibrary_ProjectManifestDependencyLockEntry *
 library_project_manifest_v2_find_lock_entry(
         const SZrLibrary_ProjectManifestDependencyLockEntry *entries,
@@ -423,6 +432,7 @@ library_project_manifest_v2_find_lock_entry(
     return match;
 }
 
+/* 按 manifest 的规范顺序序列化锁项，每个声明必须恰有同 phase、同来源的锁结果。 */
 static cJSON *library_project_manifest_v2_build_lock_dependency_collection(
         const SZrLibrary_ProjectManifestDependency *dependencies,
         TZrSize dependencyCount,
@@ -477,6 +487,8 @@ static cJSON *library_project_manifest_v2_build_lock_dependency_collection(
     return dependenciesJson;
 }
 
+/* 锁文件单独写出，但内容须按 manifest 依赖声明校验和排序；
+ * 失败时清空输出，调用期间借用传入 entries 文本。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_WriteDependencyLock(
         const SZrLibrary_Project *project,
         const SZrLibrary_ProjectManifestDependencyLockEntry *entries,

@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+/* feature 名在编译期按名称精确匹配；此处排除路径和保留分隔符，不解析语言标识符语法。 */
 static TZrBool library_project_feature_validate_name(const TZrChar *name) {
     TZrSize index;
     TZrBool previousWasDot = ZR_TRUE;
@@ -32,6 +33,7 @@ static TZrBool library_project_feature_validate_name(const TZrChar *name) {
     return !previousWasDot;
 }
 
+/* 解析失败时 project 析构也会到此；分配容量与已提交计数可以不同。 */
 void library_project_free_feature_switches(SZrGlobalState *global, SZrLibrary_Project *project) {
     if (global == ZR_NULL || project == ZR_NULL) {
         return;
@@ -48,6 +50,7 @@ void library_project_free_feature_switches(SZrGlobalState *global, SZrLibrary_Pr
     project->featureSwitchCapacity = 0;
 }
 
+/* 将 manifest 布尔 feature 投影到属性绑定、编译期求值和 AOT 条件根的共同输入。 */
 TZrBool library_project_parse_feature_switches(SZrState *state, SZrLibrary_Project *project, cJSON *projectJson) {
     cJSON *featuresJson;
     cJSON *featureJson;

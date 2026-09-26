@@ -19,6 +19,7 @@ static TZrBool library_project_manifest_v2_has_required_string(cJSON *manifestJs
     return cJSON_IsString(field) && field->valuestring != ZR_NULL && field->valuestring[0] != '\0';
 }
 
+/* 无 manifestVersion 的旧清单按 v1 解释，显式版本仅接受当前支持的整数 1 或 2。 */
 TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32 *outManifestVersion) {
     cJSON *manifestVersionJson;
     TZrUInt32 manifestVersion;
@@ -43,6 +44,7 @@ TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32
     return ZR_TRUE;
 }
 
+/* v2 项目构造需先具备非空基础定位字段，再建立声明数组。 */
 TZrBool library_project_manifest_v2_validate_base(cJSON *manifestJson) {
     return library_project_manifest_v2_has_required_string(manifestJson, "name") &&
            library_project_manifest_v2_has_required_string(manifestJson, "version") &&
@@ -64,6 +66,7 @@ static TZrBool library_project_manifest_v2_parse_specifier(const TZrChar *litera
     return ZrLibrary_ModuleSpecifier_Parse(literal, outSpecifier, errorBuffer, sizeof(errorBuffer));
 }
 
+/* 声明的包身份只能是 @ 包根，不能用子模块名代替根。 */
 static TZrBool library_project_manifest_v2_parse_package_root(const TZrChar *literal,
                                                                SZrLibrary_ModuleIdentity *outIdentity) {
     SZrLibrary_ModuleSpecifier specifier;
@@ -79,6 +82,7 @@ static TZrBool library_project_manifest_v2_parse_package_root(const TZrChar *lit
     return ZR_TRUE;
 }
 
+/* 别名表键只能声明 # 根，子段留给 import 请求拼接。 */
 static TZrBool library_project_manifest_v2_parse_alias_root(const TZrChar *literal) {
     SZrLibrary_ModuleSpecifier specifier;
 
@@ -88,6 +92,7 @@ static TZrBool library_project_manifest_v2_parse_alias_root(const TZrChar *liter
            specifier.identity.segments[0] == '\0';
 }
 
+/* 限制别名目标类别，避免递归别名与相对目标引入不确定绑定；包目标必须是根。 */
 static TZrBool library_project_manifest_v2_alias_target_is_supported(const SZrLibrary_ModuleSpecifier *target) {
     if (target == ZR_NULL ||
         target->kind == ZR_LIBRARY_MODULE_SPECIFIER_KIND_ALIAS ||
@@ -99,6 +104,7 @@ static TZrBool library_project_manifest_v2_alias_target_is_supported(const SZrLi
     return target->kind != ZR_LIBRARY_MODULE_SPECIFIER_KIND_PACKAGE || target->identity.segments[0] == '\0';
 }
 
+/* 包公开键以根或根内子段表示，拒绝导出根外位置并归一供去重。 */
 static TZrBool library_project_manifest_v2_export_key_to_canonical(const TZrChar *rawKey,
                                                                     TZrChar *outKey,
                                                                     TZrSize outKeySize) {
@@ -126,6 +132,7 @@ static TZrBool library_project_manifest_v2_export_key_to_canonical(const TZrChar
     return written >= 0 && (TZrSize)written < outKeySize;
 }
 
+/* v2 别名保存已解析目标，数组归项目持有；重复根不能靠声明顺序覆盖。 */
 static TZrBool library_project_manifest_v2_parse_aliases(SZrState *state,
                                                           SZrLibrary_Project *project,
                                                           cJSON *manifestJson) {
@@ -187,6 +194,7 @@ static TZrBool library_project_manifest_v2_parse_aliases(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 本包导出只能指工作区身份，公开键须唯一，保证显式包边界。 */
 static TZrBool library_project_manifest_v2_parse_package(SZrState *state,
                                                           SZrLibrary_Project *project,
                                                           cJSON *manifestJson) {
@@ -260,6 +268,7 @@ static TZrBool library_project_manifest_v2_parse_package(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 每条依赖必须恰有一种来源与非空版本要求，以便锁文件核对。 */
 static TZrBool library_project_manifest_v2_parse_dependency_source(
         SZrState *state,
         cJSON *dependencyJson,
@@ -312,6 +321,7 @@ static TZrBool library_project_manifest_v2_parse_dependency_source(
     return ZR_TRUE;
 }
 
+/* runtime 与 build 依赖分别建表；同 phase 不允许重复包，失败交项目清理原生数组。 */
 static TZrBool library_project_manifest_v2_parse_dependency_collection(
         SZrState *state,
         cJSON *manifestJson,
@@ -389,6 +399,7 @@ static TZrBool library_project_manifest_v2_parse_dependency_collection(
     *outDependencyCount = index;
     return ZR_TRUE;
 }
+/* 运行和构建依赖分属不同 provider phase，清单解析保留两个独立集合。 */
 static TZrBool library_project_manifest_v2_parse_dependencies(SZrState *state,
                                                                SZrLibrary_Project *project,
                                                                cJSON *manifestJson) {
@@ -427,6 +438,7 @@ static TZrBool library_project_manifest_v2_declares_package(const SZrLibrary_Pro
     return ZR_FALSE;
 }
 
+/* runtime 别名只能指本包或 runtime dependencies，buildDependencies 不扩大运行导入域。 */
 static TZrBool library_project_manifest_v2_validate_alias_package_targets(const SZrLibrary_Project *project) {
     TZrSize index;
 
@@ -444,6 +456,7 @@ static TZrBool library_project_manifest_v2_validate_alias_package_targets(const 
     return ZR_TRUE;
 }
 
+/* 只有目录和项目归档定位符能拼子项，单个 .zr/.zrm 文件不能作为模块目录。 */
 static TZrBool library_project_manifest_v2_append_file_alias_suffix(const TZrChar *baseLocator,
                                                                      const TZrChar *suffix,
                                                                      TZrChar *outLocator,
@@ -485,6 +498,7 @@ static TZrBool library_project_manifest_v2_append_file_alias_suffix(const TZrCha
     return written >= 0 && (TZrSize)written < outLocatorSize;
 }
 
+/* 项目失败回滚和析构共享清理，原生数组及锁字符串连续块释放，GC 字符串仍归 VM。 */
 void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
                                                     SZrLibrary_Project *project) {
     if (global == ZR_NULL || project == ZR_NULL) {
@@ -543,6 +557,7 @@ void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
     project->manifestDependencyLockStorageSize = 0u;
 }
 
+/* v2 声明拒绝旧版字段并在失败时回滚，避免半成品状态混入项目。 */
 TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,
                                                         SZrLibrary_Project *project,
                                                         cJSON *manifestJson) {
@@ -565,6 +580,8 @@ TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 按声明根替换请求并保留子段，输出容量不足时失败。
+ * TODO: 当前 production 未直接调用此接口；需追踪 v2 import 的实际 canonicalization 链，确认别名声明已消费。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveManifestAlias(
         const SZrLibrary_Project *project,
         const SZrLibrary_ModuleSpecifier *aliasSpecifier,
@@ -634,6 +651,8 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveManifestAlias(
     return ZR_FALSE;
 }
 
+/* 本包 import 仅匹配显式公开键，未导出的内部模块不得由此解析。
+ * TODO: 当前 production 未直接调用此接口；需追踪 v2 import 的实际 canonicalization 链，确认导出表边界已落实。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolvePackageExport(
         const SZrLibrary_Project *project,
         const SZrLibrary_ModuleSpecifier *packageSpecifier,
@@ -679,6 +698,8 @@ static TZrBool library_project_manifest_v2_has_nonempty_string(const SZrString *
     return text != ZR_NULL && text[0] != '\0';
 }
 
+/* 发布投影排除本机绝对路径及 file URI，保留相对 path 来源。
+ * TODO: 相对来源仍可含反斜线；需核对发布格式是否允许平台相关分隔符，并用跨平台消费验证。 */
 static TZrBool library_project_manifest_v2_path_source_is_portable(const TZrChar *source) {
     if (source == ZR_NULL || source[0] == '\0') {
         return ZR_FALSE;
@@ -728,6 +749,7 @@ static int library_project_manifest_v2_hex_value(TZrChar character) {
     return -1;
 }
 
+/* 网络来源检查需识别 IPv6 尾部的 IPv4 字面量，不能仅按 hostname 看待。 */
 static TZrBool library_project_manifest_v2_parse_ipv4_words(const TZrChar *text,
                                                              TZrSize length,
                                                              TZrUInt16 *outWords) {
@@ -768,6 +790,7 @@ static TZrBool library_project_manifest_v2_parse_ipv4_words(const TZrChar *text,
     return ZR_TRUE;
 }
 
+/* 展开压缩和 IPv4 尾部后判定 IPv6 loopback，服务发布来源的本机地址门禁。 */
 static TZrBool library_project_manifest_v2_parse_ipv6_address(const TZrChar *host,
                                                                TZrSize hostLength,
                                                                TZrBool *outIsLoopback) {
@@ -884,12 +907,15 @@ static TZrBool library_project_manifest_v2_parse_ipv6_address(const TZrChar *hos
     return ZR_TRUE;
 }
 
+/* 可发布来源不应绑定本机 loopback。
+ * BUG: 仅检查 localhost 和 127. 前缀，2130706433 或 0x7f000001 能通过普通主机分支；WSL getent 均解析为 127.0.0.1，绕过发布来源检查。 */
 static TZrBool library_project_manifest_v2_is_loopback_host(const TZrChar *host, TZrSize hostLength) {
     return library_project_manifest_v2_text_equals_ignore_case(host, hostLength, "localhost") ||
            library_project_manifest_v2_text_equals_ignore_case(host, hostLength, "localhost.") ||
            (hostLength >= 4u && host[0] == '1' && host[1] == '2' && host[2] == '7' && host[3] == '.');
 }
 
+/* registry 的非 URI 形式只作为包名读取，不能混入本地路径。 */
 static TZrBool library_project_manifest_v2_is_registry_package_id(const TZrChar *source) {
     TZrSize index;
 
@@ -908,6 +934,7 @@ static TZrBool library_project_manifest_v2_is_registry_package_id(const TZrChar 
     return ZR_TRUE;
 }
 
+/* 按来源类型检查 scheme 与 authority，发布来源不应依赖 loopback 主机。 */
 static TZrBool library_project_manifest_v2_has_network_uri(const TZrChar *source,
                                                             const TZrChar *scheme) {
     const TZrChar *authority;
@@ -970,6 +997,7 @@ static TZrBool library_project_manifest_v2_has_network_uri(const TZrChar *source
     return ZR_TRUE;
 }
 
+/* 已有 scheme 的来源需按网络 URI 校验，避免把 URI 当 registry 包名放行。 */
 static TZrBool library_project_manifest_v2_has_network_scheme(const TZrChar *source,
                                                                TZrBool allowGitScheme) {
     if (!library_project_manifest_v2_path_source_is_portable(source)) {
@@ -981,6 +1009,7 @@ static TZrBool library_project_manifest_v2_has_network_scheme(const TZrChar *sou
                                library_project_manifest_v2_has_network_uri(source, "git://")));
 }
 
+/* path、registry、git 在发布时有不同定位约束，区别于仅加载本地 manifest 的宽松检查。 */
 static TZrBool library_project_manifest_v2_dependency_source_is_publishable(
         EZrLibrary_ProjectManifestDependencySourceKind sourceKind,
         const TZrChar *source) {
@@ -997,6 +1026,7 @@ static TZrBool library_project_manifest_v2_dependency_source_is_publishable(
     }
 }
 
+/* 规范内部身份转回稳定公开字面量，为 JSON 输出排序与往返保持统一写法。 */
 static TZrBool library_project_manifest_v2_copy_display_segments(const TZrChar *segments,
                                                                   TZrChar *outLiteral,
                                                                   TZrSize outLiteralSize) {
@@ -1017,6 +1047,7 @@ static TZrBool library_project_manifest_v2_copy_display_segments(const TZrChar *
     return ZR_TRUE;
 }
 
+/* 写出已解析目标时保留其域和定位语义，不以磁盘路径代替模块身份。 */
 static TZrBool library_project_manifest_v2_specifier_to_literal(const SZrLibrary_ModuleSpecifier *specifier,
                                                                  TZrChar *outLiteral,
                                                                  TZrSize outLiteralSize) {
@@ -1067,6 +1098,7 @@ static TZrBool library_project_manifest_v2_specifier_to_literal(const SZrLibrary
     }
 }
 
+/* 包锁与 manifest 写出共用 @ 包根字面量，避免两份协议身份分歧。 */
 TZrBool library_project_manifest_v2_package_identity_to_literal(
         const SZrLibrary_ModuleIdentity *identity,
         TZrChar *outLiteral,
@@ -1082,6 +1114,7 @@ TZrBool library_project_manifest_v2_package_identity_to_literal(
     return written >= 0 && (TZrSize)written < outLiteralSize;
 }
 
+/* 按文本排序输出别名并拒重复，保证规范 manifest 与输入数组顺序无关。 */
 static TZrBool library_project_manifest_v2_alias_index_at_ordinal(const SZrLibrary_Project *project,
                                                                    TZrSize ordinal,
                                                                    TZrSize *outIndex) {
@@ -1118,6 +1151,7 @@ static TZrBool library_project_manifest_v2_alias_index_at_ordinal(const SZrLibra
     return ZR_FALSE;
 }
 
+/* 包导出按规范键稳定排序并拒重复，保持公开清单可比较。 */
 static TZrBool library_project_manifest_v2_export_index_at_ordinal(const SZrLibrary_Project *project,
                                                                     TZrSize ordinal,
                                                                     TZrSize *outIndex) {
@@ -1158,6 +1192,7 @@ static TZrBool library_project_manifest_v2_export_index_at_ordinal(const SZrLibr
     return ZR_FALSE;
 }
 
+/* 依赖按规范身份排序，锁和 manifest 写出必须沿同一顺序。 */
 TZrBool library_project_manifest_v2_dependency_index_at_ordinal(
         const SZrLibrary_ProjectManifestDependency *dependencies,
         TZrSize dependencyCount,
@@ -1205,6 +1240,7 @@ static TZrBool library_project_manifest_v2_dependency_source_kind_is_valid(
            sourceKind == ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_GIT;
 }
 
+/* 序列化前确认版本和来源可发布；包根字面量由后续排序与写出链再验证。 */
 static TZrBool library_project_manifest_v2_validate_dependency_collection(
         const SZrLibrary_ProjectManifestDependency *dependencies,
         TZrSize dependencyCount) {
@@ -1226,6 +1262,7 @@ static TZrBool library_project_manifest_v2_validate_dependency_collection(
     return ZR_TRUE;
 }
 
+/* 发布投影的前置门禁比本地加载严格，检查 v2 基础、来源与包导出关系。 */
 TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Project *project) {
     if (project == ZR_NULL || project->manifestVersion != 2u ||
         !library_project_manifest_v2_has_nonempty_string(project->name) ||
@@ -1259,6 +1296,7 @@ TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Proje
     return ZR_TRUE;
 }
 
+/* 以规范顺序构建别名对象；失败时回收尚未交付给 manifest 的 JSON 节点。 */
 static cJSON *library_project_manifest_v2_build_aliases(const SZrLibrary_Project *project) {
     cJSON *aliasesJson;
     TZrSize ordinal;
@@ -1289,6 +1327,7 @@ static cJSON *library_project_manifest_v2_build_aliases(const SZrLibrary_Project
     return aliasesJson;
 }
 
+/* 按规范排序建立包公开表，工作区目标转回协议字面量。 */
 static cJSON *library_project_manifest_v2_build_package(const SZrLibrary_Project *project) {
     cJSON *packageJson;
     cJSON *exportsJson;
@@ -1351,6 +1390,7 @@ const TZrChar *library_project_manifest_v2_dependency_source_field(
     }
 }
 
+/* 运行与构建依赖共用字段写出规则，来源 kind 决定 JSON 字段名。 */
 static cJSON *library_project_manifest_v2_build_dependencies(
         const SZrLibrary_ProjectManifestDependency *dependencies,
         TZrSize dependencyCount) {
@@ -1395,6 +1435,8 @@ static cJSON *library_project_manifest_v2_build_dependencies(
     return dependenciesJson;
 }
 
+/* 将 v2 可发布声明写成规范 JSON，失败清空输出，不修改项目内状态。
+ * TODO: 未写出 aotMode/features/resources/preserve/顶层 exports/supportMultithread；需明确本 API 是发布投影还是应提供完整项目往返，入口为带这些选项的 roundtrip 测试。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_Write(const SZrLibrary_Project *project,
                                                           TZrChar *outManifest,
                                                           TZrSize outManifestSize) {

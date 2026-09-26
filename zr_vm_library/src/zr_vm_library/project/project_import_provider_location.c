@@ -34,6 +34,7 @@ static const TZrChar *project_import_provider_dynamic_library_extension(void) {
 #endif
 }
 
+/* AOT provider 只支持有约定动态库布局的 C 和 LLVM 后端。 */
 static const TZrChar *project_import_provider_backend_directory(EZrAotBackendKind backendKind) {
     switch (backendKind) {
         case ZR_AOT_BACKEND_KIND_C:
@@ -45,6 +46,7 @@ static const TZrChar *project_import_provider_backend_directory(EZrAotBackendKin
     }
 }
 
+/* AOT 描述符使用包内模块名，需从版本固定包键中剥离包身份。 */
 static TZrBool project_import_provider_copy_descriptor_module_name(const TZrChar *resolvedModuleKey,
                                                                    TZrChar *buffer,
                                                                    TZrSize bufferSize) {
@@ -72,6 +74,8 @@ static TZrBool project_import_provider_copy_descriptor_module_name(const TZrChar
     return snprintf(buffer, bufferSize, "%s", moduleName + 1) < (int)bufferSize;
 }
 
+/* 动态库名与 AOT runtime 当前的字符收敛规则一致。
+ * TODO: 超长名字在此静默截断；需核对编译端同长度规则及截断碰撞，入口为长多段模块名。 */
 static void project_import_provider_sanitize_module_name(const TZrChar *moduleName,
                                                          TZrChar *buffer,
                                                          TZrSize bufferSize) {
@@ -97,6 +101,7 @@ static void project_import_provider_sanitize_module_name(const TZrChar *moduleNa
     buffer[cursor] = '\0';
 }
 
+/* 只有路径末尾确属目标模块的 .zro 时才能剥出 AOT 二进制根。 */
 static TZrBool project_import_provider_path_ends_with_module_file(const TZrChar *path,
                                                                   const TZrChar *moduleName,
                                                                   const TZrChar *extension,
@@ -149,6 +154,7 @@ static TZrBool project_import_provider_path_ends_with_module_file(const TZrChar 
     return ZR_TRUE;
 }
 
+/* 从模块二进制候选路径恢复包级根，供后端动态库布局使用。 */
 static TZrBool project_import_provider_copy_binary_root(const TZrChar *binaryPath,
                                                         const TZrChar *descriptorModuleName,
                                                         TZrChar *buffer,
@@ -176,6 +182,7 @@ static TZrBool project_import_provider_copy_binary_root(const TZrChar *binaryPat
     return rootLength > 0;
 }
 
+/* 与 AOT 编译产物布局约定一致地构造 aot_c/aot_llvm 库路径，后续加载者再查存在性。 */
 static TZrBool project_import_provider_build_library_path(const TZrChar *binaryPath,
                                                           const TZrChar *descriptorModuleName,
                                                           EZrAotBackendKind backendKind,
@@ -220,6 +227,7 @@ static TZrBool project_import_provider_build_library_path(const TZrChar *binaryP
                     project_import_provider_dynamic_library_extension()) < (int)bufferSize;
 }
 
+/* 先固定模块身份与 owner 版本约束，再定位 ZRM 条目或项目文件候选；结果指针借用项目。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderLocation(
         const SZrLibrary_Project *project,
         const TZrChar *currentModuleKey,
@@ -328,6 +336,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderLocation(
     return ZR_FALSE;
 }
 
+/* 运行时 provider 定位还需 runtime phase 与后端库路径；ZRM 的库路径留空，AOT 装载层会拒绝归档条目。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderAotLoadRequest(
         const SZrLibrary_Project *project,
         const TZrChar *currentModuleKey,

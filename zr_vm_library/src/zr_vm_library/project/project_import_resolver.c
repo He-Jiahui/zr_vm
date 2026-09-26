@@ -60,6 +60,7 @@ static TZrBool project_resolver_copy_text(const TZrChar *text, TZrChar *buffer, 
     return ZR_TRUE;
 }
 
+/* 用户源模块不能占用 zr 官方模块根；推导当前键时须先守住这一边界。 */
 static TZrBool project_resolver_is_reserved_official_module_key(
         const TZrChar *moduleKey) {
     return moduleKey != ZR_NULL && moduleKey[0] == 'z' && moduleKey[1] == 'r' &&
@@ -81,6 +82,7 @@ static TZrBool project_resolver_is_path_separator(TZrChar ch) {
     return ch == '/' || ch == '\\';
 }
 
+/* 源码归属比较兼容平台分隔符；Windows 还按文件系统习惯忽略大小写。 */
 static TZrBool project_resolver_path_prefix_matches(const TZrChar *lhs,
                                                     const TZrChar *rhs,
                                                     TZrSize length) {
@@ -128,6 +130,8 @@ static TZrBool project_resolver_is_absolute_path(const TZrChar *path) {
            path[1] == ':';
 }
 
+/* 模块缓存和文件定位共用分隔符及扩展名规范化，不在此绑定具体项目。
+ * BUG: 内嵌 . 和 .. 段未拒绝，foo/../../secret 可从普通 import 进入 source 根拼接，File_NormalizePath 会折叠到根外文件；复现入口为 ResolveImportModuleKey 后 SourceLoadImplementation。 */
 static TZrBool project_resolver_normalize_module_key_text(const TZrChar *modulePath,
                                                           TZrChar *buffer,
                                                           TZrSize bufferSize) {
@@ -203,6 +207,7 @@ static TZrBool project_resolver_normalize_module_key_text(const TZrChar *moduleP
     return ZR_TRUE;
 }
 
+/* 显式模块名与物理源码推导的键允许点和斜杠写法等价，避免重复模块身份。 */
 static TZrBool project_resolver_module_path_equals(const TZrChar *left, const TZrChar *right) {
     TZrSize index = 0;
 
@@ -222,6 +227,7 @@ static TZrBool project_resolver_module_path_equals(const TZrChar *left, const TZ
     return left[index] == '\0' && right[index] == '\0';
 }
 
+/* 当前模块的物理归属以项目目录加 source 配置为基准，而非进程工作目录。 */
 static TZrBool project_resolver_build_source_root(const SZrLibrary_Project *project,
                                                   TZrChar *buffer,
                                                   TZrSize bufferSize) {
@@ -243,6 +249,7 @@ static TZrBool project_resolver_build_source_root(const SZrLibrary_Project *proj
     return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 目录归属必须同时匹配路径前缀和边界分隔符，防止 src2 被误判为 src 内部。 */
 static TZrBool project_resolver_relative_path_from_root(const TZrChar *normalizedRoot,
                                                         const TZrChar *normalizedPath,
                                                         TZrChar *buffer,
@@ -270,6 +277,7 @@ static TZrBool project_resolver_relative_path_from_root(const TZrChar *normalize
     return project_resolver_copy_text(normalizedPath + rootLength + 1, buffer, bufferSize);
 }
 
+/* 旧版别名、依赖和相对 import 的点后缀转成逻辑路径，空段及文件分隔符不能混入。 */
 static TZrBool project_resolver_convert_dot_suffix(const TZrChar *text,
                                                    TZrChar *buffer,
                                                    TZrSize bufferSize) {
@@ -314,6 +322,7 @@ static TZrBool project_resolver_convert_dot_suffix(const TZrChar *text,
     return writeIndex > 0;
 }
 
+/* 拼接逻辑模块前缀与后缀，输出仍是模块键而非已验证的磁盘路径。 */
 static TZrBool project_resolver_join_module_paths(const TZrChar *prefix,
                                                   const TZrChar *suffix,
                                                   TZrChar *buffer,
@@ -348,6 +357,7 @@ static TZrBool project_resolver_join_module_paths(const TZrChar *prefix,
     return ZR_TRUE;
 }
 
+/* 相对 import 从当前模块所在目录起算，越过逻辑根时拒绝。 */
 static TZrBool project_resolver_apply_relative_import(const TZrChar *currentModuleKey,
                                                       TZrSize parentLevels,
                                                       const TZrChar *suffixPath,
@@ -391,6 +401,7 @@ static TZrBool project_resolver_apply_relative_import(const TZrChar *currentModu
     return project_resolver_join_module_paths(currentDirectory, suffixPath, buffer, bufferSize);
 }
 
+/* 拆出版本固定的 $name@version/module 身份；返回的模块后缀借用输入文本。 */
 static TZrBool project_resolver_parse_dependency_module_key(const TZrChar *moduleKey,
                                                             TZrChar *nameBuffer,
                                                             TZrSize nameBufferSize,
@@ -451,6 +462,7 @@ static TZrBool project_resolver_parse_dependency_module_key(const TZrChar *modul
     return ZR_TRUE;
 }
 
+/* 版本固定包键须定位到项目已经解析并持有的包节点。 */
 static const SZrLibrary_ProjectDependencyPackage *project_resolver_find_dependency_package(
         const SZrLibrary_Project *project,
         const TZrChar *name,
@@ -478,6 +490,7 @@ static const SZrLibrary_ProjectDependencyPackage *project_resolver_find_dependen
     return ZR_NULL;
 }
 
+/* 当前模块的包归属决定依赖与别名作用域，模块后缀借用当前键。 */
 static const SZrLibrary_ProjectDependencyPackage *project_resolver_current_dependency_package(
         const SZrLibrary_Project *project,
         const TZrChar *currentModuleKey,
@@ -501,6 +514,7 @@ static const SZrLibrary_ProjectDependencyPackage *project_resolver_current_depen
     return project_resolver_find_dependency_package(project, name, version, ZR_NULL);
 }
 
+/* 依赖名字只在当前包或根项目的直接引用表查找，保持 owner 作用域。 */
 static const SZrLibrary_ProjectDependencyReference *project_resolver_find_dependency_ref(
         const SZrLibrary_Project *project,
         const SZrLibrary_ProjectDependencyPackage *ownerPackage,
@@ -531,6 +545,7 @@ static const SZrLibrary_ProjectDependencyReference *project_resolver_find_depend
     return ZR_NULL;
 }
 
+/* 规范包键不携带原引用别名；构图已拒绝同一 owner 对同一包的不同区间，故可按包索引取首条等价边。 */
 static const SZrLibrary_ProjectDependencyReference *project_resolver_find_dependency_ref_by_package_index(
         const SZrLibrary_Project *project,
         const SZrLibrary_ProjectDependencyPackage *ownerPackage,
@@ -559,6 +574,7 @@ static const SZrLibrary_ProjectDependencyReference *project_resolver_find_depend
     return ZR_NULL;
 }
 
+/* 将包名字、已选版本与模块后缀固化为缓存键；省略后缀时使用包入口。 */
 static TZrBool project_resolver_dependency_package_key(const SZrLibrary_ProjectDependencyPackage *package,
                                                        const TZrChar *modulePath,
                                                        TZrChar *buffer,
@@ -605,6 +621,7 @@ static TZrBool project_resolver_dependency_package_key(const SZrLibrary_ProjectD
     return ZR_TRUE;
 }
 
+/* 依赖源码物理根取包目录及其 source 配置，不能复用根项目 source。 */
 static TZrBool project_resolver_build_package_source_root(const SZrLibrary_ProjectDependencyPackage *package,
                                                           TZrChar *buffer,
                                                           TZrSize bufferSize) {
@@ -626,12 +643,14 @@ static TZrBool project_resolver_build_package_source_root(const SZrLibrary_Proje
     return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 候选指针须先是有效可读内存；签名只能区分逻辑类型，不能验证任意 userData 指针的安全性。 */
 static const SZrLibrary_Project *project_resolver_from_candidate(TZrPtr candidate) {
     const SZrLibrary_Project *project = (const SZrLibrary_Project *)candidate;
 
     return project != ZR_NULL && project->signature == ZR_LIBRARY_PROJECT_SIGNATURE ? project : ZR_NULL;
 }
 
+/* 优先使用 sourceLoaderUserData 的项目，再查 userData；返回视图由全局调用方维持生命周期。 */
 ZR_LIBRARY_API const SZrLibrary_Project *ZrLibrary_Project_GetFromGlobal(const SZrGlobalState *global) {
     const SZrLibrary_Project *project;
 
@@ -653,6 +672,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_NormalizeModuleKey(const TZrChar *modul
     return project_resolver_normalize_module_key_text(modulePath, buffer, bufferSize);
 }
 
+/* 解析器以物理源位置推导项目或包的键，并核对显式键，避免相对 import 使用错误归属。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary_Project *project,
                                                                 const TZrChar *sourceName,
                                                                 const TZrChar *explicitModuleKey,
@@ -788,6 +808,8 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
     return project_resolver_copy_text(derivedFromPath, buffer, bufferSize);
 }
 
+/* 根据当前 owner 统一旧版依赖、别名、相对及普通 import，结果用于模块缓存和装载。
+ * TODO: 当前包没有 pathAliases 时会回退根项目别名；需核对包隔离是否允许继承根别名，并补同名别名场景。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary_Project *project,
                                                                 const TZrChar *currentModuleKey,
                                                                 const TZrChar *rawSpecifier,
@@ -1031,6 +1053,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
     return ZR_TRUE;
 }
 
+/* 跨依赖模块加载需携带 owner 声明的程序集和版本限制；输出字符串借用项目。
+ * TODO: AOT runtime 目前以 project->entry 作 currentModuleKey；需核对依赖包内部导入其私有依赖时是否丢失 owner，验证入口为 A→B 的 AOT 加载。
+ * 构图已拒绝同一 owner 对同一包的不同区间，故规范包键丢失别名后仍可回查等价引用。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         const SZrLibrary_Project *project,
         const TZrChar *currentModuleKey,
@@ -1097,6 +1122,8 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
     return ZR_TRUE;
 }
 
+/* 模块键转换为某个已选根下的源或产物候选文件，存在性留给加载阶段。
+ * BUG: 最后 PathJoin 固定按 MAX_PATH_LENGTH 写入，忽略本函数 bufferSize；ResolveSourcePath/BinaryPath/IntermediatePath 传小缓冲时可越界。用 main 和 8 字节缓冲做 ASan 验证。 */
 static TZrBool project_resolver_module_file_from_root(const TZrChar *rootDirectory,
                                                       const TZrChar *modulePath,
                                                       const TZrChar *extension,
@@ -1131,6 +1158,7 @@ static TZrBool project_resolver_module_file_from_root(const TZrChar *rootDirecto
     return buffer[0] != '\0';
 }
 
+/* 源、二进制和中间产物均以项目目录为基准，绝对 root 配置保留其定位语义。 */
 static TZrBool project_resolver_build_project_root_path(const SZrLibrary_Project *project,
                                                         SZrString *root,
                                                         TZrChar *buffer,
@@ -1153,6 +1181,7 @@ static TZrBool project_resolver_build_project_root_path(const SZrLibrary_Project
     return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 依赖模块使用其包目录和产物根，避免落到根项目同名模块上。 */
 static TZrBool project_resolver_build_package_root_path(const SZrLibrary_ProjectDependencyPackage *package,
                                                         SZrString *root,
                                                         TZrChar *buffer,
@@ -1175,6 +1204,7 @@ static TZrBool project_resolver_build_package_root_path(const SZrLibrary_Project
     return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 程序集输出配置允许绝对位置或项目相对位置，并在交付 CLI 前规范化。 */
 static TZrBool project_resolver_resolve_project_relative_path(const SZrLibrary_Project *project,
                                                               const TZrChar *relativePath,
                                                               TZrChar *buffer,
@@ -1200,6 +1230,7 @@ static TZrBool project_resolver_resolve_project_relative_path(const SZrLibrary_P
     return joinedPath[0] != '\0' && ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 区分项目模块和版本固定依赖包；ZRM 包由专用条目 API 装载，此处只生成文件候选。 */
 static TZrBool project_resolver_resolve_module_path(const SZrLibrary_Project *project,
                                                     const TZrChar *moduleName,
                                                     const TZrChar *extension,
@@ -1293,6 +1324,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveIntermediatePath(const SZrLibrar
                                                 bufferSize);
 }
 
+/* CLI 产物选择显式 assembly.output，否则以 binary 根和程序集名生成 ZRM 文件名。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveAssemblyOutputPath(const SZrLibrary_Project *project,
                                                                    TZrChar *buffer,
                                                                    TZrSize bufferSize) {
@@ -1330,6 +1362,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveAssemblyOutputPath(const SZrLibr
     return outputPath[0] != '\0' && ZrLibrary_File_NormalizePath(outputPath, buffer, bufferSize);
 }
 
+/* 只查询已打开依赖归档的模块条目；返回指针随项目关闭归档而失效。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveZrmModuleEntry(
         const SZrLibrary_Project *project,
         const TZrChar *moduleName,
