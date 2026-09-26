@@ -150,7 +150,7 @@ typedef struct SZrAotIrProjection {
 ZR_PARSER_API void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *projection);
 ZR_PARSER_API TZrBool ZrParser_ExecBcProjection_ExecutePhiMoves(
         const SZrExecBcProjection *projection, TZrExecIrBlockId edge,
-        TZrUInt32 *slots, TZrUInt32 slotCount,
+        void *slots, TZrUInt32 slotCount,
         FZrExecBcPhiMoveConsumer consumer, void *userData,
         SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection);

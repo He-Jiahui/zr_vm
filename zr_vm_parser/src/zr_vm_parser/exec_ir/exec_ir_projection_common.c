@@ -47,6 +47,22 @@ static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     }
 }
 
+static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
+    switch (opcode) {
+        case ZR_EXEC_IR_OPCODE_NOP: case ZR_EXEC_IR_OPCODE_CONSTANT:
+        case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE:
+        case ZR_EXEC_IR_OPCODE_CONVERT: case ZR_EXEC_IR_OPCODE_ARITHMETIC:
+        case ZR_EXEC_IR_OPCODE_ADD: case ZR_EXEC_IR_OPCODE_SUB:
+        case ZR_EXEC_IR_OPCODE_MUL: case ZR_EXEC_IR_OPCODE_DIV:
+        case ZR_EXEC_IR_OPCODE_NEG: case ZR_EXEC_IR_OPCODE_COMPARE:
+        case ZR_EXEC_IR_OPCODE_BRANCH: case ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH:
+        case ZR_EXEC_IR_OPCODE_SWITCH: case ZR_EXEC_IR_OPCODE_RETURN:
+        case ZR_EXEC_IR_OPCODE_PHI:
+            return ZR_TRUE;
+        default: return ZR_FALSE;
+    }
+}
+
 static TZrBool zr_projection_value_id_valid(const SZrExecIrFunction *f,
                                             TZrExecIrValueId valueId) {
     return (TZrBool)(valueId != ZR_EXEC_IR_VALUE_ID_INVALID &&
@@ -700,25 +716,21 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->instructions[i].effectIn = in->effectIn;
         p->instructions[i].effectOut = in->effectOut;
         p->instructions[i].typeToken = in->typeToken;
+        if (in->opcode == ZR_EXEC_IR_OPCODE_CONVERT &&
+            in->typeToken == 0u && in->results.count != 0u) {
+            TZrExecIrValueId resultId = f->results[in->results.start];
+            if (resultId != ZR_EXEC_IR_VALUE_ID_INVALID &&
+                resultId <= f->valueCount)
+                p->instructions[i].typeToken = f->values[resultId - 1u].typeToken;
+        }
         p->instructions[i].matchTypeToken = in->matchTypeToken;
         p->instructions[i].layoutId = in->layoutId;
         p->instructions[i].sourceId = in->sourceId;
         p->instructions[i].deoptId = in->deoptId;
         p->instructions[i].bindingRow = in->bindingRow;
-        if (in->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE ||
-            in->opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT ||
-            in->opcode == ZR_EXEC_IR_OPCODE_ALLOC ||
-            in->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED ||
-            in->opcode == ZR_EXEC_IR_OPCODE_TYPE_TEST ||
-            in->opcode == ZR_EXEC_IR_OPCODE_INVOKE ||
-            in->opcode == ZR_EXEC_IR_OPCODE_ITER_INIT ||
-            in->opcode == ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT ||
-            in->opcode == ZR_EXEC_IR_OPCODE_ITER_CURRENT ||
-            in->opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD) {
-            /* The projection preserves canonical instruction metadata, but
-             * executable layout, subtype, invoke/exception, or iterator
-             * dispatch still belongs to a later backend ABI.  Do not
-             * advertise this projection as runnable. */
+        if (!zr_projection_opcode_runnable((EZrExecIrOpcode)in->opcode)) {
+            /* Preserve metadata for later backends while advertising only
+             * the scalar/control instructions this runner can dispatch. */
             p->runnable = ZR_FALSE;
         }
     }

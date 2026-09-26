@@ -11,11 +11,13 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_oracle.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 implementation_files:
@@ -27,6 +29,9 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 plan_sources:
@@ -46,6 +51,7 @@ tests:
   - tests/acceptance/ssa-oracle-parallel-edges.md
   - tests/acceptance/ssa-projection-parallel-edges.md
   - tests/acceptance/ssa-projection-phi-schedule.md
+  - tests/acceptance/ssa-execbc-scalar-runner.md
 doc_type: module-detail
 ---
 
@@ -187,6 +193,8 @@ value receives a distinct slot while optimization is disabled. Phi incoming
 assignments retain edge-tagged parallel-copy records. The `phiMoves` array
 also orders physical-slot moves per projected predecessor edge, so executing
 only moves for the selected edge reproduces simultaneous phi assignment.
+For a `CONVERT` instruction with no explicit target token, lowering resolves
+the effective scalar type from its result value before the runner executes it.
 Dependency moves precede the overwrites they depend on; cycles save one
 destination into a reusable `phiTemporarySlot` before rotating the values.
 `temporarySlotCount` is zero without cycles and one otherwise. The temporary
@@ -213,9 +221,19 @@ When a terminator refers to a distinct successor pool range, that range is
 rewritten by the same target-occurrence identity as the source block's range.
 Mismatched adjacency multiplicities fail preflight without replacing a
 previously published projection. AOTIR owns the same move plan, but remains
-non-runnable. The move plan is executable by a slot consumer; no ExecBC
-instruction dispatcher or C/LLVM code generator consumes it yet, so this does
-not establish backend execution or oracle/ExecBC differential parity.
+non-runnable. `ZrParser_ExecBcProjection_Run` consumes the projection's owned
+instruction and CFG arrays with an isolated pointer-free slot environment.
+It supports the initial scalar/control opcode set, executes phi moves on the
+selected projected predecessor, and follows each terminator's rewritten
+successor range (which can differ from the block's successor range). An
+explicit step limit bounds loops; failed runs release the candidate slots
+without replacing an earlier result. Initial values are indexed by logical
+value ID, and the optional constants pool is indexed by `CONSTANT.layoutId`.
+The result owns its physical slots until `ZrParser_ExecBcExecutionResult_Free`.
+Only projections whose opcodes have a runner implementation are marked
+`runnable`; runtime effects and callbacks still require a later backend ABI.
+This small runner is not the VM's default ExecBC dispatcher, does not emit
+bytecode for it, and establishes no C/LLVM or effect-event parity.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a

@@ -1,5 +1,6 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_projections.h"
+#include "zr_vm_parser/exec_ir_execbc.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -205,8 +206,16 @@ static void test_projections_preserve_parallel_phi_edges(void) {
     SZrExecIrDiagnostic diagnostic;
     SZrExecBcProjection bytecode = {0};
     SZrAotIrProjection aot = {0};
+    SZrExecBcExecutionResult execution;
+    SZrExecIrRange instructionSuccessors;
+    TZrExecIrBlockId parallelSuccessors[2] = {2u, 2u};
 
     build_parallel_phi(&function);
+    check(ZrCore_ExecIr_FunctionAppendSuccessors(&function,
+                                                  parallelSuccessors, 2u,
+                                                  &instructionSuccessors),
+          "could not append separate terminator successor range");
+    function.instructions[3].successorRange = instructionSuccessors;
     check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic),
           "ExecBC projection rejected a valid parallel-edge phi");
     check(bytecode.syntheticBlockCount == 2u && bytecode.blockCount == 4u &&
@@ -226,8 +235,16 @@ static void test_projections_preserve_parallel_phi_edges(void) {
               bytecode.predecessors[bytecode.blocks[2].predecessors.start] == 1u &&
               bytecode.predecessors[bytecode.blocks[3].predecessors.start] == 1u &&
               bytecode.successors[bytecode.blocks[2].successors.start] == 2u &&
-              bytecode.successors[bytecode.blocks[3].successors.start] == 2u,
+              bytecode.successors[bytecode.blocks[3].successors.start] == 2u &&
+              bytecode.successors[bytecode.instructions[3].successorRange.start + 1u] == 4u,
           "ExecBC projection merged the two phi edge copies");
+    ZrParser_ExecBcExecutionResult_Init(&execution);
+    check(ZrParser_ExecBcProjection_Run(&bytecode, ZR_NULL, &execution,
+                                         &diagnostic) && execution.returned &&
+              execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+              execution.returnValue.as.signedInteger == 22,
+          "ExecBC runner bypassed phi moves on a separate terminator range");
+    ZrParser_ExecBcExecutionResult_Free(&execution);
     check(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic),
           "AOTIR projection rejected a valid parallel-edge phi");
     check(aot.syntheticBlockCount == 2u && aot.phiCopyCount == 2u &&
@@ -380,6 +397,9 @@ static void test_projection_schedules_cycles_and_dependencies(void) {
 static void test_verified_loop_backedge_phi_swap(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection bytecode = {0};
+    SZrExecBcExecutionResult execution;
+    SZrExecBcExecutionInput input = {0};
+    SZrExecIrOracleValue initial[2] = {0};
     SZrExecIrDiagnostic diagnostic;
     SZrExecIrRange empty = {.start = 0u, .count = 0u};
     SZrExecIrRange incomingRange;
@@ -462,13 +482,26 @@ static void test_verified_loop_backedge_phi_swap(void) {
                   diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
                   memcmp(before, physical, sizeof(before)) == 0,
               "phi consumer partially wrote slots before range validation");
-        check(!ZrParser_ExecBcProjection_ExecutePhiMoves(
+    check(!ZrParser_ExecBcProjection_ExecutePhiMoves(
                   &bytecode, loop, physical, 5u, reject_slot, physical,
                   &diagnostic) &&
                   diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
                   diagnostic.blockId == loop && diagnostic.actualVersion < bytecode.phiMoveCount,
               "phi consumer swallowed a slot-copy callback rejection");
     }
+    initial[0].kind = initial[1].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    initial[0].as.signedInteger = 11;
+    initial[1].as.signedInteger = 22;
+    input.initialValues = initial;
+    input.initialValueCount = 2u;
+    input.maxSteps = 3u;
+    ZrParser_ExecBcExecutionResult_Init(&execution);
+    check(!ZrParser_ExecBcProjection_Run(&bytecode, &input, &execution,
+                                          &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ORACLE_STEP_LIMIT &&
+              execution.slots == ZR_NULL,
+          "ExecBC loop runner failed to stop before a fourth instruction");
+    ZrParser_ExecBcExecutionResult_Free(&execution);
     ZrParser_ExecBcProjection_Free(&bytecode);
     ZrCore_ExecIr_FreeFunction(&function);
 }

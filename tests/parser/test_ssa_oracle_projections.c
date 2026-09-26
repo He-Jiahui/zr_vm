@@ -1,6 +1,7 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_projections.h"
+#include "zr_vm_parser/exec_ir_execbc.h"
 #include "zr_vm_parser/exec_ir_oracle.h"
 #include "zr_vm_common/zr_type_conf.h"
 
@@ -101,11 +102,15 @@ static void test_numeric_convert_oracle(void) {
     SZrExecIrFunction function;
     SZrExecIrOracleInput input;
     SZrExecIrOracleExecutionResult execution;
+    SZrExecBcExecutionInput bcInput;
+    SZrExecBcExecutionResult bcExecution;
+    SZrExecBcProjection bc = {0};
     SZrExecIrDiagnostic diagnostic;
     SZrExecIrOracleValue initial;
 
     build_convert_function(&function, ZR_VALUE_TYPE_INT64,
                             ZR_VALUE_TYPE_DOUBLE);
+    function.instructions[0].typeToken = 0u;
     memset(&input, 0, sizeof(input));
     input.function = &function;
     initial.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
@@ -118,6 +123,19 @@ static void test_numeric_convert_oracle(void) {
            execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT &&
            execution.returnValue.as.floating == -7.0);
     ZrCore_ExecIr_OracleResultFree(&execution);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.instructions[0].typeToken == ZR_VALUE_TYPE_DOUBLE);
+    memset(&bcInput, 0, sizeof(bcInput));
+    bcInput.initialValues = &initial;
+    bcInput.initialValueCount = 1u;
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(ZrParser_ExecBcProjection_Run(&bc, &bcInput, &bcExecution,
+                                          &diagnostic));
+    assert(bcExecution.returned &&
+           bcExecution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT &&
+           bcExecution.returnValue.as.floating == -7.0);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    ZrParser_ExecBcProjection_Free(&bc);
     ZrCore_ExecIr_FreeFunction(&function);
 
     build_convert_function(&function, ZR_VALUE_TYPE_DOUBLE,
@@ -134,6 +152,18 @@ static void test_numeric_convert_oracle(void) {
            execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
            execution.returnValue.as.signedInteger == -7);
     ZrCore_ExecIr_OracleResultFree(&execution);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    memset(&bcInput, 0, sizeof(bcInput));
+    bcInput.initialValues = &initial;
+    bcInput.initialValueCount = 1u;
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(ZrParser_ExecBcProjection_Run(&bc, &bcInput, &bcExecution,
+                                          &diagnostic));
+    assert(bcExecution.returned &&
+           bcExecution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           bcExecution.returnValue.as.signedInteger == -7);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    ZrParser_ExecBcProjection_Free(&bc);
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
@@ -520,6 +550,8 @@ static void test_move_consumes_source_and_rejects_reuse(void) {
     SZrExecIrFunction function;
     SZrExecIrOracleInput input;
     SZrExecIrOracleExecutionResult execution;
+    SZrExecBcProjection bc = {0};
+    SZrExecBcExecutionResult bcExecution;
     SZrExecIrDiagnostic diagnostic;
 
     build_move_function(&function, ZR_FALSE);
@@ -535,6 +567,15 @@ static void test_move_consumes_source_and_rejects_reuse(void) {
            execution.values[1].as.signedInteger == 17 &&
            execution.eventCount == 0u);
     ZrCore_ExecIr_OracleResultFree(&execution);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                          &diagnostic));
+    assert(bcExecution.returned &&
+           bcExecution.returnValue.as.signedInteger == 17 &&
+           bcExecution.slots[bc.valueSlots[0]].kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    ZrParser_ExecBcProjection_Free(&bc);
     ZrCore_ExecIr_FreeFunction(&function);
 
     build_move_function(&function, ZR_TRUE);
@@ -546,6 +587,14 @@ static void test_move_consumes_source_and_rejects_reuse(void) {
            diagnostic.instructionId == 3u && diagnostic.sourceId == 713u &&
            execution.eventCount == 0u);
     ZrCore_ExecIr_OracleResultFree(&execution);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                           &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+           bcExecution.slots == ZR_NULL);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    ZrParser_ExecBcProjection_Free(&bc);
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
@@ -910,6 +959,7 @@ static void test_scalar_oracle_and_projection(void) {
     SZrExecIrOracleExecutionResult execution;
     SZrExecIrOracleInput input;
     SZrExecBcProjection bc = {0};
+    SZrExecBcExecutionResult bcExecution;
     SZrAotIrProjection aot = {0};
     SZrExecIrDiagnostic diagnostic;
     build_scalar_function(&function);
@@ -928,9 +978,32 @@ static void test_scalar_oracle_and_projection(void) {
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructionCount == 4u && bc.opcodes[2] == ZR_EXEC_IR_OPCODE_ADD);
     assert(bc.valueSlotCount == function.valueCount && bc.runnable);
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                         &diagnostic));
+    assert(bcExecution.returned &&
+           bcExecution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           bcExecution.returnValue.as.signedInteger == 5);
+    {
+        SZrExecIrOracleValue constants[4];
+        SZrExecBcExecutionInput bcInput;
+        memset(constants, 0, sizeof(constants));
+        memset(&bcInput, 0, sizeof(bcInput));
+        constants[2].kind = constants[3].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        constants[2].as.signedInteger = INT64_MAX;
+        constants[3].as.signedInteger = 1;
+        bcInput.constants = constants;
+        bcInput.constantCount = 4u;
+        assert(!ZrParser_ExecBcProjection_Run(&bc, &bcInput, &bcExecution,
+                                               &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_ARITHMETIC_ERROR &&
+               bcExecution.returned &&
+               bcExecution.returnValue.as.signedInteger == 5);
+    }
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
     assert(aot.signatureHash == 99u && aot.functionToken == 7u && !aot.runnable);
     ZrParser_ExecBcProjection_Free(&bc);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
     ZrParser_AotIrProjection_Free(&aot);
     ZrCore_ExecIr_OracleResultFree(&execution);
     ZrCore_ExecIr_FreeFunction(&function);
@@ -940,6 +1013,8 @@ static void test_branch_phi_oracle(void) {
     SZrExecIrFunction function;
     SZrExecIrOracleExecutionResult execution;
     SZrExecIrOracleInput input;
+    SZrExecBcProjection bc = {0};
+    SZrExecBcExecutionResult bcExecution;
     SZrExecIrDiagnostic diagnostic;
     build_branch_phi_function(&function);
     memset(&execution, 0, sizeof(execution));
@@ -950,6 +1025,41 @@ static void test_branch_phi_oracle(void) {
     assert(execution.returnValue.as.signedInteger == 2 &&
            execution.executedInstructionCount == 5u);
     ZrCore_ExecIr_OracleResultFree(&execution);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.runnable && bc.blockCount == 4u);
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                          &diagnostic));
+    assert(bcExecution.returned &&
+           bcExecution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+           bcExecution.returnValue.as.signedInteger == 2 &&
+           bcExecution.executedInstructionCount == 5u);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    {
+        SZrExecIrOracleValue constants[4];
+        memset(constants, 0, sizeof(constants));
+        constants[1].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        constants[1].as.signedInteger = 0;
+        constants[2].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        constants[2].as.signedInteger = 11;
+        constants[3].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+        constants[3].as.signedInteger = 17;
+        memset(&bcExecution, 0, sizeof(bcExecution));
+        ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+        {
+            SZrExecBcExecutionInput bcInput;
+            memset(&bcInput, 0, sizeof(bcInput));
+            bcInput.constants = constants;
+            bcInput.constantCount = 4u;
+            assert(ZrParser_ExecBcProjection_Run(&bc, &bcInput,
+                                                  &bcExecution, &diagnostic));
+        }
+        assert(bcExecution.returned &&
+               bcExecution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
+               bcExecution.returnValue.as.signedInteger == 17);
+        ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    }
+    ZrParser_ExecBcProjection_Free(&bc);
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
@@ -1846,6 +1956,7 @@ static void test_unsupported_and_transactional_failures(void) {
     SZrAotIrProjection aot = {0};
     SZrExecIrDiagnostic diagnostic;
     SZrExecBcInstruction *oldInstructions;
+    SZrExecBcExecutionResult bcExecution;
     TZrUInt32 oldCount, oldAotCount;
     build_scalar_function(&function);
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
@@ -1865,6 +1976,11 @@ static void test_unsupported_and_transactional_failures(void) {
         assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
         assert(bc.instructions[0u].opcode == iteratorOpcodes[index] &&
                bc.instructions[0u].operands.count == 1u && !bc.runnable);
+        ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+        assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                               &diagnostic));
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+        ZrParser_ExecBcExecutionResult_Free(&bcExecution);
         oldInstructions = bc.instructions;
         oldCount = bc.instructionCount;
         assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
@@ -1881,6 +1997,11 @@ static void test_unsupported_and_transactional_failures(void) {
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD &&
            !bc.runnable);
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                           &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
     oldInstructions = bc.instructions;
     oldCount = bc.instructionCount;
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
@@ -1898,6 +2019,11 @@ static void test_unsupported_and_transactional_failures(void) {
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_INVOKE &&
            !bc.runnable);
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                           &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
     oldInstructions = bc.instructions;
     oldCount = bc.instructionCount;
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));

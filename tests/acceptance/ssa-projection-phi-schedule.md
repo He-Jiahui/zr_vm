@@ -43,8 +43,9 @@ The cycle fixture checks scheduling algebra on a projected graph, while
 `test_verified_loop_backedge_phi_swap` also verifies a two-block, external-entry
 loop with `STRUCTURE | SSA` before executing the entry and backedge move plans.
 The production phi consumer is now exercised for both edges and for missing
-callback and undersized-slot failures. A scalar instruction dispatcher and
-full oracle/ExecBC event differential remain subsequent 01.05 gates.
+callback and undersized-slot failures. A separate scalar/control projection
+runner is covered in `ssa-execbc-scalar-runner.md`; full oracle/ExecBC effect
+event differential remains a subsequent 01.05 gate.
 
 ## Validation (2026-09-26)
 
@@ -69,6 +70,6 @@ The copy scheduler runs inside transactional projection construction. It
 allocates only the pending-copy workspace and result array, frees both on
 failed preparation, and transfers the result into ExecBC or AOTIR ownership
 on success. It has no cancellation callback; repeated lowering and output
-replacement use the existing projection API. This is not emitted ExecBC,
-oracle/ExecBC event comparison, or native C/LLVM execution. Plan 01.05 and
-the full M1 gate remain open.
+replacement use the existing projection API. The runner consumes this plan,
+but is not emitted/default VM ExecBC or native C/LLVM execution. Plan 01.05
+and the full M1 gate remain open.

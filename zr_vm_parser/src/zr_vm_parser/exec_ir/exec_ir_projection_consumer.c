@@ -4,7 +4,7 @@
 
 TZrBool ZrParser_ExecBcProjection_ExecutePhiMoves(
         const SZrExecBcProjection *projection, TZrExecIrBlockId edge,
-        TZrUInt32 *slots, TZrUInt32 slotCount,
+        void *slots, TZrUInt32 slotCount,
         FZrExecBcPhiMoveConsumer consumer, void *userData,
         SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
