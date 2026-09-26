@@ -41,6 +41,8 @@ ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);
+TZrBool ZrLanguageServer_SemanticAnalyzer_TypecheckValueChildren(
+        SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node);
 SZrString *ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(SZrState *state, SZrAstNode *node);
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_IsImplicitRuntimeIdentifier(SZrString *name);
@@ -120,11 +122,12 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAna
                                                                   const SZrInferredType *typeInfo,
                                                                   EZrSemanticTypeKind typeKind);
 
-void ZrLanguageServer_SemanticAnalyzer_RecordTemplateStringSegments(SZrSemanticAnalyzer *analyzer,
-                                                                    SZrAstNode *node);
-
-void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyzer *analyzer,
-                                                              SZrAstNode *resource);
+void ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(
+        SZrState *state, SZrTypeEnvironment *typeEnv, SZrString *name,
+        SZrInferredType *typeInfo, SZrSymbol *symbol);
+void ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+        SZrState *state, SZrSemanticAnalyzer *analyzer, SZrString *name,
+        const SZrInferredType *typeInfo, SZrAstNode *declarationNode);
 
 void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,
                                                                       SZrSemanticAnalyzer *analyzer,

@@ -3,6 +3,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_identifier_facts.c
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_assignment_join.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_refinement.c
@@ -11,6 +12,7 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_identifier_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_assignment_join.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_refinement.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_loop_assignment_scope.c
@@ -19,6 +21,7 @@ plan_sources:
   - user: 2026-07-28 optimize semantic inference and record each completed LSP milestone
 tests:
   - tests/parser/test_expression_fragment_parser.c
+  - tests/parser/test_semantic_declaration_binding_cases.h
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e2b0-canonical-binding-injection.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b4-structured-runtime-root-reference-origin.md
 doc_type: module-detail
@@ -57,6 +60,13 @@ externally injected binding, each fact therefore contains the supplied
 parser and ordinary inference path remain unchanged; no debug-specific grammar,
 AST reconstruction, name lookup fallback, or synthetic `any` type is
 introduced.
+
+Publication requires a nonzero source `SymbolId` and a declaration range, but
+does not require that opaque identity to have a record in the current context.
+Read and write queries retain the supplied IDs and range without manufacturing
+a local declaration node. Inference-only temporaries still have no declaration
+range and publish no source reference. An unavailable `TypeId=0` is accepted only
+for an existing local canonical declaration, not for external injection.
 
 ## Structured Runtime-Root Origin
 

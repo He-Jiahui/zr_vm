@@ -331,6 +331,24 @@ static void test_direct_value_slot_skips_inline_member_probe(void) {
     TEST_ASSERT_FALSE(ZrCore_Function_IsDirectFrameValueSlot(&function, 0u));
 }
 
+static void test_direct_value_slot_rejects_unpacked_runtime_marker(void) {
+    SZrFunctionFrameSlotLayout layout = {0};
+    SZrFunction function = {0};
+
+    layout.stackSlot = 0u;
+    layout.byteOffset = (TZrUInt32)sizeof(SZrTypeValueOnStack) + 1u;
+    layout.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout.byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout.slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    layout.reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
+    function.stackSize = 1u;
+    function.frameSlotLayouts = &layout;
+    function.frameSlotLayoutLength = 1u;
+
+    TEST_ASSERT_FALSE(ZrCore_Function_IsDirectFrameValueSlot(&function, 0u));
+    TEST_ASSERT_NULL(ZrCore_Function_TryGetDirectFrameValueSlot(&function, ZR_NULL, 0u));
+}
+
 static void test_frame_value_slot_profile_helper_names_are_append_only(void) {
     TEST_ASSERT_EQUAL_STRING(
             "frame_value_slot_direct",
@@ -953,6 +971,7 @@ int main(void) {
     RUN_TEST(test_direct_value_slot_rejects_untrusted_derived_flags);
     RUN_TEST(test_finalized_direct_value_slot_survives_frame_initialization);
     RUN_TEST(test_direct_value_slot_skips_inline_member_probe);
+    RUN_TEST(test_direct_value_slot_rejects_unpacked_runtime_marker);
     RUN_TEST(test_frame_value_slot_profile_helper_names_are_append_only);
     RUN_TEST(test_frame_value_parameter_copy_profile_helper_names_are_append_only);
     RUN_TEST(test_frame_value_drop_profile_helper_names_are_append_only);

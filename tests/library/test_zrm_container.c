@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include "harness/path_support.h"
+#include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/zrm.h"
 
@@ -8,6 +9,7 @@
 #include "miniz.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,6 +52,22 @@ static TZrBool read_entry_text_contains(const SZrLibrary_ZrmArchive *archive,
              strstr((const TZrChar *)bytes, fragment) != ZR_NULL;
     ZrLibrary_Zrm_FreeBytes(bytes);
     return result;
+}
+
+static TZrBool contains_bytes(const TZrByte *bytes,
+                              TZrSize length,
+                              const void *value,
+                              TZrSize size) {
+    TZrSize offset;
+    if (bytes == ZR_NULL || value == ZR_NULL || size == 0u || size > length) {
+        return ZR_FALSE;
+    }
+    for (offset = 0u; offset + size <= length; ++offset) {
+        if (memcmp(bytes + offset, value, size) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
 }
 
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *text) {
@@ -201,6 +219,108 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     TEST_ASSERT_TRUE(read_entry_text_contains(&archive, ZR_LIBRARY_ZRM_MANIFEST_ENTRY, "\"resources\""));
 
     ZrLibrary_Zrm_Close(&archive);
+}
+
+static void test_zrm_roundtrip_preserves_pointer_free_call_binding_payload(void) {
+    TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+    TZrChar error[512];
+    SZrLibrary_ZrmAssemblyInfo assembly;
+    SZrLibrary_ZrmPackModule module;
+    SZrLibrary_ZrmPackRequest request;
+    SZrLibrary_ZrmArchive archive;
+    const SZrLibrary_ZrmEntryInfo *moduleEntry;
+    SZrArtifactCallBindingRow row;
+    SZrArtifactCallBindingRow decoded;
+    SZrArtifactSectionView section;
+    SZrArtifactDiagnostic diagnostic;
+    SZrCallBinding runtimeBinding;
+    TZrByte moduleBytes[ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE];
+    TZrByte *roundtripBytes = ZR_NULL;
+    TZrSize roundtripLength = 0u;
+    SZrFunction *addressSentinel = (SZrFunction *)(uintptr_t)0x123456789abcdef0ULL;
+
+    memset(&row, 0, sizeof(row));
+    row.schemaVersion = ZR_CALL_BINDING_SCHEMA_VERSION;
+    row.functionIndex = 1u;
+    row.cacheIndex = 2u;
+    row.instructionIndex = 3u;
+    row.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
+    row.contract.targetMetadataToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
+    row.contract.signatureToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 9u);
+    row.contract.signatureHash = 0x1020304050607080ULL;
+    row.contract.moduleSignatureHash = 0x9080706050403020ULL;
+    row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+    row.location.kind = ZR_CALL_BINDING_RELOCATION_CONSTANT;
+    row.location.targetIndex = 4u;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_WriteCallBindingRow(&row,
+                                                moduleBytes,
+                                                sizeof(moduleBytes),
+                                                &diagnostic));
+    memset(&runtimeBinding, 0, sizeof(runtimeBinding));
+    runtimeBinding.target.targetKind = ZR_CALL_BINDING_TARGET_VM;
+    runtimeBinding.target.vm.function = addressSentinel;
+    TEST_ASSERT_EQUAL_PTR(addressSentinel, runtimeBinding.target.vm.function);
+    TEST_ASSERT_FALSE(contains_bytes(moduleBytes,
+                                     sizeof(moduleBytes),
+                                     &runtimeBinding.target.vm.function,
+                                     sizeof(runtimeBinding.target.vm.function)));
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library", "zrm_container",
+                                                       "call_binding", ".zrm",
+                                                       archivePath, sizeof(archivePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library", "zrm_container",
+                                                       "call_binding", ".zro",
+                                                       modulePath, sizeof(modulePath)));
+    TEST_ASSERT_TRUE(write_bytes_file(modulePath, moduleBytes, sizeof(moduleBytes)));
+
+    memset(&assembly, 0, sizeof(assembly));
+    assembly.name = "zr.call-binding";
+    assembly.version = "1.0.0";
+    assembly.kind = "library";
+    assembly.entryModule = "main";
+    assembly.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
+    assembly.publicContractHash = "call-binding-contract";
+    memset(&module, 0, sizeof(module));
+    module.moduleKey = "main";
+    module.sourcePath = modulePath;
+    module.hash = "call-binding-module";
+    memset(&request, 0, sizeof(request));
+    request.outputPath = archivePath;
+    request.assembly = assembly;
+    request.modules = &module;
+    request.moduleCount = 1u;
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)), error);
+
+    memset(&archive, 0, sizeof(archive));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)), error);
+    moduleEntry = ZrLibrary_Zrm_FindModule(&archive, "main");
+    TEST_ASSERT_NOT_NULL(moduleEntry);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Zrm_ReadEntry(&archive,
+                                                     moduleEntry->entryName,
+                                                     &roundtripBytes,
+                                                     &roundtripLength,
+                                                     error,
+                                                     sizeof(error)), error);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(moduleBytes), (TZrUInt32)roundtripLength);
+    TEST_ASSERT_EQUAL_MEMORY(moduleBytes, roundtripBytes, sizeof(moduleBytes));
+
+    memset(&section, 0, sizeof(section));
+    section.kind = ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE;
+    section.elementSize = ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE;
+    section.elementCount = 1u;
+    section.byteLength = sizeof(moduleBytes);
+    section.data = roundtripBytes;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &decoded, &diagnostic));
+    TEST_ASSERT_EQUAL_MEMORY(&row, &decoded, sizeof(row));
+
+    ZrLibrary_Zrm_FreeBytes(roundtripBytes);
+    ZrLibrary_Zrm_Close(&archive);
+    remove(archivePath);
+    remove(modulePath);
 }
 
 static void test_zrm_compile_tool_uses_versioned_executable_section(void) {
@@ -684,6 +804,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_zrm_pack_writes_manifest_modules_and_deflated_resources);
+    RUN_TEST(test_zrm_roundtrip_preserves_pointer_free_call_binding_payload);
     RUN_TEST(test_zrm_compile_tool_uses_versioned_executable_section);
     RUN_TEST(test_zrm_rejects_unsafe_and_duplicate_logical_names);
     RUN_TEST(test_zrm_open_rejects_missing_manifest_and_corrupt_zip);

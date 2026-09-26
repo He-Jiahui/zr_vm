@@ -2480,6 +2480,8 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
 #include "test_semantic_scope_symbol_lifetime_cases.h"
 #include "test_semantic_external_provider_generation_cases.h"
 
+#include "test_semantic_declaration_binding_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_scope_facts_preserve_generic_class_owner_after_symbol_growth);
@@ -2491,6 +2493,11 @@ int main(void) {
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
     RUN_TEST(test_symbol_at_fails_closed_for_unresolved_reference);
     RUN_TEST(test_visible_symbols_rejects_one_sided_source_identity);
+    RUN_TEST(test_declaration_bindings_share_identity_across_environments);
+    RUN_TEST(test_unknown_declaration_remains_queryable_without_object_type);
+    RUN_TEST(test_anonymous_inference_bindings_do_not_publish_source_queries);
+    RUN_TEST(test_external_binding_reads_and_writes_preserve_opaque_identity);
+    RUN_TEST(test_implicit_construction_publishes_type_declaration_identity);
     RUN_TEST(test_visible_symbols_uses_scope_facts_for_shadowing_and_options);
     RUN_TEST(test_visible_symbols_excludes_instance_members_from_static_scope);
     RUN_TEST(test_visible_symbols_project_compiled_source_scope_facts);

@@ -398,6 +398,49 @@ static void test_zr_ffi_can_load_fixture_and_call_primitive_symbols(void) {
     ZR_TEST_DIVIDER();
 }
 
+static void test_zr_ffi_preserves_64_bit_integer_precision(void) {
+    static const TZrChar *kSourceTemplate =
+            "var ffi = import(\"zr.ffi\");\n"
+            "var lib = ffi.loadLibrary(\"%s\");\n"
+            "var identityU64 = lib.getSymbol(\"zr_ffi_identity_u64\", {\n"
+            "  returnType: \"u64\",\n"
+            "  parameters: [{ type: \"u64\" }]\n"
+            "});\n"
+            "var identityI64 = lib.getSymbol(\"zr_ffi_identity_i64\", {\n"
+            "  returnType: \"i64\",\n"
+            "  parameters: [{ type: \"i64\" }]\n"
+            "});\n"
+            "var high = identityU64.call([9007199254740993]);\n"
+            "var signed = identityI64.call([-9007199254740991]);\n"
+            "return high == 9007199254740993 && signed == -9007199254740991;\n";
+    SZrTestTimer timer;
+    char source[4096];
+    char escapedPath[4096];
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue result;
+
+    ZR_TEST_START("zr.ffi preserves 64-bit integer precision");
+    timer.startTime = clock();
+
+    escape_for_zr_string_literal(escapedPath, sizeof(escapedPath), ZR_VM_FFI_FIXTURE_PATH);
+    snprintf(source, sizeof(source), kSourceTemplate, escapedPath);
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "ffi_64_bit_integer_precision.zr");
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.type);
+    TEST_ASSERT_TRUE(result.value.nativeObject.nativeBool);
+
+    ZrCore_Function_Free(state, entryFunction);
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi preserves 64-bit integer precision");
+    ZR_TEST_DIVIDER();
+}
+
 static void test_zr_ffi_can_roundtrip_struct_symbols(void) {
     static const TZrChar *kSourceTemplate =
             "var ffi = import(\"zr.ffi\");\n"
@@ -1509,6 +1552,7 @@ int main(void) {
     RUN_TEST(test_zr_ffi_import_exposes_known_types_and_functions);
     RUN_TEST(test_zr_ffi_buffer_handle_allocate_is_callable);
     RUN_TEST(test_zr_ffi_can_load_fixture_and_call_primitive_symbols);
+    RUN_TEST(test_zr_ffi_preserves_64_bit_integer_precision);
     RUN_TEST(test_zr_ffi_can_roundtrip_struct_symbols);
     RUN_TEST(test_zr_ffi_buffer_and_pointer_methods_work);
     RUN_TEST(test_zr_ffi_can_fill_buffer_via_symbol);

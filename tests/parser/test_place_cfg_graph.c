@@ -305,6 +305,86 @@ static void test_place_overlap_reports_all_four_states(void) {
     ZrParser_PlaceGraph_Free(g_state, &graph);
 }
 
+static void test_place_overlap_preserves_aliases_after_divergent_projections(void) {
+    static const EZrParserPlaceProjectionKind kinds[] = {
+        ZR_PARSER_PLACE_PROJECTION_FIELD,
+        ZR_PARSER_PLACE_PROJECTION_CONSTANT_INDEX,
+        ZR_PARSER_PLACE_PROJECTION_TUPLE_ELEMENT,
+    };
+    SZrParserPlaceGraph graph;
+    SZrParserPlaceProjection dereference;
+    TZrPlaceId base;
+    TZrSize index;
+
+    ZrParser_PlaceGraph_Init(g_state, &graph);
+    base = add_local(&graph, 1U, 0U);
+    memset(&dereference, 0, sizeof(dereference));
+    dereference.kind = ZR_PARSER_PLACE_PROJECTION_DEREFERENCE;
+
+    for (index = 0U; index < ZR_ARRAY_COUNT(kinds); index++) {
+        TZrPlaceId left = project(
+                &graph, base, projection_index(kinds[index], 10U), 2U);
+        TZrPlaceId right = project(
+                &graph, base, projection_index(kinds[index], 11U), 4U);
+        TZrPlaceId leftTarget = project(&graph, left, dereference, 6U);
+        TZrPlaceId rightTarget = project(&graph, right, dereference, 8U);
+
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PARSER_PLACE_DISJOINT,
+                ZrParser_PlaceGraph_Overlap(&graph, left, right));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PARSER_PLACE_UNKNOWN,
+                ZrParser_PlaceGraph_Overlap(&graph, leftTarget, rightTarget));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PARSER_PLACE_UNKNOWN,
+                ZrParser_PlaceGraph_Overlap(&graph, rightTarget, leftTarget));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PARSER_PLACE_UNKNOWN,
+                ZrParser_PlaceGraph_Overlap(&graph, leftTarget, right));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PARSER_PLACE_UNKNOWN,
+                ZrParser_PlaceGraph_Overlap(&graph, right, leftTarget));
+    }
+
+    ZrParser_PlaceGraph_Free(g_state, &graph);
+}
+
+static void test_place_overlap_preserves_disjoint_fields_after_shared_dereference(void) {
+    SZrParserPlaceGraph graph;
+    SZrParserPlaceProjection dereference;
+    TZrPlaceId base;
+    TZrPlaceId target;
+    TZrPlaceId left;
+    TZrPlaceId right;
+    TZrPlaceId leftTarget;
+
+    ZrParser_PlaceGraph_Init(g_state, &graph);
+    base = add_local(&graph, 1U, 0U);
+    memset(&dereference, 0, sizeof(dereference));
+    dereference.kind = ZR_PARSER_PLACE_PROJECTION_DEREFERENCE;
+    target = project(&graph, base, dereference, 2U);
+    left = project(&graph, target,
+                   projection_symbol(ZR_PARSER_PLACE_PROJECTION_FIELD, 10U), 4U);
+    right = project(&graph, target,
+                    projection_symbol(ZR_PARSER_PLACE_PROJECTION_FIELD, 11U), 6U);
+    leftTarget = project(&graph, left, dereference, 8U);
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_PLACE_EQUAL,
+            ZrParser_PlaceGraph_Overlap(&graph, target, target));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_PLACE_DISJOINT,
+            ZrParser_PlaceGraph_Overlap(&graph, left, right));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_PLACE_DISJOINT,
+            ZrParser_PlaceGraph_Overlap(&graph, right, left));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_PLACE_UNKNOWN,
+            ZrParser_PlaceGraph_Overlap(&graph, leftTarget, right));
+
+    ZrParser_PlaceGraph_Free(g_state, &graph);
+}
+
 static TZrUInt32 append_block(SZrParserCfg *cfg, EZrParserCfgBlockKind kind) {
     TZrUInt32 blockId = ZrParser_Cfg_AppendBlock(g_state, cfg, kind, ZR_NULL);
 
@@ -567,6 +647,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_place_graph_covers_all_bases_and_projections);
     RUN_TEST(test_place_overlap_reports_all_four_states);
+    RUN_TEST(test_place_overlap_preserves_aliases_after_divergent_projections);
+    RUN_TEST(test_place_overlap_preserves_disjoint_fields_after_shared_dereference);
     RUN_TEST(test_cfg_edges_are_extensible_and_typed);
     RUN_TEST(test_cfg_builder_labels_return_and_branch_edges);
     RUN_TEST(test_cfg_builder_models_direct_await_suspend_and_resume);

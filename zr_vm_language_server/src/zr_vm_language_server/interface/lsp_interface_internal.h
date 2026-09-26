@@ -177,6 +177,7 @@ typedef struct SZrLspProjectIndex {
     TZrSize publicContractHashChangeCount;
     TZrSize publicContractHashUnavailableCount;
     SZrArray files; // SZrLspProjectFileRecord*
+    SZrArray activeModuleLoads; // SZrString*
 } SZrLspProjectIndex;
 
 typedef enum EZrLspImportedModuleSourceKind {

@@ -9,7 +9,6 @@ const {
     createTransportAwareLanguageClientLifecycle,
     isBenignLanguageClientStopError,
     isTransportDestroyedError,
-    stopLanguageClientSafely,
 } = require('../out/languageClientLifecycle.js');
 
 class FakeClient {
@@ -87,28 +86,13 @@ test('delegates close handling and clears transport-broken state after running a
     assert.equal(lifecycle.isTransportBroken(), false);
 });
 
-test('skips graceful stop when transport is already broken', async () => {
-    const lifecycle = createTransportAwareLanguageClientLifecycle();
+test('a retired session never delegates automatic restart after connection closure', async () => {
+    let retired = false;
+    const lifecycle = createTransportAwareLanguageClientLifecycle(undefined, () => retired);
     const client = new FakeClient();
-
     lifecycle.attachClient(client);
-    await lifecycle.errorHandler.error(
-        Object.assign(new Error('Cannot call write after a stream was destroyed'), { code: 'ERR_STREAM_DESTROYED' }),
-        undefined,
-        undefined,
-    );
-
-    await stopLanguageClientSafely(client, lifecycle, 10);
-
-    assert.equal(client.stopCalls, 0);
-});
-
-test('uses graceful stop while transport is healthy', async () => {
-    const lifecycle = createTransportAwareLanguageClientLifecycle();
-    const client = new FakeClient();
-
-    lifecycle.attachClient(client);
-    await stopLanguageClientSafely(client, lifecycle, 10);
-
-    assert.equal(client.stopCalls, 1);
+    assert.equal((await lifecycle.errorHandler.closed()).action, CLOSE_ACTION_RESTART);
+    retired = true;
+    assert.equal((await lifecycle.errorHandler.closed()).action, 1);
+    lifecycle.dispose();
 });

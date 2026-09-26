@@ -50,6 +50,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatType(
         TZrTypeId typeId,
         TZrChar *buffer,
         TZrSize bufferSize);
+/* Source generic names require the exact canonical owner declaration and ordinal. */
+ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatSourceType(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId,
+        TZrChar *buffer,
+        TZrSize bufferSize);
 ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatSymbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,

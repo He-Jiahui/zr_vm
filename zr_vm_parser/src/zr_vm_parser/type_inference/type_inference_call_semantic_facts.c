@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/semantic_type_use.h"
 #include "zr_vm_parser/syntax_contract.h"
 #include "zr_vm_parser/type_inference.h"
 
@@ -934,6 +935,16 @@ void type_inference_record_construct_call_facts(
     target = type_inference_construct_call_target(node);
     constructor = type_inference_construct_call_member(
             cs, target, constructedType->typeName, &temporaryConstructor);
+    if (target != ZR_NULL && constructor == ZR_NULL &&
+        target->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrType typeUse;
+        memset(&typeUse, 0, sizeof(typeUse));
+        typeUse.name = target;
+        (void)ZrParser_SemanticTypeUse_Publish(
+                cs->semanticContext, &typeUse,
+                ZrParser_CanonicalType_FromInferred(cs->semanticContext, constructedType),
+                ZR_TRUE);
+    }
     if (target == ZR_NULL || constructor == ZR_NULL || constructor->name == ZR_NULL) {
         type_inference_source_constructor_member_free(cs, &temporaryConstructor);
         return;

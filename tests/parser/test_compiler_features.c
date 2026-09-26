@@ -2489,8 +2489,8 @@ void test_function_frame_layout_metadata_keeps_large_struct_arithmetic_temps_pla
     {
         const char *source =
             "pub struct WidePoint {\n"
-            "    var a: int; var b: int; var c: int; var d: int; var e: int;\n"
-            "    var f: int; var g: int; var h: int; var i: int; var j: int;\n"
+            "    pub var a: int; var b: int; var c: int; var d: int; pub var e: int;\n"
+            "    var f: int; var g: int; var h: int; var i: int; pub var j: int;\n"
             "    pub @constructor(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int) {\n"
             "        this.a = a; this.b = b; this.c = c; this.d = d; this.e = e;\n"
             "        this.f = f; this.g = g; this.h = h; this.i = i; this.j = j;\n"

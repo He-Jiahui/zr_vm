@@ -59,7 +59,11 @@ async function main() {
     const extensionDevelopmentPath = path.resolve(__dirname, '..');
     const extensionTestsPath = path.resolve(__dirname, '..', 'test', 'smoke', 'electronRunner.js');
     const repoRoot = path.resolve(__dirname, '..', '..');
-    const workspacePath = path.resolve(repoRoot, 'tests', 'fixtures', 'projects', 'import_basic');
+    const workspacePath = path.resolve(process.env.ZR_TEST_WORKSPACE_PATH ||
+        path.join(repoRoot, 'tests', 'fixtures', 'projects', 'import_basic'));
+    if (!fs.statSync(workspacePath).isDirectory()) {
+        throw new Error(`Smoke workspace is not a directory: ${workspacePath}`);
+    }
     const nativeServerPath = resolveNativeServerPath(repoRoot);
 
     if (!nativeServerPath) {

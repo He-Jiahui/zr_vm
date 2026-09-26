@@ -57,7 +57,7 @@ static void test_registry_metadata_matches_current_implementations(void) {
             {"documentSymbolProvider", "ZrLanguageServer_Lsp_GetDocumentSymbols",
              "handle_document_symbols_request", "wasm_ZrLspGetDocumentSymbols", "language_server_stdio_smoke"},
             {"workspaceSymbolProvider", "ZrLanguageServer_Lsp_GetWorkspaceSymbols",
-             "handle_workspace_symbols_request", "wasm_ZrLspGetWorkspaceSymbols",
+             "handle_workspace_symbols_request", ZR_NULL,
              "language_server_stdio_resolve_capabilities_smoke"},
             {"documentHighlightProvider", "ZrLanguageServer_Lsp_GetDocumentHighlights",
              "handle_document_highlights_request", "wasm_ZrLspGetDocumentHighlights", "language_server_stdio_smoke"},

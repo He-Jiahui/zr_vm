@@ -578,6 +578,13 @@ cases (progress, lifecycle, protocol and optional capabilities). Clang reports n
 sanitizer diagnostic. Cross-toolchain evidence is tracked in [Plan 01 Task 4
 Sub05](../plans/lsp/optimize/2026-09-07-plan01-task04-sub05-partial-result-cancellation.md).
 
+Workspace diagnostic partial results finish with `{"items":[]}`, including when
+there were no reports to stream. The final response must retain the non-null
+`WorkspaceDiagnosticReport` shape consumed by VS Code. The progress tests cover
+ordered 64+1 batches, empty reports, cancellation, omitted tokens and allocation
+failures while constructing the completion object; failures preserve the original
+owned result. Array-result methods retain their existing `null` completion.
+
 `language_server_provider_cancellation` checks seven provider projection loops:
 workspace symbols, document symbols, references, rename, incoming calls, outgoing
 calls and subtypes. Each case first obtains multiple results, installs a callback

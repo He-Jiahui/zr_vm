@@ -1068,6 +1068,7 @@ static const TZrChar *g_classes_full_fixture =
     "        BossHero.created = BossHero.created + 1;\n"
     "    }\n"
     "\n"
+    "    // Calculates the boss total score.\n"
     "    pub fn total(): int {\n"
     "        return this.hp + ScoreBoard.bonus + BossHero.created;\n"
     "    }\n"
@@ -2764,6 +2765,8 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
     SZrLspPosition bossMemberCompletion;
     SZrLspPosition scoreBoardCompletion;
     SZrLspPosition bossHeroDefinition;
+    SZrLspPosition totalUsage;
+    SZrLspHover *totalHover = ZR_NULL;
     SZrFileRange bossHeroDefinitionRange;
     SZrFileRange bossHeroUsageRange;
     SZrParserSemanticSymbolQuery bossHeroDeclarationQuery;
@@ -2807,6 +2810,16 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
         return;
     }
     ZrCore_Array_Free(state, &diagnostics);
+
+    if (!lsp_find_position_for_substring(g_classes_full_fixture, "boss.total()", 0, 5, &totalUsage) ||
+        !ZrLanguageServer_Lsp_GetHover(state, context, uri, totalUsage, &totalHover) ||
+        totalHover == ZR_NULL ||
+        !hover_contains_text(totalHover, "Calculates the boss total score.")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Class Member Navigation And Completion",
+                  "Canonical method-call hover should retain leading declaration comments");
+        return;
+    }
 
     if (!lsp_find_position_for_substring(g_classes_full_fixture, "boss: BossHero", 0, 6, &bossUsage) ||
         !lsp_find_position_for_substring(g_classes_full_fixture, "BossHero: BaseHero", 0, 0, &bossHeroDefinition) ||
@@ -8911,6 +8924,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 }
 
 #include "test_lsp_snapshot_cache_cases.h"
+#include "test_lsp_field_reference_cases.h"
 #include "test_lsp_reference_callable_consumer_cases.h"
 #include "test_lsp_property_contract_cases.h"
 #include "test_lsp_canonical_receiver_member_type_cases.h"
@@ -9076,6 +9090,8 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_class_member_navigation_and_completion(state);
+    test_lsp_field_references_preserve_access_and_identity(state);
+    test_lsp_inaccessible_and_missing_fields_keep_diagnostics(state);
     TEST_DIVIDER();
 
     test_lsp_hover_and_completion_include_comments(state);

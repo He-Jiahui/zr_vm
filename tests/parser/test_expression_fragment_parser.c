@@ -510,6 +510,46 @@ static void test_script_releases_destructuring_and_partial_declarations(void) {
     ZrParser_State_Free(&parserState);
 }
 
+static void assert_template_comment_preserves_addition(const char *source) {
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *expression = parse_fragment(source, &capture, &parserState);
+    SZrAstNodeArray *segments;
+    SZrAstNode *addition;
+
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_FALSE(parserState.hasError);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TEMPLATE_STRING_LITERAL, expression->type);
+    segments = expression->data.templateStringLiteral.segments;
+    TEST_ASSERT_NOT_NULL(segments);
+    TEST_ASSERT_EQUAL_UINT64(3, segments->count);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRING_LITERAL, segments->nodes[0]->type);
+    TEST_ASSERT_EQUAL_STRING("", ZrCore_String_GetNativeString(segments->nodes[0]->data.stringLiteral.value));
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTERPOLATED_SEGMENT, segments->nodes[1]->type);
+    addition = segments->nodes[1]->data.interpolatedSegment.expression;
+    TEST_ASSERT_NOT_NULL(addition);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BINARY_EXPRESSION, addition->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL, addition->data.binaryExpression.left->type);
+    TEST_ASSERT_EQUAL_INT64(1, addition->data.binaryExpression.left->data.integerLiteral.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL, addition->data.binaryExpression.right->type);
+    TEST_ASSERT_EQUAL_INT64(2, addition->data.binaryExpression.right->data.integerLiteral.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRING_LITERAL, segments->nodes[2]->type);
+    TEST_ASSERT_EQUAL_STRING("", ZrCore_String_GetNativeString(segments->nodes[2]->data.stringLiteral.value));
+    ZrParser_Ast_Free(g_state, expression);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_template_interpolation_skips_block_comment_delimiters(void) {
+    assert_template_comment_preserves_addition("`${1 + /* } */ 2}`");
+    assert_template_comment_preserves_addition("`${1 /* } */ + 2}`");
+    assert_template_comment_preserves_addition("`${1 + /* { } ' \" */ 2}`");
+}
+
+static void test_template_interpolation_skips_line_comment_delimiters(void) {
+    assert_template_comment_preserves_addition("`${1 + // } ' \" {\n2}`");
+    assert_template_comment_preserves_addition("`${1 // }\r\n + 2}`");
+}
+
 static void test_compiler_state_releases_child_function_name_map(void) {
     SZrCompilerState compilerState;
 
@@ -535,6 +575,8 @@ int main(void) {
     RUN_TEST(test_script_releases_module_declaration_subtree);
     RUN_TEST(test_script_releases_decorator_lookahead_subtree);
     RUN_TEST(test_script_releases_destructuring_and_partial_declarations);
+    RUN_TEST(test_template_interpolation_skips_block_comment_delimiters);
+    RUN_TEST(test_template_interpolation_skips_line_comment_delimiters);
     RUN_TEST(test_compiler_state_releases_child_function_name_map);
     return UNITY_END();
 }

@@ -155,6 +155,19 @@ views, preserving the opcode, operand/result ranges, and source identity. The
 focused fixture asserts ExecBC transport and a non-runnable AOT view; it does
 not count metadata transport as executable allocation or GC coverage.
 
+The SSA verifier follow-up now computes fresh CFG dominance sets and checks
+ordinary use-before-definition, cross-branch uses, and PHI incoming values on
+their specific predecessor edges.  The focused fixture was first observed RED
+against the prior definition-only verifier, then GREEN after the dominance
+checks were added:
+
+```text
+WSL GCC 11.4   ssa_effects_verifier       1/1 passed
+```
+
+This is focused malformed-IR evidence only.  It does not close the broader M1
+effect-token, exception-edge, type/layout, or cross-backend differential gate.
+
 The ownership follow-up makes DROP consuming: after its event is published,
 the operand value slot is reset to `UNDEFINED`, and a later use fails with
 `ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE` carrying the later instruction/source

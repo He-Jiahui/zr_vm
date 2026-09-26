@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const vscode = require('vscode');
+const { verifyRestartResynchronization } = require('./restartProbe');
 
 const RICH_DEBUG_SOURCE = [
     'fn total(delta: int): int {',
@@ -13,6 +14,10 @@ const RICH_DEBUG_SOURCE = [
 const CLASSES_FULL_SMOKE_SOURCE = [
     'class BaseHero {',
     '    pri var _hp: int = 0;',
+    '',
+    '    pub @constructor(seed: int) {',
+    '        this._hp = seed;',
+    '    }',
     '',
     '    // Current hero hit points.',
     '    pub property hp: int {',
@@ -39,6 +44,10 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     'class BossHero: BaseHero {',
     '    pub static var created: int = 0;',
     '',
+    '    pub @constructor(seed: int) super(seed) {',
+    '        BossHero.created = BossHero.created + 1;',
+    '    }',
+    '',
     '    // Calculates the boss total score.',
     '    pub fn total(): int {',
     '        return this.hp + ScoreBoard.bonus + BossHero.created;',
@@ -46,8 +55,8 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '}',
     '',
     '#zr.testing.test#',
-'fn classesFullProjectShape(): int {',
-    '    let boss: BossHero = new BossHero();',
+    'fn classesFullProjectShape(): int {',
+    '    let boss: BossHero = new BossHero(30);',
     '    boss.hp = boss.hp + 7;',
     '    ScoreBoard.bonus = boss.heal(5);',
     '    return boss.total() + ScoreBoard.bonus;',
@@ -84,8 +93,8 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     '}',
     '',
     '#zr.testing.test#',
-    'fn structureViewSmoke(): int {',
-    '    return helper.value();',
+    'fn structureViewSmoke(): void {',
+    '    helper.value();',
     '}',
     '',
     'return helper.value();',
@@ -361,6 +370,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     assert(renameEntries.some(([uri]) => uriPath(uri).endsWith('/src/lsp_smoke.zr')),
         'Rename should include lsp_smoke.zr edits');
 
+    await verifyRestartResynchronization(mainDocument, definitionPosition, withRetry);
     await deleteDocumentFile(smokeUri);
 }
 
@@ -384,8 +394,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         '}',
         '',
         '#zr.testing.test#',
-        'fn advancedEditorSmoke(): int {',
-        'return 1;',
+        'fn advancedEditorSmoke(): void {',
+        'return;',
         '}',
         '',
     ].join('\n');
@@ -1000,7 +1010,7 @@ async function verifyStructureViews(workspaceRoot) {
     await vscode.workspace.fs.writeFile(cycleUri, new TextEncoder().encode(STRUCTURE_SMOKE_CYCLE_SOURCE));
     try {
         const mainDocument = await openDocument(mainUri);
-    const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub fn total(): int {', 0, 7);
+        const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub fn total(): int {', 0, 7);
         const nativeImportPosition = findPositionBySubstring(
             mainDocument,
             '"zr.system"',
@@ -1299,7 +1309,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     );
 
     const document = await openDocument(smokeUri);
-    const bossHeroUsage = findPositionBySubstring(document, `${bossHeroName}()`, 0);
+    const bossHeroUsage = findPositionBySubstring(document, `boss: ${bossHeroName}`, 0, 6);
     const bossCompletionPosition = findPositionBySubstring(document, 'boss.hp =', 0, 5);
     const scoreBoardCompletionPosition = findPositionBySubstring(document, `${scoreBoardName}.bonus =`, 0, scoreBoardName.length);
     const scoreBoardCompletionAfterDotPosition =
@@ -1309,6 +1319,14 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
         .map((offset) => findPositionBySubstring(document, `boss.total() + ${scoreBoardName}.bonus`, 0, offset));
     const bossHeroDefinitionPosition = findPositionBySubstring(document, `class ${bossHeroName}: ${baseHeroName}`, 0, 6);
     const totalDefinitionPosition = findPositionBySubstring(document, 'pub fn total(): int {', 0, 7);
+
+    const classReport = await vscode.commands.executeCommand('zr.__sendLanguageServerRequest',
+        'textDocument/diagnostic', { textDocument: { uri: document.uri.toString(true) } });
+    assert(classReport?.kind === 'full' && Array.isArray(classReport.items),
+        'Class analysis must produce a full diagnostic report');
+    const classErrors = classReport.items.filter((item) => item.severity === 1);
+    assert(classErrors.length === 0,
+        `Class fixture must analyze without errors: ${JSON.stringify(classErrors)}`);
 
     const bossHeroDefinition = await withRetry(
         async () => executeDefinitions(document.uri, bossHeroUsage),
@@ -2271,6 +2289,8 @@ async function runSmokeSuite({ expectedMode, focus = 'all' }) {
         await verifyDiagnostics(workspaceFolder.uri);
     } else if (focus === 'structure') {
         await verifyStructureViews(workspaceFolder.uri);
+    } else if (focus === 'class') {
+        await verifyClassLanguageFeatures(workspaceFolder.uri);
     } else if (focus === 'project-actions') {
         await verifyProjectActionIntegration(workspaceFolder.uri);
     }

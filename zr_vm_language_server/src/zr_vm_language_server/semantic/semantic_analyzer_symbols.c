@@ -245,12 +245,6 @@ static SZrFileRange semantic_parameter_diagnostic_location(
                              ZR_NULL);
 }
 
-static void register_variable_type_binding_in_env(SZrState *state,
-                                                  SZrTypeEnvironment *typeEnv,
-                                                  SZrString *name,
-                                                  SZrInferredType *typeInfo,
-                                                  SZrSymbol *symbol);
-
 static SZrTypeEnvironment *push_runtime_type_binding_scope(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer);
 
@@ -416,20 +410,30 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
                                                                                   parameter->typeInfo,
                                                                                   callableDeclarationNode);
             if (paramTypeInfo == ZR_NULL) {
+                SZrInferredType unavailableType;
                 ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                         state,
                         analyzer,
                         semantic_parameter_diagnostic_location(paramNode));
+                ZrParser_InferredType_Init(state, &unavailableType, ZR_VALUE_TYPE_OBJECT);
+                (void)ZrParser_TypeEnvironment_RegisterVariableEx(
+                        state,
+                        analyzer->compilerState != ZR_NULL
+                                ? analyzer->compilerState->typeEnv : ZR_NULL,
+                        parameter->name->name, &unavailableType, paramNode,
+                        parameter->nameLocation);
+                ZrParser_InferredType_Free(state, &unavailableType);
                 continue;
             }
 
-            register_variable_type_binding_in_env(state,
+            ZrParser_TypeEnvironment_RegisterVariableEx(state,
                                                   analyzer->compilerState != ZR_NULL
                                                       ? analyzer->compilerState->typeEnv
                                                       : ZR_NULL,
                                                   parameter->name->name,
                                                   paramTypeInfo,
-                                                  ZR_NULL);
+                                                  paramNode,
+                                                  parameter->nameLocation);
             ZrParser_InferredType_Free(state, paramTypeInfo);
             ZrCore_Memory_RawFree(state->global, paramTypeInfo, sizeof(SZrInferredType));
         }
@@ -771,7 +775,7 @@ static void collect_function_parameters(SZrState *state,
                                                                   typeInfo,
                                                                   ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
-        register_variable_type_binding_in_env(state,
+        ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                               analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv
                                                                                  : ZR_NULL,
                                               name,
@@ -779,36 +783,6 @@ static void collect_function_parameters(SZrState *state,
                                               symbol);
         semantic_free_type_info(state, typeInfo);
     }
-}
-
-static void register_variable_type_binding_in_env(SZrState *state,
-                                                  SZrTypeEnvironment *typeEnv,
-                                                  SZrString *name,
-                                                  SZrInferredType *typeInfo,
-                                                  SZrSymbol *symbol) {
-    SZrFileRange declarationRange;
-
-    if (state == ZR_NULL || typeEnv == ZR_NULL || name == ZR_NULL || typeInfo == ZR_NULL) {
-        return;
-    }
-
-    if (symbol != ZR_NULL &&
-        symbol->semanticId != ZR_SEMANTIC_ID_INVALID &&
-        symbol->semanticTypeId != ZR_SEMANTIC_ID_INVALID) {
-        declarationRange = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
-        if (declarationRange.source != ZR_NULL) {
-            (void)ZrParser_TypeEnvironment_RegisterCanonicalVariable(state,
-                                                                    typeEnv,
-                                                                    name,
-                                                                    typeInfo,
-                                                                    symbol->semanticId,
-                                                                    symbol->semanticTypeId,
-                                                                    declarationRange);
-        }
-        return;
-    }
-
-    ZrParser_TypeEnvironment_RegisterVariable(state, typeEnv, name, typeInfo);
 }
 
 static SZrTypeMemberInfo *find_type_member_info_by_name(SZrTypePrototypeInfo *prototype,
@@ -1244,7 +1218,7 @@ static void register_implicit_runtime_symbol(SZrState *state,
                                                                   typeInfo,
                                                                   ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
     }
-    register_variable_type_binding_in_env(state,
+    ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                           analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
                                           name,
                                           typeInfo,
@@ -1312,7 +1286,7 @@ static void collect_single_parameter_symbol(SZrState *state,
         }
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
     }
-    register_variable_type_binding_in_env(state,
+    ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                           analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
                                           name,
                                           typeInfo,
@@ -1435,7 +1409,7 @@ static void collect_foreach_scope(SZrState *state,
                                                                       ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
             ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
         }
-        register_variable_type_binding_in_env(state,
+        ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                               analyzer->compilerState != ZR_NULL
                                                   ? analyzer->compilerState->typeEnv
                                                   : ZR_NULL,
@@ -1789,7 +1763,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                           typeInfo,
                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
-                register_variable_type_binding_in_env(state,
+                ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                                       analyzer->compilerState != ZR_NULL
                                                           ? analyzer->compilerState->typeEnv
                                                           : ZR_NULL,
@@ -1842,6 +1816,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
 
+                ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+                        state, analyzer, name, ZR_NULL, node);
                 collect_function_like_scope(state,
                                             analyzer,
                                             node,
@@ -1902,14 +1878,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 SZrInferredType *typeInfo = create_type_info_for_variable(state,
                                                                           analyzer,
                                                                           &wrappedNode->data.variableDeclaration);
-                register_variable_type_binding_in_env(state,
+                ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                                       analyzer->compilerState != ZR_NULL
                                                           ? analyzer->compilerState->typeEnv
                                                           : ZR_NULL,
                                                       name,
                                                       typeInfo,
                                                       ZR_NULL);
-                register_variable_type_binding_in_env(state,
+                ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(state,
                                                       analyzer->compilerState != ZR_NULL
                                                           ? analyzer->compilerState->compileTimeTypeEnv
                                                           : ZR_NULL,
@@ -1992,6 +1968,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             }
             ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
 
+            ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+                    state, analyzer, name, ZR_NULL, node);
             collect_function_like_scope(state,
                                         analyzer,
                                         node,

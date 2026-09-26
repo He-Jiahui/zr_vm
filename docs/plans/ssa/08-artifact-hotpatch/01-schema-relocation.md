@@ -1,0 +1,186 @@
+---
+related_code:
+  - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_call_binding.c
+  - zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
+implementation_files:
+  - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_call_binding.c
+  - zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/execbc_verify.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir.c
+  - zr_vm_core/include/zr_vm_core/artifact_exec_ir.h
+plan_sources:
+  - docs/plans/ssa/index.md
+  - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
+tests:
+  - tests/library/test_ssa_schema_relocation.c
+  - tests/parser/test_artifact_schema_source_roundtrip.c
+  - tests/parser/test_call_binding_artifact.c
+  - tests/library/test_zrm_container.c
+doc_type: milestone-detail
+status: planned
+---
+
+# 08.01 版本化 Artifact 与无地址 Relocation
+
+> 执行时使用 `executing-plans` 逐项推进；本文件是重构计划，未勾选项不代表已实现。代码段是算法/接口草案；新增符号由本任务实现，现有接口必须复用实际声明。
+
+**Goal：** 一次升级 artifact schema/ABI，完整保存 ExecIR、ExecBC、binding 和状态映射，保证产物不含进程指针。
+
+**Architecture：** 每个 section 显式长度/版本/必选标志，逐字段编码 token/index/offset/hash/relocation；加载验证完毕后才创建运行期 witness 和目标表。
+
+**Tech Stack：** C11、CMake、Unity/CTest；共享 ExecIR 与现有 ZR runtime。
+
+## 依赖与交付范围
+
+- 对应主计划：M1 artifact；M5 基础。
+- 前置：[01.04 Ownership、挂起与状态恢复映射](../01-execir-ssa/04-state-maps.md)；[03.03 已解析目标、PIC 与 Guard 失效](../03-interpreter-binding/03-guarded-caches.md)；[00.02 共享契约、语义边界与版本冻结](../00-measurement-contracts/02-contract-freeze.md)；[03.04 自动组合指令与 ExecBC 编码投影](../03-interpreter-binding/04-generated-fusion.md)。
+- 交付：.zro/.zrm write/read/copy/AOT projection、旧版本拒绝与结构化加载错误。
+- 统一约束、测试命令与状态定义见 [00.02](../00-measurement-contracts/02-contract-freeze.md) 和 [00.03](../00-measurement-contracts/03-differential-harness.md)。每个子任务的编译依赖来自显式前置；未满足完整门禁时不得标记里程碑完成。
+
+## 现状与代码落点
+
+当前 artifact schema 5、AOT ABI 16；CallBinding source row 84 字节和 canonical row 96 字节是不同封装，不可直接 memcpy 混用。现有 writer_call_binding 与 artifact_call_binding_projection 已有基础。
+
+| 类别 | 路径 | 责任与修改边界 |
+| --- | --- | --- |
+| 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/artifact_schema.h` | 分配版本和 section registry |
+| 现有，修改/复用 | `zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c` | 写入新 sections |
+| 现有，修改/复用 | `zr_vm_parser/src/zr_vm_parser/writer/writer_call_binding.c` | 复用逐字段 binding 编码 |
+| 现有，修改/复用 | `zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c` | 统一 canonical projection |
+| 现有，修改/复用 | `zr_vm_core/src/zr_vm_core/module/module_loader.c` | 全量验证后加载 |
+| 现有，修改/复用 | `zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c` | 运行期 relocation |
+| 计划新增 | `zr_vm_core/src/zr_vm_core/artifact_exec_ir.c` | ExecIR/map section codec 与界限检查 |
+| 计划新增 | `zr_vm_core/src/zr_vm_core/exec_ir/execbc_verify.c` | 验证 ExecBC-only 的 CFG、typed slots、效果、binding 与 maps；M5 的 ExecBC-only 路径以此为门禁。目录归属说明：core 侧 `exec_ir/` 子目录与 01.01 的 `zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c` 共用，只放运行期只读模型与验证；builder/pass 仍在 parser 侧，不在两处各建一套 |
+| 计划新增 | `zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir.c` | 稳定编码投影 |
+| 计划新增 | `zr_vm_core/include/zr_vm_core/artifact_exec_ir.h` | 磁盘字段契约 |
+| 计划新增测试 | `tests/library/test_ssa_schema_relocation.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
+
+新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
+
+## 可逐项执行的重构任务
+
+- [ ] **1. 冻结 section 目录** ExecIR、ExecBC、binding、hash/layout、GC/EH/deopt/debug、remarks 摘要、capability、profile hints、target contract；计算现有 section 上限是否足够，修改上限必须有资源边界测试。
+
+- [ ] **2. 定义编码与 hash** 明确 endian、字段宽度、对齐、canonical 顺序、hash 包含/排除项；磁盘 generation 是逻辑版本，runtime epoch 不直接反序列化为有效 guard。
+
+- [ ] **3. 安全读写和压缩** 先检 header/section 范围/重叠/数量/解压限额，再解码并 Verify；压缩 ExecBC 加载后恢复固定宽度，不借机改变指令格式。
+
+- [ ] **4. 后置 relocation** 验证 signature/module/layout/ABI 后依据 token/relocation 解析 VM/native/AOT；失败清理临时 graph，禁止半加载可调用目标。
+
+## 核心算法与接口指导
+
+以下草案固定输入、处理顺序和失败行为；名称不是已经存在的 API。将其拆成上述文件中的私有 helper，错误使用项目诊断对象，不能通过布尔成功吞掉具体原因。
+
+```text
+write = encodeFields(canonicalContractsAndIR); never memcpy(runtimeStruct)
+load(bytes):
+    validateHeaderVersionAndLimits()
+    validateSectionsNoOverlapAndBoundedDecompression()
+    decodeCanonicalRecords(); VerifyExecIRAndMaps()
+    validateHashesAndTargetContract()
+    resolveTokensToProcessLocalTargets()
+    publishOnlyCompleteModule()
+oldVersion -> RECOMPILE_REQUIRED
+```
+
+native binary 自身合法的链接重定位与 .zro/.zrm 内 runtime 指针序列化不是一回事。裸地址扫描只是回归辅助；真正保证来自 schema 白名单和逐字段编码。
+
+## 测试设计与验收
+
+先用最小 fixture 固定预期，再接入实现；失败测试必须断言错误种类和 source/IR 位置，不能只断言“返回失败”。
+
+| 输入或触发 | 必须断言的结果 |
+| --- | --- |
+| write/read/copy/AOT projection | token/signature/layout/module/maps 保持 |
+| 截断、重叠 section、未知必选项、压缩炸弹 | 执行前拒绝 |
+| 注入 sentinel VM/native/AOT pointer 到 witness | 字节中不出现其编码，跨进程重新解析 |
+| schema/ABI 旧版本或 target mismatch | 明确重编译/不兼容错误 |
+
+复用回归入口：`tests/parser/test_artifact_schema_source_roundtrip.c`、`tests/parser/test_call_binding_artifact.c`、`tests/library/test_zrm_container.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
+
+登记新 CTest 名 `ssa_schema_relocation` 和可执行目标 `zr_vm_ssa_schema_relocation_test` 后，在 WSL 仓库根运行：
+
+```bash
+cmake --build build/ssa-gcc-debug --target zr_vm_ssa_schema_relocation_test -j 4
+ctest --test-dir build/ssa-gcc-debug -R '^ssa_schema_relocation$' --output-on-failure --no-tests=error
+```
+
+预期：目标构建成功，至少一个匹配测试执行，全部断言通过、退出码 0。构建目录初始化、Clang/MSVC 和 sanitizer 扩展命令见 00.03；不得把“未找到测试”当作通过。
+
+**退出门禁：** 跨进程 roundtrip 与恶意 artifact 测试通过，runtime target 从不进入 persistent 编码，版本号取实施时最新下一版。
+
+**失败恢复：** 新 reader 不宽松接受旧版本；发布前回退需成套回退 writer/loader/ABI，不产生混合 schema。
+
+**文档交付：** 更新 docs/module-system/artifact-schema.md；在 [总索引](../index.md) 关联的验收矩阵记录命令、版本、环境、实际覆盖和未通过项。性能收益只按 00.01 的同口径门槛判定。
+
+## 函数级设计与实现批次
+
+### 接口草案
+
+下面的 `SZr*` 入参/结果类型由本任务或显式前置任务定义；这是待实现的 C 接口设计，不是当前仓库 API 清单。实现时使用已有错误、分配器和容器约定，不把草案整体复制成新的平行框架。
+
+```c
+typedef struct SZrExecIrReader SZrExecIrReader;
+typedef struct SZrExecIrWriter SZrExecIrWriter;
+TZrBool ZrParser_ExecIr_Read(SZrExecIrReader *reader,
+    SZrExecIrModule *module, SZrExecIrDiagnostic *diagnostic);
+TZrBool ZrParser_ExecIr_Write(const SZrExecIrModule *module,
+    SZrExecIrWriter *writer, SZrExecIrDiagnostic *diagnostic);
+```
+
+### 数据生产与消费
+
+| 数据/状态 | 生产责任 | 消费责任及不变量 |
+| --- | --- | --- |
+| section/schema rows | writer canonical encoder | 禁止 memcpy runtime structs |
+| decoded untrusted graph | loader staging | 结构/语义/资源上限验证后才 relocation |
+| resolved target table | metadata runtime binding | 每进程新建 witness，不接受磁盘地址 |
+
+### 建议实施批次
+
+以下批次分别形成可审查改动。每批先固定测试输入和失败预期，再实现；只完成前一批不能提前标记整份计划完成。
+
+- [ ] **批次 1：** 冻结 byte-level schema、必选 section 与 migration error，添加 golden roundtrip fixture。
+
+- [ ] **批次 2：** 实现 writer/reader/copy/AOT projection，分别验证 84-byte source row 与 96-byte canonical row 的转换。
+
+- [ ] **批次 3：** 做跨进程 relocation、畸形/重叠/压缩超限、sentinel pointer scan 和 schema fuzz。
+
+### 可直接转为测试的断言草案
+
+草案中的 arrange/act/assert 表达 fixture 操作，落地到本任务的 Unity 测试时使用项目真实构造 API；事件序列必须逐项比较，不只检查函数最终返回。
+
+```text
+arrange runtime witness pointer=P then write artifact twice under different ASLR
+assert persistent bytes identical except explicitly variable metadata
+arrange overlapping sections or length arithmetic overflow
+assert reject before allocation/dereference
+arrange decode valid token with missing native registration
+assert structured link failure and no published module
+```
+
+### 迁移结束检查
+
+artifact pointer-free 的证明是编码字段白名单+独立解码+跨进程 roundtrip，字节扫描只是辅助反例检测。JIT executable pages 和 runtime import pointers 一律不可序列化。
+
+### ExecIR 与 ExecBC 的一致性不能只靠两个独立 hash
+
+同一包同时保存 canonical ExecIR 和 ExecBC 时，合法 hash 只证明各自字节未变，不证明两者语义相同。加载受限 patch 的首版策略是：验证 canonical ExecIR 后，用固定版本的可信 lowering 重新生成执行 ExecBC，将缓存的 ExecBC 视作可丢弃加速数据。要直接采用缓存，必须验证 canonical IR hash、lowering 版本、配置 hash、完整映射，并由可信构建签名覆盖该派生关系；不可信 producer 的两个自报 hash 不能成为证明。
+
+若支持 ExecBC-only patch，则必须增加独立的 bytecode verifier：校验控制流/操作数/slot、所有调用绑定、能力效果、异常/cleanup/GC map 和 branch target，禁止仅验证缺省 ExecIR 后执行另一份未验证代码。该能力未完成前明确拒绝 ExecBC-only patch，不影响完整 ExecIR+ExecBC 包。
+
+本主线的 M5 要求支持 ExecBC patch，因此把上述 verifier 列为必须完成的批次，不能把临时拒绝状态当作最终交付。复用 03.04 的生成 opcode schema 展开组合指令的验证语义，做 typed slot 数据流与 effect/capability 汇总；未知 mandatory opcode 或缺失必要 map 拒绝。这里的展开只用于检查不可信字节码，AOT 后端仍禁止从 quickened bytecode 恢复代码生成语义。
+
+- [ ] 负测：IR 只调用允许目标 A，缓存 ExecBC 被换成目标 B；即使攻击者重算非签名 hash，也不能执行 B。
+- [ ] 负测：缓存 ExecBC source/map 与 IR 不对应；重新 lowering 或拒绝，不能套用错误 root/deopt map 执行。
+
+本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。

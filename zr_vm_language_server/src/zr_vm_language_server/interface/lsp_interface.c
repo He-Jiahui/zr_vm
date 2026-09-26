@@ -1850,6 +1850,29 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                 uri,
                 fileRange,
                 result)) {
+        if (analyzer->semanticContext != ZR_NULL && analyzer->symbolTable != ZR_NULL &&
+            result != ZR_NULL && *result != ZR_NULL) {
+            SZrParserSemanticCallQuery callQuery;
+            if (ZrParser_SemanticQuery_CallAt(
+                    analyzer->semanticContext, fileRange, ZR_NULL, &callQuery) &&
+                callQuery.hasResolvedTarget &&
+                callQuery.targetSymbolId != ZR_SEMANTIC_ID_INVALID) {
+                SZrSymbol *target = ZrLanguageServer_SymbolTable_FindBySemanticId(
+                    analyzer->symbolTable, callQuery.targetSymbolId);
+                if (target != ZR_NULL &&
+                    ZrLanguageServer_FileVersionContentSnapshot_Acquire(
+                        state, fileVersion, &contentSnapshot)) {
+                    SZrString **hoverContent = (SZrString **)ZrCore_Array_Get(
+                        &(*result)->contents, 0);
+                    if (hoverContent != ZR_NULL && *hoverContent != ZR_NULL) {
+                        SZrString *comment = ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(
+                            state, target, contentSnapshot.content, contentSnapshot.contentLength);
+                        *hoverContent = lsp_append_markdown_section(state, *hoverContent, comment);
+                    }
+                    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &contentSnapshot);
+                }
+            }
+        }
         if (hasLocalQuery &&
             localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
             ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(

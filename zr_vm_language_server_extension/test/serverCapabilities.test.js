@@ -1,86 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const ts = require('typescript');
+const { loadWorker } = require('./helpers/workerHost');
 
-const workerPath = path.join(__dirname, '..', 'src', 'browser', 'worker', 'server-worker.ts');
-const workerJavaScript = ts.transpileModule(fs.readFileSync(workerPath, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-    fileName: workerPath,
-}).outputText;
-
-function loadWorker(bridgeResponses = {}) {
-    const handlers = new Map();
-    const requests = new Map();
-    const bridgeCalls = [];
-    const connection = {
-        onRequest: (method, handler) => requests.set(method, handler),
-        onNotification: () => {},
-        listen: () => {},
-        console: { warn: () => {} },
-    };
-    for (const event of [
-        'onInitialize', 'onInitialized', 'onShutdown',
-        'onDidOpenTextDocument', 'onDidChangeTextDocument',
-        'onDidCloseTextDocument', 'onDidSaveTextDocument',
-        'onCompletion', 'onHover', 'onDefinition', 'onReferences',
-        'onDocumentSymbol', 'onWorkspaceSymbol', 'onDocumentHighlight',
-        'onPrepareRename', 'onRenameRequest',
-    ]) {
-        connection[event] = (handler) => handlers.set(event, handler);
-    }
-    class TestBridge {
-        async initialize(baseUrl) {
-            bridgeCalls.push(['initialize', baseUrl]);
-        }
-    }
-    for (const [method, data] of Object.entries(bridgeResponses)) {
-        TestBridge.prototype[method] = async (...args) => {
-            bridgeCalls.push([method, ...args]);
-            if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'success')) {
-                return data;
-            }
-            return { success: true, data };
-        };
-    }
-
-    class TestResponseError extends Error {
-        constructor(code, message, data) {
-            super(message);
-            this.code = code;
-            this.data = data;
-        }
-    }
-
-    vm.runInNewContext(workerJavaScript, {
-        exports: {},
-        require: (name) => {
-            if (name === 'vscode-languageserver/browser') {
-                return {
-                    BrowserMessageReader: class {},
-                    BrowserMessageWriter: class {},
-                    createConnection: () => connection,
-                    TextDocumentSyncKind: { Incremental: 2 },
-                    ResponseError: TestResponseError,
-                    ErrorCodes: { InternalError: -32603 },
-                };
-            }
-            if (name === 'vscode-jsonrpc') {
-                return {
-                    ResponseError: TestResponseError,
-                    ErrorCodes: { InternalError: -32603 },
-                };
-            }
-            assert.equal(name, './wasm-bridge');
-            return { ZrWasmBridge: TestBridge };
-        },
-        self: { addEventListener: () => {} },
-        console,
-    }, { filename: workerPath });
-    return { handlers, requests, bridgeCalls };
-}
+test('Web advertises document diagnostics and omits project indexing routes', async () => {
+    const worker = loadWorker();
+    const result = await worker.handlers.get('onInitialize')({ capabilities: {} });
+    assert.equal(result.capabilities.workspaceSymbolProvider, undefined);
+    assert.equal(result.capabilities.diagnosticProvider.workspaceDiagnostics, false);
+    assert.equal(result.capabilities.diagnosticProvider.interFileDependencies, false);
+    assert.equal(worker.handlers.has('onWorkspaceSymbol'), false);
+    assert.equal(worker.requests.has('workspace/diagnostic'), false);
+    assert.equal(worker.requests.has('zr/projectModules'), false);
+    assert.equal(worker.requests.has('zr/nativeDeclarationDocument'), true);
+});
 
 test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError', async () => {
     const uri = 'file:///workspace/main.zr';
@@ -107,13 +39,6 @@ test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError',
             code: -32801,
             message: 'Content modified',
         },
-        {
-            handler: 'onWorkspaceSymbol',
-            bridgeMethod: 'getWorkspaceSymbols',
-            params: { query: 'main' },
-            code: -32603,
-            message: 'Internal failure',
-        },
     ];
 
     for (const fixture of cases) {
@@ -124,6 +49,7 @@ test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError',
             data: { reason: fixture.message },
         };
         const worker = loadWorker({ [fixture.bridgeMethod]: data });
+        await worker.handlers.get('onDidOpenTextDocument')({ textDocument: { uri, version: 1, text: 'var seed: int = 1;' } });
         await assert.rejects(
             worker.handlers.get(fixture.handler)(fixture.params),
             (error) => {
@@ -137,7 +63,6 @@ test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError',
 });
 
 for (const name of [
-    'workspaceSymbolProvider',
     'inlayHintProvider',
     'documentLinkProvider',
     'codeLensProvider',
@@ -214,7 +139,8 @@ test('browser base requests return complete initial payloads without resolve', a
     const uri = 'file:///workspace/main.zr';
     const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } };
     const link = { range, target: 'file:///workspace/module.zr' };
-    const lens = { range, command: { title: 'Run', command: 'zr.runCurrentProject', arguments: [uri] } };
+    const lens = { range, command: { title: '1 reference', command: 'zr.showReferences', arguments: [uri] } };
+    const unavailableLens = { range, command: { title: 'Run', command: 'zr.runCurrentProject', arguments: [uri] } };
     const hint = { position: { line: 0, character: 4 }, label: ': int', kind: 1 };
     const symbol = { name: 'main', kind: 12, location: { uri, range } };
     const action = {
@@ -224,22 +150,24 @@ test('browser base requests return complete initial payloads without resolve', a
     };
     const worker = loadWorker({
         getDocumentLinks: [link],
-        getCodeLens: [lens],
+        getCodeLens: [lens, unavailableLens],
         getInlayHints: [hint],
-        getWorkspaceSymbols: [symbol],
+        getDocumentSymbols: [symbol],
         getCodeActions: [action],
     });
+    await worker.handlers.get('onDidOpenTextDocument')({ textDocument: { uri, version: 1, text: 'var seed: int = 1;' } });
+    worker.bridgeCalls.length = 0;
     const params = { textDocument: { uri }, range };
     assert.deepEqual(await worker.requests.get('textDocument/documentLink')(params), [link]);
     assert.deepEqual(await worker.requests.get('textDocument/codeLens')(params), [lens]);
     assert.deepEqual(await worker.requests.get('textDocument/inlayHint')(params), [hint]);
-    assert.deepEqual(await worker.handlers.get('onWorkspaceSymbol')({ query: 'main' }), [symbol]);
+    assert.deepEqual(await worker.handlers.get('onDocumentSymbol')(params), [symbol]);
     assert.deepEqual(await worker.requests.get('textDocument/codeAction')(params), [action]);
     assert.deepEqual(worker.bridgeCalls, [
         ['getDocumentLinks', uri],
         ['getCodeLens', uri],
         ['getInlayHints', uri, 0, 0, 0, 4],
-        ['getWorkspaceSymbols', 'main'],
+        ['getDocumentSymbols', uri],
         ['getCodeActions', uri, 0, 0, 0, 4],
     ]);
 });

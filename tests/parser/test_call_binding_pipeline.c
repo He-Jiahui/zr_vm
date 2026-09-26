@@ -7,6 +7,8 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/parser.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 static SZrState *state;
 
@@ -23,6 +25,37 @@ void tearDown(void) {
 static SZrFunction *compile_source(const char *source) {
     return ZrParser_Source_Compile(state, source, strlen(source),
             ZrCore_String_CreateFromNative(state, "call_binding_pipeline.zr"));
+}
+
+static void assert_compile_diagnostic(const char *source, const char *expectedMessage) {
+    SZrAstNode *ast;
+    SZrCompilerState compiler;
+
+    ast = ZrParser_Parse(state,
+                         source,
+                         strlen(source),
+                         ZrCore_String_CreateFromNative(state, "call_binding_diagnostic.zr"));
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&compiler, 0, sizeof(compiler));
+    ZrParser_CompilerState_Init(&compiler, state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    compiler.currentAst = ast;
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&compiler, ast));
+    TEST_ASSERT_TRUE(compiler.hasError == ZR_FALSE);
+    TEST_ASSERT_TRUE(compiler_validate_ref_struct_rules(&compiler, ast));
+    TEST_ASSERT_TRUE(compiler_validate_reference_escapes(&compiler, ast));
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&compiler, ast));
+    compiler.currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    compile_script(&compiler, ast);
+    TEST_ASSERT_TRUE_MESSAGE(compiler.hasError, expectedMessage);
+    TEST_ASSERT_NOT_NULL(compiler.errorMessage);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(compiler.errorMessage, expectedMessage),
+                                 compiler.errorMessage);
+    ZrCore_Function_Free(state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(state, ast);
 }
 
 static const SZrFunctionCallSiteCacheEntry *find_binding(const SZrFunction *function) {
@@ -89,6 +122,21 @@ static void test_unknown_static_member_is_a_compile_error(void) {
     TEST_ASSERT_NULL(compile_source(
             "class Box { pub fn read(): int { return 1; } }\n"
             "var box = new Box(); return box.missing();\n"));
+}
+
+static void test_member_overload_ambiguity_is_a_compile_error(void) {
+    assert_compile_diagnostic(
+            "class Box { pub fn pick(value: int): int { return value; } "
+            "pub fn pick(value: int): bool { return true; } } "
+            "var box = new Box(); return box.pick(1);",
+            "Ambiguous overload for member 'pick'");
+}
+
+static void test_member_signature_mismatch_is_a_compile_error(void) {
+    assert_compile_diagnostic(
+            "class Box { pub fn pick(value: int): int { return value; } } "
+            "var box = new Box(); return box.pick(1.5);",
+            "Expected 'int' but found 'float'");
 }
 
 static void test_invalidated_generation_rejects_static_call(void) {
@@ -238,6 +286,8 @@ int main(void) {
     RUN_TEST(test_static_method_has_token_binding);
     RUN_TEST(test_object_chain_preserves_field_reads_and_binds_final_call);
     RUN_TEST(test_unknown_static_member_is_a_compile_error);
+    RUN_TEST(test_member_overload_ambiguity_is_a_compile_error);
+    RUN_TEST(test_member_signature_mismatch_is_a_compile_error);
     RUN_TEST(test_invalidated_generation_rejects_static_call);
     RUN_TEST(test_property_getter_and_setter_have_binding_contracts);
     RUN_TEST(test_virtual_binding_uses_receiver_override);

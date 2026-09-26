@@ -80,6 +80,7 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     // global
     state->global = global;
     state->gcDomain = ZR_NULL;
+    state->executionBudget = ZR_NULL;
     if (global != ZR_NULL && global->gcDomain != ZR_NULL) {
         ZrCore_GcDomain_AttachState(global->gcDomain, state);
     }

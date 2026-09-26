@@ -7,6 +7,7 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/gc.h"
 #include "gc/gc_domain_internal.h"
 #include "zr_vm_core/hash.h"
@@ -366,8 +367,12 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     ZrCore_Memory_RawSet(global, 0, sizeof(SZrGlobalState));
     // when create and init global state, we make the global is not valid
     global->isValid = ZR_FALSE;
-    global->allocator = allocator;
-    global->userAllocationArguments = userAllocationArguments;
+    global->upstreamAllocator = allocator;
+    global->upstreamAllocationArguments = userAllocationArguments;
+    global->allocatedBytes = sizeof(SZrGlobalState);
+    global->allocationPeakBytes = sizeof(SZrGlobalState);
+    global->allocator = ZrCore_ExecutionBudget_Allocate;
+    global->userAllocationArguments = global;
     global->cacheIdentity = global_state_next_cache_identity();
     global_trace("global new allocated global=%p unique=%llu", (void *)global, (unsigned long long)uniqueNumber);
     SZrState *newState = ZrCore_State_New(global);
@@ -708,7 +713,8 @@ const TZrChar *ZrCore_GlobalState_GetModuleLoadDiagnostic(const SZrGlobalState *
 
 
 void ZrCore_GlobalState_Free(SZrGlobalState *global) {
-    FZrAllocator allocator = global->allocator;
+    FZrAllocator allocator = global->upstreamAllocator;
+    TZrPtr allocatorArguments = global->upstreamAllocationArguments;
 
     if (global->parserModuleInitStateCleanup != ZR_NULL && global->parserModuleInitState != ZR_NULL) {
         global->parserModuleInitStateCleanup(global, global->parserModuleInitState);
@@ -751,7 +757,7 @@ void ZrCore_GlobalState_Free(SZrGlobalState *global) {
 
     ZrCore_State_Free(global, global->mainThreadState);
     // free global at last
-    allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    allocator(allocatorArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
 }
 
 static TZrBool global_trace_enabled(void) {

@@ -48,6 +48,13 @@ measurement policies, or statistical algorithms produce `INCOMPARABLE` output.
 The comparison helper recomputes ratios from raw median wall times and ignores
 pre-existing speedup fields.
 
+During finalization, environment validity is only an additional requirement.
+The postprocessor preserves the runner's `PASS`, `STABLE`, explicit
+`comparable`, `gate_eligible`, recognized measurement scope and positive-median
+decisions. A C-relative ratio is emitted only when both records satisfy those
+decisions and use the same scope; an absent or rejected C row suppresses the
+ratio without downgrading a separately valid record.
+
 ## WSL Cache
 
 `build_benchmark_release.sh` performs a bootstrap configure with
@@ -68,7 +75,8 @@ manifest, atomically renames the immutable run directory, and atomically updates
 ## Test Coverage
 
 The focused Python contract suite covers complete and incomplete environment
-attachment, all baseline mismatch classes, median recomputation, cache-key
-derivation, and immutable publication. The CMake contract test covers Linux
-missing/provisional evidence and Windows diagnostic-only behavior. Shell syntax
-is checked in WSL before running the minimal integration smoke.
+attachment, all baseline mismatch classes, median recomputation, preservation
+of rejected records, missing C baselines, cache-key derivation, and immutable
+publication. The CMake contract test covers Linux missing/provisional evidence
+and Windows diagnostic-only behavior. Shell syntax is checked in WSL before
+running the minimal integration smoke.

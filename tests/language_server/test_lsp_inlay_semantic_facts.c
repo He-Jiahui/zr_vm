@@ -1013,6 +1013,8 @@ int main(void) {
     test_signature_help_parameter_docs_use_argument_semantic_facts(state);
     test_completion_and_signature_use_ownership_intrinsic_fact(state);
     test_inlay_hint_enumerates_canonical_declarations_without_symbol_table(state);
+    test_inlay_hint_generic_inferred_return_uses_source_parameter_name(state);
+    test_inlay_hint_nested_generic_inferred_return_uses_source_parameter_name(state);
     test_completion_does_not_materialize_missing_snapshot_facts(state);
     test_signature_does_not_materialize_missing_snapshot_facts(state);
 

@@ -33,6 +33,7 @@ implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
 plan_sources:
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - user: 2026-06-19 .zro 保留单脚本中间文件，metadata/token 程序集语义链新增独立 .zrm 容器
   - docs/plans/using/03-metadata-and-token-model.md
   - docs/plans/using/07-implementation-blueprint.md
@@ -207,7 +208,7 @@ This is intentionally project-assembly scoped. `.zro` execution without an emitt
 
 ## Test Coverage
 
-- `tests/library/test_zrm_container.c` verifies manifest writing, module/resource entry names, compression mode, byte extraction, duplicate rejection, unsafe logical name rejection, missing manifest rejection, corrupt ZIP rejection, manifest entry path traversal rejection, provider-phase round-trip/defaulting, unknown-phase rejection, and the versioned CompileTool executable section. It also proves that missing CompileTool sections and executable sections on Runtime archives fail closed.
+- `tests/library/test_zrm_container.c` verifies manifest writing, module/resource entry names, compression mode, byte extraction, duplicate rejection by the writer, unsafe logical name rejection, missing manifest rejection, corrupt ZIP rejection, manifest entry path traversal rejection, provider-phase round-trip/defaulting, unknown-phase rejection, and the versioned CompileTool executable section. It also proves that missing CompileTool sections and executable sections on Runtime archives fail closed.
 - `tests/library/test_project_import_resolver.c` verifies `assembly.output`, project resources, `.zrm` references, `$alias@version/module` resolution, provider-location discovery and AOT load-request planning for `.zrp` and `.zrm` references, provider entry/phase/hash facts, Runtime-versus-CompileTool rejection, and loading a Runtime module `.zro` from inside the container.
 - `tests/library/test_project_import_provider_version_selection.c` verifies multi-version `.zrp` provider exact alias/version selection and strict declared range rejection.
 - `tests/library/test_project_manifest_v2.c` verifies canonical v2 manifest ordering/read-write-read equivalence,
@@ -226,3 +227,5 @@ This is intentionally project-assembly scoped. `.zro` execution without an emitt
 - `.zrm` currently packages compiled `.zro` bytes and resources; it does not introduce a new metadata-token schema beyond the `.zro` module payloads.
 - Runtime project execution still starts from the project entry `.zro` file. Referenced `.zrm` modules can be loaded by the project loader, but direct launching of a `.zrm` entry module is a separate packaging/runtime entrypoint.
 - The container manifest is JSON inside ZIP and not yet signed or authenticated. Assembly identity and hashes are validation metadata, not a security boundary.
+- The reader currently accepts repeated `logicalName` values in a hand-built manifest. In a CompileTool archive, duplicate executable rows can satisfy the count check while `Find*` resolves only the first row. The writer's duplicate-rejection test does not cover this reader path; see the `BUG:` review note in `zrm_parse_entry_array`.
+- `ReadEntry()` currently treats a failed miniz heap extraction as success when miniz clears the size output to zero. Resource callers use its boolean result, so an extraction failure can be reported as empty content. See the `BUG:` review note at the extraction check; no regression test has yet been added under this comment-only task.

@@ -1,5 +1,6 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic.h"
+#include "canonical_type_format_internal.h"
 
 #include "zr_vm_core/array.h"
 
@@ -13,6 +14,7 @@ typedef struct SZrCanonicalTypeFormatState {
     TZrChar *buffer;
     TZrSize bufferSize;
     TZrSize offset;
+    TZrCanonicalGenericNameResolver resolveGenericName;
 } SZrCanonicalTypeFormatState;
 
 static TZrBool canonical_type_format_append(
@@ -145,6 +147,17 @@ static TZrBool canonical_type_format_generic_arguments(
                 return ZR_FALSE;
             }
         } else if (argument->kind == ZR_CANONICAL_GENERIC_ARGUMENT_CONST_PARAMETER) {
+            if (state->resolveGenericName != ZR_NULL) {
+                if (!canonical_type_format_append_string(
+                            state, state->resolveGenericName(
+                                    state->context,
+                                    argument->data.constParameter.ownerSymbolId,
+                                    argument->data.constParameter.ordinal,
+                                    ZR_CANONICAL_GENERIC_ARGUMENT_CONST_PARAMETER))) {
+                    return ZR_FALSE;
+                }
+                continue;
+            }
             written = snprintf(
                     constBuffer,
                     sizeof(constBuffer),
@@ -187,6 +200,12 @@ static TZrBool canonical_type_format_generic_parameter(
     if (state == ZR_NULL || parameter == ZR_NULL ||
         parameter->ownerSymbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
+    }
+    if (state->resolveGenericName != ZR_NULL) {
+        return canonical_type_format_append_string(
+                state, state->resolveGenericName(
+                        state->context, parameter->ownerSymbolId, parameter->ordinal,
+                        ZR_CANONICAL_GENERIC_ARGUMENT_TYPE));
     }
     written = snprintf(
             text,
@@ -454,11 +473,12 @@ static TZrBool canonical_type_format_node(
     }
 }
 
-TZrBool ZrParser_CanonicalType_Format(
+TZrBool ZrParser_CanonicalType_FormatWithGenericNames(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
         TZrChar *buffer,
-        TZrSize bufferSize) {
+        TZrSize bufferSize,
+        TZrCanonicalGenericNameResolver resolveGenericName) {
     SZrCanonicalTypeFormatState state;
 
     if (buffer == ZR_NULL || bufferSize == 0) {
@@ -473,9 +493,19 @@ TZrBool ZrParser_CanonicalType_Format(
     state.buffer = buffer;
     state.bufferSize = bufferSize;
     state.offset = 0;
+    state.resolveGenericName = resolveGenericName;
     if (!canonical_type_format_node(&state, typeId, 0U)) {
         buffer[0] = '\0';
         return ZR_FALSE;
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_CanonicalType_Format(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    return ZrParser_CanonicalType_FormatWithGenericNames(
+            context, typeId, buffer, bufferSize, ZR_NULL);
 }

@@ -14,6 +14,12 @@ doc_type: milestone-detail
 
 # LSP Workspace Diagnostic Partial Results
 
+The historical final `null` result below is superseded by the 2026-09-26 repair:
+the final workspace diagnostic response is `{"items":[]}` after partial delivery.
+VS Code consumes a non-null `WorkspaceDiagnosticReport`. See
+[current stdio validation](../../../cli-and-tooling/lsp-stdio-validation.md)
+and the [repair acceptance record](../../../../tests/acceptance/2026-09-26-lsp-experience-repair.md).
+
 ## 状态与产出记录
 
 | 完成时间 | 状态 | 完成项目 |

@@ -1297,8 +1297,9 @@ async function testWorkspaceDiagnosticPartialResults(serverPath) {
                partial.value && Array.isArray(partial.value.items) &&
                partial.value.items.some((report) => report && report.uri === uri),
                `workspace diagnostic partial result must preserve report items, actual=${JSON.stringify(partial)}`);
-        assert(response && response.id === 'workspace-diagnostic-partial' && response.result === null,
-               `workspace diagnostic partial result must consume the ordinary response, actual=${JSON.stringify(response)}`);
+        assert(response && response.id === 'workspace-diagnostic-partial' && response.result &&
+               Array.isArray(response.result.items) && response.result.items.length === 0,
+               `workspace diagnostic partial result must complete with an empty report, actual=${JSON.stringify(response)}`);
     });
 }
 

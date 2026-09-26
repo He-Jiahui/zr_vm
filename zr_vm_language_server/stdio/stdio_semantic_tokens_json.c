@@ -126,6 +126,8 @@ cJSON *serialize_semantic_tokens_delta_result(SZrArray *tokens,
     if (oldData != NULL && deleteCount == 0 && start == insertEnd) {
         cJSON_Delete(edit);
         cJSON_Delete(data);
+        edit = NULL;
+        data = NULL;
     } else {
         cJSON_AddNumberToObject(edit, ZR_LSP_FIELD_START, (double)start);
         cJSON_AddNumberToObject(edit, ZR_LSP_FIELD_DELETE_COUNT, (double)deleteCount);

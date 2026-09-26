@@ -31,6 +31,36 @@ static cJSON *take_response(const char *text) {
     return json;
 }
 
+static void test_document_update_snapshot_contract(void *context) {
+    static const char uri[] = "file:///wasm-update-snapshot.zr";
+    static const char broken[] = "\"unterminated";
+    static const char repaired[] = "var value: int = 1;";
+    cJSON *json = take_response(wasm_ZrLspUpdateDocument(
+            context, uri, sizeof(uri) - 1, broken, sizeof(broken) - 1, 1));
+    expect_true(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "success")),
+                "committed text with a syntax error must be acknowledged");
+    cJSON_Delete(json);
+    json = take_response(wasm_ZrLspGetDiagnosticReport(context, uri, sizeof(uri) - 1));
+    expect_true(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "success")),
+                "committed syntax error must permit diagnostic queries");
+    expect_true(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(
+                        cJSON_GetObjectItemCaseSensitive(json, "data"), "items")) > 0,
+                "unterminated source string must produce an editor diagnostic");
+    cJSON_Delete(json);
+    json = take_response(wasm_ZrLspUpdateDocument(
+            context, uri, sizeof(uri) - 1, repaired, sizeof(repaired) - 1, 2));
+    expect_true(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "success")),
+                "a newer edit must repair the committed error snapshot");
+    cJSON_Delete(json);
+    json = take_response(wasm_ZrLspUpdateDocument(
+            context, uri, sizeof(uri) - 1, broken, sizeof(broken) - 1, 2));
+    expect_true(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(json, "success")),
+                "a stale version must not acknowledge uncommitted replacement text");
+    cJSON_Delete(json);
+    json = take_response(wasm_ZrLspCloseDocument(context, uri, sizeof(uri) - 1));
+    cJSON_Delete(json);
+}
+
 int main(void) {
     static const char uri[] = "file:///wasm-response-empty.zr";
     void *context = wasm_ZrLspContextNew();
@@ -43,6 +73,7 @@ int main(void) {
     cJSON_Hooks hooks = {fault_malloc, free};
 
     expect_true(context != NULL, "real core context must initialize");
+    test_document_update_snapshot_contract(context);
     json = take_response(wasm_ZrLspGetHover(NULL, uri, sizeof(uri) - 1, 0, 0));
     expect_true(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(json, "success")),
                 "invalid parameters must be an error, not success true");
@@ -59,6 +90,19 @@ int main(void) {
                 (cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(json, "data")) ||
                  cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(json, "data"))),
                 "real core hover must use the success envelope");
+    cJSON_Delete(json);
+
+    json = take_response(wasm_ZrLspGetDefinition(context, uri, sizeof(uri) - 1, 0, 0));
+    expect_true(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "success")) &&
+                cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(json, "data")) &&
+                cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(json, "data")) == 0,
+                "definition on empty source must be an empty successful result");
+    cJSON_Delete(json);
+    json = take_response(wasm_ZrLspGetDocumentHighlights(context, uri, sizeof(uri) - 1, 0, 0));
+    expect_true(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "success")) &&
+                cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(json, "data")) &&
+                cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(json, "data")) == 0,
+                "highlights on empty source must be an empty successful result");
     cJSON_Delete(json);
 
     cJSON_InitHooks(&hooks);

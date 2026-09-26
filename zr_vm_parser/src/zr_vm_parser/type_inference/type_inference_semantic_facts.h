@@ -3,6 +3,9 @@
 
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
+
+void type_inference_record_identifier_reference_fact(
+        SZrCompilerState *cs, SZrAstNode *node, const SZrTypeBinding *binding);
 #include "zr_vm_parser/semantic_facts.h"
 
 typedef struct SZrResolvedCallSignature SZrResolvedCallSignature;

@@ -29,15 +29,19 @@ export function setLanguageClientRequestClient(client: RequestCapableClient | un
 export async function sendLanguageServerRequest<TResult>(
     method: string,
     params?: unknown,
+    options: { strict?: boolean } = {},
 ): Promise<TResult | undefined> {
     if (!currentClient) {
+        if (options.strict) {
+            throw new Error('Language client is not running');
+        }
         return undefined;
     }
 
     try {
         return await currentClient.sendRequest<TResult>(method, params);
     } catch (error) {
-        if (isIgnorableLanguageServerRequestError(error)) {
+        if (!options.strict && isIgnorableLanguageServerRequestError(error)) {
             return undefined;
         }
 

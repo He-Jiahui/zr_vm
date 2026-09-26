@@ -87,8 +87,11 @@ export interface ZrStructureController extends vscode.Disposable {
     refresh(): Promise<void>;
 }
 
-export function registerZrStructureViews(context: vscode.ExtensionContext): ZrStructureController {
-    return new ZrStructureService(context);
+export function registerZrStructureViews(
+    context: vscode.ExtensionContext,
+    options: { projectIndexAvailable?: boolean } = {},
+): ZrStructureController {
+    return new ZrStructureService(context, options.projectIndexAvailable ?? true);
 }
 
 class StructureTreeProvider implements vscode.TreeDataProvider<TreeNode> {
@@ -136,7 +139,7 @@ class ZrStructureService implements ZrStructureController {
     private projectRoots: TreeNode[] = [];
     private builtinRoots: TreeNode[] = [];
 
-    constructor(private readonly context: vscode.ExtensionContext) {
+    constructor(private readonly context: vscode.ExtensionContext, private readonly projectIndexAvailable: boolean) {
         this.filesView = vscode.window.createTreeView(ZR_FILES_VIEW_ID, {
             treeDataProvider: this.filesProvider,
             showCollapseAll: true,
@@ -251,7 +254,10 @@ class ZrStructureService implements ZrStructureController {
 
     private async performRefresh(): Promise<void> {
         this.filesRoots = await buildCurrentFileRoots();
-        this.projectRoots = await buildProjectRoots(this.context);
+        this.projectRoots = this.projectIndexAvailable
+            ? await buildProjectRoots(this.context)
+            : [createInfoNode('project:unavailable:web',
+                'Project indexing is unavailable in VS Code Web. Open a Zr file to use language features.')];
         this.builtinRoots = buildBuiltinLibraryRoots();
         this.filesProvider.setRoots(this.filesRoots);
         this.projectProvider.setRoots(this.projectRoots);

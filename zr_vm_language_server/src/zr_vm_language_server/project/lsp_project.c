@@ -1418,6 +1418,7 @@ static void project_index_free(SZrState *state, SZrLspProjectIndex *projectIndex
     }
 
     ZrCore_Array_Free(state, &projectIndex->files);
+    ZrCore_Array_Free(state, &projectIndex->activeModuleLoads);
     if (projectIndex->project != ZR_NULL) {
         ZrLibrary_Project_Free(state, projectIndex->project);
     }
@@ -1476,6 +1477,8 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
                       &projectIndex->files,
                       sizeof(SZrLspProjectFileRecord *),
                       ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state, &projectIndex->activeModuleLoads,
+                      sizeof(SZrString *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     return projectIndex;
 }
 
@@ -2040,6 +2043,7 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
     SZrSemanticAnalyzer *analyzer;
     TZrNativeString sourceCode;
     TZrSize sourceLength;
+    TZrBool success = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_FALSE;
@@ -2067,11 +2071,21 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
         return ZR_FALSE;
     }
 
+    for (TZrSize index = 0; index < projectIndex->activeModuleLoads.length; index++) {
+        SZrString **activeName = (SZrString **)ZrCore_Array_Get(
+            &projectIndex->activeModuleLoads, index);
+        if (activeName != ZR_NULL && *activeName != ZR_NULL &&
+            ZrCore_String_Equal(*activeName, moduleName)) {
+            return ZR_FALSE;
+        }
+    }
+    ZrCore_Array_Push(state, &projectIndex->activeModuleLoads, &moduleName);
+
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, moduleUri);
     if (fileVersion == ZR_NULL) {
         sourceCode = ZrLibrary_File_ReadAll(state->global, resolvedPath);
         if (sourceCode == ZR_NULL) {
-            return ZR_FALSE;
+            goto cleanup;
         }
 
         sourceLength = strlen(sourceCode);
@@ -2080,7 +2094,7 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
                                           sourceCode,
                                           sourceLength + 1,
                                           ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-            return ZR_FALSE;
+            goto cleanup;
         }
 
         ZrCore_Memory_RawFreeWithType(state->global,
@@ -2090,11 +2104,14 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
     }
 
     if (!project_reanalyze_loaded_document(state, context, projectIndex, moduleUri, ZR_TRUE)) {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
-    return project_register_loaded_document(state, context, projectIndex, moduleUri) &&
-           project_load_imports_from_uri(state, context, projectIndex, moduleUri);
+    success = project_register_loaded_document(state, context, projectIndex, moduleUri) &&
+              project_load_imports_from_uri(state, context, projectIndex, moduleUri);
+cleanup:
+    projectIndex->activeModuleLoads.length--;
+    return success;
 }
 
 TZrBool ZrLanguageServer_LspProject_EnsureModuleLoadedByName(SZrState *state,

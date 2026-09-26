@@ -7,10 +7,12 @@ const { spawnSync } = require('child_process');
 const repository = path.resolve(__dirname, '..', '..');
 const worker = 'zr_vm_language_server_extension/src/browser/worker/server-worker.ts';
 const bridge = 'zr_vm_language_server_extension/src/browser/worker/wasm-bridge.ts';
+const response = 'zr_vm_language_server_extension/src/browser/worker/wasm-response.ts';
 const inputs = [
     'zr_vm_language_server/CMakeLists.txt',
     'zr_vm_language_server/wasm/wasm_exports.cpp',
-    'zr_vm_language_server/wasm/wasm_exports.h', worker, bridge,
+    'zr_vm_language_server/wasm/wasm_exports.h', worker, bridge, response,
+    'zr_vm_language_server_extension/src/browser/worker/document-sync.ts',
 ];
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-wasm-inventory-'));
 const sources = new Map(inputs.map(file => [file, fs.readFileSync(path.join(repository, file), 'utf8')]));
@@ -22,7 +24,7 @@ function swap(source, first, second) {
 
 const cases = [
     ['accepts the production adapter wiring', null, null],
-    ['rejects errors converted to empty success', worker, source =>
+    ['rejects errors converted to empty success', response, source =>
         source.replace('throw new ResponseError(code, message, response.data);', 'return fallback;')],
     ['rejects swapped worker providers', worker, source =>
         swap(source, 'bridge.getCompletion(', 'bridge.getHover(')],

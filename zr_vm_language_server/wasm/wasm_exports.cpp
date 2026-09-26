@@ -1123,7 +1123,9 @@ const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
         return jsonStr;
     } else {
         ZrCore_Array_Free(g_wasm_state, &locations);
-        return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get definition");
+        // A missing symbol is a valid LSP result. Keep the WASM envelope
+        // consistent with the stdio handler, which returns an empty array.
+        return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateArray());
     }
 }
 
@@ -1272,8 +1274,22 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
     if (!ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state,
                                               (SZrLspContext *)context,
                                               uriStr,
-                                              &diagnostics) ||
-        !ZrLanguageServer_LspDiagnosticStore_BuildResultId(
+                                              &diagnostics)) {
+        // A document that is not part of the WASM snapshot (for example an
+        // editor-only projection) has no diagnostics, rather than an RPC
+        // failure. Match the native handler's empty report behavior.
+        report = cJSON_CreateObject();
+        if (report == ZR_NULL ||
+            cJSON_AddStringToObject(report, "resultId", "") == ZR_NULL ||
+            cJSON_AddItemToObject(report, "items", cJSON_CreateArray()) == 0) {
+            cJSON_Delete(report);
+            free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+            return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Out of memory");
+        }
+        free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+        return ZrLanguageServer_Wasm_SuccessResponse(report);
+    }
+    if (!ZrLanguageServer_LspDiagnosticStore_BuildResultId(
                 g_wasm_state,
                 (SZrLspContext *)context,
                 uriStr,
@@ -1438,7 +1454,7 @@ const char* wasm_ZrLspGetInlayHints(void* context,
     }
 
     ZrLanguageServer_Lsp_FreeInlayHints(g_wasm_state, &hints);
-    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get inlay hints");
+    return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateArray());
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1621,7 +1637,7 @@ const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int 
     }
 
     ZrCore_Array_Free(g_wasm_state, &highlights);
-    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get document highlights");
+    return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateArray());
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1805,7 +1821,7 @@ const char* wasm_ZrLspGetCodeActions(void* context,
     }
 
     ZrLanguageServer_Lsp_FreeCodeActions(g_wasm_state, &actions);
-    return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get code actions");
+    return ZrLanguageServer_Wasm_SuccessResponse(cJSON_CreateArray());
 }
 
 #ifdef __EMSCRIPTEN__

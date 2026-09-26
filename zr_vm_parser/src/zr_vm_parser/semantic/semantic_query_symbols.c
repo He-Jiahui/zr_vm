@@ -511,7 +511,6 @@ TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
             declaration->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
             !declaration->isResolved ||
             declaration->symbolId == ZR_SEMANTIC_ID_INVALID ||
-            declaration->typeId == ZR_SEMANTIC_ID_INVALID ||
             declaration->node == ZR_NULL ||
             !semantic_query_symbols_scope_allows_declaration(scope, declaration) ||
             semantic_query_symbols_contains_id(outSymbols, declaration->symbolId)) {

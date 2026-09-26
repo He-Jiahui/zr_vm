@@ -9,7 +9,11 @@
 #include "zr_vm_common/zr_type_conf.h"
 #define ZR_INSTRUCTION_USE_DISPATCH_TABLE
 
-#if defined(ZR_COMPILER_GNU) || defined(ZR_COMPILER_CLANG)
+#if defined(__EMSCRIPTEN__) || defined(ZR_WASM_BUILD)
+/* Computed-goto dispatch creates irreducible control flow for the WASM backend.
+ * Reuse the portable switch dispatcher instead of expanding those regions. */
+#define ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED 0
+#elif defined(ZR_COMPILER_GNU) || defined(ZR_COMPILER_CLANG)
 #define ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED 1
 #elif defined(ZR_COMPILER_MSVC)
 #define ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED 0

@@ -17,6 +17,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/type_inference.h"
+#include "zr_vm_parser/semantic_source_metadata.h"
 
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
@@ -1805,83 +1806,6 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
 
 }
 
-static TZrTypeId resolve_using_resource_type_id(SZrCompilerState *cs, SZrAstNode *resource) {
-    SZrInferredType inferredType;
-    TZrBool hasInferredType = ZR_FALSE;
-    TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
-    EZrSemanticTypeKind semanticKind = ZR_SEMANTIC_TYPE_KIND_REFERENCE;
-
-    if (cs == ZR_NULL || resource == ZR_NULL || cs->semanticContext == ZR_NULL) {
-        return ZR_SEMANTIC_ID_INVALID;
-    }
-
-    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-
-    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL &&
-        resource->data.identifier.name != ZR_NULL) {
-        hasInferredType = ZrParser_TypeEnvironment_LookupVariable(cs->state,
-                                                          cs->typeEnv,
-                                                          resource->data.identifier.name,
-                                                          &inferredType);
-    }
-
-    if (!hasInferredType) {
-        hasInferredType = ZrParser_ExpressionType_Infer(cs, resource, &inferredType);
-    }
-
-    if (hasInferredType) {
-        if (inferredType.baseType != ZR_VALUE_TYPE_OBJECT &&
-            inferredType.baseType != ZR_VALUE_TYPE_ARRAY &&
-            inferredType.baseType != ZR_VALUE_TYPE_STRING) {
-            semanticKind = ZR_SEMANTIC_TYPE_KIND_VALUE;
-        }
-
-        typeId = ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
-                                                &inferredType,
-                                                semanticKind,
-                                                inferredType.typeName,
-                                                resource);
-    }
-
-    ZrParser_InferredType_Free(cs->state, &inferredType);
-    return typeId;
-}
-
-static TZrBool infer_using_resource_type(SZrCompilerState *cs,
-                                         SZrAstNode *resource,
-                                         SZrInferredType *outType) {
-    if (cs == ZR_NULL || resource == ZR_NULL || outType == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL &&
-        resource->data.identifier.name != ZR_NULL &&
-        ZrParser_TypeEnvironment_LookupVariable(cs->state,
-                                                cs->typeEnv,
-                                                resource->data.identifier.name,
-                                                outType)) {
-        return ZR_TRUE;
-    }
-
-    return ZrParser_ExpressionType_Infer(cs, resource, outType);
-}
-
-static EZrOwnershipBuiltinKind using_cleanup_builtin_for_ownership(
-        EZrOwnershipQualifier ownershipQualifier) {
-    switch (ownershipQualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-        case ZR_OWNERSHIP_QUALIFIER_SHARED:
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return ZR_OWNERSHIP_BUILTIN_KIND_DROP;
-        case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN;
-        case ZR_OWNERSHIP_QUALIFIER_WEAK:
-        case ZR_OWNERSHIP_QUALIFIER_NONE:
-        default:
-            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-    }
-}
-
 static TZrBool note_using_resource_slot_type_hint(SZrCompilerState *cs,
                                                   SZrAstNode *resource,
                                                   TZrUInt32 targetSlot) {
@@ -1893,32 +1817,13 @@ static TZrBool note_using_resource_slot_type_hint(SZrCompilerState *cs,
     }
 
     ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
-    if (infer_using_resource_type(cs, resource, &resourceType)) {
+    if (ZrParser_SemanticMetadata_InferUsingResourceType(cs, resource, &resourceType)) {
         ok = compiler_register_stack_slot_type_hint(cs, targetSlot, &resourceType);
     } else if (cs->hasError) {
         ok = ZR_FALSE;
     }
     ZrParser_InferredType_Free(cs->state, &resourceType);
     return ok;
-}
-
-static TZrSymbolId register_using_resource_symbol(SZrCompilerState *cs, SZrAstNode *resource) {
-    TZrTypeId typeId;
-
-    if (cs == ZR_NULL || resource == ZR_NULL || cs->semanticContext == ZR_NULL ||
-        resource->type != ZR_AST_IDENTIFIER_LITERAL ||
-        resource->data.identifier.name == ZR_NULL) {
-        return ZR_SEMANTIC_ID_INVALID;
-    }
-
-    typeId = resolve_using_resource_type_id(cs, resource);
-    return ZrParser_Semantic_RegisterSymbol(cs->semanticContext,
-                                    resource->data.identifier.name,
-                                    ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
-                                    typeId,
-                                    ZR_SEMANTIC_ID_INVALID,
-                                    resource,
-                                    resource->location);
 }
 
 static SZrString *create_hidden_using_local_name(SZrCompilerState *cs) {
@@ -2642,7 +2547,7 @@ static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNo
     }
 
     ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
-    hasResourceType = infer_using_resource_type(cs, stmt->resource, &resourceType);
+    hasResourceType = ZrParser_SemanticMetadata_InferUsingResourceType(cs, stmt->resource, &resourceType);
     if (cs->hasError || !hasResourceType || resourceType.typeName == ZR_NULL) {
         ZrParser_InferredType_Free(cs->state, &resourceType);
         ZrParser_Compiler_Error(cs, "Using pattern guard requires a named union resource", stmt->resource->location);
@@ -3730,8 +3635,6 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrUsingStatement *stmt;
-    TZrLifetimeRegionId regionId = ZR_SEMANTIC_ID_INVALID;
-    TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
     TZrUInt32 resourceSlot = 0;
     EZrOwnershipQualifier cleanupOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     EZrOwnershipBuiltinKind cleanupBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
@@ -3760,34 +3663,18 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
         TZrBool hasResourceType;
 
         ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
-        hasResourceType = infer_using_resource_type(cs, stmt->resource, &resourceType);
+        hasResourceType = ZrParser_SemanticMetadata_InferUsingResourceType(cs, stmt->resource, &resourceType);
         if (cs->hasError) {
             ZrParser_InferredType_Free(cs->state, &resourceType);
             return;
         }
         if (hasResourceType) {
             cleanupOwnershipQualifier = resourceType.ownershipQualifier;
-            cleanupBuiltinKind = using_cleanup_builtin_for_ownership(cleanupOwnershipQualifier);
+            cleanupBuiltinKind = ZrParser_SemanticMetadata_UsingCleanupBuiltin(cleanupOwnershipQualifier);
         }
+        ZrParser_SemanticMetadata_RecordUsingCleanup(
+                cs, node, hasResourceType ? &resourceType : ZR_NULL);
         ZrParser_InferredType_Free(cs->state, &resourceType);
-    }
-
-    if (cs->semanticContext != ZR_NULL) {
-        SZrDeterministicCleanupStep cleanupStep;
-
-        regionId = ZrParser_Semantic_ReserveLifetimeRegionId(cs->semanticContext);
-        symbolId = register_using_resource_symbol(cs, stmt->resource);
-
-        cleanupStep.kind = ZR_DETERMINISTIC_CLEANUP_KIND_BLOCK_SCOPE;
-        cleanupStep.regionId = regionId;
-        cleanupStep.ownerRegionId = regionId;
-        cleanupStep.symbolId = symbolId;
-        cleanupStep.declarationOrder = (TZrInt32)cs->semanticContext->cleanupPlan.length;
-        cleanupStep.ownershipQualifier = cleanupOwnershipQualifier;
-        cleanupStep.ownershipBuiltinKind = cleanupBuiltinKind;
-        cleanupStep.callsClose = ZR_TRUE;
-        cleanupStep.callsDestructor = ZR_TRUE;
-        ZrParser_Semantic_AppendCleanupStep(cs->semanticContext, &cleanupStep);
     }
 
     if (stmt->body != ZR_NULL) {

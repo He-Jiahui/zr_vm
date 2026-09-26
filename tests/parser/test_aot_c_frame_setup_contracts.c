@@ -161,7 +161,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "struct SZrAotMethodInfo;",
             "struct SZrAotGcRootMap;",
             "struct SZrTypeLayout;",
-            "ZR_VM_AOT_ABI_VERSION 15u",
+            "ZR_VM_AOT_ABI_VERSION 16u",
             "typedef void (*FZrAotReflectionInvoker)(struct SZrState *state,",
             "FZrAotEntryThunk target,",
             "const struct SZrAotMethodInfo *method,",

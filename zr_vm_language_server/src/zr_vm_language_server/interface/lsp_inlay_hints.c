@@ -2,6 +2,7 @@
 #include "interface/lsp_canonical_symbol_display.h"
 #include "semantic/lsp_numeric_range_text.h"
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_parser/semantic_display.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -75,6 +76,17 @@ static TZrBool lsp_inlay_declaration_has_exact_canonical_type_text(
     if (!ZrLanguageServer_Lsp_FormatCanonicalDeclarationType(
                 analyzer, declaration, buffer, bufferSize)) {
         return ZR_FALSE;
+    }
+
+    if (declaration->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
+        const SZrCanonicalTypeNode *callable = ZrParser_CanonicalType_Find(
+                analyzer->semanticContext, declaration->typeId);
+        if (callable == ZR_NULL || callable->kind != ZR_CANONICAL_TYPE_FUNCTION ||
+            !ZrParser_SemanticDisplay_FormatSourceType(
+                    analyzer->semanticContext, callable->data.function.returnTypeId,
+                    buffer, bufferSize)) {
+            return ZR_FALSE;
+        }
     }
 
     *outTypeText = buffer;

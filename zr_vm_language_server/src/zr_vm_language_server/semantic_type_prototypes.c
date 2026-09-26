@@ -2088,6 +2088,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
     if (isResolved) {
         semantic_type_prototypes_publish_declared_type_reference(
                 analyzer, ownerTypeNode, functionNode, typeNode, outType);
+        isResolved = semantic_type_prototypes_declared_type_is_resolved(
+                analyzer, ownerTypeNode, functionNode, typeNode);
     }
     return isResolved;
 }

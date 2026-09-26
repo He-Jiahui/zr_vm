@@ -11,6 +11,7 @@
 #include "object/object_super_array_internal.h"
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/profile.h"
@@ -5898,6 +5899,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 goto LZrReturning;                                                                                     \
             }                                                                                                          \
         }                                                                                                              \
+        if (ZR_UNLIKELY(state->executionBudget != ZR_NULL) &&                                                         \
+            !ZrCore_ExecutionBudget_Poll(state, ZR_TRUE)) {                                                            \
+            callInfo->context.context.programCounter = programCounter + (N);                                         \
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                        \
+            ZrCore_ExecutionBudget_UnwindVmFrames(state);                                                              \
+            goto LZrExecutionDone;                                                                                     \
+        }                                                                                                              \
     } while (0)
 #define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
     (SAVE_PC(STATE, CALL_INFO), ((STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer))
@@ -5947,6 +5955,11 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 
 #define RESUME_AFTER_NATIVE_CALL(STATE, CALL_INFO)                                                                     \
     do {                                                                                                               \
+        if (ZR_UNLIKELY((STATE)->executionBudget != ZR_NULL) &&                                                       \
+            !ZrCore_ExecutionBudget_Poll((STATE), ZR_FALSE)) {                                                         \
+            ZrCore_ExecutionBudget_UnwindVmFrames(STATE);                                                              \
+            goto LZrExecutionDone;                                                                                     \
+        }                                                                                                              \
         if ((STATE)->hasCurrentException && execution_unwind_exception_to_handler((STATE), &(CALL_INFO))) {           \
             goto LZrReturning;                                                                                         \
         }                                                                                                              \

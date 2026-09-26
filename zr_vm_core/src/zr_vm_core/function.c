@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/memory.h"
@@ -1685,6 +1686,9 @@ static ZR_FORCE_INLINE void function_call_internal_to_destination(struct SZrStat
                                                                   TZrUInt32 callIncremental,
                                                                   TZrBool isYield,
                                                                   TZrStackValuePointer returnDestination) {
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL) && !ZrCore_ExecutionBudget_Poll(state, ZR_FALSE)) {
+        return;
+    }
     state->nestedNativeCalls += callIncremental;
     state->nestedNativeCallYieldFlag += isYield ? 1 : 0;
     if (ZR_UNLIKELY(state->nestedNativeCalls > ZR_VM_MAX_NATIVE_CALL_STACK)) {
@@ -1755,6 +1759,9 @@ static ZR_FORCE_INLINE void function_call_internal_known(
         TZrBool isYield,
         const SZrTypeValue *interpreterGenericContext,
         const SZrTypeValue *interpreterGenericMethodContext) {
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL) && !ZrCore_ExecutionBudget_Poll(state, ZR_FALSE)) {
+        return;
+    }
     state->nestedNativeCalls += callIncremental;
     state->nestedNativeCallYieldFlag += isYield ? 1 : 0;
     if (ZR_UNLIKELY(state->nestedNativeCalls > ZR_VM_MAX_NATIVE_CALL_STACK)) {
@@ -3612,14 +3619,19 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(stru
                           (TZrUInt32)argumentsCount);
     }
     ZR_THREAD_UNLOCK(state);
-    returnCount = function(state);
+    returnCount = (state->executionBudget == ZR_NULL || ZrCore_ExecutionBudget_NativeEnter(state, ZR_FALSE)) ? function(state) : 0;
     ZR_THREAD_LOCK(state);
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL)) {
+        state->executionBudget->countedNativeFrame = ZR_NULL;
+        (void)ZrCore_ExecutionBudget_Poll(state, ZR_FALSE);
+    }
     callInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
     callInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
     if (hasReturnDestinationAnchor) {
         callInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
     }
-    if (state->threadStatus == ZR_THREAD_STATUS_FINE &&
+    if ((state->threadStatus == ZR_THREAD_STATUS_FINE ||
+         state->threadStatus == ZR_THREAD_STATUS_EXECUTION_TERMINATED) &&
         function_native_frame_has_pending_close_work(state, callInfo)) {
         TZrStackValuePointer returnTop = state->stackTop.valuePointer;
         if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
@@ -3726,10 +3738,15 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame_sing
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
 
     ZR_THREAD_UNLOCK(state);
-    returnCount = function(state);
+    returnCount = (state->executionBudget == ZR_NULL || ZrCore_ExecutionBudget_NativeEnter(state, ZR_FALSE)) ? function(state) : 0;
     ZR_THREAD_LOCK(state);
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL)) {
+        state->executionBudget->countedNativeFrame = ZR_NULL;
+        (void)ZrCore_ExecutionBudget_Poll(state, ZR_FALSE);
+    }
 
-    if (state->threadStatus == ZR_THREAD_STATUS_FINE &&
+    if ((state->threadStatus == ZR_THREAD_STATUS_FINE ||
+         state->threadStatus == ZR_THREAD_STATUS_EXECUTION_TERMINATED) &&
         function_native_frame_has_pending_close_work(state, callInfo)) {
         TZrStackValuePointer returnTop = state->stackTop.valuePointer;
         if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
@@ -4967,10 +4984,16 @@ TZrBool ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFastRestor
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
 
     ZR_THREAD_UNLOCK(state);
-    returnCount = nativeFunction(state);
+    returnCount = (state->executionBudget == ZR_NULL || ZrCore_ExecutionBudget_NativeEnter(state, ZR_FALSE))
+                          ? nativeFunction(state) : 0;
     ZR_THREAD_LOCK(state);
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL)) {
+        state->executionBudget->countedNativeFrame = ZR_NULL;
+        (void)ZrCore_ExecutionBudget_Poll(state, ZR_FALSE);
+    }
 
-    if (state->threadStatus == ZR_THREAD_STATUS_FINE &&
+    if ((state->threadStatus == ZR_THREAD_STATUS_FINE ||
+         state->threadStatus == ZR_THREAD_STATUS_EXECUTION_TERMINATED) &&
         function_native_frame_has_pending_close_work(state, callInfo)) {
         TZrStackValuePointer returnTop = state->stackTop.valuePointer;
         if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {

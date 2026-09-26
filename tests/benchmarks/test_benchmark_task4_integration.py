@@ -155,6 +155,102 @@ class Task4ReportContractTests(unittest.TestCase):
         self.assertEqual(0.5, implementation["relative_to_c"])
         self.assertTrue(implementation["gate_eligible"])
 
+    def test_environment_attachment_preserves_measurement_rejection(self) -> None:
+        task4 = self.require_task4()
+        rejected_records = [
+            {"sample_count": 1, "gate_eligible": False},
+            {"comparable": False},
+            {"comparable": None},
+            {"gate_eligible": None},
+            {"measurement_scope": ""},
+            {"measurement_scope": "unknown"},
+            {"status": "FAIL"},
+            {"stability": "UNSTABLE"},
+        ]
+        for updates in rejected_records:
+            with self.subTest(updates=updates):
+                report = _benchmark_report()
+                report["cases"][0]["implementations"][0].update(updates)
+                attached = task4.attach_environment_contract(
+                    report, environment_tests._fingerprinted_environment()
+                )
+                record = attached["cases"][0]["implementations"][0]
+                self.assertIsNone(record["relative_to_c"])
+                self.assertFalse(record["gate_eligible"])
+
+    def test_environment_attachment_requires_explicit_measurement_qualification(self) -> None:
+        task4 = self.require_task4()
+        for field in ("comparable", "gate_eligible", "measurement_scope"):
+            with self.subTest(field=field):
+                report = _benchmark_report()
+                del report["cases"][0]["implementations"][0][field]
+                attached = task4.attach_environment_contract(
+                    report, environment_tests._fingerprinted_environment()
+                )
+                record = attached["cases"][0]["implementations"][0]
+                self.assertIsNone(record["relative_to_c"])
+                self.assertFalse(record["gate_eligible"])
+
+    def test_environment_attachment_rejects_unqualified_or_different_scope_baseline(self) -> None:
+        task4 = self.require_task4()
+        rejected_baselines = [
+            {"status": "FAIL"},
+            {"stability": "UNSTABLE"},
+            {"comparable": False},
+            {"gate_eligible": False},
+            {"measurement_scope": "process_end_to_end"},
+            {"measurement_scope": ""},
+            {"summary": {"median_wall_ms": 0.0}},
+        ]
+        for updates in rejected_baselines:
+            with self.subTest(updates=updates):
+                report = _benchmark_report()
+                report["cases"][0]["implementations"][1].update(updates)
+                attached = task4.attach_environment_contract(
+                    report, environment_tests._fingerprinted_environment()
+                )
+                record = attached["cases"][0]["implementations"][0]
+                self.assertIsNone(record["relative_to_c"])
+                self.assertTrue(record["gate_eligible"])
+
+    def test_environment_attachment_keeps_eligible_record_without_c_baseline(self) -> None:
+        task4 = self.require_task4()
+        report = _benchmark_report()
+        report["cases"][0]["implementations"].pop()
+        attached = task4.attach_environment_contract(
+            report, environment_tests._fingerprinted_environment()
+        )
+        record = attached["cases"][0]["implementations"][0]
+        self.assertIsNone(record["relative_to_c"])
+        self.assertTrue(record["comparable"])
+        self.assertTrue(record["gate_eligible"])
+
+    def test_finalized_report_directory_preserves_gate_rejection(self) -> None:
+        task4 = self.require_task4()
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            report = _benchmark_report()
+            report["cases"][0]["implementations"][0].update(
+                {"sample_count": 1, "gate_eligible": False}
+            )
+            report_path = root / "benchmark_report.json"
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            environment_path = root / "environment_report.json"
+            environment_path.write_text(
+                json.dumps(environment_tests._fingerprinted_environment()),
+                encoding="utf-8",
+            )
+            task4.finalize_report_directory(root, environment_path)
+            attached = json.loads(report_path.read_text(encoding="utf-8"))
+            record = attached["cases"][0]["implementations"][0]
+            self.assertFalse(record["gate_eligible"])
+            self.assertIsNone(record["relative_to_c"])
+            comparison = task4.compare_benchmark_summaries(
+                _summary(report=attached), _summary()
+            )
+            self.assertEqual("INCOMPARABLE", comparison["status"])
+            self.assertIn("CURRENT_RECORD_NOT_GATE_ELIGIBLE", comparison["reasons"])
+
     def test_incomplete_or_invalid_environment_is_rejected(self) -> None:
         task4 = self.require_task4()
         environment = environment_tests._fingerprinted_environment()

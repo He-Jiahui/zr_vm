@@ -61,6 +61,19 @@ test('sendLanguageServerRequest suppresses disposed transport errors during rest
     assert.equal(result, undefined);
 });
 
+test('strict language server requests preserve protocol errors for callers', async () => {
+    const error = Object.assign(new Error('Method not found'), { code: -32601 });
+    setLanguageClientRequestClient({ sendRequest: async () => { throw error; } });
+    await assert.rejects(sendLanguageServerRequest('workspace/diagnostic', {}, { strict: true }),
+        actual => actual === error);
+});
+
+test('strict language server requests fail when the client is unavailable', async () => {
+    await assert.rejects(sendLanguageServerRequest('textDocument/diagnostic', {}, { strict: true }),
+        /client is not running/i);
+    assert.equal(await sendLanguageServerRequest('textDocument/diagnostic', {}), undefined);
+});
+
 test('language server client errors identify shutdown races', () => {
     assert.equal(isIgnorableLanguageServerRequestError(new Error('Client is not running')), true);
     assert.equal(isIgnorableLanguageServerRequestError(new Error('Cannot call write after a stream was destroyed')), true);

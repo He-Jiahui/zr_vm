@@ -834,6 +834,12 @@ static void garbage_collector_mark_object_prototype_graph(SZrState *state,
         }
     }
 
+    for (TZrUInt32 index = 0u; index < prototype->interfaceDispatchCount; ++index) {
+        SZrInterfaceDispatchEntry *entry = &prototype->interfaceDispatchEntries[index];
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entry->interfacePrototype));
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entry->implementationPrototype));
+    }
+
     for (TZrUInt32 metaIndex = 0; metaIndex < ZR_META_ENUM_MAX; metaIndex++) {
         SZrMeta *meta = prototype->metaTable.metas[metaIndex];
 
@@ -850,6 +856,7 @@ static void garbage_collector_mark_object_prototype_graph(SZrState *state,
         garbage_collector_mark_string_if_present(state, descriptor->baseDefinitionOwnerTypeName);
         garbage_collector_mark_string_if_present(state, descriptor->baseDefinitionName);
         garbage_collector_mark_function_if_present(state, descriptor->getterFunction, work);
+        garbage_collector_mark_function_if_present(state, descriptor->methodFunction, work);
         garbage_collector_mark_function_if_present(state, descriptor->setterFunction, work);
         garbage_collector_mark_function_if_present(state, descriptor->initializerFunction, work);
         if (work != ZR_NULL) {
@@ -1250,6 +1257,14 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
             if (function->callSiteCaches != ZR_NULL) {
                 for (TZrUInt32 i = 0; i < function->callSiteCacheLength; i++) {
                     SZrFunctionCallSiteCacheEntry *cacheEntry = &function->callSiteCaches[i];
+
+                    if (cacheEntry->binding.target.targetKind == ZR_CALL_BINDING_TARGET_VM) {
+                        garbage_collector_mark_function_if_present(state, cacheEntry->binding.target.vm.function, &work);
+                    }
+                    if (cacheEntry->binding.target.callableObject != ZR_NULL) {
+                        garbage_collector_mark_object(state, cacheEntry->binding.target.callableObject);
+                        work++;
+                    }
 
                     garbage_collector_sanitize_callsite_cache_pic(function, i, "mark", cacheEntry);
                     TZrUInt32 picLimit = cacheEntry->picSlotCount;

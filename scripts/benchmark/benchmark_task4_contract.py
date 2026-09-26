@@ -25,6 +25,7 @@ _RATIO_FIELDS = {
     "relative_to_c",
     "stress_vs_baseline",
 }
+_VALID_MEASUREMENT_SCOPES = {"process_end_to_end", "persistent_runtime"}
 
 
 def _unique(values: list[str]) -> list[str]:
@@ -74,6 +75,19 @@ def _record_median(record: dict[str, Any]) -> float | None:
     return value if math.isfinite(value) and value > 0.0 else None
 
 
+def _record_is_gate_eligible(record: Any) -> bool:
+    """Keep runner sampling decisions authoritative during report finalization."""
+    return (
+        isinstance(record, dict)
+        and record.get("status") == "PASS"
+        and record.get("stability") == "STABLE"
+        and record.get("comparable") is True
+        and record.get("gate_eligible") is True
+        and record.get("measurement_scope") in _VALID_MEASUREMENT_SCOPES
+        and _record_median(record) is not None
+    )
+
+
 def _recompute_benchmark_ratios(report: dict[str, Any], *, comparable: bool) -> None:
     for case in report.get("cases", []):
         if not isinstance(case, dict) or not isinstance(case.get("implementations"), list):
@@ -89,21 +103,27 @@ def _recompute_benchmark_ratios(report: dict[str, Any], *, comparable: bool) -> 
             ),
             None,
         )
-        baseline_median = _record_median(baseline) if baseline is not None else None
+        baseline_eligible = comparable and _record_is_gate_eligible(baseline)
+        baseline_median = _record_median(baseline) if baseline_eligible else None
+        baseline_scope = baseline.get("measurement_scope") if baseline_eligible else None
         for record in implementations:
+            record_eligible = comparable and _record_is_gate_eligible(record)
             eligible = (
-                comparable
-                and record.get("status") == "PASS"
-                and record.get("stability") == "STABLE"
+                record_eligible
                 and baseline_median is not None
-                and _record_median(record) is not None
+                and record.get("measurement_scope") == baseline_scope
             )
-            if not eligible:
+            if not record_eligible:
+                # A finalizer must never promote a sample rejected by the runner.
+                record["comparable"] = False
+                record["gate_eligible"] = False
                 record["relative_to_c"] = None
-                record["gate_eligible"] = None if not comparable else False
                 continue
             record["comparable"] = True
             record["gate_eligible"] = True
+            if not eligible:
+                record["relative_to_c"] = None
+                continue
             record["relative_to_c"] = round(
                 _record_median(record) / baseline_median,
                 6,

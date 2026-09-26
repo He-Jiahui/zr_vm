@@ -362,6 +362,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_super_array_raw_int_canonical_storage.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_session_checkpoint_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_session_checkpoint.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_aot_gc_root_frame_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_aot_gc_root_frame.c
     )
@@ -487,6 +491,15 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_super_array_raw_int_canonical_storage_test)
+    target_include_directories(zr_vm_session_checkpoint_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_session_checkpoint_test)
+    add_test(
+            NAME session_checkpoint
+            COMMAND $<TARGET_FILE:zr_vm_session_checkpoint_test>
+    )
     target_include_directories(zr_vm_aot_gc_root_frame_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -4156,6 +4169,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_core(zr_vm_metadata_runtime_method_binding_test)
 
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_call_binding_tests.cmake)
+
     zr_vm_add_unity_test_target(
             zr_vm_reflection_token_resolve_test
             ${CMAKE_SOURCE_DIR}/tests/module/test_reflection_token_resolve.c
@@ -4164,8 +4179,6 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_reflection_token_resolve_test)
-
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_call_binding_tests.cmake)
 
     zr_vm_add_unity_test_target(
             zr_vm_reflection_method_invoke_test
@@ -7037,6 +7050,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
         )
     endif ()
     add_test(
+            NAME language_server_stdio_cyclic_import_smoke
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_cyclic_import_smoke.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+    add_test(
             NAME language_server_stdio_inline_value_semantic_smoke
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_inline_value_semantic_smoke.js
@@ -8666,6 +8685,7 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
             containers
             language_server
             language_server_stdio_smoke
+            language_server_stdio_cyclic_import_smoke
             language_server_stdio_inline_value_semantic_smoke
             language_server_stdio_diagnostic_fix_smoke
             language_server_stdio_position_encoding_smoke

@@ -383,6 +383,7 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 #include "test_semantic_analyzer_ffi_wrapper_decorator_cases.h"
 #include "test_semantic_analyzer_extern_parameter_decorator_cases.h"
 #include "test_semantic_analyzer_local_binding_identity_cases.h"
+#include "test_semantic_analyzer_source_metadata_cases.h"
 
 static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
     const char *text;
@@ -4614,6 +4615,8 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_records_using_cleanup_and_template_segments(state);
+    test_semantic_analyzer_source_metadata_survives_cached_and_forced_analysis(state);
+    test_semantic_analyzer_nested_source_metadata_is_complete(state);
     TEST_DIVIDER();
     test_semantic_analyzer_records_owned_field_cleanup_metadata(state);
     TEST_DIVIDER();
@@ -4625,6 +4628,8 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_local_binding_identity(state);
+    test_semantic_analyzer_unknown_local_preserves_identity(state);
+    test_semantic_analyzer_unknown_parameter_preserves_identity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_local_symbols_surface_rich_hover(state);

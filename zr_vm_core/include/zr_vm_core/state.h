@@ -16,6 +16,7 @@ struct SZrGlobalState;
 struct SZrFunction;
 struct SZrAotGcRootMap;
 struct SZrGcDomain;
+struct SZrExecutionBudget;
 
 typedef enum EZrVmExceptionHandlerPhase {
     ZR_VM_EXCEPTION_HANDLER_PHASE_TRY = 0,
@@ -67,6 +68,7 @@ struct ZR_STRUCT_ALIGN SZrState {
     // SZrRawObject *gcList;
     // thread management
     EZrThreadStatus threadStatus;
+    struct SZrExecutionBudget *executionBudget;
     TZrMemoryOffset previousProgramCounter;
 
 

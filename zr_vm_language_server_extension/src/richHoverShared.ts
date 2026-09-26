@@ -60,7 +60,7 @@ export function summarizeRichHover(payload: RichHoverPayload | null | undefined)
         lines.push(`Source: \`${sourceSection.value}\``);
     }
 
-    if (lines.length === 0 && docsSection?.value) {
+    if (docsSection?.value) {
         lines.push(truncateSingleLine(docsSection.value, 160));
     }
 

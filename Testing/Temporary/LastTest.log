@@ -1,0 +1,57 @@
+Start testing: Sep 26 00:20 CST
+----------------------------------------------------------
+214/273 Testing: ssa_source_straight_line_cfg
+214/273 Test: ssa_source_straight_line_cfg
+Command: "/mnt/e/Git/zr_vm/bin/zr_vm_ssa_source_straight_line_cfg_test"
+Directory: /mnt/e/Git/zr_vm/tests
+"ssa_source_straight_line_cfg" start time: Sep 26 00:20 CST
+Output:
+----------------------------------------------------------
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:631:test_empty_source_finalizes_and_oracle_returns:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:632:test_scalar_init_load_assignment_preserves_prefix:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:633:test_repeated_validation_and_build_do_not_append_terminators:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:634:test_explicit_return_keeps_value_and_unreachable_tail_isolated:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:635:test_explicit_throw_keeps_value:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:636:test_child_body_does_not_block_or_pollute_parent:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:637:test_source_assignment_oracle_returns_second_constant:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:638:test_cross_type_binary_without_canonical_conversion_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:639:test_typed_addition_has_semantic_producer:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:640:test_typed_addition_oracle_returns_sum:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:641:test_nested_typed_arithmetic_preserves_producers:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:642:test_discarded_binary_without_semantic_producer_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:643:test_compound_assignment_without_semantic_producer_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:644:test_unary_without_semantic_producer_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:645:test_uninitialized_local_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:646:test_legacy_global_identifier_read_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:647:test_earlier_global_read_is_not_certified_by_later_local:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:648:test_legacy_child_function_read_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:649:test_named_child_declaration_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:650:test_legacy_global_assignment_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:651:test_resource_constructor_requires_canonical_seed:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:652:test_numeric_local_initialization_conversion_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:653:test_numeric_local_assignment_conversion_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:654:test_local_identifier_shadows_legacy_global:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:655:test_callable_default_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:656:test_class_static_initializer_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:657:test_supported_literal_families:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:658:test_block_expression_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:659:test_unsupported_control_flow_stays_analysis_only:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:660:test_suppressed_startup_is_not_promoted:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:661:test_blocked_startup_is_not_promoted:PASS
+/mnt/e/Git/zr_vm/tests/parser/test_ssa_source_straight_line_cfg.c:662:test_full_source_compile_keeps_execbc_artifact:PASS
+
+-----------------------
+32 Tests 0 Failures 0 Ignored 
+OK
+<end of output>
+Test time =   1.97 sec
+----------------------------------------------------------
+Test Passed.
+"ssa_source_straight_line_cfg" end time: Sep 26 00:20 CST
+"ssa_source_straight_line_cfg" time elapsed: 00:00:01
+----------------------------------------------------------
+
+End testing: Sep 26 00:20 CST
+
+ssa =   1.97 sec*proc
+

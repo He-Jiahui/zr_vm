@@ -1011,12 +1011,16 @@ static ZrRustBindingStatus native_callback_capture_fail(NativeCallbackCapture *c
     return status;
 }
 
+static ZrRustBindingStatus native_read_int_argument(
+        const ZrRustBindingNativeArgumentView *argument,
+        TZrPtr userData) {
+    return ZrRustBinding_NativeArgumentView_ReadInt(argument, (TZrInt64 *)userData);
+}
+
 static ZrRustBindingStatus native_host_sum_callback(ZrRustBindingNativeCallContext *context,
                                                     TZrPtr userData,
                                                     ZrRustBindingValue **outResult) {
     NativeCallbackCapture *capture = (NativeCallbackCapture *)userData;
-    ZrRustBindingValue *first = ZR_NULL;
-    ZrRustBindingValue *second = ZR_NULL;
     ZrRustBindingStatus status;
 
     if (capture == ZR_NULL || outResult == ZR_NULL) {
@@ -1050,35 +1054,20 @@ static ZrRustBindingStatus native_host_sum_callback(ZrRustBindingNativeCallConte
         return native_callback_capture_fail(capture, 5, status);
     }
     capture->typeName[0] = '\0';
-    status = ZrRustBinding_NativeCallContext_GetArgument(context, 0, &first);
+    status = ZrRustBinding_NativeCallContext_WithArgument(
+            context, 0, native_read_int_argument, &capture->firstValue);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
         return native_callback_capture_fail(capture, 6, status);
     }
-    status = ZrRustBinding_NativeCallContext_GetArgument(context, 1, &second);
+    status = ZrRustBinding_NativeCallContext_WithArgument(
+            context, 1, native_read_int_argument, &capture->secondValue);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(first);
         return native_callback_capture_fail(capture, 7, status);
-    }
-    status = ZrRustBinding_Value_ReadInt(first, &capture->firstValue);
-    if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(second);
-        ZrRustBinding_Value_Free(first);
-        return native_callback_capture_fail(capture, 8, status);
-    }
-    status = ZrRustBinding_Value_ReadInt(second, &capture->secondValue);
-    if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(second);
-        ZrRustBinding_Value_Free(first);
-        return native_callback_capture_fail(capture, 9, status);
     }
     status = ZrRustBinding_Value_NewInt(capture->firstValue + capture->secondValue, outResult);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(second);
-        ZrRustBinding_Value_Free(first);
         return native_callback_capture_fail(capture, 10, status);
     }
-    ZrRustBinding_Value_Free(second);
-    ZrRustBinding_Value_Free(first);
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
@@ -1086,8 +1075,6 @@ static ZrRustBindingStatus native_host_mul_callback(ZrRustBindingNativeCallConte
                                                     TZrPtr userData,
                                                     ZrRustBindingValue **outResult) {
     NativeCallbackCapture *capture = (NativeCallbackCapture *)userData;
-    ZrRustBindingValue *first = ZR_NULL;
-    ZrRustBindingValue *second = ZR_NULL;
     ZrRustBindingStatus status;
 
     if (capture == ZR_NULL || outResult == ZR_NULL) {
@@ -1120,35 +1107,20 @@ static ZrRustBindingStatus native_host_mul_callback(ZrRustBindingNativeCallConte
     if (status != ZR_RUST_BINDING_STATUS_OK) {
         return native_callback_capture_fail(capture, 105, status);
     }
-    status = ZrRustBinding_NativeCallContext_GetArgument(context, 0, &first);
+    status = ZrRustBinding_NativeCallContext_WithArgument(
+            context, 0, native_read_int_argument, &capture->firstValue);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
         return native_callback_capture_fail(capture, 106, status);
     }
-    status = ZrRustBinding_NativeCallContext_GetArgument(context, 1, &second);
+    status = ZrRustBinding_NativeCallContext_WithArgument(
+            context, 1, native_read_int_argument, &capture->secondValue);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(first);
         return native_callback_capture_fail(capture, 107, status);
-    }
-    status = ZrRustBinding_Value_ReadInt(first, &capture->firstValue);
-    if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(second);
-        ZrRustBinding_Value_Free(first);
-        return native_callback_capture_fail(capture, 108, status);
-    }
-    status = ZrRustBinding_Value_ReadInt(second, &capture->secondValue);
-    if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(second);
-        ZrRustBinding_Value_Free(first);
-        return native_callback_capture_fail(capture, 109, status);
     }
     status = ZrRustBinding_Value_NewInt(capture->firstValue * capture->secondValue, outResult);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
-        ZrRustBinding_Value_Free(second);
-        ZrRustBinding_Value_Free(first);
         return native_callback_capture_fail(capture, 110, status);
     }
-    ZrRustBinding_Value_Free(second);
-    ZrRustBinding_Value_Free(first);
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
@@ -1556,6 +1528,8 @@ static void test_rust_binding_native_builder_rejects_invalid_function_descriptor
     TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)capture.destroyCount);
 }
 
+#include "execution_budget_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -1571,6 +1545,8 @@ int main(void) {
     RUN_FILTERED_TEST(test_rust_binding_native_module_registration_roundtrip);
     RUN_FILTERED_TEST(test_rust_binding_native_module_registration_release_allows_re_registration);
     RUN_FILTERED_TEST(test_rust_binding_native_builder_rejects_invalid_function_descriptor);
+    RUN_FILTERED_TEST(test_rust_binding_execution_budget_instruction_boundary_and_recovery);
+    RUN_FILTERED_TEST(test_rust_binding_execution_budget_deadline_and_native_cancel);
 
     return UNITY_END();
 }

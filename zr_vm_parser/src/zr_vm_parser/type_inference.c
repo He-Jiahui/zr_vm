@@ -1252,42 +1252,6 @@ static TZrBool infer_identifier_callable_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-static void record_identifier_reference_fact(SZrCompilerState *cs,
-                                             SZrAstNode *node,
-                                             const SZrTypeBinding *binding) {
-    SZrSemanticReferenceFact fact;
-
-    if (cs == ZR_NULL ||
-        cs->semanticContext == ZR_NULL ||
-        node == ZR_NULL ||
-        node->type != ZR_AST_IDENTIFIER_LITERAL ||
-        binding == ZR_NULL ||
-        binding->name == ZR_NULL) {
-        return;
-    }
-
-    memset(&fact, 0, sizeof(fact));
-    fact.node = node;
-    fact.range = node->location;
-    if (binding->hasDeclarationRange) {
-        fact.declarationRange = binding->declarationRange;
-    } else if (binding->originKind == ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION) {
-        fact.declarationRange = node->location;
-    }
-    fact.kind = ZR_SEMANTIC_REFERENCE_READ;
-    fact.symbolId = binding->symbolId;
-    fact.typeId = binding->typeId;
-    fact.placeId = binding->placeId;
-    fact.originKind = binding->originKind;
-    fact.runtimeRootKind = binding->runtimeRootKind;
-    fact.originToken = binding->originToken;
-    fact.originIndex = binding->originIndex;
-    fact.ownershipQualifier = binding->type.ownershipQualifier;
-    fact.name = binding->name;
-    fact.isResolved = ZR_TRUE;
-    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
-}
-
 // 从标识符推断类型
 TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
     SZrFunctionTypeInfo *funcTypeInfo = ZR_NULL;
@@ -1316,7 +1280,14 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 ZrParser_InferredType_Copy(cs->state, result, &normalizedType);
             }
             ZrParser_InferredType_Free(cs->state, &normalizedType);
-            record_identifier_reference_fact(cs, node, binding);
+            type_inference_record_identifier_reference_fact(cs, node, binding);
+            if (cs->semanticContext != ZR_NULL && binding != ZR_NULL &&
+                binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                binding->typeId == ZR_SEMANTIC_ID_INVALID &&
+                result->baseType == ZR_VALUE_TYPE_OBJECT &&
+                result->typeName == ZR_NULL && result->elementTypes.length == 0U) {
+                return ZR_FALSE;
+            }
             return ZR_TRUE;
         }
 
@@ -1915,10 +1886,12 @@ static void infer_lambda_return_type_register_variable_declaration(SZrCompilerSt
         ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
     }
 
-    ZrParser_TypeEnvironment_RegisterVariable(cs->state,
+    ZrParser_TypeEnvironment_RegisterVariableEx(cs->state,
                                               cs->typeEnv,
                                               declaration->pattern->data.identifier.name,
-                                              &bindingType);
+                                              &bindingType,
+                                              node,
+                                              declaration->pattern->location);
     ZrParser_InferredType_Free(cs->state, &bindingType);
 }
 
@@ -1966,6 +1939,7 @@ static void infer_lambda_return_type_from_node(SZrCompilerState *cs,
             blockEnv = ZrParser_TypeEnvironment_New(cs->state);
             if (blockEnv != ZR_NULL) {
                 blockEnv->parent = savedEnv;
+                blockEnv->semanticContext = cs->semanticContext;
                 cs->typeEnv = blockEnv;
             }
 
@@ -2100,6 +2074,7 @@ static TZrBool infer_lambda_callable_signature(SZrCompilerState *cs,
         lambdaEnv = ZrParser_TypeEnvironment_New(cs->state);
         if (lambdaEnv != ZR_NULL) {
             lambdaEnv->parent = savedEnv;
+            lambdaEnv->semanticContext = cs->semanticContext;
             cs->typeEnv = lambdaEnv;
             if (lambda->params != ZR_NULL) {
                 for (TZrSize index = 0; index < lambda->params->count; index++) {
@@ -2110,10 +2085,12 @@ static TZrBool infer_lambda_callable_signature(SZrCompilerState *cs,
                         paramNode->data.parameter.name != ZR_NULL &&
                         paramNode->data.parameter.name->name != ZR_NULL &&
                         paramType != ZR_NULL) {
-                        ZrParser_TypeEnvironment_RegisterVariable(cs->state,
+                        ZrParser_TypeEnvironment_RegisterVariableEx(cs->state,
                                                                   lambdaEnv,
                                                                   paramNode->data.parameter.name->name,
-                                                                  paramType);
+                                                                  paramType,
+                                                                  paramNode,
+                                                                  paramNode->data.parameter.nameLocation);
                     }
                 }
             }
@@ -2522,6 +2499,10 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 
     if (!hasLeftType) {
         hasLeftType = ZrParser_ExpressionType_Infer(cs, assignExpr->left, &leftType);
+        if (!hasLeftType && cs->hasError) {
+            ZrParser_InferredType_Free(cs->state, &leftType);
+            return ZR_FALSE;
+        }
         if (hasLeftType) {
             type_inference_record_member_write_reference_fact(cs, assignExpr->left);
         }
@@ -2822,6 +2803,8 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                 return ZR_TRUE;
             }
         }
+        ZrParser_InferredType_Free(cs->state, &baseType);
+        type_inference_record_member_access_reference_fact(cs, node);
     }
     // 默认返回对象类型
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);

@@ -552,7 +552,8 @@ typedef enum EZrFunctionCallSiteCacheKind {
     ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL = 7,
     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL = 8,
     ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET = 9,
-    ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET = 10
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET = 10,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL = 11
 } EZrFunctionCallSiteCacheKind;
 
 typedef enum EZrFunctionCallSitePicAccessKind {
@@ -847,6 +848,12 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Function_IsDirectFrameValueSlotLayout(
                      function->frameSlotLayouts != ZR_NULL &&
                      slotLayout->stackSlot < function->frameSlotLayoutLength &&
                      &function->frameSlotLayouts[slotLayout->stackSlot] == slotLayout &&
+                     slotLayout->stackSlot < function->stackSize &&
+                     function->stackSize <= UINT32_MAX / (TZrUInt32)sizeof(SZrTypeValueOnStack) &&
+                     slotLayout->byteOffset ==
+                             function->stackSize * (TZrUInt32)sizeof(SZrTypeValueOnStack) +
+                             slotLayout->stackSlot * (TZrUInt32)sizeof(SZrTypeValueOnStack) &&
+                     slotLayout->byteSize == (TZrUInt32)sizeof(SZrTypeValue) &&
                      (slotLayout->reserved0 &
                       ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE) != 0u);
 }

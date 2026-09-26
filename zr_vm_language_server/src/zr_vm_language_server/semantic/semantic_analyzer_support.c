@@ -4,6 +4,7 @@
 
 #include "semantic/semantic_analyzer_internal.h"
 #include "interface/lsp_interface_internal.h"
+#include "zr_vm_parser/semantic_query.h"
 
 SZrString *ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(SZrState *state, SZrAstNode *node) {
     if (node == ZR_NULL || state == ZR_NULL) {
@@ -85,6 +86,13 @@ void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(SZrState *
 
     if (analyzer->semanticContext != ZR_NULL) {
         SZrSemanticReferenceFact fact;
+        const SZrSemanticReferenceFact *existing =
+                ZrParser_SemanticQuery_DeclarationOf(
+                        analyzer->semanticContext, symbol->semanticId, ZR_NULL);
+        if (existing != ZR_NULL && existing->node == symbol->astNode &&
+            existing->typeId == symbol->semanticTypeId) {
+            return;
+        }
         memset(&fact, 0, sizeof(fact));
         fact.node = symbol->astNode;
         fact.range = range;
@@ -380,134 +388,6 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
     }
 
     return analyzer->semanticContext != ZR_NULL;
-}
-
-TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAnalyzer *analyzer,
-                                       SZrSymbol *symbol,
-                                       EZrSemanticSymbolKind semanticKind,
-                                       const SZrInferredType *typeInfo,
-                                       EZrSemanticTypeKind typeKind) {
-    TZrTypeId typeId = 0;
-    TZrOverloadSetId overloadSetId = 0;
-    TZrSymbolId symbolId;
-
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (semanticKind == ZR_SEMANTIC_SYMBOL_KIND_TYPE && typeInfo == ZR_NULL) {
-        typeId = ZrParser_Semantic_RegisterNamedType(analyzer->semanticContext,
-                                             symbol->name,
-                                             typeKind,
-                                             symbol->astNode);
-    } else if (typeInfo != ZR_NULL) {
-        typeId = ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
-                                                typeInfo,
-                                                typeKind,
-                                                typeInfo->typeName,
-                                                symbol->astNode);
-    }
-
-    if (semanticKind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
-        overloadSetId = ZrParser_Semantic_GetOrCreateOverloadSet(analyzer->semanticContext, symbol->name);
-    }
-
-    symbolId = ZrParser_Semantic_RegisterSymbol(analyzer->semanticContext,
-                                        symbol->name,
-                                        semanticKind,
-                                        typeId,
-                                        overloadSetId,
-                                        symbol->astNode,
-                                        symbol->location);
-    if (overloadSetId != 0) {
-        ZrParser_Semantic_AddOverloadMember(analyzer->semanticContext, overloadSetId, symbolId);
-    }
-
-    symbol->semanticId = symbolId;
-    symbol->semanticTypeId = typeId;
-    symbol->overloadSetId = overloadSetId;
-    return symbolId != 0;
-}
-
-static TZrSymbolId resolve_semantic_symbol_id_for_node(SZrSemanticAnalyzer *analyzer,
-                                                       SZrAstNode *node) {
-    SZrString *name;
-    SZrSymbol *symbol;
-
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL || node == ZR_NULL) {
-        return 0;
-    }
-
-    name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(analyzer->state, node);
-    if (name == ZR_NULL) {
-        return 0;
-    }
-
-    symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, name, ZR_NULL);
-    if (symbol == ZR_NULL) {
-        return 0;
-    }
-
-    return symbol->semanticId;
-}
-
-void ZrLanguageServer_SemanticAnalyzer_RecordTemplateStringSegments(SZrSemanticAnalyzer *analyzer,
-                                            SZrAstNode *node) {
-    SZrTemplateStringLiteral *templateLiteral;
-
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || node == ZR_NULL ||
-        node->type != ZR_AST_TEMPLATE_STRING_LITERAL) {
-        return;
-    }
-
-    templateLiteral = &node->data.templateStringLiteral;
-    if (templateLiteral->segments == ZR_NULL || templateLiteral->segments->nodes == ZR_NULL) {
-        return;
-    }
-
-    for (TZrSize i = 0; i < templateLiteral->segments->count; i++) {
-        SZrAstNode *segmentNode = templateLiteral->segments->nodes[i];
-        SZrTemplateSegment segment;
-
-        if (segmentNode == ZR_NULL) {
-            continue;
-        }
-
-        segment.isInterpolation = ZR_FALSE;
-        segment.staticText = ZR_NULL;
-        segment.expression = ZR_NULL;
-
-        if (segmentNode->type == ZR_AST_STRING_LITERAL) {
-            segment.staticText = segmentNode->data.stringLiteral.value;
-        } else if (segmentNode->type == ZR_AST_INTERPOLATED_SEGMENT) {
-            segment.isInterpolation = ZR_TRUE;
-            segment.expression = segmentNode->data.interpolatedSegment.expression;
-        } else {
-            continue;
-        }
-
-        ZrParser_Semantic_AppendTemplateSegment(analyzer->semanticContext, &segment);
-    }
-}
-
-void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyzer *analyzer,
-                                      SZrAstNode *resource) {
-    SZrDeterministicCleanupStep step;
-
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || resource == ZR_NULL) {
-        return;
-    }
-
-    step.kind = ZR_DETERMINISTIC_CLEANUP_KIND_BLOCK_SCOPE;
-    step.regionId = ZrParser_Semantic_ReserveLifetimeRegionId(analyzer->semanticContext);
-    step.ownerRegionId = step.regionId;
-    step.symbolId = resolve_semantic_symbol_id_for_node(analyzer, resource);
-    step.declarationOrder = (TZrInt32)analyzer->semanticContext->cleanupPlan.length;
-    step.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    step.ownershipBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-    step.callsClose = ZR_TRUE;
-    step.callsDestructor = ZR_TRUE;
-    ZrParser_Semantic_AppendCleanupStep(analyzer->semanticContext, &step);
 }
 
 void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,

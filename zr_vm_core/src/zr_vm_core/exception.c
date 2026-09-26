@@ -680,7 +680,7 @@ TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state, EZrThreadStatus
     const SZrTypeValue *payload = ZR_NULL;
     SZrCallInfo *throwCallInfo;
 
-    if (state == ZR_NULL) {
+    if (state == ZR_NULL || status == ZR_THREAD_STATUS_EXECUTION_TERMINATED) {
         return ZR_FALSE;
     }
 

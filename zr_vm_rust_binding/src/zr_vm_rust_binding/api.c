@@ -113,13 +113,14 @@ static void zr_rust_binding_init_project_command(SZrCliCommand *command,
     command->programArgCount = options != ZR_NULL ? options->programArgCount : 0U;
 }
 
-static ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
+ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
         ZrRustBindingExecutionOwner *owner,
         const TZrChar *moduleName,
         const TZrChar *exportName,
         ZrRustBindingValue *const *arguments,
         TZrSize argumentCount,
-        ZrRustBindingValue **outResult) {
+        ZrRustBindingValue **outResult,
+        SZrExecutionBudget *budget) {
     SZrState *state;
     ZrLibTempValueRoot *argumentRoots = ZR_NULL;
     SZrTypeValue *materializedArguments = ZR_NULL;
@@ -138,14 +139,27 @@ static ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
     ZrCore_Value_ResetAsNull(&resultValue);
     state = owner->global->mainThreadState;
 
+    if (state->executionBudget != ZR_NULL) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "a project session export call is already active");
+    }
+    zr_rust_binding_reset_host_export_thread(state);
+    state->executionBudget = budget;
+    if (!ZrCore_ExecutionBudget_Poll(state, ZR_FALSE)) {
+        return ZR_RUST_BINDING_STATUS_EXECUTION_TERMINATED;
+    }
+
     if (ZrLib_Module_GetExport(state, moduleName, exportName) == ZR_NULL) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_NOT_FOUND,
                                          "module export %s.%s not found",
                                          moduleName,
                                          exportName);
     }
-    zr_rust_binding_reset_host_export_thread(state);
+    if (!ZrCore_ExecutionBudget_Poll(state, ZR_FALSE)) {
+        return ZR_RUST_BINDING_STATUS_EXECUTION_TERMINATED;
+    }
 
+    zr_rust_binding_reset_host_export_thread(state);
     if (argumentCount > 0U) {
         argumentRoots = (ZrLibTempValueRoot *)calloc(argumentCount, sizeof(*argumentRoots));
         materializedArguments = (SZrTypeValue *)calloc(argumentCount, sizeof(*materializedArguments));
@@ -1123,17 +1137,26 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(ZrRustBindingP
                                                                   ZrRustBindingValue *const *arguments,
                                                                   TZrSize argumentCount,
                                                                   ZrRustBindingValue **outResult) {
+    ZrRustBindingStatus status;
     if (session == ZR_NULL || session->owner == ZR_NULL) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
                                          "project session is null");
     }
 
-    return zr_rust_binding_call_module_export_with_owner(session->owner,
+    if (session->owner->activeCall) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "project session is unavailable or already executing an export");
+    }
+    session->owner->activeCall = ZR_TRUE;
+    status = zr_rust_binding_call_module_export_with_owner(session->owner,
                                                          moduleName,
                                                          exportName,
                                                          arguments,
                                                          argumentCount,
-                                                         outResult);
+                                                         outResult,
+                                                         ZR_NULL);
+    session->owner->activeCall = ZR_FALSE;
+    return status;
 }
 
 ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(ZrRustBindingProjectSession *session,

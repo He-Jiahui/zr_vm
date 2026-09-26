@@ -243,6 +243,7 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${_zr_vm_ls_parser_private_includes}
         )
         
@@ -253,7 +254,7 @@ if(BUILD_WASM)
         
         # 设置 Emscripten 编译选项
         target_compile_options(${zr_curr_module_name}_wasm PRIVATE
-            -O2
+            "$<IF:$<CONFIG:Debug>,-O0,-O2>"
             -DZR_WASM_BUILD
             -DZR_CURRENT_MODULE="${zr_curr_module_name}"
             -Wno-gnu-anonymous-struct

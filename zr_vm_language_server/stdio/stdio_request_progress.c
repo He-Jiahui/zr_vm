@@ -272,8 +272,13 @@ TZrBool stdio_request_progress_publish_partial_result(SZrStdioServer *server,
         return ZR_FALSE;
     }
 
-    completedResult = cJSON_CreateNull();
+    /* WorkspaceDiagnosticReport is non-null even after all items were streamed. */
+    completedResult = itemsField == ZR_NULL ? cJSON_CreateNull() : cJSON_CreateObject();
     if (completedResult == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (itemsField != ZR_NULL && cJSON_AddArrayToObject(completedResult, itemsField) == ZR_NULL) {
+        cJSON_Delete(completedResult);
         return ZR_FALSE;
     }
     cJSON_Delete(*inOutResult);

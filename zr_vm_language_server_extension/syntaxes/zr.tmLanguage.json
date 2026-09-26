@@ -18,6 +18,9 @@
       "include": "#modifiers"
     },
     {
+      "include": "#member-access"
+    },
+    {
       "include": "#keywords"
     },
     {
@@ -54,7 +57,7 @@
       "patterns": [
         {
           "name": "keyword.control.zr",
-          "match": "\\b(if|else|switch|case|default|while|for|break|continue|return|try|catch|finally|throw|yield|await|require)\\b"
+          "match": "\\b(if|else|switch|case|default|while|for|break|continue|return|try|catch|finally|throw|yield|await|require|using)\\b"
         },
         {
           "name": "keyword.other.zr",
@@ -66,11 +69,11 @@
         },
         {
           "name": "keyword.operator.construct.zr",
-          "match": "\\b(init|new|own|move|drop)\\b"
+          "match": "\\b(init|new|own|move)\\b"
         },
         {
           "name": "support.function.intrinsic.zr",
-          "match": "\\b(import|typeid|typeof|loadModule|loadPlugin)\\b"
+          "match": "(?<!\\.)\\b(import|typeid|typeof|loadModule|loadPlugin|share|degrade|wake|intoGc|drop)\\b"
         },
         {
           "name": "constant.language.zr",
@@ -152,6 +155,9 @@
     "literals": {
       "patterns": [
         {
+          "include": "#template-strings"
+        },
+        {
           "name": "string.quoted.double.zr",
           "begin": "\"",
           "end": "\"",
@@ -188,6 +194,120 @@
         {
           "name": "constant.numeric.integer.zr",
           "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "template-strings": {
+      "name": "string.quoted.template.zr",
+      "begin": "`",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.zr"
+        }
+      },
+      "end": "`",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.zr"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#template-content"
+        }
+      ]
+    },
+    "escaped-template-strings": {
+      "name": "string.quoted.template.zr",
+      "begin": "(?<!\\\\)(\\\\+)`",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.zr"
+        }
+      },
+      "end": "(?<!\\\\)(?:\\1\\\\\\1\\\\)*\\1`",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.zr"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#template-content"
+        }
+      ]
+    },
+    "template-content": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.zr",
+          "match": "\\\\[nrt`\\\\]"
+        },
+        {
+          "name": "meta.interpolation.zr",
+          "contentName": "meta.embedded.block.zr",
+          "begin": "\\$\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.zr"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.zr"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#template-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "template-expression": {
+      "patterns": [
+        {
+          "include": "#escaped-template-strings"
+        },
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "#template-expression"
+            }
+          ]
+        },
+        {
+          "include": "$self"
+        }
+      ]
+    },
+    "member-access": {
+      "patterns": [
+        {
+          "begin": "(?<!\\.)\\.(?!\\.|[0-9])",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.operator.other.zr"
+            }
+          },
+          "end": "([a-z_][a-zA-Z0-9_]*)|([A-Z][a-zA-Z0-9_]*)|(?=[^\\s/]|/(?![/*]))",
+          "endCaptures": {
+            "1": {
+              "name": "variable.other.member.zr"
+            },
+            "2": {
+              "name": "variable.other.member.variant.zr"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            }
+          ]
         }
       ]
     },
@@ -256,7 +376,7 @@
         },
         {
           "name": "keyword.operator.assignment.zr",
-          "match": "(?:[+\\-*/%]|<<|>>)?="
+          "match": "(?:[+\\-*/%]|<<|>>)=|=(?!=)"
         },
         {
           "name": "keyword.operator.range.zr",
@@ -268,7 +388,7 @@
         },
         {
           "name": "keyword.operator.comparison.zr",
-          "match": "==|!=|<=|>=|<|>"
+          "match": "==|!=|<=|>=|<(?!<)|>(?!>)"
         },
         {
           "name": "keyword.operator.logical.zr",
@@ -305,10 +425,6 @@
         {
           "name": "entity.name.namespace.zr",
           "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\.)\\b"
-        },
-        {
-          "name": "variable.other.member.zr",
-          "match": "(?<=\\.)\\b[a-z_][a-zA-Z0-9_]*\\b"
         },
         {
           "name": "entity.name.function.zr",

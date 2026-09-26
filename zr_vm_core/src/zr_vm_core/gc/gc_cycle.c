@@ -556,6 +556,10 @@ static TZrBool garbage_collector_function_callsite_caches_reference_live_young(c
         const SZrFunctionCallSiteCacheEntry *cacheEntry = &function->callSiteCaches[cacheIndex];
         TZrUInt32 picLimit = cacheEntry->picSlotCount;
 
+        if ((cacheEntry->binding.target.targetKind == ZR_CALL_BINDING_TARGET_VM &&
+             garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(cacheEntry->binding.target.vm.function))) ||
+            garbage_collector_raw_object_is_live_young(cacheEntry->binding.target.callableObject)) return ZR_TRUE;
+
         if (picLimit > ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY) {
             picLimit = ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY;
         }
@@ -1614,12 +1618,18 @@ static TZrSize garbage_collector_rewrite_object_prototype_graph(SZrState *state,
     work += garbage_collector_rewrite_string_slot(&prototype->name);
     work += garbage_collector_rewrite_object_prototype_slot(&prototype->superPrototype);
     work += garbage_collector_rewrite_meta_table(state, &prototype->metaTable);
+    for (TZrUInt32 index = 0u; index < prototype->interfaceDispatchCount; ++index) {
+        SZrInterfaceDispatchEntry *entry = &prototype->interfaceDispatchEntries[index];
+        work += garbage_collector_rewrite_object_prototype_slot(&entry->interfacePrototype);
+        work += garbage_collector_rewrite_object_prototype_slot(&entry->implementationPrototype);
+    }
 
     for (TZrUInt32 memberIndex = 0; memberIndex < prototype->memberDescriptorCount; memberIndex++) {
         SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[memberIndex];
 
         work += garbage_collector_rewrite_string_slot(&descriptor->name);
         work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->getterFunction);
+        work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->methodFunction);
         work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->setterFunction);
         work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->initializerFunction);
         work += garbage_collector_rewrite_string_slot(&descriptor->ownerTypeName);
@@ -1833,6 +1843,11 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
     if (function->callSiteCaches != ZR_NULL) {
         for (TZrUInt32 index = 0; index < function->callSiteCacheLength; index++) {
             SZrFunctionCallSiteCacheEntry *cacheEntry = &function->callSiteCaches[index];
+
+            if (cacheEntry->binding.target.targetKind == ZR_CALL_BINDING_TARGET_VM) {
+                garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&cacheEntry->binding.target.vm.function);
+            }
+            garbage_collector_rewrite_raw_object_slot(&cacheEntry->binding.target.callableObject);
 
             garbage_collector_sanitize_callsite_cache_pic(function, index, "rewrite", cacheEntry);
             TZrUInt32 picLimit = cacheEntry->picSlotCount;

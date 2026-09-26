@@ -2,18 +2,26 @@
 related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck_bindings.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_declaration_binding.c
+  - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_environment_declaration_binding.h
   - zr_vm_language_server/src/zr_vm_language_server/symbol_table.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_declaration_binding.c
+  - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_environment_declaration_binding.h
 tests:
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_semantic_analyzer_local_binding_identity_cases.h
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/parser/test_semantic_declaration_binding_cases.h
 plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/lsp/astra.md
+  - .codex/plans/20260926-lsp-experience-repair.md
 doc_type: module-detail
 ---
 
@@ -29,17 +37,17 @@ hover, navigation, references, highlights, and rename all observe one binding.
 ## Binding and Range Contract
 
 Symbol collection publishes a variable symbol with the declaration node as its
-location and the identifier pattern as its selection range. The declaration node
-therefore begins at the `var` keyword, while `LookupAtPosition` expects a
-position at or after the symbol selection range. Typecheck normalizes ordinary
-identifier declarations to the pattern range before looking up the canonical
-symbol. Parameter and foreach bindings retain their existing node ranges.
+location and the identifier pattern as its selection range. Typecheck resolves
+the existing record by the same AST declaration and binding name within the
+current snapshot. It does not locate a declaration by a position or a same-name
+symbol in another scope.
 
-When the symbol has valid semantic identities, typecheck calls
-`ZrParser_TypeEnvironment_RegisterCanonicalVariable` with the symbol's exact
-selection range. This keeps subsequent parser reference facts tied to the
-published declaration. A missing identity still uses the existing runtime-only
-fallback; it must not be used to replace a source symbol that can be resolved.
+The shared declaration-binding module reuses this identity when inserting the
+binding into the current lexical type environment. The environment retains the
+declaration's exact selection range. Source bindings without an exact type keep
+a valid `SymbolId` and an invalid `TypeId`; they remain discoverable and surface
+`cannot infer exact type`. Source declarations without a canonical identity no
+longer create anonymous replacement bindings during typecheck.
 
 ## Lifetime and Exactness
 
@@ -50,9 +58,11 @@ copied id through the same snapshot and fail closed when the identity or source
 does not match. No request-time name, range, AST, or display-text matching is
 part of this contract.
 
-The range correction is a written exception for a narrow edit in the existing
-large typecheck file. It changes one binding lookup input without adding a new
-production responsibility; the regression fixture lives in a separate header.
+Declaration registration is extracted into `semantic_analyzer_declaration_binding.c`
+and `type_environment_bindings.c`. Return pre-inference, symbol collection and
+typecheck share the same AST declaration identity. See
+[canonical declaration bindings](canonical-declaration-bindings.md) for the
+pre-inference, anonymous binding and unknown-type contracts.
 
 ## Regression Coverage
 

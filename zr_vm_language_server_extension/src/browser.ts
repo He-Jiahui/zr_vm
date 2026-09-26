@@ -6,10 +6,9 @@ import {
 } from 'vscode-languageclient/browser';
 import {
     createTransportAwareLanguageClientLifecycle,
-    isBenignLanguageClientStopError,
-    stopLanguageClientSafely,
-    type TransportAwareLanguageClientLifecycle,
+    isLanguageClientNotRunningError,
 } from './languageClientLifecycle';
+import { LanguageServerController, LanguageServerSession, StartupCancelled } from './languageServerSession';
 import { registerWebDebugSupportUnavailable } from './debug/webSupport';
 import { sendLanguageServerRequest, setLanguageClientRequestClient } from './languageClientRequests';
 import { registerOrganizeImportsCommand } from './organizeImports';
@@ -19,21 +18,37 @@ import { registerRichHoverSupport, type ZrRichHoverController } from './richHove
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
-import { sendZrSelectedProjectToLanguageServer } from './selectedProjectSync';
-import { activeWorkspaceFolder, onDidChangeSelectedProject, resolveSelectedProjectUri } from './workspaceProjects';
 
 const CONFIG_SECTION = 'zr.languageServer';
 const RESTART_COMMAND = 'zr.restartLanguageServer';
 
 let client: LanguageClient | undefined;
-let clientLifecycle: TransportAwareLanguageClientLifecycle<LanguageClient> | undefined;
 let structureController: ZrStructureController | undefined;
 let richHoverController: ZrRichHoverController | undefined;
-let workerHandle: { terminate: () => void } | undefined;
-let workerScriptUrl: string | undefined;
-let clientResources: vscode.Disposable[] = [];
-let restartChain: Promise<void> = Promise.resolve();
-const WEB_STARTUP_TIMEOUT_MS = 30000;
+const serverLifecycle = new LanguageServerController();
+
+class ZrLanguageClient extends LanguageClient {
+    constructor(
+        private readonly session: LanguageServerSession,
+        clientOptions: LanguageClientOptions,
+        worker: ConstructorParameters<typeof LanguageClient>[3],
+    ) {
+        super('zr-language-server-web', 'Zr Language Server', clientOptions, worker);
+    }
+
+    override start(): Promise<void> {
+        return this.session.observeClientStart(this, () => super.start());
+    }
+
+    override async stop(timeout?: number): Promise<void> {
+        try {
+            await super.stop(timeout);
+        } catch (error) {
+            // SDK 8.1 invokes stop without awaiting it after a failed initialization.
+            if (!isLanguageClientNotRunningError(error)) { throw error; }
+        }
+    }
+}
 
 type LanguageServerMode = 'auto' | 'native' | 'web';
 
@@ -50,7 +65,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(registerReferenceCodeLensCommand());
     context.subscriptions.push(registerOrganizeImportsCommand());
     context.subscriptions.push(registerVirtualDocumentSupport());
-    structureController = registerZrStructureViews(context);
+    structureController = registerZrStructureViews(context, { projectIndexAvailable: false });
     context.subscriptions.push(structureController);
     richHoverController = registerRichHoverSupport(context);
     context.subscriptions.push(richHoverController);
@@ -61,8 +76,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
     );
     context.subscriptions.push(
-        vscode.commands.registerCommand('zr.__sendLanguageServerRequest', async (method: string, params?: unknown) =>
-            sendLanguageServerRequest(method, params)),
+        vscode.commands.registerCommand('zr.__sendLanguageServerRequest',
+            async (method: string, params?: unknown, options?: { strict?: boolean }) =>
+                sendLanguageServerRequest(method, params, options)),
     );
 
     context.subscriptions.push(
@@ -73,36 +89,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
     );
 
-    context.subscriptions.push(
-        onDidChangeSelectedProject(() => {
-            void sendZrSelectedProjectToLanguageServer(context, client);
-        }),
-    );
-
     await enqueueRestart(context, false);
 }
 
 export async function deactivate(): Promise<void> {
-    await stopClient();
-    structureController?.dispose();
-    structureController = undefined;
-    richHoverController?.dispose();
-    richHoverController = undefined;
+    try {
+        await serverLifecycle.dispose();
+    } finally {
+        structureController?.dispose();
+        structureController = undefined;
+        richHoverController?.dispose();
+        richHoverController = undefined;
+    }
 }
 
 async function enqueueRestart(context: vscode.ExtensionContext, requestedByUser: boolean): Promise<void> {
-    restartChain = restartChain.then(async () => {
-        await restartLanguageServer(context, requestedByUser);
-    });
-    await restartChain;
+    try {
+        await serverLifecycle.restart((session) => startClient(context, requestedByUser, session));
+    } catch (error) {
+        if (!(error instanceof StartupCancelled)) {
+            console.error('[zr-web] language server restart failed:', error);
+            void vscode.window.showErrorMessage(`Unable to start the Zr language server: ${String(error)}`);
+        }
+    }
 }
 
-async function restartLanguageServer(context: vscode.ExtensionContext, requestedByUser: boolean): Promise<void> {
-    await stopClient();
-    await startClient(context, requestedByUser);
-}
-
-async function startClient(context: vscode.ExtensionContext, requestedByUser: boolean): Promise<void> {
+async function startClient(context: vscode.ExtensionContext, requestedByUser: boolean, session: LanguageServerSession): Promise<void> {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     const enabled = config.get<boolean>('enable', true);
     const mode = config.get<LanguageServerMode>('mode', 'auto');
@@ -121,12 +133,10 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     }
 
     const workerUri = vscode.Uri.joinPath(context.extensionUri, 'out', 'web', 'server-worker.js');
-    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}');
-    clientResources = [
-        fileEvents,
-    ];
+    const outputChannel = session.own(vscode.window.createOutputChannel('Zr Language Server'));
 
-    const worker = await createWorker(workerUri);
+    const worker = await createWorker(workerUri, session);
+    session.assertActive();
     worker.addEventListener('error', (event: Event) => {
         const errorEvent = event as Event & { message?: string; error?: unknown };
         console.error('[zr-web] Language server worker error:', errorEvent.message, errorEvent.error);
@@ -134,86 +144,38 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     worker.addEventListener('messageerror', (event: MessageEvent) => {
         console.error('[zr-web] Language server worker message error:', event.data);
     });
-    workerHandle = worker;
-
-    const selectedProjectUri = await resolveSelectedProjectUri(context, activeWorkspaceFolder(), false);
-
     const clientOptions: LanguageClientOptions = {
         documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
-        outputChannelName: 'Zr Language Server',
+        outputChannel,
         initializationOptions: {
             serverBaseUrl: vscode.Uri.joinPath(context.extensionUri, 'out', 'web').toString(),
-            zrSelectedProjectUri: selectedProjectUri?.toString() ?? null,
-        },
-        synchronize: {
-            configurationSection: CONFIG_SECTION,
-            fileEvents,
         },
         middleware: richHoverController?.createMiddleware(),
     };
-    const lifecycle = createTransportAwareLanguageClientLifecycle<LanguageClient>();
+    const lifecycle = session.own(createTransportAwareLanguageClientLifecycle<LanguageClient>(undefined, () => session.retired));
     clientOptions.errorHandler = lifecycle.errorHandler;
 
-    const nextClient = new LanguageClient(
-        'zr-language-server-web',
-        'Zr Language Server',
+    const nextClient = new ZrLanguageClient(
+        session,
         clientOptions,
         worker,
     );
     lifecycle.attachClient(nextClient);
-    client = nextClient;
-    clientLifecycle = lifecycle;
-    setLanguageClientRequestClient(nextClient);
-
-    await withTimeout(
-        nextClient.start(),
-        WEB_STARTUP_TIMEOUT_MS,
-        'Timed out while starting the Zr web language server.',
-    );
+    await session.startClient(nextClient);
     await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
-    await sendZrSelectedProjectToLanguageServer(context, nextClient);
+    session.assertActive();
+    client = nextClient;
+    session.addCleanup(() => {
+        if (client === nextClient) {
+            client = undefined;
+            setLanguageClientRequestClient(undefined);
+        }
+    });
+    setLanguageClientRequestClient(nextClient);
     refreshStructureViewsAsync();
 
     if (requestedByUser) {
         void vscode.window.showInformationMessage('Zr language server restarted.');
-    }
-}
-
-async function stopClient(): Promise<void> {
-    for (const resource of clientResources) {
-        resource.dispose();
-    }
-    clientResources = [];
-
-    if (client !== undefined) {
-        const currentClient = client;
-        const currentLifecycle = clientLifecycle;
-        client = undefined;
-        clientLifecycle = undefined;
-        setLanguageClientRequestClient(undefined);
-        try {
-            if (currentLifecycle !== undefined) {
-                await stopLanguageClientSafely(currentClient, currentLifecycle);
-            } else {
-                await currentClient.stop();
-            }
-        } catch (error) {
-            if (!isBenignLanguageClientStopError(error)) {
-                throw error;
-            }
-        } finally {
-            currentLifecycle?.dispose();
-        }
-    }
-
-    if (workerHandle !== undefined) {
-        workerHandle.terminate();
-        workerHandle = undefined;
-    }
-
-    if (workerScriptUrl !== undefined) {
-        URL.revokeObjectURL(workerScriptUrl);
-        workerScriptUrl = undefined;
     }
 }
 
@@ -228,30 +190,12 @@ function resolveTrace(value: string): Trace {
     }
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-        return await Promise.race([
-            promise,
-            new Promise<T>((_, reject) => {
-                timeoutHandle = setTimeout(() => {
-                    reject(new Error(message));
-                }, timeoutMs);
-            }),
-        ]);
-    } finally {
-        if (timeoutHandle !== undefined) {
-            clearTimeout(timeoutHandle);
-        }
-    }
-}
-
-async function createWorker(workerUri: vscode.Uri): Promise<{
+async function createWorker(workerUri: vscode.Uri, session: LanguageServerSession): Promise<{
     addEventListener: (type: string, listener: (event: any) => void) => void;
     terminate: () => void;
 }> {
-    const workerSource = await fetchWorkerSource(workerUri);
+    const workerSource = await fetchWorkerSource(workerUri, session.signal);
+    session.assertActive();
     const blob = new Blob(
         [
             workerSource,
@@ -260,18 +204,15 @@ async function createWorker(workerUri: vscode.Uri): Promise<{
         { type: 'application/javascript' },
     );
 
-    workerScriptUrl = URL.createObjectURL(blob);
-    try {
-        return new (globalThis as any).Worker(workerScriptUrl);
-    } catch (error) {
-        URL.revokeObjectURL(workerScriptUrl);
-        workerScriptUrl = undefined;
-        throw error;
-    }
+    const workerScriptUrl = URL.createObjectURL(blob);
+    session.addCleanup(() => URL.revokeObjectURL(workerScriptUrl));
+    const worker = new (globalThis as any).Worker(workerScriptUrl);
+    session.addCleanup(() => worker.terminate());
+    return worker;
 }
 
-async function fetchWorkerSource(workerUri: vscode.Uri): Promise<string> {
-    const response = await fetch(workerUri.toString());
+async function fetchWorkerSource(workerUri: vscode.Uri, signal: AbortSignal): Promise<string> {
+    const response = await fetch(workerUri.toString(), { signal });
     if (!response.ok) {
         throw new Error(`Failed to fetch the Zr language server worker from ${workerUri.toString()}: ${response.status} ${response.statusText}`);
     }

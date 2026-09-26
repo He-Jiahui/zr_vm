@@ -4,7 +4,6 @@ import {
     BrowserMessageReader,
     BrowserMessageWriter,
     createConnection,
-    ErrorCodes,
     ResponseError,
     TextDocumentSyncKind,
     type CompletionItem,
@@ -25,22 +24,20 @@ import {
     type TextDocumentContentChangeEvent,
     type WorkspaceEdit,
 } from 'vscode-languageserver/browser';
-import { ZrWasmBridge, type WasmResponse } from './wasm-bridge';
+import { ZrWasmBridge } from './wasm-bridge';
+import { DocumentSyncStore, contentModified } from './document-sync';
+import { responseData } from './wasm-response';
+import { LSPErrorCodes } from 'vscode-languageserver/browser';
 
 declare const self: DedicatedWorkerGlobalScope;
-
-type ManagedDocument = {
-    text: string;
-    version: number;
-};
 
 const connection = createConnection(
     new BrowserMessageReader(self),
     new BrowserMessageWriter(self),
 );
 const bridge = new ZrWasmBridge();
-const documents = new Map<string, ManagedDocument>();
-const publishedDiagnosticResultIds = new Map<string, { resultId: string; version: number | undefined }>();
+const documents = new DocumentSyncStore(bridge);
+const publishedDiagnosticResultIds = new Map<string, { resultId: string; version: number; generation: number }>();
 const semanticTokenLegend: SemanticTokensLegend = {
     tokenTypes: [
         'namespace',
@@ -94,7 +91,6 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
                 prepareProvider: true,
             },
             documentSymbolProvider: true,
-            workspaceSymbolProvider: true,
             documentHighlightProvider: true,
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
@@ -111,8 +107,8 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
                 resolveProvider: false,
             },
             diagnosticProvider: {
-                interFileDependencies: true,
-                workspaceDiagnostics: true,
+                interFileDependencies: false,
+                workspaceDiagnostics: false,
             },
             inlayHintProvider: true,
             semanticTokensProvider: {
@@ -142,108 +138,76 @@ connection.onNotification('exit', () => {
 });
 
 connection.onDidOpenTextDocument(async ({ textDocument }) => {
-    documents.set(textDocument.uri, {
-        text: textDocument.text,
-        version: textDocument.version,
-    });
-
-    const updateResponse = await bridge.updateDocument(textDocument.uri, textDocument.text, textDocument.version);
-    if (!updateResponse.success) {
-        console.error('[zr-web-worker] updateDocument failed on open:', textDocument.uri, updateResponse.error);
+    if (await documents.open(textDocument.uri, textDocument.text, textDocument.version)) {
+        await publishDiagnostics(textDocument.uri);
     }
-    await publishDiagnostics(textDocument.uri, textDocument.version);
 });
 
 connection.onDidChangeTextDocument(async ({ textDocument, contentChanges }) => {
-    const current = documents.get(textDocument.uri);
-    const updatedText = applyContentChanges(current?.text ?? '', contentChanges);
-    const version = textDocument.version ?? (current?.version ?? 0) + 1;
-
-    documents.set(textDocument.uri, {
-        text: updatedText,
-        version,
-    });
-
-    const updateResponse = await bridge.updateDocument(textDocument.uri, updatedText, version);
-    if (!updateResponse.success) {
-        console.error('[zr-web-worker] updateDocument failed on change:', textDocument.uri, updateResponse.error);
+    if (await documents.change(textDocument.uri, textDocument.version, contentChanges)) {
+        await publishDiagnostics(textDocument.uri);
     }
-    await publishDiagnostics(textDocument.uri, version);
 });
 
 connection.onDidCloseTextDocument(async ({ textDocument }) => {
-    documents.delete(textDocument.uri);
+    const closing = documents.close(textDocument.uri);
     publishedDiagnosticResultIds.delete(textDocument.uri);
-    await bridge.closeDocument(textDocument.uri);
-    connection.sendDiagnostics({
-        uri: textDocument.uri,
-        diagnostics: [],
-    });
+    connection.sendDiagnostics({ uri: textDocument.uri, diagnostics: [] });
+    await closing;
 });
 
-connection.onDidSaveTextDocument(async ({ textDocument, text }) => {
-    const current = documents.get(textDocument.uri);
-    if (typeof text === 'string') {
-        const version = current?.version ?? 0;
-        documents.set(textDocument.uri, {
-            text,
-            version,
-        });
-        await bridge.updateDocument(textDocument.uri, text, version);
-    }
-
-    await publishDiagnostics(textDocument.uri, documents.get(textDocument.uri)?.version);
+connection.onDidSaveTextDocument(async ({ textDocument }) => {
+    // didSave never replaces the synchronized editor snapshot, even when it includes text.
+    await publishDiagnostics(textDocument.uri);
 });
 
 connection.onCompletion(async ({ textDocument, position }) => {
-    const response = await bridge.getCompletion(textDocument.uri, position.line, position.character);
+    const response = await queryDocument(textDocument.uri, () => bridge.getCompletion(textDocument.uri, position.line, position.character));
     return responseData<CompletionItem[]>(response, []);
 });
 
 connection.onHover(async ({ textDocument, position }) => {
-    const response = await bridge.getHover(textDocument.uri, position.line, position.character);
+    const response = await queryDocument(textDocument.uri, () => bridge.getHover(textDocument.uri, position.line, position.character));
     return responseData<Hover | null>(response, null);
 });
 
-connection.onRequest('zr/richHover', async ({ uri, line, character }: { uri: string; line: number; character: number }) => {
-    const response = await bridge.getRichHover(uri, line, character);
+connection.onRequest('zr/richHover', async ({ textDocument, position }: {
+    textDocument: { uri: string }; position: Position;
+}) => {
+    const response = await queryDocument(textDocument.uri, () =>
+        bridge.getRichHover(textDocument.uri, position.line, position.character));
     return responseData<unknown | null>(response, null);
 });
 
 connection.onDefinition(async ({ textDocument, position }) => {
-    const response = await bridge.getDefinition(textDocument.uri, position.line, position.character);
+    const response = await queryDocument(textDocument.uri, () => bridge.getDefinition(textDocument.uri, position.line, position.character));
     return responseData<Location[]>(response, []);
 });
 
 connection.onReferences(async ({ textDocument, position, context }) => {
-    const response = await bridge.findReferences(
+    const response = await queryDocument(textDocument.uri, () => bridge.findReferences(
         textDocument.uri,
         position.line,
         position.character,
         context.includeDeclaration,
-    );
+    ));
     return responseData<Location[]>(response, []);
 });
 
 connection.onDocumentSymbol(async ({ textDocument }) => {
-    const response = await bridge.getDocumentSymbols(textDocument.uri);
+    const response = await queryDocument(textDocument.uri, () => bridge.getDocumentSymbols(textDocument.uri));
     return responseData<SymbolInformation[]>(response, []);
 });
 
 connection.onRequest('textDocument/inlayHint', async ({ textDocument, range }) => {
-    const response = await bridge.getInlayHints(
+    const response = await queryDocument(textDocument.uri, () => bridge.getInlayHints(
         textDocument.uri,
         range.start.line,
         range.start.character,
         range.end.line,
         range.end.character,
-    );
+    ));
     return responseData<InlayHint[]>(response, []);
-});
-
-connection.onWorkspaceSymbol(async ({ query }) => {
-    const response = await bridge.getWorkspaceSymbols(query);
-    return responseData<SymbolInformation[]>(response, []);
 });
 
 connection.onRequest('zr/nativeDeclarationDocument', async ({ uri }: { uri: string }) => {
@@ -251,28 +215,23 @@ connection.onRequest('zr/nativeDeclarationDocument', async ({ uri }: { uri: stri
     return responseData<string | null>(response, null);
 });
 
-connection.onRequest('zr/projectModules', async ({ uri }: { uri: string }) => {
-    const response = await bridge.getProjectModules(uri);
-    return responseData<unknown[]>(response, []);
-});
-
 connection.onDocumentHighlight(async ({ textDocument, position }) => {
-    const response = await bridge.getDocumentHighlights(textDocument.uri, position.line, position.character);
+    const response = await queryDocument(textDocument.uri, () => bridge.getDocumentHighlights(textDocument.uri, position.line, position.character));
     return responseData<DocumentHighlight[]>(response, []);
 });
 
 connection.onRequest('textDocument/semanticTokens/full', async ({ textDocument }) => {
-    const response = await bridge.getSemanticTokens(textDocument.uri);
+    const response = await queryDocument(textDocument.uri, () => bridge.getSemanticTokens(textDocument.uri));
     return responseData<SemanticTokens | null>(response, null);
 });
 
 connection.onPrepareRename(async ({ textDocument, position }) => {
-    const response = await bridge.prepareRename(textDocument.uri, position.line, position.character);
+    const response = await queryDocument(textDocument.uri, () => bridge.prepareRename(textDocument.uri, position.line, position.character));
     return responseData<PrepareRenameResult | null>(response, null);
 });
 
 connection.onRenameRequest(async ({ textDocument, position, newName }) => {
-    const response = await bridge.rename(textDocument.uri, position.line, position.character, newName);
+    const response = await queryDocument(textDocument.uri, () => bridge.rename(textDocument.uri, position.line, position.character, newName));
     const locations = responseData<Location[] | null>(response, null);
     if (locations === null) {
         return null;
@@ -282,7 +241,7 @@ connection.onRenameRequest(async ({ textDocument, position, newName }) => {
 });
 
 connection.onRequest('textDocument/formatting', async ({ textDocument }: { textDocument: { uri: string } }) => {
-    const response = await bridge.getFormatting(textDocument.uri);
+    const response = await queryDocument(textDocument.uri, () => bridge.getFormatting(textDocument.uri));
     return responseData<unknown[]>(response, []);
 });
 
@@ -293,13 +252,13 @@ connection.onRequest('textDocument/rangeFormatting', async ({
     textDocument: { uri: string };
     range: Range;
 }) => {
-    const response = await bridge.getRangeFormatting(
+    const response = await queryDocument(textDocument.uri, () => bridge.getRangeFormatting(
         textDocument.uri,
         range.start.line,
         range.start.character,
         range.end.line,
         range.end.character,
-    );
+    ));
     return responseData<unknown[]>(response, []);
 });
 
@@ -312,18 +271,18 @@ connection.onRequest('textDocument/codeAction', async ({
     range: Range;
     context?: { only?: string[] };
 }) => {
-    const response = await bridge.getCodeActions(
+    const response = await queryDocument(textDocument.uri, () => bridge.getCodeActions(
         textDocument.uri,
         range.start.line,
         range.start.character,
         range.end.line,
         range.end.character,
-    );
+    ));
     return filterCodeActions(responseData<unknown[]>(response, []), context?.only);
 });
 
 connection.onRequest('textDocument/foldingRange', async ({ textDocument }: { textDocument: { uri: string } }) => {
-    const response = await bridge.getFoldingRanges(textDocument.uri);
+    const response = await queryDocument(textDocument.uri, () => bridge.getFoldingRanges(textDocument.uri));
     return responseData<unknown[]>(response, []);
 });
 
@@ -334,23 +293,30 @@ connection.onRequest('textDocument/selectionRange', async ({
     textDocument: { uri: string };
     positions: Position[];
 }) => {
+    if (isVirtualDocumentUri(textDocument.uri)) {
+        return positions.map(() => null);
+    }
+    return queryDocument(textDocument.uri, async () => {
     const ranges: unknown[] = [];
     for (const position of positions) {
-        const response = await bridge.getSelectionRange(textDocument.uri, position.line, position.character);
+        const response = await queryDocument(textDocument.uri, () => bridge.getSelectionRange(textDocument.uri, position.line, position.character));
         const data = responseData<unknown[]>(response, []);
         ranges.push(data[0] ?? null);
     }
     return ranges;
+    });
 });
 
 connection.onRequest('textDocument/documentLink', async ({ textDocument }: { textDocument: { uri: string } }) => {
-    const response = await bridge.getDocumentLinks(textDocument.uri);
+    const response = await queryDocument(textDocument.uri, () => bridge.getDocumentLinks(textDocument.uri));
     return responseData<unknown[]>(response, []);
 });
 
 connection.onRequest('textDocument/codeLens', async ({ textDocument }: { textDocument: { uri: string } }) => {
-    const response = await bridge.getCodeLens(textDocument.uri);
-    return responseData<unknown[]>(response, []);
+    const response = await queryDocument(textDocument.uri, () => bridge.getCodeLens(textDocument.uri));
+    const lenses = responseData<{ command?: { command?: string } }[]>(response, []);
+    return lenses.filter(lens => lens.command?.command !== 'zr.runCurrentProject' &&
+        lens.command?.command !== 'zr.debugCurrentProject');
 });
 
 connection.onRequest('textDocument/diagnostic', async ({
@@ -361,81 +327,36 @@ connection.onRequest('textDocument/diagnostic', async ({
     previousResultId?: string;
 }) => getDocumentDiagnosticReport(textDocument.uri, previousResultId));
 
-connection.onRequest('workspace/diagnostic', async ({
-    previousResultIds,
-}: {
-    previousResultIds?: { uri: string; value: string }[];
-} = {}) => {
-    const previousByUri = new Map<string, string>();
-    for (const previous of previousResultIds ?? []) {
-        previousByUri.set(previous.uri, previous.value);
-    }
-
-    const response = await bridge.getWorkspaceDiagnosticReports();
-    const reports = responseData<{
-        uri: string;
-        version: number | null;
-        resultId: string;
-        items: Diagnostic[];
-    }[]>(response, []);
-    const items = reports.map((report) => {
-        if (previousByUri.get(report.uri) === report.resultId) {
-            return {
-                uri: report.uri,
-                version: report.version,
-                kind: 'unchanged',
-                resultId: report.resultId,
-            };
-        }
-        return {
-            uri: report.uri,
-            version: report.version,
-            kind: 'full',
-            resultId: report.resultId,
-            items: report.items.map(normalizeDiagnostic),
-        };
-    });
-
-    return { items };
-});
-
 connection.listen();
 
-function responseData<T>(response: WasmResponse<T>, fallback: T): T {
-    if (typeof response !== 'object' || response === null || typeof response.success !== 'boolean') {
-        throw new ResponseError(ErrorCodes.InternalError, 'Malformed WASM response envelope.');
+async function queryDocument<T>(uri: string, query: () => Promise<T>): Promise<T> {
+    // Decompiled documents are editor-only projections. They have no source
+    // snapshot in the WASM project index, so feature requests resolve through
+    // the normal empty-result envelopes without touching the backend.
+    if (isVirtualDocumentUri(uri)) {
+        return { success: true, data: null } as T;
     }
-    if (response.success === false) {
-        const code = typeof response.code === 'number' && Number.isInteger(response.code)
-            ? response.code : ErrorCodes.InternalError;
-        const message = typeof response.error === 'string' && response.error.length > 0
-            ? response.error : 'Malformed WASM error response.';
-        throw new ResponseError(code, message, response.data);
-    }
-    if (!Object.prototype.hasOwnProperty.call(response, 'data') || response.data === undefined ||
-        'error' in response || 'code' in response) {
-        throw new ResponseError(ErrorCodes.InternalError, 'Malformed WASM success response.');
-    }
-    return response.data ?? fallback;
+    const result = await documents.read(uri, query);
+    if (!documents.isCurrent(result.token)) { throw contentModified(); }
+    return result.value;
 }
 
-async function publishDiagnostics(uri: string, version: number | undefined): Promise<void> {
-    const response = await bridge.getDiagnosticReport(uri);
-    const report = responseData<{ resultId: string; items: Diagnostic[] }>(response, {
-        resultId: '',
-        items: [],
-    });
-    const published = publishedDiagnosticResultIds.get(uri);
-    if (published?.resultId === report.resultId && published.version === version) {
-        return;
+async function publishDiagnostics(uri: string): Promise<void> {
+    if (isVirtualDocumentUri(uri)) { return; }
+    try {
+        const { value: response, token } = await documents.read(uri, () => bridge.getDiagnosticReport(uri));
+        const report = responseData<{ resultId: string; items: Diagnostic[] }>(response, { resultId: '', items: [] });
+        if (!documents.isCurrent(token)) { return; }
+        const published = publishedDiagnosticResultIds.get(uri);
+        if (published?.resultId === report.resultId && published.version === token.version &&
+            published.generation === token.generation) { return; }
+        connection.sendDiagnostics({ uri, version: token.version, diagnostics: report.items.map(normalizeDiagnostic) });
+        publishedDiagnosticResultIds.set(uri, { resultId: report.resultId, version: token.version, generation: token.generation });
+    } catch (error) {
+        if (!(error instanceof ResponseError && error.code === LSPErrorCodes.ContentModified)) {
+            console.error('[zr-web-worker] diagnostics failed:', uri, error);
+        }
     }
-
-    connection.sendDiagnostics({
-        uri,
-        version,
-        diagnostics: report.items.map(normalizeDiagnostic),
-    });
-    publishedDiagnosticResultIds.set(uri, { resultId: report.resultId, version });
 }
 
 function normalizeDiagnostic(diagnostic: Diagnostic): Diagnostic {
@@ -450,7 +371,14 @@ function normalizeDiagnostic(diagnostic: Diagnostic): Diagnostic {
 }
 
 async function getDocumentDiagnosticReport(uri: string, previousResultId: string | undefined): Promise<unknown> {
-    const response = await bridge.getDiagnosticReport(uri);
+    if (isVirtualDocumentUri(uri)) {
+        return {
+            kind: previousResultId === '' ? 'unchanged' : 'full',
+            resultId: '',
+            ...(previousResultId === '' ? {} : { items: [] }),
+        };
+    }
+    const response = await queryDocument(uri, () => bridge.getDiagnosticReport(uri));
     const report = responseData<{ resultId: string; items: Diagnostic[] }>(response, {
         resultId: '',
         items: [],
@@ -470,6 +398,10 @@ async function getDocumentDiagnosticReport(uri: string, previousResultId: string
         resultId,
         items: diagnostics,
     };
+}
+
+function isVirtualDocumentUri(uri: string): boolean {
+    return uri.startsWith('zr-decompiled:');
 }
 
 function buildWorkspaceEdit(locations: Location[], newName: string): WorkspaceEdit {
@@ -509,44 +441,6 @@ function codeActionKindMatches(actionKind: string, requestedKind: string): boole
 
 function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
-}
-
-function applyContentChanges(text: string, contentChanges: TextDocumentContentChangeEvent[]): string {
-    let currentText = text;
-
-    for (const change of contentChanges) {
-        if (!('range' in change)) {
-            currentText = change.text;
-            continue;
-        }
-
-        const startOffset = positionToOffset(currentText, change.range.start);
-        const endOffset = positionToOffset(currentText, change.range.end);
-        currentText = currentText.slice(0, startOffset) + change.text + currentText.slice(endOffset);
-    }
-
-    return currentText;
-}
-
-function positionToOffset(text: string, position: Position): number {
-    let offset = 0;
-    let currentLine = 0;
-
-    while (offset < text.length && currentLine < position.line) {
-        const code = text.charCodeAt(offset);
-        offset += 1;
-
-        if (code === 13) {
-            if (offset < text.length && text.charCodeAt(offset) === 10) {
-                offset += 1;
-            }
-            currentLine += 1;
-        } else if (code === 10) {
-            currentLine += 1;
-        }
-    }
-
-    return Math.min(offset + position.character, text.length);
 }
 
 function resolveDefaultServerBaseUrl(): string {

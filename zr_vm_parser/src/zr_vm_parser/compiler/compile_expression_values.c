@@ -4,6 +4,7 @@
 
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
+#include "zr_vm_parser/semantic_source_metadata.h"
 
 static TZrBool compile_identifier_note_result_slot_type(SZrCompilerState *cs,
                                                         SZrAstNode *node,
@@ -215,30 +216,6 @@ static void compile_identifier_report_unresolved_name(SZrCompilerState *cs,
     ZrParser_Compiler_Error(cs, errorBuffer, location);
 }
 
-static void record_template_segment_semantics(SZrCompilerState *cs, SZrAstNode *segmentNode) {
-    SZrTemplateSegment segment;
-
-    if (cs == ZR_NULL || segmentNode == ZR_NULL || cs->semanticContext == ZR_NULL) {
-        return;
-    }
-
-    memset(&segment, 0, sizeof(segment));
-    if (segmentNode->type == ZR_AST_STRING_LITERAL) {
-        segment.isInterpolation = ZR_FALSE;
-        segment.staticText = segmentNode->data.stringLiteral.value;
-        if (segment.staticText == ZR_NULL) {
-            segment.staticText = ZrCore_String_Create(cs->state, "", 0);
-        }
-    } else if (segmentNode->type == ZR_AST_INTERPOLATED_SEGMENT) {
-        segment.isInterpolation = ZR_TRUE;
-        segment.expression = segmentNode->data.interpolatedSegment.expression;
-    } else {
-        return;
-    }
-
-    ZrParser_Semantic_AppendTemplateSegment(cs->semanticContext, &segment);
-}
-
 static TZrUInt32 compile_template_segment_into_string_slot(SZrCompilerState *cs,
                                                          SZrAstNode *segmentNode,
                                                          TZrUInt32 targetSlot) {
@@ -324,9 +301,7 @@ void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    for (TZrSize i = 0; i < segments->count; i++) {
-        record_template_segment_semantics(cs, segments->nodes[i]);
-    }
+    ZrParser_SemanticMetadata_RecordTemplateSegments(cs->semanticContext, node);
 
     resultSlot = allocate_stack_slot(cs);
     if (compile_template_segment_into_string_slot(cs, segments->nodes[0], resultSlot) == ZR_PARSER_SLOT_NONE) {

@@ -256,10 +256,18 @@ void type_inference_record_member_call_reference_fact(
         const SZrInferredType *receiverType,
         SZrTypeMemberInfo *memberInfo,
         const SZrResolvedCallSignature *resolvedSignature);
-void type_inference_record_resolved_property_reference_fact(
+TZrBool type_inference_validate_field_access(
         SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
         SZrAstNode *memberNode,
         const SZrTypeMemberInfo *memberInfo,
+        SZrString *receiverTypeName,
+        TZrBool receiverIsPrototype);
+void type_inference_record_resolved_member_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        SZrTypeMemberInfo *memberInfo,
+        const SZrInferredType *valueType,
         EZrSemanticReferenceKind kind);
 void type_inference_record_unbound_member_reference_fact(
         SZrCompilerState *cs,

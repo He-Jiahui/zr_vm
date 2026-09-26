@@ -1,5 +1,48 @@
 const vscode = require('vscode');
 
+async function verifyRestartResynchronization(document, position, withRetry) {
+    const originalText = document.getText();
+    const symbol = `restartUnsavedProbe${Date.now()}`;
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(document.uri, document.positionAt(originalText.length),
+        `\nfn ${symbol}(): int { return 739; }\n`);
+    if (!await vscode.workspace.applyEdit(edit) || !document.isDirty) {
+        throw new Error('Restart probe requires an unsaved document edit');
+    }
+    try {
+        const unsavedPosition = document.positionAt(document.getText().indexOf(symbol) + 1);
+        await Promise.all([
+            vscode.commands.executeCommand('zr.restartLanguageServer'),
+            vscode.commands.executeCommand('zr.restartLanguageServer'),
+        ]);
+        await withRetry(
+            () => vscode.commands.executeCommand('vscode.executeHoverProvider', document.uri, unsavedPosition),
+            (items) => Array.isArray(items) && items.some((item) =>
+                item.contents.some((content) =>
+                    (typeof content === 'string' ? content : content.value)?.includes(symbol))),
+            15000,
+            'unsaved symbol hover after queued restarts and document resynchronization',
+        );
+        if (!document.isDirty) {
+            throw new Error('Restart probe content must remain unsaved');
+        }
+        await withRetry(
+            () => vscode.commands.executeCommand('vscode.executeHoverProvider', document.uri, position),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'original hover after queued restarts',
+        );
+    } finally {
+        const restore = new vscode.WorkspaceEdit();
+        restore.replace(document.uri,
+            new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
+            originalText);
+        if (!await vscode.workspace.applyEdit(restore)) {
+            throw new Error('Unable to restore restart smoke document');
+        }
+    }
+}
+
 const CLASSES_FULL_SMOKE_SOURCE = [
     'module classes_full;',
     '',
@@ -16,7 +59,7 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '        set { this._hp = value; }',
     '    }',
     '',
-    '    pub heal(amount: int): int {',
+    '    pub fn heal(amount: int): int {',
     '        this.hp = this.hp + amount;',
     '        return this.hp;',
     '    }',
@@ -40,17 +83,17 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    }',
     '',
     '    // Calculates the boss total score.',
-    '    pub total(): int {',
+    '    pub fn total(): int {',
     '        return this.hp + ScoreBoard.bonus + BossHero.created;',
     '    }',
     '}',
     '',
     '#zr.testing.test#',
-    'fn classesFullProjectShape(): int {',
+    'fn classesFullProjectShape(): void {',
     '    let boss: BossHero = new BossHero(30);',
     '    boss.hp = boss.hp + 7;',
     '    ScoreBoard.bonus = boss.heal(5);',
-    '    return boss.total() + ScoreBoard.bonus;',
+    '    boss.total() + ScoreBoard.bonus;',
     '}',
     '',
 ].join('\n');
@@ -60,14 +103,14 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     'let system = import("zr.system");',
     '',
     'class StructureHero {',
-    '    pub total(): int {',
+    '    pub fn total(): int {',
     '        return helper.value();',
     '    }',
     '}',
     '',
     '#zr.testing.test#',
-    'fn structureViewSmoke(): int {',
-    '    return helper.value();',
+    'fn structureViewSmoke(): void {',
+    '    helper.value();',
     '}',
     '',
     'return helper.value();',
@@ -215,23 +258,6 @@ async function deleteDocumentFile(uri, fallbackUri) {
     await vscode.workspace.fs.delete(uri, { useTrash: false });
 }
 
-async function withPatchedWindowMethod(methodName, replacement, action) {
-    const original = vscode.window[methodName];
-    let restored = false;
-
-    assert(typeof original === 'function', `Expected vscode.window.${methodName} to be patchable`);
-    vscode.window[methodName] = replacement;
-
-    try {
-        return await action();
-    } finally {
-        if (!restored) {
-            vscode.window[methodName] = original;
-            restored = true;
-        }
-    }
-}
-
 async function verifyDiagnostics(workspaceRoot) {
     console.log('[zr-web-smoke] verifyDiagnostics:start');
     const diagnosticUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'diagnostics_smoke.zr');
@@ -251,6 +277,17 @@ async function verifyDiagnostics(workspaceRoot) {
 
     assert(diagnostics[0].message.length > 0, 'Expected syntax diagnostics to include a message');
 
+    const repaired = new vscode.WorkspaceEdit();
+    repaired.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
+        'var x = 1;\r\nvar emoji = "😀";\r\n');
+    assert(await vscode.workspace.applyEdit(repaired), 'Expected diagnostic repair edit to apply');
+    await document.save();
+    await withRetry(
+        () => vscode.languages.getDiagnostics(document.uri),
+        (items) => items.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
+        15000,
+        'syntax diagnostics clear after an edit and save with UTF-16/CRLF text',
+    );
     await deleteDocumentFile(diagnosticUri);
     console.log('[zr-web-smoke] verifyDiagnostics:done');
 }
@@ -321,17 +358,9 @@ async function verifyLanguageFeatures(workspaceRoot) {
     assert(hasDocumentSymbol(documentSymbols, 'x'),
         'Expected document symbols to include x');
 
-    const workspaceSymbols = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeWorkspaceSymbolProvider',
-            'x',
-        ),
-        (items) => Array.isArray(items) && items.length > 0,
-        15000,
-        'workspace symbols',
-    );
-    assert(workspaceSymbols.some((item) => item.name === 'x'),
-        'Expected workspace symbols to include x');
+    const workspaceSymbols = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', 'x');
+    assert(Array.isArray(workspaceSymbols) && workspaceSymbols.length === 0,
+        'Web must not advertise workspace symbol indexing');
 
     const renameEdit = await withRetry(
         async () => vscode.commands.executeCommand(
@@ -349,6 +378,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     assert(renameEntries.some(([uri]) => uriPath(uri).endsWith('/src/lsp_smoke.zr')),
         'Rename should include lsp_smoke.zr edits');
 
+    await verifyRestartResynchronization(mainDocument, definitionPosition, withRetry);
     await deleteDocumentFile(smokeUri);
     console.log('[zr-web-smoke] verifyLanguageFeatures:done');
 }
@@ -364,7 +394,6 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     assert(commands.includes('zr.removeUnusedImports'), 'Expected web zr.removeUnusedImports command to be registered');
     const advancedSource = [
         'let system = import("zr.system");',
-        'let tcp = import("zr.network.tcp");',
         '',
         'class AdvancedSmoke {',
         'pub fn run(value: int): int {',
@@ -373,9 +402,12 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         '}',
         '}',
         '',
+        'fn advancedHelper(): int { return 1; }',
+        '',
         '#zr.testing.test#',
-        'fn advancedEditorSmoke(): int {',
-        'return 1;',
+        'fn advancedEditorSmoke(): void {',
+        'advancedHelper();',
+        'return;',
         '}',
         '',
     ].join('\n');
@@ -529,8 +561,10 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
             15000,
             'code lens provider',
         );
-        assert(codeLens.some((item) => item.command?.command === 'zr.runCurrentProject'),
-            'Expected web CodeLens to expose the Zr test run command');
+        assert(codeLens.some((item) => item.command?.command === 'zr.showReferences') &&
+                codeLens.every((item) => !['zr.runCurrentProject', 'zr.debugCurrentProject']
+                    .includes(item.command?.command)),
+            'Expected web CodeLens to expose references without unavailable project commands');
 
         const pullDiagnostics = await sendRawLanguageServerRequest('textDocument/diagnostic', {
             textDocument: { uri: document.uri.toString(true) },
@@ -552,21 +586,15 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
                 !Object.prototype.hasOwnProperty.call(unchangedDiagnostics, 'items'),
             'Expected web textDocument/diagnostic to return unchanged reports');
 
-        const workspaceDiagnostics = await sendRawLanguageServerRequest('workspace/diagnostic', {
-            previousResultIds: [
-                {
-                    uri: document.uri.toString(true),
-                    value: pullDiagnostics.resultId,
-                },
-            ],
-        });
-        assert(workspaceDiagnostics &&
-                Array.isArray(workspaceDiagnostics.items) &&
-                workspaceDiagnostics.items.some((item) =>
-                    item.uri === document.uri.toString(true) &&
-                    item.kind === 'unchanged' &&
-                    item.resultId === pullDiagnostics.resultId),
-            'Expected web workspace/diagnostic to include opened document reports');
+        let workspaceDiagnosticError;
+        try {
+            await vscode.commands.executeCommand('zr.__sendLanguageServerRequest',
+                'workspace/diagnostic', { previousResultIds: [] }, { strict: true });
+        } catch (error) {
+            workspaceDiagnosticError = error;
+        }
+        assert(workspaceDiagnosticError?.code === -32601,
+            'Web workspace/diagnostic must return MethodNotFound while project indexing is unavailable');
     } finally {
         try {
             await deleteDocumentFile(advancedUri);
@@ -783,12 +811,15 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     );
 
     const document = await openDocument(smokeUri);
-    const bossHeroUsage = findPositionBySubstring(document, 'BossHero(30)', 0);
+    const bossHeroUsage = findPositionBySubstring(document, 'boss: BossHero', 0, 6);
+    const constructorUsage = findPositionBySubstring(document, 'new BossHero(30)', 0, 4);
     const bossCompletionPosition = findPositionBySubstring(document, 'boss.hp =', 0, 5);
     const scoreBoardCompletionPosition = findPositionBySubstring(document, 'ScoreBoard.bonus =', 0, 11);
     const totalUsagePosition = findPositionBySubstring(document, 'boss.total() + ScoreBoard.bonus', 0, 5);
     const bossHeroDefinitionPosition = findPositionBySubstring(document, 'class BossHero: BaseHero', 0, 6);
-    const totalDefinitionPosition = findPositionBySubstring(document, 'pub total(): int {', 0, 4);
+    const constructorDefinitionPosition = findPositionBySubstring(document,
+        '@constructor(seed: int) super(seed)', 0);
+    const totalDefinitionPosition = findPositionBySubstring(document, 'pub fn total(): int {', 0, 7);
 
     const bossHeroDefinition = await withRetry(
         async () => vscode.commands.executeCommand(
@@ -812,6 +843,17 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
             )),
         'BossHero definition should resolve to the class identifier span',
     );
+    const constructorDefinition = await withRetry(
+        () => vscode.commands.executeCommand('vscode.executeDefinitionProvider', document.uri, constructorUsage),
+        (items) => Array.isArray(items) && items.length > 0,
+        15000,
+        'explicit constructor definition provider',
+    );
+    assert(constructorDefinition.some((item) =>
+        uriPath(locationUri(item)).endsWith('/src/classes_full_smoke.zr') &&
+        positionEquals(locationRange(item)?.start,
+            constructorDefinitionPosition.line, constructorDefinitionPosition.character)),
+    'Explicit constructor calls should navigate to the constructor declaration');
 
     const bossHeroReferences = await withRetry(
         async () => vscode.commands.executeCommand(
@@ -934,6 +976,13 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     assert(hasDocumentSymbol(documentSymbols, 'total'),
         'Document symbols should include method total');
 
+    const classReport = await vscode.commands.executeCommand('zr.__sendLanguageServerRequest',
+        'textDocument/diagnostic', { textDocument: { uri: document.uri.toString(true) } });
+    assert(classReport?.kind === 'full' && Array.isArray(classReport.items),
+        'Valid class analysis must produce a full diagnostic report');
+    const classErrors = classReport.items.filter((item) => item.severity === 1);
+    assert(classErrors.length === 0,
+        `Valid class field and property access must not report errors: ${JSON.stringify(classErrors)}`);
     await deleteDocumentFile(smokeUri);
     console.log('[zr-web-smoke] verifyClassLanguageFeatures:done');
 }
@@ -943,17 +992,14 @@ async function verifyStructureViews(workspaceRoot) {
     const mainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_smoke_main.zr');
     const helperUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_helper.zr');
     const cycleUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_cycle.zr');
-    const alternateProjectRootUri = vscode.Uri.joinPath(workspaceRoot, '.structure_selected_project_smoke');
-    const alternateProjectUri = vscode.Uri.joinPath(alternateProjectRootUri, 'structure_selected_project_smoke.zrp');
-    const alternateProjectSrcUri = vscode.Uri.joinPath(alternateProjectRootUri, 'src');
-    const alternateProjectMainUri = vscode.Uri.joinPath(alternateProjectSrcUri, 'main.zr');
-
     await vscode.workspace.fs.writeFile(mainUri, new TextEncoder().encode(STRUCTURE_SMOKE_MAIN_SOURCE));
     await vscode.workspace.fs.writeFile(helperUri, new TextEncoder().encode(STRUCTURE_SMOKE_HELPER_SOURCE));
     await vscode.workspace.fs.writeFile(cycleUri, new TextEncoder().encode(STRUCTURE_SMOKE_CYCLE_SOURCE));
     try {
+        await openDocument(helperUri);
+        await openDocument(cycleUri);
         const mainDocument = await openDocument(mainUri);
-        const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub total(): int {', 0, 4);
+        const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub fn total(): int {', 0, 7);
         const nativeImportPosition = findPositionBySubstring(
             mainDocument,
             '"zr.system"',
@@ -1035,48 +1081,14 @@ async function verifyStructureViews(workspaceRoot) {
             'Expected Declarations group to include test function structureViewSmoke',
         );
 
-        const projectActionSelectNode = findImmediateStructureNode(
-            snapshot.project,
-            (node) => node.nodeType === 'action' && node.label === 'Select Project',
-        );
-        const projectActionRunNode = findImmediateStructureNode(
-            snapshot.project,
-            (node) => node.nodeType === 'action' && node.label === 'Run Selected Project',
-        );
-        const projectActionDebugNode = findImmediateStructureNode(
-            snapshot.project,
-            (node) => node.nodeType === 'action' && node.label === 'Debug Selected Project',
-        );
-        assert(
-            projectActionSelectNode?.commandId === 'zr.selectProject' &&
-            projectActionRunNode?.commandId === 'zr.runSelectedProject' &&
-            projectActionDebugNode?.commandId === 'zr.debugSelectedProject',
-            'Expected Selected Project view actions to expose select/run/debug commands in web mode',
-        );
-
-        const selectedProjectNode = findStructureNode(
-            snapshot.project,
-            (node) => node.nodeType === 'project' && node.label === 'import_basic',
-        );
-        assert(selectedProjectNode, 'Expected the Selected Project view to render the auto-selected import_basic project');
-
-        const projectModulesGroup = findImmediateGroupNode(selectedProjectNode, 'Project Modules');
-        const nativeModulesGroup = findImmediateGroupNode(selectedProjectNode, 'Native Modules');
-        const binaryModulesGroup = findImmediateGroupNode(selectedProjectNode, 'Binary Modules');
-        assert(projectModulesGroup, 'Expected the selected project view to include a Project Modules group');
-        assert(nativeModulesGroup, 'Expected the selected project view to include a Native Modules group');
-        assert(binaryModulesGroup, 'Expected the selected project view to include a Binary Modules group');
-        assert(
-            findStructureNode(
-                structureChildren(projectModulesGroup),
-                (node) => node.nodeType === 'module' && node.label === 'main',
-            ),
-            'Expected Project Modules to include the selected project entry module',
-        );
-        const nativeProjectModuleNode = findStructureNode(
-            structureChildren(nativeModulesGroup),
-            (node) => node.nodeType === 'module',
-        );
+        const unavailable = findImmediateStructureNode(snapshot.project,
+            (node) => node.nodeType === 'info' && node.id === 'project:unavailable:web');
+        assert(unavailable && unavailable.label.includes('Project indexing is unavailable in VS Code Web'),
+            'Web project view must explain the current indexing boundary');
+        assert(snapshot.project.every((node) => node.nodeType === 'info'),
+            'Web project view must not display a synthetic project index');
+        assert(Array.isArray(snapshot.builtin) && snapshot.builtin.length > 0,
+            'Web must retain the builtin module view');
 
         const totalNode = findStructureNode(
             structureChildren(mainDeclarationsGroup),
@@ -1147,61 +1159,7 @@ async function verifyStructureViews(workspaceRoot) {
             'Expected native import goto definition to resolve into zr-decompiled virtual documents',
         );
 
-        if (nativeProjectModuleNode) {
-            assert(nativeProjectModuleNode.commandId, 'Expected selected-project native module nodes to expose navigation commands');
-            await vscode.commands.executeCommand(nativeProjectModuleNode.commandId, ...commandArguments(nativeProjectModuleNode));
-            await withRetry(
-                async () => vscode.window.activeTextEditor,
-                (editor) => editor?.document?.uri?.scheme === 'zr-decompiled',
-                15000,
-                'selected project native module navigation',
-            );
-        }
-
-        await vscode.workspace.fs.createDirectory(alternateProjectSrcUri);
-        await vscode.workspace.fs.writeFile(
-            alternateProjectUri,
-            new TextEncoder().encode(JSON.stringify({
-                name: 'structure_selected_project_smoke',
-                source: 'src',
-                binary: 'bin',
-                entry: 'main',
-            }, null, 2) + '\n'),
-        );
-        await vscode.workspace.fs.writeFile(
-            alternateProjectMainUri,
-            new TextEncoder().encode('return 7;\n'),
-        );
-
-        await withPatchedWindowMethod('showQuickPick', async (items) => items.find((item) => item.label === 'structure_selected_project_smoke'), async () => {
-            await vscode.commands.executeCommand('zr.selectProject');
-        });
-        await withRetry(
-            async () => vscode.commands.executeCommand('zr.__inspectStructureViews'),
-            (value) => Boolean(findStructureNode(
-                value?.project,
-                (node) => node.nodeType === 'project' && node.label === 'structure_selected_project_smoke',
-            )),
-            15000,
-            'selected project updates after zr.selectProject',
-        );
-
-        await vscode.commands.executeCommand('zr.structure.refresh');
-        await withRetry(
-            async () => vscode.commands.executeCommand('zr.__inspectStructureViews'),
-            (value) => Boolean(findStructureNode(
-                value?.project,
-                (node) => node.nodeType === 'project' && node.label === 'structure_selected_project_smoke',
-            )),
-            15000,
-            'selected project persists across refresh',
-        );
-
-        await withPatchedWindowMethod('showQuickPick', async (items) => items.find((item) => item.label === 'import_basic'), async () => {
-            await vscode.commands.executeCommand('zr.selectProject');
-        });
     } finally {
-        await vscode.workspace.fs.delete(alternateProjectRootUri, { recursive: true, useTrash: false });
         await deleteDocumentFile(mainUri);
         await deleteDocumentFile(helperUri);
         await deleteDocumentFile(cycleUri);

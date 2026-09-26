@@ -514,51 +514,28 @@ static const SZrSemanticTypeRecord *semantic_find_type_record_by_id(const SZrSem
 }
 
 static const SZrInferredType *semantic_symbol_display_type_info(SZrSemanticAnalyzer *analyzer, SZrSymbol *symbol) {
-    const SZrSymbol *canonicalSymbol = ZR_NULL;
+    const SZrSemanticSymbolRecord *record;
+    const SZrSemanticTypeRecord *typeRecord;
 
     if (symbol == ZR_NULL) {
         return ZR_NULL;
     }
-
     if (ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
         return symbol->typeInfo;
     }
-
-    if (analyzer != ZR_NULL && analyzer->symbolTable != ZR_NULL && symbol->name != ZR_NULL) {
-        canonicalSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, symbol->name, ZR_NULL);
-        if (canonicalSymbol != ZR_NULL &&
-            ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(canonicalSymbol->typeInfo)) {
-            return canonicalSymbol->typeInfo;
-        }
+    record = analyzer != ZR_NULL
+                     ? ZrParser_Semantic_FindSymbolById(
+                               analyzer->semanticContext, symbol->semanticId)
+                     : ZR_NULL;
+    typeRecord = record != ZR_NULL
+                         ? semantic_find_type_record_by_id(
+                                   analyzer->semanticContext, record->typeId)
+                         : ZR_NULL;
+    if (typeRecord != ZR_NULL &&
+        ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(&typeRecord->inferredType)) {
+        return &typeRecord->inferredType;
     }
-
-    if (analyzer != ZR_NULL &&
-        analyzer->semanticContext != ZR_NULL &&
-        (symbol->semanticId != ZR_SEMANTIC_ID_INVALID ||
-         (canonicalSymbol != ZR_NULL && canonicalSymbol->semanticId != ZR_SEMANTIC_ID_INVALID))) {
-        TZrSymbolId semanticId = symbol->semanticId != ZR_SEMANTIC_ID_INVALID
-                                     ? symbol->semanticId
-                                     : canonicalSymbol->semanticId;
-        for (TZrSize index = 0; index < analyzer->semanticContext->symbols.length; index++) {
-            const SZrSemanticSymbolRecord *symbolRecord = (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
-                (SZrArray *)&analyzer->semanticContext->symbols,
-                index);
-            const SZrSemanticTypeRecord *typeRecord;
-
-            if (symbolRecord == ZR_NULL || symbolRecord->id != semanticId) {
-                continue;
-            }
-
-            typeRecord = semantic_find_type_record_by_id(analyzer->semanticContext, symbolRecord->typeId);
-            if (typeRecord != ZR_NULL &&
-                ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(&typeRecord->inferredType)) {
-                return &typeRecord->inferredType;
-            }
-            break;
-        }
-    }
-
-    return symbol->typeInfo;
+    return ZR_NULL;
 }
 
 static SZrString *semantic_extract_direct_identifier_name(SZrAstNode *node) {

@@ -960,10 +960,13 @@ static void test_callable_signature_formats_canonical_effects_and_passing_modes(
 }
 
 #include "test_semantic_display_unresolved_cases.h"
+#include "test_semantic_display_source_generic_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_display_formats_canonical_type_symbol_and_property);
+    RUN_TEST(test_source_type_display_projects_nested_generic_parameter_names);
+    RUN_TEST(test_source_type_display_rejects_missing_generic_declaration_identity);
     RUN_TEST(test_callable_signature_redacts_unresolved_parameter_type);
     RUN_TEST(test_callable_signature_redacts_unresolved_return_type);
     RUN_TEST(test_callable_signature_redacts_both_unresolved_type_uses);

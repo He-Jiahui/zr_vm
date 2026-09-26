@@ -17,7 +17,8 @@ typedef enum EZrRustBindingStatus {
     ZR_RUST_BINDING_STATUS_COMPILE_ERROR = 6,
     ZR_RUST_BINDING_STATUS_RUNTIME_ERROR = 7,
     ZR_RUST_BINDING_STATUS_UNSUPPORTED = 8,
-    ZR_RUST_BINDING_STATUS_INTERNAL_ERROR = 9
+    ZR_RUST_BINDING_STATUS_INTERNAL_ERROR = 9,
+    ZR_RUST_BINDING_STATUS_EXECUTION_TERMINATED = 10
 } ZrRustBindingStatus;
 
 typedef enum EZrRustBindingExecutionMode {
@@ -82,6 +83,41 @@ typedef struct ZrRustBindingGcStepResult {
     TZrUInt64 rootCount;
     TZrUInt64 crossBoundaryReferenceCount;
 } ZrRustBindingGcStepResult;
+
+typedef struct SZrExecutionCancelToken ZrRustBindingCancellationToken;
+
+typedef enum EZrRustBindingTermination {
+    ZR_RUST_BINDING_TERMINATION_NONE = 0,
+    ZR_RUST_BINDING_TERMINATION_INSTRUCTION_LIMIT = 1,
+    ZR_RUST_BINDING_TERMINATION_DEADLINE = 2,
+    ZR_RUST_BINDING_TERMINATION_CANCELLED = 3,
+    ZR_RUST_BINDING_TERMINATION_HEAP_LIMIT = 4,
+    ZR_RUST_BINDING_TERMINATION_NATIVE_CALL_LIMIT = 5,
+    ZR_RUST_BINDING_TERMINATION_GC_TIME_LIMIT = 6
+} ZrRustBindingTermination;
+
+typedef struct ZrRustBindingCallBudget {
+    TZrUInt64 maxInstructions;
+    TZrUInt64 deadlineMicros;
+    const ZrRustBindingCancellationToken *cancelToken;
+    TZrBool hasInstructionLimit;
+    TZrBool hasDeadline;
+    TZrUInt64 maxHeapBytes;
+    TZrUInt64 maxNativeCalls;
+    TZrUInt64 maxGcMicros;
+    TZrBool hasHeapLimit;
+    TZrBool hasNativeCallLimit;
+    TZrBool hasGcTimeLimit;
+} ZrRustBindingCallBudget;
+
+typedef struct ZrRustBindingCallUsage {
+    TZrUInt64 executedInstructions;
+    TZrUInt64 elapsedMicros;
+    ZrRustBindingTermination termination;
+    TZrUInt64 peakHeapBytes;
+    TZrUInt64 nativeCalls;
+    TZrUInt64 gcMicros;
+} ZrRustBindingCallUsage;
 
 typedef enum EZrRustBindingNativeConstantKind {
     ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_NULL = 0,
@@ -190,6 +226,7 @@ typedef struct ZrRustBindingNativeModuleLinkDescriptor {
 typedef struct ZrRustBindingRuntime ZrRustBindingRuntime;
 typedef struct ZrRustBindingProjectWorkspace ZrRustBindingProjectWorkspace;
 typedef struct ZrRustBindingProjectSession ZrRustBindingProjectSession;
+typedef struct ZrRustBindingProjectSessionCheckpoint ZrRustBindingProjectSessionCheckpoint;
 typedef struct ZrRustBindingCompileResult ZrRustBindingCompileResult;
 typedef struct ZrRustBindingManifestSnapshot ZrRustBindingManifestSnapshot;
 typedef struct ZrRustBindingNativeCallContext ZrRustBindingNativeCallContext;
@@ -415,10 +452,51 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleE
         ZrRustBindingValue *const *arguments,
         TZrSize argumentCount,
         ZrRustBindingValue **outResult);
+/* The deadline uses ExecutionNowMicros' monotonic clock. An enabled instruction
+ * limit of zero admits no bytecode instructions; native boundaries do not count.
+ * Checks run before bytecode fetch and before/after native callbacks, which must
+ * return cooperatively. Termination preserves globals and heap mutations; it is
+ * not rollback. Session start/compilation and argument copying are not preempted.
+ * Usage is filled even on failure; a terminated call returns no result value.
+ * Heap usage is peak live requested bytes from the global VM allocator during
+ * this call, including preexisting allocations and allocate/free transients.
+ * It excludes allocations outside that allocator. The heap limit is checked
+ * after allocation at the next cooperative boundary, not before allocation;
+ * a single allocation or running native callback may overshoot without bound.
+ * GC usage is cumulative synchronous collection/step time including safepoint
+ * waits; the active collection finishes before the time limit is enforced.
+ * Native call limits admit function/binding boundaries before the callback.
+ * The token must stay alive until the call returns. A session is single-threaded. */
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExportWithBudget(
+        ZrRustBindingProjectSession *session,
+        const TZrChar *moduleName,
+        const TZrChar *exportName,
+        ZrRustBindingValue *const *arguments,
+        TZrSize argumentCount,
+        const ZrRustBindingCallBudget *budget,
+        ZrRustBindingCallUsage *outUsage,
+        ZrRustBindingValue **outResult);
+ZR_RUST_BINDING_API TZrUInt64 ZrRustBinding_ExecutionNowMicros(void);
+/* Token operations do not access the binding's process-global error snapshot.
+ * Cancel and IsCancelled are atomic and may run on other threads. Free requires
+ * all calls and token readers/writers to have finished. Cancellation is one-shot. */
+ZR_RUST_BINDING_API ZrRustBindingCancellationToken *ZrRustBinding_CancellationToken_New(void);
+ZR_RUST_BINDING_API void ZrRustBinding_CancellationToken_Cancel(ZrRustBindingCancellationToken *token);
+ZR_RUST_BINDING_API TZrBool ZrRustBinding_CancellationToken_IsCancelled(
+        const ZrRustBindingCancellationToken *token);
+ZR_RUST_BINDING_API void ZrRustBinding_CancellationToken_Free(ZrRustBindingCancellationToken *token);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(
         ZrRustBindingProjectSession *session,
         TZrUInt64 maxPauseMicros,
         ZrRustBindingGcStepResult *outResult);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Checkpoint(
+        ZrRustBindingProjectSession *session,
+        ZrRustBindingProjectSessionCheckpoint **outCheckpoint);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Rollback(
+        ZrRustBindingProjectSession *session,
+        const ZrRustBindingProjectSessionCheckpoint *checkpoint);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSessionCheckpoint_Free(
+        ZrRustBindingProjectSessionCheckpoint *checkpoint);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Free(
         ZrRustBindingProjectSession *session);
 

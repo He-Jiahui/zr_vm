@@ -212,11 +212,13 @@ static void compiler_register_function_like_pattern_bindings(
             return;
         }
         ZrParser_InferredType_Init(cs->state, &unknownType, ZR_VALUE_TYPE_OBJECT);
-        ZrParser_TypeEnvironment_RegisterVariable(
+        ZrParser_TypeEnvironment_RegisterVariableEx(
                 cs->state,
                 cs->typeEnv,
                 pattern->data.identifier.name,
-                &unknownType);
+                &unknownType,
+                pattern,
+                pattern->location);
         ZrParser_InferredType_Free(cs->state, &unknownType);
         return;
     }
@@ -283,11 +285,13 @@ static void compiler_register_function_like_local_variable_type(
         ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
     }
 
-    ZrParser_TypeEnvironment_RegisterVariable(
+    ZrParser_TypeEnvironment_RegisterVariableEx(
             cs->state,
             cs->typeEnv,
             declaration->pattern->data.identifier.name,
-            &bindingType);
+            &bindingType,
+            node,
+            declaration->pattern->location);
     ZrParser_InferredType_Free(cs->state, &bindingType);
 }
 
@@ -305,9 +309,18 @@ static void compiler_collect_function_like_return_type(
     switch (node->type) {
         case ZR_AST_BLOCK: {
             SZrBlock *block = &node->data.block;
+            SZrTypeEnvironment *savedEnv = cs->typeEnv;
+            SZrTypeEnvironment *blockEnv;
             if (block->body == ZR_NULL) {
                 return;
             }
+            blockEnv = ZrParser_TypeEnvironment_New(cs->state);
+            if (blockEnv == ZR_NULL) {
+                return;
+            }
+            blockEnv->parent = savedEnv;
+            blockEnv->semanticContext = cs->semanticContext;
+            cs->typeEnv = blockEnv;
 
             for (TZrSize index = 0U; index < block->body->count; index++) {
                 compiler_collect_function_like_return_type(
@@ -317,9 +330,11 @@ static void compiler_collect_function_like_return_type(
                         accumulatedType,
                         firstReturnRange);
                 if (cs->hasError) {
-                    return;
+                    break;
                 }
             }
+            cs->typeEnv = savedEnv;
+            ZrParser_TypeEnvironment_Free(cs->state, blockEnv);
             return;
         }
 

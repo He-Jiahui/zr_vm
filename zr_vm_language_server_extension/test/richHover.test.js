@@ -25,6 +25,7 @@ test('summarizeRichHover keeps standard hover concise while preserving key seman
         'Resolved Type: `Unique<PointSet>`',
         'Access: `public`',
         'Source: `project source`',
+        'Allocates and returns a unique point set.',
     ]);
 });
 

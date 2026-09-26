@@ -2073,6 +2073,9 @@ async function main() {
         await client.waitForNotification('textDocument/publishDiagnostics');
     assert(canonicalDisplayDiagnostics.uri === canonicalDisplayUri,
         'canonical display diagnostics uri mismatch');
+    assert(Array.isArray(canonicalDisplayDiagnostics.diagnostics) &&
+        canonicalDisplayDiagnostics.diagnostics.some((item) => item.severity === 1),
+    'unresolved declaration types must retain an error diagnostic');
     const canonicalDisplayPosition = findPosition(canonicalDisplayText, 'redact(null)', 0, 0);
     const canonicalDisplayCompletions = await client.request('textDocument/completion', {
         textDocument: { uri: canonicalDisplayUri },
@@ -2080,9 +2083,8 @@ async function main() {
     });
     const redactCompletion = Array.isArray(canonicalDisplayCompletions) ?
         canonicalDisplayCompletions.find((item) => item && item.label === 'redact') : undefined;
-    assert(redactCompletion && typeof redactCompletion.detail === 'string' &&
-        redactCompletion.detail.includes('value: cannot infer exact type') &&
-        redactCompletion.detail.includes('): cannot infer exact type') &&
+    assert(redactCompletion && redactCompletion.kind === 3 &&
+        redactCompletion.detail === 'cannot infer exact type' &&
         !redactCompletion.detail.includes('MissingType'),
     `completion must fail closed when an explicit declaration type lacks a resolved canonical fact: ${JSON.stringify(redactCompletion)}`);
     const canonicalDisplayHover = await client.request('textDocument/hover', {
@@ -2091,8 +2093,9 @@ async function main() {
     });
     assert(canonicalDisplayHover && canonicalDisplayHover.contents &&
         typeof canonicalDisplayHover.contents.value === 'string' &&
-        canonicalDisplayHover.contents.value.includes('value: cannot infer exact type') &&
-        canonicalDisplayHover.contents.value.includes('): cannot infer exact type') &&
+        canonicalDisplayHover.contents.value.includes('redact') &&
+        canonicalDisplayHover.contents.value.includes('function') &&
+        canonicalDisplayHover.contents.value.includes('cannot infer exact type') &&
         !canonicalDisplayHover.contents.value.includes('MissingType'),
     `hover must fail closed when an explicit declaration type lacks a resolved canonical fact: ${JSON.stringify(canonicalDisplayHover)}`);
 
@@ -4090,6 +4093,22 @@ async function main() {
         Array.isArray(minimalSemanticDelta.edits[0].data) &&
         minimalSemanticDelta.edits[0].data.length < semanticDeltaBaseline.data.length,
     'semanticTokens/full/delta must return a minimal cached edit for changed token data');
+
+    client.notify('textDocument/didChange', {
+        textDocument: { uri: semanticDeltaUri, version: 3 },
+        contentChanges: [{ text: `${semanticDeltaUpdatedText}\n` }],
+    });
+    const unchangedDataDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(unchangedDataDiagnostics.uri === semanticDeltaUri,
+        'semantic delta unchanged-data didChange diagnostics uri mismatch');
+    const unchangedDataDelta = await client.request('textDocument/semanticTokens/full/delta', {
+        textDocument: { uri: semanticDeltaUri },
+        previousResultId: minimalSemanticDelta.resultId,
+    });
+    assert(unchangedDataDelta &&
+        unchangedDataDelta.resultId !== minimalSemanticDelta.resultId &&
+        Array.isArray(unchangedDataDelta.edits) && unchangedDataDelta.edits.length === 0,
+    'semanticTokens/full/delta must retain an empty edit list when only the document snapshot changes');
 
     client.notify('textDocument/didClose', {
         textDocument: {

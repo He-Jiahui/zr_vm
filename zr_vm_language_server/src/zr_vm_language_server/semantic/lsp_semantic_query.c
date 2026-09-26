@@ -2763,6 +2763,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL &&
         query->hasCanonicalSymbol && query->analyzer != ZR_NULL &&
         query->analyzer->semanticContext != ZR_NULL) {
+        SZrSymbol *sourceSymbol = query->symbol;
+        if ((sourceSymbol == ZR_NULL ||
+             sourceSymbol->semanticId != query->canonicalSymbol.symbolId) &&
+            query->analyzer->symbolTable != ZR_NULL) {
+            sourceSymbol = ZrLanguageServer_SymbolTable_FindBySemanticId(
+                    query->analyzer->symbolTable, query->canonicalSymbol.symbolId);
+        }
         TZrBool built = ZrLanguageServer_LspCanonicalHover_BuildSymbol(
                 state,
                 context,
@@ -2771,7 +2778,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
                 &query->canonicalSymbol,
                 query->canonicalReferenceRange,
                 query->analyzer->ast,
-                query->symbol,
+                sourceSymbol,
                 result);
         return built;
     }

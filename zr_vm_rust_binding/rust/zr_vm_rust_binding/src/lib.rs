@@ -6,12 +6,16 @@ use std::ptr;
 
 use zr_vm_rust_binding_sys as sys;
 
+mod execution_budget;
 mod gc;
 mod native;
 mod native_argument_view;
+mod project_session_checkpoint;
+pub use execution_budget::*;
 pub use gc::GcStepResult;
 pub use native::*;
 pub use native_argument_view::*;
+pub use project_session_checkpoint::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionMode {

@@ -13,8 +13,12 @@ pub type TZrUInt64 = u64;
 pub type TZrFloat64 = f64;
 pub type TZrPtr = *mut c_void;
 
+mod execution_budget;
 mod native;
+mod project_session_checkpoint;
+pub use execution_budget::*;
 pub use native::*;
+pub use project_session_checkpoint::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +33,7 @@ pub enum ZrRustBindingStatus {
     ZR_RUST_BINDING_STATUS_RUNTIME_ERROR = 7,
     ZR_RUST_BINDING_STATUS_UNSUPPORTED = 8,
     ZR_RUST_BINDING_STATUS_INTERNAL_ERROR = 9,
+    ZR_RUST_BINDING_STATUS_EXECUTION_TERMINATED = 10,
 }
 
 #[repr(C)]

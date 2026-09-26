@@ -5,6 +5,7 @@
 #include "gc/gc_domain_internal.h"
 
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
@@ -543,11 +544,15 @@ TZrBool ZrCore_GcDomain_NativeEnter(
         mode > ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL) {
         return ZR_FALSE;
     }
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL) && !ZrCore_ExecutionBudget_Poll(state, ZR_FALSE)) {
+        return ZR_FALSE;
+    }
     domain = state->gcDomain;
     ZrCore_GcDomain_Lock(domain);
     record = gc_domain_find_mutator_locked(domain, state);
     record = gc_domain_wait_for_entry_boundary_locked(domain, state, record);
-    if (record == ZR_NULL) {
+    if (record == ZR_NULL ||
+        (ZR_UNLIKELY(state->executionBudget != ZR_NULL) && !ZrCore_ExecutionBudget_Poll(state, ZR_FALSE))) {
         ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
     }
@@ -556,19 +561,28 @@ TZrBool ZrCore_GcDomain_NativeEnter(
             ZrCore_GcDomain_Unlock(domain);
             return ZR_FALSE;
         }
+        if (!ZrCore_ExecutionBudget_NativeEnter(state, ZR_TRUE)) {
+            ZrCore_GcDomain_Unlock(domain);
+            return ZR_FALSE;
+        }
         record->nativeDepth++;
         ZrCore_GcDomain_Unlock(domain);
         return ZR_TRUE;
+    }
+    if (record->status != ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING &&
+        record->status != ZR_GC_DOMAIN_MUTATOR_STATUS_ATTACHED_INACTIVE) {
+        ZrCore_GcDomain_Unlock(domain);
+        return ZR_FALSE;
+    }
+    if (!ZrCore_ExecutionBudget_NativeEnter(state, ZR_TRUE)) {
+        ZrCore_GcDomain_Unlock(domain);
+        return ZR_FALSE;
     }
     if (record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_ATTACHED_INACTIVE) {
         record->status = ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING;
         record->nativeEnteredFromInactive = ZR_TRUE;
     } else {
         record->nativeEnteredFromInactive = ZR_FALSE;
-    }
-    if (record->status != ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING) {
-        ZrCore_GcDomain_Unlock(domain);
-        return ZR_FALSE;
     }
     record->nativeDepth = 1u;
     record->nativeMode = mode;
@@ -612,6 +626,9 @@ void ZrCore_GcDomain_NativeLeave(SZrState *state) {
     ZrCore_GcDomain_Unlock(domain);
     if (pollAfterLeave) {
         ZrCore_GcDomain_MutatorPoll(state);
+    }
+    if (ZR_UNLIKELY(state->executionBudget != ZR_NULL)) {
+        (void)ZrCore_ExecutionBudget_Poll(state, ZR_FALSE);
     }
 }
 

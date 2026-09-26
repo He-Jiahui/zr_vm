@@ -263,7 +263,6 @@ static inline TZrByte *ZrTests_Fixture_BuildBinaryFile(SZrState *state,
     if (function == ZR_NULL) {
         return ZR_NULL;
     }
-
     if (!ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
         ZrCore_Function_Free(state, function);
         return ZR_NULL;

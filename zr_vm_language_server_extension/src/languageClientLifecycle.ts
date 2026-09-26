@@ -3,6 +3,7 @@ export const LANGUAGE_CLIENT_STATE_RUNNING = 2;
 
 export const ERROR_ACTION_CONTINUE = 1;
 export const CLOSE_ACTION_RESTART = 2;
+export const CLOSE_ACTION_DO_NOT_RESTART = 1;
 
 type StateChangeEventLike = {
     oldState: number;
@@ -57,6 +58,11 @@ export function isBenignLanguageClientStopError(error: unknown): boolean {
         return true;
     }
 
+    return isLanguageClientNotRunningError(error);
+}
+
+export function isLanguageClientNotRunningError(error: unknown): boolean {
+
     if (!error || typeof error !== 'object') {
         return false;
     }
@@ -68,8 +74,8 @@ export function isBenignLanguageClientStopError(error: unknown): boolean {
 
 export function createTransportAwareLanguageClientLifecycle<TClient extends LanguageClientLike>(
     maxRestartCount?: number,
+    isRetired: () => boolean = () => false,
 ): TransportAwareLanguageClientLifecycle<TClient> {
-    let currentClient: TClient | undefined;
     let delegate: ErrorHandlerLike | undefined;
     let stateDisposable: DisposableLike | undefined;
     let transportBroken = false;
@@ -96,6 +102,10 @@ export function createTransportAwareLanguageClientLifecycle<TClient extends Lang
         async closed() {
             transportBroken = true;
 
+            if (isRetired()) {
+                return { action: CLOSE_ACTION_DO_NOT_RESTART };
+            }
+
             if (delegate) {
                 return delegate.closed();
             }
@@ -108,7 +118,6 @@ export function createTransportAwareLanguageClientLifecycle<TClient extends Lang
         errorHandler,
         attachClient(client) {
             stateDisposable?.dispose();
-            currentClient = client;
             delegate = client.createDefaultErrorHandler(maxRestartCount);
             transportBroken = false;
             stateDisposable = client.onDidChangeState((event) => {
@@ -121,62 +130,8 @@ export function createTransportAwareLanguageClientLifecycle<TClient extends Lang
         dispose() {
             stateDisposable?.dispose();
             stateDisposable = undefined;
-            currentClient = undefined;
             delegate = undefined;
             transportBroken = false;
         },
     };
-}
-
-export async function stopLanguageClientSafely<TClient extends LanguageClientLike>(
-    client: TClient,
-    lifecycle: TransportAwareLanguageClientLifecycle<TClient>,
-    waitForStateChangeMs = 500,
-): Promise<void> {
-    if (client.state !== LANGUAGE_CLIENT_STATE_RUNNING) {
-        return;
-    }
-
-    if (!lifecycle.isTransportBroken()) {
-        await client.stop();
-        return;
-    }
-
-    await waitForClientToLeaveRunningState(client, waitForStateChangeMs);
-}
-
-async function waitForClientToLeaveRunningState<TClient extends LanguageClientLike>(
-    client: TClient,
-    timeoutMs: number,
-): Promise<void> {
-    if (client.state !== LANGUAGE_CLIENT_STATE_RUNNING) {
-        return;
-    }
-
-    await new Promise<void>((resolve) => {
-        let settled = false;
-        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-        let stateDisposable: DisposableLike | undefined;
-
-        const complete = (): void => {
-            if (settled) {
-                return;
-            }
-
-            settled = true;
-            if (timeoutHandle !== undefined) {
-                clearTimeout(timeoutHandle);
-            }
-            stateDisposable?.dispose();
-            resolve();
-        };
-
-        stateDisposable = client.onDidChangeState((event) => {
-            if (event.newState !== LANGUAGE_CLIENT_STATE_RUNNING) {
-                complete();
-            }
-        });
-
-        timeoutHandle = setTimeout(complete, timeoutMs);
-    });
 }

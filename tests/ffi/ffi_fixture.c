@@ -42,6 +42,8 @@ static const char *kZrFfiFixtureVersion = "1.2.3-fixture";
 
 ZR_FFI_FIXTURE_EXPORT const char *zr_ffi_version_string(void);
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_add_i32(int32_t lhs, int32_t rhs);
+ZR_FFI_FIXTURE_EXPORT uint64_t zr_ffi_identity_u64(uint64_t value);
+ZR_FFI_FIXTURE_EXPORT int64_t zr_ffi_identity_i64(int64_t value);
 ZR_FFI_FIXTURE_EXPORT double zr_ffi_mul_f64(double lhs, double rhs);
 ZR_FFI_FIXTURE_EXPORT size_t zr_ffi_strlen_utf8(const char *text);
 ZR_FFI_FIXTURE_EXPORT ZrFfiFixturePoint zr_ffi_make_point(int32_t x, int32_t y);
@@ -72,6 +74,14 @@ ZR_FFI_FIXTURE_EXPORT const char *zr_ffi_version_string(void) {
 
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_add_i32(int32_t lhs, int32_t rhs) {
     return lhs + rhs;
+}
+
+ZR_FFI_FIXTURE_EXPORT uint64_t zr_ffi_identity_u64(uint64_t value) {
+    return value;
+}
+
+ZR_FFI_FIXTURE_EXPORT int64_t zr_ffi_identity_i64(int64_t value) {
+    return value;
 }
 
 ZR_FFI_FIXTURE_EXPORT double zr_ffi_mul_f64(double lhs, double rhs) {

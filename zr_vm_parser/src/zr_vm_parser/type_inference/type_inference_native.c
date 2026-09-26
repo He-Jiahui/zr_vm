@@ -4239,6 +4239,13 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     return ZR_TRUE;
                 }
 
+                if (!type_inference_validate_field_access(
+                            cs, primaryNode, memberNode, memberInfo,
+                            currentType.typeName, currentIsPrototypeReference)) {
+                    ZrParser_InferredType_Free(cs->state, &currentType);
+                    return ZR_FALSE;
+                }
+
                 {
                     SZrString *prototypeCandidateTypeName = memberInfo->fieldTypeName;
                     if (type_name_is_module_prototype_inference(cs, currentType.typeName) &&
@@ -4253,6 +4260,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     }
 
                 if ((memberInfo->memberType == ZR_AST_STRUCT_FIELD || memberInfo->memberType == ZR_AST_CLASS_FIELD) &&
+                    type_name_is_module_prototype_inference(cs, currentType.typeName) &&
                     prototypeCandidateTypeName != ZR_NULL &&
                     find_compiler_type_prototype_inference(cs, prototypeCandidateTypeName) != ZR_NULL &&
                     !type_name_is_module_prototype_inference(cs, prototypeCandidateTypeName)) {
@@ -4443,10 +4451,11 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                 memberInfo->returnTypeName,
                                 &externalCallableReturnType);
                     }
-                    type_inference_record_resolved_property_reference_fact(
+                    type_inference_record_resolved_member_reference_fact(
                             cs,
                             memberNode,
                             memberInfo,
+                            &nextType,
                             ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
                     if (memberInfo->declarationNode == ZR_NULL &&
                         type_name_is_module_prototype_inference(

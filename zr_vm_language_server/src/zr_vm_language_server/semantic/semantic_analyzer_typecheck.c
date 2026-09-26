@@ -5,6 +5,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 #include "zr_vm_parser/const_assignment.h"
+#include "zr_vm_parser/semantic_source_metadata.h"
 #include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/variance.h"
 
@@ -241,57 +242,6 @@ static void semantic_typecheck_pop_runtime_type_binding_scope(SZrState *state,
     }
 }
 
-static void semantic_typecheck_register_inferred_binding(
-        SZrState *state,
-        SZrSemanticAnalyzer *analyzer,
-        SZrString *name,
-        const SZrInferredType *bindingType,
-        SZrAstNode *declarationNode) {
-    SZrSymbol *symbol;
-    SZrFileRange lookupRange;
-
-    if (state == ZR_NULL || analyzer == ZR_NULL ||
-        analyzer->compilerState == ZR_NULL ||
-        analyzer->compilerState->typeEnv == ZR_NULL ||
-        name == ZR_NULL || bindingType == ZR_NULL) {
-        return;
-    }
-
-    lookupRange = declarationNode != ZR_NULL ? declarationNode->location : (SZrFileRange){0};
-    if (declarationNode != ZR_NULL &&
-        declarationNode->type == ZR_AST_VARIABLE_DECLARATION &&
-        declarationNode->data.variableDeclaration.pattern != ZR_NULL &&
-        declarationNode->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
-        lookupRange = declarationNode->data.variableDeclaration.pattern->location;
-    }
-
-    symbol = declarationNode != ZR_NULL
-                 ? ZrLanguageServer_SymbolTable_LookupAtPosition(
-                       analyzer->symbolTable,
-                       name,
-                       lookupRange)
-                 : ZR_NULL;
-    if (symbol != ZR_NULL &&
-        symbol->semanticId != ZR_SEMANTIC_ID_INVALID &&
-        symbol->semanticTypeId != ZR_SEMANTIC_ID_INVALID &&
-        ZrParser_TypeEnvironment_RegisterCanonicalVariable(
-            state,
-            analyzer->compilerState->typeEnv,
-            name,
-            bindingType,
-            symbol->semanticId,
-            symbol->semanticTypeId,
-            symbol->selectionRange)) {
-        return;
-    }
-
-    ZrParser_TypeEnvironment_RegisterVariable(
-        state,
-        analyzer->compilerState->typeEnv,
-        name,
-        bindingType);
-}
-
 static void semantic_typecheck_register_variable_binding(SZrState *state,
                                                          SZrSemanticAnalyzer *analyzer,
                                                          SZrString *name,
@@ -315,6 +265,8 @@ static void semantic_typecheck_register_variable_binding(SZrState *state,
                                                                           ZrParser_FilePosition_Create(0, 0, 0),
                                                                           ZrParser_FilePosition_Create(0, 0, 0),
                                                                           ZR_NULL));
+            ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+                    state, analyzer, name, ZR_NULL, declarationNode);
             ZrParser_InferredType_Free(state, &bindingType);
             return;
         }
@@ -342,12 +294,14 @@ static void semantic_typecheck_register_variable_binding(SZrState *state,
                 ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                         state, analyzer, valueNode->location);
             }
+            ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+                    state, analyzer, name, ZR_NULL, declarationNode);
             ZrParser_InferredType_Free(state, &bindingType);
             return;
         }
     }
 
-    semantic_typecheck_register_inferred_binding(
+    ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
         state,
         analyzer,
         name,
@@ -423,7 +377,7 @@ static void semantic_typecheck_register_foreach_binding(SZrState *state,
         return;
     }
 
-    semantic_typecheck_register_inferred_binding(
+    ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
         state,
         analyzer,
         name,
@@ -705,6 +659,17 @@ static void semantic_typecheck_using_statement(SZrState *state,
 
     usingStmt = &node->data.usingStatement;
     ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->resource);
+    if (usingStmt->guardKind == ZR_USING_GUARD_DROP &&
+        analyzer->compilerState != ZR_NULL) {
+        SZrInferredType resourceType;
+        TZrBool hasResourceType;
+        ZrParser_InferredType_Init(state, &resourceType, ZR_VALUE_TYPE_OBJECT);
+        hasResourceType = ZrParser_SemanticMetadata_InferUsingResourceType(
+                analyzer->compilerState, usingStmt->resource, &resourceType);
+        ZrParser_SemanticMetadata_RecordUsingCleanup(
+                analyzer->compilerState, node, hasResourceType ? &resourceType : ZR_NULL);
+        ZrParser_InferredType_Free(state, &resourceType);
+    }
 
     ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionInit(state, &resolution);
     hasUnionPattern = ZrLanguageServer_SemanticAnalyzer_ResolveUsingUnionPattern(state,
@@ -1168,6 +1133,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             break;
     }
     
+    if (ZrLanguageServer_SemanticAnalyzer_TypecheckValueChildren(state, analyzer, node)) {
+        return;
+    }
+
     // 递归检查子节点
     switch (node->type) {
         case ZR_AST_SCRIPT: {
@@ -1246,51 +1215,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             break;
         }
         
-        case ZR_AST_BINARY_EXPRESSION: {
-            SZrBinaryExpression *binExpr = &node->data.binaryExpression;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, binExpr->left);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, binExpr->right);
-            break;
-        }
-        
-        case ZR_AST_UNARY_EXPRESSION: {
-            SZrUnaryExpression *unaryExpr = &node->data.unaryExpression;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, unaryExpr->argument);
-            break;
-        }
-        
-        case ZR_AST_ASSIGNMENT_EXPRESSION: {
-            SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, assignExpr->left);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, assignExpr->right);
-            break;
-        }
-        
-        case ZR_AST_FUNCTION_CALL: {
-            SZrFunctionCall *funcCall = &node->data.functionCall;
-            if (funcCall->args != ZR_NULL && funcCall->args->nodes != ZR_NULL) {
-                for (TZrSize i = 0; i < funcCall->args->count; i++) {
-                    if (funcCall->args->nodes[i] != ZR_NULL) {
-                        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, funcCall->args->nodes[i]);
-                    }
-                }
-            }
-            break;
-        }
-        
-        case ZR_AST_PRIMARY_EXPRESSION: {
-            SZrPrimaryExpression *primaryExpr = &node->data.primaryExpression;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, primaryExpr->property);
-            if (primaryExpr->members != ZR_NULL && primaryExpr->members->nodes != ZR_NULL) {
-                for (TZrSize i = 0; i < primaryExpr->members->count; i++) {
-                    if (primaryExpr->members->nodes[i] != ZR_NULL) {
-                        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, primaryExpr->members->nodes[i]);
-                    }
-                }
-            }
-            break;
-        }
-        
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, varDecl->pattern);
@@ -1305,54 +1229,29 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             break;
         }
 
-        case ZR_AST_EXPRESSION_STATEMENT: {
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state,
-                                                                  analyzer,
-                                                                  node->data.expressionStatement.expr);
-            break;
-        }
-
-        case ZR_AST_RETURN_STATEMENT: {
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state,
-                                                                  analyzer,
-                                                                  node->data.returnStatement.expr);
-            break;
-        }
-
-        case ZR_AST_THROW_STATEMENT: {
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state,
-                                                                  analyzer,
-                                                                  node->data.throwStatement.expr);
-            break;
-        }
-
         case ZR_AST_USING_STATEMENT: {
             semantic_typecheck_using_statement(state, analyzer, node);
             break;
         }
 
-        case ZR_AST_TEMPLATE_STRING_LITERAL: {
-            SZrTemplateStringLiteral *templateLiteral = &node->data.templateStringLiteral;
-            if (templateLiteral->segments != ZR_NULL && templateLiteral->segments->nodes != ZR_NULL) {
-                for (TZrSize i = 0; i < templateLiteral->segments->count; i++) {
-                    if (templateLiteral->segments->nodes[i] != ZR_NULL) {
-                        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, templateLiteral->segments->nodes[i]);
-                    }
-                }
-            }
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(
+                    state, analyzer, node->data.compileTimeDeclaration.declaration);
             break;
-        }
 
-        case ZR_AST_INTERPOLATED_SEGMENT: {
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, node->data.interpolatedSegment.expression);
+        case ZR_AST_LAMBDA_EXPRESSION:
+            semantic_typecheck_callable_body(state, analyzer, node,
+                    node->data.lambdaExpression.params, ZR_NULL, node->data.lambdaExpression.block);
             break;
-        }
-        
+
         case ZR_AST_FUNCTION_DECLARATION: {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
             SZrSemanticTypecheckContextSnapshot contextSnapshot;
             SZrTypeEnvironment *savedTypeEnv;
 
+            ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+                    state, analyzer, funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL,
+                    ZR_NULL, node);
             semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
             savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
             semantic_typecheck_register_parameter_bindings(state, analyzer, funcDecl->params);
@@ -1374,6 +1273,9 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrSemanticTypecheckContextSnapshot contextSnapshot;
             SZrTypeEnvironment *savedTypeEnv;
 
+            ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
+                    state, analyzer, funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL,
+                    ZR_NULL, node);
             semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
             savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
             semantic_typecheck_register_parameter_bindings(state, analyzer, funcDecl->params);
@@ -1386,13 +1288,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             }
             semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
             semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
-            break;
-        }
-
-        case ZR_AST_LOGICAL_EXPRESSION: {
-            SZrLogicalExpression *logicalExpr = &node->data.logicalExpression;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, logicalExpr->left);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, logicalExpr->right);
             break;
         }
 

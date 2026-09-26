@@ -8,6 +8,7 @@
 
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/gc_domain.h"
+#include "zr_vm_core/execution_budget.h"
 
 #define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
 
@@ -647,8 +648,10 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
 
     global = state->global;
     collector = global->garbageCollector;
+    ZrCore_ExecutionBudget_GcBegin(state);
     if (!ZrCore_GcDomain_StopTheWorldBegin(
                 state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
+        ZrCore_ExecutionBudget_GcEnd(state);
         return;
     }
     ZrCore_GcDomain_MutationLock(state->gcDomain);
@@ -689,6 +692,7 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     }
     ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     ZrCore_GcDomain_StopTheWorldEnd(state);
+    ZrCore_ExecutionBudget_GcEnd(state);
 }
 
 void ZrCore_GarbageCollector_GcStep(SZrState *state) {
@@ -708,6 +712,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
 
     global = state->global;
     collector = global->garbageCollector;
+    ZrCore_ExecutionBudget_GcBegin(state);
     collector->gcLastStepWork = 0;
     debtBefore = collector->gcDebtSize;
     statusBefore = collector->gcRunningStatus;
@@ -722,6 +727,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
             collector->statsSnapshot.lastStepDurationUs = 0u;
             collector->statsSnapshot.lastStepWork = 0u;
             garbage_collector_refresh_cumulative_snapshot(collector);
+            ZrCore_ExecutionBudget_GcEnd(state);
             return;
         }
     }
@@ -733,6 +739,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     if (!concurrentMarkSlice) {
         if (!ZrCore_GcDomain_StopTheWorldBegin(
                     state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
+            ZrCore_ExecutionBudget_GcEnd(state);
             return;
         }
         domainPaused = ZR_TRUE;
@@ -810,6 +817,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     if (domainPaused) {
         ZrCore_GcDomain_StopTheWorldEnd(state);
     }
+    ZrCore_ExecutionBudget_GcEnd(state);
 }
 
 void ZrCore_GarbageCollector_SetHeapLimitBytes(SZrGlobalState *global, TZrMemoryOffset heapLimitBytes) {

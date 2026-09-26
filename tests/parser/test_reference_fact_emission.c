@@ -774,6 +774,7 @@ static void test_resolved_extern_function_call_reuses_declaration_identity(void)
 }
 
 #include "test_assignment_reference_diagnostic_cases.h"
+#include "test_reference_field_fact_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -788,5 +789,9 @@ int main(void) {
     RUN_TEST(test_assignment_member_targets_record_member_write_reference_facts);
     RUN_TEST(test_resolved_function_call_records_call_reference_fact);
     RUN_TEST(test_resolved_extern_function_call_reuses_declaration_identity);
+    RUN_TEST(test_field_reads_and_writes_share_inherited_declaration_identity);
+    RUN_TEST(test_inaccessible_field_assignment_preserves_inference_failure);
+    RUN_TEST(test_field_identity_preserves_unavailable_exact_type);
+    RUN_TEST(test_protected_field_access_checks_the_immediate_receiver);
     return UNITY_END();
 }

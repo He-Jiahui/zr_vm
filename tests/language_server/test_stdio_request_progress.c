@@ -213,7 +213,9 @@ static void test_workspace_diagnostic_batches_preserve_items_and_order(void) {
     prepare_result(ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, 65);
     TEST_ASSERT_TRUE(stdio_request_progress_publish_partial_result(
             &g_server, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, &g_result));
-    TEST_ASSERT_TRUE(cJSON_IsNull(g_result));
+    TEST_ASSERT_TRUE(cJSON_IsObject(g_result));
+    TEST_ASSERT_TRUE(cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
+    TEST_ASSERT_EQUAL_INT(0, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
     TEST_ASSERT_EQUAL_INT(2, g_partialCount);
     first = partial_items(1, ZR_TRUE);
     last = partial_items(2, ZR_TRUE);
@@ -222,6 +224,30 @@ static void test_workspace_diagnostic_batches_preserve_items_and_order(void) {
     TEST_ASSERT_EQUAL_INT(0, cJSON_GetArrayItem(first, 0)->valueint);
     TEST_ASSERT_EQUAL_INT(63, cJSON_GetArrayItem(first, 63)->valueint);
     TEST_ASSERT_EQUAL_INT(64, cJSON_GetArrayItem(last, 0)->valueint);
+    expect_progress_ended();
+}
+
+static void test_empty_workspace_diagnostic_completes_with_empty_report(void) {
+    prepare_result(ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, 0);
+    TEST_ASSERT_TRUE(stdio_request_progress_publish_partial_result(
+            &g_server, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, &g_result));
+    TEST_ASSERT_TRUE(cJSON_IsObject(g_result));
+    TEST_ASSERT_TRUE(cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
+    TEST_ASSERT_EQUAL_INT(0, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
+    TEST_ASSERT_EQUAL_INT(0, g_partialCount);
+    expect_progress_ended();
+}
+
+static void test_workspace_diagnostic_without_partial_token_preserves_full_report(void) {
+    cJSON *original;
+    cJSON_DeleteItemFromObjectCaseSensitive(g_params, ZR_LSP_FIELD_PARTIAL_RESULT_TOKEN);
+    prepare_result(ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, 65);
+    original = g_result;
+    TEST_ASSERT_TRUE(stdio_request_progress_publish_partial_result(
+            &g_server, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, &g_result));
+    TEST_ASSERT_EQUAL_PTR(original, g_result);
+    TEST_ASSERT_EQUAL_INT(65, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
+    TEST_ASSERT_EQUAL_INT(0, g_partialCount);
     expect_progress_ended();
 }
 
@@ -319,7 +345,13 @@ static size_t run_partial_allocation_case(const char *method, size_t failAt, TZr
         TEST_ASSERT_EQUAL_PTR(original, g_result);
     } else {
         TEST_ASSERT_TRUE(success);
-        TEST_ASSERT_TRUE(cJSON_IsNull(g_result));
+        if (workspaceDiagnostic) {
+            TEST_ASSERT_TRUE(cJSON_IsObject(g_result));
+            TEST_ASSERT_TRUE(cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
+            TEST_ASSERT_EQUAL_INT(0, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(g_result, ZR_LSP_FIELD_ITEMS)));
+        } else {
+            TEST_ASSERT_TRUE(cJSON_IsNull(g_result));
+        }
         TEST_ASSERT_EQUAL_INT(2, g_partialCount);
     }
     TEST_ASSERT_EQUAL_INT(g_partialCount + 1, cJSON_GetArraySize(g_notifications));
@@ -357,6 +389,8 @@ int main(void) {
     RUN_TEST(test_workspace_diagnostic_last_batch_observes_cancellation);
     RUN_TEST(test_string_id_cancellation_does_not_cancel_numeric_request);
     RUN_TEST(test_workspace_diagnostic_batches_preserve_items_and_order);
+    RUN_TEST(test_empty_workspace_diagnostic_completes_with_empty_report);
+    RUN_TEST(test_workspace_diagnostic_without_partial_token_preserves_full_report);
     RUN_TEST(test_omitted_partial_token_preserves_ordinary_result);
     RUN_TEST(test_work_done_begin_does_not_commit_when_publication_fails);
     RUN_TEST(test_partial_result_publication_failure_preserves_result);

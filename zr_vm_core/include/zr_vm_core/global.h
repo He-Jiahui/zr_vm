@@ -75,6 +75,11 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAllocator allocator;
     TZrPtr userAllocationArguments;
+    FZrAllocator upstreamAllocator;
+    TZrPtr upstreamAllocationArguments;
+    volatile TZrUInt64 allocatedBytes;
+    volatile TZrUInt64 allocationPeakBytes;
+    volatile TZrInt32 allocationAccountingLock;
 
     // injected data
     TZrPtr userData;

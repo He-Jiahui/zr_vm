@@ -26,6 +26,7 @@ typedef enum EZrLibrary_ZrmManifestEntryKind {
     ZR_LIBRARY_ZRM_MANIFEST_ENTRY_COMPILE_TOOL_EXECUTABLE = 2
 } EZrLibrary_ZrmManifestEntryKind;
 
+/* errorBuffer 是可选诊断通道；使用它的公开入口先清空，再沿失败路径写入具体原因。 */
 static void zrm_set_error(TZrChar *errorBuffer, TZrSize errorBufferSize, const TZrChar *format, ...) {
     va_list arguments;
 
@@ -110,6 +111,7 @@ static TZrBool zrm_parse_provider_phase(const TZrChar *text, EZrLibrary_Provider
     if (outPhase == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 旧归档没有 providerPhase 字段，读取时仍将其解释为 Runtime。 */
     if (text == ZR_NULL || strcmp(text, "runtime") == 0) {
         *outPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
         return ZR_TRUE;
@@ -172,6 +174,7 @@ static TZrBool zrm_read_file(const TZrChar *path, TZrByte **outBytes, TZrSize *o
         return ZR_FALSE;
     }
 
+    /* ZIP 写入器稍后才消费数据，因此打包阶段持有独立副本直到统一 cleanup。 */
     *outBytes = bytes;
     *outByteCount = (TZrSize)fileSize;
     return ZR_TRUE;
@@ -304,9 +307,13 @@ static TZrBool zrm_apply_zip_stat(mz_zip_archive *zip,
         return ZR_FALSE;
     }
 
+    /* 已打开归档的大小、CRC 和压缩方式以实际 ZIP 中央目录为准。 */
     entry->uncompressedSize = (TZrUInt64)stat.m_uncomp_size;
     entry->compressedSize = (TZrUInt64)stat.m_comp_size;
     entry->crc32 = (TZrUInt32)stat.m_crc32;
+    /* TODO: 当前把所有非 DEFLATE 的 ZIP 方法均呈现为 STORE；需核查未知方法应在
+     * Open 时拒绝，还是交给 ReadEntry/miniz 拒绝。证据：此映射未检查 STORE 方法号。
+     */
     entry->compression = stat.m_method == ZR_LIBRARY_ZRM_ZIP_METHOD_DEFLATE ? ZR_LIBRARY_ZRM_COMPRESSION_DEFLATE
                                                                              : ZR_LIBRARY_ZRM_COMPRESSION_STORE;
     return ZR_TRUE;
@@ -385,6 +392,7 @@ static TZrBool zrm_parse_entry_array(cJSON *array,
                                   expectedEntryName,
                                   sizeof(expectedEntryName));
 
+        /* 清单中的路径必须等于规范 builder 产物，防止导入器随后跨出预期归档目录。 */
         if (!validEntryName ||
             strcmp(entryName, expectedEntryName) != 0) {
             free(entries);
@@ -411,6 +419,10 @@ static TZrBool zrm_parse_entry_array(cJSON *array,
         index++;
     }
 
+    /* BUG: 此处未拒绝重复 logicalName；手工构造的清单可让 Find* 只命中首项，
+     * 并使 CompileTool 的“每模块恰好一个 executable”计数检查误判。
+     * 证据：本函数直接保留全部条目，zrm_open_initialized_reader 仅比较计数并逐项调用 Find*。
+     */
     *outEntries = entries;
     *outCount = count;
     return ZR_TRUE;
@@ -645,6 +657,7 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
     cJSON_AddItemToObject(manifest, "assembly", assembly);
     assembly = ZR_NULL;
 
+    /* 在初始化 ZIP 写入器前读入并校验全部输入，以免普通输入错误留下半成品。 */
     for (TZrSize index = 0; index < request->moduleCount; index++) {
         const SZrLibrary_ZrmPackModule *module = &request->modules[index];
         moduleEntryNames[index] = (TZrChar *)calloc(ZR_LIBRARY_MAX_PATH_LENGTH, sizeof(TZrChar));
@@ -706,6 +719,10 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
         }
     }
 
+    /* TODO: 若调用方违反 PackRequest 的数组前提，resourceCount > 0 而 resources == NULL，
+     * 这里的数组寻址会产生未定义行为；需确认公开打包 API 是否应防御性拒绝。
+     * 核查入口：本循环与 WriteArchive 的请求校验；现有 CLI 调用会提供有效数组。
+     */
     for (TZrSize index = 0; index < request->resourceCount; index++) {
         const SZrLibrary_ZrmPackResource *resource = &request->resources[index];
         resourceEntryNames[index] = (TZrChar *)calloc(ZR_LIBRARY_MAX_PATH_LENGTH, sizeof(TZrChar));
@@ -835,6 +852,7 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
         }
     }
 
+    /* finalize 成功才可发布输出；失败后 mz_zip_writer_end 释放句柄，不删除已创建的目标文件。 */
     if (!mz_zip_writer_finalize_archive(&zip)) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to finalize archive");
         goto cleanup;
@@ -926,6 +944,7 @@ static TZrBool zrm_open_initialized_reader(
     const TZrChar *publicContractHash;
     TZrBool ok = ZR_FALSE;
 
+    /* 自此 ZIP 句柄归 archive 所有，任一清单校验失败均通过 Close 回收。 */
     archive->zipHandle = zip;
     if (!zrm_copy_text(archive->path, sizeof(archive->path), sourceName)) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm source name is too long");
@@ -1054,6 +1073,7 @@ static TZrBool zrm_open_initialized_reader(
                 "zrm compile-tool executable section is forbidden for this provider phase");
         goto cleanup;
     }
+    /* 默认入口必须可由模块索引解析；项目加载器依赖这项前置校验。 */
     if (ZrLibrary_Zrm_FindModule(archive, archive->entryModule) == ZR_NULL) {
         zrm_set_error(
                 errorBuffer,
@@ -1087,6 +1107,10 @@ static TZrBool zrm_open_initialized_reader(
         }
     }
 
+    /* TODO: 清单含 size/CRC/hash，但这里只用 ZIP stat 覆盖大小和 CRC；需核查
+     * 归档信任边界是否要求核对清单值，或仅由上层内容 hash/ZIP CRC 承担校验。
+     * 核查入口：docs/module-system/zrm-assembly-container.md 与 CompileTool 导入器。
+     */
     for (TZrSize index = 0; index < archive->moduleCount; index++) {
         if (!zrm_apply_zip_stat(
                     zip, &archive->modules[index], errorBuffer, errorBufferSize)) {
@@ -1290,6 +1314,11 @@ TZrBool ZrLibrary_Zrm_ReadEntry(const SZrLibrary_ZrmArchive *archive,
     }
 
     bytes = mz_zip_reader_extract_to_heap(zip, (mz_uint)fileIndex, &byteCount, 0);
+    /* BUG: miniz 的 mz_zip_reader_extract_to_heap 在任意失败时将 pSize 置零并返回 NULL；
+     * 这里因此把损坏条目或分配失败报告为成功，outBytes 仍为 NULL。
+     * 证据：zr_miniz/miniz/miniz_zip.c 的该函数 1639-1661 行；项目导入器另查 NULL，
+     * 但资源读取调用方只依赖本函数返回值。
+     */
     if (bytes == ZR_NULL && byteCount != 0) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to extract entry '%s'", entryName);
         return ZR_FALSE;

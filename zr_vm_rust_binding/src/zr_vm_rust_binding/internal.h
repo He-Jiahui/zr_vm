@@ -9,6 +9,7 @@
 #include "compiler/compiler.h"
 #include "runtime/runtime.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/common_state.h"
@@ -28,6 +29,9 @@ typedef struct ZrRustBindingExecutionOwner {
     ZrRustBindingNativeModule **nativeModules;
     TZrSize nativeModuleCount;
     TZrSize refCount;
+    /* Owner references held by checkpoints, excluded from live Value-root checks. */
+    TZrSize checkpointRefCount;
+    TZrBool activeCall;
 } ZrRustBindingExecutionOwner;
 
 typedef struct ZrRustBindingOwnedArray {
@@ -61,6 +65,11 @@ struct ZrRustBindingProjectSession {
     ZrRustBindingExecutionOwner *owner;
 };
 
+struct ZrRustBindingProjectSessionCheckpoint {
+    struct SZrSessionCheckpoint *checkpoint;
+    ZrRustBindingExecutionOwner *owner;
+};
+
 struct ZrRustBindingCompileResult {
     TZrSize compiledCount;
     TZrSize skippedCount;
@@ -90,6 +99,14 @@ struct ZrRustBindingValue {
 };
 
 void zr_rust_binding_clear_error(void);
+ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
+        ZrRustBindingExecutionOwner *owner,
+        const TZrChar *moduleName,
+        const TZrChar *exportName,
+        ZrRustBindingValue *const *arguments,
+        TZrSize argumentCount,
+        ZrRustBindingValue **outResult,
+        SZrExecutionBudget *budget);
 ZrRustBindingStatus zr_rust_binding_set_error(ZrRustBindingStatus status, const TZrChar *format, ...);
 TZrBool zr_rust_binding_copy_string_to_buffer(const TZrChar *source, TZrChar *buffer, TZrSize bufferSize);
 TZrChar *zr_rust_binding_strdup(const TZrChar *value);

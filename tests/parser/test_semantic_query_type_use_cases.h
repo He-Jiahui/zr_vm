@@ -4,6 +4,52 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_type_use.h"
 
+static void test_implicit_construction_publishes_type_declaration_identity(void) {
+    const char *source =
+            "class Hero {}\n"
+            "class Child: Hero {}\n"
+            "class Box<T> {}\n"
+            "fn use(): void {\n"
+            "    let hero = new Hero();\n"
+            "    let child = new Child();\n"
+            "    let box = new Box<int>();\n"
+            "}\n";
+    const char *uses[] = {"new Hero", "new Child", "new Box"};
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "implicit_constructor.zr");
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    SZrCompilerState cs;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    for (TZrSize index = 0U; index < ZR_ARRAY_COUNT(uses); index++) {
+        const SZrSemanticSymbolRecord *declaration = symbol_find_registered_node(
+                cs.semanticContext, ast->data.script.statements->nodes[index]);
+        SZrParserSemanticSymbolQuery query;
+        SZrFileRange position = symbol_source_position(source, sourceName, uses[index], 0U);
+        position.start.offset += strlen("new ");
+        position.start.column += (TZrInt32)strlen("new ");
+        position.end = position.start;
+        TEST_ASSERT_NOT_NULL(declaration);
+        TEST_ASSERT_TRUE_MESSAGE(ZrParser_SemanticQuery_SymbolAt(
+                cs.semanticContext, position, ZR_NULL, &query), uses[index]);
+        TEST_ASSERT_EQUAL_UINT32(declaration->id, query.symbolId);
+        TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_TYPE, query.role);
+        TEST_ASSERT_EQUAL_PTR(declaration->astNode, query.declarationNode);
+        TEST_ASSERT_EQUAL_UINT64(position.start.offset, query.referenceRange.start.offset);
+        TEST_ASSERT_EQUAL_UINT64(position.start.offset + strlen(uses[index]) - strlen("new "),
+                                 query.referenceRange.end.offset);
+    }
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_type_use_query_preserves_closed_type_and_declaration_identity(void) {
     const TZrChar *source =
             "class Item { }\n"

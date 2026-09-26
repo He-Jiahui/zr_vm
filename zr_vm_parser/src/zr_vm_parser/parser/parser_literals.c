@@ -268,6 +268,26 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
                     continue;
                 }
 
+                if (current == '/' && cursor + 1 < rawLength) {
+                    if (rawText[cursor + 1] == '/') {
+                        cursor += 2;
+                        while (cursor < rawLength && rawText[cursor] != '\n' &&
+                               rawText[cursor] != '\r') {
+                            cursor++;
+                        }
+                        continue;
+                    }
+                    if (rawText[cursor + 1] == '*') {
+                        cursor += 2;
+                        while (cursor + 1 < rawLength &&
+                               !(rawText[cursor] == '*' && rawText[cursor + 1] == '/')) {
+                            cursor++;
+                        }
+                        cursor = cursor + 1 < rawLength ? cursor + 2 : rawLength;
+                        continue;
+                    }
+                }
+
                 if (current == '\'' || current == '"' || current == '`') {
                     stringDelimiter = current;
                     cursor++;

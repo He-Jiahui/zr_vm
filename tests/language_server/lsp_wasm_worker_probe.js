@@ -1,5 +1,6 @@
 const assert = require('assert').strict;
 const path = require('path');
+const fs = require('fs');
 const vm = require('vm');
 const { TextEncoder } = require('util');
 
@@ -9,7 +10,6 @@ const REQUESTS = [
     ['textDocument/definition', 'definitionProvider', 'wasm_ZrLspGetDefinition'],
     ['textDocument/references', 'referencesProvider', 'wasm_ZrLspFindReferences'],
     ['textDocument/documentSymbol', 'documentSymbolProvider', 'wasm_ZrLspGetDocumentSymbols'],
-    ['workspace/symbol', 'workspaceSymbolProvider', 'wasm_ZrLspGetWorkspaceSymbols'],
     ['textDocument/documentHighlight', 'documentHighlightProvider', 'wasm_ZrLspGetDocumentHighlights'],
     ['textDocument/inlayHint', 'inlayHintProvider', 'wasm_ZrLspGetInlayHints'],
     ['textDocument/semanticTokens/full', 'semanticTokensProvider', 'wasm_ZrLspGetSemanticTokens'],
@@ -23,10 +23,8 @@ const REQUESTS = [
     ['textDocument/documentLink', 'documentLinkProvider', 'wasm_ZrLspGetDocumentLinks'],
     ['textDocument/codeLens', 'codeLensProvider', 'wasm_ZrLspGetCodeLens'],
     ['textDocument/diagnostic', 'diagnosticProvider', 'wasm_ZrLspGetDiagnosticReport'],
-    ['workspace/diagnostic', 'diagnosticProvider', 'wasm_ZrLspGetWorkspaceDiagnosticReports'],
     ['zr/richHover', null, 'wasm_ZrLspGetRichHover'],
     ['zr/nativeDeclarationDocument', null, 'wasm_ZrLspGetNativeDeclarationDocument'],
-    ['zr/projectModules', null, 'wasm_ZrLspGetProjectModules'],
 ];
 
 const EVENTS = {
@@ -44,10 +42,10 @@ const DOCUMENTS = ['textDocument/didOpen', 'textDocument/didChange', 'textDocume
 const TOKEN_TYPES = ['namespace', 'class', 'struct', 'interface', 'enum', 'function', 'method',
     'property', 'variable', 'parameter', 'keyword', 'decorator', 'metaMethod'];
 
-async function probeWorker(workerSource, bridgeSource, runtimeExports) {
+async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDirectory) {
     // Execute production adapters; only the browser connection and WASM ABI are test doubles.
     const ts = require(path.join(__dirname, '..', '..', 'zr_vm_language_server_extension', 'node_modules', 'typescript'));
-    const { ResponseError, ErrorCodes } = require(path.join(__dirname, '..', '..',
+    const { ResponseError, ErrorCodes, LSPErrorCodes } = require(path.join(__dirname, '..', '..',
         'zr_vm_language_server_extension', 'node_modules', 'vscode-languageserver', 'browser'));
     const handlers = new Map();
     const calls = [];
@@ -109,18 +107,27 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
         assert.equal(name, 'vscode-languageserver/browser', 'unexpected bridge import');
         return { ResponseError, ErrorCodes };
     });
-    execute(workerSource, 'server-worker.ts', name => {
+    const workerModules = new Map();
+    function requireWorkerModule(name) {
         if (name === './wasm-bridge') return bridge;
         if (name === 'vscode-jsonrpc') {
             return { ResponseError, ErrorCodes };
+        }
+        if (name === './document-sync' || name === './wasm-response') {
+            if (!workerModules.has(name)) {
+                const filename = path.join(workerDirectory, name + '.ts');
+                workerModules.set(name, execute(fs.readFileSync(filename, 'utf8'), filename, requireWorkerModule));
+            }
+            return workerModules.get(name);
         }
         assert.equal(name, 'vscode-languageserver/browser', 'unexpected worker import');
         return {
             BrowserMessageReader: class {}, BrowserMessageWriter: class {},
             createConnection: () => connection, TextDocumentSyncKind: { Incremental: 2 },
-            ResponseError, ErrorCodes,
+            ResponseError, ErrorCodes, LSPErrorCodes,
         };
-    });
+    }
+    execute(workerSource, 'server-worker.ts', requireWorkerModule);
     assert.deepEqual([...handlers.keys()].sort(),
         REQUESTS.map(row => row[0]).concat(CONTROLS, DOCUMENTS).sort(), 'worker route set mismatch');
     async function invoke(method, params, expectedExports) {
@@ -145,7 +152,8 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
     }
     assert.equal(capabilities.textDocumentSync, 2, 'worker document synchronization mismatch');
     assert.equal(capabilities.renameProvider.prepareProvider, true);
-    assert.equal(capabilities.diagnosticProvider.workspaceDiagnostics, true);
+    assert.equal(capabilities.diagnosticProvider.workspaceDiagnostics, false);
+    assert.equal(capabilities.diagnosticProvider.interFileDependencies, false);
     assert.deepEqual(capabilities.semanticTokensProvider, {
         legend: { tokenTypes: TOKEN_TYPES, tokenModifiers: ['declaration'] }, full: true,
     }, 'worker semantic-token legend or full/range/delta capability mismatch');
@@ -163,9 +171,20 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
         context: { includeDeclaration: true }, newName: 'next', query: 'seed', uri, line: 0, character: 4 };
     const featureRoutes = [];
     for (const [method, capabilityKey, exportName] of REQUESTS) {
-        const { route } = await invoke(method, params, [exportName]);
+        const requestParams = method === 'zr/richHover' ? { textDocument: { uri }, position } : params;
+        const { route } = await invoke(method, requestParams, [exportName]);
         featureRoutes.push(Object.assign({ capabilityKey }, route));
     }
+    responseFixture = { raw: JSON.stringify({ success: true, data: [
+        { command: { command: 'zr.runCurrentProject' } },
+        { command: { command: 'zr.debugCurrentProject' } },
+        { command: { command: 'zr.showReferences' } },
+    ] }) };
+    const webCodeLenses = await invoke('textDocument/codeLens', params, ['wasm_ZrLspGetCodeLens']);
+    assert.deepEqual(JSON.parse(JSON.stringify(webCodeLenses.result.map(lens => lens.command.command))),
+        ['zr.showReferences'],
+        'Web CodeLens must omit project commands without a browser handler');
+    responseFixture = undefined;
     const errorFixtures = [-32602, -32603, -32800, -32801].map(code => ({
         label: 'structured error ' + code, code, message: 'same message for every code',
         data: { reason: 'fixture', generation: 7 },
@@ -193,7 +212,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports) {
         }
     }
     responseFixture = undefined;
-    documentRoutes.push((await invoke('textDocument/didSave', { textDocument: { uri }, text: textDocument.text }, updateExports)).route);
+    documentRoutes.push((await invoke('textDocument/didSave', { textDocument: { uri }, text: textDocument.text }, ['wasm_ZrLspGetDiagnosticReport'])).route);
     documentRoutes.push((await invoke('textDocument/didClose', { textDocument: { uri } }, ['wasm_ZrLspCloseDocument'])).route);
     const shutdown = await invoke('shutdown', undefined, ['wasm_ZrLspContextFree']);
     await invoke('exit', undefined, []);

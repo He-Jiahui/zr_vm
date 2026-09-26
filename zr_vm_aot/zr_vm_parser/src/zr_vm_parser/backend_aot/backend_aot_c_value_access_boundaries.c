@@ -1,5 +1,7 @@
 #include "backend_aot_c_emitter.h"
 
+#include <string.h>
+
 static void backend_aot_write_c_dynamic_value_access_deopt_bridge(FILE *file,
                                                                   TZrUInt32 deoptId,
                                                                   const char *errorLabel) {
@@ -31,6 +33,29 @@ void backend_aot_write_c_unsupported_meta_value_access(FILE *file,
     }
 
     safeOpcodeName = opcodeName != ZR_NULL ? opcodeName : "META_VALUE_ACCESS";
+    if (strcmp(safeOpcodeName, "SUPER_META_GET_CACHED") == 0 ||
+        strcmp(safeOpcodeName, "SUPER_META_GET_STATIC_CACHED") == 0 ||
+        strcmp(safeOpcodeName, "SUPER_META_SET_CACHED") == 0 ||
+        strcmp(safeOpcodeName, "SUPER_META_SET_STATIC_CACHED") == 0) {
+        const char *runtimeHelper =
+                strcmp(safeOpcodeName, "SUPER_META_GET_CACHED") == 0
+                        ? "ZrLibrary_AotRuntime_MetaGetCached"
+                        : strcmp(safeOpcodeName, "SUPER_META_GET_STATIC_CACHED") == 0
+                                  ? "ZrLibrary_AotRuntime_MetaGetStaticCached"
+                                  : strcmp(safeOpcodeName, "SUPER_META_SET_CACHED") == 0
+                                            ? "ZrLibrary_AotRuntime_MetaSetCached"
+                                            : "ZrLibrary_AotRuntime_MetaSetStaticCached";
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_value_bound_meta_access */\n"
+                "        ZR_AOT_C_GUARD(%s(state, &frame, %u, %u, %u));\n"
+                "    }\n",
+                runtimeHelper,
+                (unsigned)primarySlot,
+                (unsigned)secondarySlot,
+                (unsigned)memberOrCacheIndex);
+        return;
+    }
     fprintf(file,
             "    {\n"
             "        /* zr_aot_value_unsupported_meta_value_access */\n"
@@ -45,6 +70,54 @@ void backend_aot_write_c_unsupported_meta_value_access(FILE *file,
             (unsigned)secondarySlot,
             (unsigned)memberOrCacheIndex,
             safeOpcodeName);
+}
+
+void backend_aot_write_c_bound_meta_get_cached(FILE *file,
+                                               TZrUInt32 destinationSlot,
+                                               TZrUInt32 receiverSlot,
+                                               TZrUInt32 cacheIndex,
+                                               TZrBool expectedStatic) {
+    const char *helperName;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    helperName = expectedStatic ? "ZrLibrary_AotRuntime_MetaGetStaticCached"
+                                : "ZrLibrary_AotRuntime_MetaGetCached";
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_bound_meta_get_cached */\n"
+            "        ZR_AOT_C_GUARD(%s(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
+            helperName,
+            (unsigned)destinationSlot,
+            (unsigned)receiverSlot,
+            (unsigned)cacheIndex);
+}
+
+void backend_aot_write_c_bound_meta_set_cached(FILE *file,
+                                               TZrUInt32 receiverAndResultSlot,
+                                               TZrUInt32 assignedValueSlot,
+                                               TZrUInt32 cacheIndex,
+                                               TZrBool expectedStatic) {
+    const char *helperName;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    helperName = expectedStatic ? "ZrLibrary_AotRuntime_MetaSetStaticCached"
+                                : "ZrLibrary_AotRuntime_MetaSetCached";
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_bound_meta_set_cached */\n"
+            "        ZR_AOT_C_GUARD(%s(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
+            helperName,
+            (unsigned)receiverAndResultSlot,
+            (unsigned)assignedValueSlot,
+            (unsigned)cacheIndex);
 }
 
 void backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,

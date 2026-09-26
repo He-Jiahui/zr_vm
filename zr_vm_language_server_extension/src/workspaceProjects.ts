@@ -42,8 +42,9 @@ export async function createWorkspaceProject(uri: vscode.Uri): Promise<Workspace
         return undefined;
     }
 
-    const document = await vscode.workspace.openTextDocument(uri);
-    const manifest = parseProjectManifestText(document.getText(), uri.fsPath || uri.path);
+    const document = vscode.workspace.textDocuments.find((candidate) => candidate.uri.toString() === uri.toString());
+    const text = document?.getText() ?? new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
+    const manifest = parseProjectManifestText(text, uri.fsPath || uri.path);
     if (!manifest) {
         return undefined;
     }
