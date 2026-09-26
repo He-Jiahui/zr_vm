@@ -59,7 +59,8 @@ static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_SWITCH: case ZR_EXEC_IR_OPCODE_RETURN:
         case ZR_EXEC_IR_OPCODE_PHI: case ZR_EXEC_IR_OPCODE_CALL:
         case ZR_EXEC_IR_OPCODE_LOAD:
-        case ZR_EXEC_IR_OPCODE_STORE: case ZR_EXEC_IR_OPCODE_DROP:
+        case ZR_EXEC_IR_OPCODE_STORE: case ZR_EXEC_IR_OPCODE_BARRIER:
+        case ZR_EXEC_IR_OPCODE_DROP:
         case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
             return ZR_TRUE;
         default: return ZR_FALSE;

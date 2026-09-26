@@ -292,6 +292,13 @@ the executed instruction/source. Verified single-block and conditional
 branch-join fixtures compare the direct oracle's result, DROP event order,
 and owner states against the projected runner, including an uninitialized
 join-path skip. Ownership event-allocation failures are not fault-injected.
+`BARRIER` also runs as a pointer-free effect event. Its one value operand is
+validated before recording a bounded snapshot; the projection retains its
+managed-heap/GC memory versions and source/instruction IDs. Two verified
+barriers with distinct operands compare event order and values against the
+direct oracle, while a bad operand preserves an earlier published result.
+This records a write-barrier observation only; no production GC barrier is
+installed by the projection runner.
 Only projections whose opcodes have a runner implementation are marked
 `runnable`; other ownership effects, exceptions, suspend, and production
 runtime callback wiring still require a later backend ABI.
@@ -299,7 +306,7 @@ This small runner is not the VM's default ExecBC dispatcher, does not emit
 bytecode for it, and establishes no C/LLVM or full effect-event parity. The
 direct differential currently covers scalar/control returns, pointer-free
 LOAD/STORE memory providers, provider-backed ordinary CALL, and ownership
-MOVE/DROP/conditional cleanup.
+MOVE/DROP/conditional cleanup, and BARRIER observations.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a

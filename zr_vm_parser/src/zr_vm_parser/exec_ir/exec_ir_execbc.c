@@ -662,6 +662,19 @@ TZrBool ZrParser_ExecBcProjection_Run(
                     if (!zr_execbc_call(projection, input, &candidate, instruction,
                                         block, index + 1u, diagnostic)) goto fail;
                     break;
+                case ZR_EXEC_IR_OPCODE_BARRIER:
+                    if (instruction->operands.count != 1u) goto invalid;
+                    if (!zr_execbc_operand(projection, instruction, &candidate,
+                                           0u, &value)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, 0u);
+                        goto fail;
+                    }
+                    if (!zr_execbc_reserve_event(&candidate, projection, block,
+                                                 index + 1u, diagnostic)) goto fail;
+                    zr_execbc_record_event(&candidate, instruction, index + 1u,
+                                           ZR_EXEC_IR_ORACLE_EVENT_BARRIER, &value, 1u);
+                    break;
                 case ZR_EXEC_IR_OPCODE_DROP:
                 case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED: {
                     TZrExecIrValueId owner;

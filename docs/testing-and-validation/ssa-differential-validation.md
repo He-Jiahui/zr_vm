@@ -82,3 +82,10 @@ must skip DROP with no event. A mutated RETURN that reads a consumed owner
 reports INVALID_VALUE with its source and preserves the prior result. These
 tests do not establish exceptional cleanup, ownership-provider effects, or
 production backend parity.
+
+The verified BARRIER fixture records two ordered, distinct value snapshots
+plus RETURN in the same oracle/projected harness. Changing the second
+barrier payload is detected at event index one; an invalid projected barrier
+operand reports INVALID_VALUE at its instruction/source and leaves the prior
+published result intact. This asserts observable pointer-free barrier events,
+not an actual GC write-barrier implementation.

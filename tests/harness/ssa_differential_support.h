@@ -17,6 +17,7 @@ typedef enum EZrSsaEventKind {
     ZR_SSA_EVENT_THROW,
     ZR_SSA_EVENT_RETURN,
     ZR_SSA_EVENT_CALL,
+    ZR_SSA_EVENT_BARRIER,
     ZR_SSA_EVENT_COUNT
 } EZrSsaEventKind;
 
