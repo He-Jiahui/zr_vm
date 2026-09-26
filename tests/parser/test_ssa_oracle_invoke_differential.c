@@ -145,6 +145,17 @@ static void build(SZrExecIrFunction *function) {
     function->blocks[1].terminatorInstructionId = 2u;
     function->blocks[2].instructionRange = range(2u, 2u);
     function->blocks[2].terminatorInstructionId = 4u;
+    function->sourceMaps = (SZrExecIrSourceMap *)calloc(1u, sizeof(*function->sourceMaps));
+    check(function->sourceMaps != NULL, "could not allocate INVOKE source map");
+    function->sourceMapCount = function->sourceMapCapacity = 1u;
+    function->sourceMaps[0].sourceId = 991u;
+    function->sourceMaps[0].instructionId = 1u;
+    function->sourceMaps[0].startOffset = 14u;
+    function->sourceMaps[0].endOffset = 25u;
+    function->sourceMaps[0].startLine = 3u;
+    function->sourceMaps[0].startColumn = 5u;
+    function->sourceMaps[0].endLine = 3u;
+    function->sourceMaps[0].endColumn = 16u;
     if (!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic)) {
         fprintf(stderr, "INVOKE verifier: code=%u instruction=%u source=%u\n",
                 (unsigned)diagnostic.code, (unsigned)diagnostic.instructionId,
@@ -172,6 +183,24 @@ void test_oracle_execbc_invoke_differential(void) {
           projection.runnable, "verified INVOKE projection must be runnable");
     check(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic) && !aot.runnable,
           "verified INVOKE AOTIR projection must retain its non-runnable boundary");
+    check(projection.sourceMapCount == 1u && aot.sourceMapCount == 1u &&
+          projection.sourceMaps[0].pc == 0u && aot.sourceMaps[0].pc == 0u &&
+          projection.sourceMaps[0].startOffset == 14u &&
+          projection.sourceMaps[0].endOffset == 25u &&
+          aot.sourceMaps[0].startLine == 3u && aot.sourceMaps[0].startColumn == 5u &&
+          aot.sourceMaps[0].endLine == 3u && aot.sourceMaps[0].endColumn == 16u,
+          "INVOKE projections lost the full source span");
+    function.sourceMaps[0].startLine = 99u;
+    check(projection.sourceMaps[0].startLine == 3u &&
+          aot.sourceMaps[0].startLine == 3u,
+          "projected source spans alias the input function");
+    function.sourceMaps[0].startLine = 3u;
+    function.sourceMaps[0].instructionId = function.instructionCount + 1u;
+    check(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic) &&
+          diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE &&
+          aot.sourceMapCount == 1u && aot.sourceMaps[0].endColumn == 16u,
+          "invalid source-map PC replaced a published AOTIR span");
+    function.sourceMaps[0].instructionId = 1u;
     for (TZrUInt32 block = 0u; block < function.blockCount; ++block) {
         check(projection.blocks[block].flags == function.blocks[block].flags &&
               aot.blocks[block].flags == function.blocks[block].flags,

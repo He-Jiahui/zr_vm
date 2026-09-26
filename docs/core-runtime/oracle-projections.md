@@ -52,6 +52,7 @@ tests:
   - tests/parser/test_ssa_oracle_invoke_differential.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/acceptance/ssa-projection-cfg-flags-sparse-slots.md
+  - tests/acceptance/ssa-projection-source-spans.md
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
   - tests/cmake/ssa-tests.cmake
@@ -199,7 +200,12 @@ state-map moved-owner boundary without adding a runtime ownership action.
 
 `ZrParser_ExecIr_LowerExecBc` copies instruction, operand/result, CFG, source,
 state-map, GC/deopt counts, and value-slot metadata into owned arrays. Every
-value receives a distinct slot while optimization is disabled. Phi incoming
+source-map entry retains its source ID, projected PC, byte offsets, and
+start/end line and column in both ExecBC and AOTIR; the records do not alias
+the input function. An invalid source-map instruction ID rejects a candidate
+without replacing the previously published AOTIR projection. This debug
+metadata is not yet consumed by the C/LLVM emitters. Every value receives a
+distinct slot while optimization is disabled. Phi incoming
 assignments retain edge-tagged parallel-copy records. The `phiMoves` array
 also orders physical-slot moves per projected predecessor edge, so executing
 only moves for the selected edge reproduces simultaneous phi assignment.

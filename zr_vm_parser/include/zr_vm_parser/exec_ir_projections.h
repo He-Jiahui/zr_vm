@@ -39,6 +39,12 @@ typedef struct SZrExecBcBlock {
 typedef struct SZrExecIrProjectionSourceMap {
     TZrExecIrSourceId sourceId;
     TZrUInt32 pc;
+    TZrUInt32 startOffset;
+    TZrUInt32 endOffset;
+    TZrUInt32 startLine;
+    TZrUInt32 startColumn;
+    TZrUInt32 endLine;
+    TZrUInt32 endColumn;
 } SZrExecIrProjectionSourceMap;
 
 /* Ordered physical-slot move performed when entering the successor of edge.

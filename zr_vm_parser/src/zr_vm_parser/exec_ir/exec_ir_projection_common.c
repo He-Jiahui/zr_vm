@@ -828,6 +828,12 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     for (i = 0u; i < p->sourceMapCount; ++i) {
         p->sourceMaps[i].sourceId = f->sourceMaps[i].sourceId;
         p->sourceMaps[i].pc = f->sourceMaps[i].instructionId == 0u ? 0u : f->sourceMaps[i].instructionId - 1u;
+        p->sourceMaps[i].startOffset = f->sourceMaps[i].startOffset;
+        p->sourceMaps[i].endOffset = f->sourceMaps[i].endOffset;
+        p->sourceMaps[i].startLine = f->sourceMaps[i].startLine;
+        p->sourceMaps[i].startColumn = f->sourceMaps[i].startColumn;
+        p->sourceMaps[i].endLine = f->sourceMaps[i].endLine;
+        p->sourceMaps[i].endColumn = f->sourceMaps[i].endColumn;
     }
     if (!zr_projection_append_phi_copies(p, f, d)) goto fail;
     if (!zr_projection_schedule_phi_copies(p, f, d)) goto fail;
