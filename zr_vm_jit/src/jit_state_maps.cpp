@@ -4,6 +4,7 @@
 
 namespace {
 
+/* 多个验证入口共用同一可选诊断格式，成功调用先清除上一次错误。 */
 void clear_diagnostic(SZrJitHostDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         std::memset(diagnostic, 0, sizeof(*diagnostic));
@@ -12,6 +13,7 @@ void clear_diagnostic(SZrJitHostDiagnostic *diagnostic) {
     }
 }
 
+/* 保留失败字段的完整上下文，让编译请求能够原样透传状态图拒绝原因。 */
 EZrJitHostStatus fail(SZrJitHostDiagnostic *diagnostic,
                       EZrJitHostStatus status,
                       TZrUInt32 expected,
@@ -30,10 +32,12 @@ EZrJitHostStatus fail(SZrJitHostDiagnostic *diagnostic,
     return status;
 }
 
+/* 仅供单类注册证据检查；公开入口先拒绝未知位及缺失的必需位。 */
 bool has_flag(TZrUInt32 flags, TZrUInt32 flag) {
     return (flags & flag) != 0u;
 }
 
+/* bit、条目数和 hash 需共同构成注册声明；该入口不查验实际平台图内容。 */
 EZrJitHostStatus validate_entry(TZrUInt32 flag,
                                 TZrUInt32 count,
                                 TZrUInt64 hash,
@@ -46,8 +50,7 @@ EZrJitHostStatus validate_entry(TZrUInt32 flag,
                         1u, count, 1u, hash, sourceIndex);
         }
     } else if (count != 0u || hash != 0u) {
-        /* A hash/count without its registration bit is ambiguous and must not
-         * be mistaken for a completed registration. */
+        /* 当前公开校验先要求四个 bit 全部设置；保留该防线供单项校验复用。 */
         return fail(diagnostic, ZR_JIT_HOST_STATUS_REGISTRATION_INCOMPLETE,
                     flag, facts->registrationFlags, 0u, hash, sourceIndex);
     }
@@ -56,6 +59,7 @@ EZrJitHostStatus validate_entry(TZrUInt32 flag,
 
 }  // namespace
 
+/* PrepareWithMaps 和 Compile 都依赖此入口拒绝不完整的图声明；它不读取实际图内容。 */
 extern "C" EZrJitHostStatus ZrJit_Host_ValidateStateMaps(
         const SZrJitStateMapFacts *facts,
         SZrJitHostDiagnostic *diagnostic) {

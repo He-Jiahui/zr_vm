@@ -1,10 +1,14 @@
 # Optional C++ host-JIT adapter.  The core remains C11 and does not include
 # LLVM headers; this target is only configured when ZR_VM_ENABLE_HOST_JIT is ON.
 
+# 顶层 ZR_VM_ENABLE_HOST_JIT 仅决定是否构建本适配层；本选项只探测
+# 将来可接入的 LLVM 工具链，当前源码仍不会生成机器码。
 option(ZR_VM_JIT_USE_LLVM
         "Probe for LLVM ORC/JITLink for the optional host-JIT provider"
         OFF)
 
+# TODO: ZR_VM_JIT_HAS_ORC 目前只进入编译定义，源码没有读取它；
+# 接入真实 ORC provider 时需同时核对链接库与能力报告，不能以 LLVM_FOUND 代替可用性。
 set(ZR_VM_JIT_HAS_ORC OFF)
 if (ZR_VM_JIT_USE_LLVM)
     # The contract adapter intentionally does not hard-code an LLVM API
@@ -20,6 +24,7 @@ if (ZR_VM_JIT_USE_LLVM)
     endif ()
 endif ()
 
+# 本可选 target 汇合 C++ facade 与图声明校验；顶层未启用时 core 仍按 C11 构建。
 add_library(zr_vm_jit STATIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/orc_backend.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/jit_state_maps.cpp)
@@ -50,6 +55,7 @@ else ()
             $<$<COMPILE_LANGUAGE:CXX>:-Wno-write-strings>)
 endif ()
 
+# core 拥有代码记录和 lease 状态；解析器 IR 仅在对应目标存在时参与链接。
 if (TARGET zr_vm_parser_aot_ir)
     target_link_libraries(zr_vm_jit PRIVATE zr_vm_parser_aot_ir)
 endif ()
