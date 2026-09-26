@@ -1,0 +1,9 @@
+file	unit	kind	callers	intent	constraints	evidence	decision	reason
+scripts/code_review_inventory.py	module inventory policy	state	classify; expected_rows; check_coverage	限定首方源与审查台账的可维护范围	构建产物与第三方代码不计入待审	git ls-files; generated header marker; classification smoke	no-comment	模块文档和常量名称已说明用途；无需逐项重复注释
+scripts/code_review_inventory.py	worktree_paths	function	expected_rows	合并已跟踪和未跟踪文件以覆盖并发新源码	只读取存在的文件；不遍历 Git 忽略目录	git ls-files --cached --others --exclude-standard; inventory check	commented	函数文档说明为何纳入未跟踪文件
+scripts/code_review_inventory.py	classify	function	expected_rows; classification smoke	将工作树文件按首方边界与文件角色分类	生成文件和第三方必须排除；根配置也应纳入	CMakeLists.txt; execbc_fusion_patterns_generated.h; classification smoke 6/6	commented	函数文档说明排除构建产物的设计
+scripts/code_review_inventory.py	load_existing	function	main	读取既有进度以供重扫时保留结论	拒绝无效表头与状态	inventory.tsv header; check run	no-comment	字段校验与失败路径直接可读
+scripts/code_review_inventory.py	expected_rows	function	main	为当前文件生成哈希和审查状态	内容变化一律恢复 pending	sha256; inventory sync/check	commented	函数文档解释失效机制
+scripts/code_review_inventory.py	render	function	main	输出稳定顺序与固定字段的 TSV	始终使用 UTF-8 调用方和 LF 行尾	csv.DictWriter; inventory header	no-comment	序列化逻辑直接可读
+scripts/code_review_inventory.py	check_coverage	function	main --require-complete	检查已审文件有可解析的逐单元审查证据	不能据此证明每个定义都已登记；仍需独立人工核对	coverage TSV schema; check --require-complete	commented	函数文档说明最小覆盖门槛
+scripts/code_review_inventory.py	main	function	__main__; CLI	执行 sync/check 与最终完成门槛	check 只读；sync 仅更新 inventory.tsv	python scripts/code_review_inventory.py check; check --require-complete	no-comment	CLI 分派及退出状态直接可读
