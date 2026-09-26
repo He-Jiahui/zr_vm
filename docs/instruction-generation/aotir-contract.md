@@ -5,6 +5,10 @@ consumed by C and LLVM AOT backends.  AOTIR is not a second language IR: its
 opcode, effect, CFG, state-map, signature, and frame identities originate in
 ExecIR.  Backend-specific code may legalize alignment and calling convention,
 but may not infer ownership, calls, or exceptions from quickened bytecode.
+The current legacy emitter dependencies and the gap between this descriptor
+and the owned ExecIR projection are inventoried in
+`docs/instruction-generation/aot-emitter-consumer-matrix.md`. This contract
+does not yet drive the archived C/LLVM artifact writers.
 The target contract requires a nonzero target-triple hash and ABI hash in
 addition to the supported ABI version, pointer size, and endianness; its
 required capability mask may contain only known execution capabilities.
