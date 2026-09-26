@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 
+/** @brief C ABI 的返回分类；Rust 安全层据此读取最近错误快照，调用方不能只检查输出指针。 */
 typedef enum EZrRustBindingStatus {
     ZR_RUST_BINDING_STATUS_OK = 0,
     ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT = 1,
@@ -71,6 +72,7 @@ typedef struct ZrRustBindingCompileOptions {
     TZrBool incremental;
 } ZrRustBindingCompileOptions;
 
+/** @brief 一次项目执行的借用参数；moduleName 和 programArgs 只需保持到调用返回。 */
 typedef struct ZrRustBindingRunOptions {
     ZrRustBindingExecutionMode executionMode;
     const TZrChar *moduleName;
@@ -96,6 +98,7 @@ typedef enum EZrRustBindingTermination {
     ZR_RUST_BINDING_TERMINATION_GC_TIME_LIMIT = 6
 } ZrRustBindingTermination;
 
+/** @brief 仅约束 session 导出调用；限制在 VM 协作检查点生效，不回滚已发生的副作用。 */
 typedef struct ZrRustBindingCallBudget {
     TZrUInt64 maxInstructions;
     TZrUInt64 deadlineMicros;
@@ -248,6 +251,7 @@ typedef ZrRustBindingStatus (*FZrRustBindingNativeStringVisitor)(
         TZrPtr userData);
 typedef void (*FZrRustBindingDestroyCallback)(TZrPtr userData);
 
+/** @brief AddFunction 的临时输入；成功后 builder 模块复制文本和参数并接管 callback userData，失败时仍由调用方负责 userData。 */
 typedef struct ZrRustBindingNativeFunctionDescriptor {
     const TZrChar *name;
     TZrUInt16 minArgumentCount;
@@ -296,6 +300,7 @@ typedef struct ZrRustBindingNativeMetaMethodDescriptor {
     TZrSize genericParameterCount;
 } ZrRustBindingNativeMetaMethodDescriptor;
 
+/** @brief 向 VM 注册类型的跨语言合同；AddType 成功后 builder 模块复制嵌套字段和方法，Build 再转出模块句柄。 */
 typedef struct ZrRustBindingNativeTypeDescriptor {
     const TZrChar *name;
     ZrRustBindingPrototypeType prototypeType;
@@ -325,6 +330,8 @@ typedef struct ZrRustBindingNativeTypeDescriptor {
     const TZrChar *ffiReleaseHook;
 } ZrRustBindingNativeTypeDescriptor;
 
+/** @brief 复制最近一次 C ABI 错误信息；应紧跟失败调用读取。
+ * BUG: api.c 使用进程级 g_zr_rust_binding_last_error，两个线程交错调用会互相覆盖错误快照。 */
 ZR_RUST_BINDING_API void ZrRustBinding_GetLastErrorInfo(ZrRustBindingErrorInfo *outErrorInfo);
 
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Runtime_NewBare(const ZrRustBindingRuntimeOptions *options,
@@ -333,6 +340,8 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Runtime_NewStandard(const 
                                                                           ZrRustBindingRuntime **outRuntime);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Runtime_Free(ZrRustBindingRuntime *runtime);
 
+/** @brief 按项目模板创建 .zrp 和入口源码，再打开 workspace；已有文件由 overwriteExisting 决定是否覆盖。
+ * BUG: api.c 对路径和 JSON 使用固定缓冲区，却只检查 snprintf 非负；长路径可被截断，项目名中的引号未转义。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Project_Scaffold(
         const ZrRustBindingScaffoldOptions *options,
         ZrRustBindingProjectWorkspace **outWorkspace);
@@ -440,6 +449,7 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(
         ZrRustBindingValue *const *arguments,
         TZrSize argumentCount,
         ZrRustBindingValue **outResult);
+/** @brief 执行项目入口并保留其 VM global，供后续导出调用和增量 checkpoint 共用。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Start(
         ZrRustBindingRuntime *runtime,
         const ZrRustBindingProjectWorkspace *workspace,
@@ -489,6 +499,7 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(
         ZrRustBindingProjectSession *session,
         TZrUInt64 maxPauseMicros,
         ZrRustBindingGcStepResult *outResult);
+/** @brief 捕获 session 状态供回滚；有跨边界 live Value root 时会拒绝创建。checkpoint 持有执行 owner，但回滚仍需要 session。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Checkpoint(
         ZrRustBindingProjectSession *session,
         ZrRustBindingProjectSessionCheckpoint **outCheckpoint);
@@ -538,6 +549,7 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeModuleBuilder_Free(
         ZrRustBindingNativeModuleBuilder *builder);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeModule_Free(
         ZrRustBindingNativeModule *module);
+/** @brief 把已 Build 的模块挂到 runtime；返回注册句柄负责撤销可见性，存活结果仍持有旧 descriptor。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Runtime_RegisterNativeModule(
         ZrRustBindingRuntime *runtime,
         ZrRustBindingNativeModule *module,
@@ -564,6 +576,7 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_CheckAri
         const ZrRustBindingNativeCallContext *context,
         TZrSize minArgumentCount,
         TZrSize maxArgumentCount);
+/** @brief 在回调栈内借用一个参数；visitor 不得保存 view 或其字符串指针到调用结束后。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_WithArgument(
         const ZrRustBindingNativeCallContext *context,
         TZrSize index,
@@ -592,10 +605,13 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_WithStr
         const ZrRustBindingNativeArgumentView *argument,
         FZrRustBindingNativeStringVisitor visitor,
         TZrPtr userData);
+/** @brief 在 native 回调中把 self 转为 Value 句柄；调用方负责 Value_Free。
+ * BUG: 当前句柄的 owner 不持有 VM global，若句柄逃逸到 session 释放之后，读取或释放会访问失效 global。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_GetSelf(
         const ZrRustBindingNativeCallContext *context,
         ZrRustBindingValue **outSelfValue);
 
+/** @brief 创建可独立持有的 host 值；New* 和容器读取返回的新句柄均须由 Value_Free 释放。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_NewNull(ZrRustBindingValue **outValue);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_NewBool(TZrBool boolValue, ZrRustBindingValue **outValue);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_NewInt(TZrInt64 intValue, ZrRustBindingValue **outValue);
@@ -612,6 +628,8 @@ ZR_RUST_BINDING_API ZrRustBindingOwnershipKind ZrRustBinding_Value_GetOwnershipK
         const ZrRustBindingValue *value);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_ReadBool(const ZrRustBindingValue *value,
                                                                      TZrBool *outBoolValue);
+/** @brief 读取宿主或 VM 整数到 int64。
+ * BUG: VM uint64 大于 INT64_MAX 时 value.c 未拒绝窄化，返回成功但值失真。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_ReadInt(const ZrRustBindingValue *value,
                                                                     TZrInt64 *outIntValue);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_ReadFloat(const ZrRustBindingValue *value,

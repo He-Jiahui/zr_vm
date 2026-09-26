@@ -50,7 +50,7 @@ workspace 可读取 project/root/manifest/entry，解析依赖和 artifact；`Ma
 executedInstructions、elapsedMicros、peakHeapBytes、nativeCalls、gcMicros 和 termination。
 `ZrRustBinding_ProjectSession_GcStep`、`ZrRustBinding_ProjectSession_Checkpoint`、
 `ZrRustBinding_ProjectSession_Rollback`、`ZrRustBinding_ProjectSession_Free` 允许 REPL/编辑器增量工作；
-rollback 后旧 value/session handle 不得继续使用。
+rollback 要求使用同一 session 的 checkpoint，且不能保留跨边界的 live Value root；成功后原 session 仍可继续调用。
 
 ## Value API
 
@@ -61,8 +61,10 @@ rollback 后旧 value/session handle 不得继续使用。
 `ZrRustBinding_Value_ReadBool`、`ZrRustBinding_Value_ReadInt`、`ZrRustBinding_Value_ReadFloat`
 和 `ZrRustBinding_Value_ReadString` 复制 scalar/string，Array/Object 用
 `ZrRustBinding_Value_Array_Length/Get/Push`、`ZrRustBinding_Value_Object_Get/Set` 访问。
-返回的字符串写入调用方 buffer，先询问长度或
-处理 `BUFFER_TOO_SMALL`。value 不可跨 runtime 线程共享。
+当前 `ReadInt` 会把超过 `INT64_MAX` 的 VM `uint64` 直接窄化为有符号值且仍返回 OK；调用方不能用它无损读取该范围。
+返回的字符串写入调用方 buffer；当前 C API 不提供所需长度查询。容量不足时返回
+`BUFFER_TOO_SMALL`，调用方可扩大 buffer 后重试；Rust 安全层当前使用固定 4096 字节 buffer。
+value 不可跨 runtime 线程共享。
 
 ## Native module builder
 
@@ -80,5 +82,6 @@ builder 按顺序调用 `ZrRustBinding_NativeModuleBuilder_New`、`SetDocumentat
 
 状态码包括 OK、INVALID_ARGUMENT、IO_ERROR、NOT_FOUND、ALREADY_EXISTS、BUFFER_TOO_SMALL、
 COMPILE_ERROR、RUNTIME_ERROR、UNSUPPORTED、INTERNAL_ERROR、EXECUTION_TERMINATED。失败后
-调用 `ZrRustBinding_GetLastErrorInfo`；错误 buffer 是线程局部快照。一个 runtime 只允许其
+调用 `ZrRustBinding_GetLastErrorInfo`；错误快照保存在进程级静态对象中，失败后应立即读取，
+多个线程并发调用可能互相覆盖状态和文案。一个 runtime 只允许其
 owner 线程进入 session，跨线程应在 Rust 层序列化调用或创建独立 runtime。

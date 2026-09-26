@@ -18,6 +18,7 @@ pub enum ZrRustBindingTermination {
     ZR_RUST_BINDING_TERMINATION_GC_TIME_LIMIT = 6,
 }
 
+/// 与 C 的协作式预算布局一致；cancelToken 由调用者保持到导出调用返回。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ZrRustBindingCallBudget {

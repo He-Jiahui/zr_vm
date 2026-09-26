@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// sys crate 只链接 C ABI；有外部库目录时复用它，否则在 Cargo 构建期编译完整 native 目标。
 fn main() {
     println!("cargo:rerun-if-env-changed=ZR_VM_RUST_BINDING_LIB_DIR");
 
@@ -19,6 +20,7 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=zr_vm_rust_binding");
 }
 
+// 独立 cargo 构建依赖完整源码树和本机 CMake；交叉编译必须由调用者提供目标平台库目录。
 fn build_native() {
     assert_eq!(
         env::var_os("HOST"),

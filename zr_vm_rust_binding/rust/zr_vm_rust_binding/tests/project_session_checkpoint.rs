@@ -2,6 +2,8 @@ use std::fs;
 
 use zr_vm_rust_binding::{ProjectWorkspace, RunOptions, RuntimeBuilder, ValueKind};
 
+// TODO: 本文件四个测试可由 cargo test 并行运行，而 C 最近错误对象为进程级共享状态；
+// safe crate 当前编译受阻，修复后需给此测试二进制加互斥并验证并发路径。
 #[test]
 fn rollback_restores_retained_module_state_and_next_tick() -> Result<(), Box<dyn std::error::Error>>
 {

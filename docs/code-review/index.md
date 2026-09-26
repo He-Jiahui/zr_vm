@@ -48,5 +48,6 @@ doc_type: category-index
 | 项目清单、导入与依赖锁 | [275 项](coverage/zr_vm_library_project.tsv) | 16 个文件完成调用链审查，193 个 C 定义及公开声明均登记；GCC/Clang 语法检查通过，定向测试目标构建停在 Ninja glob 复查，运行测试未执行。 |
 | 可选 JIT 后端与状态映射 | [122 项](coverage/zr_vm_jit.tsv) | 4 个文件完成调用链审查；GCC/Clang 严格语法和直接链接的可选 JIT 测试通过，JIT ON 配置通过；完整目标构建停在 glob 复查，CTest 未执行。 |
 | coverage 与 profile 回归用例 | [15 项](coverage/tests_profile.tsv) | 2 个测试文件完成调用链审查；Clang C11 语法和非注释 token 核对通过，GCC 检查受共享 WSL I/O 阻塞而中断，测试目标未构建；固定行数组容量疑问已标 TODO。 |
+| C/Rust binding 与安全封装 | [826 项](coverage/zr_vm_rust_binding.tsv) | 28 文件独立复核，23 个改动文件仅增注释；Rust fmt 与 sys crate 离线检查通过；workspace 检查仍有两处已标 BUG 的 E0283。C 独立目标构建未完成；Wiki 的 session、buffer、错误对象及整数读取边界已校正。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

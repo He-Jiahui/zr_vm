@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 
+/* visitor 栈帧内的临时视图；字符串和数组在访问期间建立 GC root 并 pin，返回前必须清理。 */
 struct ZrRustBindingNativeArgumentView {
     const ZrRustBindingNativeCallContext *context;
     TZrSize index;
@@ -93,6 +94,7 @@ static ZrRustBindingStatus zr_rust_binding_native_argument_view_init(
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* Rust with_argument 的 FFI 入口；只允许 visitor 同步消费 view，回调返回即撤销 pin/root。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeCallContext_WithArgument(
         const ZrRustBindingNativeCallContext *context,
         TZrSize index,
@@ -149,6 +151,7 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadBoo
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* BUG: UINT64 大于 INT64_MAX 时直接转为 TZrInt64，Rust read_int 可得到负值而非拒绝或无损值。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadInt(
         const ZrRustBindingNativeArgumentView *argument,
         TZrInt64 *outIntValue) {
@@ -276,6 +279,7 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ByteArr
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* 长度随 visitor 传递，允许合法字符串含 NUL；Rust trampoline 在借用期内核 UTF-8。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_WithString(
         const ZrRustBindingNativeArgumentView *argument,
         FZrRustBindingNativeStringVisitor visitor,

@@ -1,3 +1,5 @@
+//! C ABI 的原样镜像；上层 `zr_vm_rust_binding` 负责状态检查、CString 生命周期和句柄释放。
+//! 此 crate 的原始指针与 extern 调用没有 Rust 生命周期保证。
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
@@ -69,6 +71,7 @@ pub enum ZrRustBindingOwnershipKind {
     ZR_RUST_BINDING_OWNERSHIP_KIND_LOANED = 5,
 }
 
+/// 与 C 头文件的固定错误缓冲区逐字段匹配；仅在失败调用后立即读取有意义。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ZrRustBindingErrorInfo {
@@ -100,6 +103,7 @@ pub struct ZrRustBindingCompileOptions {
     pub incremental: TZrBool,
 }
 
+/// 同步 C 调用借用 moduleName 与 programArgs；调用者须保持两者及字符串存储有效。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ZrRustBindingRunOptions {
@@ -147,6 +151,7 @@ pub struct ZrRustBindingValue {
     _private: [u8; 0],
 }
 
+// 原始函数声明只表达 ABI；返回句柄的释放函数与调用先后由安全层配对。
 extern "C" {
     pub fn ZrRustBinding_GetLastErrorInfo(outErrorInfo: *mut ZrRustBindingErrorInfo);
 

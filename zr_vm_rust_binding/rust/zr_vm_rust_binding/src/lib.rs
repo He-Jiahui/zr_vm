@@ -130,6 +130,7 @@ pub struct Manifest {
     pub entries: Vec<ManifestEntry>,
 }
 
+// FFI 错误只返回状态码；安全层紧接失败调用复制 C 侧快照，再以直接状态码作为权威结果。
 fn last_error() -> Error {
     let mut error = sys::ZrRustBindingErrorInfo {
         status: sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_INTERNAL_ERROR,
@@ -150,8 +151,7 @@ fn check_status(status: sys::ZrRustBindingStatus) -> Result<(), Error> {
         Ok(())
     } else {
         let mut error = last_error();
-        // The direct FFI return code is authoritative even if the thread-local
-        // error snapshot is cleared by later teardown on some platforms.
+        // 直接返回码才是权威值；C 错误快照目前是进程共享状态，并发调用还可能覆盖文案。
         error.status = status;
         if error.message.is_empty() {
             error.message = format!("{status:?}");
@@ -160,6 +160,8 @@ fn check_status(status: sys::ZrRustBindingStatus) -> Result<(), Error> {
     }
 }
 
+// BUG: Unix Path 可包含非 UTF-8 字节；to_string_lossy 会替换它们，使 C 侧访问另一个路径。
+// 下一步应以 Unix OsStr 原始字节与 Windows 原生路径约定分别核验，不能把 NUL 检查当作完整编码验证。
 fn path_to_cstring(path: &Path) -> Result<CString, Error> {
     CString::new(path.to_string_lossy().as_bytes()).map_err(|_| Error {
         status: sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
@@ -174,6 +176,7 @@ fn string_to_cstring(value: &str) -> Result<CString, Error> {
     })
 }
 
+// C ABI 采用调用方缓冲区；当前固定 4096 字节，过长文本会返回 BUFFER_TOO_SMALL。
 fn read_string_with<F>(mut call: F) -> Result<String, Error>
 where
     F: FnMut(*mut c_char, usize) -> sys::ZrRustBindingStatus,
@@ -194,6 +197,7 @@ fn to_sys_runtime_options(options: RuntimeOptions) -> sys::ZrRustBindingRuntimeO
     }
 }
 
+// C 调用仅借用这些 CString 和指针数组；把它们保存在同一对象中直到同步 FFI 返回。
 struct RunOptionsOwned {
     sys_options: sys::ZrRustBindingRunOptions,
     _args: Vec<CString>,
@@ -252,6 +256,7 @@ fn module_export_argument_ptrs<'a>(
     }
 }
 
+/// 选择 bare 或 standard provider 并传入 GC 参数；当前只有 standard 支持项目执行。
 pub struct RuntimeBuilder {
     options: RuntimeOptions,
     standard: bool,
@@ -292,6 +297,7 @@ impl RuntimeBuilder {
     }
 }
 
+/// 持有 C runtime 的注册表；session 和返回值另持有执行 global，不依赖此 wrapper 存活。
 pub struct Runtime {
     raw: *mut sys::ZrRustBindingRuntime,
 }
@@ -307,12 +313,14 @@ impl Drop for Runtime {
     }
 }
 
+/// 持有 CLI 项目路径与清单上下文；编译读取该上下文，run/start_session 另建立执行 global。
 pub struct ProjectWorkspace {
     raw: *mut sys::ZrRustBindingProjectWorkspace,
 }
 
 impl ProjectWorkspace {
     pub fn scaffold(root: impl AsRef<Path>, project_name: &str) -> Result<Self, Error> {
+        // TODO: 安全层固定 overwriteExisting=1；复用已有目录会覆盖项目文件，应确认是否需暴露拒绝覆盖选项。
         let root = path_to_cstring(root.as_ref())?;
         let project_name = string_to_cstring(project_name)?;
         let options = sys::ZrRustBindingScaffoldOptions {
@@ -387,6 +395,8 @@ impl ProjectWorkspace {
     }
 
     pub fn load_manifest(&self) -> Result<Manifest, Error> {
+        // TODO: raw 尚无 RAII 守卫；当前 version/count getter 仅拒绝空指针，正常路径不触发失败，
+        // 若 getter 日后增加 I/O 或格式验证，`?` 将绕过 ManifestSnapshot_Free，应先统一失败清理。
         let mut raw = ptr::null_mut();
         check_status(unsafe {
             sys::ZrRustBinding_ProjectWorkspace_LoadManifest(self.raw, &mut raw)
@@ -487,6 +497,8 @@ impl ProjectWorkspace {
         runtime: &mut Runtime,
         options: &CompileOptions,
     ) -> Result<CompileResult, Error> {
+        // TODO: raw 尚无 RAII 守卫；GetCounts 当前仅拒绝空指针，正常路径不触发失败，
+        // 若以后增加结果校验，`?` 会跳过 CompileResult_Free，应先统一失败清理。
         let options = sys::ZrRustBindingCompileOptions {
             emitIntermediate: options.emit_intermediate as u8,
             incremental: options.incremental as u8,
@@ -585,6 +597,7 @@ impl Drop for ProjectWorkspace {
     }
 }
 
+/// 保留单个 VM global 供多次导出调用；Rust 的 &mut self 限定顺序使用，C 导出入口另检查重入。
 pub struct ProjectSession {
     raw: *mut sys::ZrRustBindingProjectSession,
 }
@@ -627,6 +640,7 @@ impl Drop for ProjectSession {
     }
 }
 
+/// host 新值或带 GC root 的 VM 值句柄；普通执行结果可延长 global 生命周期，native self 例外见对应 BUG。
 pub struct Value {
     raw: *mut sys::ZrRustBindingValue,
 }

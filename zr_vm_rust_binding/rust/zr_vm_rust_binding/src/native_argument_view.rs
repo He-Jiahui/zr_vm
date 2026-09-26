@@ -58,6 +58,7 @@ impl From<NativeArgumentKind> for ValueKind {
     }
 }
 
+/// 借用 VM 参数的短期视图；C visitor 返回后 root/pin 均撤销，不能保存内部指针。
 pub struct NativeArgumentView<'argument> {
     raw: *const sys::ZrRustBindingNativeArgumentView,
     _scope: PhantomData<&'argument NativeCallContext<'argument>>,
@@ -112,6 +113,8 @@ impl NativeArgumentView<'_> {
         Ok(value)
     }
 
+    /// 在 C 的同步字符串 visitor 内暂借 UTF-8 视图，闭包返回后不保留该指针。
+    /// BUG: cargo check --workspace 在 trampoline::<_, T> 处报 E0283，当前签名无法推断 F，安全 crate 无法编译。
     pub fn with_str<T>(
         &self,
         visitor: impl for<'value> FnOnce(&'value str) -> Result<T, Error>,
@@ -145,6 +148,7 @@ struct NativeArgumentVisitorState<F, T> {
     result: Option<Result<T, Error>>,
 }
 
+// SAFETY: user_data 指向调用栈上的状态，C 侧同步调用一次；panic 在此被转换为错误状态。
 unsafe extern "C" fn native_argument_visitor_trampoline<F, T>(
     argument: *const sys::ZrRustBindingNativeArgumentView,
     user_data: *mut c_void,
@@ -189,6 +193,7 @@ struct NativeStringVisitorState<F, T> {
     result: Option<Result<T, Error>>,
 }
 
+// SAFETY: C 侧 pin 字符串并同步调用；按字节长度构造临时 UTF-8 借用，返回前不让引用逃逸。
 unsafe extern "C" fn native_string_visitor_trampoline<F, T>(
     utf8: *const c_char,
     utf8_byte_length: usize,
@@ -235,6 +240,8 @@ where
 }
 
 impl NativeCallContext<'_> {
+    /// 以 visitor 限定参数视图的生命周期；闭包不能把 view 交给回调外持有。
+    /// BUG: cargo check --workspace 在 trampoline::<_, T> 处报 E0283，当前签名无法推断 F，安全 crate 无法编译。
     pub fn with_argument<T>(
         &self,
         index: usize,

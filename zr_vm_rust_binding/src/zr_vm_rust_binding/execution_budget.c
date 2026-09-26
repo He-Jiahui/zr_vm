@@ -22,6 +22,7 @@ void ZrRustBinding_CancellationToken_Free(ZrRustBindingCancellationToken *token)
     ZrCore_ExecutionCancelToken_Free(token);
 }
 
+/* 预算只绑定这一轮 session 导出；退出时无论成功或终止都撤销 state 指针并填写 usage。 */
 ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExportWithBudget(
         ZrRustBindingProjectSession *session,
         const TZrChar *moduleName,

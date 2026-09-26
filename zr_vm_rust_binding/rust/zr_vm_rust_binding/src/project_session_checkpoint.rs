@@ -3,8 +3,7 @@ use std::ptr;
 use crate::{check_status, Error, ProjectSession};
 use zr_vm_rust_binding_sys as sys;
 
-/// A retained VM checkpoint. The native handle owns the VM roots and the
-/// logical object graph captured at the quiescent session boundary.
+/// 静止 session 边界上的 VM 快照；native 句柄保留 owner 与快照 root，回滚仍需原 session。
 pub struct ProjectSessionCheckpoint {
     raw: *mut sys::ZrRustBindingProjectSessionCheckpoint,
 }

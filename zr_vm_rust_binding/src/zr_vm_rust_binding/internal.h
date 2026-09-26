@@ -23,6 +23,8 @@ typedef enum EZrRustBindingValueStorageKind {
 
 typedef struct ZrRustBindingRuntimeNativeRegistry ZrRustBindingRuntimeNativeRegistry;
 
+/* session、checkpoint 与 live Value 共享此计数；最后一个引用在 ownsGlobal 时先销毁 global，再释放 native descriptor。
+ * 计数非原子，所有 owner 操作需由同一执行线程串行完成。 */
 typedef struct ZrRustBindingExecutionOwner {
     SZrGlobalState *global;
     TZrBool ownsGlobal;
@@ -80,6 +82,7 @@ struct ZrRustBindingManifestSnapshot {
     SZrCliIncrementalManifest manifest;
 };
 
+/* OWNED 保存 host 深拷贝，VM 保存 owner 加临时 GC root；两种存储决定跨 global 传参及释放方式。 */
 struct ZrRustBindingValue {
     ZrRustBindingValueKind kind;
     ZrRustBindingOwnershipKind ownershipKind;

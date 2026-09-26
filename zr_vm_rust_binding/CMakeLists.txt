@@ -3,6 +3,7 @@ set(zr_curr_module_name "zr_vm_rust_binding")
 
 zr_declare_module(${zr_curr_module_name} ON)
 
+# Rust ABI 的项目编译/执行复用 CLI 原有管线；native callback 也进入相同模块目标，避免宿主行为分叉。
 set(zr_vm_rust_binding_cli_support_sources
         ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
         ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
@@ -65,6 +66,7 @@ if (TARGET zr_vm_lib_thread_shared OR TARGET zr_vm_lib_thread_static)
     zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_thread")
 endif ()
 
+# 优先从用户 cargo 安装目录找工具；找到后只在 shared native target 存在时提供 Rust 校验入口。
 set(zr_vm_rust_binding_cargo_candidates
         "$ENV{HOME}/.cargo/bin/cargo"
         "$ENV{USERPROFILE}/.cargo/bin/cargo.exe"
@@ -88,6 +90,7 @@ else ()
     unset(ZR_VM_RUST_BINDING_CARGO_EXECUTABLE CACHE)
     find_program(ZR_VM_RUST_BINDING_CARGO_EXECUTABLE NAMES cargo cargo.exe)
 endif ()
+# Cargo 的 sys build.rs 可独立构建 native；CMake 入口则显式提供已建库目录，防止重复构建。
 if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND TARGET zr_vm_rust_binding_shared)
     set(zr_vm_rust_binding_rust_workspace "${CMAKE_CURRENT_SOURCE_DIR}/rust")
     set(zr_vm_rust_binding_cargo_target_dir "${CMAKE_BINARY_DIR}/cargo/zr_vm_rust_binding")

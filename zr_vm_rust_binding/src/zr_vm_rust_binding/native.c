@@ -9,6 +9,8 @@
 #include "zr_vm_core/meta.h"
 #include "zr_vm_library/native_registry.h"
 
+/* BUG: 后续把此数组强转成 ZrLibGenericParameterDescriptor*；额外的 constraintTypeNames 指针改变元素步长，
+ * 两个及以上泛型参数时 VM 按 descriptor 步长读取第二项会落到首项 storage 尾部。 */
 typedef struct ZrRustBindingNativeGenericParameterStorage {
     ZrLibGenericParameterDescriptor descriptor;
     TZrChar **constraintTypeNames;
@@ -31,6 +33,7 @@ typedef struct ZrRustBindingNativeTypeStorage {
     ZrRustBindingNativeGenericParameterStorage *genericParameters;
 } ZrRustBindingNativeTypeStorage;
 
+/* descriptor 必须位于首字段，dispatch 以 moduleDescriptor 回找模块；所有文本、表与回调销毁责任由模块持有。 */
 struct ZrRustBindingNativeModule {
     ZrLibModuleDescriptor descriptor;
     TZrSize refCount;
@@ -181,6 +184,8 @@ static TZrBool zr_rust_binding_native_callback_copy_string(const TZrChar *source
     return ZR_TRUE;
 }
 
+/* callback self 句柄只借用当前 global，保留 descriptor 并不保留执行 global。
+ * BUG: Rust self_value 返回无回调生命周期的 Value；保存到调用外后，global 释放时该句柄及 root 会悬空。 */
 static ZrRustBindingExecutionOwner *zr_rust_binding_native_callback_owner_new(
         const ZrLibCallContext *context) {
     ZrRustBindingExecutionOwner *owner;
@@ -242,6 +247,7 @@ static ZrRustBindingStatus zr_rust_binding_native_call_context_get_value(
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* 回调把结果句柄所有权交给此桥接层；物化后立即释放 host 句柄，VM 的返回槽承接值。 */
 static TZrBool zr_rust_binding_native_invoke_callback(const ZrLibCallContext *context,
                                                       const ZrRustBindingNativeCallbackStorage *callbackStorage,
                                                       const TZrChar *callableName,
@@ -612,6 +618,8 @@ ZrRustBindingStatus ZrRustBinding_NativeModuleBuilder_AddType(ZrRustBindingNativ
     typeIndex = builder->module->descriptor.typeCount;
     memset(&builder->module->types[typeIndex], 0, sizeof(builder->module->types[typeIndex]));
     memset(&builder->module->typeStorage[typeIndex], 0, sizeof(builder->module->typeStorage[typeIndex]));
+    /* BUG: 后续方法/元方法复制失败会先销毁已复制 callback 的 userData；AddType 返回失败后
+     * Rust PendingCallbackUserData 仍认为未转移而再次释放。需在整体成功前保留调用方所有权。 */
     if (!zr_rust_binding_copy_type_descriptor(&builder->module->types[typeIndex],
                                               &builder->module->typeStorage[typeIndex],
                                               descriptor)) {
@@ -624,6 +632,7 @@ ZrRustBindingStatus ZrRustBinding_NativeModuleBuilder_AddType(ZrRustBindingNativ
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* Build 只转移模块所有权，不销毁 builder；Rust RawModuleBuilder 的 Drop 随后释放空 builder。 */
 ZrRustBindingStatus ZrRustBinding_NativeModuleBuilder_Build(ZrRustBindingNativeModuleBuilder *builder,
                                                             ZrRustBindingNativeModule **outModule) {
     if (builder == ZR_NULL || builder->module == ZR_NULL || outModule == ZR_NULL) {
@@ -832,6 +841,7 @@ ZrRustBindingStatus ZrRustBinding_NativeCallContext_GetSelf(
     return zr_rust_binding_native_call_context_get_value(context, selfValue, outSelfValue);
 }
 
+/* TODO: 当前仓内没有此 retain 的调用点；核对注册表是否仍需要额外引用，或删除遗留入口。 */
 static void zr_rust_binding_runtime_registration_entry_retain(
         ZrRustBindingRuntimeRegistrationEntry *entry) {
     if (entry != ZR_NULL) {
@@ -1284,6 +1294,8 @@ static TZrBool zr_rust_binding_module_reserve_functions(ZrRustBindingNativeModul
         newCapacity *= 2U;
     }
 
+    /* BUG: 两次 realloc 若仅一侧失败，下面 free 已成功的新地址而 module 仍持旧地址；
+     * AddFunction 报错后模块可能悬空，后续 Free 再次释放。两数组必须分别提交或回滚。 */
     newFunctions = (ZrLibFunctionDescriptor *)realloc(module->functions, newCapacity * sizeof(*newFunctions));
     newCallbacks = (ZrRustBindingNativeCallbackStorage *)realloc(module->functionCallbacks,
                                                                  newCapacity * sizeof(*newCallbacks));
@@ -1317,6 +1329,8 @@ static TZrBool zr_rust_binding_module_reserve_types(ZrRustBindingNativeModule *m
         newCapacity *= 2U;
     }
 
+    /* BUG: types/typeStorage 任一 realloc 失败时，成功一侧被释放而旧模块指针未更新；
+     * AddType 失败后的 builder 继续使用或释放会访问悬空存储。 */
     newTypes = (ZrLibTypeDescriptor *)realloc(module->types, newCapacity * sizeof(*newTypes));
     newStorage = (ZrRustBindingNativeTypeStorage *)realloc(module->typeStorage, newCapacity * sizeof(*newStorage));
     if (newTypes == ZR_NULL || newStorage == ZR_NULL) {
@@ -1529,6 +1543,8 @@ static TZrBool zr_rust_binding_copy_callback_storage(ZrRustBindingNativeCallback
     return ZR_TRUE;
 }
 
+/* BUG: 分配失败时把模块数组中的单个 target 交给 free_constant_array，后者会 free(target)；
+ * 非首项为无效释放，首项也会令模块数组悬空。需以分配失败注入核验清理路径。 */
 static TZrBool zr_rust_binding_copy_constant_descriptor(ZrLibConstantDescriptor *target,
                                                         const ZrRustBindingNativeConstantDescriptor *source) {
     if (target == ZR_NULL || source == ZR_NULL || source->name == ZR_NULL) {
@@ -1556,6 +1572,8 @@ static TZrBool zr_rust_binding_copy_constant_descriptor(ZrLibConstantDescriptor 
     return ZR_TRUE;
 }
 
+/* BUG: 字符串复制失败时 free_type_hint_array 会 free 模块数组中的 target；
+ * target 并非单独 malloc 的数组，失败路径会使后续 builder/模块释放使用悬空数组。 */
 static TZrBool zr_rust_binding_copy_type_hint_descriptor(ZrLibTypeHintDescriptor *target,
                                                          const ZrRustBindingNativeTypeHintDescriptor *source) {
     if (target == ZR_NULL || source == ZR_NULL || source->symbolName == ZR_NULL) {
@@ -1579,6 +1597,8 @@ static TZrBool zr_rust_binding_copy_type_hint_descriptor(ZrLibTypeHintDescriptor
     return ZR_TRUE;
 }
 
+/* BUG: 字符串复制失败时 free_module_link_array 会 free 模块数组中的单个 target；
+ * AddModuleLink 失败后 builder 仍持有已释放的 moduleLinks 数组。 */
 static TZrBool zr_rust_binding_copy_module_link_descriptor(ZrLibModuleLinkDescriptor *target,
                                                            const ZrRustBindingNativeModuleLinkDescriptor *source) {
     if (target == ZR_NULL || source == ZR_NULL || source->name == ZR_NULL || source->moduleName == ZR_NULL) {
@@ -1599,6 +1619,8 @@ static TZrBool zr_rust_binding_copy_module_link_descriptor(ZrLibModuleLinkDescri
     return ZR_TRUE;
 }
 
+/* 为 VM descriptor 复制文本及参数，并把 callback userData 留给模块成功接管。
+ * BUG: name/returnTypeName/documentation 复制失败时仅释放参数表，已成功复制的文本未释放。 */
 static TZrBool zr_rust_binding_copy_function_descriptor(
         ZrLibFunctionDescriptor *target,
         ZrRustBindingNativeCallbackStorage *callbackStorage,
@@ -1649,6 +1671,9 @@ static TZrBool zr_rust_binding_copy_function_descriptor(
     return ZR_TRUE;
 }
 
+/* 与函数复制共享注册期所有权约定；失败前 callback userData 仍属于原调用者。
+ * BUG: 文本复制失败时先释放 target->parameters/genericParameters，再由 copy_method_array
+ * 的清理路径按 target 字段再次释放，触发重复释放。 */
 static TZrBool zr_rust_binding_copy_method_descriptor(
         ZrLibMethodDescriptor *target,
         ZrRustBindingNativeCallbackStorage *callbackStorage,
@@ -1700,6 +1725,9 @@ static TZrBool zr_rust_binding_copy_method_descriptor(
     return ZR_TRUE;
 }
 
+/* 元方法由类型 descriptor 持有，callback userData 只在成功加入后转交。
+ * BUG: 文本复制失败时先释放 target->parameters/genericParameters，再由 copy_meta_method_array
+ * 的清理路径按 target 字段再次释放，触发重复释放。 */
 static TZrBool zr_rust_binding_copy_meta_method_descriptor(
         ZrLibMetaMethodDescriptor *target,
         ZrRustBindingNativeCallbackStorage *callbackStorage,
@@ -1786,6 +1814,7 @@ static TZrBool zr_rust_binding_copy_field_array(const ZrRustBindingNativeFieldDe
     return ZR_TRUE;
 }
 
+/* TODO: 当前 AddFunction 逐项复制且未调用此批量复制入口；核对是否为遗留路径或后续类型函数扩展预留。 */
 static TZrBool zr_rust_binding_copy_function_array(const ZrRustBindingNativeFunctionDescriptor *source,
                                                    TZrSize count,
                                                    ZrLibFunctionDescriptor **outFunctions,
@@ -1894,6 +1923,8 @@ static TZrBool zr_rust_binding_copy_meta_method_array(const ZrRustBindingNativeM
     return ZR_TRUE;
 }
 
+/* BUG: 字符串复制失败时 free_enum_member_array 会 free 类型 storage 数组中的单个 target；
+ * 随后的 free_type_storage 再读该数组，存在重复释放和悬空访问。 */
 static TZrBool zr_rust_binding_copy_enum_member_descriptor(ZrLibEnumMemberDescriptor *target,
                                                            const ZrRustBindingNativeEnumMemberDescriptor *source) {
     if (target == ZR_NULL || source == ZR_NULL || source->name == ZR_NULL) {
@@ -1919,6 +1950,9 @@ static TZrBool zr_rust_binding_copy_enum_member_descriptor(ZrLibEnumMemberDescri
     return ZR_TRUE;
 }
 
+/* 在 AddType 时把嵌套字段、回调和泛型信息复制到模块持有的 storage。
+ * BUG: 嵌套数组复制中途失败时 target 对应 count 尚为 0，free_type_storage 无法释放已复制的子项；
+ * implementsTypeNames/enumMembers 的 count 也只在全量成功后设置，失败路径泄漏已复制的文本。 */
 static TZrBool zr_rust_binding_copy_type_descriptor(ZrLibTypeDescriptor *target,
                                                     ZrRustBindingNativeTypeStorage *storage,
                                                     const ZrRustBindingNativeTypeDescriptor *source) {

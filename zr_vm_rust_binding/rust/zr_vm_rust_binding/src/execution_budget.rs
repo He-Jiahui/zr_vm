@@ -21,7 +21,7 @@ impl Drop for CancellationTokenInner {
     }
 }
 
-/// A one-shot cancellation request that can be shared with another thread.
+/// 可跨线程共享的一次性取消请求；Arc 保证预算调用与并发取消期间 token 存活。
 #[derive(Clone, Debug)]
 pub struct CancellationToken(Arc<CancellationTokenInner>);
 
@@ -51,7 +51,7 @@ impl CancellationToken {
     }
 }
 
-/// An absolute deadline in the VM's monotonic clock domain.
+/// 使用 VM 单调时钟的绝对截止点；适用于同一时钟域的预算调用。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExecutionDeadline(u64);
 
@@ -63,8 +63,7 @@ impl ExecutionDeadline {
     }
 }
 
-/// Limits bytecode dispatch and polls around native callbacks. Native callbacks
-/// must return cooperatively; termination does not roll back VM or host state.
+/// 限制字节码和 native 调用边界；native 回调须协作返回，终止不会回滚 VM 或宿主副作用。
 #[derive(Clone, Debug, Default)]
 pub struct CallBudget {
     /// Some(0) admits no bytecode instructions. None leaves instruction count unlimited.
@@ -136,6 +135,7 @@ impl std::error::Error for CallError {
 }
 
 impl ProjectSession {
+    /// 在当前 session 执行一次有预算的导出；成功和值/usage 一起返回，失败仍携带 usage 与终止原因。
     pub fn call_module_export_with_budget(
         &mut self,
         module_name: &str,

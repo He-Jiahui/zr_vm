@@ -179,6 +179,7 @@ pub type FZrRustBindingNativeStringVisitor = Option<
 
 pub type FZrRustBindingDestroyCallback = Option<unsafe extern "C" fn(userData: TZrPtr)>;
 
+/// 临时传入 C builder 的布局；AddFunction 成功后 C 模块复制字段并接管 userData 销毁回调。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ZrRustBindingNativeFunctionDescriptor {
@@ -264,6 +265,7 @@ pub struct ZrRustBindingNativeTypeDescriptor {
     pub ffiReleaseHook: *const c_char,
 }
 
+// 与 C builder 和 callback visitor 对应；回调参数指针只在同步调用栈中有效。
 extern "C" {
     pub fn ZrRustBinding_NativeModuleBuilder_New(
         moduleName: *const c_char,

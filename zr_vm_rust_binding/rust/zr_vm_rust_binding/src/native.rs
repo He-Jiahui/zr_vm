@@ -541,6 +541,7 @@ impl TypeBuilder {
     }
 }
 
+/// 收集 native descriptor；build 时序列化为 C ABI 并交给模块深拷贝。
 pub struct ModuleBuilder {
     name: String,
     documentation: Option<String>,
@@ -736,6 +737,7 @@ impl Drop for NativeModule {
     }
 }
 
+/// 拥有 runtime 注册句柄和原始模块引用；Drop 撤销未来执行的可见性，已创建的结果另保留旧模块。
 pub struct NativeModuleRegistration {
     raw: *mut sys::ZrRustBindingRuntimeNativeModuleRegistration,
     _module: NativeModule,
@@ -752,6 +754,7 @@ impl Drop for NativeModuleRegistration {
     }
 }
 
+/// 仅在 VM 调用 Rust callback 的同步栈内有效；参数视图不得逃逸此生命周期。
 pub struct NativeCallContext<'call> {
     pub(super) raw: *mut sys::ZrRustBindingNativeCallContext,
     _call: PhantomData<&'call ()>,
@@ -798,6 +801,8 @@ impl NativeCallContext<'_> {
         })
     }
 
+    /// 返回 native 方法回调中的 self；调用方通常应在本次回调内处理。
+    /// BUG: C 侧 owner 不保留 VM global，返回的 Value 可被保存到 session 释放之后，随后读或 Drop 会访问失效内存。
     pub fn self_value(&self) -> Result<Option<Value>, Error> {
         let mut raw = ptr::null_mut();
         let status = unsafe { sys::ZrRustBinding_NativeCallContext_GetSelf(self.raw, &mut raw) };
@@ -1843,6 +1848,7 @@ fn map_meta_method_type(value: MetaMethodType) -> sys::ZrRustBindingMetaMethodTy
     }
 }
 
+// SAFETY: C 侧同步调用且 user_data 由注册模块持有；捕获 panic，避免 Rust unwind 穿过 C ABI。
 unsafe extern "C" fn native_callback_trampoline(
     context: *mut sys::ZrRustBindingNativeCallContext,
     user_data: *mut c_void,

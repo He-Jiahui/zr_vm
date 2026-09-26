@@ -1,3 +1,4 @@
+/// 不透明 native 快照句柄；释放与回滚均通过同一 VM owner 的 C ABI 完成。
 #[repr(C)]
 pub struct ZrRustBindingProjectSessionCheckpoint {
     _private: [u8; 0],

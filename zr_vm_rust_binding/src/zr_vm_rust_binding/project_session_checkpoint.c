@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 
+/* checkpoint 要求 session 静止且没有跨边界 live Value root；额外 owner 引用让快照能独立释放。 */
 ZrRustBindingStatus ZrRustBinding_ProjectSession_Checkpoint(
         ZrRustBindingProjectSession *session,
         ZrRustBindingProjectSessionCheckpoint **outCheckpoint) {
@@ -39,6 +40,7 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_Checkpoint(
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* 仅同一 owner 的快照可回滚，且不能在导出调用中或 live Value 存在时替换 VM 状态。 */
 ZrRustBindingStatus ZrRustBinding_ProjectSession_Rollback(
         ZrRustBindingProjectSession *session,
         const ZrRustBindingProjectSessionCheckpoint *checkpoint) {

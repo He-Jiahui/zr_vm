@@ -13,8 +13,10 @@
 #define ZR_RUST_BINDING_MKDIR(path) mkdir(path, ZR_VM_POSIX_DIRECTORY_CREATE_MODE)
 #endif
 
+/* BUG: Rust check_status 紧跟失败调用读取此快照，但它是进程共享状态；并发调用可覆盖彼此的错误文案。 */
 static ZrRustBindingErrorInfo g_zr_rust_binding_last_error = {ZR_RUST_BINDING_STATUS_OK, {0}};
 
+/* workspace 只保留 CLI 项目上下文快照；初始化用的 global 在此函数内释放，后续 Run 另建执行 global。 */
 static ZrRustBindingStatus zr_rust_binding_workspace_init(const TZrChar *projectPath,
                                                           ZrRustBindingProjectWorkspace *workspace) {
     SZrGlobalState *global;
@@ -84,6 +86,7 @@ static void zr_rust_binding_copy_current_exception_message(SZrState *state,
     }
 }
 
+/* 主入口执行后复用同一 global 调用导出，需要先清掉入口帧，保留已加载模块和堆。 */
 static void zr_rust_binding_reset_host_export_thread(SZrState *state) {
     if (state == ZR_NULL) {
         return;
@@ -113,6 +116,7 @@ static void zr_rust_binding_init_project_command(SZrCliCommand *command,
     command->programArgCount = options != ZR_NULL ? options->programArgCount : 0U;
 }
 
+/* session 导出调用把 host 参数临时 root 到目标 global，返回值再交给 owner 维持生命周期。 */
 ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
         ZrRustBindingExecutionOwner *owner,
         const TZrChar *moduleName,
@@ -253,6 +257,7 @@ static ZrRustBindingStatus zr_rust_binding_manifest_copy_entry_string(
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* BUG: scaffold 依赖此返回值判断路径可用；snprintf 截断时仍返回非负，后续可能写到意外路径。 */
 static TZrBool zr_rust_binding_join_path(const TZrChar *left,
                                          const TZrChar *right,
                                          TZrChar *buffer,
@@ -448,6 +453,7 @@ ZrRustBindingStatus ZrRustBinding_Project_Scaffold(const ZrRustBindingScaffoldOp
                                          options->rootPath);
     }
 
+    /* BUG: projectName 直接进入固定长度 JSON 缓冲区；引号/反斜杠会破坏清单，长名称可被截断。 */
     snprintf(manifestContent,
              sizeof(manifestContent),
              "{\n  \"name\": \"%s\",\n  \"source\": \"src\",\n  \"binary\": \"bin\",\n  \"entry\": \"main\"\n}\n",
@@ -766,6 +772,7 @@ ZrRustBindingStatus ZrRustBinding_ManifestSnapshot_Free(ZrRustBindingManifestSna
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* 编译委托 CLI 项目编译管线；提供 runtime 时 bootstrap 会先注册它的 native modules。 */
 ZrRustBindingStatus ZrRustBinding_Project_Compile(ZrRustBindingRuntime *runtime,
                                                   const ZrRustBindingProjectWorkspace *workspace,
                                                   const ZrRustBindingCompileOptions *options,
@@ -838,6 +845,7 @@ ZrRustBindingStatus ZrRustBinding_CompileResult_Free(ZrRustBindingCompileResult 
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* 每次 Run 新建项目 global；执行结果的 Value root 持有它，直到最后一个相关句柄释放。 */
 ZrRustBindingStatus ZrRustBinding_Project_Run(ZrRustBindingRuntime *runtime,
                                               const ZrRustBindingProjectWorkspace *workspace,
                                               const ZrRustBindingRunOptions *options,
@@ -906,6 +914,7 @@ ZrRustBindingStatus ZrRustBinding_Project_Run(ZrRustBindingRuntime *runtime,
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
+/* 一次性导出调用执行入口并清理入口帧，再在同一 global 调用目标导出；需复用状态时应使用 ProjectSession。 */
 ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime *runtime,
                                                            const ZrRustBindingProjectWorkspace *workspace,
                                                            const ZrRustBindingRunOptions *options,
@@ -1063,6 +1072,7 @@ zr_rust_binding_call_module_export_cleanup_error:
                                      exportName);
 }
 
+/* session 保留已运行入口的 global；Export、GcStep、Checkpoint 共用该 owner，调用方须串行使用。 */
 ZrRustBindingStatus ZrRustBinding_ProjectSession_Start(ZrRustBindingRuntime *runtime,
                                                        const ZrRustBindingProjectWorkspace *workspace,
                                                        const ZrRustBindingRunOptions *options,
@@ -1159,6 +1169,7 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(ZrRustBindingP
     return status;
 }
 
+/* TODO: 此入口没有检查 activeCall；C 调用方若从 native callback 重入同一 session，需核对 GC 的并发/重入约束。 */
 ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(ZrRustBindingProjectSession *session,
                                                         TZrUInt64 maxPauseMicros,
                                                         ZrRustBindingGcStepResult *outResult) {
@@ -1181,6 +1192,8 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(ZrRustBindingProjectSess
     memset(&snapshot, 0, sizeof(snapshot));
     ZrCore_GarbageCollector_GetStatsSnapshot(global, &snapshot);
 
+    /* BUG: checkpoint 也增加 owner->refCount；这里把 checkpoint 算成跨边界 Value 引用，
+     * nested_checkpoints 测试证明可同时存在多个 checkpoint 而没有 live Value。 */
     crossBoundaryReferenceCount = session->owner->refCount > 0U
                                           ? (TZrUInt64)(session->owner->refCount - 1U)
                                           : 0U;

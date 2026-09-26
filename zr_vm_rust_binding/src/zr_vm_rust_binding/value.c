@@ -321,6 +321,7 @@ ZrRustBindingOwnershipKind zr_rust_binding_map_ownership_kind(EZrOwnershipValueK
     }
 }
 
+/* capture 已把 global 的销毁责任转交 owner；额外保留 native modules，避免注册句柄释放后结果仍引用旧 descriptor。 */
 ZrRustBindingExecutionOwner *zr_rust_binding_execution_owner_new(SZrGlobalState *global,
                                                                  const ZrRustBindingRuntime *runtime) {
     ZrRustBindingExecutionOwner *owner;
@@ -377,6 +378,7 @@ ZrRustBindingValue *zr_rust_binding_value_alloc(void) {
     return (ZrRustBindingValue *)calloc(1, sizeof(ZrRustBindingValue));
 }
 
+/* 先撤销 Value root，再减少 owner 引用；对 ownsGlobal 的正常执行 owner，最后一个 Value 才会销毁 global。 */
 void zr_rust_binding_value_free_impl(ZrRustBindingValue *value) {
     TZrSize index;
 
@@ -405,6 +407,7 @@ void zr_rust_binding_value_free_impl(ZrRustBindingValue *value) {
     free(value);
 }
 
+/* host 容器拥有克隆句柄；VM 值只新增同一 owner 的 root，避免误承诺为对象内容的深拷贝。 */
 static ZrRustBindingValue *zr_rust_binding_value_clone(const ZrRustBindingValue *value) {
     ZrRustBindingValue *clone;
     TZrSize index;
@@ -515,6 +518,7 @@ ZrRustBindingValue *zr_rust_binding_value_new_live(ZrRustBindingExecutionOwner *
     return handle;
 }
 
+/* host 值可在目标 global 重新物化；live VM 值只允许回到其原 global，不能把 GC 指针移到另一执行域。 */
 TZrBool zr_rust_binding_materialize_value(SZrState *state, const ZrRustBindingValue *value, SZrTypeValue *outValue) {
     const SZrTypeValue *liveValue;
 
@@ -684,6 +688,7 @@ ZrRustBindingStatus ZrRustBinding_Value_ReadInt(const ZrRustBindingValue *value,
         if (ZR_VALUE_IS_TYPE_SIGNED_INT(liveValue->type)) {
             *outIntValue = liveValue->value.nativeObject.nativeInt64;
         } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(liveValue->type)) {
+            /* BUG: VM uint64 超过 INT64_MAX 时仍报成功，Rust Value::as_int 可能收到失真的 i64。 */
             *outIntValue = (TZrInt64)liveValue->value.nativeObject.nativeUInt64;
         } else {
             return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT, "vm value is not int");
