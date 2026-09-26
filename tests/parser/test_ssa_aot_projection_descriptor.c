@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "zr_vm_parser/aot_ir_projection_descriptor.h"
+#include "backend_aot_ir_adapter.h"
 
 static void fill_contract(SZrExecutionContract *contract,
                           TZrMetadataToken token,
@@ -66,6 +67,8 @@ int main(void) {
     SZrAotIrTargetContract target = {ZR_AOT_IR_TARGET_ABI_VERSION, sizeof(void *), 0u, 0u, 67u, 66u};
     SZrExecutionContract moduleContract;
     SZrAotIrDiagnostic diagnostic;
+    SZrBackendAotIrDiagnostic backendDiagnostic;
+    TZrUInt32 instructionCount = 0u;
 
     fill_contract(&input.contract, input.functionToken, 33u,
                   input.signatureHash, input.frameLayoutHash);
@@ -87,6 +90,12 @@ int main(void) {
     assert(descriptor.function.frameSlots[0].byteSize == 8u);
     assert(ZrCore_AotIr_ValidateModule(&descriptor.module, &diagnostic) ==
            ZR_AOT_IR_OK);
+    assert(backend_aot_ir_adapter_validate(&descriptor.module,
+                                           &backendDiagnostic) ==
+           ZR_BACKEND_AOT_IR_OK);
+    assert(backend_aot_ir_adapter_count_instructions(
+                   &descriptor.module, &instructionCount, &backendDiagnostic));
+    assert(instructionCount == 1u);
     ZrParser_AotIrProjection_FreeDescriptor(&descriptor);
     assert(descriptor.owner == ZR_NULL);
     return 0;

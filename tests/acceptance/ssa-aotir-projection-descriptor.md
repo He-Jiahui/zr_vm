@@ -30,12 +30,14 @@ included in the AOTIR hash.
 
 `tests/cmake/ssa-tests.cmake` registers `zr_vm_ssa_aot_projection_descriptor_test`
 and CTest name `ssa_aot_projection_descriptor` with the `ssa` label. The
-standalone source list used for direct compiler checks is the same four-source
-slice used by that target.
+target. The standalone source list used for direct compiler checks is the same
+six-source slice, including shared lowering and the descriptor-only backend
+adapter.
 
 ## Acceptance
 
-The direct cross-toolchain slice is accepted. The CMake target
+The direct cross-toolchain slice, including adapter validation/counting, is
+accepted. The CMake target
 `ssa_aot_projection_descriptor` is registered; a full post-schema-v4 CMake
 rebuild is pending because concurrent workspace glob churn previously expanded
 the build and was stopped. C/LLVM artifact emission remains open.

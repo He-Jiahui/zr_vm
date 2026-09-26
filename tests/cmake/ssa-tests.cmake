@@ -750,11 +750,15 @@ if (NOT TARGET zr_vm_ssa_aot_projection_descriptor_test)
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_projection_descriptor.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c)
     target_include_directories(zr_vm_ssa_aot_projection_descriptor_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_include_directories(zr_vm_ssa_aot_projection_descriptor_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
     zr_vm_apply_common_test_settings(zr_vm_ssa_aot_projection_descriptor_test)
     add_test(NAME ssa_aot_projection_descriptor
             COMMAND zr_vm_ssa_aot_projection_descriptor_test)
