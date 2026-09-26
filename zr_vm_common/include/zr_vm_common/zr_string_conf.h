@@ -11,6 +11,7 @@
 
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
+/* core 字符串头以短/长标志编码长度；这些界限同时被构造器、比较器和 GC 扫描使用。 */
 // gc object type
 #define ZR_VM_SHORT_STRING_MAX 127U // 短字符串最大长度 不得超过UINT8_MAX
 #define ZR_VM_LONG_STRING_FLAG (0XFF) // 长字符串最大长度 不得超过INT32_MAX
@@ -23,11 +24,13 @@
 
 #define ZR_STRING_DECIMAL_NUMBER_SET "-0123456789"
 
+/* 数值文本化读取进程 locale；调用方不得假设小数点恒为 ASCII '.'。 */
 #define ZR_STRING_LOCALE_DECIMAL_POINT (localeconv()->decimal_point[0])
 
 #define ZR_STRING_UTF8_SIZE 8
 
 
+/* 统一数值文本化宽度，LEN 必须包含末尾 NUL 且调用方应检查 snprintf 的截断结果。 */
 #define ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(STR, LEN, NUMBER) snprintf(STR, LEN, "%" PRId64, (TZrInt64) NUMBER)
 
 #define ZR_STRING_UNSIGNED_INTEGER_PRINT_FORMAT(STR, LEN, NUMBER) snprintf(STR, LEN, "%" PRIu64, (TZrUInt64) NUMBER)

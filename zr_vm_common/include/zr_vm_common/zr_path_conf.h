@@ -7,6 +7,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+/* CLI、library 和 LSP 共享路径容量及模块扩展名；长度宏表示扩展名数据字节数，不含 NUL。 */
 #define ZR_VM_PATH_LENGTH_MAX 4096U
 #define ZR_VM_POSIX_DIRECTORY_CREATE_MODE 0755
 

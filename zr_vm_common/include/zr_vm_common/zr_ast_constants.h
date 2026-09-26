@@ -7,6 +7,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+// AST 节点的跨模块线格式编号：core 读取编译产物时不能依赖 parser 头，已写入格式的编号不可重排。
 // AST节点类型常量（用于序列化数据，避免依赖parser模块）
 // 这些值必须与zr_vm_parser/ast.h中的EZrAstNodeType枚举值保持一致。
 // 当前声明区段包含：
@@ -38,6 +39,7 @@
 // ZR_AST_STRUCT_INIT_EXPRESSION=91, ZR_AST_PROPERTY_DECLARATION=92
 #define ZR_AST_CONSTANT_PROPERTY_DECLARATION 92
 
+// 访问修饰符由 parser 写出、core 读取；值与 parser 枚举同步才能保留成员可见性语义。
 // 访问修饰符常量（用于序列化数据，避免依赖parser模块）
 // 这些值必须与zr_vm_parser/ast.h中的EZrAccessModifier枚举值保持一致
 #define ZR_ACCESS_CONSTANT_PUBLIC 0

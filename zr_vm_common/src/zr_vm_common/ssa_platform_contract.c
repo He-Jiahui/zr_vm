@@ -2,9 +2,12 @@
 
 #include <string.h>
 
+/* ABI 摘要按字段顺序和固定字节序编码，避免结构体填充和宿主字节序影响
+ * 能力声明、产物及运行观察之间的比对。 */
 #define ZR_SSA_PLATFORM_FNV_OFFSET UINT64_C(1469598103934665603)
 #define ZR_SSA_PLATFORM_FNV_PRIME UINT64_C(1099511628211)
 
+/* 由 ComputeAbiHash 和宿主回调占位见证共用，不能改动编码顺序而不升级 schema。 */
 static TZrUInt64 ssa_platform_hash_u32(TZrUInt64 hash, TZrUInt32 value) {
     TZrUInt32 index;
 
@@ -42,6 +45,7 @@ static TZrUInt64 ssa_platform_hash_abi_without_callback(
     return hash;
 }
 
+/* UNKNOWN/COUNT 是记录边界，不是可验收的平台或执行结果。 */
 static TZrBool ssa_platform_valid_target(EZrSsaPlatformTarget target) {
     return target > ZR_SSA_PLATFORM_TARGET_UNKNOWN &&
            target < ZR_SSA_PLATFORM_TARGET_COUNT;
@@ -68,12 +72,14 @@ static TZrBool ssa_platform_valid_outcome(EZrSsaPlatformOutcome outcome) {
            outcome < ZR_SSA_PLATFORM_OUTCOME_COUNT;
 }
 
+/* UNKNOWN 分派可用于不依赖 switch/computed-goto 的后端观察。 */
 static TZrBool ssa_platform_valid_dispatch(EZrSsaPlatformDispatchKind dispatch) {
     return dispatch == ZR_SSA_PLATFORM_DISPATCH_UNKNOWN ||
            dispatch == ZR_SSA_PLATFORM_DISPATCH_SWITCH ||
            dispatch == ZR_SSA_PLATFORM_DISPATCH_COMPUTED_GOTO;
 }
 
+/* 在读取三元组之前先排除平台/架构的显然矛盾；非 WASM 平台可共享桌面架构。 */
 static TZrBool ssa_platform_target_architecture_compatible(
         EZrSsaPlatformTarget target,
         EZrSsaPlatformArchitecture architecture) {
@@ -88,6 +94,7 @@ static TZrBool ssa_platform_target_architecture_compatible(
            architecture == ZR_SSA_PLATFORM_ARCH_AARCH64;
 }
 
+/* 三元组来自固定容量记录；比较前要求非空且在数组界内结束。 */
 static TZrBool ssa_platform_string_present(const TZrChar *value,
                                             TZrSize capacity) {
     TZrSize index;
@@ -110,6 +117,7 @@ static void ssa_platform_set_status(SZrSsaPlatformDiagnostic *diagnostic,
     }
 }
 
+/* 失败发生在完整校验前也保留观察来源，便于矩阵定位设备与指令。 */
 static void ssa_platform_copy_observation_context(
         SZrSsaPlatformDiagnostic *diagnostic,
         const SZrSsaPlatformObservation *observation) {
@@ -137,6 +145,7 @@ static void ssa_platform_copy_artifact_context(
     diagnostic->requiredFeatures = artifact->requiredFeatures;
 }
 
+/* 能力、观察和产物共用同一身份入口，保证版本与目标组合一致解释。 */
 static EZrSsaPlatformStatus ssa_platform_validate_identity(
         TZrUInt32 magic,
         TZrUInt32 schemaVersion,
@@ -164,6 +173,9 @@ static EZrSsaPlatformStatus ssa_platform_validate_identity(
                                  ZR_SSA_PLATFORM_STATUS_ARCHITECTURE_INVALID);
         return ZR_SSA_PLATFORM_STATUS_ARCHITECTURE_INVALID;
     }
+    /* TODO: 此处只验证三元组存在，未核对其文本与 target/architecture 是否
+     * 相符；当前测试只比对两份相同三元组。后续应查目标适配器是否另有
+     * 规范化注册表，再决定是否在此拒绝矛盾的声明。 */
     if (!ssa_platform_string_present(
                 targetTriple, ZR_SSA_PLATFORM_TARGET_TRIPLE_CAPACITY)) {
         ssa_platform_set_status(
@@ -174,6 +186,7 @@ static EZrSsaPlatformStatus ssa_platform_validate_identity(
     return ZR_SSA_PLATFORM_STATUS_OK;
 }
 
+/* 目标策略在能力声明、观察和产物三个入口复用，防止只在某一阶段禁用 JIT。 */
 static TZrBool ssa_platform_is_machine_code_forbidden(
         EZrSsaPlatformTarget target) {
     return target == ZR_SSA_PLATFORM_TARGET_ANDROID ||
@@ -198,6 +211,7 @@ static TZrBool ssa_platform_feature_allowed(
     return ZR_TRUE;
 }
 
+/* 观察中的后端必须先映射为能力位，才能与声明的 featureFlags 比较。 */
 static TZrUInt64 ssa_platform_backend_feature(EZrSsaPlatformBackend backend) {
     switch (backend) {
         case ZR_SSA_PLATFORM_BACKEND_EXECBC:
@@ -336,9 +350,12 @@ void ZrCommon_SsaPlatform_DetectHostAbi(SZrSsaPlatformAbi *abi) {
     abi->int64WidthBits = (TZrUInt32)(sizeof(TZrInt64) * CHAR_BIT);
     abi->float32WidthBits = (TZrUInt32)(sizeof(TZrFloat32) * CHAR_BIT);
     abi->float64WidthBits = (TZrUInt32)(sizeof(TZrFloat64) * CHAR_BIT);
-    /* A portable probe cannot infer every aggregate return class.  MIXED is a
-     * valid conservative witness and target-specific probes may replace it. */
+    /* 通用探针无法确定聚合返回类别，MIXED 只作保守占位；发布产物时应由
+     * 目标专用探针替换，不可把宿主探针直接用于交叉目标。 */
     abi->structReturnKind = ZR_SSA_PLATFORM_STRUCT_RETURN_MIXED;
+    /* TODO: 此值仅由通用 ABI 字段推得，并未调用 native callback 验证真实
+     * 调用约定。现有测试只检查哈希变化；接入实际 FFI 适配器时需核对
+     * 回调参数/返回布局并提供目标专用见证。 */
     abi->nativeCallbackAbiHash =
             ssa_platform_hash_abi_without_callback(abi) ^ UINT64_C(0x9e3779b97f4a7c15);
     if (abi->nativeCallbackAbiHash == 0u) {
@@ -463,6 +480,8 @@ TZrBool ZrCommon_SsaPlatform_AbiEqual(
             ZR_SSA_PLATFORM_STATUS_OK) {
         return ZR_FALSE;
     }
+    /* 首个差异决定诊断字段，使目标矩阵可稳定归因；调用方需要完整差异时
+     * 应保留两份 ABI 记录，而不能仅依赖此单字段诊断。 */
     if (expected->pointerWidthBits != actual->pointerWidthBits) {
         if (diagnostic != ZR_NULL) {
             diagnostic->abiField = ZR_SSA_PLATFORM_ABI_FIELD_POINTER_WIDTH;
@@ -585,6 +604,7 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_ValidateCapability(
     if (status != ZR_SSA_PLATFORM_STATUS_OK) {
         return status;
     }
+    /* WASM 架构名称蕴含指针宽度，其余平台仍以显式 ABI 见证为准。 */
     if (capability->target == ZR_SSA_PLATFORM_TARGET_WASM &&
         ((capability->architecture == ZR_SSA_PLATFORM_ARCH_WASM32 &&
           capability->abi.pointerWidthBits != 32u) ||
@@ -631,6 +651,7 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_ValidateCapability(
 TZrBool ZrCommon_SsaPlatform_CapabilitySupports(
         const SZrSsaPlatformCapability *capability,
         TZrUInt64 feature) {
+    /* 此接口只查询单个位；组合需求由 Check/ValidateArtifact 做集合比较。 */
     if (capability == ZR_NULL || feature == 0u ||
         (feature & (feature - 1u)) != 0u ||
         (feature & ~ZR_SSA_PLATFORM_FEATURE_KNOWN_MASK) != 0u ||
@@ -659,6 +680,7 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
     TZrUInt64 unsupported;
     TZrUInt64 backendFeature;
 
+    /* 先重置，再复制原始观察上下文；即使后续身份验证失败仍可报告来源。 */
     ZrCommon_SsaPlatform_DiagnosticInit(diagnostic);
     ssa_platform_copy_observation_context(diagnostic, observed);
     if (declared == ZR_NULL || observed == ZR_NULL) {
@@ -680,6 +702,9 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         ssa_platform_set_status(diagnostic, ZR_SSA_PLATFORM_STATUS_BACKEND_INVALID);
         return ZR_SSA_PLATFORM_STATUS_BACKEND_INVALID;
     }
+    /* BUG: runner=CROSS_COMPILE 与 executed/semanticPassed/PASSED 同时出现时，
+     * 现有路径仍可能返回 OK；矩阵测试的 passing_observation 可构造该组合。
+     * 交叉编译不能充当目标执行证据，需校验 runner 与阶段/结果的一致性。 */
     if (!ssa_platform_valid_runner(observed->runner)) {
         ssa_platform_set_status(diagnostic, ZR_SSA_PLATFORM_STATUS_RUNNER_INVALID);
         return ZR_SSA_PLATFORM_STATUS_RUNNER_INVALID;
@@ -780,6 +805,8 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
                 diagnostic, ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN);
         return ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN;
     }
+    /* 后端能力、显式需求及分派许可是三个独立门槛；任一缺失都不能把
+     * 编译或运行观察提升为平台验收。 */
     unsupported = observed->requiredFeatures & ~declared->featureFlags;
     backendFeature = ssa_platform_backend_feature(observed->backend);
     if ((backendFeature & ~declared->featureFlags) != 0u) {
@@ -807,6 +834,7 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
                                  ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
         return ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID;
     }
+    /* 不可用/不支持先于阶段成功判断，确保跳过的运行环境不会成为通过行。 */
     if (observed->outcome == ZR_SSA_PLATFORM_OUTCOME_UNAVAILABLE) {
         if (observed->executed || observed->semanticPassed) {
             ssa_platform_set_status(diagnostic,
@@ -830,10 +858,8 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
                 diagnostic, ZR_SSA_PLATFORM_STATUS_REQUIRED_FEATURE_UNSUPPORTED);
         return ZR_SSA_PLATFORM_STATUS_REQUIRED_FEATURE_UNSUPPORTED;
     }
-    /* A passed row must not carry an unsupported-feature witness.  Without
-     * this check a producer could set outcome=PASSED while leaving a required
-     * feature unavailable; the Boolean test entry point would then report a
-     * false success even though IsRuntimeAcceptance() rejects the row. */
+    /* 已通过的观察不得同时报告需求不支持；否则测试布尔入口与独立验收
+     * 谓词会对同一行给出相反结论。 */
     if (observed->outcome == ZR_SSA_PLATFORM_OUTCOME_PASSED &&
         observed->unsupportedFeatures != 0u) {
         if (diagnostic != ZR_NULL) {
@@ -857,6 +883,8 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         ssa_platform_set_status(diagnostic, ZR_SSA_PLATFORM_STATUS_SEMANTIC_FAILURE);
         return ZR_SSA_PLATFORM_STATUS_SEMANTIC_FAILURE;
     }
+    /* 三类语义见证独立于分派形式；只要一侧声明了哈希，另一侧缺失也算
+     * 不匹配，从而避免把未记录异常或源码映射误作一致。 */
     if (declared->semanticResultHash != 0u || observed->semanticResultHash != 0u) {
         if (declared->semanticResultHash != observed->semanticResultHash) {
             if (diagnostic != ZR_NULL) {
@@ -909,6 +937,9 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
 
 TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
         const SZrSsaPlatformObservation *observation) {
+    /* BUG: 仅检查 JIT 实际执行位会放过移动端/WASM 的 HOST_JIT 后端声明；
+     * CROSS_COMPILE 配合三个真值和 PASSED 也会返回真。Check 已拒绝前者，
+     * 后者两入口均未拒绝。修正时应沿用同一 runner/后端策略。 */
     if (observation == ZR_NULL ||
         observation->magic != ZR_SSA_PLATFORM_CONTRACT_MAGIC ||
         observation->schemaVersion != ZR_SSA_PLATFORM_CONTRACT_SCHEMA_VERSION ||
@@ -966,6 +997,8 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_ValidateArtifact(
     EZrSsaPlatformStatus status;
     TZrUInt64 unsupported;
 
+    /* 产物校验不消费运行观察；在加载前先比对 ABI 和契约哈希，再核对
+     * 后端需求及受限平台策略。 */
     ZrCommon_SsaPlatform_DiagnosticInit(diagnostic);
     ssa_platform_copy_artifact_context(diagnostic, artifact);
     if (declared == ZR_NULL || artifact == ZR_NULL) {

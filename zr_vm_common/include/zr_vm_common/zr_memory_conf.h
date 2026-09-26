@@ -5,6 +5,8 @@
 #ifndef ZR_MEMORY_CONF_H
 #define ZR_MEMORY_CONF_H
 
+/** @brief 原生内存分配的类别标签；分配器与诊断统计以此区分 VM 内部资源。
+ *  它不表示 GC 对象类型，不能用于判断对象存活或回收方式。 */
 enum EZrMemoryNativeType {
     ZR_MEMORY_NATIVE_TYPE_NONE,
 

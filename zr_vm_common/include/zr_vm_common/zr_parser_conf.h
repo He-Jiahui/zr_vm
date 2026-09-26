@@ -7,6 +7,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+/* parser 的恢复和递归上限保护错误输入下的诊断工作量，容量值供各语义表按需扩展。 */
 #define ZR_PARSER_LEXER_BUFFER_INITIAL_SIZE 256U
 #define ZR_PARSER_MAX_CONSECUTIVE_ERRORS 10U
 #define ZR_PARSER_MAX_RECOVERY_SKIP_TOKENS 100U
@@ -22,6 +23,7 @@
 #define ZR_PARSER_INITIAL_CAPACITY_LARGE 32U
 #define ZR_PARSER_INSTRUCTION_INITIAL_CAPACITY 64U
 
+/* 不同宽度的缺席值会写入 IR/编译器索引；消费者须按字段类型比较，不能与合法 0 混用。 */
 #define ZR_PARSER_U32_NONE ((TZrUInt32)0xFFFFFFFFu)
 #define ZR_PARSER_I32_NONE ((TZrInt32)-1)
 #define ZR_PARSER_SLOT_NONE ZR_PARSER_U32_NONE

@@ -9,6 +9,7 @@
 #define ZR_VM_COPYRIGHT "Copyright (c) 2025 HeJiahui"
 #define ZR_VM_AUTHOR "HeJiahui"
 #define ZR_VM_DESCRIPTION "A simple virtual machine written in C"
+/* 对外显示版本由源码版本、平台、构建模式和注入的编译器版本组成；CLI/包元数据共享该格式。 */
 // SETUP VERSION
 #define ZR_VM_MAJOR_VERSION 0
 #define ZR_VM_MINOR_VERSION 0
@@ -25,6 +26,7 @@
 #else
 #define ZR_VM_PUBLISH_VERSION "unknown"
 #endif
+/* 路径分隔符与平台显示名依赖同一构建选择；跨编译时须由目标平台宏决定。 */
 // SETUP PLATFORM INFO
 #ifdef ZR_PLATFORM_WIN
 #define ZR_VM_PLATFORM_INFO "win"

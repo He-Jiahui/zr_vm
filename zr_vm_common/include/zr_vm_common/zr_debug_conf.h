@@ -11,6 +11,8 @@
 #define ZR_DEBUG_MAX_FIELDS 50
 #define ZR_DEBUG_SEARCH_THRESHOLD 100
 
+/* 三项运行时检查在默认构建关闭；启用时影响边界、类型及数值路径的诊断成本。
+ * 配置者须在包含公共头前统一定义，避免不同编译单元采用不同契约。 */
 // 运行时检查默认配置
 #ifndef ZR_ENABLE_RUNTIME_BOUNDS_CHECK
 #define ZR_ENABLE_RUNTIME_BOUNDS_CHECK ZR_FALSE  // 默认关闭边界检查

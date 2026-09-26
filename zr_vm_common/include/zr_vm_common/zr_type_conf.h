@@ -9,6 +9,8 @@
 #include "zr_vm_common/zr_common_conf.h"
 
 //
+/** @brief VM 值的运行时标签；连续区段被下方谓词与 switch 宏当作分类契约。
+ *  变更顺序时须同时核对 core 存储、parser 类型映射和序列化兼容性。 */
 enum EZrValueType {
     // BASIC
     ZR_VALUE_TYPE_NULL,
@@ -65,6 +67,7 @@ enum EZrValueType {
 
 typedef enum EZrValueType EZrValueType;
 
+/** @brief SemIR/AOT 的静态 C 表示类别；DYNAMIC 保留运行时选择，GC_REF 与原生指针不可互换。 */
 typedef enum EZrStaticCType {
     ZR_STATIC_C_TYPE_DYNAMIC = 0,
     ZR_STATIC_C_TYPE_BOOL,
@@ -84,6 +87,7 @@ typedef enum EZrStaticCType {
     ZR_STATIC_C_TYPE_NATIVE_DATA
 } EZrStaticCType;
 
+/* 类型谓词供 core 值操作和编译器分支共享；区间判定依赖 EZrValueType 的连续编号。 */
 #define ZR_VALUE_IS_TYPE_NULL(valueType) ((valueType) == ZR_VALUE_TYPE_NULL)
 #define ZR_VALUE_IS_TYPE_BOOL(valueType) ((valueType) == ZR_VALUE_TYPE_BOOL)
 #define ZR_VALUE_IS_TYPE_SIGNED_INT(valueType) ((valueType) >= ZR_VALUE_TYPE_INT8 && (valueType) <= ZR_VALUE_TYPE_INT64)
@@ -115,6 +119,7 @@ typedef enum EZrStaticCType {
 #define ZR_VALUE_IS_TYPE_NORMAL(valueType)                                                                             \
     ((valueType) >= ZR_VALUE_TYPE_NULL && (valueType) <= ZR_VALUE_TYPE_NATIVE_DATA)
 
+/* switch case 组与上述区间保持一致，用于数值转换和运行时运算分派。 */
 #define ZR_VALUE_CASES_SIGNED_INT                                                                                      \
     case ZR_VALUE_TYPE_INT8:                                                                                           \
     case ZR_VALUE_TYPE_INT16:                                                                                          \
@@ -143,6 +148,7 @@ typedef enum EZrStaticCType {
     case ZR_VALUE_TYPE_NATIVE_POINTER:                                                                                 \
     case ZR_VALUE_TYPE_NATIVE_DATA:
 
+/* 编译期整数范围以 TZrInt64 比较；uint64 上界受 AST 字面量存储宽度限制。 */
 #define ZR_TYPE_RANGE_INT8_MIN ((TZrInt64)INT8_MIN)
 #define ZR_TYPE_RANGE_INT8_MAX ((TZrInt64)INT8_MAX)
 #define ZR_TYPE_RANGE_INT16_MIN ((TZrInt64)INT16_MIN)

@@ -7,6 +7,7 @@
 
 #define ZR_LOG_DEBUG_FUNCTION_STR_SIZE_MAX 120
 
+/** @brief core 日志通道的统一严重度，供 sink 过滤与异常输出路由使用。 */
 enum EZrLogLevel {
     ZR_LOG_LEVEL_DEBUG,
     ZR_LOG_LEVEL_VERBOSE,

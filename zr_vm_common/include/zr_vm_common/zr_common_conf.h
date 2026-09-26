@@ -27,8 +27,11 @@
 
 #define ZR_IS_OVER_32_INT ((UINT_MAX >> 30) >= 3)
 
+/* TODO: 当前宏无生产调用；若将来接受 31 或更高位，带符号 int 左移可能溢出。
+ * 引入调用前须明确掩码宽度并加边界测试。 */
 #define ZR_BIT_MASK(BIT) (1 << (BIT))
 
+/* 大小、偏移和线格式整数分开定义：内存长度随宿主位宽，持久化字段采用固定宽度。 */
 typedef size_t TZrSize;
 #define ZR_MAX_SIZE (SIZE_MAX)
 
@@ -66,8 +69,10 @@ typedef unsigned char TZrBool;
 
 typedef TZrUInt32 TZrEnum;
 
+/* 原生字符串惯用 NUL 结束；含内嵌 NUL 的 VM 字符串跨此边界会丢失后续内容。 */
 typedef char *TZrNativeString;
 
+/** @brief native 调用与 VM 值转换共享的标量槽；读出的成员必须对应写入时的值类型。 */
 union TZrNativeObject {
     // to fulfill the union
     TZrUInt64 nativeBool;
@@ -95,6 +100,7 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_TRUE (1)
 #define ZR_FALSE (0)
 
+/* 调试构建保留断言，发布构建不求值 CONDITION；不得把有副作用的操作放入检查表达式。 */
 #if defined(ZR_DEBUG)
 #define ZR_ASSERT(CONDITION) assert((CONDITION))
 #else
@@ -168,6 +174,8 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_OUT
 #define ZR_INOUT
 
+/** @brief 宿主分配器回调；pointer/originalSize 表示旧块，newSize 为请求大小，flag 传递内存类别。
+ *  返回新块由调用方依约持有；newSize 为 0 时按调用方释放协议处理。 */
 // allocator function
 typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag);
 

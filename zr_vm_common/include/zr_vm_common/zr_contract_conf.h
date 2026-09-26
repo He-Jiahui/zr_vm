@@ -11,6 +11,7 @@
 #define ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC (1u << 9)
 #define ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY (1u << 31)
 
+/** @brief 编译器与运行时共用的成员角色编号；descriptor 不靠拼写猜测迭代、任务和池协议入口。 */
 typedef enum EZrMemberContractRole {
     ZR_MEMBER_CONTRACT_ROLE_NONE = 0,
     ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT = 1,
@@ -45,12 +46,14 @@ typedef enum EZrMemberContractRole {
     ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION = 30
 } EZrMemberContractRole;
 
+/** @brief 官方 provider 在注册与发现时使用的能力角色，不等同于模块显示名称。 */
 typedef enum EZrProviderContractRole {
     ZR_PROVIDER_CONTRACT_ROLE_NONE = 0,
     ZR_PROVIDER_CONTRACT_ROLE_BUILTIN_TYPE_SURFACE = 1,
     ZR_PROVIDER_CONTRACT_ROLE_REFLECTION = 2
 } EZrProviderContractRole;
 
+/** @brief 反射与内建元数据的规范类型角色；跨 provider 对齐时需保持稳定编号。 */
 typedef enum EZrCanonicalTypeRole {
     ZR_CANONICAL_TYPE_ROLE_NONE = 0,
     ZR_CANONICAL_TYPE_ROLE_BUILTIN_METADATA_ROOT = 1,
@@ -75,6 +78,7 @@ typedef enum EZrCanonicalTypeRole {
     ZR_CANONICAL_TYPE_ROLE_REFLECTION_ENUM_TYPE_OF = 20
 } EZrCanonicalTypeRole;
 
+/* 位标志描述规范类型可公开的元数据面，消费者可组合检查而不能按枚举序号索引。 */
 typedef enum EZrCanonicalTypeSurfaceFlag {
     ZR_CANONICAL_TYPE_SURFACE_NONE = 0,
     ZR_CANONICAL_TYPE_SURFACE_METADATA_MEMBERS = 1u << 0u,
@@ -84,6 +88,7 @@ typedef enum EZrCanonicalTypeSurfaceFlag {
     ZR_CANONICAL_TYPE_SURFACE_CONSTRUCTIBLE = 1u << 4u
 } EZrCanonicalTypeSurfaceFlag;
 
+/** @brief 反射查询期望的类型投影，决定返回具体类、接口、结构或擦除视图。 */
 typedef enum EZrCanonicalTypeProjectionKind {
     ZR_CANONICAL_TYPE_PROJECTION_ERASED = 0,
     ZR_CANONICAL_TYPE_PROJECTION_CLASS = 1,

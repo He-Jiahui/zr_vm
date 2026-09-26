@@ -7,6 +7,8 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+/** @brief 编译器把常量引用路径编码为带符号步骤，运行时沿路径恢复模块/原型/常量池目标。
+ *  负值为结构跳转标签；转换为 uint32 存储后须用配对宏还原。 */
 typedef enum EZrConstantReferenceStepType {
     ZR_CONSTANT_REF_STEP_PARENT = -1,
     ZR_CONSTANT_REF_STEP_CHILD = 0,

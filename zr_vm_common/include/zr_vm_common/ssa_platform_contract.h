@@ -1,8 +1,7 @@
 /*
- * Portable SSA platform capability, ABI, artifact, and runtime-evidence
- * contract.  This header deliberately contains no host pointers, executable
- * addresses, or runtime handles so declarations and observations can be
- * retained in a test manifest or an artifact-side verifier.
+ * SSA 平台契约由能力声明、产物声明和运行观察三份值对象组成。调用方可先验证
+ * 目标及 ABI，再把实际执行证据与声明比对；对象不含宿主指针或运行时句柄，
+ * 便于跨进程保存到矩阵报告，旨在区分交叉编译与真实目标运行。
  */
 
 #ifndef ZR_VM_COMMON_SSA_PLATFORM_CONTRACT_H
@@ -13,11 +12,13 @@
 
 #include <limits.h>
 
+/* 持久化记录的身份及固定长度字符串边界；读入旧/未知记录须先验 schema。 */
 #define ZR_SSA_PLATFORM_CONTRACT_SCHEMA_VERSION ((TZrUInt32)1u)
 #define ZR_SSA_PLATFORM_CONTRACT_MAGIC ((TZrUInt32)0x53504d31u)
 #define ZR_SSA_PLATFORM_TARGET_TRIPLE_CAPACITY ((TZrSize)96u)
 #define ZR_SSA_PLATFORM_COMPILER_CAPACITY ((TZrSize)96u)
 #define ZR_SSA_PLATFORM_RUNTIME_CAPACITY ((TZrSize)128u)
+/* ABI 字段只表达受支持的宽度与对齐范围，不从当前宿主推断目标 ABI。 */
 #define ZR_SSA_PLATFORM_MAX_ALIGNMENT ((TZrUInt32)4096u)
 #define ZR_SSA_PLATFORM_INT8_WIDTH_BITS ((TZrUInt32)8u)
 #define ZR_SSA_PLATFORM_INT16_WIDTH_BITS ((TZrUInt32)16u)
@@ -26,9 +27,8 @@
 #define ZR_SSA_PLATFORM_FLOAT32_WIDTH_BITS ((TZrUInt32)32u)
 #define ZR_SSA_PLATFORM_FLOAT64_WIDTH_BITS ((TZrUInt32)64u)
 
-/* These assert the C ABI facts which are invariant for every supported
- * target.  Per-target pointer width, alignment, return convention, and
- * callback ABI are carried by SZrSsaPlatformAbi and checked at load/run time. */
+/* 编译期只排除本契约无法表达的 C 类型宽度；目标指针、对齐、返回约定和
+ * 回调 ABI 仍由 SZrSsaPlatformAbi 随声明与观察显式校验。 */
 #if defined(__cplusplus)
 #define ZR_SSA_PLATFORM_STATIC_ASSERT(CONDITION, MESSAGE) \
     static_assert((CONDITION), MESSAGE)
@@ -54,6 +54,7 @@ ZR_SSA_PLATFORM_STATIC_ASSERT(sizeof(void *) * CHAR_BIT == 32 ||
                                       sizeof(void *) * CHAR_BIT == 64,
                               "supported C targets use 32-bit or 64-bit pointers");
 
+/** @brief 区分运行平台的策略域；移动端和 WASM 的 JIT 限制依此判断。 */
 typedef enum EZrSsaPlatformTarget {
     ZR_SSA_PLATFORM_TARGET_UNKNOWN = 0,
     ZR_SSA_PLATFORM_TARGET_DESKTOP_WINDOWS,
@@ -65,6 +66,7 @@ typedef enum EZrSsaPlatformTarget {
     ZR_SSA_PLATFORM_TARGET_COUNT
 } EZrSsaPlatformTarget;
 
+/** @brief 与目标平台配对的架构身份，用于拒绝不可能的目标组合。 */
 typedef enum EZrSsaPlatformArchitecture {
     ZR_SSA_PLATFORM_ARCH_UNKNOWN = 0,
     ZR_SSA_PLATFORM_ARCH_X86_64,
@@ -74,6 +76,7 @@ typedef enum EZrSsaPlatformArchitecture {
     ZR_SSA_PLATFORM_ARCH_COUNT
 } EZrSsaPlatformArchitecture;
 
+/** @brief 观察行采用的执行后端；必须能映射到能力声明中的对应特性。 */
 typedef enum EZrSsaPlatformBackend {
     ZR_SSA_PLATFORM_BACKEND_NONE = 0,
     ZR_SSA_PLATFORM_BACKEND_EXECBC,
@@ -83,6 +86,7 @@ typedef enum EZrSsaPlatformBackend {
     ZR_SSA_PLATFORM_BACKEND_COUNT
 } EZrSsaPlatformBackend;
 
+/** @brief 记录证据来源；交叉编译行不得凭编译成功声称运行验收。 */
 typedef enum EZrSsaPlatformRunner {
     ZR_SSA_PLATFORM_RUNNER_NONE = 0,
     ZR_SSA_PLATFORM_RUNNER_HOST,
@@ -94,6 +98,7 @@ typedef enum EZrSsaPlatformRunner {
     ZR_SSA_PLATFORM_RUNNER_COUNT
 } EZrSsaPlatformRunner;
 
+/** @brief 区分通过、环境不可用、特性不支持和已执行失败。 */
 typedef enum EZrSsaPlatformOutcome {
     ZR_SSA_PLATFORM_OUTCOME_UNSET = 0,
     ZR_SSA_PLATFORM_OUTCOME_PASSED,
@@ -103,6 +108,7 @@ typedef enum EZrSsaPlatformOutcome {
     ZR_SSA_PLATFORM_OUTCOME_COUNT
 } EZrSsaPlatformOutcome;
 
+/** @brief ABI 值的一部分，跨设备比对时不能采用验证机的默认字节序。 */
 typedef enum EZrSsaPlatformEndianness {
     ZR_SSA_PLATFORM_ENDIAN_UNKNOWN = 0,
     ZR_SSA_PLATFORM_ENDIAN_LITTLE,
@@ -110,6 +116,7 @@ typedef enum EZrSsaPlatformEndianness {
     ZR_SSA_PLATFORM_ENDIAN_COUNT
 } EZrSsaPlatformEndianness;
 
+/** @brief 聚合返回约定的显式见证；通用 sizeof 探针无法确定目标约定。 */
 typedef enum EZrSsaPlatformStructReturnKind {
     ZR_SSA_PLATFORM_STRUCT_RETURN_UNKNOWN = 0,
     ZR_SSA_PLATFORM_STRUCT_RETURN_REGISTER,
@@ -118,6 +125,7 @@ typedef enum EZrSsaPlatformStructReturnKind {
     ZR_SSA_PLATFORM_STRUCT_RETURN_COUNT
 } EZrSsaPlatformStructReturnKind;
 
+/** @brief ABI 失败时的首个不匹配字段，供矩阵报告定位原因。 */
 typedef enum EZrSsaPlatformAbiField {
     ZR_SSA_PLATFORM_ABI_FIELD_NONE = 0,
     ZR_SSA_PLATFORM_ABI_FIELD_POINTER_WIDTH,
@@ -134,6 +142,7 @@ typedef enum EZrSsaPlatformAbiField {
     ZR_SSA_PLATFORM_ABI_FIELD_HASH
 } EZrSsaPlatformAbiField;
 
+/** @brief 实际使用的分派形式，可与另一形式共享相同的语义见证。 */
 typedef enum EZrSsaPlatformDispatchKind {
     ZR_SSA_PLATFORM_DISPATCH_UNKNOWN = 0,
     ZR_SSA_PLATFORM_DISPATCH_SWITCH,
@@ -141,6 +150,7 @@ typedef enum EZrSsaPlatformDispatchKind {
     ZR_SSA_PLATFORM_DISPATCH_COUNT
 } EZrSsaPlatformDispatchKind;
 
+/** @brief 语义哈希不符时的结果、异常或源码映射维度。 */
 typedef enum EZrSsaPlatformWitnessField {
     ZR_SSA_PLATFORM_WITNESS_FIELD_NONE = 0,
     ZR_SSA_PLATFORM_WITNESS_FIELD_RESULT,
@@ -148,6 +158,8 @@ typedef enum EZrSsaPlatformWitnessField {
     ZR_SSA_PLATFORM_WITNESS_FIELD_SOURCE_MAP
 } EZrSsaPlatformWitnessField;
 
+/* 能力位同时用于声明和观察的 requiredFeatures；新增位必须更新 KNOWN_MASK
+ * 及后端/目标策略，否则未知位应被校验器拒绝。 */
 #define ZR_SSA_PLATFORM_FEATURE_EXECBC ((TZrUInt64)1u << 0u)
 #define ZR_SSA_PLATFORM_FEATURE_AOT_C ((TZrUInt64)1u << 1u)
 #define ZR_SSA_PLATFORM_FEATURE_AOT_LLVM ((TZrUInt64)1u << 2u)
@@ -162,6 +174,7 @@ typedef enum EZrSsaPlatformWitnessField {
 #define ZR_SSA_PLATFORM_FEATURE_COMPUTED_GOTO ((TZrUInt64)1u << 11u)
 #define ZR_SSA_PLATFORM_FEATURE_SWITCH_DISPATCH ((TZrUInt64)1u << 12u)
 
+/* 分派位描述允许/观察到的实现集合，dispatchKind 表示本次实际选择。 */
 #define ZR_SSA_PLATFORM_DISPATCH_FLAG_SWITCH ((TZrUInt32)1u << 0u)
 #define ZR_SSA_PLATFORM_DISPATCH_FLAG_COMPUTED_GOTO ((TZrUInt32)1u << 1u)
 #define ZR_SSA_PLATFORM_DISPATCH_FLAG_KNOWN_MASK \
@@ -183,6 +196,7 @@ typedef enum EZrSsaPlatformWitnessField {
                  ZR_SSA_PLATFORM_FEATURE_COMPUTED_GOTO | \
                  ZR_SSA_PLATFORM_FEATURE_SWITCH_DISPATCH))
 
+/** @brief 校验结果的稳定分类；诊断对象补充具体字段和预期/实际值。 */
 typedef enum EZrSsaPlatformStatus {
     ZR_SSA_PLATFORM_STATUS_OK = 0,
     ZR_SSA_PLATFORM_STATUS_INVALID_ARGUMENT,
@@ -217,6 +231,9 @@ typedef enum EZrSsaPlatformStatus {
     ZR_SSA_PLATFORM_STATUS_COUNT
 } EZrSsaPlatformStatus;
 
+/** @brief 可序列化的目标 ABI 见证；callback 哈希由目标适配器提供。
+ * @note 对齐必须是非零的二次幂；空初始化记录必须填充后才能校验通过。
+ */
 typedef struct SZrSsaPlatformAbi {
     TZrUInt32 pointerWidthBits;
     EZrSsaPlatformEndianness endianness;
@@ -231,6 +248,11 @@ typedef struct SZrSsaPlatformAbi {
     TZrUInt64 nativeCallbackAbiHash;
 } SZrSsaPlatformAbi;
 
+/** @brief 目标预期；Check 和 ValidateArtifact 均以其作为声明比较基准。
+ * @note targetTriple 须在固定容量内以 NUL 结束；ABI/数值/布局哈希须非零。
+ * semanticResultHash、exceptionContractHash、sourceMapHash 双方均为零时
+ * 不要求该维度见证，任一方非零则必须相等。
+ */
 typedef struct SZrSsaPlatformCapability {
     TZrUInt32 magic;
     TZrUInt32 schemaVersion;
@@ -248,6 +270,11 @@ typedef struct SZrSsaPlatformCapability {
     TZrUInt32 dispatchFlags;
 } SZrSsaPlatformCapability;
 
+/** @brief 后端执行后的证据；compiled、executed、semanticPassed 是不同阶段。
+ * @note unsupportedFeatures 必须是 requiredFeatures 的子集；PASSED 行
+ * 不能携带 unsupportedFeatures。compiler/deviceOrRuntime 仅供报告，
+ * 当前校验器不会用这两个描述字段证明实际执行。
+ */
 typedef struct SZrSsaPlatformObservation {
     TZrUInt32 magic;
     TZrUInt32 schemaVersion;
@@ -278,6 +305,7 @@ typedef struct SZrSsaPlatformObservation {
     TZrBool machineCodeJitExecuted;
 } SZrSsaPlatformObservation;
 
+/** @brief 构建产物声明；装载前比对身份、ABI、数值/布局契约和特性需求。 */
 typedef struct SZrSsaPlatformArtifactContract {
     TZrUInt32 magic;
     TZrUInt32 schemaVersion;
@@ -294,6 +322,10 @@ typedef struct SZrSsaPlatformArtifactContract {
     TZrBool restrictedPatch;
 } SZrSsaPlatformArtifactContract;
 
+/** @brief 单次校验的诊断；调用方应保留上下文而非只记录布尔结果。
+ * @note Check/ValidateArtifact 会重置对象；单独调用较低层校验时应先
+ * DiagnosticInit，且只读取当前 status 对应的字段，避免沿用上次失败值。
+ */
 typedef struct SZrSsaPlatformDiagnostic {
     EZrSsaPlatformStatus status;
     EZrSsaPlatformTarget target;
@@ -314,54 +346,83 @@ typedef struct SZrSsaPlatformDiagnostic {
 extern "C" {
 #endif
 
+/** @brief 清空诊断并置为 OK，适用于重复使用同一输出对象；可传 NULL。 */
 ZR_API void ZrCommon_SsaPlatform_DiagnosticInit(
         SZrSsaPlatformDiagnostic *diagnostic);
+/** @brief 将状态转为报告用静态名称；返回值无需释放。 */
 ZR_API const TZrChar *ZrCommon_SsaPlatform_StatusName(
         EZrSsaPlatformStatus status);
+/** @brief 将运行结果转为报告用静态名称；返回值无需释放。 */
 ZR_API const TZrChar *ZrCommon_SsaPlatform_OutcomeName(
         EZrSsaPlatformOutcome outcome);
 
+/** @brief 建立空 ABI 见证，调用方须随后填充目标特有字段；可传 NULL。 */
 ZR_API void ZrCommon_SsaPlatform_AbiInit(SZrSsaPlatformAbi *abi);
+/** @brief 为当前宿主生成初始 ABI 见证，不能替代交叉目标的专用探针。 */
 ZR_API void ZrCommon_SsaPlatform_DetectHostAbi(SZrSsaPlatformAbi *abi);
+/** @brief 对 ABI 字段生成稳定哈希，供声明、产物和观察采用同一编码。
+ * @note 不验证 ABI 是否有效；NULL 返回零。各契约中的 abiHash 由适配器
+ * 提供，校验器比较其一致性而不强制采用此算法重算。
+ */
 ZR_API TZrUInt64 ZrCommon_SsaPlatform_ComputeAbiHash(
         const SZrSsaPlatformAbi *abi);
+/** @brief 检查 ABI 见证是否落在可表达范围；失败字段写入可选 diagnostic。
+ * @note 不重置 diagnostic，也不验证该 ABI 是否属于某一目标架构。
+ */
 ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_ValidateAbi(
         const SZrSsaPlatformAbi *abi,
         SZrSsaPlatformDiagnostic *diagnostic);
+/** @brief 比对两份有效 ABI，诊断返回首个不匹配字段。
+ * @note 任一输入无效均返回假；不重置 diagnostic。
+ */
 ZR_API TZrBool ZrCommon_SsaPlatform_AbiEqual(
         const SZrSsaPlatformAbi *expected,
         const SZrSsaPlatformAbi *actual,
         SZrSsaPlatformDiagnostic *diagnostic);
 
+/** @brief 初始化声明容器；目标、三元组、哈希和特性仍须由适配器补全。 */
 ZR_API void ZrCommon_SsaPlatform_CapabilityInit(
         SZrSsaPlatformCapability *capability);
+/** @brief 验证目标能力的身份、ABI 和平台禁用特性，再允许后续比对。
+ * @note 不重置 diagnostic；哈希只要求非零，不在此重算。
+ */
 ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_ValidateCapability(
         const SZrSsaPlatformCapability *capability,
         SZrSsaPlatformDiagnostic *diagnostic);
+/** @brief 查询单一特性位；组合掩码、未知位及目标禁用位均返回假。
+ * @pre 需要可信能力查询时，先用 ValidateCapability 验证 capability。
+ */
 ZR_API TZrBool ZrCommon_SsaPlatform_CapabilitySupports(
         const SZrSsaPlatformCapability *capability,
         TZrUInt64 feature);
 
+/** @brief 初始化观察容器；未设置运行结果不能被当作通过。 */
 ZR_API void ZrCommon_SsaPlatform_ObservationInit(
         SZrSsaPlatformObservation *observation);
+/** @brief 将运行观察与能力声明分层比对，返回状态和可选诊断。
+ * @note 当前实现仍需核对 CROSS_COMPILE 与执行成功位的矛盾组合，见实现处 BUG。
+ */
 ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         const SZrSsaPlatformCapability *declared,
         const SZrSsaPlatformObservation *observed,
         SZrSsaPlatformDiagnostic *diagnostic);
-/* Fail-closed convenience predicate: malformed schema/identity/ABI/dispatch
- * fields are never considered runtime acceptance. */
+/** @brief 仅判断观察对象自身是否足以声称运行通过。
+ * @note 此接口不接收能力声明，无法替代 Check 的后端、特性与哈希比较。
+ * 当前实现对 CROSS_COMPILE 和移动端/WASM HOST_JIT 仍有漏检，见实现处 BUG。
+ */
 ZR_API TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
         const SZrSsaPlatformObservation *observation);
 
+/** @brief 初始化产物声明容器；调用方须补全目标、ABI 和需求。 */
 ZR_API void ZrCommon_SsaPlatform_ArtifactContractInit(
         SZrSsaPlatformArtifactContract *artifact);
+/** @brief 在加载或部署前将产物契约与目标能力比较，不声称运行已成功。 */
 ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_ValidateArtifact(
         const SZrSsaPlatformCapability *declared,
         const SZrSsaPlatformArtifactContract *artifact,
         SZrSsaPlatformDiagnostic *diagnostic);
 
-/* Narrow test-facing entry point from the 10.03 plan.  Production callers
- * should use ZrCommon_SsaPlatform_Check to retain structured diagnostics. */
+/** @brief 测试矩阵的布尔入口；需要诊断的调用方应使用 Check。 */
 ZR_API TZrBool ZrTests_Ssa_CheckPlatform(
         const SZrSsaPlatformCapability *declared,
         const SZrSsaPlatformObservation *observed);

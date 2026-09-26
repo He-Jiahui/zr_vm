@@ -20,6 +20,7 @@
 #endif
 
 
+/* 单一 opcode 列表同时生成 enum、解释器标签及调试名称；新增项须同步 writer/reader 与执行处理。 */
 #define ZR_INSTRUCTION_DECLARE(Z)                                                                                      \
     Z(GET_STACK)                                                                                                       \
     Z(SET_STACK)                                                                                                       \
@@ -270,6 +271,7 @@
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)
 
+/* 取下一条指令前检查调试 trap；PC 的更新与 interpreter 分发使用同一宏约定。 */
 #define ZR_INSTRUCTION_FETCH(INSTRUCTION, PC, EXCEPTION, N)                                                            \
     {                                                                                                                  \
         if (ZR_UNLIKELY(trap != ZR_DEBUG_SIGNAL_NONE)) {                                                               \
@@ -296,11 +298,16 @@
 
 #define ZR_INSTRUCTION_DISPATCH_TABLE_DECLARE(INSTRUCTION) &&LZrInstruction_##INSTRUCTION,
 
+/* GNU/Clang 原生构建使用 computed goto；MSVC/WASM 使用 switch，两路径共享 opcode 编号与解释语义。
+ * TODO: computed goto 和 fastDispatchTable 均按 operationCode 直接索引；IO 直接装入指令字节，
+ *       需继续确认 module 装载或执行入口对损坏/不可信 opcode 是否作范围校验。 */
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 #define ZR_INSTRUCTION_DISPATCH_TABLE                                                                                  \
     ZR_INSTRUCTION_DISPATCH_TABLE_WRAP(ZR_INSTRUCTION_DECLARE(ZR_INSTRUCTION_DISPATCH_TABLE_DECLARE));
 #define ZR_INSTRUCTION_DISPATCH(INSTRUCTION) goto *CZrInstructionDispatchTable[ZR_INSTRUCTION_OPCODE(INSTRUCTION)];
 #define ZR_INSTRUCTION_LABEL(INSTRUCTION) LZrInstruction_##INSTRUCTION:
+/* TODO: 此分支展开 ZR_INSTRUCTION_FETCH 时少传 EXCEPTION 实参；目前仅见 EXEC_DONE 定义，
+ *       未见其调用，若重新启用必须补齐 trap 处理参数并验证 computed-goto 编译。 */
 #define ZR_INSTRUCTION_DONE(INSTRUCTION, PC, N)                                                                        \
     ZR_INSTRUCTION_FETCH(INSTRUCTION, PC, N) ZR_INSTRUCTION_DISPATCH(INSTRUCTION)
 #define ZR_INSTRUCTION_DEFAULT()                                                                                       \
@@ -354,6 +361,7 @@ ZR_INSTRUCTION_ENUM_WRAP(ZR_INSTRUCTION_DECLARE(ZR_INSTRUCTION_ENUM_DECLARE));
 
 typedef enum EZrInstructionCode EZrInstructionCode;
 
+/** @brief 指令四字节操作数在不同宽度下的视图；解释器须按 opcode 解释对应槽位。 */
 union TZrInstructionType {
     TZrUInt8 operand0[4];
     TZrUInt16 operand1[2];
@@ -362,6 +370,7 @@ union TZrInstructionType {
 
 typedef union TZrInstructionType TZrInstructionType;
 #define ZR_INSTRUCTION_USE_RET_FLAG ((TZrUInt16) (-1))
+/** @brief 固定八字节指令实体，parser 写出后由 core reader 和执行器按相同布局读取。 */
 struct SZrInstruction {
     TZrUInt16 operationCode;
     TZrUInt16 operandExtra;
@@ -370,6 +379,7 @@ struct SZrInstruction {
 
 typedef struct SZrInstruction SZrInstruction;
 
+/** @brief 将一条指令与 64 位原始传输单元叠合，供二进制 I/O 保持一致宽度。 */
 union TZrInstruction {
     SZrInstruction instruction;
     TZrUInt64 value;

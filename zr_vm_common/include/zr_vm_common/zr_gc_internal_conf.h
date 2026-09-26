@@ -7,6 +7,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+/* GC 调度把对象扫描与分配债务换算成工作预算；上限使一次 safepoint 不无限占用 mutator。 */
 #define ZR_GC_WORK_TO_MEMORY_BYTES 1024U
 #define ZR_GC_SWEEP_SLICE_BUDGET_MAX 100U
 #define ZR_GC_DEFAULT_PAUSE_BUDGET 64U
@@ -16,6 +17,8 @@
 #define ZR_GC_DEBT_CREDIT_BYTES ((TZrMemoryOffset)2000)
 #define ZR_GC_MANAGED_MEMORY_DRIFT_TOLERANCE_DIVISOR 10U
 
+/* GC 周期/退出路径以迭代预算防止异常环路；触发时应核对阶段是否仍能推进。
+ * ZR_GC_PROPAGATE_ALL_ITERATION_LIMIT 当前只供 GC 压力测试构造超过旧阈值的标记链。 */
 #define ZR_GC_PROPAGATE_ALL_ITERATION_LIMIT 10000U
 #define ZR_GC_RUN_UNTIL_STATE_ITERATION_LIMIT 10000U
 #define ZR_GC_GENERATIONAL_FULL_SWEEP_ITERATION_LIMIT 10000U

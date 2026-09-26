@@ -7,37 +7,47 @@
 #include <stddef.h>
 #include <string.h>
 
+/** @brief parser、AOT 产物与 FFI 运行时共同识别的契约格式版本。 */
 #define ZR_FFI_CONTRACT_SCHEMA_VERSION ((TZrUInt32)4u)
+/** @brief 目标 ABI 指纹算法的版本；变更布局参与项时需同步生产端与校验端。 */
 #define ZR_FFI_CONTRACT_ABI_MODEL_VERSION ((TZrUInt32)3u)
+/** @brief 固定数组容量，也是生成端与校验端接受的参数上限。 */
 #define ZR_FFI_CONTRACT_MAX_PARAMETERS ((TZrUInt32)32u)
+/** @brief 单个签名可描述的聚合字段上限，生成端展开与验证端共用。 */
 #define ZR_FFI_CONTRACT_MAX_AGGREGATE_FIELDS ((TZrUInt32)64u)
+/** @brief 单个函数可携带的导入契约上限；核心模块反序列化与运行时注册均据此拒绝超量数据。 */
 #define ZR_FFI_CONTRACT_MAX_IMPORTS_PER_FUNCTION ((TZrUInt32)1024u)
+/** @brief 定长契约文本容量；生产端写入时须保留终止符，校验端会检查。 */
 #define ZR_FFI_CONTRACT_LIBRARY_CAPACITY ((TZrSize)512u)
 #define ZR_FFI_CONTRACT_ENTRY_CAPACITY ((TZrSize)128u)
 #define ZR_FFI_CONTRACT_SOURCE_DOCUMENT_CAPACITY ((TZrSize)512u)
 #define ZR_FFI_CONTRACT_FIELD_NAME_CAPACITY ((TZrSize)32u)
 #define ZR_FFI_CONTRACT_TARGET_TRIPLE_CAPACITY ((TZrSize)64u)
 
+/** @brief 导入声明允许的平台集合；运行时在真正解析符号前核对当前宿主。 */
 #define ZR_FFI_CONTRACT_AVAILABILITY_WINDOWS ((TZrUInt32)1u << 0u)
 #define ZR_FFI_CONTRACT_AVAILABILITY_UNIX ((TZrUInt32)1u << 1u)
 #define ZR_FFI_CONTRACT_AVAILABILITY_ALL                                      \
     (ZR_FFI_CONTRACT_AVAILABILITY_WINDOWS | ZR_FFI_CONTRACT_AVAILABILITY_UNIX)
 
-/* Mirrors the public native-provider FFI runtime capability bit. */
+/* 与原生 provider 公开能力位一致；编译端要求它，运行时再核对授权。 */
 #define ZR_FFI_CONTRACT_CAPABILITY_FFI_RUNTIME ((TZrUInt64)1u << 4u)
 
+/** @brief 外部函数采用的调用约定；ABI 指纹和 libffi 调用共同消费。 */
 typedef enum EZrFfiAbi {
     ZR_FFI_CONTRACT_ABI_SYSTEM = 0,
     ZR_FFI_CONTRACT_ABI_C,
     ZR_FFI_CONTRACT_ABI_STDCALL
 } EZrFfiAbi;
 
+/** @brief 外部参数的读写方向，与 callable 的传递形式共同校验。 */
 typedef enum EZrFfiDirection {
     ZR_FFI_CONTRACT_DIRECTION_IN = 0,
     ZR_FFI_CONTRACT_DIRECTION_REF,
     ZR_FFI_CONTRACT_DIRECTION_OUT
 } EZrFfiDirection;
 
+/** @brief 语言调用点的 value/in/ref/out 形式，供编译端与契约校验端对齐。 */
 typedef enum EZrFfiCallablePassingForm {
     ZR_FFI_CALLABLE_PASSING_VALUE = 0,
     ZR_FFI_CALLABLE_PASSING_IN,
@@ -46,6 +56,7 @@ typedef enum EZrFfiCallablePassingForm {
     ZR_FFI_CALLABLE_PASSING_OUT
 } EZrFfiCallablePassingForm;
 
+/** @brief 参数引用允许逃逸的最大作用域；阻止 native 调用越过语言所有权边界。 */
 typedef enum EZrFfiCallableEscapeUpperBound {
     ZR_FFI_CALLABLE_ESCAPE_BLOCK = 0,
     ZR_FFI_CALLABLE_ESCAPE_FUNCTION,
@@ -54,28 +65,33 @@ typedef enum EZrFfiCallableEscapeUpperBound {
     ZR_FFI_CALLABLE_ESCAPE_UNKNOWN
 } EZrFfiCallableEscapeUpperBound;
 
+/** @brief 调用前的初始化要求，out 参数可在入口未初始化。 */
 typedef enum EZrFfiCallableEntryInitialization {
     ZR_FFI_CALLABLE_ENTRY_INITIALIZED = 0,
     ZR_FFI_CALLABLE_ENTRY_UNINITIALIZED
 } EZrFfiCallableEntryInitialization;
 
+/** @brief 调用返回后的初始化保证，供 out 参数的静态检查使用。 */
 typedef enum EZrFfiCallableExitInitialization {
     ZR_FFI_CALLABLE_EXIT_UNCHANGED = 0,
     ZR_FFI_CALLABLE_EXIT_DEFINITELY_INITIALIZED
 } EZrFfiCallableExitInitialization;
 
+/** @brief 源语言调用点必须出现的 ref/out 标记。 */
 typedef enum EZrFfiCallableCallSiteMarker {
     ZR_FFI_CALLABLE_CALL_SITE_NONE = 0,
     ZR_FFI_CALLABLE_CALL_SITE_REF,
     ZR_FFI_CALLABLE_CALL_SITE_OUT
 } EZrFfiCallableCallSiteMarker;
 
+/** @brief 调用对接收者的可写性承诺，进入 callable 哈希。 */
 typedef enum EZrFfiCallableReceiverEffect {
     ZR_FFI_CALLABLE_RECEIVER_NONE = 0,
     ZR_FFI_CALLABLE_RECEIVER_READONLY,
     ZR_FFI_CALLABLE_RECEIVER_MUTABLE
 } EZrFfiCallableReceiverEffect;
 
+/** @brief 可调用体副作用位，编译端生成后由校验端限制为已知集合。 */
 #define ZR_FFI_CALLABLE_EFFECT_NONE ((TZrUInt32)0u)
 #define ZR_FFI_CALLABLE_EFFECT_THROWS ((TZrUInt32)1u << 0u)
 #define ZR_FFI_CALLABLE_EFFECT_ASYNC ((TZrUInt32)1u << 1u)
@@ -84,6 +100,7 @@ typedef enum EZrFfiCallableReceiverEffect {
     (ZR_FFI_CALLABLE_EFFECT_THROWS | ZR_FFI_CALLABLE_EFFECT_ASYNC |      \
      ZR_FFI_CALLABLE_EFFECT_GENERATOR)
 
+/** @brief 可投影到目标 C ABI 的类型分类；UNSUPPORTED 在契约校验中被拒绝。 */
 typedef enum EZrFfiTypeKind {
     ZR_FFI_CONTRACT_TYPE_VOID = 0,
     ZR_FFI_CONTRACT_TYPE_BOOL,
@@ -107,6 +124,7 @@ typedef enum EZrFfiTypeKind {
     ZR_FFI_CONTRACT_TYPE_UNSUPPORTED
 } EZrFfiTypeKind;
 
+/** @brief 值跨 VM/native 边界时的封送策略，运行时按类型与方向进一步判定。 */
 typedef enum EZrFfiMarshallingKind {
     ZR_FFI_CONTRACT_MARSHALLING_DIRECT = 0,
     ZR_FFI_CONTRACT_MARSHALLING_PIN,
@@ -114,6 +132,7 @@ typedef enum EZrFfiMarshallingKind {
     ZR_FFI_CONTRACT_MARSHALLING_REGISTERED
 } EZrFfiMarshallingKind;
 
+/** @brief 参数指针在调用前后的所有权说明，不能仅由 C 类型推导。 */
 typedef enum EZrFfiParameterOwnership {
     ZR_FFI_CONTRACT_OWNERSHIP_BORROWED = 0,
     ZR_FFI_CONTRACT_OWNERSHIP_TRANSFER,
@@ -121,6 +140,7 @@ typedef enum EZrFfiParameterOwnership {
     ZR_FFI_CONTRACT_OWNERSHIP_PINNED
 } EZrFfiParameterOwnership;
 
+/** @brief 文本参数的编码协议，编译端写入签名供运行时选择转换。 */
 typedef enum EZrFfiCharset {
     ZR_FFI_CONTRACT_CHARSET_NONE = 0,
     ZR_FFI_CONTRACT_CHARSET_UTF8,
@@ -128,6 +148,7 @@ typedef enum EZrFfiCharset {
     ZR_FFI_CONTRACT_CHARSET_ANSI
 } EZrFfiCharset;
 
+/** @brief native 错误如何映射到语言层；当前校验明确拒绝 THROWS。 */
 typedef enum EZrFfiErrorPolicy {
     ZR_FFI_CONTRACT_ERROR_NONE = 0,
     ZR_FFI_CONTRACT_ERROR_RETURN_CODE,
@@ -136,6 +157,7 @@ typedef enum EZrFfiErrorPolicy {
     ZR_FFI_CONTRACT_ERROR_THROWS
 } EZrFfiErrorPolicy;
 
+/** @brief 外部资源由哪一侧清理；当前校验明确拒绝 REGISTERED。 */
 typedef enum EZrFfiCleanupPolicy {
     ZR_FFI_CONTRACT_CLEANUP_NONE = 0,
     ZR_FFI_CONTRACT_CLEANUP_CALLER,
@@ -143,6 +165,7 @@ typedef enum EZrFfiCleanupPolicy {
     ZR_FFI_CONTRACT_CLEANUP_REGISTERED
 } EZrFfiCleanupPolicy;
 
+/** @brief 回调指针允许存活的期限；回调类型要求同时给出线程与异常策略。 */
 typedef enum EZrFfiCallbackLifetime {
     ZR_FFI_CONTRACT_CALLBACK_LIFETIME_NONE = 0,
     ZR_FFI_CONTRACT_CALLBACK_LIFETIME_CALL,
@@ -150,6 +173,7 @@ typedef enum EZrFfiCallbackLifetime {
     ZR_FFI_CONTRACT_CALLBACK_LIFETIME_STATIC
 } EZrFfiCallbackLifetime;
 
+/** @brief native 回调进入 VM 时允许的线程关系。 */
 typedef enum EZrFfiCallbackThreadPolicy {
     ZR_FFI_CONTRACT_CALLBACK_THREAD_NONE = 0,
     ZR_FFI_CONTRACT_CALLBACK_THREAD_CALLER,
@@ -157,6 +181,7 @@ typedef enum EZrFfiCallbackThreadPolicy {
     ZR_FFI_CONTRACT_CALLBACK_THREAD_FORBIDDEN
 } EZrFfiCallbackThreadPolicy;
 
+/** @brief 回调异常跨 native 栈时的处理契约。 */
 typedef enum EZrFfiCallbackExceptionPolicy {
     ZR_FFI_CONTRACT_CALLBACK_EXCEPTION_NONE = 0,
     ZR_FFI_CONTRACT_CALLBACK_EXCEPTION_ABORT,
@@ -164,11 +189,13 @@ typedef enum EZrFfiCallbackExceptionPolicy {
     ZR_FFI_CONTRACT_CALLBACK_EXCEPTION_ERROR_RESULT
 } EZrFfiCallbackExceptionPolicy;
 
+/** @brief 目标字节序，参与 ABI 指纹以阻止跨目标误用契约。 */
 typedef enum EZrFfiTargetEndianness {
     ZR_FFI_CONTRACT_ENDIAN_LITTLE = 0,
     ZR_FFI_CONTRACT_ENDIAN_BIG
 } EZrFfiTargetEndianness;
 
+/** @brief 类型投影属性；GC 引用、ref-like 与资源所有权位在直接 FFI 契约中不可接受。 */
 #define ZR_FFI_CONTRACT_TYPE_FLAG_BLITTABLE ((TZrUInt32)1u << 0u)
 #define ZR_FFI_CONTRACT_TYPE_FLAG_GC_REFERENCE ((TZrUInt32)1u << 1u)
 #define ZR_FFI_CONTRACT_TYPE_FLAG_REF_LIKE ((TZrUInt32)1u << 2u)
@@ -176,6 +203,7 @@ typedef enum EZrFfiTargetEndianness {
 #define ZR_FFI_CONTRACT_TYPE_FLAG_OWNER ((TZrUInt32)1u << 4u)
 #define ZR_FFI_CONTRACT_TYPE_FLAG_MASK ((TZrUInt32)0x1fu)
 
+/** @brief 聚合类型的字段布局；offset/size 按宿主 ABI 核对且 name 必须终止。 */
 typedef struct SZrFfiAggregateFieldContract {
     TZrChar name[ZR_FFI_CONTRACT_FIELD_NAME_CAPACITY];
     EZrFfiTypeKind typeKind;
@@ -184,6 +212,7 @@ typedef struct SZrFfiAggregateFieldContract {
     TZrUInt32 offset;
 } SZrFfiAggregateFieldContract;
 
+/** @brief 单个 native 类型的大小、对齐和稳定身份；聚合字段由下标范围引用。 */
 typedef struct SZrFfiTypeContract {
     EZrFfiTypeKind typeKind;
     TZrUInt32 size;
@@ -195,6 +224,7 @@ typedef struct SZrFfiTypeContract {
     TZrUInt32 aggregateFieldCount;
 } SZrFfiTypeContract;
 
+/** @brief 语言参数与 native 参数之间的方向、封送及所有权约定。 */
 typedef struct SZrFfiParameterContract {
     SZrFfiTypeContract type;
     EZrFfiDirection direction;
@@ -204,6 +234,10 @@ typedef struct SZrFfiParameterContract {
     TZrUInt32 flags;
 } SZrFfiParameterContract;
 
+/**
+ * @brief 完整 native 函数签名，含目标 ABI 指纹和参数/聚合固定容量数组。
+ * @note parameterCount 与 aggregateFieldCount 必须在各自上限内，signatureHash 须由有效字段计算。
+ */
 typedef struct SZrFfiSignatureContract {
     EZrFfiAbi abi;
     TZrUInt32 targetPointerSize;
@@ -226,6 +260,7 @@ typedef struct SZrFfiSignatureContract {
     TZrUInt64 signatureHash;
 } SZrFfiSignatureContract;
 
+/** @brief 源语言可调用参数的逃逸、初始化与调用点标记契约。 */
 typedef struct SZrFfiCallableParameterContract {
     TZrUInt64 canonicalTypeHash;
     EZrFfiCallablePassingForm passingForm;
@@ -236,6 +271,7 @@ typedef struct SZrFfiCallableParameterContract {
     EZrFfiCallableCallSiteMarker callSiteMarker;
 } SZrFfiCallableParameterContract;
 
+/** @brief 源语言调用形态的摘要，供 parser、FFI 运行时复核同一声明。 */
 typedef struct SZrFfiCallableContract {
     TZrUInt32 parameterCount;
     SZrFfiCallableParameterContract parameters[ZR_FFI_CONTRACT_MAX_PARAMETERS];
@@ -246,6 +282,7 @@ typedef struct SZrFfiCallableContract {
     TZrUInt64 contractHash;
 } SZrFfiCallableContract;
 
+/** @brief 原始声明的源码位置，验证和诊断均以此定位问题。 */
 typedef struct SZrFfiSourceMapping {
     TZrChar document[ZR_FFI_CONTRACT_SOURCE_DOCUMENT_CAPACITY];
     TZrUInt64 startOffset;
@@ -256,6 +293,10 @@ typedef struct SZrFfiSourceMapping {
     TZrInt32 endColumn;
 } SZrFfiSourceMapping;
 
+/**
+ * @brief 由 parser 产生、AOT 或解释执行端消费的完整 native 导入契约。
+ * @note 验证只确认格式和宿主 ABI 匹配；动态库可用性与符号解析由运行时另行处理。
+ */
 typedef struct SZrNativeImportContract {
     TZrUInt32 schemaVersion;
     TZrChar libraryLocator[ZR_FFI_CONTRACT_LIBRARY_CAPACITY];
@@ -269,15 +310,19 @@ typedef struct SZrNativeImportContract {
     SZrFfiSignatureContract signature;
 } SZrNativeImportContract;
 
+/** @brief 契约身份哈希的稳定种子；生成与加载两侧必须使用同一字节序列。 */
 #define ZR_FFI_CONTRACT_FNV_OFFSET UINT64_C(1469598103934665603)
+/** @brief 契约哈希的乘数，与种子一起固定产消两侧的身份算法。 */
 #define ZR_FFI_CONTRACT_FNV_PRIME UINT64_C(1099511628211)
 
+/** @brief 契约哈希的字节级公共基元；生产端和校验端应按相同顺序组合字段。 */
 static inline TZrUInt64 ZrCommon_FfiContract_HashByte(
         TZrUInt64 hash,
         TZrUInt8 value) {
     return (hash ^ value) * ZR_FFI_CONTRACT_FNV_PRIME;
 }
 
+/** @brief 以固定字节顺序纳入 32 位值，避免主机字节序改变契约身份。 */
 static inline TZrUInt64 ZrCommon_FfiContract_HashU32(
         TZrUInt64 hash,
         TZrUInt32 value) {
@@ -288,6 +333,7 @@ static inline TZrUInt64 ZrCommon_FfiContract_HashU32(
     return hash;
 }
 
+/** @brief 以固定字节顺序纳入 64 位值，供类型与 callable 身份计算复用。 */
 static inline TZrUInt64 ZrCommon_FfiContract_HashU64(
         TZrUInt64 hash,
         TZrUInt64 value) {
@@ -298,6 +344,10 @@ static inline TZrUInt64 ZrCommon_FfiContract_HashU64(
     return hash;
 }
 
+/**
+ * @brief 计算源语言可调用契约的身份，parser 写入后由导入校验重新计算。
+ * @pre contract 非空且 parameterCount 不超过固定容量；无效输入返回 0。
+ */
 static inline TZrUInt64 ZrCommon_FfiCallableContract_ComputeHash(
         const SZrFfiCallableContract *contract) {
     TZrUInt64 hash = ZR_FFI_CONTRACT_FNV_OFFSET;
@@ -332,6 +382,7 @@ static inline TZrUInt64 ZrCommon_FfiCallableContract_ComputeHash(
             hash, contract->isVariadic ? 1u : 0u);
 }
 
+/** @brief 返回当前编译宿主的稳定 target triple，供导入契约绑定目标平台。 */
 static inline const TZrChar *ZrCommon_FfiContract_GetHostTargetTriple(void) {
 #if defined(_M_X64) || defined(__x86_64__)
 #define ZR_FFI_HOST_ARCH "x86_64"
@@ -360,6 +411,7 @@ static inline const TZrChar *ZrCommon_FfiContract_GetHostTargetTriple(void) {
 #undef ZR_FFI_HOST_ARCH
 }
 
+/** @brief 将以 NUL 结束的目标文本纳入哈希；调用方须先保证字符串可终止。 */
 static inline TZrUInt64 ZrCommon_FfiContract_HashText(
         TZrUInt64 hash,
         const TZrChar *text) {
@@ -375,6 +427,7 @@ static inline TZrUInt64 ZrCommon_FfiContract_HashText(
     }
 }
 
+/** @brief 将类型的 ABI 可观察字段纳入签名指纹，聚合字段另由签名遍历。 */
 static inline TZrUInt64 ZrCommon_FfiContract_HashType(
         TZrUInt64 hash,
         const SZrFfiTypeContract *type) {
@@ -388,6 +441,10 @@ static inline TZrUInt64 ZrCommon_FfiContract_HashType(
     return ZrCommon_FfiContract_HashU32(hash, type->aggregateFieldCount);
 }
 
+/**
+ * @brief 为 native 导入计算宿主 ABI 指纹，阻止用另一平台或 C 数据模型的契约调用。
+ * @pre targetTriple 为可终止的目标字符串；调用端与运行时需以同一目标工具链编译。
+ */
 static inline TZrUInt64 ZrCommon_FfiContract_ComputeTargetAbiHash(
         EZrFfiAbi abi,
         TZrUInt32 pointerSize,
@@ -449,6 +506,10 @@ static inline TZrUInt64 ZrCommon_FfiContract_ComputeTargetAbiHash(
             hash, CHAR_MIN < 0 ? 1u : 0u);
 }
 
+/**
+ * @brief 计算 native 签名指纹，parser 写入后由校验器检测布局或策略是否被改动。
+ * @pre 各计数不超过固定容量，targetTriple 含 NUL；无效计数返回 0。
+ */
 static inline TZrUInt64 ZrCommon_FfiSignatureContract_ComputeHash(
         const SZrFfiSignatureContract *signature) {
     TZrUInt64 hash = ZR_FFI_CONTRACT_FNV_OFFSET;
@@ -463,6 +524,8 @@ static inline TZrUInt64 ZrCommon_FfiSignatureContract_ComputeHash(
     hash = ZrCommon_FfiContract_HashU32(hash, signature->targetPointerSize);
     hash = ZrCommon_FfiContract_HashU32(
             hash, (TZrUInt32)signature->targetEndianness);
+    /* TODO: 此独立哈希入口只检查计数，不先检查 targetTriple 终止符；
+     * NativeImportContract_Validate 会先检查，但直接调用者须自行保证字符串有效。 */
     hash = ZrCommon_FfiContract_HashText(hash, signature->targetTriple);
     hash = ZrCommon_FfiContract_HashU64(hash, signature->targetAbiHash);
     hash = ZrCommon_FfiContract_HashU32(hash, (TZrUInt32)signature->charset);
@@ -511,6 +574,7 @@ static inline TZrUInt64 ZrCommon_FfiSignatureContract_ComputeHash(
     return hash;
 }
 
+/** @brief 过滤不能直接投影到 native ABI 的类型和未受支持的所有权位。 */
 static inline TZrBool ZrCommon_FfiTypeContract_Validate(
         const SZrFfiTypeContract *type,
         TZrBool allowVoid) {
@@ -555,6 +619,7 @@ static inline TZrBool ZrCommon_FfiTypeContract_Validate(
     return ZR_TRUE;
 }
 
+/** @brief 核对类型引用的聚合字段切片与每个字段的基本布局边界。 */
 static inline TZrBool ZrCommon_FfiTypeAggregateRange_Validate(
         const SZrFfiSignatureContract *signature,
         const SZrFfiTypeContract *type) {
@@ -589,6 +654,7 @@ static inline TZrBool ZrCommon_FfiTypeAggregateRange_Validate(
     return ZR_TRUE;
 }
 
+/** @brief 限定 return-code 错误策略的返回类型为可判定的整数类。 */
 static inline TZrBool ZrCommon_FfiReturnCodeType_Validate(
         const SZrFfiTypeContract *type) {
     if (type == ZR_NULL) {
@@ -603,6 +669,7 @@ static inline TZrBool ZrCommon_FfiReturnCodeType_Validate(
             type->typeKind == ZR_FFI_CONTRACT_TYPE_ENUM);
 }
 
+/** @brief 验证 value/in/ref/out 对逃逸、初始化与调用标记的组合约束。 */
 static inline TZrBool ZrCommon_FfiCallableParameterContract_Validate(
         const SZrFfiCallableParameterContract *parameter) {
     if (parameter == ZR_NULL || parameter->canonicalTypeHash == 0u ||
@@ -671,6 +738,7 @@ static inline TZrBool ZrCommon_FfiCallableParameterContract_Validate(
     }
 }
 
+/** @brief 复核源语言 callable 形态及其哈希，防止与 native 签名仅按位置硬绑定。 */
 static inline TZrBool ZrCommon_FfiCallableContract_Validate(
         const SZrFfiCallableContract *contract) {
     if (contract == ZR_NULL ||
@@ -693,6 +761,10 @@ static inline TZrBool ZrCommon_FfiCallableContract_Validate(
                     ZrCommon_FfiCallableContract_ComputeHash(contract));
 }
 
+/**
+ * @brief 在解析动态库符号前复核导入契约格式、宿主 ABI、callable 和签名。
+ * @return 真表示结构适合交给运行时进一步解析；并不保证库、符号或调用一定成功。
+ */
 static inline TZrBool ZrCommon_NativeImportContract_Validate(
         const SZrNativeImportContract *contract) {
     TZrUInt64 expectedHash;

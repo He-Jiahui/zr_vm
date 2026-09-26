@@ -11,6 +11,7 @@
 #define ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST
 #endif
 
+/* 传统 GC 阈值与增量步长；调度器和统计快照共享单位，调整时须核对停顿预算。 */
 #define ZR_GARBAGE_COLLECT_DEBT_SIZE (-2000)
 #define ZR_GARBAGE_COLLECT_MINOR_MULTIPLIER 20
 #define ZR_GARBAGE_COLLECT_MAJOR_MULTIPLIER 100
@@ -23,6 +24,7 @@
 #define ZR_GC_SCOPE_DEPTH_NONE ((TZrUInt32)0xFFFFFFFFu)
 
 
+/** @brief collector 的代际/增量调度模式，控制扫描路径而非对象公开类型。 */
 enum EZrGarbageCollectMode {
     ZR_GARBAGE_COLLECT_MODE_GENERATIONAL,
     ZR_GARBAGE_COLLECT_MODE_INCREMENTAL,
@@ -32,6 +34,7 @@ enum EZrGarbageCollectMode {
 typedef enum EZrGarbageCollectMode EZrGarbageCollectMode;
 
 
+/** @brief 增量标记颜色及回收进度；写屏障须保持已扫描对象对子对象的可达性。 */
 enum EZrGarbageCollectIncrementalObjectStatus {
     // gc ignore
     ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT,
@@ -51,6 +54,7 @@ enum EZrGarbageCollectIncrementalObjectStatus {
 
 typedef enum EZrGarbageCollectIncrementalObjectStatus EZrGarbageCollectIncrementalObjectStatus;
 
+/** @brief 代际回收的年龄与扫描状态，供 minor/major 周期迁移对象。 */
 enum EZrGarbageCollectGenerationalObjectStatus {
     ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW,
     ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL,
@@ -65,6 +69,7 @@ enum EZrGarbageCollectGenerationalObjectStatus {
 
 typedef enum EZrGarbageCollectGenerationalObjectStatus EZrGarbageCollectGenerationalObjectStatus;
 
+/** @brief collector 全局运行许可状态；用户停用、自动停用和退出具有不同恢复意图。 */
 enum EZrGarbageCollectStatus {
     ZR_GARBAGE_COLLECT_STATUS_RUNNING,
     ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER,
@@ -75,6 +80,7 @@ enum EZrGarbageCollectStatus {
 
 typedef enum EZrGarbageCollectStatus EZrGarbageCollectStatus;
 
+/** @brief 一轮增量回收的阶段游标，决定后续 safepoint 从何处继续。 */
 enum EZrGarbageCollectRunningStatus {
     ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION,
     ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC,
@@ -90,6 +96,8 @@ enum EZrGarbageCollectRunningStatus {
 
 typedef enum EZrGarbageCollectRunningStatus EZrGarbageCollectRunningStatus;
 
+/** @brief 增量回收周期的 A/B 存活标记；collector 翻转代号后据此识别未触及对象。
+ *  此字段与 young/old/permanent 堆代无关，初始化、扫描和搬迁必须使用当前周期代号。 */
 enum EZrGarbageCollectGeneration {
     ZR_GARBAGE_COLLECT_GENERATION_INVALID,
     ZR_GARBAGE_COLLECT_GENERATION_A,
@@ -98,6 +106,7 @@ enum EZrGarbageCollectGeneration {
 
 typedef enum EZrGarbageCollectGeneration EZrGarbageCollectGeneration;
 
+/** @brief 对象所属堆代，用于调度和报告；与物理 region 类别分开。 */
 enum EZrGarbageCollectHeapGenerationKind {
     ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_YOUNG = 0,
     ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_OLD = 1,
@@ -107,6 +116,7 @@ enum EZrGarbageCollectHeapGenerationKind {
 
 typedef enum EZrGarbageCollectHeapGenerationKind EZrGarbageCollectHeapGenerationKind;
 
+/** @brief region 的统计与分配类别，GC 快照按此聚合 used/live 字节。 */
 enum EZrGarbageCollectRegionKind {
     ZR_GARBAGE_COLLECT_REGION_KIND_INVALID = 0,
     ZR_GARBAGE_COLLECT_REGION_KIND_EDEN = 1,
@@ -120,6 +130,7 @@ enum EZrGarbageCollectRegionKind {
 
 typedef enum EZrGarbageCollectRegionKind EZrGarbageCollectRegionKind;
 
+/** @brief 对象物理存储策略，决定是否允许移动及是否需要保持 pin。 */
 enum EZrGarbageCollectStorageKind {
     ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE = 0,
     ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE = 1,
@@ -130,6 +141,7 @@ enum EZrGarbageCollectStorageKind {
 
 typedef enum EZrGarbageCollectStorageKind EZrGarbageCollectStorageKind;
 
+/** @brief 对象逃逸原因位集；返回、闭包、宿主句柄或跨线程引用会影响晋升和根处理。 */
 enum EZrGarbageCollectEscapeKind {
     ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE = 0,
     ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN = 1 << 0,
@@ -145,6 +157,7 @@ enum EZrGarbageCollectEscapeKind {
 
 typedef enum EZrGarbageCollectEscapeKind EZrGarbageCollectEscapeKind;
 
+/** @brief pin 来源位集；不同持有者可独立设置，释放时须只撤销自身来源。 */
 enum EZrGarbageCollectPinKind {
     ZR_GARBAGE_COLLECT_PIN_KIND_NONE = 0,
     ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE = 1 << 0,
@@ -155,6 +168,7 @@ enum EZrGarbageCollectPinKind {
 
 typedef enum EZrGarbageCollectPinKind EZrGarbageCollectPinKind;
 
+/** @brief 对象晋升的单一诊断原因，供 GC 状态检查与统计解释。 */
 enum EZrGarbageCollectPromotionReason {
     ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE = 0,
     ZR_GARBAGE_COLLECT_PROMOTION_REASON_SURVIVAL = 1,
@@ -169,6 +183,7 @@ enum EZrGarbageCollectPromotionReason {
 
 typedef enum EZrGarbageCollectPromotionReason EZrGarbageCollectPromotionReason;
 
+/** @brief GC 原始对象标签与 VM 值标签共用对应编号，扫描器依此选择对象布局。 */
 enum EZrRawObjectType {
     ZR_RAW_OBJECT_TYPE_INVALID,
     ZR_RAW_OBJECT_TYPE_STRING = ZR_VALUE_TYPE_STRING,
@@ -187,6 +202,7 @@ enum EZrRawObjectType {
 
 typedef enum EZrRawObjectType EZrRawObjectType;
 
+/** @brief 模块、类、接口等原型类别；运行时成员解析按类别选择继承与实例化规则。 */
 enum EZrObjectPrototypeType {
     ZR_OBJECT_PROTOTYPE_TYPE_INVALID,
     ZR_OBJECT_PROTOTYPE_TYPE_MODULE,
@@ -201,6 +217,9 @@ enum EZrObjectPrototypeType {
 
 typedef enum EZrObjectPrototypeType EZrObjectPrototypeType;
 
+/** @brief 每个 GC 对象的状态头；颜色、周期代号、堆代、region、逃逸与 pin 信息共同约束回收和搬迁。
+ *  forwardingAddress 在搬迁后的引用修正阶段指向副本，阶段结束由 collector 清理。
+ *  TODO: forwardingRefLocation 当前只见初始化与清零，未见写入有效地址；需确认它是否仍属于搬迁协议。 */
 struct SZrGarbageCollectionObjectMark {
     EZrGarbageCollectIncrementalObjectStatus status;
     EZrGarbageCollectGenerationalObjectStatus generationalStatus;

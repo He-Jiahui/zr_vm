@@ -6,17 +6,14 @@
 #define ZR_ARRAY_CONF_H
 #include "zr_common_conf.h"
 
-// 列表扩容的百分比 不得小于100
+/* core 数组按容量比例扩张；调用方不能把该比例当作元素个数或字节数。 */
 #define ZR_ARRAY_INCREASEMENT_MULTIPLIER_PERCENT 200
 
+/** @brief 计算编译期固定数组的元素个数；value 必须是数组而非退化后的指针。 */
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 
-// 数组结构体
-// 注意：SZrArray 并非是 SZrObject，它们是两个独立的类型
-// - SZrArray 是一个独立的 C 结构体，用于存储动态数组数据
-// - SZrObject 是 VM 对象类型，用于垃圾回收和元方法系统
-// - SZrArray 不能嵌入在 SZrObject 中，需要单独分配内存
-// - 如果需要在 Object 的 nodeMap 中存储数组，应该使用 ZR_VALUE_TYPE_NATIVE_POINTER 存储 SZrArray 指针
+/** @brief core 动态数组的原生存储视图；head 由数组 API 分配/释放，length 不得超过 capacity。
+ *  这是 C 容器，不是 VM 的 GC SZrObject；持有其地址的对象需另行管理原生内存生命周期。 */
 struct SZrArray {
     TZrBytePtr head;
     TZrSize elementSize;

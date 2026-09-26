@@ -8,6 +8,7 @@
 #define ZR_IO_EOF EOF
 #include "zr_vm_common/zr_common_conf.h"
 
+/* 写端与读端使用同一端序标识；该静态对象只描述本宿主字节序，不表示文件自身可随意交换端序。 */
 static const union {
     TZrUInt64 dummy;
     TZrBool littleEndian;
@@ -15,6 +16,7 @@ static const union {
 
 #define ZR_IO_IS_LITTLE_ENDIAN (CZrIoEndian.littleEndian)
 
+/* .zro 头部格式由 parser writer 与 core reader 共同消费；字段宽度和 patch 门槛属于持久化协议。 */
 // IO文件格式相关常量
 #define ZR_IO_NATIVE_INT_SIZE 8
 #define ZR_IO_SIZE_T_SIZE 8
@@ -78,6 +80,7 @@ static const union {
 #define ZR_IO_SOURCE_PATCH_HAS_TYPED_CLOSURE_CAPTURE_BINDINGS 41U
 #define ZR_IO_SOURCE_PATCH_HAS_TYPED_EXPORT_GENERIC_PARAMETERS 42U
 #define ZR_IO_SOURCE_PATCH_HAS_CALL_BINDING 43U
+/* 当前 writer 输出的 patch；reader 拒绝更高版本，并按历史门槛解析可选字段。 */
 #define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_CALL_BINDING
 
 /* .MODULE:
@@ -156,6 +159,8 @@ static const union {
  */
 
 
+/* TODO: 下列 .FUNCTION 布局速记未列出现行 writer 写入的 closure/exception 元数据等字段；
+ * 应以 parser writer 与 core reader 的实际字段顺序和 patch 门槛校订线格式说明。 */
 /* .FUNCTION:
  * NAME [string]
  * START_LINE [8]
@@ -234,6 +239,7 @@ static const union {
  * ENUMS [.ENUM_DECLARE] [.ENUM_FIELD]
  */
 
+/** @brief 二进制模块声明的线格式类别，读写端须保持同序。 */
 enum EZrIoModuleDeclareType {
     ZR_IO_MODULE_DECLARE_TYPE_CLASS,
     ZR_IO_MODULE_DECLARE_TYPE_STRUCT,
@@ -247,6 +253,7 @@ enum EZrIoModuleDeclareType {
 
 typedef enum EZrIoModuleDeclareType EZrIoModuleDeclareType;
 
+/** @brief 二进制成员声明类别，供 core 重建字段、属性、方法与元方法。 */
 enum EZrIoMemberDeclareType {
     ZR_IO_MEMBER_DECLARE_TYPE_FIELD,
     ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY,
@@ -259,6 +266,9 @@ enum EZrIoMemberDeclareType {
 
 typedef enum EZrIoMemberDeclareType EZrIoMemberDeclareType;
 
+/* TODO: 声明状态预留 DECLARED/DEFINED/STATIC 位值，但当前仅见 io.h 字段持有，
+ * 尚未找到 parser writer 或 core loader 对这些位的实际编码；需确认是否仍属线格式。 */
+/** @brief 声明状态位；STATIC 可与 DECLARED/DEFINED 组合，不能按互斥枚举解释。 */
 enum EZrIoMemberDeclareStatus {
     ZR_IO_MEMBER_DECLARE_STATUS_NONE = 0,
     ZR_IO_MEMBER_DECLARE_STATUS_DECLARED = 1,

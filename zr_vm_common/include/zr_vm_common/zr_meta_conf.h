@@ -6,6 +6,7 @@
 #define ZR_META_CONF_H
 #include "zr_vm_common/zr_common_conf.h"
 
+/* core 按这些槽位约定放置 receiver/实参；调整时须同时核对执行器的 meta 调用栈布局。 */
 #define ZR_META_CALL_UNARY_ARGUMENT_COUNT 1U
 #define ZR_META_CALL_MAX_ARGUMENTS 2U
 #define ZR_META_CALL_SELF_SLOT_OFFSET ZR_META_CALL_UNARY_ARGUMENT_COUNT
@@ -16,6 +17,7 @@
 #define ZR_META_CALL_SLOT_COUNT(ARGUMENT_COUNT) (ZR_META_CALL_SELF_SLOT_OFFSET + (ARGUMENT_COUNT))
 #define ZR_META_CALL_STACK_TOP(BASE, ARGUMENT_COUNT) ((BASE) + ZR_META_CALL_SLOT_COUNT(ARGUMENT_COUNT))
 
+/* 统一元方法表供 enum 与名称表展开；序号是 parser、core 和 native descriptor 共同使用的协议。 */
 #define ZR_META_DECLARE(Z)                                                                                             \
     Z(CONSTRUCTOR)                                                                                                     \
     Z(DESTRUCTOR)                                                                                                      \
@@ -68,6 +70,7 @@ ZR_META_ENUM_WRAP(ZR_META_DECLARE(ZR_META_ENUM_DECLARE));
 
 typedef enum EZrMetaType EZrMetaType;
 
+/* 名称表与 EZrMetaType 由同一列表展开，索引必须始终一一对应。 */
 static TZrNativeString const CZrMetaName[] = ZR_META_CONSTANT_WRAP(ZR_META_DECLARE(ZR_META_CONSTANT_DECLARE));
 
 
