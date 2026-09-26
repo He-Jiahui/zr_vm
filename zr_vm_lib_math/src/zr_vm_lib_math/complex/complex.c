@@ -33,6 +33,7 @@ TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result
 }
 TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
     /* 零模选择零复数作为结果；其余输入的范数由 magnitude 同款计算路径决定。 */
+    /* BUG: (1e200, 0) 的平方范数溢出后按无穷模缩放，非零复数得到零复数。 */
     ZrMathComplex value; TZrFloat64 magnitude; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     magnitude = sqrt(value.real * value.real + value.imag * value.imag);

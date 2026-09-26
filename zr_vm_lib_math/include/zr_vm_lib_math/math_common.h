@@ -55,7 +55,7 @@ typedef struct ZrMathComplex {
  * 核对成员填充及跨成员指针运算的 C 对象模型约束，再决定是否保留这种调用约定。 */
 
 /** @brief 从 Tensor 对象借用的形状和数据数组视图。
- *  `rank` 对应 shape 长度，`size` 对应数据元素数；调用方不得把这些对象指针保存到本次
+ *  按构造时约定，`rank` 对应 shape 长度、`size` 对应数据元素数；调用方不得把对象指针保存到本次
  *  native 回调之外，也不能假设仅凭字段类型检查即可证明维度与数据仍一致。
  */
 typedef struct ZrMathTensorStorage {
@@ -70,7 +70,7 @@ TZrFloat64 ZrMath_AbsFloat(TZrFloat64 value);
  *  @note 调用方负责选择非负 epsilon；NaN 输入不会得到相等结果。
  */
 TZrBool ZrMath_AlmostEqual(TZrFloat64 lhs, TZrFloat64 rhs, TZrFloat64 epsilon);
-/** @brief 计算已验证长度的连续数值分量点积，供向量回调复用。
+/** @brief 按调用方给出的分量数计算点积，供向量回调复用。
  *  @pre `lhs`、`rhs` 均指向至少 `count` 个可读 `TZrFloat64`。
  */
 TZrFloat64 ZrMath_Dot(const TZrFloat64 *lhs, const TZrFloat64 *rhs, TZrSize count);

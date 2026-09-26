@@ -13,6 +13,8 @@ related_code:
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
+  - zr_vm_library/include/zr_vm_library/native_registry.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/scalar/scalar.c
@@ -54,7 +56,7 @@ descriptor 签名如下；所有参数按值传递，除 `almostEqual` 外返回
 | --- | --- | --- |
 | `abs` | `abs(value: float): float` | 绝对值 |
 | `min` / `max` | `min(lhs: float, rhs: float): float`；`max(lhs: float, rhs: float): float` | 两值比较 |
-| `clamp` | `clamp(value: float, low: float, high: float): float` | 约束到闭区间 |
+| `clamp` | `clamp(value: float, low: float, high: float): float` | 按下界、上界的顺序截断；调用方保证 `low <= high` |
 | `lerp` | `lerp(a: float, b: float, t: float): float` | 线性插值 |
 | `sqrt` / `rsqrt` | `sqrt(value: float): float`；`rsqrt(value: float): float` | 平方根/倒平方根 |
 | `pow` | `pow(base: float, exponent: float): float` | 幂 |
@@ -109,8 +111,8 @@ helper 保持一致。
 
 模块初始化按 scalar、vector、quaternion、complex、matrix、tensor registry 顺序收集
 function/type descriptors，并发布 `zr.math`、版本 `1.0.0`、native plugin ABI 和
-runtime ABI。每个 descriptor 的泛型参数和字段偏移在注册时验证；`invokeCallback` 通过
-`ZrLibCallContext` 调用 ZR callable，异常会恢复调用栈后再返回失败。
+runtime ABI。注册入口委托 native registry 核查 ABI、能力和 provider 契约；
+`invokeCallback` 通过 `ZrLib_CallValue` 调用 ZR callable，并将调用结果交给 binding。
 
 ## C API
 
@@ -119,7 +121,8 @@ const ZrLibModuleDescriptor *ZrVmLibMath_GetModuleDescriptor(void);
 TZrBool ZrVmLibMath_Register(SZrGlobalState *global);
 ```
 
-`GetModuleDescriptor` 返回进程内静态 descriptor，不应由宿主释放。`Register` 失败通常
-表示 ABI/contract 冲突或 global 已关闭；错误细节写入 global diagnostic。共享构建导出
+`GetModuleDescriptor` 返回进程内静态 descriptor，不应由宿主释放。`Register` 在
+registry 附着、ABI、能力或 provider 契约检查失败时返回 false；可用
+`ZrLibrary_NativeRegistry_GetLastErrorMessage(global)` 查询 registry 错误。共享构建导出
 `ZrVm_GetNativeModule_v1()`。数学模块不拥有调用方传入的 `SZrTypeValue`，native callback
 返回值必须写入由 binding 分配的 result slot。

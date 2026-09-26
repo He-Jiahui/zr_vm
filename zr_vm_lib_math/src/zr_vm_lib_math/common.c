@@ -36,6 +36,8 @@ static SZrObject *zr_math_make_object_with_fields(SZrState *state,
 }
 
 TZrFloat64 ZrMath_AbsFloat(TZrFloat64 value) {
+    /* TODO: -0.0 < 0.0 为假，此写法会保留负零；核对 VM 中负零的可观测性及
+     * math.abs 是否要求与 fabs 一致，再决定是否属于公开契约缺陷。 */
     return value < 0.0 ? -value : value;
 }
 

@@ -14,7 +14,9 @@
 TZrBool ZrMath_Vector3_Construct(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector3_Length(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector3_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result);
-/** @brief 近零长度时返回零向量，其余情况返回新的单位向量。 */
+/** @brief 近零长度时返回零向量，其余按计算长度缩放分量并返回新向量。
+ *  @note 大有限分量的平方和可能溢出，结果不保证单位长度。
+ */
 TZrBool ZrMath_Vector3_Normalized(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector3_Dot(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector3_Distance(ZrLibCallContext *context, SZrTypeValue *result);

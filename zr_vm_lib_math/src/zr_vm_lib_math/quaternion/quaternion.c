@@ -43,6 +43,7 @@ TZrBool ZrMath_Quaternion_LengthSquared(ZrLibCallContext *context, SZrTypeValue 
 }
 TZrBool ZrMath_Quaternion_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
     /* 零长度采用单位四元数作为中性回退，区别于 Complex 的零结果。 */
+    /* BUG: (1e200, 0, 0, 0) 的平方范数溢出后按无穷长度缩放，非零输入得到零。 */
     ZrMathQuaternion q; TZrFloat64 len; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
     len = sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);

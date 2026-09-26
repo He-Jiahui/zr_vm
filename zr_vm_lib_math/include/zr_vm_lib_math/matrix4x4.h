@@ -24,7 +24,7 @@ TZrBool ZrMath_Matrix4x4_Scale(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix4x4_RotationX(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix4x4_RotationY(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix4x4_RotationZ(ZrLibCallContext *context, SZrTypeValue *result);
-/** @brief `*` 的分派入口：确切 Vector4 原型走向量乘法，其余按 Matrix4x4 读取。 */
+/** @brief `*` 的分派入口：右对象原型名为 Vector4 时走向量乘法，其余按 Matrix4x4 读取。 */
 TZrBool ZrMath_Matrix4x4_MetaMul(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix4x4_MetaToString(ZrLibCallContext *context, SZrTypeValue *result);
 

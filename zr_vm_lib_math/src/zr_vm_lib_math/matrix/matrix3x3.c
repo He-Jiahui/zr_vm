@@ -126,6 +126,8 @@ TZrBool ZrMath_Matrix3x3_Determinant(ZrLibCallContext *context, SZrTypeValue *re
 }
 
 TZrBool ZrMath_Matrix3x3_Inverse(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* TODO: 近零行列式使回调返回 ZR_FALSE；native_binding_dispatch.c:600-605
+     * 在无异常时将其转为 null。核对这是否符合 registry 的 Matrix3x3 返回契约。 */
     TZrFloat64 matrix[9];
     TZrFloat64 inverse[9];
     SZrObject *object;
@@ -192,7 +194,7 @@ TZrBool ZrMath_Matrix3x3_MulMatrix(ZrLibCallContext *context, SZrTypeValue *resu
 }
 
 TZrBool ZrMath_Matrix3x3_MetaMul(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* `*` 比命名乘法更宽：依据右操作数的确切原型挑选向量或矩阵回调。 */
+    /* `*` 比命名乘法更宽：依据右操作数原型名挑选向量或矩阵回调。 */
     SZrObject *other = ZR_NULL;
     if (!ZrLib_CallContext_ReadObject(context, 0, &other)) {
         return ZR_FALSE;

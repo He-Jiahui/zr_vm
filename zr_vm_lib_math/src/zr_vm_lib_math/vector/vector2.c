@@ -34,6 +34,7 @@ TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *re
 }
 
 TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: (1e200, 0) 的平方范数溢出后按无穷长度缩放，非零输入得到零向量。 */
     ZrMathVector2 value; TZrFloat64 length; SZrObject *object;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     length = sqrt(ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2));

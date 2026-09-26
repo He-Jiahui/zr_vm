@@ -19,7 +19,7 @@ TZrBool ZrMath_Matrix3x3_Determinant(ZrLibCallContext *context, SZrTypeValue *re
 TZrBool ZrMath_Matrix3x3_Inverse(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix3x3_MulVector(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix3x3_MulMatrix(ZrLibCallContext *context, SZrTypeValue *result);
-/** @brief `*` 的分派入口：确切 Vector3 原型走向量乘法，其余按 Matrix3x3 读取。 */
+/** @brief `*` 的分派入口：右对象原型名为 Vector3 时走向量乘法，其余按 Matrix3x3 读取。 */
 TZrBool ZrMath_Matrix3x3_MetaMul(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Matrix3x3_MetaToString(ZrLibCallContext *context, SZrTypeValue *result);
 

@@ -14,7 +14,9 @@
 TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result);
-/** @brief 创建归一化新值；近零输入返回零向量而不修改 receiver。 */
+/** @brief 按计算长度缩放分量创建新值；近零输入返回零向量而不修改 receiver。
+ *  @note 大有限分量的平方和可能溢出，结果不保证单位长度。
+ */
 TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_Dot(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_Distance(ZrLibCallContext *context, SZrTypeValue *result);

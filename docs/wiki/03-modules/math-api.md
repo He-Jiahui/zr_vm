@@ -173,7 +173,7 @@ let product = tensor.matmul(transposed);
 
 | 方法 | 规则 |
 | --- | --- |
-| `clone` | 深复制 shape 和数据。 |
+| `clone` | 复制 shape 和 data 数组容器，返回新 Tensor。 |
 | `reshape(shape)` | 新 shape 的元素总数必须与 size 相同；返回 shape 和 data 均复制的新 Tensor。 |
 | `fill(value)` | 原位覆盖全部元素，并返回 receiver。 |
 | `get(indices)` / `set(indices,value)` | indices 数组长度必须等于 rank；按 row-major 计算 offset；set 原位更新并返回 receiver。 |

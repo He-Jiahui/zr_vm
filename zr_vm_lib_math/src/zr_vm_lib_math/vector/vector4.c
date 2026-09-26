@@ -27,6 +27,7 @@ TZrBool ZrMath_Vector4_LengthSquared(ZrLibCallContext *context, SZrTypeValue *re
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: (1e200, 0, 0, 0) 的平方范数溢出后按无穷长度缩放，非零输入得到零向量。 */
     ZrMathVector4 value; TZrFloat64 length; SZrObject *object;
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     length = sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4));

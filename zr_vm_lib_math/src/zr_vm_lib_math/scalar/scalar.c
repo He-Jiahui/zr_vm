@@ -37,8 +37,8 @@ ZR_MATH_UNARY(ZrMath_Scalar_Degrees, value * (180.0 / ZR_MATH_PI))
 ZR_MATH_UNARY(ZrMath_Scalar_Radians, value * (ZR_MATH_PI / 180.0))
 
 TZrBool ZrMath_Scalar_Clamp(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* TODO: docs/wiki/03-modules/math-api.md 声称先调整边界顺序；当前回调保持传入顺序。
-     * 核对 low > high 的公开契约及现有调用，再同步文档或行为。 */
+    /* TODO: 当前回调保持传入的边界顺序；核对 low > high 是否允许，以及此时
+     * 应拒绝、交换还是维持现状的公开契约，再补相应边界测试。 */
     TZrFloat64 value = 0.0, minimum = 0.0, maximum = 0.0;
     if (!ZrLib_CallContext_ReadFloat(context, 0, &value) || !ZrLib_CallContext_ReadFloat(context, 1, &minimum) ||
         !ZrLib_CallContext_ReadFloat(context, 2, &maximum)) return ZR_FALSE;
@@ -53,8 +53,8 @@ TZrBool ZrMath_Scalar_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrLib_Value_SetFloat(context->state, result, start + (end - start) * factor); return ZR_TRUE;
 }
 TZrBool ZrMath_Scalar_AlmostEqual(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* TODO: docs/wiki/03-modules/math.md 称绝对/相对误差；ZrMath_AlmostEqual 只比较绝对误差。
-     * 核对调用方是否依赖相对阈值，再明确文档中的比较规则。 */
+    /* TODO: ZrMath_AlmostEqual 只比较绝对误差；核对大/小量级调用是否需要相对阈值，
+     * 再明确公开比较契约及边界测试。 */
     TZrFloat64 lhs = 0.0, rhs = 0.0, epsilon = ZR_MATH_EPSILON;
     if (!ZrLib_CallContext_ReadFloat(context, 0, &lhs) || !ZrLib_CallContext_ReadFloat(context, 1, &rhs)) return ZR_FALSE;
     if (ZrLib_CallContext_ArgumentCount(context) >= 3 && !ZrLib_CallContext_ReadFloat(context, 2, &epsilon)) return ZR_FALSE;
