@@ -922,8 +922,11 @@ EZrAotIrStatus ZrCore_AotIr_ValidateTarget(const SZrAotIrTargetContract *target,
     if (target == ZR_NULL) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, 0u, 0u, 0u, 0u, 0u, 0u);
     }
-    if (target->abiVersion != ZR_AOT_IR_TARGET_ABI_VERSION ||
-        (target->pointerSize != 4u && target->pointerSize != 8u) ||
+    if (target->abiVersion != ZR_AOT_IR_TARGET_ABI_VERSION) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_VERSION_MISMATCH, 0u, 0u, 0u, 0u,
+                           ZR_AOT_IR_TARGET_ABI_VERSION, target->abiVersion);
+    }
+    if ((target->pointerSize != 4u && target->pointerSize != 8u) ||
         target->endianness > 1u) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_TARGET, 0u, 0u, 0u, 0u,
                            ZR_AOT_IR_TARGET_ABI_VERSION, target->abiVersion);
