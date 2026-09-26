@@ -9,7 +9,10 @@ from pygments.token import Comment, Keyword, Name, Number, Operator, Punctuation
 
 
 class ZrLexer(RegexLexer):
-    """Highlight ZR syntax without attempting semantic name resolution."""
+    """供 wiki 的 zr 代码围栏和 Pygments 文件识别共用的词法着色入口。
+
+    此处只做展示层的词法分类；编译器与语言服务器负责语义分析，着色结果不参与诊断。
+    """
 
     name = "ZR"
     aliases = ["zr", "zro", "zrs", "zrp"]
@@ -66,6 +69,8 @@ class ZrLexer(RegexLexer):
 
     @staticmethod
     def analyse_text(text: str) -> float:
+        """仅供 Pygments 自动猜测语言；明确标记 zr 的围栏优先走插件 alias。"""
+
         if re.search(r"(?m)^\s*module\s+[A-Za-z_][A-Za-z0-9_.]*\s*;", text):
             return 0.8
         if re.search(r"\b(?:fn|struct|class|interface|union)\b", text):

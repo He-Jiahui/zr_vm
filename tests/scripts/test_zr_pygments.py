@@ -1,4 +1,4 @@
-"""Unit tests for the local Pygments lexer used by the Wiki build."""
+"""验证本地 Pygments 插件在 wiki 构建前可识别 ZR 并安全输出 HTML。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 
 class ZrPygmentsTests(unittest.TestCase):
+    """覆盖插件元数据、词法分类和 HTML 转义；不把着色规则当编译器语法验收。"""
+
     def test_lexer_exposes_zr_aliases_and_file_patterns(self) -> None:
         from zr_pygments.lexer import ZrLexer
 

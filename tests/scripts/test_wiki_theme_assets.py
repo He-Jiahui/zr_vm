@@ -1,4 +1,4 @@
-"""Contract tests for the Wiki handbook and rendered theme assets."""
+"""保护 wiki 的导航、主题与源码高亮配置，供 Pages 严格构建前运行。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ WIKI = ROOT / "docs" / "wiki"
 
 
 class WikiThemeAssetsTests(unittest.TestCase):
+    """验证作者可见的页面与资源契约，避免主题升级时静默丢失导航或样式。"""
+
     def test_handbook_pages_are_manifested(self) -> None:
         manifest = json.loads((WIKI / "manifest.json").read_text(encoding="utf-8"))
         pages = {page["path"] for page in manifest["pages"]}

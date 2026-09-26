@@ -57,6 +57,7 @@ toggle.icon = "lucide/moon"
 toggle.name = "切换到浅色模式"
 
 [project.markdown_extensions]
+# zr 围栏通过 requirements-docs.txt 的本地 Pygments 入口注册；主题只配置渲染方式。
 pymdownx.highlight.anchor_linenums = true
 pymdownx.highlight.line_spans = "__span"
 pymdownx.highlight.pygments_lang_class = true

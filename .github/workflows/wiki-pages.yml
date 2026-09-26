@@ -81,6 +81,7 @@ jobs:
 
   deploy:
     name: Deploy wiki
+    # PR 只验证源码和产物；main 的 push 或手动触发才发布 Pages。
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
