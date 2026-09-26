@@ -23,6 +23,7 @@ typedef struct ZrVmTaskExecuteRequest {
 } ZrVmTaskExecuteRequest;
 
 static const TZrChar *kTaskMainSchedulerField = "__zr_task_scheduler";
+/* 这些隐藏字段由本模块与旧 worker 传输路径共同使用；Task/Job 的规范执行入口在 library/task_runtime.c。 */
 static const TZrChar *kTaskQueueField = "__zr_task_queue";
 static const TZrChar *kTaskQueueHeadField = "__zr_task_queue_head";
 static const TZrChar *kTaskSupportMultithreadField = "__zr_task_support_multithread";
@@ -208,6 +209,7 @@ TZrBool zr_vm_task_default_support_multithread(SZrState *state) {
 }
 
 TZrUInt64 zr_vm_task_next_worker_isolate_id(void) {
+    /* TODO: 进程内计数器没有同步；若不同宿主线程同时创建隔离任务，需验证诊断 isolateId 的唯一性与数据竞争。 */
     static TZrUInt64 nextId = 0x1000u;
 
     nextId++;
@@ -239,6 +241,11 @@ void zr_vm_task_scheduler_signal_runtime(ZrVmTaskSchedulerRuntime *runtime) {
 }
 
 ZrVmTaskSchedulerRuntime *zr_vm_task_scheduler_get_runtime(SZrState *state, SZrObject *scheduler) {
+    /* 消息队列独立于 GC 对象，worker 只持此原生句柄；对象字段保存指针，不承担析构。 */
+    /* BUG: 成功分配的消息运行时只存为对象的 nativePointer，模块没有释放它或销毁同步原语的路径；
+     * 反复创建/销毁调度器或 global 会留下该原生内存。 */
+    /* BUG: 保存 nativePointer 的 void 字段写可因 pin/key 分配失败而直接返回；本函数仍返回
+     * 新 runtime，下一次查询将重复分配且旧句柄无法从 scheduler 回收。 */
     const SZrTypeValue *runtimeValue;
     ZrVmTaskSchedulerRuntime *runtime;
     SZrTypeValue fieldValue;
@@ -287,6 +294,8 @@ void zr_vm_task_record_last_worker_domain(SZrState *state, SZrGcDomainIdentity d
 TZrBool ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
         SZrGlobalState *global,
         EZrVmThreadSchedulerExecutionPolicy policy) {
+    /* BUG: 字段写入经 void 封装，pin/key 分配失败可静默跳过；本接口仍返回 true，
+     * 后续构造器会按旧配置或默认 attached 策略创建 worker。 */
     SZrState *state;
     SZrObject *rootObject;
 
@@ -312,6 +321,8 @@ TZrBool ZrVmThread_Runtime_SetIsolatedTransferQuota(
         TZrUInt32 maxObjects,
         TZrUInt64 maxBytes,
         TZrUInt32 maxDepth) {
+    /* BUG: 三个 void 字段写无成功反馈；若中途 pin/key 分配失败仍返回 true，
+     * 后续 scheduler 可使用新旧混合的传输预算。 */
     SZrState *state;
     SZrObject *rootObject;
 
@@ -331,6 +342,9 @@ TZrBool ZrVmThread_Runtime_SetIsolatedTransferQuota(
 }
 
 TZrBool ZrVmThread_Runtime_ShutdownIsolatedSchedulers(SZrGlobalState *global) {
+    /* 这里只拒收并故障化排队任务，不等待已启动 worker；宿主仍须泵送主域 completion，
+     * 并在 worker 全部退出后才能销毁 global。 */
+    /* TODO: 若需要将停止接单作为安全销毁门禁，应另定等待 worker 退出的宿主接口契约。 */
     SZrState *state;
     SZrObject *rootObject;
 
@@ -520,6 +534,7 @@ static TZrBool zr_vm_task_scheduler_has_pending_workers(SZrState *state, SZrObje
 }
 
 TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *scheduler) {
+    /* 仅调用者域推进消息：worker 发布原生信封，Task 完成和跨域 Claim/Commit 必须回到拥有工作项根的 state。 */
     ZrVmTaskSchedulerRuntime *runtime;
     ZrVmTaskSchedulerMessage *message = ZR_NULL;
     SZrTypeValue value;
@@ -587,6 +602,7 @@ TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *schedu
             ZrCore_OwnershipTransfer_Free(state, message->isolatedEnvelope);
         }
         ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &message->isolatedWorkItem);
+        /* 先完成/回滚信封和释放 caller 根，再确认处理结果；worker 收到确认后才可销毁其域。 */
         zr_vm_thread_isolated_completion_processed(message->isolatedCompletionContext,
                                                     completed,
                                                     workerMustDisposeEnvelope);
@@ -642,6 +658,7 @@ TZrBool zr_vm_task_scheduler_enqueue_isolated_completion(
         SZrGcDomainIdentity workerDomain,
         TZrPtr completionContext,
         ZrVmTaskSchedulerMessage *preallocatedMessage) {
+    /* 成功入队即转移 workItem 与信封的处理责任；worker 保持存活，等待主域确认由谁释放信封。 */
     ZrVmTaskSchedulerMessage *message;
 
     if (runtime == ZR_NULL || workItem == ZR_NULL || envelope == ZR_NULL || workerDomain.id == 0u) {
@@ -679,6 +696,7 @@ TZrBool zr_vm_task_scheduler_enqueue_isolated_fault(
         ZrLibraryTaskRuntimeWorkItem *workItem,
         TZrPtr completionContext,
         ZrVmTaskSchedulerMessage *preallocatedMessage) {
+    /* 即使 worker 执行失败，也把已消耗 Job 的完成句柄交回主域 fault；预分配消息保证故障路径无需再分配。 */
     ZrVmTaskSchedulerMessage *message;
 
     if (runtime == ZR_NULL || workItem == ZR_NULL) {
@@ -816,6 +834,7 @@ static SZrObject *zr_vm_thread_new_task_object(SZrState *state) {
 }
 
 SZrObject *zr_vm_task_resolve_construct_target(ZrLibCallContext *context) {
+    /* 构造回调可来自实例构造或反射构造；保留调用上下文指定的闭合泛型原型。 */
     SZrObject *self;
     SZrObjectPrototype *ownerPrototype;
     SZrObjectPrototype *targetPrototype;
@@ -1160,6 +1179,7 @@ static TZrBool zr_vm_task_wait_for_handle(SZrState *state, SZrObject *handle, SZ
 }
 
 static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 每个实例固定策略与隔离复制预算，后续宿主配置只影响新实例；启动 worker 延后到 schedule。 */
     SZrObject *scheduler;
     SZrObject *queue;
     SZrTypeValue queueValue;
@@ -1175,6 +1195,7 @@ static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTy
         return zr_vm_task_raise_runtime_error(context->state,
                                               "ThreadScheduler workerCount must be greater than zero");
     }
+    /* BUG: 只检查正数却将 int64 workerCount 窄化为 uint32；例如 4294967297 会被当作 1 个 worker。 */
 
     scheduler = zr_vm_task_resolve_construct_target(context);
     queue = ZrLib_Array_New(context->state);
@@ -1220,6 +1241,7 @@ static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTy
 }
 
 static TZrBool zr_vm_thread_scheduler_schedule(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 两个后端都消耗 canonical Job 并返回 caller-domain Task；选择后端不改变脚本的完成句柄协议。 */
     SZrObject *scheduler;
     SZrObject *job;
     TZrUInt64 policy;
@@ -1277,6 +1299,7 @@ static const ZrLibParameterDescriptor g_thread_scheduler_schedule_parameters[] =
 };
 
 static const ZrLibParameterDescriptor g_thread_scheduler_constructor_parameters[] = {
+        /* BUG: isolated 策略同样使用此构造器，下面的公开参数文案却固定承诺 attached GcDomain。 */
         {"workerCount", "int", "The number of workers attached to the caller GcDomain."},
 };
 
@@ -1288,6 +1311,7 @@ static const TZrChar *g_send_sync_implements[] = {"Send", "Sync"};
 static const TZrChar *g_send_implements[] = {"Send"};
 
 static const ZrLibMethodDescriptor g_thread_scheduler_methods[] = {
+        /* TASK_SCHEDULER_SCHEDULE 角色让编译器按 Job 消费契约检查调用，而非靠方法名称猜测。 */
         {"schedule", 1, 1, zr_vm_thread_scheduler_schedule, "zr.task.Task<T>",
          "Consume a canonical Job and publish its caller-domain Task.", ZR_FALSE,
           g_thread_scheduler_schedule_parameters, ZR_ARRAY_COUNT(g_thread_scheduler_schedule_parameters),
@@ -1296,6 +1320,7 @@ static const ZrLibMethodDescriptor g_thread_scheduler_methods[] = {
 };
 
 static const ZrLibMetaMethodDescriptor g_thread_scheduler_meta_methods[] = {
+        /* BUG: 宿主可选择 isolated 策略，下面的构造器描述却只写 attached。 */
         {
                 .metaType = ZR_META_CONSTRUCTOR,
                 .minArgumentCount = 1,
@@ -1402,6 +1427,8 @@ static const ZrLibMetaMethodDescriptor g_shared_meta_methods[] = {
 };
 
 static const ZrLibMetaMethodDescriptor g_channel_meta_methods[] = {
+        /* TODO: 此处文案称 same-isolate，但类型描述/提示称 cross-isolate；旧 native transport
+         * 能复制 Channel 指针，当前 isolated ownership-transfer 可用范围仍需以端到端用例确定。 */
         {ZR_META_CONSTRUCTOR, 0, 0, zr_vm_task_channel_construct, "Channel<T>",
          "Construct a same-isolate FIFO channel wrapper.", ZR_NULL, 0},
 };
@@ -1452,6 +1479,7 @@ static const ZrLibMetaMethodDescriptor g_shared_mutex_meta_methods[] = {
 };
 
 static const ZrLibTypeDescriptor g_task_types[] = {
+        /* Send/Sync 协议位供编译器与跨域传输校验；Lock/SharedLock 不声明这些能力，禁止守卫跨 await/线程。 */
         ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("Send", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0,
                                              ZR_NULL, 0,
                                              "Marker contract for values that can move between thread mutators.",
@@ -1462,6 +1490,7 @@ static const ZrLibTypeDescriptor g_task_types[] = {
                                              "Marker contract for values that can be safely shared between thread mutators.",
                                              ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
                                              ZR_NULL, 0, ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SYNC)),
+        /* BUG: ThreadScheduler 的公开类型描述固定称 attached，未反映宿主可选 isolated 后端。 */
         ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT(
                 "ThreadScheduler", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_thread_scheduler_methods,
                 ZR_ARRAY_COUNT(g_thread_scheduler_methods), g_thread_scheduler_meta_methods,

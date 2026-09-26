@@ -128,6 +128,9 @@ TZrBool zr_vm_task_shared_cell_add_weak_ref_if_alive(ZrVmTaskSharedCell *cell) {
     return retained;
 }
 
+/* BUG: strong=2、weak=0 时，先减到 1 的线程解锁后仍会二次回锁；另一 strong
+ * 可先减到 0 并销毁 cell/mutex。strong=1、weak=1 时，最后 strong 与最后 weak
+ * 同时释放也可在二次回锁前销毁 cell；Shared.clone 可产生前一种合法交错。 */
 void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell) {
     TZrBool freeCell = ZR_FALSE;
     ZrVmTaskTransportValue releasedValue;
@@ -220,6 +223,7 @@ TZrBool zr_vm_task_shared_make_value(SZrState *state,
                                      ZrVmTaskSharedCell *cell,
                                      TZrBool isWeak,
                                      SZrTypeValue *result) {
+    /* BUG: 此函数消费调用方预先增加的一份 strong/weak 引用；创建 façade 失败时多个调用方没有回滚。 */
     SZrObject *handle;
     SZrTypeValue cellValue;
     const TZrChar *typeName = isWeak ? "WeakShared" : "Shared";
@@ -400,6 +404,7 @@ static TZrBool zr_vm_task_lock_make_value(SZrState *state,
                                           ZrVmTaskMutexCell *cell,
                                           TZrUInt32 lockKind,
                                           SZrTypeValue *result) {
+    /* BUG: Guard 保有 native cell 引用和读写许可，只有显式 unlock 会归还；VM GC 丢弃活动 Guard 不调用该路径。 */
     SZrObject *handle;
     SZrTypeValue cellValue;
 
@@ -488,6 +493,9 @@ static TZrBool zr_vm_task_mutex_lock_internal(ZrLibCallContext *context,
                                               SZrTypeValue *result,
                                               TZrUInt32 expectedMutexKind,
                                               TZrUInt32 guardKind) {
+    /* 独占/共享锁共用此等待路径；guard 成功创建后负责归还许可并释放 cell 引用。 */
+    /* TODO: native 方法按 GC_AWARE 分发，条件等待不轮询 safepoint；若同域 worker 请求 GC，
+     * 等待锁的 mutator 可能一直被视为 RUNNING，直到 GC 暂停超时。需补并发压力用例。 */
     ZrVmTaskMutexCell *cell;
     TZrUInt32 actualKind;
 
@@ -535,6 +543,7 @@ static TZrBool zr_vm_task_mutex_lock_internal(ZrLibCallContext *context,
 static TZrBool zr_vm_task_lock_unlock_internal(ZrLibCallContext *context,
                                                SZrTypeValue *result,
                                                TZrUInt32 expectedKind) {
+    /* 显式解锁同时使 façade 失效、归还读写许可，并释放 guard 持有的原生 cell 引用。 */
     SZrObject *guard;
     ZrVmTaskMutexCell *cell;
 
@@ -574,6 +583,7 @@ static TZrBool zr_vm_task_lock_unlock_internal(ZrLibCallContext *context,
 }
 
 TZrBool zr_vm_task_shared_construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: native cell 只靠 Shared.release 显式释放，普通 GC 丢弃包装对象不会减 strongCount 或清 payload。 */
     SZrObject *handle;
     SZrTypeValue *value;
     ZrVmTaskSharedCell *cell;
@@ -648,6 +658,8 @@ TZrBool zr_vm_task_shared_load(ZrLibCallContext *context, SZrTypeValue *result) 
 }
 
 TZrBool zr_vm_task_shared_store(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* TODO: 新 Transfer 会在 encode 时置 taken，随后才检查 Shared 是否仍 alive；
+     * 失败 store 是否应恢复源 Transfer 的可用状态须明确。 */
     ZrVmTaskSharedCell *cell;
     SZrTypeValue *value;
     ZrVmTaskTransportValue encodedValue;
@@ -710,6 +722,7 @@ TZrBool zr_vm_task_shared_clone(ZrLibCallContext *context, SZrTypeValue *result)
 }
 
 TZrBool zr_vm_task_shared_downgrade(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: 返回的 WeakShared 没有 release/drop；成功创建后 weakCount 永不随 VM 包装对象回收而减少。 */
     ZrVmTaskSharedCell *cell;
 
     if (context == ZR_NULL || result == ZR_NULL) {
@@ -784,6 +797,7 @@ TZrBool zr_vm_task_weak_shared_is_alive(ZrLibCallContext *context, SZrTypeValue 
 }
 
 TZrBool zr_vm_task_transfer_construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 创建本域一次性值包装；实际移交发生于 Channel/Shared/Mutex native 编码路径。 */
     SZrObject *handle;
     SZrTypeValue *value;
 
@@ -811,6 +825,7 @@ TZrBool zr_vm_task_transfer_construct(ZrLibCallContext *context, SZrTypeValue *r
 }
 
 TZrBool zr_vm_task_transfer_take(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 只允许一次取出包装值，消费后清除 façade 内的 VM 引用。 */
     SZrObject *self;
 
     if (context == ZR_NULL || result == ZR_NULL) {
@@ -902,6 +917,8 @@ TZrBool zr_vm_task_lock_load(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool zr_vm_task_lock_store(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* TODO: Transfer 在验证 Guard active 前已被 encode 消费；若 Guard 已解锁，
+     * 写入失败仍会留下 taken 源值，需确认该失败语义。 */
     SZrObject *guard;
     ZrVmTaskMutexCell *cell;
     SZrTypeValue *value;

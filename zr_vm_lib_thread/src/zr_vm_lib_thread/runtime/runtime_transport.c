@@ -7,6 +7,8 @@ static const TZrChar *kTaskTransferValueField = "__zr_task_transfer_value";
 static const TZrChar *kTaskTransferTakenField = "__zr_task_transfer_taken";
 
 static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
+    /* BUG: VM 字符串有显式 byteLength，此 C 字符串副本用 strlen 丢弃首个内嵌 NUL 后的字节；
+     * Channel/Shared/旧 worker transport 的字符串往返不能保持原值。 */
     TZrSize length;
     TZrChar *copy;
 
@@ -25,6 +27,7 @@ static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
 }
 
 TZrBool zr_vm_task_transport_clone_value(const ZrVmTaskTransportValue *value, ZrVmTaskTransportValue *outValue) {
+    /* 克隆后的 native envelope 拥有自己的文本/嵌套 payload 或额外 cell 引用；Channel 指针仍只是共享借用。 */
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -106,6 +109,7 @@ TZrBool zr_vm_task_transport_clone_value(const ZrVmTaskTransportValue *value, Zr
 }
 
 void zr_vm_task_transport_clear(ZrVmTaskTransportValue *value) {
+    /* 归还 clone/encode 获得的 native 所有权，可能触发嵌套 Shared/Mutex 析构，调用者须在 cell 锁外执行。 */
     if (value == ZR_NULL) {
         return;
     }
@@ -295,6 +299,7 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
                                           const SZrTypeValue *value,
                                           ZrVmTaskTransportValue *outValue,
                                           const TZrChar *contextMessage) {
+    /* 旧 native-envelope 传输只支持显式列出的值形状；隔离调度器另用 core ownership-transfer 协议。 */
     ZrVmTaskChannelTransport *channelTransport = ZR_NULL;
     TZrChar message[256];
 
@@ -363,6 +368,7 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
 TZrBool zr_vm_task_transport_decode_value(SZrState *state,
                                           const ZrVmTaskTransportValue *value,
                                           SZrTypeValue *result) {
+    /* BUG: Shared/WeakShared/Mutex 分支先加 cell 引用，创建目标 VM façade 失败时未回滚该引用。 */
     if (state == ZR_NULL || value == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -448,6 +454,8 @@ static ZrVmTaskChannelTransport *zr_vm_task_channel_get_transport_internal(SZrSt
 }
 
 TZrBool zr_vm_task_channel_construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: FIFO 及同步原语分配后只以对象 nativePointer 保存，Channel 无 drop/析构路径；
+     * 丢弃 Channel 也不会释放未读消息及其 transport 引用。 */
     SZrObject *handle;
     ZrVmTaskChannelTransport *transport;
     SZrTypeValue transportValue;
@@ -476,6 +484,8 @@ TZrBool zr_vm_task_channel_construct(ZrLibCallContext *context, SZrTypeValue *re
 }
 
 TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* TODO: Transfer 在 encode 阶段即标记 taken，随后若发现 Channel 已关闭则投递失败；
+     * 需确认消费语义是否应以成功入队为提交点。 */
     SZrObject *self;
     SZrTypeValue *value;
     ZrVmTaskChannelTransport *transport;
@@ -532,6 +542,7 @@ TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result)
 }
 
 TZrBool zr_vm_task_channel_recv(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 非阻塞接收：空队列返回 null；close 只拒绝后续 send，已入队消息仍可按 FIFO 取出。 */
     SZrObject *self;
     ZrVmTaskChannelTransport *transport;
     ZrVmTaskChannelMessage *message;

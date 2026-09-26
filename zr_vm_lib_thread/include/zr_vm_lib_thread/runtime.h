@@ -32,7 +32,7 @@ ZR_VM_THREAD_API TZrBool ZrVmThread_Runtime_SetIsolatedTransferQuota(
         TZrUInt32 maxObjects,
         TZrUInt64 maxBytes,
         TZrUInt32 maxDepth);
-/** @brief 阻止隔离调度器继续接单并故障化排队任务；已启动任务仍须由宿主推进完成消息。 */
+/** @brief 阻止隔离调度器继续接单并故障化排队任务；不等待 worker 退出，宿主仍须保持 global 有效并推进完成消息。 */
 ZR_VM_THREAD_API TZrBool ZrVmThread_Runtime_ShutdownIsolatedSchedulers(
         struct SZrGlobalState *global);
 /** @brief 读取最近完成的隔离 worker 的域身份；没有有效记录时返回假并清零输出。 */

@@ -26,6 +26,7 @@ static const TZrChar *kTaskWorkerIsolateIdField = "__zr_task_worker_isolate_id";
 static const TZrChar *kThreadSchedulerAttachedRuntimeField = "__zr_thread_scheduler_attached_runtime";
 
 typedef struct ZrVmAttachedDomainWorkerLaunch {
+    /* detached worker 接手新建 state；runtime/global 仍由 caller 域持有。 */
     ZrVmAttachedDomainRuntime *runtime;
     SZrState *state;
 } ZrVmAttachedDomainWorkerLaunch;
@@ -48,6 +49,10 @@ static ZrVmAttachedDomainRuntime *zr_vm_thread_attached_scheduler_runtime(
 static TZrBool zr_vm_thread_attached_scheduler_await(SZrState *state,
                                                       SZrObject *task,
                                                       TZrPtr context) {
+    /* BUG: Task 已终结仅表示结果可见，worker 还可能在释放工作项/退出 mutator/释放 state；
+     * 宿主按 result 返回后立刻销毁 callerGlobal，可与仍使用同一 global 的 worker 交错。 */
+    /* TODO: Task.result 的 native 回调为 GC_AWARE，此条件等待不进入阻塞域或轮询 safepoint；
+     * 同域 worker 请求 GC 时，等待者可能阻塞暂停直到超时。需以并发 GC 用例验证。 */
     ZrVmAttachedDomainRuntime *runtime = (ZrVmAttachedDomainRuntime *)context;
 
     if (state == ZR_NULL || task == ZR_NULL || runtime == ZR_NULL) {
@@ -75,6 +80,7 @@ static void zr_vm_thread_attached_scheduler_worker_finished(ZrVmAttachedDomainRu
 }
 
 static void zr_vm_thread_attached_scheduler_worker_run(ZrVmAttachedDomainWorkerLaunch *launch) {
+    /* worker 在 caller GcDomain 内运行 canonical Job；Task 终态发布早于 mutator/state 退出。 */
     ZrVmAttachedDomainRuntime *runtime;
     SZrState *workerState;
     TZrBool workerIsLive = ZR_TRUE;
@@ -201,6 +207,7 @@ static TZrBool zr_vm_thread_attached_scheduler_start_worker(
 TZrBool zr_vm_thread_attached_scheduler_init(SZrState *state,
                                               SZrObject *scheduler,
                                               TZrUInt32 workerCount) {
+    /* BUG: 成功注册的 provider/condition/mutex 仅存裸 nativePointer，当前没有 scheduler/global 析构回收。 */
     ZrVmAttachedDomainRuntime *runtime;
     SZrTypeValue runtimeValue;
 
@@ -230,6 +237,9 @@ TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
                                                   SZrObject *scheduler,
                                                   SZrObject *job,
                                                   SZrTypeValue *result) {
+    /* PrepareJob 消费冷 Job 并注册 await；在锁内入队，必要时启动 detached attached-domain worker。 */
+    /* TODO: 启动新 worker 失败时只移除本次请求；若并发旧 worker 已退出且队列仍有请求，
+     * 需验证剩余请求会否缺少后续 worker 唤醒。 */
     ZrVmAttachedDomainRuntime *runtime;
     ZrVmAttachedDomainRequest *request;
     TZrBool startWorker = ZR_FALSE;
@@ -329,6 +339,7 @@ TZrChar *zr_vm_task_worker_strdup(const TZrChar *text) {
 }
 
 void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch) {
+    /* 释放 launch 内存与 transport 引用；临时二进制文件由调用方或 worker teardown 单独删除。 */
     TZrUInt32 captureIndex;
 
     if (launch == ZR_NULL) {
@@ -386,6 +397,7 @@ SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, const ZrVmT
 }
 
 TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferSize) {
+    /* 调用成功即已实际创建临时文件；调用方包括隔离调度器，后续序列化失败也须清理路径。 */
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
     }
@@ -418,6 +430,8 @@ TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferSize) {
 }
 
 static TZrBool zr_vm_task_worker_append_pending_handle(SZrState *state, SZrObject *scheduler, SZrObject *handle) {
+    /* TODO: 旧 direct-worker 路径以根对象数组保活 Task；启动失败后没有从数组撤销的路径，
+     * 需先确认此入口是否仍计划恢复。 */
     SZrObject *pendingArray;
     SZrTypeValue pendingValue;
     SZrTypeValue handleValue;
@@ -574,6 +588,8 @@ static void zr_vm_task_worker_enqueue_message(ZrVmTaskSchedulerRuntime *runtime,
                                               TZrUInt32 kind,
                                               SZrObject *handle,
                                               ZrVmTaskTransportValue *payload) {
+    /* TODO: 旧 direct-worker 的完成消息分配失败会静默丢失；若该入口恢复，
+     * 被 pending 数组保活的 Task 将无法收到完成或故障。 */
     ZrVmTaskSchedulerMessage *message;
 
     if (runtime == ZR_NULL || handle == ZR_NULL || payload == ZR_NULL) {
@@ -765,6 +781,8 @@ TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
                                        const SZrTypeValue *callable,
                                        SZrTypeValue *result,
                                        SZrObject *mainScheduler) {
+    /* TODO: 全仓无此入口的生产调用；zr_vm_lib_task 有另一同名实现。
+     * 需确认这条旧直接 worker/消息链是否仍属 zr.thread 契约及如何处理其临时文件和退出生命周期。 */
     SZrObject *handle;
     SZrFunction *function;
     ZrVmTaskWorkerLaunch *launch;
@@ -792,6 +810,7 @@ TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
 
     if (!zr_vm_task_worker_make_temp_path(tempPath, sizeof(tempPath)) ||
         !ZrParser_Writer_WriteBinaryFile(context->state, function, tempPath)) {
+        /* BUG: temp path 成功创建而 Writer 失败时，已创建的文件没有 remove。 */
         return zr_vm_task_raise_runtime_error(context->state, "Failed to serialize worker callable");
     }
 

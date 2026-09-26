@@ -26,6 +26,8 @@
 #include "zr_vm_library/task_runtime.h"
 
 typedef enum EZrVmTaskTransportKind {
+    /* Channel/Shared/Mutex 当前使用的 native transport 值种类；旧 direct-worker 也沿用它，
+     * 当前隔离调度器另用 core OwnershipTransfer。 */
     ZR_VM_TASK_TRANSPORT_KIND_NONE = 0,
     ZR_VM_TASK_TRANSPORT_KIND_NULL = 1,
     ZR_VM_TASK_TRANSPORT_KIND_BOOL = 2,
@@ -68,6 +70,7 @@ typedef pthread_cond_t ZrVmTaskCondition;
 #endif
 
 typedef struct ZrVmTaskTransportValue {
+    /* 原生队列或 cell 持有的跨线程副本；STRING 和引用型 kind 须由 transport_clear 结清。 */
     TZrUInt32 kind;
     TZrUInt32 reserved;
     union {
@@ -87,6 +90,8 @@ typedef enum EZrVmTaskSharedCellLifecycle {
 } EZrVmTaskSharedCellLifecycle;
 
 typedef struct ZrVmTaskSharedCell {
+    /* Shared/WeakShared façade 共用的原生引用状态；GC 不减计数，Shared 需显式 release，
+     * WeakShared 当前没有对应释放入口。 */
     ZrVmTaskMutex mutex;
     TZrUInt64 strongCount;
     TZrUInt64 weakCount;
@@ -96,6 +101,7 @@ typedef struct ZrVmTaskSharedCell {
 } ZrVmTaskSharedCell;
 
 typedef struct ZrVmTaskMutexCell {
+    /* guard 保留 cell 引用和读写许可；unlock 负责归还，丢弃活跃 guard 没有析构路径。 */
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
     TZrUInt64 refCount;
@@ -114,6 +120,7 @@ enum {
 };
 
 typedef struct ZrVmTaskSchedulerMessage {
+    /* 旧 worker 传 handle+payload；当前隔离 worker 传 workItem+envelope，caller 域消费后确认。 */
     TZrUInt32 kind;
     TZrUInt32 reserved;
     struct SZrObject *handle;
@@ -126,6 +133,7 @@ typedef struct ZrVmTaskSchedulerMessage {
 } ZrVmTaskSchedulerMessage;
 
 typedef struct ZrVmTaskSchedulerRuntime {
+    /* 调度器对象仅保存此 native 指针；worker 入队，caller 域消费完成消息。 */
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
     ZrVmTaskSchedulerMessage *head;
@@ -139,6 +147,7 @@ typedef struct ZrVmAttachedDomainRequest {
 } ZrVmAttachedDomainRequest;
 
 typedef struct ZrVmAttachedDomainRuntime {
+    /* attached worker 借用 caller global，离开前宿主必须维持 global 与同步原语有效。 */
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
     ZrVmAttachedDomainRequest *head;
@@ -152,6 +161,7 @@ typedef struct ZrVmAttachedDomainRuntime {
 } ZrVmAttachedDomainRuntime;
 
 typedef struct ZrVmTaskWorkerLaunch {
+    /* 启动工件拥有项目路径/捕获的 native 副本；allocator 参数借自 caller global。 */
     TZrChar *binaryPath;
     TZrChar *projectFile;
     TZrChar *projectDirectory;
@@ -174,6 +184,7 @@ typedef struct ZrVmTaskChannelMessage {
 } ZrVmTaskChannelMessage;
 
 typedef struct ZrVmTaskChannelTransport {
+    /* FIFO 和未读消息由原生内存持有；VM 的 Channel façade 仅借用此指针。 */
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
     ZrVmTaskSchedulerRuntime *notifyRuntime;
@@ -183,6 +194,7 @@ typedef struct ZrVmTaskChannelTransport {
     TZrBool closed;
 } ZrVmTaskChannelTransport;
 
+/* 两平台均以 broadcast 唤醒所有 waiter；wait 需在持锁时调用并由调用方循环检查谓词。 */
 #if defined(ZR_PLATFORM_WIN)
 static ZR_FORCE_INLINE void zr_vm_task_sync_mutex_init(ZrVmTaskMutex *mutex) { InitializeCriticalSection(mutex); }
 static ZR_FORCE_INLINE void zr_vm_task_sync_mutex_destroy(ZrVmTaskMutex *mutex) { DeleteCriticalSection(mutex); }

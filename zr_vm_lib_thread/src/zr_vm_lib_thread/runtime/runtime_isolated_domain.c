@@ -25,6 +25,7 @@ static const TZrChar *kThreadSchedulerIsolatedShutdownField =
 typedef struct ZrVmIsolatedDomainLaunch ZrVmIsolatedDomainLaunch;
 
 typedef struct ZrVmIsolatedDomainRuntime {
+    /* root/scheduler 借用此原生状态；workerLimit 当前统计已发出但尚未确认完成的任务。 */
     SZrObject *scheduler;
     ZrVmTaskMutex mutex;
     TZrUInt32 workerLimit;
@@ -37,6 +38,8 @@ typedef struct ZrVmIsolatedDomainRuntime {
 } ZrVmIsolatedDomainRuntime;
 
 struct ZrVmIsolatedDomainLaunch {
+    /* schedule 创建；入队期间由 caller 持有，worker 启动后负责最终释放 artifact/launch。
+     * caller 与 worker 用 ready/request/completion 三阶段同步跨域 envelope 的交接。 */
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
     ZrVmTaskWorkerLaunch *artifact;
@@ -76,6 +79,8 @@ static SZrDomainTransferContract zr_vm_thread_isolated_value_copy_contract(void)
 static SZrDomainTransferContract zr_vm_thread_isolated_contract_for_value(
         const SZrDomainTransferQuota *transferQuota,
         const SZrTypeValue *value) {
+    /* 普通标量按值复制、GC 值按预算结构化克隆；带 ownership 控制的资源先禁止，
+     * 其独立 provider 必须由 canonical type metadata 决定。 */
     SZrDomainTransferContract contract = zr_vm_thread_isolated_value_copy_contract();
 
     if (value != ZR_NULL &&
@@ -165,6 +170,10 @@ static void zr_vm_thread_isolated_launch_signal_ready(
 void zr_vm_thread_isolated_completion_processed(TZrPtr completionContext,
                                                 TZrBool completed,
                                                 TZrBool workerMustDisposeEnvelope) {
+    /* BUG: Task 完成回调在 worker GlobalState_Free 前解除 liveWorkerCount 并发出确认；
+     * Task.result() 随后可返回，宿主若立即释放 callerGlobal，worker teardown 会使用悬空的分配器上下文。 */
+    /* TODO: 当前 workerLimit 以 completion 计数；旧线程尚在清理时新线程可启动，
+     * 需确认该上限承诺的是在途 Job 数还是实际 OS worker 数。 */
     ZrVmIsolatedDomainLaunch *launch = (ZrVmIsolatedDomainLaunch *)completionContext;
     ZrVmIsolatedDomainRuntime *runtime;
 
@@ -194,6 +203,7 @@ void zr_vm_thread_isolated_completion_processed(TZrPtr completionContext,
 }
 
 static void zr_vm_thread_isolated_launch_free(ZrVmIsolatedDomainLaunch *launch) {
+    /* pending/启动失败由 caller 释放；worker 成功接手后在最终退出路径释放工件与临时二进制。 */
     if (launch == ZR_NULL) {
         return;
     }
@@ -255,6 +265,8 @@ static TZrBool zr_vm_thread_isolated_build_callable(
         SZrFunction *function,
         ZrVmIsolatedDomainLaunch *launch,
         SZrTypeValue *outCallable) {
+    /* worker 先 Claim 已发布的 capture envelope，再恢复脚本 closure；
+     * 任何失败必须按所有权协议中止尚未消费的转移。 */
     SZrClosure *closure;
     TZrUInt32 captureIndex;
     TZrUInt64 workerId;
@@ -312,6 +324,8 @@ static TZrBool zr_vm_thread_isolated_build_callable(
 }
 
 static void zr_vm_thread_isolated_worker_run(ZrVmIsolatedDomainLaunch *launch) {
+    /* BUG: Task 完成/确认消息先于 worker GlobalState_Free；artifact 的 allocator userData 借自 callerGlobal，
+     * 宿主在 result 返回后立即释放 callerGlobal，可使 worker teardown 使用悬空的分配器上下文。 */
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *workerGlobal = ZR_NULL;
     SZrState *workerState = ZR_NULL;
@@ -507,6 +521,7 @@ static void zr_vm_thread_isolated_cancel_before_request(ZrVmIsolatedDomainLaunch
 static TZrBool zr_vm_thread_isolated_launch_begin(
         SZrState *state,
         ZrVmIsolatedDomainLaunch *launch) {
+    /* caller 等待目标 GcDomain 发布后才创建 envelope；worker 等待 requestReady 后才 Claim。 */
     SZrClosure *closure = ZR_NULL;
     SZrFunction *function;
     SZrTypeValue callableValue;
@@ -564,6 +579,8 @@ static TZrBool zr_vm_thread_isolated_launch_begin(
             return ZR_TRUE;
         }
         for (captureIndex = 0u; captureIndex < launch->captureCount; captureIndex++) {
+            /* TODO: queued Job 到实际启动才逐个读取 closure capture 并准备跨域副本；
+             * 需明确提交时还是启动时取快照，以及多个 capture 间的别名保持契约。 */
             const SZrTypeValue *captureValue = ZrCore_ClosureValue_GetValue(
                     closure->closureValuesExtend[captureIndex]);
 
@@ -645,6 +662,7 @@ static void zr_vm_thread_isolated_fault_queued_launches(
 }
 
 void zr_vm_thread_isolated_scheduler_shutdown_all(SZrState *state) {
+    /* 只把尚未启动的队列 Job 故障化；已启动 worker 的完成消息仍须 caller 域泵送。 */
     const SZrTypeValue *runtimeValue;
     SZrObject *rootObject;
     ZrVmIsolatedDomainRuntime *runtime;
@@ -723,6 +741,7 @@ TZrBool zr_vm_thread_isolated_scheduler_init(SZrState *state,
                                               SZrObject *scheduler,
                                               TZrUInt32 workerCount,
                                               const SZrDomainTransferQuota *transferQuota) {
+    /* BUG: 成功初始化的原生 runtime 与 mutex 挂在 VM 对象 nativePointer，当前没有析构路径。 */
     ZrVmIsolatedDomainRuntime *runtime;
     SZrTypeValue runtimeValue;
     SZrObject *rootObject;
@@ -778,6 +797,8 @@ TZrBool zr_vm_thread_isolated_scheduler_schedule(SZrState *state,
                                                   SZrObject *scheduler,
                                                   SZrObject *job,
                                                   SZrTypeValue *result) {
+    /* PrepareJob 在提交时消费 Job，function 二进制随即写出；
+     * capture 的跨域副本直到此 launch 真正启动时才准备。 */
     ZrVmIsolatedDomainRuntime *runtime;
     ZrVmIsolatedDomainLaunch *launch;
     ZrVmTaskWorkerLaunch *artifact;
@@ -834,6 +855,7 @@ TZrBool zr_vm_thread_isolated_scheduler_schedule(SZrState *state,
     launch->captureCount = closure != ZR_NULL ? (TZrUInt32)closure->closureValueCount : 0u;
     if (!zr_vm_task_worker_make_temp_path(tempPath, sizeof(tempPath)) ||
         !ZrParser_Writer_WriteBinaryFile(state, function, tempPath)) {
+        /* BUG: 临时文件已创建但 Writer 失败时，这条分支未删除该路径。 */
         ZrLibrary_TaskRuntime_FaultPreparedJob(state,
                                                &launch->workItem,
                                                "IsolatedDomain could not serialize Job callable");
