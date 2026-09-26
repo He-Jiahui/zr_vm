@@ -48,9 +48,11 @@ CFG/instructions/slots/source spans/logical state map. The independently
 defined `SZrAotIrModule` is a validated, caller-owned module descriptor that
 borrows complete logical maps from its function producer;
 `backend_aot_ir_adapter` consumes it only to report lowering/coverage facts
-(`descriptorOnly`, `artifactAvailable = false`). No producer currently
-converts the owned projection into that module, and the archived production
-emitters still consume the legacy module. Connecting those representations
-must preserve typed tokens, memory edges, and the state-map entry and side-pool lifetimes. A C/LLVM artifact
+(`descriptorOnly`, `artifactAvailable = false`).
+`ZrParser_AotIrProjection_BuildDescriptor` now converts an owned projection to
+that validated module view by copying representation-dependent records and
+borrowing the typed/memory/state side pools for the descriptor lifetime. The
+archived production emitters still consume the legacy module. The bridge must
+preserve typed tokens, memory edges, and the state-map entry and side-pool lifetimes. A C/LLVM artifact
 claim requires replacing
 the legacy reads family by family and validating an actual emitted artifact.

@@ -26,6 +26,13 @@ The descriptor owns its converted record arrays and can be freed independently
 of the projection only after all consumers stop reading it. No host pointer is
 included in the AOTIR hash.
 
+## CMake registration
+
+`tests/cmake/ssa-tests.cmake` registers `zr_vm_ssa_aot_projection_descriptor_test`
+and CTest name `ssa_aot_projection_descriptor` with the `ssa` label. The
+standalone source list used for direct compiler checks is the same four-source
+slice used by that target.
+
 ## Acceptance
 
 The direct cross-toolchain slice is accepted. The CMake target
