@@ -1,5 +1,5 @@
 //
-// Exception runtime and compiler behavior tests.
+// The root tests/CMakeLists.txt runs these compiler/runtime exception contracts in one Unity binary.
 //
 
 #include <stdio.h>
@@ -20,6 +20,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 
+/* Active logging macros supplement Unity assertions; the unused TEST_FAIL_CUSTOM can set Unity's failure flag. */
 #define TEST_START(summary)                                                                                            \
     do {                                                                                                               \
         printf("Unit Test - %s\n", summary);                                                                           \
@@ -60,10 +61,14 @@
         fflush(stdout);                                                                                                \
     } while (0)
 
+/** @brief Keep expected uncaught-exception tests inside the harness failure path instead of aborting the process. */
 static void test_panic_handler(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
 }
 
+/** @brief Give each test a fresh parser and zr.system.exception registry for compile and runtime assertions.
+ * @return A state owned by the test; the caller must pass it to destroy_test_state.
+ */
 static SZrState *create_test_state(void) {
     SZrState *state = ZrTests_State_Create(test_panic_handler);
     if (state != ZR_NULL) {
@@ -73,10 +78,14 @@ static SZrState *create_test_state(void) {
     return state;
 }
 
+/** @brief Release the per-test global, including GC-owned compiled functions and registered provider state. */
 static void destroy_test_state(SZrState *state) {
     ZrTests_State_Destroy(state);
 }
 
+/** @brief Inspect compiler output when runtime behavior alone cannot prove the emitted exception boundary.
+ * @note Used only by the metadata and ordinary-function tests; it does not prove control-flow execution.
+ */
 static TZrBool function_contains_opcode(SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -93,6 +102,9 @@ static TZrBool function_contains_opcode(SZrFunction *function, EZrInstructionCod
     return ZR_FALSE;
 }
 
+/** @brief Select the nested function whose closure or exception opcodes the tests need to inspect.
+ * @return A borrowed child inside function; it becomes invalid when the parent function is freed.
+ */
 static SZrFunction *find_child_function_by_name(SZrFunction *function, const TZrChar *nameLiteral) {
     TZrUInt32 index;
 
@@ -117,6 +129,9 @@ static SZrFunction *find_child_function_by_name(SZrFunction *function, const TZr
     return ZR_NULL;
 }
 
+/** @brief Compile a named source fixture into the function inspected or executed by an exception test.
+ * @note On success *function belongs to the caller until Function_Free or global teardown.
+ */
 static TZrBool compile_source_to_function(SZrState *state,
                                           const TZrChar *source,
                                           const TZrChar *sourceNameLiteral,
@@ -136,6 +151,9 @@ static TZrBool compile_source_to_function(SZrState *state,
     return *function != ZR_NULL;
 }
 
+/** @brief Exercise parser, compiler and VM together, then release the temporary compiled function.
+ * @return False for compile, execution or integer-result failure; the caller owns state and result.
+ */
 static TZrBool execute_source_expect_int64(SZrState *state,
                                            const TZrChar *source,
                                            const TZrChar *sourceNameLiteral,
@@ -157,11 +175,14 @@ static TZrBool execute_source_expect_int64(SZrState *state,
     return success;
 }
 
-// 测试初始化
+/* Unity invokes tearDown even after an assertion aborts the current test body.
+ * BUG: tearDown owns no state, so an assertion after create_test_state skips the
+ * test body's destroy_test_state and leaks that VM global until process exit. */
 void setUp(void) {}
 
 void tearDown(void) {}
 
+/** @brief Verify scalar throws are boxed into Error-compatible catch values. */
 static void test_throw_string_is_boxed_and_caught_by_base_error(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -196,6 +217,7 @@ static void test_throw_string_is_boxed_and_caught_by_base_error(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Check ordered typed-catch dispatch against the registered zr.system.exception prototypes. */
 static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -230,6 +252,9 @@ static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Check that qualified catch syntax records the member type, not the imported module name.
+ * @note This test inspects compiler metadata only; it does not execute the qualified handler.
+ */
 static void test_qualified_exception_catch_uses_member_type_name(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -272,6 +297,7 @@ static void test_qualified_exception_catch_uses_member_type_name(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Run independent fixtures for normal completion, return and throw unwinding through finally. */
 static void test_finally_runs_for_normal_return_and_throw_paths(void) {
     SZrTestTimer timer = {0};
     const TZrChar *normalSource =
@@ -338,6 +364,9 @@ static void test_finally_runs_for_normal_return_and_throw_paths(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Inspect nested finally capture metadata and run a separate sibling-call visibility fixture.
+ * TODO: The closure fixture is compiled but never run, so its captured marker update is unverified.
+ */
 static void test_named_function_finally_closure_and_sibling_function_metadata(void) {
     SZrTestTimer timer = {0};
     const TZrChar *closureSource =
@@ -388,6 +417,7 @@ static void test_named_function_finally_closure_and_sibling_function_metadata(vo
     TEST_DIVIDER();
 }
 
+/** @brief Ensure return through catch/finally leaves no handler on the caller's following loop. */
 static void test_return_from_catch_discards_frame_exception_handlers(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -434,6 +464,7 @@ static void test_return_from_catch_discards_frame_exception_handlers(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Check the caught Error exposes the throwing frame before its caller and keeps source identity. */
 static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -476,6 +507,9 @@ static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Keep ordinary functions outside test-only exception wrapping, both in bytecode and execution.
+ * TODO: Execution asserts only failure; capture and assert the escaping error value to prove its identity.
+ */
 static void test_ordinary_function_throw_is_not_wrapped(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -513,6 +547,7 @@ static void test_ordinary_function_throw_is_not_wrapped(void) {
     TEST_DIVIDER();
 }
 
+/** @brief Run all eight exception contracts through Unity; the root CMake target provides the harness. */
 int main(void) {
     UNITY_BEGIN();
 
