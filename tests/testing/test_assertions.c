@@ -17,6 +17,7 @@
 
 #include <string.h>
 
+/* 先注册 provider，再由各用例切换 phase；注册成功本身不应绕过 Test phase 门禁。 */
 static SZrState *create_testing_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
@@ -25,6 +26,7 @@ static SZrState *create_testing_state(void) {
     return state;
 }
 
+/* 失败断言会同时留下 VM exception 与测试快照，下一段验证前须恢复可执行状态。 */
 static void reset_exception(SZrState *state) {
     ZrCore_Exception_ClearCurrent(state);
     state->threadStatus = ZR_THREAD_STATUS_FINE;
@@ -52,6 +54,7 @@ static const ZrLibAttributeRoleDescriptor *find_role(
     return ZR_NULL;
 }
 
+/* 比较 provider 描述符和 parser 属性 schema，防止编译与运行对测试角色解释分叉。 */
 static void test_descriptor_is_the_test_phase_contract_source(void) {
     const ZrLibModuleDescriptor *descriptor = ZrVmLibTesting_GetModuleDescriptor();
     const ZrLibFunctionDescriptor *throwsDescriptor;
@@ -97,6 +100,7 @@ static void test_descriptor_is_the_test_phase_contract_source(void) {
     }
 }
 
+/* 注册与导出可见性分离：Runtime/CompileTool 不得取到测试断言，Test 才可物化。 */
 static void test_runtime_phase_rejects_testing_and_test_phase_materializes_it(void) {
     SZrState *state = create_testing_state();
 
@@ -123,6 +127,8 @@ static void test_runtime_phase_rejects_testing_and_test_phase_materializes_it(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 失败断言同时产生 VM 异常和有界结构化快照；新状态下成功断言不产生快照。 */
+/* TODO: 增加先失败再成功的顺序，验证成功路径是否清除已有失败记录。 */
 static void test_assert_success_and_structured_failure(void) {
     SZrState *state = create_testing_state();
     SZrTypeValue arguments[2];
@@ -158,6 +164,7 @@ static void test_assert_success_and_structured_failure(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 相等性走 VM 语义；长文本失败快照应截断且保留类型和预期值。 */
 static void test_equal_uses_canonical_equality_and_bounded_snapshots(void) {
     SZrState *state = create_testing_state();
     SZrTypeValue arguments[2];
@@ -192,6 +199,7 @@ static void test_equal_uses_canonical_equality_and_bounded_snapshots(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 为 throws 提供正常返回的 native action，确认“未抛出”会成为断言失败。 */
 static TZrInt64 test_action_noop(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase =
@@ -203,6 +211,7 @@ static TZrInt64 test_action_noop(SZrState *state) {
     return 1;
 }
 
+/* 为 throws 提供真实 VM 异常；先保持 native 返回槽有效以隔离断言逻辑。 */
 static TZrInt64 test_action_throws(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase =
@@ -215,11 +224,13 @@ static TZrInt64 test_action_throws(SZrState *state) {
     return 1;
 }
 
+/* 在 action 内强制 GC，检查隐藏的预期类型身份跨回调仍可找回。 */
 static TZrInt64 test_action_collects_then_throws(SZrState *state) {
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
     return test_action_throws(state);
 }
 
+/* 无效类型参数必须在调用 action 前拒绝；此标记只观测是否错误进入回调。 */
 static TZrBool g_invalid_expected_type_action_called = ZR_FALSE;
 
 static TZrInt64 test_action_marks_unexpected_call(SZrState *state) {
@@ -227,6 +238,7 @@ static TZrInt64 test_action_marks_unexpected_call(SZrState *state) {
     return test_action_throws(state);
 }
 
+/* 快照格式化器故意抛错，测试断言失败处理不得被二次异常覆盖。 */
 static TZrInt64 test_formatter_throws(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase =
@@ -239,6 +251,7 @@ static TZrInt64 test_formatter_throws(SZrState *state) {
     return 1;
 }
 
+/* 将探针 action 装成 VM 可调用值，交由 throws 通过正常调用路径执行。 */
 static void init_native_callable(SZrState *state,
                                  FZrNativeFunction callback,
                                  SZrTypeValue *value) {
@@ -253,6 +266,7 @@ static void init_native_callable(SZrState *state,
     value->isGarbageCollectable = ZR_TRUE;
 }
 
+/* 让 expected type 经过运行时 TypeId 物化，覆盖 generic 参数的身份传递。 */
 static void init_type_id_argument(SZrState *state,
                                   const TZrChar *typeName,
                                   SZrTypeValue *value) {
@@ -270,6 +284,7 @@ static void init_type_id_argument(SZrState *state,
     value->type = ZR_VALUE_TYPE_OBJECT;
 }
 
+/* 成功捕获异常后不得向外泄漏 exception；未抛出的 action 应报告结构化失败。 */
 static void test_throws_returns_exception_and_rejects_non_throwing_action(void) {
     SZrState *state = create_testing_state();
     SZrTypeValue arguments[2];
@@ -296,6 +311,7 @@ static void test_throws_returns_exception_and_rejects_non_throwing_action(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 错配异常需保留 expected/actual 类型；非法 expected TypeId 不能执行 action。 */
 static void test_throws_rejects_wrong_exception_type(void) {
     SZrState *state = create_testing_state();
     SZrTypeValue arguments[2];
@@ -326,6 +342,7 @@ static void test_throws_rejects_wrong_exception_type(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 回调 GC 后仍须以原 TypeId 判定捕获异常，而非依赖可能移动的临时指针。 */
 static void test_throws_reloads_hidden_type_identity_after_callback_gc(void) {
     SZrState *state = create_testing_state();
     SZrTypeValue arguments[2];
@@ -343,6 +360,7 @@ static void test_throws_reloads_hidden_type_identity_after_callback_gc(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 临时替换 bool 的字符串元方法，验证两侧格式化失败都收敛成快照标记。 */
 static void test_equal_isolates_formatter_faults(void) {
     SZrState *state = create_testing_state();
     SZrTypeValue arguments[2];
@@ -365,6 +383,7 @@ static void test_equal_isolates_formatter_faults(void) {
     throwingMeta.function = ZR_CAST(
             SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(formatterClosure));
     previousMeta = boolPrototype->metaTable.metas[ZR_META_TO_STRING];
+    /* 原型为共享状态；仅在被测调用期间注入故障，随即恢复以免影响后续用例。 */
     boolPrototype->metaTable.metas[ZR_META_TO_STRING] = &throwingMeta;
 
     ZrLib_Value_SetBool(state, &arguments[0], ZR_FALSE);
@@ -384,6 +403,7 @@ static void test_equal_isolates_formatter_faults(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同一源码在普通构建应拒绝测试导出，在 Test 构建才可通过类型检查。 */
 static void test_compiler_enforces_testing_provider_phase(void) {
     static const TZrChar *source =
             "let testing = import(\"zr.testing\");\n"
@@ -405,6 +425,7 @@ static void test_compiler_enforces_testing_provider_phase(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 编译器须把 throws<T> 的类型身份送入运行时，供回调异常匹配。 */
 static void test_compiler_reifies_throws_type_argument(void) {
     static const TZrChar *source =
             "let testing = import(\"zr.testing\");\n"
@@ -428,6 +449,7 @@ static void test_compiler_reifies_throws_type_argument(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* action 的参数、返回值与 expected 类型约束属于编译期契约。 */
 static void test_compiler_rejects_invalid_throws_action_signatures(void) {
     static const TZrChar *sourceWithParameter =
             "let testing = import(\"zr.testing\");\n"
@@ -458,6 +480,7 @@ static void test_compiler_rejects_invalid_throws_action_signatures(void) {
     }
 }
 
+/* 脚本断言失败快照应携带可供测试报告定位的源码路径与行范围。 */
 static void test_compiled_assertion_captures_source_span(void) {
     static const TZrChar *source =
             "let testing = import(\"zr.testing\");\n"

@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+/* Test 构建里的 async 用例需要 task 内建；普通运行时状态在此统一注册。 */
 static SZrState *create_test_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
@@ -23,6 +24,7 @@ static void destroy_test_state(SZrState *state) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 用显式路径固定 manifest 中的模块身份，并切换生产/Test 两条编译入口。 */
 static SZrFunction *compile_source_named(
         SZrState *state,
         const TZrChar *source,
@@ -41,6 +43,7 @@ static SZrFunction *compile_source(SZrState *state, const TZrChar *source, TZrBo
     return compile_source_named(state, source, "test_role_binding.zr", testBuild);
 }
 
+/* 三种测试属性的 owner、phase 与 ID 必须在 parser schema 中一致。 */
 static void test_testing_roles_have_test_phase_owner_and_stable_ids(void) {
     const SZrParserAttributeSchema *testRole =
             ZrParser_AttributeContract_FindBuiltinByRole(ZR_PARSER_ATTRIBUTE_ROLE_TEST);
@@ -69,6 +72,7 @@ static void test_testing_roles_have_test_phase_owner_and_stable_ids(void) {
             skipRole->attributeId);
 }
 
+/* Test 构建将普通函数提升为可调用测试条目，并保留类型与模块图身份。 */
 static void test_test_build_emits_manifest_for_ordinary_function(void) {
     static const TZrChar *source =
             "#zr.testing.test#\n"
@@ -103,6 +107,7 @@ static void test_test_build_emits_manifest_for_ordinary_function(void) {
     destroy_test_state(state);
 }
 
+/* 生产构建仍需检查测试体，但不得把测试入口留在可执行函数树或 manifest。 */
 static void test_production_build_typechecks_then_trims_test_roots(void) {
     static const TZrChar *source =
             "#zr.testing.test#\n"
@@ -120,6 +125,7 @@ static void test_production_build_typechecks_then_trims_test_roots(void) {
     destroy_test_state(state);
 }
 
+/* case 参数和 skip 理由写入静态 manifest，runner 无须重新执行属性表达式。 */
 static void test_parameter_cases_and_skip_are_bound_as_constants(void) {
     static const TZrChar *source =
             "#zr.testing.test#\n"
@@ -150,6 +156,7 @@ static void test_parameter_cases_and_skip_are_bound_as_constants(void) {
     destroy_test_state(state);
 }
 
+/* async 测试必须显式满足 Task<void> 契约，manifest 同时标记异步入口。 */
 static void test_async_test_uses_explicit_task_void_contract(void) {
     static const TZrChar *source =
             "#zr.testing.test#\n"
@@ -172,6 +179,9 @@ static void test_async_test_uses_explicit_task_void_contract(void) {
     destroy_test_state(state);
 }
 
+/* 同名重载在 manifest 中应保留不同的规范符号和类型 ID。 */
+/* 调试模块会消费这两个 ID，当前 CLI runner 只按名称、序号和参数构造 case ID。 */
+/* TODO: 核对同名重载若产生相同 case 序号和参数时，runner 的 ID 是否冲突。 */
 static void test_overloaded_tests_keep_canonical_symbol_and_type_identity(void) {
     static const TZrChar *source =
             "#zr.testing.test#\n"
@@ -203,6 +213,7 @@ static void test_overloaded_tests_keep_canonical_symbol_and_type_identity(void) 
     destroy_test_state(state);
 }
 
+/* 对非法属性组合统一走 Test 编译入口，保留每个输入的原始诊断上下文。 */
 static void assert_test_compile_rejected(const TZrChar *source) {
     SZrState *state = create_test_state();
     SZrFunction *function;
@@ -223,6 +234,7 @@ static void assert_production_compile_rejected(const TZrChar *source) {
     destroy_test_state(state);
 }
 
+/* 检查测试属性仅绑定合法顶层签名，case 值为常量且与参数个数/类型相符。 */
 static void test_invalid_test_signatures_and_role_combinations_are_rejected(void) {
     assert_test_compile_rejected(
             "#zr.testing.test# fn missingCase(value: int): void { }\n");
@@ -255,6 +267,7 @@ static void test_invalid_test_signatures_and_role_combinations_are_rejected(void
             "struct Suite { #zr.testing.case(1)# fn member(): void { } }\n");
 }
 
+/* 生产构建裁去测试根前仍要诊断坏测试体及指向已裁函数的引用。 */
 static void test_production_still_rejects_invalid_test_body_and_dangling_reference(void) {
     assert_production_compile_rejected(
             "#zr.testing.test# fn invalidBody(): void { let value: int = \"wrong\"; }\n");
