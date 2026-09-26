@@ -52,7 +52,7 @@ typedef struct ZrMathComplex {
 } ZrMathComplex;
 
 /* TODO: 向量和四元数回调把上述结构体视为连续 TZrFloat64 数组传给 ZrMath_Dot；
- * 核对所有支持的 C ABI 是否保证成员之间无填充，再决定是否保留这种调用约定。 */
+ * 核对成员填充及跨成员指针运算的 C 对象模型约束，再决定是否保留这种调用约定。 */
 
 /** @brief 从 Tensor 对象借用的形状和数据数组视图。
  *  `rank` 对应 shape 长度，`size` 对应数据元素数；调用方不得把这些对象指针保存到本次

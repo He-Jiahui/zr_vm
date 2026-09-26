@@ -48,9 +48,13 @@ passes canonical `E` TypeId metadata through a compiler-hidden native argument;
 the runtime accepts only the exact exception type or an allowed subtype.
 Failures are bounded structured `AssertionFailure` values rather than
 process-global text matching. They carry the caller source span and bounded
-type/value snapshots; formatter faults are isolated and cannot replace the
-original assertion failure. The provider descriptor, phase, role ids, and
-public contract hash participate in the official-provider inventory.
+type/value snapshots. In `equal`, a value formatter fault sets the snapshot's
+`formatterFaulted` flag without replacing the comparison failure. The `throws`
+path snapshots a caught exception before matching its type; whether a formatter
+fault in that snapshot can clear the caught exception still needs a targeted
+test, as recorded by the `TODO:` in `runtime/assertions.c`. The provider
+descriptor, phase, role ids, and public contract hash participate in the
+official-provider inventory.
 
 The current `testing_copy_bounded` helper truncates these diagnostic strings by
 byte count. A multibyte UTF-8 character crossing the limit can leave an invalid

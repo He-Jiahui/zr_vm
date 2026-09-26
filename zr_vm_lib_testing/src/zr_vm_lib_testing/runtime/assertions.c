@@ -528,7 +528,7 @@ TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result) {
     }
     context->state->threadStatus = ZR_THREAD_STATUS_FINE;
     /* TODO: 此处格式化当前异常若再次抛错，testing_snapshot 会清除 currentException，
-     * 后续类型匹配可能失去原异常；需用格式化元方法抛错的 Error 派生对象验证。 */
+     * 后续类型匹配可能失去原异常；需用含抛错格式化字段的 Error 派生对象验证。 */
     testing_snapshot(
             context->state,
             &context->state->currentException,

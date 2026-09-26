@@ -78,6 +78,7 @@ static TZrBool zr_pool_align_up(
     return ZR_TRUE;
 }
 
+/* 返回对齐后的槽位存储，同时保留原始 allocation 供 slab 销毁时正确释放。 */
 static void *zr_pool_aligned_allocate(
         TZrSize size,
         TZrSize alignment,
@@ -173,6 +174,7 @@ static TZrBool zr_pool_grow_slab_directory(SZrPool *pool) {
     return ZR_TRUE;
 }
 
+/* 扩容只追加独立 slab，避免移动已交付给 guard 的元素地址。 */
 static EZrPoolStatus zr_pool_add_slab(SZrPool *pool) {
     SZrPoolSlab *slab;
     TZrSize storageSize;
@@ -254,6 +256,7 @@ static void zr_pool_clear_slot_dirty(
     }
 }
 
+/* 按池 ID、槽位与代数区分跨池、旧句柄和已退役实体，供所有公开操作共用。 */
 static EZrPoolStatus zr_pool_validate_handle(
         const SZrPool *pool,
         SZrPoolHandle handle,
@@ -435,6 +438,7 @@ EZrPoolStatus ZrPool_Destroy(SZrPool **poolPointer) {
     return ZR_POOL_STATUS_OK;
 }
 
+/* 构造失败时交给 abortInitialize 处理部分资源，再将未发布槽位放回空闲链。 */
 static EZrPoolStatus zr_pool_deliver_unlocked(
         SZrPool *pool,
         const void *source,
@@ -670,6 +674,7 @@ void *ZrPoolGuard_Value(SZrPoolGuard *guard) {
     return (void *)ZrPoolGuard_ReadOnlyValue(guard);
 }
 
+/* 只有最后一个借用结束才允许回收退役槽位；清空 guard 防止重复释放。 */
 static EZrPoolStatus zr_pool_guard_release_unlocked(SZrPoolGuard *guard) {
     SZrPool *pool;
     SZrPoolSlab *slab;
@@ -722,6 +727,7 @@ EZrPoolStatus ZrPoolGuard_Release(SZrPoolGuard *guard) {
     return status;
 }
 
+/* 布局扫描处理 LIVE 与 RETIRED；写 guard 未释放前保留脏标记供后续重扫。 */
 static EZrPoolStatus zr_pool_scan_unlocked(
         SZrPool *pool,
         uint64_t *outScannedSlots,
@@ -804,6 +810,7 @@ EZrPoolStatus ZrPool_Scan(
     return status;
 }
 
+/* GC 从规范类型布局完整追踪引用，不能只依赖增量脏标记判断对象可达性。 */
 EZrPoolStatus ZrPool_TraceGcValues(
         SZrPool *pool,
         FZrTypeLayoutGcValueVisitor visitor,
