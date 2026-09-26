@@ -9,6 +9,7 @@ const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescriptor(void) {
 }
 
 TZrBool ZrVmLibTesting_Register(SZrGlobalState *global) {
+    /* 任务内建类型先于测试描述符注册，使异步测试能引用规范 Task<void>。 */
     return global != ZR_NULL &&
            ZrCore_TaskRuntime_RegisterBuiltins(global) &&
            ZrLibrary_NativeRegistry_Attach(global) &&

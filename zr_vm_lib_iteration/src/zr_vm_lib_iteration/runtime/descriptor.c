@@ -2,19 +2,25 @@
 
 #include "zr_vm_core/object.h"
 
+/* 这些静态表只发布协议身份和成员契约；具体集合的迭代回调由 zr.container 提供。 */
 static const ZrLibGenericParameterDescriptor g_iteration_generic_parameter[] = {
         {"T", "Iteration element type.", ZR_NULL, 0},
 };
 
+/* 编译器生成的 Iterator<T> 载体使用同一 Enumerator<T> 协议身份，不能由脚本直接构造。 */
 static const TZrChar *g_iterator_implements[] = {
         "zr.iteration.Enumerator<T>",
 };
 
+/* 同步 cursor 的成员角色会投影到原生 prototype，供运行时按角色定位当前值。 */
+/* TODO: 本字段的 ROLE_INIT 宏令 isReadonly=false，而 docs/wiki/03-modules/iteration-api.md
+ * 称 current 为 readonly；需核对赋值语义和 native_binding_metadata.c 的可写投影，再决定契约。 */
 static const ZrLibFieldDescriptor g_enumerator_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("current", "T", "Current element after a successful moveNext.",
                                           ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD),
 };
 
+/* 异步成员目前只发布描述符；同步 for 的绑定器不消费 ASYNC_ITERATOR 角色。 */
 static const ZrLibFieldDescriptor g_async_iterator_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("current", "T", "Current element after a successful asynchronous moveNext.",
                                           ZR_MEMBER_CONTRACT_ROLE_ASYNC_ITERATOR_CURRENT_FIELD),
@@ -42,6 +48,8 @@ static const ZrLibMethodDescriptor g_async_iterator_methods[] = {
                                            ZR_MEMBER_CONTRACT_ROLE_ASYNC_ITERATOR_CLOSE),
 };
 
+/* 类型表区分 Iterable 生产者、Enumerator 游标、Iterator 载体和异步描述符；
+ * Iterator 与 Enumerator 共用 ITERATOR 位，避免按具体类型名判定迭代能力。 */
 static const ZrLibTypeDescriptor g_iteration_types[] = {
         ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("Iterable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
                                              ZR_NULL, 0, g_iterable_methods, ZR_ARRAY_COUNT(g_iterable_methods),
@@ -76,6 +84,7 @@ static const ZrLibTypeDescriptor g_iteration_types[] = {
                                              ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ASYNC_ITERATOR)),
 };
 
+/* 官方 Runtime provider 保留稳定的 ABI 与公共契约哈希；注册表借用此静态地址。 */
 static const ZrLibModuleDescriptor g_iteration_module_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.iteration",

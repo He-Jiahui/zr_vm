@@ -13,6 +13,8 @@ TZrBool ZrVmLibIteration_Register(SZrGlobalState *global) {
         return ZR_FALSE;
     }
 
+    // TODO: RegisterModule 内部也执行 Attach；需核对这里的提前附着是否承载独立的生命周期约束。
+    // 核查入口：native_binding_support.c 的注册流程及容器重复注册测试。
     if (!ZrLibrary_NativeRegistry_Attach(global)) {
         return ZR_FALSE;
     }

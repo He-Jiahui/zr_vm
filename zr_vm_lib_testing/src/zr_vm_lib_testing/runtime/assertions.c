@@ -12,6 +12,7 @@
 
 #define ZR_TESTING_THREAD_LOCAL ZR_THREAD_LOCAL
 
+/* CLI 逐用例清理此快照；线程隔离避免并行测试的失败信息互相覆盖。 */
 static ZR_TESTING_THREAD_LOCAL SZrTestingAssertionFailure g_last_failure;
 static ZR_TESTING_THREAD_LOCAL TZrBool g_has_last_failure = ZR_FALSE;
 
@@ -26,6 +27,7 @@ typedef struct SZrTestingFormatRequest {
     SZrString *text;
 } SZrTestingFormatRequest;
 
+/* 在断言回调内部捕获动作或格式化异常后，恢复外层 VM 调用帧的栈锚点和处理器边界。 */
 static EZrThreadStatus testing_try_run_preserving_frame(
         SZrState *state,
         FZrTryFunction function,
@@ -86,6 +88,9 @@ static EZrThreadStatus testing_try_run_preserving_frame(
     return status;
 }
 
+/* BUG: 多字节 UTF-8 文本恰跨容量边界时按字节截断会留下非法编码；
+ * 例如 85 个“€”后再接“€”写入 257 字节缓冲区，最后仅保留下一个字符首字节。
+ * 失败消息和快照均经此路径传给 CLI 与脚本可见异常。 */
 static void testing_copy_bounded(TZrChar *destination,
                                  TZrSize capacity,
                                  const TZrChar *source,
@@ -112,6 +117,7 @@ static void testing_format_try(SZrState *state, TZrPtr arguments) {
     request->text = ZrCore_Value_ToDebugString(state, request->value);
 }
 
+/* 调试格式化可能执行用户元方法并抛错；保留原断言，改用格式化失败标记供宿主诊断。 */
 static void testing_snapshot(SZrState *state,
                              const SZrTypeValue *value,
                              SZrTestingValueSnapshot *snapshot) {
@@ -189,6 +195,7 @@ static void testing_snapshot(SZrState *state,
     testing_copy_bounded(snapshot->text, sizeof(snapshot->text), text, &snapshot->truncated);
 }
 
+/* 原生断言帧没有脚本调用点，沿调用链找到最近 VM 帧并投影其执行位置。 */
 static void testing_source_span(const ZrLibCallContext *context,
                                 SZrTestingSourceSpan *outSpan) {
     SZrCallInfo *callInfo;
@@ -312,6 +319,7 @@ static SZrObject *testing_build_snapshot_object(SZrState *state,
     return object;
 }
 
+/* 同一失败记录既供 CLI 读取，也转成脚本可捕获的 AssertionFailure；构造失败时退回 VM 错误。 */
 static ZR_NO_RETURN void testing_raise_failure(ZrLibCallContext *context) {
     SZrState *state = context != ZR_NULL ? context->state : ZR_NULL;
     SZrObjectPrototype *prototype;
@@ -431,6 +439,7 @@ static void testing_call_try(SZrState *state, TZrPtr arguments) {
             state, request->callable, ZR_NULL, ZR_NULL, 0U, &request->result);
 }
 
+/* 编译器把 throws<E> 的 E 作为隐藏 TypeId 参数传入，运行时再次验证其 Error 继承关系。 */
 static TZrBool testing_read_expected_type_name(ZrLibCallContext *context,
                                                SZrString **outTypeName) {
     SZrTypeValue *typeValue;
@@ -493,7 +502,7 @@ TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result) {
     request.callable = callable;
     status = testing_try_run_preserving_frame(
             context->state, testing_call_try, &request);
-    /* The callback may collect or relocate managed arguments. */
+    /* 被调用动作可能触发 GC 并搬迁托管参数；重新从调用上下文读取隐藏 TypeId。 */
     if (!testing_read_expected_type_name(context, &expectedTypeName)) {
         return ZR_FALSE;
     }

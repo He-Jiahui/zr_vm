@@ -29,6 +29,7 @@ static const ZrLibGenericParameterDescriptor g_single_e[] = {
          g_error_constraint, ZR_ARRAY_COUNT(g_error_constraint)},
 };
 
+/* 描述符向解析器声明公开签名；throws<E> 的 TypeId 由编译器作为隐藏实参传入回调。 */
 static const ZrLibFunctionDescriptor g_testing_functions[] = {
         {"assert", 1U, 2U, ZrVmLibTesting_Assert, "void",
          "Raise AssertionFailure when condition is false.",
@@ -72,6 +73,7 @@ static const ZrLibFieldDescriptor g_value_snapshot_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("formatterFaulted", "bool", "Whether value formatting raised."),
 };
 
+/* 这些类型同时约束脚本可见失败对象和测试宿主读取的结构化字段。 */
 static const ZrLibTypeDescriptor g_testing_types[] = {
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Test", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
                                     ZR_NULL, 0U, ZR_NULL, 0U, ZR_NULL, 0U,
@@ -110,6 +112,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
                                     ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0U),
 };
 
+/* 属性角色与解析器内建 schema 的名称、稳定 ID 和保留策略保持一致，供编译期测试清单使用。 */
 static const ZrLibAttributeRoleDescriptor g_testing_roles[] = {
         {"zr.testing.test", 0xdf51f287U, ZR_PARSER_ATTRIBUTE_ROLE_TEST,
          ZR_PARSER_ATTRIBUTE_TARGET_FUNCTION, ZR_PARSER_ATTRIBUTE_RETENTION_ARTIFACT,
@@ -126,6 +129,7 @@ static const ZrLibModuleLinkDescriptor g_testing_links[] = {
         {"task", "zr.task", "Async tests return the canonical Task<void>."},
 };
 
+/* 仅在 Test 提供者阶段物化；公开契约哈希参与官方提供者一致性检查。 */
 static const ZrLibModuleDescriptor g_testing_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.testing",

@@ -709,6 +709,28 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                containingBlock != ZR_NULL ? containingBlock->id : 0u,
                                instruction->id, i, requiredFlags, instruction->flags);
         }
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+            module->constantCount != 0u) {
+            const SZrExecIrConstant *constant;
+            if (instruction->layoutId >= module->constantCount) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID,
+                                   function->id,
+                                   containingBlock != ZR_NULL
+                                       ? containingBlock->id : 0u,
+                                   instruction->id, i, module->constantCount,
+                                   instruction->layoutId);
+            }
+            constant = &module->constantPool[instruction->layoutId];
+            if (instruction->typeToken != 0u &&
+                instruction->typeToken != constant->typeToken) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                                   function->id,
+                                   containingBlock != ZR_NULL
+                                       ? containingBlock->id : 0u,
+                                   instruction->id, i, constant->typeToken,
+                                   instruction->typeToken);
+            }
+        }
         if (requiredFlags != 0u &&
             (instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
              instruction->effectOut == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID)) {

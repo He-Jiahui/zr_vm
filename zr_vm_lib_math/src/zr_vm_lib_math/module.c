@@ -18,6 +18,8 @@
 #include <math.h>
 #include <string.h>
 
+/* 容量服务于一次性拼接各 registry 的静态描述符。新增导出项时必须同步核对上界。 */
+/* TODO: 聚合 helper 未检查 offset + count；扩充 registry 时先核对实际总数并补容量约束。 */
 enum {
     ZR_MATH_MAX_FUNCTIONS = 48,
     ZR_MATH_MAX_TYPES = 8,
@@ -33,6 +35,7 @@ static const ZrLibConstantDescriptor g_math_constants[] = {
         {"NAN", ZR_LIB_CONSTANT_KIND_FLOAT, 0, NAN, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
 };
 
+/* native registry 借用这些描述符及其数组，因此发布后保持进程期有效。 */
 static ZrLibFunctionDescriptor g_math_functions[ZR_MATH_MAX_FUNCTIONS];
 static ZrLibTypeDescriptor g_math_types[ZR_MATH_MAX_TYPES];
 static ZrLibTypeHintDescriptor g_math_hints[ZR_MATH_MAX_HINTS];
@@ -95,6 +98,8 @@ static void zr_math_append_hints(const ZrLibTypeHintDescriptor *descriptors, TZr
         zr_math_append_hints(descriptors, count, &offset);            \
     } while (0)
 
+/* 三组 registry 保持稳定顺序，供运行时导入与编译期类型投影读取同一份契约。 */
+/* TODO: g_math_initialized 是普通全局标志；核实插件加载和内建注册是否允许并行首次调用。 */
 static void zr_math_initialize_module_descriptor(void) {
     TZrSize count = 0;
     TZrSize offset = 0;

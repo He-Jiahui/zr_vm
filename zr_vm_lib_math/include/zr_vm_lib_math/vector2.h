@@ -7,9 +7,14 @@
 
 #include "zr_vm_lib_math/math_common.h"
 
+/** @file
+ *  Vector2 回调通过 type descriptor 绑定为构造、方法与操作符；普通 C 调用方应使用
+ *  native binding 的调用约定，结果由 VM 管理而非由调用方释放。
+ */
 TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result);
+/** @brief 创建归一化新值；近零输入返回零向量而不修改 receiver。 */
 TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_Dot(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_Distance(ZrLibCallContext *context, SZrTypeValue *result);
@@ -17,6 +22,7 @@ TZrBool ZrMath_Vector2_Lerp(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_MetaSub(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result);
+/** @brief 为比较协议按长度平方建立顺序；这不是逐分量相等判断。 */
 TZrBool ZrMath_Vector2_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Vector2_MetaToString(ZrLibCallContext *context, SZrTypeValue *result);
 

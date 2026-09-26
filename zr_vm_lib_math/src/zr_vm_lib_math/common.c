@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 
+/* 在编译期选择可用指令集；调用方仍只依赖点积及余数处理这一数值契约。 */
 #if defined(__AVX2__)
 #define ZR_VM_LIB_MATH_USE_AVX2 1
 #include <immintrin.h>
@@ -17,6 +18,7 @@
 #include <arm_neon.h>
 #endif
 
+/* 命名方法和 meta 运算需要创建新对象，字段顺序与各 type descriptor 保持一致。 */
 static SZrObject *zr_math_make_object_with_fields(SZrState *state,
                                                   const TZrChar *typeName,
                                                   const TZrChar *const *fieldNames,
@@ -102,6 +104,7 @@ TZrFloat64 ZrMath_Dot(const TZrFloat64 *lhs, const TZrFloat64 *rhs, TZrSize coun
 }
 
 TZrBool ZrMath_NumberFromValue(const SZrTypeValue *value, TZrFloat64 *outValue) {
+    /* VM 数值标签统一转换为计算用 double；不接受对象等隐式强制转换。 */
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -128,6 +131,8 @@ TZrBool ZrMath_NumberFromValue(const SZrTypeValue *value, TZrFloat64 *outValue) 
 }
 
 TZrBool ZrMath_IntFromValue(const SZrTypeValue *value, TZrInt64 *outValue) {
+    /* TODO: Tensor shape/index 会走此处；核查非有限、越界浮点和 uint64 大值转换为
+     * int64 的平台语义，避免非法维度在转换后参与长度计算。 */
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -170,6 +175,7 @@ void ZrMath_WriteIntField(SZrState *state, SZrObject *object, const TZrChar *fie
 }
 
 void ZrMath_WriteBoolField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrBool value) {
+    /* TODO: 全仓只找到此定义及声明，确认布尔字段 helper 是否仍属当前 math 契约。 */
     SZrTypeValue fieldValue;
     ZrLib_Value_SetBool(state, &fieldValue, value);
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
@@ -356,6 +362,8 @@ TZrBool ZrMath_ArraySetValue(SZrState *state, SZrObject *array, TZrSize index, c
 }
 
 TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
+    /* BUG: 构造器允许 shape 数组进入此路径；正维度如 [INT64_MAX, 2] 在乘法处发生
+     * 有符号溢出，后续 data 长度校验无法可靠拒绝该输入。见 Tensor_Construct/Populate。 */
     TZrInt64 total = 1;
     TZrSize index;
     for (index = 0; index < ZrLib_Array_Length(shapeArray); index++) {
@@ -369,6 +377,7 @@ TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
 }
 
 SZrObject *ZrMath_TensorMakeZeroData(SZrState *state, TZrInt64 size) {
+    /* TODO: 当前没有调用方；核对它是否原本用于 metadata 宣称的 fillValue 构造形式。 */
     SZrObject *data = ZrLib_Array_New(state);
     TZrInt64 index;
     for (index = 0; data != ZR_NULL && index < size; index++) {
@@ -405,6 +414,8 @@ TZrBool ZrMath_TensorGetStorage(SZrState *state, SZrObject *tensor, ZrMathTensor
 }
 
 TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *shapeArray, SZrObject *dataArray) {
+    /* 构造器和计算回调把数组交给 Tensor 持有；这里只核对 shape 与 data 的元素数，
+     * 因此上游若允许用户传入非数值 data，后续计算还需自行检查每个元素。 */
     TZrInt64 totalSize;
 
     if (state == ZR_NULL || tensor == ZR_NULL || shapeArray == ZR_NULL || dataArray == ZR_NULL) {
@@ -462,6 +473,7 @@ TZrBool ZrMath_TensorShapeEquals(SZrState *state, SZrObject *lhsShape, SZrObject
 }
 
 TZrBool ZrMath_TensorComputeOffset(SZrState *state, SZrObject *shape, SZrObject *indices, TZrSize *outOffset) {
+    /* 逆序累积 stride，保证 get/set 与 matmul 使用相同的 row-major 布局。 */
     TZrSize rank = ZrLib_Array_Length(shape);
     TZrSize stride = 1;
     TZrSize offset = 0;
