@@ -73,9 +73,8 @@ int main(void) {
     result.records = records;
     result.capacity = 5u;
     if (!ZrParser_AotIr_LowerShared(&module, &result, &diagnostic)) {
-        fprintf(stderr, "status=%d fn=%u block=%u ins=%u idx=%u exp=%llu act=%llu\\n", (int)diagnostic.status,
-                diagnostic.functionId, diagnostic.blockId, diagnostic.instructionId, diagnostic.index,
-                (unsigned long long)diagnostic.expected, (unsigned long long)diagnostic.actual);
+        fprintf(stderr, "status=%d fn=%u block=%u ins=%u idx=%u\n", (int)diagnostic.status,
+                diagnostic.functionId, diagnostic.blockId, diagnostic.instructionId, diagnostic.index);
         return 1;
     }
     assert(result.count == 5u);
