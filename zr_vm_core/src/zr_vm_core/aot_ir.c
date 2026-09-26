@@ -343,6 +343,40 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                            functionIndex, function->frameLayout.logicalSlotCount,
                            function->frameLayout.storageSlotCount);
     }
+    if ((function->frameSlotCount != 0u && function->frameSlots == ZR_NULL) ||
+        (function->valueSlotCount != 0u && function->valueSlotPool == ZR_NULL) ||
+        function->frameSlotCount != function->frameLayout.storageSlotCount ||
+        function->valueSlotCount != function->frameLayout.logicalSlotCount) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, function->id, 0u, 0u,
+                           functionIndex, function->frameLayout.storageSlotCount,
+                           function->frameSlotCount);
+    }
+    for (TZrUInt32 i = 0u; i < function->frameSlotCount; ++i) {
+        const SZrAotIrFrameSlot *slot = &function->frameSlots[i];
+        if (slot->slotId == ZR_AOT_IR_ID_INVALID ||
+            !aot_ir_alignment_valid(slot->byteAlign) ||
+            slot->byteOffset > function->frameLayout.frameByteSize ||
+            (slot->byteOffset & (slot->byteAlign - 1u)) != 0u ||
+            slot->byteSize > function->frameLayout.frameByteSize -
+                             slot->byteOffset) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, function->id, 0u, 0u,
+                               i, function->frameLayout.frameByteSize, slot->byteOffset);
+        }
+        for (TZrUInt32 j = 0u; j < i; ++j) {
+            if (function->frameSlots[j].slotId == slot->slotId) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_DUPLICATE_ID, function->id,
+                                   0u, 0u, i, function->frameSlots[j].slotId,
+                                   slot->slotId);
+            }
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->valueSlotCount; ++i) {
+        TZrUInt32 slot = function->valueSlotPool[i];
+        if (slot >= function->frameSlotCount) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                               0u, 0u, i, function->frameSlotCount, slot);
+        }
+    }
     if (function->frameLayout.parameterPrefixBytes >
         function->frameLayout.returnAreaOffset) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, function->id, 0u, 0u,
@@ -356,7 +390,8 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                            functionIndex, function->frameLayout.frameByteAlign,
                            function->frameLayout.frameByteSize);
     }
-    if (function->blockCount == 0u || function->instructionCount == 0u ||
+    if ((function->sourceMapCount != 0u && function->sourceMaps == ZR_NULL) ||
+        function->blockCount == 0u || function->instructionCount == 0u ||
         ((function->operandCount > 0u) && (function->operandPool == ZR_NULL)) ||
         ((function->resultCount > 0u) && (function->resultPool == ZR_NULL)) ||
         ((function->phiIncomingCount > 0u) && (function->phiIncomingPool == ZR_NULL)) ||
@@ -618,6 +653,29 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                instruction->effectOut);
         }
     }
+    for (TZrUInt32 i = 0u; i < function->sourceMapCount; ++i) {
+        const SZrAotIrSourceMap *map = &function->sourceMaps[i];
+        TZrBool found = ZR_FALSE;
+        if (map->sourceId == ZR_AOT_IR_ID_INVALID ||
+            map->instructionId == ZR_AOT_IR_ID_INVALID ||
+            map->startOffset > map->endOffset || map->startLine == 0u ||
+            map->startColumn == 0u || map->endLine == 0u || map->endColumn == 0u) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                               0u, map->instructionId, i, 1u, map->sourceId);
+        }
+        for (TZrUInt32 j = 0u; j < function->instructionCount; ++j) {
+            if (function->instructions[j].id == map->instructionId &&
+                function->instructions[j].sourceId == map->sourceId) {
+                found = ZR_TRUE;
+                break;
+            }
+        }
+        if (!found) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                               0u, map->instructionId, i, function->instructionCount,
+                               map->instructionId);
+        }
+    }
     for (TZrUInt32 blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
         const SZrAotIrBlock *block = &function->blocks[blockIndex];
         TZrUInt32 latestEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
@@ -785,6 +843,19 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
         hash = aot_ir_hash_u32(hash, function->frameLayout.frameByteSize);
         hash = aot_ir_hash_u32(hash, function->frameLayout.frameByteAlign);
         hash = aot_ir_hash_u64(hash, function->frameLayout.layoutHash);
+        hash = aot_ir_hash_u32(hash, function->frameSlotCount);
+        for (TZrUInt32 j = 0u; j < function->frameSlotCount; ++j) {
+            const SZrAotIrFrameSlot *slot = &function->frameSlots[j];
+            hash = aot_ir_hash_u32(hash, slot->slotId);
+            hash = aot_ir_hash_u32(hash, slot->byteOffset);
+            hash = aot_ir_hash_u32(hash, slot->byteSize);
+            hash = aot_ir_hash_u32(hash, slot->byteAlign);
+            hash = aot_ir_hash_u32(hash, slot->typeToken);
+            hash = aot_ir_hash_u32(hash, slot->kind);
+        }
+        hash = aot_ir_hash_u32(hash, function->valueSlotCount);
+        for (TZrUInt32 j = 0u; j < function->valueSlotCount; ++j)
+            hash = aot_ir_hash_u32(hash, function->valueSlotPool[j]);
         hash = aot_ir_hash_u32(hash, function->blockCount);
         for (TZrUInt32 j = 0u; j < function->blockCount; ++j) {
             const SZrAotIrBlock *block = &function->blocks[j];
@@ -830,6 +901,18 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
         hash = aot_ir_hash_u32(hash, function->memoryTokenCount);
         for (TZrUInt32 j = 0u; j < function->memoryTokenCount; ++j)
             hash = aot_ir_hash_u32(hash, function->memoryTokenPool[j]);
+        hash = aot_ir_hash_u32(hash, function->sourceMapCount);
+        for (TZrUInt32 j = 0u; j < function->sourceMapCount; ++j) {
+            const SZrAotIrSourceMap *map = &function->sourceMaps[j];
+            hash = aot_ir_hash_u32(hash, map->sourceId);
+            hash = aot_ir_hash_u32(hash, map->instructionId);
+            hash = aot_ir_hash_u32(hash, map->startOffset);
+            hash = aot_ir_hash_u32(hash, map->endOffset);
+            hash = aot_ir_hash_u32(hash, map->startLine);
+            hash = aot_ir_hash_u32(hash, map->startColumn);
+            hash = aot_ir_hash_u32(hash, map->endLine);
+            hash = aot_ir_hash_u32(hash, map->endColumn);
+        }
         hash = aot_ir_hash_logical_map(hash, function->logicalStateMap);
         hash = aot_ir_hash_u64(hash, function->gcMapHash);
         hash = aot_ir_hash_u64(hash, function->exceptionMapHash);

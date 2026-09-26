@@ -15,7 +15,7 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 
-#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)3u)
+#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)4u)
 #define ZR_AOT_IR_TARGET_ABI_VERSION ((TZrUInt32)1u)
 #define ZR_AOT_IR_ID_INVALID ((TZrUInt32)0u)
 
@@ -71,6 +71,26 @@ typedef struct SZrAotIrFrameLayout {
     TZrUInt64 layoutHash;
 } SZrAotIrFrameLayout;
 
+typedef struct SZrAotIrFrameSlot {
+    TZrUInt32 slotId;
+    TZrUInt32 byteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 byteAlign;
+    TZrExecIrTypeToken typeToken;
+    TZrUInt32 kind;
+} SZrAotIrFrameSlot;
+
+typedef struct SZrAotIrSourceMap {
+    TZrUInt32 sourceId;
+    TZrUInt32 instructionId;
+    TZrUInt32 startOffset;
+    TZrUInt32 endOffset;
+    TZrUInt32 startLine;
+    TZrUInt32 startColumn;
+    TZrUInt32 endLine;
+    TZrUInt32 endColumn;
+} SZrAotIrSourceMap;
+
 typedef struct SZrAotIrInstruction {
     TZrUInt32 id;
     TZrUInt32 opcode;
@@ -111,6 +131,10 @@ typedef struct SZrAotIrFunction {
     SZrExecutionContract contract;
     TZrUInt64 signatureHash;
     SZrAotIrFrameLayout frameLayout;
+    const SZrAotIrFrameSlot *frameSlots;
+    TZrUInt32 frameSlotCount;
+    const TZrUInt32 *valueSlotPool;
+    TZrUInt32 valueSlotCount;
     const SZrAotIrBlock *blocks;
     TZrUInt32 blockCount;
     const SZrAotIrInstruction *instructions;
@@ -125,6 +149,8 @@ typedef struct SZrAotIrFunction {
     TZrUInt32 successorCount;
     const TZrExecIrMemoryTokenId *memoryTokenPool;
     TZrUInt32 memoryTokenCount;
+    const SZrAotIrSourceMap *sourceMaps;
+    TZrUInt32 sourceMapCount;
     const SZrExecIrStateMap *logicalStateMap; /* borrowed complete checkpoint table */
     TZrUInt64 gcMapHash;
     TZrUInt64 exceptionMapHash;

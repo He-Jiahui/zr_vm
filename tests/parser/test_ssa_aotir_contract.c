@@ -43,6 +43,13 @@ int main(void) {
     TZrExecIrValueId roots[] = {1u};
     TZrUInt32 owners[] = {ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED};
     TZrExecIrMemoryTokenId memoryTokens[] = {1u};
+    const SZrAotIrFrameSlot frameSlots[] = {
+        {1u, 0u, 8u, 8u, 17u, 0u}
+    };
+    const TZrUInt32 valueSlots[] = {0u};
+    const SZrAotIrSourceMap sourceMaps[] = {
+        {1u, 1u, 0u, 2u, 1u, 1u, 1u, 2u}
+    };
     const SZrAotIrInstruction instructions[] = {
         {1u, ZR_EXEC_IR_OPCODE_PHI, 0u, {0u, 1u}, {0u, 1u},
          {0u, 0u}, {0u, 1u}, 0u, 0u, 1u, 0u, 0u, 0u,
@@ -79,6 +86,12 @@ int main(void) {
     function.frameLayout.frameByteSize = 16u;
     function.frameLayout.frameByteAlign = 8u;
     function.frameLayout.layoutHash = UINT64_C(22);
+    function.frameSlots = frameSlots;
+    function.frameSlotCount = 1u;
+    function.valueSlotPool = valueSlots;
+    function.valueSlotCount = 1u;
+    function.sourceMaps = sourceMaps;
+    function.sourceMapCount = 1u;
     function.blocks = blocks;
     function.blockCount = 1u;
     function.instructions = instructions;
@@ -111,6 +124,49 @@ int main(void) {
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);
     assert(hash == ZrCore_AotIr_HashModule(&module));
+    {
+        SZrAotIrSourceMap changedSource = sourceMaps[0];
+        SZrAotIrFunction changedFunction = function;
+        SZrAotIrModule changedModule = module;
+        changedSource.endColumn++;
+        changedFunction.sourceMaps = &changedSource;
+        changedModule.functions = &changedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&changedModule, &diagnostic) ==
+               ZR_AOT_IR_OK);
+        assert(ZrCore_AotIr_HashModule(&changedModule) != hash);
+        changedSource.startOffset = 3u;
+        changedSource.endOffset = 2u;
+        assert(ZrCore_AotIr_ValidateModule(&changedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_RANGE);
+    }
+    {
+        TZrUInt32 badValueSlot[] = {1u};
+        SZrAotIrFunction changedFunction = function;
+        SZrAotIrModule changedModule = module;
+        changedFunction.valueSlotPool = badValueSlot;
+        changedModule.functions = &changedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&changedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_RANGE);
+    }
+    {
+        SZrAotIrFrameSlot changedSlot = frameSlots[0];
+        SZrAotIrFunction changedFunction = function;
+        SZrAotIrModule changedModule = module;
+        changedFunction.frameSlots = &changedSlot;
+        changedModule.functions = &changedFunction;
+        changedSlot.byteOffset = UINT32_MAX;
+        assert(ZrCore_AotIr_ValidateModule(&changedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_LAYOUT);
+        changedSlot.byteOffset = 0u;
+        changedSlot.byteAlign = 3u;
+        assert(ZrCore_AotIr_ValidateModule(&changedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_LAYOUT);
+        changedSlot.byteAlign = 8u;
+        changedSlot.typeToken++;
+        assert(ZrCore_AotIr_ValidateModule(&changedModule, &diagnostic) ==
+               ZR_AOT_IR_OK);
+        assert(ZrCore_AotIr_HashModule(&changedModule) != hash);
+    }
     {
         SZrAotIrInstruction typedInstruction = instructions[0];
         SZrAotIrFunction typedFunction = function;

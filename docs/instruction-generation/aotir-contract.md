@@ -33,7 +33,7 @@ required capability mask may contain only known execution capabilities.
 The module and function execution contracts likewise reject unknown capability
 and effect bits before any backend lowering begins.
 
-Schema version 3 replaces the old `{resumeId, instructionId, stateHash}`
+Schema version 4 replaces the old `{resumeId, instructionId, stateHash}`
 checkpoint summary with a borrowed view of the complete ExecIR logical
 state map. A function without checkpoints may leave `logicalStateMap` null.
 With a map, the function token, signature hash and generation must match the
@@ -50,6 +50,13 @@ borrowed memory-token pool. TYPE_TEST must carry a nonzero match type token;
 other instructions must carry zero. Memory ranges and every pool token are
 validated before hashing, so C/LLVM consumers cannot silently lose memory
 ordering or type-test semantics.
+
+Frame legalization is represented by borrowed frame-slot records and a
+logical-value-to-physical-slot pool. Source spans are borrowed as numeric
+source maps and must resolve to the instruction/source identity they describe;
+their offsets and one-based line/column endpoints are validated and hashed.
+This keeps ABI layout and source diagnostics available to both consumers
+without persisting host pointers.
 
 The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the

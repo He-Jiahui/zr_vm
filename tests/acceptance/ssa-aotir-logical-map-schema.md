@@ -2,7 +2,7 @@
 
 ## Scope
 
-The shared AOTIR schema v3 now borrows the entire ExecIR logical checkpoint map,
+The shared AOTIR schema v4 now borrows the entire ExecIR logical checkpoint map,
 including multi-phase entries and the live-value/root/owner side pools. Module
 validation checks storage, identity and indexed records; module hashing uses
 semantic contents, never host pointers or allocation capacity. This replaces
@@ -20,8 +20,8 @@ and could not represent recovery pools. The previous full GCC SSA label was
 
 ## Test Inventory
 
-`test_ssa_aotir_contract.c` covers two phases for one resume ID, typed tokens,
-memory ranges and pool tokens, and hash changes
+`test_ssa_aotir_contract.c` covers frame slots/value-slot mapping, source spans,
+two phases for one resume ID, typed tokens, memory ranges and pool tokens, and hash changes
 from owner/cleanup/deopt metadata and live/root pools, no-map validity, bad
 generation, missing root, invalid owner enum, bad instruction, zero resume ID,
 duplicate phase and out-of-range owner pool.
@@ -49,7 +49,7 @@ fixture sources are `tests/parser/test_ssa_aotir_contract.c`,
   same strict flags: compilation and execution exit 0, no sanitizer report.
 - Windows MSVC x64: `cl /nologo /utf-8 /W4 /WX /std:c11` for the same sources;
   executable exits 0. `/utf-8` avoids unrelated CP936 encoding warnings.
-- The schema v3 fixture was rerun with strict GCC/Clang and GCC
+- The schema v4 fixture was rerun with strict GCC and GCC
   ASan/UBSan after adding typed/memory validation; all executables exit 0.
 - GCC direct `ssa_c_llvm_lowering` and strict full adapter fixture compiled
   and executed with the new storage source, exit 0. The full adapter fixture
@@ -70,10 +70,17 @@ fixture sources are `tests/parser/test_ssa_aotir_contract.c`,
   `conditional_invoke_and_throw_try_finally_cleanup.zr:4:5` and
   `repeated_conditional_invokes_and_object_throws_cleanup.zr:4:5`. The same
   two failures were present in the baseline before this schema change.
+- After the schema v4 side-table expansion, direct GCC/Clang/MSVC and
+  sanitizer checks were rerun. A follow-up GCC CMake invocation entered a
+  workspace-wide glob rebuild (772 objects) because unrelated files were
+  changing concurrently; it was stopped before completion and is not counted
+  as a pass. The preceding focused CMake run remains valid for schema v3;
+  schema v4 CMake coverage is therefore recorded as pending.
 
 ## Acceptance Decision
 
-This schema slice is accepted with focused GCC 3/3, Clang 2/2, direct MSVC,
-GCC/Clang and GCC ASan/UBSan checks passing; the existing 79/80 full-label
-gap remains open outside this slice. Descriptor-only adapter and legacy
-artifact writer remain separate paths; no C/LLVM execution parity is claimed.
+This schema slice is accepted for direct compiler/sanitizer evidence and the
+existing consumer fixture; schema v4 focused CMake coverage remains pending.
+The existing 79/80 full-label gap remains open outside this slice. Descriptor-
+only adapter and legacy artifact writer remain separate paths; no C/LLVM
+execution parity is claimed.
