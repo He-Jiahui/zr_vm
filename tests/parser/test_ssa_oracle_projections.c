@@ -591,7 +591,8 @@ static void test_move_consumes_source_and_rejects_reuse(void) {
     ZrParser_ExecBcExecutionResult_Init(&bcExecution);
     assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
                                            &diagnostic));
-    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+           diagnostic.instructionId == 3u && diagnostic.sourceId == 713u &&
            bcExecution.slots == ZR_NULL);
     ZrParser_ExecBcExecutionResult_Free(&bcExecution);
     ZrParser_ExecBcProjection_Free(&bc);
@@ -2112,11 +2113,13 @@ static void test_malformed_input(void) {
 
 void test_oracle_execbc_memory_differential(void);
 void test_oracle_execbc_call_differential(void);
+void test_oracle_execbc_drop_differential(void);
 
 int main(void) {
     test_load_requires_and_uses_memory_provider();
     test_oracle_execbc_memory_differential();
     test_oracle_execbc_call_differential();
+    test_oracle_execbc_drop_differential();
     test_allocate_requires_and_uses_provider();
     test_drop_consumes_value_and_rejects_reuse();
     test_move_consumes_source_and_rejects_reuse();

@@ -35,6 +35,7 @@ void ZrParser_ExecBcExecutionResult_Init(SZrExecBcExecutionResult *result) {
 void ZrParser_ExecBcExecutionResult_Free(SZrExecBcExecutionResult *result) {
     if (result != ZR_NULL && result->ownershipTag == ZR_EXEC_BC_EXECUTION_RESULT_TAG) {
         free(result->slots);
+        free(result->ownerStates);
         free(result->events);
         memset(result, 0, sizeof(*result));
     }
@@ -79,27 +80,37 @@ static TZrFloat64 zr_execbc_float(const SZrExecIrOracleValue *value) {
 
 static TZrBool zr_execbc_operand(const SZrExecBcProjection *projection,
                                  const SZrExecBcInstruction *instruction,
-                                 const SZrExecIrOracleValue *slots,
+                                 const SZrExecBcExecutionResult *state,
                                  TZrUInt32 index, SZrExecIrOracleValue *value) {
     TZrExecIrValueId id;
+    TZrUInt32 slot;
     if (index >= instruction->operands.count) return ZR_FALSE;
     id = projection->operands[instruction->operands.start + index];
     if (id == ZR_EXEC_IR_VALUE_ID_INVALID || id > projection->valueSlotCount)
         return ZR_FALSE;
-    *value = slots[projection->valueSlots[id - 1u]];
-    return value->kind != ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+    slot = projection->valueSlots[id - 1u];
+    *value = state->slots[slot];
+    if (value->kind == ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED) return ZR_FALSE;
+    return (TZrBool)((projection->slotValues[slot].ownership != ZR_EXEC_IR_OWNERSHIP_UNIQUE &&
+                     projection->slotValues[slot].ownership != ZR_EXEC_IR_OWNERSHIP_SHARED) ||
+                    state->ownerStates[slot] == ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED);
 }
 
 static TZrBool zr_execbc_assign(const SZrExecBcProjection *projection,
                                 const SZrExecBcInstruction *instruction,
-                                SZrExecIrOracleValue *slots,
+                                SZrExecBcExecutionResult *state,
                                 const SZrExecIrOracleValue *value) {
     TZrExecIrValueId id;
+    TZrUInt32 slot;
     if (instruction->results.count == 0u) return ZR_TRUE;
     id = projection->results[instruction->results.start];
     if (id == ZR_EXEC_IR_VALUE_ID_INVALID || id > projection->valueSlotCount)
         return ZR_FALSE;
-    slots[projection->valueSlots[id - 1u]] = *value;
+    slot = projection->valueSlots[id - 1u];
+    state->slots[slot] = *value;
+    state->ownerStates[slot] = projection->slotValues[slot].ownership ==
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN
+                                         : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
     return ZR_TRUE;
 }
 
@@ -271,10 +282,23 @@ static TZrBool zr_execbc_compare(const SZrExecBcInstruction *instruction,
     return ZR_TRUE;
 }
 
+typedef struct SZrExecBcPhiContext {
+    const SZrExecBcProjection *projection;
+    SZrExecBcExecutionResult *result;
+} SZrExecBcPhiContext;
+
 static TZrBool zr_execbc_copy_slot(void *userData, TZrUInt32 destination,
                                    TZrUInt32 source) {
-    SZrExecIrOracleValue *slots = (SZrExecIrOracleValue *)userData;
-    slots[destination] = slots[source];
+    SZrExecBcPhiContext *context = (SZrExecBcPhiContext *)userData;
+    TZrUInt32 owner = context->result->ownerStates[source];
+    context->result->slots[destination] = context->result->slots[source];
+    if (destination < context->projection->valueSlotCount &&
+        (owner == ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED ||
+         owner == ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN))
+        owner = context->projection->slotValues[destination].ownership ==
+                ZR_EXEC_IR_OWNERSHIP_UNKNOWN ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN
+                                             : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+    context->result->ownerStates[destination] = owner;
     return ZR_TRUE;
 }
 
@@ -365,7 +389,7 @@ static TZrBool zr_execbc_call(const SZrExecBcProjection *projection,
         }
     }
     for (TZrUInt32 i = 0u; i < count; ++i) {
-        if (!zr_execbc_operand(projection, instruction, candidate->slots,
+        if (!zr_execbc_operand(projection, instruction, candidate,
                                i, &operands[i])) {
             zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                            projection, block, id, i);
@@ -387,7 +411,7 @@ static TZrBool zr_execbc_call(const SZrExecBcProjection *projection,
     }
     zr_execbc_record_event(candidate, instruction, id, ZR_EXEC_IR_ORACLE_EVENT_CALL,
                            operands, count);
-    if (!zr_execbc_assign(projection, instruction, candidate->slots, &value)) {
+    if (!zr_execbc_assign(projection, instruction, candidate, &value)) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
                        projection, block, id, count);
         goto done;
@@ -404,6 +428,7 @@ TZrBool ZrParser_ExecBcProjection_Run(
         SZrExecBcExecutionResult *result,
         SZrExecIrDiagnostic *diagnostic) {
     SZrExecBcExecutionResult candidate;
+    SZrExecBcPhiContext phiContext = {projection, &candidate};
     TZrExecIrBlockId block, previous = ZR_EXEC_IR_BLOCK_ID_INVALID;
     TZrExecIrBlockId selectedSuccessor = ZR_EXEC_IR_BLOCK_ID_INVALID;
     TZrUInt32 ordinal = 0u, steps = 0u;
@@ -421,7 +446,8 @@ TZrBool ZrParser_ExecBcProjection_Run(
                        projection, 0u, 0u, 0u);
         return ZR_FALSE;
     }
-    if ((projection->valueSlotCount != 0u && projection->valueSlots == ZR_NULL) ||
+    if ((projection->valueSlotCount != 0u &&
+         (projection->valueSlots == ZR_NULL || projection->slotValues == ZR_NULL)) ||
         (projection->phiMoveCount != 0u && projection->phiMoves == ZR_NULL)) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
                        projection, 0u, 0u, 0u);
@@ -467,11 +493,16 @@ TZrBool ZrParser_ExecBcProjection_Run(
     if (candidate.slotCount != 0u) {
         candidate.slots = (SZrExecIrOracleValue *)calloc(candidate.slotCount,
                                                           sizeof(*candidate.slots));
-        if (candidate.slots == ZR_NULL) {
+        candidate.ownerStates = (TZrUInt32 *)calloc(candidate.slotCount,
+                                                    sizeof(*candidate.ownerStates));
+        if (candidate.slots == ZR_NULL || candidate.ownerStates == ZR_NULL) {
             zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
                            projection, 0u, 0u, candidate.slotCount);
+            ZrParser_ExecBcExecutionResult_Free(&candidate);
             return ZR_FALSE;
         }
+        for (TZrUInt32 i = 0u; i < candidate.slotCount; ++i)
+            candidate.ownerStates[i] = ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED;
     }
     for (TZrUInt32 i = 0u; i < projection->valueSlotCount; ++i) {
         if (projection->valueSlots[i] >= candidate.slotCount) {
@@ -480,10 +511,26 @@ TZrBool ZrParser_ExecBcProjection_Run(
             ZrParser_ExecBcExecutionResult_Free(&candidate);
             return ZR_FALSE;
         }
+        {
+            TZrUInt32 slot = projection->valueSlots[i];
+            const SZrExecIrValue *fact = &projection->slotValues[slot];
+            if ((fact->flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u) {
+                candidate.ownerStates[slot] = fact->ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN
+                        ? ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN
+                        : ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+            }
+        }
     }
     if (input != ZR_NULL && input->initialValueCount != 0u) {
         for (TZrUInt32 i = 0u; i < input->initialValueCount; ++i)
             candidate.slots[projection->valueSlots[i]] = input->initialValues[i];
+    }
+    for (TZrUInt32 i = 0u; i < projection->valueSlotCount; ++i) {
+        TZrUInt32 slot = projection->valueSlots[i];
+        if ((projection->slotValues[slot].flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) == 0u &&
+            (projection->slotValues[slot].ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE ||
+             projection->slotValues[slot].ownership == ZR_EXEC_IR_OWNERSHIP_SHARED))
+            candidate.slots[slot].kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
     }
     block = projection->blockCount == 0u ? 1u :
             (projection->entryBlockId != ZR_EXEC_IR_BLOCK_ID_INVALID
@@ -497,7 +544,7 @@ TZrBool ZrParser_ExecBcProjection_Run(
         if (previous != ZR_EXEC_IR_BLOCK_ID_INVALID &&
             !ZrParser_ExecBcProjection_ExecutePhiMoves(
                 projection, previous, candidate.slots, candidate.slotCount,
-                zr_execbc_copy_slot, candidate.slots, diagnostic))
+                zr_execbc_copy_slot, &phiContext, diagnostic))
             goto fail;
         for (TZrUInt32 index = current != ZR_NULL ? current->instructions.start : 0u;
              index < (current != ZR_NULL
@@ -517,21 +564,24 @@ TZrBool ZrParser_ExecBcProjection_Run(
                         instruction->layoutId < input->constantCount)
                         value = input->constants[instruction->layoutId];
                     else { value.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED; value.as.signedInteger = instruction->layoutId; }
-                    if (!zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto invalid;
+                    if (!zr_execbc_assign(projection, instruction, &candidate, &value)) goto invalid;
                     break;
                 case ZR_EXEC_IR_OPCODE_COPY:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &value) ||
-                        !zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto invalid;
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value) ||
+                        !zr_execbc_assign(projection, instruction, &candidate, &value)) goto invalid;
                     break;
                 case ZR_EXEC_IR_OPCODE_MOVE:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &value) ||
-                        !zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto invalid;
-                    candidate.slots[projection->valueSlots[
-                        projection->operands[instruction->operands.start] - 1u]].kind =
-                            ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value) ||
+                        !zr_execbc_assign(projection, instruction, &candidate, &value)) goto invalid;
+                    {
+                        TZrUInt32 source = projection->valueSlots[
+                            projection->operands[instruction->operands.start] - 1u];
+                        candidate.slots[source].kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+                        candidate.ownerStates[source] = ZR_EXEC_IR_STATE_MAP_OWNER_MOVED;
+                    }
                     break;
                 case ZR_EXEC_IR_OPCODE_CONVERT:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &value))
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value))
                         goto invalid;
                     if (ZR_VALUE_IS_TYPE_BOOL(instruction->typeToken) ||
                         ZR_VALUE_IS_TYPE_NUMBER(instruction->typeToken)) {
@@ -539,19 +589,19 @@ TZrBool ZrParser_ExecBcProjection_Run(
                             goto arithmetic;
                         value = converted;
                     }
-                    if (!zr_execbc_assign(projection, instruction, candidate.slots, &value))
+                    if (!zr_execbc_assign(projection, instruction, &candidate, &value))
                         goto invalid;
                     break;
                 case ZR_EXEC_IR_OPCODE_ADD: case ZR_EXEC_IR_OPCODE_SUB:
                 case ZR_EXEC_IR_OPCODE_MUL: case ZR_EXEC_IR_OPCODE_DIV:
                 case ZR_EXEC_IR_OPCODE_ARITHMETIC:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &left) ||
-                        !zr_execbc_operand(projection, instruction, candidate.slots, 1u, &right) ||
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &left) ||
+                        !zr_execbc_operand(projection, instruction, &candidate, 1u, &right) ||
                         !zr_execbc_binary((EZrExecIrOpcode)instruction->opcode, &left, &right, &value) ||
-                        !zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto arithmetic;
+                        !zr_execbc_assign(projection, instruction, &candidate, &value)) goto arithmetic;
                     break;
                 case ZR_EXEC_IR_OPCODE_NEG:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &value) ||
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value) ||
                         !zr_execbc_numeric(&value)) goto arithmetic;
                     if (value.kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT)
                         value.as.floating = -value.as.floating;
@@ -561,13 +611,13 @@ TZrBool ZrParser_ExecBcProjection_Run(
                         value.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
                         value.as.signedInteger = -signedValue;
                     }
-                    if (!zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto invalid;
+                    if (!zr_execbc_assign(projection, instruction, &candidate, &value)) goto invalid;
                     break;
                 case ZR_EXEC_IR_OPCODE_COMPARE:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &left) ||
-                        !zr_execbc_operand(projection, instruction, candidate.slots, 1u, &right) ||
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &left) ||
+                        !zr_execbc_operand(projection, instruction, &candidate, 1u, &right) ||
                         !zr_execbc_compare(instruction, &left, &right, &value)) goto arithmetic;
-                    if (!zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto invalid;
+                    if (!zr_execbc_assign(projection, instruction, &candidate, &value)) goto invalid;
                     break;
                 case ZR_EXEC_IR_OPCODE_LOAD: case ZR_EXEC_IR_OPCODE_STORE: {
                     TZrBool load = instruction->opcode == ZR_EXEC_IR_OPCODE_LOAD;
@@ -581,7 +631,7 @@ TZrBool ZrParser_ExecBcProjection_Run(
                     }
                     for (TZrUInt32 at = 0u; at < operandCount; ++at) {
                         if (!zr_execbc_operand(projection, instruction,
-                                               candidate.slots, at, &operands[at]))
+                                               &candidate, at, &operands[at]))
                             goto invalid;
                     }
                     if (!zr_execbc_reserve_event(&candidate, projection, block,
@@ -605,15 +655,57 @@ TZrBool ZrParser_ExecBcProjection_Run(
                         load ? ZR_EXEC_IR_ORACLE_EVENT_LOAD : ZR_EXEC_IR_ORACLE_EVENT_STORE,
                         operands, operandCount);
                     if (load && !zr_execbc_assign(projection, instruction,
-                                                   candidate.slots, &value)) goto invalid;
+                                                   &candidate, &value)) goto invalid;
                     break;
                 }
                 case ZR_EXEC_IR_OPCODE_CALL:
                     if (!zr_execbc_call(projection, input, &candidate, instruction,
                                         block, index + 1u, diagnostic)) goto fail;
                     break;
+                case ZR_EXEC_IR_OPCODE_DROP:
+                case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED: {
+                    TZrExecIrValueId owner;
+                    TZrUInt32 slot, state;
+                    if (instruction->operands.count != 1u ||
+                        instruction->operands.start >= projection->operandCount)
+                        goto invalid;
+                    owner = projection->operands[instruction->operands.start];
+                    if (owner == 0u || owner > projection->valueSlotCount)
+                        goto invalid;
+                    slot = projection->valueSlots[owner - 1u];
+                    state = candidate.ownerStates[slot];
+                    if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED &&
+                        (state == ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED ||
+                         state == ZR_EXEC_IR_STATE_MAP_OWNER_MOVED ||
+                         state == ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED))
+                        break;
+                    if (instruction->opcode == ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED &&
+                        state != ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, state);
+                        goto fail;
+                    }
+                    if (!zr_execbc_operand(projection, instruction, &candidate,
+                                           0u, &value)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, owner);
+                        goto fail;
+                    }
+                    if (!zr_execbc_reserve_event(&candidate, projection, block,
+                                                 index + 1u, diagnostic)) goto fail;
+                    zr_execbc_record_event(&candidate, instruction, index + 1u,
+                                           ZR_EXEC_IR_ORACLE_EVENT_DROP, &value, 1u);
+                    candidate.slots[slot].kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+                    candidate.ownerStates[slot] = ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED;
+                    break;
+                }
                 case ZR_EXEC_IR_OPCODE_RETURN:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &candidate.returnValue)) goto invalid;
+                    if (!zr_execbc_operand(projection, instruction, &candidate,
+                                           0u, &candidate.returnValue)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, 0u);
+                        goto fail;
+                    }
                     candidate.currentBlock = current != ZR_NULL ? block : 0u;
                     candidate.returnInstructionId = index + 1u;
                     candidate.returnSourceId = instruction->sourceId;
@@ -624,12 +716,12 @@ TZrBool ZrParser_ExecBcProjection_Run(
                     ordinal = 0u; terminated = ZR_TRUE;
                     goto select_successor;
                 case ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &value)) goto invalid;
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value)) goto invalid;
                     ordinal = zr_execbc_truthy(&value) ? 0u : 1u;
                     terminated = ZR_TRUE;
                     goto select_successor;
                 case ZR_EXEC_IR_OPCODE_SWITCH:
-                    if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &value)) goto invalid;
+                    if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value)) goto invalid;
                     if (instruction->successorRange.count == 0u) goto invalid;
                     ordinal = value.kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED
                             ? (TZrUInt32)value.as.unsignedInteger : (TZrUInt32)value.as.signedInteger;

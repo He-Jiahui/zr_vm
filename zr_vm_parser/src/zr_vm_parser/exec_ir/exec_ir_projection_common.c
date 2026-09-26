@@ -59,7 +59,8 @@ static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_SWITCH: case ZR_EXEC_IR_OPCODE_RETURN:
         case ZR_EXEC_IR_OPCODE_PHI: case ZR_EXEC_IR_OPCODE_CALL:
         case ZR_EXEC_IR_OPCODE_LOAD:
-        case ZR_EXEC_IR_OPCODE_STORE:
+        case ZR_EXEC_IR_OPCODE_STORE: case ZR_EXEC_IR_OPCODE_DROP:
+        case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
             return ZR_TRUE;
         default: return ZR_FALSE;
     }
@@ -521,6 +522,7 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->results);
     free(p->memoryTokens);
     free(p->valueSlots);
+    free(p->slotValues);
     free(p->blocks);
     free(p->predecessors);
     free(p->successors);
@@ -631,7 +633,9 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     if (!zr_projection_bytes(p->valueSlotCount, sizeof(*p->valueSlots), &bytes)) goto overflow;
     if (p->valueSlotCount != 0u) {
         p->valueSlots = (TZrUInt32 *)malloc(bytes);
-        if (p->valueSlots == ZR_NULL) goto oom;
+        p->slotValues = (SZrExecIrValue *)calloc(p->valueSlotCount,
+                                                  sizeof(*p->slotValues));
+        if (p->valueSlots == ZR_NULL || p->slotValues == ZR_NULL) goto oom;
         if (f->frameLayout != ZR_NULL &&
             f->frameLayout->slotCount < f->valueCount) {
             zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
@@ -667,6 +671,15 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
                 p->valueSlots[i] = f->frameLayout != ZR_NULL
                     ? f->frameLayout->slots[i].slotId : i;
             }
+        }
+        for (i = 0u; i < p->valueSlotCount; ++i) {
+            TZrUInt32 slot = p->valueSlots[i];
+            if (slot >= p->valueSlotCount || p->slotValues[slot].id != 0u) {
+                zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                                   f, 0u, 0u, p->valueSlotCount, slot);
+                goto fail;
+            }
+            p->slotValues[slot] = f->values[i];
         }
     }
     if (!zr_projection_bytes(p->blockCount, sizeof(*p->blocks), &bytes)) goto overflow;
@@ -835,6 +848,7 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->memoryTokenCount = source->memoryTokenCount;
     destination->valueSlots = source->valueSlots;
     destination->valueSlotCount = source->valueSlotCount;
+    destination->slotValues = source->slotValues;
     destination->blocks = source->blocks;
     destination->blockCount = source->blockCount;
     destination->syntheticBlockCount = source->syntheticBlockCount;
@@ -868,6 +882,7 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->results = ZR_NULL;
     source->memoryTokens = ZR_NULL;
     source->valueSlots = ZR_NULL;
+    source->slotValues = ZR_NULL;
     source->blocks = ZR_NULL;
     source->predecessors = ZR_NULL;
     source->successors = ZR_NULL;

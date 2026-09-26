@@ -11,6 +11,7 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->results);
     free(projection->memoryTokens);
     free(projection->valueSlots);
+    free(projection->slotValues);
     free(projection->blocks);
     free(projection->predecessors);
     free(projection->successors);

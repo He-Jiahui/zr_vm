@@ -74,3 +74,11 @@ Invalid initial-value and constant kinds are rejected before either CALL
 provider runs, with diagnostic instruction ID zero and unchanged projected
 result. Event-allocation OOM parity remains unverified: the projection
 reserves before invoking the provider, but the oracle appends afterward.
+The same target now compares verifier-valid ownership cleanup: direct-oracle
+and projected DROP snapshots, return values, and owner states for ordinary
+DROP, repeated guarded DROP, MOVE followed by guarded no-op, and a branch
+join with owner initialization on only one path. The uninitialized branch
+must skip DROP with no event. A mutated RETURN that reads a consumed owner
+reports INVALID_VALUE with its source and preserves the prior result. These
+tests do not establish exceptional cleanup, ownership-provider effects, or
+production backend parity.

@@ -30,6 +30,7 @@ typedef struct SZrExecBcExecutionInput {
 typedef struct SZrExecBcExecutionResult {
     SZrExecIrOracleValue *slots;
     TZrUInt32 slotCount;
+    TZrUInt32 *ownerStates; /* indexed by physical slot, including phi temp */
     TZrUInt32 executedInstructionCount;
     TZrExecIrBlockId currentBlock;
     TZrExecIrInstructionId returnInstructionId;

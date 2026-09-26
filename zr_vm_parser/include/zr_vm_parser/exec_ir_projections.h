@@ -69,6 +69,7 @@ typedef struct SZrExecBcProjection {
     TZrUInt32 memoryTokenCount;
     TZrUInt32 *valueSlots; /* valueId -> physical slot, no slot reuse */
     TZrUInt32 valueSlotCount;
+    SZrExecIrValue *slotValues; /* physical slot -> owned value metadata */
     SZrExecBcBlock *blocks;
     TZrUInt32 blockCount;
     TZrUInt32 syntheticBlockCount;
@@ -115,6 +116,7 @@ typedef struct SZrAotIrProjection {
     TZrUInt32 memoryTokenCount;
     TZrUInt32 *valueSlots;
     TZrUInt32 valueSlotCount;
+    SZrExecIrValue *slotValues;
     SZrExecBcBlock *blocks;
     TZrUInt32 blockCount;
     TZrUInt32 syntheticBlockCount;

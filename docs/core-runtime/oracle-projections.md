@@ -281,13 +281,25 @@ The projected runner reserves event capacity before CALL side effects; the
 oracle appends its event after the callback, so their provider invocation
 timing differs if event allocation fails. This fault is not covered by the
 successful-event differential contract.
+The projection also owns one value fact per physical slot (`slotValues`),
+transferred to AOTIR and released with either projection. The projected
+execution result owns a parallel `ownerStates` array. MOVE marks its source
+MOVED, and DROP snapshots the owned value in a bounded event before clearing
+the slot and marking it DROPPED. `DROP_IF_INITIALIZED` in a verifier-approved
+cleanup block drops only an INITIALIZED owner; UNINITIALIZED, MOVED, and
+DROPPED states are no-ops. Reading a consumed owner reports INVALID_VALUE at
+the executed instruction/source. Verified single-block and conditional
+branch-join fixtures compare the direct oracle's result, DROP event order,
+and owner states against the projected runner, including an uninitialized
+join-path skip. Ownership event-allocation failures are not fault-injected.
 Only projections whose opcodes have a runner implementation are marked
-`runnable`; ownership drops, exceptions, suspend, and production
+`runnable`; other ownership effects, exceptions, suspend, and production
 runtime callback wiring still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
 bytecode for it, and establishes no C/LLVM or full effect-event parity. The
 direct differential currently covers scalar/control returns, pointer-free
-LOAD/STORE memory providers, and provider-backed ordinary CALL.
+LOAD/STORE memory providers, provider-backed ordinary CALL, and ownership
+MOVE/DROP/conditional cleanup.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
