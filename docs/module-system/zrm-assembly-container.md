@@ -150,8 +150,10 @@ machine-local cache path. Artifact default-entry selection and actual provider l
 Syntax 10R M2.4 adds provider facts to the `.zrm` assembly record without expanding module identity. The optional
 `assembly.providerPhase` is one of `runtime`, `test`, or `compileTool`; old `zr.zrm/v1` manifests without it load as
 `runtime`. `assembly.publicContractHash` is an optional artifact contract fact. Unknown, empty, null, or non-string
-phases reject the archive. The declared default `entry` must name exactly one entry in `modules`; both writer and
-reader reject an archive whose default entry cannot be opened as a `.zro` payload.
+phases reject the archive. The declared default `entry` must resolve to a module key. The writer rejects duplicate
+module keys; the reader currently accepts repeated logical names and checks only that `FindModule()` finds the
+default key. Opening the container does not decode its `.zro` payloads; a selected payload is checked when a caller
+loads it.
 
 `ZrLibrary_Project_ResolveImportProviderLocation()` returns the selected provider kind, phase, exact archive entry,
 and public contract hash in addition to the canonical provider module key. The matching AOT request carries the same
@@ -161,14 +163,17 @@ non-runtime archive providers before opening the selected `.zro`; no filename or
 CompileTool or Test provider as Runtime.
 
 CompileTool archives have an additional phase-isolated executable contract.
-Their manifest must contain `compileToolExecutable` with schema
-`zr.compile-tool-executable/v1`, format `zr.source/utf8-v1`, and exactly one
-hash-authenticated entry for every declared module. The compiler resolves
-provider source exclusively through `ZrLibrary_Zrm_FindCompileToolExecutable()`;
-it does not reinterpret `modules/*.zro` as source. Missing, duplicate,
-wrong-format, wrong-hash, or incomplete executable sections reject the archive.
-Runtime and Test archives reject this section, so a loader cannot acquire
-CompileTool execution capability through an ordinary module entry.
+Their manifest requires `compileToolExecutable` with schema
+`zr.compile-tool-executable/v1`, format `zr.source/utf8-v1`, and one source
+entry for every declared module. The writer emits one entry per module. The
+reader rejects a missing section, wrong schema or format, a mismatched count,
+or a module without a matching source name; it currently does not reject
+duplicate logical names. The compiler resolves provider source exclusively
+through `ZrLibrary_Zrm_FindCompileToolExecutable()` and compares the selected
+source bytes with its declared hash when that module is imported; `Open()`
+does not hash every entry or reinterpret `modules/*.zro` as source. Runtime
+and Test archives reject this section, so a loader cannot acquire CompileTool
+execution capability through an ordinary module entry.
 The pack request supplies the `.zro` module path/hash and the executable
 source path/hash independently; the writer rejects a CompileTool module which
 does not explicitly provide its executable source.
