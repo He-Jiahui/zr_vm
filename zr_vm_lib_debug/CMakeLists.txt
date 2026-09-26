@@ -1,3 +1,4 @@
+# Debug Agent 的协议传输依赖 network；保留 zr_vm_debug target 名供 CLI 和测试链接。
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/CommonMacros.cmake)
 set(zr_curr_module_name "zr_vm_debug")
 
@@ -11,6 +12,7 @@ if (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static)
     set(zr_vm_debug_has_network ON)
 endif ()
 
+# 不构建缺少传输依赖的半成品目标，使上层通过 TARGET gate 显式关闭调试支持。
 if (zr_debug_module_src AND zr_vm_debug_has_network)
     zr_declare_module(${zr_curr_module_name} ON)
 

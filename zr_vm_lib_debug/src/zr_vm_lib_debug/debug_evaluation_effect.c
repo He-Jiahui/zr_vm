@@ -330,6 +330,7 @@ TZrBool zr_debug_evaluation_effect_has_canonical_facts(
         const SZrSemanticContext *context,
         const SZrAstNode *expression,
         const SZrSemanticExpressionFact *expressionFact) {
+    /* 根表达式精确且范围内引用均已解析，才能用语义事实给副作用分类背书。 */
     return (TZrBool)(
             context != ZR_NULL && expression != ZR_NULL && expressionFact != ZR_NULL &&
             expressionFact->exactness == ZR_SEMANTIC_FACT_EXACT &&
@@ -366,6 +367,7 @@ void zr_debug_evaluation_effect_classify_resolved_properties(
         return;
     }
 
+    /* AST 结构分类看不到 getter 与所有权动作，此处用已解析事实补齐能力位。 */
     zr_debug_evaluation_effect_classify_resolved_ownership(context, node, effectFlags);
 
     reference = node->type == ZR_AST_IDENTIFIER_LITERAL
@@ -530,6 +532,7 @@ TZrBool ZrDebug_ClassifyEvaluationEffect(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* 分类成功与“可安全执行”不同：仅有规范事实且无副作用位时才标记纯表达式。 */
     zr_debug_evaluation_effect_classify_structure(context.expression, &outPolicy->effectFlags);
     outPolicy->hasCanonicalFacts = context.hasCanonicalFacts;
     if (context.hasCanonicalFacts) {

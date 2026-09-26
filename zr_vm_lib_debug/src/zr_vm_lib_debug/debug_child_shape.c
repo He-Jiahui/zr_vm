@@ -20,6 +20,7 @@ static const SZrTypeValue *zr_debug_child_object_get_field(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/** @brief 统计调试器可展开字段，隐藏运行时内部的 __zr_ 键。 */
 TZrSize zr_debug_count_visible_object_entries(const SZrHashSet *set) {
     TZrSize bucketIndex;
     TZrSize count = 0;
@@ -44,6 +45,7 @@ TZrSize zr_debug_count_visible_object_entries(const SZrHashSet *set) {
     return count;
 }
 
+/** @brief 将运行时值映射成协议中的 named/indexed 子节点数量。 */
 void zr_debug_value_child_shape(SZrState *state,
                                 const SZrTypeValue *value,
                                 TZrSize *outNamedVariables,
@@ -74,6 +76,7 @@ void zr_debug_value_child_shape(SZrState *state,
         return;
     }
 
+    /* union 的内部元字段只公开 variant 与 payload，数量须和展开路径一致。 */
     if (zr_debug_value_is_union_carrier(state, value)) {
         namedVariables = 1u + zr_debug_count_union_carrier_payload_fields(state, value);
         if (outNamedVariables != ZR_NULL) {
@@ -85,6 +88,7 @@ void zr_debug_value_child_shape(SZrState *state,
         return;
     }
 
+    /* 普通数组直接公开索引；库容器将隐藏数组合成为一个命名节点。 */
     if (zr_debug_try_resolve_indexed_storage(state, value, &indexedStorage, &indexedSyntheticName, &indexedCount) &&
         object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         indexedVariables = indexedCount;
@@ -165,6 +169,7 @@ static void zr_debug_semantic_append_ownership(const SZrTypeValue *value, TZrCha
     buffer[bufferSize - 1u] = '\0';
 }
 
+/** @brief 为预览及求值结果描述值类型、子节点形状与所有权状态。 */
 void zr_debug_value_semantic_summary(SZrState *state,
                                      const SZrTypeValue *value,
                                      TZrSize namedVariables,

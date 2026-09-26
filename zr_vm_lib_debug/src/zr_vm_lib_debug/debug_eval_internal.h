@@ -3,6 +3,9 @@
 
 #include "debug_internal.h"
 
+/** 兼容表达式解析器的单次调用状态；cursor 指向调用方持有的表达式，缓冲区也由调用方持有。
+ * skip_evaluation 仅跳过运行时取值，短路分支仍需完整解析并检查被禁止的语法。
+ */
 typedef struct ZrDebugEvalParser {
     ZrDebugAgent *agent;
     TZrUInt32 frame_id;
@@ -14,6 +17,7 @@ typedef struct ZrDebugEvalParser {
     TZrBool skip_evaluation;
 } ZrDebugEvalParser;
 
+/** 运算符右侧的递归下降入口，由诊断包装器在失败时补足错误信息。 */
 typedef TZrBool (*FZrDebugEvalParseValue)(ZrDebugEvalParser *parser, SZrTypeValue *outValue);
 
 void zr_debug_eval_set_error(ZrDebugEvalParser *parser, const TZrChar *message);

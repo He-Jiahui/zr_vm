@@ -7,6 +7,7 @@
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/type_system.h"
 
+/* 只把可由暂停值精确表达的整数/布尔事实带入推断；超出 int64 的无符号值不伪造范围。 */
 static void zr_debug_semantic_apply_exact_value_range(const SZrTypeValue *value,
                                                       SZrInferredType *inferredType) {
     TZrUInt64 unsignedValue;
@@ -40,6 +41,7 @@ static void zr_debug_semantic_apply_exact_value_range(const SZrTypeValue *value,
     }
 }
 
+/* 将 VM 导出的 zr 根绑定成带 token 的语义根，避免调试表达式把它当作普通局部变量。 */
 static TZrBool zr_debug_semantic_register_runtime_root(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
@@ -68,6 +70,7 @@ static TZrBool zr_debug_semantic_register_runtime_root(
     memset(&context, 0, sizeof(context));
     status = ZrCore_Debug_GetEvaluationContext(
             agent->state, frameId == 0u ? 0u : frameId - 1u, &context);
+    /* 缺少暂停元数据时保留其它可推断绑定；真正的解析/读取失败才阻止规范绑定。 */
     if (status == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT ||
         status == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE) {
         return ZR_TRUE;
@@ -106,6 +109,7 @@ static TZrBool zr_debug_semantic_register_runtime_root(
     return registered;
 }
 
+/* 诊断摘要的宽松回退：只为 AST 中实际出现且能在暂停帧解析的名字补值类型。 */
 static void zr_debug_semantic_register_summary_value_binding(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
@@ -148,6 +152,7 @@ static void zr_debug_semantic_register_summary_value_binding(
     ZrParser_InferredType_Free(compilerState->state, &inferredType);
 }
 
+/* 只走会影响表达式推断的子节点，不把属性名误注册成独立变量。 */
 static void zr_debug_semantic_register_summary_node(ZrDebugAgent *agent,
                                                     TZrUInt32 frameId,
                                                     SZrCompilerState *compilerState,
@@ -260,6 +265,7 @@ static void zr_debug_semantic_register_summary_node(ZrDebugAgent *agent,
     }
 }
 
+/* 将编译函数留下的类型引用转换为本次推断环境拥有的类型对象。 */
 static void zr_debug_semantic_type_ref_to_inferred(SZrCompilerState *compilerState,
                                                    const SZrFunctionTypedTypeRef *typeRef,
                                                    SZrInferredType *result) {
@@ -321,6 +327,7 @@ static const SZrFunctionTypedLocalBinding *zr_debug_semantic_find_typed_local_bi
     return ZR_NULL;
 }
 
+/* 以活动槽名核对编译期绑定，再把 symbol/type/place ID 注入暂停求值。 */
 static TZrBool zr_debug_semantic_register_canonical_frame_binding(
         SZrCompilerState *compilerState,
         const SZrFunction *function,
@@ -370,6 +377,7 @@ static TZrBool zr_debug_semantic_register_canonical_frame_binding(
     return registered;
 }
 
+/* 没有可用暂停帧时，仅注册入口函数中仍带规范身份的顶层局部绑定。 */
 static void zr_debug_semantic_register_entry_typed_locals(ZrDebugAgent *agent,
                                                           SZrCompilerState *compilerState) {
     SZrFunction *entryFunction;
@@ -470,6 +478,7 @@ static TZrBool zr_debug_semantic_collect_callable_parameter_types(SZrCompilerSta
     return ZR_TRUE;
 }
 
+/* 以编译产物中的签名提供顶层函数推断，数组和临时类型在每轮注册后释放。 */
 static void zr_debug_semantic_register_entry_callables(ZrDebugAgent *agent, SZrCompilerState *compilerState) {
     SZrFunction *entryFunction;
     TZrUInt32 index;
@@ -539,6 +548,7 @@ cleanup:
     }
 }
 
+/* 当前 PC 的活动绑定顺序由 Core Debug 提供，失配时整帧视为元数据不可用。 */
 static EZrDebugEvaluationContextStatus zr_debug_semantic_register_frame_variables(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
@@ -599,6 +609,7 @@ static EZrDebugEvaluationContextStatus zr_debug_semantic_register_frame_variable
     return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
+/* 捕获变量沿用 Core Debug 的 token 与原声明位置，避免推断生成第二套符号身份。 */
 static EZrDebugEvaluationContextStatus zr_debug_semantic_register_closure_captures(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
@@ -679,6 +690,7 @@ static EZrDebugEvaluationContextStatus zr_debug_semantic_register_closure_captur
     return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
+/** @brief 为正式暂停求值建立规范帧绑定、捕获、运行时根与入口可调用项。 */
 TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
                                             TZrUInt32 frameId,
                                             SZrCompilerState *compilerState) {
@@ -712,6 +724,7 @@ TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+/** @brief 为只读语义摘要补充可解析的标识符；规范帧绑定缺席时仍允许部分摘要。 */
 TZrBool zr_debug_semantic_register_summary_bindings(ZrDebugAgent *agent,
                                                     TZrUInt32 frameId,
                                                     SZrCompilerState *compilerState,

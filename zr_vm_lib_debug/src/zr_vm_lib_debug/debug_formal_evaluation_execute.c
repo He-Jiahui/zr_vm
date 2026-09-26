@@ -84,6 +84,7 @@ static TZrBool zr_debug_formal_read_frame_binding(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* 以 symbol/type/place 三重身份定位实际栈槽，避免同名局部或已过期绑定被误读。 */
     for (index = 0u; index < context.activeBindingCount; ++index) {
         const SZrTypeValue *value;
 
@@ -179,6 +180,7 @@ static TZrBool zr_debug_formal_read_closure_capture(
     }
 
     memset(&capture, 0, sizeof(capture));
+    /* 捕获元数据须同时匹配词法来源与运行时 token，才可取出暂停帧中的闭包值。 */
     if (ZrCore_Debug_EvaluationContext_GetClosureCapture(
                 agent->state,
                 &context,
@@ -253,6 +255,7 @@ TZrBool zr_debug_formal_has_paused_array_index_facts(
         return ZR_FALSE;
     }
 
+    /* 规范事实缺失时只承认已解析数组根和整数字面量索引这一可直接核验的窄路径。 */
     ZrCore_Value_ResetAsNull(&frameValue);
     if (!zr_debug_formal_read_reference_value(agent, frameId, reference, &frameValue) ||
         frameValue.type != ZR_VALUE_TYPE_ARRAY) {
@@ -298,6 +301,7 @@ static TZrBool zr_debug_formal_evaluate_array_literal(
         return ZR_TRUE;
     }
 
+    /* 分配由上层能力位许可；数组由 VM 构造，结果句柄在快照层注册。 */
     array = ZrCore_Object_NewCustomized(
             agent->state, sizeof(*array), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
     if (array == ZR_NULL) {
@@ -366,6 +370,7 @@ TZrBool zr_debug_formal_evaluate_node(ZrDebugAgent *agent,
         return ZR_TRUE;
     }
 
+    /* 仅处理已支持的 AST 子集；未支持节点以 outSupported 回传给上层作拒绝或兼容决策。 */
     switch (node->type) {
         case ZR_AST_BOOLEAN_LITERAL:
             ZrCore_Value_InitAsBool(agent->state, outValue, node->data.booleanLiteral.value);
@@ -594,6 +599,7 @@ TZrBool zr_debug_formal_evaluate_node(ZrDebugAgent *agent,
                 *outSupported = ZR_FALSE;
                 return ZR_TRUE;
             }
+            /* 短路分支不读取右侧暂停帧值；能力分类已在执行前覆盖整棵 AST。 */
             if ((strcmp(op, "&&") == 0 && !left.value.nativeObject.nativeBool) ||
                 (strcmp(op, "||") == 0 && left.value.nativeObject.nativeBool)) {
                 ZrCore_Value_InitAsBool(agent->state, outValue, left.value.nativeObject.nativeBool);
@@ -839,6 +845,9 @@ TZrBool zr_debug_formal_evaluate_node(ZrDebugAgent *agent,
                                    "shift requires a non-negative value and shift count below 63");
                 return ZR_FALSE;
             }
+            /* TODO: 当前只校验左值非负及位数；2 << 62 等结果超出 int64 可表示范围。
+             * 需沿 ZrDebug_Evaluate 的规范求值路径补充溢出用例，确认类型推断是否先行拒绝。
+             */
             ZrCore_Value_InitAsInt(agent->state,
                                    outValue,
                                    strcmp(op, "<<") == 0

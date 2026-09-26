@@ -1,5 +1,6 @@
 #include "debug_breakpoint_logpoint.h"
 
+/* 多段插值共享同一个固定上限的输出缓冲区，保留尾端 NUL 给协议发送者。 */
 static void zr_debug_breakpoint_logpoint_append(TZrChar *buffer,
                                                 TZrSize bufferSize,
                                                 const TZrChar *text) {
@@ -18,6 +19,7 @@ static void zr_debug_breakpoint_logpoint_append(TZrChar *buffer,
     buffer[bufferSize - 1u] = '\0';
 }
 
+/* logpoint 由断点命中路径调用，表达式失败只影响该片段的展示，不取消事件。 */
 TZrBool zr_debug_breakpoint_logpoint_format(ZrDebugAgent *agent,
                                             const TZrChar *logMessage,
                                             TZrChar *outText,
@@ -70,6 +72,7 @@ TZrBool zr_debug_breakpoint_logpoint_format(ZrDebugAgent *agent,
             memcpy(expression, openBrace + 1, expressionLength);
             expression[expressionLength] = '\0';
 
+            /* 插值失败仍保留整个 logpoint 事件；客户端能在原位置看到失败原因。 */
             memset(&value, 0, sizeof(value));
             if (zr_debug_evaluate_expression_with_capabilities(agent,
                                                                 1u,

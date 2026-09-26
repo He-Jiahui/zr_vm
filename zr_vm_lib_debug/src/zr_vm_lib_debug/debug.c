@@ -74,6 +74,8 @@ void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text
         return;
     }
 
+    // 可容纳标记时，路径保留末尾文件名，普通文本保留开头；两者都标出省略的字节数。
+    // TODO: 快照是否要求合法 UTF-8 尚需确认；当前按 strlen 字节截断，下一步补长多字节协议字段测试。
     if (zr_debug_text_looks_like_path(text)) {
         memcpy(buffer, marker, markerLength);
         memcpy(buffer + markerLength, text + textLength - visibleLength, visibleLength);
@@ -222,6 +224,9 @@ const TZrChar *zr_debug_value_type_name(EZrValueType type) {
 }
 
 TZrUInt32 zr_debug_scope_id(TZrUInt32 frameId, EZrDebugScopeKind kind) {
+    // BUG: 第 100 层及更深的 VM 帧会生成 >= 1000 的 scopeId，与动态变量句柄区间重叠。
+    // ReadScopes 会返回该 ID，但 ReadVariables 把无匹配 handle 的高位 ID 拒绝，导致变量请求失败。
+    // Core 的 GetStack 按链遍历帧且无 99 层上限；可在 100 层递归停点请求 scopes/variables 验证。
     return frameId * 10u + (TZrUInt32)kind;
 }
 
@@ -327,6 +332,7 @@ TZrBool zr_debug_agent_register_thread_state(ZrDebugAgent *agent,
         snprintf(entry->name, sizeof(entry->name), "thread %u", entry->thread_id);
     }
 
+    // 核心 VM 的 trace observer 是每个 state 独立注册的；记录旧掩码供 AgentStop 恢复。
     state->debugHookSignal |= ZR_DEBUG_HOOK_MASK_LINE;
     ZrCore_Debug_SetTraceObserver(state, zr_debug_agent_trace_observer, agent);
     if (agent->currentThreadId == 0) {
@@ -366,6 +372,7 @@ SZrState *zr_debug_agent_begin_thread_access(ZrDebugAgent *agent,
         return ZR_NULL;
     }
 
+    // 协议读栈和求值沿用 agent->state；仅在当前请求期间切换，调用方须成对恢复。
     agent->state = entry->state;
     agent->currentThreadId = entry->thread_id;
     if (outResolvedThreadId != ZR_NULL) {
@@ -393,6 +400,7 @@ static void zr_debug_data_breakpoint_copy_value_snapshot(SZrTypeValue *destinati
         return;
     }
 
+    // 上次值只用于后续比较，不能继承 VM 值的拥有权并参与释放。
     *destination = *source;
     if (!destination->isGarbageCollectable ||
         ZR_VALUE_IS_TYPE_NULL(destination->type) ||
@@ -522,6 +530,7 @@ static TZrBool zr_debug_data_breakpoint_resolve_local(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    // 调试局部变量序号按当前 PC 的活跃元数据计数，和源码声明序号不同。
     pc = zr_debug_instruction_offset(callInfo, function);
     for (localMetadataIndex = 0u;
          localMetadataIndex < function->localVariableLength &&
@@ -639,6 +648,7 @@ static TZrBool zr_debug_data_breakpoint_parse_id(const TZrChar *dataId, ZrDebugD
         return ZR_FALSE;
     }
 
+    // dataId 由 dataBreakpointInfo 发给客户端，setDataBreakpoints 再解析并重新定位目标。
     name[0] = '\0';
     if (sscanf(dataId, "local:%u:%u:%u:%d:%127s", &threadId, &frameId, &scopeKind, &valueIndex, name) == 5 &&
         threadId > 0 &&
@@ -846,6 +856,7 @@ TZrBool zr_debug_agent_add_data_breakpoint(ZrDebugAgent *agent,
         agent->dataBreakpointCapacity = newCapacity;
     }
 
+    // 安装时保存基线值，下一次 trace 才把变化报告为写入命中。
     entry = &agent->dataBreakpoints[agent->dataBreakpointCount++];
     *entry = parsed;
     entry->verified = ZR_TRUE;
@@ -889,6 +900,7 @@ ZrDebugDataBreakpoint *zr_debug_agent_check_data_breakpoints(ZrDebugAgent *agent
                                                                 ZR_NULL,
                                                                 &currentValue);
         }
+        // 帧或捕获值暂时不可解析时保留旧基线，避免把失效目标当作一次写入。
         if (!resolved) {
             continue;
         }
@@ -996,6 +1008,7 @@ static TZrBool zr_debug_source_paths_equal(const TZrChar *left, const TZrChar *r
         return ZR_FALSE;
     }
 
+    // 编译产物中的模块名可能没有目录与扩展名；只有至少一侧像模块名时才按 stem 匹配。
     zr_debug_normalized_path_copy_stem(normalizedLeft, leftStem, sizeof(leftStem));
     zr_debug_normalized_path_copy_stem(normalizedRight, rightStem, sizeof(rightStem));
     return (TZrBool)(leftStem[0] != '\0' && strcmp(leftStem, rightStem) == 0);
@@ -1132,6 +1145,7 @@ static void zr_debug_resolve_breakpoint_recursive(ZrDebugBreakpoint *breakpoint,
         return;
     }
 
+    // 行断点先搜子函数以选更内层的执行位置；函数断点则先考虑当前函数。
     if (breakpoint->kind == ZR_DEBUG_BREAKPOINT_KIND_LINE && function->childFunctionList != ZR_NULL) {
         for (index = 0; index < function->childFunctionLength; index++) {
             zr_debug_resolve_breakpoint_recursive(breakpoint, &function->childFunctionList[index]);
@@ -1183,6 +1197,7 @@ static void zr_debug_refine_line_breakpoint_with_constant_roots(ZrDebugBreakpoin
         return;
     }
 
+    // 部分可执行函数存于常量表而非 childFunctionList；以较窄的行跨度选归属函数。
     for (constantIndex = 0; constantIndex < entryFunction->constantValueLength; constantIndex++) {
         SZrFunction *candidateFunction =
                 zr_debug_function_from_constant(&entryFunction->constantValueList[constantIndex]);
@@ -1500,6 +1515,7 @@ static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
     zr_debug_agent_poll_messages(agent, 0, ZR_NULL);
     zr_debug_agent_try_resolve_pending_breakpoints_for_function(agent, function);
 
+    // 停止原因有固定优先级：异常和显式暂停优先于断点，再考虑单步。
     if (zr_debug_bool_load(&agent->exceptionStopPending)) {
         reason = ZR_DEBUG_STOP_REASON_EXCEPTION;
         exceptionFilter = ZR_DEBUG_EXCEPTION_FILTER_UNCAUGHT;
@@ -1578,6 +1594,7 @@ TZrBool ZrDebug_AgentStart(SZrState *state,
     agent->nextVariableHandleId = ZR_DEBUG_VARIABLE_HANDLE_BASE;
     agent->state = state;
     agent->entryFunction = entryFunction;
+    // TestManifest 在 agent 生命周期内解码并由 ReadTestManifest 复制给调用者。
     if (entryFunction->testManifestDataLength > 0U) {
         if (entryFunction->testManifestData == ZR_NULL ||
             entryFunction->testManifestDataLength > (TZrSize)UINT32_MAX ||
@@ -1625,6 +1642,7 @@ void ZrDebug_AgentStop(ZrDebugAgent *agent) {
         return;
     }
 
+    // 先摘除所有 state 上指向 agent 的回调，避免释放后 VM 再访问 userData。
     for (index = 0; index < agent->threadCount; index++) {
         SZrState *threadState = agent->threads[index].state;
         if (threadState != ZR_NULL && threadState->debugTraceUserData == agent) {
@@ -1782,6 +1800,7 @@ static TZrBool zr_debug_replace_breakpoints_of_kind(ZrDebugAgent *agent,
         }
     }
 
+    // 先构造完整替代数组，分配失败时旧断点集合仍可用。
     newCount = preservedCount + count;
     if (newCount > 0) {
         breakpoints = (ZrDebugBreakpoint *)calloc(newCount, sizeof(*breakpoints));
@@ -1847,6 +1866,7 @@ void ZrDebug_Pause(ZrDebugAgent *agent) {
         return;
     }
 
+    // 外部线程只提交暂停请求，由执行线程在下一个 trace 安全点进入暂停循环。
     zr_debug_bool_store(&agent->pauseRequested, ZR_TRUE);
 }
 
@@ -1860,6 +1880,7 @@ static void zr_debug_begin_step(ZrDebugAgent *agent, EZrDebugRunMode runMode) {
 
     callInfo = agent->state->callInfoList;
     function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(agent->state, callInfo);
+    // 记录恢复时的帧身份和位置，单步判断才能区分尾调用与真正返回。
     agent->stepCallInfo = callInfo;
     agent->resumeFunction = function;
     agent->resumeInstruction = zr_debug_instruction_offset(callInfo, function);

@@ -18,17 +18,18 @@ plan_sources:
   - docs/library-and-builtins/index.md
 tests:
   - tests/debug/test_debug_agent.c
-  - tests/debug/test_debug_evaluation_policy.c
-  - tests/debug/test_coverage.c
-  - tests/debug/test_profile.c
-  - tests/testing/test_testing_module.c
+  - tests/debug/test_debug_expression_diagnostics.c
+  - tests/profile/test_coverage.c
+  - tests/profile/test_profile_deterministic.c
+  - tests/testing/test_assertions.c
 doc_type: api-reference
 ---
 
 # zr.debug 与 zr.testing API 参考
 
-debug provider 面向调试器、coverage 和 profiler；testing provider 只在 Test phase 注册。
-两者都采用 bounded snapshot，避免把 VM 内部 frame、string 或 metadata 指针泄漏给宿主。
+debug provider 面向调试器、coverage 和 profiler；testing provider 的导出需在 Test phase 访问。
+调试协议输出和文本字段采用有界快照；coverage/profile 的 C API 中，function 身份指针借用自 VM，
+宿主只能在 VM 对象有效期间使用。
 
 ## Debug agent
 
@@ -68,7 +69,7 @@ logMessage。agent 只监听配置地址；生产环境应设置 token 或完全
 | ReadScopes/ReadVariables | 读取 arguments、locals、closures、globals、prototype、statics、exception scope。 |
 | Evaluate | 在当前 frame 受限求值。 |
 | EvaluateWithCapabilities/Detailed | 显式提供 effect capability 并返回分类/诊断。 |
-| ClassifyEvaluationEffect | 识别 PureValue、ReadOnly、Mutating、Blocking 等 effect。 |
+| ClassifyEvaluationEffect | 按 property getter、allocation、call、native call、mutation、owner mutation 标志及规范化事实分类求值 effect。 |
 | EvaluationEffectPolicy_Allows | 检查 policy 是否允许该 effect。 |
 | Free | 释放 debug API 返回的 snapshot/diagnostic buffer。 |
 | NotifyException/NotifyTerminated | runtime 主动通知外部调试器。 |
@@ -96,8 +97,9 @@ for (TZrSize i = 0; i < ZrDebug_Coverage_GetLineCount(&coverage); ++i) {
 ZrDebug_Coverage_Destroy(&coverage);
 ~~~
 
-先 Init，再注册 function/tree；Start/Stop 可重复成对调用。line snapshot 的 function/source
-引用是 borrowed，导出报告后再销毁 coverage。Reset 清计数但不改变已注册 function set。
+先 Init，再注册 function/tree；Start/Stop 可重复成对调用。line snapshot 的 function 指针借用自 VM，
+name/source 文本由 coverage 行快照持有；GetLine 返回的行指针在扩容、Reset 或 Destroy 后失效。
+Reset 清空行记录；如需继续报告未执行的静态可执行行，需重新注册 function/tree。
 
 ## Profile
 

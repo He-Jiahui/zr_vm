@@ -88,6 +88,7 @@ cJSON *zr_debug_protocol_make_evaluate_result_detailed(
     TZrUInt32 resolvedThreadId = 0u;
 
     memset(&evaluateResult, 0, sizeof(evaluateResult));
+    /* 切换到请求线程的暂停 VM 状态，并在所有退出路径恢复先前线程。 */
     if (zr_debug_agent_begin_thread_access(agent,
                                            threadId,
                                            &resolvedThreadId,

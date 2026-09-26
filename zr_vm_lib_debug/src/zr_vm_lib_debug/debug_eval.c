@@ -1,5 +1,7 @@
 #include "debug_eval_internal.h"
 
+/* 此文件的递归下降求值器只服务于显式允许的旧语法兼容路径；先尝试正式解析与能力判定。 */
+
 void zr_debug_evaluate_failure_clear(ZrDebugEvaluateFailure *failure) {
     if (failure != ZR_NULL) {
         memset(failure, 0, sizeof(*failure));
@@ -100,6 +102,7 @@ static TZrBool zr_debug_eval_parse_identifier(ZrDebugEvalParser *parser, TZrChar
         return ZR_FALSE;
     }
 
+    /* 光标始终消费整个标识符，缓冲区容量只限制传给暂停帧解析器的名称长度。 */
     while (zr_debug_eval_is_ident_part(*parser->cursor)) {
         if (buffer != ZR_NULL && bufferSize > 0 && length + 1 < bufferSize) {
             buffer[length] = *parser->cursor;
@@ -432,6 +435,7 @@ static TZrBool zr_debug_eval_parse_primary(ZrDebugEvalParser *parser, SZrTypeVal
         return ZR_FALSE;
     }
 
+    /* 短路分支仍在上面完成语法和调用/赋值限制检查，但不读取暂停帧变量。 */
     if (parser->skip_evaluation) {
         ZrCore_Value_ResetAsNull(outValue);
         return ZR_TRUE;
@@ -961,6 +965,7 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
                                       "invalid debug evaluate request");
         return ZR_FALSE;
     }
+    /* 先使用语义事实执行；只有调用方授权，且正式解析失败或未处理时才尝试兼容求值。 */
     if (!zr_debug_formal_evaluate_expression(agent,
                                              frameId,
                                              expression,

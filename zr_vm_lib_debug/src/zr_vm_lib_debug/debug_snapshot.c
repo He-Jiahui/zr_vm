@@ -2,8 +2,10 @@
 
 #include "zr_vm_core/debug.h"
 
+/* 原型对象固定展示六个入口；无效槽哨兵与真实栈槽索引分离。 */
 #define ZR_DEBUG_TYPE_OBJECT_FIELD_COUNT ((TZrSize)6u)
 #define ZR_DEBUG_INVALID_SLOT_INDEX ((TZrUInt32)0xFFFFFFFFu)
+/* 长字符串的子变量以字节区间分页，区间名也使用字节偏移。 */
 #define ZR_DEBUG_STRING_CHUNK_SIZE ((TZrSize)64u)
 
 static const SZrTypeValue *zr_debug_object_get_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
@@ -54,6 +56,7 @@ static void zr_debug_copy_value_snapshot(SZrTypeValue *destination, const SZrTyp
         return;
     }
 
+    /* 调试快照只借用 VM 值：不能复制独占/共享所有权后再按普通值释放。 */
     *destination = *source;
     if (!destination->isGarbageCollectable ||
         ZR_VALUE_IS_TYPE_NULL(destination->type) ||
@@ -109,6 +112,7 @@ const SZrTypeValue *zr_debug_frame_value_slot(SZrState *state,
         return ZrCore_Stack_GetValue(frameBase + stackSlot);
     }
 
+    /* 内联值槽须按编译器帧布局取地址；其余槽仍走标准栈值接口。 */
     slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
     if (slotLayout != ZR_NULL &&
         slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
@@ -197,6 +201,7 @@ static TZrBool zr_debug_string_needs_chunk_handle(SZrState *state,
     }
 
     byteLength = ZrCore_String_GetByteLength(stringValue);
+    /* 原始字节长达到固定阈值时才暴露分页句柄；短字符串仍按标量展示。 */
     if (byteLength < ZR_DEBUG_TEXT_CAPACITY) {
         return ZR_FALSE;
     }
@@ -251,6 +256,7 @@ TZrBool zr_debug_exception_read_frame(ZrDebugAgent *agent, TZrUInt32 frameId, Zr
         return ZR_FALSE;
     }
 
+    /* 异常对象中的 stacks 数组使用零基索引，协议帧 ID 使用一基索引。 */
     ZrCore_Value_InitAsInt(agent->state, &key, (TZrInt64)(frameId - 1u));
     frameValue = ZrCore_Object_GetValue(agent->state, framesObject, &key);
     if (frameValue == ZR_NULL || frameValue->type != ZR_VALUE_TYPE_OBJECT || frameValue->value.object == ZR_NULL) {
@@ -368,6 +374,7 @@ SZrObjectPrototype *zr_debug_resolve_value_prototype(SZrState *state, const SZrT
 void zr_debug_format_value_text_safe(SZrState *state, const SZrTypeValue *value, TZrChar *buffer, TZrSize bufferSize) {
     SZrObjectPrototype *prototype;
 
+    /* 断点日志、求值及变量预览共用此路径；对象只展示类型，不调用用户代码。 */
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
     }
@@ -480,6 +487,7 @@ static ZrDebugVariableHandle *zr_debug_find_variable_handle(ZrDebugAgent *agent,
     }
 
     for (index = 0; index < agent->variableHandleCount; index++) {
+        /* 恢复运行或下一次停点后的句柄即使数字相同也不能复用。 */
         if (agent->variableHandles[index].handle_id == handleId &&
             agent->variableHandles[index].state_id == agent->stopStateId) {
             return &agent->variableHandles[index];
@@ -510,6 +518,7 @@ static ZrDebugVariableHandle *zr_debug_alloc_variable_handle(ZrDebugAgent *agent
 
     handle = &agent->variableHandles[agent->variableHandleCount++];
     memset(handle, 0, sizeof(*handle));
+    /* ID 单调递增且清表时不回退；低于保留区表示溢出后停止分配。 */
     handle->state_id = agent->stopStateId;
     handle->handle_id = agent->nextVariableHandleId++;
     return handle;
@@ -744,6 +753,7 @@ static TZrBool zr_debug_fill_value_preview(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* 子节点句柄随本次停点注册；预览文本和子节点数量从同一值生成。 */
     if (zr_debug_value_is_expandable(agent->state, value)) {
         variablesReference = zr_debug_register_value_handle(agent, value);
     }
@@ -858,6 +868,7 @@ TZrBool zr_debug_try_resolve_indexed_storage(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* 库容器的内部数组只作为调试索引来源，并以 data/entries 合成节点公开。 */
     storageValue = zr_debug_object_get_field(state, object, "__zr_items");
     if (storageValue != ZR_NULL && storageValue->type == ZR_VALUE_TYPE_ARRAY && storageValue->value.object != ZR_NULL) {
         if (outStorage != ZR_NULL) {
@@ -925,6 +936,7 @@ static TZrBool zr_debug_expand_indexed_window(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* start/count 是窗口内偏移，baseIndex 才是原数组中的绝对索引。 */
     windowStart = start > totalIndexed ? totalIndexed : start;
     if (countLimit == 0 || windowStart + countLimit > totalIndexed) {
         windowEnd = totalIndexed;
@@ -1016,6 +1028,9 @@ static TZrBool zr_debug_expand_string_chunks_handle(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* BUG: 长字符串按固定 64 字节切块，63 个 ASCII 后接 é 时首块仅含 C3；
+     * cJSON 把该字节原样写入 JSON，zrdbgClient 以 UTF-8 解码后显示 U+FFFD，
+     * 原字符丢失。补 test_debug_truncation.c 的跨边界协议用例。 */
     for (index = 0; index < windowCount; index++) {
         TZrChar nameBuffer[ZR_DEBUG_NAME_CAPACITY];
         TZrChar chunkBuffer[ZR_DEBUG_STRING_CHUNK_SIZE + 1u];
@@ -1358,6 +1373,7 @@ static TZrBool zr_debug_expand_prototype_view(ZrDebugAgent *agent,
         return ZR_TRUE;
     }
 
+    /* 先按同一谓词计数、再填充；缺失的直接值保留描述符的静态说明。 */
     for (descriptorIndex = 0; descriptorIndex < prototype->memberDescriptorCount; descriptorIndex++) {
         const SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[descriptorIndex];
         TZrBool include = ZR_FALSE;
@@ -1708,6 +1724,7 @@ static TZrBool zr_debug_expand_value_handle(ZrDebugAgent *agent,
     }
 
     prototype = zr_debug_resolve_value_prototype(agent->state, value);
+    /* union、原生数组与普通对象的子节点结构不同，按优先级分流。 */
     if (zr_debug_value_is_union_carrier(agent->state, value)) {
         return zr_debug_expand_union_value_handle(agent,
                                                  value,
@@ -1807,6 +1824,7 @@ void zr_debug_variable_handles_clear(ZrDebugAgent *agent) {
         free(agent->variableHandles);
         agent->variableHandles = ZR_NULL;
     }
+    /* 恢复执行、换停点和停止 agent 都调用这里；保留 nextVariableHandleId 防止旧 ID 复活。 */
     agent->variableHandleCount = 0;
     agent->variableHandleCapacity = 0;
 }
@@ -1879,6 +1897,7 @@ static TZrBool zr_debug_core_local_scope_entry(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* Core 调试 API 负责解释活动局部变量序号和内联槽布局。 */
     name = ZrCore_Debug_GetLocal(agent->state, activation, localIndex, outValue);
     if (name == ZR_NULL) {
         return ZR_FALSE;
@@ -1913,6 +1932,7 @@ const SZrTypeValue *zr_debug_closure_capture_value(ZrDebugAgent *agent,
         return ZR_NULL;
     }
 
+    /* 返回捕获槽的借用指针；调用方必须在当前停点内复制所需值。 */
     for (slotIndex = 0; slotIndex < function->closureValueLength; slotIndex++) {
         TZrNativeString upvalueName = ZrCore_Debug_GetUpvalue(agent->state, closure, (TZrInt32)slotIndex + 1, ZR_NULL);
         SZrClosureValue *upvalueId = (SZrClosureValue *)ZrCore_Debug_GetUpvalueId(agent->state,
@@ -1993,6 +2013,7 @@ TZrBool zr_debug_resolve_identifier_value(ZrDebugAgent *agent,
     memset(&activation, 0, sizeof(activation));
     callInfo = ZrCore_Debug_GetStack(agent->state, frameId - 1u, &activation) ? activation.callInfo : ZR_NULL;
     function = activation.function;
+    /* 兼容求值器先查捕获和当前活动局部变量，再查受限的调试全局名。 */
     if (callInfo != ZR_NULL && function != ZR_NULL) {
         const SZrTypeValue *closureSlot = zr_debug_closure_capture_value(agent, function, callInfo, name);
         if (closureSlot != ZR_NULL) {
@@ -2099,6 +2120,8 @@ TZrBool zr_debug_safe_get_member_value(ZrDebugAgent *agent,
         }
     }
 
+    /* 只读直接存储与描述符：跳过可能执行用户代码的属性 getter；
+     * 静态成员仅接受原型对象作为 receiver。 */
     prototype = isPrototypeReceiver ? (SZrObjectPrototype *)object : zr_debug_resolve_value_prototype(agent->state, receiver);
     while (prototype != ZR_NULL) {
         const SZrMemberDescriptor *descriptor =
@@ -2177,6 +2200,7 @@ TZrBool zr_debug_safe_get_index_value(ZrDebugAgent *agent,
         return ZR_TRUE;
     }
 
+    /* 自定义索引协议可能执行用户代码，安全求值只允许直接对象查表。 */
     prototype = zr_debug_resolve_value_prototype(agent->state, receiver);
     if (prototype != ZR_NULL &&
         (prototype->indexContract.getByIndexFunction != ZR_NULL ||
@@ -2266,6 +2290,7 @@ static TZrBool zr_debug_split_index_window_expression(const TZrChar *expression,
         return ZR_FALSE;
     }
 
+    /* 仅识别末尾的顶层 [start..end]；嵌套括号内的省略号不作窗口分隔符。 */
     bracketDepth = 1;
     cursor = trimmedEnd - 1;
     while (cursor > expression) {
@@ -2415,6 +2440,7 @@ static TZrBool zr_debug_try_evaluate_index_window(ZrDebugAgent *agent,
         endIndex = indexedLength;
     }
 
+    /* 窗口只保存基值与范围，后续 variables 请求重新解析当前索引存储。 */
     handleId = zr_debug_register_index_window_handle(agent, &baseValue, startIndex, endIndex - startIndex);
     if (handleId == 0) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to allocate debug range window");
@@ -2474,6 +2500,7 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
                                       "invalid evaluate request");
         return ZR_FALSE;
     }
+    /* 表达式结果与诊断都绑定停点代号，运行态禁止读取 VM 帧。 */
     if (agent->runMode != ZR_DEBUG_RUN_MODE_PAUSED) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "evaluate is only available while paused");
         zr_debug_evaluate_failure_set(outFailure,
@@ -2487,6 +2514,7 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
     if (outFailure != ZR_NULL) {
         outFailure->state_id = agent->stopStateId;
     }
+    /* 旧求值入口仍支持调试窗口语法；能力化入口交由正式求值器处理。 */
     if (allowLegacyCompatibility &&
         zr_debug_try_evaluate_index_window(agent,
                                            frameId == 0 ? 1u : frameId,
@@ -2650,6 +2678,7 @@ TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames,
         return ZR_FALSE;
     }
 
+    /* 异常对象保存的是抛出时的栈；异常停点优先返回这份快照。 */
     exceptionFrameCount = agent->lastStopEvent.reason == ZR_DEBUG_STOP_REASON_EXCEPTION
                                   ? zr_debug_exception_frame_count(agent)
                                   : 0;
@@ -2681,6 +2710,7 @@ TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames,
         }
     }
 
+    /* 只有入口帧已不在 VM 栈、且当前仅剩单帧时补一条可显示的入口记录。 */
     needsSyntheticEntryFrame = (TZrBool)(frameCount == 1 &&
                                          topFunction != ZR_NULL &&
                                          agent->entryFunction != ZR_NULL &&
@@ -2759,6 +2789,7 @@ TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames,
                         ? (TZrInt32)ZrCore_Stack_SavePointerAsOffset(agent->state, callInfo->returnDestination)
                         : -1;
         frames[frameId - 1].is_exception_frame = ZR_FALSE;
+        /* 异步调度与测试元数据是帧的附加投影，缺失时保留普通帧。 */
         {
             SZrDebugAsyncSchedulerContract asyncContract;
             if (ZrCore_Debug_ProjectSchedulerSourceContract(function, 0u, &asyncContract)) {
@@ -2853,6 +2884,9 @@ TZrBool ZrDebug_ReadScopes(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* BUG: 异常停点有 stacks 时，此分支未核对 frameId 上界；协议 scopes 请求
+     * 传入大于异常帧数的 ID 仍得到 Exception scope。证据：debug_protocol.c 的
+     * zr_debug_agent_process_scopes 直传请求 ID；此分支仅判断帧数非零。 */
     if (agent->lastStopEvent.reason == ZR_DEBUG_STOP_REASON_EXCEPTION &&
         zr_debug_exception_frame_count(agent) > 0) {
         count = 1;
@@ -2982,6 +3016,10 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* BUG: ReadScopes 对第 100 帧及更深帧生成 frameId*10+kind >= 1000，
+     * 与动态句柄区间重叠；此处无对应 handle 即拒绝，合法深帧变量无法展开。
+     * 证据：debug.c:zr_debug_scope_id、core/debug.c:ZrCore_Debug_GetStack。 */
+    /* 高位区间只接收本停点句柄，不能退回 frameId*10+scopeKind 的算术解码。 */
     handle = zr_debug_find_variable_handle(agent, scopeId);
     if (scopeId >= ZR_DEBUG_VARIABLE_HANDLE_BASE && handle == ZR_NULL) {
         return ZR_FALSE;
@@ -3090,6 +3128,7 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* 与异常栈的 scope 投影同源；当前只按 kind 展开，没有核对 frameId 对应的异常帧。 */
     if (scopeKind == ZR_DEBUG_SCOPE_KIND_EXCEPTION) {
         TZrBool ok = zr_debug_expand_exception_value(agent, outValues, outCount);
         if (ok && outNamedVariables != ZR_NULL) {
@@ -3117,6 +3156,7 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
         TZrUInt32 localMetadataIndex;
         TZrInt32 activeLocalIndex = 0;
 
+        /* 先计数后分配：两遍都用活动局部变量序号交给 Core 获取，避免直接解释帧槽。 */
         for (localMetadataIndex = 0u;
              localMetadataIndex < function->localVariableLength &&
              function->localVariableList[localMetadataIndex].offsetActivate <= pc;

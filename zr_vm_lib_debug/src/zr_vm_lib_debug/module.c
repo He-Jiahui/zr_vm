@@ -1,6 +1,5 @@
-//
-// Built-in script-level debug native module.
-//
+/* 脚本级 zr.debug provider：将 core 调试元数据包装成脚本对象。
+ * 它使用 VM 的单个 script hook 槽位；Agent 的 trace observer 属另一通道。 */
 
 #include "zr_vm_lib_debug/module.h"
 
@@ -22,6 +21,7 @@
 #define ZR_DEBUG_SCRIPT_TRACEBACK_BUFFER_SIZE 8192U
 #define ZR_DEBUG_SCRIPT_HOOK_MASK_TEXT_CAPACITY 8U
 
+/* 进程链表按 state 保存脚本 hook；回调需要它找回闭包与原始 mask 文本。 */
 typedef struct ZrDebugScriptHookRecord {
     SZrState *state;
     SZrTypeValue hookValue;
@@ -45,8 +45,13 @@ static TZrBool debug_module_on_materialize(SZrState *state,
 
 static const ZrLibModuleDescriptor g_debug_module_descriptor;
 static const ZrLibModuleDescriptor g_debug_sandboxed_module_descriptor;
+/* BUG: 脚本调用 sethook 时 get_or_create 会 calloc 记录；清除 hook 和 VM state
+ * 销毁路径均未从此链表 free 节点。每个使用 sethook 的新 state 至少留下一个
+ * 记录和旧 state 指针；tests/library/test_debug_library.c 的 hook 测试可达。
+ * TODO: 再核对 state 地址复用时旧记录是否被误认以及并发读写链表的同步约束。 */
 static ZrDebugScriptHookRecord *g_debug_hook_records = ZR_NULL;
 
+/* 两个 provider 共用同一函数表，写 API 由调用时的 descriptor 身份拦截。 */
 static const ZrLibFunctionDescriptor g_debug_functions[] = {
         {
                 .name = "traceback",
@@ -122,6 +127,7 @@ static const ZrLibFunctionDescriptor g_debug_functions[] = {
         },
 };
 
+/* 供编译器/工具读取的公开签名，与函数表导出保持同名。 */
 static const TZrChar g_debug_type_hints_json[] =
         "{\n"
         "  \"schema\": \"zr.native.hints/v1\",\n"
@@ -139,6 +145,7 @@ static const TZrChar g_debug_type_hints_json[] =
         "  ]\n"
         "}\n";
 
+/* 宿主显式注册后脚本才能 import zr.debug；默认导出完整能力。 */
 static const ZrLibModuleDescriptor g_debug_module_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.debug",
@@ -162,6 +169,7 @@ static const ZrLibModuleDescriptor g_debug_module_descriptor = {
         .publicContractHash = "zr.debug:v1:lua-aligned-debug-surface",
 };
 
+/* 沙箱仍可读取堆栈/变量，但 setlocal、setupvalue、sethook 会在回调处拒绝。 */
 static const ZrLibModuleDescriptor g_debug_sandboxed_module_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.debug",
@@ -232,6 +240,9 @@ static void debug_write_value_field(SZrState *state,
     ZrLib_Object_SetFieldCString(state, object, fieldName, value);
 }
 
+/* 脚本接口以 1 为当前帧，core 栈接口以 0 为当前帧。 */
+/* TODO: level > UINT32_MAX + 1 会截断，负数折叠为 0；核对公开 debug API
+ * 的越界层级契约及恶意脚本可观察结果后补范围测试。 */
 static TZrUInt32 debug_script_level_to_core(TZrInt64 level) {
     if (level <= 1) {
         return 0u;
@@ -266,6 +277,7 @@ static const TZrChar *debug_namewhat_text(EZrDebugNameWhat nameWhat) {
     }
 }
 
+/* 脚本 getinfo 的选项字符映射到 core 查询位集，未知字符当前被忽略。 */
 static EZrDebugInfoType debug_parse_what(const TZrChar *whatText) {
     EZrDebugInfoType type = 0;
     const TZrChar *cursor;
@@ -354,6 +366,7 @@ static TZrUInt32 debug_parse_hook_mask_text(const TZrChar *maskText) {
     return mask;
 }
 
+/* 权限取实际调用上下文中的静态 descriptor 身份，而非用户可改的模块字段。 */
 static TZrBool debug_context_allows_writes(const ZrLibCallContext *context) {
     return (TZrBool)(context != ZR_NULL && context->moduleDescriptor == &g_debug_module_descriptor);
 }
@@ -379,6 +392,7 @@ static ZrDebugScriptHookRecord *debug_find_hook_record(SZrState *state) {
     return ZR_NULL;
 }
 
+/* hook trampoline 只收到 state，故先在全局表保存该 state 的闭包与配置。 */
 static ZrDebugScriptHookRecord *debug_get_or_create_hook_record(SZrState *state) {
     ZrDebugScriptHookRecord *record;
 
@@ -404,6 +418,7 @@ static ZrDebugScriptHookRecord *debug_get_or_create_hook_record(SZrState *state)
     return record;
 }
 
+/* 模块字段 __hook 同时作为脚本可达的 GC 根，防止 hook 闭包被提前回收。 */
 static void debug_store_module_hook_value(SZrState *state, const SZrTypeValue *hookValue) {
     SZrObjectModule *module;
     SZrTypeValue nullValue;
@@ -426,6 +441,7 @@ static void debug_store_module_hook_value(SZrState *state, const SZrTypeValue *h
     ZrLib_Object_SetFieldCString(state, &module->super, "__hook", &nullValue);
 }
 
+/* 清空 VM hook 和模块 GC 根；保留链表节点供同一 state 的下一次 sethook 复用。 */
 static void debug_clear_script_hook(SZrState *state) {
     ZrDebugScriptHookRecord *record = debug_get_or_create_hook_record(state);
 
@@ -458,6 +474,7 @@ static const TZrChar *debug_hook_event_name(EZrDebugHookEvent event) {
     }
 }
 
+/* core 事件被转成脚本闭包的 (event,line) 两参数回调。 */
 static void debug_script_hook_trampoline(SZrState *state, SZrDebugInfo *debugInfo) {
     ZrDebugScriptHookRecord *record;
     SZrTypeValue arguments[2];
@@ -508,6 +525,7 @@ static SZrObject *debug_make_named_value_object(SZrState *state,
     return object;
 }
 
+/* 仅填充 getinfo 的 what 位集所请求的字段，保持脚本层可见属性与查询成本一致。 */
 static SZrObject *debug_make_stack_info_object(SZrState *state,
                                                const SZrDebugInfo *info,
                                                EZrDebugInfoType type,
@@ -642,6 +660,7 @@ static TZrBool debug_traceback_callback(ZrLibCallContext *context, SZrTypeValue 
     return ZR_TRUE;
 }
 
+/* getinfo 可查活动栈层级或闭包元数据；查询栈层级时恢复 core 的临时压栈。 */
 static TZrBool debug_getinfo_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *target;
     const TZrChar *whatText = ZR_NULL;
@@ -680,6 +699,8 @@ static TZrBool debug_getinfo_callback(ZrLibCallContext *context, SZrTypeValue *r
             return ZR_TRUE;
         }
 
+        /* PUSH_FUNCTION 可让 core 临时压入函数值；回调必须在返回脚本前
+         * 拷出该值并恢复栈顶，避免 getinfo 改动被调函数的运行栈。 */
         ZrCore_Value_ResetAsNull(&functionValue);
         if (!ZrCore_Debug_GetInfo(context->state, &activation, type, &info)) {
             context->state->stackTop.valuePointer = savedStackTop;
@@ -869,6 +890,9 @@ static TZrBool debug_upvalueid_callback(ZrLibCallContext *context, SZrTypeValue 
     return ZR_TRUE;
 }
 
+/* trusted 脚本可换 VM hook；mask 字符串/整数和 count 共同决定订阅事件。 */
+/* TODO: VM state 同时只能保存一个 script hook，sethook 会覆盖 Profile/
+ * Coverage 的 hook；核对这些模式共存时的宿主约束或冲突诊断。 */
 static TZrBool debug_sethook_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *hookValue;
     SZrTypeValue *maskValue;
@@ -942,6 +966,8 @@ static TZrBool debug_sethook_callback(ZrLibCallContext *context, SZrTypeValue *r
         return ZR_FALSE;
     }
 
+    /* 先保存闭包并发布模块 GC 根，再打开 hook；否则首次事件可读到
+     * 已回收或尚未发布的脚本回调。 */
     ZrCore_Value_Copy(context->state, &record->hookValue, hookValue);
     memcpy(record->maskText, maskText, sizeof(record->maskText));
     record->maskText[sizeof(record->maskText) - 1u] = '\0';

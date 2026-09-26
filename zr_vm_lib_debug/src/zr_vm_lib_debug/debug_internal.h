@@ -29,10 +29,18 @@ typedef struct SZrAstNode SZrAstNode;
 #define ZR_DEBUG_WAIT_INFINITE ((TZrUInt32) 0xFFFFFFFFu)
 #define ZR_DEBUG_PROTOCOL_NAME "zrdbg/1"
 #define ZR_DEBUG_MAIN_THREAD_ID ((TZrUInt32)1u)
+/* BUG: scope ID 用 frameId * 10 + kind 编码；第 100 帧起与本动态句柄区间
+ * 重叠。ReadScopes 仍发出该 ID，ReadVariables 在无动态句柄时直接拒绝，
+ * 合法深递归帧无法展开变量。证据：debug.c:zr_debug_scope_id、
+ * debug_snapshot.c:ReadScopes/ReadVariables、core/debug.c:GetStack。 */
 #define ZR_DEBUG_VARIABLE_HANDLE_BASE ((TZrUInt32)1000u)
 #define ZR_DEBUG_INSTANCE_SYNTHETIC_FIELD_COUNT ((TZrSize)1u)
 #define ZR_DEBUG_CANONICAL_TYPE_ID_INVALID ((TZrUInt32)0u)
 
+/* Pause/exception 请求由外部控制路径提交，执行线程在 trace 观察点读取。 */
+/* TODO: volatile bool 配合全栅栏不等同于 C 原子对象；核对外部线程与 VM
+ * 的真实同步前提，依据 tests/debug/test_debug_agent.c 的跨线程 Pause 路径
+ * 决定是否应使用原子 load/store 或现有线程锁。 */
 static ZR_FORCE_INLINE void zr_debug_memory_barrier(void) {
 #if defined(_WIN32)
     MemoryBarrier();
@@ -59,6 +67,7 @@ static ZR_FORCE_INLINE TZrBool zr_debug_bool_load(const volatile TZrBool *slot) 
     return *slot;
 }
 
+/* 执行线程根据该模式、起始帧和 PC 判断下一停点；协议请求只选择意图。 */
 typedef enum EZrDebugRunMode {
     ZR_DEBUG_RUN_MODE_RUNNING = 0,
     ZR_DEBUG_RUN_MODE_PAUSED = 1,
@@ -67,6 +76,7 @@ typedef enum EZrDebugRunMode {
     ZR_DEBUG_RUN_MODE_STEP_OUT = 4
 } EZrDebugRunMode;
 
+/* prototype 的不同元数据视图共享句柄通道，避免调用语言层 getter 来展开。 */
 typedef enum EZrDebugPrototypeViewKind {
     ZR_DEBUG_PROTOTYPE_VIEW_NONE = 0,
     ZR_DEBUG_PROTOTYPE_VIEW_METADATA = 1,
@@ -78,6 +88,7 @@ typedef enum EZrDebugPrototypeViewKind {
     ZR_DEBUG_PROTOTYPE_VIEW_MANAGED_FIELDS = 7
 } EZrDebugPrototypeViewKind;
 
+/* Agent 内持有的断点快照；resolved_function/PC 是函数树解析后的可执行位置。 */
 typedef struct ZrDebugBreakpoint {
     EZrDebugBreakpointKind kind;
     TZrChar module_name[ZR_DEBUG_TEXT_CAPACITY];
@@ -93,6 +104,7 @@ typedef struct ZrDebugBreakpoint {
     TZrBool resolved;
 } ZrDebugBreakpoint;
 
+/* 客户端变量引用按 kind 展开；句柄只能在创建它的 stopStateId 中使用。 */
 typedef enum EZrDebugVariableHandleKind {
     ZR_DEBUG_VARIABLE_HANDLE_KIND_NONE = 0,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_VALUE = 1,
@@ -105,6 +117,8 @@ typedef enum EZrDebugVariableHandleKind {
     ZR_DEBUG_VARIABLE_HANDLE_KIND_STRING_CHUNKS = 8
 } EZrDebugVariableHandleKind;
 
+/* 把 boxed carrier 与 inline union 的元数据映射到同一种展示视图。
+ * 指针均借用 VM/编译元数据，仅在当前停点与函数生命周期内访问。 */
 typedef struct ZrDebugUnionView {
     TZrChar type_name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar variant_name[ZR_DEBUG_NAME_CAPACITY];
@@ -118,6 +132,7 @@ typedef struct ZrDebugUnionView {
     TZrUInt32 tag_size;
 } ZrDebugUnionView;
 
+/* 保存停点内可展开值或窗口；继续运行即清空，不能向下一 stopStateId 转移。 */
 typedef struct ZrDebugVariableHandle {
     TZrUInt32 handle_id;
     TZrUInt64 state_id;
@@ -131,12 +146,14 @@ typedef struct ZrDebugVariableHandle {
     SZrObjectPrototype *prototype;
 } ZrDebugVariableHandle;
 
+/* 数据断点当前只跟踪局部槽和闭包 upvalue，尚非通用对象字段 watch。 */
 typedef enum EZrDebugDataBreakpointKind {
     ZR_DEBUG_DATA_BREAKPOINT_KIND_NONE = 0,
     ZR_DEBUG_DATA_BREAKPOINT_KIND_LOCAL = 1,
     ZR_DEBUG_DATA_BREAKPOINT_KIND_UPVALUE = 2
 } EZrDebugDataBreakpointKind;
 
+/* 用上次快照与 trace 时读取的值比较；frame/slot 身份来自注册时的当前停点。 */
 typedef struct ZrDebugDataBreakpoint {
     EZrDebugDataBreakpointKind kind;
     EZrDebugScopeKind scope_kind;
@@ -152,6 +169,7 @@ typedef struct ZrDebugDataBreakpoint {
     TZrChar description[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugDataBreakpoint;
 
+/* 协议 thread ID 映射到 VM state，并保留卸载 Agent 时要恢复的 hook signal。 */
 typedef struct ZrDebugThreadEntry {
     TZrUInt32 thread_id;
     TZrUInt32 previous_debug_hook_signal;
@@ -159,6 +177,9 @@ typedef struct ZrDebugThreadEntry {
     TZrChar name[ZR_DEBUG_NAME_CAPACITY];
 } ZrDebugThreadEntry;
 
+/* Agent 拥有网络连接、断点数组、变量句柄和解码后的 TestManifest；
+ * VM state、入口函数及配置 auth_token 为借用，必须活到 AgentStop。
+ * 读取其它线程时只临时切换 state/currentThreadId，结束访问必须恢复。 */
 struct ZrDebugAgent {
     SZrState *state;
     SZrFunction *entryFunction;

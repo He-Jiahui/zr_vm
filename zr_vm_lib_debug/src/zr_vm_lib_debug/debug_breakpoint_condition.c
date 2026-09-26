@@ -1,5 +1,6 @@
 #include "debug_breakpoint_condition.h"
 
+/* 条件断点沿用调试器自身的真值约定，避免把断点表达式的结果类型限制为 bool。 */
 static TZrBool zr_debug_breakpoint_condition_value_truthy(const SZrTypeValue *value) {
     if (value == ZR_NULL) {
         return ZR_FALSE;
@@ -29,6 +30,7 @@ static TZrBool zr_debug_breakpoint_condition_value_truthy(const SZrTypeValue *va
     }
 }
 
+/* 断点 hook 在决定是否停住之前读取当前首帧；副作用白名单为空且不回退旧求值器。 */
 TZrBool zr_debug_breakpoint_condition_evaluate(ZrDebugAgent *agent,
                                                const TZrChar *condition,
                                                TZrBool *outSatisfied,

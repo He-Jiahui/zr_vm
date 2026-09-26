@@ -21,6 +21,7 @@ static const TZrChar *zr_debug_reference_scope_label(EZrDebugScopeKind scopeKind
     }
 }
 
+/** @brief 用 scope 类别生成求值器与变量快照共用的简短来源描述。 */
 void zr_debug_reference_summary_from_scope(EZrDebugScopeKind scopeKind,
                                            const TZrChar *name,
                                            TZrChar *buffer,
@@ -44,6 +45,7 @@ void zr_debug_reference_summary_from_scope(EZrDebugScopeKind scopeKind,
     buffer[bufferSize - 1u] = '\0';
 }
 
+/** @brief 按兼容求值器的查找顺序定位暂停帧中的标识符来源。 */
 TZrBool zr_debug_identifier_reference_summary(ZrDebugAgent *agent,
                                               TZrUInt32 frameId,
                                               const TZrChar *name,
@@ -62,6 +64,7 @@ TZrBool zr_debug_identifier_reference_summary(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* 与 zr_debug_resolve_identifier_value 保持捕获、局部、内建全局的优先级一致。 */
     callInfo = zr_debug_find_call_info_by_frame_id(agent, frameId == 0 ? 1u : frameId, &function);
     if (callInfo != ZR_NULL && function != ZR_NULL) {
         if (zr_debug_closure_capture_value(agent, function, callInfo, name) != ZR_NULL) {

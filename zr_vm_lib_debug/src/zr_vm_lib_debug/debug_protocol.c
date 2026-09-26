@@ -45,6 +45,7 @@ static TZrBool zr_debug_agent_send_json(ZrDebugAgent *agent, cJSON *json) {
 static void zr_debug_agent_send_event(ZrDebugAgent *agent, const TZrChar *eventName, cJSON *params) {
     cJSON *message;
 
+    // 调用方移交 params；未连接或构造失败时仍由此处释放。
     if (agent == ZR_NULL || !agent->hasClient || !agent->client.isOpen || eventName == ZR_NULL) {
         if (params != ZR_NULL) {
             cJSON_Delete(params);
@@ -70,6 +71,7 @@ static void zr_debug_agent_send_event(ZrDebugAgent *agent, const TZrChar *eventN
 static void zr_debug_agent_send_response(ZrDebugAgent *agent, const cJSON *requestId, cJSON *result) {
     cJSON *message;
 
+    // 请求 id 仍属于解析树，复制后将 result 所有权交给响应对象。
     if (agent == ZR_NULL) {
         if (result != ZR_NULL) {
             cJSON_Delete(result);
@@ -227,6 +229,7 @@ void zr_debug_agent_fill_stop_event(ZrDebugAgent *agent,
         }
     }
 
+    // 每次停止生成新状态代号；旧变量句柄只对上一次暂停快照有效。
     zr_debug_variable_handles_clear(agent);
     memset(&agent->lastStopEvent, 0, sizeof(agent->lastStopEvent));
     agent->stopStateId++;
@@ -403,6 +406,7 @@ static TZrBool zr_debug_agent_process_initialize(ZrDebugAgent *agent, const cJSO
     cJSON_AddBoolToObject(capabilities, "supportsThreads", 1);
     cJSON_AddBoolToObject(capabilities, "supportsDataBreakpoints", 1);
     cJSON_AddItemToObject(result, "capabilities", capabilities);
+    // 先回 initialize 再切换已初始化状态，使后续事件遵守协议握手顺序。
     zr_debug_agent_send_response(agent, requestId, result);
     agent->waitForClientPending = ZR_FALSE;
     agent->clientInitialized = ZR_TRUE;
@@ -527,6 +531,9 @@ static cJSON *zr_debug_agent_make_breakpoint_result_array(const ZrDebugAgent *ag
 
     for (index = 0; index < agent->breakpointCount; index++) {
         cJSON *breakpointObject = cJSON_CreateObject();
+        // BUG: 同时存在行断点和函数断点时，每次 setBreakpoints/setFunctionBreakpoints
+        // 为另一类断点分配的对象在 continue 前未释放，造成持续内存泄漏。
+        // tests/debug/test_debug_agent.c 的 control 场景连续发送这两类请求，可达此分支。
         if (agent->breakpoints[index].kind != kind || breakpointObject == ZR_NULL) {
             continue;
         }
@@ -901,6 +908,7 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent, TZrUIn
     TZrUInt32 resolvedThreadId = 0;
     TZrSize index;
 
+    // 协议可以读取指定 VM 线程；请求结束前必须恢复 agent 当前线程上下文。
     if (zr_debug_agent_begin_thread_access(agent, threadId, &resolvedThreadId, &previousState, &previousThreadId) ==
         ZR_NULL) {
         return ZR_NULL;
@@ -1323,6 +1331,7 @@ static TZrBool zr_debug_agent_process_message(ZrDebugAgent *agent, const TZrChar
         return ZR_TRUE;
     }
 
+    // DAP 桥先发 zrdbg initialize；认证成功前不执行任何状态读写请求。
     if (!agent->clientInitialized && strcmp(method, "initialize") != 0) {
         zr_debug_agent_send_error(agent, idItem, -32000, "initialize must be the first request");
         cJSON_Delete(request);
@@ -1388,6 +1397,7 @@ void zr_debug_agent_poll_messages(ZrDebugAgent *agent, TZrUInt32 timeoutMs, TZrB
         return;
     }
 
+    // 非阻塞轮询的超时不算断线；暂停循环的无限等待失败则关闭连接。
     if (!ZrNetwork_StreamReadFrame(&agent->client, timeoutMs, frame, sizeof(frame), &frameLength)) {
         if (timeoutMs == ZR_DEBUG_WAIT_INFINITE || !agent->client.isOpen) {
             zr_debug_agent_close_client(agent);
@@ -1414,6 +1424,7 @@ void zr_debug_agent_pause_loop(ZrDebugAgent *agent) {
     agent->runMode = ZR_DEBUG_RUN_MODE_PAUSED;
     zr_debug_agent_emit_stopped(agent);
 
+    // 在 VM 执行线程上处理请求；断线后按启动等待策略决定是否自动恢复。
     while (agent->runMode == ZR_DEBUG_RUN_MODE_PAUSED) {
         disconnected = ZR_FALSE;
         zr_debug_agent_poll_messages(agent, ZR_DEBUG_WAIT_INFINITE, &disconnected);
@@ -1433,6 +1444,7 @@ void ZrDebug_NotifyTerminated(ZrDebugAgent *agent, TZrBool success) {
         return;
     }
 
+    // CLI 完成或失败后都只发一次终止事件，且不为迟到的连接重放。
     agent->terminatedNotified = ZR_TRUE;
     if (!agent->clientInitialized) {
         return;

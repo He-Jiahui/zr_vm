@@ -6,6 +6,7 @@
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* 多类事实共用一段有界诊断文本；空间不足时保留已写入的事实，不截断旧内容。 */
 static void zr_debug_semantic_append_fragment(TZrChar *buffer, TZrSize bufferSize, const TZrChar *fragment) {
     TZrSize length;
 
@@ -191,6 +192,7 @@ static void zr_debug_semantic_append_escaped_string_constant(SZrString *value,
     TZrSize index;
 
     fragment[0] = '\0';
+    /* 按字节长度走访，使包含 NUL 和控制字符的编译期常量仍可用于调试摘要。 */
     zr_debug_semantic_append_fragment_text(fragment, sizeof(fragment), &used, "constant \"");
     for (index = 0; text != ZR_NULL && index < length; ++index) {
         unsigned char byte = (unsigned char)text[index];
@@ -354,6 +356,7 @@ static void zr_debug_semantic_append_reference_fact(const SZrSemanticReferenceFa
     TZrChar fragment[ZR_DEBUG_TEXT_CAPACITY];
     const TZrChar *name;
 
+    /* AST 与源码位置可能指向同一事实；仅去重相邻的同一事实对象。声明本身不作读取摘要。 */
     if (fact == ZR_NULL ||
         fact->kind == ZR_SEMANTIC_REFERENCE_DECLARATION ||
         (lastFact != ZR_NULL && *lastFact == fact)) {
@@ -485,6 +488,7 @@ static void zr_debug_semantic_append_reachability_fact(const SZrSemanticReachabi
     }
 }
 
+/* 单次 AST 遍历的事实去重游标；context 和 buffer 均由调用方持有。 */
 typedef struct ZrDebugSemanticFactWalk {
     SZrState *state;
     const SZrSemanticContext *context;
@@ -516,6 +520,7 @@ static void zr_debug_semantic_walk_list(SZrAstNodeArray *nodes, ZrDebugSemanticF
 
 static TZrBool zr_debug_semantic_should_suppress_nested_literal_fact(SZrAstNode *node,
                                                                      TZrUInt32 depth) {
+    /* 根字面量保留常量说明；嵌套常量由所属表达式的语义覆盖，避免淹没摘要。 */
     if (node == ZR_NULL || depth == 0u) {
         return ZR_FALSE;
     }
@@ -546,6 +551,7 @@ static void zr_debug_semantic_walk_node_at_depth(SZrAstNode *node,
 
     suppressLiteralFacts = zr_debug_semantic_should_suppress_nested_literal_fact(node, depth);
 
+    /* 写入先于普通读取报告，保证赋值目标的引用类别不会被位置级读取事实遮盖。 */
     zr_debug_semantic_append_reference_fact(
             ZrParser_SemanticFacts_FindReferenceByNodeAndKind(walk->context,
                                                               node,
@@ -587,6 +593,7 @@ static void zr_debug_semantic_walk_node_at_depth(SZrAstNode *node,
         }
     }
 
+    /* 位置索引补足没有直接挂在 AST 节点上的引用和不可达事实。 */
     zr_debug_semantic_append_reference_fact(
             ZrParser_SemanticFacts_FindReferenceAtPosition(walk->context, node->location),
             &walk->lastReferenceFact,
@@ -781,6 +788,7 @@ static void zr_debug_append_reference_summaries(
         TZrChar summary[ZR_DEBUG_TEXT_CAPACITY];
         TZrSize length;
 
+        /* 仅对已解析的读取补充暂停帧来源；同名来源摘要只输出一次。 */
         if (fact == ZR_NULL || !fact->isResolved || fact->kind != ZR_SEMANTIC_REFERENCE_READ ||
             fact->name == ZR_NULL ||
             !zr_debug_identifier_reference_summary(agent,
@@ -827,6 +835,7 @@ static void zr_debug_append_expression_facts(ZrDebugAgent *agent,
     }
     state = agent->state;
 
+    /* 重新解析求值表达式，仅运行类型推断以读取语义事实；不再次执行表达式。 */
     sourceName = ZrCore_String_CreateFromNative(state, "<debug:evaluate>");
     ZrParser_State_Init(&parserState, state, expression, strlen(expression), sourceName);
     parserStateInitialized = ZR_TRUE;
@@ -866,6 +875,7 @@ static void zr_debug_append_expression_facts(ZrDebugAgent *agent,
     }
 
 cleanup:
+    /* 推断事实依附 compilerState/AST，必须在这两者释放前完成文本化。 */
     if (inferredTypeInitialized) {
         ZrParser_InferredType_Free(state, &inferredType);
     }
@@ -880,6 +890,7 @@ cleanup:
     }
 }
 
+/** @brief 为求值结果追加当前表达式的推断事实，保留调用方已有的值摘要。 */
 void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
                                                TZrUInt32 frameId,
                                                const TZrChar *expression,
@@ -889,6 +900,7 @@ void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
             agent, frameId, expression, buffer, bufferSize, ZR_NULL, 0u);
 }
 
+/** @brief 将已解析标识符映射为暂停帧内的来源摘要。 */
 void zr_debug_append_expression_reference_summary(ZrDebugAgent *agent,
                                                   TZrUInt32 frameId,
                                                   const TZrChar *expression,

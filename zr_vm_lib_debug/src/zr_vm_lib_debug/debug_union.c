@@ -6,10 +6,12 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/state.h"
 
+/* 名称必须与 compiler_union.c 生成的 boxed carrier 字段一致。 */
 #define ZR_DEBUG_UNION_TYPE_FIELD "__zr_unionType"
 #define ZR_DEBUG_UNION_VARIANT_FIELD "__zr_unionVariant"
 #define ZR_DEBUG_UNION_PAYLOAD_PREFIX "__zr_unionPayload"
 
+/* 借用入口函数 prototypeData 内的连续记录，不拥有成员表内存。 */
 typedef struct ZrDebugUnionPrototypeRecord {
     const SZrCompiledPrototypeInfo *prototype;
     const SZrCompiledMemberInfo *members;
@@ -33,6 +35,7 @@ static TZrBool zr_debug_union_checked_mul_size(TZrSize left, TZrSize right, TZrS
     return ZR_TRUE;
 }
 
+/* 嵌套函数的 union 原型记录通常存于入口函数，缺席时沿用显式上下文。 */
 static const SZrFunction *zr_debug_union_entry_function(const SZrFunction *function) {
     const SZrFunction *entryFunction = function;
 
@@ -53,6 +56,7 @@ static const SZrFunction *zr_debug_union_entry_function(const SZrFunction *funct
     return function->prototypeContextFunction != ZR_NULL ? function->prototypeContextFunction : entryFunction;
 }
 
+/* 按编码计数遍历变长原型表；每段先做溢出与长度校验才借出内部指针。 */
 static TZrBool zr_debug_union_find_prototype_record(
         const SZrFunction *function,
         TZrUInt32 targetIndex,
@@ -139,6 +143,7 @@ static SZrString *zr_debug_union_function_string_constant(const SZrFunction *fun
     return ZR_CAST_STRING(ZR_NULL, constant->value.object);
 }
 
+/* 运行时泛型名可能带实参，而编译原型仅保存基名。 */
 static TZrBool zr_debug_union_type_name_matches(const TZrChar *recordName, const TZrChar *runtimeName) {
     const TZrChar *genericStart;
     TZrSize baseLength;
@@ -365,6 +370,7 @@ static SZrObject *zr_debug_union_array_object_at(SZrState *state,
     return ZR_CAST_OBJECT(state, value->value.object);
 }
 
+/* variant 的 payloadFields/tagSize 来自编译期装饰器常量，视图只在函数有效期内借用。 */
 static SZrObject *zr_debug_union_variant_metadata(ZrDebugAgent *agent,
                                                   const SZrFunction *entryFunction,
                                                   const SZrCompiledMemberInfo *variantMember) {
@@ -419,6 +425,7 @@ static TZrBool zr_debug_union_parse_payload_index(const TZrChar *text,
     return ZR_TRUE;
 }
 
+/** @brief 在缺少原型元数据时，用 carrier 的内部字段数提供展开数量。 */
 TZrSize zr_debug_count_union_carrier_payload_fields(SZrState *state, const SZrTypeValue *value) {
     SZrObject *object;
     TZrSize bucketIndex;
@@ -453,6 +460,7 @@ TZrSize zr_debug_count_union_carrier_payload_fields(SZrState *state, const SZrTy
     return count;
 }
 
+/** @brief 识别编译器生成的 boxed union carrier，供求值预览与子节点统计共用。 */
 TZrBool zr_debug_value_is_union_carrier(SZrState *state, const SZrTypeValue *value) {
     SZrObject *object;
     SZrString *variantName;
@@ -469,6 +477,7 @@ TZrBool zr_debug_value_is_union_carrier(SZrState *state, const SZrTypeValue *val
     return (TZrBool)(variantName != ZR_NULL);
 }
 
+/** @brief 将 boxed carrier 和可用编译元数据合成统一展示视图。 */
 TZrBool zr_debug_union_value_view(ZrDebugAgent *agent,
                                   const SZrTypeValue *value,
                                   ZrDebugUnionView *outView) {
@@ -507,6 +516,7 @@ TZrBool zr_debug_union_value_view(ZrDebugAgent *agent,
 
     zr_debug_copy_text(outView->type_name, sizeof(outView->type_name), typeText != ZR_NULL ? typeText : "union");
     zr_debug_copy_text(outView->variant_name, sizeof(outView->variant_name), variantText);
+    /* 无对应原型时按实存字段降级；找到变体后改用声明参数数目。 */
     outView->payload_count = (TZrUInt32)zr_debug_count_union_carrier_payload_fields(agent->state, value);
 
     entryFunction = zr_debug_union_entry_function(agent->entryFunction);
@@ -594,6 +604,7 @@ static const SZrCompiledMemberInfo *zr_debug_union_find_variant_by_tag(
     return ZR_NULL;
 }
 
+/** @brief 从栈槽的类型布局读取 tag，并用编译原型定位当前变体。 */
 TZrBool zr_debug_inline_union_view(ZrDebugAgent *agent,
                                    const SZrFunction *function,
                                    const SZrFunctionFrameSlotLayout *slotLayout,
@@ -622,6 +633,7 @@ TZrBool zr_debug_inline_union_view(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* 先确认 tag 在帧槽边界内，再读取原始字节，避免把失效布局当作有效 union。 */
     typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, slotLayout->typeLayoutId, agent->state);
     if (typeLayout == ZR_NULL ||
         typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION ||
@@ -669,6 +681,7 @@ TZrBool zr_debug_inline_union_view(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+/** @brief 把当前调用帧的 inline 槽映射为原始地址和 union 展示视图。 */
 TZrBool zr_debug_inline_union_slot_view(ZrDebugAgent *agent,
                                         const SZrFunction *function,
                                         const SZrCallInfo *callInfo,
@@ -708,6 +721,7 @@ TZrBool zr_debug_inline_union_slot_view(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+/* 编译装饰器记录的字段类型与字节宽度必须吻合，才能安全解码 primitive。 */
 static TZrBool zr_debug_union_payload_field_layout(SZrState *state,
                                                    SZrObject *fieldMetadata,
                                                    SZrFunctionFrameFieldLayout *outLayout) {
@@ -785,6 +799,9 @@ static TZrBool zr_debug_union_payload_field_layout(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* TODO: 此处仅凭宽度判定 SZrTypeValue 槽；compiler_union.c 对无所有权的
+     * 非泛型字段可写入原始内联布局。需用大于 SZrTypeValue 的 struct payload
+     * 检查元数据是否可能把原始字节误读为带 type 标签的值。 */
     if (byteSize >= sizeof(SZrTypeValue)) {
         outLayout->isValueSlot = ZR_TRUE;
         return ZR_TRUE;
@@ -830,6 +847,7 @@ static TZrBool zr_debug_union_load_signed_int(const TZrByte *address,
     }
 }
 
+/* 只按布局描述读取 POD 或值槽，避免执行脚本层成员访问。 */
 static TZrBool zr_debug_union_load_field(SZrState *state,
                                          const SZrFunctionFrameFieldLayout *fieldLayout,
                                          const TZrByte *fieldAddress,
@@ -896,6 +914,7 @@ static TZrBool zr_debug_union_load_field(SZrState *state,
     return ZR_FALSE;
 }
 
+/** @brief 将 payload 元数据中的用户字段名映射到调试子节点名。 */
 TZrBool zr_debug_union_payload_display_name(SZrState *state,
                                             const ZrDebugUnionView *view,
                                             TZrUInt32 payloadIndex,
@@ -925,6 +944,7 @@ TZrBool zr_debug_union_payload_display_name(SZrState *state,
     return ZR_TRUE;
 }
 
+/* carrier 读取使用编译器的内部字段名；显示名可由用户声明覆盖。 */
 static TZrBool zr_debug_union_payload_internal_name(SZrState *state,
                                                     const ZrDebugUnionView *view,
                                                     TZrUInt32 payloadIndex,
@@ -954,6 +974,7 @@ static TZrBool zr_debug_union_payload_internal_name(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 直接读取 boxed carrier 的 payload，缺失槽表示可展示的 null。 */
 TZrBool zr_debug_union_payload_value_from_carrier(ZrDebugAgent *agent,
                                                   const SZrTypeValue *value,
                                                   const ZrDebugUnionView *view,
@@ -991,6 +1012,7 @@ TZrBool zr_debug_union_payload_value_from_carrier(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+/** @brief 按编译元数据中的偏移和长度读取当前栈帧的 payload。 */
 TZrBool zr_debug_union_payload_value_from_inline(ZrDebugAgent *agent,
                                                  const SZrFunction *function,
                                                  const SZrStackFramePlace *place,
@@ -1027,6 +1049,7 @@ TZrBool zr_debug_union_payload_value_from_inline(ZrDebugAgent *agent,
     return zr_debug_union_load_field(agent->state, &fieldLayout, fieldAddress, outValue);
 }
 
+/** @brief 为安全求值把 inline union 暂时包装成与编译器一致的 carrier 形状。 */
 TZrBool zr_debug_materialize_inline_union_slot(ZrDebugAgent *agent,
                                                const SZrFunction *function,
                                                const SZrCallInfo *callInfo,
@@ -1049,6 +1072,13 @@ TZrBool zr_debug_materialize_inline_union_slot(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    /* BUG: 求值 inline union 局部变量会新建并永久登记 ignored root；
+     * 成功后重复求值会使 carrier 滞留至 VM 销毁；IgnoreObject 成功后
+     * 字符串、字段或 payload 构造失败时直接返回，也留下同一 GC 根。
+     * debug_snapshot.c 的标识符解析会
+     * 调用本函数，句柄清理仅 free 数组；gc.c::IgnoreObject 入表后，
+     * gc_mark.c::garbage_collector_mark_ignored_roots 每轮将其标根。
+     * 本路径没有 Unignore；需补重复求值的 GC 回归。 */
     object = ZrCore_Object_New(agent->state, ZR_NULL);
     if (object == ZR_NULL ||
         !ZrCore_GarbageCollector_IgnoreObject(agent->state, ZR_CAST_RAW_OBJECT_AS_SUPER(object)) ||
@@ -1076,6 +1106,7 @@ TZrBool zr_debug_materialize_inline_union_slot(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+/** @brief 只读映射 variant/type/payload 名称，不调用脚本 getter。 */
 TZrBool zr_debug_union_safe_get_member_value(ZrDebugAgent *agent,
                                              const SZrTypeValue *receiver,
                                              const TZrChar *memberName,
@@ -1122,6 +1153,7 @@ TZrBool zr_debug_union_safe_get_member_value(ZrDebugAgent *agent,
     return ZR_FALSE;
 }
 
+/** @brief 给 boxed union 输出稳定的类型和变体预览文本。 */
 TZrBool zr_debug_format_union_value_text(ZrDebugAgent *agent,
                                          const SZrTypeValue *value,
                                          TZrChar *buffer,

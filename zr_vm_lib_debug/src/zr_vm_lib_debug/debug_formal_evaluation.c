@@ -71,6 +71,7 @@ static TZrBool zr_debug_formal_allows_legacy_live_scope_compatibility(
     if (semanticContext->referenceFacts.length == 0u) {
         return expression != ZR_NULL ? ZR_TRUE : ZR_FALSE;
     }
+    /* 仅允许可映射到活动作用域的读取或成员引用落回兼容路径；其它未解析引用必须拒绝。 */
     for (index = 0u; index < semanticContext->referenceFacts.length; ++index) {
         const SZrSemanticReferenceFact *fact =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
@@ -151,6 +152,7 @@ void zr_debug_formal_free_prepared_expression(SZrDebugFormalEvaluationContext *c
     if (context == ZR_NULL) {
         return;
     }
+    /* 推断结果和编译器仍依赖 VM 状态，AST 和诊断仍依赖解析器状态。 */
     if (context->inferredTypeInitialized) {
         ZrParser_InferredType_Free(context->compilerState.state, &context->inferredType);
     }
@@ -204,6 +206,7 @@ TZrBool zr_debug_formal_prepare_expression_with_failure(
     ZrParser_StructuredDiagnostic_Init(&outContext->parserDiagnostic);
     outContext->parserState.structuredErrorCallback = zr_debug_formal_capture_parser_diagnostic;
     outContext->parserState.errorUserData = outContext;
+    /* 表达式使用完整语言解析器，结构化诊断留给协议失败对象。 */
     outContext->expression = ZrParser_ParseExpressionWithState(&outContext->parserState);
     if (outContext->parserState.hasError || outContext->expression == ZR_NULL) {
         zr_debug_copy_text(errorBuffer,
@@ -232,6 +235,7 @@ TZrBool zr_debug_formal_prepare_expression_with_failure(
     outContext->compilerState.currentAst = outContext->expression;
     outContext->compilerState.scriptAst = outContext->expression;
     outContext->compilerState.suppressErrorOutput = ZR_TRUE;
+    /* 暂停帧绑定注册失败后不继续推断；已初始化的上下文仍交给调用方检查与释放。 */
     if (!zr_debug_semantic_register_bindings(agent, frameId, &outContext->compilerState)) {
         return ZR_TRUE;
     }
@@ -341,6 +345,7 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
         goto cleanup;
     }
 
+    /* 先拒绝结构性写入，再要求引用有足够语义事实，最后比对调用方授予的副作用能力。 */
     zr_debug_evaluation_effect_classify_structure(context.expression, &effectFlags);
     if (context.hasCanonicalFacts) {
         zr_debug_evaluation_effect_classify_resolved_properties(

@@ -1,5 +1,7 @@
 #include "debug_eval_internal.h"
 
+/* 这些诊断仅由兼容解析器产生；正式解析器的结构化诊断走独立的失败传输路径。 */
+
 void zr_debug_eval_set_error(ZrDebugEvalParser *parser, const TZrChar *message) {
     if (parser == ZR_NULL) {
         return;
@@ -256,6 +258,7 @@ void zr_debug_eval_refine_right_operand_error(ZrDebugEvalParser *parser, const T
     TZrChar message[ZR_DEBUG_TEXT_CAPACITY];
     const TZrChar *operatorText = op != ZR_NULL ? op : "operator";
 
+    /* 仅替换通用的“缺少表达式”，保留更具体的成员、括号及字面量错误。 */
     if (parser == ZR_NULL ||
         (parser->error_buffer != ZR_NULL && parser->error_buffer[0] != '\0' &&
          !zr_debug_eval_error_is_expected_expression(parser))) {
@@ -304,6 +307,7 @@ TZrBool zr_debug_eval_parse_right_operand_with_skip(ZrDebugEvalParser *parser,
         return zr_debug_eval_parse_right_operand(parser, op, parseValue, outValue);
     }
 
+    /* 短路只在当前右操作数内生效，递归返回后恢复外层解析状态。 */
     previousSkip = parser->skip_evaluation;
     parser->skip_evaluation = ZR_TRUE;
     parsed = zr_debug_eval_parse_right_operand(parser, op, parseValue, outValue);
