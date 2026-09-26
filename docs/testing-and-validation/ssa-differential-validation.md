@@ -4,6 +4,7 @@ related_code:
   - tests/harness/ssa_differential_support.h
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/parser/test_ssa_oracle_memory_differential.c
+  - tests/parser/test_ssa_oracle_call_differential.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
 implementation_files:
@@ -18,6 +19,7 @@ tests:
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
   - tests/acceptance/ssa-oracle-execbc-memory-differential.md
+  - tests/acceptance/ssa-oracle-execbc-call-differential.md
 doc_type: testing-guide
 ---
 
@@ -26,7 +28,7 @@ doc_type: testing-guide
 `tests/harness/ssa_differential_support.[ch]` provides the first shared
 observation boundary for the SSA plan.  An observation records the exact
 result type/bit pattern, exception type/source, effect counters, backend
-identity, and ordered semantic events (`get`, `write`, `writeback`, `drop`,
+identity, and ordered semantic events (`get`, `write`, `writeback`, `call`, `drop`,
 allocation, suspension, throw, and return).  Comparison fails at the first
 event mismatch and reports its index and source IDs; it never reduces a
 difference to a final numeric value.
@@ -60,3 +62,15 @@ Missing and rejected providers and invalid loaded values
 report their actual instruction/source and preserve the previously published
 projected result. This establishes the pointer-free memory-provider subset,
 not full effects, drop, exception, writeback, production ExecBC, or AOT parity.
+The same `ssa_oracle_projections` target now verifies ordinary CALL with five
+arguments and a nine-argument allocation-path case. It compares direct-oracle
+and projected return values plus four bounded CALL operand snapshots. The
+provider receives every argument, including those omitted from event storage;
+a deliberate fourth-snapshot mutation is detected at event index three.
+Missing/rejected callbacks and undefined callback values keep the earlier
+projected result and report the call's instruction/source identity. This
+provider-only result does not establish exception or native calling parity.
+Invalid initial-value and constant kinds are rejected before either CALL
+provider runs, with diagnostic instruction ID zero and unchanged projected
+result. Event-allocation OOM parity remains unverified: the projection
+reserves before invoking the provider, but the oracle appends afterward.

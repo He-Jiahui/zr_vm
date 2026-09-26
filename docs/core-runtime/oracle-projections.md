@@ -47,6 +47,7 @@ tests:
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_oracle_memory_differential.c
+  - tests/parser/test_ssa_oracle_call_differential.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
@@ -57,6 +58,7 @@ tests:
   - tests/acceptance/ssa-execbc-scalar-runner.md
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
   - tests/acceptance/ssa-oracle-execbc-memory-differential.md
+  - tests/acceptance/ssa-oracle-execbc-call-differential.md
 doc_type: module-detail
 ---
 
@@ -262,13 +264,30 @@ contents, missing/rejected providers, invalid load values, and repeated runs.
 An independently verified STORE-only function also checks the provider-free
 event-only mode. Address snapshots are compared as well as stored values, and
 corrupting the observed address must fail the event comparison.
+The projection runner also executes ordinary `CALL` through an explicit
+`FZrExecBcCall` callback. All operand values, including arguments beyond the
+four-event-snapshot limit, reach the caller-owned provider in their original
+order; up to four are copied into the owned CALL event after a defined return
+value is checked. More than eight operands use temporary allocation, released
+on both success and failure. Missing callbacks report UNSUPPORTED; rejected
+callbacks report ORACLE_CALL_ERROR, and undefined callback results report
+INVALID_VALUE, all at the call's source/instruction. A verified five-argument
+fixture compares oracle/projected result and each event snapshot, and a
+nine-argument fixture exercises the temporary-allocation path. Neither
+callback ABI represents runtime exceptions or an external rollback protocol.
+The runner rejects out-of-range initial-value and constant kinds during input
+preflight, as the oracle does, before an invalid operand can reach the callback.
+The projected runner reserves event capacity before CALL side effects; the
+oracle appends its event after the callback, so their provider invocation
+timing differs if event allocation fails. This fault is not covered by the
+successful-event differential contract.
 Only projections whose opcodes have a runner implementation are marked
-`runnable`; calls, ownership drops, exceptions, suspend, and production
+`runnable`; ownership drops, exceptions, suspend, and production
 runtime callback wiring still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
 bytecode for it, and establishes no C/LLVM or full effect-event parity. The
-direct differential currently covers scalar/control returns and the
-pointer-free LOAD/STORE memory-provider subset.
+direct differential currently covers scalar/control returns, pointer-free
+LOAD/STORE memory providers, and provider-backed ordinary CALL.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a

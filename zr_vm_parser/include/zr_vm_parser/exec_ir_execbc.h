@@ -10,6 +10,11 @@ typedef TZrBool (*FZrExecBcMemory)(
         const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
         SZrExecIrOracleValue *result);
 
+typedef TZrBool (*FZrExecBcCall)(
+        void *userData, const SZrExecBcInstruction *instruction,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result);
+
 typedef struct SZrExecBcExecutionInput {
     const SZrExecIrOracleValue *initialValues;
     TZrUInt32 initialValueCount;
@@ -18,6 +23,8 @@ typedef struct SZrExecBcExecutionInput {
     TZrUInt32 maxSteps;
     FZrExecBcMemory memory;
     void *memoryUserData;
+    FZrExecBcCall call;
+    void *callUserData;
 } SZrExecBcExecutionInput;
 
 typedef struct SZrExecBcExecutionResult {

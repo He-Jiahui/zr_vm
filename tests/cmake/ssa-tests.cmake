@@ -403,6 +403,7 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
     add_executable(zr_vm_ssa_oracle_projections_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_projections.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_memory_differential.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_call_differential.c
             ${CMAKE_SOURCE_DIR}/tests/harness/ssa_differential_support.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c

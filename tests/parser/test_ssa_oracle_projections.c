@@ -2111,10 +2111,12 @@ static void test_malformed_input(void) {
 }
 
 void test_oracle_execbc_memory_differential(void);
+void test_oracle_execbc_call_differential(void);
 
 int main(void) {
     test_load_requires_and_uses_memory_provider();
     test_oracle_execbc_memory_differential();
+    test_oracle_execbc_call_differential();
     test_allocate_requires_and_uses_provider();
     test_drop_consumes_value_and_rejects_reuse();
     test_move_consumes_source_and_rejects_reuse();
