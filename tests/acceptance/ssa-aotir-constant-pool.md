@@ -8,7 +8,7 @@ owned module view; AOTIR validation rejects schema-version mismatches, missing
 pools and zero type tokens,
 out-of-range `CONSTANT` instruction pool indices, missing pools referenced by a
 `CONSTANT` instruction, and non-matching instruction type tokens. Semantic
-hashing covers every constant record. Schema version 5 marks the contract
+hashing covers every constant record. Schema version 6 marks the contract
 change.
 
 Callers can use `ZrParser_ExecIr_LowerAotWithConstants` to deep-copy module
