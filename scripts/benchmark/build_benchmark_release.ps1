@@ -50,6 +50,7 @@ function Find-RepoRoot {
     }
 }
 
+# 将用户指定的 Windows 仓库路径转换为 Linux 构建脚本可用的绝对路径；转换失败立即终止。
 function Convert-ToWslPath {
     param([string]$WindowsPath)
     $normalized = $WindowsPath -replace "\\", "/"
@@ -60,6 +61,7 @@ function Convert-ToWslPath {
     return $converted.Trim()
 }
 
+# 在子进程运行 VsDevCmd 后把其环境变量带回当前 PowerShell 进程，供后续 CMake 使用。
 function Import-VsDevCmdEnvironment {
     param(
         [string]$VsDevCmdPath = "",
@@ -105,6 +107,7 @@ function Import-VsDevCmdEnvironment {
     }
 }
 
+# 仅从本机 CMake 实际支持的 Visual Studio 生成器中选择版本最高者。
 function Get-PreferredVisualStudioGenerator {
     $capabilitiesJson = & cmake -E capabilities
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($capabilitiesJson)) {
@@ -150,6 +153,8 @@ if ($Toolchain -eq "gcc" -or $Toolchain -eq "clang") {
     }
     $wslRoot = Convert-ToWslPath $resolvedRoot
     $bashScript = "${wslRoot}/scripts/benchmark/build_benchmark_release.sh"
+    # BUG: -RepoRoot 含单引号时此处的 shell 引号提前闭合，WSL 无法定位仓库；可由该参数传入此类有效路径。
+    # BUG: -Jobs 参数在此分支未转交 Linux 构建脚本，调用者指定的并行度不会生效。
     $inner = "set -euo pipefail; cd '$wslRoot'; bash '$bashScript' '$Toolchain'"
     wsl bash -lc $inner
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -161,6 +166,7 @@ else {
     $gen = Get-PreferredVisualStudioGenerator
     Write-Host "Using generator: $gen"
     $buildDir = Join-Path $resolvedRoot "build\benchmark-msvc-release"
+    # BUG: 全新配置仅启用 BUILD_TESTS；performance_report 的注册开关默认 OFF，后续提示的 ctest 命令找不到该测试。
     & cmake "-S" $resolvedRoot `
         "-B" $buildDir `
         "-G" $gen `

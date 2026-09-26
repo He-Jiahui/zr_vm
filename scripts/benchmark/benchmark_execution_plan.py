@@ -16,6 +16,7 @@ from benchmark_statistics import (
 )
 
 
+# 计划把洗牌算法与随机源版本显式序列化，避免将来实现变化重排旧种子。
 EXECUTION_PLAN_SCHEMA_VERSION = 1
 SHUFFLE_ALGORITHM = "fisher_yates_splitmix64"
 SHUFFLE_VERSION = 1
@@ -28,6 +29,7 @@ def _validate_identity(value: Any, location: str) -> str:
 
 
 def validate_jobs(jobs: Any) -> tuple[dict[str, str], ...]:
+    # case 与 implementation 的组合是作业身份，重复项会破坏执行次数契约。
     if not isinstance(jobs, list):
         raise ValueError("jobs must be a non-empty JSON array")
     if not jobs:
@@ -86,6 +88,7 @@ def _filter_validated_jobs(
     cases: tuple[str, ...] | None,
     implementations: tuple[str, ...] | None,
 ) -> list[dict[str, str]]:
+    # 先过滤再洗牌，种子对同一筛选结果才有稳定含义；返回新记录保护输入。
     case_filter = set(cases) if cases is not None else None
     implementation_filter = (
         set(implementations) if implementations is not None else None
@@ -127,6 +130,7 @@ def _shuffle_validated_jobs(
     jobs: Sequence[dict[str, str]],
     seed: int,
 ) -> list[dict[str, str]]:
+    # 使用版本化 SplitMix64 驱动 Fisher–Yates，顺序须与 CMake 执行入口一致。
     generator = SplitMix64(seed)
     shuffled = [dict(job) for job in jobs]
     for index in range(len(shuffled) - 1, 0, -1):
@@ -149,6 +153,7 @@ def create_execution_plan(
     cases: Any = None,
     implementations: Any = None,
 ) -> dict[str, Any]:
+    # 计划保留筛选条件、随机算法版本与结果顺序，供套件复跑和审计。
     validated_jobs = validate_jobs(jobs)
     validated_cases = _validate_filter(cases, "cases")
     validated_implementations = _validate_filter(
@@ -183,6 +188,7 @@ def create_execution_plan(
     }
 
 
+# 兼容调用方保留旧入口名，与主构造函数共享同一实现。
 build_execution_plan = create_execution_plan
 
 
@@ -228,6 +234,7 @@ def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, An
 
 
 def _parse_request(raw: bytes) -> tuple[Any, int, Any, Any]:
+    # 拒绝重复键、未知字段和非标准常量，避免 CLI 与 API 解读不一致。
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:

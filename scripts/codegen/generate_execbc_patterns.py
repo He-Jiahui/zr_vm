@@ -16,6 +16,7 @@ import tempfile
 from typing import Iterable, Sequence
 
 
+# 解析器只接受 .def 的符号化七元组；这些白名单同时限制生成头能引用的 C 名称。
 ROW_RE = re.compile(r"ZR_EXECBC_FUSION\s*\(")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 OPCODE_NAMES = {
@@ -74,11 +75,14 @@ BOUNDARY_NAMES = {
 }
 
 
+# find_rows 先删除 schema 注释，避免示例中的宏名被当成可执行融合规则。
+# 输入约定为不含 C 字符串字面量的符号化 .def，故此处不实现完整 C 词法器。
 def strip_comments(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     return re.sub(r"//[^\n]*", "", text)
 
 
+# 融合约束允许带括号的表达式；仅顶层逗号构成七个 schema 字段。
 def split_fields(payload: str) -> list[str]:
     fields: list[str] = []
     start = 0
@@ -99,6 +103,7 @@ def split_fields(payload: str) -> list[str]:
     return fields
 
 
+# 从展开后的 .def 抽取所有规则；空表或字段不全会使生成/检查立即失败。
 def find_rows(text: str) -> list[tuple[str, ...]]:
     text = strip_comments(text)
     rows: list[tuple[str, ...]] = []
@@ -130,6 +135,8 @@ def find_rows(text: str) -> list[tuple[str, ...]]:
     return rows
 
 
+# main 的输入可通过同目录旧名称转接到规范 .def；限制 include 的解析目录并拒绝递归，
+# 使 --check 与生成模式读取同一组受控规则。
 def read_schema(path: pathlib.Path, include_stack: tuple[pathlib.Path, ...] = ()) -> str:
     """Read a schema and expand only local quoted includes.
 
@@ -145,6 +152,7 @@ def read_schema(path: pathlib.Path, include_stack: tuple[pathlib.Path, ...] = ()
         raise ValueError(f"recursive pattern schema include: {chain}")
     text = path.read_text(encoding="utf-8")
 
+    # include 展开只返回文本，不写文件；路径逃逸或环会由上层以异常终止生成。
     def expand(match: re.Match[str]) -> str:
         included = (path.parent / match.group(1)).resolve()
         base = path.parent.resolve()
@@ -158,6 +166,8 @@ def read_schema(path: pathlib.Path, include_stack: tuple[pathlib.Path, ...] = ()
                   text, flags=re.MULTILINE)
 
 
+# C 的 ExecIR opcode/constraint/boundary 枚举是规则语言的边界；拒绝未知符号、重复模式
+# 和非 ASCII 的 benefit，避免生成可编译却不符合融合契约的头文件。
 def validate_rows(rows: Sequence[tuple[str, ...]]) -> None:
     names: set[str] = set()
     for name, head, tail, constraints, result, benefit, boundary in rows:
@@ -189,6 +199,8 @@ def validate_rows(rows: Sequence[tuple[str, ...]]) -> None:
             raise ValueError(f"dispatch benefit must be positive in {name}")
 
 
+# exec_ir_fusion.h 消费生成的宏行；保持顺序及末尾换行稳定，以便 --check 比较精确内容。
+# 调用者须先经过 validate_rows，render 自身不再重复校验符号。
 def render(rows: Iterable[tuple[str, ...]]) -> str:
     rows = list(rows)
     lines = [
@@ -212,6 +224,8 @@ def render(rows: Iterable[tuple[str, ...]]) -> str:
     return "\n".join(lines)
 
 
+# 构建/验收入口：--check 只检查生成头是否与 .def 同步；默认模式先写同目录临时文件，
+# 再替换目标，避免中途生成失败留下半截头文件。
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=pathlib.Path, required=True)

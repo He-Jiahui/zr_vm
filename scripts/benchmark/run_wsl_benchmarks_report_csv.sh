@@ -32,6 +32,7 @@ capture_tool="${script_dir}/capture_benchmark_environment.sh"
 task4_tool="${script_dir}/benchmark_task4_contract.py"
 publisher_tool="${script_dir}/benchmark_report_publisher.py"
 
+# 显式路径和环境变量优先；返回第一个含 CMakeCache 的绝对目录供后续 CTest 与报告路径共用。
 zr_vm_resolve_cmake_build_dir() {
   local repo="$1"
   local explicit="$2"
@@ -112,6 +113,7 @@ echo "Testing benchmark CSV export:
   report_dir=${report_dir}"
 
 start_ts=$(date +%s)
+# BUG: 构建未注册 performance_report 时 ctest -R 仍返回 0；若旧报告存在，后处理可将旧数据当作本轮结果。
 if [[ "${BENCHMARK_CSV_SKIP_CTEST:-0}" == "1" ]]; then
   ctest_rc=0
 elif [[ "${BENCHMARK_DUAL_CTEST:-1}" == "1" ]]; then
@@ -181,6 +183,7 @@ if [[ "${ctest_rc}" -ne 0 ]]; then
   exit "${ctest_rc}"
 fi
 
+# 后处理只接受带环境报告的计时结果；profile 轮已单独归档，不进入 CSV 主报告。
 if [[ ! -f "${report_dir}/benchmark_report.json" ]]; then
   echo "error: missing ${report_dir}/benchmark_report.json (run ctest first or fix build_dir)" >&2
   exit 1

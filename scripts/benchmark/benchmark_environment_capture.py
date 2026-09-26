@@ -27,6 +27,7 @@ from benchmark_environment_schema import (
 from benchmark_source_identity import HASH_CHUNK_SIZE, source_identity
 
 
+# 探测超时与 CMake/运行时字段清单界定捕获范围，失败记录为不可用。
 PROBE_SUBPROCESS_TIMEOUT_SECONDS = 10.0
 _BUILD_FLAG_NAMES = (
     "CMAKE_C_FLAGS",
@@ -132,6 +133,7 @@ def _normalize_compile_entry(
     repository: Path,
     build_directory: Path,
 ) -> dict[str, Any]:
+    # 把仓库和构建绝对路径替换为稳定标记，编译命令的其余差异仍进入指纹。
     if not isinstance(entry, dict):
         raise ValueError("compile_commands entry must be an object")
     if not isinstance(entry.get("file"), str) or not entry["file"]:
@@ -165,6 +167,7 @@ def _target_compile_evidence(
     repository: Path,
     build_directory: Path,
 ) -> dict[str, Any]:
+    # compile_commands 是目标实际编译配置的证据；缺失时显式标为不可用。
     path = build_directory / "compile_commands.json"
     if not path.is_file():
         return {"status": "unavailable", "entry_count": 0, "sha256": None}
@@ -193,6 +196,7 @@ def build_contract_from_cache(
     repository: str | os.PathLike[str],
     build_directory: str | os.PathLike[str],
 ) -> dict[str, Any]:
+    # 从 CMake 缓存提取会影响性能的构建选项，并附上目标编译命令摘要。
     if not isinstance(cache, dict):
         raise ValueError("CMake cache must be a mapping")
     generator = cache.get("CMAKE_GENERATOR")
@@ -289,6 +293,7 @@ def select_allowed_cpu(
     sysfs_root: str | os.PathLike[str] = "/sys/devices/system/cpu",
     requested_cpu: int | None = None,
 ) -> dict[str, Any]:
+    # 只从允许且在线的逻辑 CPU 中挑选，要求 sysfs 拓扑能验证其身份。
     allowed = parse_cpu_list(allowed_list)
     if requested_cpu is not None:
         if isinstance(requested_cpu, bool) or not isinstance(requested_cpu, int):
@@ -382,6 +387,7 @@ def _resolve_executable(value: str) -> str:
 
 
 def _capture_runtimes() -> dict[str, dict[str, str | None]]:
+    # 逐项探测版本；探测失败保留 unavailable，而不猜测外部运行时身份。
     result: dict[str, dict[str, str | None]] = {}
     for name, (candidates, arguments) in _RUNTIME_PROBES.items():
         executable = next(
@@ -449,6 +455,7 @@ def capture_environment(
     configuration: str | None = None,
     process_id: int | None = None,
 ) -> dict[str, Any]:
+    # 先核实构建与源码起点，再写 IN_PROGRESS；包装脚本运行完才可 finalize。
     repo_root = Path(repository).resolve()
     build_root = Path(build_directory).resolve()
     cache_path = build_root / "CMakeCache.txt"
@@ -528,6 +535,7 @@ def finalize_environment(
     environment: Any,
     repository: str | os.PathLike[str],
 ) -> dict[str, Any]:
+    # 仅接受未完成快照；补齐结束时的源码与负载后，才设置 COMPLETE 并计算指纹。
     if not isinstance(environment, dict):
         raise EnvironmentContractError("ENVIRONMENT_NOT_OBJECT")
     if environment.get("schema_version") != ENVIRONMENT_SCHEMA_VERSION:

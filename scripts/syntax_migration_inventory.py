@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import Iterable
 
 
+# JSON 报告中保留扫描来源，使消费方区分真实 .zr、宿主字面量与当前文档示例。
 class SourceKind(str, Enum):
     ZR_SOURCE = "zrSource"
     EMBEDDED_ZR_FIXTURE = "embeddedZrFixture"
     CURRENT_DOCUMENTATION = "currentDocumentation"
 
 
+# 分类只记录迁移责任与可自动化程度；扫描器本身不改写输入或批准迁移。
 class MigrationClassification(str, Enum):
     MACHINE_APPLICABLE = "machineApplicable"
     MAYBE_INCORRECT = "maybeIncorrect"
@@ -29,24 +31,28 @@ class MigrationClassification(str, Enum):
 
 @dataclass(frozen=True)
 class SourcePosition:
+    # 对外统一使用 1-based 行列，供 fixture golden 与编辑器定位消费。
     line: int
     column: int
 
 
 @dataclass(frozen=True)
 class SourceRange:
+    # finding 的起止位置必须在同一来源文本坐标系中，嵌入式宿主输入尤其依赖此契约。
     start: SourcePosition
     end: SourcePosition
 
 
 @dataclass(frozen=True)
 class ScannedFile:
+    # 已扫描路径单独列出，即使没有发现旧语法也可证明它进入了候选边界。
     file: str
     source_kind: SourceKind
 
 
 @dataclass(frozen=True)
 class InventoryFinding:
+    # 将旧语法位置、分类、目标计划和稳定理由捆绑，避免报告只给出裸文本命中。
     file: str
     source_kind: SourceKind
     source_range: SourceRange
@@ -58,12 +64,14 @@ class InventoryFinding:
 
 @dataclass(frozen=True)
 class InventoryExclusion:
+    # 被选择却不扫描的文件保留可审计原因，而非从报告静默消失。
     file: str
     reason: str
 
 
 @dataclass(frozen=True)
 class InventoryAllowlistedFinding:
+    # 负向测试中的预期旧写法仍输出到独立列表，不计入待迁移 findings。
     file: str
     line: int
     column: int
@@ -73,6 +81,7 @@ class InventoryAllowlistedFinding:
 
 @dataclass(frozen=True)
 class InventoryReviewedCurrentFinding:
+    # 已晋升为当前语法的候选保留审查痕迹，不再误报为 legacy finding。
     file: str
     source_kind: SourceKind
     source_range: SourceRange
@@ -82,6 +91,7 @@ class InventoryReviewedCurrentFinding:
 
 @dataclass(frozen=True)
 class MigrationRule:
+    # 规则表只决定已识别形式的归类，具体绑定/所有权证明留给目标计划。
     classification: MigrationClassification
     target_plan: str
     reason: str
@@ -89,6 +99,7 @@ class MigrationRule:
 
 @dataclass(frozen=True)
 class InventoryReport:
+    # 同一快照支持机器 JSON、人工文本和 fixture 合同三种投影；字段顺序保持稳定。
     scanned_files: tuple[ScannedFile, ...]
     exclusions: tuple[InventoryExclusion, ...]
     findings: tuple[InventoryFinding, ...]
@@ -97,6 +108,7 @@ class InventoryReport:
     scanner_version: str = "1"
     selected_roots: tuple[str, ...] = ()
 
+    # CLI 默认输出；对路径和 finding 排序由构造方保证，输出固定 LF 供跨主机基线比较。
     def to_json(self) -> str:
         return json.dumps(
             {
@@ -155,6 +167,7 @@ class InventoryReport:
             sort_keys=True,
         ) + "\n"
 
+    # 人工审阅模式突出分类数量与每个位置，避免必须解析完整 JSON 才能定位迁移点。
     def to_text(self) -> str:
         lines = [
             f"Syntax 06A migration inventory (scanner {self.scanner_version})",
@@ -191,6 +204,7 @@ class InventoryReport:
         )
         return "\n".join(lines) + "\n"
 
+    # 合成 fixture 只冻结每种旧形式的单一合同；相同形式冲突应使基线构建失败。
     def to_fixture_json(self) -> str:
         contracts: dict[str, tuple[str, str, str]] = {}
         for finding in self.findings:
@@ -224,6 +238,8 @@ class InventoryReport:
         ) + "\n"
 
 
+# build_inventory 的合成 fixture 边界：embedded/docs 目录名用于区分宿主片段与文档，
+# 不等同于下方 repository 模式的全仓 Git 候选策略。
 def _source_kind_for(path: Path, relative_path: Path) -> SourceKind | None:
     if path.suffix == ".zr":
         return SourceKind.ZR_SOURCE
@@ -234,6 +250,7 @@ def _source_kind_for(path: Path, relative_path: Path) -> SourceKind | None:
     return None
 
 
+# 两种报告投影共用分类统计；零命中的分类仍保留，保证 JSON schema 稳定。
 def _classification_counts(
     findings: tuple[InventoryFinding, ...],
 ) -> dict[str, int]:
@@ -243,6 +260,7 @@ def _classification_counts(
     return counts
 
 
+# 将归属计划汇总给人工迁移安排，输出排序不受发现文件次序影响。
 def _target_plan_counts(
     findings: tuple[InventoryFinding, ...],
 ) -> dict[str, int]:
@@ -252,12 +270,14 @@ def _target_plan_counts(
     return dict(sorted(counts.items()))
 
 
+# 合成 fixture 模式允许扫描未跟踪文件；仓库 CLI 使用 Git 候选列表，不调用此遍历。
 def _iter_files(root: Path) -> Iterable[tuple[Path, Path]]:
     for path in root.rglob("*"):
         if path.is_file():
             yield path, path.relative_to(root)
 
 
+# 以基点把片段内 offset 投影为对外行列；仅首行继承 base.column。
 def _position_at(
     text: str,
     offset: int,
@@ -273,6 +293,7 @@ def _position_at(
     )
 
 
+# _append_finding 统一建立范围，避免各正则路径自行实现坐标换算。
 def _range_for(
     text: str,
     start: int,
@@ -285,6 +306,8 @@ def _range_for(
     )
 
 
+# 保留字符长度与换行后屏蔽注释/字符串，使后续正则不把说明文字或字符串内容当旧语法。
+# 它是迁移清单词法边界，不承担完整 Zr parser 的嵌套语法判断。
 def _code_mask(text: str) -> str:
     masked = list(text)
     offset = 0
@@ -327,6 +350,7 @@ def _code_mask(text: str) -> str:
     return "".join(masked)
 
 
+# 已识别形式必须出现在规则表中；报告位置来自原文本，归类来自唯一合同。
 def _append_finding(
     findings: list[InventoryFinding],
     *,
@@ -352,6 +376,7 @@ def _append_finding(
     )
 
 
+# 被移除的百分号写法映射到稳定报告名称；未知指令另列 blocked，而非默默丢弃。
 _PERCENT_FORMS = {
     "module": "percentModule",
     "import": "percentImport",
@@ -380,6 +405,7 @@ _PERCENT_FORMS = {
 }
 
 
+# 此表反映目标计划已晋升的边界；词法可匹配不代表绑定/资源证明足以自动改写。
 _MIGRATION_RULES = {
     "percentModule": MigrationRule(
         MigrationClassification.MACHINE_APPLICABLE,
@@ -564,6 +590,7 @@ _MIGRATION_RULES = {
 }
 
 
+# arrow 分类只回溯同一局部语句的参数括号，避免越过分隔符借用前一个调用的上下文。
 def _callable_open_before_arrow(text: str, arrow_start: int) -> int | None:
     close = arrow_start
     while close > 0 and text[close - 1] != ")":
@@ -584,6 +611,7 @@ def _callable_open_before_arrow(text: str, arrow_start: int) -> int | None:
     return None
 
 
+# 为 arrow 判断提取紧邻括号的 callable 名；传入的是已屏蔽注释/字符串的文本。
 def _word_before_offset(text: str, offset: int) -> str:
     end = offset
     while end > 0 and text[end - 1].isspace():
@@ -594,6 +622,8 @@ def _word_before_offset(text: str, offset: int) -> str:
     return text[start:end]
 
 
+# .zr、文档围栏和宿主字面量共用的旧写法检测器；返回审查候选而非解析器诊断。
+# 大写调用/new 等依赖语义绑定的形式在 repository 模式另列 reviewedCurrentFindings。
 def _scan_zr_text(
     text: str,
     *,
@@ -772,6 +802,10 @@ def _scan_zr_text(
     return findings
 
 
+# 供宿主 fixture 扫描逐个提取字面量；这里只处理少量转义，不能等同于宿主语言求值。
+# BUG: 解码 \\n 后仍以宿主起点直接计算位置，后续 finding 会落到不存在的宿主行；
+# 例：同一物理行的 source="%foo\\n%await" 将 %await 报为下一行第 1 列。
+# 应保留解码字符到宿主 offset 的映射；相邻字面量也须保留各自真实范围。
 def _iter_embedded_string_payloads(
     text: str,
 ) -> Iterable[tuple[str, SourcePosition, int, int]]:
@@ -809,6 +843,8 @@ def _iter_embedded_string_payloads(
         offset += 1
 
 
+# 全仓宿主文件只扫描具有 source/parse 等输入上下文且以 Zr 形式开头的字面量，
+# 防止格式化字符串和期望诊断文本成为待迁移输入。
 def _embedded_context_is_zr_input(
     host_text: str,
     literal_start: int,
@@ -844,6 +880,7 @@ def _embedded_context_is_zr_input(
     return has_zr_opening and (has_input_context or has_parser_context)
 
 
+# 按来源选择扫描入口；repository 模式启用宿主输入过滤，fixture 模式可扫描全部字面量。
 def _scan_path(
     path: Path,
     *,
@@ -864,6 +901,7 @@ def _scan_path(
                 literal_start,
                 payload,
             )
+            # C 相邻字面量属于同一 source 序列，后续片段即使不再以 Zr 关键字开头也要扫描。
             contiguous_source_segment = (
                 source_sequence
                 and text[previous_literal_end + 1 : literal_start - 1].strip() == ""
@@ -888,11 +926,16 @@ def _scan_path(
     return _scan_documentation(text, file=file)
 
 
+# 只扫描显式 ```zr 围栏，历史解释中的普通 Markdown 文本不进入语法候选。
 def _scan_documentation(
     text: str,
     *,
     file: str,
 ) -> list[InventoryFinding]:
+    # TODO: 当前仓库的五处 wiki ```zr 围栏令 repository gate 产生 findings，
+    # 包括 error-handling/grammar-reference/patterns-ownership-recipes/
+    # type-expression-reference/math-api。需逐份核对是过时示例还是明确的反例，
+    # 再修正文档或建立有证据的负向清单；见 test_repository_inventory_is_closed_deterministic_and_excludes_non_source_inputs。
     findings: list[InventoryFinding] = []
     lines = text.splitlines(keepends=True)
     in_zr_fence = False
@@ -921,6 +964,7 @@ def _scan_documentation(
     return findings
 
 
+# 测试的合成 fixture 入口：遍历本地目录并保留固定分类合同，不套用全仓排除/allowlist。
 def build_inventory(root: Path) -> InventoryReport:
     root = root.resolve()
     scanned_files: list[ScannedFile] = []
@@ -959,6 +1003,7 @@ def build_inventory(root: Path) -> InventoryReport:
     )
 
 
+# 报告公开的扫描范围声明；实际候选由 Git 文件列表及下方分类谓词决定。
 _REPOSITORY_SELECTED_ROOTS = (
     "tests",
     "examples",
@@ -967,8 +1012,10 @@ _REPOSITORY_SELECTED_ROOTS = (
     "zr_vm_lib_*",
     "zr_vm_library",
 )
+# 二进制进入候选后显式排除，宿主源码仅从可能嵌入 Zr 文本的扩展名中选择。
 _BINARY_ARTIFACT_SUFFIXES = {".zro", ".zri", ".zrs"}
 _EMBEDDED_HOST_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".js", ".ts"}
+# 负向测试依 file/column/form 稳定识别；新增相同位置的真实旧写法需人工复核此表。
 _REPOSITORY_FINDING_ALLOWLIST = {
     (
         "tests/parser/test_percent_syntax_cutover.c",
@@ -1041,6 +1088,7 @@ _REPOSITORY_FINDING_ALLOWLIST = {
         "legacyPropertyAccessor",
     ): "expectedLegacyPropertyMigrationInput",
 }
+# 当前 parser 可接受但词面似旧语法的形式单列，而不再阻断迁移 gate。
 _REPOSITORY_REVIEWED_CURRENT_FORMS = {
     "legacyBareTypeCall",
     "legacyNewStruct",
@@ -1055,6 +1103,8 @@ _repository_inventory_cache: dict[
 ] = {}
 
 
+# 重复请求同一仓库快照时以候选文件元数据失效缓存；调用方若要求强一致，须意识到
+# 相同元数据但内容被外部改写时此签名无法察觉。
 def _repository_inventory_signature(
     root: Path,
     candidate_paths: tuple[str, ...],
@@ -1079,6 +1129,7 @@ def _repository_inventory_signature(
     return tuple(signature)
 
 
+# 全仓模式只审 Git 跟踪路径，避免工作树临时生成物污染跨主机基线。
 def _tracked_files(root: Path) -> tuple[Path, ...]:
     result = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z"],
@@ -1093,6 +1144,7 @@ def _tracked_files(root: Path) -> tuple[Path, ...]:
     )
 
 
+# 先按根目录与后缀宽选，再让 exclusion 阶段给二进制/历史/生成物写出原因。
 def _is_repository_candidate(path: Path) -> bool:
     parts = path.parts
     suffix = path.suffix.lower()
@@ -1107,6 +1159,7 @@ def _is_repository_candidate(path: Path) -> bool:
     return False
 
 
+# 对外候选清单只包含当前仍存在的跟踪文件；调用方可用它与 report.scanned/exclusions 对账。
 def repository_candidate_paths(root: Path) -> tuple[str, ...]:
     root = root.resolve()
     return tuple(
@@ -1118,6 +1171,7 @@ def repository_candidate_paths(root: Path) -> tuple[str, ...]:
     )
 
 
+# 历史计划、负向/迁移 fixture 与构建产物不代表当前源码；排除理由保留在报告中。
 def _repository_exclusion_reason(relative_path: Path) -> str | None:
     parts = relative_path.parts
     normalized = relative_path.as_posix()
@@ -1140,6 +1194,7 @@ def _repository_exclusion_reason(relative_path: Path) -> str | None:
     return None
 
 
+# 路径已经经过候选过滤，剩余类型进入 .zr、Markdown 或宿主字符串扫描之一。
 def _repository_source_kind(relative_path: Path) -> SourceKind:
     if relative_path.suffix.lower() == ".zr":
         return SourceKind.ZR_SOURCE
@@ -1148,6 +1203,9 @@ def _repository_source_kind(relative_path: Path) -> SourceKind:
     return SourceKind.EMBEDDED_ZR_FIXTURE
 
 
+# 仓库 CLI 与基线测试入口：从 Git 候选生成可审计的 scanned/exclusion/findings 分区，
+# 保留 allowlist 与已晋升当前语法记录；输出固定排序供跨平台逐字节比较。
+# 规则表不会因编辑 Markdown 自动更新，新增当前文档片段可能使 gate 出现新 finding。
 def build_repository_inventory(root: Path) -> InventoryReport:
     root = root.resolve()
     candidate_paths = repository_candidate_paths(root)
@@ -1249,6 +1307,7 @@ def build_repository_inventory(root: Path) -> InventoryReport:
     return report
 
 
+# 只读命令行入口；--output 只写报告目标，不迁移或改写任何源文件。
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Read-only Syntax 06A legacy ZR migration inventory."

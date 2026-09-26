@@ -16,6 +16,7 @@ from typing import Any
 from benchmark_task4_contract import compare_benchmark_summaries, _null_ratios_and_gates
 
 
+# 报告测量契约与 CSV 导出共用字段和合法值，比较映射绑定目标运行时名。
 MEASUREMENT_FIELDS = (
     "measurement_scope",
     "prepare_scope",
@@ -85,6 +86,8 @@ def _implementation_contract_issue(implementation: Any, location: str) -> list[s
         if field not in implementation:
             issues.append(f"{location}: missing {field}")
 
+    # BUG: JSON 数组或对象作为 measurement_scope 时，集合成员检查抛出 TypeError；
+    # _build_summary 的合法性诊断因此中断，无法输出应清空比值的汇总。复现：设 measurement_scope=[] 调用本函数。
     measurement_scope = implementation.get("measurement_scope")
     if "measurement_scope" in implementation and measurement_scope not in VALID_MEASUREMENT_SCOPES:
         issues.append(f"{location}: invalid measurement_scope {measurement_scope!r}")
@@ -197,6 +200,7 @@ def _contract_is_comparable(left: Any, right: Any) -> bool:
 
 
 def _gate_benchmark_relative_to_c(benchmark_report: Any) -> tuple[Any, list[str]]:
+    # 汇总只撤销不可信比值，不重新计算；原报告供追溯，副本供查看器消费。
     gated = copy.deepcopy(benchmark_report)
     removed: list[str] = []
     if not isinstance(gated, dict) or not isinstance(gated.get("cases"), list):
@@ -234,6 +238,7 @@ def _gate_benchmark_relative_to_c(benchmark_report: Any) -> tuple[Any, list[str]
 
 
 def _gate_comparison_ratios(benchmark_report: Any, comparison_report: Any) -> tuple[Any, list[str]]:
+    # 比较报告的比例必须能对应唯一基准 case、唯一实现及相同测量范围。
     gated = copy.deepcopy(comparison_report)
     removed: list[str] = []
     if not isinstance(gated, dict) or not isinstance(gated.get("cases"), list):
@@ -309,6 +314,7 @@ def _build_summary(
     performance_subdir: str,
     baseline_summary: Path | None = None,
 ) -> dict[str, Any]:
+    # 缺失或损坏的可选报告仍写入诊断汇总；比例门控使用已读取的基准记录。
     perf_dir = tests_generated / performance_subdir
     names = (
         "benchmark_report",

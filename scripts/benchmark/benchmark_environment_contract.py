@@ -49,6 +49,7 @@ from benchmark_source_identity import (
 )
 
 
+# CLI 与测试共用此门面；固定导出面汇合捕获、schema 和源码身份 API。
 __all__ = (
     "BUILD_CONTRACT_VERSION",
     "CACHE_CONTRACT_VERSION",
@@ -130,6 +131,7 @@ def _parse_flag_argument(value: str) -> dict[str, str]:
 
 
 def _main_cache_key(args: argparse.Namespace) -> None:
+    # 有构建目录时纳入实际 target evidence；缺失时缓存身份仍可生成但不可比。
     build_contract = None
     if args.build_dir:
         build_directory = Path(args.build_dir).resolve()
@@ -216,6 +218,7 @@ def _argument_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    # shell 包装器与发布流水线调用此 CLI；验证失败统一以状态码 2 报出。
     parser = _argument_parser()
     args = parser.parse_args()
     try:

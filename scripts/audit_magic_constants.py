@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Iterable
 
 
+# 从脚本位置定位仓库，使文档或 CI 在其他工作目录调用时仍审计同一组源码。
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True)
 class AuditRule:
+    # 每条规则将已迁移的裸常量模式与目标命名边界绑定；run_rules 将命中视为回归。
     name: str
     path: str
     pattern: str
@@ -25,10 +27,13 @@ class AuditRule:
 
 @dataclass(frozen=True)
 class Exemption:
+    # 输出中保留明确的豁免理由，供新增规则时区分协议常量与实现局部值。
     scope: str
     reason: str
 
 
+# 常量收敛的仓库级回归清单；由项目 inventory 文档维护，路径相对 ROOT。
+# 此表只识别列出的历史写法，并不证明未列出源码已无魔数。
 MIGRATED_RULES: tuple[AuditRule, ...] = (
     AuditRule(
         name="global api cache legacy macros",
@@ -1715,9 +1720,11 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
 )
 
 
+# backlog 保留审计协议位置；当前无条目，main 仍在 JSON/text 输出中维持其字段。
 BACKLOG_RULES: tuple[AuditRule, ...] = ()
 
 
+# 豁免是审计边界说明，不参与正则匹配或退出码计算。
 EXEMPTIONS: tuple[Exemption, ...] = (
     Exemption(scope="descriptor tables", reason="Field-name arrays, type descriptors, hint JSON, and help text are data, not conf constants."),
     Exemption(scope="definition-bound values", reason="sizeof(...) expressions, enum values, and schema table counts stay beside the defining type."),
@@ -1731,14 +1738,18 @@ EXEMPTIONS: tuple[Exemption, ...] = (
 )
 
 
+# collect_matches 的容错读取；无法解码的字节会被忽略，适用于目前以 ASCII 模式
+# 检查的首方源码，但不承担文件编码校验职责。
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
+# 命中位置转为用户可定位的 1-based 行号，供文本与 JSON 报告使用。
 def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+# 每条规则只读取指定路径；缺文件也作为命中报告，防止改名后审计静默通过。
 def collect_matches(rule: AuditRule) -> list[dict[str, object]]:
     path = ROOT / rule.path
     if not path.is_file():
@@ -1753,6 +1764,7 @@ def collect_matches(rule: AuditRule) -> list[dict[str, object]]:
     return matches
 
 
+# 将原始命中统一成 pass/fail 记录，供 CLI、人读报告及自动化 JSON 共用。
 def run_rules(rules: Iterable[AuditRule]) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     for rule in rules:
@@ -1771,6 +1783,7 @@ def run_rules(rules: Iterable[AuditRule]) -> list[dict[str, object]]:
     return results
 
 
+# 文本模式保留规则目标、文件和命中位置，便于开发者追踪收敛边界。
 def print_results(title: str, results: list[dict[str, object]]) -> None:
     print(title)
     for result in results:
@@ -1786,6 +1799,8 @@ def print_results(title: str, results: list[dict[str, object]]) -> None:
     print()
 
 
+# 脚本入口以 migrated 规则的命中数决定退出码；backlog 只计数展示，不阻断调用方。
+# --json 与文本模式使用同一次规则结果，避免两种输出对回归状态作不同判断。
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audit shared and module magic-number consolidation in zr_vm production code.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON instead of text.")

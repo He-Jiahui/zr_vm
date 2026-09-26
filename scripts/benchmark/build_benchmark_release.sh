@@ -64,6 +64,7 @@ start_ts=$(date +%s)
 
 mkdir -p "${cache_root}"
 rm -rf "${bootstrap_root}"
+# BUG: 新缓存配置只启用 BUILD_TESTS；performance_report 的 CTest 注册开关默认 OFF，报告脚本随后无法运行该测试。
 cmake -S "${repo_root}" -B "${bootstrap_root}" \
   -G "${generator}" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -96,6 +97,7 @@ source_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], enc
 toolchain_key="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["toolchain_key"])' "${cache_identity}")"
 build_dir="${cache_root}/${source_key}/${toolchain_key}"
 
+# 命中时只核对身份并复用现有构建；未命中时重新配置最终路径，不能搬移带绝对路径的 CMake 探针目录。
 if [[ -e "${build_dir}" ]]; then
   if [[ "${ZR_VM_BENCHMARK_REUSE_CACHE:-1}" != "1" ]]; then
     echo "error: keyed benchmark cache already exists and reuse is disabled: ${build_dir}" >&2

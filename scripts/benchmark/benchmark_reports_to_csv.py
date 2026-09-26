@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+# 保留完整测量契约并按运行时名查找基准记录，比例只转录合格输入。
 MEASUREMENT_FIELDS = (
     "measurement_scope",
     "prepare_scope",
@@ -67,6 +68,8 @@ def _implementation_contract_valid(implementation: Any) -> bool:
         return False
     if any(field not in implementation for field in MEASUREMENT_FIELDS):
         return False
+    # BUG: 五字段齐全但 measurement_scope 为 JSON 数组或对象时，此处抛 TypeError；
+    # main 经 _write_benchmark_timings 到达此处，CSV 导出中断而非留空比值。复现：五字段齐全且 measurement_scope=[]。
     if implementation.get("measurement_scope") not in VALID_MEASUREMENT_SCOPES:
         return False
     if implementation.get("prepare_scope") not in VALID_PREPARE_SCOPES:
@@ -112,6 +115,7 @@ def _implementations_by_name(case: Any) -> dict[str, Mapping[str, Any]]:
 
 
 def _gated_relative_to_c(case: Any, implementation: Any, case_identity_ambiguous: bool) -> Any:
+    # 原报告比例只能在实现及 C 基线均满足测量契约时进入 CSV。
     if case_identity_ambiguous:
         return None
     implementations = _implementations_by_name(case)
@@ -128,6 +132,7 @@ def _gated_comparison_ratio(
     ratio: Any,
     identity_ambiguous: bool,
 ) -> Any:
+    # 比较 case 自己声明的 scope 也须与 ZR interp 一致，不能由基准记录代填。
     if identity_ambiguous:
         return None
     implementations = _implementations_by_name(benchmark_case)
@@ -179,6 +184,7 @@ def _scalar(v: Any) -> str:
 
 
 def _write_benchmark_timings(report: Mapping[str, Any], out_path: Path) -> None:
+    # 保留原测量字段与非比例统计量，只对 C 基线比值执行可信度门控。
     fieldnames = [
         "generated_at_utc",
         "suite_tier",
@@ -288,6 +294,7 @@ def _write_benchmark_timings(report: Mapping[str, Any], out_path: Path) -> None:
 
 
 def _write_comparison(comp: Mapping[str, Any], benchmark_report: Mapping[str, Any], out_path: Path) -> None:
+    # 比较 CSV 的身份关联从基准报告读取；重复或缺失身份使对应比例留空。
     fieldnames = [
         "generated_at_utc",
         "suite_tier",

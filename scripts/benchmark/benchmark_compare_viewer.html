@@ -176,8 +176,10 @@
     el.hidden = !msg;
   }
 
+  // 文件选择器和嵌入页共用此入口；兼容聚合摘要与旧版单份报告。
   function normalizePayload(root) {
     if (!root || typeof root !== "object") return null;
+    // BUG: 聚合器允许只生成 comparison_report 摘要，此处却要求 benchmark_report；选择这种合法摘要会被拒绝。
     if (root.schema_version && root.reports && root.reports.benchmark_report) {
       return root;
     }
@@ -200,12 +202,15 @@
     return null;
   }
 
+  // 聚合脚本把 UTF-8 JSON 编码后嵌入模板；仅生成的单文件页应自动展示。
   function parseMaybeBundle() {
     const embed = document.getElementById("zr-bench-embed");
     if (!embed) return;
     const t = embed.textContent.trim();
+    // BUG: 打包器全局替换占位符时也会替换此判断中的字面量；生成页的 t 总包含自身，自动加载恒被跳过（Node DOM 桩复现）。
     if (!t || t.indexOf("__ZR_BENCH_SUMMARY_B64__") >= 0) return;
     try {
+      // TODO: 上方占位符问题修复后核验中文字段；打包器以 UTF-8 编码，而 atob 返回字节映射字符串，示例中文会变乱码。
       const data = JSON.parse(atob(t));
       const norm = normalizePayload(data);
       if (norm) renderAll(norm);
@@ -240,6 +245,7 @@
       n === "C" ||
       n === "Rust" ||
       n === "Java" ||
+      // BUG: 当前 CMake 报告写入 C#/.NET，此处只匹配 .NET；载入含该实现的 JSON 后原生组表缺列（Node DOM 桩复现）。
       n === ".NET" ||
       n === "ZR binary"
     ) {
@@ -248,6 +254,7 @@
     return "other";
   }
 
+  // 按展示组筛选实现，再以组内每行最快值着色；全量报告仍由 renderMatrix 展示。
   function renderFilteredMatrix(br, category, containerId) {
     const implSet = {};
     for (const c of br.cases || []) {
@@ -313,12 +320,14 @@
     el.innerHTML = html;
   }
 
+  // 聚合摘要允许缺少任一报告；重置对应区域，避免文件选择器保留上次数据。
   function renderAll(payload) {
     showError("");
     const br = payload.reports && payload.reports.benchmark_report;
     const cr = payload.reports && payload.reports.comparison_report;
 
     const meta = $("meta");
+    // BUG: 文件选择器接受任意 JSON，aggregated_at_utc 未转义即写入 innerHTML；含事件属性的输入会注入 HTML（Node DOM 桩复现）。
     meta.innerHTML =
       "<strong>聚合时间</strong> " + (payload.aggregated_at_utc || "—") +
       " &nbsp;|&nbsp; <strong>目录</strong> " + escapeHtml(String(payload.tests_generated_dir || "—")) +

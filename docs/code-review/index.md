@@ -39,5 +39,6 @@ doc_type: category-index
 | `zr.network` TCP/UDP provider | [197 项](coverage/zr_vm_lib_network.tsv) | 13 个文件独立复核，79 个 C 定义均登记；GCC/Clang 语法检查和完整 TCP 帧烟测通过，半帧 EOF 与零字节 UDP 的既有缺陷在烟测中复现。 |
 | 根 CMake 与跨平台 CI | [30 项](coverage/root_build_ci.tsv) | 2 个入口文件独立复核，去注释后内容未变；YAML 矩阵解析与 `diff --check` 通过，记录扩展 WASM 构建目标缺失和未消费的依赖开关。 |
 | `zr.ffi` 动态调用与 ABI provider | [287 项](coverage/zr_vm_lib_ffi.tsv) | 15 个文件独立复核，100 个 C 定义均登记；GCC shared 构建和 Clang 8 个 C 文件语法检查通过。四个既有测试目标仍有失败（8/30、3/30、1/2、另一个断言中止），未取得同基准对照结果。 |
+| 工作区维护脚本（剩余批次） | [392 项](coverage/scripts_remaining.tsv) | 21 个文件完成调用链审查；Python AST、Shell/PowerShell 语法与注释纯度复核通过；魔术常量审计现存 199 项中 7 项失败，已保留风险记录。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

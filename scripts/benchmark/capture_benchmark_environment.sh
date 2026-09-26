@@ -69,6 +69,7 @@ if [[ -z "${observed_mask}" ]]; then
   exit 2
 fi
 
+# 先写 IN_PROGRESS 环境，再运行子命令并完成采样；完成阶段失败时以契约错误优先，否则保留子命令退出码。
 run_captured_command() {
   local isolation_status="$1"
   local selected_cpu="$2"
@@ -115,6 +116,7 @@ run_captured_command() {
   return "${command_result}"
 }
 
+# taskset 重入的子进程必须观察到单 CPU 掩码；验证失败时仍运行，但报告为不可比较的非隔离结果。
 if [[ -n "${_ZR_VM_BENCHMARK_PINNED_CPU:-}" ]]; then
   pinned_cpu="${_ZR_VM_BENCHMARK_PINNED_CPU}"
   if [[ "${pinned_cpu}" =~ ^[0-9]+$ && "${observed_mask}" == "${pinned_cpu}" ]]; then
@@ -152,6 +154,7 @@ if [[ "${selection_result}" -ne 0 || ! "${selection_output}" =~ ^[0-9]+$ ]]; the
   exit "$?"
 fi
 
+# 先探测 taskset 是否可用，再重入本脚本；只有重入后的进程能记录实际生效的亲和性掩码。
 selected_cpu="${selection_output}"
 if ! taskset -c "${selected_cpu}" true >/dev/null 2>&1; then
   run_captured_command "NON_ISOLATED" "" "taskset rejected CPU ${selected_cpu}"

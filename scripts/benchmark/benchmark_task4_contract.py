@@ -17,6 +17,7 @@ from benchmark_environment_schema import (
 )
 
 
+# 非致命环境变化保留报告但撤销门控，比较算法只消费同范围合格中位数。
 COMPARISON_ALGORITHM = "median_wall_time_ratio_v1"
 _NONFATAL_ENVIRONMENT_ISSUES = {"SOURCE_CHANGED_DURING_RUN"}
 _RATIO_FIELDS = {
@@ -52,6 +53,7 @@ def _remove_untrusted_speedups(value: Any) -> None:
 
 
 def _null_ratios_and_gates(value: Any) -> None:
+    # 环境不可比时递归撤销比值与门控资格，避免旧 speedup 泄漏到报告。
     if isinstance(value, dict):
         for key in list(value):
             lowered = key.lower()
@@ -89,6 +91,7 @@ def _record_is_gate_eligible(record: Any) -> bool:
 
 
 def _recompute_benchmark_ratios(report: dict[str, Any], *, comparable: bool) -> None:
+    # 环境合格也不提升 runner 拒绝的样本；只为原本合格且同 scope 的记录重算比值。
     for case in report.get("cases", []):
         if not isinstance(case, dict) or not isinstance(case.get("implementations"), list):
             continue
@@ -136,6 +139,7 @@ def _environment_attachment(
     report_reference: str,
     profile: bool,
 ) -> tuple[dict[str, Any], list[str]]:
+    # 结构损坏为硬错误；隔离不足、源码变动或 profile 作为不可比原因随报告保留。
     issues = validate_environment_contract(environment)
     fatal_issues = [
         issue for issue in issues if issue not in _NONFATAL_ENVIRONMENT_ISSUES
@@ -173,6 +177,7 @@ def attach_environment_contract(
     *,
     report_reference: str = "environment_report.json",
 ) -> dict[str, Any]:
+    # 在报告副本上附环境判定，先去掉不可信 speedup，再按资格撤销或重算比值。
     if not isinstance(report, dict):
         raise ValueError("benchmark report must be an object")
     if report.get("schema_version") != 3:
@@ -198,6 +203,7 @@ def finalize_report_directory(
     report_directory: str | Path,
     environment_path: str | Path,
 ) -> dict[str, Any]:
+    # 先完成主基准报告，再将同一环境附件写入其他报告以统一可比性判定。
     report_root = Path(report_directory).resolve()
     environment_file = Path(environment_path).resolve()
     benchmark_path = report_root / "benchmark_report.json"
@@ -263,6 +269,7 @@ def _index_report(
     side: str,
     reasons: list[str],
 ) -> dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]]:
+    # 以 case/implementation 组成比较键；重复身份另记原因，阻止错误配对。
     if not isinstance(report, dict) or not isinstance(report.get("cases"), list):
         reasons.append(f"{side}_CASES_INVALID")
         return {}
@@ -331,6 +338,7 @@ def _median(record: dict[str, Any], side: str, reasons: list[str]) -> float | No
 
 
 def compare_benchmark_summaries(current: Any, baseline: Any) -> dict[str, Any]:
+    # 环境、策略、记录集合与门控资格全部一致后，才用原始中位数计算加速比。
     reasons: list[str] = []
     current_environment = _summary_report(current, "environment_report", "CURRENT", reasons)
     baseline_environment = _summary_report(baseline, "environment_report", "BASELINE", reasons)

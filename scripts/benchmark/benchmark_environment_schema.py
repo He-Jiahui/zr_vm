@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
+# 版本与必填字段同时约束缓存身份、稳定指纹和捕获状态机。
 ENVIRONMENT_SCHEMA_VERSION = 2
 BUILD_CONTRACT_VERSION = 1
 SOURCE_IDENTITY_CONTRACT_VERSION = 2
@@ -56,6 +57,7 @@ _HEX_DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_PATTERN = re.compile(r"^[0-9a-fA-F]{40,64}$")
 
 
+# 保留稳定错误码，CLI 与比较器据此区分缺失、无效和未完成的环境证据。
 class EnvironmentContractError(ValueError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -95,6 +97,7 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def atomic_write_json(path: str | os.PathLike[str], value: Any) -> None:
+    # 临时文件与目标同目录；落盘后替换，失败时清除尚未发布的文件。
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = canonical_json_bytes(value)
@@ -289,6 +292,7 @@ def normalize_build_contract(
     *,
     allow_unavailable_target_evidence: bool = False,
 ) -> dict[str, Any]:
+    # 统一缓存键与环境指纹使用的实际构建身份；缺少目标编译证据默认拒绝。
     build = _mapping(value, "MISSING_BUILD")
     for field in REQUIRED_BUILD_IDENTITY_FIELDS:
         if field not in build:
@@ -314,6 +318,7 @@ def normalize_build_contract(
 
 
 def stable_environment_payload(environment: Any) -> dict[str, Any]:
+    # 只保留影响跨运行可比性的稳定维度；路径、时间和选中 CPU 留在外围证据。
     root = _mapping(environment, "ENVIRONMENT_NOT_OBJECT")
     if root.get("schema_version") != ENVIRONMENT_SCHEMA_VERSION:
         raise EnvironmentContractError("INVALID_SCHEMA_VERSION")
@@ -384,6 +389,7 @@ def stable_environment_fingerprint(environment: Any) -> str:
 
 
 def environment_with_fingerprint(environment: Any) -> dict[str, Any]:
+    # 对深拷贝重算指纹，防止旧 stable_fingerprint 自身参与哈希。
     result = copy.deepcopy(_mapping(environment, "ENVIRONMENT_NOT_OBJECT"))
     result.pop("stable_fingerprint", None)
     result["stable_fingerprint"] = {
@@ -430,6 +436,7 @@ def _source_snapshot(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_source(source: Any) -> list[str]:
+    # 比对开始与结束的源码快照；变化本身保留为可诊断问题码。
     if not isinstance(source, dict):
         return ["MISSING_SOURCE"]
     issues = _validate_source_snapshot(source)
@@ -480,6 +487,7 @@ def _validate_volatile(volatile: Any) -> list[str]:
 
 
 def validate_environment_contract(environment: Any) -> list[str]:
+    # 稳定载荷与外围证据分层验证，返回问题码供最终报告和基线比较使用。
     try:
         stable_environment_payload(environment)
     except EnvironmentContractError as exc:
@@ -534,6 +542,7 @@ def validate_environment_contract(environment: Any) -> list[str]:
     return issues
 
 
+# 字段差异各自对应稳定的诊断码，供基线比较器说明不可比原因。
 _STABLE_COMPARISON_FIELDS = (
     (("cpu", "model"), "CPU_MODEL_MISMATCH"),
     (("platform", "architecture"), "ARCHITECTURE_MISMATCH"),
@@ -563,6 +572,7 @@ def _nested_value(value: dict[str, Any], path: tuple[str, ...]) -> Any:
 
 
 def compare_environment_contracts(baseline: Any, current: Any) -> list[str]:
+    # 任一侧无效先停止字段比较，避免把损坏输入误判成可比环境。
     baseline_issues = validate_environment_contract(baseline)
     current_issues = validate_environment_contract(current)
     reasons = [f"BASELINE_{issue}" for issue in baseline_issues]

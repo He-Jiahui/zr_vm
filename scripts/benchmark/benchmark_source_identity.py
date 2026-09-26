@@ -22,6 +22,7 @@ from benchmark_environment_schema import (
 )
 
 
+# Git 探测须有上限；流式哈希块大小不改变带长度前缀的摘要协议。
 DEFAULT_GIT_SUBPROCESS_TIMEOUT_SECONDS = 30.0
 HASH_CHUNK_SIZE = 1024 * 1024
 _COMMIT_PATTERN = re.compile(r"^[0-9a-fA-F]{40,64}$")
@@ -99,6 +100,7 @@ def _hash_stream_record(
     handle: BinaryIO,
     size: int,
 ) -> None:
+    # 内容按块进入带长度前缀的记录；读取字节数变化时拒绝不稳定快照。
     for field in (kind, name, mode):
         _hash_field(hasher, field)
     hasher.update(size.to_bytes(8, byteorder="big", signed=False))
@@ -120,6 +122,7 @@ def _stream_tracked_diff(
     git_command: Sequence[str],
     timeout_seconds: float,
 ) -> bool:
+    # 固定 Git diff 选项及输出顺序，使用户 Git 配置不改变脏树摘要。
     timeout = _validate_timeout(timeout_seconds)
     with (
         tempfile.TemporaryDirectory(prefix="zr-vm-empty-order-") as order_directory,
@@ -220,6 +223,7 @@ def compute_dirty_tree_digest(
     git_command: Sequence[str] = ("git",),
     timeout_seconds: float = DEFAULT_GIT_SUBPROCESS_TIMEOUT_SECONDS,
 ) -> str | None:
+    # 覆盖已跟踪差异、未跟踪内容及递归子模块；干净树以 None 表示。
     root = Path(repository).resolve()
     if not root.is_dir():
         raise ValueError(f"repository is not a directory: {root}")
@@ -253,6 +257,7 @@ def compute_dirty_tree_digest(
         git_command=command,
         timeout_seconds=timeout,
     )
+    # 路径与模式也参与摘要，不能只比较文件正文或 Git diff。
     for raw_name in sorted(name for name in untracked_raw.split(b"\0") if name):
         path = root / os.fsdecode(raw_name)
         if path.is_symlink():
@@ -325,6 +330,7 @@ def source_identity(
     git_command: Sequence[str] = ("git",),
     timeout_seconds: float = DEFAULT_GIT_SUBPROCESS_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
+    # 提交号与脏树摘要共同标识构建时源码，供环境捕获及缓存键复用。
     root = Path(repository).resolve()
     command = _validated_git_command(git_command)
     timeout = _validate_timeout(timeout_seconds)
@@ -415,6 +421,7 @@ def compute_cache_identity(
     git_command: Sequence[str] = ("git",),
     timeout_seconds: float = DEFAULT_GIT_SUBPROCESS_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
+    # 分离源码键和工具链键；无实际构建证据时仍可寻址，但标记不可比。
     source = source_identity(
         repository,
         git_command=git_command,

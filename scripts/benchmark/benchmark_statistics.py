@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
+# SplitMix64 与 bootstrap 的常量构成可复现序列协议，修改需同步版本和向量测试。
 UINT64_MASK = (1 << 64) - 1
 SPLITMIX64_INCREMENT = 0x9E3779B97F4A7C15
 SPLITMIX64_MULTIPLIER_1 = 0xBF58476D1CE4E5B9
@@ -26,6 +27,7 @@ DEFAULT_STABILITY_THRESHOLD = 0.05
 MAX_SAMPLE_COUNT = 20
 
 
+# 随机序列是执行计划与 bootstrap 共享的版本化协议状态。
 class SplitMix64:
     """Small deterministic PRNG with a fixed cross-language contract."""
 
@@ -74,6 +76,7 @@ def validate_samples(samples: Any, *, minimum_count: int = 2) -> tuple[float, ..
 
 
 def _median_validated(samples: Sequence[float]) -> float:
+    # 偶数样本先尝试常规平均，溢出时分项折半以保留有限结果。
     ordered = sorted(samples)
     midpoint = len(ordered) // 2
     if len(ordered) % 2:
@@ -91,6 +94,7 @@ def median(samples: Any) -> float:
 
 
 def _mean_validated(samples: Sequence[float]) -> float:
+    # 先按最大样本缩放，再求和，避免大有限值相加时的中间溢出。
     sample_count = len(samples)
     maximum = max(samples)
     normalized_mean = math.fsum(sample / maximum for sample in samples) / sample_count
@@ -147,6 +151,7 @@ def is_stable(samples: Any, *, threshold: float = DEFAULT_STABILITY_THRESHOLD) -
 
 
 def bootstrap_median_confidence_interval(samples: Any, *, seed: int) -> dict[str, Any]:
+    # 固定 PRNG、重采样次数和分位索引构成跨运行可复现的统计协议。
     validated = validate_samples(samples)
     validated_seed = _validate_seed(seed)
     generator = SplitMix64(validated_seed)
@@ -179,6 +184,7 @@ def calculate_statistics(
     seed: int,
     stability_threshold: float = DEFAULT_STABILITY_THRESHOLD,
 ) -> dict[str, Any]:
+    # 一次校验后复用样本，输出离散度、稳定性和种子固定的置信区间。
     validated = validate_samples(samples)
     validated_seed = _validate_seed(seed)
     threshold = _validate_stability_threshold(stability_threshold)
@@ -250,6 +256,7 @@ def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, An
 
 
 def _parse_request(raw: bytes) -> tuple[Any, int, float]:
+    # CLI 输入拒绝重复键和非标准 JSON 常量，避免同一请求有多种解释。
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:

@@ -91,6 +91,7 @@ check_regex_absent() {
     fi
 }
 
+# 只提取 callgrind_annotate 的 Ir 函数表前八行，避免报告混入其他事件表或冗长列表。
 top_function_lines() {
     local annotate_path="$1"
     awk '
@@ -106,6 +107,7 @@ top_function_lines() {
     ' "${annotate_path}"
 }
 
+# 生成重复的已知调用以放大热路径，并保留外部 scale 调用防止整个表达式退化成常量。
 write_known_call_source() {
     local output_path="$1"
     local scale="$2"
@@ -139,6 +141,7 @@ write_known_call_source() {
     } >"${output_path}"
 }
 
+# 每个 fixture 在临时副本中注入规模参数；依次校验中间指令、运行结果和 Callgrind 热路径。
 run_case() {
     local case_name="$1"
     local project_rel="$2"
@@ -154,6 +157,7 @@ run_case() {
     local top_lines
 
     workdir="$(mktemp -d "/tmp/${case_name}_XXXXXX")"
+    # BUG: set -e 触发整脚本退出时不会执行 RETURN trap；编译或校验失败后临时工程残留在 /tmp。
     trap 'rm -rf "${workdir}"' RETURN
 
     cp -a "${REPO_ROOT}/${project_rel}/." "${workdir}/"

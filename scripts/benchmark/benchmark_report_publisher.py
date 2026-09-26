@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
+# 发布白名单只接受可阅读报告格式，排除执行文件和中间构建产物。
 _REPORT_EXTENSIONS = {".csv", ".html", ".json", ".md", ".txt"}
 
 
@@ -26,6 +27,7 @@ def _sha256(path: Path) -> str:
 
 
 def _is_report_file(source: Path, path: Path) -> bool:
+    # 只允许报告格式及指定 performance 子目录，避免把构建二进制纳入发布包。
     relative = path.relative_to(source)
     if path.suffix.lower() not in _REPORT_EXTENSIONS:
         return False
@@ -46,6 +48,7 @@ def publish_report_bundle(
     *,
     run_id: str | None = None,
 ) -> dict[str, Any]:
+    # 在目标目录内完整复制并生成校验清单，再用重命名公布不可变 run 目录。
     source = Path(source_directory).resolve()
     destination = Path(destination_root).resolve()
     if not source.is_dir():
@@ -77,6 +80,7 @@ def publish_report_bundle(
         shutil.rmtree(stage, ignore_errors=True)
         raise
 
+    # run 目录先于 LATEST 可见；指针写入临时文件并 fsync 后才原子替换。
     latest_fd, latest_name = tempfile.mkstemp(prefix=".LATEST-", dir=destination)
     try:
         with os.fdopen(latest_fd, "w", encoding="utf-8", newline="\n") as handle:
