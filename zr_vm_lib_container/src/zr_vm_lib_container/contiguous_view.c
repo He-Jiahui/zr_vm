@@ -60,6 +60,7 @@ static TZrBool contiguous_view_read_int_field(
     return ZR_TRUE;
 }
 
+/* source 作为对象字段受 GC 追踪；区间只记录投影边界，不复制底层元素。 */
 static TZrBool contiguous_view_store(
         SZrState *state,
         SZrObject *view,
@@ -117,6 +118,7 @@ static SZrObject *contiguous_view_new(
     return view;
 }
 
+/* 每次访问重新解析 source，以便 PoolLease.close 后的 Span 通过源对象拒绝解引用。 */
 static TZrBool contiguous_view_read_state(
         ZrLibCallContext *context,
         SZrObject **outView,
@@ -312,6 +314,7 @@ TZrBool ZrVmLibContainer_ContiguousView_AsReadOnly(
     return ZR_TRUE;
 }
 
+/* 先校验视图相对边界，再委托 source 的索引契约检查其当前可用性。 */
 TZrBool ZrVmLibContainer_ContiguousView_GetItem(
         ZrLibCallContext *context,
         SZrTypeValue *result) {

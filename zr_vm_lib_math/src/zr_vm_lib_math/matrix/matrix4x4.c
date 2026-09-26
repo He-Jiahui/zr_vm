@@ -8,9 +8,12 @@ static void zr_math_matrix4_identity(TZrFloat64 *m) {
     TZrSize i; for (i = 0; i < 16; i++) m[i] = 0.0; m[0] = m[5] = m[10] = m[15] = 1.0;
 }
 static void zr_math_matrix4_mul(const TZrFloat64 *a, const TZrFloat64 *b, TZrFloat64 *out) {
+    /* 行主序、左矩阵乘右矩阵；translation/rotation 工厂与列向量乘法均依赖此约定。 */
     TZrSize r, c, k; for (r = 0; r < 4; r++) for (c = 0; c < 4; c++) { out[r * 4 + c] = 0.0; for (k = 0; k < 4; k++) out[r * 4 + c] += a[r * 4 + k] * b[k * 4 + c]; }
 }
 static TZrFloat64 zr_math_matrix4_det(TZrFloat64 *m) {
+    /* BUG: 绝对主元阈值错误地把可逆矩阵 diag(1e-10, 1e10, 1, 1)
+     * 的 determinant 判为 0；该矩阵实际行列式为 1，可经命名回调直接观察。 */
     TZrFloat64 a[16]; TZrFloat64 det = 1.0; TZrSize i, j, k; memcpy(a, m, sizeof(a));
     for (i = 0; i < 4; i++) {
         TZrSize pivot = i; for (j = i + 1; j < 4; j++) if (fabs(a[j * 4 + i]) > fabs(a[pivot * 4 + i])) pivot = j;
@@ -22,6 +25,7 @@ static TZrFloat64 zr_math_matrix4_det(TZrFloat64 *m) {
     return det;
 }
 static TZrBool zr_math_matrix4_inverse(const TZrFloat64 *m, TZrFloat64 *out) {
+    /* 与 determinant 使用相同的固定主元阈值；失败沿回调返回 ZR_FALSE。 */
     TZrFloat64 a[16], inv[16]; TZrSize i, j, k; memcpy(a, m, sizeof(a)); zr_math_matrix4_identity(inv);
     for (i = 0; i < 4; i++) {
         TZrSize pivot = i; for (j = i + 1; j < 4; j++) if (fabs(a[j * 4 + i]) > fabs(a[pivot * 4 + i])) pivot = j;
@@ -33,6 +37,7 @@ static TZrBool zr_math_matrix4_inverse(const TZrFloat64 *m, TZrFloat64 *out) {
     memcpy(out, inv, sizeof(inv)); return ZR_TRUE;
 }
 TZrBool ZrMath_Matrix4x4_Construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 零参数构造单位变换；完整十六分量构造自定义变换。 */
     static const TZrChar *const kFields[] = {
             "m00","m01","m02","m03","m10","m11","m12","m13","m20","m21","m22","m23","m30","m31","m32","m33"
     };
@@ -43,6 +48,7 @@ TZrBool ZrMath_Matrix4x4_Construct(ZrLibCallContext *context, SZrTypeValue *resu
         zr_math_matrix4_identity(values);
     } else {
         if (ZrLib_CallContext_ArgumentCount(context) != 16) {
+            /* BUG: 1..15 个参数被拒绝，却报允许 0..16；报错区间与实际契约不符。 */
             ZrLib_CallContext_RaiseArityError(context, 0, 16);
         }
         for (i = 0; i < 16; i++) {
@@ -56,6 +62,8 @@ TZrBool ZrMath_Matrix4x4_Construct(ZrLibCallContext *context, SZrTypeValue *resu
 TZrBool ZrMath_Matrix4x4_Identity(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16]; SZrObject *o; zr_math_matrix4_identity(m); o = ZrMath_MakeMatrix4x4(context->state, m); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }
 TZrBool ZrMath_Matrix4x4_Transpose(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16], t[16]; TZrSize r, c; SZrObject *o; if (!ZrMath_ReadMatrix4Object(context->state, ZrMath_SelfObject(context), m)) return ZR_FALSE; for (r = 0; r < 4; r++) for (c = 0; c < 4; c++) t[r * 4 + c] = m[c * 4 + r]; o = ZrMath_MakeMatrix4x4(context->state, t); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }
 TZrBool ZrMath_Matrix4x4_Determinant(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16]; if (!ZrMath_ReadMatrix4Object(context->state, ZrMath_SelfObject(context), m)) return ZR_FALSE; ZrLib_Value_SetFloat(context->state, result, zr_math_matrix4_det(m)); return ZR_TRUE; }
+/* TODO: inverse 失败时 native dispatcher 在无异常状态下给出 null，但 registry 声明
+ * Matrix4x4 返回类型；核对脚本层是否允许这一失败结果，再决定契约如何表述。 */
 TZrBool ZrMath_Matrix4x4_Inverse(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16], inv[16]; SZrObject *o; if (!ZrMath_ReadMatrix4Object(context->state, ZrMath_SelfObject(context), m) || !zr_math_matrix4_inverse(m, inv)) return ZR_FALSE; o = ZrMath_MakeMatrix4x4(context->state, inv); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }
 TZrBool ZrMath_Matrix4x4_MulVector(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrFloat64 m[16]; ZrMathVector4 v; SZrObject *other = ZR_NULL; SZrObject *o; TZrFloat64 r[4];
@@ -68,6 +76,7 @@ TZrBool ZrMath_Matrix4x4_MulMatrix(ZrLibCallContext *context, SZrTypeValue *resu
     if (!ZrMath_ReadMatrix4Object(context->state, ZrMath_SelfObject(context), a) || !ZrLib_CallContext_ReadObject(context, 0, &other) || !ZrMath_ReadMatrix4Object(context->state, other, b)) return ZR_FALSE;
     zr_math_matrix4_mul(a, b, out); o = ZrMath_MakeMatrix4x4(context->state, out); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
 }
+/* 三个变换工厂分别构造平移、缩放和弧度旋转，不读取 self，供类型静态方法调用。 */
 TZrBool ZrMath_Matrix4x4_Translation(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 x = 0.0, y = 0.0, z = 0.0, m[16]; SZrObject *o; if (!ZrLib_CallContext_ReadFloat(context,0,&x) || !ZrLib_CallContext_ReadFloat(context,1,&y) || !ZrLib_CallContext_ReadFloat(context,2,&z)) return ZR_FALSE; zr_math_matrix4_identity(m); m[3]=x; m[7]=y; m[11]=z; o=ZrMath_MakeMatrix4x4(context->state,m); if(o==ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state,result,o,ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }
 TZrBool ZrMath_Matrix4x4_Scale(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 x = 1.0, y = 1.0, z = 1.0, m[16]; SZrObject *o; if (!ZrLib_CallContext_ReadFloat(context,0,&x) || !ZrLib_CallContext_ReadFloat(context,1,&y) || !ZrLib_CallContext_ReadFloat(context,2,&z)) return ZR_FALSE; zr_math_matrix4_identity(m); m[0]=x; m[5]=y; m[10]=z; o=ZrMath_MakeMatrix4x4(context->state,m); if(o==ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state,result,o,ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }
 TZrBool ZrMath_Matrix4x4_RotationX(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 a=0.0,m[16]; SZrObject *o; if(!ZrLib_CallContext_ReadFloat(context,0,&a)) return ZR_FALSE; zr_math_matrix4_identity(m); m[5]=cos(a); m[6]=-sin(a); m[9]=sin(a); m[10]=cos(a); o=ZrMath_MakeMatrix4x4(context->state,m); if(o==ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state,result,o,ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }

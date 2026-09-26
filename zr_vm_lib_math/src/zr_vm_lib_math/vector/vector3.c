@@ -17,6 +17,8 @@ TZrBool ZrMath_Vector3_Construct(ZrLibCallContext *context, SZrTypeValue *result
 }
 
 TZrBool ZrMath_Vector3_Length(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: 有限向量 (1e200, 0, 0) 的平方和溢出，length 返回无穷；
+     * normalized 进一步得到失真的零向量。 */
     ZrMathVector3 value; if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 3))); return ZR_TRUE;
 }
@@ -56,6 +58,7 @@ TZrBool ZrMath_Vector3_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Cross(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 只在 Vector3 中注册叉积；方向遵循右手坐标的分量次序。 */
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs)) return ZR_FALSE;

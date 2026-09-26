@@ -15,6 +15,7 @@ static void zr_math_matrix3_identity(TZrFloat64 *m) {
 }
 
 static void zr_math_matrix3_mul(const TZrFloat64 *lhs, const TZrFloat64 *rhs, TZrFloat64 *out) {
+    /* 注册的 mulMatrix 与 `*` 共用左乘语义；索引按 row-major 对应列向量。 */
     TZrSize row;
     TZrSize column;
     TZrSize k;
@@ -35,6 +36,7 @@ static TZrFloat64 zr_math_matrix3_det(const TZrFloat64 *m) {
 }
 
 static TZrBool zr_math_matrix3_inverse(const TZrFloat64 *m, TZrFloat64 *out) {
+    /* 固定绝对阈值定义“不可逆”的 native 失败路径；调用方不应把失败解释为异常。 */
     TZrFloat64 determinant = zr_math_matrix3_det(m);
     if (fabs(determinant) <= ZR_MATH_EPSILON) {
         return ZR_FALSE;
@@ -53,6 +55,7 @@ static TZrBool zr_math_matrix3_inverse(const TZrFloat64 *m, TZrFloat64 *out) {
 }
 
 TZrBool ZrMath_Matrix3x3_Construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 允许无参单位矩阵或完整九分量，目的是避免部分初始化矩阵进入数值运算。 */
     static const TZrChar *const kFields[] = {"m00","m01","m02","m10","m11","m12","m20","m21","m22"};
     TZrFloat64 values[9];
     TZrSize index;
@@ -61,6 +64,8 @@ TZrBool ZrMath_Matrix3x3_Construct(ZrLibCallContext *context, SZrTypeValue *resu
         zr_math_matrix3_identity(values);
     } else {
         if (ZrLib_CallContext_ArgumentCount(context) != 9) {
+            /* BUG: 1..8 个参数也会走到此处，但 RaiseArityError 报允许 0..9，
+             * native dispatcher 显示的期望区间会把实际拒绝的参数数目包含进去。 */
             ZrLib_CallContext_RaiseArityError(context, 0, 9);
         }
         for (index = 0; index < 9; index++) {
@@ -187,6 +192,7 @@ TZrBool ZrMath_Matrix3x3_MulMatrix(ZrLibCallContext *context, SZrTypeValue *resu
 }
 
 TZrBool ZrMath_Matrix3x3_MetaMul(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* `*` 比命名乘法更宽：依据右操作数的确切原型挑选向量或矩阵回调。 */
     SZrObject *other = ZR_NULL;
     if (!ZrLib_CallContext_ReadObject(context, 0, &other)) {
         return ZR_FALSE;

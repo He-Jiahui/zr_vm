@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+/* 递归验证整体复制、析构和扫描策略兼容，避免父布局接受无法安全托管的嵌套元素。 */
 static TZrBool zr_pool_canonical_layout_is_admissible(
         const SZrTypeLayout *layout,
         const SZrTypeLayoutRegistryView *registry,
@@ -55,6 +56,7 @@ static TZrBool zr_pool_canonical_layout_is_admissible(
                     (TZrUInt8)ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE);
 }
 
+/* 含 VM value 或其嵌套布局依赖线程状态，因而不能接入无状态并发池。 */
 static TZrBool zr_pool_canonical_layout_requires_state(
         const SZrTypeLayout *layout,
         const SZrTypeLayoutRegistryView *registry,
@@ -88,6 +90,7 @@ static TZrBool zr_pool_canonical_layout_requires_state(
     return ZR_FALSE;
 }
 
+/* 将核心布局生命周期适配为池回调；失败后由池的 abortInitialize 路径清理部分构造。 */
 static TZrBool zr_pool_canonical_initialize(
         void *destination,
         const void *source,

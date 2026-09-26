@@ -5,6 +5,7 @@
 #include "zr_vm_lib_math/quaternion.h"
 
 static ZrMathQuaternion zr_math_quaternion_mul_value(ZrMathQuaternion lhs, ZrMathQuaternion rhs) {
+    /* Hamilton 积保留乘法次序；命名 mul 与 `*` 元方法共同使用该语义。 */
     ZrMathQuaternion result;
     result.x = lhs.w * rhs.x + lhs.x * rhs.w + lhs.y * rhs.z - lhs.z * rhs.y;
     result.y = lhs.w * rhs.y - lhs.x * rhs.z + lhs.y * rhs.w + lhs.z * rhs.x;
@@ -31,6 +32,8 @@ TZrBool ZrMath_Quaternion_Construct(ZrLibCallContext *context, SZrTypeValue *res
 }
 
 TZrBool ZrMath_Quaternion_Length(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: 有限分量 (1e200, 0, 0, 0) 在平方阶段溢出，length 返回无穷；
+     * normalized/inverse 同样依赖平方范数，会给出失真的结果。 */
     ZrMathQuaternion q; if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w)); return ZR_TRUE;
 }
@@ -39,6 +42,7 @@ TZrBool ZrMath_Quaternion_LengthSquared(ZrLibCallContext *context, SZrTypeValue 
     ZrLib_Value_SetFloat(context->state, result, q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w); return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 零长度采用单位四元数作为中性回退，区别于 Complex 的零结果。 */
     ZrMathQuaternion q; TZrFloat64 len; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
     len = sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
@@ -82,6 +86,9 @@ TZrBool ZrMath_Quaternion_Mul(ZrLibCallContext *context, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Slerp(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 负点积翻转右端以选择较短插值弧；接近同向时走线性分支，避免除以小 sin(theta)。 */
+    /* TODO: 当前不约束 t 或端点范数，线性分支也不重新归一化；
+     * 核对 API 是否承诺单位输出及 t∈[0,1]，并用近邻单位端点的中点测试验证。 */
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; TZrFloat64 t = 0.0; TZrFloat64 dot; TZrFloat64 theta; TZrFloat64 s0; TZrFloat64 s1; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadQuaternionObject(context->state, other, &rhs) || !ZrLib_CallContext_ReadFloat(context, 1, &t)) return ZR_FALSE;
@@ -125,6 +132,7 @@ TZrBool ZrMath_Quaternion_MetaNeg(ZrLibCallContext *context, SZrTypeValue *resul
     return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* VM 比较协议按模长平方排序；等模但不同旋转可能比较为相等。 */
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; TZrFloat64 dl; TZrFloat64 dr;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadQuaternionObject(context->state, other, &rhs)) return ZR_FALSE;

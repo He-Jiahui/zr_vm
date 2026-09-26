@@ -5,6 +5,7 @@
 #include "zr_vm_lib_math/scalar_registry.h"
 
 const ZrLibFunctionDescriptor *ZrMath_ScalarRegistry_GetFunctions(TZrSize *count) {
+    /* 模块级函数经同一 native dispatcher 暴露；count 与静态数组须同步返回给聚合器。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"abs",1,1,ZrMath_Scalar_Abs,"float",ZR_NULL,ZR_NULL,0},
             {"min",2,2,ZrMath_Scalar_Min,"float",ZR_NULL,ZR_NULL,0},

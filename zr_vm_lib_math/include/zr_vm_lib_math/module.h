@@ -12,7 +12,7 @@
  */
 ZR_API const ZrLibModuleDescriptor *ZrVmLibMath_GetModuleDescriptor(void);
 /** @brief 将同一描述符注册到指定 VM 的 native registry，供 `import("zr.math")` 使用。
- *  @pre `global` 必须处于可注册模块的初始化阶段。
+ *  @pre `global` 已创建，且其 native registry 可用于注册模块。
  *  @return 注册是否成功；失败细节由 native registry 报告。
  */
 ZR_API TZrBool ZrVmLibMath_Register(SZrGlobalState *global);

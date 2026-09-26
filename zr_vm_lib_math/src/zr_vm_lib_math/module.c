@@ -42,6 +42,7 @@ static ZrLibTypeHintDescriptor g_math_hints[ZR_MATH_MAX_HINTS];
 static ZrLibModuleDescriptor g_math_module_descriptor;
 static TZrBool g_math_initialized = ZR_FALSE;
 
+/* JSON 提示与类型/函数 descriptor 一起供编译器和工具查询；维护导出名称时应同步检查两处。 */
 static const TZrChar *g_math_type_hints_json =
         "{\n"
         "  \"schema\": \"zr.native.hints/v1\",\n"

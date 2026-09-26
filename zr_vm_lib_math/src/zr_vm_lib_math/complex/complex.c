@@ -14,6 +14,8 @@ TZrBool ZrMath_Complex_Construct(ZrLibCallContext *context, SZrTypeValue *result
     return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 TZrBool ZrMath_Complex_Magnitude(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: 有限输入 (1e200, 0) 的平方中间值溢出，magnitude 返回无穷；
+     * 同一计算也使 normalized 把非零复数错误地归一化为零。 */
     ZrMathComplex value; if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, sqrt(value.real * value.real + value.imag * value.imag)); return ZR_TRUE;
 }
@@ -30,6 +32,7 @@ TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result
     return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 零模选择零复数作为结果；其余输入的范数由 magnitude 同款计算路径决定。 */
     ZrMathComplex value; TZrFloat64 magnitude; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     magnitude = sqrt(value.real * value.real + value.imag * value.imag);
@@ -75,6 +78,7 @@ TZrBool ZrMath_Complex_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) 
     return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 比较协议定义为模长平方的顺序，不解释复数本身的自然大小。 */
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; TZrFloat64 dl; TZrFloat64 dr;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadComplexObject(context->state, other, &rhs)) return ZR_FALSE;

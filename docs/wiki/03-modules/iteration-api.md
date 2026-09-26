@@ -10,11 +10,12 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/iterator_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
 plan_sources:
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/library-and-builtins/index.md
 tests:
-  - tests/iteration/test_iteration_module.c
-  - tests/container/test_container_module.c
+  - tests/iterator/test_enumerator_protocol.c
+  - tests/container/test_container_runtime.c
   - tests/parser/test_syntax_reference_v1.c
 doc_type: api-reference
 ---
@@ -29,7 +30,7 @@ doc_type: api-reference
 | 类型 | 成员 | 说明 |
 | --- | --- | --- |
 | `Iterable<T>` | `getEnumerator(): Enumerator<T>` | 同步生产者协议。 |
-| `Enumerator<T>` | readonly `current:T`、`moveNext(): bool` | `moveNext` 成功后 current 才更新。 |
+| `Enumerator<T>` | `current:T`、`moveNext(): bool` | `moveNext` 成功后读取 current；字段可写性仍需核对。 |
 | `Iterator<T>` | opaque struct，实现 Enumerator | 由 container/adapter 创建，脚本不能伪造内部 cursor。 |
 | `AsyncIterator<T>` | `current:T`、`moveNext(): zr.task.Task<bool>`、`close(): zr.task.Task<void>` | 异步生产者，必须显式 close。 |
 
@@ -76,7 +77,9 @@ try {
 ## C 侧实现要点
 
 native module 发布 Iterable/Enumerator descriptor 时要声明 generic parameter、current field
-的 readonly reference access 和 method return type。callback 中按 index 读取参数、创建
+的成员角色和 method return type。当前 `ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT` 将 `current` 的
+`isReadonly` 设为 false，原生元数据据此发布 `isWritable=true`；脚本赋值语义尚待验证，
+因此此处不承诺只读。callback 中按 index 读取参数、创建
 iterator object 后，临时 object 必须 root；返回的 current value 需要 `ZrLib_Value_Set*` 或
 `ZrCore_Value_Copy` 写入 result。不要把 C stack 上的 cursor 地址塞进 managed field，使用
 native pointer + finalizer 或 managed state wrapper。

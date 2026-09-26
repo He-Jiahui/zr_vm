@@ -6,13 +6,16 @@
 
 #include "zr_vm_core/zrp_metadata.h"
 
+/* 版本探测依赖当前格式约定的固定前缀；完整摘要仍交给核心元数据格式校验。 */
 #define ZR_CLI_ZRP_METADATA_HEADER_PREFIX_SIZE 16u
 
+/* 将核心节类别映射到 CLI 的稳定文本字段名，供两个摘要模式复用。 */
 typedef struct SZrCliZrpMetadataDumpSectionInfo {
     const TZrChar *name;
     EZrZrpMetadataSectionKind kind;
 } SZrCliZrpMetadataDumpSectionInfo;
 
+/* 兼容性诊断只读取固定前缀，允许报告尚不能按当前版本解码的头。 */
 typedef struct SZrCliZrpMetadataHeaderPrefix {
     TZrUInt32 magic;
     TZrUInt16 version;
@@ -21,6 +24,7 @@ typedef struct SZrCliZrpMetadataHeaderPrefix {
     TZrUInt32 sectionCount;
 } SZrCliZrpMetadataHeaderPrefix;
 
+/* 摘要和差异共用此展示顺序；新增核心节时须同步名称与类别。 */
 static const SZrCliZrpMetadataDumpSectionInfo g_zr_cli_zrp_metadata_dump_sections[] = {
         {"tokenRecords", ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS},
         {"typeDefs", ZR_ZRP_METADATA_SECTION_TYPE_DEFS},
@@ -48,6 +52,7 @@ static TZrUInt32 zrp_metadata_dump_read_u32(const TZrByte *buffer, TZrSize offse
            ((TZrUInt32)buffer[offset + 3u] << 24u);
 }
 
+/* 写入辅助函数不接管缓冲区；公开写入入口先清空可选诊断，再在失败分支填入原因。 */
 static void zrp_metadata_dump_write_error(TZrChar *buffer,
                                           TZrSize bufferSize,
                                           const TZrChar *format,
@@ -64,6 +69,7 @@ static void zrp_metadata_dump_write_error(TZrChar *buffer,
     buffer[bufferSize - 1u] = '\0';
 }
 
+/* 两种摘要使用同一节映射，保持字段名与核心头中实际节统计一一对应。 */
 static const SZrZrpMetadataSection *zrp_metadata_dump_get_section(const SZrZrpMetadataHeader *header,
                                                                   EZrZrpMetadataSectionKind kind) {
     if (header == ZR_NULL) {
@@ -102,10 +108,12 @@ static const SZrZrpMetadataSection *zrp_metadata_dump_get_section(const SZrZrpMe
     }
 }
 
+/* 裁剪量只表达减少的部分；新增字节或记录在 diff 输出中记为零而非负数。 */
 static TZrUInt32 zrp_metadata_dump_removed_u32(TZrUInt32 beforeValue, TZrUInt32 afterValue) {
     return beforeValue > afterValue ? beforeValue - afterValue : 0u;
 }
 
+/* 先确认最短前缀长度，再读取小端字段；不以当前版本的完整布局为前提。 */
 static TZrBool zrp_metadata_dump_read_header_prefix(const TZrByte *buffer,
                                                     TZrSize bufferLength,
                                                     SZrCliZrpMetadataHeaderPrefix *outPrefix) {
@@ -121,6 +129,7 @@ static TZrBool zrp_metadata_dump_read_header_prefix(const TZrByte *buffer,
     return ZR_TRUE;
 }
 
+/* diff 的两份输入使用同一核心校验，但保留 before/after 标签以定位失败侧。 */
 static TZrBool zrp_metadata_dump_read_valid_header(const TZrByte *buffer,
                                                    TZrSize bufferLength,
                                                    const TZrChar *label,
@@ -146,6 +155,7 @@ static TZrBool zrp_metadata_dump_read_valid_header(const TZrByte *buffer,
     return ZR_TRUE;
 }
 
+/* 单节文本行是 CLI 摘要的消费契约；取节失败与写流失败都向调用方传播。 */
 static TZrBool zrp_metadata_dump_write_section_summary(FILE *output,
                                                        const SZrCliZrpMetadataDumpSectionInfo *info,
                                                        const SZrZrpMetadataHeader *header,
@@ -173,6 +183,7 @@ static TZrBool zrp_metadata_dump_write_section_summary(FILE *output,
     return ZR_TRUE;
 }
 
+/* 差异行保留前后尺寸及偏移，供裁剪诊断区分大小变化与布局移动。 */
 static TZrBool zrp_metadata_dump_write_section_diff_summary(FILE *output,
                                                             const SZrCliZrpMetadataDumpSectionInfo *info,
                                                             const SZrZrpMetadataHeader *beforeHeader,
@@ -276,6 +287,7 @@ TZrBool ZrCli_ZrpMetadataDump_WriteDiffSummary(FILE *output,
         zrp_metadata_dump_write_error(errorBuffer, errorBufferSize, "zrp metadata diff requires output and input buffers");
         return ZR_FALSE;
     }
+    /* 两份输入都通过当前格式校验后才写首行，避免把坏的 after 文件展示为有效差异。 */
     if (!zrp_metadata_dump_read_valid_header(beforeBuffer,
                                              beforeBufferLength,
                                              "before",
@@ -345,6 +357,7 @@ TZrBool ZrCli_ZrpMetadataDump_WriteVersionCheck(FILE *output,
         return ZR_FALSE;
     }
 
+    /* 前缀可诊断未知版本；只有匹配当前形状时才进入完整解码与节范围校验。 */
     isCurrentShape = (TZrBool)(prefix.magic == ZR_ZRP_METADATA_MAGIC &&
                               prefix.version == ZR_ZRP_METADATA_VERSION &&
                               prefix.headerSize == ZR_ZRP_METADATA_HEADER_SIZE &&
@@ -371,6 +384,7 @@ TZrBool ZrCli_ZrpMetadataDump_WriteVersionCheck(FILE *output,
         return ZR_FALSE;
     }
 
+    /* 不支持的头也先输出 status 与实际字段，随后以非零状态告知自动化调用方。 */
     if (!isCurrentShape) {
         zrp_metadata_dump_write_error(errorBuffer,
                                       errorBufferSize,
@@ -381,6 +395,7 @@ TZrBool ZrCli_ZrpMetadataDump_WriteVersionCheck(FILE *output,
     return ZR_TRUE;
 }
 
+/* 路径入口统一持有原始字节，成功后交给 Write*；失败不会转移文件或缓冲区所有权。 */
 static int zrp_metadata_dump_read_file(const TZrChar *path,
                                        TZrByte **outBuffer,
                                        TZrSize *outBufferLength,
@@ -457,6 +472,11 @@ static int zrp_metadata_dump_read_file(const TZrChar *path,
     return 0;
 }
 
+/* TODO: 命令帮助示例使用 module.zrp，但普通项目 .zrp 由 project.c 按 JSON 解析，
+ * 此处及另外两个路径入口只接受原始二进制元数据头。需核实生产端元数据文件来源，
+ * 再决定命令应定位项目内元数据，还是将帮助示例改为明确的二进制输入。
+ * 证据：command.c 的三个示例、project.c 的 cJSON_Parse、WriteSummary/VersionCheck 的头校验。
+ */
 int ZrCli_ZrpMetadataDump_RunPath(const TZrChar *path, FILE *output, FILE *errorOutput) {
     TZrByte *buffer = ZR_NULL;
     TZrSize bufferLength = 0u;

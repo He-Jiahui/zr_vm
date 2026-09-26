@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_Vector4Registry_GetType(void) {
+    /* 注册表定义脚本可见的四维分量和运算符绑定，供模块描述符借用。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("x", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),

@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_Vector3Registry_GetType(void) {
+    /* 注册表把三维向量的 cross/dot 等命名方法和算符回调导出给 zr.math。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("x", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),

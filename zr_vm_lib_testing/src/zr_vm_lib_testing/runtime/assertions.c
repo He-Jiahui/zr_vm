@@ -89,7 +89,8 @@ static EZrThreadStatus testing_try_run_preserving_frame(
 }
 
 /* BUG: 多字节 UTF-8 文本恰跨容量边界时按字节截断会留下非法编码；
- * 例如 85 个“€”后再接“€”写入 257 字节缓冲区，最后仅保留下一个字符首字节。
+ * 例如 86 个“€”共 258 字节写入 text[256+1]，最多复制 256 字节，
+ * 最后仅保留下第 86 个字符的首字节。
  * 失败消息和快照均经此路径传给 CLI 与脚本可见异常。 */
 static void testing_copy_bounded(TZrChar *destination,
                                  TZrSize capacity,

@@ -196,6 +196,7 @@ static SZrObject *pooling_ensure_available(
     return available;
 }
 
+/* 归还时清空元素引用，避免池的可复用数组继续保活租约中的旧对象。 */
 static TZrBool pooling_clear_backing(
         SZrState *state,
         SZrObject *backing) {
@@ -237,6 +238,7 @@ static TZrBool pooling_store_available(
     return ZrLib_Array_PushValue(state, available, &backingValue);
 }
 
+/* 只复用长度相同的数组；从 available 取出前先用临时根保护 GC 可见性。 */
 static SZrObject *pooling_acquire_backing(
         SZrState *state,
         SZrObject *pool,
@@ -299,6 +301,7 @@ static SZrObject *pooling_acquire_backing(
     }
 }
 
+/* 租约是唯一使用入口；发布前将 owner、backing 和代数一起写入受 GC 管理的对象。 */
 static TZrBool pooling_buffer_pool_rent(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -400,6 +403,7 @@ cleanup:
     return ZR_FALSE;
 }
 
+/* close 可重复调用；首次关闭清理元素并归还 backing，使旧 lease 及其 Span 无法再访问。 */
 static TZrBool pooling_pool_lease_close(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -525,6 +529,7 @@ static TZrBool pooling_pool_lease_set_item(
     return ZR_TRUE;
 }
 
+/* Span.source 保留 lease 而非原始 backing，从而通过 lease 的索引元方法执行关闭检查。 */
 static TZrBool pooling_pool_lease_span(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -813,6 +818,7 @@ static const ZrLibMetaMethodDescriptor kPoolLeaseMetaMethods[] = {
          .returnTypeName = "null"},
 };
 
+/* 类型描述符同时约束语言层构造权、泛型、协议和 guard 的 move-only/只读语义。 */
 static const ZrLibTypeDescriptor kPoolingTypes[] = {
         {.name = "BufferPool",
          .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,

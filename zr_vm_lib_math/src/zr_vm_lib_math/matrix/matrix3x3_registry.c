@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_Matrix3x3Registry_GetType(void) {
+    /* descriptor 将命名矩阵运算和 `*` 分派交给回调；字段顺序就是 row-major 布局。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("m00", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("m01", "float", ZR_NULL),

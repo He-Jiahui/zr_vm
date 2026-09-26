@@ -5,12 +5,15 @@
 #include "zr_vm_lib_math/tensor.h"
 
 static SZrObject *zr_math_tensor_copy_array(SZrState *state, SZrObject *array) {
+    /* 只复制外层数组：构造、reshape 和 toArray 的调用方不会共享可变数组容器。 */
+    /* TODO: PushValue 结果未检查；需用分配失败注入验证副本是否可能静默截短。 */
     SZrObject *copy = ZrLib_Array_New(state); TZrSize i;
     for (i = 0; copy != ZR_NULL && i < ZrLib_Array_Length(array); i++) ZrLib_Array_PushValue(state, copy, ZrLib_Array_Get(state, array, i));
     return copy;
 }
 
 TZrBool ZrMath_Tensor_Construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 当前公开入口要求 shape 与 data 两个数组；descriptor 的签名文字另需同步。 */
     SZrObject *shape = ZR_NULL;
     SZrObject *data = ZR_NULL;
     SZrObject *tensor;
@@ -35,6 +38,7 @@ TZrBool ZrMath_Tensor_Clone(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrMath_Tensor_Reshape(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 总元素数保持不变，但两份数组均复制；调用方拿到独立的 Tensor 实例。 */
     ZrMathTensorStorage storage; SZrObject *shape = ZR_NULL; SZrObject *tensor;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage) || !ZrLib_CallContext_ReadArray(context, 0, &shape)) return ZR_FALSE;
     if (ZrMath_TensorTotalSize(context->state, shape) != storage.size) return ZR_FALSE;
@@ -70,6 +74,7 @@ TZrBool ZrMath_Tensor_Set(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrMath_Tensor_Sum(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 聚合依赖构造时 data 全部可转为数值；当前构造器并未保证这一点，见 Populate 的 BUG。 */
     ZrMathTensorStorage storage; TZrSize i; TZrFloat64 sum = 0.0; TZrFloat64 value;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage)) return ZR_FALSE;
     for (i = 0; i < ZrLib_Array_Length(storage.data); i++) if (ZrMath_ArrayReadFloat(context->state, storage.data, i, &value)) sum += value;
@@ -83,6 +88,7 @@ TZrBool ZrMath_Tensor_Mean(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrMath_Tensor_Transpose2D(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 将 row-major 的二维坐标交换后写入新数组，供脚本保留原 Tensor。 */
     ZrMathTensorStorage storage; TZrInt64 rows = 0, cols = 0, r, c; SZrObject *shape; SZrObject *data; SZrObject *tensor;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage) || storage.rank != 2 ||
         !ZrMath_ArrayReadInt(context->state, storage.shape, 0, &rows) || !ZrMath_ArrayReadInt(context->state, storage.shape, 1, &cols)) return ZR_FALSE;
@@ -93,6 +99,7 @@ TZrBool ZrMath_Tensor_Transpose2D(ZrLibCallContext *context, SZrTypeValue *resul
 }
 
 TZrBool ZrMath_Tensor_Matmul(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 仅支持严格二维的矩阵乘积；不做广播，输出形状为左行数 × 右列数。 */
     ZrMathTensorStorage lhs; ZrMathTensorStorage rhs; SZrObject *other = ZR_NULL; TZrInt64 lr = 0, lc = 0, rr = 0, rc = 0, r, c, k; SZrObject *shape; SZrObject *data; SZrObject *tensor;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_TensorGetStorage(context->state, other, &rhs) || lhs.rank != 2 || rhs.rank != 2 ||
@@ -105,6 +112,7 @@ TZrBool ZrMath_Tensor_Matmul(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 static TZrBool zr_math_tensor_binary(ZrLibCallContext *context, SZrTypeValue *result, TZrFloat64 sign) {
+    /* add/sub 共用逐项运算，只接受逐维相等的形状；结果持有 shape 的副本。 */
     ZrMathTensorStorage lhs; ZrMathTensorStorage rhs; SZrObject *other = ZR_NULL; SZrObject *tensor; SZrObject *data; TZrSize i;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_TensorGetStorage(context->state, other, &rhs) || !ZrMath_TensorShapeEquals(context->state, lhs.shape, rhs.shape)) return ZR_FALSE;

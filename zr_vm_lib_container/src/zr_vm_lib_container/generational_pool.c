@@ -15,6 +15,7 @@
 static uint64_t gNextPoolId = 1u;
 static volatile long gPoolIdLockWord = 0L;
 
+/* 进程内唯一池 ID 让同一槽位与代数不能跨池误用；ID 耗尽后拒绝继续创建。 */
 static void zr_pool_lock_word(volatile long *word) {
 #if defined(_MSC_VER)
     while (_InterlockedExchange(word, 1L) != 0L) {
@@ -39,6 +40,9 @@ static void zr_pool_unlock_word(volatile long *word) {
 #endif
 }
 
+/* TODO: 明确 CONCURRENT 池的回调重入契约。initialize、drop、scan 和 GC visitor
+ * 可在持有此锁时运行；需用重入同池的回调测试确认是否应禁止或调整调用边界。
+ */
 static void zr_pool_lock(const SZrPool *pool) {
     if (pool != ZR_NULL &&
         pool->config.concurrencyMode == ZR_POOL_CONCURRENCY_CONCURRENT) {
@@ -284,6 +288,7 @@ static EZrPoolStatus zr_pool_validate_handle(
                    : ZR_POOL_STATUS_OK;
 }
 
+/* 回收点由 Recycle、guard 释放和 Destroy 共用；借用未结束时只退役身份，不析构存储。 */
 static void zr_pool_reclaim(
         SZrPool *pool,
         TZrSize slotIndex,
@@ -382,6 +387,7 @@ EZrPoolStatus ZrPool_Create(
     return ZR_POOL_STATUS_OK;
 }
 
+/* Destroy 可以因活动 guard 分两次完成，第一次只阻止新操作并使所有句柄退役。 */
 EZrPoolStatus ZrPool_Destroy(SZrPool **poolPointer) {
     SZrPool *pool;
 
@@ -571,6 +577,7 @@ EZrPoolStatus ZrPool_Validate(
     return status;
 }
 
+/* 读者共享、写者独占；写借用同时标记 BARRIERED 槽位，供后续扫描补访。 */
 static EZrPoolStatus zr_pool_acquire(
         SZrPool *pool,
         SZrPoolHandle handle,

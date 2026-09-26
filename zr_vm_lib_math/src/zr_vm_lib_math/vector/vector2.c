@@ -18,6 +18,8 @@ TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result
 }
 
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: 有限向量 (1e200, 0) 的点积中间值溢出，length 得到无穷；
+     * normalized 沿用该范数后把非零向量压成零向量。 */
     ZrMathVector2 value;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2)));
@@ -66,6 +68,7 @@ TZrBool ZrMath_Vector2_Distance(ZrLibCallContext *context, SZrTypeValue *result)
 }
 
 TZrBool ZrMath_Vector2_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* 插值因子未限制在 [0,1]，调用方可以用同一入口外推。 */
     ZrMathVector2 lhs; ZrMathVector2 rhs; SZrObject *other = ZR_NULL; TZrFloat64 factor = 0.0; SZrObject *object;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &lhs) ||
         !ZrLib_CallContext_ReadObject(context, 0, &other) ||

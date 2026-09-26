@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_Matrix4x4Registry_GetType(void) {
+    /* 静态工厂与实例运算共处同一类型表；callback 是否读取 self 由各方法定义。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("m00", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("m01", "float", ZR_NULL),

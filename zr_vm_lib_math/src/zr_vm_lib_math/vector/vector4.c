@@ -17,6 +17,8 @@ TZrBool ZrMath_Vector4_Construct(ZrLibCallContext *context, SZrTypeValue *result
     return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 TZrBool ZrMath_Vector4_Length(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: 有限向量 (1e200, 0, 0, 0) 的平方和溢出，length 返回无穷；
+     * normalized 进一步得到失真的零向量。 */
     ZrMathVector4 value; if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4))); return ZR_TRUE;
 }

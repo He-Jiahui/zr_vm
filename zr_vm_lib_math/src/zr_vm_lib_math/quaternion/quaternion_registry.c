@@ -6,6 +6,8 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_QuaternionRegistry_GetType(void) {
+    /* 静态 descriptor 汇集公开字段、Hamilton 乘法回调和比较元方法；
+     * 模块聚合器只借用指针，不转移其中数组的所有权。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("x", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),

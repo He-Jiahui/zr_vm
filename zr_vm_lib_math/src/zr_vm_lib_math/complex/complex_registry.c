@@ -6,6 +6,8 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) {
+    /* 进程期 descriptor 将脚本方法和比较元方法映射到 native 回调；
+     * 比较的具体语义由 Complex_MetaCompare 定义为模长顺序。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("real", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("imag", "float", ZR_NULL),

@@ -6,6 +6,8 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
+    /* descriptor 是导入 zr.math 后脚本可见的唯一 Tensor 契约来源；它把 native 回调
+     * 连接到方法、构造元方法和类型提示，必须与回调读参方式一致。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("shape", "array", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("rank", "int", ZR_NULL),
@@ -32,10 +34,13 @@ const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("toArray", 0, 0, ZrMath_Tensor_ToArray, "array", ZR_NULL, ZR_FALSE, ZR_NULL,
                                           0),
     };
+    /* 构造器参数类型元数据为空，不能据此断言编译器会依签名文字静态拒绝数组。 */
     static const ZrLibMetaMethodDescriptor kMeta[] = {
             {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Tensor_Construct, "Tensor", ZR_NULL, ZR_NULL, 0},
             {ZR_META_TO_STRING, 0, 0, ZrMath_Tensor_MetaToString, "string", ZR_NULL, ZR_NULL, 0},
     };
+    /* BUG: 公开签名写 fillValue: float，但 Construct 第 1 参数 ReadArray，
+     * native_numeric_pipeline/tensor_pipeline.zr 也传 data 数组；导出的契约文字错误。 */
     static const ZrLibTypeDescriptor kType = ZR_LIB_TYPE_DESCRIPTOR_INIT("Tensor",
                                                                          ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
                                                                          kFields,

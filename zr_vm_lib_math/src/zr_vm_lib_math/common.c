@@ -355,6 +355,8 @@ TZrBool ZrMath_ArrayReadInt(SZrState *state, SZrObject *array, TZrSize index, TZ
 }
 
 TZrBool ZrMath_ArraySetValue(SZrState *state, SZrObject *array, TZrSize index, const SZrTypeValue *value) {
+    /* TODO: Fill/Set 把本 helper 的真值当作写入成功；底层 SetValue 无返回值，
+     * 需用分配失败或不可写数组场景确认错误是否可由 VM 状态传出。 */
     SZrTypeValue key;
     ZrLib_Value_SetInt(state, &key, (TZrInt64)index);
     ZrCore_Object_SetValue(state, array, &key, value);
@@ -371,6 +373,8 @@ TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
         if (!ZrMath_ArrayReadInt(state, shapeArray, index, &dimension) || dimension <= 0) {
             return -1;
         }
+        /* BUG: ReadInt 会把 2.9 截断为 2；Tensor([2.9], [a,b]) 因而通过长度校验，
+         * 但对外 shape 字段仍为 2.9，维度契约与实际布局不一致。 */
         total *= dimension;
     }
     return total;
@@ -389,6 +393,8 @@ SZrObject *ZrMath_TensorMakeZeroData(SZrState *state, TZrInt64 size) {
 }
 
 TZrBool ZrMath_TensorGetStorage(SZrState *state, SZrObject *tensor, ZrMathTensorStorage *outStorage) {
+    /* TODO: 这里只做字段类型检查；公开的 shape/rank/size 若被脚本修改，运算仍信任缓存值。
+     * 需检查字段可写性和修改后 get/matmul 的实际行为，再决定是否重验存储不变量。 */
     const SZrTypeValue *shapeValue;
     const SZrTypeValue *dataValue;
     const SZrTypeValue *rankValue;
@@ -414,8 +420,10 @@ TZrBool ZrMath_TensorGetStorage(SZrState *state, SZrObject *tensor, ZrMathTensor
 }
 
 TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *shapeArray, SZrObject *dataArray) {
-    /* 构造器和计算回调把数组交给 Tensor 持有；这里只核对 shape 与 data 的元素数，
-     * 因此上游若允许用户传入非数值 data，后续计算还需自行检查每个元素。 */
+    /* 构造器和计算回调把数组交给 Tensor 持有；此处建立 shape、data、rank、size
+     * 的共同基线，后续 get/set 和数值运算依赖这四个字段仍然一致。 */
+    /* BUG: 这里只检查 data 长度。Tensor([1], ["x"]) 可构造；sum/mean 忽略
+     * 该元素并返回 0，其他计算路径把读取失败的元素当作零值使用。 */
     TZrInt64 totalSize;
 
     if (state == ZR_NULL || tensor == ZR_NULL || shapeArray == ZR_NULL || dataArray == ZR_NULL) {
@@ -474,6 +482,7 @@ TZrBool ZrMath_TensorShapeEquals(SZrState *state, SZrObject *lhsShape, SZrObject
 
 TZrBool ZrMath_TensorComputeOffset(SZrState *state, SZrObject *shape, SZrObject *indices, TZrSize *outOffset) {
     /* 逆序累积 stride，保证 get/set 与 matmul 使用相同的 row-major 布局。 */
+    /* BUG: ArrayReadInt 对浮点索引截断；get([0.9]) 会访问第 0 项而非拒绝非整数索引。 */
     TZrSize rank = ZrLib_Array_Length(shape);
     TZrSize stride = 1;
     TZrSize offset = 0;

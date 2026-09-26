@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_Vector2Registry_GetType(void) {
+    /* 注册表是脚本 Vector2 接口的契约源，命名方法与运算符共用数值回调。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("x", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),

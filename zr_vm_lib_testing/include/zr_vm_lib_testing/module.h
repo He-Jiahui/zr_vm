@@ -49,7 +49,7 @@ typedef struct SZrTestingAssertionFailure {
 ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescriptor(void);
 /** @brief 在目标 VM 全局状态注册测试提供者及其任务依赖；调用方随后须选择测试阶段。 */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Register(SZrGlobalState *global);
-/** @brief 清除当前线程的上一次断言记录；测试宿主在每个用例开始和结束时调用。 */
+/** @brief 清除当前线程的上一次断言记录；CLI 在用例执行前及失败报告读取后调用。 */
 ZR_VM_LIB_TESTING_API void ZrVmLibTesting_ClearLastFailure(void);
 /** @brief 将当前线程的失败记录复制给宿主；没有记录或输出指针为空时返回假。 */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionFailure *outFailure);

@@ -65,6 +65,7 @@ typedef struct ZrContainerHotMapLookupCacheSlot {
     SZrObject *entryObject;
 } ZrContainerHotMapLookupCacheSlot;
 
+/* 快速路径只保存派生查找结果；entries 身份及 memberVersion 变化时必须失效。 */
 typedef struct ZrContainerHotMapLookupCache {
     TZrUInt64 cacheIdentity;
     SZrObject *entries;
@@ -144,6 +145,9 @@ static SZrString *zr_container_cache_field_string_once(SZrState *state,
     return fieldString;
 }
 
+/* TODO: 核实多个 GlobalState 并行使用容器方法的支持范围。此处及下方 hot cache
+ * 是进程级可写缓存，仅按 cacheIdentity 顺序失效；需并行双 GlobalState 测试确认隔离与同步契约。
+ */
 static SZrString *zr_container_cached_field_string(SZrState *state, const TZrChar *fieldName) {
     static TZrUInt64 cachedGlobalCacheIdentity = 0;
     static ZrContainerFieldStringCacheEntry cache[ZR_CONTAINER_FIELD_CACHE_CAPACITY];
@@ -2256,6 +2260,7 @@ static SZrObject *zr_container_make_linked_node(SZrState *state, const SZrTypeVa
     return node;
 }
 
+/* Map 的字符串键优先按对象身份与版本缓存命中；其他键仍走 hash 与语言层相等性契约。 */
 static TZrBool zr_container_map_find_index(SZrState *state,
                                            SZrObject *entries,
                                            const SZrTypeValue *key,
@@ -4196,6 +4201,7 @@ static const ZrLibTypeDescriptor g_container_types[] = {
                          ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY)},
 };
 
+/* 描述符是 parser、原生绑定与运行时共享的类型/协议契约来源。 */
 static const ZrLibModuleDescriptor g_container_module_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.container",
@@ -4271,6 +4277,7 @@ static TZrBool zr_container_install_basic_array_adapter(SZrGlobalState *global) 
                                                    zr_container_native_array_get_iterator_native);
 }
 
+/* 先注册迭代依赖，再注册 Span 和引用其契约的池，最后桥接内建 array 迭代。 */
 TZrBool ZrVmLibContainer_Register(SZrGlobalState *global) {
     if (global == ZR_NULL) {
         return ZR_FALSE;

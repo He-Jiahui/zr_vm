@@ -16,6 +16,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/test_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c
 plan_sources:
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/plans/syntax/2026-07-20-14-test-function-harness-design.md
 tests:
   - tests/testing/test_test_role_binding.c
@@ -50,6 +51,12 @@ process-global text matching. They carry the caller source span and bounded
 type/value snapshots; formatter faults are isolated and cannot replace the
 original assertion failure. The provider descriptor, phase, role ids, and
 public contract hash participate in the official-provider inventory.
+
+The current `testing_copy_bounded` helper truncates these diagnostic strings by
+byte count. A multibyte UTF-8 character crossing the limit can leave an invalid
+trailing byte sequence in the copied failure message or snapshot; see its `BUG:`
+review note in `runtime/assertions.c`. The existing assertion tests do not cover
+this boundary case.
 
 ## TestManifest
 

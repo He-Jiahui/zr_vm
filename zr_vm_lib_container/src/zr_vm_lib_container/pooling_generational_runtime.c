@@ -18,6 +18,7 @@
 #define ZR_POOLING_GUARD_OWNER_FIELD "__zr_pool_guard_owner"
 #define ZR_POOLING_GUARD_VALUE_FIELD "__zr_pool_guard_value"
 
+/* Pool<T> 持有底层池及内联布局来源；函数值作为根参与 GC，直至宿主对象终结。 */
 typedef struct SZrPoolingRuntime {
     SZrPool *pool;
     SZrState *state;
@@ -29,6 +30,7 @@ typedef struct SZrPoolingRuntime {
     TZrBool finalized;
 } SZrPoolingRuntime;
 
+/* 语言层 guard 接管底层借用，并记录写回权限以支持显式 close 与终结器共用路径。 */
 typedef struct SZrPoolingGuardRuntime {
     SZrPoolGuard guard;
     TZrBool finalized;
@@ -143,6 +145,7 @@ static void pooling_value_scan(
     ZR_UNUSED_PARAMETER(userData);
 }
 
+/* 底层槽位位于非 GC 管理内存，宿主 Pool 对象的 trace 回调承担引用可达性。 */
 static void pooling_pool_trace(
         SZrState *state,
         SZrRawObject *rawObject,
@@ -266,6 +269,7 @@ static void pooling_pool_finalize(SZrState *state, SZrRawObject *rawObject) {
             state, object, ZR_POOLING_RUNTIME_FIELD, ZR_NULL);
 }
 
+/* 首次 deliver 才按实参布局建立池；后续调用必须匹配该布局，避免混用槽位表示。 */
 static SZrPoolingRuntime *pooling_runtime_require(
         ZrLibCallContext *context,
         SZrObject **outOwner,
@@ -547,6 +551,7 @@ TZrBool ZrPooling_Generational_Recycle(
     return ZR_TRUE;
 }
 
+/* 关闭可写 guard 时先将语言层投影写回槽位并执行 GC 屏障，再释放底层借用。 */
 static TZrBool pooling_guard_release(
         SZrState *state,
         SZrRawObject *rawObject) {
@@ -615,6 +620,7 @@ static void pooling_guard_finalize(SZrState *state, SZrRawObject *rawObject) {
     (void)pooling_guard_release(state, rawObject);
 }
 
+/* view 持有 owner 与底层 guard；构造失败时由终结路径归还借用，防止阻塞回收。 */
 static SZrObject *pooling_new_guard_view(
         ZrLibCallContext *context,
         SZrObject *owner,
@@ -706,6 +712,7 @@ static SZrObject *pooling_new_guard_view(
     return view;
 }
 
+/* out 参数复用时先关闭旧 guard，再交付新 view；失败交付会释放刚取得的借用。 */
 static TZrBool pooling_try_guard(
         ZrLibCallContext *context,
         SZrTypeValue *result,
