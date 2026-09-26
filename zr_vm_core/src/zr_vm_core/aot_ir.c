@@ -152,6 +152,119 @@ static TZrBool aot_ir_state_range_valid(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
 }
 
+static EZrAotIrStatus aot_ir_validate_deopt(
+        const SZrAotIrFunction *function, SZrAotIrDiagnostic *diagnostic) {
+    if ((function->deoptStateCount != 0u && function->deoptStates == ZR_NULL) ||
+        (function->deoptValueCount != 0u && function->deoptValuePool == ZR_NULL) ||
+        (function->deoptAggregateCount != 0u && function->deoptAggregates == ZR_NULL) ||
+        (function->deoptAggregateFieldCount != 0u &&
+         function->deoptAggregateFields == ZR_NULL)) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                           0u, 0u, 0u, 1u, 0u);
+    }
+    for (TZrUInt32 i = 0u; i < function->deoptValueCount; ++i) {
+        if (function->deoptValuePool[i] == ZR_AOT_IR_ID_INVALID ||
+            function->deoptValuePool[i] > function->valueSlotCount) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                               0u, 0u, i, function->valueSlotCount,
+                               function->deoptValuePool[i]);
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->deoptStateCount; ++i) {
+        const SZrExecIrDeoptState *state = &function->deoptStates[i];
+        if (state->id == ZR_AOT_IR_ID_INVALID ||
+            state->sourceId == ZR_AOT_IR_ID_INVALID ||
+            state->resumeId == ZR_AOT_IR_ID_INVALID ||
+            !aot_ir_exec_range_valid(state->valueRange, function->deoptValueCount) ||
+            !aot_ir_exec_range_valid(state->aggregates,
+                                     function->deoptAggregateCount)) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                               0u, 0u, i, function->deoptValueCount,
+                               state->valueRange.count);
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->deoptAggregateCount; ++i) {
+        const SZrExecIrDeoptAggregate *aggregate = &function->deoptAggregates[i];
+        if (aggregate->identityId == ZR_AOT_IR_ID_INVALID ||
+            aggregate->typeToken == ZR_AOT_IR_ID_INVALID ||
+            aggregate->layoutId == ZR_AOT_IR_ID_INVALID ||
+            !aot_ir_exec_range_valid(aggregate->fields,
+                                     function->deoptAggregateFieldCount)) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                               0u, 0u, i, function->deoptAggregateFieldCount,
+                               aggregate->fields.count);
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->deoptAggregateFieldCount; ++i) {
+        const SZrExecIrDeoptAggregateField *field =
+                &function->deoptAggregateFields[i];
+        if (field->kind == ZR_EXEC_IR_DEOPT_FIELD_VALUE) {
+            if (field->valueId == ZR_AOT_IR_ID_INVALID ||
+                field->valueId > function->valueSlotCount ||
+                field->aggregateId != ZR_AOT_IR_ID_INVALID) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                                   0u, 0u, i, function->valueSlotCount,
+                                   field->valueId);
+            }
+        } else if (field->kind == ZR_EXEC_IR_DEOPT_FIELD_AGGREGATE) {
+            TZrBool found = ZR_FALSE;
+            for (TZrUInt32 aggregateIndex = 0u;
+                 aggregateIndex < function->deoptAggregateCount;
+                 ++aggregateIndex) {
+                if (function->deoptAggregates[aggregateIndex].identityId ==
+                    field->aggregateId) {
+                    found = ZR_TRUE;
+                    break;
+                }
+            }
+            if (field->valueId != ZR_AOT_IR_ID_INVALID ||
+                field->aggregateId == ZR_AOT_IR_ID_INVALID || !found) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                                   0u, 0u, i, function->deoptAggregateCount,
+                                   field->aggregateId);
+            }
+        } else if (field->kind != ZR_EXEC_IR_DEOPT_FIELD_UNINITIALIZED ||
+                   field->valueId != ZR_AOT_IR_ID_INVALID ||
+                   field->aggregateId != ZR_AOT_IR_ID_INVALID) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                               0u, 0u, i, ZR_EXEC_IR_DEOPT_FIELD_KIND_COUNT,
+                               (TZrUInt32)field->kind);
+        }
+    }
+    for (TZrUInt32 stateIndex = 0u;
+         stateIndex < function->deoptStateCount; ++stateIndex) {
+        const SZrExecIrDeoptState *state = &function->deoptStates[stateIndex];
+        for (TZrUInt32 aggregateOffset = 0u;
+             aggregateOffset < state->aggregates.count; ++aggregateOffset) {
+            const SZrExecIrDeoptAggregate *aggregate =
+                    &function->deoptAggregates[state->aggregates.start + aggregateOffset];
+            for (TZrUInt32 fieldOffset = 0u;
+                 fieldOffset < aggregate->fields.count; ++fieldOffset) {
+                const SZrExecIrDeoptAggregateField *field =
+                        &function->deoptAggregateFields[aggregate->fields.start + fieldOffset];
+                if (field->kind == ZR_EXEC_IR_DEOPT_FIELD_AGGREGATE) {
+                    TZrBool found = ZR_FALSE;
+                    for (TZrUInt32 otherOffset = 0u;
+                         otherOffset < state->aggregates.count; ++otherOffset) {
+                        if (function->deoptAggregates[state->aggregates.start + otherOffset]
+                                    .identityId == field->aggregateId) {
+                            found = ZR_TRUE;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID,
+                                           function->id, 0u, 0u,
+                                           state->aggregates.start + aggregateOffset,
+                                           1u, field->aggregateId);
+                    }
+                }
+            }
+        }
+    }
+    return ZR_AOT_IR_OK;
+}
+
 static EZrAotIrStatus aot_ir_validate_logical_map(
         const SZrAotIrFunction *function, SZrAotIrDiagnostic *diagnostic) {
     const SZrExecIrStateMap *map = function->logicalStateMap;
@@ -397,6 +510,12 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
     }
     if ((function->sourceMapCount != 0u && function->sourceMaps == ZR_NULL) ||
         (function->gcRootCount != 0u && function->gcRootPool == ZR_NULL) ||
+        (function->deoptStateCount != 0u && function->deoptStates == ZR_NULL) ||
+        (function->deoptValueCount != 0u && function->deoptValuePool == ZR_NULL) ||
+        (function->deoptAggregateCount != 0u &&
+         function->deoptAggregates == ZR_NULL) ||
+        (function->deoptAggregateFieldCount != 0u &&
+         function->deoptAggregateFields == ZR_NULL) ||
         function->blockCount == 0u || function->instructionCount == 0u ||
         ((function->operandCount > 0u) && (function->operandPool == ZR_NULL)) ||
         ((function->resultCount > 0u) && (function->resultPool == ZR_NULL)) ||
@@ -721,6 +840,10 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                function->gcRootPool[i]);
         }
     }
+    {
+        EZrAotIrStatus deoptStatus = aot_ir_validate_deopt(function, diagnostic);
+        if (deoptStatus != ZR_AOT_IR_OK) return deoptStatus;
+    }
     for (TZrUInt32 blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
         const SZrAotIrBlock *block = &function->blocks[blockIndex];
         TZrUInt32 latestEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
@@ -984,6 +1107,40 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
         hash = aot_ir_hash_u32(hash, function->gcRootCount);
         for (TZrUInt32 j = 0u; j < function->gcRootCount; ++j)
             hash = aot_ir_hash_u32(hash, function->gcRootPool[j]);
+        hash = aot_ir_hash_u32(hash, function->deoptStateCount);
+        for (TZrUInt32 j = 0u; j < function->deoptStateCount; ++j) {
+            const SZrExecIrDeoptState *state = &function->deoptStates[j];
+            hash = aot_ir_hash_u32(hash, state->id);
+            hash = aot_ir_hash_u32(hash, state->sourceId);
+            hash = aot_ir_hash_u32(hash, state->resumeId);
+            hash = aot_ir_hash_u32(hash, state->valueRange.start);
+            hash = aot_ir_hash_u32(hash, state->valueRange.count);
+            hash = aot_ir_hash_u32(hash, state->cleanupState);
+            hash = aot_ir_hash_u32(hash, state->aggregates.start);
+            hash = aot_ir_hash_u32(hash, state->aggregates.count);
+        }
+        hash = aot_ir_hash_u32(hash, function->deoptValueCount);
+        for (TZrUInt32 j = 0u; j < function->deoptValueCount; ++j)
+            hash = aot_ir_hash_u32(hash, function->deoptValuePool[j]);
+        hash = aot_ir_hash_u32(hash, function->deoptAggregateCount);
+        for (TZrUInt32 j = 0u; j < function->deoptAggregateCount; ++j) {
+            const SZrExecIrDeoptAggregate *aggregate =
+                    &function->deoptAggregates[j];
+            hash = aot_ir_hash_u32(hash, aggregate->identityId);
+            hash = aot_ir_hash_u32(hash, aggregate->typeToken);
+            hash = aot_ir_hash_u32(hash, aggregate->layoutId);
+            hash = aot_ir_hash_u32(hash, aggregate->fields.start);
+            hash = aot_ir_hash_u32(hash, aggregate->fields.count);
+        }
+        hash = aot_ir_hash_u32(hash, function->deoptAggregateFieldCount);
+        for (TZrUInt32 j = 0u; j < function->deoptAggregateFieldCount; ++j) {
+            const SZrExecIrDeoptAggregateField *field =
+                    &function->deoptAggregateFields[j];
+            hash = aot_ir_hash_u32(hash, field->fieldIndex);
+            hash = aot_ir_hash_u32(hash, (TZrUInt32)field->kind);
+            hash = aot_ir_hash_u32(hash, field->valueId);
+            hash = aot_ir_hash_u32(hash, field->aggregateId);
+        }
         hash = aot_ir_hash_logical_map(hash, function->logicalStateMap);
         hash = aot_ir_hash_u64(hash, function->gcMapHash);
         hash = aot_ir_hash_u64(hash, function->exceptionMapHash);

@@ -168,6 +168,15 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
             ? &projection->gcMap : ZR_NULL;
     candidate.function.gcRootPool = projection->gcRoots;
     candidate.function.gcRootCount = projection->gcRootCount;
+    candidate.function.deoptStates = projection->deoptStates;
+    candidate.function.deoptStateCount = projection->deoptStateCount;
+    candidate.function.deoptValuePool = projection->deoptValues;
+    candidate.function.deoptValueCount = projection->deoptValueCount;
+    candidate.function.deoptAggregates = projection->deoptAggregates;
+    candidate.function.deoptAggregateCount = projection->deoptAggregateCount;
+    candidate.function.deoptAggregateFields = projection->deoptAggregateFields;
+    candidate.function.deoptAggregateFieldCount =
+            projection->deoptAggregateFieldCount;
     candidate.module.schemaVersion = ZR_AOT_IR_SCHEMA_VERSION;
     candidate.module.target = *target;
     candidate.module.contract = *moduleContract;

@@ -115,6 +115,13 @@ typedef struct SZrExecBcProjection {
     TZrUInt32 gcRootCount;
     TZrBool gcMapPresent;
     TZrUInt32 deoptStateCount;
+    SZrExecIrDeoptState *deoptStates;
+    TZrExecIrValueId *deoptValues;
+    TZrUInt32 deoptValueCount;
+    SZrExecIrDeoptAggregate *deoptAggregates;
+    TZrUInt32 deoptAggregateCount;
+    SZrExecIrDeoptAggregateField *deoptAggregateFields;
+    TZrUInt32 deoptAggregateFieldCount;
     TZrBool stateMapPresent;
     TZrUInt32 unsupportedInstructionId;
     TZrBool runnable;
@@ -177,6 +184,13 @@ typedef struct SZrAotIrProjection {
     TZrUInt32 gcRootCount;
     TZrBool gcMapPresent;
     TZrUInt32 deoptStateCount;
+    SZrExecIrDeoptState *deoptStates;
+    TZrExecIrValueId *deoptValues;
+    TZrUInt32 deoptValueCount;
+    SZrExecIrDeoptAggregate *deoptAggregates;
+    TZrUInt32 deoptAggregateCount;
+    SZrExecIrDeoptAggregateField *deoptAggregateFields;
+    TZrUInt32 deoptAggregateFieldCount;
     TZrBool stateMapPresent;
     TZrUInt32 unsupportedInstructionId;
     TZrBool runnable; /* false until a backend emits executable C/LLVM */

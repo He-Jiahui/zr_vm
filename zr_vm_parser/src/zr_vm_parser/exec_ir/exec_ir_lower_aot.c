@@ -25,6 +25,10 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->sourceMaps);
     ZrCore_ExecIr_GcMapFree(&projection->gcMap);
     free(projection->gcRoots);
+    free(projection->deoptStates);
+    free(projection->deoptValues);
+    free(projection->deoptAggregates);
+    free(projection->deoptAggregateFields);
     ZrCore_ExecIr_StateMapFree(&projection->stateMap);
     memset(projection, 0, sizeof(*projection));
 }

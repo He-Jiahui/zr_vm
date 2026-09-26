@@ -53,7 +53,7 @@ borrows complete logical maps from its function producer;
 that validated module view by copying representation-dependent records and
 borrowing the typed/memory/state side pools for the descriptor lifetime. The
 archived production emitters still consume the legacy module. The bridge must
-preserve typed tokens, memory edges, GC map entries/root pools, and the state-map
-entry and side-pool lifetimes. Deopt reconstruction pools and a C/LLVM artifact
-claim requires replacing
+preserve typed tokens, memory edges, GC map entries/root pools, deopt
+reconstruction pools, and the state-map entry and side-pool lifetimes. A native
+deopt reconstruction consumer and a C/LLVM artifact claim require replacing
 the legacy reads family by family and validating an actual emitted artifact.

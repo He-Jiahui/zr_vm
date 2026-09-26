@@ -29,7 +29,7 @@ int main(void) {
         .opcode = ZR_EXEC_IR_OPCODE_RETURN,
         .operands = {{.offset = 0u}, .count = 1u},
         .results = {{.offset = 0u}, .count = 1u},
-        .typeToken = 11u, .sourceId = 17u};
+        .typeToken = 11u, .sourceId = 17u, .deoptId = 91u};
     const SZrExecBcBlock block = {
         .id = 1u, .flags = ZR_EXEC_IR_BLOCK_FLAG_ENTRY,
         .instructions = {{.offset = 0u}, .count = 1u},
@@ -43,6 +43,17 @@ int main(void) {
         (TZrUInt32 *)gcSlotPool, 1u, 1u, ZR_NULL, 0u, 0u,
         9u, 17u, {.start = 0u, .count = 1u}};
     const TZrExecIrValueId gcRoots[] = {1u};
+    const TZrExecIrValueId deoptValues[] = {1u};
+    const SZrExecIrDeoptState deoptStates[] = {
+        {.id = 91u, .sourceId = 17u, .resumeId = 701u,
+         .valueRange = {.start = 0u, .count = 1u},
+         .aggregates = {.start = 0u, .count = 1u}}};
+    const SZrExecIrDeoptAggregate deoptAggregates[] = {
+        {.identityId = 11u, .typeToken = 101u, .layoutId = 201u,
+         .fields = {.start = 0u, .count = 1u}}};
+    const SZrExecIrDeoptAggregateField deoptAggregateFields[] = {
+        {.fieldIndex = 0u, .kind = ZR_EXEC_IR_DEOPT_FIELD_VALUE,
+         .valueId = 1u}};
     SZrAotIrProjection input = {
         .functionId = 1u,
         .functionToken = 7u,
@@ -69,6 +80,15 @@ int main(void) {
         .gcRootCount = 1u,
         .gcMapPresent = ZR_TRUE,
         .gcMapCount = 1u,
+        .deoptStates = (SZrExecIrDeoptState *)deoptStates,
+        .deoptStateCount = 1u,
+        .deoptValues = (TZrExecIrValueId *)deoptValues,
+        .deoptValueCount = 1u,
+        .deoptAggregates = (SZrExecIrDeoptAggregate *)deoptAggregates,
+        .deoptAggregateCount = 1u,
+        .deoptAggregateFields =
+                (SZrExecIrDeoptAggregateField *)deoptAggregateFields,
+        .deoptAggregateFieldCount = 1u,
         .blocks = (SZrExecBcBlock *)&block,
         .blockCount = 1u,
         .successors = (TZrExecIrBlockId *)successors,
@@ -86,6 +106,8 @@ int main(void) {
     TZrUInt64 noGcHash;
     SZrAotIrFunction noGcFunction;
     SZrAotIrModule noGcModule;
+    SZrAotIrFunction malformedDeoptFunction;
+    SZrExecIrDeoptAggregateField malformedDeoptField;
 
     fill_contract(&input.contract, input.functionToken, 33u,
                   input.signatureHash, input.frameLayoutHash);
@@ -107,17 +129,44 @@ int main(void) {
            descriptor.function.gcMap->slotIndexPool[0] == 0u);
     assert(descriptor.function.gcRootCount == 1u &&
            descriptor.function.gcRootPool[0] == 1u);
+    assert(descriptor.function.deoptStateCount == 1u &&
+           descriptor.function.deoptStates[0].id == 91u &&
+           descriptor.function.deoptValuePool[0] == 1u &&
+           descriptor.function.deoptAggregates[0].identityId == 11u &&
+           descriptor.function.deoptAggregateFields[0].valueId == 1u);
     fullHash = ZrCore_AotIr_HashModule(&descriptor.module);
     noGcFunction = descriptor.function;
     noGcFunction.gcMap = ZR_NULL;
     noGcFunction.gcRootPool = ZR_NULL;
     noGcFunction.gcRootCount = 0u;
+    noGcFunction.deoptStates = ZR_NULL;
+    noGcFunction.deoptStateCount = 0u;
+    noGcFunction.deoptValuePool = ZR_NULL;
+    noGcFunction.deoptValueCount = 0u;
+    noGcFunction.deoptAggregates = ZR_NULL;
+    noGcFunction.deoptAggregateCount = 0u;
+    noGcFunction.deoptAggregateFields = ZR_NULL;
+    noGcFunction.deoptAggregateFieldCount = 0u;
     noGcModule = descriptor.module;
     noGcModule.functions = &noGcFunction;
     noGcHash = ZrCore_AotIr_HashModule(&noGcModule);
     assert(fullHash != 0u && noGcHash != 0u && fullHash != noGcHash);
     assert(ZrCore_AotIr_ValidateModule(&descriptor.module, &diagnostic) ==
            ZR_AOT_IR_OK);
+    malformedDeoptFunction = descriptor.function;
+    malformedDeoptField = deoptAggregateFields[0];
+    malformedDeoptField.valueId = 0u;
+    malformedDeoptField.aggregateId = 999u;
+    malformedDeoptFunction.deoptAggregateFields = &malformedDeoptField;
+    assert(ZrCore_AotIr_ValidateModule(
+                   &(SZrAotIrModule){
+                       .schemaVersion = descriptor.module.schemaVersion,
+                       .target = descriptor.module.target,
+                       .contract = descriptor.module.contract,
+                       .moduleHash = descriptor.module.moduleHash,
+                       .functions = &malformedDeoptFunction,
+                       .functionCount = 1u},
+                   &diagnostic) != ZR_AOT_IR_OK);
     assert(backend_aot_ir_adapter_validate(&descriptor.module,
                                            &backendDiagnostic) ==
            ZR_BACKEND_AOT_IR_OK);

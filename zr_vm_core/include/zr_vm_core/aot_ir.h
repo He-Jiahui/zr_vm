@@ -154,6 +154,14 @@ typedef struct SZrAotIrFunction {
     const SZrExecIrGcMap *gcMap;
     const TZrExecIrValueId *gcRootPool;
     TZrUInt32 gcRootCount;
+    const SZrExecIrDeoptState *deoptStates;
+    TZrUInt32 deoptStateCount;
+    const TZrExecIrValueId *deoptValuePool;
+    TZrUInt32 deoptValueCount;
+    const SZrExecIrDeoptAggregate *deoptAggregates;
+    TZrUInt32 deoptAggregateCount;
+    const SZrExecIrDeoptAggregateField *deoptAggregateFields;
+    TZrUInt32 deoptAggregateFieldCount;
     const SZrExecIrStateMap *logicalStateMap; /* borrowed complete checkpoint table */
     TZrUInt64 gcMapHash;
     TZrUInt64 exceptionMapHash;

@@ -557,6 +557,10 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->sourceMaps);
     ZrCore_ExecIr_GcMapFree(&p->gcMap);
     free(p->gcRoots);
+    free(p->deoptStates);
+    free(p->deoptValues);
+    free(p->deoptAggregates);
+    free(p->deoptAggregateFields);
     memset(p, 0, sizeof(*p));
 }
 
@@ -647,6 +651,9 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     p->gcRootCount = f->gcRootCount;
     p->gcMapPresent = f->gcMap != ZR_NULL;
     p->deoptStateCount = f->deoptStateCount;
+    p->deoptValueCount = f->deoptValueCount;
+    p->deoptAggregateCount = f->deoptAggregateCount;
+    p->deoptAggregateFieldCount = f->deoptAggregateFieldCount;
     p->stateMapPresent = f->stateMap != ZR_NULL;
     p->runnable = ZR_TRUE;
     p->ownershipTag = ZR_EXEC_IR_PROJECTION_TAG;
@@ -710,6 +717,33 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->gcRoots = (TZrExecIrValueId *)malloc(bytes);
         if (p->gcRoots == ZR_NULL) goto oom;
         memcpy(p->gcRoots, f->gcRoots, bytes);
+    }
+    if (!zr_projection_bytes(p->deoptStateCount, sizeof(*p->deoptStates), &bytes)) goto overflow;
+    if (p->deoptStateCount != 0u) {
+        p->deoptStates = (SZrExecIrDeoptState *)malloc(bytes);
+        if (p->deoptStates == ZR_NULL) goto oom;
+        memcpy(p->deoptStates, f->deoptStates, bytes);
+    }
+    if (!zr_projection_bytes(p->deoptValueCount, sizeof(*p->deoptValues), &bytes)) goto overflow;
+    if (p->deoptValueCount != 0u) {
+        p->deoptValues = (TZrExecIrValueId *)malloc(bytes);
+        if (p->deoptValues == ZR_NULL) goto oom;
+        memcpy(p->deoptValues, f->deoptValues, bytes);
+    }
+    if (!zr_projection_bytes(p->deoptAggregateCount,
+                             sizeof(*p->deoptAggregates), &bytes)) goto overflow;
+    if (p->deoptAggregateCount != 0u) {
+        p->deoptAggregates = (SZrExecIrDeoptAggregate *)malloc(bytes);
+        if (p->deoptAggregates == ZR_NULL) goto oom;
+        memcpy(p->deoptAggregates, f->deoptAggregates, bytes);
+    }
+    if (!zr_projection_bytes(p->deoptAggregateFieldCount,
+                             sizeof(*p->deoptAggregateFields), &bytes)) goto overflow;
+    if (p->deoptAggregateFieldCount != 0u) {
+        p->deoptAggregateFields =
+                (SZrExecIrDeoptAggregateField *)malloc(bytes);
+        if (p->deoptAggregateFields == ZR_NULL) goto oom;
+        memcpy(p->deoptAggregateFields, f->deoptAggregateFields, bytes);
     }
     if (!zr_projection_bytes(p->valueSlotCount, sizeof(*p->valueSlots), &bytes)) goto overflow;
     if (p->valueSlotCount != 0u) {
@@ -991,6 +1025,13 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->gcRootCount = source->gcRootCount;
     destination->gcMapPresent = source->gcMapPresent;
     destination->deoptStateCount = source->deoptStateCount;
+    destination->deoptStates = source->deoptStates;
+    destination->deoptValues = source->deoptValues;
+    destination->deoptValueCount = source->deoptValueCount;
+    destination->deoptAggregates = source->deoptAggregates;
+    destination->deoptAggregateCount = source->deoptAggregateCount;
+    destination->deoptAggregateFields = source->deoptAggregateFields;
+    destination->deoptAggregateFieldCount = source->deoptAggregateFieldCount;
     destination->stateMapPresent = source->stateMapPresent;
     destination->unsupportedInstructionId = source->unsupportedInstructionId;
     destination->runnable = source->runnable;
@@ -1017,5 +1058,12 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->gcRoots = ZR_NULL;
     source->gcRootCount = 0u;
     source->gcMapPresent = ZR_FALSE;
+    source->deoptStates = ZR_NULL;
+    source->deoptValues = ZR_NULL;
+    source->deoptValueCount = 0u;
+    source->deoptAggregates = ZR_NULL;
+    source->deoptAggregateCount = 0u;
+    source->deoptAggregateFields = ZR_NULL;
+    source->deoptAggregateFieldCount = 0u;
     source->ownershipTag = 0u;
 }

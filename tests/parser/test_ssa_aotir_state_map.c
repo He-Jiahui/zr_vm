@@ -36,6 +36,7 @@ void test_aotir_owns_state_map(void) {
     instruction.opcode = ZR_EXEC_IR_OPCODE_CALL;
     instruction.flags = ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE;
     instruction.sourceId = 101u;
+    instruction.deoptId = 91u;
     instruction.effectIn = before;
     instruction.effectOut = after;
     TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendOperands(
@@ -55,6 +56,34 @@ void test_aotir_owns_state_map(void) {
     TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction, NULL));
     function.blocks[0].instructionRange.count = 2u;
     function.blocks[0].terminatorInstructionId = 2u;
+    function.deoptStates = (SZrExecIrDeoptState *)calloc(
+            1u, sizeof(*function.deoptStates));
+    function.deoptValues = (TZrExecIrValueId *)calloc(
+            1u, sizeof(*function.deoptValues));
+    function.deoptAggregates = (SZrExecIrDeoptAggregate *)calloc(
+            1u, sizeof(*function.deoptAggregates));
+    function.deoptAggregateFields = (SZrExecIrDeoptAggregateField *)calloc(
+            1u, sizeof(*function.deoptAggregateFields));
+    TEST_ASSERT_NOT_NULL(function.deoptStates);
+    TEST_ASSERT_NOT_NULL(function.deoptValues);
+    TEST_ASSERT_NOT_NULL(function.deoptAggregates);
+    TEST_ASSERT_NOT_NULL(function.deoptAggregateFields);
+    function.deoptStateCount = function.deoptStateCapacity = 1u;
+    function.deoptValueCount = function.deoptValueCapacity = 1u;
+    function.deoptAggregateCount = function.deoptAggregateCapacity = 1u;
+    function.deoptAggregateFieldCount = function.deoptAggregateFieldCapacity = 1u;
+    function.deoptValues[0] = receiver;
+    function.deoptStates[0].id = 91u;
+    function.deoptStates[0].sourceId = 101u;
+    function.deoptStates[0].resumeId = 701u;
+    function.deoptStates[0].valueRange.count = 1u;
+    function.deoptStates[0].aggregates.count = 1u;
+    function.deoptAggregates[0].identityId = 11u;
+    function.deoptAggregates[0].typeToken = 101u;
+    function.deoptAggregates[0].layoutId = 201u;
+    function.deoptAggregates[0].fields.count = 1u;
+    function.deoptAggregateFields[0].kind = ZR_EXEC_IR_DEOPT_FIELD_VALUE;
+    function.deoptAggregateFields[0].valueId = receiver;
     TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyFunction(&function,
             ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
     TEST_ASSERT_TRUE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
@@ -73,6 +102,17 @@ void test_aotir_owns_state_map(void) {
     TEST_ASSERT_TRUE(function.stateMap->valuePool != aot.stateMap.valuePool);
     TEST_ASSERT_TRUE(function.stateMap->rootPool != aot.stateMap.rootPool);
     TEST_ASSERT_TRUE(function.stateMap->ownerStatePool != aot.stateMap.ownerStatePool);
+    TEST_ASSERT_EQUAL_UINT32(1u, aot.deoptStateCount);
+    TEST_ASSERT_EQUAL_UINT32(91u, aot.deoptStates[0].id);
+    TEST_ASSERT_EQUAL_UINT32(1u, aot.deoptValueCount);
+    TEST_ASSERT_EQUAL_UINT32(receiver, aot.deoptValues[0]);
+    TEST_ASSERT_EQUAL_UINT32(11u, aot.deoptAggregates[0].identityId);
+    TEST_ASSERT_EQUAL_UINT32(receiver, aot.deoptAggregateFields[0].valueId);
+    TEST_ASSERT_NOT_EQUAL(function.deoptStates, aot.deoptStates);
+    TEST_ASSERT_NOT_EQUAL(function.deoptValues, aot.deoptValues);
+    TEST_ASSERT_NOT_EQUAL(function.deoptAggregates, aot.deoptAggregates);
+    TEST_ASSERT_NOT_EQUAL(function.deoptAggregateFields,
+                          aot.deoptAggregateFields);
     publishedEntries = aot.stateMap.entries;
     originalRoots = aot.stateMap.rootPool[0];
     originalValues = function.stateMap->valueCount;
