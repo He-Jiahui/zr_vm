@@ -17,7 +17,7 @@ typedef enum EZrTestingAssertionKind {
     ZR_TESTING_ASSERTION_KIND_THROWS = 3
 } EZrTestingAssertionKind;
 
-/** @brief 保存失败时的有界值视图；格式化异常由 formatterFaulted 隔离，不覆盖原始断言。 */
+/** @brief 保存失败时的有界值视图；formatterFaulted 标明调试文本格式化失败。 */
 typedef struct SZrTestingValueSnapshot {
     TZrChar typeName[ZR_VM_LIB_TESTING_TYPE_NAME_CAPACITY + 1U];
     TZrChar text[ZR_VM_LIB_TESTING_SNAPSHOT_CAPACITY + 1U];

@@ -118,7 +118,7 @@ static void testing_format_try(SZrState *state, TZrPtr arguments) {
     request->text = ZrCore_Value_ToDebugString(state, request->value);
 }
 
-/* 调试格式化可能执行用户元方法并抛错；保留原断言，改用格式化失败标记供宿主诊断。 */
+/* 调试格式化可能执行用户元方法并抛错；快照以 formatterFaulted 区分该故障与正常值文本。 */
 static void testing_snapshot(SZrState *state,
                              const SZrTypeValue *value,
                              SZrTestingValueSnapshot *snapshot) {
