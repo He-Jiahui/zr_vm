@@ -8,12 +8,16 @@ related_code:
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_stream.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/process/process.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_stream.c
   - zr_vm_lib_system/src/zr_vm_lib_system/gc/gc.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/process/process.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/plans/syntax/README.md
@@ -53,10 +57,10 @@ system.console.printLine(text);
 | `console` | `print`、`printLine`、`printError`、`printErrorLine`、`read`、`readLine` | UTF-8 文本 I/O；错误流和普通流分开，EOF 返回 `null` |
 | `env` | `getVariable(name)` | 读取宿主环境；未定义变量返回 `null` |
 | `process` | `arguments`、`sleepMilliseconds`、`exit` | 启动参数、阻塞休眠和进程退出 |
-| `assembly` | assembly/package 元数据查询 | 读取当前 module/assembly identity |
+| `assembly` | `resourceExists`、`readResourceText`、`readResourceBytes` | 查询和读取当前项目包中的资源 |
 | `vm` | `loadedModules`、`state`、`callModuleExport` | 运行时模块快照和受控导出调用 |
 
-`exit` 是不可恢复控制转移，宿主可在 C 层拦截；库函数不得把它当普通错误返回。
+`exit` 直接终止宿主进程，是不可恢复控制转移；验证退出路径时应使用独立进程。
 环境和参数字符串由 VM 创建并受 GC 管理，C callback 只在 `ZrLibCallContext` 生命周期内
 借用指针。
 
@@ -84,7 +88,7 @@ system.console.printLine(text);
   和 `fileInfo` 快照；`exists()` 先刷新快照再返回布尔值，`refresh()` 返回本轮对象视图。
 - `File(path).open(mode = "r")` 返回 `FileStream`；`create(recursively = true)`、
   `readText()`、`writeText(text)`、`appendText(text)` 委托同一个 stream/handle 层。
-- `Folder(path).entries()`、`files()`、`folders()` 和 `glob(pattern, recursively = false)`
+- `Folder(path).entries()`、`files()`、`folders()` 和 `glob(pattern, recursively = true)`
   返回按 `fullPath` 排序的 `array`；`entries` 只列直接子项，`glob` 才按参数递归。
 - `FileStream` 的宿主句柄存放在隐藏 `handle_id` wrapper 中。脚本只能通过公开 close/read/write
   方法操作，不能把 `Ptr` 直接当文件句柄。
@@ -102,7 +106,7 @@ system.console.printLine(text);
 | `File` | `delete()` | 删除文件，返回 `null` |
 | `Folder` | `create(recursively = true)` | 创建目录，返回 `null` |
 | `Folder` | `entries()` / `files()` / `folders()` | 返回直接子项数组 |
-| `Folder` | `glob(pattern, recursively = false)` | `*`/`?` 通配；返回匹配项数组 |
+| `Folder` | `glob(pattern, recursively = true)` | `*`/`?` 通配；返回匹配项数组 |
 | `Folder` | `copyTo(targetPath, overwrite = false)` / `moveTo(targetPath, overwrite = false)` | 返回目标 `Folder` |
 | `Folder` | `delete(recursively = false)` | 非空目录须显式传 `true` |
 | `FileStream` | `readText(count = -1)` / `readBytes(count = -1)` | 从当前位置读取；`-1` 表示剩余全部 |
@@ -113,9 +117,10 @@ system.console.printLine(text);
 `FileStream` 同时实现 `IStreamReader` 和 `IStreamWriter`。读写模式不匹配、负长度（除
 `-1` 外）、越界 seek 和已关闭句柄都会抛出 `IOException`；不会返回 errno 整数哨兵。
 
-所有路径先经过平台归一化和权限检查。失败统一抛出 `zr.system.exception.IOException`；
-不会返回裸指针、负整数或宿主 errno sentinel。`close()` 可重复调用，第一次释放句柄，
-后续调用无副作用。
+`File`、`Folder` 和 `FileStream` 的 I/O 操作会将相应失败转换为
+`zr.system.exception.IOException`。兼容的路径探测和 `changeCurrentDirectory` 通过布尔值
+报告结果，不保证附带异常。脚本 API 不返回裸指针或宿主 errno sentinel。`close()` 可重复调用，
+第一次释放句柄，后续调用无副作用。
 
 ## GC、VM 和异常子模块
 
@@ -142,5 +147,5 @@ TZrBool ok = ZrVmLibSystem_Register(global);
 ```
 
 `Register` 负责 descriptor 校验、叶子 module links 注册和全局缓存挂接。共享库导出
-`ZrVm_GetNativeModule_v1()`。宿主销毁 global 前必须先关闭仍由 fs/assembly/vm 模块持有的
-native handles；最终 GC 会再次调用 finalizer，但 finalizer 设计为幂等。
+`ZrVm_GetNativeModule_v1()`。宿主应显式关闭仍打开的 `FileStream`；其隐藏文件句柄另有
+finalizer 作为兜底。`assembly` 在单次资源读取中关闭归档，`vm` 查询不持有文件句柄。

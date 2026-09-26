@@ -9,6 +9,7 @@
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_ProcessRegistry_GetModule(void) {
+    /* arguments 声明供脚本导入；CLI 在执行入口前写入入口标识及用户参数。 */
     static const ZrLibConstantDescriptor kConstants[] = {
             {"arguments", ZR_LIB_CONSTANT_KIND_ARRAY, 0, 0.0, ZR_NULL, ZR_FALSE, "Process argument list.", "string[]"},
     };

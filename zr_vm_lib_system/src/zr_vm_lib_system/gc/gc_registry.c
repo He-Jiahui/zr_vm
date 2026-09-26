@@ -20,6 +20,7 @@ static const ZrLibParameterDescriptor g_budget_parameters[] = {
         {"microseconds", "int", "Pause budget in microseconds used for both pause and remark slices."},
 };
 
+/* 字段名须与 gc.c 的快照投影一致，编译期成员访问据此获知字段类型。 */
 static const ZrLibFieldDescriptor g_gc_stats_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("enabled", "bool", "Whether background and incremental GC steps are enabled."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("heapLimitBytes", "int", "Configured heap limit in bytes."),

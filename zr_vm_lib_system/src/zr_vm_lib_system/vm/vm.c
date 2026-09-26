@@ -67,6 +67,7 @@ static TZrBool system_vm_read_string_argument(const ZrLibCallContext *context,
     return *outText != ZR_NULL;
 }
 
+/* 只统计 global 的已加载实例缓存；原生 registry 中尚未导入的描述符不计入。 */
 static TZrInt64 system_vm_loaded_module_count(SZrState *state) {
     SZrObject *registry;
     TZrSize bucket;
@@ -94,6 +95,7 @@ static TZrInt64 system_vm_loaded_module_count(SZrState *state) {
     return (TZrInt64)count;
 }
 
+/* 将当前线程栈与全局 GC 状态组成值快照，避免向脚本暴露可变核心结构。 */
 static SZrObject *system_vm_make_state(SZrState *state, TZrInt64 loadedModuleCount) {
     SZrObject *object;
     SZrGarbageCollector *garbageCollector;
@@ -129,6 +131,7 @@ static SZrObject *system_vm_make_state(SZrState *state, TZrInt64 loadedModuleCou
     return object;
 }
 
+/* 合并运行期模块对象与注册表元数据；原生插件特征以注册表为准。 */
 static SZrObject *system_vm_make_loaded_module_info(SZrState *state,
                                                     const TZrChar *name,
                                                     const TZrChar *sourceKind,
@@ -193,6 +196,8 @@ TZrBool ZrSystem_Vm_LoadedModules(ZrLibCallContext *context, SZrTypeValue *resul
     }
 
     registry = ZR_CAST_OBJECT(context->state, context->state->global->loadedModulesRegistry.value.object);
+    /* TODO: 遍历 nodeMap 的 pair 与名称指针后会分配脚本对象/字符串；
+     * 若这些分配触发搬迁 GC，应验证 registry/pair 和借用文本是否仍稳定。 */
     for (bucket = 0; registry != ZR_NULL && bucket < registry->nodeMap.capacity; bucket++) {
         SZrHashKeyValuePair *pair = registry->nodeMap.buckets[bucket];
         while (pair != ZR_NULL) {
@@ -290,6 +295,7 @@ TZrBool ZrSystem_Vm_CallModuleExport(ZrLibCallContext *context, SZrTypeValue *re
         return ZR_FALSE;
     }
 
+    /* 参数先从脚本数组借出再交给通用原生调用器，调用器负责目标导入、arity 和异常。 */
     argumentCount = ZrLib_Array_Length(argumentsArray);
     if (argumentCount > 0) {
         arguments = (SZrTypeValue *)malloc(sizeof(SZrTypeValue) * argumentCount);
@@ -307,6 +313,8 @@ TZrBool ZrSystem_Vm_CallModuleExport(ZrLibCallContext *context, SZrTypeValue *re
         arguments[index] = *item;
     }
 
+    /* TODO: 目标导入可能在 CallValue 将参数放上 VM 栈前触发 GC；需以 GC 压力测试确认
+     * malloc 中的浅拷贝值及 moduleName/exportName 借用指针是否保持有效。 */
     success = ZrLib_CallModuleExport(context->state, moduleName, exportName, arguments, argumentCount, result);
     free(arguments);
     return success;

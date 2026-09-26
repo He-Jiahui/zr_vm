@@ -34,5 +34,6 @@ doc_type: category-index
 | 历史 `zr_vm_lib_task` 实现 | [225 项](coverage/zr_vm_lib_task.tsv) | 10 个文件经独立复核；顶层当前不构建此目录，GCC 单文件语法检查发现旧代码引用已删除字段（原始版本同样失败），不能视为当前 CLI task provider 的测试结果。 |
 | `zr.thread` 调度器与共享封装 | [309 项](coverage/zr_vm_lib_thread.tsv) | 11 个文件独立复核；GCC/Clang 语法检查通过；运行时目标因 VerifyGlobs 卡顿未执行，BUG/TODO 为静态证据。 |
 | Wiki 渲染与 ZR 词法着色 | [33 项](coverage/wiki_rendering.tsv) | 8 个配置、插件和测试文件独立复核；注释之外的 Python AST 与配置保持一致，定向测试 7/7 通过。 |
+| `zr.system` 宿主能力 provider | [386 项](coverage/zr_vm_lib_system.tsv) | 39 个文件独立复核，非注释 token 未变；GCC 构建、Clang 语法检查通过。assembly 2/2、GC 67/67、provider convergence 9/9 通过；FS 8 项中 2 项、module system 78 项中 6 项、exceptions 8 项中 2 项失败。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

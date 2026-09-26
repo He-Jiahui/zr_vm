@@ -9,13 +9,17 @@ related_code:
   - zr_vm_lib_system/include/zr_vm_lib_system/exception_registry.h
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/process/process.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_stream.c
   - zr_vm_lib_system/src/zr_vm_lib_system/gc/gc.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/exception_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/process/process.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/library-and-builtins/index.md
@@ -41,8 +45,9 @@ let console = system.console;
 console.printLine("ready");
 ```
 
-普通值 API 返回 `bool`、`int` 或 `null`；资源和 I/O 错误抛出
-`zr.system.exception.IOException`。`read`/`readLine` 在 EOF 返回 null；这和 C API 的
+普通值 API 返回 `bool`、`int` 或 `null`；`File`、`Folder` 和 `FileStream` 的 I/O 失败
+按各自接口抛出 `zr.system.exception.IOException`，兼容路径函数可能只返回 `false`。
+`read`/`readLine` 在 EOF 返回 null；这和 C API 的
 `ZR_NULL` 指针失败不是同一语义。所有 path、stream 和 exception object 都由当前 state
 管理，不能跨 state 保存裸地址。
 
@@ -54,7 +59,7 @@ console.printLine("ready");
 | `printLine` | `printLine(value: any): null` | 写普通输出并追加换行。 |
 | `printError` | `printError(value: any): null` | 写错误流，不自动换行。 |
 | `printErrorLine` | `printErrorLine(value: any): null` | 写错误流并追加换行。 |
-| `read` | `read(): string/null` | 读取一段输入；EOF 为 null。 |
+| `read` | `read(): string/null` | 读取恰好一个 UTF-8 码点；EOF 为 null。 |
 | `readLine` | `readLine(): string/null` | 读取一行；保留 provider 的 UTF-8 解码规则。 |
 
 `value:any` 会走 core formatter；对象格式化可能触发 `toString`/reflection，复杂对象不应在
@@ -82,13 +87,13 @@ process.sleepMilliseconds(10);
 | --- | --- | --- |
 | `env` | `getVariable(name: string): string/null` | 未定义变量返回 null，不修改环境。 |
 | `process` | `arguments: string[]` | 启动参数快照；数组由 VM 管理。 |
-| `process` | `sleepMilliseconds(milliseconds: int): null` | 阻塞当前执行线程；负值抛 TypeError。 |
+| `process` | `sleepMilliseconds(milliseconds: int): null` | 阻塞当前执行线程；负值按 0 毫秒处理。 |
 | `process` | `exit(code: int): null` | 不可恢复控制转移；不会正常返回。 |
 | `assembly` | `resourceExists(name: string): bool` | 查询当前 assembly 资源。 |
-| `assembly` | `readResourceText(name: string): string` | 读取 UTF-8 资源；缺失/解码失败抛 IOException。 |
+| `assembly` | `readResourceText(name: string): string` | 将资源字节作为文本构造字符串，当前不验证 UTF-8；资源缺失或读取失败触发运行错误，内嵌 NUL 会截断。 |
 | `assembly` | `readResourceBytes(name: string): array` | 读取原始字节整数数组。 |
 
-`exit` 不是异常；宿主若需要可测试退出路径，应在 C 层安装受控入口或使用独立进程。
+`exit` 不是异常，当前回调直接调用宿主 `exit()`；测试退出路径应使用独立进程。
 
 ## 文件系统
 
@@ -97,7 +102,7 @@ process.sleepMilliseconds(10);
 | 函数 | 签名 | 返回值 |
 | --- | --- | --- |
 | `currentDirectory` | `(): string` | 当前工作目录的归一化路径。 |
-| `changeCurrentDirectory` | `(path: string): bool` | 成功 true；权限/不存在时 false 或抛 IOException（以 provider 配置为准）。 |
+| `changeCurrentDirectory` | `(path: string): bool` | 成功返回 true；系统调用失败返回 false，不附带 I/O 异常。 |
 | `pathExists` | `(path: string): bool` | 文件或目录存在性。 |
 | `isFile` / `isDirectory` | `(path: string): bool` | 类型判断，不跟随无效路径。 |
 | `createDirectory` | `(path: string): bool` | 创建单层目录。 |
@@ -107,8 +112,8 @@ process.sleepMilliseconds(10);
 | `writeText` / `appendText` | `(path: string, text: string): bool` | 覆盖/追加文本。 |
 | `getInfo` | `(path: string): SystemFileInfo` | 返回 metadata snapshot。 |
 
-兼容函数适合一次性操作；需要多次读写、seek 或资源组合时使用对象 API。布尔 false 只表示
-操作未完成，详细 I/O 原因仍应从当前异常/日志取得。
+兼容函数适合一次性操作；需要多次读写、seek 或资源组合时使用对象 API。布尔 false 表示
+操作未完成，其中 `changeCurrentDirectory` 不提供结构化 I/O 错误详情。
 
 ### 对象和字段
 
@@ -140,9 +145,12 @@ process.sleepMilliseconds(10);
 | `create` | `(recursively: bool = true): null` | 创建目录或目录树。 |
 | `entries` | `(): FileSystemEntry[]` | 只列直接子项，按 `fullPath` 排序。 |
 | `files` / `folders` | `(): File[]` / `(): Folder[]` | 只列直接子项并过滤类型。 |
-| `glob` | `(pattern: string, recursively: bool = false): FileSystemEntry[]` | `*`、`?` 通配；递归由参数开启。 |
+| `glob` | `(pattern: string, recursively: bool = true): FileSystemEntry[]` | `*`、`?` 通配；省略参数时回调按递归处理。 |
 | `copyTo` / `moveTo` | `(targetPath: string, overwrite: bool = false): Folder` | 复制/移动整棵树。 |
 | `delete` | `(recursively: bool = false): null` | 非空目录必须显式允许递归删除。 |
+
+`glob` 的 descriptor 只声明接受 1 到 2 个参数，不携带默认值；上表的 `true` 来自回调
+实现。现有脚本测试显式传入 `true`，省略参数的实际调用路径仍待测试确认。
 
 ### FileStream 和 using
 
@@ -175,19 +183,20 @@ using (let stream = file.open("w+")) {
 | `get_stats` | `(): SystemGcStats` | 返回控制状态和 region 统计快照。 |
 
 `SystemGcStats` 包含 enabled、heap/managed/debt/预算、worker/region 数、各 region used/live
-bytes、最近一次 step/collection 信息以及 minor/major/full 次数和时长。快照是只读值；不要
-保存其中的内部 region 指针。GC 操作可能触发 safepoint，native callback 必须先 root 临时值。
+bytes、最近一次 step/collection 信息以及 minor/major/full 次数和时长。快照不暴露
+collector 内部结构；修改脚本快照字段不会改变 collector。GC 操作可能触发 safepoint，
+native callback 必须先 root 临时值。
 
 ## vm 和 exception
 
 `vm.loadedModules(): SystemLoadedModuleInfo[]` 返回模块名称、source kind/path、registration
 kind、type hints、module/runtime ABI、required capabilities 和 descriptor-plugin 标志。
 `vm.state(): SystemVmState` 返回 loadedModuleCount、GC 控制、debt/threshold、stackDepth 和
-frameDepth。`vm.callModuleExport(moduleName, exportName, args)` 按已注册 descriptor 调用导出，
-参数数组会进行完整 arity/type 检查。
+frameDepth。`vm.callModuleExport(moduleName, exportName, args)` 按已注册 descriptor 调用导出；
+参数数组由目标导出的实际调用约束处理，native descriptor 会检查参数数量。
 
 `exception.registerUnhandledException(handler: (Error) -> bool): null` 注册未处理异常 handler。
-handler 中应只读取 error snapshot 并快速返回；异常 handler 自身抛错会进入默认终止策略。
+生产宿主的未处理异常分发路径尚待核查，目前不承诺 handler 的调用时机或其自身抛错时的策略。
 
 ## C 注册和资源顺序
 
@@ -199,7 +208,7 @@ if (!ZrVmLibSystem_Register(global)) {
 }
 ```
 
-共享库入口是 `ZrVm_GetNativeModule_v1()`。宿主销毁 global 前应关闭 FileStream、资源读取
-句柄和自定义 exception/debug callback；finalizer 会再次检查，但不应依赖 finalizer 作为唯一
-关闭路径。详细 descriptor/callback helper 见 [Native API](native-api.md)，宿主阶段见
+共享库入口是 `ZrVm_GetNativeModule_v1()`。宿主销毁 global 前应显式关闭仍打开的
+`FileStream`；其文件句柄由 finalizer 兜底释放。资源读取归档在单次调用内关闭；注册的
+exception handler 由 VM global 持有。详细 descriptor/callback helper 见 [Native API](native-api.md)，宿主阶段见
 [C 宿主指南](../05-interop/c-host-guide.md)。

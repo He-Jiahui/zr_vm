@@ -9,6 +9,7 @@
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_ConsoleRegistry_GetModule(void) {
+    /* 回调表约束脚本可见名称和参数数目；提示表供编译器及工具显示同一接口。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"print", 1, 1, ZrSystem_Console_Print, "null", "Print text to stdout without a trailing newline.", ZR_NULL, 0},
             {"printLine", 1, 1, ZrSystem_Console_PrintLine, "null", "Print text to stdout with a trailing newline.", ZR_NULL, 0},

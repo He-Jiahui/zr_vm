@@ -10,9 +10,11 @@
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_library/file.h"
 
+/* native 指针只供本模块管理句柄生命周期；脚本可见的 handle_id 仅在 FFI/native 边界 lowering。 */
 #define ZR_SYSTEM_FS_HIDDEN_STREAM_FIELD "__zr_fs_stream"
 #define ZR_SYSTEM_FS_HIDDEN_HANDLE_ID_FIELD "__zr_ffi_handleId"
 
+/* 一个 FileStream 拥有一个平台句柄；closed 与 handle 同步，finalized 避免 GC 清理重复释放堆数据。 */
 typedef struct ZrSystemFsStreamData {
     TZrLibrary_File_Handle handle;
     TZrBool readable;
@@ -22,6 +24,7 @@ typedef struct ZrSystemFsStreamData {
     TZrBool finalized;
 } ZrSystemFsStreamData;
 
+/* 对象字段辅助函数连接宿主查询快照和脚本对象模型；字符串及对象字段可能触发 VM 分配。 */
 void ZrSystem_Fs_WriteIntField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value);
 void ZrSystem_Fs_WriteBoolField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrBool value);
 void ZrSystem_Fs_WriteStringField(SZrState *state, SZrObject *object, const TZrChar *fieldName, const TZrChar *value);
@@ -38,6 +41,7 @@ TZrBool ZrSystem_Fs_GetBoolField(SZrState *state, SZrObject *object, const TZrCh
 SZrObject *ZrSystem_Fs_SelfObject(const ZrLibCallContext *context);
 SZrObject *ZrSystem_Fs_ResolveConstructTarget(ZrLibCallContext *context);
 TZrBool ZrSystem_Fs_FinishObjectResult(SZrState *state, SZrTypeValue *result, SZrObject *object);
+/* 实参读取返回的对象或原生字符串均为借用视图，只能在本次 native 调用的有效期内使用。 */
 TZrBool ZrSystem_Fs_ReadStringArgument(const ZrLibCallContext *context, TZrSize index, const TZrChar **outText);
 TZrBool ZrSystem_Fs_ReadOptionalStringArgument(const ZrLibCallContext *context,
                                                TZrSize index,
@@ -54,9 +58,11 @@ TZrBool ZrSystem_Fs_ReadOptionalIntArgument(const ZrLibCallContext *context,
                                             TZrInt64 *outValue);
 TZrBool ZrSystem_Fs_ReadArrayArgument(const ZrLibCallContext *context, TZrSize index, SZrObject **outArray);
 
+/* I/O 失败在 native 回调边界转为结构化 IOException；errno 版本须紧跟失败的宿主调用。 */
 TZrBool ZrSystem_Fs_RaiseIOException(SZrState *state, const TZrChar *format, ...);
 TZrBool ZrSystem_Fs_RaiseErrnoIOException(SZrState *state, const TZrChar *action, const TZrChar *path);
 
+/* FileSystemEntry 的元数据是构造或 refresh 时取得的快照；parent 是另一个 Folder 包装对象。 */
 SZrObject *ZrSystem_Fs_MakeInfoObject(SZrState *state, const SZrLibrary_File_Info *info);
 TZrBool ZrSystem_Fs_PopulateEntryObject(SZrState *state,
                                         SZrObject *object,
@@ -71,10 +77,12 @@ TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,
                                        ZR_OUT SZrLibrary_File_Info *outInfo,
                                        ZR_OUT SZrObject **outInfoObject);
 
+/* NewStreamObject 成功后由 FileStream 接管 openResult->handle；失败时 File.open 仍负责关闭它。 */
 SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *state,
                                        const TZrChar *path,
                                        const SZrLibrary_File_StreamOpenResult *openResult);
 ZrSystemFsStreamData *ZrSystem_Fs_GetStreamData(SZrState *state, SZrObject *object);
+/* close、using 与 GC finalizer 会合到同一个句柄状态；closed 后隐藏 handle id 必须为 -1。 */
 TZrBool ZrSystem_Fs_StreamEnsureOpen(SZrState *state,
                                      SZrObject *object,
                                      ZrSystemFsStreamData **outData);
@@ -82,6 +90,7 @@ TZrBool ZrSystem_Fs_StreamSyncFields(SZrState *state, SZrObject *object, ZrSyste
 TZrBool ZrSystem_Fs_StreamCloseInternal(SZrState *state, SZrObject *object, ZrSystemFsStreamData *data);
 void ZrSystem_Fs_StreamFinalize(SZrState *state, SZrRawObject *rawObject);
 
+/* 一次性 File/兼容 API 和持久 FileStream 共用的句柄编解码路径；count 以字节计。 */
 TZrBool ZrSystem_Fs_ReadBytesFromHandle(SZrState *state,
                                         TZrLibrary_File_Handle handle,
                                         TZrInt64 count,

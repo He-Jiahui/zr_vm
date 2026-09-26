@@ -9,6 +9,7 @@
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
+    /* 所有 Error 派生类型复用字段契约，核心异常打印和 catch 类型匹配依赖此层级。 */
     static const ZrLibFieldDescriptor kErrorFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("message", "string", "Human-readable exception message."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("stacks", "StackFrame[]", "Structured stack frames, throw-site first."),
@@ -23,6 +24,7 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
     static const ZrLibMetaMethodDescriptor kExceptionConstructors[] = {
             {ZR_META_CONSTRUCTOR, 0, 1, ZrSystem_Exception_Constructor, "null", "Initialize an exception instance.", ZR_NULL, 0},
     };
+    /* 注册根模块后立即导入本叶模块，确保 Error 原型在执行前可用。 */
     static const ZrLibTypeDescriptor kTypes[] = {
             ZR_LIB_TYPE_DESCRIPTOR_INIT("Error", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kErrorFields,
                                         ZR_ARRAY_COUNT(kErrorFields), ZR_NULL, 0, kExceptionConstructors,

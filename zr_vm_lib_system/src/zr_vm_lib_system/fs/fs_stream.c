@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 私有 malloc 状态不受 VM GC 追踪；FileStream 的清理回调通过此字段找到并释放它。 */
 static TZrBool system_fs_set_hidden_native_pointer(SZrState *state,
                                                    SZrObject *object,
                                                    const TZrChar *fieldName,
@@ -25,6 +26,8 @@ static TZrBool system_fs_set_hidden_native_pointer(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 将流读取与 VM 值构造分开：成功后调用方拥有 malloc 缓冲，失败则在此释放。
+ * count 为负时读到 EOF，0 不消费输入；此层不会关闭调用方的句柄。 */
 static TZrBool system_fs_read_buffer_from_handle(TZrLibrary_File_Handle handle,
                                                  TZrInt64 count,
                                                  unsigned char **outBytes,
@@ -103,6 +106,7 @@ cleanup:
     return success;
 }
 
+/* 宿主 write 允许短写；只有全部写入才报告成功，失败时已写部分无法回滚。 */
 static TZrBool system_fs_write_all(TZrLibrary_File_Handle handle, const unsigned char *bytes, TZrSize size) {
     TZrSize written = 0;
 
@@ -121,6 +125,7 @@ static TZrBool system_fs_write_all(TZrLibrary_File_Handle handle, const unsigned
     return ZR_TRUE;
 }
 
+/* 把 File.open 刚创建的句柄绑定为一个 owned wrapper，同时提供 FFI 所需的整数视图。 */
 SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *state,
                                        const TZrChar *path,
                                        const SZrLibrary_File_StreamOpenResult *openResult) {
@@ -170,6 +175,7 @@ ZrSystemFsStreamData *ZrSystem_Fs_GetStreamData(SZrState *state, SZrObject *obje
     return (ZrSystemFsStreamData *)value->value.nativeObject.nativePointer;
 }
 
+/* 可读/可写检查之前统一拒绝已关闭资源，避免脚本继续使用复用后的平台句柄号。 */
 TZrBool ZrSystem_Fs_StreamEnsureOpen(SZrState *state,
                                      SZrObject *object,
                                      ZrSystemFsStreamData **outData) {
@@ -183,6 +189,7 @@ TZrBool ZrSystem_Fs_StreamEnsureOpen(SZrState *state,
     return ZR_TRUE;
 }
 
+/* position/length 是最近一次流操作后的快照；关闭后保留最后快照供脚本检查。 */
 TZrBool ZrSystem_Fs_StreamSyncFields(SZrState *state, SZrObject *object, ZrSystemFsStreamData *data) {
     TZrInt64 position = 0;
     TZrInt64 length = 0;
@@ -207,6 +214,7 @@ TZrBool ZrSystem_Fs_StreamSyncFields(SZrState *state, SZrObject *object, ZrSyste
     return ZR_TRUE;
 }
 
+/* 显式 close 和 using 共用此幂等入口；GC 最终只负责尚未关闭的句柄和 malloc 状态。 */
 TZrBool ZrSystem_Fs_StreamCloseInternal(SZrState *state, SZrObject *object, ZrSystemFsStreamData *data) {
     if (state == ZR_NULL || object == ZR_NULL || data == ZR_NULL) {
         return ZR_FALSE;
@@ -218,6 +226,9 @@ TZrBool ZrSystem_Fs_StreamCloseInternal(SZrState *state, SZrObject *object, ZrSy
     }
 
     ZrSystem_Fs_StreamSyncFields(state, object, data);
+    /* TODO: 平台 close 失败后保留了有效 handle/closed=false，后续 finalizer 会再次 close。
+     * 需核对 close 错误下句柄是否已被 OS 释放，并以故障注入验证不会误关复用的句柄号；
+     * ZrLibrary_File_CloseHandle 当前仅直接转发 _close/close。 */
     if (data->handle != ZR_LIBRARY_FILE_INVALID_HANDLE && !ZrLibrary_File_CloseHandle(data->handle)) {
         return ZR_FALSE;
     }
@@ -229,6 +240,7 @@ TZrBool ZrSystem_Fs_StreamCloseInternal(SZrState *state, SZrObject *object, ZrSy
     return ZR_TRUE;
 }
 
+/* 对象释放时的兜底清理，不能向脚本返回错误；显式 close/using 负责可观察的失败诊断。 */
 void ZrSystem_Fs_StreamFinalize(SZrState *state, SZrRawObject *rawObject) {
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
     ZrSystemFsStreamData *data;
@@ -252,6 +264,7 @@ void ZrSystem_Fs_StreamFinalize(SZrState *state, SZrRawObject *rawObject) {
     system_fs_set_hidden_native_pointer(state, object, ZR_SYSTEM_FS_HIDDEN_STREAM_FIELD, ZR_NULL);
 }
 
+/* 二进制路径保留所有字节，数组中的元素固定为 0..255 整数。 */
 TZrBool ZrSystem_Fs_ReadBytesFromHandle(SZrState *state,
                                         TZrLibrary_File_Handle handle,
                                         TZrInt64 count,
@@ -328,6 +341,9 @@ TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
     }
     text[size] = '\0';
     free(bytes);
+    /* BUG: 含 U+0000 的文件经 File.readText/Stream.readText 读取时，句柄已消费全部 size 字节，
+     * 但 SetString -> CreateTryHitCache 按 strlen 建串，会把 A\0B 返回为 A。
+     * 该路径必须保留显式长度，才能让文本结果与已读取数据一致。 */
     ZrLib_Value_SetString(state, result, text);
     if (outReadCount != ZR_NULL) {
         *outReadCount = (TZrInt64)size;
@@ -336,6 +352,7 @@ TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 先校验整组整数再写入，避免数组中较晚出现非法元素时已部分写出。 */
 TZrBool ZrSystem_Fs_WriteBytesToHandle(SZrState *state,
                                        TZrLibrary_File_Handle handle,
                                        SZrObject *array,
@@ -390,6 +407,7 @@ TZrBool ZrSystem_Fs_WriteBytesToHandle(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 文本写入使用 NUL 结尾的宿主字符串；需要保留任意二进制字节时使用 writeBytes。 */
 TZrBool ZrSystem_Fs_WriteTextToHandle(SZrState *state,
                                       TZrLibrary_File_Handle handle,
                                       const TZrChar *text,
@@ -448,6 +466,8 @@ TZrBool ZrSystem_Fs_Stream_ReadText(ZrLibCallContext *context, SZrTypeValue *res
         return ZrSystem_Fs_RaiseIOException(context->state, "FileStream mode '%s' is not readable",
                                             ZrSystem_Fs_GetStringField(context->state, self, "mode"));
     }
+    /* TODO: count 以字节限制读取，合法 UTF-8 文件首字符如 é 用 readText(1) 会只读入 C3。
+     * ReadTextFromHandle 不验证字符边界；需补跨字符边界用例，明确结果是否允许不完整 UTF-8。 */
     if (!ZrSystem_Fs_ReadTextFromHandle(context->state, data->handle, count, result, ZR_NULL) ||
         !ZrSystem_Fs_StreamSyncFields(context->state, self, data)) {
         return ZrSystem_Fs_RaiseErrnoIOException(context->state, "readText", ZrSystem_Fs_GetStringField(context->state, self, "path"));

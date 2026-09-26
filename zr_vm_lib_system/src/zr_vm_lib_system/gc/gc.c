@@ -10,6 +10,7 @@
 
 #include <string.h>
 
+/* 所有 GC 导出均以调用者所属 global 的 collector 为操作对象。 */
 static TZrBool system_gc_get_collector(const ZrLibCallContext *context, SZrGarbageCollector **outCollector) {
     if (context == ZR_NULL || outCollector == ZR_NULL || context->state == ZR_NULL || context->state->global == ZR_NULL ||
         context->state->global->garbageCollector == ZR_NULL) {
@@ -57,6 +58,7 @@ static TZrBool system_gc_read_non_negative_int_argument(const ZrLibCallContext *
     return ZR_TRUE;
 }
 
+/* 参数文字只开放三种调度语义，省略时选择同步 full。 */
 static TZrBool system_gc_read_collection_kind(const ZrLibCallContext *context,
                                               EZrGarbageCollectCollectionKind *outKind) {
     SZrString *kindString = ZR_NULL;
@@ -96,6 +98,7 @@ static TZrBool system_gc_read_collection_kind(const ZrLibCallContext *context,
     return ZR_FALSE;
 }
 
+/* full 同步执行；minor/major 进入调度器并只推进当前安全步骤。 */
 static void system_gc_run_collection(SZrState *state, EZrGarbageCollectCollectionKind kind) {
     if (state == ZR_NULL || state->global == ZR_NULL) {
         return;
@@ -110,6 +113,7 @@ static void system_gc_run_collection(SZrState *state, EZrGarbageCollectCollectio
     ZrCore_GarbageCollector_GcStep(state);
 }
 
+/* 先读取核心统计快照，再投影到脚本可见的固定字段结构。 */
 static SZrObject *system_gc_make_stats_object(SZrState *state, SZrGarbageCollector *collector) {
     SZrObject *object;
     SZrGarbageCollectorStatsSnapshot snapshot;

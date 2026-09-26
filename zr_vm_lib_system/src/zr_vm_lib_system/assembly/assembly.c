@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 资源 API 只接受容器内逻辑名，避免将脚本参数当宿主路径使用。 */
 static TZrBool system_assembly_read_resource_name(const ZrLibCallContext *context,
                                                   TZrSize index,
                                                   const TZrChar **outName) {
@@ -33,6 +34,7 @@ static TZrBool system_assembly_read_resource_name(const ZrLibCallContext *contex
     return *outName != ZR_NULL && ZrLibrary_Zrm_ValidateLogicalName(*outName);
 }
 
+/* 从当前项目配置解析其输出 .zrm；成功时 archive 的关闭责任转交调用方。 */
 static TZrBool system_assembly_open_current_archive(ZrLibCallContext *context,
                                                     SZrLibrary_ZrmArchive *archive,
                                                     TZrChar *errorBuffer,
@@ -61,6 +63,7 @@ static TZrBool system_assembly_open_current_archive(ZrLibCallContext *context,
     return ZrLibrary_Zrm_Open(archivePath, archive, errorBuffer, errorBufferSize);
 }
 
+/* 找到的 entry 借用 archive 内存；资源不存在时此函数自行关闭，成功时由调用方关闭。 */
 static TZrBool system_assembly_find_current_resource(ZrLibCallContext *context,
                                                      const TZrChar *resourceName,
                                                      SZrLibrary_ZrmArchive *archive,
@@ -88,6 +91,7 @@ static TZrBool system_assembly_find_current_resource(ZrLibCallContext *context,
     return ZR_TRUE;
 }
 
+/* 二进制资源转成脚本整数数组，避免经文本 API 丢失零字节。 */
 static TZrBool system_assembly_make_byte_array(SZrState *state,
                                                const TZrByte *bytes,
                                                TZrSize byteCount,
@@ -175,6 +179,8 @@ TZrBool ZrSystem_Assembly_ReadResourceText(ZrLibCallContext *context, SZrTypeVal
         return system_assembly_raise_resource_error(context->state, resourceName, error);
     }
 
+    /* BUG: 有效 UTF-8 文本可包含 U+0000；SetString 经 NativeString_Length 按首个 NUL 截断，
+     * 例如资源字节 41 00 42 在 readResourceText 中只得到 "A"。需按长度构造或明确拒绝。 */
     text = (TZrChar *)malloc(byteCount + 1U);
     if (text != ZR_NULL) {
         if (byteCount > 0) {

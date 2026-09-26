@@ -8,6 +8,7 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/* 参数表同时服务 native 调用签名和编译器/LSP 元数据；可选参数的运行时默认值由回调决定。 */
 static const ZrLibParameterDescriptor g_path_parameter[] = {
         {"path", "string", "Filesystem path."},
 };
@@ -60,17 +61,20 @@ static const ZrLibParameterDescriptor g_glob_parameters[] = {
         {"recursively", "bool", "Whether to recurse into subfolders."},
 };
 
+/* File 与 Folder 复用基类构造回调，但实际实例原型由调用上下文的构造目标决定。 */
 static const ZrLibMetaMethodDescriptor g_entry_constructors[] = {
         {ZR_META_CONSTRUCTOR, 1, 1, ZrSystem_Fs_Entry_Constructor, "null",
          "Initialize a path wrapper object from the supplied path.", g_path_parameter,
          ZR_ARRAY_COUNT(g_path_parameter), ZR_NULL, 0},
 };
 
+/* using 的标准 @close 钩子与显式 FileStream.close 共用资源释放入口。 */
 static const ZrLibMetaMethodDescriptor g_stream_meta_methods[] = {
         {ZR_META_CLOSE, 1, 1, ZrSystem_Fs_Stream_Close, "null",
          "Close this FileStream. Registered for canonical using auto-close.", ZR_NULL, 0, ZR_NULL, 0},
 };
 
+/* SystemFileInfo 是查询时点的值快照；FileSystemEntry 的 fileInfo 通过 refresh 替换。 */
 static const ZrLibFieldDescriptor g_file_info_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("path", "string", "Normalized absolute path that was queried."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("size", "int", "File size in bytes when available."),
@@ -97,6 +101,7 @@ static const ZrLibFieldDescriptor g_entry_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("fileInfo", "SystemFileInfo", "Latest metadata snapshot for this path wrapper."),
 };
 
+/* 公开字段展示流状态；真实句柄和关闭标志保存在 fs_internal.h 的私有数据中。 */
 static const ZrLibFieldDescriptor g_stream_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("path", "string", "Normalized absolute path bound to this stream."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("mode", "string", "Canonical open mode without the optional b alias."),
@@ -169,6 +174,7 @@ static const ZrLibMethodDescriptor g_folder_methods[] = {
                                       g_delete_recursive_parameter, ZR_ARRAY_COUNT(g_delete_recursive_parameter)),
 };
 
+/* 接口方法与 FileStream 具体方法复用回调，使脚本类型检查不改变资源所有权。 */
 static const ZrLibMethodDescriptor g_stream_reader_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("readBytes", 0, 1, ZrSystem_Fs_Stream_ReadBytes, "array",
                                       "Read bytes from the current position.", ZR_FALSE,
@@ -214,9 +220,12 @@ static const ZrLibMethodDescriptor g_file_stream_methods[] = {
                                       "Close this FileStream.", ZR_FALSE, ZR_NULL, 0),
 };
 
+/* 作为接口参数传递仍是对象引用；只有 FFI/native 边界执行 handle_id lowering。 */
 static const TZrChar *g_file_stream_implements[] = {"IStreamReader", "IStreamWriter"};
 
+/* 此静态描述符由 zr.system 注册为 Runtime 叶模块；直接导入与根字段使用同一模块身份。 */
 const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
+    /* FileStream 是唯一拥有 native handle 的类型；路径包装器只保存路径与元数据快照。 */
     static const ZrLibTypeDescriptor kTypes[] = {
             ZR_LIB_TYPE_DESCRIPTOR_INIT("SystemFileInfo", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, g_file_info_fields,
                                         ZR_ARRAY_COUNT(g_file_info_fields), ZR_NULL, 0, ZR_NULL, 0,
@@ -258,6 +267,7 @@ const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
                                             0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0,
                                             "handle_id", ZR_NULL, "i32", "owned", "close"),
     };
+    /* 旧模块级函数保留给兼容脚本，新的 File/Folder API 由 kTypes 中的方法表提供。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"currentDirectory", 0, 0, ZrSystem_Fs_CurrentDirectory, "string",
              "Return the current working directory.", ZR_NULL, 0},
@@ -284,6 +294,7 @@ const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
             {"getInfo", 1, 1, ZrSystem_Fs_GetInfo, "SystemFileInfo", "Query filesystem metadata for a path.",
              g_path_parameter, ZR_ARRAY_COUNT(g_path_parameter)},
     };
+    /* hints 支持编辑器发现公开形状；可调用行为仍由上面的 descriptor 与回调决定。 */
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"currentDirectory", "function", "currentDirectory(): string", "Return the current working directory."},
             {"changeCurrentDirectory", "function", "changeCurrentDirectory(path: string): bool",

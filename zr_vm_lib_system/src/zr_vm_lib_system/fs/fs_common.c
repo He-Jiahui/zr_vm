@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 临时根按数组/对象的真实值类型登记，供构造元数据时跨 VM 分配恢复移动后的对象地址。 */
 static EZrValueType system_fs_root_value_type(const SZrObject *object) {
     if (object != ZR_NULL && object->super.type == ZR_RAW_OBJECT_TYPE_ARRAY) {
         return ZR_VALUE_TYPE_ARRAY;
@@ -51,6 +52,7 @@ static SZrObject *system_fs_rooted_object(SZrState *state, ZrLibTempValueRoot *r
     return ZR_CAST_OBJECT(state, rootValue->value.object);
 }
 
+/* IOException 的 message 值创建可能触发 GC；先根住异常对象再设置字段。 */
 static void system_fs_set_message_field(SZrState *state, SZrObject *object, const TZrChar *message) {
     SZrTypeValue fieldValue;
     ZrLibTempValueRoot objectRoot;
@@ -72,6 +74,7 @@ static void system_fs_set_message_field(SZrState *state, SZrObject *object, cons
     ZrLib_TempValueRoot_End(&objectRoot);
 }
 
+/* 生成与系统异常原型兼容的 IOException 对象，供所有文件回调汇聚失败原因。 */
 static TZrBool system_fs_make_io_exception(SZrState *state,
                                            const TZrChar *message,
                                            ZR_OUT SZrTypeValue *outValue) {
@@ -127,6 +130,7 @@ static TZrBool system_fs_make_io_exception(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 下列字段写入共同物化 FileSystemEntry、SystemFileInfo 与 FileStream 的描述符字段。 */
 void ZrSystem_Fs_WriteIntField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
     SZrTypeValue fieldValue;
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
@@ -217,6 +221,8 @@ TZrInt64 ZrSystem_Fs_GetIntField(SZrState *state, SZrObject *object, const TZrCh
     return defaultValue;
 }
 
+/* TODO: 当前全仓仅此定义与 fs_internal.h 声明，没有实调用方。
+ * 需在后续清理时核对是否为旧 closed 字段读取路径遗留，再决定是否删除。 */
 TZrBool ZrSystem_Fs_GetBoolField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrBool defaultValue) {
     const SZrTypeValue *value = ZrSystem_Fs_GetFieldValue(state, object, fieldName);
     if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_BOOL) {
@@ -237,6 +243,7 @@ SZrObject *ZrSystem_Fs_SelfObject(const ZrLibCallContext *context) {
     return ZR_CAST_OBJECT(context->state, selfValue->value.object);
 }
 
+/* native 构造可复用调度器已经创建的子类实例；否则按实际构造目标原型新建。 */
 SZrObject *ZrSystem_Fs_ResolveConstructTarget(ZrLibCallContext *context) {
     SZrObject *self;
     SZrObjectPrototype *ownerPrototype;
@@ -280,6 +287,7 @@ TZrBool ZrSystem_Fs_ReadStringArgument(const ZrLibCallContext *context, TZrSize 
     return *outText != ZR_NULL;
 }
 
+/* 将短模式、seek 原点等可选参数复制到调用方缓冲，避免直接持有借用字符串。 */
 TZrBool ZrSystem_Fs_ReadOptionalStringArgument(const ZrLibCallContext *context,
                                                TZrSize index,
                                                const TZrChar *defaultValue,
@@ -345,6 +353,7 @@ TZrBool ZrSystem_Fs_ReadArrayArgument(const ZrLibCallContext *context, TZrSize i
     return context != ZR_NULL && outArray != ZR_NULL && ZrLib_CallContext_ReadArray(context, index, outArray);
 }
 
+/* 所有会抛错的 I/O 回调经此统一设置 VM 异常状态，回调本身仍返回失败。 */
 TZrBool ZrSystem_Fs_RaiseIOException(SZrState *state, const TZrChar *format, ...) {
     TZrChar message[512];
     va_list arguments;
@@ -376,6 +385,7 @@ TZrBool ZrSystem_Fs_RaiseIOException(SZrState *state, const TZrChar *format, ...
     return ZR_FALSE;
 }
 
+/* 读取最近一次平台错误；调用方应先保存或避免覆盖 errno，再报告原始失败。 */
 TZrBool ZrSystem_Fs_RaiseErrnoIOException(SZrState *state, const TZrChar *action, const TZrChar *path) {
     const TZrChar *detail = strerror(errno);
     return ZrSystem_Fs_RaiseIOException(state,
@@ -385,6 +395,7 @@ TZrBool ZrSystem_Fs_RaiseErrnoIOException(SZrState *state, const TZrChar *action
                                         detail != ZR_NULL ? detail : "unknown error");
 }
 
+/* 宿主的路径/时间/类型信息在此复制为脚本快照，避免脚本对象借用栈上 Info。 */
 SZrObject *ZrSystem_Fs_MakeInfoObject(SZrState *state, const SZrLibrary_File_Info *info) {
     SZrObject *object;
     ZrLibTempValueRoot objectRoot;
@@ -452,6 +463,7 @@ SZrObject *ZrSystem_Fs_MakeInfoObject(SZrState *state, const SZrLibrary_File_Inf
     return object;
 }
 
+/* 目录列举、复制/移动结果都用同一构造路径，以维持 File/Folder 的字段形状。 */
 SZrObject *ZrSystem_Fs_NewEntryObject(SZrState *state,
                                       const TZrChar *typeName,
                                       const TZrChar *originalPath,
@@ -464,9 +476,13 @@ SZrObject *ZrSystem_Fs_NewEntryObject(SZrState *state,
     if (object == ZR_NULL) {
         return ZR_NULL;
     }
+    /* TODO: PopulateEntryObject 内部用临时根恢复地址，此处却返回调用前的裸 object。
+     * 需在 GC 压力下验证目录列举、copyTo/moveTo 及 parent 递归构造的返回地址；
+     * 当前临时根只保护内部填充期间的存活性，未向本层回传可能更新的指针。 */
     return ZrSystem_Fs_PopulateEntryObject(state, object, originalPath, fullPathOverride) ? object : ZR_NULL;
 }
 
+/* path 保留调用者提供的拼写，fullPath 和 fileInfo 记录当前规范化快照。 */
 TZrBool ZrSystem_Fs_PopulateEntryObject(SZrState *state,
                                         SZrObject *object,
                                         const TZrChar *originalPath,
@@ -502,6 +518,7 @@ TZrBool ZrSystem_Fs_PopulateEntryObject(SZrState *state,
         goto cleanup;
     }
     hasInfoRoot = ZR_TRUE;
+    /* parent 递归包装的是上级目录，而不是把宿主 Info 指针借给脚本。 */
     if (info.parentPath[0] != '\0') {
         parentObject = ZrSystem_Fs_NewEntryObject(state, "Folder", info.parentPath, info.parentPath);
         if (parentObject != ZR_NULL) {
@@ -563,6 +580,7 @@ cleanup:
     return result;
 }
 
+/* refresh 仅更新 fileInfo，原路径及构造时的 name/parent 保持原有包装对象语义。 */
 TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,
                                        SZrObject *object,
                                        ZR_OUT SZrLibrary_File_Info *outInfo,

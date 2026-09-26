@@ -9,6 +9,7 @@
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
+    /* state() 的字段同时包含线程栈和全局 GC 视图，由 vm.c 负责填充。 */
     static const ZrLibFieldDescriptor kVmStateFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("loadedModuleCount", "int", "Number of currently loaded modules."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("garbageCollectionMode", "int",
@@ -19,6 +20,7 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("stackDepth", "int", "Current VM stack depth."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("frameDepth", "int", "Current VM call-frame depth."),
     };
+    /* loadedModules() 的投影形状在此声明，模块来源和插件身份来自不同注册层。 */
     static const ZrLibFieldDescriptor kLoadedModuleInfoFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("name", "string", "Resolved module name."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("sourceKind", "string",

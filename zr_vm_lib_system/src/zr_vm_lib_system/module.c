@@ -25,6 +25,7 @@ static const TZrChar g_system_root_type_hints_json[] =
         "  \"module\": \"zr.system\"\n"
         "}\n";
 
+/* 聚合入口只发布叶模块链接；编译器与运行期据此解析 zr.system.<leaf>。 */
 static const ZrLibModuleLinkDescriptor g_system_module_links[] = {
         {"console", "zr.system.console", "Console output helpers."},
         {"fs", "zr.system.fs", "Filesystem helpers."},
@@ -61,6 +62,7 @@ const ZrLibModuleDescriptor *ZrVmLibSystem_GetModuleDescriptor(void) {
     return &g_system_root_module_descriptor;
 }
 
+/* 注册后立即物化 Error 原型，供运行期异常包装和派生类型判断使用。 */
 static TZrBool system_materialize_exception_module(SZrGlobalState *global) {
     SZrString *moduleName;
 
@@ -92,6 +94,7 @@ TZrBool ZrVmLibSystem_Register(SZrGlobalState *global) {
         return ZR_FALSE;
     }
 
+    /* 先登记叶模块，再登记带链接的根模块；最后导入 exception 使原型可用。 */
     for (index = 0; index < ZR_ARRAY_COUNT(leafModules); index++) {
         if (leafModules[index] == ZR_NULL ||
             !ZrLibrary_NativeRegistry_RegisterModule(global, leafModules[index])) {

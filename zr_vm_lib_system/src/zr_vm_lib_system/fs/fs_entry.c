@@ -13,6 +13,7 @@
 #include <unistd.h>
 #endif
 
+/* 兼容 API 直接改变宿主进程工作目录，因此不同 VM/state 也共享这项副作用。 */
 static int system_fs_change_directory_native(const TZrChar *path) {
 #if defined(ZR_PLATFORM_WIN)
     return _chdir(path);
@@ -32,6 +33,7 @@ static TZrBool system_fs_self_full_path(SZrState *state, SZrObject *object, cons
     return *outPath != ZR_NULL;
 }
 
+/* 一次性文件 API 自己拥有临时句柄；保存原 I/O errno，避免清理掩盖主要失败原因。 */
 static TZrBool system_fs_read_text_file(SZrState *state, const TZrChar *path, SZrTypeValue *result) {
     SZrLibrary_File_StreamOpenResult openResult;
     TZrBool success;
@@ -124,6 +126,7 @@ static TZrBool system_fs_write_bytes_file(SZrState *state,
     return success;
 }
 
+/* 平台目录列表在调用方转换完成后释放；返回数组中的每个条目独立持有路径快照。 */
 static TZrBool system_fs_make_entry_array(SZrState *state,
                                           const SZrLibrary_File_List *list,
                                           TZrBool filesOnly,
@@ -141,6 +144,9 @@ static TZrBool system_fs_make_entry_array(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* TODO: array 仅保存在 C 局部变量中，逐项 NewEntryObject 会分配 VM 对象。
+     * 需用 GC 压力场景验证 Folder.entries/glob 构造期间的存活性和地址更新；
+     * ZrLib_Array_PushValue 的 pin 仅覆盖单次 push，不能覆盖相邻条目构造。 */
     for (index = 0; index < list->count; index++) {
         SZrObject *entryObject = ZR_NULL;
         SZrTypeValue entryValue;
@@ -329,6 +335,8 @@ TZrBool ZrSystem_Fs_GetInfo(ZrLibCallContext *context, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 
+/* TODO: path 是从 VM 字符串借用的原生指针；ResolveConstructTarget 和 PopulateEntryObject 都可分配。
+ * 需在构造 File/Folder 时强制 GC 移动并验证路径；当前代码未在分配后重取 path。 */
 TZrBool ZrSystem_Fs_Entry_Constructor(ZrLibCallContext *context, SZrTypeValue *result) {
     const TZrChar *path = ZR_NULL;
     SZrObject *object;
@@ -365,6 +373,7 @@ TZrBool ZrSystem_Fs_Entry_Refresh(ZrLibCallContext *context, SZrTypeValue *resul
     return ZR_TRUE;
 }
 
+/* 只有包装成功才把句柄所有权交给 FileStream；构造失败仍由此处关闭。 */
 TZrBool ZrSystem_Fs_File_Open(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self = ZrSystem_Fs_SelfObject(context);
     const TZrChar *fullPath = ZR_NULL;
@@ -380,6 +389,8 @@ TZrBool ZrSystem_Fs_File_Open(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!ZrLibrary_File_OpenHandle((TZrNativeString)fullPath, modeBuffer, &openResult)) {
         return ZrSystem_Fs_RaiseErrnoIOException(context->state, "open", fullPath);
     }
+    /* TODO: fullPath 借自 self 的字符串；NewStreamObject 会先分配对象和字段再写 path。
+     * 需以 GC 压力验证路径指针有效期，并核对包装失败时仍由本层关闭句柄。 */
     streamObject = ZrSystem_Fs_NewStreamObject(context->state, fullPath, &openResult);
     if (streamObject == ZR_NULL) {
         ZrLibrary_File_CloseHandle(openResult.handle);
@@ -519,10 +530,13 @@ TZrBool ZrSystem_Fs_File_CopyTo(ZrLibCallContext *context, SZrTypeValue *result)
         return ZrSystem_Fs_RaiseErrnoIOException(context->state, "copyTo", fullPath);
     }
     ZrSystem_Fs_RefreshEntryObject(context->state, self, ZR_NULL, ZR_NULL);
+    /* TODO: targetPath 借自 VM 实参，RefreshEntryObject 会分配快照对象。
+     * 需在强制 GC 移动时验证随后创建的目标 File 路径仍有效。 */
     copyObject = ZrSystem_Fs_NewEntryObject(context->state, "File", targetPath, ZR_NULL);
     return copyObject != ZR_NULL && ZrSystem_Fs_FinishObjectResult(context->state, result, copyObject);
 }
 
+/* 调用者继续使用返回的新 File；self 仍描述原路径，以便 exists 观察移动后的消失状态。 */
 TZrBool ZrSystem_Fs_File_MoveTo(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self = ZrSystem_Fs_SelfObject(context);
     const TZrChar *fullPath = ZR_NULL;
@@ -539,6 +553,8 @@ TZrBool ZrSystem_Fs_File_MoveTo(ZrLibCallContext *context, SZrTypeValue *result)
         return ZrSystem_Fs_RaiseErrnoIOException(context->state, "moveTo", fullPath);
     }
     ZrSystem_Fs_RefreshEntryObject(context->state, self, ZR_NULL, ZR_NULL);
+    /* TODO: targetPath 借自 VM 实参，刷新源路径快照后可能已失效。
+     * 需在强制 GC 移动时验证返回的目标 File 包装对象。 */
     movedObject = ZrSystem_Fs_NewEntryObject(context->state, "File", targetPath, ZR_NULL);
     return movedObject != ZR_NULL && ZrSystem_Fs_FinishObjectResult(context->state, result, movedObject);
 }
@@ -575,6 +591,7 @@ TZrBool ZrSystem_Fs_Folder_Create(ZrLibCallContext *context, SZrTypeValue *resul
     return ZR_TRUE;
 }
 
+/* 三种直接子项视图共享一次平台枚举，File/Folder 筛选在物化脚本对象前完成。 */
 static TZrBool system_fs_folder_list_common(ZrLibCallContext *context,
                                             SZrTypeValue *result,
                                             TZrBool filesOnly,
@@ -607,6 +624,8 @@ TZrBool ZrSystem_Fs_Folder_Folders(ZrLibCallContext *context, SZrTypeValue *resu
     return system_fs_folder_list_common(context, result, ZR_FALSE, ZR_TRUE);
 }
 
+/* TODO: 省略 recursively 当前按 true 处理；descriptor 只声明可选参数，不记录默认值。
+ * 现有 test_system_fs_module 只显式传 true；需补脚本省略参数场景以核实公开契约。 */
 TZrBool ZrSystem_Fs_Folder_Glob(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self = ZrSystem_Fs_SelfObject(context);
     const TZrChar *fullPath = ZR_NULL;

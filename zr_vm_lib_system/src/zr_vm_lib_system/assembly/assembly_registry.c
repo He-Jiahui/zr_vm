@@ -8,6 +8,7 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/* 三个导出共用逻辑名参数；描述符及类型提示由项目容器资源契约统一提供。 */
 static const ZrLibParameterDescriptor g_resource_name_parameter[] = {
         {"name", "string", "Logical resource name inside the current .zrm assembly."},
 };

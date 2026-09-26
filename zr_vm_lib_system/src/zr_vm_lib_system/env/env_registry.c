@@ -9,6 +9,8 @@
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_EnvRegistry_GetModule(void) {
+    /* BUG: 回调在变量缺失时返回 null，提示也声明 string?，但函数描述符仍写 string；
+     * __native_module_info 的 returnTypeName 会发布不一致的非空返回契约。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"getVariable", 1, 1, ZrSystem_Env_GetVariable, "string", "Read an environment variable by name.", ZR_NULL, 0},
     };

@@ -20,6 +20,7 @@ TZrBool ZrSystem_Env_GetVariable(ZrLibCallContext *context, SZrTypeValue *result
         return ZR_FALSE;
     }
 
+    /* 宿主 getenv 返回的借用指针只用于本次调用，SetString 将内容复制进 VM。 */
     value = getenv(ZrCore_String_GetNativeString(nameString));
     if (value == ZR_NULL) {
         ZrLib_Value_SetNull(result);

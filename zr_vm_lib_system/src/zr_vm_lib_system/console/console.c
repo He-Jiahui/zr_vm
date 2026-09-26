@@ -32,6 +32,7 @@ static ZR_NO_RETURN void system_console_raise_invalid_utf8(ZrLibCallContext *con
     ZrCore_Debug_RunError(context != ZR_NULL ? context->state : ZR_NULL, "stdin contains invalid UTF-8");
 }
 
+/* 四个 print 导出汇入此处，保留 stdout 结果和 stderr 诊断的宿主通道语义。 */
 static TZrBool system_console_print(ZrLibCallContext *context,
                                     SZrTypeValue *result,
                                     EZrOutputChannel channel,
@@ -51,6 +52,7 @@ static TZrBool system_console_print(ZrLibCallContext *context,
         return ZR_FALSE;
     }
 
+    /* BUG: 字符串长度按字节校验，但日志 sink 使用 strlen/%s，嵌入 NUL 后的合法文本会被截断。 */
     nativeText = ZrCore_String_GetNativeString(text);
     byteLength = ZrCore_String_GetByteLength(text);
     if (!ZrCore_Utf8_IsValid(nativeText, byteLength)) {
@@ -103,6 +105,7 @@ TZrBool ZrSystem_Console_Read(ZrLibCallContext *context, SZrTypeValue *result) {
         return ZR_FALSE;
     }
 
+    /* 输入前刷新已写出的提示，且从 stdin 原始字节构造恰好一个码点。 */
     ZrCore_Log_FlushDefaultSinks();
     firstByte = fgetc(stdin);
     if (firstByte == EOF) {
@@ -148,6 +151,7 @@ TZrBool ZrSystem_Console_ReadLine(ZrLibCallContext *context, SZrTypeValue *resul
         return ZR_FALSE;
     }
 
+    /* 仅在行首 EOF 返回 null；空行是有效的空字符串。 */
     ZrCore_Log_FlushDefaultSinks();
     while ((nextByte = fgetc(stdin)) != EOF) {
         TZrChar ch = (TZrChar)nextByte;
