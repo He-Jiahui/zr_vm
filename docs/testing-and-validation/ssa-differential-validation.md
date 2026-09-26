@@ -89,3 +89,10 @@ barrier payload is detected at event index one; an invalid projected barrier
 operand reports INVALID_VALUE at its instruction/source and leaves the prior
 published result intact. This asserts observable pointer-free barrier events,
 not an actual GC write-barrier implementation.
+
+The verifier-valid terminal THROW fixture compares pointer-free payload,
+exception observation, source/instruction identity, event order, and
+non-returning termination between the direct oracle and projected ExecBC.
+A changed THROW payload mismatches at event index zero; a bad projected
+operand reports INVALID_VALUE at its source without replacing the prior
+result. Handler entry and resumption remain unverified.

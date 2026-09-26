@@ -40,6 +40,7 @@ typedef struct SZrExecBcExecutionResult {
     TZrUInt32 eventCapacity;
     SZrExecIrOracleValue returnValue;
     TZrBool returned;
+    TZrBool terminatedByThrow;
     TZrUInt32 ownershipTag;
 } SZrExecBcExecutionResult;
 

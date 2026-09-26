@@ -712,6 +712,22 @@ TZrBool ZrParser_ExecBcProjection_Run(
                     candidate.ownerStates[slot] = ZR_EXEC_IR_STATE_MAP_OWNER_DROPPED;
                     break;
                 }
+                case ZR_EXEC_IR_OPCODE_THROW:
+                    if (instruction->operands.count != 1u) goto invalid;
+                    if (!zr_execbc_operand(projection, instruction, &candidate,
+                                           0u, &value)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, 0u);
+                        goto fail;
+                    }
+                    if (!zr_execbc_reserve_event(&candidate, projection, block,
+                                                 index + 1u, diagnostic)) goto fail;
+                    zr_execbc_record_event(&candidate, instruction, index + 1u,
+                                           ZR_EXEC_IR_ORACLE_EVENT_THROW, &value, 1u);
+                    candidate.currentBlock = current != ZR_NULL ? block : 0u;
+                    candidate.terminatedByThrow = ZR_TRUE;
+                    terminated = ZR_TRUE;
+                    break;
                 case ZR_EXEC_IR_OPCODE_RETURN:
                     if (!zr_execbc_operand(projection, instruction, &candidate,
                                            0u, &candidate.returnValue)) {
@@ -757,7 +773,7 @@ instruction_done:
             if (candidate.returned) break;
             if (terminated) break;
         }
-        if (candidate.returned) break;
+        if (candidate.returned || candidate.terminatedByThrow) break;
         if (current == ZR_NULL) break;
         if (!terminated) {
             if (current->successors.count != 1u) goto invalid;

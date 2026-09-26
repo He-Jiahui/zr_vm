@@ -299,14 +299,20 @@ barriers with distinct operands compare event order and values against the
 direct oracle, while a bad operand preserves an earlier published result.
 This records a write-barrier observation only; no production GC barrier is
 installed by the projection runner.
+`THROW` with a defined pointer-free payload also runs as a terminal event.
+The result marks `terminatedByThrow`, leaves `returned` false, and snapshots
+the operand with its source/instruction identity. A verifier-valid fixture
+compares this terminal observation and payload with the direct oracle; a bad
+projected payload reports INVALID_VALUE without replacing an earlier result.
+This does not implement exception-handler entry, landing pads, or resume.
 Only projections whose opcodes have a runner implementation are marked
-`runnable`; other ownership effects, exceptions, suspend, and production
+`runnable`; exception-handler flow, suspend, and production
 runtime callback wiring still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
 bytecode for it, and establishes no C/LLVM or full effect-event parity. The
 direct differential currently covers scalar/control returns, pointer-free
 LOAD/STORE memory providers, provider-backed ordinary CALL, and ownership
-MOVE/DROP/conditional cleanup, and BARRIER observations.
+MOVE/DROP/conditional cleanup, BARRIER observations, and terminal THROW.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
