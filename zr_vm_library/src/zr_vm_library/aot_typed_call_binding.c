@@ -2,6 +2,8 @@
 
 #include "zr_vm_core/call_binding.h"
 
+/* PrepareDirectCall、静态直调与通用 Call 共用这一门禁，防止生成代码绕过
+ * 由元数据装载时链接的调用契约。 */
 TZrBool aot_prepare_call_binding(SZrState *state, ZrAotGeneratedFrame *frame,
                                 SZrTypeValue *callable) {
     if (state == ZR_NULL || frame == ZR_NULL || callable == ZR_NULL) return ZR_FALSE;
@@ -9,6 +11,8 @@ TZrBool aot_prepare_call_binding(SZrState *state, ZrAotGeneratedFrame *frame,
             frame->currentInstructionIndex, callable, &state->lastCallBindingError);
 }
 
+/* PrepareMetaCall 在寻找 AOT thunk 前先用已链接的 META contract 解析目标；
+ * 没有映射时通知调用方回退到运行时 @call 查询。 */
 TZrBool aot_prepare_meta_binding(SZrState *state, ZrAotGeneratedFrame *frame,
         const SZrTypeValue *receiver, SZrTypeValue *callable, TZrBool *hasBinding) {
     SZrFunction *function = frame->function;

@@ -51,5 +51,6 @@ doc_type: category-index
 | C/Rust binding 与安全封装 | [826 项](coverage/zr_vm_rust_binding.tsv) | 28 文件独立复核，23 个改动文件仅增注释；Rust fmt 与 sys crate 离线检查通过；workspace 检查仍有两处已标 BUG 的 E0283。C 独立目标构建未完成；Wiki 的 session、buffer、错误对象及整数读取边界已校正。 |
 | 测试 manifest 二进制往返与 IoSource 生命周期 | [17 项](coverage/tests_artifact.tsv) | 2 文件独立复核、纯注释及 Clang C11 语法检查通过；已标读取失败原生泄漏和断言跳过分配器恢复两处 BUG。Unity 目标构建停在 CMake 重新配置，运行测试未执行。 |
 | `zr.testing` 断言、并行 runner 与角色绑定回归 | [53 项](coverage/tests_testing.tsv) | 3 文件独立复核，源码只增注释、Clang C11 语法检查通过；并行 probe 共享计数器数据竞争已标 BUG，失败清理与快照覆盖疑问已标 TODO。四个 Unity 目标构建停在 CMake 重新配置，运行测试未执行。 |
+| AOT runtime、typed call 与生命周期边界 | [624 项](coverage/zr_vm_library_aot.tsv) | 11 文件独立复核，非注释词法流不变，Clang C11 语法和 MSVC Debug 共享库构建通过；生成器未引用的 shim 风险记为 TODO，已证实的调用/清理问题记为 BUG。WSL GCC 检查因 I/O 阻塞中断，未计通过。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

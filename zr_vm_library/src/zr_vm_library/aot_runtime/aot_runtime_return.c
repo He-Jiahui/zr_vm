@@ -14,6 +14,10 @@
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 
+/* 生成器标量返回快路径：借用 caller 结果槽并让 core 处理异常 handler 与关闭链。 */
+/* BUG: CloseClosure 会运行用户 __close，可能经 ReserveScratchSlots 扩容迁移 VM 栈；
+ * 这里及 Bool/U64/F64 变体在关闭前缓存 callerResultValue，随后仍写旧指针。
+ * 通用 Return 在关闭后重新取得结果槽；需用会深调用的 __close 定向验证并修正四处。 */
 TZrBool ZrLibrary_AotRuntime_ReturnI64(SZrState *state, TZrInt64 value) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
@@ -50,6 +54,8 @@ TZrBool ZrLibrary_AotRuntime_ReturnI64(SZrState *state, TZrInt64 value) {
     return ZR_TRUE;
 }
 
+/* 与 ReturnI64 共用标量返回协议及其关闭回调后的栈位置约束。 */
+/* BUG: callerResultValue 在 CloseClosure 触发栈迁移后可能悬空；需在关闭后重取。 */
 TZrBool ZrLibrary_AotRuntime_ReturnBool(SZrState *state, TZrBool value) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
@@ -86,6 +92,8 @@ TZrBool ZrLibrary_AotRuntime_ReturnBool(SZrState *state, TZrBool value) {
     return ZR_TRUE;
 }
 
+/* 与 ReturnI64 共用标量返回协议及其关闭回调后的栈位置约束。 */
+/* BUG: callerResultValue 在 CloseClosure 触发栈迁移后可能悬空；需在关闭后重取。 */
 TZrBool ZrLibrary_AotRuntime_ReturnU64(SZrState *state, TZrUInt64 value) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
@@ -122,6 +130,8 @@ TZrBool ZrLibrary_AotRuntime_ReturnU64(SZrState *state, TZrUInt64 value) {
     return ZR_TRUE;
 }
 
+/* 与 ReturnI64 共用标量返回协议及其关闭回调后的栈位置约束。 */
+/* BUG: callerResultValue 在 CloseClosure 触发栈迁移后可能悬空；需在关闭后重取。 */
 TZrBool ZrLibrary_AotRuntime_ReturnF64(SZrState *state, TZrFloat64 value) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
@@ -158,6 +168,9 @@ TZrBool ZrLibrary_AotRuntime_ReturnF64(SZrState *state, TZrFloat64 value) {
     return ZR_TRUE;
 }
 
+/* 生成桥接只应使用已登记的 deopt id；缺表时当前实现把 id 当作可接受的弱校验。 */
+/* TODO: function 或 semIrDeoptTable 缺失时直接返回 true；需核对生成器在缺元数据
+ * 夹具下是否仍能发出非 NONE id，补桥接验证测试。 */
 static TZrBool aot_runtime_function_has_semir_deopt_id(const SZrFunction *function, TZrUInt32 deoptId) {
     TZrUInt32 index;
 
@@ -177,6 +190,7 @@ static TZrBool aot_runtime_function_has_semir_deopt_id(const SZrFunction *functi
     return ZR_FALSE;
 }
 
+/* 动态调用桥接在回退 core 前核对生成器给出的 deopt id，失败转为 AOT 诊断。 */
 TZrBool ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(SZrState *state,
                                                         ZrAotGeneratedFrame *frame,
                                                         TZrUInt32 deoptId,
@@ -208,6 +222,7 @@ static TZrBool aot_runtime_typed_direct_function_bindings_compatible(const SZrFu
     return (TZrBool)(status == ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE);
 }
 
+/* typed thunk 只在 caller 与 callee 的元数据绑定均与当前模块版本相容时采用。 */
 TZrBool ZrLibrary_AotRuntime_CanUseTypedDirectCall(SZrState *state,
                                                    ZrAotGeneratedFrame *frame,
                                                    TZrUInt32 calleeFunctionIndex) {
@@ -227,6 +242,7 @@ TZrBool ZrLibrary_AotRuntime_CanUseTypedDirectCall(SZrState *state,
     return aot_runtime_typed_direct_function_bindings_compatible(calleeFunction);
 }
 
+/* 绑定失配时经物化的 VM 值槽重新调用目标，不能继续使用旧 callee 索引的 typed thunk。 */
 TZrBool ZrLibrary_AotRuntime_DeoptTypedDirectCall(SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 destinationSlot,
@@ -246,6 +262,10 @@ TZrBool ZrLibrary_AotRuntime_DeoptTypedDirectCall(SZrState *state,
     return ZrLibrary_AotRuntime_CallStackValue(state, frame, destinationSlot, functionSlot, argumentCount, label);
 }
 
+/* 动态/deopt/展开调用共享此桥接：锚定 callable 与结果槽以跨越 core 调用期间的栈迁移。 */
+/* TODO: 当前检查到的生成调用使 destinationSlot==functionSlot；接口未强制此关系。
+ * 若两槽不同，末尾原始 SZrTypeValue 赋值绕过 Value_Copy 的旧目标释放及新值所有权处理；
+ * 需枚举所有生成器与外部调用，加入不同槽的 ownership 测试后确定契约或修正。 */
 TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,
                                             ZrAotGeneratedFrame *frame,
                                             TZrUInt32 destinationSlot,
@@ -328,6 +348,7 @@ TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 先展开尾部数组实参，再用同一 CallStackValue 桥接保留调用约定和栈锚点。 */
 TZrBool ZrLibrary_AotRuntime_CallSpread(
         SZrState *state,
         ZrAotGeneratedFrame *frame,
@@ -404,6 +425,7 @@ TZrBool ZrLibrary_AotRuntime_CallSpread(
             label);
 }
 
+/* 动态退优化先验证 deopt id，再回到值槽调用，以保留 VM 的实际 callable 语义。 */
 TZrBool ZrLibrary_AotRuntime_CallDynamicDeoptBridge(SZrState *state,
                                                     ZrAotGeneratedFrame *frame,
                                                     TZrUInt32 destinationSlot,
@@ -433,6 +455,7 @@ TZrBool ZrLibrary_AotRuntime_CallDynamicDeoptBridge(SZrState *state,
                                                label);
 }
 
+/* 生成器显式未支持的元调用边界：报错而不猜测可能改变 receiver/ownership 的退路。 */
 TZrBool ZrLibrary_AotRuntime_UnsupportedMetaCall(SZrState *state,
                                                  ZrAotGeneratedFrame *frame,
                                                  TZrUInt32 destinationSlot,
@@ -529,6 +552,9 @@ TZrBool ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 静态 AOT thunk 经 core PreCall 建立 VM 帧，供生成调用保留异常和返回协议。 */
+/* TODO: 多处参数准备或 PreCall 失败直接返回，需核对已物化值槽和 counted owner
+ * 是否都由上层异常路径回收；补失败注入与 ownership 测试。 */
 TZrBool ZrLibrary_AotRuntime_CallStaticDirect(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -695,6 +721,9 @@ TZrBool ZrLibrary_AotRuntime_CallStaticDirect(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 内联结构体调用按布局偏移把结果写入物理帧，供生成器避免装箱。 */
+/* TODO: destinationByteOffset 的目标边界目前只做部分尺寸检查；需与 FrameSlotLayout
+ * 的对齐及目标槽上界核对，并用非法偏移生成夹具验证。 */
 TZrBool ZrLibrary_AotRuntime_CallInlineStruct(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -870,6 +899,8 @@ TZrBool ZrLibrary_AotRuntime_CallInlineStruct(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 内联结构体的动态退优化桥接仍要沿用目标布局与 core 调用的清理契约。 */
+/* TODO: 与 CallInlineStruct 共用目标偏移边界疑点，需加入非法偏移和失败后临时所有权测试。 */
 TZrBool ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(
         SZrState *state,
         ZrAotGeneratedFrame *frame,
@@ -1017,6 +1048,9 @@ TZrBool ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(
     return ZR_TRUE;
 }
 
+/* 内联结构体返回把物理槽字节交给 caller，需在关闭当前作用域后保持来源地址有效。 */
+/* TODO: returnSource 与 functionTop 的边界以及 sourceByteSize 对齐只做部分校验；
+ * 需以短槽/偏移异常夹具核对读取是否可能越过帧布局。 */
 TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 sourceSlot,

@@ -24,6 +24,7 @@ static TZrStackValuePointer aot_runtime_cleanup_registration_dense_slot(
     return frame->slotBase + logicalSlot;
 }
 
+/* 仅当物理 VALUE 槽与稠密槽分离时返回物理地址，供作用域清理维护唯一 owner。 */
 static SZrTypeValue *aot_runtime_cleanup_registration_physical_value(
         const ZrAotGeneratedFrame *frame,
         TZrUInt32 logicalSlot,
@@ -44,6 +45,7 @@ static SZrTypeValue *aot_runtime_cleanup_registration_physical_value(
     return physical;
 }
 
+/* 只有仍挂在当前 state 的 toBeClosed 链上的物理槽才能被清除或刷新。 */
 static TZrBool aot_runtime_cleanup_registration_is_active(
         const SZrState *state,
         TZrStackValuePointer registration) {
@@ -69,6 +71,7 @@ static TZrBool aot_runtime_cleanup_registration_is_active(
     return ZR_FALSE;
 }
 
+/* MarkToBeClosed 的注册前置步骤：把稠密槽 owner 安放到可由 core 关闭链追踪的物理槽。 */
 TZrBool aot_runtime_cleanup_registration_prepare(
         SZrState *state,
         const ZrAotGeneratedFrame *frame,
@@ -102,6 +105,7 @@ TZrBool aot_runtime_cleanup_registration_prepare(
     return ZR_TRUE;
 }
 
+/* 物理槽仍在关闭链中时释放旧 owner，阻止稠密槽被覆盖后再次 drop 旧值。 */
 void aot_runtime_cleanup_registration_clear(
         SZrState *state,
         const ZrAotGeneratedFrame *frame,
@@ -121,6 +125,7 @@ void aot_runtime_cleanup_registration_clear(
     }
 }
 
+/* 稠密槽更新后同步当前 owner；只有活动的双槽注册需要写回。 */
 void aot_runtime_cleanup_registration_refresh(
         SZrState *state,
         const ZrAotGeneratedFrame *frame,

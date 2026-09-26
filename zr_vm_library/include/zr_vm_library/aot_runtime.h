@@ -13,6 +13,7 @@ struct SZrMetadataRuntime;
 struct SZrString;
 struct SZrTypeValue;
 
+/** @brief 生成代码向调试与异常观察点报告的指令类别；BeginInstruction 用它决定是否发布当前 PC。 */
 typedef enum EZrAotGeneratedStepFlag {
     ZR_AOT_GENERATED_STEP_FLAG_NONE = 0,
     ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW = 1u << 0,
@@ -21,8 +22,12 @@ typedef enum EZrAotGeneratedStepFlag {
     ZR_AOT_GENERATED_STEP_FLAG_RETURN = 1u << 3
 } EZrAotGeneratedStepFlag;
 
+/* 直接调用恢复协议中表示顺序执行的哨兵；生成器不得把它当成真实指令索引。 */
 #define ZR_AOT_RUNTIME_RESUME_FALLTHROUGH ((TZrUInt32)0xFFFFFFFFu)
 
+/** @brief 一次生成函数调用的运行时视图，由 BeginGeneratedFunction 建立并在该调用帧存活期内使用。
+ * @note 其中的函数表、模块与 recordHandle 均借用项目 AOT 记录；栈扩容或调用返回后须通过运行时入口刷新栈位置。
+ */
 typedef struct ZrAotGeneratedFrame {
     TZrPtr recordHandle;
     struct SZrFunction *function;
@@ -44,6 +49,7 @@ typedef struct ZrAotGeneratedFrame {
     TZrUInt32 functionThunkCount;
 } ZrAotGeneratedFrame;
 
+/** @brief 生成器按函数索引解析的模块上下文，供生成入口校验描述符与绑定函数身份。 */
 typedef struct ZrAotGeneratedModuleContext {
     TZrPtr recordHandle;
     struct SZrFunction *metadataFunction;
@@ -59,6 +65,9 @@ typedef struct ZrAotGeneratedModuleContext {
     TZrUInt32 generatedFrameSlotCount;
 } ZrAotGeneratedModuleContext;
 
+/** @brief 准备阶段与完成阶段之间的直接调用凭据，保存调用双方帧及异常恢复位置。
+ * @note 仅 prepared 为真时才能调用完成入口；通用调用回退时不得使用其余字段。
+ */
 typedef struct ZrAotGeneratedDirectCall {
     FZrAotEntryThunk nativeFunction;
     struct SZrCallInfo *callerCallInfo;
@@ -72,6 +81,7 @@ typedef struct ZrAotGeneratedDirectCall {
     TZrBool prepared;
 } ZrAotGeneratedDirectCall;
 
+/** @brief 项目请求的执行模式；AOT 模式会为模块导入安装严格的 AOT loader。 */
 typedef enum EZrLibraryProjectExecutionMode {
     ZR_LIBRARY_PROJECT_EXECUTION_MODE_INTERP = 0,
     ZR_LIBRARY_PROJECT_EXECUTION_MODE_BINARY = 1,
@@ -79,6 +89,7 @@ typedef enum EZrLibraryProjectExecutionMode {
     ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM = 3
 } EZrLibraryProjectExecutionMode;
 
+/** @brief 本次项目执行实际经过的后端，供运行记录读取与测试断言使用。 */
 typedef enum EZrLibraryExecutedVia {
     ZR_LIBRARY_EXECUTED_VIA_NONE = 0,
     ZR_LIBRARY_EXECUTED_VIA_INTERP = 1,
@@ -87,52 +98,70 @@ typedef enum EZrLibraryExecutedVia {
     ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM = 4
 } EZrLibraryExecutedVia;
 
+/** @brief 在项目执行前配置 AOT 状态，并按模式向 core 注册模块加载回调。
+ * @pre global->userData 已关联项目；项目结束时应调用 FreeProjectState 释放记录。
+ */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ConfigureGlobal(struct SZrGlobalState *global,
                                                             EZrLibraryProjectExecutionMode executionMode,
                                                             TZrBool requireAotPath);
 
+/** @brief 由项目释放链撤销模块和函数的 GC pin；动态库交给 global 的 GC 后清理回调延迟关闭。 */
 ZR_LIBRARY_API void ZrLibrary_AotRuntime_FreeProjectState(struct SZrState *state,
                                                           struct SZrLibrary_Project *project);
 
+/** @brief 将实际执行后端转换为 CLI 可报告的稳定名称。 */
 ZR_LIBRARY_API const TZrChar *ZrLibrary_AotRuntime_ExecutedViaName(EZrLibraryExecutedVia executedVia);
 
+/** @brief 查询项目运行记录中的实际后端；未配置时返回 NONE。 */
 ZR_LIBRARY_API EZrLibraryExecutedVia ZrLibrary_AotRuntime_GetExecutedVia(struct SZrGlobalState *global);
 
+/** @brief 借用最近一次 AOT 诊断文字；下一次配置或失败会覆盖它。 */
 ZR_LIBRARY_API const TZrChar *ZrLibrary_AotRuntime_GetLastError(struct SZrGlobalState *global);
 
+/** @brief 从已验证的 AOT 注册表按函数及局部序号定位 native import 契约，供桥接层核对。 */
 ZR_LIBRARY_API const struct SZrNativeImportContract *
 ZrLibrary_AotRuntime_ResolveNativeImportContract(
         const SZrAotCodeRegistration *codeRegistration,
         TZrUInt32 functionIndex,
         TZrUInt32 localContractIndex);
 
+/** @brief FFI 从活动调用帧的 VM 元数据函数反查 native import 契约；结果借用项目记录。 */
 ZR_LIBRARY_API const struct SZrNativeImportContract *
 ZrLibrary_AotRuntime_FindNativeImportContract(
         struct SZrState *state,
         const struct SZrFunction *function,
         TZrUInt32 localContractIndex);
 
+/** @brief core 模块导入回调：载入、校验并至多执行一次 AOT 模块，返回项目持有的模块对象。
+ * @note 由 ConfigureGlobal 安装；userData 必须是该 global 的有效 AOT 状态。
+ */
 ZR_LIBRARY_API struct SZrObjectModule *ZrLibrary_AotRuntime_ModuleLoader(struct SZrState *state,
                                                                          struct SZrString *moduleName,
                                                                          TZrPtr userData);
 
+/** @brief 项目执行路径的 AOT 入口；加载根模块并在异常边界内调用其入口 thunk。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ExecuteEntry(struct SZrState *state,
                                                          EZrAotBackendKind backendKind,
                                                          struct SZrTypeValue *result);
 
+/** @brief 兼容 VM 对 native closure 的调用约定，将当前活动 AOT 记录转给生成入口。 */
 ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_InvokeActiveShim(struct SZrState *state,
                                                               EZrAotBackendKind backendKind);
+/** @brief 在活动 AOT 记录中，以当前 closure 元数据函数进入 VM shim。 */
 ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_InvokeCurrentClosureShim(struct SZrState *state,
                                                                       EZrAotBackendKind backendKind);
 
+/** @brief 生成函数序言的必经入口：校验函数索引，建立并锚定物理调用帧和稠密槽视图。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_BeginGeneratedFunction(struct SZrState *state,
                                                                    TZrUInt32 functionIndex,
                                                                    ZrAotGeneratedFrame *frame);
 
+/** @brief 在生成入口按当前 callInfo 解析模块、元数据函数与 thunk，防止跨记录索引漂移。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ResolveGeneratedModuleContext(struct SZrState *state,
                                                                           TZrUInt32 functionIndex,
                                                                           ZrAotGeneratedModuleContext *context);
 
+/** @brief 生成器默认仅在可抛错、控制流、调用、返回指令同步可观察 PC。 */
 ZR_FORCE_INLINE TZrUInt32 ZrLibrary_AotRuntime_DefaultObservationMask(void) {
     return ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW |
            ZR_AOT_GENERATED_STEP_FLAG_CONTROL_FLOW |
@@ -140,6 +169,7 @@ ZR_FORCE_INLINE TZrUInt32 ZrLibrary_AotRuntime_DefaultObservationMask(void) {
            ZR_AOT_GENERATED_STEP_FLAG_RETURN;
 }
 
+/** @brief 由调试或测试调用链覆盖当前 state 的指令观察策略。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetObservationPolicy(struct SZrState *state,
                                                                  TZrUInt32 observationMask,
                                                                  TZrBool publishAllInstructions);
@@ -150,11 +180,15 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetObservationPolicy(struct SZrState
                                                                  TZrUInt32 *outObservationMask,
                                                                  TZrBool *outPublishAllInstructions);
 
+/** @brief 生成指令的观察边界；维护异常 PC 和行调试钩子，并在栈移动后刷新帧视图。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_BeginInstruction(struct SZrState *state,
                                                              ZrAotGeneratedFrame *frame,
                                                              TZrUInt32 instructionIndex,
                                                              TZrUInt32 stepFlags);
 
+/** @brief 生成代码的值槽与常量操作入口；函数索引和槽位由已校验的生成帧约束。
+ * @note CopyStack 与 GetStack 的保源和所有权语义不同，生成器须按 lowering 的 preserveSource 选择。
+ */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CopyConstant(struct SZrState *state,
                                                          ZrAotGeneratedFrame *frame,
                                                          TZrUInt32 destinationSlot,
@@ -199,6 +233,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ResetStackNull2(struct SZrState *sta
                                                             TZrUInt32 firstSlot,
                                                             TZrUInt32 secondSlot);
 
+/** @brief 把泛型值槽转成生成器使用的标量缓存；失败时由 AOT 诊断和 VM 状态承载原因。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ConvertGenericToBool(struct SZrState *state,
                                                                  ZrAotGeneratedFrame *frame,
                                                                  TZrUInt32 destinationSlot,
@@ -219,6 +254,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ConvertGenericToFloat(struct SZrStat
                                                                   TZrUInt32 destinationSlot,
                                                                   TZrUInt32 sourceSlot);
 
+/** @brief 类型特化无法确定时的数值退路，仍从生成帧取值并保持解释器可见的异常状态。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GenericNumericAdd(struct SZrState *state,
                                                               ZrAotGeneratedFrame *frame,
                                                               TZrUInt32 destinationSlot,
@@ -260,6 +296,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GenericPower(struct SZrState *state,
                                                          TZrUInt32 leftSlot,
                                                          TZrUInt32 rightSlot);
 
+/** @brief 从 VM 物理值槽同步标量局部缓存；类型不匹配时保留调用方已有缓存。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SyncSignedIntLocal(struct SZrState *state,
                                                                ZrAotGeneratedFrame *frame,
                                                                TZrUInt32 sourceSlot,
@@ -296,6 +333,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(struct S
                                                                         TZrUInt32 callableFlatIndex,
                                                                         FZrAotEntryThunk nativeThunk);
 
+/** @brief 生成器对象与内联数组构造入口；新对象创建后由 VM 值槽承担可达性。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateObject(struct SZrState *state,
                                                          ZrAotGeneratedFrame *frame,
                                                          TZrUInt32 destinationSlot);
@@ -334,6 +372,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToStruct(struct SZrState *state,
                                                      TZrUInt32 sourceSlot,
                                                      TZrUInt32 typeNameConstantIndex);
 
+/** @brief 元成员访问复用已链接的 call-site/cache 信息；不匹配时由通用访问路径处理。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaGetCached(struct SZrState *state,
                                                           ZrAotGeneratedFrame *frame,
                                                           TZrUInt32 destinationSlot,
@@ -370,6 +409,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaSetStaticCached(struct SZrState 
                                                                 TZrUInt32 assignedValueSlot,
                                                                 TZrUInt32 cacheIndex);
 
+/** @brief 生成代码的所有权指令适配层，必须保持 core Ownership 的借用、共享和释放约束。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUnique(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,
                                                       TZrUInt32 destinationSlot,
@@ -425,6 +465,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnDrop(struct SZrState *state,
                                                        TZrUInt32 destinationSlot,
                                                        TZrUInt32 sourceSlot);
 
+/** @brief 生成器比较、真值和条件跳转的通用入口；返回值反映运行时操作是否完成。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalEqual(struct SZrState *state,
                                                          ZrAotGeneratedFrame *frame,
                                                          TZrUInt32 destinationSlot,
@@ -617,6 +658,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst(stru
                                                                             TZrUInt32 constantIndex,
                                                                             TZrBool *outShouldJump);
 
+/** @brief VM 值槽上的算术指令入口；具体类型特化由生成器调用下列标量重载。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Add(struct SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 destinationSlot,
@@ -925,6 +967,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToString(struct SZrState *state,
                                                      TZrUInt32 destinationSlot,
                                                      TZrUInt32 sourceSlot);
 
+/** @brief 属性引用先创建位置对象，再由 Load/Store 与 core property-reference 语义衔接。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateMember(
         struct SZrState *state,
         ZrAotGeneratedFrame *frame,
@@ -957,6 +1000,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceStore(
         TZrUInt32 sourceSlot,
         TZrUInt32 referenceSlot);
 
+/** @brief 成员与索引访问复用 core 对象/数组边界；NewOwner 变体仅供生成器已证明新 owner 的写入点。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetMember(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,
                                                       TZrUInt32 destinationSlot,
@@ -1011,6 +1055,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(str
                                                                              TZrUInt32 receiverSlot,
                                                                              TZrUInt32 keySlot);
 
+/** @brief 对 super array 的绑定项做类型特化访问；绑定句柄不得越过原数组和生成帧寿命。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayBindItems(struct SZrState *state,
                                                                 ZrAotGeneratedFrame *frame,
                                                                 TZrUInt32 destinationSlot,
@@ -1068,6 +1113,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayFillInt4Const(struct SZrSt
                                                                     TZrUInt32 countSlot,
                                                                     TZrUInt32 constantIndex);
 
+/** @brief 迭代器指令的 VM 桥接，保留 MoveNext 与 Current 的异常和跳转语义。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IterInit(struct SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
                                                      TZrUInt32 destinationSlot,
@@ -1089,12 +1135,14 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(struct SZrSt
                                                                     TZrUInt32 iteratorSlot,
                                                                     TZrBool *outJumpIfFalse);
 
+/** @brief 生成代码的通用调用退路；已准备的 AOT 直接调用通过后续 Prepare/Finish 协议执行。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Call(struct SZrState *state,
                                                  ZrAotGeneratedFrame *frame,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 functionSlot,
                                                  TZrUInt32 argumentCount);
 
+/** @brief 从当前模块的泛型字典解析类型布局；生成静态缓存只可复用同一元数据运行时的结果。 */
 ZR_LIBRARY_API const struct SZrTypeLayout *ZrLibrary_AotRuntime_GenericSlot_TypeLayout(
         struct SZrState *state,
         const SZrAotGenericDictionary *dictionary,
@@ -1114,6 +1162,7 @@ ZR_LIBRARY_API FZrAotEntryThunk ZrLibrary_AotRuntime_GenericSlot_Method(
         const struct SZrFunction *metadataFunction,
         TZrUInt32 slotIndex);
 
+/** @brief 完成已准备的 AOT thunk 或回退普通调用；Resume 变体还把异常恢复位置交回生成器。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallPreparedOrGeneric(struct SZrState *state,
                                                                   ZrAotGeneratedFrame *frame,
                                                                   ZrAotGeneratedDirectCall *directCall,
@@ -1140,6 +1189,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume
         TZrUInt32 resultCount,
         TZrUInt32 *outResumeInstructionIndex);
 
+/** @brief 动态调用/deopt 桥接的 VM 值槽调用入口，须在可能扩栈前保存并恢复栈锚点。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *state,
                                                            ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 destinationSlot,
@@ -1232,6 +1282,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(
         TZrUInt32 deoptId,
         const TZrChar *errorLabel);
 
+/** @brief 直接调用准备阶段：用当前指令绑定解析元数据与 thunk，并建立 VM callee 帧。
+ * @note 调用方先检查 directCall.prepared，再决定执行 nativeFunction 或普通调用。
+ */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PrepareDirectCall(struct SZrState *state,
                                                               ZrAotGeneratedFrame *frame,
                                                               TZrUInt32 destinationSlot,
@@ -1254,11 +1307,13 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(struct SZrSt
                                                                     TZrUInt32 calleeFunctionIndex,
                                                                     ZrAotGeneratedDirectCall *directCall);
 
+/** @brief 直接调用完成阶段：关闭 callee upvalue，执行 VM PostCall，恢复 caller 帧和结果所有权。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_FinishDirectCall(struct SZrState *state,
                                                              ZrAotGeneratedFrame *frame,
                                                              ZrAotGeneratedDirectCall *directCall,
                                                              TZrUInt32 resultCount);
 
+/** @brief 生成代码异常区间与 pending control 的协议入口；handlerIndex 必须来自当前函数元数据。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Try(struct SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 handlerIndex);
@@ -1307,6 +1362,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetPendingContinue(struct SZrState *
                                                                TZrUInt32 targetInstructionIndex,
                                                                TZrUInt32 *outResumeInstructionIndex);
 
+/** @brief 离开作用域前登记并关闭待清理值；双槽表示的所有权需由 cleanup registration 同步。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MarkToBeClosed(struct SZrState *state,
                                                            ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 slotIndex);
@@ -1335,13 +1391,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToFloat(struct SZrState *state,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 sourceSlot);
 
+/** @brief 模块入口完成前发布生成模块导出，使后续 import 可复用同一 module 对象。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PublishModuleExports(struct SZrState *state,
                                                                  ZrAotGeneratedFrame *frame);
 
+/** @brief 生成函数返回协议；关闭作用域和 upvalue 后把返回值交给 caller 调用帧。 */
 ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_Return(struct SZrState *state,
                                                     ZrAotGeneratedFrame *frame,
                                                     TZrUInt32 sourceSlot,
                                                     TZrBool publishExports);
+/** @brief 标量返回的直接写回入口；调用者须处于有效 generated callInfo。 */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnI64(struct SZrState *state, TZrInt64 value);
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnBool(struct SZrState *state, TZrBool value);
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnU64(struct SZrState *state, TZrUInt64 value);
@@ -1354,6 +1413,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(struct SZrState *
                                                                TZrUInt32 sourceByteSize,
                                                                TZrUInt32 *outSkipDropSlot);
 
+/** @brief 生成器无法表达的指令统一报告 VM 运行错误，避免静默执行错误代码。 */
 ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_ReportUnsupportedInstruction(struct SZrState *state,
                                                                           TZrUInt32 functionIndex,
                                                                           TZrUInt32 instructionIndex,

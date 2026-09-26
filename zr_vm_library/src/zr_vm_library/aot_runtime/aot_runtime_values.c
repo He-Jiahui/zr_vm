@@ -23,6 +23,10 @@ static TZrStackValuePointer aot_runtime_value_frame_slot(const ZrAotGeneratedFra
     return frame->slotBase + slotIndex;
 }
 
+/* lowering_values 在需要物化转移时选择 CopyStack；inline struct 使用物理布局复制，
+ * 普通 VALUE 则委托 core 的 materialized ownership 赋值。 */
+/* TODO: 源为 inline struct、目标为非同布局的普通 VALUE 时会落到普通值赋值；
+ * 需核对生成 IR 是否保证该组合不可达，并补错配布局夹具。 */
 TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
                                        ZrAotGeneratedFrame *frame,
                                        TZrUInt32 destinationSlot,
@@ -95,6 +99,9 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
     return ZR_TRUE;
 }
 
+/* lowering_values 要保留源值时选择 GetStack；非 inline 槽经 Value_Copy 保持引用计数。 */
+/* TODO: 源为 inline struct、目标为非 inline 槽时会把稠密槽当普通值复制；
+ * 需核对生成器的槽布局门禁及此组合是否可达。 */
 TZrBool ZrLibrary_AotRuntime_GetStack(SZrState *state,
                                       ZrAotGeneratedFrame *frame,
                                       TZrUInt32 destinationSlot,
@@ -151,6 +158,7 @@ TZrBool ZrLibrary_AotRuntime_GetStack(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 生成器明确结束值槽寿命时先让 core 处理目标原所有权，再置空。 */
 TZrBool ZrLibrary_AotRuntime_ResetStackNull(SZrState *state,
                                             ZrAotGeneratedFrame *frame,
                                             TZrUInt32 destinationSlot) {
@@ -203,6 +211,9 @@ TZrBool ZrLibrary_AotRuntime_ResetStackNull2(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 泛型转换共用的槽门禁；仅返回当前帧中的借用指针，调用者不可在扩栈后继续使用。 */
+/* TODO: 各 ConvertGeneric 入口以 ZR_VALUE_FAST_SET 覆盖目标槽；需核对生成器是否
+ * 保证目标原值已清理或无 owner，并用 Shared/Unique 旧值覆盖做定向测试。 */
 static TZrBool aot_runtime_generic_conversion_values(SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
                                                      TZrUInt32 destinationSlot,
@@ -236,6 +247,8 @@ static TZrBool aot_runtime_generic_conversion_values(SZrState *state,
     return ZR_TRUE;
 }
 
+/* TODO: 泛型 TO_BOOL 仅接受 null/bool/数值；需核对未知类型的字符串、对象
+ * 或元方法真值转换是否可能流入此入口，以及生成器退路是否完备。 */
 TZrBool ZrLibrary_AotRuntime_ConvertGenericToBool(SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 destinationSlot,
@@ -281,6 +294,9 @@ TZrBool ZrLibrary_AotRuntime_ConvertGenericToBool(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 生成器的泛型标量转换：源类型在运行期才确定，结果写入同一生成帧。 */
+/* BUG: float 转 int64 未检查 NaN、无穷和目标范围；越界 C 转换未定义，
+ * lowering_generic_conversion 可将运行时浮点输入导向此路径，需加边界回归。 */
 TZrBool ZrLibrary_AotRuntime_ConvertGenericToInt(SZrState *state,
                                                  ZrAotGeneratedFrame *frame,
                                                  TZrUInt32 destinationSlot,
@@ -324,6 +340,9 @@ TZrBool ZrLibrary_AotRuntime_ConvertGenericToInt(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 与 ToInt 同源的泛型无符号转换；其值域由运行时输入决定。 */
+/* BUG: float 转 uint64 未检查 NaN、负数、无穷或上界；越界 C 转换未定义，
+ * 需和 core 的数值转换契约核对并加入边界测试。 */
 TZrBool ZrLibrary_AotRuntime_ConvertGenericToUInt(SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 destinationSlot,
@@ -481,6 +500,8 @@ static TZrBool aot_runtime_generic_numeric_extract_float64(SZrState *state,
     return ZR_TRUE;
 }
 
+/* TODO: unsigned 大于 INT64_MAX 时转 signed 的结果为实现定义；需核对语言规范
+ * 与解释器的混合数值路径，补极值对照测试。 */
 static TZrBool aot_runtime_generic_numeric_extract_int64(SZrState *state,
                                                          SZrLibraryAotRuntimeState *runtimeState,
                                                          const SZrTypeValue *value,
@@ -502,6 +523,9 @@ static TZrBool aot_runtime_generic_numeric_extract_int64(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 泛型数值退路在运行时区分 float、unsigned 和 signed；由五种生成算术操作复用。 */
+/* BUG: signed ADD/SUB/MUL 溢出及 INT64_MIN 除/模 -1 触发 C 未定义行为，
+ * 当前仅检查除数为零；需明确语言溢出语义并以极值/UBSan 覆盖此生成退路。 */
 static TZrBool aot_runtime_generic_numeric_binary(SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 destinationSlot,
@@ -721,6 +745,9 @@ TZrBool ZrLibrary_AotRuntime_GenericNumericMod(SZrState *state,
                                               ZR_AOT_RUNTIME_GENERIC_NUMERIC_MOD);
 }
 
+/* 泛型负号在执行时依据源值类型选定目标值种类。 */
+/* BUG: signed INT64_MIN 取负触发 C 有符号溢出，unsigned 高位值转 signed
+ * 后再取负也可能越界；需加入极值回归并统一解释器/生成器契约。 */
 TZrBool ZrLibrary_AotRuntime_GenericNumericNeg(SZrState *state,
                                                ZrAotGeneratedFrame *frame,
                                                TZrUInt32 destinationSlot,
@@ -766,6 +793,9 @@ TZrBool ZrLibrary_AotRuntime_GenericNumericNeg(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 编译器的泛型 POW 退路应在运行时沿元方法处理自定义值。 */
+/* BUG: 有 ZR_META_POW 时此处直接报 unsupported，而解释器 execution_dispatch.c
+ * 会调用该元方法；自定义 POW 在 AOT 下失败。需补同一脚本的 AOT/解释器对照测试。 */
 TZrBool ZrLibrary_AotRuntime_GenericPower(SZrState *state,
                                           ZrAotGeneratedFrame *frame,
                                           TZrUInt32 destinationSlot,
@@ -873,6 +903,8 @@ static TZrBool aot_runtime_generic_logical_values(SZrState *state,
     return ZR_TRUE;
 }
 
+/* TODO: 仅覆盖基本值真值语义；需核对未知类型是否可经 lowering_generic_logical
+ * 进入本入口，并与动态对象/字符串真值路径做对照。 */
 static TZrBool aot_runtime_generic_primitive_truthy(SZrState *state,
                                                    SZrLibraryAotRuntimeState *runtimeState,
                                                    const SZrTypeValue *sourceValue,
@@ -900,6 +932,9 @@ static TZrBool aot_runtime_generic_primitive_truthy(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 作为生成器基本值 EQ/NEQ 的共享比较边界；这里只支持 null、bool 和数字。 */
+/* TODO: 未知类型的 EQ/NEQ 是否可能从生成器进入此原始值退路尚未核证；
+ * 需测试字符串与对象比较同解释器的结果是否一致。 */
 static TZrBool aot_runtime_generic_primitive_equal(SZrState *state,
                                                   SZrLibraryAotRuntimeState *runtimeState,
                                                   const SZrTypeValue *leftValue,
@@ -956,6 +991,8 @@ TZrBool ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(SZrState *state,
     return aot_runtime_generic_primitive_truthy(state, runtimeState, sourceValue, outTruthy);
 }
 
+/* TODO: 此类逻辑结果以 FAST_SET 覆盖目标；需核对目标槽可能已有 Shared/Unique
+ * owner 时是否由生成器预先释放，补同槽重复赋值与关闭作用域的所有权测试。 */
 TZrBool ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(SZrState *state,
                                                        ZrAotGeneratedFrame *frame,
                                                        TZrUInt32 destinationSlot,

@@ -40,6 +40,8 @@ static TZrBool aot_runtime_sync_local_source(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 生成器从 VM 值槽同步 signed 局部缓存；槽可读即成功，类型不匹配保留原缓存，
+ * 以允许同一槽存在多个类型专用缓存而不误覆盖。 */
 TZrBool ZrLibrary_AotRuntime_SyncSignedIntLocal(SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 sourceSlot,
@@ -57,6 +59,7 @@ TZrBool ZrLibrary_AotRuntime_SyncSignedIntLocal(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 与 signed 同步协议相同，供 unsigned 专用 lowering 在复用值槽时更新缓存。 */
 TZrBool ZrLibrary_AotRuntime_SyncUnsignedIntLocal(SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 sourceSlot,
@@ -74,6 +77,7 @@ TZrBool ZrLibrary_AotRuntime_SyncUnsignedIntLocal(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 与 signed 同步协议相同；仅 float 值会改变调用方的浮点缓存。 */
 TZrBool ZrLibrary_AotRuntime_SyncFloatLocal(SZrState *state,
                                             ZrAotGeneratedFrame *frame,
                                             TZrUInt32 sourceSlot,
@@ -91,6 +95,7 @@ TZrBool ZrLibrary_AotRuntime_SyncFloatLocal(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 与 signed 同步协议相同；仅 bool 值会改变调用方的布尔缓存。 */
 TZrBool ZrLibrary_AotRuntime_SyncBoolLocal(SZrState *state,
                                            ZrAotGeneratedFrame *frame,
                                            TZrUInt32 sourceSlot,
