@@ -10,6 +10,29 @@ static TZrBool ssa_fail(const SZrExecIrFunction *function,
         diagnostic->code = code;
         diagnostic->functionToken = function->functionToken;
         diagnostic->instructionId = instructionId;
+        if (instructionId != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+            instructionId <= function->instructionCount &&
+            function->instructions != ZR_NULL) {
+            TZrUInt32 blockIndex;
+            diagnostic->sourceId =
+                    function->instructions[instructionId - 1u].sourceId;
+            if (function->blockCount <= function->blockCapacity &&
+                function->blocks != ZR_NULL) {
+                for (blockIndex = 0u; blockIndex < function->blockCount;
+                     ++blockIndex) {
+                    const SZrExecIrBlock *block =
+                            &function->blocks[blockIndex];
+                    if (block->instructionRange.start <=
+                                instructionId - 1u &&
+                        block->instructionRange.count >
+                                instructionId - 1u -
+                                        block->instructionRange.start) {
+                        diagnostic->blockId = block->id;
+                        break;
+                    }
+                }
+            }
+        }
     }
     return ZR_FALSE;
 }

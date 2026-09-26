@@ -99,21 +99,26 @@ participates in cache and pass identity without a parallel side channel.
 
 Invalid storage, arity or operand range reports `INVALID_RANGE`; an unknown
 opcode reports `UNKNOWN_OPCODE`; an invalid or undefined value reports
-`INVALID_VALUE`. Instruction-level diagnostics carry the function token and
-one-based instruction ID. Function-level malformed backing storage carries
-the function token and instruction ID zero. Null function input returns false
-without dereferencing the diagnostic target. Promotion allocates a temporary
-clone and releases it on failure; the surrounding builder similarly owns and
-releases its candidate if construction fails.
+`INVALID_VALUE`. Instruction-level diagnostics carry the function token,
+one-based instruction ID, and the instruction's existing source ID. When a
+valid block table identifies the containing instruction range, they also
+carry its block ID; incomplete or malformed block tables do not prevent the
+original validation error from being reported. Function-level malformed
+backing storage carries the function token and instruction ID zero. Null
+function input returns false without dereferencing the diagnostic target.
+Promotion allocates a temporary clone and releases it on failure; the
+surrounding builder similarly owns and releases its candidate if construction
+fails.
 
 ## Verification boundary
 
 `ssa_value_validation` links the production parser validation and core model.
 Its positive cases define an operand before its use and consume an explicit
 external entry. Failure cases cover an unflagged undefined operand, an
-external entry reused as an instruction result, unknown value flags, a
-logical out-of-range operand whose physical memory contains a valid value, a
-wrapped range, null backing storage, and an unknown opcode. Promotion's
+external entry reused as an instruction result, a source-located undefined
+operand use, unknown value flags, a logical out-of-range operand whose
+physical memory contains a valid value, a wrapped range, null backing
+storage, and an unknown opcode. Promotion's
 CFG-aware and tokenized-input coverage is recorded separately in
 `tests/acceptance/ssa-place-promotion.md`; the full 01.02 exit gate remains
 outside these focused fixtures. See `tests/acceptance/ssa-value-validation.md`

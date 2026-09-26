@@ -290,6 +290,35 @@ static void test_rejects_unknown_opcode_with_location(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_rejects_undefined_operand_with_source_location(void) {
+    SZrExecIrFunction function;
+    SZrExecIrInstruction drop;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId undefined;
+
+    make_defined_operand(&function);
+    undefined = ZrCore_ExecIr_FunctionAddValue(
+            &function, (TZrMetadataToken)1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    check(undefined == 2u, "could not create undefined operand fixture");
+    function.operands[0] = undefined;
+    memset(&drop, 0, sizeof(drop));
+    drop.opcode = ZR_EXEC_IR_OPCODE_DROP;
+    drop.sourceId = 247u;
+    drop.operands.count = 1u;
+    check(ZrCore_ExecIr_FunctionAppendInstruction(&function, &drop, NULL),
+          "could not append undefined operand use");
+    function.blocks[0].instructionRange.count = 2u;
+    check(!ZrParser_ExecIr_BuildSsa(&function, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+              diagnostic.functionToken == 77u &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 2u &&
+              diagnostic.sourceId == 247u,
+          "SSA operand error lost its source and block location");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_accepts_defined_operand_in_range();
     test_accepts_explicit_external_entry_operand();
@@ -302,6 +331,7 @@ int main(void) {
     test_rejects_wrapped_operand_range();
     test_rejects_missing_operand_storage();
     test_rejects_unknown_opcode_with_location();
+    test_rejects_undefined_operand_with_source_location();
     puts("ssa value validation PASS");
     return EXIT_SUCCESS;
 }

@@ -38,6 +38,24 @@ WSL `uname -r` still failed before entering Linux with host error
 E: lacked free capacity for the full repository build, and pre-existing user
 edits to the `ssa_construction` integration test were not staged or changed.
 
+## Source-location follow-up (2026-09-27)
+
+A direct `BuildSsa` undefined-operand regression uses instruction source ID
+247 in block 1. Before the fix, `ssa_value_validation` failed with
+`SSA operand error lost its source and block location`; the shared diagnostic
+exit populated only the function token and instruction ID. Instruction-level
+validation now includes the existing source ID and the containing block ID
+when the block table is valid. Function-level errors retain instruction ID
+zero. MSVC Debug static rebuilt `zr_vm_ssa_value_validation_test` and the
+adjacent `zr_vm_ssa_construction_test`, `zr_vm_ssa_builder_cfg_test`,
+`zr_vm_ssa_builder_dominance_test`, and `zr_vm_ssa_place_promotion_test` in
+`build/codex-ssa-conversion-msvc-static`. Before changing the diagnostic exit,
+`ctest -R '^ssa_value_validation$'` failed 0/1 on the new assertion; afterward
+it passed 1/1. The final focused CTest regex
+`^ssa_(value_validation|construction|place_promotion|builder_cfg|builder_dominance)$`
+passed 5/5. The prior 2026-09-17 evidence above applies only to the earlier
+range-validation slice; this follow-up does not claim a fresh WSL toolchain run.
+
 ## Acceptance boundary
 
 Only parser SSA input-range and diagnostic correctness are accepted here.
