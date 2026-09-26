@@ -555,6 +555,8 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->phiCopyEdges);
     free(p->phiMoves);
     free(p->sourceMaps);
+    ZrCore_ExecIr_GcMapFree(&p->gcMap);
+    free(p->gcRoots);
     memset(p, 0, sizeof(*p));
 }
 
@@ -642,6 +644,8 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     p->phiIncomingCount = f->phiIncomingCount;
     p->sourceMapCount = f->sourceMapCount;
     p->gcMapCount = f->gcMapCount;
+    p->gcRootCount = f->gcRootCount;
+    p->gcMapPresent = f->gcMap != ZR_NULL;
     p->deoptStateCount = f->deoptStateCount;
     p->stateMapPresent = f->stateMap != ZR_NULL;
     p->runnable = ZR_TRUE;
@@ -667,6 +671,45 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->frameSlots = (SZrExecIrFrameSlot *)malloc(bytes);
         if (p->frameSlots == ZR_NULL) goto oom;
         memcpy(p->frameSlots, f->frameLayout->slots, bytes);
+    }
+    if (p->gcMapPresent) {
+        ZrCore_ExecIr_GcMapInit(&p->gcMap);
+        p->gcMap = *f->gcMap;
+        p->gcMap.entries = ZR_NULL;
+        p->gcMap.slotIndexPool = ZR_NULL;
+        p->gcMap.inlineRefOffsetPool = ZR_NULL;
+        p->gcMap.entryCapacity = 0u;
+        p->gcMap.slotIndexCapacity = 0u;
+        p->gcMap.inlineRefOffsetCapacity = 0u;
+        if (!zr_projection_bytes(p->gcMap.entryCount, sizeof(*p->gcMap.entries), &bytes)) goto overflow;
+        if (p->gcMap.entryCount != 0u) {
+            p->gcMap.entries = (SZrExecIrGcMapEntry *)malloc(bytes);
+            if (p->gcMap.entries == ZR_NULL) goto oom;
+            memcpy(p->gcMap.entries, f->gcMap->entries, bytes);
+            p->gcMap.entryCapacity = p->gcMap.entryCount;
+        }
+        if (!zr_projection_bytes(p->gcMap.slotIndexCount, sizeof(*p->gcMap.slotIndexPool), &bytes)) goto overflow;
+        if (p->gcMap.slotIndexCount != 0u) {
+            p->gcMap.slotIndexPool = (TZrUInt32 *)malloc(bytes);
+            if (p->gcMap.slotIndexPool == ZR_NULL) goto oom;
+            memcpy(p->gcMap.slotIndexPool, f->gcMap->slotIndexPool, bytes);
+            p->gcMap.slotIndexCapacity = p->gcMap.slotIndexCount;
+        }
+        if (!zr_projection_bytes(p->gcMap.inlineRefOffsetCount,
+                                 sizeof(*p->gcMap.inlineRefOffsetPool), &bytes)) goto overflow;
+        if (p->gcMap.inlineRefOffsetCount != 0u) {
+            p->gcMap.inlineRefOffsetPool = (TZrUInt32 *)malloc(bytes);
+            if (p->gcMap.inlineRefOffsetPool == ZR_NULL) goto oom;
+            memcpy(p->gcMap.inlineRefOffsetPool,
+                   f->gcMap->inlineRefOffsetPool, bytes);
+            p->gcMap.inlineRefOffsetCapacity = p->gcMap.inlineRefOffsetCount;
+        }
+    }
+    if (!zr_projection_bytes(p->gcRootCount, sizeof(*p->gcRoots), &bytes)) goto overflow;
+    if (p->gcRootCount != 0u) {
+        p->gcRoots = (TZrExecIrValueId *)malloc(bytes);
+        if (p->gcRoots == ZR_NULL) goto oom;
+        memcpy(p->gcRoots, f->gcRoots, bytes);
     }
     if (!zr_projection_bytes(p->valueSlotCount, sizeof(*p->valueSlots), &bytes)) goto overflow;
     if (p->valueSlotCount != 0u) {
@@ -943,6 +986,10 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->sourceMaps = source->sourceMaps;
     destination->sourceMapCount = source->sourceMapCount;
     destination->gcMapCount = source->gcMapCount;
+    destination->gcMap = source->gcMap;
+    destination->gcRoots = source->gcRoots;
+    destination->gcRootCount = source->gcRootCount;
+    destination->gcMapPresent = source->gcMapPresent;
     destination->deoptStateCount = source->deoptStateCount;
     destination->stateMapPresent = source->stateMapPresent;
     destination->unsupportedInstructionId = source->unsupportedInstructionId;
@@ -966,5 +1013,9 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->phiCopyEdges = ZR_NULL;
     source->phiMoves = ZR_NULL;
     source->sourceMaps = ZR_NULL;
+    memset(&source->gcMap, 0, sizeof(source->gcMap));
+    source->gcRoots = ZR_NULL;
+    source->gcRootCount = 0u;
+    source->gcMapPresent = ZR_FALSE;
     source->ownershipTag = 0u;
 }

@@ -32,6 +32,11 @@ static TZrBool aot_ir_range_valid(SZrAotIrRange range, TZrUInt32 length) {
     return (TZrBool)(range.offset <= length && range.count <= length - range.offset);
 }
 
+static TZrBool aot_ir_exec_range_valid(SZrExecIrRange range,
+                                        TZrUInt32 length) {
+    return (TZrBool)(range.start <= length && range.count <= length - range.start);
+}
+
 static TZrBool aot_ir_alignment_valid(TZrUInt32 alignment) {
     return (TZrBool)(alignment != 0u && (alignment & (alignment - 1u)) == 0u);
 }
@@ -391,6 +396,7 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                            function->frameLayout.frameByteSize);
     }
     if ((function->sourceMapCount != 0u && function->sourceMaps == ZR_NULL) ||
+        (function->gcRootCount != 0u && function->gcRootPool == ZR_NULL) ||
         function->blockCount == 0u || function->instructionCount == 0u ||
         ((function->operandCount > 0u) && (function->operandPool == ZR_NULL)) ||
         ((function->resultCount > 0u) && (function->resultPool == ZR_NULL)) ||
@@ -676,6 +682,45 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                map->instructionId);
         }
     }
+    if (function->gcMap != ZR_NULL) {
+        const SZrExecIrGcMap *map = function->gcMap;
+        if ((map->entryCount != 0u && map->entries == ZR_NULL) ||
+            (map->slotIndexCount != 0u && map->slotIndexPool == ZR_NULL) ||
+            (map->inlineRefOffsetCount != 0u && map->inlineRefOffsetPool == ZR_NULL) ||
+            !aot_ir_exec_range_valid(map->rootRange, map->slotIndexCount)) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                               0u, 0u, 0u, map->slotIndexCount, map->rootRange.count);
+        }
+        for (TZrUInt32 i = 0u; i < map->entryCount; ++i) {
+            const SZrExecIrGcMapEntry *entry = &map->entries[i];
+            if (entry->site == ZR_AOT_IR_ID_INVALID ||
+                entry->site > function->instructionCount ||
+                !aot_ir_exec_range_valid(entry->liveRefSlots, map->slotIndexCount) ||
+                !aot_ir_exec_range_valid(entry->inlineRefOffsets,
+                                         map->inlineRefOffsetCount)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE,
+                                   function->id, 0u, entry->site, i,
+                                   function->instructionCount, entry->site);
+            }
+            for (TZrUInt32 j = 0u; j < entry->liveRefSlots.count; ++j) {
+                if (map->slotIndexPool[entry->liveRefSlots.offset + j] >=
+                    function->frameSlotCount) {
+                    return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT,
+                                       function->id, 0u, entry->site, i,
+                                       function->frameSlotCount,
+                                       map->slotIndexPool[entry->liveRefSlots.offset + j]);
+                }
+            }
+        }
+    }
+    for (TZrUInt32 i = 0u; i < function->gcRootCount; ++i) {
+        if (function->gcRootPool[i] == ZR_AOT_IR_ID_INVALID ||
+            function->gcRootPool[i] > function->frameLayout.logicalSlotCount) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                               0u, 0u, i, function->frameLayout.logicalSlotCount,
+                               function->gcRootPool[i]);
+        }
+    }
     for (TZrUInt32 blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
         const SZrAotIrBlock *block = &function->blocks[blockIndex];
         TZrUInt32 latestEffect = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
@@ -913,6 +958,32 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
             hash = aot_ir_hash_u32(hash, map->endLine);
             hash = aot_ir_hash_u32(hash, map->endColumn);
         }
+        hash = aot_ir_hash_u32(hash, function->gcMap != ZR_NULL);
+        if (function->gcMap != ZR_NULL) {
+            const SZrExecIrGcMap *map = function->gcMap;
+            hash = aot_ir_hash_u32(hash, map->entryCount);
+            hash = aot_ir_hash_u32(hash, map->slotIndexCount);
+            hash = aot_ir_hash_u32(hash, map->inlineRefOffsetCount);
+            hash = aot_ir_hash_u32(hash, map->safepointId);
+            hash = aot_ir_hash_u32(hash, map->sourceId);
+            hash = aot_ir_hash_u32(hash, map->rootRange.start);
+            hash = aot_ir_hash_u32(hash, map->rootRange.count);
+            for (TZrUInt32 j = 0u; j < map->entryCount; ++j) {
+                const SZrExecIrGcMapEntry *entry = &map->entries[j];
+                hash = aot_ir_hash_u32(hash, entry->site);
+                hash = aot_ir_hash_u32(hash, entry->liveRefSlots.offset);
+                hash = aot_ir_hash_u32(hash, entry->liveRefSlots.count);
+                hash = aot_ir_hash_u32(hash, entry->inlineRefOffsets.offset);
+                hash = aot_ir_hash_u32(hash, entry->inlineRefOffsets.count);
+            }
+            for (TZrUInt32 j = 0u; j < map->slotIndexCount; ++j)
+                hash = aot_ir_hash_u32(hash, map->slotIndexPool[j]);
+            for (TZrUInt32 j = 0u; j < map->inlineRefOffsetCount; ++j)
+                hash = aot_ir_hash_u32(hash, map->inlineRefOffsetPool[j]);
+        }
+        hash = aot_ir_hash_u32(hash, function->gcRootCount);
+        for (TZrUInt32 j = 0u; j < function->gcRootCount; ++j)
+            hash = aot_ir_hash_u32(hash, function->gcRootPool[j]);
         hash = aot_ir_hash_logical_map(hash, function->logicalStateMap);
         hash = aot_ir_hash_u64(hash, function->gcMapHash);
         hash = aot_ir_hash_u64(hash, function->exceptionMapHash);

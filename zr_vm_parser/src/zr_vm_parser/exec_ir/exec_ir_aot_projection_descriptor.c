@@ -164,6 +164,10 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     candidate.function.frameSlotCount = projection->frameSlotCount;
     candidate.function.sourceMaps = candidate.sourceMaps;
     candidate.function.sourceMapCount = projection->sourceMapCount;
+    candidate.function.gcMap = projection->gcMapPresent
+            ? &projection->gcMap : ZR_NULL;
+    candidate.function.gcRootPool = projection->gcRoots;
+    candidate.function.gcRootCount = projection->gcRootCount;
     candidate.module.schemaVersion = ZR_AOT_IR_SCHEMA_VERSION;
     candidate.module.target = *target;
     candidate.module.contract = *moduleContract;

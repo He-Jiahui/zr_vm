@@ -110,6 +110,10 @@ typedef struct SZrExecBcProjection {
     SZrExecIrProjectionSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
     TZrUInt32 gcMapCount;
+    SZrExecIrGcMap gcMap;
+    TZrExecIrValueId *gcRoots;
+    TZrUInt32 gcRootCount;
+    TZrBool gcMapPresent;
     TZrUInt32 deoptStateCount;
     TZrBool stateMapPresent;
     TZrUInt32 unsupportedInstructionId;
@@ -168,6 +172,10 @@ typedef struct SZrAotIrProjection {
     SZrExecIrProjectionSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
     TZrUInt32 gcMapCount;
+    SZrExecIrGcMap gcMap;
+    TZrExecIrValueId *gcRoots;
+    TZrUInt32 gcRootCount;
+    TZrBool gcMapPresent;
     TZrUInt32 deoptStateCount;
     TZrBool stateMapPresent;
     TZrUInt32 unsupportedInstructionId;

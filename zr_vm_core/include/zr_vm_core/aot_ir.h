@@ -151,6 +151,9 @@ typedef struct SZrAotIrFunction {
     TZrUInt32 memoryTokenCount;
     const SZrAotIrSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
+    const SZrExecIrGcMap *gcMap;
+    const TZrExecIrValueId *gcRootPool;
+    TZrUInt32 gcRootCount;
     const SZrExecIrStateMap *logicalStateMap; /* borrowed complete checkpoint table */
     TZrUInt64 gcMapHash;
     TZrUInt64 exceptionMapHash;

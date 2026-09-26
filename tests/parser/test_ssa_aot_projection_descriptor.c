@@ -35,6 +35,14 @@ int main(void) {
         .instructions = {{.offset = 0u}, .count = 1u},
         .successors = {{.offset = 0u}, .count = 0u},
         .terminatorInstructionId = 1u};
+    const TZrUInt32 gcSlotPool[] = {0u};
+    const SZrExecIrGcMapEntry gcEntries[] = {
+        {1u, {.start = 0u, .count = 1u}, {.start = 0u, .count = 0u}}};
+    const SZrExecIrGcMap gcMap = {
+        (SZrExecIrGcMapEntry *)gcEntries, 1u, 1u,
+        (TZrUInt32 *)gcSlotPool, 1u, 1u, ZR_NULL, 0u, 0u,
+        9u, 17u, {.start = 0u, .count = 1u}};
+    const TZrExecIrValueId gcRoots[] = {1u};
     SZrAotIrProjection input = {
         .functionId = 1u,
         .functionToken = 7u,
@@ -56,6 +64,11 @@ int main(void) {
         .valueSlots = (TZrUInt32[]){0u},
         .valueSlotCount = 1u,
         .physicalSlotCount = 1u,
+        .gcMap = gcMap,
+        .gcRoots = (TZrExecIrValueId *)gcRoots,
+        .gcRootCount = 1u,
+        .gcMapPresent = ZR_TRUE,
+        .gcMapCount = 1u,
         .blocks = (SZrExecBcBlock *)&block,
         .blockCount = 1u,
         .successors = (TZrExecIrBlockId *)successors,
@@ -69,6 +82,10 @@ int main(void) {
     SZrAotIrDiagnostic diagnostic;
     SZrBackendAotIrDiagnostic backendDiagnostic;
     TZrUInt32 instructionCount = 0u;
+    TZrUInt64 fullHash;
+    TZrUInt64 noGcHash;
+    SZrAotIrFunction noGcFunction;
+    SZrAotIrModule noGcModule;
 
     fill_contract(&input.contract, input.functionToken, 33u,
                   input.signatureHash, input.frameLayoutHash);
@@ -77,17 +94,28 @@ int main(void) {
     if (!ZrParser_AotIrProjection_BuildDescriptor(
                    &input, &target,
                    &moduleContract, &descriptor, &diagnostic)) {
-        fprintf(stderr, "status=%d fn=%u block=%u ins=%u index=%u expected=%llu actual=%llu\\n",
-                (int)diagnostic.status, diagnostic.functionId, diagnostic.blockId,
-                diagnostic.instructionId, diagnostic.index,
-                (unsigned long long)diagnostic.expected,
-                (unsigned long long)diagnostic.actual);
+        (void)diagnostic;
+        fputs("projection descriptor build failed\n", stderr);
         return 1;
     }
     assert(descriptor.owner == &input);
     assert(descriptor.module.functions == &descriptor.function);
     assert(descriptor.function.instructions[0].typeToken == 11u);
     assert(descriptor.function.frameSlots[0].byteSize == 8u);
+    assert(descriptor.function.gcMap != ZR_NULL &&
+           descriptor.function.gcMap->entries[0].site == 1u &&
+           descriptor.function.gcMap->slotIndexPool[0] == 0u);
+    assert(descriptor.function.gcRootCount == 1u &&
+           descriptor.function.gcRootPool[0] == 1u);
+    fullHash = ZrCore_AotIr_HashModule(&descriptor.module);
+    noGcFunction = descriptor.function;
+    noGcFunction.gcMap = ZR_NULL;
+    noGcFunction.gcRootPool = ZR_NULL;
+    noGcFunction.gcRootCount = 0u;
+    noGcModule = descriptor.module;
+    noGcModule.functions = &noGcFunction;
+    noGcHash = ZrCore_AotIr_HashModule(&noGcModule);
+    assert(fullHash != 0u && noGcHash != 0u && fullHash != noGcHash);
     assert(ZrCore_AotIr_ValidateModule(&descriptor.module, &diagnostic) ==
            ZR_AOT_IR_OK);
     assert(backend_aot_ir_adapter_validate(&descriptor.module,
