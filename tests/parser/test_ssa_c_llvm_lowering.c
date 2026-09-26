@@ -21,13 +21,13 @@ int main(void) {
     const TZrUInt32 results[] = {3u};
     const TZrUInt32 successors[] = {1u, 1u};
     const SZrAotIrInstruction instructions[] = {
-        {1u, ZR_EXEC_IR_OPCODE_ADD, 0u, {0u, 1u}, {0u, 2u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 4u, 0u, 0u, 0u},
-        {2u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW, {0u, 1u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 1u, 2u, 6u, 0u, 0u, 9u},
-        {3u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 2u, 3u, 7u, 1u, 0u, 0u},
+        {1u, ZR_EXEC_IR_OPCODE_ADD, 0u, {0u, 1u}, {0u, 2u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 4u, 0u, 0u, 0u, 0u, 0u, {0u, 0u}, {0u, 0u}},
+        {2u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW, {0u, 1u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 1u, 2u, 6u, 0u, 0u, 9u, 0u, 0u, {0u, 0u}, {0u, 0u}},
+        {3u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 1u}, {0u, 0u}, {0u, 0u}, 2u, 3u, 7u, 1u, 0u, 0u, 0u, 0u, {0u, 0u}, {0u, 0u}},
         /* NOP is deliberately retained as a runtime bridge in the shared
          * lowering so its accounting cannot be hidden by an adapter. */
-        {4u, ZR_EXEC_IR_OPCODE_NOP, 0u, {0u, 0u}, {0u, 0u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 8u, 0u, 0u, 0u},
-        {5u, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH, 0u, {0u, 0u}, {0u, 1u}, {0u, 2u}, {0u, 0u}, 0u, 0u, 5u, 0u, 0u, 0u}
+        {4u, ZR_EXEC_IR_OPCODE_NOP, 0u, {0u, 0u}, {0u, 0u}, {0u, 0u}, {0u, 0u}, 0u, 0u, 8u, 0u, 0u, 0u, 0u, 0u, {0u, 0u}, {0u, 0u}},
+        {5u, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH, 0u, {0u, 0u}, {0u, 1u}, {0u, 2u}, {0u, 0u}, 0u, 0u, 5u, 0u, 0u, 0u, 0u, 0u, {0u, 0u}, {0u, 0u}}
     };
     const SZrAotIrBlock block = {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 5u}, {0u, 0u}, {0u, 0u}, 5u};
     SZrAotIrFunction function;

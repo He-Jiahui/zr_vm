@@ -15,7 +15,7 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 
-#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)2u)
+#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)3u)
 #define ZR_AOT_IR_TARGET_ABI_VERSION ((TZrUInt32)1u)
 #define ZR_AOT_IR_ID_INVALID ((TZrUInt32)0u)
 
@@ -85,6 +85,10 @@ typedef struct SZrAotIrInstruction {
     TZrUInt32 deoptId;
     TZrUInt32 layoutId;
     TZrUInt32 bindingRow;
+    TZrExecIrTypeToken typeToken;
+    TZrExecIrTypeToken matchTypeToken;
+    SZrAotIrRange memoryIn;
+    SZrAotIrRange memoryOut;
 } SZrAotIrInstruction;
 
 typedef struct SZrAotIrBlock {
@@ -119,6 +123,8 @@ typedef struct SZrAotIrFunction {
     TZrUInt32 phiIncomingCount;
     const TZrUInt32 *successorPool;
     TZrUInt32 successorCount;
+    const TZrExecIrMemoryTokenId *memoryTokenPool;
+    TZrUInt32 memoryTokenCount;
     const SZrExecIrStateMap *logicalStateMap; /* borrowed complete checkpoint table */
     TZrUInt64 gcMapHash;
     TZrUInt64 exceptionMapHash;

@@ -51,6 +51,6 @@ borrows complete logical maps from its function producer;
 (`descriptorOnly`, `artifactAvailable = false`). No producer currently
 converts the owned projection into that module, and the archived production
 emitters still consume the legacy module. Connecting those representations
-must preserve the state-map entry and side-pool lifetimes. A C/LLVM artifact
+must preserve typed tokens, memory edges, and the state-map entry and side-pool lifetimes. A C/LLVM artifact
 claim requires replacing
 the legacy reads family by family and validating an actual emitted artifact.

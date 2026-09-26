@@ -33,7 +33,7 @@ required capability mask may contain only known execution capabilities.
 The module and function execution contracts likewise reject unknown capability
 and effect bits before any backend lowering begins.
 
-Schema version 2 replaces the old `{resumeId, instructionId, stateHash}`
+Schema version 3 replaces the old `{resumeId, instructionId, stateHash}`
 checkpoint summary with a borrowed view of the complete ExecIR logical
 state map. A function without checkpoints may leave `logicalStateMap` null.
 With a map, the function token, signature hash and generation must match the
@@ -44,6 +44,13 @@ hash includes checkpoint phases, effect/handler/cleanup metadata and live,
 root and owner-state pools, not capacities, pointers or a caller-supplied
 summary hash. No physical native frame restoration is implied.
 
+The function instruction view also carries typed `typeToken` and
+`matchTypeToken` identities plus bounded `memoryIn`/`memoryOut` ranges into a
+borrowed memory-token pool. TYPE_TEST must carry a nonzero match type token;
+other instructions must carry zero. Memory ranges and every pool token are
+validated before hashing, so C/LLVM consumers cannot silently lose memory
+ordering or type-test semantics.
+
 The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the
 canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
@@ -52,6 +59,7 @@ contract versions, target ABI, IDs, ranges, opcode bounds, CFG block instruction
 partition, last-in-block terminator opcode and edge-target membership,
 state-map storage shape, function identity, instruction/source membership,
 bounded live/root/owner pools and phase-aware resume identity, effect pairing,
+typed match-token and memory-token identities/ranges,
 frame layout, phi incoming cardinality and ordered
 predecessor-edge membership in the containing block's predecessor edge range,
 nonzero state-map resume identity, and

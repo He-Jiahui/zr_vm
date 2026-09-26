@@ -42,9 +42,11 @@ int main(void) {
     TZrExecIrValueId liveValues[] = {1u};
     TZrExecIrValueId roots[] = {1u};
     TZrUInt32 owners[] = {ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED};
+    TZrExecIrMemoryTokenId memoryTokens[] = {1u};
     const SZrAotIrInstruction instructions[] = {
         {1u, ZR_EXEC_IR_OPCODE_PHI, 0u, {0u, 1u}, {0u, 1u},
-         {0u, 0u}, {0u, 1u}, 0u, 0u, 1u, 0u, 0u, 0u}
+         {0u, 0u}, {0u, 1u}, 0u, 0u, 1u, 0u, 0u, 0u,
+         0u, 0u, {0u, 0u}, {0u, 0u}}
     };
     const SZrAotIrBlock blocks[] = {
         {1u, ZR_EXEC_IR_BLOCK_FLAG_ENTRY, {0u, 1u}, {0u, 1u},
@@ -109,6 +111,50 @@ int main(void) {
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);
     assert(hash == ZrCore_AotIr_HashModule(&module));
+    {
+        SZrAotIrInstruction typedInstruction = instructions[0];
+        SZrAotIrFunction typedFunction = function;
+        SZrAotIrModule typedModule = module;
+        typedInstruction.typeToken = 17u;
+        typedInstruction.memoryIn = (SZrAotIrRange){0u, 1u};
+        typedFunction.instructions = &typedInstruction;
+        typedFunction.memoryTokenPool = memoryTokens;
+        typedFunction.memoryTokenCount = 1u;
+        typedModule.functions = &typedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&typedModule, &diagnostic) ==
+               ZR_AOT_IR_OK);
+        assert(ZrCore_AotIr_HashModule(&typedModule) != hash);
+        {
+            TZrUInt64 typedHash = ZrCore_AotIr_HashModule(&typedModule);
+            memoryTokens[0] = 2u;
+            assert(ZrCore_AotIr_HashModule(&typedModule) != typedHash);
+            memoryTokens[0] = 1u;
+        }
+        typedInstruction.matchTypeToken = 42u;
+        assert(ZrCore_AotIr_ValidateModule(&typedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        assert(diagnostic.instructionId == typedInstruction.id);
+        assert(diagnostic.actual == 42u);
+        typedInstruction.matchTypeToken = 0u;
+        typedInstruction.opcode = ZR_EXEC_IR_OPCODE_TYPE_TEST;
+        typedInstruction.phiIncoming = (SZrAotIrRange){0u, 0u};
+        assert(ZrCore_AotIr_ValidateModule(&typedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        typedInstruction.matchTypeToken = 42u;
+        assert(ZrCore_AotIr_ValidateModule(&typedModule, &diagnostic) ==
+               ZR_AOT_IR_OK);
+        typedInstruction.opcode = ZR_EXEC_IR_OPCODE_PHI;
+        typedInstruction.phiIncoming = (SZrAotIrRange){0u, 1u};
+        typedInstruction.matchTypeToken = 0u;
+        typedInstruction.memoryOut = (SZrAotIrRange){1u, 1u};
+        assert(ZrCore_AotIr_ValidateModule(&typedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_RANGE);
+        typedInstruction.memoryOut = (SZrAotIrRange){0u, 0u};
+        memoryTokens[0] = ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID;
+        assert(ZrCore_AotIr_ValidateModule(&typedModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        memoryTokens[0] = 1u;
+    }
     owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
     assert(hash != ZrCore_AotIr_HashModule(&module));
     owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
