@@ -1616,7 +1616,6 @@ static void zr_container_array_clear_items_reuse_storage(SZrObject *items) {
     items->superArrayRawIntLength = 0;
     if (items->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
         items->superArrayRawIntData != ZR_NULL) {
-        /* Keep the raw buffer as the canonical empty-array storage. */
         items->superArrayStorageGeneration++;
     } else {
         items->superArrayStorageMode = ZR_SUPER_ARRAY_STORAGE_MODE_NONE;
@@ -3452,7 +3451,7 @@ static TZrBool zr_container_map_get_item(ZrLibCallContext *context, SZrTypeValue
 }
 
 /* 只读内联派发只读取已经建立的 entries，避免一次下标访问隐式创建 backing；
- * 未命中仍按 Map.get 的 null 语义返回，供执行器与普通 meta 回调保持一致。
+ * entries 不存在时返回 false，由 core 的正常状态分支转换成 null 结果。
  */
 static ZR_FORCE_INLINE TZrBool zr_container_map_get_item_readonly_inline_fast(SZrState *state,
                                                                               const SZrTypeValue *selfValue,

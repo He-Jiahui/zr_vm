@@ -306,7 +306,7 @@ static SZrObject *pooling_acquire_backing(
     }
 }
 
-/* rent 把池内 backing 交给带代数的租约；两个临时根覆盖从 available 移除到结果发布的窗口。 */
+/* rent 把池内 backing 交给带代数的租约；backing 根覆盖离池交接，lease 根保护字段初始化。 */
 static TZrBool pooling_buffer_pool_rent(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -351,7 +351,8 @@ static TZrBool pooling_buffer_pool_rent(
     }
 
     /* TODO: backing 已从 available 移除后，租约创建或字段写入失败会直接走 cleanup；
-     * 需以分配/字段写入故障注入核对是否应归还 backing，以及 generation/reuseCount 的提交边界。 */
+     * lease 创建后才 BeginTempValueRoot。需以 GC/故障注入核对这一窗口、backing 回滚
+     * 以及 generation/reuseCount 的提交边界。 */
     lease = ZrLib_Type_NewInstance(
             context->state, "zr.pooling.PoolLease");
     if (lease == ZR_NULL) {

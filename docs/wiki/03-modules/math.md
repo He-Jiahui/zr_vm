@@ -11,12 +11,17 @@ related_code:
   - zr_vm_lib_math/src/zr_vm_lib_math/quaternion/quaternion.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/common.c
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/scalar/scalar.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/common.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/plans/syntax/README.md
 tests:
   - tests/fixtures/projects/native_math_export_probe/native_math_export_probe.zrp
@@ -60,23 +65,22 @@ descriptor 签名如下；所有参数按值传递，除 `almostEqual` 外返回
 | `floor` / `ceil` / `round` | 各接收一个 `float`，返回 `float` | 舍入 |
 | `sign` | `sign(value: float): float` | 符号值 |
 | `degrees` / `radians` | 各接收一个 `float`，返回 `float` | 角度转换 |
-| `almostEqual` | `almostEqual(lhs: float, rhs: float, epsilon?: float): bool` | 绝对/相对误差比较 |
+| `almostEqual` | `almostEqual(lhs: float, rhs: float, epsilon?: float): bool` | 仅比较绝对误差 `abs(lhs-rhs) <= epsilon` |
 | `invokeCallback` | `invokeCallback(callback: function, value: float): float` | 通过 `ZrLibCallContext` 调用 ZR callable |
 
 值类型：`Vector2`、`Vector3`、`Vector4`、`Quaternion`、`Complex`、`Matrix3x3`、
 `Matrix4x4`；引用类型：`Tensor`。
 
-向量和矩阵类型支持构造、按分量读取/写入、加减、标量乘除、点积/叉积（维度允许时）、
-长度和归一化。矩阵提供转置、乘法和行列式/逆（奇异矩阵返回错误或失败状态，不能静默
-产生 NaN）。`Quaternion` 提供共轭、归一化和向量旋转；`Complex` 提供实部/虚部、共轭
-和复乘除；`Tensor` 以 shape、stride 和元素 layout 保存多维数据，切片视图的生命周期
-遵守 container view 规则。
+向量提供分量、长度、归一化、点积和插值，`Vector3` 另提供叉积；矩阵提供转置、乘法、
+行列式和逆，逆矩阵计算在实现判定不可逆时返回 native 失败。`Quaternion` 提供共轭、
+归一化、乘法和球面插值；`Complex` 提供实部/虚部、共轭和复乘。`Tensor` 用公开的
+`shape/rank/size` 字段与隐藏的 `__data` 数组保存 row-major 多维数据。
 
 ## 类型成员清单
 
-下表列出 descriptor 中的命名方法；`+`、`-`、一元 `-`、比较和字符串化由同一类型的
-operator meta method 提供。构造器参数均为 `float`，除特别注明外方法返回新值，不就地
-修改 receiver。
+下表列出 descriptor 中的命名方法；各类型的运算符支持范围以其 descriptor 的 meta
+method 为准。除 Tensor 的 `fill/set` 会修改 receiver 并返回它自身外，表中返回对象的
+方法创建新对象。
 
 | 类型 | 构造器与命名方法 |
 | --- | --- |
@@ -87,11 +91,12 @@ operator meta method 提供。构造器参数均为 `float`，除特别注明外
 | `Complex(real, imag)` | `magnitude(): float`、`phase(): float`、`conjugate(): Complex`、`normalized(): Complex` |
 | `Matrix3x3(...values)` | `identity(): Matrix3x3`（静态）；`transpose(): Matrix3x3`；`determinant(): float`；`inverse(): Matrix3x3`；`mulVector(v: Vector3): Vector3`；`mulMatrix(m: Matrix3x3): Matrix3x3` |
 | `Matrix4x4(...values)` | `translation(x, y, z)`、`scale(x, y, z)`、`rotationX/Y/Z(angle: float)`、`identity()`（均静态）；`transpose()`、`determinant()`、`inverse()`、`mulVector(v: Vector4)`、`mulMatrix(m: Matrix4x4)` |
-| `Tensor(shape: array, fillValue: float)` | `clone()`、`reshape(shape: array)`、`fill(value: float)`、`get(index: int)`、`set(index: int, value: float)`、`sum()`、`mean()`、`transpose2D()`、`matmul(other: Tensor)`、`add/sub(other: Tensor)`、`mulScalar(value: float)`、`toArray()` |
+| `Tensor(shape: array, data: array)` | `clone()`、`reshape(shape: array)`、`fill(value: float)`、`get(indices: array)`、`set(indices: array, value: float)`、`sum()`、`mean()`、`transpose2D()`、`matmul(other: Tensor)`、`add/sub(other: Tensor)`、`mulScalar(value: float)`、`toArray()` |
 
-`Tensor` 的 `get/set` 当前 descriptor 以单个 index 参数表示线性 row-major 访问；shape
-检查由实现执行，`set` 返回更新后的 `Tensor`。矩阵构造器支持零参数（生成 identity）或
-恰好 9/16 个 `float` 参数；其它数量直接报告 arity error。
+`Tensor` 构造回调实际读取 shape 与 data 两个数组，要求 data 长度等于各维度之积；当前
+descriptor 的签名文字仍误写为 `fillValue: float`。`get/set` 的单个参数是长度与 rank 相同
+的多维 indices 数组，按 row-major 映射到 data；`set` 原位更新并返回 receiver。
+矩阵构造器支持零参数（生成 identity）或恰好 9/16 个 `float` 参数。
 
 ## 数值规则
 

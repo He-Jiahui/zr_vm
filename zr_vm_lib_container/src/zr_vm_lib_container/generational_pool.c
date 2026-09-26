@@ -12,10 +12,11 @@
 #define ZR_POOL_NO_SLOT ((TZrSize)SIZE_MAX)
 #define ZR_POOL_DEFAULT_SLAB_CAPACITY ((TZrSize)256u)
 
+/* 进程级池身份只在共享锁内递增，避免跨池句柄误认。 */
 static uint64_t gNextPoolId = 1u;
 static volatile long gPoolIdLockWord = 0L;
 
-/* 进程内唯一池 ID 让同一槽位与代数不能跨池误用；ID 耗尽后拒绝继续创建。 */
+/* 同一自旋原语用于进程级 ID 分配和 CONCURRENT 池的内部状态。 */
 static void zr_pool_lock_word(volatile long *word) {
 #if defined(_MSC_VER)
     while (_InterlockedExchange(word, 1L) != 0L) {

@@ -945,11 +945,17 @@ EZrAotIrStatus ZrCore_AotIr_ValidateTarget(const SZrAotIrTargetContract *target,
 EZrAotIrStatus ZrCore_AotIr_ValidateModule(const SZrAotIrModule *module,
                                            SZrAotIrDiagnostic *diagnostic) {
     aot_ir_diag_clear(diagnostic);
-    if (module == ZR_NULL ||
-        module->schemaVersion != ZR_AOT_IR_SCHEMA_VERSION ||
-        module->functions == ZR_NULL || module->functionCount == 0u) {
+    if (module == ZR_NULL) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, 0u, 0u, 0u, 0u,
-                           ZR_AOT_IR_SCHEMA_VERSION, module != ZR_NULL ? module->schemaVersion : 0u);
+                           ZR_AOT_IR_SCHEMA_VERSION, 0u);
+    }
+    if (module->schemaVersion != ZR_AOT_IR_SCHEMA_VERSION) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_VERSION_MISMATCH, 0u, 0u, 0u, 0u,
+                           ZR_AOT_IR_SCHEMA_VERSION, module->schemaVersion);
+    }
+    if (module->functions == ZR_NULL || module->functionCount == 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, 0u, 0u, 0u, 0u,
+                           1u, 0u);
     }
     if (ZrCore_AotIr_ValidateTarget(&module->target, diagnostic) != ZR_AOT_IR_OK) {
         return diagnostic != ZR_NULL ? diagnostic->status : ZR_AOT_IR_INVALID_TARGET;

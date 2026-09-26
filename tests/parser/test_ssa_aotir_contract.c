@@ -120,6 +120,14 @@ int main(void) {
     module.target.abiHash = UINT64_C(66);
 
     assert(ZrCore_AotIr_ValidateModule(&module, &diagnostic) == ZR_AOT_IR_OK);
+    {
+        SZrAotIrModule wrongSchema = module;
+        wrongSchema.schemaVersion++;
+        assert(ZrCore_AotIr_ValidateModule(&wrongSchema, &diagnostic) ==
+               ZR_AOT_IR_VERSION_MISMATCH);
+        assert(diagnostic.expected == ZR_AOT_IR_SCHEMA_VERSION);
+        assert(diagnostic.actual == wrongSchema.schemaVersion);
+    }
     assert(ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);

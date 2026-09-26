@@ -1,0 +1,2 @@
+file	unit	kind	callers	intent	constraints	evidence	decision	reason
+zr_vm_lib_container/CMakeLists.txt	zr_vm_lib_container.build	config	CMakeLists.txt:add_subdirectory;zr_vm_cli/CMakeLists.txt:link;tests/CMakeLists.txt:container targets	构建容器 provider 并链接规范迭代协议拥有者	容器注册链先调用 ZrVmLibIteration_Register;构建需链接 core/library/iteration	zr_vm_lib_container/CMakeLists.txt;zr_vm_lib_container/src/zr_vm_lib_container/module.c:ZrVmLibContainer_Register;zr_vm_cli/src/zr_vm_cli/project/project.c:registration	commented	跨构建链接与运行期协议注册的关系需要在模块入口说明
