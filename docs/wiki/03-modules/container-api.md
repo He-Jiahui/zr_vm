@@ -6,6 +6,8 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_iteration/src/zr_vm_lib_iteration/runtime/descriptor.c
+  - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
@@ -13,9 +15,10 @@ implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/library-and-builtins/index.md
 tests:
-  - tests/container/test_container_module.c
+  - tests/container/test_container_runtime.c
   - tests/container/test_generational_pool.c
   - tests/container/test_generational_pool_type_layout.c
 doc_type: api-reference
@@ -39,7 +42,7 @@ values.removeAt(1);
 
 | 成员 | 签名 | 语义 |
 | --- | --- | --- |
-| 字段 | `length: int`、`capacity: int` | 当前元素数和已分配容量，只读观察。 |
+| 字段 | `length: int`、`capacity: int` | 当前元素数和容量；当前 descriptor 将两个字段标记为可写。 |
 | 构造 | `Array<T>(capacity?: int)` | 0 或指定初始容量；容量不足时增长。 |
 | `span` | `span(): Span<T>` | 取得连续视图；视图存活期间不能让 backing storage 失效。 |
 | `add` | `(value: T): null` | 追加元素。 |
@@ -52,6 +55,11 @@ values.removeAt(1);
 
 随机访问为摊销 O(1)，insert/remove 为 O(n)，contains/indexOf 为 O(n)。`span` 是借用 view，
 不能跨越可能重新分配的 `add/insert` 或 owner 销毁；需要稳定身份时使用 `Pool<T>`。
+
+`kArrayFields` 使用默认 `isReadonly=false` 的字段初始化宏，materialize 时将其投影为
+`isWritable=true`。TODO: 现有容器测试覆盖字段读取、容量增长与 clear 后容量保留，尚未
+验证脚本直接赋值 `length/capacity` 的行为；需补查赋值路径及赋值后与 backing storage
+的一致性，不能仅凭 descriptor 把直接赋值作为已验证的容器修改方式。
 
 ## Map、Set、Pair
 

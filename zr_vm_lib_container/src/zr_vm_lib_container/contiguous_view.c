@@ -74,6 +74,8 @@ static TZrBool contiguous_view_store(
         return ZR_FALSE;
     }
 
+    /* TODO: 三个字段写入接口均返回 void，此处仅靠 threadStatus 判断完成；
+     * 需对 Object_SetFieldCString 的分配/pin 失败注入，核对部分初始化视图是否会被当作成功发布。 */
     if (source != ZR_NULL) {
         ZrLib_Object_SetFieldCString(
                 state, view, kViewSourceField, source);

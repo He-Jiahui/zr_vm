@@ -2573,6 +2573,9 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
     }
 
     capacity = zr_container_get_int_field(state, arrayObject, kContainerCapacityField, 0);
+    /* TODO: capacity 是可见字段，负值在此转换为 TZrSize 后可能直接通过比较；
+     * 倍增也缺少上界检查。需核对字段写权限并用边界值验证容量契约。
+     */
     if ((TZrSize)capacity >= requiredLength) {
         return ZR_TRUE;
     }
@@ -3782,6 +3785,9 @@ static TZrBool zr_container_linked_list_constructor(ZrLibCallContext *context, S
 }
 
 static TZrBool zr_container_linked_list_add_first(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* TODO: addFirst/addLast/clear 分多次写首尾和节点连接；需用字段写入失败
+     * 注入验证中途退出后 count、首尾与双向链接的一致性。
+     */
     SZrObject *self = zr_container_self_object(context);
     SZrObject *node;
     SZrObject *first;
@@ -4029,6 +4035,9 @@ static const ZrLibMethodDescriptor kArrayMethods[] = {
                                            ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kArrayMetaMethods[] = {
+        /* TODO: 此构造参数实际作为 capacity 读取，却复用名为 index 的元数据；
+         * 需检查命名实参、签名帮助与 LSP 是否向用户暴露错误参数名。
+         */
         {ZR_META_CONSTRUCTOR, 0, 1, zr_container_array_constructor, "Array<T>", ZR_NULL, kArrayIndexParameter, 1},
         {ZR_META_GET_ITEM, 1, 1, zr_container_array_get_item, "T", ZR_NULL,
          kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter), ZR_NULL, 0,
