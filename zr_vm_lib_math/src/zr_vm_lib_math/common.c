@@ -355,7 +355,7 @@ TZrBool ZrMath_ArrayReadInt(SZrState *state, SZrObject *array, TZrSize index, TZ
 }
 
 TZrBool ZrMath_ArraySetValue(SZrState *state, SZrObject *array, TZrSize index, const SZrTypeValue *value) {
-    /* TODO: Fill/Set 把本 helper 的真值当作写入成功；底层 SetValue 无返回值，
+    /* TODO: 本 helper 无条件返回成功，Fill/Set 也未检查写入状态；底层 SetValue 无返回值，
      * 需用分配失败或不可写数组场景确认错误是否可由 VM 状态传出。 */
     SZrTypeValue key;
     ZrLib_Value_SetInt(state, &key, (TZrInt64)index);
@@ -373,7 +373,7 @@ TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
         if (!ZrMath_ArrayReadInt(state, shapeArray, index, &dimension) || dimension <= 0) {
             return -1;
         }
-        /* BUG: ReadInt 会把 2.9 截断为 2；Tensor([2.9], [a,b]) 因而通过长度校验，
+        /* BUG: ReadInt 会把 2.9 截断为 2；Tensor([2.9], [1,2]) 因而通过长度校验，
          * 但对外 shape 字段仍为 2.9，维度契约与实际布局不一致。 */
         total *= dimension;
     }
@@ -463,6 +463,8 @@ SZrObject *ZrMath_TensorMake(SZrState *state, SZrObject *shapeArray, SZrObject *
 }
 
 TZrBool ZrMath_TensorShapeEquals(SZrState *state, SZrObject *lhsShape, SZrObject *rhsShape) {
+    /* BUG: 浮点维度沿 ArrayReadInt 截断后比较；[1.1] 和 [1.9] 会被 Add/Sub
+     * 判为同形状，这两种 shape 都可用单元素 data 通过当前构造器。 */
     TZrSize index;
     TZrSize count = ZrLib_Array_Length(lhsShape);
     if (count != ZrLib_Array_Length(rhsShape)) {

@@ -915,7 +915,7 @@ static const ZrLibTypeDescriptor kPoolingTypes[] = {
          .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)},
 };
 
-/* 合同哈希随稳定槽协议发布，供跨提供者消费者核对布局版本。 */
+/* 合同哈希随稳定槽协议发布，供宿主核对提供者的能力契约版本。 */
 static const ZrLibConstantDescriptor kPoolingConstants[] = {
         {.name = "STABLE_SLOT_CONTRACT_HASH",
          .kind = ZR_LIB_CONSTANT_KIND_INT,

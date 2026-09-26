@@ -19,7 +19,7 @@ TZrBool ZrMath_Quaternion_Conjugate(ZrLibCallContext *context, SZrTypeValue *res
 TZrBool ZrMath_Quaternion_Inverse(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Quaternion_Dot(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Quaternion_Mul(ZrLibCallContext *context, SZrTypeValue *result);
-/** @brief 在两端之间取短路径插值；调用方若需要单位结果须自行核实输入和结果范数。 */
+/** @brief 单位端点时按短球面弧插值；调用方若需要单位结果须自行核实输入和结果范数。 */
 TZrBool ZrMath_Quaternion_Slerp(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Quaternion_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrMath_Quaternion_MetaSub(ZrLibCallContext *context, SZrTypeValue *result);

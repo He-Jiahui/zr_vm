@@ -61,6 +61,7 @@ TZrBool ZrMath_Quaternion_Conjugate(ZrLibCallContext *context, SZrTypeValue *res
     return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Inverse(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: (1e200, 0, 0, 0) 的平方范数溢出为无穷，使可表示的逆元退化为零。 */
     ZrMathQuaternion q; TZrFloat64 lenSq; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
     lenSq = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
@@ -86,7 +87,7 @@ TZrBool ZrMath_Quaternion_Mul(ZrLibCallContext *context, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Slerp(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* 负点积翻转右端以选择较短插值弧；接近同向时走线性分支，避免除以小 sin(theta)。 */
+    /* 对单位端点，负点积翻转右端可选择较短插值弧；接近同向时走线性分支，避免除以小 sin(theta)。 */
     /* TODO: 当前不约束 t 或端点范数，线性分支也不重新归一化；
      * 核对 API 是否承诺单位输出及 t∈[0,1]，并用近邻单位端点的中点测试验证。 */
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; TZrFloat64 t = 0.0; TZrFloat64 dot; TZrFloat64 theta; TZrFloat64 s0; TZrFloat64 s1; SZrObject *object;

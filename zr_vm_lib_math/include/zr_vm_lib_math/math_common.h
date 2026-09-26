@@ -51,7 +51,7 @@ typedef struct ZrMathComplex {
     TZrFloat64 imag;
 } ZrMathComplex;
 
-/* TODO: 向量和四元数回调把上述结构体视为连续 TZrFloat64 数组传给 ZrMath_Dot；
+/* TODO: 向量回调把上述 Vector2/3/4 结构体视为连续 TZrFloat64 数组传给 ZrMath_Dot；
  * 核对成员填充及跨成员指针运算的 C 对象模型约束，再决定是否保留这种调用约定。 */
 
 /** @brief 从 Tensor 对象借用的形状和数据数组视图。
@@ -70,7 +70,7 @@ TZrFloat64 ZrMath_AbsFloat(TZrFloat64 value);
  *  @note 调用方负责选择非负 epsilon；NaN 输入不会得到相等结果。
  */
 TZrBool ZrMath_AlmostEqual(TZrFloat64 lhs, TZrFloat64 rhs, TZrFloat64 epsilon);
-/** @brief 计算已验证长度的连续数值分量点积，供向量和四元数回调复用。
+/** @brief 计算已验证长度的连续数值分量点积，供向量回调复用。
  *  @pre `lhs`、`rhs` 均指向至少 `count` 个可读 `TZrFloat64`。
  */
 TZrFloat64 ZrMath_Dot(const TZrFloat64 *lhs, const TZrFloat64 *rhs, TZrSize count);
