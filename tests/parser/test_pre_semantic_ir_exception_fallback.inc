@@ -911,6 +911,7 @@ static void test_unmodeled_try_scope_does_not_start_detached_call_cfg(void) {
             "try { identity(); }\n"
             "catch (error) {\n"
             "  var observed = error;\n"
+            "  observed;\n"
             "  error;\n"
             "}\n";
     static TZrChar nonpropagatingHandlerLocalSourceName[] =

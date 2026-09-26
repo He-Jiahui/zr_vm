@@ -73,6 +73,8 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
+  - tests/parser/test_canonical_type_graph.c
+  - tests/parser/test_canonical_type_graph_union_cases.h
   - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/parser/test_semantic_value_facts.c
@@ -235,6 +237,16 @@ canonical TypeId of its initializer temporary while the source symbol remains
 unresolved. Without a canonical initializer type, no SemanticIR local is
 emitted; the legacy binding survives and source-CFG preflight refuses to
 promote a declaration lacking a matching INITIALIZE.
+Declared callable bodies remain isolated on the legacy execution path. If an
+open generic parameter has a source binding but no closed canonical TypeId,
+its local read retains GET_STACK without inventing a typed SemanticIR place;
+this exception is confined to inactive callable CFGs. Load failures in active
+source CFGs still report missing canonical facts.
+The guard stays beside the existing LOAD/materialization logic for now: it
+depends on that function's private slot and legacy emission ordering. If the
+large compiler SemanticIR unit is split, move local materialization, LOAD
+emission, and this callable-only compatibility check together rather than
+extracting the check as a detached helper module.
 Source CFG preflight promotes cross-type CONVERT only when both canonical types
 are numeric primitives and the explicit scalar runtime token matches the
 destination primitive. That token is distinct from the canonical TypeId and

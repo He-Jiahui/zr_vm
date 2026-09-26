@@ -46,6 +46,8 @@ plan_sources:
   - .codex/plans/20260926-lsp-experience-repair.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 tests:
+  - tests/parser/test_canonical_type_graph.c
+  - tests/parser/test_canonical_type_graph_union_cases.h
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/parser/test_semantic_query_type_use_cases.h
@@ -135,6 +137,10 @@ that value's TypeId without publishing an inferred exact type on the source
 declaration symbol. If neither declaration nor initializer has a canonical
 type, the legacy compiler retains the binding but no executable SemanticIR
 local is emitted; the source CFG completeness check must reject promotion.
+An open generic parameter in an inactive declared callable likewise keeps
+its source identity and legacy GET_STACK read when its type cannot be closed;
+no `object` TypeId or executable SSA claim is synthesized. Typed or active
+source-local LOAD errors are not subject to that compatibility path.
 Identifier reads still publish the resolved declaration
 identity, while exact expression inference fails. If later analysis obtains an
 exact type, the type can be attached to the same declaration identity.

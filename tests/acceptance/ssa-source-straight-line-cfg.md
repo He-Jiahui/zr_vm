@@ -51,8 +51,25 @@ symbol. If no such value is available, the legacy declaration remains but the
 source graph cannot qualify as executable without a matching INITIALIZE.
 An adjacent `zr_vm_canonical_type_graph_test` run passed 18/19: the open const
 generic method fixture fails while lowering `return value` through SemanticIR
-(`canonical_open_const.zr:3:62`). This separately observed failure is not
-counted as passing and still needs its own root-cause investigation.
+(`canonical_open_const.zr:3:62`). This first run is not counted as passing;
+the follow-up below records its repair and the final result.
+
+## Open Generic Callable Follow-Up (2026-09-27)
+
+The open const generic method's source parameter has a valid declaration
+symbol but no closed canonical TypeId in its callable isolation. Before the
+repair, local materialization could not provide a SemanticIR Place and the
+ordinary source LOAD stopped compilation. The callable already uses the
+legacy execution path: only for an inactive declared callable whose known
+local binding has an invalid TypeId and no existing semantic slot, LOAD now
+uses its legacy GET_STACK. This does not manufacture an object TypeId or
+promote the callable to executable SSA. Active source CFGs and typed local
+LOAD failures keep their existing strict behavior. The existing open const
+generic fixture reproduced 19 tests / 1 failure before the change; after the
+repair the static MSVC `zr_vm_canonical_type_graph_test` ran 19/19, alongside
+the pre-semantic-IR golden 101/101 and straight-line source suite 35/35.
+The try/catch fallback fixture also reads its local `observed` before exiting;
+the golden continues to require analysis-only behavior there.
 
 ## Scope
 

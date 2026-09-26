@@ -1938,6 +1938,28 @@ static TZrBool compiler_semantic_ir_emit_ownership(
     return compiler_semantic_ir_emit(cs, &spec);
 }
 
+static TZrBool compiler_semantic_ir_has_untyped_callable_local(
+        const SZrCompilerState *cs, TZrUInt32 stackSlot) {
+    TZrSize index;
+    if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL ||
+        cs->preSemanticIrCfgActive || cs->typeEnv == ZR_NULL ||
+        !cs->localVars.isValid) return ZR_FALSE;
+    for (index = cs->localVars.length; index > 0U; --index) {
+        const SZrFunctionLocalVariable *local =
+                (const SZrFunctionLocalVariable *)ZrCore_Array_Get(
+                        (SZrArray *)&cs->localVars, index - 1U);
+        const SZrTypeBinding *binding;
+        if (local == ZR_NULL || local->stackSlot != stackSlot ||
+            local->name == ZR_NULL) continue;
+        binding = ZrParser_TypeEnvironment_FindVariableBinding(
+                cs->typeEnv, local->name);
+        return (TZrBool)(binding != ZR_NULL &&
+                binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                binding->typeId == ZR_SEMANTIC_ID_INVALID);
+    }
+    return ZR_FALSE;
+}
+
 TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
                                         TZrUInt32 stackSlot,
                                         TZrUInt32 resultSlot,
@@ -1946,6 +1968,17 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
     EZrInstructionCode opcode;
 
     if (cs != ZR_NULL && cs->preSemanticIrCfgTerminated) {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(GET_STACK),
+                        (TZrUInt16)resultSlot,
+                        (TZrInt32)stackSlot));
+        return ZR_TRUE;
+    }
+    if (compiler_semantic_ir_find_slot(cs, stackSlot) == ZR_NULL &&
+        compiler_semantic_ir_has_untyped_callable_local(cs, stackSlot)) {
+        /* Open generic callable parameters have no closed SemanticIR TypeId. */
         emit_instruction(
                 cs,
                 create_instruction_1(
