@@ -5,12 +5,15 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
   - zr_vm_parser/include/zr_vm_parser/ffi_contract.h
   - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
 implementation_files:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_support.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
 plan_sources:
   - user: 2026-09-10 继续细化 Wiki 的语言规则、用例与 C 接口说明
   - docs/plans/syntax/10-native-ffi-module-package/m2-v2-declarations.md
@@ -54,10 +57,10 @@ let ffi = import("zr.ffi");
 |  | `nullPointer(type)` | 创建带 target type 的 null pointer wrapper。 |
 | LibraryHandle | `close()` / `isClosed()` | 关闭库；`close` 可重复调用。 |
 |  | `getSymbol(name, signature)` | 解析动态符号，编译 typed `SymbolHandle`。 |
-|  | `getContractSymbol(contract)` | 以 retained static native-import contract 解析符号。 |
-|  | `getVersion([versionSymbol])` | 读取库导出的版本字符串。 |
+|  | `getContractSymbol(index:int)` | 以编译器生成的整数索引查找活动调用帧保留的同库 native-import contract。 |
+|  | `getVersion([versionSymbol])` | 读取库导出的版本字符串；未找到时返回 `null`。 |
 | SymbolHandle | `call(args)` / `symbol(...)` | 用 array 或 positional meta-call 执行已编译 ABI call。 |
-| CallbackHandle | `close()` | 释放/禁用 callback trampoline；可重复。 |
+| CallbackHandle | `close()` | 禁用 callback 进入 VM；可重复，trampoline 的存储由 GC finalizer 释放。 |
 | PointerHandle/`Ptr<T>` | `as(type)`、`read(type)`、`close()`、`span()`、`[]` | 有类型的 native address/view；访问仍受 pin/owner/ABI 约束。 |
 | BufferHandle | `allocate(size)`、`pin()`、`read`、`write`、`slice`、`close()` | managed native byte buffer，明确 pin 后获得 pointer view。 |
 
@@ -82,9 +85,11 @@ callback(signature, closure)
 ```
 
 `LibraryHandle`、`SymbolHandle` 和 `CallbackHandle` 都是 managed wrapper，但“受 GC 管理”不等于
-“任意时刻都可调用”。显式 `close()` 使资源生命周期可预测；close 之后的 lookup/call 应被
-拒绝。Library close 与现有 SymbolHandle 的关系要由 runtime handle data/contract 处理，不能
-在 native code 中缓存 symbol pointer 并假定库仍常驻。
+“任意时刻都可调用”。LibraryHandle 和 CallbackHandle 有显式 `close()`；SymbolHandle
+没有公开 `close()`，释放 VM 引用后由 finalizer 减少库的 symbol 计数。Library close
+立即阻止新 lookup 和已有 symbol 调用；已有 symbol 未最终化时延迟卸载动态库，不能在
+native code 中缓存 symbol pointer 并假定库仍常驻。**BUG:** 此时 `getVersion()` 仍可绕过
+逻辑关闭检查调用版本导出。
 
 推荐脚本结构：
 
@@ -109,7 +114,7 @@ try {
 | 情形 | 正确入口 | 最重要的验证 |
 | --- | --- | --- |
 | 源代码固定声明一个 C 函数 | `native extern` | parser/semantic build 的 `SZrNativeImportContract`、ABI/hash/layout。 |
-| 已有 retained static contract，运行时取符号 | `LibraryHandle.getContractSymbol(contract)` | contract 与当前 library/target ABI 仍匹配。 |
+| 已有 retained static contract，运行时取符号 | `LibraryHandle.getContractSymbol(index:int)` | 整数索引由编译器发出；contract 属于活动调用帧且 library locator 匹配。 |
 | 运行时用户选择库/符号 | `getSymbol(name, signature)` | signature object 合法、符号存在、library open。 |
 | C 回调 ZR closure | `ffi.callback(signature, fn)` | callback signature、lifetime/thread policy、VM state/root。 |
 
@@ -145,8 +150,9 @@ C ABI arguments
 
 callback 失败不能把未初始化 C return storage 交给 native caller；当前实现会清零 call storage
 并记录 native-call/marshal error。C 库若保存 callback 到调用返回之后，必须使用与其存储行为
-匹配的 lifetime policy；`call`-scoped callback 不能被持久保存。关闭 callback 后再回调是错误，
-不是“自动重新创建 closure”。
+匹配的 lifetime policy；`call`-scoped callback 不能被持久保存。`callback.close()` 只标记
+关闭并阻止后续回调进入 VM；libffi closure/trampoline 由 GC finalizer 释放。关闭后再回调
+是错误，不会自动重新创建 closure。
 
 特别注意线程：callback 绑定到创建它的 VM state/owner context。跨线程、跨 isolated GC domain
 调用需要明确的 dispatch/transport 策略；不要把 `CallbackHandle` 的 native code pointer 传到
@@ -169,19 +175,24 @@ try {
 ```
 
 `PointerHandle`/`Ptr<T>` 是 ABI-aware wrapper，不是语言中的任意整数地址。它携带类型/owner
-事实，并提供 `as`、`read`、index/meta access 与 `span` 等受控入口；每个操作仍需验证 handle
-未关闭、pointer 可访问、目标 type 支持 lowering、边界/对齐足够。
+事实，并提供 `as`、`read`、index/meta access 与 `span` 等受控入口；调用方须保证 handle
+有效、pointer 可访问、目标 type 支持 lowering、边界/对齐足够。**BUG:** 当前已关闭的
+PointerHandle 仍可经 `as(type)` 创建空地址别名；若它保存 BufferHandle owner，还可能
+重新增加 pin 计数。
 
 `BufferHandle` 是 managed native byte buffer。`pin()` 产生 pointer view，避免 GC/移动/生命周期
 不明时把对象内部地址传给 C。Pin 不授权无限期保存地址：native call 完成或 view close 后，
-地址的有效性由 pointer/buffer contract 决定。`span()` 是明确的连续视图；若在 native callback
+地址的有效性由 pointer/buffer contract 决定。`buffer.close()` 会阻止新 pin，已有 pin
+让底层字节保持到最后一个 pointer view 释放；`slice()` 则复制成独立 owned buffer。
+**BUG:** 有存活 pin 时，已关闭 buffer 的 `read`、`write`、`slice` 仍可操作底层字节；
+`write` 也未严格验证 0..255 整数范围，`[256]` 会成功写入 `0`。`span()` 是明确的连续视图；若在 native callback
 中保留 span/inline argument view，遇到 safepoint 或 stack relocation 后必须重新获取。
 
 | 错误做法 | 为什么错误 | 正确替代 |
 | --- | --- | --- |
 | 将普通 ZR object 强转为 `Ptr<T>` | 没有 pin/layout/owner contract | 用 BufferHandle/正式 pointer API。 |
 | 保存 `pin()` 返回地址到下一帧/线程 | view 生命周期可能结束或 domain 不同 | 复制数据或建立明确 owned native allocation。 |
-| close buffer 后读 pointer | underlying allocation 已不可用 | 先完成所有 pointer 操作，再关闭 buffer。 |
+| 以为 close buffer 会立即使已有 pinned pointer 失效 | 底层字节要等最后一个 pointer pin 释放才回收 | 先完成 pointer 操作并 close pointer，再 close buffer；不要依赖关闭后的 buffer 操作。 |
 | 用 `as()` 逃避 ABI type 检查 | reinterpret 不创建正确 layout/ownership | 仅对 contract 允许的 ABI-compatible target 使用。 |
 
 ## Native module/C API 对接

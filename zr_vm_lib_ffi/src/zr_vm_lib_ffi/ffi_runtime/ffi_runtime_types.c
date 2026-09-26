@@ -1,5 +1,7 @@
 #include "ffi_runtime/ffi_runtime_internal.h"
 
+/* 类型树节点拥有名称、子节点和 libffi 元素表；原语 ffi_type 为借用的
+ * 静态对象。解析或克隆中途失败时也会调用本析构。 */
 void zr_ffi_destroy_type(ZrFfiTypeLayout *type) {
     TZrSize index;
 
@@ -14,6 +16,9 @@ void zr_ffi_destroy_type(ZrFfiTypeLayout *type) {
             break;
         case ZR_FFI_TYPE_STRUCT:
         case ZR_FFI_TYPE_UNION:
+            /* BUG: aggregate 的 fieldCount 可先于 fields 分配被设置；
+             * parse/clone/contract 构造遇到 calloc 失败后会走到这里并解引用
+             * NULL fields，造成崩溃。需支持部分初始化节点的回滚。 */
             for (index = 0; index < type->as.aggregate.fieldCount; index++) {
                 free(type->as.aggregate.fields[index].name);
                 zr_ffi_destroy_type(type->as.aggregate.fields[index].type);
@@ -35,6 +40,8 @@ void zr_ffi_destroy_type(ZrFfiTypeLayout *type) {
     free(type);
 }
 
+/* SymbolHandle、CallbackHandle 和临时合同验证都由此归还签名树。
+ * 参数类型、返回类型和 CIF 参数表均由签名拥有。 */
 void zr_ffi_destroy_signature(ZrFfiSignature *signature) {
     TZrSize index;
 
@@ -42,6 +49,9 @@ void zr_ffi_destroy_signature(ZrFfiSignature *signature) {
         return;
     }
 
+    /* BUG: 参数个数已设置但 parameters 分配或 returnType 构造失败时，
+     * parse_signature/signature_from_contract 会在此解引用 NULL 数组；
+     * 应允许部分初始化签名安全析构。 */
     for (index = 0; index < signature->parameterCount; index++) {
         zr_ffi_destroy_type(signature->parameters[index].type);
     }
@@ -61,6 +71,8 @@ ZrFfiTypeLayout *zr_ffi_new_type(ZrFfiTypeKind kind) {
     return type;
 }
 
+/* PointerHandle 包装 pointee 前需复制类型树；调用者随后会释放原
+ * descriptor，因此副本的名称、子类型和聚合 ffiElements 必须独立存活。 */
 ZrFfiTypeLayout *zr_ffi_clone_type(const ZrFfiTypeLayout *type) {
     TZrSize index;
     ZrFfiTypeLayout *copy;
@@ -102,6 +114,9 @@ ZrFfiTypeLayout *zr_ffi_clone_type(const ZrFfiTypeLayout *type) {
                 zr_ffi_destroy_type(copy);
                 return ZR_NULL;
             }
+            /* BUG: 子字段克隆失败时这里仍继续组装，libffi 分支随后解引用
+             * 空的 child->ffiType；无 libffi 构建则可能返回残缺树。需在每个
+             * 子节点失败后终止并回滚。 */
             for (index = 0; index < copy->as.aggregate.fieldCount; index++) {
                 copy->as.aggregate.fields[index].name = zr_ffi_strdup(type->as.aggregate.fields[index].name);
                 copy->as.aggregate.fields[index].offset = type->as.aggregate.fields[index].offset;
@@ -125,6 +140,9 @@ ZrFfiTypeLayout *zr_ffi_clone_type(const ZrFfiTypeLayout *type) {
         case ZR_FFI_TYPE_ENUM:
             copy->as.enumType.underlying = zr_ffi_clone_type(type->as.enumType.underlying);
             break;
+        /* TODO: FUNCTION 节点的嵌套 signature 未被克隆；
+         * ZrFfi_NullPointer 和 ZrFfi_Pointer_As 包装后保留的是指针布局，
+         * 需沿指针读写与回调路径确认是否还要保留 pointee 签名。 */
         default:
             break;
     }
@@ -132,6 +150,8 @@ ZrFfiTypeLayout *zr_ffi_clone_type(const ZrFfiTypeLayout *type) {
     return copy;
 }
 
+/* 为共用的原语节点绑定主机 size/align；名称由节点拥有，libffi
+ * 全局 ffi_type 仅借用，不随 zr_ffi_destroy_type 释放。 */
 void zr_ffi_init_primitive_type(ZrFfiTypeLayout *type, const char *name, TZrSize size, TZrSize align
 #if ZR_VM_HAS_LIBFFI
                                        ,
@@ -150,6 +170,8 @@ void zr_ffi_init_primitive_type(ZrFfiTypeLayout *type, const char *name, TZrSize
 #endif
 }
 
+/* 动态 descriptor 与 canonical 合同共用此原语入口；返回自有节点，
+ * 由父布局树或句柄签名接管。未知名称返回空。 */
 ZrFfiTypeLayout *zr_ffi_make_primitive_type(const char *name) {
     ZrFfiTypeLayout *type = ZR_NULL;
 
@@ -258,6 +280,9 @@ ZrFfiTypeLayout *zr_ffi_make_primitive_type(const char *name) {
     return type;
 }
 
+/* 解析动态 descriptor 或 canonical cdecl/stdcall 的目标调用约定。
+ * BUG: 显式 win64/sysv 目前都映射为本机 FFI_DEFAULT_ABI；例如 Linux
+ * 上的 win64 请求会按 SysV 调用。需只接受本目标匹配的名称或准确映射。 */
 ffi_abi zr_ffi_parse_abi(const char *abiText, char *errorBuffer, TZrSize errorBufferSize) {
     if (abiText == ZR_NULL || abiText[0] == '\0' || strcmp(abiText, "default") == 0 || strcmp(abiText, "system") == 0 ||
         strcmp(abiText, "sysv") == 0 || strcmp(abiText, "win64") == 0) {
@@ -293,6 +318,8 @@ ffi_abi zr_ffi_parse_abi(const char *abiText, char *errorBuffer, TZrSize errorBu
     return 0;
 }
 
+/* 建立拥有 pointee 深拷贝的 pointer 布局，供 nullPointer、Pointer.as
+ * 与 canonical ref/out 包装；传入 target 只借用，可在返回后立即释放。 */
 ZrFfiTypeLayout *zr_ffi_pointer_type_from_target(const ZrFfiTypeLayout *target) {
     ZrFfiTypeLayout *pointerType = zr_ffi_new_type(ZR_FFI_TYPE_POINTER);
     if (pointerType == ZR_NULL) {
@@ -314,6 +341,8 @@ ZrFfiTypeLayout *zr_ffi_pointer_type_from_target(const ZrFfiTypeLayout *target) 
     return pointerType;
 }
 
+/* 把运行时对象描述符转成自有布局树，供 sizeof/alignof、指针操作
+ * 和动态符号签名共用。输入由语言侧提供，布局参数不能假定已受校验。 */
 ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValue *descriptorValue,
                                                      char *errorBuffer, TZrSize errorBufferSize) {
     ZrFfiTypeLayout *type;
@@ -346,6 +375,9 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
         return ZR_NULL;
     }
 
+    /* BUG: utf16/ansi 标记虽保存在节点内，build_scalar_argument 和
+     * set_result_from_scalar 仍一律按 native char* 编组；指定 utf16 的
+     * 非 ASCII 字符串会以错误编码传递。需实现转换及临时缓冲区所有权。 */
     if (strcmp(kindText, "string") == 0) {
         const char *encodingText = "utf8";
         type = zr_ffi_new_type(ZR_FFI_TYPE_STRING);
@@ -423,6 +455,9 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
 
         zr_ffi_read_object_string_field(state, descriptorObject, "name", &kindText);
         type->name = zr_ffi_strdup(kindText != ZR_NULL ? kindText : (isUnion ? "union" : "struct"));
+        /* BUG: pack/align 可由公开 sizeof/alignof 的 descriptor 任意指定；
+         * align=3 的单 i8 struct 会得到 size=1、align=3，因为 align_up
+         * 使用只适合二的幂的掩码。需拒绝非法对齐并核对目标 ABI。 */
         zr_ffi_read_object_int_field(state, descriptorObject, "pack", &packValue);
         zr_ffi_read_object_int_field(state, descriptorObject, "align", &explicitAlignValue);
         if (packValue > 0) {
@@ -477,6 +512,9 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
                 fieldOffset = zr_ffi_align_up(currentSize, fieldAlign);
             }
 
+            /* BUG: 嵌套聚合可使 fieldOffset + fieldType->size 回绕。内外层
+             * 都用 INT64_MAX 显式偏移时，外层可报告 size=8，却仍按巨大
+             * offset 进行字段编组，可能越界；需在累加前检查溢出。 */
             type->as.aggregate.fields[index].offset = fieldOffset;
             if (fieldOffset + fieldType->size > currentSize) {
                 currentSize = fieldOffset + fieldType->size;
@@ -494,6 +532,9 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
         }
         type->align = maxAlign;
         type->size = zr_ffi_align_up(currentSize, maxAlign);
+        /* TODO: 动态 union 将所有重叠字段作为顺序 struct elements 提交；
+         * canonical 降级只提交单个 ABI 代表元素。需用混合整数/浮点
+         * union 的 native fixture 核对两条路径在各平台的传参类别。 */
 #if ZR_VM_HAS_LIBFFI
         type->ffiElements = (ffi_type **) calloc(fieldCount + 1, sizeof(ffi_type *));
         if (type->ffiElements == ZR_NULL) {
@@ -560,6 +601,8 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
     return ZR_NULL;
 }
 
+/* 将用户签名对象降为 SymbolHandle 或 CallbackHandle 持有的 CIF；
+ * 参数与返回类型树随句柄释放，调用者提供可写错误缓冲区。 */
 ZrFfiSignature *zr_ffi_parse_signature(SZrState *state, SZrObject *signatureObject, char *errorBuffer,
                                                TZrSize errorBufferSize) {
     ZrFfiSignature *signature;
@@ -648,6 +691,8 @@ ZrFfiSignature *zr_ffi_parse_signature(SZrState *state, SZrObject *signatureObje
         }
     }
 
+    /* TODO: varargs 标记下 fixed/total 均为 parameterCount，而调用层
+     * 仅接受同样数量的实参。需核对额外实参与默认参数提升的设计入口。 */
     if (signature->isVarargs) {
         if (ffi_prep_cif_var(&signature->cif, signature->abi, (unsigned int) parameterCount,
                              (unsigned int) parameterCount, signature->returnType->ffiType,

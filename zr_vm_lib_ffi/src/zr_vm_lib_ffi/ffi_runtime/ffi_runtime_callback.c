@@ -1,5 +1,9 @@
 #include "ffi_runtime/ffi_runtime_internal.h"
 
+/** @brief 为原生实参封送及联合体活动字段判定提取 VM 数值。 */
+/* BUG: i64/u64 经 double 中转会丢失大于 2^53 的部分整数精度；
+ * SymbolHandle.call 和回调返回值均会再转换为整数，
+ * tests/ffi/test_ffi_module.c 的 9007199254740993 恒等调用应保持原值。 */
 TZrBool zr_ffi_extract_numeric_value(const SZrTypeValue *value, double *outDouble) {
     if (value == ZR_NULL || outDouble == ZR_NULL) {
         return ZR_FALSE;
@@ -20,6 +24,9 @@ TZrBool zr_ffi_extract_numeric_value(const SZrTypeValue *value, double *outDoubl
     return ZR_FALSE;
 }
 
+/** @brief 用值约定推断联合体活动字段，供聚合实参封送检查唯一性。 */
+/* TODO: 零值、false 和 null 均被视为未激活，当前约定无法表达值为零的活动字段；
+ * 对照 union 参数契约及 tests/ffi/test_native_extern_contract.c 的歧义用例，确认是否需要显式判别字段。 */
 static TZrBool zr_ffi_union_field_is_default(
         SZrState *state,
         const SZrTypeValue *value,
@@ -45,6 +52,9 @@ static TZrBool zr_ffi_union_field_is_default(
     return ZR_FALSE;
 }
 
+/** @brief 将 VM 对象按已解析的 ABI 布局封送为 struct/union 的原生传值缓冲区。
+ * @note 调用方提供至少 type->size 字节；联合体要求恰有一个非默认字段。
+ */
 TZrBool zr_ffi_build_struct_argument(SZrState *state, const SZrTypeValue *value, ZrFfiTypeLayout *type,
                                             unsigned char *buffer, char *errorBuffer, TZrSize errorBufferSize) {
     TZrSize index;
@@ -118,6 +128,7 @@ TZrBool zr_ffi_build_struct_argument(SZrState *state, const SZrTypeValue *value,
     return ZR_TRUE;
 }
 
+/** @brief 只让声明了 pointer lowering 的包装对象进入原生地址提取路径。 */
 static TZrBool zr_ffi_object_uses_pointer_lowering(SZrState *state, SZrObject *object) {
     const char *loweringKind = ZR_NULL;
 
@@ -130,6 +141,7 @@ static TZrBool zr_ffi_object_uses_pointer_lowering(SZrState *state, SZrObject *o
            strcmp(loweringKind, "pointer") == 0;
 }
 
+/** @brief 从类型原型读取 handle_id lowering 契约，避免普通对象被当作整数句柄。 */
 static TZrBool zr_ffi_object_uses_handle_id_lowering(SZrState *state,
                                                      SZrObject *object,
                                                      const char **outUnderlyingTypeName) {
@@ -152,6 +164,9 @@ static TZrBool zr_ffi_object_uses_handle_id_lowering(SZrState *state,
                                            outUnderlyingTypeName);
 }
 
+/** @brief 为 pointer 实参借用 PointerHandle/BufferHandle 的原生地址。
+ * @note 返回地址不转移所有权；调用方须保证包装对象及其底层资源在原生调用期间存活。
+ */
 static TZrBool zr_ffi_try_lower_pointer_wrapper(SZrState *state, const SZrTypeValue *value, void **outPointer) {
     SZrObject *wrapperObject = ZR_NULL;
     ZrFfiHandleData *handleData = ZR_NULL;
@@ -219,6 +234,7 @@ static const char *zr_ffi_integer_type_name_for_layout(const ZrFfiTypeLayout *ty
     }
 }
 
+/** @brief 从未关闭的句柄包装对象取得被隐藏字段或公开 handleId 承载的整数值。 */
 static TZrBool zr_ffi_try_read_handle_id_field(SZrState *state, SZrObject *wrapperObject, SZrTypeValue *outValue) {
     const SZrTypeValue *fieldValue;
     TZrBool closed = ZR_FALSE;
@@ -247,6 +263,7 @@ static TZrBool zr_ffi_try_read_handle_id_field(SZrState *state, SZrObject *wrapp
     return ZR_TRUE;
 }
 
+/** @brief 仅在原型声明的底层整数类型与形参布局一致时拆解 handle_id 包装。 */
 static TZrBool zr_ffi_try_lower_handle_id_wrapper(SZrState *state,
                                                   const SZrTypeValue *value,
                                                   const ZrFfiTypeLayout *type,
@@ -270,6 +287,9 @@ static TZrBool zr_ffi_try_lower_handle_id_wrapper(SZrState *state,
     return zr_ffi_try_read_handle_id_field(state, wrapperObject, outLoweredValue);
 }
 
+/** @brief 为 SymbolHandle.call、ref/inout 及回调返回值构造 libffi 所需的原生存储。
+ * @note buffer 属于调用方；指针与字符串路径只借用底层资源，使用期由调用方维持。
+ */
 TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value, ZrFfiTypeLayout *type,
                                             void *buffer, char *errorBuffer, TZrSize errorBufferSize) {
     double numericValue = 0.0;
@@ -292,6 +312,8 @@ TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value,
                 return ZR_FALSE;
             }
             return ZR_TRUE;
+        /* BUG: 数值类型只验证“可提取”，未按目标整数范围或有限性校验；
+         * 如 i32 形参收到 1e300，随后浮点转整数超出 C 可表示范围。 */
         case ZR_FFI_TYPE_I8:
             if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
@@ -352,6 +374,8 @@ TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value,
             }
             *(double *) buffer = (double) numericValue;
             return ZR_TRUE;
+        /* BUG: 类型描述符接受 utf16/ansi，但这里始终借用 VM 的 char* 文本；
+         * 目标 C API 按 utf16/ansi 解释时会收到错误字节，需按 encoding 转码并管理临时缓冲区。 */
         case ZR_FFI_TYPE_STRING: {
             const char *text = ZR_NULL;
             if (!zr_ffi_read_string_value(state, effectiveValue, &text)) {
@@ -400,6 +424,7 @@ TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value,
     return ZR_FALSE;
 }
 
+/** @brief 在 VM 的 TryRun 异常边界内调用回调值，并把结果交还 libffi trampoline。 */
 void zr_ffi_callback_try_invoke(SZrState *state, TZrPtr arguments) {
     ZrFfiCallbackInvokeArgs *invokeArgs = (ZrFfiCallbackInvokeArgs *)arguments;
 
@@ -412,6 +437,9 @@ void zr_ffi_callback_try_invoke(SZrState *state, TZrPtr arguments) {
             ZrLib_CallValue(state, invokeArgs->callbackValue, ZR_NULL, invokeArgs->argumentValues, invokeArgs->argumentCount, invokeArgs->result);
 }
 
+/** @brief 将原生聚合值变为 VM 对象，供原生返回、ref/out 写回及回调形参复用。
+ * @note 构造期间以临时根保护对象；返回后由调用方负责维持结果的 GC 可达性。
+ */
 TZrBool zr_ffi_struct_to_object(SZrState *state, ZrFfiTypeLayout *type, const unsigned char *bytes,
                                        SZrTypeValue *result) {
     TZrSize index;
@@ -438,6 +466,8 @@ TZrBool zr_ffi_struct_to_object(SZrState *state, ZrFfiTypeLayout *type, const un
             ZrLib_TempValueRoot_End(&objectRoot);
             return ZR_FALSE;
         }
+        /* BUG: SetFieldCString 在分配/pin 失败时静默返回，此处仍交付缺字段的聚合对象；
+         * struct 返回、ref/out 写回及回调形参均受影响，须用分配失败注入核验错误传播。 */
         ZrLib_Object_SetFieldCString(state, object, field->name, &fieldValue);
     }
 
@@ -446,6 +476,7 @@ TZrBool zr_ffi_struct_to_object(SZrState *state, ZrFfiTypeLayout *type, const un
     return ZR_TRUE;
 }
 
+/** @brief 将 libffi 返回存储或回调形参解码为 VM 值；调用方负责原生缓冲区的生命周期。 */
 TZrBool zr_ffi_set_result_from_scalar(SZrState *state, ZrFfiTypeLayout *type, const void *value,
                                              SZrTypeValue *result) {
     switch (type->kind) {
@@ -477,6 +508,8 @@ TZrBool zr_ffi_set_result_from_scalar(SZrState *state, ZrFfiTypeLayout *type, co
             ZrLib_Value_SetInt(state, result, *(const int64_t *) value);
             return ZR_TRUE;
         case ZR_FFI_TYPE_U64:
+            /* BUG: 大于 INT64_MAX 的 u64 被强制转为有符号整数，原生无符号结果失真；
+             * 本路径由原生返回、ref/out 写回及回调形参共同调用。 */
             ZrLib_Value_SetInt(state, result, (TZrInt64) * (const uint64_t *) value);
             return ZR_TRUE;
         case ZR_FFI_TYPE_F32:
@@ -486,6 +519,8 @@ TZrBool zr_ffi_set_result_from_scalar(SZrState *state, ZrFfiTypeLayout *type, co
             ZrLib_Value_SetFloat(state, result, *(const double *) value);
             return ZR_TRUE;
         case ZR_FFI_TYPE_STRING:
+            /* BUG: 描述符可指定 utf16/ansi，但原生结果始终按 char* 交给 VM 字符串接口；
+             * 指向 UTF-16 数据的结果会在首个零字节处截断。 */
             ZrLib_Value_SetString(state, result,
                                   *(const char *const *) value != ZR_NULL ? *(const char *const *) value : "");
             return ZR_TRUE;
@@ -495,10 +530,13 @@ TZrBool zr_ffi_set_result_from_scalar(SZrState *state, ZrFfiTypeLayout *type, co
         case ZR_FFI_TYPE_UNION:
             return zr_ffi_struct_to_object(state, type, (const unsigned char *) value, result);
         default:
+            /* BUG: pointer/function 类型可进入原生返回或回调形参契约，
+             * 这里缺少反向转换，调用链只能以封送失败结束。 */
             return ZR_FALSE;
     }
 }
 
+/** @brief SymbolHandle 终结时归还库的符号引用，并兑现库此前的关闭请求。 */
 void zr_ffi_symbol_release_owner(SZrState *state, SZrObject *object) {
     const SZrTypeValue *ownerValue = zr_ffi_find_field_raw(state, object, ZR_FFI_HIDDEN_OWNER_FIELD);
     if (ownerValue != ZR_NULL && ownerValue->type == ZR_VALUE_TYPE_OBJECT && ownerValue->value.object != ZR_NULL) {
@@ -517,6 +555,7 @@ void zr_ffi_symbol_release_owner(SZrState *state, SZrObject *object) {
     }
 }
 
+/** @brief PointerHandle 关闭或终结时归还 BufferHandle 的借用计数并兑现延期释放。 */
 void zr_ffi_pointer_release_owner(SZrState *state, SZrObject *object) {
     const SZrTypeValue *ownerValue = zr_ffi_find_field_raw(state, object, ZR_FFI_HIDDEN_OWNER_FIELD);
     if (ownerValue != ZR_NULL && ownerValue->type == ZR_VALUE_TYPE_OBJECT && ownerValue->value.object != ZR_NULL) {
@@ -535,6 +574,9 @@ void zr_ffi_pointer_release_owner(SZrState *state, SZrObject *object) {
     }
 }
 
+/** @brief VM GC 对各类 FFI Handle 的统一终结入口，释放签名、闭包及原生资源。
+ * @note 显式关闭后的资源状态由各分支识别；finalized 状态阻止重复执行终结器。
+ */
 void zr_ffi_handle_finalize(SZrState *state, SZrRawObject *rawObject) {
     SZrObject *object;
     ZrFfiHandleData *handleData;
@@ -601,6 +643,9 @@ void zr_ffi_handle_finalize(SZrState *state, SZrRawObject *rawObject) {
 }
 
 #if ZR_VM_HAS_LIBFFI
+/** @brief libffi 闭包进入 VM 的同步回调边界。
+ * @note 由 ffi_prep_closure_loc 注册；只允许所有者线程及有效调用期，异常须在返回原生栈前化为策略约定的结果。
+ */
 void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **arguments, void *userData) {
     ZrFfiCallbackData *callbackData = (ZrFfiCallbackData *) userData;
     const SZrTypeValue *callbackValue;
@@ -633,6 +678,8 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
         return;
     }
 
+    /* call 生命周期由外层 zr_ffi_symbol_invoke_array 暂时激活；
+     * 原生代码留存闭包并在外层返回后再调用时，必须拒绝进入 VM。 */
     if (callbackData->activeLifetime ==
                 ZR_FFI_CONTRACT_CALLBACK_LIFETIME_CALL &&
         !callbackData->invocationActive) {
@@ -692,6 +739,9 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
         return;
     }
 
+    /* TODO: 聚合形参转换后仅存于 calloc 的 argumentValues，临时根已经结束；
+     * 后续对象分配失败可经 GcMalloc 进入 GcFull。核对 GC 是否扫描该数组，
+     * 并用多聚合形参与强制收集验证前序参数在进入 CallValue 前仍可达。 */
     for (index = 0; index < callbackData->signature->parameterCount; index++) {
         if (!zr_ffi_set_result_from_scalar(callbackData->state, callbackData->signature->parameters[index].type,
                                            arguments[index], &argumentValues[index])) {
@@ -704,6 +754,8 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
         }
     }
 
+    /* 回调可重入正在执行的 VM；锚点记录外层栈位置，避免回调期间栈扩容后
+     * 使用失效指针，并在 TryRun 后恢复原生调用现场。 */
     savedCallInfo = callbackData->state->callInfoList;
     savedStackTop = callbackData->state->stackTop.valuePointer;
     savedExceptionHandlerStackLength =
@@ -767,6 +819,8 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
     }
     callbackData->state->exceptionHandlerStackLength =
             savedExceptionHandlerStackLength;
+    /* VM 异常不能跨过 C/libffi 栈传播；此处按回调异常策略记录失败、
+     * 清理线程异常状态，并给原生调用者一个零值返回。 */
     if (callbackStatus != ZR_THREAD_STATUS_FINE || !invokeArgs.succeeded) {
         callbackData->callbackExceptionObserved = ZR_TRUE;
         if (callbackData->activeExceptionPolicy ==
@@ -804,6 +858,8 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
         return;
     }
 
+    /* BUG: void 回调签名可被解析，但这里仍调用不支持 VOID 的 build_scalar_argument；
+     * 成功执行的 void 回调会被记为封送失败，需让 void 直接完成返回。 */
     zr_ffi_zero_call_storage(callbackData->signature->returnType, returnValue);
     if (!zr_ffi_build_scalar_argument(callbackData->state, &callResult, callbackData->signature->returnType,
                                       returnValue, callbackData->lastErrorMessage,

@@ -2,20 +2,24 @@
 related_code:
   - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/runtime.h
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_support.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler
 implementation_files:
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_support.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
-  - docs/plans/2026-07-19-10-native-ffi-module-package-design.md
+  - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
 tests:
   - tests/ffi/test_native_extern_contract.c
   - tests/ffi/test_ffi_module.c
@@ -91,7 +95,8 @@ sizeof(type) 和 alignof(type) 只对有有效 FFI lowering 的 type 成功。nu
 动态 API 的 signature object 至少描述 return 和 parameters；可选字段包括 calling convention、
 struct fields、pointer target/length、string encoding、ownership、version symbol 和 callback
 thread policy。LibraryHandle.getSymbol(name, signature) 在返回 SymbolHandle 前完成
-parse/lookup/contract validation；getContractSymbol(contract) 使用编译期保留 contract。
+parse/lookup/contract validation；`getContractSymbol(index:int)` 用编译器生成的整数索引
+从活动调用帧查找同库的保留 contract，不接收任意 contract 对象。
 
 ~~~zr
 let ffi = import("zr.ffi");
@@ -111,9 +116,12 @@ signature object 不是普通 map：字段名、数组元素类型和 optional/d
 
 ## pointer、buffer 和 pin
 
-PointerHandle 默认 borrowed，BufferHandle 的 owner mode 是 owned。BufferHandle.write
-只接受 0..255 integer array；read/slice 检查 offset+length，不允许整数溢出。pin 建立
-共享 pin loan，直到 pointer/span 关闭前 backing storage 不能移动或释放。
+PointerHandle 默认 borrowed，BufferHandle 的 owner mode 是 owned。`read`、`write`、
+`slice` 检查 offset/length，`slice` 复制为独立 owned buffer。调用方应只向 `write`
+传入 0..255 的整数；**BUG:** 当前实现使用宽松数值转换并直接收窄为字节，`[256]`
+会成功写入 `0`，浮点值也可能被接受。`pin` 建立共享 pin loan；buffer 可先逻辑关闭，
+底层字节待最后一个 pointer pin 释放后回收。**BUG:** 有存活 pin 时，已关闭 buffer 的
+`read`、`write`、`slice` 仍可操作字节；已关闭 pointer 的 `as` 仍可创建空地址别名。
 
 ~~~zr
 let buffer = ffi.BufferHandle.allocate(8);
@@ -158,13 +166,15 @@ foreign call 的事务顺序：
 
 ~~~text
 validate -> allocate/marshal -> pin/root -> invoke
-  -> unmarshal result/out -> unpin/free
+  -> write back ref/out -> check callback -> unmarshal result -> unpin/free
 ~~~
 
-任何阶段失败都先撤销临时 callback、释放 native storage、解除 pin，再报告原始错误。常见
+受检的失败路径应撤销本次调用取得的临时资源并报告错误；**BUG:** 句柄隐藏 owner/callback
+字段或聚合结果字段写入失败可被忽略而交付不完整对象，`BufferHandle.read()` 数组追加
+失败可能返回短数组，因此当前不能承诺任意阶段失败都会完整回滚。常见
 错误：ZR_FFI_ERROR_LOAD、ABI/signature mismatch、closed handle、marshal/type error、
-bounds/null error、callback thread error。部分 out 写入失败时，结果槽和调用方 place 的
-可用性以 contract 标志为准，不得把未初始化 memory 当成功值。
+bounds/null error、callback thread error。**TODO:** `ref/out` 逐项写回，后续失败不会回滚
+先前 place；需核实公开契约是否允许部分提交。不得把未初始化 memory 当成功值。
 
 ## 版本兼容
 

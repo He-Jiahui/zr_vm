@@ -5,6 +5,8 @@
 
 #include <string.h>
 
+/* canonical 标量先映射到共用的主机原语构造器；复杂类型另走专门降级路径。
+ * 此名称映射只选择表示形式，合同中的尺寸和对齐仍须独立核验。 */
 static const char *zr_ffi_contract_primitive_name(
         EZrFfiTypeKind kind,
         TZrUInt32 size) {
@@ -43,6 +45,8 @@ static ZrFfiTypeLayout *zr_ffi_type_from_contract(
         TZrSize errorBufferSize);
 
 #if ZR_VM_HAS_LIBFFI
+/* libffi 没有 union 参数种类；这里按平台 ABI 类别挑选单个代表存储，
+ * 后续布局校验再确认该表示的大小、对齐与 canonical 合同一致。 */
 static ffi_type *zr_ffi_union_abi_storage_type(
         const ZrFfiTypeLayout *type,
         char *errorBuffer,
@@ -113,6 +117,8 @@ static ffi_type *zr_ffi_union_abi_storage_type(
 }
 #endif
 
+/* 从已验证的合同字段区间创建自有聚合树，供签名编组与 CIF 共用。
+ * 成功后由签名接管，任何构造失败都应交给类型树析构回滚。 */
 static ZrFfiTypeLayout *zr_ffi_aggregate_from_contract(
         const SZrFfiTypeContract *contractType,
         const SZrFfiSignatureContract *signatureContract,
@@ -167,6 +173,8 @@ static ZrFfiTypeLayout *zr_ffi_aggregate_from_contract(
             return ZR_NULL;
         }
     }
+    /* union 的字段共享同一存储，只提交一个 ABI 代表元素；struct 则按字段
+     * 顺序交给 libffi，避免把重叠字段当成顺序排列的结构。 */
 #if ZR_VM_HAS_LIBFFI
     {
         TZrSize ffiElementCount = type->kind == ZR_FFI_TYPE_UNION
@@ -208,6 +216,8 @@ static ZrFfiTypeLayout *zr_ffi_aggregate_from_contract(
 }
 
 #if ZR_VM_HAS_LIBFFI
+/* 在绑定 native 符号前，向 libffi 询问聚合在本机 ABI 下的实际尺寸、
+ * 对齐和字段偏移；pointer 的 pointee 也必须递归检查。 */
 static TZrBool zr_ffi_validate_contract_layout(
         ZrFfiTypeLayout *type,
         ffi_abi abi,
@@ -285,6 +295,10 @@ static TZrBool zr_ffi_validate_contract_layout(
 }
 #endif
 
+/* 将 canonical 类型降为运行时自有布局树；返回树由上层签名接管。
+ * BUG: common validator 只验证非零尺寸和幂次对齐，这里却仅按 kind 生成
+ * 标量：把 i32 合同改为 size=8 并重算签名哈希仍可通过验证，libffi 实际
+ * 按四字节 i32 调用。需在降级前核对每种标量的合同尺寸和对齐。 */
 static ZrFfiTypeLayout *zr_ffi_type_from_contract(
         const SZrFfiTypeContract *contractType,
         const SZrFfiSignatureContract *signatureContract,
@@ -367,6 +381,8 @@ static TZrBool zr_ffi_contract_is_available(
 #endif
 }
 
+/* Library.GetContractSymbol 及公开验证 API 共用此准入门槛：先确认合同
+ * 哈希、平台、目标 ABI 与可执行策略，再构造由调用方持有的 libffi 签名。 */
 ZrFfiSignature *zr_ffi_signature_from_contract(
         const SZrNativeImportContract *contract,
         char *errorBuffer,
@@ -402,6 +418,8 @@ ZrFfiSignature *zr_ffi_signature_from_contract(
                  "native import target ABI does not match this runtime");
         return ZR_NULL;
     }
+    /* 声明了但运行时无法执行的策略必须在绑定前拒绝，不能静默按普通
+     * native 调用处理，否则清理、错误和回调语义会与源码合同不符。 */
     if (source->cleanupPolicy == ZR_FFI_CONTRACT_CLEANUP_REGISTERED) {
         snprintf(
                 errorBuffer,
@@ -485,6 +503,8 @@ ZrFfiSignature *zr_ffi_signature_from_contract(
             zr_ffi_destroy_signature(signature);
             return ZR_NULL;
         }
+        /* ref/out 在 native ABI 中是指向参数存储的指针；调用层据此申请
+         * pointee 临时区并在返回时写回语言侧参数。包装后原类型可释放。 */
         if (parameter->direction != ZR_FFI_CONTRACT_DIRECTION_IN) {
             ZrFfiTypeLayout *pointerType =
                     zr_ffi_pointer_type_from_target(parameterType);
@@ -555,6 +575,8 @@ ZrFfiSignature *zr_ffi_signature_from_contract(
         signature->ffiParameterTypes[index] =
                 signature->parameters[index].type->ffiType;
     }
+    /* TODO: 当前 fixed/total 都是 parameterCount，调用层也要求实参数等于
+     * 此数量。需沿语言变参入口确认额外参数如何展开并进行 C 默认提升。 */
     if (signature->isVarargs) {
         signature->cifPrepared = (TZrBool)(
                 ffi_prep_cif_var(
@@ -583,6 +605,11 @@ ZrFfiSignature *zr_ffi_signature_from_contract(
     return signature;
 }
 
+/**
+ * @brief 在加载符号前验证 canonical native import 是否能由当前 FFI 运行时执行。
+ * @pre errorBufferSize 非零时，errorBuffer 指向相应可写空间；调用方需提供容量来接收错误文本。
+ * @return 可执行时为真；临时签名在返回前已释放。
+ */
 TZrBool ZrVmLibFfi_ValidateNativeImportContract(
         const SZrNativeImportContract *contract,
         TZrChar *errorBuffer,
@@ -597,6 +624,11 @@ TZrBool ZrVmLibFfi_ValidateNativeImportContract(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为 canonical 导入准备 core native-call 计划与诊断，不执行实际调用。
+ * @pre plan 非空；后续调用必须持有有效的 native pin lease。
+ * @note 地址默认视为不稳定，由 core 选择需要 pin/copy 的执行路径。
+ */
 TZrBool ZrVmLibFfi_PrepareNativeCallPlan(
         const SZrNativeImportContract *contract,
         TZrUInt64 callbackId,

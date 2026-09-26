@@ -6,6 +6,7 @@ related_code:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_support.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
 implementation_files:
@@ -13,6 +14,8 @@ implementation_files:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_support.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
@@ -27,7 +30,8 @@ doc_type: module-detail
 # `zr.ffi` 与 `native extern`
 
 **状态：`current`（功能依赖平台动态库/FFI backend）；Runtime provider，descriptor 版本
-`1.0.0`。所有句柄均为显式 close/finalizer 资源。**
+`1.0.0`。LibraryHandle、CallbackHandle、PointerHandle 和 BufferHandle 提供 `close()`；
+SymbolHandle 没有公开 `close()`，由 GC finalizer 回收。**
 
 FFI provider 将静态 ABI contract 和运行时动态库句柄分开。源代码声明 native symbol，
 编译器保留参数/返回类型、passing mode、调用约定和 library contract；运行时只在
@@ -59,7 +63,7 @@ scalar、canonical struct、`Ptr<T>`、`ref`/`out` view 或 callback；编译器
 | 对象 | 成员签名 | 返回 |
 | --- | --- | --- |
 | 模块 | `loadLibrary(path: string)`；`callback(signature: object, fn: function)`；`sizeof(type: object)`；`alignof(type: object)`；`nullPointer(type: object)` | `LibraryHandle`、`CallbackHandle`、`int`、`int`、`Ptr<void>` |
-| `LibraryHandle` | `close()`；`isClosed()`；`getSymbol(name: string, signature: object)`；`getContractSymbol(contract: object)`；`getVersion(name?: string)` | `null`、`bool`、`SymbolHandle`、`SymbolHandle`、`string` |
+| `LibraryHandle` | `close()`；`isClosed()`；`getSymbol(name: string, signature: object)`；`getContractSymbol(index: int)`；`getVersion(name?: string)` | `null`、`bool`、`SymbolHandle`、`SymbolHandle`、`string` 或 `null` |
 | `SymbolHandle` | `call(args: array)`；直接 callable meta-call `symbol(...)` | `value` |
 | `CallbackHandle` | `close()` | `null` |
 | `PointerHandle` | `as(type: object)`；`read(type: object)`；`span()`；索引读写；`close()` | `Ptr<void>`、`value`、`Span<u8>`、`u8`/`null`、`null` |
@@ -76,15 +80,19 @@ scalar、canonical struct、`Ptr<T>`、`ref`/`out` view 或 callback；编译器
 
 句柄的宿主 payload 放在 `SZrRawObject::finalizerData`，finalizer 清理 context 后释放
 payload，重复 finalizer 不会二次访问。`BufferHandle.pin()` 产生共享 pin loan；由它创建
-的 Span 在最后一次使用前阻止 close/unpin。
+的 pointer 视图在关闭前维持底层字节存活。`BufferHandle.close()` 可以先标记逻辑关闭，
+实际存储在最后一个 pin 释放后回收；`BufferHandle.slice()` 则复制为独立的 owned 存储。
+`getContractSymbol` 读取编译器发出的整数索引，只在当前活动调用帧保留的同库 contract
+中解析，不接收任意 contract 对象。
 
 ## 调用事务
 
-调用流程是“验证 -> 分配/转换 -> pin/callback 激活 -> native call -> 反序列化 -> 清理”。
-验证、marshalling、pin、callback 或返回存储任一步失败，都记录原始 FFI error 和消息，
-先撤销 callback 状态、释放 native buffer、解除所有 pin，再抛 VM 异常。native callback
-中的 ZR 异常会恢复保存的 call-info、stack top、handler depth 和 pending control，不能
-污染外层执行。
+符号调用依次校验句柄与 ABI、编组参数并准备临时存储、调用 native 函数、解码返回值，
+然后回收该调用持有的临时资源。受检的分配和编组失败会返回错误；不能假定所有构造与
+解码失败都能回滚：**BUG:** 隐藏 owner/callback 字段写入失败仍可能发布句柄，聚合返回
+字段写入失败仍可能交付缺字段对象，`BufferHandle.read()` 的数组追加失败也可能返回短数组。
+这些路径需要故障注入核验。native callback 中的 ZR 异常会恢复保存的 call-info、stack top、
+handler depth 和 pending control，不能污染外层执行。
 
 ## 安全与线程边界
 
@@ -103,4 +111,7 @@ TZrBool valid = ZrVmLibFfi_ValidateNativeImportContract(
 ```
 
 具体函数指针见 `zr_vm_lib_ffi/runtime.h`；宿主必须保持 library path、signature metadata
-和 global 生命周期一致。关闭 global 前先关闭 callback、symbol、buffer 和 library handles。
+和 global 生命周期一致。销毁 global 前应停止 native 调用，关闭仍在使用的 callback、
+pointer、buffer 和 library 句柄，并释放 SymbolHandle 的 VM 引用；SymbolHandle 没有
+公开 `close()`，其 native 状态由 finalizer 回收。`LibraryHandle.close()` 会阻止新符号调用，
+已有 SymbolHandle 尚未最终化时会延迟卸载动态库。

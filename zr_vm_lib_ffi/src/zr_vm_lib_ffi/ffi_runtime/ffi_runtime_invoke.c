@@ -1,6 +1,9 @@
 #include "ffi_runtime_internal.h"
 
 #if ZR_VM_HAS_LIBFFI
+/** @brief 暂存原生调用错误，供统一清理完成后再转为 VM 异常。
+ * @note 清理前直接抛异常可能绕过参数缓冲区、GC pin 与回调状态的归还。
+ */
 static void zr_ffi_record_pending_error(
         ZrFfiErrorCode *outCode,
         char *message,
@@ -20,6 +23,9 @@ static void zr_ffi_record_pending_error(
     vsnprintf(message, messageSize, format, arguments);
     va_end(arguments);
 }
+/** @brief 按已声明的整数或布尔返回类型解释 canonical return_code 策略。
+ * @note 该策略把非零视为原生失败；浮点、聚合及 void 不参与此判定。
+ */
 static TZrBool zr_ffi_return_code_is_failure(
         const ZrFfiTypeLayout *type,
         const void *storage,
@@ -69,6 +75,10 @@ static TZrBool zr_ffi_return_code_is_failure(
 
 #endif
 
+/** @brief SymbolHandle.call 与直接元调用共用的 libffi 调用边界。
+ * @note 参数类型与返回布局来自已解析签名；writebackContext 只在直接元调用中提供，
+ *       用于 ref/out 参数的属性引用或调用参数写回。
+ */
 TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
                                           SZrObject *selfObject,
                                           ZrFfiSymbolData *symbolData,
@@ -166,6 +176,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
                     "out of memory while preparing ffi arguments");
         goto cleanup;
     }
+    /* 原生函数可同步回调 VM 并触发 GC；在 ffi_call 全程固定符号、库所有者、
+     * 参数对象和 ref/out 属性引用，避免原生地址及 VM 值失效。 */
     if (!ZrCore_Gc_NativeCallPinObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(selfObject), &selfPin) ||
         !ZrCore_Gc_NativeCallPinValue(state, ownerValue, &ownerPin)) {
         zr_ffi_record_pending_error(
@@ -181,6 +193,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
         const SZrTypeValue *effectiveArgumentValue = argumentValue;
         ZrFfiTypeLayout *parameterType = symbolData->signature->parameters[index].type;
         ZrFfiMarshalledValue *marshalledValue = &marshalledValues[index];
+        /* 只有直接元调用提供 writebackContext，才把可写属性引用降为
+         * 原生 ref/out 存储；inout 在调用前读取，out 在调用后写回。 */
         if (parameterType->kind == ZR_FFI_TYPE_POINTER &&
             parameterType->as.pointer.direction != ZR_FFI_DIRECTION_IN &&
             writebackContext != ZR_NULL &&
@@ -229,6 +243,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
                                (unsigned long long)(index + 1));
             goto cleanup;
         }
+        /* function 形参传 libffi closure 代码地址；canonical 哈希使
+         * CallbackHandle 与原生函数指针契约在调用前完成一致性检查。 */
         if (parameterType->kind == ZR_FFI_TYPE_FUNCTION) {
             SZrObject *callbackObject = ZR_NULL;
             ZrFfiCallbackData *callbackData = ZR_NULL;
@@ -354,6 +370,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
                     "out of memory while preparing ffi return storage");
         goto cleanup;
     }
+    /* 回调只在本次原生调用的生命周期内激活；保存旧状态是为了同一
+     * CallbackHandle 被嵌套调用时，外层策略在内层返回后继续生效。 */
     for (index = 0u; index < argumentCount; index++) {
         ZrFfiMarshalledValue *marshalledValue = &marshalledValues[index];
         ZrFfiCallbackData *callbackData = marshalledValue->callbackData;
@@ -402,6 +420,7 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
                            errorBuffer[0] != '\0' ? errorBuffer : "ffi native call failed");
         goto cleanup;
     }
+    /* 原生错误通道必须紧随 ffi_call 捕获，后续 VM 封送与写回可能覆盖它们。 */
     capturedErrno = errno;
 #if defined(ZR_PLATFORM_WIN)
     capturedLastError = GetLastError();
@@ -458,6 +477,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
         goto cleanup;
     }
 #endif
+    /* TODO: ref/out 按参数顺序逐个写回；后一个转换或 Store 失败时，
+     * 前面的 VM 属性可能已经改变。核对写回是否承诺原子性，并补充失败注入用例。 */
     for (index = 0; index < argumentCount; index++) {
         ZrFfiMarshalledValue *marshalledValue = &marshalledValues[index];
         ZrFfiTypeLayout *parameterType =
@@ -494,6 +515,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
             }
         }
     }
+    /* return_default 策略允许回调异常以零返回值交还原生侧；其他
+     * 回调错误由外层调用在统一清理后向 VM 报告。 */
     for (index = 0; index < argumentCount; index++) {
         if (callbackArguments[index] != ZR_NULL) {
             SZrObject *callbackObject = ZR_CAST_OBJECT(state, callbackArguments[index]->value.object);
@@ -531,6 +554,8 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
     }
     callSucceeded = ZR_TRUE;
 cleanup:
+    /* 无论封送、原生调用还是写回在哪一步失败，先恢复嵌套回调状态，
+     * 再释放已分配的缓冲区和 GC pin，最后才把暂存错误抛向 VM。 */
     if (marshalledValues != ZR_NULL) {
         for (index = argumentCount; index > 0u; index--) {
             ZrFfiMarshalledValue *marshalledValue =
@@ -541,6 +566,8 @@ cleanup:
                 !marshalledValue->callbackActivationInstalled) {
                 continue;
             }
+            /* 初次激活的回调保留本次 call 生命周期标记，供晚到的
+             * 原生调用在 trampoline 中识别为过期；嵌套激活则还原外层状态。 */
             if (!marshalledValue->savedInvocationActive) {
                 callbackData->invocationActive = ZR_FALSE;
                 continue;

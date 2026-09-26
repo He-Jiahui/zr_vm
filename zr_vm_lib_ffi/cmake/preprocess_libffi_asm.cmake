@@ -17,6 +17,8 @@ endif ()
 get_filename_component(ASM_OUTPUT_DIR "${ASM_OUTPUT}" DIRECTORY)
 file(MAKE_DIRECTORY "${ASM_OUTPUT_DIR}")
 
+# 上游 Win64 汇编含 C 预处理指令；用同一 MSVC 配置展开为 MASM 输入，
+# 失败时阻断 vendor 目标，避免链接与 C 后端不匹配的 trampoline。
 execute_process(
         COMMAND "${C_COMPILER}"
         /nologo

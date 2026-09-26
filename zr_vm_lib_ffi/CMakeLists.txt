@@ -9,6 +9,8 @@ zr_link_library_for_module(${zr_curr_module_name} "zr_vm_library")
 set(ZR_VM_LIBFFI_FOUND OFF)
 set(ZR_VM_LIBFFI_BUNDLED_TARGET "")
 
+# zr.ffi 始终提供模块描述符；此处选择 ABI 执行后端。
+# 缺少 libffi 时仍可导入模块，但 callback 与 native symbol 调用会报告 ABI 不可用。
 find_path(ZR_VM_LIBFFI_INCLUDE_DIR
         NAMES ffi.h
         PATH_SUFFIXES
@@ -26,6 +28,8 @@ if (ZR_VM_LIBFFI_INCLUDE_DIR AND ZR_VM_LIBFFI_LIBRARY)
     set(ZR_VM_LIBFFI_FOUND ON)
 endif ()
 
+# Windows x64/MSVC 没有系统 libffi 时，配套构建仓库副本的 C 实现与 MASM 汇编。
+# 生成头、预处理定义及汇编源必须属于同一个 Win64 ABI 配置。
 if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(ZR_VM_LIBFFI_VENDOR_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zr_libffi/libffi)
     set(ZR_VM_LIBFFI_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/libffi/x86_win64)
@@ -107,6 +111,8 @@ if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(ZR_VM_LIBFFI_BUNDLED_TARGET zr_vm_libffi_vendor)
 endif ()
 
+# 静态与共享 zr.ffi 目标经此处取得一致的链接后端和 ZR_VM_HAS_LIBFFI 值；
+# 运行时以该值决定是否能创建 trampoline 或执行 ffi_call。
 function(zr_vm_attach_libffi target_name)
     if (NOT TARGET ${target_name})
         return()
@@ -132,6 +138,7 @@ if (BUILD_SHARED_LIB)
     zr_vm_attach_libffi(${zr_curr_module_name}_shared)
 endif ()
 
+# Unix 回调需要 pthread 的创建线程标识，以阻止外来线程直接进入同一 VM。
 if (UNIX AND NOT WIN32)
     find_package(Threads REQUIRED)
     if (BUILD_STATIC_LIB)

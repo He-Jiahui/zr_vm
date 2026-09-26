@@ -1,5 +1,6 @@
 #include "ffi_runtime_internal.h"
 
+/* Span 和字节索引共用同一有效期检查；零长度空地址可表示合法空视图。 */
 static TZrBool zr_ffi_pointer_require_open(
         ZrLibCallContext *context,
         SZrObject **outObject,
@@ -32,6 +33,7 @@ static TZrBool zr_ffi_pointer_require_open(
     return ZR_TRUE;
 }
 
+/* Span.source 保存 PointerHandle，使视图使用期间的 native 地址所有者仍可达；显式 close 仍会失效该视图。 */
 TZrBool ZrFfi_Pointer_Span(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -84,6 +86,7 @@ TZrBool ZrFfi_Pointer_Span(
     return context->state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 将固定长度 native 字节窗口暴露给语言层索引；调用方不得越过 pin 的有效期。 */
 TZrBool ZrFfi_Pointer_GetItem(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -107,6 +110,7 @@ TZrBool ZrFfi_Pointer_GetItem(
     return ZR_TRUE;
 }
 
+/* 单字节写入与 Buffer 的可见内容共享存储，因此拒绝越界索引及非 0..255 值。 */
 TZrBool ZrFfi_Pointer_SetItem(
         ZrLibCallContext *context,
         SZrTypeValue *result) {

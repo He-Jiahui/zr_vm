@@ -1,4 +1,6 @@
-/* fficonfig.h for bundled libffi on Windows x64/MSVC. */
+/* 仓库内嵌 libffi 的 Win64/MSVC ABI 配置；只供对应版本的 vendor 目标生成 fficonfig.h。
+ * 修改这些能力值时须与同一次构建的 C 实现和 MASM 汇编保持一致。
+ */
 
 #ifndef ZR_VM_LIBFFI_FFICONFIG_X86_WIN64_H
 #define ZR_VM_LIBFFI_FFICONFIG_X86_WIN64_H
@@ -7,6 +9,7 @@
 
 /* #undef FFI_DEBUG */
 /* #undef FFI_EXEC_TRAMPOLINE_TABLE */
+/* 与上游 Windows DEP 分支一致，供 closure 分配可执行 trampoline 页面。 */
 #define FFI_MMAP_EXEC_WRIT 1
 /* #undef FFI_NO_RAW_API */
 /* #undef FFI_NO_STRUCTS */
@@ -23,6 +26,7 @@
 /* #undef HAVE_DLFCN_H */
 /* #undef HAVE_HIDDEN_VISIBILITY_ATTRIBUTE */
 #define HAVE_INTTYPES_H 1
+/* MSVC Win64 的 long double 按 8 字节 double 处理，不能套用 Unix x64 布局。 */
 #define HAVE_LONG_DOUBLE 1
 /* #undef HAVE_LONG_DOUBLE_VARIANT */
 #define HAVE_MEMCPY 1
@@ -45,6 +49,7 @@
 #define STDC_HEADERS 1
 #define VERSION "@FFI_VERSION_STRING@"
 
+/* 上游在汇编和 C 声明中使用两种 FFI_HIDDEN 写法；MSVC 两侧均不需要 ELF 可见性属性。 */
 #ifdef LIBFFI_ASM
 #define FFI_HIDDEN(name)
 #else
