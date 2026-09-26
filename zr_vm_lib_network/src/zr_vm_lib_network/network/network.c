@@ -7,6 +7,7 @@
 #endif
 #endif
 
+/* 当前网络模块直接使用平台 socket 与 select；仓库内的 libuv 副本不在本调用链中。 */
 #include "zr_vm_lib_network/network.h"
 
 #include <limits.h>
@@ -14,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 平台 socket/长度类型与少量 API 差异在此映射，以下传输逻辑共用同一套路径。 */
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -39,6 +41,7 @@ typedef socklen_t ZrNetworkSockLen;
 #endif
 
 #define ZR_NETWORK_FRAME_HEADER_SIZE 4U
+/** @brief 固定长度读取的内部结果；帧读取方将所有非成功结果视为断开帧流。 */
 typedef enum EZrNetworkIoResult {
     ZR_NETWORK_IO_RESULT_SUCCESS = 0,
     ZR_NETWORK_IO_RESULT_TIMEOUT = 1,
@@ -46,6 +49,7 @@ typedef enum EZrNetworkIoResult {
     ZR_NETWORK_IO_RESULT_ERROR = 3
 } EZrNetworkIoResult;
 
+/* 统一写入可选错误缓冲区；调用方即使未提供缓冲区也可安全调用。 */
 static void network_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *message) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
@@ -54,6 +58,7 @@ static void network_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrCh
     buffer[bufferSize - 1] = '\0';
 }
 
+/* socket API 在 Windows 与 POSIX 上保存错误码的位置不同。 */
 static int network_last_error(void) {
 #if defined(_WIN32)
     return (int)WSAGetLastError();
@@ -62,6 +67,7 @@ static int network_last_error(void) {
 #endif
 }
 
+/* 把平台错误码转为对外的短消息，再经统一边界截断。 */
 static void network_write_socket_error(TZrChar *buffer,
                                        TZrSize bufferSize,
                                        const TZrChar *prefix,
@@ -75,8 +81,10 @@ static void network_write_socket_error(TZrChar *buffer,
     network_write_error(buffer, bufferSize, message);
 }
 
+/* Windows 首次创建 socket 前初始化 Winsock；POSIX 无需初始化。 */
 static TZrBool network_initialize(TZrChar *errorBuffer, TZrSize errorBufferSize) {
 #if defined(_WIN32)
+    /* TODO: initialized 是未同步的进程静态状态；并发首次打开 socket 时需核查初始化与清理契约。 */
     static TZrBool initialized = ZR_FALSE;
     if (!initialized) {
         WSADATA data;
@@ -94,15 +102,18 @@ static TZrBool network_initialize(TZrChar *errorBuffer, TZrSize errorBufferSize)
     return ZR_TRUE;
 }
 
+/* nativeHandle 用空指针表示关闭状态，因此将系统 socket 值偏移一位保存。 */
 static TZrPtr network_store_socket(ZrNetworkSocket socketHandle) {
     return (TZrPtr)(uintptr_t)((uintptr_t)socketHandle + 1u);
 }
 
+/* 撤销偏移映射；空指针还原为平台无效 socket。 */
 static ZrNetworkSocket network_load_socket(TZrPtr handle) {
     uintptr_t raw = (uintptr_t)handle;
     return raw == 0 ? ZR_NETWORK_INVALID_SOCKET : (ZrNetworkSocket)(raw - 1u);
 }
 
+/* 只释放系统 socket，不改变上层结构体的状态；Close 接口负责清零。 */
 static void network_close_socket(ZrNetworkSocket socketHandle) {
     if (socketHandle == ZR_NETWORK_INVALID_SOCKET) {
         return;
@@ -114,12 +125,15 @@ static void network_close_socket(ZrNetworkSocket socketHandle) {
 #endif
 }
 
+/* 等待读或写就绪；ZR_NETWORK_WAIT_INFINITE 不传 timeval，0 表示立即轮询。 */
 static int network_wait_socket(ZrNetworkSocket socketHandle, TZrUInt32 timeoutMs, TZrBool writeSet) {
     fd_set sockets;
     struct timeval timeout;
     struct timeval *timeoutPointer = ZR_NULL;
     int status;
 
+    /* BUG: POSIX 的 FD_SET 要求 socketHandle < FD_SETSIZE；进程打开足够多描述符后，
+     * 通过 accept/read/connect 等可达此处，写越界 fd_set。当前没有高 fd 的回归测试。 */
     FD_ZERO(&sockets);
     FD_SET(socketHandle, &sockets);
     if (timeoutMs != ZR_NETWORK_WAIT_INFINITE) {
@@ -128,6 +142,7 @@ static int network_wait_socket(ZrNetworkSocket socketHandle, TZrUInt32 timeoutMs
         timeoutPointer = &timeout;
     }
 
+    /* TODO: EINTR 重试沿用 select 已可能修改的 fd_set/timeval；需核查目标平台的重试语义。 */
     do {
 #if defined(_WIN32)
         status = select(0, writeSet ? ZR_NULL : &sockets, writeSet ? &sockets : ZR_NULL, ZR_NULL, timeoutPointer);
@@ -147,6 +162,7 @@ static int network_wait_socket(ZrNetworkSocket socketHandle, TZrUInt32 timeoutMs
     return status;
 }
 
+/* connect 临时采用非阻塞模式以便 select 施加连接超时。 */
 static TZrBool network_set_nonblocking(ZrNetworkSocket socketHandle, TZrBool enabled) {
 #if defined(_WIN32)
     u_long mode = enabled ? 1UL : 0UL;
@@ -161,6 +177,7 @@ static TZrBool network_set_nonblocking(ZrNetworkSocket socketHandle, TZrBool ena
 #endif
 }
 
+/* 保持网络接口仅接受数值 IP，且统一空主机与 localhost 的回环语义。 */
 static TZrBool network_normalize_host(const TZrChar *host, TZrChar *buffer, TZrSize bufferSize) {
     const TZrChar *resolved = (host == ZR_NULL || host[0] == '\0' || strcmp(host, "localhost") == 0) ? "127.0.0.1" : host;
     if (buffer == ZR_NULL || bufferSize == 0) {
@@ -172,6 +189,7 @@ static TZrBool network_normalize_host(const TZrChar *host, TZrChar *buffer, TZrS
     return ZR_TRUE;
 }
 
+/* 从系统 sockaddr 快照转换成公开的文本地址与主机序端口。 */
 static TZrBool network_endpoint_from_sockaddr(const struct sockaddr *address, SZrNetworkEndpoint *outEndpoint) {
     if (address == ZR_NULL || outEndpoint == ZR_NULL) {
         return ZR_FALSE;
@@ -196,6 +214,7 @@ static TZrBool network_endpoint_from_sockaddr(const struct sockaddr *address, SZ
     return ZR_FALSE;
 }
 
+/* 解析公开地址值为 IPv4/IPv6 sockaddr；不做 DNS 查询。 */
 static TZrBool network_sockaddr_from_endpoint(const SZrNetworkEndpoint *endpoint,
                                               struct sockaddr_storage *storage,
                                               ZrNetworkSockLen *outLength,
@@ -234,6 +253,7 @@ static TZrBool network_sockaddr_from_endpoint(const SZrNetworkEndpoint *endpoint
     return ZR_TRUE;
 }
 
+/* 查询已绑定/已连接 socket 的实际地址，供端口 0 绑定与 VM 地址访问器使用。 */
 static void network_update_endpoints(ZrNetworkSocket socketHandle,
                                      SZrNetworkEndpoint *outLocalEndpoint,
                                      SZrNetworkEndpoint *outRemoteEndpoint) {
@@ -255,11 +275,14 @@ static void network_update_endpoints(ZrNetworkSocket socketHandle,
     }
 }
 
+/* 逐块读满指定长度；任何中途失败都会使帧读取方关闭已失去同步的连接。 */
 static EZrNetworkIoResult network_read_exact(ZrNetworkSocket socketHandle,
                                              TZrUInt32 timeoutMs,
                                              TZrByte *buffer,
                                              TZrSize length) {
     TZrSize total = 0;
+    /* TODO: 每次 recv 前重新使用完整 timeoutMs，慢速分块发送者可使总耗时超过单次超时；
+     * 需明确 timeoutMs 是每块等待上限还是整帧截止时间。 */
     while (total < length) {
         int waitStatus = network_wait_socket(socketHandle, timeoutMs, ZR_FALSE);
         int received;
@@ -269,6 +292,8 @@ static EZrNetworkIoResult network_read_exact(ZrNetworkSocket socketHandle,
         if (waitStatus < 0) {
             return ZR_NETWORK_IO_RESULT_ERROR;
         }
+        /* TODO: ReadFrame 在 64 位可接收超过 INT_MAX 的帧长，剩余长度收窄为 int；
+         * 需用大帧与平台 socket 故障注入核查 POSIX/Winsock 的 recv 参数和写入边界。 */
         received = recv(socketHandle, (char *)(buffer + total), (int)(length - total), 0);
         if (received == 0) {
             return ZR_NETWORK_IO_RESULT_CLOSED;
@@ -281,6 +306,7 @@ static EZrNetworkIoResult network_read_exact(ZrNetworkSocket socketHandle,
     return ZR_NETWORK_IO_RESULT_SUCCESS;
 }
 
+/* 只查询已排队字节数，不消费数据；零超时调试轮询用此判断整帧是否到齐。 */
 static TZrBool network_query_available_bytes(ZrNetworkSocket socketHandle, TZrSize *outLength) {
 #if defined(_WIN32)
     u_long pendingBytes = 0;
@@ -303,6 +329,7 @@ static TZrBool network_query_available_bytes(ZrNetworkSocket socketHandle, TZrSi
 #endif
 }
 
+/* 预览固定长度帧头，避免轮询在帧尚未完整到达时破坏接收队列。 */
 static TZrBool network_peek_exact(ZrNetworkSocket socketHandle, TZrByte *buffer, TZrSize length) {
     int received;
 
@@ -387,6 +414,7 @@ TZrBool ZrNetwork_TcpListenerOpen(const SZrNetworkEndpoint *requested, SZrNetwor
     ZrNetworkSockLen storageLength = 0;
     ZrNetworkSocket socketHandle;
     int reuseAddress = 1;
+    /* 参数或 Winsock 初始化失败时尚未清零输出；调用方应先初始化其所有权状态。 */
     if (outListener == ZR_NULL || !network_initialize(errorBuffer, errorBufferSize) ||
         !network_sockaddr_from_endpoint(requested, &storage, &storageLength, errorBuffer, errorBufferSize)) {
         return ZR_FALSE;
@@ -438,6 +466,7 @@ TZrBool ZrNetwork_ListenerAccept(SZrNetworkListener *listener, TZrUInt32 timeout
         return ZR_FALSE;
     }
     listenerSocket = network_load_socket(listener->nativeHandle);
+    /* 超时与 socket 错误均不改写 outStream，VM 包装器据此返回 null。 */
     if (listenerSocket == ZR_NETWORK_INVALID_SOCKET || network_wait_socket(listenerSocket, timeoutMs, ZR_FALSE) <= 0) {
         return ZR_FALSE;
     }
@@ -468,6 +497,7 @@ TZrBool ZrNetwork_TcpStreamConnect(const SZrNetworkEndpoint *endpoint, TZrUInt32
         network_write_socket_error(errorBuffer, errorBufferSize, "failed to create TCP stream", network_last_error());
         return ZR_FALSE;
     }
+    /* TODO: 非阻塞切换失败会直接返回且不写 errorBuffer；需要与其余连接失败路径统一。 */
     if (!network_set_nonblocking(socketHandle, ZR_TRUE)) {
         network_close_socket(socketHandle);
         return ZR_FALSE;
@@ -487,6 +517,7 @@ TZrBool ZrNetwork_TcpStreamConnect(const SZrNetworkEndpoint *endpoint, TZrUInt32
             return ZR_FALSE;
         }
     }
+    /* TODO: 恢复阻塞模式的返回值被忽略；失败时会交付不符合后续读写假设的 socket。 */
     network_set_nonblocking(socketHandle, ZR_FALSE);
     outStream->nativeHandle = network_store_socket(socketHandle);
     outStream->isOpen = ZR_TRUE;
@@ -525,6 +556,7 @@ TZrBool ZrNetwork_StreamWrite(SZrNetworkStream *stream, const TZrByte *bytes, TZ
         return ZR_FALSE;
     }
     socketHandle = network_load_socket(stream->nativeHandle);
+    /* TODO: length 为 size_t，传给 send 前转成 int；超过 INT_MAX 的单次长度需分块。 */
     while (total < length) {
         int sent = send(socketHandle, (const char *)(bytes + total), (int)(length - total),
 #if defined(MSG_NOSIGNAL)
@@ -533,6 +565,8 @@ TZrBool ZrNetwork_StreamWrite(SZrNetworkStream *stream, const TZrByte *bytes, TZ
                         0
 #endif
         );
+        /* BUG: 若前几次 send 已成功、随后失败，outWritten 仍为入口设置的 0；
+         * registry/tcp_registry.c 的 write 方法把它作为实际写入数返回，调用方会误认没有副作用。 */
         if (sent <= 0) {
             return ZR_FALSE;
         }
@@ -609,15 +643,20 @@ TZrBool ZrNetwork_StreamReadFrame(SZrNetworkStream *stream, TZrUInt32 timeoutMs,
             return ZR_FALSE;
         }
 
-        /* Zero-timeout polling is used by the debugger trace hook. If only part of a frame
-         * has arrived, leave the bytes queued and try again on the next safepoint instead of
-         * consuming a partial frame and tearing down the control stream. */
+        /* 调试 trace hook 使用零超时轮询。整帧未到时保留接收队列，在下一安全点重试，
+         * 避免消耗半帧后误关闭控制流。 */
+        /* BUG: 对端发送不足四字节帧头后关闭时，FIONREAD 始终仍报告残留字节，
+         * 本分支永远返回 ZR_FALSE 而不关闭流；debug_protocol.c 的零超时轮询因
+         * client.isOpen 保持为真而不清除客户端，阻止后续连接被接受。帧体残缺同理。 */
         if (availableBytes < sizeof(frameLength) ||
             !network_peek_exact(socketHandle, (TZrByte *)&frameLength, sizeof(frameLength))) {
             return ZR_FALSE;
         }
 
         frameLength = ntohl(frameLength);
+        /* BUG: 32 位 size_t 上 frameLength=UINT32_MAX 时加一回绕为 0，
+         * 小缓冲也通过容量检查；之后的 recv 会收到未受容量约束的帧长。
+         * 需在 32 位目标和两种 socket 后端验证具体失败或越界后果。 */
         if ((TZrSize)frameLength + 1 > bufferSize) {
             ZrNetwork_StreamClose(stream);
             return ZR_FALSE;
@@ -634,6 +673,7 @@ TZrBool ZrNetwork_StreamReadFrame(SZrNetworkStream *stream, TZrUInt32 timeoutMs,
         return ZR_FALSE;
     }
     frameLength = ntohl(frameLength);
+    /* 同一 32 位容量校验绕过也存在于阻塞读取路径。 */
     if ((TZrSize)frameLength + 1 > bufferSize ||
         network_read_exact(socketHandle, timeoutMs, (TZrByte *)buffer, frameLength) !=
                 ZR_NETWORK_IO_RESULT_SUCCESS) {
@@ -696,6 +736,8 @@ TZrBool ZrNetwork_UdpSocketSend(SZrNetworkUdpSocket *socket, const SZrNetworkEnd
     if (outLength != ZR_NULL) {
         *outLength = 0;
     }
+    /* BUG: .close() 后调用 VM UdpSocket.send 可达 !socket->isOpen；此处直接失败而
+     * 不写 errorBuffer，但 udp_registry.c 将未初始化的 error 数组作为异常文本读取。 */
     if (socket == ZR_NULL || !socket->isOpen || target == ZR_NULL || bytes == ZR_NULL || length > INT_MAX ||
         !network_sockaddr_from_endpoint(target, &storage, &storageLength, errorBuffer, errorBufferSize)) {
         return ZR_FALSE;
@@ -728,6 +770,8 @@ TZrBool ZrNetwork_UdpSocketReceive(SZrNetworkUdpSocket *socket, TZrUInt32 timeou
         return ZR_FALSE;
     }
     received = recvfrom(socketHandle, (char *)buffer, (int)bufferSize, 0, (struct sockaddr *)&storage, &storageLength);
+    /* BUG: UDP 的零字节数据报是合法报文。UdpSocket.send(host, port, "") 会发送长度 0，
+     * 此处却将 recvfrom 返回 0 视作失败，VM 的 receive 因而返回 null 并丢失发送端。 */
     if (received <= 0) {
         return ZR_FALSE;
     }
