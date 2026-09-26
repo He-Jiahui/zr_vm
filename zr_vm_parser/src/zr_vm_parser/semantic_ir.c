@@ -586,6 +586,9 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
          spec->matchTypeId == ZR_SEMANTIC_ID_INVALID) ||
         (spec->opcode != ZR_SEMANTIC_IR_TYPE_TEST &&
          spec->matchTypeId != ZR_SEMANTIC_ID_INVALID) ||
+        (spec->scalarConversionTypeToken != 0u &&
+         (spec->opcode != ZR_SEMANTIC_IR_CONVERT ||
+          !ZR_VALUE_IS_TYPE_NUMBER(spec->scalarConversionTypeToken))) ||
         (spec->placeId != ZR_PLACE_ID_INVALID &&
          ZrParser_PlaceGraph_Get(&function->places, spec->placeId) == ZR_NULL) ||
         (spec->valueId != ZR_VALUE_ID_INVALID &&
@@ -603,6 +606,7 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
             (TZrSemanticInstructionId)(function->instructions.length + 1U);
     instruction.opcode = spec->opcode;
     instruction.typeId = spec->typeId;
+    instruction.scalarConversionTypeToken = spec->scalarConversionTypeToken;
     instruction.matchTypeId = spec->matchTypeId;
     instruction.placeId = spec->placeId;
     instruction.valueId = spec->valueId;
@@ -801,6 +805,9 @@ TZrBool ZrParser_SemanticIr_Validate(
              instruction->matchTypeId == ZR_SEMANTIC_ID_INVALID) ||
             (instruction->opcode != ZR_SEMANTIC_IR_TYPE_TEST &&
              instruction->matchTypeId != ZR_SEMANTIC_ID_INVALID) ||
+            (instruction->scalarConversionTypeToken != 0u &&
+             (instruction->opcode != ZR_SEMANTIC_IR_CONVERT ||
+              !ZR_VALUE_IS_TYPE_NUMBER(instruction->scalarConversionTypeToken))) ||
             instruction->ownershipOperation < ZR_SEMANTIC_OWNERSHIP_NONE ||
             instruction->ownershipOperation >= ZR_SEMANTIC_OWNERSHIP_ENUM_MAX ||
             (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&

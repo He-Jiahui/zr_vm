@@ -80,9 +80,41 @@ static TZrBool compiler_semantic_cfg_has_complete_value_types(
             (instruction->opcode != ZR_SEMANTIC_IR_CONVERT &&
              instruction->opcode != ZR_SEMANTIC_IR_STORE)) continue;
         input = ZrParser_SemanticIr_Value(&cs->preSemanticIr, instruction->valueId);
-        /* Cross-type CONVERT is not executable yet; an implicit assignment
-         * conversion only appears in ExecBC, leaving STORE's input unchanged. */
-        if (input == ZR_NULL || input->typeId != instruction->typeId) return ZR_FALSE;
+        if (input == ZR_NULL) return ZR_FALSE;
+        if (instruction->opcode == ZR_SEMANTIC_IR_CONVERT &&
+            instruction->scalarConversionTypeToken != 0u) {
+            const SZrCanonicalTypeNode *target = cs->semanticContext != ZR_NULL
+                    ? ZrParser_CanonicalType_Find(
+                            cs->semanticContext, instruction->typeId)
+                    : ZR_NULL;
+            if (target == ZR_NULL || target->kind != ZR_CANONICAL_TYPE_PRIMITIVE ||
+                !ZR_VALUE_IS_TYPE_NUMBER(target->data.primitive.valueType) ||
+                instruction->scalarConversionTypeToken !=
+                        (TZrUInt32)target->data.primitive.valueType)
+                return ZR_FALSE;
+        }
+        if (input->typeId != instruction->typeId) {
+            const SZrCanonicalTypeNode *sourceType;
+            const SZrCanonicalTypeNode *targetType;
+            const SZrSemanticIrValue *result;
+            if (instruction->opcode != ZR_SEMANTIC_IR_CONVERT ||
+                cs->semanticContext == ZR_NULL) return ZR_FALSE;
+            result = ZrParser_SemanticIr_Value(
+                    &cs->preSemanticIr, instruction->resultValueId);
+            if (result == ZR_NULL || result->typeId != instruction->typeId)
+                return ZR_FALSE;
+            sourceType = ZrParser_CanonicalType_Find(
+                    cs->semanticContext, input->typeId);
+            targetType = ZrParser_CanonicalType_Find(
+                    cs->semanticContext, instruction->typeId);
+            if (sourceType == ZR_NULL || targetType == ZR_NULL ||
+                sourceType->kind != ZR_CANONICAL_TYPE_PRIMITIVE ||
+                targetType->kind != ZR_CANONICAL_TYPE_PRIMITIVE ||
+                !ZR_VALUE_IS_TYPE_NUMBER(sourceType->data.primitive.valueType) ||
+                !ZR_VALUE_IS_TYPE_NUMBER(targetType->data.primitive.valueType) ||
+                instruction->scalarConversionTypeToken == 0u)
+                return ZR_FALSE;
+        }
     }
     return ZR_TRUE;
 }

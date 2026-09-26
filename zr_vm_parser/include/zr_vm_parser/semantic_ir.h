@@ -226,6 +226,7 @@ typedef struct SZrSemanticIrInstruction {
     TZrSemanticInstructionId id;
     EZrSemanticIrOpcode opcode;
     TZrTypeId typeId;
+    TZrUInt32 scalarConversionTypeToken; /* Runtime scalar type, not canonical TypeId. */
     TZrTypeId matchTypeId;
     TZrPlaceId placeId;
     TZrValueId valueId;
@@ -250,6 +251,7 @@ typedef struct SZrSemanticIrInstruction {
 typedef struct SZrSemanticIrInstructionSpec {
     EZrSemanticIrOpcode opcode;
     TZrTypeId typeId;
+    TZrUInt32 scalarConversionTypeToken;
     TZrTypeId matchTypeId;
     TZrPlaceId placeId;
     TZrValueId valueId;

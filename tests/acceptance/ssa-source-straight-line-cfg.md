@@ -1,5 +1,31 @@
 # Source straight-line CFG finalization
 
+## Numeric conversion follow-up (2026-09-27; execution pending)
+
+Source numeric local initialization and assignment now emit a destination-typed
+SemanticIR CONVERT before INITIALIZE or STORE. Numeric conversion instructions
+carry an explicit runtime scalar token instead of using their canonical TypeId
+as an ExecIR type token. The straight-line preflight checks both canonical
+primitive types, the converted result type, and token/target agreement before
+promoting an inactive graph; nonnumeric cross-type values remain analysis-only.
+The new source regression covers initialization, assignment, oracle return,
+fallthrough promotion, malformed token rejection, and retry after restoring
+the token. `PLACE_BASE` is still metadata-only for ExecBC projection, so this
+follow-up does not claim source-local ExecBC parity or close 01.05.
+
+An earlier direct WSL GCC 11.4 `-std=c11 -Wall -Wextra -Wpedantic -Werror
+-Wno-error=missing-braces -fsyntax-only` pass on the four modified production C
+files and the focused regression completed; only three existing
+`-Wmissing-braces` warnings in `exec_ir_build.c` were downgraded. A final
+repeat after the additional target-token preflight regression was also blocked
+in WSL mounted-drive I/O and was interrupted; it is not counted as a pass.
+The configured
+`zr_vm_ssa_source_straight_line_cfg_test` build had compiled more than 490 of
+591 steps but CMake regeneration then spent over 20 minutes blocked in WSL
+`p9_client_rpc` on the mounted workspace. That build was interrupted, so the
+new source assertions and the pre-semantic-IR golden are not yet executable
+acceptance evidence. Rebuild and run both before claiming this slice verified.
+
 ## Scope
 
 This stage advances 01.02 source-owned CFG production. A supported entry body

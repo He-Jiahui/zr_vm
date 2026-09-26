@@ -108,6 +108,17 @@ static TZrBool compiler_semantic_ir_type_is_scalar(
                      type->kind == ZR_CANONICAL_TYPE_PRIMITIVE);
 }
 
+static TZrUInt32 compiler_semantic_ir_numeric_type_token(
+        const SZrCompilerState *cs, TZrTypeId typeId) {
+    const SZrCanonicalTypeNode *type;
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        typeId == ZR_SEMANTIC_ID_INVALID) return 0u;
+    type = ZrParser_CanonicalType_Find(cs->semanticContext, typeId);
+    return type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_PRIMITIVE &&
+                   ZR_VALUE_IS_TYPE_NUMBER(type->data.primitive.valueType)
+            ? (TZrUInt32)type->data.primitive.valueType : 0u;
+}
+
 static TZrBool compiler_semantic_ir_is_receiver_loan(
         const SZrCompilerState *cs,
         TZrLoanId loanId) {
@@ -1629,9 +1640,15 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
     *(SZrCompilerSemanticIrSlot *)ZrCore_Array_Get(
             &cs->preSemanticIrSlots, cs->preSemanticIrSlots.length - 1U) = slot;
     if (priorTemporaryValueId != ZR_VALUE_ID_INVALID) {
+        const SZrSemanticIrValue *priorValue = ZrParser_SemanticIr_Value(
+                &cs->preSemanticIr, priorTemporaryValueId);
         memset(&spec, 0, sizeof(spec));
         spec.opcode = ZR_SEMANTIC_IR_CONVERT;
         spec.typeId = slot.typeId;
+        if (priorValue != ZR_NULL &&
+            compiler_semantic_ir_numeric_type_token(cs, priorValue->typeId) != 0u)
+            spec.scalarConversionTypeToken =
+                    compiler_semantic_ir_numeric_type_token(cs, slot.typeId);
         spec.valueId = priorTemporaryValueId;
         spec.resultValueId = slot.valueId;
         spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
@@ -1699,6 +1716,7 @@ static TZrBool compiler_semantic_ir_emit_store(SZrCompilerState *cs,
     SZrCompilerSemanticIrSlot destination, source;
     SZrCompilerSemanticIrSlot *slot;
     SZrSemanticIrInstructionSpec spec;
+    TZrValueId storedValueId;
 
     if (valueSlot == ZR_PARSER_SLOT_NONE ||
         !compiler_semantic_ir_materialize_slot_snapshot(
@@ -1712,12 +1730,30 @@ static TZrBool compiler_semantic_ir_emit_store(SZrCompilerState *cs,
     if (slot == ZR_NULL) {
         return ZR_FALSE;
     }
-    slot->valueId = source.valueId;
+    storedValueId = source.valueId;
+    if (source.typeId != destination.typeId &&
+        compiler_semantic_ir_numeric_type_token(cs, source.typeId) != 0u &&
+        compiler_semantic_ir_numeric_type_token(cs, destination.typeId) != 0u) {
+        storedValueId = ZrParser_SemanticIr_AddValue(
+                &cs->preSemanticIr, destination.typeId, sourceRange);
+        if (storedValueId == ZR_VALUE_ID_INVALID) return ZR_FALSE;
+        memset(&spec, 0, sizeof(spec));
+        spec.opcode = ZR_SEMANTIC_IR_CONVERT;
+        spec.typeId = destination.typeId;
+        spec.scalarConversionTypeToken =
+                compiler_semantic_ir_numeric_type_token(cs, destination.typeId);
+        spec.valueId = source.valueId;
+        spec.resultValueId = storedValueId;
+        spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        spec.sourceRange = sourceRange;
+        if (!compiler_semantic_ir_emit(cs, &spec)) return ZR_FALSE;
+    }
+    slot->valueId = storedValueId;
     memset(&spec, 0, sizeof(spec));
     spec.opcode = ZR_SEMANTIC_IR_STORE;
     spec.typeId = destination.typeId;
     spec.placeId = destination.placeId;
-    spec.valueId = source.valueId;
+    spec.valueId = storedValueId;
     spec.symbolId = destination.symbolId;
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.sourceRange = sourceRange;

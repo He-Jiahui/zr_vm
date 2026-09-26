@@ -667,6 +667,9 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 isTerminator = (TZrBool)(info != ZR_NULL &&
                     (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u);
                 x.typeToken = (TZrExecIrTypeToken)in->typeId;
+                if (in->opcode == ZR_SEMANTIC_IR_CONVERT &&
+                    in->scalarConversionTypeToken != 0u)
+                    x.typeToken = (TZrExecIrTypeToken)in->scalarConversionTypeToken;
                 x.matchTypeToken = (TZrExecIrTypeToken)in->matchTypeId;
                 if ((in->opcode == ZR_SEMANTIC_IR_TYPE_TEST &&
                      in->matchTypeId == ZR_SEMANTIC_ID_INVALID) ||

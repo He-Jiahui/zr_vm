@@ -223,8 +223,14 @@ ValueId; binding
 an initialized local then emits its existing typed `CONVERT` definition from
 the temporary. Synthetic SemIR functions may still use `CONSTANT` without a
 compiler-owned pool, and a pool index alone does not make a standalone SemIR
-function self-contained. Other computed expressions, conversions outside the
-local-binding path, and full CFG/phi construction remain open.
+function self-contained. Numeric primitive initialization and assignment
+convert the source ValueId into a new destination-typed value before
+INITIALIZE/STORE; a local assignment's STORE consumes that converted ValueId.
+Source CFG preflight promotes cross-type CONVERT only when both canonical types
+are numeric primitives and the explicit scalar runtime token matches the
+destination primitive. That token is distinct from the canonical TypeId and
+is preserved by ExecIR lowering for oracle execution. Other computed
+expressions, nonnumeric conversions, and full CFG/phi construction remain open.
 Overwriting an already materialized destination must use an explicit semantic
 `STORE`; expression normalization does not silently retag an existing Place.
 
