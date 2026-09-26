@@ -111,6 +111,8 @@ typedef struct SZrExecBcProjection {
     TZrUInt32 sourceMapCount;
     SZrExecIrConstant *constants;
     TZrUInt32 constantCount;
+    SZrExecIrLayout *layouts;
+    TZrUInt32 layoutCount;
     TZrUInt32 gcMapCount;
     SZrExecIrGcMap gcMap;
     TZrExecIrValueId *gcRoots;
@@ -182,6 +184,8 @@ typedef struct SZrAotIrProjection {
     TZrUInt32 sourceMapCount;
     SZrExecIrConstant *constants;
     TZrUInt32 constantCount;
+    SZrExecIrLayout *layouts;
+    TZrUInt32 layoutCount;
     TZrUInt32 gcMapCount;
     SZrExecIrGcMap gcMap;
     TZrExecIrValueId *gcRoots;
@@ -218,6 +222,11 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAotWithConstants(
         const SZrExecIrFunction *function,
         const SZrExecIrConstant *constants, TZrUInt32 constantCount,
         SZrAotIrProjection *output, SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
+        const SZrExecIrFunction *function,
+        const SZrExecIrConstant *constants, TZrUInt32 constantCount,
+        const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
+        SZrAotIrProjection *output, SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAot(
         const SZrExecIrFunction *function, SZrAotIrProjection *output,
         SZrExecIrDiagnostic *diagnostic);
@@ -230,6 +239,11 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildProjection(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
         const SZrExecIrFunction *function,
         const SZrExecIrConstant *constants, TZrUInt32 constantCount,
+        SZrExecBcProjection *output, SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildProjectionWithConstantsAndLayouts(
+        const SZrExecIrFunction *function,
+        const SZrExecIrConstant *constants, TZrUInt32 constantCount,
+        const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
         SZrExecBcProjection *output, SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API void ZrParser_ExecIr_MoveProjectionToAot(
         SZrExecBcProjection *source, SZrAotIrProjection *destination);

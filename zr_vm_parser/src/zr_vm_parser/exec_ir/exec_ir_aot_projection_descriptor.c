@@ -16,6 +16,7 @@ void ZrParser_AotIrProjection_FreeDescriptor(
     free(descriptor->frameSlots);
     free(descriptor->sourceMaps);
     free(descriptor->constants);
+    free(descriptor->layouts);
     memset(descriptor, 0, sizeof(*descriptor));
 }
 
@@ -41,6 +42,7 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         projection->instructions == ZR_NULL || projection->instructionCount == 0u ||
         projection->blocks == ZR_NULL || projection->blockCount == 0u ||
         (projection->constantCount != 0u && projection->constants == ZR_NULL) ||
+        (projection->layoutCount != 0u && projection->layouts == ZR_NULL) ||
         projection->functionToken == 0u || projection->signatureHash == 0u ||
         projection->frameLayoutHash == 0u) {
         if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
@@ -92,7 +94,10 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
                           sizeof(*candidate.sourceMaps)) ||
         !descriptor_alloc((void **)&candidate.constants,
                           projection->constantCount,
-                          sizeof(*candidate.constants))) {
+                          sizeof(*candidate.constants)) ||
+        !descriptor_alloc((void **)&candidate.layouts,
+                          projection->layoutCount,
+                          sizeof(*candidate.layouts))) {
         ZrParser_AotIrProjection_FreeDescriptor(&candidate);
         if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
         return ZR_FALSE;
@@ -166,6 +171,10 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         memcpy(candidate.constants, projection->constants,
                (size_t)projection->constantCount * sizeof(*candidate.constants));
     }
+    if (projection->layoutCount != 0u) {
+        memcpy(candidate.layouts, projection->layouts,
+               (size_t)projection->layoutCount * sizeof(*candidate.layouts));
+    }
     candidate.function.instructions = candidate.instructions;
     candidate.function.blocks = candidate.blocks;
     candidate.function.phiIncomingPool = candidate.phiIncoming;
@@ -192,6 +201,8 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     candidate.module.moduleHash = moduleContract->moduleHash;
     candidate.module.constantPool = candidate.constants;
     candidate.module.constantCount = projection->constantCount;
+    candidate.module.layoutPool = candidate.layouts;
+    candidate.module.layoutCount = projection->layoutCount;
     candidate.module.functions = &candidate.function;
     candidate.module.functionCount = 1u;
     if (ZrCore_AotIr_ValidateModule(&candidate.module, diagnostic) != ZR_AOT_IR_OK) {

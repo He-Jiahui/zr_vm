@@ -15,7 +15,7 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 
-#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)5u)
+#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)6u)
 #define ZR_AOT_IR_TARGET_ABI_VERSION ((TZrUInt32)1u)
 #define ZR_AOT_IR_ID_INVALID ((TZrUInt32)0u)
 
@@ -177,6 +177,8 @@ typedef struct SZrAotIrModule {
     TZrUInt64 moduleHash;
     const SZrExecIrConstant *constantPool;
     TZrUInt32 constantCount;
+    const SZrExecIrLayout *layoutPool;
+    TZrUInt32 layoutCount;
     const SZrAotIrFunction *functions;
     TZrUInt32 functionCount;
     TZrUInt32 relocationCount;

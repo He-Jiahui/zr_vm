@@ -24,6 +24,7 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->phiMoves);
     free(projection->sourceMaps);
     free(projection->constants);
+    free(projection->layouts);
     ZrCore_ExecIr_GcMapFree(&projection->gcMap);
     free(projection->gcRoots);
     free(projection->deoptStates);
@@ -34,9 +35,10 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     memset(projection, 0, sizeof(*projection));
 }
 
-TZrBool ZrParser_ExecIr_LowerAotWithConstants(
+TZrBool ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
         const SZrExecIrFunction *function, const SZrExecIrConstant *constants,
-        TZrUInt32 constantCount, SZrAotIrProjection *output,
+        TZrUInt32 constantCount, const SZrExecIrLayout *layouts,
+        TZrUInt32 layoutCount, SZrAotIrProjection *output,
         SZrExecIrDiagnostic *diagnostic) {
     SZrExecBcProjection prepared;
     SZrAotIrProjection candidate;
@@ -45,8 +47,9 @@ TZrBool ZrParser_ExecIr_LowerAotWithConstants(
         return ZR_FALSE;
     }
     memset(&prepared, 0, sizeof(prepared));
-    if (!ZrParser_ExecIr_BuildProjectionWithConstants(
-            function, constants, constantCount, &prepared, diagnostic)) {
+    if (!ZrParser_ExecIr_BuildProjectionWithConstantsAndLayouts(
+            function, constants, constantCount, layouts, layoutCount,
+            &prepared, diagnostic)) {
         return ZR_FALSE;
     }
     memset(&candidate, 0, sizeof(candidate));
@@ -77,6 +80,14 @@ TZrBool ZrParser_ExecIr_LowerAotWithConstants(
     *output = candidate;
     ZrParser_ExecBcProjection_Free(&prepared);
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_ExecIr_LowerAotWithConstants(
+        const SZrExecIrFunction *function, const SZrExecIrConstant *constants,
+        TZrUInt32 constantCount, SZrAotIrProjection *output,
+        SZrExecIrDiagnostic *diagnostic) {
+    return ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
+            function, constants, constantCount, ZR_NULL, 0u, output, diagnostic);
 }
 
 TZrBool ZrParser_ExecIr_LowerAot(const SZrExecIrFunction *function,

@@ -17,6 +17,7 @@ void test_aotir_owns_state_map(void) {
     TZrExecIrValueId receiver, result;
     TZrExecIrMemoryTokenId before = 1u, after = 2u;
     const SZrExecIrConstant constants[] = {{1u, 5u, 42u}};
+    const SZrExecIrLayout layouts[] = {{201u, 1u, 8u, 8u, 301u}};
     SZrExecIrStateMapEntry *publishedEntries;
     TZrUInt32 originalRoots, originalValues, originalResumeId;
 
@@ -92,8 +93,8 @@ void test_aotir_owns_state_map(void) {
     TEST_ASSERT_TRUE(function.stateMap->entryCount > 0u);
     TEST_ASSERT_TRUE(function.stateMap->rootCount > 0u);
     TEST_ASSERT_TRUE(ZrCore_ExecIr_StateMapStorageValid(function.stateMap));
-    TEST_ASSERT_TRUE(ZrParser_ExecIr_LowerAotWithConstants(
-            &function, constants, 1u, &aot, &diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
+            &function, constants, 1u, layouts, 1u, &aot, &diagnostic));
     TEST_ASSERT_FALSE(aot.runnable);
     TEST_ASSERT_TRUE(aot.stateMapPresent);
     TEST_ASSERT_EQUAL_UINT32(function.stateMap->entryCount, aot.stateMap.entryCount);
@@ -107,6 +108,9 @@ void test_aotir_owns_state_map(void) {
     TEST_ASSERT_EQUAL_UINT32(1u, aot.constantCount);
     TEST_ASSERT_EQUAL_UINT32(1u, aot.constants[0].typeToken);
     TEST_ASSERT_EQUAL_UINT64(42u, aot.constants[0].bits);
+    TEST_ASSERT_EQUAL_UINT32(1u, aot.layoutCount);
+    TEST_ASSERT_EQUAL_UINT32(201u, aot.layouts[0].id);
+    TEST_ASSERT_EQUAL_UINT32(8u, aot.layouts[0].byteSize);
     TEST_ASSERT_EQUAL_UINT32(1u, aot.deoptStateCount);
     TEST_ASSERT_EQUAL_UINT32(91u, aot.deoptStates[0].id);
     TEST_ASSERT_EQUAL_UINT32(1u, aot.deoptValueCount);
@@ -130,8 +134,8 @@ void test_aotir_owns_state_map(void) {
     function.stateMap->entries[0].resumeId = originalResumeId;
     function.stateMap->valueCount = function.stateMap->valueCapacity + 1u;
     TEST_ASSERT_FALSE(ZrCore_ExecIr_StateMapStorageValid(function.stateMap));
-    TEST_ASSERT_FALSE(ZrParser_ExecIr_LowerAotWithConstants(
-            &function, constants, 1u, &aot, &diagnostic));
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
+            &function, constants, 1u, layouts, 1u, &aot, &diagnostic));
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION, diagnostic.code);
     TEST_ASSERT_EQUAL_UINT32(function.functionToken, diagnostic.functionToken);
     TEST_ASSERT_EQUAL_PTR(publishedEntries, aot.stateMap.entries);

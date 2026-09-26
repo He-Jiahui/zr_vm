@@ -940,6 +940,26 @@ EZrAotIrStatus ZrCore_AotIr_ValidateModule(const SZrAotIrModule *module,
                                1u, module->constantPool[i].typeToken);
         }
     }
+    if (module->layoutCount != 0u && module->layoutPool == ZR_NULL) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, 0u, 0u, 0u, 0u,
+                           1u, 0u);
+    }
+    for (TZrUInt32 i = 0u; i < module->layoutCount; ++i) {
+        const SZrExecIrLayout *layout = &module->layoutPool[i];
+        if (layout->id == ZR_AOT_IR_ID_INVALID ||
+            layout->typeToken == ZR_AOT_IR_ID_INVALID ||
+            layout->byteSize == 0u || !aot_ir_alignment_valid(layout->byteAlign) ||
+            layout->layoutHash == 0u) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_LAYOUT, 0u, 0u, 0u,
+                               i, 1u, layout->id);
+        }
+        for (TZrUInt32 j = 0u; j < i; ++j) {
+            if (module->layoutPool[j].id == layout->id) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_DUPLICATE_ID, 0u, 0u, 0u,
+                                   i, j, layout->id);
+            }
+        }
+    }
     if ((module->contract.requiredCapabilities &
          ~ZR_EXECUTION_CAPABILITY_KNOWN_MASK) != 0u) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
@@ -1012,6 +1032,14 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
         hash = aot_ir_hash_u32(hash, module->constantPool[i].typeToken);
         hash = aot_ir_hash_u32(hash, module->constantPool[i].flags);
         hash = aot_ir_hash_u64(hash, module->constantPool[i].bits);
+    }
+    hash = aot_ir_hash_u32(hash, module->layoutCount);
+    for (TZrUInt32 i = 0u; i < module->layoutCount; ++i) {
+        hash = aot_ir_hash_u32(hash, module->layoutPool[i].id);
+        hash = aot_ir_hash_u32(hash, module->layoutPool[i].typeToken);
+        hash = aot_ir_hash_u32(hash, module->layoutPool[i].byteSize);
+        hash = aot_ir_hash_u32(hash, module->layoutPool[i].byteAlign);
+        hash = aot_ir_hash_u64(hash, module->layoutPool[i].layoutHash);
     }
     hash = aot_ir_hash_u32(hash, module->functionCount);
     for (TZrUInt32 i = 0u; i < module->functionCount; ++i) {

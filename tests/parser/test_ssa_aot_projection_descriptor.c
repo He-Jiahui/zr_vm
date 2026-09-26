@@ -27,6 +27,9 @@ int main(void) {
     const TZrUInt32 results[] = {1u};
     const TZrUInt32 successors[] = {1u};
     const SZrExecIrConstant constants[] = {{11u, 3u, UINT64_C(0x1122334455667788)}};
+    const SZrExecIrLayout layouts[] = {
+        {.id = 201u, .typeToken = 101u, .byteSize = 8u, .byteAlign = 8u,
+         .layoutHash = UINT64_C(0x8877665544332211)}};
     const SZrExecBcInstruction instruction = {
         .opcode = ZR_EXEC_IR_OPCODE_RETURN,
         .operands = {{.offset = 0u}, .count = 1u},
@@ -93,6 +96,8 @@ int main(void) {
         .deoptAggregateFieldCount = 1u,
         .constants = (SZrExecIrConstant *)constants,
         .constantCount = 1u,
+        .layouts = (SZrExecIrLayout *)layouts,
+        .layoutCount = 1u,
         .blocks = (SZrExecBcBlock *)&block,
         .blockCount = 1u,
         .successors = (TZrExecIrBlockId *)successors,
@@ -132,6 +137,9 @@ int main(void) {
            descriptor.module.constantPool[0].typeToken == 11u &&
            descriptor.module.constantPool[0].bits ==
                    UINT64_C(0x1122334455667788));
+    assert(descriptor.module.layoutCount == 1u &&
+           descriptor.module.layoutPool[0].id == 201u &&
+           descriptor.module.layoutPool[0].byteSize == 8u);
     assert(descriptor.function.instructions[0].typeToken == 11u);
     assert(descriptor.function.frameSlots[0].byteSize == 8u);
     assert(descriptor.function.gcMap != ZR_NULL &&
@@ -161,6 +169,8 @@ int main(void) {
     noGcModule.functions = &noGcFunction;
     noGcModule.constantPool = ZR_NULL;
     noGcModule.constantCount = 0u;
+    noGcModule.layoutPool = ZR_NULL;
+    noGcModule.layoutCount = 0u;
     noGcHash = ZrCore_AotIr_HashModule(&noGcModule);
     assert(fullHash != 0u && noGcHash != 0u && fullHash != noGcHash);
     assert(ZrCore_AotIr_ValidateModule(&descriptor.module, &diagnostic) ==

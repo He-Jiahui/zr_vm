@@ -556,6 +556,7 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->phiMoves);
     free(p->sourceMaps);
     free(p->constants);
+    free(p->layouts);
     ZrCore_ExecIr_GcMapFree(&p->gcMap);
     free(p->gcRoots);
     free(p->deoptStates);
@@ -565,9 +566,10 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     memset(p, 0, sizeof(*p));
 }
 
-TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
+TZrBool ZrParser_ExecIr_BuildProjectionWithConstantsAndLayouts(
         const SZrExecIrFunction *f, const SZrExecIrConstant *constants,
-        TZrUInt32 constantCount, SZrExecBcProjection *p,
+        TZrUInt32 constantCount, const SZrExecIrLayout *layouts,
+        TZrUInt32 layoutCount, SZrExecBcProjection *p,
         SZrExecIrDiagnostic *d) {
     TZrUInt32 i, j;
     TZrUInt32 splitCount = 0u;
@@ -575,6 +577,7 @@ TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
     size_t bytes;
     if (d != ZR_NULL) memset(d, 0, sizeof(*d));
     if (p == ZR_NULL || (constantCount != 0u && constants == ZR_NULL) ||
+        (layoutCount != 0u && layouts == ZR_NULL) ||
         !zr_projection_validate(f, d)) return ZR_FALSE;
     if (!zr_projection_count_critical_edges(f, &splitCount, d)) return ZR_FALSE;
     if (splitCount != 0u) {
@@ -651,6 +654,7 @@ TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
     p->phiIncomingCount = f->phiIncomingCount;
     p->sourceMapCount = f->sourceMapCount;
     p->constantCount = constantCount;
+    p->layoutCount = layoutCount;
     p->gcMapCount = f->gcMapCount;
     p->gcRootCount = f->gcRootCount;
     p->gcMapPresent = f->gcMap != ZR_NULL;
@@ -688,6 +692,12 @@ TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
         p->constants = (SZrExecIrConstant *)malloc(bytes);
         if (p->constants == ZR_NULL) goto oom;
         memcpy(p->constants, constants, bytes);
+    }
+    if (!zr_projection_bytes(p->layoutCount, sizeof(*p->layouts), &bytes)) goto overflow;
+    if (p->layoutCount != 0u) {
+        p->layouts = (SZrExecIrLayout *)malloc(bytes);
+        if (p->layouts == ZR_NULL) goto oom;
+        memcpy(p->layouts, layouts, bytes);
     }
     if (p->gcMapPresent) {
         ZrCore_ExecIr_GcMapInit(&p->gcMap);
@@ -979,6 +989,14 @@ fail:
     return ZR_FALSE;
 }
 
+TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
+        const SZrExecIrFunction *f, const SZrExecIrConstant *constants,
+        TZrUInt32 constantCount, SZrExecBcProjection *p,
+        SZrExecIrDiagnostic *d) {
+    return ZrParser_ExecIr_BuildProjectionWithConstantsAndLayouts(
+            f, constants, constantCount, ZR_NULL, 0u, p, d);
+}
+
 TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
                                         SZrExecBcProjection *p,
                                         SZrExecIrDiagnostic *d) {
@@ -1037,6 +1055,8 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->sourceMapCount = source->sourceMapCount;
     destination->constants = source->constants;
     destination->constantCount = source->constantCount;
+    destination->layouts = source->layouts;
+    destination->layoutCount = source->layoutCount;
     destination->gcMapCount = source->gcMapCount;
     destination->gcMap = source->gcMap;
     destination->gcRoots = source->gcRoots;
@@ -1074,6 +1094,8 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->sourceMaps = ZR_NULL;
     source->constants = ZR_NULL;
     source->constantCount = 0u;
+    source->layouts = ZR_NULL;
+    source->layoutCount = 0u;
     memset(&source->gcMap, 0, sizeof(source->gcMap));
     source->gcRoots = ZR_NULL;
     source->gcRootCount = 0u;
