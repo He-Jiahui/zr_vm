@@ -13,16 +13,24 @@ related_code:
   - zr_vm_lib_math/include/zr_vm_lib_math/math_common.h
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/scalar/scalar.c
   - zr_vm_lib_math/src/zr_vm_lib_math/scalar/scalar_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c
   - zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/vector/vector3.c
   - zr_vm_lib_math/src/zr_vm_lib_math/vector/vector3_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/vector/vector4.c
   - zr_vm_lib_math/src/zr_vm_lib_math/vector/vector4_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/quaternion/quaternion.c
   - zr_vm_lib_math/src/zr_vm_lib_math/quaternion/quaternion_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix3x3.c
   - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix3x3_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix4x4.c
   - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix4x4_registry.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
-  - zr_vm_lib_math/src/zr_vm_lib_math
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c

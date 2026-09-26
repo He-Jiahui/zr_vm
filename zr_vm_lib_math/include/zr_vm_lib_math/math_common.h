@@ -123,8 +123,8 @@ TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *sha
 SZrObject *ZrMath_TensorMake(SZrState *state, SZrObject *shapeArray, SZrObject *dataArray);
 TZrBool ZrMath_TensorShapeEquals(SZrState *state, SZrObject *lhsShape, SZrObject *rhsShape);
 /** @brief 按 row-major 规则把完整维度索引映射为数据数组偏移。
- *  @pre 调用方确保 shape 仍满足正整数维度和可表示的总大小约束。
- *  @return 索引数量、类型或取值不满足形状约束时失败。
+ *  @note 依赖存储 shape 未被改写；Get/Set 当前仅检查字段类型，不重验维度不变量。
+ *  @return 索引数量或范围不符、数值转换失败时返回失败；浮点维度/索引会被截断。
  */
 TZrBool ZrMath_TensorComputeOffset(SZrState *state, SZrObject *shape, SZrObject *indices, TZrSize *outOffset);
 TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray);

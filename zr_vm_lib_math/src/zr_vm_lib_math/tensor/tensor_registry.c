@@ -6,8 +6,8 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
-    /* descriptor 是导入 zr.math 后脚本可见的唯一 Tensor 契约来源；它把 native 回调
-     * 连接到方法、构造元方法和类型提示，必须与回调读参方式一致。 */
+    /* descriptor 把 native 回调连接到脚本方法和构造元方法；读参及布局限制由回调
+     * 实现，编译期提示另由 GetHints 提供，维护时需交叉核对这些契约。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("shape", "array", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("rank", "int", ZR_NULL),

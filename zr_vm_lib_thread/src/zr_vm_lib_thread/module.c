@@ -6,6 +6,7 @@
 const ZrLibModuleDescriptor *ZrVmThread_GetModuleDescriptor(void) { return ZrVmThread_Runtime_GetModuleDescriptor(); }
 
 TZrBool ZrVmThread_Register(SZrGlobalState *global) {
+    /* 注册表先附着到目标全局状态，再登记由 runtime.c 维护的静态模块契约。 */
     if (global == ZR_NULL) {
         return ZR_FALSE;
     }

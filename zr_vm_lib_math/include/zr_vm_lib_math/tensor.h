@@ -8,7 +8,8 @@
 #include "zr_vm_lib_math/math_common.h"
 
 /** @file
- *  Tensor 回调由 tensor_registry 绑定给 VM。构造参数是 shape 数组与等长的数值 data 数组；
+ *  Tensor 回调由 tensor_registry 绑定给 VM。构造参数是 shape 和 data 两数组，
+ *  data 长度等于维度乘积；元素预期为数值，但当前构造尚未验证其类型。
  *  运算采用 row-major 布局，失败时返回 ZR_FALSE 并由 native dispatcher 处理结果。
  */
 /** @brief 复制输入数组并建立 Tensor 存储，避免调用者随后修改原数组影响实例。 */

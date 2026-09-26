@@ -43,6 +43,7 @@ TZrBool ZrMath_Vector3_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((TZrFloat64 *)&lhs, (TZrFloat64 *)&rhs, 3)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Distance(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: (1e200, 0, 0) 到零点的有限距离在平方差阶段溢出，回调返回无穷。 */
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL; TZrFloat64 d[3];
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs)) return ZR_FALSE;

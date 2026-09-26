@@ -54,6 +54,7 @@ TZrBool ZrMath_Vector2_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrMath_Vector2_Distance(ZrLibCallContext *context, SZrTypeValue *result) {
+    /* BUG: (1e200, 0) 到零点的有限距离在平方差阶段溢出，回调返回无穷。 */
     ZrMathVector2 lhs; ZrMathVector2 rhs; SZrObject *other = ZR_NULL;
     TZrFloat64 dx; TZrFloat64 dy;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &lhs) ||
