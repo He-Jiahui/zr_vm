@@ -211,6 +211,31 @@ int main(void) {
                ZR_AOT_IR_INVALID_ID);
         memoryTokens[0] = 1u;
     }
+    {
+        const SZrExecIrConstant constantPool[] = {{17u, 0u, UINT64_C(42)}};
+        SZrAotIrInstruction constantInstruction = instructions[0];
+        SZrAotIrFunction constantFunction = function;
+        SZrAotIrModule constantModule = module;
+        constantInstruction.opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
+        constantInstruction.phiIncoming = (SZrAotIrRange){0u, 0u};
+        constantInstruction.typeToken = 17u;
+        constantInstruction.layoutId = 0u;
+        constantFunction.instructions = &constantInstruction;
+        constantFunction.phiIncomingPool = ZR_NULL;
+        constantFunction.phiIncomingCount = 0u;
+        constantModule.functions = &constantFunction;
+        constantModule.constantPool = constantPool;
+        constantModule.constantCount = 1u;
+        assert(ZrCore_AotIr_ValidateModule(&constantModule, &diagnostic) ==
+               ZR_AOT_IR_OK);
+        constantInstruction.layoutId = 1u;
+        assert(ZrCore_AotIr_ValidateModule(&constantModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        constantInstruction.layoutId = 0u;
+        constantInstruction.typeToken = 18u;
+        assert(ZrCore_AotIr_ValidateModule(&constantModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_SIGNATURE);
+    }
     owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
     assert(hash != ZrCore_AotIr_HashModule(&module));
     owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
