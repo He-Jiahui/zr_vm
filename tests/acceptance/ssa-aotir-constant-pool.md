@@ -24,9 +24,9 @@ and rejects a zero type token. `tests/parser/test_ssa_aotir_state_map.c` now
 exercises the constant-aware AOT lowering entry point and asserts the copied
 projection record is non-aliased. The strict GCC descriptor and AOTIR contract
 fixtures passed; the contract fixture also rejects an out-of-range `CONSTANT`
-pool index, a missing pool, and a mismatched instruction type token. Schema
-mismatches report the dedicated version status. Modified AOTIR, projection,
-and descriptor sources compile with
+pool index, a missing pool, and a mismatched instruction type token. Schema and
+target ABI mismatches report the dedicated version status. Modified AOTIR,
+projection, and descriptor sources compile with
 `-std=c11 -Wall -Wextra -Werror -pedantic`.
 
 This host has no `clang` or MSVC toolchain on `PATH`, and MinGW GCC 4.8 does
