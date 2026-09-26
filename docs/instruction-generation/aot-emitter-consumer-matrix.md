@@ -33,7 +33,7 @@ The older module is therefore not the shared `SZrAotIrModule` contract.
 
 | Family | Current C / LLVM input and consumer | Shared input and remaining gap |
 | --- | --- | --- |
-| Scalar/constants | `backend_aot_c_scalar_semir.c` reads SemIR type rows alongside legacy slots; `backend_aot_c_constant_consumers.c` walks GET_CONSTANT / STACK / branch sequences; `backend_aot_llvm_lowering_constants.c` reads the legacy constant pool. | ExecIR values, type/layout IDs and source-backed constant payloads must replace opcode-pattern and pool lookups. The current projection owns slot metadata but does not transport constant payloads. |
+| Scalar/constants | `backend_aot_c_scalar_semir.c` reads SemIR type rows alongside legacy slots; `backend_aot_c_constant_consumers.c` walks GET_CONSTANT / STACK / branch sequences; `backend_aot_llvm_lowering_constants.c` reads the legacy constant pool. | ExecIR values, type/layout IDs and source-backed constant payloads must replace opcode-pattern and pool lookups. Shared AOTIR now has a validated module constant pool; production module-to-projection population and emitter consumption remain open. |
 | Control | `backend_aot_exec_ir.c` derives blocks from legacy instruction offsets; `backend_aot_c_function_body.c` and `backend_aot_llvm_lowering_branch_control.c` decode JUMP variants and targets. | Projected block/successor ranges and scheduled edge phi moves exist; the emitter needs an edge-aware lowering of those fields, including critical-edge copies. |
 | Calls/native | `backend_aot_c_function_body.c`, `backend_aot_c_lowering_calls.c`, and `backend_aot_llvm_lowering_calls.c` use legacy call operands, cache shape and runtime call helpers; the old module separately derives callsite kind from opcode/cache. | ExecIR call/invoke operands, result ranges, `bindingRow`, effect/memory tokens and target ABI are the semantic source. A real callsite ABI and native-import legalization still need to be attached before either emitter switches. |
 | Member/property | `backend_aot_c_function_body.c` decodes GET_MEMBER and META_GET/SET variants; `backend_aot_llvm_lowering_member_access.c` and `backend_aot_llvm_lowering_meta_access.c` dispatch property/reference opcodes. | Typed place, receiver, member binding and guard/dispatch identity need one shared AOTIR producer; legacy cache opcodes cannot be the semantic source. |
@@ -53,7 +53,8 @@ borrows complete logical maps from its function producer;
 that validated module view by copying representation-dependent records and
 borrowing the typed/memory/state side pools for the descriptor lifetime. The
 archived production emitters still consume the legacy module. The bridge must
-preserve typed tokens, memory edges, GC map entries/root pools, deopt
-reconstruction pools, and the state-map entry and side-pool lifetimes. A native
+preserve typed tokens, memory edges, source constant payloads, GC map
+entries/root pools, deopt reconstruction pools, and the state-map entry and
+side-pool lifetimes. A native
 deopt reconstruction consumer and a C/LLVM artifact claim require replacing
 the legacy reads family by family and validating an actual emitted artifact.

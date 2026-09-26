@@ -555,6 +555,7 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     free(p->phiCopyEdges);
     free(p->phiMoves);
     free(p->sourceMaps);
+    free(p->constants);
     ZrCore_ExecIr_GcMapFree(&p->gcMap);
     free(p->gcRoots);
     free(p->deoptStates);
@@ -1019,6 +1020,8 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->phiMoves = source->phiMoves;
     destination->sourceMaps = source->sourceMaps;
     destination->sourceMapCount = source->sourceMapCount;
+    destination->constants = source->constants;
+    destination->constantCount = source->constantCount;
     destination->gcMapCount = source->gcMapCount;
     destination->gcMap = source->gcMap;
     destination->gcRoots = source->gcRoots;
@@ -1054,6 +1057,8 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     source->phiCopyEdges = ZR_NULL;
     source->phiMoves = ZR_NULL;
     source->sourceMaps = ZR_NULL;
+    source->constants = ZR_NULL;
+    source->constantCount = 0u;
     memset(&source->gcMap, 0, sizeof(source->gcMap));
     source->gcRoots = ZR_NULL;
     source->gcRootCount = 0u;

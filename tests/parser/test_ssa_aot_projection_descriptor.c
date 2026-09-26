@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,6 +26,7 @@ int main(void) {
     const TZrUInt32 operands[] = {1u};
     const TZrUInt32 results[] = {1u};
     const TZrUInt32 successors[] = {1u};
+    const SZrExecIrConstant constants[] = {{11u, 3u, UINT64_C(0x1122334455667788)}};
     const SZrExecBcInstruction instruction = {
         .opcode = ZR_EXEC_IR_OPCODE_RETURN,
         .operands = {{.offset = 0u}, .count = 1u},
@@ -89,6 +91,8 @@ int main(void) {
         .deoptAggregateFields =
                 (SZrExecIrDeoptAggregateField *)deoptAggregateFields,
         .deoptAggregateFieldCount = 1u,
+        .constants = (SZrExecIrConstant *)constants,
+        .constantCount = 1u,
         .blocks = (SZrExecBcBlock *)&block,
         .blockCount = 1u,
         .successors = (TZrExecIrBlockId *)successors,
@@ -108,6 +112,8 @@ int main(void) {
     SZrAotIrModule noGcModule;
     SZrAotIrFunction malformedDeoptFunction;
     SZrExecIrDeoptAggregateField malformedDeoptField;
+    SZrAotIrModule malformedConstantModule;
+    SZrExecIrConstant malformedConstant;
 
     fill_contract(&input.contract, input.functionToken, 33u,
                   input.signatureHash, input.frameLayoutHash);
@@ -122,6 +128,10 @@ int main(void) {
     }
     assert(descriptor.owner == &input);
     assert(descriptor.module.functions == &descriptor.function);
+    assert(descriptor.module.constantCount == 1u &&
+           descriptor.module.constantPool[0].typeToken == 11u &&
+           descriptor.module.constantPool[0].bits ==
+                   UINT64_C(0x1122334455667788));
     assert(descriptor.function.instructions[0].typeToken == 11u);
     assert(descriptor.function.frameSlots[0].byteSize == 8u);
     assert(descriptor.function.gcMap != ZR_NULL &&
@@ -149,6 +159,8 @@ int main(void) {
     noGcFunction.deoptAggregateFieldCount = 0u;
     noGcModule = descriptor.module;
     noGcModule.functions = &noGcFunction;
+    noGcModule.constantPool = ZR_NULL;
+    noGcModule.constantCount = 0u;
     noGcHash = ZrCore_AotIr_HashModule(&noGcModule);
     assert(fullHash != 0u && noGcHash != 0u && fullHash != noGcHash);
     assert(ZrCore_AotIr_ValidateModule(&descriptor.module, &diagnostic) ==
@@ -167,6 +179,12 @@ int main(void) {
                        .functions = &malformedDeoptFunction,
                        .functionCount = 1u},
                    &diagnostic) != ZR_AOT_IR_OK);
+    malformedConstantModule = descriptor.module;
+    malformedConstant = constants[0];
+    malformedConstant.typeToken = 0u;
+    malformedConstantModule.constantPool = &malformedConstant;
+    assert(ZrCore_AotIr_ValidateModule(&malformedConstantModule, &diagnostic) !=
+           ZR_AOT_IR_OK);
     assert(backend_aot_ir_adapter_validate(&descriptor.module,
                                            &backendDiagnostic) ==
            ZR_BACKEND_AOT_IR_OK);

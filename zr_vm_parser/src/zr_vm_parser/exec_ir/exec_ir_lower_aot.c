@@ -23,6 +23,7 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->phiCopyEdges);
     free(projection->phiMoves);
     free(projection->sourceMaps);
+    free(projection->constants);
     ZrCore_ExecIr_GcMapFree(&projection->gcMap);
     free(projection->gcRoots);
     free(projection->deoptStates);

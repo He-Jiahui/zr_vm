@@ -930,6 +930,16 @@ EZrAotIrStatus ZrCore_AotIr_ValidateModule(const SZrAotIrModule *module,
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
                            module->moduleHash, module->contract.moduleHash);
     }
+    if (module->constantCount != 0u && module->constantPool == ZR_NULL) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, 0u, 0u, 0u, 0u,
+                           1u, 0u);
+    }
+    for (TZrUInt32 i = 0u; i < module->constantCount; ++i) {
+        if (module->constantPool[i].typeToken == ZR_AOT_IR_ID_INVALID) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, 0u, 0u, 0u, i,
+                               1u, module->constantPool[i].typeToken);
+        }
+    }
     if ((module->contract.requiredCapabilities &
          ~ZR_EXECUTION_CAPABILITY_KNOWN_MASK) != 0u) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
@@ -997,6 +1007,12 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
     hash = aot_ir_hash_u64(hash, module->target.abiHash);
     hash = aot_ir_hash_contract(hash, &module->contract);
     hash = aot_ir_hash_u64(hash, module->moduleHash);
+    hash = aot_ir_hash_u32(hash, module->constantCount);
+    for (TZrUInt32 i = 0u; i < module->constantCount; ++i) {
+        hash = aot_ir_hash_u32(hash, module->constantPool[i].typeToken);
+        hash = aot_ir_hash_u32(hash, module->constantPool[i].flags);
+        hash = aot_ir_hash_u64(hash, module->constantPool[i].bits);
+    }
     hash = aot_ir_hash_u32(hash, module->functionCount);
     for (TZrUInt32 i = 0u; i < module->functionCount; ++i) {
         const SZrAotIrFunction *function = &module->functions[i];

@@ -12,6 +12,7 @@ typedef struct SZrAotIrProjectionDescriptor {
     SZrAotIrPhiIncoming *phiIncoming;
     SZrAotIrFrameSlot *frameSlots;
     SZrAotIrSourceMap *sourceMaps;
+    SZrExecIrConstant *constants;
     const SZrAotIrProjection *owner;
 } SZrAotIrProjectionDescriptor;
 

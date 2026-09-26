@@ -109,6 +109,8 @@ typedef struct SZrExecBcProjection {
     SZrExecBcPhiMove *phiMoves;
     SZrExecIrProjectionSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
+    SZrExecIrConstant *constants;
+    TZrUInt32 constantCount;
     TZrUInt32 gcMapCount;
     SZrExecIrGcMap gcMap;
     TZrExecIrValueId *gcRoots;
@@ -178,6 +180,8 @@ typedef struct SZrAotIrProjection {
     SZrExecutionContract contract;
     SZrExecIrProjectionSourceMap *sourceMaps;
     TZrUInt32 sourceMapCount;
+    SZrExecIrConstant *constants;
+    TZrUInt32 constantCount;
     TZrUInt32 gcMapCount;
     SZrExecIrGcMap gcMap;
     TZrExecIrValueId *gcRoots;
