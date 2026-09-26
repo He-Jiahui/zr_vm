@@ -28,6 +28,7 @@ typedef struct SZrExecBcInstruction {
 
 typedef struct SZrExecBcBlock {
     TZrExecIrBlockId id;
+    TZrUInt32 flags;
     SZrExecIrRange instructions;
     SZrExecIrRange predecessors;
     SZrExecIrRange successors;
@@ -69,6 +70,7 @@ typedef struct SZrExecBcProjection {
     TZrUInt32 memoryTokenCount;
     TZrUInt32 *valueSlots; /* valueId -> physical slot, no slot reuse */
     TZrUInt32 valueSlotCount;
+    TZrUInt32 physicalSlotCount; /* includes reserved sparse frame slots */
     SZrExecIrValue *slotValues; /* physical slot -> owned value metadata */
     SZrExecBcBlock *blocks;
     TZrUInt32 blockCount;
@@ -116,6 +118,7 @@ typedef struct SZrAotIrProjection {
     TZrUInt32 memoryTokenCount;
     TZrUInt32 *valueSlots;
     TZrUInt32 valueSlotCount;
+    TZrUInt32 physicalSlotCount;
     SZrExecIrValue *slotValues;
     SZrExecBcBlock *blocks;
     TZrUInt32 blockCount;

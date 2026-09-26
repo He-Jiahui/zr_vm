@@ -654,9 +654,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     if (!zr_projection_bytes(p->valueSlotCount, sizeof(*p->valueSlots), &bytes)) goto overflow;
     if (p->valueSlotCount != 0u) {
         p->valueSlots = (TZrUInt32 *)malloc(bytes);
-        p->slotValues = (SZrExecIrValue *)calloc(p->valueSlotCount,
-                                                  sizeof(*p->slotValues));
-        if (p->valueSlots == ZR_NULL || p->slotValues == ZR_NULL) goto oom;
+        if (p->valueSlots == ZR_NULL) goto oom;
         if (f->frameLayout != ZR_NULL &&
             f->frameLayout->slotCount < f->valueCount) {
             zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
@@ -692,15 +690,6 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
                 p->valueSlots[i] = f->frameLayout != ZR_NULL
                     ? f->frameLayout->slots[i].slotId : i;
             }
-        }
-        for (i = 0u; i < p->valueSlotCount; ++i) {
-            TZrUInt32 slot = p->valueSlots[i];
-            if (slot >= p->valueSlotCount || p->slotValues[slot].id != 0u) {
-                zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
-                                   f, 0u, 0u, p->valueSlotCount, slot);
-                goto fail;
-            }
-            p->slotValues[slot] = f->values[i];
         }
     }
     if (!zr_projection_bytes(p->blockCount, sizeof(*p->blocks), &bytes)) goto overflow;
@@ -775,6 +764,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     for (i = 0u; i < f->blockCount; ++i) {
         const SZrExecIrBlock *in = &f->blocks[i];
         p->blocks[i].id = in->id;
+        p->blocks[i].flags = in->flags;
         p->blocks[i].instructions = in->instructionRange;
         p->blocks[i].predecessors = in->predecessorRange;
         for (j = 0u; j < in->predecessorRange.count; ++j) {
@@ -822,6 +812,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     for (i = 0u; i < splitCount; ++i) {
         TZrUInt32 blockIndex = f->blockCount + i;
         p->blocks[blockIndex].id = splits[i].syntheticBlock;
+        p->blocks[blockIndex].flags = 0u;
         p->blocks[blockIndex].instructions.start = 0u;
         p->blocks[blockIndex].instructions.count = 0u;
         p->blocks[blockIndex].predecessors.start = f->predecessorCount + i;
@@ -840,6 +831,31 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     }
     if (!zr_projection_append_phi_copies(p, f, d)) goto fail;
     if (!zr_projection_schedule_phi_copies(p, f, d)) goto fail;
+    p->physicalSlotCount = p->valueSlotCount;
+    if (f->frameLayout != ZR_NULL &&
+        f->frameLayout->storageSlotCount > p->physicalSlotCount)
+        p->physicalSlotCount = f->frameLayout->storageSlotCount;
+    for (i = 0u; i < p->valueSlotCount; ++i) {
+        TZrUInt32 slot = p->valueSlots[i];
+        if (slot == UINT32_MAX) goto overflow;
+        if (slot + 1u > p->physicalSlotCount) p->physicalSlotCount = slot + 1u;
+    }
+    if (!zr_projection_bytes(p->physicalSlotCount, sizeof(*p->slotValues), &bytes))
+        goto overflow;
+    if (p->physicalSlotCount != 0u) {
+        p->slotValues = (SZrExecIrValue *)calloc(p->physicalSlotCount,
+                                                  sizeof(*p->slotValues));
+        if (p->slotValues == ZR_NULL) goto oom;
+        for (i = 0u; i < p->valueSlotCount; ++i) {
+            TZrUInt32 slot = p->valueSlots[i];
+            if (p->slotValues[slot].id != 0u) {
+                zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                                   f, 0u, 0u, p->physicalSlotCount, slot);
+                goto fail;
+            }
+            p->slotValues[slot] = f->values[i];
+        }
+    }
     free(splits);
     return ZR_TRUE;
 overflow:
@@ -871,6 +887,7 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->memoryTokenCount = source->memoryTokenCount;
     destination->valueSlots = source->valueSlots;
     destination->valueSlotCount = source->valueSlotCount;
+    destination->physicalSlotCount = source->physicalSlotCount;
     destination->slotValues = source->slotValues;
     destination->blocks = source->blocks;
     destination->blockCount = source->blockCount;

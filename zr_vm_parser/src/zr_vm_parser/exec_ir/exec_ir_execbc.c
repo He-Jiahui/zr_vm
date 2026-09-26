@@ -292,7 +292,8 @@ static TZrBool zr_execbc_copy_slot(void *userData, TZrUInt32 destination,
     SZrExecBcPhiContext *context = (SZrExecBcPhiContext *)userData;
     TZrUInt32 owner = context->result->ownerStates[source];
     context->result->slots[destination] = context->result->slots[source];
-    if (destination < context->projection->valueSlotCount &&
+    if (destination < context->projection->physicalSlotCount &&
+        context->projection->slotValues[destination].id != ZR_EXEC_IR_VALUE_ID_INVALID &&
         (owner == ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED ||
          owner == ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN))
         owner = context->projection->slotValues[destination].ownership ==
@@ -530,8 +531,9 @@ TZrBool ZrParser_ExecBcProjection_Run(
                        projection, 0u, 0u, 0u);
         return ZR_FALSE;
     }
-    if ((projection->valueSlotCount != 0u &&
-         (projection->valueSlots == ZR_NULL || projection->slotValues == ZR_NULL)) ||
+    if (projection->physicalSlotCount < projection->valueSlotCount ||
+        (projection->physicalSlotCount != 0u && projection->slotValues == ZR_NULL) ||
+        (projection->valueSlotCount != 0u && projection->valueSlots == ZR_NULL) ||
         (projection->phiMoveCount != 0u && projection->phiMoves == ZR_NULL)) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
                        projection, 0u, 0u, 0u);
@@ -558,8 +560,8 @@ TZrBool ZrParser_ExecBcProjection_Run(
         }
     }
     ZrParser_ExecBcExecutionResult_Init(&candidate);
-    candidate.slotCount = projection->valueSlotCount + projection->temporarySlotCount;
-    if (candidate.slotCount < projection->valueSlotCount) {
+    candidate.slotCount = projection->physicalSlotCount + projection->temporarySlotCount;
+    if (candidate.slotCount < projection->physicalSlotCount) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
                        projection, 0u, 0u, candidate.slotCount);
         return ZR_FALSE;

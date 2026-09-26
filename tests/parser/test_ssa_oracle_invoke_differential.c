@@ -156,6 +156,7 @@ static void build(SZrExecIrFunction *function) {
 void test_oracle_execbc_invoke_differential(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection projection = {0};
+    SZrAotIrProjection aot = {0};
     SZrExecIrOracleInput directInput = {0};
     SZrExecBcExecutionInput projectedInput = {0};
     SZrExecIrOracleExecutionResult direct;
@@ -169,6 +170,13 @@ void test_oracle_execbc_invoke_differential(void) {
     build(&function);
     check(ZrParser_ExecIr_LowerExecBc(&function, &projection, &diagnostic) &&
           projection.runnable, "verified INVOKE projection must be runnable");
+    check(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic) && !aot.runnable,
+          "verified INVOKE AOTIR projection must retain its non-runnable boundary");
+    for (TZrUInt32 block = 0u; block < function.blockCount; ++block) {
+        check(projection.blocks[block].flags == function.blocks[block].flags &&
+              aot.blocks[block].flags == function.blocks[block].flags,
+              "INVOKE projection lost entry or exception block flags");
+    }
     initial.kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
     initial.as.signedInteger = 17;
     directInput.function = &function;
@@ -270,6 +278,7 @@ void test_oracle_execbc_invoke_differential(void) {
           "undefined normal INVOKE result replaced a published result");
     ZrParser_ExecBcExecutionResult_Free(&projected);
     ZrCore_ExecIr_OracleResultFree(&direct);
+    ZrParser_AotIrProjection_Free(&aot);
     ZrParser_ExecBcProjection_Free(&projection);
     ZrCore_ExecIr_FreeFunction(&function);
 }

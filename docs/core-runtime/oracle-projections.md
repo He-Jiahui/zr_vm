@@ -51,6 +51,7 @@ tests:
   - tests/parser/test_ssa_oracle_call_differential.c
   - tests/parser/test_ssa_oracle_invoke_differential.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
+  - tests/acceptance/ssa-projection-cfg-flags-sparse-slots.md
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
   - tests/cmake/ssa-tests.cmake
@@ -213,6 +214,11 @@ slot positions in its slot array; a packed frame that reuses slots and a
 custom frame whose mapped value slots alias are rejected until liveness-aware
 lowering exists. Self-copies are omitted. Capacity overflow or allocation
 failure rejects the candidate without replacing an earlier projection.
+`valueSlotCount` counts logical values; `physicalSlotCount` includes reserved
+and sparse frame slots, and only occupied slots carry `slotValues` metadata.
+The pointer-free runner allocates physical capacity plus any phi temporary,
+so a sparse slot or reserved range cannot be mistaken for the number of
+logical values. Phi-cycle overflow is diagnosed before allocating metadata.
 `ZrParser_ExecBcProjection_ExecutePhiMoves` is the first production consumer
 of this plan. It validates the selected projected edge and every source/
 destination slot before calling the backend's slot-copy callback. A bad range
@@ -221,7 +227,9 @@ moves, the callback owns any external rollback policy and the diagnostic
 identifies the failing move.
 Critical CFG edges and phi-bearing edges leaving a branching block are split
 into synthetic empty blocks in the projection, preserving the source function
-and keeping phi copies on an identifiable edge-local block. Parallel CFG
+and keeping phi copies on an identifiable edge-local block. Both projections
+retain original blocks' entry/exception/cleanup flags; synthetic split blocks
+carry no flags. Parallel CFG
 edges are paired by their occurrence number in the source successor and
 destination predecessor rows. Each critical occurrence gets its own split
 block; phi incoming predecessors are rewritten to the projected predecessor

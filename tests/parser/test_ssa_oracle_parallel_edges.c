@@ -220,6 +220,7 @@ static void test_projections_preserve_parallel_phi_edges(void) {
     check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic),
           "ExecBC projection rejected a valid parallel-edge phi");
     check(bytecode.syntheticBlockCount == 2u && bytecode.blockCount == 4u &&
+              bytecode.blocks[2].flags == 0u && bytecode.blocks[3].flags == 0u &&
               bytecode.phiCopyCount == 2u &&
               bytecode.successors[bytecode.blocks[0].successors.start] == 3u &&
               bytecode.successors[bytecode.blocks[0].successors.start + 1u] == 4u &&
@@ -249,6 +250,7 @@ static void test_projections_preserve_parallel_phi_edges(void) {
     check(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic),
           "AOTIR projection rejected a valid parallel-edge phi");
     check(aot.syntheticBlockCount == 2u && aot.phiCopyCount == 2u &&
+              aot.blocks[2].flags == 0u && aot.blocks[3].flags == 0u &&
               aot.phiCopyEdges[0] == 3u && aot.phiCopyEdges[1] == 4u &&
               aot.phiCopySources[0] == 1u && aot.phiCopySources[1] == 2u &&
               aot.predecessors[aot.blocks[1].predecessors.start] == 3u &&
@@ -411,6 +413,41 @@ static void test_oracle_execbc_parallel_phi_differential(void) {
           difference.expectedSourceId == 401u &&
           difference.actualSourceId == 402u,
           "differential harness missed a return event source mismatch");
+    {
+        SZrExecBcProjection sparse = {0};
+        SZrExecBcExecutionResult result;
+        SZrExecBcExecutionInput input = {0};
+        function.frameLayout = (SZrExecIrFrameLayout *)calloc(1u, sizeof(*function.frameLayout));
+        check(function.frameLayout != NULL, "could not allocate sparse frame");
+        function.frameLayout->slots = (SZrExecIrFrameSlot *)calloc(
+                function.valueCount, sizeof(*function.frameLayout->slots));
+        check(function.frameLayout->slots != NULL, "could not allocate sparse frame slots");
+        function.frameLayout->slotCount = function.frameLayout->slotCapacity = function.valueCount;
+        function.frameLayout->storageSlotCount = 10u;
+        for (TZrUInt32 i = 0u; i < function.valueCount; ++i)
+            function.frameLayout->slots[i].slotId = 2u * i;
+        check(ZrParser_ExecIr_LowerExecBc(&function, &sparse, &executionDiagnostic) &&
+              sparse.physicalSlotCount == 10u && sparse.slotValues[6].id == 4u,
+              "sparse frame lost physical slot capacity or value metadata");
+        fixture.condition.as.boolean = ZR_FALSE;
+        input.constants = &fixture.condition;
+        input.constantCount = 1u;
+        ZrParser_ExecBcExecutionResult_Init(&result);
+        check(ZrParser_ExecBcProjection_Run(&sparse, &input, &result,
+                                              &executionDiagnostic) && result.returned &&
+              result.slotCount == 10u &&
+              result.returnValue.as.signedInteger == 11,
+              "sparse frame runner used logical value count as slot capacity");
+        sparse.physicalSlotCount = 3u;
+        check(!ZrParser_ExecBcProjection_Run(&sparse, &input, &result,
+                                               &executionDiagnostic) &&
+              executionDiagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION &&
+              result.slotCount == 10u && result.returnValue.as.signedInteger == 11,
+              "undersized physical capacity replaced the published execution");
+        sparse.physicalSlotCount = 10u;
+        ZrParser_ExecBcExecutionResult_Free(&result);
+        ZrParser_ExecBcProjection_Free(&sparse);
+    }
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
