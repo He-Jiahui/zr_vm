@@ -3,6 +3,7 @@ related_code:
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
   - tests/parser/test_ssa_oracle_parallel_edges.c
+  - tests/parser/test_ssa_oracle_memory_differential.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
 implementation_files:
@@ -14,7 +15,9 @@ plan_sources:
 tests:
   - tests/core/test_ssa_differential_harness.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
+  - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
+  - tests/acceptance/ssa-oracle-execbc-memory-differential.md
 doc_type: testing-guide
 ---
 
@@ -47,5 +50,13 @@ through the direct ExecIR oracle and projected ExecBC runner as separate
 backend identities. Its four conditional-branch/switch observations compare
 the selected parallel phi result and the actual return source event. A
 test-only source mismatch confirms the event comparison fails at index zero.
-This proves only the scalar/control return subset; effect, drop, exception,
-writeback, and runtime-default ExecBC parity remain pending.
+The `ssa_oracle_projections` suite also executes a fully verifier-checked
+STORE/LOAD/RETURN function on separate oracle and projected memory providers.
+It compares observed write/read/return order, source IDs, the STORE address
+and value snapshots, return bits, and external memory contents. A changed
+event kind or STORE address must mismatch at index zero; a separate verified
+STORE-only function also covers successful provider-free event recording.
+Missing and rejected providers and invalid loaded values
+report their actual instruction/source and preserve the previously published
+projected result. This establishes the pointer-free memory-provider subset,
+not full effects, drop, exception, writeback, production ExecBC, or AOT parity.

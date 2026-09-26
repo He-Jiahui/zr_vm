@@ -4,12 +4,20 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_projections.h"
 
+typedef TZrBool (*FZrExecBcMemory)(
+        void *userData, const SZrExecBcInstruction *instruction,
+        EZrExecIrOracleMemoryOperation operation,
+        const SZrExecIrOracleValue *operands, TZrUInt32 operandCount,
+        SZrExecIrOracleValue *result);
+
 typedef struct SZrExecBcExecutionInput {
     const SZrExecIrOracleValue *initialValues;
     TZrUInt32 initialValueCount;
     const SZrExecIrOracleValue *constants;
     TZrUInt32 constantCount;
     TZrUInt32 maxSteps;
+    FZrExecBcMemory memory;
+    void *memoryUserData;
 } SZrExecBcExecutionInput;
 
 typedef struct SZrExecBcExecutionResult {
@@ -19,6 +27,9 @@ typedef struct SZrExecBcExecutionResult {
     TZrExecIrBlockId currentBlock;
     TZrExecIrInstructionId returnInstructionId;
     TZrExecIrSourceId returnSourceId;
+    SZrExecIrOracleEvent *events;
+    TZrUInt32 eventCount;
+    TZrUInt32 eventCapacity;
     SZrExecIrOracleValue returnValue;
     TZrBool returned;
     TZrUInt32 ownershipTag;

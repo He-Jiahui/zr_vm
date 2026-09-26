@@ -19,6 +19,9 @@ static void zr_execbc_diag(SZrExecIrDiagnostic *diagnostic,
             ? projection->functionToken : 0u;
     diagnostic->blockId = block;
     diagnostic->instructionId = instruction;
+    if (projection != ZR_NULL && projection->instructions != ZR_NULL &&
+        instruction != 0u && instruction <= projection->instructionCount)
+        diagnostic->sourceId = projection->instructions[instruction - 1u].sourceId;
     diagnostic->actualVersion = actual;
 }
 
@@ -32,6 +35,7 @@ void ZrParser_ExecBcExecutionResult_Init(SZrExecBcExecutionResult *result) {
 void ZrParser_ExecBcExecutionResult_Free(SZrExecBcExecutionResult *result) {
     if (result != ZR_NULL && result->ownershipTag == ZR_EXEC_BC_EXECUTION_RESULT_TAG) {
         free(result->slots);
+        free(result->events);
         memset(result, 0, sizeof(*result));
     }
 }
@@ -274,6 +278,55 @@ static TZrBool zr_execbc_copy_slot(void *userData, TZrUInt32 destination,
     return ZR_TRUE;
 }
 
+static TZrBool zr_execbc_reserve_event(SZrExecBcExecutionResult *result,
+                                      const SZrExecBcProjection *projection,
+                                      TZrExecIrBlockId block,
+                                      TZrExecIrInstructionId instruction,
+                                      SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrOracleEvent *events;
+    TZrUInt32 capacity;
+    if (result->eventCount < result->eventCapacity) return ZR_TRUE;
+    if (result->eventCount == UINT32_MAX) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                       projection, block, instruction, result->eventCount);
+        return ZR_FALSE;
+    }
+    capacity = result->eventCapacity == 0u ? 8u : result->eventCapacity;
+    if (result->eventCapacity != 0u) {
+        capacity = capacity > UINT32_MAX / 2u ? UINT32_MAX : capacity * 2u;
+    }
+    if (sizeof(*events) > SIZE_MAX / (size_t)capacity) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                       projection, block, instruction, capacity);
+        return ZR_FALSE;
+    }
+    events = (SZrExecIrOracleEvent *)realloc(result->events,
+                                             (size_t)capacity * sizeof(*events));
+    if (events == ZR_NULL) {
+        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                       projection, block, instruction, capacity);
+        return ZR_FALSE;
+    }
+    result->events = events;
+    result->eventCapacity = capacity;
+    return ZR_TRUE;
+}
+
+static void zr_execbc_record_memory_event(SZrExecBcExecutionResult *result,
+                                           const SZrExecBcInstruction *instruction,
+                                           TZrExecIrInstructionId instructionId,
+                                           EZrExecIrOracleEventKind kind,
+                                           const SZrExecIrOracleValue *operands,
+                                           TZrUInt32 count) {
+    SZrExecIrOracleEvent *event = &result->events[result->eventCount++];
+    memset(event, 0, sizeof(*event));
+    event->kind = kind;
+    event->instructionId = instructionId;
+    event->sourceId = instruction->sourceId;
+    event->operandCount = count;
+    memcpy(event->operands, operands, (size_t)count * sizeof(*operands));
+}
+
 TZrBool ZrParser_ExecBcProjection_Run(
         const SZrExecBcProjection *projection,
         const SZrExecBcExecutionInput *input,
@@ -360,7 +413,7 @@ TZrBool ZrParser_ExecBcProjection_Run(
                       ? current->instructions.start + current->instructions.count
                       : projection->instructionCount); ++index) {
             const SZrExecBcInstruction *instruction = &projection->instructions[index];
-            SZrExecIrOracleValue left, right, value, converted;
+            SZrExecIrOracleValue left, right, value = {0}, converted;
             if (steps == UINT32_MAX ||
                 (input != ZR_NULL && input->maxSteps != 0u &&
                  steps >= input->maxSteps)) goto step_limit;
@@ -425,6 +478,45 @@ TZrBool ZrParser_ExecBcProjection_Run(
                         !zr_execbc_compare(instruction, &left, &right, &value)) goto arithmetic;
                     if (!zr_execbc_assign(projection, instruction, candidate.slots, &value)) goto invalid;
                     break;
+                case ZR_EXEC_IR_OPCODE_LOAD: case ZR_EXEC_IR_OPCODE_STORE: {
+                    TZrBool load = instruction->opcode == ZR_EXEC_IR_OPCODE_LOAD;
+                    SZrExecIrOracleValue operands[2];
+                    TZrUInt32 operandCount = load ? 1u : 2u;
+                    if (instruction->operands.count != operandCount) goto invalid;
+                    if (load && (input == ZR_NULL || input->memory == ZR_NULL)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                                       projection, block, index + 1u, instruction->opcode);
+                        goto fail;
+                    }
+                    for (TZrUInt32 at = 0u; at < operandCount; ++at) {
+                        if (!zr_execbc_operand(projection, instruction,
+                                               candidate.slots, at, &operands[at]))
+                            goto invalid;
+                    }
+                    if (!zr_execbc_reserve_event(&candidate, projection, block,
+                                                 index + 1u, diagnostic)) goto fail;
+                    if (input != ZR_NULL && input->memory != ZR_NULL &&
+                        !input->memory(input->memoryUserData, instruction,
+                                       load ? ZR_EXEC_IR_ORACLE_MEMORY_LOAD
+                                            : ZR_EXEC_IR_ORACLE_MEMORY_STORE,
+                                       operands, operandCount, load ? &value : ZR_NULL)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_MEMORY_ERROR,
+                                       projection, block, index + 1u, operandCount);
+                        goto fail;
+                    }
+                    if (load && (value.kind <= ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED ||
+                                 value.kind >= ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT)) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, value.kind);
+                        goto fail;
+                    }
+                    zr_execbc_record_memory_event(&candidate, instruction, index + 1u,
+                        load ? ZR_EXEC_IR_ORACLE_EVENT_LOAD : ZR_EXEC_IR_ORACLE_EVENT_STORE,
+                        operands, operandCount);
+                    if (load && !zr_execbc_assign(projection, instruction,
+                                                   candidate.slots, &value)) goto invalid;
+                    break;
+                }
                 case ZR_EXEC_IR_OPCODE_RETURN:
                     if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &candidate.returnValue)) goto invalid;
                     candidate.currentBlock = current != ZR_NULL ? block : 0u;

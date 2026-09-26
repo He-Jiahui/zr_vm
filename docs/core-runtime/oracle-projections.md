@@ -46,6 +46,7 @@ tests:
   - tests/parser/ssa_oracle_resume_fault_allocator.h
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
@@ -55,6 +56,7 @@ tests:
   - tests/acceptance/ssa-projection-phi-schedule.md
   - tests/acceptance/ssa-execbc-scalar-runner.md
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
+  - tests/acceptance/ssa-oracle-execbc-memory-differential.md
 doc_type: module-detail
 ---
 
@@ -233,6 +235,17 @@ explicit step limit bounds loops; failed runs release the candidate slots
 without replacing an earlier result. Initial values are indexed by logical
 value ID, and the optional constants pool is indexed by `CONSTANT.layoutId`.
 The result owns its physical slots until `ZrParser_ExecBcExecutionResult_Free`.
+`LOAD` and `STORE` are also executable when their verifier-preserved memory
+tokens and effect flags form a valid function. They pass pointer-free operands
+and the projected instruction to an optional caller-owned memory provider;
+`LOAD` requires a provider and a defined returned value, while `STORE` can
+also record an event without a provider, matching the oracle's event-only
+mode. Successful reads and writes append owned, ordered operand snapshots
+with executed instruction and source IDs to the result. Event capacity is
+reserved before invoking a provider; callback rejection and invalid read
+values report the failing instruction/source, release the candidate result,
+and leave an earlier published result intact. The provider owns external
+memory mutations and must decide how to handle its own rejected operations.
 On return it also records the executed block, instruction ID, and source ID,
 allowing a differential fixture to emit a return event from the executed
 projection, not from an assumed source path. The parallel-edge fixture runs
@@ -241,12 +254,21 @@ runner, compares actual result and return-event observations with
 `ZrTests_Ssa_Compare`, and records both backend identities. A separate
 successor range exercises the projected synthetic-edge rewrite for both
 conditional branches and switches. A test-only return-source corruption
-must fail at event index zero; no production fallback is involved.
+must fail at event index zero; no production fallback is involved. The
+effect-memory fixture verifies STRUCTURE, SSA, and EFFECT, then executes both
+backends against separate but identical caller-owned memory states. It
+compares STORE, LOAD, and RETURN event order and payloads, and checks memory
+contents, missing/rejected providers, invalid load values, and repeated runs.
+An independently verified STORE-only function also checks the provider-free
+event-only mode. Address snapshots are compared as well as stored values, and
+corrupting the observed address must fail the event comparison.
 Only projections whose opcodes have a runner implementation are marked
-`runnable`; runtime effects and callbacks still require a later backend ABI.
+`runnable`; calls, ownership drops, exceptions, suspend, and production
+runtime callback wiring still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
-bytecode for it, and establishes no C/LLVM or effect-event parity. Only the
-scalar/control return observation is compared by this fixture.
+bytecode for it, and establishes no C/LLVM or full effect-event parity. The
+direct differential currently covers scalar/control returns and the
+pointer-free LOAD/STORE memory-provider subset.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
