@@ -42,6 +42,8 @@ plan_sources:
   - docs/plans/ssa/guides/E-projections-fusion-aot.md
 tests:
   - tests/parser/test_ssa_oracle_resume.c
+  - tests/parser/test_ssa_aotir_state_map.c
+  - tests/acceptance/ssa-aotir-owned-state-map.md
   - tests/parser/ssa_oracle_resume_fault_allocator.c
   - tests/parser/ssa_oracle_resume_fault_allocator.h
   - tests/acceptance/ssa-oracle-resume.md
@@ -387,7 +389,12 @@ and an exceptional edge may consume the payload provider above.
 
 `ZrParser_ExecIr_LowerAot` uses the same builder and transfers ownership of the
 projection arrays, adding the function token, signature hash, and execution
-contract. It is an AOTIR seam only: `runnable` is deliberately false until the
+contract. When the input has a logical state map, AOTIR also owns a deep
+clone of its entries and value/root/owner pools, so releasing or mutating the
+input function does not invalidate the projected checkpoint. Malformed
+storage reports INVALID_PROJECTION, while a clone allocation failure reports
+OUT_OF_MEMORY; neither replaces a previously published result. It is an
+AOTIR seam only: `runnable` is deliberately false until the
 07.01 adapter and 07.02 C/LLVM emitters exist. No projection stores a runtime
 pointer or treats an opcode count as evidence of executable backend parity.
 

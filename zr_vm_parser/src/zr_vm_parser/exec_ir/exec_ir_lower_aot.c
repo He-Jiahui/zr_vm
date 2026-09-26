@@ -22,6 +22,7 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     free(projection->phiCopyEdges);
     free(projection->phiMoves);
     free(projection->sourceMaps);
+    ZrCore_ExecIr_StateMapFree(&projection->stateMap);
     memset(projection, 0, sizeof(*projection));
 }
 
@@ -44,6 +45,22 @@ TZrBool ZrParser_ExecIr_LowerAot(const SZrExecIrFunction *function,
     /* This record is an AOTIR seam, not executable native code yet. */
     candidate.runnable = ZR_FALSE;
     candidate.ownershipTag = ZR_EXEC_IR_PROJECTION_TAG;
+    if (function->stateMap != ZR_NULL) {
+        EZrExecutionDiagnosticCode failure =
+                ZrCore_ExecIr_StateMapStorageValid(function->stateMap)
+                ? ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY
+                : ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION;
+        if (failure == ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION ||
+            !ZrCore_ExecIr_StateMapClone(function->stateMap, &candidate.stateMap)) {
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = failure;
+                diagnostic->functionToken = function->functionToken;
+            }
+            ZrParser_AotIrProjection_Free(&candidate);
+            ZrParser_ExecBcProjection_Free(&prepared);
+            return ZR_FALSE;
+        }
+    }
     ZrParser_AotIrProjection_Free(output);
     *output = candidate;
     ZrParser_ExecBcProjection_Free(&prepared);

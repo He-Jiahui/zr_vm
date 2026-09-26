@@ -149,6 +149,10 @@ static TZrBool zr_state_map_storage_is_shared(const SZrExecIrStateMap *left,
     return ZR_FALSE;
 }
 
+TZrBool ZrCore_ExecIr_StateMapStorageValid(const SZrExecIrStateMap *map) {
+    return zr_state_map_storage_shape_valid(map);
+}
+
 void ZrCore_ExecIr_StateMapInit(SZrExecIrStateMap *map) {
     if (map != ZR_NULL) {
         memset(map, 0, sizeof(*map));

@@ -127,6 +127,7 @@ typedef struct SZrExecIrResumeRequest {
 
 ZR_CORE_API void ZrCore_ExecIr_StateMapInit(SZrExecIrStateMap *map);
 ZR_CORE_API void ZrCore_ExecIr_StateMapFree(SZrExecIrStateMap *map);
+ZR_CORE_API TZrBool ZrCore_ExecIr_StateMapStorageValid(const SZrExecIrStateMap *map);
 ZR_CORE_API TZrBool ZrCore_ExecIr_StateMapClone(const SZrExecIrStateMap *source,
                                                 SZrExecIrStateMap *destination);
 ZR_CORE_API TZrBool ZrCore_ExecIr_StateMapBoundaryFlags(

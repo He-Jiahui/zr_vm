@@ -61,6 +61,8 @@ tests:
   - tests/parser/test_ssa_escape_ownership.c
   - tests/parser/ssa_escape_aggregate_cases.h
   - tests/parser/test_ssa_oracle_resume.c
+  - tests/parser/test_ssa_aotir_state_map.c
+  - tests/acceptance/ssa-aotir-owned-state-map.md
   - tests/parser/test_ssa_core_model.c
   - tests/acceptance/ssa-oracle-invoke-checkpoint-differential.md
   - tests/acceptance/ssa-oracle-resume.md
@@ -92,6 +94,15 @@ candidate root, and borrowed
 or plain values do not appear there. Consumers reject either omission or
 invention. Concrete materialization removes inactive conditional-cleanup roots
 after validating the runtime initialization state.
+
+The non-runnable AOTIR projection owns a clone of the full logical map,
+including checkpoint entries and live-value, root, and owner-state pools.
+`ZrCore_ExecIr_StateMapStorageValid` checks only the cloneable storage shape
+(counts, capacities, and disjoint backing ranges); it is not a semantic
+checkpoint verifier. The AOT lowerer distinguishes malformed storage from a
+valid map whose clone cannot allocate, and leaves any previously published
+projection unchanged in either case. No physical AOT frame restoration is
+implemented by this data transport.
 
 An effect or memory phi may carry token zero from an entry edge where no
 effect has yet committed. Structure verification, the direct oracle, and

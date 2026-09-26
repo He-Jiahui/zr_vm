@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_EXEC_IR_PROJECTIONS_H
 
 #include "zr_vm_core/exec_ir.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_parser/conf.h"
 
 /* Fixed-width, pointer-free instruction representation used by both initial
@@ -153,6 +154,7 @@ typedef struct SZrAotIrProjection {
     TZrBool stateMapPresent;
     TZrUInt32 unsupportedInstructionId;
     TZrBool runnable; /* false until a backend emits executable C/LLVM */
+    SZrExecIrStateMap stateMap; /* owned logical recovery entries and side pools */
     TZrUInt32 ownershipTag;
 } SZrAotIrProjection;
 

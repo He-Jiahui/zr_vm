@@ -367,6 +367,7 @@ endif ()
 if (NOT TARGET zr_vm_ssa_oracle_resume_test)
     add_executable(zr_vm_ssa_oracle_resume_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_resume.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aotir_state_map.c
             ${CMAKE_SOURCE_DIR}/tests/harness/ssa_differential_support.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
@@ -391,7 +392,8 @@ if (NOT TARGET zr_vm_ssa_oracle_resume_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_oracle_resume_test)
     target_include_directories(zr_vm_ssa_oracle_resume_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
