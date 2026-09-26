@@ -728,6 +728,37 @@ TZrBool ZrParser_ExecBcProjection_Run(
                     candidate.terminatedByThrow = ZR_TRUE;
                     terminated = ZR_TRUE;
                     break;
+                case ZR_EXEC_IR_OPCODE_SUSPEND: {
+                    SZrExecIrOracleValue snapshots[ZR_EXEC_IR_ORACLE_EVENT_OPERAND_LIMIT];
+                    TZrUInt32 count = instruction->operands.count;
+                    if (instruction->operands.start > projection->operandCount ||
+                        count > projection->operandCount - instruction->operands.start)
+                        goto invalid;
+                    for (TZrUInt32 at = 0u; at < count; ++at) {
+                        if (!zr_execbc_operand(projection, instruction, &candidate,
+                                               at, &value)) {
+                            zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                           projection, block, index + 1u, at);
+                            goto fail;
+                        }
+                        if (at < ZR_EXEC_IR_ORACLE_EVENT_OPERAND_LIMIT)
+                            snapshots[at] = value;
+                    }
+                    if (!zr_execbc_reserve_event(&candidate, projection, block,
+                                                 index + 1u, diagnostic)) goto fail;
+                    zr_execbc_record_event(&candidate, instruction, index + 1u,
+                                           ZR_EXEC_IR_ORACLE_EVENT_SUSPEND,
+                                           snapshots, count);
+                    if (count != 0u) {
+                        candidate.returnValue = snapshots[0];
+                        if (!zr_execbc_assign(projection, instruction,
+                                              &candidate, &snapshots[0])) goto invalid;
+                    }
+                    candidate.currentBlock = current != ZR_NULL ? block : 0u;
+                    candidate.suspended = ZR_TRUE;
+                    terminated = ZR_TRUE;
+                    break;
+                }
                 case ZR_EXEC_IR_OPCODE_RETURN:
                     if (!zr_execbc_operand(projection, instruction, &candidate,
                                            0u, &candidate.returnValue)) {
@@ -773,7 +804,8 @@ instruction_done:
             if (candidate.returned) break;
             if (terminated) break;
         }
-        if (candidate.returned || candidate.terminatedByThrow) break;
+        if (candidate.returned || candidate.terminatedByThrow ||
+            candidate.suspended) break;
         if (current == ZR_NULL) break;
         if (!terminated) {
             if (current->successors.count != 1u) goto invalid;

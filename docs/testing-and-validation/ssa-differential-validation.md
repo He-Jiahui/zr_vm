@@ -96,3 +96,10 @@ non-returning termination between the direct oracle and projected ExecBC.
 A changed THROW payload mismatches at event index zero; a bad projected
 operand reports INVALID_VALUE at its source without replacing the prior
 result. Handler entry and resumption remain unverified.
+
+The terminal SUSPEND differential compares oracle/projected suspended flags,
+payload and SSA result, execution length, and bounded event snapshots for
+one- and five-operand verifier-valid functions. A fifth invalid operand
+reports INVALID_VALUE with source identity and preserves the published
+result even though it is not present in the four-value event snapshot.
+Checkpoint capture and resume are not covered by this projected runner.

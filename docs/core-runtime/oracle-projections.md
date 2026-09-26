@@ -305,14 +305,22 @@ the operand with its source/instruction identity. A verifier-valid fixture
 compares this terminal observation and payload with the direct oracle; a bad
 projected payload reports INVALID_VALUE without replacing an earlier result.
 This does not implement exception-handler entry, landing pads, or resume.
+`SUSPEND` also records a bounded event and terminates the projected run with
+`suspended` true. With an operand, its first value becomes the returned
+payload and SSA result, as in the oracle. Every variadic operand is validated
+before the event is published, even when only the first four are copied into
+the event. Verifier-valid one- and five-operand fixtures compare the terminal
+state, payload, result slot and bounded event snapshots against the oracle.
+This is a terminal observation only, not checkpoint/resume execution.
 Only projections whose opcodes have a runner implementation are marked
-`runnable`; exception-handler flow, suspend, and production
+`runnable`; exception-handler flow, suspend/resume restoration, and production
 runtime callback wiring still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
 bytecode for it, and establishes no C/LLVM or full effect-event parity. The
 direct differential currently covers scalar/control returns, pointer-free
 LOAD/STORE memory providers, provider-backed ordinary CALL, and ownership
-MOVE/DROP/conditional cleanup, BARRIER observations, and terminal THROW.
+MOVE/DROP/conditional cleanup, BARRIER observations, terminal THROW, and
+terminal SUSPEND.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
