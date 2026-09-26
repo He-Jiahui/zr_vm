@@ -235,6 +235,11 @@ int main(void) {
         constantInstruction.typeToken = 18u;
         assert(ZrCore_AotIr_ValidateModule(&constantModule, &diagnostic) ==
                ZR_AOT_IR_INVALID_SIGNATURE);
+        constantInstruction.typeToken = 17u;
+        constantModule.constantPool = ZR_NULL;
+        constantModule.constantCount = 0u;
+        assert(ZrCore_AotIr_ValidateModule(&constantModule, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
     }
     owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
     assert(hash != ZrCore_AotIr_HashModule(&module));

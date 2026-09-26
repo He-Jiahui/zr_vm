@@ -709,10 +709,10 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                containingBlock != ZR_NULL ? containingBlock->id : 0u,
                                instruction->id, i, requiredFlags, instruction->flags);
         }
-        if (instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
-            module->constantCount != 0u) {
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT) {
             const SZrExecIrConstant *constant;
-            if (instruction->layoutId >= module->constantCount) {
+            if (module->constantCount == 0u || module->constantPool == ZR_NULL ||
+                instruction->layoutId >= module->constantCount) {
                 return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID,
                                    function->id,
                                    containingBlock != ZR_NULL
