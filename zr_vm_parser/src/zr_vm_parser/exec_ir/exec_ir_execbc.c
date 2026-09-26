@@ -397,8 +397,6 @@ static TZrBool zr_execbc_call(const SZrExecBcProjection *projection,
             goto done;
         }
     }
-    if (!zr_execbc_reserve_event(candidate, projection, block, id, diagnostic))
-        goto done;
     if (!input->call(input->callUserData, instruction, operands, count, &value)) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_CALL_ERROR,
                        projection, block, id, count);
@@ -410,6 +408,8 @@ static TZrBool zr_execbc_call(const SZrExecBcProjection *projection,
                        projection, block, id, value.kind);
         goto done;
     }
+    if (!zr_execbc_reserve_event(candidate, projection, block, id, diagnostic))
+        goto done;
     zr_execbc_record_event(candidate, instruction, id, ZR_EXEC_IR_ORACLE_EVENT_CALL,
                            operands, count);
     if (!zr_execbc_assign(projection, instruction, candidate, &value)) {
