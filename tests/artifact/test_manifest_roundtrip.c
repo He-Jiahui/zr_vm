@@ -11,11 +11,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* fixture 的字节缓冲由用例持有，Io 的 close 回调不得替它释放。 */
 static void manifest_reader_close_noop(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(customData);
 }
 
+/* 测试属性须经编译、ZRO 写入、Io 读取和运行时装载后仍保留同一 manifest 身份。 */
 static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void) {
     static const TZrChar *sourceText =
             "#zr.testing.test#\n"
@@ -45,6 +47,7 @@ static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void
     function = ZrParser_Source_CompileTest(
             state, sourceText, strlen(sourceText), sourceName);
     TEST_ASSERT_NOT_NULL(function);
+    /* 解码器必须拒绝截断、schema 漂移、越界条目数和尾随字节。 */
     TEST_ASSERT_TRUE(ZrParser_TestManifest_Validate(
             state,
             function->testManifestData,
@@ -106,6 +109,8 @@ static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void
             manifest_reader_close_noop,
             &reader);
     io->isBinary = ZR_TRUE;
+    /* BUG: ReadSourceNew 遇不支持的版本或读取错误时，在已分配 source 后直接返回 NULL，泄漏原生内存。 */
+    /* TODO: 增加非法版本和截断输入的分配计数回归，验证上述失败路径的释放。 */
     ioSource = ZrCore_Io_ReadSourceNew(io);
     TEST_ASSERT_NOT_NULL(ioSource);
     TEST_ASSERT_EQUAL_UINT32(
@@ -143,6 +148,7 @@ static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void
             7, manifest.entries[0].cases[0].arguments[0].value.intValue);
     ZrParser_TestManifest_Free(state, &manifest);
 
+    /* 写入阶段合法不代表装载阶段可盲信，损坏后的 source 必须被运行时拒绝。 */
     originalMagicByte = ioSource->modules[0].entryFunction->testManifestData[0];
     ioSource->modules[0].entryFunction->testManifestData[0] ^= 1U;
     TEST_ASSERT_NULL(ZrCore_Io_LoadEntryFunctionToRuntime(state, ioSource));

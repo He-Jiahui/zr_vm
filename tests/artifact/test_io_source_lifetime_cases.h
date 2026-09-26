@@ -3,12 +3,14 @@
 
 #include "zr_vm_core/memory.h"
 
+/* 只核算 IO 类原生分配；其他 VM 分配不属于 source 释放责任。 */
 static FZrAllocator g_io_source_allocator;
 static TZrSize g_io_source_allocated_count;
 static TZrSize g_io_source_freed_count;
 static TZrSize g_io_source_allocated_bytes;
 static TZrSize g_io_source_freed_bytes;
 
+/* 委托原分配器并核对 IO 类 realloc 的旧块与新块，供两种所有权场景共用。 */
 static TZrPtr io_source_counting_allocator(TZrPtr arguments,
                                           TZrPtr pointer,
                                           TZrSize originalSize,
@@ -29,6 +31,7 @@ static TZrPtr io_source_counting_allocator(TZrPtr arguments,
     return result;
 }
 
+/* 分别检验未装载的 source 全量释放，以及装载后函数脱离 source 的独立寿命。 */
 static void io_source_assert_read_free(TZrBool loadRuntime) {
     static const TZrChar sourceText[] =
             "fn adjust(value: int, offset: int = 2): int {\n"
@@ -68,7 +71,10 @@ static void io_source_assert_read_free(TZrBool loadRuntime) {
     g_io_source_allocated_bytes = 0u;
     g_io_source_freed_bytes = 0u;
     g_io_source_allocator = state->global->allocator;
+    /* 仅在 source 读取和释放期间替换分配器；函数执行必须回到原分配器。 */
     state->global->allocator = io_source_counting_allocator;
+    /* BUG: 分配器恢复前的 Unity 断言若失败，会 longjmp 越过恢复与资源释放，污染后续测试。 */
+    /* TODO: 将失败报告移到恢复之后，或建立统一清理出口。 */
     source = ZrCore_Io_ReadSourceNew(&io);
     TEST_ASSERT_NOT_NULL(source);
     TEST_ASSERT_FALSE(io.hasReadError);
@@ -95,10 +101,12 @@ static void io_source_assert_read_free(TZrBool loadRuntime) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 不装载运行时函数时，source 内的原生对象应成对释放。 */
 static void test_io_source_free_releases_unloaded_graph(void) {
     io_source_assert_read_free(ZR_FALSE);
 }
 
+/* 已装载函数应在 source 释放后仍可运行，证明装载没有借用待释放数组。 */
 static void test_io_source_free_preserves_loaded_function(void) {
     io_source_assert_read_free(ZR_TRUE);
 }
