@@ -61,6 +61,7 @@ typedef TZrBool (*FZrExecBcPhiMoveConsumer)(void *userData,
                                              TZrUInt32 sourceSlot);
 
 typedef struct SZrExecBcProjection {
+    TZrExecIrFunctionId functionId;
     TZrMetadataToken functionToken;
     TZrUInt64 signatureHash;
     TZrExecIrBlockId entryBlockId;
@@ -117,6 +118,7 @@ typedef struct SZrExecBcProjection {
 } SZrExecBcProjection;
 
 typedef struct SZrAotIrProjection {
+    TZrExecIrFunctionId functionId;
     TZrMetadataToken functionToken;
     TZrUInt64 signatureHash;
     TZrExecIrBlockId entryBlockId;

@@ -616,6 +616,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     ZrParser_ExecBcProjection_Free(p);
     memset(p, 0, sizeof(*p));
     p->instructionCount = f->instructionCount;
+    p->functionId = f->id;
     p->functionToken = f->functionToken;
     p->signatureHash = f->signatureHash;
     p->entryBlockId = f->entryBlockId;
@@ -895,6 +896,7 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
                                          SZrAotIrProjection *destination) {
     if (source == ZR_NULL || destination == ZR_NULL) return;
     destination->instructionCount = source->instructionCount;
+    destination->functionId = source->functionId;
     destination->functionToken = source->functionToken;
     destination->signatureHash = source->signatureHash;
     destination->entryBlockId = source->entryBlockId;

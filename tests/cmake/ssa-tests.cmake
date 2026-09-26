@@ -745,6 +745,22 @@ if (NOT TARGET zr_vm_ssa_aotir_contract_test)
     set_tests_properties(ssa_aotir_contract PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_aot_projection_descriptor_test)
+    add_executable(zr_vm_ssa_aot_projection_descriptor_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_projection_descriptor.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c)
+    target_include_directories(zr_vm_ssa_aot_projection_descriptor_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_aot_projection_descriptor_test)
+    add_test(NAME ssa_aot_projection_descriptor
+            COMMAND zr_vm_ssa_aot_projection_descriptor_test)
+    set_tests_properties(ssa_aot_projection_descriptor PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_c_llvm_lowering_test)
     add_executable(zr_vm_ssa_c_llvm_lowering_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_c_llvm_lowering.c
