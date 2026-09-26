@@ -5,6 +5,8 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/app/app.c
   - zr_vm_cli/src/zr_vm_cli/command/command.h
   - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_cli/src/zr_vm_cli/project/project.h
   - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.h
@@ -27,6 +29,7 @@ related_code:
 implementation_files:
   - zr_vm_cli/src/zr_vm_cli/app/app.c
   - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
@@ -46,6 +49,7 @@ plan_sources:
   - user: 2026-04-06 扩成 CLI 覆盖矩阵，列出入口模式、合法组合、非法组合和 process.arguments 契约
 tests:
   - tests/cli/test_cli_args.c
+  - tests/cli/test_cli_zrp_metadata_dump.c
   - tests/cli/test_cli_repl_e2e.c
   - tests/cli/test_cli_debug_e2e.c
   - zr_vm_language_server_extension/test/syntaxGrammar.test.js
@@ -71,6 +75,9 @@ doc_type: category-index
   - 入口模式、合法组合、非法组合和 `zr.system.process.arguments` 的查表矩阵
   - parser / runtime 拒绝边界与稳定错误片段
   - 当前单测、集成用例和专用 fixture 的覆盖映射
+- [zrp-metadata-inspection.md](zrp-metadata-inspection.md)
+  - 二进制元数据头的摘要、差异与版本诊断入口
+  - 与 JSON 项目清单的输入边界及待核实的磁盘文件来源
 - `syntax-migration-command.md`
   - `migrate syntax` 的 check/write、JSON/text report 和固定 language direction
   - machine-only write、hash/parser/compiler/atomic replacement guard 与目录 exclusion
@@ -157,4 +164,5 @@ doc_type: category-index
 12. 需要修改 pull/push diagnostics、workspace report coverage、resultId 或 browser diagnostics bridge 时，再看 `lsp-pull-push-diagnostics.md`。
 13. 需要修改 document URI、native filesystem path、project path discovery 或 virtual document I/O boundary 时，再看 `lsp-uri-native-path-boundary.md`。
 14. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
-15. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+15. 需要诊断二进制 ZRP 元数据头或确认三个 CLI 检查模式的输入格式时，看 `zrp-metadata-inspection.md`。
+16. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

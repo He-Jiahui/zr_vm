@@ -1044,6 +1044,7 @@ static ZR_FORCE_INLINE TZrBool zr_container_try_set_existing_pair_value_plain_fa
     return ZR_TRUE;
 }
 
+/* 字段热槽和最近使用缓存只加速查找；未命中时仍回到对象自己的 nodeMap 核实键。 */
 static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_cached_field_pair_fast(
         SZrState *state,
         SZrObject *object,
@@ -1126,6 +1127,7 @@ static ZR_FORCE_INLINE void zr_container_refresh_cached_field_slot(SZrState *sta
     *hotPairSlot = pair;
 }
 
+/* 字段更新需同步 memberVersion 与隐藏数组缓存，使 Map 热查找和迭代源看到新状态。 */
 static ZR_FORCE_INLINE TZrBool zr_container_set_cached_field_value_fast(SZrState *state,
                                                                         SZrObject *object,
                                                                         SZrString *fieldString,
@@ -1582,6 +1584,7 @@ static void zr_container_hash_set_clear_reuse_storage(SZrHashSet *set) {
     }
 }
 
+/* 清空元素和对象级热槽但保留已分配的散列表/原始整数缓冲，供下一轮容器操作复用。 */
 static void zr_container_array_clear_items_reuse_storage(SZrObject *items) {
     if (items == ZR_NULL || items->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return;
@@ -1675,6 +1678,7 @@ static TZrBool zr_container_call_method(SZrState *state,
 
 static TZrUInt64 zr_container_value_hash(SZrState *state, const SZrTypeValue *value);
 
+/* Map/Set/Pair 先尝试核心值相等，再回退到对象的 equals 协议。 */
 static TZrBool zr_container_values_equal(SZrState *state, const SZrTypeValue *lhs, const SZrTypeValue *rhs) {
     SZrTypeValue lhsCopy;
     SZrTypeValue rhsCopy;
@@ -1865,6 +1869,7 @@ static TZrInt64 zr_container_values_compare(SZrState *state, const SZrTypeValue 
     return lhsHash < rhsHash ? -1 : 1;
 }
 
+/* 容器键遵从对象 hashCode 协议；未提供有效结果时回退核心值哈希。 */
 static TZrUInt64 zr_container_value_hash(SZrState *state, const SZrTypeValue *value) {
     SZrTypeValue result;
 
@@ -1931,6 +1936,7 @@ static TZrBool zr_container_storage_push_raw_int_fast(SZrState *state, SZrObject
     return ZR_TRUE;
 }
 
+/* 密集整数键数组可直接取预留 pair；写入 GC 值后仍需屏障与版本递增。 */
 static TZrBool zr_container_storage_push_gc_value_dense_pair_pool_fast(SZrState *state,
                                                                        SZrObject *array,
                                                                        const SZrTypeValue *value) {
@@ -2571,6 +2577,7 @@ static TZrBool zr_container_array_prepare_backing_storage(SZrState *state,
     return ZrCore_HashSet_EnsurePairPoolForElementCount(state, &itemsObject->nodeMap, requiredCapacity);
 }
 
+/* 迭代器持有 source 并绑定对应 moveNext 原生闭包，供 Iterable 协议统一驱动。 */
 static SZrObject *zr_container_iterator_make(SZrState *state,
                                              SZrObject *source,
                                              EZrValueType sourceType,
@@ -2707,6 +2714,7 @@ static ZR_FORCE_INLINE TZrInt64 zr_container_iterator_index_fast(SZrState *state
     return zr_container_get_int_field(state, iterator, kContainerIndexField, defaultValue);
 }
 
+/* 内建 array 与容器的数组 backing 共用迭代逻辑，原始整数表示走直接读取路径。 */
 static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state) {
     SZrObject *iterator = zr_container_iterator_self(state);
     SZrObject *source;
@@ -3700,6 +3708,9 @@ static TZrBool zr_container_linked_node_constructor(ZrLibCallContext *context, S
     return zr_container_finish_object(context, result, node);
 }
 
+/* TODO: 核实摘除节点时字段写入失败的传播与原子性。这里丢弃多次 setter 结果，
+ * removeFirst/removeLast/remove 仍报告成功；需对字段写入做故障注入并检查首尾与 count。
+ */
 static void zr_container_linked_list_unlink_node(SZrState *state, SZrObject *list, SZrObject *node) {
     SZrObject *previous;
     SZrObject *next;
@@ -4160,6 +4171,7 @@ static const ZrLibMetaMethodDescriptor kReadOnlySpanMetaMethods[] = {
          ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
 };
 
+/* 容器类型表把构造权、泛型约束及 Iterable/RefLike 协议映射到运行时回调。 */
 static const ZrLibTypeDescriptor g_container_types[] = {
         {"Array", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kArrayFields, ZR_ARRAY_COUNT(kArrayFields), kArrayMethods, ZR_ARRAY_COUNT(kArrayMethods), kArrayMetaMethods, ZR_ARRAY_COUNT(kArrayMetaMethods), ZR_NULL, ZR_NULL, kArrayImplements, ZR_ARRAY_COUNT(kArrayImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Array<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ARRAY_LIKE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
         {"Map", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kMapFields, ZR_ARRAY_COUNT(kMapFields), kMapMethods, ZR_ARRAY_COUNT(kMapMethods), kMapMetaMethods, ZR_ARRAY_COUNT(kMapMetaMethods), ZR_NULL, ZR_NULL, kMapImplements, ZR_ARRAY_COUNT(kMapImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Map<K,V>()", kMapGenericParameters, ZR_ARRAY_COUNT(kMapGenericParameters), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},

@@ -47,7 +47,7 @@ typedef struct SZrTestingAssertionFailure {
 
 /** @brief 返回测试阶段提供者的静态描述符，供内建注册和测试宿主检查公开契约。 */
 ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescriptor(void);
-/** @brief 在目标 VM 全局状态注册测试提供者及其任务依赖；调用方随后须选择测试阶段。 */
+/** @brief 在目标 VM 全局状态注册测试提供者及其任务依赖；访问导出前宿主须选择测试阶段。 */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Register(SZrGlobalState *global);
 /** @brief 清除当前线程的上一次断言记录；CLI 在用例执行前及失败报告读取后调用。 */
 ZR_VM_LIB_TESTING_API void ZrVmLibTesting_ClearLastFailure(void);
@@ -61,7 +61,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZ
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result);
 
 #if defined(ZR_LIBRARY_TYPE_SHARED)
-/** @brief 动态原生模块加载器约定的 ABI v1 符号，与内建注册返回同一描述符。 */
+/** @brief 动态加载器约定的固定 v1 入口符号；描述符 ABI 版本另行校验。 */
 ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVm_GetNativeModule_v1(void);
 #endif
 

@@ -73,7 +73,8 @@ static const ZrLibFieldDescriptor g_value_snapshot_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("formatterFaulted", "bool", "Whether value formatting raised."),
 };
 
-/* 这些类型同时约束脚本可见失败对象和测试宿主读取的结构化字段。 */
+/* 类型表兼有测试属性元数据与结构化失败类型；
+ * SourceSpan、ValueSnapshot、AssertionFailure 对应宿主读取的失败副本。 */
 static const ZrLibTypeDescriptor g_testing_types[] = {
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Test", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
                                     ZR_NULL, 0U, ZR_NULL, 0U, ZR_NULL, 0U,

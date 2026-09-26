@@ -247,6 +247,7 @@ static SZrFunction *pooling_runtime_layout_function(
                    : ZR_CAST_FUNCTION(state, rawFunction);
 }
 
+/* 宿主对象终结时销毁池；活动 guard 导致 BUSY 时保留运行时以待后续终结机会。 */
 static void pooling_pool_finalize(SZrState *state, SZrRawObject *rawObject) {
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
     SZrPoolingRuntime *runtime;
@@ -551,7 +552,7 @@ TZrBool ZrPooling_Generational_Recycle(
     return ZR_TRUE;
 }
 
-/* 关闭可写 guard 时先将语言层投影写回槽位并执行 GC 屏障，再释放底层借用。 */
+/* 关闭可写 guard 时先尝试写回语言层投影并执行 GC 屏障，再释放底层借用。 */
 static TZrBool pooling_guard_release(
         SZrState *state,
         SZrRawObject *rawObject) {
@@ -568,6 +569,9 @@ static TZrBool pooling_guard_release(
     if (guardRuntime == ZR_NULL || guardRuntime->finalized) {
         return ZR_TRUE;
     }
+    /* TODO: 核实写回失败后的 guard 关闭契约。此处先标记 finalized，后续内联复制
+     * 失败也会释放底层借用；需故障注入 CopyObjectValueToInlineStorage 验证是否允许重试。
+     */
     guardRuntime->finalized = ZR_TRUE;
     owner = pooling_runtime_object_field(
             state,
