@@ -4,7 +4,10 @@
 #include "zr_vm_parser/exec_ir_projections.h"
 #include "zr_vm_parser/exec_ir_state_maps.h"
 
+#include <stdlib.h>
+
 void test_aotir_owns_state_map(void);
+void test_aotir_moves_frame_layout_metadata(void);
 
 void test_aotir_owns_state_map(void) {
     SZrExecIrFunction function;
@@ -92,4 +95,32 @@ void test_aotir_owns_state_map(void) {
     TEST_ASSERT_EQUAL_UINT32(originalRoots, aot.stateMap.rootPool[0]);
     TEST_ASSERT_EQUAL_UINT32(originalResumeId, aot.stateMap.entries[0].resumeId);
     ZrParser_AotIrProjection_Free(&aot);
+}
+
+void test_aotir_moves_frame_layout_metadata(void) {
+    SZrExecBcProjection source = {0};
+    SZrAotIrProjection destination = {0};
+    source.ownershipTag = ZR_EXEC_IR_PROJECTION_TAG;
+    source.logicalSlotCount = 2u;
+    source.storageSlotCount = 3u;
+    source.parameterPrefixBytes = 8u;
+    source.returnAreaOffset = 16u;
+    source.frameByteSize = 32u;
+    source.frameByteAlign = 8u;
+    source.frameSlotCount = 3u;
+    source.frameSlots = (SZrExecIrFrameSlot *)calloc(
+            source.frameSlotCount, sizeof(*source.frameSlots));
+    TEST_ASSERT_NOT_NULL(source.frameSlots);
+    source.frameSlots[1].slotId = 2u;
+    ZrParser_ExecIr_MoveProjectionToAot(&source, &destination);
+    TEST_ASSERT_EQUAL_UINT32(2u, destination.logicalSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(3u, destination.storageSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(8u, destination.parameterPrefixBytes);
+    TEST_ASSERT_EQUAL_UINT32(16u, destination.returnAreaOffset);
+    TEST_ASSERT_EQUAL_UINT32(32u, destination.frameByteSize);
+    TEST_ASSERT_EQUAL_UINT32(8u, destination.frameByteAlign);
+    TEST_ASSERT_EQUAL_UINT32(3u, destination.frameSlotCount);
+    TEST_ASSERT_EQUAL_PTR(source.frameSlots, destination.frameSlots);
+    TEST_ASSERT_NULL(source.frameSlots);
+    ZrParser_AotIrProjection_Free(&destination);
 }

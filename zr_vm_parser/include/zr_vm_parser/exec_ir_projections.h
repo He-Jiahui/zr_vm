@@ -65,6 +65,14 @@ typedef struct SZrExecBcProjection {
     TZrUInt64 signatureHash;
     TZrExecIrBlockId entryBlockId;
     TZrUInt64 frameLayoutHash;
+    TZrUInt32 logicalSlotCount;
+    TZrUInt32 storageSlotCount;
+    TZrUInt32 parameterPrefixBytes;
+    TZrUInt32 returnAreaOffset;
+    TZrUInt32 frameByteSize;
+    TZrUInt32 frameByteAlign;
+    SZrExecIrFrameSlot *frameSlots;
+    TZrUInt32 frameSlotCount;
     TZrUInt32 instructionCount;
     TZrUInt32 *opcodes; /* compatibility view; same order as instructions */
     SZrExecBcInstruction *instructions;
@@ -113,6 +121,14 @@ typedef struct SZrAotIrProjection {
     TZrUInt64 signatureHash;
     TZrExecIrBlockId entryBlockId;
     TZrUInt64 frameLayoutHash;
+    TZrUInt32 logicalSlotCount;
+    TZrUInt32 storageSlotCount;
+    TZrUInt32 parameterPrefixBytes;
+    TZrUInt32 returnAreaOffset;
+    TZrUInt32 frameByteSize;
+    TZrUInt32 frameByteAlign;
+    SZrExecIrFrameSlot *frameSlots;
+    TZrUInt32 frameSlotCount;
     TZrUInt32 instructionCount;
     TZrUInt32 *opcodes;
     SZrExecBcInstruction *instructions;

@@ -7,6 +7,7 @@
 #include <string.h>
 
 void test_aotir_owns_state_map(void);
+void test_aotir_moves_frame_layout_metadata(void);
 
 typedef struct SResumeEffects {
     TZrUInt32 calls;
@@ -976,5 +977,6 @@ int main(void) {
     RUN_TEST(test_resumed_void_return_does_not_inherit_suspend_payload);
     RUN_TEST(test_resumed_payloadless_suspend_does_not_inherit_prior_payload);
     RUN_TEST(test_aotir_owns_state_map);
+    RUN_TEST(test_aotir_moves_frame_layout_metadata);
     return UNITY_END();
 }
