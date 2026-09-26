@@ -17,7 +17,7 @@ void test_aotir_owns_state_map(void) {
     TZrExecIrValueId receiver, result;
     TZrExecIrMemoryTokenId before = 1u, after = 2u;
     const SZrExecIrConstant constants[] = {{1u, 5u, 42u}};
-    const SZrExecIrLayout layouts[] = {{201u, 1u, 8u, 8u, 301u}};
+    const SZrExecIrLayout layouts[] = {{201u, 101u, 8u, 8u, 301u}};
     SZrExecIrStateMapEntry *publishedEntries;
     TZrUInt32 originalRoots, originalValues, originalResumeId;
 
