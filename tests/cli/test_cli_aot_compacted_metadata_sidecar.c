@@ -60,6 +60,7 @@ static TZrInstruction make_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+/* 用根函数及两个子函数制造可裁剪目标，使 sidecar 可对照写出后的方法定义。 */
 static SZrFunction *create_two_child_fixture(SZrState *state) {
     SZrFunction *root;
 
@@ -101,6 +102,7 @@ static SZrFunction *create_two_child_fixture(SZrState *state) {
     return root;
 }
 
+/* 构造有类型与两个方法定义的合法 ZRP 元数据，用于验证 sidecar 发布。 */
 static TZrSize build_zrp_metadata_method_def_fixture(TZrByte *buffer, TZrSize bufferLength) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
     const TZrUInt32 typeDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
@@ -153,6 +155,7 @@ static TZrSize build_zrp_metadata_method_def_fixture(TZrByte *buffer, TZrSize bu
     return offset;
 }
 
+/* 只保留缺失归属信息的方法表，验证不可发布元数据的失败边界。 */
 static TZrSize build_zrp_metadata_invalid_method_def_fixture(TZrByte *buffer, TZrSize bufferLength) {
     const TZrUInt32 methodDefRowBytes = (TZrUInt32)sizeof(SZrZrpMetadataMethodDefRow);
     SZrZrpMetadataHeader header;
@@ -229,6 +232,7 @@ static TZrBool append_path_segment(const TZrChar *basePath,
     return (TZrBool)(written > 0 && (TZrSize)written < outputLength);
 }
 
+/* sidecar 路径从生成 C 文件派生，必须保留目录层级并更换扩展名。 */
 static void test_cli_project_derives_compacted_metadata_sidecar_path_from_aot_c_path(void) {
     TZrChar metadataPath[ZR_TESTS_PATH_MAX];
 
@@ -239,6 +243,7 @@ static void test_cli_project_derives_compacted_metadata_sidecar_path_from_aot_c_
     TEST_ASSERT_EQUAL_STRING("build/bin/aot_c/src/tools/seed.zrp", metadataPath);
 }
 
+/* 真实写出 C 文件时应同时发布可解析 sidecar，且方法表数量保持一致。 */
 static void test_cli_aot_writer_publishes_metadata_sidecar_for_zrp_input_blob(void) {
     TZrByte metadataBlob[768];
     TZrSize metadataBytes;
@@ -301,6 +306,7 @@ static void test_cli_aot_writer_publishes_metadata_sidecar_for_zrp_input_blob(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 元数据定义表无效时仍可写出 C 源，但不得发布误导性的 sidecar。 */
 static void test_cli_aot_writer_does_not_publish_sidecar_for_invalid_zrp_definition_tables(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -356,6 +362,7 @@ static void test_cli_aot_writer_does_not_publish_sidecar_for_invalid_zrp_definit
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 后续输入不可发布时必须清除旧 sidecar，避免消费方误读上一轮结果。 */
 static void test_cli_aot_writer_removes_stale_sidecar_when_metadata_is_not_publishable(void) {
     static const TZrByte staleSidecarBytes[] = {'s', 't', 'a', 'l', 'e'};
     TZrByte metadataBlob[512];
@@ -415,6 +422,7 @@ static void test_cli_aot_writer_removes_stale_sidecar_when_metadata_is_not_publi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 旧 sidecar 被目录占据而无法删除时，写出应整体失败且不留下新 C 文件。 */
 static void test_cli_aot_writer_fails_when_stale_sidecar_cannot_be_removed(void) {
     static const TZrByte staleSidecarBytes[] = {'s', 't', 'a', 'l', 'e'};
     TZrByte metadataBlob[512];

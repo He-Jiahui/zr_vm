@@ -49,6 +49,7 @@
         }                                                                                                              \
     } while (0)
 
+/* 集中检查解析失败的错误文字，使互斥选项测试同时约束可诊断性。 */
 static int cli_assert_parse_failure_contains(int argc,
                                              char **argv,
                                              const char *expectedFragment,
@@ -61,6 +62,7 @@ static int cli_assert_parse_failure_contains(int argc,
     return 0;
 }
 
+/* 确认 -- 之后的参数保持原始顺序，并交由运行路径而非 CLI 选项解析器消费。 */
 static int cli_assert_program_args(const SZrCliCommand *command,
                                    TZrSize expectedCount,
                                    const char *const *expectedArgs) {
@@ -81,6 +83,7 @@ static int cli_assert_program_args(const SZrCliCommand *command,
     return 0;
 }
 
+/* 覆盖 explain optimize 独立子命令的过滤选项，避免被通用运行参数语法抢先消费。 */
 static int test_explain_optimize_mode_parse(void) {
     char *argv[] = {
         "zr_vm_cli", "explain", "optimize", "--json", "--reason", "bounds",
@@ -119,6 +122,7 @@ static int test_explain_optimize_mode_parse(void) {
     return 0;
 }
 
+/* 无用户参数时应进入交互模式，这是 CLI 默认入口契约。 */
 static int test_no_args_enters_repl(void) {
     char *argv[] = {"zr_vm_cli"};
     char error[256];
@@ -130,6 +134,7 @@ static int test_no_args_enters_repl(void) {
     return 0;
 }
 
+/* 位置项目路径仍映射到项目运行模式，防止新增子命令破坏旧调用方式。 */
 static int test_positional_project_keeps_run_compatibility(void) {
     char *argv[] = {"zr_vm_cli", "demo.zrp"};
     char error[256];
@@ -145,6 +150,7 @@ static int test_positional_project_keeps_run_compatibility(void) {
     return 0;
 }
 
+/* 帮助别名是终止模式，不能与需要执行的主模式叠加。 */
 static int test_help_aliases_and_exclusivity(void) {
     char *argv1[] = {"zr_vm_cli", "--help"};
     char *argv2[] = {"zr_vm_cli", "-h"};
@@ -168,6 +174,7 @@ static int test_help_aliases_and_exclusivity(void) {
     return 0;
 }
 
+/* 版本别名是终止模式，不能与项目或内联执行混用。 */
 static int test_version_aliases_and_exclusivity(void) {
     char *argv1[] = {"zr_vm_cli", "--version"};
     char *argv2[] = {"zr_vm_cli", "-V"};
@@ -187,6 +194,7 @@ static int test_version_aliases_and_exclusivity(void) {
     return 0;
 }
 
+/* 内联代码入口应把源码交给运行模式，而非误识别为项目路径。 */
 static int test_inline_code_aliases_parse(void) {
     char *argv1[] = {"zr_vm_cli", "-e", "return 1;"};
     char *argv2[] = {"zr_vm_cli", "-c", "return 2;"};
@@ -204,6 +212,7 @@ static int test_inline_code_aliases_parse(void) {
     return 0;
 }
 
+/* 显式模块名需与项目路径共同解析，供运行时选择非默认入口模块。 */
 static int test_project_module_mode_parse(void) {
     char *argv[] = {"zr_vm_cli", "--project", "demo.zrp", "-m", "tools.seed", "--execution-mode", "binary"};
     char error[256];
@@ -217,6 +226,7 @@ static int test_project_module_mode_parse(void) {
     return 0;
 }
 
+/* 模块运行缺少项目或混用互斥模式时必须在执行前拒绝。 */
 static int test_module_mode_requires_project_and_rejects_unsupported_combinations(void) {
     char *argv1[] = {"zr_vm_cli", "-m", "tools.seed"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "-m", "tools.seed"};
@@ -233,6 +243,7 @@ static int test_module_mode_requires_project_and_rejects_unsupported_combination
     return 0;
 }
 
+/* 交互尾随模式只允许附着到可运行命令，防止无执行结果时启动 REPL。 */
 static int test_interactive_modifier_parse_and_validate(void) {
     char *argv1[] = {"zr_vm_cli", "-i"};
     char *argv2[] = {"zr_vm_cli", "demo.zrp", "-i"};
@@ -258,6 +269,7 @@ static int test_interactive_modifier_parse_and_validate(void) {
     return 0;
 }
 
+/* 带值选项缺参必须被解析层拒绝，不能把后续选项错当其值。 */
 static int test_missing_required_values_fail(void) {
     char *argv1[] = {"zr_vm_cli", "--compile"};
     char *argv2[] = {"zr_vm_cli", "--project"};
@@ -291,6 +303,7 @@ static int test_missing_required_values_fail(void) {
     return 0;
 }
 
+/* 分隔符之后是被运行程序的参数，必须停止 CLI 自身的选项识别。 */
 static int test_passthrough_arguments_stop_cli_parsing(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--execution-mode", "binary", "--", "arg1", "--debug", "-x"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--", "seed", "42"};
@@ -315,6 +328,7 @@ static int test_passthrough_arguments_stop_cli_parsing(void) {
     return 0;
 }
 
+/* 内联和模块运行路径均须保留分隔符后的程序参数。 */
 static int test_inline_and_module_passthrough_parse(void) {
     char *argv1[] = {"zr_vm_cli", "-e", "return 1;", "-i", "--", "foo", "bar"};
     char *argv2[] = {"zr_vm_cli", "--project", "demo.zrp", "-m", "tools.seed", "--", "seed"};
@@ -342,6 +356,7 @@ static int test_inline_and_module_passthrough_parse(void) {
     return 0;
 }
 
+/* 仅执行路径允许接收程序参数，终止型命令不应静默吞入。 */
 static int test_passthrough_arguments_require_active_run_path(void) {
     char *argv1[] = {"zr_vm_cli", "--compile", "demo.zrp", "--", "arg1"};
     char *argv2[] = {"zr_vm_cli", "--", "arg1"};
@@ -358,6 +373,7 @@ static int test_passthrough_arguments_require_active_run_path(void) {
     return 0;
 }
 
+/* 内联求值与项目编译、调试及模块入口的选项边界应明确拒绝。 */
 static int test_eval_rejects_compile_debug_and_module_options(void) {
     char *argv1[] = {"zr_vm_cli", "-e", "return 1;", "--debug"};
     char *argv2[] = {"zr_vm_cli", "-c", "return 1;", "--compile", "demo.zrp"};
@@ -380,6 +396,7 @@ static int test_eval_rejects_compile_debug_and_module_options(void) {
     return 0;
 }
 
+/* 覆盖项目编译及产物选项组合，确保模式字段供编译器正确消费。 */
 static int test_compile_flag_combinations_parse(void) {
     char *argv[] = {"zr_vm_cli",
                     "--compile",
@@ -405,6 +422,7 @@ static int test_compile_flag_combinations_parse(void) {
     return 0;
 }
 
+/* 编译后运行再进入交互的串联模式需保持三个动作的解析状态。 */
 static int test_compile_run_interactive_parse(void) {
     char *argv[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "-i"};
     char error[256];
@@ -419,6 +437,7 @@ static int test_compile_run_interactive_parse(void) {
     return 0;
 }
 
+/* 只供编译使用的选项不能在纯运行路径静默生效。 */
 static int test_compile_only_modifiers_require_compile(void) {
     char *argv1[] = {"zr_vm_cli", "--run"};
     char *argv2[] = {"zr_vm_cli", "--intermediate"};
@@ -449,6 +468,7 @@ static int test_compile_only_modifiers_require_compile(void) {
     return 0;
 }
 
+/* 运行期参数必须绑定实际运行路径，不能附着到只编译命令。 */
 static int test_run_only_runtime_options_require_active_run_path(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--execution-mode", "binary", "--emit-executed-via"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--emit-executed-via"};
@@ -474,6 +494,7 @@ static int test_run_only_runtime_options_require_active_run_path(void) {
     return 0;
 }
 
+/* 调试地址、等待和端点输出选项应保留给运行期调试启动。 */
 static int test_debug_run_flags_parse(void) {
     char *argv1[] = {"zr_vm_cli",
                      "demo.zrp",
@@ -503,6 +524,7 @@ static int test_debug_run_flags_parse(void) {
     return 0;
 }
 
+/* 调试修饰项必须依附调试运行，防止产生无调试器的虚假配置。 */
 static int test_debug_flags_require_debug_and_active_run_path(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--debug-address", "127.0.0.1:9000"};
     char *argv2[] = {"zr_vm_cli", "demo.zrp", "--debug-wait"};
@@ -539,6 +561,7 @@ static int test_debug_flags_require_debug_and_active_run_path(void) {
     return 0;
 }
 
+/* 性能采样参数可进入运行路径，但当前不支持与调试钩子并用。 */
 static int test_profile_run_flags_parse_and_reject_debug_combo(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--profile=profile.txt"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--profile"};
@@ -565,6 +588,7 @@ static int test_profile_run_flags_parse_and_reject_debug_combo(void) {
     return 0;
 }
 
+/* 覆盖率输出与其他执行钩子的互斥关系必须在 CLI 解析期确定。 */
 static int test_coverage_run_flags_parse_and_reject_hook_conflicts(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--coverage=coverage.txt"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--coverage"};
@@ -597,6 +621,7 @@ static int test_coverage_run_flags_parse_and_reject_hook_conflicts(void) {
     return 0;
 }
 
+/* 字节码导出依赖有效输出路径，空路径应在运行前被拒绝。 */
 static int test_dump_bytecode_run_flags_parse_and_require_output_path(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--dump-bytecode", "bytecode.txt"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--dump-bytecode", "bytecode.txt"};
@@ -628,6 +653,7 @@ static int test_dump_bytecode_run_flags_parse_and_require_output_path(void) {
     return 0;
 }
 
+/* 堆摘要只对实际运行有意义，不能附着到终止型或纯编译模式。 */
 static int test_heap_summary_run_flags_parse_and_require_run_path(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--heap-summary"};
     char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--heap-summary=heap.txt"};
@@ -660,6 +686,7 @@ static int test_heap_summary_run_flags_parse_and_require_run_path(void) {
     return 0;
 }
 
+/* 元数据摘要子命令的文件路径应路由至独立检查模式。 */
 static int test_zrp_metadata_dump_mode_parse(void) {
     char *argv[] = {"zr_vm_cli", "--dump-zrp-metadata", "module.zrp"};
     char error[256];
@@ -675,6 +702,7 @@ static int test_zrp_metadata_dump_mode_parse(void) {
     return 0;
 }
 
+/* 元数据差异命令必须保留前后两个文件路径及顺序。 */
 static int test_zrp_metadata_diff_mode_parse(void) {
     char *argv[] = {"zr_vm_cli", "--diff-zrp-metadata", "before.zrp", "after.zrp"};
     char error[256];
@@ -692,6 +720,7 @@ static int test_zrp_metadata_diff_mode_parse(void) {
     return 0;
 }
 
+/* 版本检查应进入只读元数据入口并持有所检文件路径。 */
 static int test_zrp_metadata_version_check_mode_parse(void) {
     char *argv[] = {"zr_vm_cli", "--check-zrp-metadata-version", "module.zrp"};
     char error[256];
@@ -712,6 +741,7 @@ static int test_zrp_metadata_version_check_mode_parse(void) {
     return 0;
 }
 
+/* 迁移子命令的 check/write、格式和生成文件开关需交给迁移入口。 */
 static int test_syntax_migration_mode_parse(void) {
     char *checkArgv[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--check", "--format", "json"};
     char *writeArgv[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--write", "--format=text",
@@ -736,6 +766,7 @@ static int test_syntax_migration_mode_parse(void) {
     return 0;
 }
 
+/* test 子命令的过滤、并发和超时参数应路由到测试运行器。 */
 static int test_test_mode_parse(void) {
     char *argv[] = {
             "zr_vm_cli", "test", "demo.zrp", "--filter", "suite::*",
@@ -756,6 +787,7 @@ static int test_test_mode_parse(void) {
     return 0;
 }
 
+/* test 子命令必须拒绝缺值、重复和非法范围参数。 */
 static int test_test_mode_rejects_invalid_options(void) {
     char *missingTarget[] = {"zr_vm_cli", "test"};
     char *zeroJobs[] = {"zr_vm_cli", "test", "demo.zrp", "--jobs", "0"};
@@ -785,6 +817,7 @@ static int test_test_mode_rejects_invalid_options(void) {
     return 0;
 }
 
+/* 迁移模式应拒绝与一般项目运行选项组合，避免意外执行。 */
 static int test_syntax_migration_mode_rejects_invalid_combinations(void) {
     char *missingSyntax[] = {"zr_vm_cli", "migrate", "legacy.zr", "--check"};
     char *missingPath[] = {"zr_vm_cli", "migrate", "syntax", "--check"};
@@ -813,6 +846,7 @@ static int test_syntax_migration_mode_rejects_invalid_combinations(void) {
     return 0;
 }
 
+/* 未知选项及重复主模式必须失败，防止静默选择错误执行路径。 */
 static int test_unknown_and_duplicate_modes_fail(void) {
     char *argv1[] = {"zr_vm_cli", "--wat"};
     char *argv2[] = {"zr_vm_cli", "--compile", "a.zrp", "--compile", "b.zrp"};

@@ -12,6 +12,8 @@ function assert(condition, message) {
     }
 }
 
+// CTest 传入 CLI 可执行路径；此场景查询常量条件表达式，验证 :type 同时报告被选分支的数值事实和未执行分支的可达性事实。
+// TODO: 这里等待 exit 后立即检查已收集输出；子进程 stdio 可能尚未关闭，需用慢速或大量尾部输出的假 CLI 验证是否漏读，再决定是否等待 close。
 async function main() {
     const child = spawn(cliPath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],

@@ -32,6 +32,7 @@ static void set_counted_section(SZrZrpMetadataSection *section,
     *nextOffset += section->byteLength;
 }
 
+/* 回卷临时输出流并读取文本，供内存 API 和文件入口共用同一输出断言。 */
 static int read_stream_text(FILE *file, char *buffer, size_t bufferLength) {
     size_t readLength;
 
@@ -45,6 +46,7 @@ static int read_stream_text(FILE *file, char *buffer, size_t bufferLength) {
     return 0;
 }
 
+/* 构造可控的元数据头与节布局，作为摘要、差异和版本检查的共同输入。 */
 static void build_summary_metadata(TZrByte *bytes,
                                    size_t byteLength,
                                    SZrZrpMetadataHeader *outHeader,
@@ -87,6 +89,7 @@ static void build_summary_metadata(TZrByte *bytes,
     (void)ZrCore_ZrpMetadata_WriteHeader(bytes, (TZrSize)byteLength, &header);
 }
 
+/* 同时比较内存 API 与文件入口的摘要，保护各节字节数、行数和偏移的可读输出契约。 */
 static int test_summary_prints_metadata_section_bytes_and_counts(void) {
     SZrZrpMetadataHeader header;
     TZrUInt32 nextOffset;
@@ -177,6 +180,7 @@ static int test_summary_prints_metadata_section_bytes_and_counts(void) {
     return 0;
 }
 
+/* 对比收缩、增长与空节，防止差异输出把增长计算成无符号下溢。 */
 static int test_diff_prints_metadata_section_deltas(void) {
     SZrZrpMetadataHeader beforeHeader;
     SZrZrpMetadataHeader afterHeader;
@@ -276,6 +280,7 @@ static int test_diff_prints_metadata_section_deltas(void) {
     return 0;
 }
 
+/* 同时检查内存和路径入口，确认当前格式的版本、头长与节数均被报告。 */
 static int test_version_check_reports_current_header_shape(void) {
     SZrZrpMetadataHeader header;
     TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + 1024u];
@@ -340,6 +345,7 @@ static int test_version_check_reports_current_header_shape(void) {
     return 0;
 }
 
+/* 可读但不受支持的头形状应显示 unsupported 并保留具体错误原因。 */
 static int test_version_check_reports_unsupported_header_shape(void) {
     SZrZrpMetadataHeader header;
     TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + 1024u];
@@ -373,6 +379,7 @@ static int test_version_check_reports_unsupported_header_shape(void) {
     return 0;
 }
 
+/* 短输入不得被解释为完整元数据摘要。 */
 static int test_summary_rejects_invalid_metadata_header(void) {
     TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE - 1u] = {0};
     char error[256] = {0};
@@ -386,6 +393,7 @@ static int test_summary_rejects_invalid_metadata_header(void) {
     return 0;
 }
 
+/* 版本检查也需先通过最小头长度校验。 */
 static int test_version_check_rejects_short_header(void) {
     TZrByte bytes[8] = {0};
     char error[256] = {0};
@@ -399,6 +407,7 @@ static int test_version_check_rejects_short_header(void) {
     return 0;
 }
 
+/* 差异两侧各自需要合法头；此例固定 before 并破坏 after。 */
 static int test_diff_rejects_invalid_metadata_header(void) {
     SZrZrpMetadataHeader beforeHeader;
     TZrByte beforeBytes[ZR_ZRP_METADATA_HEADER_SIZE + 1024u];

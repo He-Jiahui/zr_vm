@@ -12,6 +12,8 @@ function assert(condition, message) {
     }
 }
 
+// CTest 传入 CLI 可执行路径；此场景用未声明的调用目标和成员接收者查询语法事实，验证 :type 可报告调用、成员及写引用而不会执行表达式。
+// TODO: 这里等待 exit 后立即检查已收集输出；子进程 stdio 可能尚未关闭，需用慢速或大量尾部输出的假 CLI 验证是否漏读，再决定是否等待 close。
 async function main() {
     const child = spawn(cliPath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],

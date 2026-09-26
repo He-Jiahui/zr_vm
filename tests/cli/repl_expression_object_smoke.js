@@ -12,6 +12,8 @@ function assert(condition, message) {
     }
 }
 
+// CTest 传入 CLI 可执行路径；此场景验证对象成员读取与计算属性索引在 REPL 裸表达式中执行，并避免读取路径误落入写入指令。
+// TODO: 这里等待 exit 后立即检查已收集输出；子进程 stdio 可能尚未关闭，需用慢速或大量尾部输出的假 CLI 验证是否漏读，再决定是否等待 close。
 async function main() {
     const child = spawn(cliPath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],

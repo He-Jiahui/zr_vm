@@ -51,6 +51,8 @@ static TZrBool copy_file_bytes(const TZrChar *sourcePath, const TZrChar *destina
     return ZR_TRUE;
 }
 
+/* 清理上次生成的测试副本，避免残留 manifest 和产物干扰增量判断。
+ * TODO: shell 删除命令的返回值被忽略；需注入删除失败并核对测试是否可能误用残留目录。 */
 static void clean_directory_tree(const TZrChar *path) {
     TZrChar command[ZR_TESTS_PATH_MAX * 2];
     TZrChar shellPath[ZR_TESTS_PATH_MAX];
@@ -84,6 +86,7 @@ static void build_generated_fixture_root(TZrChar *buffer, TZrSize bufferSize) {
                                                        bufferSize));
 }
 
+/* 把 import_basic 项目复制到生成目录，允许反复编译并保留源 fixture 不变。 */
 static void prepare_import_basic_fixture(TZrChar *rootPath,
                                          TZrSize rootPathSize,
                                          TZrChar *projectPath,
@@ -180,6 +183,7 @@ static TZrBool file_contains_text(const TZrChar *path, const TZrChar *needle) {
     return strstr(buffer, needle) != ZR_NULL ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 用跨模块可调用导出在重编译后运行，覆盖编译产物与运行时链接接口。 */
 static void test_cli_import_basic_callable_export_runs_after_recompile(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -206,6 +210,7 @@ static void test_cli_import_basic_callable_export_runs_after_recompile(void) {
     ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
+/* 编译并运行项目，确认请求的字节码报告实际落盘且含反汇编内容。 */
 static void test_cli_dump_bytecode_writes_disassembly_report(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -244,6 +249,7 @@ static void test_cli_dump_bytecode_writes_disassembly_report(void) {
                              "bytecode report should contain source line comments");
 }
 
+/* 运行后检查堆摘要报告，覆盖 CLI 选项到运行时报告写出的传递。 */
 static void test_cli_heap_summary_writes_report(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -281,6 +287,7 @@ static void test_cli_heap_summary_writes_report(void) {
 }
 
 #if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+/* 用同一 fixture 运行性能采样，约束报告格式和确定性字段。 */
 static void test_cli_profile_writes_deterministic_report(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -319,6 +326,7 @@ static void test_cli_profile_writes_deterministic_report(void) {
                              "profile report should contain the sampling columns");
 }
 
+/* 运行覆盖率采样并检查源行报告，防止只接受选项而不写文件。 */
 static void test_cli_coverage_writes_line_report(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];

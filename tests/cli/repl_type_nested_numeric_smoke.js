@@ -12,6 +12,8 @@ function assert(condition, message) {
     }
 }
 
+// CTest 传入 CLI 可执行路径；此场景查询数组元素的数值区间事实，验证 :type 在聚合节点内继续遍历而不执行数组表达式。
+// TODO: 这里等待 exit 后立即检查已收集输出；子进程 stdio 可能尚未关闭，需用慢速或大量尾部输出的假 CLI 验证是否漏读，再决定是否等待 close。
 async function main() {
     const child = spawn(cliPath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],

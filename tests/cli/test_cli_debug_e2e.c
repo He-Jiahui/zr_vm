@@ -33,6 +33,7 @@
 #define CLI_E2E_ENDPOINT_TIMEOUT_MS 10000
 #define CLI_E2E_PROTOCOL_TIMEOUT_MS 10000
 
+/* 保存调试 CLI 子进程与累积输出；端点解析、协议连接和退出诊断依赖同一实例。 */
 typedef struct ZrCliE2eProcess {
 #if defined(_WIN32)
     HANDLE processHandle;
@@ -60,6 +61,7 @@ static const char *cli_process_output(const ZrCliE2eProcess *process);
 static char *cli_windows_build_command_line(const char *const *command);
 #endif
 
+/* 启动真实 CLI 并捕获输出，以便读取动态调试端点后建立回环连接。 */
 static int cli_process_start(ZrCliE2eProcess *process,
                              const char *workingDirectory,
                              const char *const *command,
@@ -181,6 +183,7 @@ static int cli_process_start(ZrCliE2eProcess *process,
 #endif
 }
 
+/* 非阻塞查询调试 CLI 的退出状态，供端点等待和场景收尾共享。 */
 static int cli_process_update_exit_status(ZrCliE2eProcess *process) {
     if (process == NULL || process->hasExited) {
         return 1;
@@ -226,6 +229,7 @@ static int cli_process_update_exit_status(ZrCliE2eProcess *process) {
 #endif
 }
 
+/* 持续收集 CLI 输出以解析动态端点和保留失败诊断，读取过程不得卡住协议步骤。 */
 static int cli_process_read_available(ZrCliE2eProcess *process) {
     char buffer[CLI_E2E_IO_CHUNK_SIZE];
 
@@ -303,6 +307,7 @@ static int cli_process_read_available(ZrCliE2eProcess *process) {
 #endif
 }
 
+/* 等待 CLI 输出端点或诊断文字，超时后将当前输出留给场景错误报告。 */
 static int cli_process_wait_for_substring(ZrCliE2eProcess *process, const char *needle, unsigned int timeoutMs) {
     unsigned long long deadline;
 
@@ -330,6 +335,7 @@ static int cli_process_wait_for_substring(ZrCliE2eProcess *process, const char *
     return strstr(cli_process_output(process), needle) != NULL ? 1 : 0;
 }
 
+/* 在调试会话结束后限时收割子进程，避免网络步骤成功却留下悬挂执行。 */
 static int cli_process_wait_for_exit(ZrCliE2eProcess *process, unsigned int timeoutMs) {
     unsigned long long deadline;
     int drainPass;
@@ -362,6 +368,7 @@ static int cli_process_wait_for_exit(ZrCliE2eProcess *process, unsigned int time
     return 1;
 }
 
+/* 协议失败或超时后停止仍在运行的调试 CLI，避免遗留监听端口。 */
 static void cli_process_terminate(ZrCliE2eProcess *process) {
     if (process == NULL || process->hasExited) {
         return;
@@ -415,6 +422,7 @@ static void cli_process_close(ZrCliE2eProcess *process) {
     process->outputCapacity = 0;
 }
 
+/* 从启动日志中提取动态端点，连接只依赖 CLI 实际公布的地址。 */
 static int cli_extract_prefixed_line_value(const char *text,
                                            const char *prefix,
                                            char *buffer,
@@ -447,6 +455,7 @@ static int cli_extract_prefixed_line_value(const char *text,
     return 1;
 }
 
+/* 定位当前测试二进制所属构建目录，防止启动旧版本 CLI。 */
 static int cli_get_executable_directory(char *buffer, size_t bufferSize) {
 #if defined(_WIN32)
     DWORD length = GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);
@@ -479,6 +488,7 @@ static int cli_get_executable_directory(char *buffer, size_t bufferSize) {
     return 1;
 }
 
+/* 根据测试进程位置解析真实 CLI 和工作目录，供所有调试场景复用。 */
 static int cli_build_cli_executable_path(char *buffer, size_t bufferSize, char *workingDirectory, size_t workingDirectorySize) {
     char executableDirectory[CLI_E2E_PATH_CAPACITY];
 
@@ -500,6 +510,7 @@ static int cli_build_cli_executable_path(char *buffer, size_t bufferSize, char *
     return ZrTests_File_Exists(buffer) ? 1 : 0;
 }
 
+/* 解析 CLI 公布的动态地址，并只连接回环调试端口。 */
 static int cli_debug_connect(const char *endpointText, SZrNetworkStream *stream, char *errorBuffer, size_t errorBufferSize) {
     SZrNetworkEndpoint endpoint;
 
@@ -518,6 +529,8 @@ static int cli_debug_connect(const char *endpointText, SZrNetworkStream *stream,
     return 1;
 }
 
+/* 按帧发送 JSON-RPC 请求；有效 stream 和 method 前提下，params 的所有权转移给请求对象。
+ * TODO: 入参无效时当前会直接返回而不释放 params；需核查调用者能否在该失败分支传入已分配对象。 */
 static int cli_debug_send_request(SZrNetworkStream *stream,
                                   int id,
                                   const char *method,
@@ -563,6 +576,7 @@ static int cli_debug_send_request(SZrNetworkStream *stream,
     return success;
 }
 
+/* 按协议超时读取单个帧并解析 JSON；调用方负责释放返回的 cJSON。 */
 static cJSON *cli_debug_read_message(SZrNetworkStream *stream, char *errorBuffer, size_t errorBufferSize) {
     char frame[ZR_NETWORK_FRAME_BUFFER_CAPACITY];
     TZrSize frameLength = 0;
@@ -590,6 +604,7 @@ static cJSON *cli_debug_read_message(SZrNetworkStream *stream, char *errorBuffer
     return message;
 }
 
+/* 按请求 id 对齐响应，避免把异步事件误当作当前请求的结果。 */
 static int cli_debug_expect_response(SZrNetworkStream *stream,
                                      int expectedId,
                                      cJSON **outMessage,
@@ -628,6 +643,7 @@ static int cli_debug_expect_response(SZrNetworkStream *stream,
     return 1;
 }
 
+/* 按方法名对齐调试事件，使断点与终止时序由真实协议消息证明。 */
 static int cli_debug_expect_event(SZrNetworkStream *stream,
                                   const char *expectedMethod,
                                   cJSON **outMessage,
@@ -707,6 +723,7 @@ static cJSON *cli_debug_find_named_object(cJSON *array, const char *name) {
     return NULL;
 }
 
+/* 仅输出调试端点的启动方式应让程序继续运行并正常退出。 */
 static int test_debug_print_endpoint_without_wait(void) {
     const char *testName = "debug_print_endpoint_without_wait";
     ZrCliE2eProcess process;
@@ -771,6 +788,7 @@ cleanup:
     return status;
 }
 
+/* --debug-wait 应等待客户端初始化，再按协议发出启动、继续和终止事件。 */
 static int test_debug_wait_prints_endpoint_and_accepts_client(void) {
     const char *testName = "debug_wait_prints_endpoint_and_accepts_client";
     ZrCliE2eProcess process;
@@ -949,6 +967,7 @@ cleanup:
     return status;
 }
 
+/* 未经处理的运行错误应给出可定位的 CLI 回溯，而不是只返回非零状态。 */
 static int test_cli_unhandled_error_prints_traceback(void) {
     const char *testName = "cli_unhandled_error_prints_traceback";
     ZrCliE2eProcess process;
@@ -1007,6 +1026,7 @@ cleanup:
     return status;
 }
 
+/* 在导入项目入口下断，检查停止位置、栈帧、作用域和变量可由协议读取。 */
 static int test_debug_wait_hits_import_basic_launch_breakpoint(void) {
     const char *testName = "debug_wait_hits_import_basic_launch_breakpoint";
     ZrCliE2eProcess process;
@@ -1446,6 +1466,7 @@ cleanup:
     return status;
 }
 
+/* 装饰器跨模块导入的断点应解析并命中正确源码。 */
 static int test_debug_wait_hits_decorator_import_breakpoint(void) {
     const char *testName = "debug_wait_hits_decorator_import_breakpoint";
     ZrCliE2eProcess process;
@@ -1782,6 +1803,7 @@ cleanup:
     return status;
 }
 
+/* 跨模块装饰器调用链的 stepIn/stepOut 应产生可追踪的帧与停止位置。 */
 static int test_debug_wait_steps_into_decorator_import_call_chain(void) {
     const char *testName = "debug_wait_steps_into_decorator_import_call_chain";
     ZrCliE2eProcess process;
@@ -2273,6 +2295,7 @@ static void cli_normalize_separators(char *path) {
     }
 }
 
+/* 比较调试协议报告的源码路径时统一分隔符，避免跨平台路径表示差异造成假失败。 */
 static int cli_paths_equal(const char *left, const char *right) {
     char leftBuffer[CLI_E2E_PATH_CAPACITY];
     char rightBuffer[CLI_E2E_PATH_CAPACITY];
@@ -2322,6 +2345,7 @@ static void cli_sleep_ms(unsigned int milliseconds) {
 #endif
 }
 
+/* 保留跨读取块的完整启动日志和错误信息，以支持端点搜索与失败诊断。 */
 static int cli_process_append_output(ZrCliE2eProcess *process, const char *text, size_t length) {
     size_t requiredCapacity;
     size_t newCapacity;
@@ -2387,6 +2411,7 @@ static int cli_windows_append_repeated(char *buffer, size_t bufferSize, size_t *
     return 1;
 }
 
+/* 遵循 Windows argv 转义规则，避免调试 fixture 路径中的空格改变启动参数。 */
 static int cli_windows_append_quoted_arg(char *buffer, size_t bufferSize, size_t *length, const char *argument) {
     const char *cursor;
     size_t backslashCount = 0;
@@ -2427,6 +2452,7 @@ static int cli_windows_append_quoted_arg(char *buffer, size_t bufferSize, size_t
     return cli_windows_append_char(buffer, bufferSize, length, '"');
 }
 
+/* 构造 CreateProcess 接收的命令串，并由调用方释放分配的缓冲。 */
 static char *cli_windows_build_command_line(const char *const *command) {
     size_t requiredLength = 1;
     size_t length = 0;

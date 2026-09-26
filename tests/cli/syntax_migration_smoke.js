@@ -17,12 +17,16 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zr-vm-syntax-migration-"
 const target = path.join(tempRoot, "machine_forms.zr");
 const original = fs.readFileSync(fixture, "utf8");
 
+// 从仓库 fixture 对照稳定 JSON，再在临时副本上覆盖只检查、实际写入、幂等性和生成目录过滤。
+// 现有验收脚本手动传入已构建的 CLI；只有临时副本允许被 --write 改动。
+// TODO: tests/CMakeLists.txt 目前只注册 C 版 cli_syntax_migration；需确认本脚本是否应纳入常规 CTest。
 try {
     const golden = childProcess.spawnSync(cli, ["migrate", "syntax", fixtureRelative, "--check", "--format", "json"], {
         cwd: repoRoot,
         encoding: "utf8"
     });
     assert.strictEqual(golden.status, 0, golden.stderr);
+    // BUG: 当前 legacy_migration.c 将 %module 标为 machineApplicable/06A，golden JSON 仍要求 targetNotPromoted/06B；此断言在现存 CLI 上失败。
     assert.strictEqual(golden.stdout.trim(), fs.readFileSync(expectedReport, "utf8").trim());
 
     fs.writeFileSync(target, original);
@@ -33,6 +37,7 @@ try {
     const report = JSON.parse(check.stdout);
     assert.strictEqual(report.schemaVersion, 1);
     assert.strictEqual(report.write, false);
+    // TODO: 当前 %module 规则已有 fix，下面仍要求 targetNotPromoted 且无 fix；修正首个 golden 分歧后需继续跑到此断言核对。
     assert(report.items.some((item) => item.oldConstructKind === "percentModule" &&
         item.applicability === "targetNotPromoted" && !item.hasFix));
     assert(report.items.some((item) => item.oldConstructKind === "percentOwned" && item.hasFix));
@@ -45,6 +50,7 @@ try {
     });
     assert.strictEqual(write.status, 0, write.stderr);
     const migrated = fs.readFileSync(target, "utf8");
+    // TODO: 当前规则会改写 %module，旧语法保留断言可能同样过时；需跑通前面的检查后验证 --write 实际产物。
     assert(migrated.includes("%module migration.fixture;"));
     assert(migrated.includes("resource class Handle {}"));
     assert(migrated.includes("9 % 2"));

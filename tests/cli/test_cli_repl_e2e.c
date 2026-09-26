@@ -30,6 +30,7 @@
 #define CLI_REPL_E2E_OUTPUT_TIMEOUT_MS 1500
 #define CLI_REPL_E2E_EXIT_TIMEOUT_MS 5000
 
+/* 跨平台子进程句柄与累积输出共同属于一个 REPL 场景；调用方须先终止或等待，再关闭句柄。 */
 typedef struct ZrCliReplE2eProcess {
 #if defined(_WIN32)
     HANDLE processHandle;
@@ -58,6 +59,7 @@ static const char *cli_process_output(const ZrCliReplE2eProcess *process);
 static char *cli_windows_build_command_line(const char *const *command);
 #endif
 
+/* 启动真实 CLI 并接通 stdin/stdout，供后续逐行提交与输出轮询共享同一会话。 */
 static int cli_process_start(ZrCliReplE2eProcess *process,
                              const char *workingDirectory,
                              const char *const *command,
@@ -220,6 +222,7 @@ static int cli_process_start(ZrCliReplE2eProcess *process,
 #endif
 }
 
+/* 向当前交互会话写入完整一行；空行是提交多行片段的边界，调用方据此等待输出。 */
 static int cli_process_write_line(ZrCliReplE2eProcess *process, const char *line) {
     size_t lineLength;
     static const char newline[] = "\n";
@@ -262,6 +265,7 @@ static int cli_process_write_line(ZrCliReplE2eProcess *process, const char *line
 #endif
 }
 
+/* 非阻塞轮询退出状态，为等待输出和超时清理共享终态判断。 */
 static int cli_process_update_exit_status(ZrCliReplE2eProcess *process) {
     if (process == NULL || process->hasExited) {
         return 1;
@@ -307,6 +311,7 @@ static int cli_process_update_exit_status(ZrCliReplE2eProcess *process) {
 #endif
 }
 
+/* 轮询合并输出并积累到进程缓冲；等待标记时不能被一次阻塞读取卡住。 */
 static int cli_process_read_available(ZrCliReplE2eProcess *process) {
     char buffer[CLI_REPL_E2E_IO_CHUNK_SIZE];
 
@@ -419,6 +424,7 @@ static int cli_process_output_contains(const ZrCliReplE2eProcess *process, const
     return found;
 }
 
+/* 轮询 CLI 输出到场景所需标记或超时，避免固定睡眠把交互时序误判为功能失败。 */
 static int cli_process_wait_for_substring(ZrCliReplE2eProcess *process, const char *needle, unsigned int timeoutMs) {
     unsigned long long deadline;
 
@@ -446,6 +452,7 @@ static int cli_process_wait_for_substring(ZrCliReplE2eProcess *process, const ch
     return cli_process_output_contains(process, needle);
 }
 
+/* 在 :quit 后限时等待进程退出，并吸收剩余输出供最终诊断。 */
 static int cli_process_wait_for_exit(ZrCliReplE2eProcess *process, unsigned int timeoutMs) {
     unsigned long long deadline;
     int drainPass;
@@ -478,6 +485,7 @@ static int cli_process_wait_for_exit(ZrCliReplE2eProcess *process, unsigned int 
     return 1;
 }
 
+/* 场景失败或超时后停止仍在运行的 CLI，防止测试进程留下后台子进程。 */
 static void cli_process_terminate(ZrCliReplE2eProcess *process) {
     if (process == NULL || process->hasExited) {
         return;
@@ -500,6 +508,7 @@ static void cli_process_terminate(ZrCliReplE2eProcess *process) {
 #endif
 }
 
+/* 释放进程管道和输出缓冲；只在等待或强制终止之后调用。 */
 static void cli_process_close(ZrCliReplE2eProcess *process) {
     if (process == NULL) {
         return;
@@ -539,6 +548,7 @@ static void cli_process_close(ZrCliReplE2eProcess *process) {
     process->outputCapacity = 0;
 }
 
+/* 从测试可执行文件定位同一构建配置的 bin 目录，避免误启动 PATH 中旧 CLI。 */
 static int cli_get_executable_directory(char *buffer, size_t bufferSize) {
 #if defined(_WIN32)
     DWORD length = GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);
@@ -571,6 +581,7 @@ static int cli_get_executable_directory(char *buffer, size_t bufferSize) {
     return 1;
 }
 
+/* 按当前测试二进制目录拼出 CLI 路径，供所有端到端场景启动。 */
 static int cli_build_cli_executable_path(char *buffer,
                                          size_t bufferSize,
                                          char *workingDirectory,
@@ -595,6 +606,7 @@ static int cli_build_cli_executable_path(char *buffer,
     return ZrTests_File_Exists(buffer) ? 1 : 0;
 }
 
+/* 进入真实 REPL 后先查看帮助再退出，验证命令在会话未结束时即可响应。 */
 static int test_repl_help_is_visible_before_quit(void) {
     const char *testName = "repl_help_is_visible_before_quit";
     ZrCliReplE2eProcess process;
@@ -679,6 +691,7 @@ cleanup:
     return status;
 }
 
+/* 裸表达式需在空行提交后求值输出，而不要求尾随分号。 */
 static int test_repl_evaluates_bare_expression_before_quit(void) {
     const char *testName = "repl_evaluates_bare_expression_before_quit";
     ZrCliReplE2eProcess process;
@@ -764,6 +777,7 @@ cleanup:
     return status;
 }
 
+/* 后续提交须读到先前发布的会话绑定。 */
 static int test_repl_expression_can_use_previous_session_binding(void) {
     const char *testName = "repl_expression_can_use_previous_session_binding";
     ZrCliReplE2eProcess process;
@@ -843,6 +857,7 @@ cleanup:
     return status;
 }
 
+/* 赋值后的绑定与 :type 应共享当前代状态，:reset 后旧声明不可再解析。 */
 static int test_repl_persists_generation_backed_binding_until_reset(void) {
     const char *testName = "repl_persists_generation_backed_binding_until_reset";
     ZrCliReplE2eProcess process;
@@ -967,6 +982,7 @@ cleanup:
     return status;
 }
 
+/* 不完整输入应作为用户诊断返回，并允许会话继续接收命令。 */
 static int test_repl_incomplete_expression_reports_user_input(void) {
     const char *testName = "repl_incomplete_expression_reports_user_input";
     ZrCliReplE2eProcess process;
@@ -1059,6 +1075,7 @@ cleanup:
     return status;
 }
 
+/* 缺失分号的声明不得进入持久会话状态，已成功声明仍可继续使用。 */
 static int test_repl_rejects_missing_statement_semicolon_without_publishing(void) {
     const char *testName = "repl_rejects_missing_statement_semicolon_without_publishing";
     ZrCliReplE2eProcess process;
@@ -1146,6 +1163,7 @@ cleanup:
     return status;
 }
 
+/* :type 只查询语义事实；覆盖数值、短路和已有绑定而不执行表达式。 */
 static int test_repl_type_command_reports_expression_inference(void) {
     const char *testName = "repl_type_command_reports_expression_inference";
     ZrCliReplE2eProcess process;
@@ -1366,6 +1384,7 @@ static void cli_sleep_ms(unsigned int milliseconds) {
 #endif
 }
 
+/* 扩展累积输出并维持字符串终止符，使跨读取块的提示和错误可整体搜索。 */
 static int cli_process_append_output(ZrCliReplE2eProcess *process, const char *text, size_t length) {
     size_t requiredCapacity;
     size_t newCapacity;
@@ -1431,6 +1450,7 @@ static int cli_windows_append_repeated(char *buffer, size_t bufferSize, size_t *
     return 1;
 }
 
+/* 按 Windows 命令行转义规则保留单个 argv，防止空格或反斜杠改变 CLI 入口参数。 */
 static int cli_windows_append_quoted_arg(char *buffer, size_t bufferSize, size_t *length, const char *argument) {
     const char *cursor;
     size_t backslashCount = 0;
@@ -1471,6 +1491,7 @@ static int cli_windows_append_quoted_arg(char *buffer, size_t bufferSize, size_t
     return cli_windows_append_char(buffer, bufferSize, length, '"');
 }
 
+/* 为 CreateProcess 构造可逆的参数串；调用方释放返回缓冲。 */
 static char *cli_windows_build_command_line(const char *const *command) {
     size_t requiredLength = 1;
     size_t length = 0;

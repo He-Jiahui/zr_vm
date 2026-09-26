@@ -42,6 +42,8 @@ static TZrBool write_text_file(const TZrChar *destinationPath, const TZrChar *co
     return ZR_TRUE;
 }
 
+/* 清理上次生成的测试副本，避免残留 manifest 和产物干扰增量判断。
+ * TODO: shell 删除命令的返回值被忽略；需注入删除失败并核对测试是否可能误用残留目录。 */
 static void clean_directory_tree(const TZrChar *path) {
     TZrChar command[ZR_TESTS_PATH_MAX * 2];
     TZrChar shellPath[ZR_TESTS_PATH_MAX];
@@ -131,6 +133,7 @@ static void assert_capture_returns_expected_string(const SZrCliRunCapture *captu
     TEST_ASSERT_EQUAL_STRING(expectedExecutedVia, capture->executedVia);
 }
 
+/* 生成 provider 与 consumer 项目，以及 provider 的资源，验证磁盘 ZRM 引用和当前程序集资源查询。 */
 static void prepare_zrm_reference_runtime_fixture(TZrChar *rootPath,
                                                  TZrSize rootPathSize,
                                                  TZrChar *providerProjectPath,
@@ -193,6 +196,7 @@ static void prepare_zrm_reference_runtime_fixture(TZrChar *rootPath,
     TEST_ASSERT_TRUE(write_text_file(consumerResourcePath, "consumer-runtime-resource"));
 }
 
+/* 直接查看打包 ZRM 的资源索引，避免运行时成功但包内缺少声明资源。 */
 static void assert_zrm_has_resource(const TZrChar *zrmPath, const TZrChar *resourceName) {
     SZrLibrary_ZrmArchive archive;
     TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
@@ -208,6 +212,7 @@ static void assert_zrm_has_resource(const TZrChar *zrmPath, const TZrChar *resou
     ZrLibrary_Zrm_Close(&archive);
 }
 
+/* 先打包 provider，再编译并运行 consumer；分别验证引用模块调用和当前程序集资源读取。 */
 static void test_cli_runtime_loads_referenced_zrm_module_and_current_assembly_resource(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar providerProjectPath[ZR_TESTS_PATH_MAX];

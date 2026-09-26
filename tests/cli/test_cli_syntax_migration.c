@@ -16,6 +16,7 @@ static int cli_migration_fail(const char *message) {
     return 1;
 }
 
+/* 从 CTest 提供的 CLI 路径执行 migrate syntax --check，验证结构化报告且源 fixture 完全不变。 */
 int main(void) {
     TZrChar fixturePath[ZR_TESTS_PATH_MAX];
     TZrChar reportPath[CLI_MIGRATION_PATH_CAPACITY];

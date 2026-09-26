@@ -52,6 +52,7 @@ static void write_u32_le(TZrByte *buffer, TZrSize offset, TZrUInt32 value) {
     buffer[offset + 3u] = (TZrByte)((value >> 24u) & 0xFFu);
 }
 
+/* 构造可区分保留与裁剪的函数树，为 manifest 目标绑定提供稳定 flat index。 */
 static SZrFunction *create_preserve_method_fixture(SZrState *state,
                                                    const TZrChar *usedName,
                                                    const TZrChar *keptName) {
@@ -116,6 +117,7 @@ static SZrFunction *create_preserve_method_fixture(SZrState *state,
     return root;
 }
 
+/* 给函数挂接泛型 TypeSpec 与签名元数据，以验证保留根绑定到真实 token。 */
 static void attach_list_foo_type_spec_metadata(SZrState *state, SZrFunction *function) {
     const TZrUInt32 listStringIndex = 10u;
     const TZrUInt32 fooStringIndex = 11u;
@@ -187,6 +189,7 @@ static void attach_list_foo_type_spec_metadata(SZrState *state, SZrFunction *fun
     function->metadataTokenRecords[1].signatureHash = signatureHash;
 }
 
+/* 构造仅有开放泛型 TypeRef 的输入，覆盖缺失 TypeSpec 时的合成路径。 */
 static void attach_list_type_ref_metadata(SZrState *state, SZrFunction *function) {
     const TZrUInt32 listStringIndex = 10u;
     const TZrUInt32 fooStringIndex = 11u;
@@ -249,6 +252,7 @@ static void attach_list_type_ref_metadata(SZrState *state, SZrFunction *function
     function->metadataTokenRecords[1].signatureHash = typeRefSignatureHash;
 }
 
+/* 同时提供开放 TypeRef 与封闭 TypeSpec，核对实例化的基类型绑定。 */
 static void attach_list_foo_type_ref_and_type_spec_metadata(SZrState *state, SZrFunction *function) {
     const TZrUInt32 listStringIndex = 10u;
     const TZrUInt32 fooStringIndex = 11u;
@@ -346,6 +350,7 @@ static void attach_list_foo_type_ref_and_type_spec_metadata(SZrState *state, SZr
     function->metadataTokenRecords[3].signatureHash = typeSpecSignatureHash;
 }
 
+/* 构造 MethodSpec 元数据，使泛型方法保留规则能与方法 token 对齐。 */
 static void attach_generic_method_spec_metadata(SZrState *state, SZrFunction *function) {
     const TZrUInt32 fooStringIndex = 11u;
     const TZrUInt32 methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
@@ -420,6 +425,7 @@ static void attach_generic_method_spec_metadata(SZrState *state, SZrFunction *fu
     TEST_ASSERT_NOT_NULL(function->typedExportedSymbols[0].name);
 }
 
+/* 向样例加字段导出符号，区分字段、方法和类型导出的 token 绑定。 */
 static void attach_field_export_symbol(SZrState *state, SZrFunction *function) {
     const TZrUInt32 fieldToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u);
     const TZrUInt32 fieldSignatureToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 3u);
@@ -442,6 +448,7 @@ static void attach_field_export_symbol(SZrState *state, SZrFunction *function) {
     TEST_ASSERT_NOT_NULL(function->typedExportedSymbols[0].name);
 }
 
+/* 以 TypeDef 为开放基类型构造泛型实例化，覆盖不同于 TypeRef 的绑定路径。 */
 static void attach_list_foo_type_def_and_type_spec_metadata(SZrState *state, SZrFunction *function) {
     const TZrUInt32 listStringIndex = 10u;
     const TZrUInt32 fooStringIndex = 11u;
@@ -539,6 +546,7 @@ static void attach_list_foo_type_def_and_type_spec_metadata(SZrState *state, SZr
     function->metadataTokenRecords[3].signatureHash = typeSpecSignatureHash;
 }
 
+/* 检查保留规则输出的 C 代码仍包含样例函数全集，避免仅绑定 token 却未保留实现。 */
 static void assert_generated_preserves_all_fixture_functions(SZrState *state,
                                                              SZrFunction *function,
                                                              SZrAotWriterOptions *options,
@@ -566,6 +574,7 @@ static void assert_generated_preserves_all_fixture_functions(SZrState *state,
     free(generatedCText);
 }
 
+/* 对照裁剪后的生成 C，确认未保留目标不会因前缀匹配而残留。 */
 static void assert_generated_trims_kept_fixture_function(SZrState *state,
                                                          SZrFunction *function,
                                                          SZrAotWriterOptions *options,
@@ -593,6 +602,7 @@ static void assert_generated_trims_kept_fixture_function(SZrState *state,
     free(generatedCText);
 }
 
+/* 从 writer 输出核对 manifest 泛型根已进入生成元数据。 */
 static void assert_generated_reports_manifest_generic_roots(SZrState *state,
                                                             SZrFunction *function,
                                                             SZrAotWriterOptions *options,
@@ -618,6 +628,7 @@ static void assert_generated_reports_manifest_generic_roots(SZrState *state,
     free(generatedCText);
 }
 
+/* 核对生成代码携带 manifest 导出声明，防止只更新内存选项。 */
 static void assert_generated_reports_manifest_export_declarations(SZrState *state,
                                                                   SZrFunction *function,
                                                                   SZrAotWriterOptions *options,
@@ -656,6 +667,7 @@ static void assert_generated_reports_manifest_export_declarations(SZrState *stat
     free(generatedCText);
 }
 
+/* 核对导出声明在最终生成代码中的 token 绑定。 */
 static void assert_generated_reports_manifest_export_token_binding(SZrState *state,
                                                                    SZrFunction *function,
                                                                    SZrAotWriterOptions *options,
@@ -688,6 +700,7 @@ static void assert_generated_reports_manifest_export_token_binding(SZrState *sta
     free(generatedCText);
 }
 
+/* 核对封闭泛型根的 TypeSpec 绑定已写入生成代码。 */
 static void assert_generated_reports_manifest_generic_type_spec_binding(SZrState *state,
                                                                         SZrFunction *function,
                                                                         SZrAotWriterOptions *options,
@@ -712,6 +725,7 @@ static void assert_generated_reports_manifest_generic_type_spec_binding(SZrState
     free(generatedCText);
 }
 
+/* 核对共享泛型实例化根在生成结果中有明确绑定。 */
 static void assert_generated_reports_manifest_generic_instantiation_binding(SZrState *state,
                                                                             SZrFunction *function,
                                                                             SZrAotWriterOptions *options,
@@ -736,6 +750,7 @@ static void assert_generated_reports_manifest_generic_instantiation_binding(SZrS
     free(generatedCText);
 }
 
+/* 核对开放 TypeRef 基类型的实例化绑定未丢失。 */
 static void assert_generated_reports_manifest_generic_instantiation_type_ref_binding(
         SZrState *state,
         SZrFunction *function,
@@ -761,6 +776,7 @@ static void assert_generated_reports_manifest_generic_instantiation_type_ref_bin
     free(generatedCText);
 }
 
+/* 核对开放 TypeDef 基类型的实例化绑定未丢失。 */
 static void assert_generated_reports_manifest_generic_instantiation_type_def_binding(
         SZrState *state,
         SZrFunction *function,
@@ -786,6 +802,7 @@ static void assert_generated_reports_manifest_generic_instantiation_type_def_bin
     free(generatedCText);
 }
 
+/* 核对泛型方法 MethodSpec 保留根写入生成代码。 */
 static void assert_generated_reports_manifest_generic_method_spec_binding(
         SZrState *state,
         SZrFunction *function,
@@ -811,6 +828,7 @@ static void assert_generated_reports_manifest_generic_method_spec_binding(
     free(generatedCText);
 }
 
+/* manifest 方法保留规则应解析到 writer 所用 flat index。 */
 static void test_cli_aot_writer_options_bind_preserve_method_to_manifest_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -865,6 +883,7 @@ static void test_cli_aot_writer_options_bind_preserve_method_to_manifest_root(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 点分方法目标只能匹配指定可调用对象。 */
 static void test_cli_aot_writer_options_bind_dotted_method_target_to_exact_callable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -913,6 +932,7 @@ static void test_cli_aot_writer_options_bind_dotted_method_target_to_exact_calla
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 类型保留规则应扩展到其方法前缀而非单个方法。 */
 static void test_cli_aot_writer_options_bind_type_preserve_methods_to_callable_prefix(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -963,6 +983,7 @@ static void test_cli_aot_writer_options_bind_type_preserve_methods_to_callable_p
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已启用 feature 条件应让对应保留规则进入 writer。 */
 static void test_cli_aot_writer_options_applies_matching_feature_conditioned_preserve_rule(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1022,6 +1043,7 @@ static void test_cli_aot_writer_options_applies_matching_feature_conditioned_pre
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 未满足 feature 条件时不能产生保留根。 */
 static void test_cli_aot_writer_options_skips_mismatched_feature_conditioned_preserve_rule(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1082,6 +1104,7 @@ static void test_cli_aot_writer_options_skips_mismatched_feature_conditioned_pre
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 泛型保留规则的目标与实参需原样传到 writer 选项。 */
 static void test_cli_aot_writer_options_bind_generic_preserve_arguments_to_writer_options(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1145,6 +1168,7 @@ static void test_cli_aot_writer_options_bind_generic_preserve_arguments_to_write
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* manifest 的方法、类型和字段导出声明应桥接到 writer。 */
 static void test_cli_aot_writer_options_bridges_manifest_export_declarations(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1219,6 +1243,7 @@ static void test_cli_aot_writer_options_bridges_manifest_export_declarations(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 重复导出声明应失败并清空部分绑定结果。 */
 static void test_cli_aot_writer_options_rejects_duplicate_manifest_export_declarations(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1271,6 +1296,7 @@ static void test_cli_aot_writer_options_rejects_duplicate_manifest_export_declar
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 方法导出应绑定对应 MemberDef token。 */
 static void test_cli_aot_writer_options_binds_method_export_declaration_to_member_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1331,6 +1357,7 @@ static void test_cli_aot_writer_options_binds_method_export_declaration_to_membe
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 字段导出应绑定对应字段 MemberDef token。 */
 static void test_cli_aot_writer_options_binds_field_export_declaration_to_member_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1391,6 +1418,7 @@ static void test_cli_aot_writer_options_binds_field_export_declaration_to_member
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 类型导出应绑定 TypeDef token。 */
 static void test_cli_aot_writer_options_binds_type_export_declaration_to_type_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1451,6 +1479,7 @@ static void test_cli_aot_writer_options_binds_type_export_declaration_to_type_to
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 封闭泛型保留根应绑定 TypeSpec 与签名。 */
 static void test_cli_aot_writer_options_binds_generic_preserve_to_type_spec_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1514,6 +1543,7 @@ static void test_cli_aot_writer_options_binds_generic_preserve_to_type_spec_toke
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 带共享类型实例化记录的保留根应转为 writer 可消费的绑定。 */
 static void test_cli_aot_writer_options_materializes_bound_generic_preserve_instantiation_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1578,6 +1608,7 @@ static void test_cli_aot_writer_options_materializes_bound_generic_preserve_inst
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 开放基类型为 TypeRef 时保留实例化关系。 */
 static void test_cli_aot_writer_options_materializes_generic_preserve_instantiation_open_base_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1643,6 +1674,7 @@ static void test_cli_aot_writer_options_materializes_generic_preserve_instantiat
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 开放基类型为 TypeDef 时保留实例化关系。 */
 static void test_cli_aot_writer_options_materializes_generic_preserve_instantiation_type_def_base_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1708,6 +1740,7 @@ static void test_cli_aot_writer_options_materializes_generic_preserve_instantiat
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 仅有开放 TypeRef 时可合成缺失的封闭 TypeSpec 并写出。 */
 static void test_cli_aot_writer_options_synthesizes_missing_generic_preserve_type_spec_from_open_type_ref(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1789,6 +1822,7 @@ static void test_cli_aot_writer_options_synthesizes_missing_generic_preserve_typ
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 泛型方法规则应绑定 MethodSpec 与成员定义 token。 */
 static void test_cli_aot_writer_options_binds_generic_method_preserve_to_method_spec(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1857,6 +1891,7 @@ static void test_cli_aot_writer_options_binds_generic_method_preserve_to_method_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* full AOT 不应接受无法绑定到元数据的泛型保留根。 */
 static void test_cli_aot_writer_options_rejects_unbound_generic_preserve_root_in_full_aot(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1920,6 +1955,7 @@ static void test_cli_aot_writer_options_rejects_unbound_generic_preserve_root_in
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* full AOT 不应接受仅有 TypeSpec 而缺实例化绑定的保留根。 */
 static void test_cli_aot_writer_options_rejects_typespec_only_generic_preserve_root_in_full_aot(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;

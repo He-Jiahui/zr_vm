@@ -137,6 +137,7 @@ static void assert_text_not_contains(const TZrChar *text, const TZrChar *needle)
     TEST_ASSERT_NULL(strstr(text, needle));
 }
 
+/* 只替换 fixture 中的首个目标片段，使导入关系改动可控且可比较重编译影响。 */
 static TZrBool rewrite_text_file_replacing_once(const TZrChar *path,
                                                 const TZrChar *needle,
                                                 const TZrChar *replacement) {
@@ -186,6 +187,8 @@ static TZrBool rewrite_text_file_replacing_once(const TZrChar *path,
     return success;
 }
 
+/* 清理上次生成的测试副本，避免残留 manifest 和产物干扰增量判断。
+ * TODO: shell 删除命令的返回值被忽略；需注入删除失败并核对测试是否可能误用残留目录。 */
 static void clean_directory_tree(const TZrChar *path) {
     TZrChar command[ZR_TESTS_PATH_MAX * 2];
     TZrChar shellPath[ZR_TESTS_PATH_MAX];
@@ -220,6 +223,7 @@ static void build_generated_project_root(const TZrChar *baseName, TZrChar *buffe
                                                        bufferSize));
 }
 
+/* 从只读项目样例复制到独立生成目录，允许各增量场景修改导入关系而不污染原样例。 */
 static TZrBool prepare_decorator_import_fixture_named(const TZrChar *baseName,
                                                       TZrChar *projectRoot,
                                                       TZrSize projectRootSize,
@@ -328,6 +332,7 @@ static TZrBool prepare_cli_args_fixture(TZrChar *projectRoot,
     return ZR_TRUE;
 }
 
+/* 建立带依赖包的项目副本，验证路径解析从主包根切换到依赖包根。 */
 static TZrBool prepare_dependency_path_fixture(TZrChar *projectRoot,
                                                TZrSize projectRootSize,
                                                TZrChar *projectPath,
@@ -369,6 +374,7 @@ static TZrBool prepare_dependency_path_fixture(TZrChar *projectRoot,
            write_text_file(mathProjectPath, mathProjectContent);
 }
 
+/* 建立可实际编译的依赖项目，检查依赖模块产物归属。 */
 static TZrBool prepare_dependency_compile_fixture(TZrChar *projectRoot,
                                                   TZrSize projectRootSize,
                                                   TZrChar *projectPath,
@@ -416,6 +422,7 @@ static TZrBool prepare_dependency_compile_fixture(TZrChar *projectRoot,
            write_text_file(mathModulePath, "pub var value = 1;\n");
 }
 
+/* 从项目全局状态读取持久化 manifest，使增量统计与磁盘清单能交叉验证。 */
 static TZrBool load_manifest_for_project(const TZrChar *projectPath,
                                          SZrCliProjectContext *projectContext,
                                          SZrCliIncrementalManifest *manifest) {
@@ -487,6 +494,7 @@ static void assert_manifest_entry_missing(const SZrCliIncrementalManifest *manif
     TEST_ASSERT_NULL(ZrCli_Project_FindManifestEntryConst(manifest, moduleName));
 }
 
+/* 首次编译、无修改重编译及两次运行互相对照，保护 manifest 跳过计数和产物哈希稳定性。 */
 static void test_cli_incremental_decorator_import_compile_skips_clean_rebuild_and_keeps_binary_run_stable(void) {
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -609,6 +617,7 @@ static void test_cli_incremental_decorator_import_compile_skips_clean_rebuild_an
     ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
+/* 移除源码导入后重编译，验证不可达模块从 manifest 与磁盘产物同时退出而程序仍能运行。 */
 static void test_cli_incremental_decorator_import_prunes_removed_modules_and_keeps_binary_run_consistent(void) {
     static const TZrChar *replacementMainSource = "return 7;\n";
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
@@ -740,6 +749,7 @@ static void test_cli_incremental_decorator_import_prunes_removed_modules_and_kee
     ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
+/* 重命名导入目标后只重建受影响模块，复用未变依赖并清除旧产物。 */
 static void test_cli_incremental_decorator_import_rename_reuses_clean_dependencies_and_prunes_old_artifacts(void) {
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -870,6 +880,7 @@ static void test_cli_incremental_decorator_import_rename_reuses_clean_dependenci
     ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
+/* 关闭中间产物时，可达模块的旧 .zri 也应删除，避免下次构建误读。 */
 static void test_cli_incremental_disabling_intermediate_prunes_stale_zri_for_reachable_modules(void) {
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -964,6 +975,7 @@ static void test_cli_incremental_disabling_intermediate_prunes_stale_zri_for_rea
     ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
+/* 点分模块名须映射到嵌套源文件与产物路径。 */
 static void test_cli_project_path_resolution_maps_dotted_module_name_to_nested_artifacts(void) {
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -1003,6 +1015,7 @@ static void test_cli_project_path_resolution_maps_dotted_module_name_to_nested_a
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 依赖模块路径应落在其包目录，避免写入主项目 bin。 */
 static void test_cli_project_path_resolution_maps_dependency_module_to_package_roots(void) {
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -1054,6 +1067,7 @@ static void test_cli_project_path_resolution_maps_dependency_module_to_package_r
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 项目 full AOT 配置应进入 writer 选项而非停留在 manifest 字段。 */
 static void test_cli_project_aot_mode_applies_full_aot_writer_option(void) {
     static const TZrChar *projectContent =
             "{\n"
@@ -1093,6 +1107,7 @@ static void test_cli_project_aot_mode_applies_full_aot_writer_option(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 未开启 full AOT 时维持 hybrid 写出选项的默认值。 */
 static void test_cli_project_aot_mode_keeps_hybrid_writer_option_default(void) {
     static const TZrChar *projectContent =
             "{\n"
@@ -1129,6 +1144,7 @@ static void test_cli_project_aot_mode_keeps_hybrid_writer_option_default(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 从实际项目编译入口确认 full AOT 会生成对应 C 源文件。 */
 static void test_cli_compile_emit_aot_c_writes_full_aot_project_c_source(void) {
     static const TZrChar *projectContent =
             "{\n"
@@ -1203,6 +1219,7 @@ static void test_cli_compile_emit_aot_c_writes_full_aot_project_c_source(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 编译跨包导入时，依赖模块的二进制产物应保存在依赖包根。 */
 static void test_cli_incremental_compiles_dependency_modules_into_package_binary_root(void) {
     TZrChar projectRoot[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -1278,6 +1295,7 @@ static void test_cli_incremental_compiles_dependency_modules_into_package_binary
     }
 }
 
+/* ZRM 打包只纳入可达模块及声明资源，防止将无关文件一并发布。 */
 static void test_cli_compile_emit_zrm_packs_reachable_modules_and_resources(void) {
     static const TZrChar *projectContent =
             "{\n"

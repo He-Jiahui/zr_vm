@@ -12,6 +12,8 @@ function assert(condition, message) {
     }
 }
 
+// CTest 传入 CLI 可执行路径；此场景在同一 REPL 会话中依次修改局部变量、对象成员和数组元素，再查询结果与静态数值事实；防止查询继续读取旧值。
+// TODO: 这里等待 exit 后立即检查已收集输出；子进程 stdio 可能尚未关闭，需用慢速或大量尾部输出的假 CLI 验证是否漏读，再决定是否等待 close。
 async function main() {
     const child = spawn(cliPath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -32,6 +34,7 @@ async function main() {
     child.stdin.write('seed + 1\n');
     child.stdin.write('\n');
     child.stdin.write(':type seed + 1\n');
+    // BUG: 当前 MSVC CLI 运行此会话时对象声明报 Failed to register variable in pre-execution Semantic IR，obj 后续读写均找不到绑定，40 的结果断言失败。
     child.stdin.write('var obj = {a: 10};\n');
     child.stdin.write('\n');
     child.stdin.write('obj.a = 40;\n');

@@ -1,3 +1,4 @@
+/* 由 test_cli_project_incremental.c 包含；使用同一 fixture 与 Unity 主入口。 */
 #ifndef ZR_VM_TEST_CLI_COMPTIME_CACHE_INCREMENTAL_CASES_H
 #define ZR_VM_TEST_CLI_COMPTIME_CACHE_INCREMENTAL_CASES_H
 
@@ -39,6 +40,7 @@ static TZrBool cli_comptime_cache_read_bytes(
     return ZR_TRUE;
 }
 
+/* 依次验证首次缓存、命中、同长度语义改动失效和损坏缓存重建，并比较产物字节保持确定性。 */
 static void test_cli_incremental_persists_comptime_cache_and_recovers_corruption(void) {
     static const TZrChar *projectContent =
             "{\n"
