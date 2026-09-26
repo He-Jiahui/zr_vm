@@ -42,6 +42,9 @@ static const TZrChar *kTaskCooperativeTaskField = "__zr_task_cooperative_task";
 static const TZrChar *kTaskCooperativeTurnsField = "__zr_task_cooperative_turns";
 static const TZrChar *kTaskProviderAwaitRegistrationField = "__zr_task_provider_await_registration";
 
+/* 这些私有字段形成 Job -> Task -> Scheduler 的共享 ABI：Job 仅提供一次性 callable，
+ * Task 持有完成状态与归属 scheduler，thread provider 通过公开 handoff API 访问它们。 */
+
 static SZrObject *task_runtime_self_object(const ZrLibCallContext *context) {
     SZrTypeValue *selfValue = ZrLib_CallContext_Self(context);
 
@@ -75,6 +78,8 @@ static void task_runtime_set_value_field(SZrState *state,
         return;
     }
 
+    /* BUG: 底层 void setter 在 pin/key 分配失败时静默返回；上层构造 Task、
+     * 标记 Job 已消费和登记 await hook 均无法确认字段写入，仍可报告成功。 */
     ZrLib_Object_SetFieldCString(state, object, fieldName, value);
 }
 
@@ -505,6 +510,8 @@ static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
         hasSavedCallInfoReturn = ZR_TRUE;
     }
 
+    /* Job 回调可能触发 GC 或异常跳转。保存调用帧锚点，并在返回后以本地根重新定位
+     * Task/结果，才能把完成状态写回原 caller-domain Task。 */
     status = ZrCore_Exception_TryRun(state, task_runtime_execute_callable_body, &request);
     {
         static const SZrAotGcRootSlot slots[] = {
@@ -587,6 +594,9 @@ static TZrBool task_runtime_scheduler_step_internal(SZrState *state, SZrObject *
 
     queuedValue = ZrLib_Array_Get(state, queue, (TZrSize)head);
     if (queuedValue == ZR_NULL) {
+        /* BUG: 这里只把 head 归零，没有删除队列中的已执行 Task。下一次
+         * Scheduler.schedule/yieldNow/delay 追加新项后，会先重跑旧 Task；
+         * 旧 Task 的 callable 已清空，可从 completed 被错误改成 faulted。 */
         task_runtime_set_int_field(state, scheduler, kTaskQueueHeadField, 0);
         return ZR_FALSE;
     }
@@ -781,6 +791,7 @@ TZrBool ZrLibrary_TaskRuntime_PrepareJob(SZrState *state,
         return task_runtime_raise_runtime_error(state, "Job is missing its callable");
     }
 
+    /* 一次性消费先于 provider 排队；即使后续建立 Task/GC 根失败也不重放 callable。 */
     task_runtime_set_bool_field(state, job, kTaskJobConsumedField, ZR_TRUE);
     if (!task_runtime_create_task_handle(state, scheduler, callable, result) ||
         result->type != ZR_VALUE_TYPE_OBJECT || result->value.object == ZR_NULL) {
@@ -921,6 +932,8 @@ TZrBool ZrLibrary_TaskRuntime_RegisterAwaitHook(
         return ZR_FALSE;
     }
     ZrCore_Value_InitAsNativePointer(state, &registrationValue, (TZrPtr)registration);
+    /* BUG: setter 可能静默失败，本函数仍返回 true。ThreadScheduler 随后接受 Job，
+     * 但 Task.result 找不到等待钩子而退回本地队列等待，无法处理 provider 任务。 */
     task_runtime_set_value_field(state, scheduler, kTaskProviderAwaitRegistrationField, &registrationValue);
     return ZR_TRUE;
 }

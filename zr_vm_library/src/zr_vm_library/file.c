@@ -284,6 +284,8 @@ static void file_compact_separators(TZrChar *path) {
         return;
     }
 
+    /* BUG: Windows UNC 输入以两个分隔符开头；这里连首部也折叠，
+     * NormalizePath 随后只能识别单分隔符根，网络共享路径会变成本地根。 */
     while (path[readIndex] != '\0') {
         TZrChar ch = path[readIndex++];
         if (file_is_separator(ch)) {
@@ -653,6 +655,8 @@ static TZrBool file_join_into(const TZrChar *path1,
 
     path1HasSeparator = file_is_separator(path1[length1 - 1]);
     path2HasSeparator = file_is_separator(path2[0]);
+    /* BUG: snprintf 截断时返回原本需要的长度，仍为非负；三个分支都把截断
+     * 当作成功。PathJoin 无错误返回，project/CLI 的固定缓冲区会得到残缺路径。 */
     if (path1HasSeparator && path2HasSeparator) {
         return snprintf(result, resultSize, "%s%s", path1, path2 + 1) >= 0;
     }
@@ -916,6 +920,8 @@ TZrBool ZrLibrary_File_IsAbsolutePath(TZrNativeString path) {
     }
 
 #if defined(ZR_PLATFORM_WIN)
+    /* BUG: Windows 的 C:foo 是相对该盘当前目录的路径；只检查盘符与冒号
+     * 会把它当绝对路径，NormalizePath 随后把它重写为 C:\foo。 */
     return (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':') ||
            (file_is_separator(path[0]) && file_is_separator(path[1]));
 #else
@@ -1590,6 +1596,8 @@ TZrNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TZrNativeString p
     readSize = fread(buffer, 1, reader->size, reader->file);
     buffer[readSize] = '\0';
     if (readSize != reader->size && ferror(reader->file)) {
+        /* BUG: 读取出错时 CloseRead 释放 reader，后续释放 buffer 仍读取 reader->size；
+         * 该错误路径构成 use-after-free，释放尺寸也可能与分配尺寸不符。 */
         ZrLibrary_File_CloseRead(global, reader);
         ZrCore_Memory_RawFreeWithType(global, buffer, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
         return ZR_NULL;

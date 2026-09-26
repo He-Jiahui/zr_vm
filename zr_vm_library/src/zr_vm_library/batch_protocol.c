@@ -5,6 +5,9 @@
 static TZrBool batch_prepare(const SZrBatchBuffer *input, SZrBatchBuffer *output,
                              TZrSize count, SZrBatchDiagnostic *diagnostic) {
     TZrBool alias = ZR_FALSE;
+    /* BUG: 两个 buffer 各自通过核心边界校验并不保证 Map 的输出槽足以容纳
+     * input->elementSize 字节。若输入槽 8 字节、独立输出槽 1 字节且回调按
+     * elementSize 写出（如 test_ssa_batch_vectorization 的 add_one），将越界写入。 */
     if (output == ZR_NULL || !ZrCore_BatchBuffer_Validate(input, count, diagnostic) ||
         !ZrCore_BatchBuffer_Validate(output, count, diagnostic) ||
         !ZrCore_BatchBuffers_MayAlias(input, count, output, count, &alias, diagnostic)) return ZR_FALSE;

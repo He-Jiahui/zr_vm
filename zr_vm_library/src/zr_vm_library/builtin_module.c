@@ -4,6 +4,9 @@
 
 static const TZrChar *kBuiltinBoxedValueField = "__zr_builtin_boxed_value";
 
+/* zr.builtin 的包装对象以私有字段保存原值，协议 equals/hashCode/compareTo 均先解箱；
+ * 类型描述符还向编译器和反射层声明相同的内建协议角色。 */
+
 static const TZrChar *builtin_wrapper_type_name_for_value_type(EZrValueType valueType) {
     switch (valueType) {
         case ZR_VALUE_TYPE_BOOL:
@@ -74,6 +77,9 @@ static TZrInt64 builtin_compare_values(SZrState *state,
         TZrFloat64 rightNumber = ZR_VALUE_IS_TYPE_FLOAT(stableRight->type)
                                          ? stableRight->value.nativeObject.nativeDouble
                                          : (TZrFloat64)stableRight->value.nativeObject.nativeInt64;
+        /* BUG: UInt64 大于 INT64_MAX 时经 nativeInt64 转为 double，符号变负；
+         * 不同 Int64 如 2^53 与 2^53+1 也会折成同一 double，但上方精确相等
+         * 检查仍判不同，双向 compareTo/IComparer.compare 都返回 +1。 */
         return leftNumber < rightNumber ? -1 : 1;
     }
 
@@ -89,6 +95,8 @@ static TZrInt64 builtin_compare_values(SZrState *state,
         return strcmp(leftText != ZR_NULL ? leftText : "", rightText != ZR_NULL ? rightText : "") < 0 ? -1 : 1;
     }
 
+    /* TODO: 不同且不相等的值可能具有相同 hash；此回退在碰撞时两个调用方向
+     * 都返回 1。需确认 IComparable 是否要求反对称，再确定跨类型全序策略。 */
     return ZrCore_Value_GetHash(state, stableLeft) < ZrCore_Value_GetHash(state, stableRight) ? -1 : 1;
 }
 
@@ -136,6 +144,8 @@ static TZrBool builtin_make_boxed_wrapper(const ZrLibCallContext *context,
         return ZR_FALSE;
     }
 
+    /* BUG: 底层 void setter 可能因 pin 或字段名分配失败而不写值，本函数却
+     * 仍返回成功的包装对象；后续 equals/hashCode 读到的是对象本身。 */
     ZrLib_Object_SetFieldCString(state, boxedObject, kBuiltinBoxedValueField, source);
     ZrLib_Value_SetObject(state, result, boxedObject, ZR_VALUE_TYPE_OBJECT);
     ZrLib_TempValueRoot_End(&root);

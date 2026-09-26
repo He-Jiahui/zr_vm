@@ -21,6 +21,9 @@ typedef TZrBool (*FZrLibraryTaskRuntimeAwaitHook)(
         struct SZrObject *task,
         TZrPtr context);
 
+/** @brief provider 自有的等待回调登记；scheduler 字段仅保存此结构的裸指针。
+ *  @pre 登记对象及其 context 必须活到 scheduler 停止使用等待钩子之后。
+ */
 typedef struct ZrLibraryTaskRuntimeAwaitRegistration {
     FZrLibraryTaskRuntimeAwaitHook awaitHook;
     TZrPtr context;
@@ -37,9 +40,10 @@ ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_ScheduleJob(
         struct SZrObject *job,
         struct SZrTypeValue *result);
 
-/* Prepare a provider-owned work item without exposing Job storage. The returned
- * root keeps the caller-domain Task and its callable alive until the provider
- * executes, faults, or releases the item exactly once. */
+/** @brief 让 provider 消费 Job 并获得 caller-domain Task 的 GC 根句柄。
+ *  @pre 同一 Job 只能消费一次；provider 必须在同一 GC 域完成或置错后调用 ReleasePreparedJob。
+ *  @note isolated worker 只复制 callable 到自己的域；Task 的完成写回在 caller 域进行。
+ */
 ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_PrepareJob(
         struct SZrState *state,
         struct SZrObject *scheduler,
@@ -69,8 +73,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_CompletePreparedJob(
         ZrLibraryTaskRuntimeWorkItem *item,
         const struct SZrTypeValue *result);
 
-/* Provider schedulers register a native wait hook so Task.result() can await
- * completion without exposing a source-level pump/step member. */
+/** @brief provider 注册等待钩子，使 Task.result 经 scheduler 等待任务完成。
+ *  @pre registration 保持有效直到不再可能调用 Task.result；该 API 不复制结构体。
+ */
 ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_RegisterAwaitHook(
         struct SZrState *state,
         struct SZrObject *scheduler,
