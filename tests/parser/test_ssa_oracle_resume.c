@@ -1,6 +1,8 @@
 #include "ssa_state_map_fixture.h"
 #include "ssa_oracle_resume_fault_allocator.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
+#include "zr_vm_parser/exec_ir_execbc.h"
+#include "ssa_differential_support.h"
 
 #include <string.h>
 
@@ -516,9 +518,11 @@ static void test_repeated_loop_checkpoint_advances_and_accumulates_effects(void)
     TZrExecIrValueId condition = value(ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_FALSE);
     SZrExecIrOracleValue initial[1] = {scalar(7)};
     SZrExecIrOracleExecutionResult uninterrupted, resumed;
+    SZrExecBcProjection projection = {0};
     SResumeEffects referenceEffects = {0}, resumedEffects = {0};
     SZrExecIrOracleInput input;
     SZrExecIrOracleCheckpoint stop;
+    SZrExecIrPhiIncoming effectIncoming[2] = {{1u, 0u}, {2u, 4u}};
     TZrUInt32 iteration;
     blocks(3u);
     edges(1u, 2u, 0u);
@@ -527,9 +531,17 @@ static void test_repeated_loop_checkpoint_advances_and_accumulates_effects(void)
     effect_metadata(emit(2u, ZR_EXEC_IR_OPCODE_CALL,
             ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE,
             receiver, condition), 1u, ZR_TRUE, ZR_TRUE);
+    function.instructions[1].effectIn = 3u;
+    function.instructions[1].effectOut = 4u;
+    function.blocks[1].effectPhiResult = 3u;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendPhiIncoming(
+            &function, effectIncoming, 2u, &function.blocks[1].effectPhiIncomings));
     terminate(2u, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH, 0u, condition);
     terminate(3u, ZR_EXEC_IR_OPCODE_RETURN, 0u, receiver);
     build();
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_LowerExecBc(&function, &projection, &diagnostic));
+    TEST_ASSERT_TRUE(projection.runnable);
+    ZrParser_ExecBcProjection_Free(&projection);
     input = oracle_input(initial, 1u, &referenceEffects);
     input.call = loop_condition;
     ZrCore_ExecIr_OracleResultInit(&uninterrupted);
@@ -688,13 +700,33 @@ static TZrBool invoke(void *userData,
     return ZR_TRUE;
 }
 
+static TZrBool projected_invoke(void *userData,
+                               const SZrExecBcInstruction *instruction,
+                               const SZrExecIrOracleValue *operands,
+                               TZrUInt32 operandCount,
+                               SZrExecIrOracleValue *result, TZrBool *threw) {
+    SResumeEffects *effects = (SResumeEffects *)userData;
+    if (instruction->opcode != ZR_EXEC_IR_OPCODE_INVOKE || operandCount != 1u ||
+        operands[0].kind != ZR_EXEC_IR_ORACLE_VALUE_SIGNED ||
+        operands[0].as.signedInteger != 7) return ZR_FALSE;
+    ++effects->calls;
+    *threw = effects->throwInvoke;
+    if (!*threw) *result = scalar(42);
+    return ZR_TRUE;
+}
+
 static void compare_invoke_resume(TZrBool throwing) {
     TZrExecIrValueId receiver = value(ZR_EXEC_IR_OWNERSHIP_GC, ZR_TRUE);
     TZrExecIrValueId fallback = value(ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_TRUE);
     TZrExecIrValueId result = value(ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_FALSE);
     SZrExecIrOracleValue initial[3] = {scalar(7), scalar(99), scalar(-777)};
     SZrExecIrOracleExecutionResult uninterrupted, resumed;
-    SResumeEffects referenceEffects = {0}, resumedEffects = {0};
+    SZrExecBcProjection projection = {0};
+    SZrExecBcExecutionInput projectedInput = {0};
+    SZrExecBcExecutionResult projected;
+    SZrSsaObservation expected = {0}, actual = {0};
+    SZrSsaDiffDiagnostic difference;
+    SResumeEffects referenceEffects = {0}, resumedEffects = {0}, projectedEffects = {0};
     SZrExecIrOracleInput input;
     SZrExecIrOracleCheckpoint stop;
     blocks(3u);
@@ -708,7 +740,16 @@ static void compare_invoke_resume(TZrBool throwing) {
     terminate(2u, ZR_EXEC_IR_OPCODE_RETURN, 0u, result);
     terminate(3u, ZR_EXEC_IR_OPCODE_RETURN, 0u, fallback);
     build();
-    referenceEffects.throwInvoke = resumedEffects.throwInvoke = throwing;
+    referenceEffects.throwInvoke = resumedEffects.throwInvoke = projectedEffects.throwInvoke = throwing;
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_LowerExecBc(&function, &projection, &diagnostic));
+    TEST_ASSERT_TRUE(projection.runnable);
+    projectedInput.initialValues = initial;
+    projectedInput.initialValueCount = 3u;
+    projectedInput.invoke = projected_invoke;
+    projectedInput.invokeUserData = &projectedEffects;
+    ZrParser_ExecBcExecutionResult_Init(&projected);
+    TEST_ASSERT_TRUE(ZrParser_ExecBcProjection_Run(&projection, &projectedInput,
+                                                  &projected, &diagnostic));
     input = oracle_input(initial, 3u, &referenceEffects);
     input.invoke = invoke;
     input.invokeUserData = &referenceEffects;
@@ -725,6 +766,16 @@ static void compare_invoke_resume(TZrBool throwing) {
     TEST_ASSERT_EQUAL_UINT32(1u, resumedEffects.calls);
     TEST_ASSERT_EQUAL_UINT32(1u, resumed.eventCount);
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_ORACLE_EVENT_CALL, resumed.events[0].kind);
+    TEST_ASSERT_EQUAL_UINT32(1u, projectedEffects.calls);
+    TEST_ASSERT_EQUAL_UINT32(1u, projected.eventCount);
+    TEST_ASSERT_EQUAL(resumed.events[0].kind, projected.events[0].kind);
+    TEST_ASSERT_EQUAL_UINT32(resumed.events[0].instructionId,
+                             projected.events[0].instructionId);
+    TEST_ASSERT_EQUAL_UINT32(resumed.events[0].sourceId,
+                             projected.events[0].sourceId);
+    TEST_ASSERT_EQUAL_UINT32(resumed.events[0].operandCount,
+                             projected.events[0].operandCount);
+    assert_value(&resumed.events[0].operands[0], &projected.events[0].operands[0]);
     if (throwing) {
         TEST_ASSERT_EQUAL(ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED,
                           resumed.values[result - 1u].kind);
@@ -736,12 +787,44 @@ static void compare_invoke_resume(TZrBool throwing) {
     TEST_ASSERT_TRUE(ZrCore_ExecIr_ResumeOracleEx(&input, &resumed, &diagnostic));
     TEST_ASSERT_EQUAL_UINT32(1u, resumedEffects.calls);
     assert_execution(&uninterrupted, &resumed);
+    TEST_ASSERT_TRUE(projected.returned);
+    TEST_ASSERT_EQUAL_UINT32(throwing ? 3u : 2u, projected.currentBlock);
+    TEST_ASSERT_EQUAL_UINT32(resumed.executedInstructionCount,
+                             projected.executedInstructionCount);
+    assert_value(&resumed.returnValue, &projected.returnValue);
+    ZrTests_Ssa_ObservationInit(&expected);
+    ZrTests_Ssa_ObservationInit(&actual);
+    expected.completed = actual.completed = ZR_TRUE;
+    expected.resultType = actual.resultType = ZR_SSA_RESULT_INTEGER;
+    expected.resultBits = (TZrUInt64)resumed.returnValue.as.signedInteger;
+    actual.resultBits = (TZrUInt64)projected.returnValue.as.signedInteger;
+    actual.backend = 1u;
+    TEST_ASSERT_TRUE(ZrTests_Ssa_ObservationAppendEvent(&expected, ZR_SSA_EVENT_CALL,
+            resumed.events[0].sourceId,
+            (TZrUInt64)resumed.events[0].operands[0].as.signedInteger,
+            resumed.events[0].instructionId));
+    TEST_ASSERT_TRUE(ZrTests_Ssa_ObservationAppendEvent(&actual, ZR_SSA_EVENT_CALL,
+            projected.events[0].sourceId,
+            (TZrUInt64)projected.events[0].operands[0].as.signedInteger,
+            projected.events[0].instructionId));
+    TEST_ASSERT_TRUE(ZrTests_Ssa_ObservationAppendEvent(&expected, ZR_SSA_EVENT_RETURN,
+            function.instructions[throwing ? 2u : 1u].sourceId, expected.resultBits,
+            throwing ? 3u : 2u));
+    TEST_ASSERT_TRUE(ZrTests_Ssa_ObservationAppendEvent(&actual, ZR_SSA_EVENT_RETURN,
+            projected.returnSourceId, actual.resultBits, projected.currentBlock));
+    TEST_ASSERT_TRUE(ZrTests_Ssa_Compare(&expected, &actual, &difference));
+    actual.events[0].valueBits ^= 1u;
+    TEST_ASSERT_FALSE(ZrTests_Ssa_Compare(&expected, &actual, &difference));
+    TEST_ASSERT_EQUAL(ZR_SSA_DIFF_EVENT_MISMATCH, difference.reason);
+    TEST_ASSERT_EQUAL_UINT32(0u, difference.eventIndex);
     if (throwing) {
         TEST_ASSERT_EQUAL(ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED,
                           resumed.values[result - 1u].kind);
     }
     ZrCore_ExecIr_OracleResultFree(&resumed);
     ZrCore_ExecIr_OracleResultFree(&uninterrupted);
+    ZrParser_ExecBcExecutionResult_Free(&projected);
+    ZrParser_ExecBcProjection_Free(&projection);
 }
 
 static void test_after_invoke_resumes_normal_result_without_replaying_call(void) {

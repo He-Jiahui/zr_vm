@@ -441,9 +441,9 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
         TZrBool memoryPhiIncoming = zr_exec_ir_is_memory_phi_incoming(function, index);
         if (function->phiIncoming[index].predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
             function->phiIncoming[index].predecessor > function->blockCount ||
-            function->phiIncoming[index].value == ZR_EXEC_IR_VALUE_ID_INVALID ||
             (!effectPhiIncoming && !memoryPhiIncoming &&
-             function->phiIncoming[index].value > function->valueCount)) {
+             (function->phiIncoming[index].value == ZR_EXEC_IR_VALUE_ID_INVALID ||
+              function->phiIncoming[index].value > function->valueCount))) {
             zr_exec_ir_set_diagnostic(diagnostic,
                                       memoryPhiIncoming
                                           ? ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN

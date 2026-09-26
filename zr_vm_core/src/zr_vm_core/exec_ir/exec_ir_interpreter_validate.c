@@ -129,15 +129,16 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         }
     }
     for (i = 0u; i < f->phiIncomingCount; ++i) {
+        TZrBool effectPhiIncoming = zr_oracle_is_effect_phi_incoming(f, i);
+        TZrBool memoryPhiIncoming = zr_oracle_is_memory_phi_incoming(f, i);
         if (f->phiIncoming[i].predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
             f->phiIncoming[i].predecessor > f->blockCount ||
-            f->phiIncoming[i].value == ZR_EXEC_IR_VALUE_ID_INVALID ||
-            (!zr_oracle_is_effect_phi_incoming(f, i) &&
-             !zr_oracle_is_memory_phi_incoming(f, i) &&
-             f->phiIncoming[i].value > f->valueCount)) {
-            zr_oracle_diag(d, zr_oracle_is_memory_phi_incoming(f, i)
+            (!effectPhiIncoming && !memoryPhiIncoming &&
+             (f->phiIncoming[i].value == ZR_EXEC_IR_VALUE_ID_INVALID ||
+              f->phiIncoming[i].value > f->valueCount))) {
+            zr_oracle_diag(d, memoryPhiIncoming
                                   ? ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN
-                                  : (zr_oracle_is_effect_phi_incoming(f, i)
+                                  : (effectPhiIncoming
                                          ? ZR_EXEC_IR_DIAGNOSTIC_EFFECT_TOKEN
                                          : ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE),
                            f,
@@ -183,7 +184,8 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
                     (!ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(
                              b->memoryPhiResults[region]) ||
                      ZR_EXEC_IR_MEMORY_TOKEN_REGION(
-                             b->memoryPhiResults[region]) != region ||
+                             b->memoryPhiResults[region]) !=
+                         (EZrExecIrMemoryClass)region ||
                      ZR_EXEC_IR_MEMORY_TOKEN_VERSION(
                              b->memoryPhiResults[region]) == 0u)) {
                     zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN, f,

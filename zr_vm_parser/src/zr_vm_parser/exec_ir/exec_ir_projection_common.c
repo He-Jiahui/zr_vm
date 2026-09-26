@@ -220,9 +220,26 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
         }
     }
     for (i = 0u; i < f->phiIncomingCount; ++i) {
+        TZrBool tokenIncoming = ZR_FALSE;
+        for (TZrUInt32 blockIndex = 0u; blockIndex < f->blockCount; ++blockIndex) {
+            const SZrExecIrBlock *block = &f->blocks[blockIndex];
+            if ((i >= block->effectPhiIncomings.start &&
+                 i - block->effectPhiIncomings.start < block->effectPhiIncomings.count)) {
+                tokenIncoming = ZR_TRUE;
+                break;
+            }
+            for (TZrUInt32 region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+                SZrExecIrRange range = block->memoryPhiIncomings[region];
+                if (i >= range.start && i - range.start < range.count) {
+                    tokenIncoming = ZR_TRUE;
+                    break;
+                }
+            }
+            if (tokenIncoming) break;
+        }
         if (f->phiIncoming[i].predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
             f->phiIncoming[i].predecessor > f->blockCount ||
-            !zr_projection_value_id_valid(f, f->phiIncoming[i].value)) {
+            (!tokenIncoming && !zr_projection_value_id_valid(f, f->phiIncoming[i].value))) {
             zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
                                f, f->phiIncoming[i].predecessor, 0u,
                                f->valueCount, f->phiIncoming[i].value);

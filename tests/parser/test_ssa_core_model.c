@@ -307,6 +307,35 @@ static void test_structure_requires_reciprocal_cfg_edges(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_structure_rejects_zero_value_phi_incoming(void) {
+    SZrExecIrFunction function;
+    SZrExecIrPhiIncoming incoming = {1u, ZR_EXEC_IR_VALUE_ID_INVALID};
+    SZrExecIrPhi phi = {0};
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 1u;
+    expect_true(ZrCore_ExecIr_FunctionAddBlock(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+                "value phi fixture entry append failed");
+    phi.result = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_NULLABLE);
+    expect_true(phi.result != ZR_EXEC_IR_VALUE_ID_INVALID,
+                "value phi fixture result append failed");
+    expect_true(ZrCore_ExecIr_FunctionAppendPhiIncoming(&function, &incoming, 1u, &phi.incomings),
+                "value phi fixture incoming append failed");
+    expect_true(ZrCore_ExecIr_FunctionAppendPhis(&function, &phi, 1u, NULL),
+                "value phi fixture phi append failed");
+    function.blocks[0].phis.count = 1u;
+    expect_true(!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                               &diagnostic),
+                "zero ordinary value phi incoming was accepted");
+    expect_true(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+                    diagnostic.actualVersion == ZR_EXEC_IR_VALUE_ID_INVALID,
+                "zero ordinary value phi lost its invalid-value diagnostic");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_empty_module_and_entry_block();
     test_value_builder_rejects_unknown_enums();
@@ -315,6 +344,7 @@ int main(void) {
     test_validation_rejects_null_operand_pool_without_dereference();
     test_failed_module_clone_reclaims_partially_copied_function();
     test_structure_requires_reciprocal_cfg_edges();
+    test_structure_rejects_zero_value_phi_incoming();
     puts("ssa core model PASS");
     return EXIT_SUCCESS;
 }

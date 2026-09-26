@@ -6,6 +6,7 @@ related_code:
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
   - tests/parser/test_ssa_oracle_invoke_differential.c
+  - tests/parser/test_ssa_oracle_resume.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
 implementation_files:
@@ -113,3 +114,11 @@ and an undefined normal result, leave the last published projection intact;
 the exceptional edge does not define a normal result. This fixture exercises
 pointer-free handler entry, not production exception state, checkpoint/resume,
 or AOT execution.
+
+The `ssa_oracle_resume` fixture also stops immediately after a verifier-valid
+INVOKE effect, compares its complete CALL snapshot with an independent
+projected run, then resumes the oracle and compares ordered CALL/RETURN
+observations and results for both normal and exceptional successors. The
+provider count stays one after resume even when its edge choice is changed
+between pause and resume. An injected event mismatch is detected at index
+zero. This does not exercise projection-side checkpoint restoration.

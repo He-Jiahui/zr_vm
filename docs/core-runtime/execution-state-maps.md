@@ -61,6 +61,8 @@ tests:
   - tests/parser/test_ssa_escape_ownership.c
   - tests/parser/ssa_escape_aggregate_cases.h
   - tests/parser/test_ssa_oracle_resume.c
+  - tests/parser/test_ssa_core_model.c
+  - tests/acceptance/ssa-oracle-invoke-checkpoint-differential.md
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_state_maps.c
   - tests/parser/test_ssa_deopt_validation.c
@@ -90,6 +92,12 @@ candidate root, and borrowed
 or plain values do not appear there. Consumers reject either omission or
 invention. Concrete materialization removes inactive conditional-cleanup roots
 after validating the runtime initialization state.
+
+An effect or memory phi may carry token zero from an entry edge where no
+effect has yet committed. Structure verification, the direct oracle, and
+projection lowering accept that initial token only in token-phi incoming
+ranges; ordinary value phis still require nonzero value IDs. The effect CFG
+verifier checks the forward/backedge token chain before publication.
 
 An entry's source identity is an exact projection of its instruction: the
 instruction's explicit `sourceId` is used when present, otherwise its one-based

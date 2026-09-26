@@ -46,6 +46,7 @@ tests:
   - tests/parser/ssa_oracle_resume_fault_allocator.h
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_oracle_resume.c
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
   - tests/parser/test_ssa_oracle_invoke_differential.c
@@ -348,6 +349,11 @@ unsupported, a rejected invocation reports ORACLE_INVOKE_ERROR, and an
 undefined normal result reports INVALID_VALUE. A malformed zero-successor
 INVOKE remains non-runnable. The direct Oracle has equivalent pointer-free
 providers; neither projection implements a native landing pad or resume.
+For an `AFTER_EFFECT` checkpoint on INVOKE, the resume fixture compares the
+paused CALL event with independent projected execution, then compares the
+oracle's completed CALL/RETURN trace and return block after resume. Both
+normal and exceptional paths must invoke their provider exactly once; the
+projection still runs uninterrupted and does not reconstruct a checkpoint.
 
 `PLACE_BASE` and `PLACE_PROJECT` are transported with their stable operand,
 result, type, layout, and source metadata. The projections mark these place
