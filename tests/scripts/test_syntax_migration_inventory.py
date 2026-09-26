@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""保护旧语法扫描器的输入选择、分类协议和 CLI JSON 基线。"""
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ from unittest import mock
 
 
 def _repository_root_from_arguments() -> Path:
+    """支持对独立 checkout 运行同一仓库扫描测试，并从 unittest 参数中移除自有选项。"""
     if "--repository" not in sys.argv:
         return Path(__file__).resolve().parents[2]
     argument_index = sys.argv.index("--repository")
@@ -43,6 +45,8 @@ from syntax_migration_inventory import (  # noqa: E402
 
 
 class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
+    """用人工 fixture 与真实仓库双重验证迁移清单，避免扫描器静默遗漏或误报。"""
+
     def test_repository_candidates_ignore_tracked_paths_missing_from_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -61,6 +65,7 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 )
 
     def test_repository_inventory_reuses_unchanged_snapshot_and_invalidates_changes(self) -> None:
+        """保证扫描缓存由文件内容失效；第二次同内容读取不能重新扫描。"""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             source = root / "tests" / "sample.zr"
@@ -88,6 +93,7 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
             self.assertNotEqual(first.to_json(), third.to_json())
 
     def test_fixture_inventory_has_stable_protocol_and_source_kinds(self) -> None:
+        """将 source kind 与 JSON schema 作为工具消费者依赖的协议验收。"""
         report = build_inventory(FIXTURE_ROOT)
         payload = json.loads(report.to_json())
 
@@ -325,6 +331,9 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         self.assertEqual(golden_path.read_text(encoding="utf-8"), report.to_fixture_json())
 
     def test_repository_inventory_is_closed_deterministic_and_excludes_non_source_inputs(self) -> None:
+        """把当前仓库输出与冻结 JSON 对齐，并核对每个候选文件必有扫描或排除结论。"""
+        # TODO: 当前五处 wiki zr 围栏仍含旧语法，使 findings==[] 的仓库基线断言失败；
+        # 应先核实并修正文档示例，再更新冻结清单，不要放宽扫描器或隐藏该失败。
         first = build_repository_inventory(REPOSITORY_ROOT)
         second = build_repository_inventory(REPOSITORY_ROOT)
         first_payload = json.loads(first.to_json())
@@ -496,6 +505,7 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         self.assertIn("docs/zr_language_specification.md", scanned_files)
 
     def test_embedded_scan_tracks_adjacent_zr_source_literals(self) -> None:
+        """宿主字符串拼接后仍需作为一个 ZR 输入扫描，避免多行 fixture 躲过迁移门禁。"""
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "adjacent_fixture.c"
             path.write_text(
@@ -547,6 +557,7 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         )
 
     def test_cli_json_output_is_utf8_lf_and_matches_the_repository_baseline(self) -> None:
+        """确保命令行导出与库 API 使用同一稳定 JSON、UTF-8 及 LF 格式。"""
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_path = Path(temporary_directory) / "inventory.json"
             result = subprocess.run(

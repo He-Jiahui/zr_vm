@@ -1,3 +1,5 @@
+"""验证 55 份语法里程碑状态记录的筛选规则与仓库冻结分布。"""
+
 from __future__ import annotations
 
 import sys
@@ -7,6 +9,7 @@ from pathlib import Path
 
 
 def _repository_root_from_arguments() -> Path:
+    """保留命令行指定仓库的测试入口，便于在隔离 checkout 重放同一契约。"""
     if "--repository" not in sys.argv:
         return Path(__file__).resolve().parents[2]
     argument_index = sys.argv.index("--repository")
@@ -30,8 +33,11 @@ from syntax_status_records import (  # noqa: E402
 
 
 class SyntaxStatusRecordTests(unittest.TestCase):
+    """同时校验合成记录的边界与真实计划目录，防止支持文档被误算为交付里程碑。"""
+
     @staticmethod
     def _write_record(root: Path, relative_path: str, status: str, time: str) -> None:
+        """构造与生产解析器共用的最小 Markdown 状态记录。"""
         path = root / "docs" / "plans" / "syntax" / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -116,6 +122,7 @@ class SyntaxStatusRecordTests(unittest.TestCase):
         self.assertTrue(any("non-complete status" in issue for issue in issues))
 
     def test_repository_matches_frozen_55_record_contract(self) -> None:
+        """仓库级门禁：新增或改写计划状态时，须有意更新 55 条基线及目录分布。"""
         report = collect_syntax_status_records(REPOSITORY_ROOT)
         issues = validate_syntax_status_records(report)
 

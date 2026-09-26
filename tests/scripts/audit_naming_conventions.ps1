@@ -1,3 +1,4 @@
+# 从仓库根目录的 Git 跟踪列表取 C/C++ 文件并排除 third_party/build/.cache；已跟踪的生成头仍会进入文本扫描。
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 )
@@ -18,6 +19,7 @@ $headerFiles = $codeFiles | Where-Object { $_ -like '*.h' -or $_ -like '*.hpp' }
 $violations = New-Object System.Collections.Generic.List[string]
 
 function Add-ViolationSection {
+    # 同类命名问题统一去重并分组，让调用者可按规则处理而不是逐行猜测错误来源。
     param(
         [string]$Title,
         [string[]]$Entries
@@ -32,6 +34,7 @@ function Add-ViolationSection {
 }
 
 function Get-MatchingLines {
+    # 用于历史别名/宏的文本级门禁；只负责报告候选位置，不承担 C 语法解析。
     param(
         [string[]]$Paths,
         [string]$Pattern
@@ -51,6 +54,8 @@ function Get-MatchingLines {
 }
 
 function Get-DeclarationName {
+    # 仅提取带公开 API 标志或 force-inline 的声明名，供后续两类命名规则共享。
+    # TODO: 这里只读取单个物理行；跨行声明或宏包裹签名是否漏检，需与公开头样例核对。
     param(
         [string]$Line
     )
