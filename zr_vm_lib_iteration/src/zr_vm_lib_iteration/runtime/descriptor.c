@@ -13,8 +13,8 @@ static const TZrChar *g_iterator_implements[] = {
 };
 
 /* 同步 cursor 的成员角色会投影到原生 prototype，供运行时按角色定位当前值。 */
-/* TODO: 本字段的 ROLE_INIT 宏令 isReadonly=false，而 docs/wiki/03-modules/iteration-api.md
- * 称 current 为 readonly；需核对赋值语义和 native_binding_metadata.c 的可写投影，再决定契约。 */
+/* TODO: ROLE_INIT 令 current 的 isReadonly=false，原生元数据据此发布可写成员；
+ * 旧文档曾称其 readonly。需通过脚本赋值用例核查公开写入语义。 */
 static const ZrLibFieldDescriptor g_enumerator_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("current", "T", "Current element after a successful moveNext.",
                                           ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD),

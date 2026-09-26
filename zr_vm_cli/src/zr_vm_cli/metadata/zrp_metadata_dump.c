@@ -473,9 +473,11 @@ static int zrp_metadata_dump_read_file(const TZrChar *path,
 }
 
 /* TODO: 命令帮助示例使用 module.zrp，但普通项目 .zrp 由 project.c 按 JSON 解析，
- * 此处及另外两个路径入口只接受原始二进制元数据头。需核实生产端元数据文件来源，
- * 再决定命令应定位项目内元数据，还是将帮助示例改为明确的二进制输入。
- * 证据：command.c 的三个示例、project.c 的 cJSON_Parse、WriteSummary/VersionCheck 的头校验。
+ * 此处及另外两个路径入口只接受原始二进制元数据头。AOT 后端会在内存中生成或
+ * 重写 metadata blob，尚需核实供 CLI 使用的独立磁盘文件来源，再决定命令应定位
+ * 项目内元数据，还是将帮助示例改为明确的二进制输入。
+ * 证据：command.c 示例、project.c 的 cJSON_Parse、backend_aot_c_zrp_metadata_*.c
+ * 的 WriteHeader 调用，以及 WriteSummary/VersionCheck 的头校验。
  */
 int ZrCli_ZrpMetadataDump_RunPath(const TZrChar *path, FILE *output, FILE *errorOutput) {
     TZrByte *buffer = ZR_NULL;
