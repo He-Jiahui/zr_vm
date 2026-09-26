@@ -44,7 +44,10 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_inlay_hints.c
 plan_sources:
   - .codex/plans/20260926-lsp-experience-repair.md
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 tests:
+  - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/parser/test_semantic_query_type_use_cases.h
   - tests/parser/test_semantic_declaration_binding_cases.h
   - tests/parser/test_semantic_query_symbols.c
@@ -124,7 +127,15 @@ own read fact; neither fact invents a resolved member identity.
 Declaration identity and type exactness are independent. A source declaration
 whose type is unavailable keeps a nonzero `SymbolId` and an invalid `TypeId`.
 The internal object sentinel used by inference is not registered as the source
-declaration's type. Identifier reads still publish the resolved declaration
+declaration's type. An explicit `: object` annotation is not that sentinel:
+it registers the declared canonical type even though both cases share the
+inference representation's `baseType`. When an unannotated local has a
+canonical initializer value, its compiler-private SemanticIR place can use
+that value's TypeId without publishing an inferred exact type on the source
+declaration symbol. If neither declaration nor initializer has a canonical
+type, the legacy compiler retains the binding but no executable SemanticIR
+local is emitted; the source CFG completeness check must reject promotion.
+Identifier reads still publish the resolved declaration
 identity, while exact expression inference fails. If later analysis obtains an
 exact type, the type can be attached to the same declaration identity.
 Canonical variable binding accepts an invalid type only when the semantic

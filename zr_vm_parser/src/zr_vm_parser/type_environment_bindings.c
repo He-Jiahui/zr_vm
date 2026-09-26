@@ -106,7 +106,9 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
         /* A source declaration can be known before its exact type. Keep its
          * identity without publishing the inference sentinel as `object`. */
         if (declarationNode == ZR_NULL || type->baseType != ZR_VALUE_TYPE_OBJECT ||
-            type->typeName != ZR_NULL || type->elementTypes.length != 0U) {
+            type->typeName != ZR_NULL || type->elementTypes.length != 0U ||
+            (declarationNode->type == ZR_AST_VARIABLE_DECLARATION &&
+             declarationNode->data.variableDeclaration.typeInfo != ZR_NULL)) {
             typeId = ZrParser_Semantic_RegisterInferredType(
                     env->semanticContext,
                     type,

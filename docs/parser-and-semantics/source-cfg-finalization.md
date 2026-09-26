@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
@@ -81,7 +82,7 @@ existing identifier places. Empty undecorated nongeneric class declarations
 have no entry initializer to skip. Global/closure/function/type reads,
 global assignments, named child function declarations, new/resource instance
 construction, class members/initializers, uninitialized local defaults,
-cross-type numeric conversions, unsupported binary operators, unary expressions,
+nonnumeric or untyped conversions, unsupported binary operators, unary expressions,
 compound assignment and block/object expressions
 retain analysis-only status until their producer contracts are complete.
 An isolated child body does not justify skipping the declaration's parent
@@ -105,17 +106,23 @@ as a compatibility sidecar, while the strict builder maps the canonical
 instruction to the corresponding ExecIR arithmetic opcode. Nested expressions
 are matched by source range, so source traversal does not infer a producer from
 the legacy instruction stream. Division remains analysis-only until its
-exception-edge contract is represented; modulo, implicit numeric conversion,
+exception-edge contract is represented; modulo, mixed-type arithmetic without
+a canonical binary producer,
 string/dynamic arithmetic, comparison, unary, and compound assignment forms
 likewise remain outside this producer subset.
 
 The capability walk uses an explicit, checked worklist rather than recursive
 AST descent. Identifier reads follow source order and require corresponding
 SemanticIR provenance and a previously initialized Place; assignment writes
-require their own source STORE. The initialized-Place bitmap and instruction
-cursor make repeated local reads linear in the emitted instruction stream.
-Different input/output TypeIds on CONVERT or STORE retain the analysis graph
-until executable conversion semantics are implemented. Its
+require their own source STORE. Each source declaration also requires a
+source-matched canonical INITIALIZE, so an untyped legacy-only local cannot
+silently disappear from an executable graph. A shared forward write cursor
+checks both declaration INITIALIZE and assignment STORE in source order. The
+initialized-Place bitmap and instruction cursor make repeated local reads
+linear in the emitted instruction stream. A cross-type CONVERT is executable
+only for canonical numeric primitive source/target types with a matching
+destination scalar runtime token. Unmodeled or mismatched conversions retain
+the analysis graph. The preflight scratch bitmap's
 initial and growth allocation failures release scratch storage and return
 failure before replacing the graph; allocation failure is not treated as an
 unsupported source form. The failure suite enumerates every scratch allocation

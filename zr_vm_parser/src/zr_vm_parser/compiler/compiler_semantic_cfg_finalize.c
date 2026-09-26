@@ -52,15 +52,16 @@ static TZrBool compiler_semantic_cfg_same_source(
             instruction->sourceRange.end.offset == node->location.end.offset);
 }
 
-static TZrBool compiler_semantic_cfg_has_source_store(
+static TZrBool compiler_semantic_cfg_has_source_write(
         const SZrCompilerState *cs, const SZrAstNode *node,
+        EZrSemanticIrOpcode opcode,
         TZrSize *nextWriteInstruction) {
     TZrSize index;
     for (index = *nextWriteInstruction;
          index < cs->preSemanticIr.instructions.length; ++index) {
         const SZrSemanticIrInstruction *instruction =
                 ZrParser_SemanticIr_InstructionAt(&cs->preSemanticIr, index);
-        if (instruction != ZR_NULL && instruction->opcode == ZR_SEMANTIC_IR_STORE &&
+        if (instruction != ZR_NULL && instruction->opcode == opcode &&
             compiler_semantic_cfg_same_source(instruction, node)) {
             *nextWriteInstruction = index + 1U;
             return ZR_TRUE;
@@ -231,7 +232,11 @@ static TZrBool compiler_semantic_cfg_straight_line_is_supported(
             case ZR_AST_VARIABLE_DECLARATION:
                 supported = (TZrBool)(node->data.variableDeclaration.pattern != ZR_NULL &&
                         node->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
-                        node->data.variableDeclaration.value != ZR_NULL);
+                        node->data.variableDeclaration.value != ZR_NULL &&
+                        compiler_semantic_cfg_has_source_write(
+                                cs, node->data.variableDeclaration.pattern,
+                                ZR_SEMANTIC_IR_INITIALIZE,
+                                &pending.nextWriteInstruction));
                 compiler_semantic_cfg_queue_node(
                         cs, &pending, node->data.variableDeclaration.value);
                 break;
@@ -272,8 +277,9 @@ static TZrBool compiler_semantic_cfg_straight_line_is_supported(
                         strcmp(node->data.assignmentExpression.op.op, "=") == 0 &&
                         node->data.assignmentExpression.left != ZR_NULL &&
                         node->data.assignmentExpression.left->type == ZR_AST_IDENTIFIER_LITERAL &&
-                        compiler_semantic_cfg_has_source_store(
+                        compiler_semantic_cfg_has_source_write(
                                 cs, node->data.assignmentExpression.left,
+                                ZR_SEMANTIC_IR_STORE,
                                 &pending.nextWriteInstruction));
                 compiler_semantic_cfg_queue_node(
                         cs, &pending, node->data.assignmentExpression.right);

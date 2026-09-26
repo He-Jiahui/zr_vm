@@ -422,10 +422,6 @@ static void assert_analysis_only(const char *source, TZrBool suppress,
     free_source(&compiler, ast);
 }
 
-static void test_cross_type_binary_without_canonical_conversion_stays_analysis_only(void) {
-    assert_analysis_only("var value: float = 1 + 2;\nvalue;\n", ZR_FALSE, ZR_FALSE);
-}
-
 static void test_typed_addition_has_semantic_producer(void) {
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler,
@@ -573,7 +569,9 @@ static void test_resource_constructor_requires_canonical_seed(void) {
             ZR_FALSE, ZR_FALSE);
 }
 static void assert_numeric_local_conversion(const char *source,
-                                            TZrBool assignment) {
+                                            TZrBool assignment,
+                                            TZrFloat64 expectedValue,
+                                            TZrBool expectAdd) {
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler, source);
     const SZrSemanticIrFunction *semantic = &compiler.preSemanticIr;
@@ -588,6 +586,7 @@ static void assert_numeric_local_conversion(const char *source,
     TZrValueId converted = ZR_VALUE_ID_INVALID;
     TZrBool storedConverted = ZR_FALSE;
     TZrBool loweredConversion = ZR_FALSE;
+    TZrBool hasAdd = ZR_FALSE;
     TZrUInt32 expectedTypeToken = 0u;
     TZrSize convertedInstructionIndex = 0u;
 
@@ -596,14 +595,16 @@ static void assert_numeric_local_conversion(const char *source,
     for (index = 0u; index < semantic->instructions.length; ++index) {
         const SZrSemanticIrInstruction *instruction =
                 ZrParser_SemanticIr_InstructionAt(semantic, index);
+        if (instruction->opcode == ZR_SEMANTIC_IR_ADD)
+            hasAdd = ZR_TRUE;
         if (instruction->opcode == ZR_SEMANTIC_IR_CONVERT &&
             instruction->resultValueId != ZR_VALUE_ID_INVALID) {
-            const SZrSemanticIrValue *input = ZrParser_SemanticIr_Value(
+            const SZrSemanticIrValue *sourceValue = ZrParser_SemanticIr_Value(
                     semantic, instruction->valueId);
             const SZrSemanticIrValue *result = ZrParser_SemanticIr_Value(
                     semantic, instruction->resultValueId);
-            if (input != ZR_NULL && result != ZR_NULL &&
-                input->typeId != result->typeId) {
+            if (sourceValue != ZR_NULL && result != ZR_NULL &&
+                sourceValue->typeId != result->typeId) {
                 const SZrCanonicalTypeNode *target = ZrParser_CanonicalType_Find(
                         compiler.semanticContext, result->typeId);
                 TEST_ASSERT_NOT_NULL(target);
@@ -619,6 +620,7 @@ static void assert_numeric_local_conversion(const char *source,
         if (assignment && instruction->opcode == ZR_SEMANTIC_IR_STORE &&
             instruction->valueId == converted) storedConverted = ZR_TRUE;
     }
+    if (expectAdd) TEST_ASSERT_TRUE(hasAdd);
     TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, converted);
     if (assignment) TEST_ASSERT_TRUE(storedConverted);
     {
@@ -675,17 +677,23 @@ static void assert_numeric_local_conversion(const char *source,
     TEST_ASSERT_TRUE(ZrParser_ExecIr_Interpret(&input, &execution, &diagnostic));
     TEST_ASSERT_TRUE(execution.returned);
     TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_ORACLE_VALUE_FLOAT, execution.returnValue.kind);
-    TEST_ASSERT_EQUAL_DOUBLE(7.0, execution.returnValue.as.floating);
+    TEST_ASSERT_EQUAL_DOUBLE(expectedValue, execution.returnValue.as.floating);
     ZrCore_ExecIr_OracleResultFree(&execution);
     ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
 }
 static void test_numeric_initialization_has_executable_conversion(void) {
-    assert_numeric_local_conversion("var value: float = 7;\nreturn value;\n", ZR_FALSE);
+    assert_numeric_local_conversion("var value: float = 7;\nreturn value;\n",
+            ZR_FALSE, 7.0, ZR_FALSE);
 }
 static void test_numeric_assignment_has_executable_conversion(void) {
     assert_numeric_local_conversion(
-            "var value: float = 1.0;\nvalue = 7;\nreturn value;\n", ZR_TRUE);
+            "var value: float = 1.0;\nvalue = 7;\nreturn value;\n",
+            ZR_TRUE, 7.0, ZR_FALSE);
+}
+static void test_integer_binary_to_float_has_executable_conversion(void) {
+    assert_numeric_local_conversion("var value: float = 1 + 2;\nreturn value;\n",
+            ZR_FALSE, 3.0, ZR_TRUE);
 }
 static void test_numeric_assignment_fallthrough_is_promoted(void) {
     SZrCompilerState compiler;
@@ -725,6 +733,27 @@ static void test_numeric_conversion_token_must_match_canonical_target(void) {
     conversion->scalarConversionTypeToken = token;
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    free_source(&compiler, ast);
+}
+static void test_declaration_without_source_initialization_stays_analysis_only(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler,
+            "var value: int = 7;\nvalue;\n");
+    TZrSize index;
+    TZrSize initializationCount = 0u;
+    for (index = 0u; index < compiler.preSemanticIr.instructions.length; ++index) {
+        SZrSemanticIrInstruction *instruction = (SZrSemanticIrInstruction *)
+                ZrCore_Array_Get(&compiler.preSemanticIr.instructions, index);
+        if (instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE) {
+            instruction->sourceRange.start.offset += 1u;
+            ++initializationCount;
+        }
+    }
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, initializationCount);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&compiler.preSemanticIr));
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
     free_source(&compiler, ast);
 }
 static void test_local_identifier_shadows_legacy_global(void) {
@@ -784,7 +813,6 @@ int main(void) {
     RUN_TEST(test_explicit_throw_keeps_value);
     RUN_TEST(test_child_body_does_not_block_or_pollute_parent);
     RUN_TEST(test_source_assignment_oracle_returns_second_constant);
-    RUN_TEST(test_cross_type_binary_without_canonical_conversion_stays_analysis_only);
     RUN_TEST(test_typed_addition_has_semantic_producer);
     RUN_TEST(test_typed_addition_oracle_returns_sum);
     RUN_TEST(test_nested_typed_arithmetic_preserves_producers);
@@ -800,8 +828,10 @@ int main(void) {
     RUN_TEST(test_resource_constructor_requires_canonical_seed);
     RUN_TEST(test_numeric_initialization_has_executable_conversion);
     RUN_TEST(test_numeric_assignment_has_executable_conversion);
+    RUN_TEST(test_integer_binary_to_float_has_executable_conversion);
     RUN_TEST(test_numeric_assignment_fallthrough_is_promoted);
     RUN_TEST(test_numeric_conversion_token_must_match_canonical_target);
+    RUN_TEST(test_declaration_without_source_initialization_stays_analysis_only);
     RUN_TEST(test_local_identifier_shadows_legacy_global);
     RUN_TEST(test_callable_default_stays_analysis_only);
     RUN_TEST(test_class_static_initializer_stays_analysis_only);

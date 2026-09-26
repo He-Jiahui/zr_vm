@@ -1560,6 +1560,7 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
     const SZrCompilerSemanticIrSlot *priorSlot;
     const SZrParserPlace *priorPlace = ZR_NULL;
     TZrValueId priorTemporaryValueId = ZR_VALUE_ID_INVALID;
+    TZrTypeId localTypeId;
     SZrSemanticContiguousViewFact priorViewFact;
     const SZrSemanticContiguousViewFact *priorViewFactRef;
     TZrBool hasPriorViewFact;
@@ -1572,8 +1573,7 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
         return ZR_TRUE;
     }
     binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
-    if (binding == ZR_NULL || binding->typeId == ZR_SEMANTIC_ID_INVALID ||
-        binding->symbolId == ZR_SEMANTIC_ID_INVALID) {
+    if (binding == ZR_NULL || binding->symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
     priorSlot = compiler_semantic_ir_find_slot(cs, stackSlot);
@@ -1587,6 +1587,18 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
             priorTemporaryValueId = priorSlot->valueId;
         }
     }
+    localTypeId = binding->typeId;
+    if (localTypeId == ZR_SEMANTIC_ID_INVALID &&
+        priorTemporaryValueId != ZR_VALUE_ID_INVALID) {
+        const SZrSemanticIrValue *sourceValue = ZrParser_SemanticIr_Value(
+                &cs->preSemanticIr, priorTemporaryValueId);
+        if (sourceValue != ZR_NULL) localTypeId = sourceValue->typeId;
+    }
+    if (localTypeId == ZR_SEMANTIC_ID_INVALID) {
+        /* The declaration remains visible to the legacy compiler, but no
+         * executable SemanticIR local can be formed without a source type. */
+        return ZR_TRUE;
+    }
     priorViewFactRef = compiler_semantic_ir_contiguous_view_fact_for_slot(
             cs, stackSlot, sourceRange);
     hasPriorViewFact = (TZrBool)(priorViewFactRef != ZR_NULL);
@@ -1599,7 +1611,7 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
     base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
     base.identity = stackSlot;
     slot.stackSlot = stackSlot;
-    slot.typeId = binding->typeId;
+    slot.typeId = localTypeId;
     slot.symbolId = binding->symbolId;
     slot.placeId = ZrParser_SemanticIr_AddLocal(
             &cs->preSemanticIr,

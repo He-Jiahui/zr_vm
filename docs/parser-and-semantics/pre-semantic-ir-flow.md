@@ -30,11 +30,13 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_catch_dispatch.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
+  - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_value_facts.c
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -226,6 +228,13 @@ compiler-owned pool, and a pool index alone does not make a standalone SemIR
 function self-contained. Numeric primitive initialization and assignment
 convert the source ValueId into a new destination-typed value before
 INITIALIZE/STORE; a local assignment's STORE consumes that converted ValueId.
+An explicit `: object` declaration is a real annotated type, not the
+type-inference object's unknown sentinel. For an unannotated local with an
+unresolved declaration TypeId, the compiler-private local may inherit the
+canonical TypeId of its initializer temporary while the source symbol remains
+unresolved. Without a canonical initializer type, no SemanticIR local is
+emitted; the legacy binding survives and source-CFG preflight refuses to
+promote a declaration lacking a matching INITIALIZE.
 Source CFG preflight promotes cross-type CONVERT only when both canonical types
 are numeric primitives and the explicit scalar runtime token matches the
 destination primitive. That token is distinct from the canonical TypeId and

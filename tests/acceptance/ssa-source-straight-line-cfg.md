@@ -1,6 +1,6 @@
 # Source straight-line CFG finalization
 
-## Numeric conversion follow-up (2026-09-27; execution pending)
+## Numeric conversion follow-up (2026-09-27)
 
 Source numeric local initialization and assignment now emit a destination-typed
 SemanticIR CONVERT before INITIALIZE or STORE. Numeric conversion instructions
@@ -8,9 +8,12 @@ carry an explicit runtime scalar token instead of using their canonical TypeId
 as an ExecIR type token. The straight-line preflight checks both canonical
 primitive types, the converted result type, and token/target agreement before
 promoting an inactive graph; nonnumeric cross-type values remain analysis-only.
-The new source regression covers initialization, assignment, oracle return,
-fallthrough promotion, malformed token rejection, and retry after restoring
-the token. `PLACE_BASE` is still metadata-only for ExecBC projection, so this
+The source regression covers initialization, assignment, integer ADD followed
+by float conversion (oracle returns 3.0), oracle return, fallthrough promotion,
+malformed token rejection, retry after restoring the token, and rejection of
+a declaration whose INITIALIZE no longer matches its source pattern. Mixed float/int
+arithmetic without a canonical producer remains analysis-only. `PLACE_BASE`
+is still metadata-only for ExecBC projection, so this
 follow-up does not claim source-local ExecBC parity or close 01.05.
 
 An earlier direct WSL GCC 11.4 `-std=c11 -Wall -Wextra -Wpedantic -Werror
@@ -19,12 +22,37 @@ files and the focused regression completed; only three existing
 `-Wmissing-braces` warnings in `exec_ir_build.c` were downgraded. A final
 repeat after the additional target-token preflight regression was also blocked
 in WSL mounted-drive I/O and was interrupted; it is not counted as a pass.
-The configured
-`zr_vm_ssa_source_straight_line_cfg_test` build had compiled more than 490 of
-591 steps but CMake regeneration then spent over 20 minutes blocked in WSL
-`p9_client_rpc` on the mounted workspace. That build was interrupted, so the
-new source assertions and the pre-semantic-IR golden are not yet executable
-acceptance evidence. Rebuild and run both before claiming this slice verified.
+The configured WSL GCC `zr_vm_ssa_source_straight_line_cfg_test` build had
+compiled more than 490 of 591 steps but CMake regeneration then spent over
+20 minutes blocked in WSL `p9_client_rpc` on the mounted workspace. That build
+was interrupted. A Windows MSVC 19.44 Debug shared-library build in
+`build/codex-ssa-conversion-msvc` subsequently built and ran the focused source
+executable: 34/34 passed. Its first 34-case run exposed an outdated negative
+fixture (`var value: float = 1 + 2`): the source already has an integer ADD
+producer and now has a canonical destination-typed conversion. The corrected
+fixture asserts ADD, CONVERT, and oracle float 3.0 instead. The MSVC shared
+build cannot link `zr_vm_pre_semantic_ir_test` because that test directly
+references four internal parser symbols not exported by the shared DLL.
+The separate Debug static build in `build/codex-ssa-conversion-msvc-static`
+built both executables. The final direct runs passed source 35/35 and
+pre-semantic-IR golden 101/101; the selected `ssa_construction`,
+`semantic_value_facts`, `ssa_source_value_facts`, and
+`ssa_source_straight_line_cfg` CTests passed 4/4. The declaration-source
+negative first failed (35 tests / 1 failure) before the producer check and
+passed after the shared forward write-cursor check was added.
+
+The new static run also exposed a mismatch with the later canonical declaration
+binding contract: the type environment correctly keeps an inferred unknown
+object declaration's TypeId invalid, but local SemanticIR registration previously
+treated that as a compile error. An explicitly annotated `: object` now keeps its
+real canonical type; an unannotated local can use a canonical initializer
+temporary's TypeId without publishing an invented exact type on its source
+symbol. If no such value is available, the legacy declaration remains but the
+source graph cannot qualify as executable without a matching INITIALIZE.
+An adjacent `zr_vm_canonical_type_graph_test` run passed 18/19: the open const
+generic method fixture fails while lowering `return value` through SemanticIR
+(`canonical_open_const.zr:3:62`). This separately observed failure is not
+counted as passing and still needs its own root-cause investigation.
 
 ## Scope
 
@@ -94,12 +122,14 @@ instance construction. Resource-construction facts still validate as analysis
 facts but cannot be advertised as executable ExecIR. Empty classes without
 runtime-bearing members remain metadata-only.
 
-The review follow-up found another value-completeness case. Numeric
-int-to-float initialization emits a generic SemanticIR CONVERT but its current
-oracle execution copies the input; numeric int-to-float assignment emits a
+The review follow-up found another value-completeness case. At that historical
+baseline, numeric int-to-float initialization emitted a generic SemanticIR
+CONVERT whose oracle execution copied the input; numeric assignment emitted a
 legacy TO_FLOAT and a SemanticIR STORE of the original RHS. Both valid source
 regressions failed against the earlier preflight (29 cases / 2 failures).
-Cross-type CONVERT/STORE now retains the analysis-only graph. Typed arithmetic
+The earlier gate retained cross-type CONVERT/STORE as analysis-only; the
+2026-09-27 follow-up above now certifies numeric conversions with a canonical
+target type and runtime token. Typed arithmetic
 producer tests cover a direct sum, nested subtraction/multiplication, strict
 builder lowering, and oracle execution; mixed-type arithmetic remains
 analysis-only. The local read
