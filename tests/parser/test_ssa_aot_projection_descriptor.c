@@ -119,6 +119,9 @@ int main(void) {
     SZrExecIrDeoptAggregateField malformedDeoptField;
     SZrAotIrModule malformedConstantModule;
     SZrExecIrConstant malformedConstant;
+    SZrAotIrModule malformedLayoutModule;
+    SZrAotIrFunction malformedLayoutFunction;
+    SZrExecIrDeoptAggregate malformedLayoutAggregate;
 
     fill_contract(&input.contract, input.functionToken, 33u,
                   input.signatureHash, input.frameLayoutHash);
@@ -195,6 +198,14 @@ int main(void) {
     malformedConstantModule.constantPool = &malformedConstant;
     assert(ZrCore_AotIr_ValidateModule(&malformedConstantModule, &diagnostic) !=
            ZR_AOT_IR_OK);
+    malformedLayoutModule = descriptor.module;
+    malformedLayoutFunction = descriptor.function;
+    malformedLayoutAggregate = deoptAggregates[0];
+    malformedLayoutAggregate.layoutId = 999u;
+    malformedLayoutFunction.deoptAggregates = &malformedLayoutAggregate;
+    malformedLayoutModule.functions = &malformedLayoutFunction;
+    assert(ZrCore_AotIr_ValidateModule(&malformedLayoutModule, &diagnostic) ==
+           ZR_AOT_IR_INVALID_ID);
     assert(backend_aot_ir_adapter_validate(&descriptor.module,
                                            &backendDiagnostic) ==
            ZR_BACKEND_AOT_IR_OK);

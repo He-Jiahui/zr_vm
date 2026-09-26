@@ -152,8 +152,22 @@ static TZrBool aot_ir_state_range_valid(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
 }
 
+static const SZrExecIrLayout *aot_ir_find_layout(
+        const SZrAotIrModule *module, TZrUInt32 layoutId) {
+    if (module == ZR_NULL || module->layoutPool == ZR_NULL || layoutId == 0u) {
+        return ZR_NULL;
+    }
+    for (TZrUInt32 i = 0u; i < module->layoutCount; ++i) {
+        if (module->layoutPool[i].id == layoutId) {
+            return &module->layoutPool[i];
+        }
+    }
+    return ZR_NULL;
+}
+
 static EZrAotIrStatus aot_ir_validate_deopt(
-        const SZrAotIrFunction *function, SZrAotIrDiagnostic *diagnostic) {
+        const SZrAotIrModule *module, const SZrAotIrFunction *function,
+        SZrAotIrDiagnostic *diagnostic) {
     if ((function->deoptStateCount != 0u && function->deoptStates == ZR_NULL) ||
         (function->deoptValueCount != 0u && function->deoptValuePool == ZR_NULL) ||
         (function->deoptAggregateCount != 0u && function->deoptAggregates == ZR_NULL) ||
@@ -185,14 +199,21 @@ static EZrAotIrStatus aot_ir_validate_deopt(
     }
     for (TZrUInt32 i = 0u; i < function->deoptAggregateCount; ++i) {
         const SZrExecIrDeoptAggregate *aggregate = &function->deoptAggregates[i];
+        const SZrExecIrLayout *layout =
+                aot_ir_find_layout(module, aggregate->layoutId);
         if (aggregate->identityId == ZR_AOT_IR_ID_INVALID ||
             aggregate->typeToken == ZR_AOT_IR_ID_INVALID ||
             aggregate->layoutId == ZR_AOT_IR_ID_INVALID ||
+            layout == ZR_NULL || layout->typeToken != aggregate->typeToken ||
             !aot_ir_exec_range_valid(aggregate->fields,
                                      function->deoptAggregateFieldCount)) {
-            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
-                               0u, 0u, i, function->deoptAggregateFieldCount,
-                               aggregate->fields.count);
+            return aot_ir_fail(diagnostic,
+                               layout == ZR_NULL
+                                       ? ZR_AOT_IR_INVALID_ID
+                                       : ZR_AOT_IR_INVALID_LAYOUT,
+                               function->id, 0u, 0u, i,
+                               function->deoptAggregateFieldCount,
+                               aggregate->layoutId);
         }
     }
     for (TZrUInt32 i = 0u; i < function->deoptAggregateFieldCount; ++i) {
@@ -841,7 +862,8 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         }
     }
     {
-        EZrAotIrStatus deoptStatus = aot_ir_validate_deopt(function, diagnostic);
+        EZrAotIrStatus deoptStatus =
+                aot_ir_validate_deopt(module, function, diagnostic);
         if (deoptStatus != ZR_AOT_IR_OK) return deoptStatus;
     }
     for (TZrUInt32 blockIndex = 0u; blockIndex < function->blockCount; ++blockIndex) {
