@@ -16,10 +16,12 @@ opcodes.
 ## Evidence
 
 `tests/parser/test_ssa_aot_projection_descriptor.c` carries one layout record
-through descriptor validation and checks the copied payload. The existing
-state-map projection fixture exercises the layout-aware lowering entry point
-and asserts the projection copy. Strict GCC descriptor, AOTIR contract, and
-modified projection/lowering object checks passed.
+through descriptor validation and checks the copied payload. The same fixture
+rejects a deopt aggregate whose `layoutId` is absent from the module pool or
+whose type token disagrees with the referenced layout. The existing state-map
+projection fixture exercises the layout-aware lowering entry point and asserts
+the projection copy. Strict GCC descriptor, AOTIR contract, and modified
+projection/lowering object checks passed.
 
 This host has no `clang` or MSVC toolchain on `PATH`, and MinGW GCC 4.8 does
 not support sanitizer flags. Configured WSL/MSVC matrix checks remain pending.
