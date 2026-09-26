@@ -1,4 +1,4 @@
-/* ZrVm Wiki: readable code and explicit light/dark token contrast. */
+/* zensical.toml 将此文件作为 extra_css 加载；两套变量同时服务主题默认高亮与 ZR lexer 的 token 类。 */
 :root > * {
   --md-code-hl-keyword-color: #8b3a8b;
   --md-code-hl-string-color: #0f766e;
@@ -17,6 +17,7 @@
   --zr-code-border: #cbd5e1;
 }
 
+/* 主题切到 slate 时只覆盖配色变量，使同一套 Pygments 选择器适用于明暗两种显示模式。 */
 [data-md-color-scheme="slate"] {
   --md-code-hl-keyword-color: #e9a7e9;
   --md-code-hl-string-color: #73daca;
@@ -45,6 +46,7 @@
   tab-size: 4;
 }
 
+/* Pygments 的 .highlight 类与文档手写的 .zr-token-* 类共享语义色，不依赖编译器诊断。 */
 .highlight .k,
 .highlight .kd,
 .highlight .kn,
@@ -109,6 +111,7 @@
   color: var(--zr-token-comment);
 }
 
+/* 尊重系统减少动态效果设置，避免主题导航及代码区过渡影响阅读。 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
