@@ -1,5 +1,4 @@
-# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
-# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
+# main 的 push 与面向 main 的 PR 都运行同一构建/CTest 矩阵，防止平台差异只在发布后暴露。
 name: CMake on multiple platforms
 
 on:
@@ -13,14 +12,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this to true when your workflow is stable.
+      # 保留所有平台结果；一个组合失败时继续收集其余组合的构建和测试证据。
       fail-fast: false
 
-      # Set up a matrix to run the following 3 configurations:
-      # 1. <Windows, Debug, latest MSVC compiler toolchain on the default runner image, default generator>
-      # 2. <Linux, Release, latest GCC compiler toolchain on the default runner image, default generator>
-      # 3. <Linux, Release, latest Clang compiler toolchain on the default runner image, default generator>
-      #
       # Ubuntu validates optimized Release builds with both supported toolchains.
       # Windows validates the full Debug build and test suite. The current Release
       # build is blocked by MSVC optimizing execution_dispatch.c for over 40 minutes.
@@ -51,7 +45,7 @@ jobs:
         arch: x64
 
     - name: Set reusable strings
-      # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
+      # Windows 将输出移到短路径，避免长测试目标的 MSVC 对象文件路径超限；后续三个步骤共用该目录。
       id: strings
       shell: bash
       run: |
@@ -95,6 +89,5 @@ jobs:
 
     - name: Test
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
-      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+      # CTest 消费当前配置注册的测试；Windows Visual Studio 是多配置生成器，必须传 --build-config。
       run: ctest --build-config ${{ matrix.build_type }} --output-on-failure

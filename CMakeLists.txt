@@ -5,18 +5,18 @@ project(ZR_VM
         DESCRIPTION "A ZR VM"
 )
 
+# 测试子目录按 BUILD_TESTS 选择注册用例；提前启用 CTest，供各模块创建测试目标。
 enable_testing()
 
-# 是否构建静态库（默认 ON）
+# 模块宏用这两个开关决定目标和链接优先级；当前默认只构建 shared 版本。
 option(BUILD_STATIC_LIB "Build static library" OFF)
 
-# 是否构建动态库（默认 ON）
 option(BUILD_SHARED_LIB "Build shared library" ON)
 
 # ================ 编译器选项和标准设置 ================
 set(CMAKE_C_STANDARD 11)           # 默认 C 11
 set(CMAKE_C_STANDARD_REQUIRED ON)  # 必须支持指定标准
-set(CMAKE_C_EXTENSIONS OFF)        # 禁用编译器扩展（如 GNU g++ 的扩展）
+set(CMAKE_C_EXTENSIONS OFF)        # 以标准 C11 模式调用编译器，不主动启用 GNU C 扩展。
 
 # 仅对单配置生成器设置默认构建类型；多配置生成器（如 VS/MSVC）由 --config 决定。
 if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
@@ -29,7 +29,7 @@ if (MSVC)
             "$<$<COMPILE_LANGUAGE:C>:/W4>"
             "$<$<COMPILE_LANGUAGE:C>:/wd4819>"
             "$<$<COMPILE_LANGUAGE:C>:/wd4103>"
-    )  # Windows: 开启所有警告并视警告为错误 /WX
+    )  # 使用 /W4 报告警告；此处没有启用 /WX。
     # MSVC's C11 stdatomic.h implementation is gated behind this switch
     # (VS 2019 16.8 / MSVC 19.28 and newer).  Keep it C-only so the optional
     # C++ JIT target continues to use the native C++ atomic headers.
@@ -41,7 +41,7 @@ if (MSVC)
     add_compile_options(-DZR_PLATFORM_WIN_USE_MSVC)
     add_compile_options(-D_CRT_SECURE_NO_WARNINGS)  # 禁用 MSVC 安全函数警告
 else ()
-    add_compile_options(-Wall -Wextra -Wpedantic)  # Linux/macOS: 严格警告 #-Werror
+    add_compile_options(-Wall -Wextra -Wpedantic)  # 非 MSVC 编译器报告常见和标准兼容性警告；未全局启用 -Werror。
     add_compile_options(-Wstrict-prototypes -Wmissing-prototypes)
 endif ()
 
@@ -49,6 +49,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# TODO: 当前构建图仅在此声明 USE_SYSTEM_PACKAGES，没有下游读取；确认是否接入依赖选择或移除此无效开关。
 option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
 option(BUILD_NETWORK_LIB "Build zr_vm_lib_network module" ON)
 option(BUILD_DEBUG_LIB "Build zr_vm_lib_debug module" ON)
@@ -64,6 +65,7 @@ option(ZR_VM_ENABLE_HOST_JIT
         "Build the optional host baseline JIT adapter"
         OFF)
 
+# host JIT 在顶层启用 C++17；语言服务器 WASM 分支会在自己的子目录按需另行启用 C++。
 if (ZR_VM_ENABLE_HOST_JIT)
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 17)
@@ -88,7 +90,7 @@ elseif (UNIX)
 endif ()
 
 if (UNIX AND NOT WIN32)
-    # 强制为第三方库启用 -fPIC
+    # 共享库会链接首方与第三方静态对象；为当前目录下所有 Unix C 目标统一启用 PIC。
     add_compile_options(-fPIC)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 endif ()
@@ -100,6 +102,7 @@ if (CMAKE_CXX_COMPILER_LOADED)
 endif ()
 add_compile_options(-DZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
 
+# common 的构建宏先声明共享目标命名/链接规则，后续模块按依赖层次依次加入。
 add_subdirectory("zr_vm_common")
 
 add_subdirectory("zr_vm_core")
@@ -122,6 +125,7 @@ else ()
     message(STATUS "Skipping zr_vm_lib_network: BUILD_NETWORK_LIB is OFF")
 endif ()
 
+# debug provider 的网络桥接在 CMake 目标层依赖 network；关闭 network 时不注册 debug。
 if (BUILD_DEBUG_LIB AND (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static))
     if (EXISTS "${CMAKE_SOURCE_DIR}/zr_vm_lib_debug/CMakeLists.txt")
         add_subdirectory("zr_vm_lib_debug")
@@ -162,6 +166,7 @@ else ()
     message(STATUS "Skipping zr_vm_language_server: BUILD_LANGUAGE_SERVER is OFF")
 endif ()
 
+# Rust 绑定当前链接 network 目标；无该目标时跳过，以免暴露缺失依赖的构建入口。
 if (BUILD_RUST_BINDING AND (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static))
     add_subdirectory("zr_vm_rust_binding")
 elseif (BUILD_RUST_BINDING)
@@ -176,13 +181,13 @@ else ()
     message(STATUS "Skipping zr_vm_cli: BUILD_CLI is OFF")
 endif ()
 
-# 是否构建测试（默认 OFF）
+# 默认注册首方测试；大范围 CTest 的实际运行由调用者或 CI 决定。
 option(BUILD_TESTS "Build test executables" ON)
 if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# 是否构建 Language Server Extension（默认 OFF）
+# 扩展目标需要语言服务器和 Node/npm，普通 C 库构建不触发 npm 或 WASM 打包。
 option(BUILD_LANGUAGE_SERVER_EXTENSION "Build VS Code Language Server Extension" OFF)
 if (BUILD_LANGUAGE_SERVER_EXTENSION AND NOT BUILD_LANGUAGE_SERVER)
     message(FATAL_ERROR "BUILD_LANGUAGE_SERVER_EXTENSION requires BUILD_LANGUAGE_SERVER=ON")
@@ -203,7 +208,9 @@ if(BUILD_LANGUAGE_SERVER_EXTENSION)
         # 确保 WASM 目录存在
         file(MAKE_DIRECTORY ${EXTENSION_WASM_DIR})
         
-        # 添加自定义目标：构建 WASM
+        # BUG: 普通 MSVC/GCC/Clang 配置中，此命令用原生工具链原地重配置 BUILD_WASM；
+        # language-server 子目录只在 Emscripten 下创建 *_wasm 目标，下一命令遂找不到目标。
+        # 扩展脚本已有 emcmake 独立构建目录；此目标应复用它，再复制 wasm 产物。
         add_custom_target(build_wasm_for_extension
             COMMAND ${CMAKE_COMMAND} -DBUILD_WASM=ON ${CMAKE_SOURCE_DIR}
             COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target zr_vm_language_server_wasm
