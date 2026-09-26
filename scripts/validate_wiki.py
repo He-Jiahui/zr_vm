@@ -31,6 +31,8 @@ FRONT_MATTER_KEY_PATTERN = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_-]*)\s*:")
 
 
 class ValidationResult(NamedTuple):
+    """供 CLI 和回归测试共享的诊断结果；计数用于定位扫描范围，错误决定验收。"""
+
     errors: tuple[str, ...]
     markdown_files: int
     manifest_pages: int
@@ -48,6 +50,8 @@ def _relative_path(path: Path, base: Path) -> str:
 
 
 def _inside(path: Path, directory: Path) -> bool:
+    """为 manifest 与本地链接共用目录边界，resolve 后也排除符号链接越界。"""
+
     try:
         path.resolve().relative_to(directory.resolve())
     except ValueError:
@@ -75,6 +79,8 @@ def _front_matter_end(lines: list[str]) -> int | None:
 
 
 def _validate_markdown(path: Path, docs_root: Path, errors: list[str]) -> str | None:
+    """在严格构建前检查源文件契约；无渲染器依赖，只核 front matter 必需键。"""
+
     text = _read_utf8(path, errors, docs_root)
     if text is None:
         return None
@@ -135,6 +141,8 @@ def _heading_anchors(text: str) -> set[str]:
 
 
 def _manifest_path(manifest: dict, docs_root: Path, errors: list[str]) -> tuple[set[str], int]:
+    """将导航清单的页面路径归一，以供后续和实际 Markdown 文件集合互证。"""
+
     pages = manifest.get("pages")
     if not isinstance(pages, list):
         errors.append("manifest pages must be an array")
@@ -176,6 +184,8 @@ def _manifest_path(manifest: dict, docs_root: Path, errors: list[str]) -> tuple[
 
 
 def _validate_manifest(manifest_path: Path, docs_root: Path, errors: list[str]) -> tuple[int, set[str]]:
+    """验证导航引用与源文件双向一致；发布入口依赖此检查拦截漏列页面。"""
+
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -240,7 +250,7 @@ def _is_external_link(target: str) -> bool:
 
 
 def _content_lines(text: str) -> Iterable[str]:
-    """Yield Markdown lines outside fenced code blocks."""
+    """链接与标题检查共用正文视图，避免把围栏代码示例当成导航目标。"""
 
     fence_character: str | None = None
     fence_length = 0
@@ -260,6 +270,11 @@ def _content_lines(text: str) -> Iterable[str]:
 
 
 def _validate_links(documents: dict[Path, str], docs_root: Path, errors: list[str]) -> int:
+    """解析当前 wiki 使用的行内本地链接，并以同一份标题缓存核对锚点。
+
+    TODO: 此预检不解析 Markdown 的引用式链接；引入该写法前须扩展扫描并补回归样例。
+    """
+
     local_links = 0
     anchor_cache = {path: _heading_anchors(text) for path, text in documents.items()}
     for source, text in documents.items():
@@ -287,7 +302,10 @@ def _validate_links(documents: dict[Path, str], docs_root: Path, errors: list[st
 
 
 def validate(root: Path, *, site_dir: Path | None = None) -> ValidationResult:
-    """Validate a checkout and return structured counts plus all errors."""
+    """供 CI、作者本地命令及测试调用的统一入口，汇总所有可独立发现的源错误。
+
+    site_dir 只在渲染完成后验证入口文件存在且非空，不代替渲染器的严格构建。
+    """
 
     root = Path(root).resolve()
     docs_root = root / "docs" / "wiki"
@@ -347,6 +365,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    """将统一校验结果映射成 CI 退出码；错误逐项输出以便定位源文件。"""
+
     args = _build_parser().parse_args(argv)
     result = validate(args.root, site_dir=args.site_dir)
     for error in result.errors:

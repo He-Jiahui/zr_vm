@@ -1,3 +1,5 @@
+"""用最小临时 wiki 隔离源校验规则，并以真实仓库覆盖 CI 的集成入口。"""
+
 import importlib.util
 import json
 import tempfile
@@ -15,6 +17,8 @@ SPEC.loader.exec_module(validate_wiki)
 
 
 def write_document(path: Path, body: str, *, title: str = "Test page") -> None:
+    """构造符合其余元数据要求的页面，让每个用例只引入目标错误。"""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "---\n"
@@ -31,6 +35,8 @@ def write_document(path: Path, body: str, *, title: str = "Test page") -> None:
 
 
 def write_manifest(root: Path, paths: list[str]) -> None:
+    """为临时页面建立可控导航；清单用例可引入缺项，其余用例免受导航错误干扰。"""
+
     manifest = {
         "schema": 1,
         "title": "Test Wiki",
@@ -47,6 +53,8 @@ def write_manifest(root: Path, paths: list[str]) -> None:
 
 
 class WikiValidationTests(unittest.TestCase):
+    """覆盖真实文档入口及各类独立失败，避免发布流程吞掉源诊断。"""
+
     def test_repository_wiki_is_valid(self) -> None:
         result = validate_wiki.validate(REPO_ROOT)
 
