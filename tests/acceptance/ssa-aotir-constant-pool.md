@@ -5,8 +5,9 @@
 The shared AOTIR module now carries a typed constant pool with flags and raw
 bits. Projection descriptors copy the supplied constant records into their
 owned module view; AOTIR validation rejects missing pools and zero type tokens,
-and semantic hashing covers every constant record. Schema version 5 marks the
-contract change.
+out-of-range `CONSTANT` instruction pool indices, and non-matching instruction
+type tokens. Semantic hashing covers every constant record. Schema version 5
+marks the contract change.
 
 Callers can use `ZrParser_ExecIr_LowerAotWithConstants` to deep-copy module
 constant rows into the owned projection before descriptor conversion. C/LLVM
@@ -20,8 +21,9 @@ through the projection descriptor, checks its copied payload and hash impact,
 and rejects a zero type token. `tests/parser/test_ssa_aotir_state_map.c` now
 exercises the constant-aware AOT lowering entry point and asserts the copied
 projection record is non-aliased. The strict GCC descriptor and AOTIR contract
-fixtures passed; modified AOTIR, projection, and descriptor sources compile
-with `-std=c11 -Wall -Wextra -Werror -pedantic`.
+fixtures passed; the contract fixture also rejects an out-of-range `CONSTANT`
+pool index and a mismatched instruction type token. Modified AOTIR, projection,
+and descriptor sources compile with `-std=c11 -Wall -Wextra -Werror -pedantic`.
 
 This host has no `clang` or MSVC toolchain on `PATH`, and MinGW GCC 4.8 does
 not support sanitizer flags. Configured WSL/MSVC matrix checks remain pending.
