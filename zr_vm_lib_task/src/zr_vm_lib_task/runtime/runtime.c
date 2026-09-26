@@ -20,6 +20,7 @@ typedef struct ZrVmTaskExecuteRequest {
     TZrBool completed;
 } ZrVmTaskExecuteRequest;
 
+/* 这些对象字段组成旧版 Async/Scheduler 的私有状态协议；包装层和 worker 只通过同名键交换状态。 */
 static const TZrChar *kTaskMainSchedulerField = "__zr_task_scheduler";
 static const TZrChar *kTaskQueueField = "__zr_task_queue";
 static const TZrChar *kTaskQueueHeadField = "__zr_task_queue_head";
@@ -37,6 +38,7 @@ static const TZrChar *kTaskSchedulerOwnerField = "__zr_task_scheduler_owner";
 static const TZrUInt32 kTaskSchedulerExternalWaitMs = 1u;
 static const TZrChar *kTaskModuleName = "zr.task";
 
+/* 方法回调只接受真实对象 receiver，避免把非实例值当作包装器内部状态读取。 */
 SZrObject *zr_vm_task_self_object(const ZrLibCallContext *context) {
     SZrTypeValue *selfValue = ZrLib_CallContext_Self(context);
     if (selfValue == ZR_NULL || (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY) ||
@@ -198,6 +200,8 @@ TZrBool zr_vm_task_default_support_multithread(SZrState *state) {
     return project != ZR_NULL && project->supportMultithread ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 主 scheduler 原拟从项目配置继承自动推进策略，影响 spawn 返回前是否执行。 */
+/* BUG: 旧实现读取 project->autoCoroutine，但当前 SZrLibrary_Project 已无此成员；恢复构建时编译失败。 */
 static TZrBool zr_vm_task_default_auto_coroutine(SZrState *state) {
     SZrLibrary_Project *project;
 
@@ -209,6 +213,8 @@ static TZrBool zr_vm_task_default_auto_coroutine(SZrState *state) {
     return project == ZR_NULL || project->autoCoroutine ? ZR_TRUE : ZR_FALSE;
 }
 
+/* worker launch 写入 ID，宿主读取 last-worker 字段用于追踪隔离实例。 */
+/* BUG: worker clone_project 保留多线程权限并注册同一旧 provider，可与 owner 同时 spawnThread；此静态自增无同步，存在数据竞争和重复 ID 风险。 */
 TZrUInt64 zr_vm_task_next_worker_isolate_id(void) {
     static TZrUInt64 nextId = 0x1000u;
 
@@ -230,6 +236,7 @@ static ZrVmTaskSchedulerRuntime *zr_vm_task_scheduler_alloc_runtime(TZrUInt64 is
     return runtime;
 }
 
+/* Channel.send/close 唤醒 scheduler，worker completion 则直接向相同条件变量发布消息。 */
 void zr_vm_task_scheduler_signal_runtime(ZrVmTaskSchedulerRuntime *runtime) {
     if (runtime == ZR_NULL) {
         return;
@@ -240,6 +247,8 @@ void zr_vm_task_scheduler_signal_runtime(ZrVmTaskSchedulerRuntime *runtime) {
     zr_vm_task_sync_mutex_unlock(&runtime->mutex);
 }
 
+/* scheduler VM 对象持有 native queue 指针；worker 仅通过该指针发布，VM 字段仍由 owner isolate 修改。 */
+/* BUG: 本目录只分配并缓存此 runtime，从未在 scheduler 释放或 global 关闭时销毁互斥量、条件变量并 free；启用旧 provider 后每个 scheduler 都会泄漏 native 内存。 */
 ZrVmTaskSchedulerRuntime *zr_vm_task_scheduler_get_runtime(SZrState *state, SZrObject *scheduler) {
     const SZrTypeValue *runtimeValue;
     ZrVmTaskSchedulerRuntime *runtime;
@@ -318,6 +327,7 @@ static SZrObject *zr_vm_task_ensure_scheduler_with_field(SZrState *state, const 
                               kTaskSupportMultithreadField,
                               zr_vm_task_default_support_multithread(state));
     zr_vm_task_set_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE);
+    /* TODO: native queue 初始化失败仍返回 scheduler；重新启用时需确认调用方如何区分不可用调度器。 */
     zr_vm_task_scheduler_get_runtime(state, scheduler);
     return scheduler;
 }
@@ -371,6 +381,7 @@ static void zr_vm_task_scheduler_pending_worker_remove(SZrState *state, SZrObjec
     }
 }
 
+/* worker 句柄由 scheduler 数组保持可达，直到外部 completion/fault 在 owner isolate 被消费。 */
 static TZrBool zr_vm_task_scheduler_has_pending_workers(SZrState *state, SZrObject *scheduler) {
     SZrObject *pendingArray;
     TZrSize index;
@@ -396,6 +407,7 @@ static TZrBool zr_vm_task_scheduler_has_pending_workers(SZrState *state, SZrObje
     return ZR_FALSE;
 }
 
+/* 此入口是 worker→owner 的唯一 VM 状态提交点；锁外解码，避免 worker 线程触碰 owner 的 VM 对象。 */
 TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *scheduler) {
     ZrVmTaskSchedulerRuntime *runtime;
     ZrVmTaskSchedulerMessage *message = ZR_NULL;
@@ -449,6 +461,7 @@ TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *schedu
     return ZR_TRUE;
 }
 
+/* 等待仅观察 native 消息队列，不驱动 VM 回调；调用方随后必须再次 process_external。 */
 TZrBool zr_vm_task_scheduler_wait_for_external(SZrState *state, SZrObject *scheduler, TZrUInt32 timeoutMs) {
     ZrVmTaskSchedulerRuntime *runtime;
     TZrBool hasMessage;
@@ -472,6 +485,7 @@ TZrBool zr_vm_task_scheduler_wait_for_external(SZrState *state, SZrObject *sched
     return hasMessage;
 }
 
+/* 在旧 wrapper、transport、worker 回调中统一把宿主错误写入 VM 异常状态。 */
 TZrBool zr_vm_task_raise_runtime_error(SZrState *state, const TZrChar *message) {
     SZrTypeValue errorValue;
 
@@ -494,6 +508,7 @@ TZrBool zr_vm_task_raise_runtime_error(SZrState *state, const TZrChar *message) 
     return ZR_FALSE;
 }
 
+/* worker/共享 transport 创建前核对项目权限，防止无权限项目借用跨线程能力。 */
 TZrBool zr_vm_task_require_multithread(SZrState *state, const TZrChar *message) {
     if (zr_vm_task_default_support_multithread(state)) {
         return ZR_TRUE;
@@ -502,6 +517,7 @@ TZrBool zr_vm_task_require_multithread(SZrState *state, const TZrChar *message) 
     return zr_vm_task_raise_runtime_error(state, message);
 }
 
+/* worker isolate 还原 Channel 时可能尚未完成模块加载；此时降级为普通对象承载 native 指针。 */
 SZrObject *zr_vm_task_new_typed_object(SZrState *state, const TZrChar *typeName) {
     SZrObject *object;
 
@@ -522,6 +538,7 @@ SZrObject *zr_vm_task_new_typed_object(SZrState *state, const TZrChar *typeName)
     return object;
 }
 
+/* 构造回调沿用实际 receiver 或构造目标原型，保证泛型包装器实例与调用点的类型身份一致。 */
 SZrObject *zr_vm_task_resolve_construct_target(ZrLibCallContext *context) {
     SZrObject *self;
     SZrObjectPrototype *ownerPrototype;
@@ -553,6 +570,7 @@ TZrBool zr_vm_task_is_integer_value(const SZrTypeValue *value) {
     return value != ZR_NULL && (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type));
 }
 
+/* AtomicInt/AtomicUInt 包装层使用严格整数读取；类型错误由 native binding 的不返回异常入口终止。 */
 TZrBool zr_vm_task_read_strict_int(const ZrLibCallContext *context, TZrSize index, TZrInt64 *outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
 
@@ -592,6 +610,7 @@ TZrBool zr_vm_task_read_strict_uint(const ZrLibCallContext *context, TZrSize ind
     ZrLib_CallContext_RaiseTypeError(context, index, "uint");
 }
 
+/* CompareExchange 使用数值语义比较跨整数宽度，而对象仅按同一底层引用比较。 */
 TZrBool zr_vm_task_value_equals(const SZrTypeValue *lhs, const SZrTypeValue *rhs) {
     if (lhs == ZR_NULL || rhs == ZR_NULL) {
         return ZR_FALSE;
@@ -628,6 +647,7 @@ static void zr_vm_task_execute_callable_body(SZrState *state, TZrPtr arguments) 
     request->completed = ZrLib_CallValue(state, request->callable, ZR_NULL, ZR_NULL, 0, &request->result);
 }
 
+/* await 从 FAULTED 句柄传播原异常；没有可归一化值时以通用运行时错误终止。 */
 static ZR_NO_RETURN void zr_vm_task_raise_fault(SZrState *state, const SZrTypeValue *errorValue) {
     if (state != ZR_NULL && errorValue != ZR_NULL &&
         (ZrCore_Exception_NormalizeThrownValue(state,
@@ -641,6 +661,7 @@ static ZR_NO_RETURN void zr_vm_task_raise_fault(SZrState *state, const SZrTypeVa
     ZrCore_Debug_RunError(state, "Task fault");
 }
 
+/* 本地 callable 失败后保留错误值于 Async，清掉 callable 引用并恢复 scheduler 所需的正常线程状态。 */
 static TZrBool zr_vm_task_handle_mark_faulted(SZrState *state,
                                               SZrObject *handle,
                                               EZrThreadStatus status,
@@ -671,6 +692,7 @@ static TZrBool zr_vm_task_handle_mark_faulted(SZrState *state,
     return ZR_TRUE;
 }
 
+/* scheduler 的本地句柄执行入口：只在 owner isolate 调用，异常被收敛到句柄而不穿透 pump。 */
 static TZrBool zr_vm_task_execute_handle(SZrState *state, SZrObject *handle) {
     const SZrTypeValue *callable;
     ZrVmTaskExecuteRequest request;
@@ -707,6 +729,7 @@ static TZrBool zr_vm_task_execute_handle(SZrState *state, SZrObject *handle) {
     return zr_vm_task_handle_mark_faulted(state, handle, status, request.completed ? &request.result : ZR_NULL);
 }
 
+/* 单步先提交 worker 外部结果，再消费本地队列；pending worker 只短暂等待，不占住 VM 锁。 */
 static TZrBool zr_vm_task_scheduler_step_internal(SZrState *state, SZrObject *scheduler) {
     SZrObject *queue;
     TZrInt64 head;
@@ -763,6 +786,7 @@ static TZrBool zr_vm_task_scheduler_step_internal(SZrState *state, SZrObject *sc
     return ZR_TRUE;
 }
 
+/* 自动推进和显式 pump 共用此入口；isPumping 防止回调递归推进同一 scheduler。 */
 static TZrInt64 zr_vm_task_scheduler_pump_internal(SZrState *state, SZrObject *scheduler) {
     TZrInt64 executed = 0;
 
@@ -782,6 +806,7 @@ static TZrInt64 zr_vm_task_scheduler_pump_internal(SZrState *state, SZrObject *s
     return executed;
 }
 
+/* spawn 与 spawnThread 共享 Async 句柄初态；scheduler owner 字段决定后续 await 的推进对象。 */
 static TZrBool zr_vm_task_create_async_handle(SZrState *state,
                                               SZrObject *scheduler,
                                               const SZrTypeValue *callable,
@@ -810,6 +835,7 @@ static TZrBool zr_vm_task_create_async_handle(SZrState *state,
     return zr_vm_task_finish_object(state, result, handle);
 }
 
+/* await/result 仅在完成时复制结果、故障时重新抛错；未完成时由所属 scheduler 和 autoCoroutine 决定是否推进。 */
 static TZrBool zr_vm_task_wait_for_handle(SZrState *state, SZrObject *handle, SZrTypeValue *result) {
     TZrInt64 status;
     SZrObject *scheduler;
@@ -842,6 +868,7 @@ static TZrBool zr_vm_task_wait_for_handle(SZrState *state, SZrObject *handle, SZ
     autoCoroutine = scheduler != ZR_NULL && zr_vm_task_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE);
     isPumping = scheduler != ZR_NULL && zr_vm_task_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE);
 
+    /* worker 消息丢失或 pending 集合未释放时，这个等待循环没有取消与超时出口。 */
     if (scheduler != ZR_NULL && autoCoroutine && !isPumping) {
         while (ZR_TRUE) {
             status = zr_vm_task_get_int_field(state, handle, kTaskStatusField, ZR_VM_TASK_STATUS_CREATED);
@@ -869,6 +896,7 @@ static TZrBool zr_vm_task_current_scheduler(ZrLibCallContext *context, SZrTypeVa
     return zr_vm_task_finish_object(context->state, result, zr_vm_task_main_scheduler(context->state));
 }
 
+/* 本地 spawn 在自动模式下可能于返回前执行 callable；关闭自动模式时由显式 pump/step 驱动。 */
 static TZrBool zr_vm_task_spawn_on_scheduler(ZrLibCallContext *context,
                                              SZrTypeValue *result,
                                              SZrObject *scheduler) {
@@ -906,6 +934,7 @@ static TZrBool zr_vm_task_spawn(ZrLibCallContext *context, SZrTypeValue *result)
     return zr_vm_task_spawn_on_scheduler(context, result, zr_vm_task_main_scheduler(context->state));
 }
 
+/* 跨线程 spawn 先检查项目权限，再把 handle 和序列化工件交给 worker；完成状态仅在 owner isolate 回写。 */
 static TZrBool zr_vm_task_spawn_thread(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrBool supportMultithread;
     SZrTypeValue *callable = ZR_NULL;
@@ -955,6 +984,7 @@ static TZrBool zr_vm_task_await(ZrLibCallContext *context, SZrTypeValue *result)
     return zr_vm_task_wait_for_handle(context->state, handle, result);
 }
 
+/* 旧版 yieldNow 是一次同步 scheduler step，调用方不应把它当作可恢复的协程挂起点。 */
 static TZrBool zr_vm_task_yield_now(ZrLibCallContext *context, SZrTypeValue *result) {
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -965,6 +995,7 @@ static TZrBool zr_vm_task_yield_now(ZrLibCallContext *context, SZrTypeValue *res
     return ZR_TRUE;
 }
 
+/* TODO: 旧 descriptor 仍导出 sleep，但此回调只返回 null；恢复公开入口前需确定延迟/挂起语义。 */
 static TZrBool zr_vm_task_sleep(ZrLibCallContext *context, SZrTypeValue *result) {
     ZR_UNUSED_PARAMETER(context);
     ZrLib_Value_SetNull(result);
@@ -1027,6 +1058,7 @@ static TZrBool zr_vm_task_scheduler_get_auto(ZrLibCallContext *context, SZrTypeV
     return ZR_TRUE;
 }
 
+/* 旧版导出 surface 由这些函数及方法表固定；当前核心 provider 使用另一套 Task/Job contract。 */
 static const ZrLibFunctionDescriptor g_task_functions[] = {
         {"spawn", 1, 1, zr_vm_task_spawn, "Async", "Queue a callable on the current scheduler.", ZR_NULL, 0},
         {"spawnThread", 1, 1, zr_vm_task_spawn_thread, "Async",
@@ -1195,6 +1227,7 @@ static const ZrLibGenericParameterDescriptor g_task_single_generic_parameter[] =
         },
 };
 
+/* 各 wrapper 的实例方法、构造器及泛型参数在此汇总供 native registry 发布。 */
 static const ZrLibTypeDescriptor g_task_types[] = {
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Async", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_async_methods,
                                     ZR_ARRAY_COUNT(g_async_methods), ZR_NULL, 0,
@@ -1280,6 +1313,7 @@ static const TZrChar g_task_hints_json[] =
         "  \"module\": \"zr.task\"\n"
         "}\n";
 
+/* TODO: 此 v1.0.0/Async descriptor 与当前核心 zr.task 的 Task/Job contract 不同；接入构建前须先决定迁移或删除，避免同名 provider 竞争。 */
 static const ZrLibModuleDescriptor g_task_descriptor = {
         ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         "zr.task",

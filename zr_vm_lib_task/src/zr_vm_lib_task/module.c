@@ -3,6 +3,7 @@
 #include "zr_vm_lib_task/runtime.h"
 #include "zr_vm_library/native_registry.h"
 
+/* 显式宿主注册和插件 loader 共用同一静态 descriptor，避免入口间的模块身份分叉。 */
 const ZrLibModuleDescriptor *ZrVmTask_GetModuleDescriptor(void) { return ZrVmTask_Runtime_GetModuleDescriptor(); }
 
 TZrBool ZrVmTask_Register(SZrGlobalState *global) {
@@ -10,6 +11,7 @@ TZrBool ZrVmTask_Register(SZrGlobalState *global) {
         return ZR_FALSE;
     }
 
+    /* registry 先附着到 global，再登记 descriptor；调用方负责选择唯一 zr.task provider。 */
     if (!ZrLibrary_NativeRegistry_Attach(global)) {
         return ZR_FALSE;
     }

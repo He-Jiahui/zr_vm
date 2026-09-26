@@ -19,9 +19,11 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_lib_task/module.h"
 
+/* owner isolate 的 pending 数组保持 handle 可达，直到 scheduler 消费 worker 终态消息。 */
 static const TZrChar *kTaskPendingWorkersField = "__zr_task_pending_workers";
 static const TZrChar *kTaskWorkerIsolateIdField = "__zr_task_worker_isolate_id";
 
+/* detached worker 独占这些复制来的路径、捕获和项目配置；ownerRuntime/ownerHandle 只是跨线程借用。 */
 typedef struct ZrVmTaskWorkerLaunch {
     TZrChar *binaryPath;
     TZrChar *projectFile;
@@ -40,6 +42,7 @@ typedef struct ZrVmTaskWorkerLaunch {
     TZrBool autoCoroutine;
 } ZrVmTaskWorkerLaunch;
 
+/* TryRun 只在 worker isolate 内执行 callable，完成值随后编码成传输 payload。 */
 typedef struct ZrVmTaskWorkerExecuteRequest {
     const SZrTypeValue *callable;
     SZrTypeValue result;
@@ -64,6 +67,7 @@ static TZrChar *zr_vm_task_worker_strdup(const TZrChar *text) {
     return copy;
 }
 
+/* worker 入口或启动失败分支释放 launch 内存；临时磁盘文件另由 run_launch/调用方删除。 */
 static void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch) {
     TZrUInt32 captureIndex;
 
@@ -87,6 +91,8 @@ static void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch) {
     free(launch);
 }
 
+/* worker isolate 复制项目查找路径与权限，不共享 owner 的字符串对象或 AOT runtime。 */
+/* BUG: 克隆仍写 project->autoCoroutine，但当前 SZrLibrary_Project 已无此成员；旧目录独立编译在此失败。 */
 static SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, const ZrVmTaskWorkerLaunch *launch) {
     SZrLibrary_Project *project;
 
@@ -123,6 +129,7 @@ static SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, cons
     return project;
 }
 
+/* callable 编译成独立临时工件，由 worker 的新 global 重新加载，避免共享函数/闭包 VM 指针。 */
 static TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferSize) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -155,6 +162,7 @@ static TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferS
     return ZR_TRUE;
 }
 
+/* 在线程启动前根住 handle；否则 worker 完成消息可能携带已回收的 owner 对象地址。 */
 static TZrBool zr_vm_task_worker_append_pending_handle(SZrState *state, SZrObject *scheduler, SZrObject *handle) {
     SZrObject *pendingArray;
     SZrTypeValue pendingValue;
@@ -178,6 +186,7 @@ static TZrBool zr_vm_task_worker_append_pending_handle(SZrState *state, SZrObjec
     return ZrLib_Array_PushValue(state, pendingArray, &handleValue);
 }
 
+/* worker 自己打开、加载并关闭序列化函数，加载结果只归 worker global 管理。 */
 static TZrBool zr_vm_task_worker_load_function(SZrState *state, const TZrChar *path, SZrFunction **outFunction) {
     SZrLibrary_File_Reader *reader;
     SZrIo io;
@@ -207,6 +216,7 @@ static TZrBool zr_vm_task_worker_load_function(SZrState *state, const TZrChar *p
     return *outFunction != ZR_NULL;
 }
 
+/* 捕获值在目标 isolate 解码后灌入新 closure；不允许携带普通 owner VM 对象。 */
 static TZrBool zr_vm_task_worker_build_callable(SZrState *state,
                                                 SZrFunction *function,
                                                 const ZrVmTaskWorkerLaunch *launch,
@@ -277,6 +287,7 @@ static void zr_vm_task_worker_execute_body(SZrState *state, TZrPtr arguments) {
     request->completed = ZR_TRUE;
 }
 
+/* TryRun 约束异常留在 worker isolate，调用方把成功值或错误文字投递给 owner。 */
 static TZrBool zr_vm_task_worker_execute_callable(SZrState *state,
                                                   const SZrTypeValue *callableValue,
                                                   SZrTypeValue *resultValue) {
@@ -299,6 +310,8 @@ static TZrBool zr_vm_task_worker_execute_callable(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 投递是 worker 回传终态并修改 owner Async 的通路：锁内转移 payload 所有权，owner 稍后消费并释放。 */
+/* BUG: runtime 为空或消息分配失败都会静默丢弃 completion/fault；pending handle 只在 process_external 消费消息时移除，await 自动等待因此没有终态出口。 */
 static void zr_vm_task_worker_enqueue_message(ZrVmTaskSchedulerRuntime *runtime,
                                               TZrUInt32 kind,
                                               SZrObject *handle,
@@ -344,6 +357,8 @@ static void zr_vm_task_worker_queue_error_message(ZrVmTaskSchedulerRuntime *runt
     zr_vm_task_worker_enqueue_message(runtime, ZR_VM_TASK_SCHEDULER_MESSAGE_FAULT, handle, &payload);
 }
 
+/* worker 创建独立 global、注册旧 task descriptor、加载临时工件、执行并只回传可编码值。 */
+/* BUG: global 创建失败、缺少 mainState 或注册失败的早退分支跳过 cleanup 中的 remove(binaryPath)，留下临时文件。 */
 static void zr_vm_task_worker_run_launch(ZrVmTaskWorkerLaunch *launch) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *workerGlobal;
@@ -462,6 +477,7 @@ static void *zr_vm_task_worker_entry(void *argument) {
 }
 #endif
 
+/* 启动后线程 detached；调用方不得再释放 launch，worker entry 负责最终内存清理。 */
 static TZrBool zr_vm_task_worker_start(ZrVmTaskWorkerLaunch *launch) {
     if (launch == ZR_NULL) {
         return ZR_FALSE;
@@ -488,6 +504,8 @@ static TZrBool zr_vm_task_worker_start(ZrVmTaskWorkerLaunch *launch) {
 #endif
 }
 
+/* spawnThread 只支持可序列化脚本函数及可传输捕获；先造磁盘工件，再根住 handle 和启动线程。 */
+/* BUG: 临时路径创建成功但 WriteBinaryFile 失败时直接返回，既不 remove 已创建文件，也不保证部分写入被清理。 */
 TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context, SZrTypeValue *result, SZrObject *mainScheduler) {
     SZrTypeValue *callable = ZR_NULL;
     SZrObject *handle;
@@ -527,10 +545,12 @@ TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context, SZrTypeValue *
         return ZR_FALSE;
     }
     memset(launch, 0, sizeof(*launch));
+    /* BUG: 路径复制失败未删除已创建文件；worker 后续无法通过 NULL binaryPath 找回它。 */
     launch->binaryPath = zr_vm_task_worker_strdup(tempPath);
     launch->captureCount = captureCount;
     launch->ownerRuntime = zr_vm_task_scheduler_get_runtime(context->state, mainScheduler);
     launch->ownerHandle = handle;
+    /* BUG: global->allocator/userAllocationArguments 是预算包装器与 ownerGlobal 指针；detached worker 创建新 global 时继续借用，owner 先销毁会解引用已释放 global。 */
     launch->allocator = context->state->global->allocator;
     launch->userAllocationArguments = context->state->global->userAllocationArguments;
     launch->workerIsolateId = zr_vm_task_next_worker_isolate_id();
@@ -578,6 +598,7 @@ TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context, SZrTypeValue *
 
     zr_vm_task_set_uint_field(context->state, handle, kTaskWorkerIsolateIdField, launch->workerIsolateId);
     zr_vm_task_record_last_worker_isolate(context->state, launch->workerIsolateId);
+    /* BUG: pending 先入数组而线程启动失败时只释放 launch，不撤销 GC 根，句柄停留在 QUEUED。 */
     if (!zr_vm_task_worker_append_pending_handle(context->state, mainScheduler, handle) ||
         !zr_vm_task_worker_start(launch)) {
         zr_vm_task_worker_launch_free(launch);

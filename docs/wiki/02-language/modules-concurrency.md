@@ -1,10 +1,12 @@
 ---
 related_code:
+  - CMakeLists.txt
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/include/zr_vm_library/task_runtime.h
-  - zr_vm_lib_task/include/zr_vm_lib_task/module.h
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_lib_thread/include/zr_vm_lib_thread/module.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
@@ -15,6 +17,7 @@ related_code:
   - tests/fixtures/projects/syntax_reference_v1/src/iterators.zr
   - tests/fixtures/projects/syntax_reference_v1/src/native_ffi.zr
 implementation_files:
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_library/src/zr_vm_library/project/project.c
@@ -34,6 +37,7 @@ tests:
   - tests/fixtures/projects/syntax_reference_v1/golden/provider-locator.json
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
   - docs/plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md
 doc_type: language-reference
@@ -175,17 +179,17 @@ if (!ZrLibrary_ModuleSpecifier_Parse("@fixturedep/tool",
     return ZR_FALSE;
 }
 
-const ZrLibModuleDescriptor *taskDescriptor = ZrVmTask_GetModuleDescriptor();
-if (!ZrVmTask_Register(state->global)) {
+if (!ZrCore_TaskRuntime_RegisterBuiltins(state->global)) {
     /* read ZrLibrary_NativeRegistry_GetLastError* before cleanup */
     ZrLibrary_Project_Free(state, project);
     return ZR_FALSE;
 }
-/* taskDescriptor is a borrowed static descriptor; never free it. */
-(void)taskDescriptor;
 ```
 
-宿主需要在同一 global 上注册 provider、保持 manifest/archive/path 的 owner 生命周期，并在关闭前释放 project、Task/Job、FFI handle 和 native registry。常用入口：
+自建宿主可按上例在同一 global 注册当前内建 task provider；CLI 标准模块注册路径已调用
+该入口。旧版 `zr_vm_lib_task` 的 `ZrVmTask_Register` 没有进入顶层构建和当前 CLI 路径。
+宿主还须保持 manifest/archive/path 的 owner 生命周期，并在关闭前释放 project、
+Task/Job、FFI handle 和 native registry。常用入口：
 
 | C API | 用途 |
 | --- | --- |
@@ -195,7 +199,7 @@ if (!ZrVmTask_Register(state->global)) {
 | `ZrLibrary_Project_ResolveImportProviderLocation` | 找 source/binary/package/native provider。 |
 | `ZrLibrary_Zrm_Open/Close/FindModule/ReadEntry` | 读取 `.zrm`。 |
 | `ZrLibrary_NativeRegistry_Attach/RegisterModule` | 安装并校验 native descriptor。 |
-| `ZrLibrary_TaskRuntime_PrepareJob/ExecutePreparedJob/CompletePreparedJob` | 驱动 Task/Job bridge。 |
-| `ZrVmTask_Register`、`ZrVmThread_Register` | 注册官方 task/thread provider。 |
+| `ZrLibrary_TaskRuntime_PrepareJob/ExecutePreparedJob/CompletePreparedJob/ReleasePreparedJob` | 准备与释放 work item；同域 Execute 自行结算，外部结果由 Complete 结算。 |
+| `ZrCore_TaskRuntime_RegisterBuiltins`、`ZrVmThread_Register` | 注册当前内建 task 与可选 thread provider。 |
 
 上述函数的真实参数、返回枚举和借用规则以公共头文件为准；完整生命周期见 [Library C API](../05-interop/c-api-library.md) 和 [C API 通用约定](../05-interop/c-api.md)。

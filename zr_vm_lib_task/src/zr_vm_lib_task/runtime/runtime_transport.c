@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+/* Channel wrapper 只保存共享 transport 的 native 指针；消息队列不存跨 isolate 的 VM 引用。 */
 static const TZrChar *kTaskChannelTransportField = "__zr_task_channel_transport";
 
 static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
@@ -22,6 +23,7 @@ static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
     return copy;
 }
 
+/* 与成功 encode 配对：字符串所有权在消息间移动，Channel 指针仍借用，不由消息释放。 */
 void zr_vm_task_transport_clear(ZrVmTaskTransportValue *value) {
     if (value == ZR_NULL) {
         return;
@@ -66,6 +68,7 @@ TZrBool zr_vm_task_channel_try_get_transport(SZrState *state,
     return ZR_TRUE;
 }
 
+/* decode 在目标 isolate 新建 wrapper，共享 native transport 而非原 isolate 的 VM 对象。 */
 TZrBool zr_vm_task_channel_make_value(SZrState *state, ZrVmTaskChannelTransport *transport, SZrTypeValue *result) {
     SZrObject *handle;
     SZrTypeValue transportValue;
@@ -84,6 +87,7 @@ TZrBool zr_vm_task_channel_make_value(SZrState *state, ZrVmTaskChannelTransport 
     return zr_vm_task_finish_object(state, result, handle);
 }
 
+/* worker captures、worker result 和 Channel.send 共用允许传输的值域；普通对象无法跨 isolate 搬运。 */
 TZrBool zr_vm_task_transport_encode_value(SZrState *state,
                                           const SZrTypeValue *value,
                                           ZrVmTaskTransportValue *outValue,
@@ -122,6 +126,7 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
         return ZR_TRUE;
     }
     if (value->type == ZR_VALUE_TYPE_STRING && value->value.object != ZR_NULL) {
+        /* BUG: VM 字符串有独立 byteLength，复制却用 strlen；中间含 NUL 的值经 send/worker 传输后静默截断。 */
         SZrString *stringObject = ZR_CAST_STRING(state, value->value.object);
         outValue->kind = ZR_VM_TASK_TRANSPORT_KIND_STRING;
         outValue->as.stringValue = zr_vm_task_duplicate_native_string(ZrCore_String_GetNativeString(stringObject));
@@ -140,6 +145,7 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 解码不取得 payload 所有权；调用方复制到目标 VM 后仍需 clear 编码值。 */
 TZrBool zr_vm_task_transport_decode_value(SZrState *state,
                                           const ZrVmTaskTransportValue *value,
                                           SZrTypeValue *result) {
@@ -193,6 +199,8 @@ static ZrVmTaskChannelTransport *zr_vm_task_channel_get_transport_internal(SZrSt
     return (ZrVmTaskChannelTransport *)value.value.nativeObject.nativePointer;
 }
 
+/* Channel 的队列与状态由 native 锁保护，wrapper 可经 worker 捕获再次还原。 */
+/* BUG: transport 仅以 native 指针存入 VM 字段，本目录没有析构/引用计数或关闭后的释放路径；每次构造会泄漏队列和同步资源，未 recv 的消息也一直保留。 */
 TZrBool zr_vm_task_channel_construct(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *handle;
     ZrVmTaskChannelTransport *transport;
@@ -221,6 +229,7 @@ TZrBool zr_vm_task_channel_construct(ZrLibCallContext *context, SZrTypeValue *re
     return zr_vm_task_finish_object(context->state, result, handle);
 }
 
+/* 先编码再取得队列锁；成功入队后消息拥有 payload，关闭竞态在锁内拒绝并清理未发布消息。 */
 TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self;
     SZrTypeValue *value;
@@ -277,6 +286,7 @@ TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result)
     return ZR_TRUE;
 }
 
+/* recv 始终非阻塞：空队列和发送 null 都返回 null；已关闭队列仍可排空。 */
 TZrBool zr_vm_task_channel_recv(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self;
     ZrVmTaskChannelTransport *transport;
@@ -321,6 +331,7 @@ TZrBool zr_vm_task_channel_recv(ZrLibCallContext *context, SZrTypeValue *result)
     return ZR_TRUE;
 }
 
+/* close 是幂等的逻辑封口，唤醒 scheduler，但不丢弃已入队消息或释放 transport。 */
 TZrBool zr_vm_task_channel_close(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrVmTaskChannelTransport *transport;
 

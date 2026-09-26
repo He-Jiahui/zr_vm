@@ -1,25 +1,26 @@
 ---
 related_code:
+  - CMakeLists.txt
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_library/include/zr_vm_library/task_runtime.h
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_lib_task/include/zr_vm_lib_task/module.h
   - zr_vm_lib_task/include/zr_vm_lib_task/runtime.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
 implementation_files:
   - zr_vm_library/src/zr_vm_library/task_runtime.c
-  - zr_vm_lib_task/src/zr_vm_lib_task/module.c
-  - zr_vm_lib_task/src/zr_vm_lib_task/runtime/runtime.c
-  - zr_vm_lib_task/src/zr_vm_lib_task/runtime/runtime_workers.c
-  - zr_vm_lib_task/src/zr_vm_lib_task/runtime/runtime_transport.c
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
 plan_sources:
   - user: 2026-09-10 继续细化 Wiki 的语言规则、用例与 C 接口说明
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/plans/syntax/12-async-task-job-scheduler/m1-explicit-task-syntax-effect.md
   - docs/plans/syntax/12-async-task-job-scheduler/m2-task-frame-runtime.md
   - docs/plans/syntax/12-async-task-job-scheduler/m3-job-scheduler-runtime.md
 tests:
   - tests/task/test_task_runtime.c
   - tests/task/test_task_job_scheduler.c
-  - tests/library/test_task_runtime_bridge.c
   - tests/thread/test_thread_runtime.c
 doc_type: api-reference
 ---
@@ -31,6 +32,10 @@ doc_type: api-reference
 bridge 保证 task/callable 在异步交接期间被 GC root 持有；Core/Thread provider 决定实际执行域。
 本页将它们按状态机和调用顺序展开。
 
+当前 CLI 通过 `ZrCore_TaskRuntime_RegisterBuiltins` 注册 `zr.task` v3 descriptor。
+`zr_vm_lib_task` 中的旧 descriptor 未进入顶层 CMake 构建，以下公开调用均以当前
+`zr_vm_library/src/zr_vm_library/task_runtime.c` 的注册表为准。
+
 语言级 `async` / `await` grammar 请先阅读[可调用对象、调用与异步迭代](../02-language/callable-async-iterator-reference.md)；
 本页以运行时 API 和 C provider 实现为中心。
 
@@ -41,7 +46,7 @@ bridge 保证 task/callable 在异步交接期间被 GC root 持有；Core/Threa
 | `Job<T>` | 脚本或 provider | schedule 消费其 callable | 一个 Job 只能成功进入 prepare/schedule 一次。 |
 | `Task<T>` | scheduler/Library bridge | caller-domain task handle | 完成前必须有可达 owner/root；完成后保存 result 或 fault。 |
 | `Scheduler` | `zr.task`/线程 provider | state/global 的运行时对象 | queue、head、pumping flag 是私有字段。 |
-| `WorkItem` | `PrepareJob` | provider 直到 Execute/Fault/Complete 后 Release | 包含 GC root，必须恰好 release 一次。 |
+| `WorkItem` | `PrepareJob` | provider 在执行/结算后或队列接管 Task 后 Release | 包含 GC root，必须恰好 release 一次。 |
 | await hook | provider 注册 | scheduler registration 所有 | 不暴露脚本 pump 字段；hook 只处理所属 provider task。 |
 
 `Job` 的“冷”特性意味着构造 job 不等于开始执行；`schedule` 才完成 callable 到 queue/task
@@ -70,12 +75,14 @@ Task<T>       result(): T; isCompleted(): bool
 Job<T>        cold callable: fn() -> T or fn() -> Task<T>
 Scheduler     schedule(job: Job<T>): Task<T>
 yieldNow()    Task<void>
-delay(...)    Task<void>
+delay(duration: Duration)    Task<void>  // descriptor 签名；实际 callback 读非负整数 turn
 ```
 
-实际 provider 还可能提供 `Async`、`spawn`、`currentScheduler`、`pump`/`step` 等兼容或
-runtime descriptor surface；代码应以当前导入 module 的 descriptor/类型提示为准，不要把另一
-层 provider 的成员假定为 canonical public contract。
+`delay` 的 descriptor 参数写为 `Duration`，当前回调却读取非负整数并按 scheduler turn
+计数，不提供墙上时钟等待。TODO: 需统一参数契约与当前实现，并加入对应回归验证。
+
+当前模块 materialize 时公开 `currentScheduler` 属性。`Async`、`spawn` 和脚本可调用的
+`pump`/`step` 均不在当前 descriptor 中；不要用旧 task 模块的成员编写当前脚本。
 
 ### async effect 的前置条件
 
@@ -101,7 +108,8 @@ CREATED ----------------------------------> QUEUED
    v                                           v
 FAULTED <------------------------------- RUNNING / completing
    ^                                           |
-   | FaultPreparedJob or callable failure      | CompletePreparedJob
+    | FaultPreparedJob or callable failure      | callable returns normally /
+    |                                           | CompletePreparedJob
    +-------------------------------------------+
                                                |
                                                v
@@ -112,15 +120,17 @@ FAULTED <------------------------------- RUNNING / completing
 
 - `PrepareJob` 将 job 标为 consumed，取出 callable，建立 caller-domain task，并创建 GC root
   handle；任务不能在 root 创建之前交给异步 provider。
-- `ExecutePreparedJob` 从 root resolve task，再在当前合法 state/domain 执行其 callable。
+- `ExecutePreparedJob` 从 root resolve task，在当前合法 state/domain 执行 callable，并自行写入
+  completed 或 faulted；其后不得再对同一 task 调用 `CompletePreparedJob`。
 - `CompletePreparedJob` 只接受尚未完成的 task，将 result 写入并发布 completed；重复 complete
   是失败而非覆盖旧结果。
 - `FaultPreparedJob` 将失败信息写入 task fault state；它不应伪造一个成功 `null` result。
-- `ReleasePreparedJob` 释放 root 并清零 work item；无论 execute/complete/fault 的哪个分支
-  结束，调用者都必须走一次 release。
+- `ReleasePreparedJob` 释放 root 并清零 work item；执行/结算后或队列已接管 Task 可达性后，
+  都由 work item 持有者调用一次 release。
 
 `Task.result()`/`await` 先检查 completed/fault。仍 pending 时，runtime 尝试 provider await
-hook；若无 hook 或 hook 未处理，再在未处于 pumping 的 scheduler 上推进 step。若队列不能让
+hook；只有未注册有效 hook 时，才在未处于 pumping 的 scheduler 上推进 step。已注册的 hook
+返回失败会直接中止本次等待，返回成功则重查 task 状态。若队列不能让
 该 task 到达终态，则产生“pending on active scheduler frame”运行时错误，而不是无限递归 pump。
 
 ## 同域、worker 与 isolated provider
@@ -141,47 +151,40 @@ caller domain 结算 task”拆开的接口。transport 解码、配额或执行
 ### 注册模块
 
 ```c
-#include "zr_vm_lib_task/module.h"
+#include "zr_vm_core/task_runtime.h"
 #include "zr_vm_library/task_runtime.h"
 
-if (!ZrVmTask_Register(global)) {
+if (!ZrCore_TaskRuntime_RegisterBuiltins(global)) {
     return ZR_FALSE;
 }
 ```
 
-`ZrVmTask_GetModuleDescriptor()` 返回 provider descriptor 的借用静态数据；不要 free，也不要
-假设所有 task 实现都使用同一个 internal field layout。若自己的 scheduler/provider 依赖
-`zr.task`，应先让 registry/phase admission 成功，再提交 job。
+`RegisterBuiltins` 附着 native registry，并注册当前内建 `zr.task` descriptor。
+CLI 的标准模块入口已调用此函数；同一个 global 上不要重复注册另一份 `zr.task` descriptor。
+若自己的 scheduler/provider 依赖 `zr.task`，应先让 registry/phase admission 成功，再提交 job。
 
 ### 最小安全 work item 模板
 
 ```c
 ZrLibraryTaskRuntimeWorkItem item = {0};
 SZrTypeValue taskValue;
-SZrTypeValue resultValue;
-TZrBool prepared = ZR_FALSE;
-
-prepared = ZrLibrary_TaskRuntime_PrepareJob(
-        state, schedulerObject, jobObject, &taskValue, &item);
-if (!prepared) {
+if (!ZrLibrary_TaskRuntime_PrepareJob(
+        state, schedulerObject, jobObject, &taskValue, &item)) {
     return ZR_FALSE;
 }
 
-if (ZrLibrary_TaskRuntime_ExecutePreparedJob(state, &item)) {
-    /* For an external provider, produce resultValue in the caller state/domain. */
-    if (!ZrLibrary_TaskRuntime_CompletePreparedJob(state, &item, &resultValue)) {
-        ZrLibrary_TaskRuntime_FaultPreparedJob(state, &item, "provider completion failed");
-    }
-} else {
-    ZrLibrary_TaskRuntime_FaultPreparedJob(state, &item, "provider job execution failed");
-}
-
+/* 同域调用执行 callable，并由 Execute 写入 completed 或 faulted。 */
+TZrBool executed = ZrLibrary_TaskRuntime_ExecutePreparedJob(state, &item);
 ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &item);
+if (!executed) return ZR_FALSE;
 ```
 
-真实 provider 通常在 `PrepareJob` 后将工作移交队列，随后在适当时机执行或从 completion queue
-调用 complete；上例只显示 ownership 的骨架。关键是：准备成功后，所有退出路径都必须
-`ReleasePreparedJob`；不要复制 `item.taskRoot`、不要在 worker 直接释放 caller root。
+真实 provider 可在 `PrepareJob` 后将工作移交队列。若由外部执行者计算结果，应经
+`CopyPreparedCallable` 获取 callable，并在 caller domain 以明确初始化的结果调用
+`CompletePreparedJob`，失败则调用 `FaultPreparedJob`。`ExecutePreparedJob` 已自行结算任务，
+不能再对同一任务调用 `CompletePreparedJob`。准备成功后，所有退出路径都必须
+`ReleasePreparedJob`；不要复制 `item.taskRoot`。跨 GC domain 的 isolated worker 不得直接
+释放 caller root；attached worker 在 caller domain 的合法 state 下可按 API 释放。
 
 ### Provider await hook
 
@@ -196,10 +199,10 @@ if (!ZrLibrary_TaskRuntime_RegisterAwaitHook(state, schedulerObject, &registrati
 }
 ```
 
-hook 接收 state、task 和 provider context。它只能处理自己拥有的 pending task；若不能处理，
-应按 API contract 让 runtime 继续默认流程，而不是在 hook 中长期阻塞或递归调用 `await`。
-`AwaitProviderTask` 输出 `outHandled`，由 runtime 区分“无 hook/未处理”与“hook 处理后应重查
-task 状态”。registration 生命周期必须覆盖 scheduler 使用期。
+hook 接收 state、task 和 provider context。注册后它负责自己拥有的 pending task；若无法
+推进，应返回失败，让本次等待终止，而不要在 hook 中长期阻塞或递归调用 `await`。
+`AwaitProviderTask` 在调用有效 hook 前就设置 `outHandled=true`；仅未注册有效 hook 时返回
+`outHandled=false` 并允许默认 step。registration 生命周期必须覆盖 scheduler 使用期。
 
 ## GC、异常、取消与安全点
 
@@ -221,7 +224,7 @@ task 状态”。registration 生命周期必须覆盖 scheduler 使用期。
 | Job 第二次 schedule 失败 | job consumed 标志 | 新建 Job，不复用已消费 callable。 |
 | Task 一直 pending | scheduler/hook 是否能推进该 task | 安装/修复 provider completion；不要 busy-loop。 |
 | result 读取抛错 | task 是否 FAULTED | 读取/报告原始 error，检查 worker/transport。 |
-| completion 后崩溃 | work item root 已提前 release 或跨域使用 | 保持 root 到 complete/fault 后，再 release。 |
+| completion 后崩溃 | work item root 已提前 release 或跨域使用 | 释放前确认 Task 已由队列或其他 owner 保持可达；外部 completion 路径在结算后 release。 |
 | `await` 编译失败 | async signature、Task operand、borrow/parameter contract | 修正 source effect/ownership，不修改 scheduler 私有字段。 |
 | isolated result 损坏 | transport/quotas/owner domain | 在 caller domain 完整 decode 后 complete，否则 fault。 |
 | hook 递归或卡死 | hook 重入默认 await/pump | 将 hook 设计为一次 provider-specific state transition。 |

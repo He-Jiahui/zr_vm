@@ -1,5 +1,8 @@
 ---
 related_code:
+  - CMakeLists.txt
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_function_syntax.c
@@ -8,7 +11,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_yield.c
   - zr_vm_library/include/zr_vm_library/task_runtime.h
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
 implementation_files:
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_function_syntax.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_call_arguments.c
@@ -18,6 +23,7 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/task_runtime.c
 plan_sources:
   - user: 2026-09-10 继续细化 Wiki 的语言规则、用例与 C 接口说明
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/plans/syntax/12-async-task-job-scheduler/m1-explicit-task-syntax-effect.md
   - docs/plans/syntax/12-async-task-job-scheduler/m2-task-frame-runtime.md
   - docs/plans/syntax/13-iterator-enumerator-yield/m2-yield-syntax-semir.md
@@ -25,6 +31,7 @@ tests:
   - tests/parser/test_typed_call_binding.c
   - tests/parser/test_syntax_reference_v1.c
   - tests/task/test_task_runtime.c
+  - tests/task/test_task_job_scheduler.c
   - tests/iterator/test_yield_syntax.c
   - tests/fixtures/projects/syntax_reference_v1/src/callables.zr
   - tests/fixtures/projects/syntax_reference_v1/src/async_jobs.zr
@@ -308,16 +315,17 @@ yield 后的安全点继续；正常结束、close、异常和取消走不同终
 
 | C 接口 | 角色 | 生命周期重点 |
 | --- | --- | --- |
-| `ZrVmTask_Register` | 注册 `zr.task` descriptor | descriptor 为静态借用对象；global 释放前保持注册有效。 |
+| `ZrCore_TaskRuntime_RegisterBuiltins` | 注册当前内建 `zr.task` descriptor | 参数为 `SZrGlobalState *`；内部附着 native registry。 |
 | `ZrVmLibIteration_Register` | 注册 `zr.iteration` descriptor | 先于依赖它的模块/编译任务。 |
-| `ZrLibrary_TaskRuntime_ScheduleJob` | 提交 callable/job | 只提交已满足 provider/contract 的工作。 |
-| `ZrLibrary_TaskRuntime_PrepareJob` | 建立 work item | item 有明确 owner，完成、fault 或 release 都必须收尾。 |
-| `ZrLibrary_TaskRuntime_ExecutePreparedJob` | 执行 prepared item | 遵守 state/thread domain 约束。 |
-| `ZrLibrary_TaskRuntime_CompletePreparedJob` | 发布成功完成 | 用任务结果完成而不是自行篡改 frame。 |
-| `ZrLibrary_TaskRuntime_FaultPreparedJob` | 发布 fault | 保留 exception/diagnostic，而不是吞掉失败。 |
-| `ZrLibrary_TaskRuntime_ReleasePreparedJob` | 释放未完成/已完成 item | 恰好一次，避免泄漏 callable root。 |
+| `ZrLibrary_TaskRuntime_ScheduleJob` | 向 scheduler 提交 Job | 只提交已满足 provider/contract 的工作。 |
+| `ZrLibrary_TaskRuntime_PrepareJob` | 消费 Job 并建立 work item | 成功后持有 caller-domain Task root，最终须 Release。 |
+| `ZrLibrary_TaskRuntime_ExecutePreparedJob` | 同域执行 prepared callable | 遵守 state/domain 约束，并自行将 Task 结算为 completed 或 faulted。 |
+| `ZrLibrary_TaskRuntime_CompletePreparedJob` | 发布外部 provider 的成功结果 | 不用于已由 ExecutePreparedJob 结算的 Task。 |
+| `ZrLibrary_TaskRuntime_FaultPreparedJob` | 发布 fault | 把传入的消息写入 Task error，并将状态置为 faulted。 |
+| `ZrLibrary_TaskRuntime_ReleasePreparedJob` | 释放 work item 持有的 Task root | 恰好一次；队列已接管 Task 时也可先于任务结算。 |
 
-`RegisterAwaitHook` 和 `AwaitProviderTask` 用于把 provider Task 的等待行为接到 runtime；
+CLI 标准注册链已调用 `RegisterBuiltins`；旧 `zr_vm_lib_task` 的 `ZrVmTask_Register` 不在
+顶层构建中。`RegisterAwaitHook` 和 `AwaitProviderTask` 用于把 provider Task 的等待行为接到 runtime；
 `IsTaskComplete` 只查询状态，不替代 completion/fault 的所有权处理。完整 C 回调的 root、
 exception 和 cancellation 规则见[核心运行时宿主 API](../05-interop/core-runtime-host-api.md)与
 [原生库调用契约](../05-interop/ffi-contract.md)。

@@ -23,6 +23,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
 
+/* worker isolate 与 owner isolate 之间只传可复制的标量、字符串和 Channel native 句柄。 */
 typedef enum EZrVmTaskTransportKind {
     ZR_VM_TASK_TRANSPORT_KIND_NONE = 0,
     ZR_VM_TASK_TRANSPORT_KIND_NULL = 1,
@@ -42,6 +43,7 @@ typedef pthread_mutex_t ZrVmTaskMutex;
 typedef pthread_cond_t ZrVmTaskCondition;
 #endif
 
+/* 编码后字符串归当前 payload 持有者所有，转移或退出时 clear；Channel 指针借用原 transport。 */
 typedef struct ZrVmTaskTransportValue {
     TZrUInt32 kind;
     TZrUInt32 reserved;
@@ -55,11 +57,13 @@ typedef struct ZrVmTaskTransportValue {
     } as;
 } ZrVmTaskTransportValue;
 
+/* worker 只发送终态，owner scheduler 消费消息后更新 Async 对象字段。 */
 enum {
     ZR_VM_TASK_SCHEDULER_MESSAGE_COMPLETE = 1,
     ZR_VM_TASK_SCHEDULER_MESSAGE_FAULT = 2
 };
 
+/* handle 是 owner isolate 的对象地址；worker 不解引用，只交还 owner 消费。 */
 typedef struct ZrVmTaskSchedulerMessage {
     TZrUInt32 kind;
     TZrUInt32 reserved;
@@ -68,6 +72,7 @@ typedef struct ZrVmTaskSchedulerMessage {
     struct ZrVmTaskSchedulerMessage *next;
 } ZrVmTaskSchedulerMessage;
 
+/* native 队列是 worker 与 scheduler 的同步边界，VM 对象队列仍只属于 owner isolate。 */
 typedef struct ZrVmTaskSchedulerRuntime {
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
@@ -76,11 +81,13 @@ typedef struct ZrVmTaskSchedulerRuntime {
     TZrUInt64 isolateId;
 } ZrVmTaskSchedulerRuntime;
 
+/* Channel 队列节点拥有编码值；recv 与 transport_clear 结束节点生命周期。 */
 typedef struct ZrVmTaskChannelMessage {
     ZrVmTaskTransportValue value;
     struct ZrVmTaskChannelMessage *next;
 } ZrVmTaskChannelMessage;
 
+/* 多个 Channel wrapper 可共享同一 native transport；closed 只禁止新 send，已入队值可继续 recv。 */
 typedef struct ZrVmTaskChannelTransport {
     ZrVmTaskMutex mutex;
     ZrVmTaskCondition condition;
@@ -91,6 +98,7 @@ typedef struct ZrVmTaskChannelTransport {
     TZrBool closed;
 } ZrVmTaskChannelTransport;
 
+/* 两个平台的互斥量/条件变量接口只保护 native 队列；调用方必须在解锁后访问 VM。 */
 #if defined(ZR_PLATFORM_WIN)
 static ZR_FORCE_INLINE void zr_vm_task_sync_mutex_init(ZrVmTaskMutex *mutex) { InitializeCriticalSection(mutex); }
 static ZR_FORCE_INLINE void zr_vm_task_sync_mutex_destroy(ZrVmTaskMutex *mutex) { DeleteCriticalSection(mutex); }
@@ -131,6 +139,7 @@ static ZR_FORCE_INLINE TZrBool zr_vm_task_sync_condition_wait(ZrVmTaskCondition 
 }
 #endif
 
+/* 跨翻译单元桥：runtime.c 管理旧 scheduler/字段状态，transport 和 workers 只通过此组接口交换。 */
 SZrObject *zr_vm_task_self_object(const ZrLibCallContext *context);
 SZrObject *zr_vm_task_root_object(SZrState *state);
 SZrObject *zr_vm_task_main_scheduler(SZrState *state);
@@ -173,6 +182,7 @@ TZrBool zr_vm_task_is_integer_value(const SZrTypeValue *value);
 TZrBool zr_vm_task_read_strict_int(const ZrLibCallContext *context, TZrSize index, TZrInt64 *outValue);
 TZrBool zr_vm_task_read_strict_uint(const ZrLibCallContext *context, TZrSize index, TZrUInt64 *outValue);
 TZrBool zr_vm_task_value_equals(const SZrTypeValue *lhs, const SZrTypeValue *rhs);
+/* transport 的 encode/clear 是所有权配对；decode 在目标 isolate 重新创建 VM 值。 */
 TZrBool zr_vm_task_transport_encode_value(SZrState *state,
                                           const SZrTypeValue *value,
                                           ZrVmTaskTransportValue *outValue,
@@ -185,8 +195,10 @@ TZrBool zr_vm_task_channel_try_get_transport(SZrState *state,
                                              const SZrTypeValue *value,
                                              ZrVmTaskChannelTransport **outTransport);
 TZrBool zr_vm_task_channel_make_value(SZrState *state, ZrVmTaskChannelTransport *transport, SZrTypeValue *result);
+/* launch 向 owner scheduler 暂存句柄，直到 worker 终态消息被 process_external 消费。 */
 TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context, SZrTypeValue *result, SZrObject *mainScheduler);
 
+/* 后续 callbacks 由 runtime.c 的 descriptor 表注册，并由 native binding 分派。 */
 TZrBool zr_vm_task_channel_construct(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool zr_vm_task_channel_recv(ZrLibCallContext *context, SZrTypeValue *result);

@@ -1,5 +1,9 @@
 ---
 related_code:
+  - CMakeLists.txt
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_lib_container/include/zr_vm_lib_container/module.h
@@ -7,25 +11,26 @@ related_code:
   - zr_vm_lib_math/include/zr_vm_lib_math/module.h
   - zr_vm_lib_network/include/zr_vm_lib_network/module.h
   - zr_vm_lib_system/include/zr_vm_lib_system/module.h
-  - zr_vm_lib_task/include/zr_vm_lib_task/module.h
   - zr_vm_lib_thread/include/zr_vm_lib_thread/module.h
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/module.h
   - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
   - zr_vm_lib_testing/include/zr_vm_lib_testing/module.h
 implementation_files:
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_library/src/zr_vm_library/builtin_module.c
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - zr_vm_lib_iteration/src/zr_vm_lib_iteration/runtime/descriptor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_network/src/zr_vm_lib_network/module.c
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
-  - zr_vm_lib_task/src/zr_vm_lib_task/module.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/module.c
   - zr_vm_lib_testing/src/zr_vm_lib_testing/module.c
 plan_sources:
   - user: 2026-09-10 继续细化 Wiki，要求详细介绍内置库接口和 C native 调用方案
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/library-and-builtins/index.md
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
 tests:
@@ -36,6 +41,7 @@ tests:
   - tests/parser/test_value_type_runtime.c
   - tests/parser/test_aot_c_provider_shared_library_smoke.c
   - tests/task/test_task_runtime.c
+  - tests/task/test_task_job_scheduler.c
   - tests/thread/test_thread_runtime.c
   - tests/testing/test_test_role_binding.c
   - tests/ffi/test_ffi_module.c
@@ -60,7 +66,7 @@ flag 与 contract hash。
 | N1 / Runtime | `zr.container` | Array、Map、Set、LinkedList、Span、Pool |
 | N1 / Runtime | `zr.iteration` | Iterable、Enumerator、Iterator、AsyncIterator 协议 |
 | N1 / Runtime | `zr.math` | scalar、Vector2/3/4、Complex、Quaternion、Matrix、Tensor |
-| N1 / Runtime | `zr.task` | Task、Job、Scheduler、Channel、Shared、Atomic |
+| N1 / Runtime | `zr.task` | Task、Job、Scheduler、yieldNow、delay |
 | N2 / Runtime | `zr.debug` | debug agent、coverage、profile、evaluation policy |
 | N2 / Runtime | `zr.ffi` | native extern、Library/Symbol/Pointer/Buffer、callback |
 | N2 / Runtime | `zr.network` | endpoint 根模块和 TCP/UDP link |
@@ -189,17 +195,15 @@ pool destroy 使用 handle 前必须重新 `isLive/Validate`。详见 [Container
 | 类型/函数 | 典型签名 | 语义 |
 | --- | --- | --- |
 | `Task<T>` | `result():T`、`isCompleted():bool` | 结果/状态 handle |
-| `Job<T>` | `Job(fn()->T)` | cold work description，不自动执行 |
-| `Scheduler` | `schedule(job):Task<T>`、`pump()`、`step()` | 驱动队列 |
-| `spawn` | `spawn(fn): Async` | 当前 scheduler 排队 |
-| `await` | `await(handle): value` | 在允许挂起的 frame 中恢复 |
-| `Channel<T>` | `send`、`recv`、`close` | 空队列/EOF 返回 null，close 后 send 失败 |
-| `Shared<T>` | `load/store/clone/downgrade/release` | 引用计数共享，不等于 transaction |
-| `Atomic*` | `load/store/compareExchange/fetchAdd` | 单操作原子性 |
+| `Job<T>` | `init Job<T>(callable)` | 接受返回 `T` 或 `Task<T>` 的 callable；构造后仍是 cold work description |
+| `Scheduler` | `schedule(job: Job<T>): Task<T>` | 通过公开的 `currentScheduler` 属性提交 Job |
+| `yieldNow` / `delay` | `yieldNow(): Task<void>`；`delay(duration: Duration): Task<void>` | 当前 callback 按非负整数 turn 计数；`delay` 的 descriptor/实现参数契约仍待统一 |
+| `await` | `await task` | 语言表达式，在允许挂起的 frame 中恢复 |
 
 `async fn` 必须显式返回 `zr.task.Task<T>`；活动 `ref`、`scoped` loan、thread-affine lock
-不能跨 `await`。canonical bridge 的 C 调用顺序是 `Prepare -> Execute -> Complete/Fault ->
-Release`，见 [Task API](task-api.md)。
+不能跨 `await`。当前 `zr.task` descriptor 不含 `Async/spawn/pump/step`；`Channel`、`Shared`
+由 `zr.thread` 提供。C bridge 同域路径为 `Prepare -> Execute -> Release`，其中 Execute 已结算
+Task；外部结果路径为 `Prepare -> Complete/Fault -> Release`，见 [Task API](task-api.md)。
 
 ### 6.2 Thread
 
@@ -291,8 +295,8 @@ phase 和 public contract；runtime import 不会加载它们。具体阶段、e
 
 ## 10. C 注册入口速查
 
-静态宿主先完成 core/global 初始化，再按依赖顺序注册 provider。以下函数名来自各自 public
-`module.h`：
+静态宿主先完成 core/global 初始化，再按依赖顺序注册 provider。`zr.task` 的当前入口
+在 core 的 `task_runtime.h`，其余函数名来自各 provider 的 public `module.h`：
 
 | provider | descriptor getter | register |
 | --- | --- | --- |
@@ -302,7 +306,7 @@ phase 和 public contract；runtime import 不会加载它们。具体阶段、e
 | math | `ZrVmLibMath_GetModuleDescriptor` | `ZrVmLibMath_Register` |
 | network | `ZrVmLibNetwork_GetModuleDescriptor` | `ZrVmLibNetwork_Register` |
 | system | `ZrVmLibSystem_GetModuleDescriptor` | `ZrVmLibSystem_Register` |
-| task | `ZrVmTask_GetModuleDescriptor` | `ZrVmTask_Register` |
+| task | 注册后用 `ZrLibrary_NativeRegistry_FindModule(global, "zr.task")` 查询 | `ZrCore_TaskRuntime_RegisterBuiltins` |
 | thread | `ZrVmThread_GetModuleDescriptor` | `ZrVmThread_Register` |
 | ffi | `ZrVmLibFfi_GetModuleDescriptor` | `ZrVmLibFfi_Register` |
 | debug | `ZrVmLibDebug_GetModuleDescriptor` | `ZrVmLibDebug_Register` / `ZrVmLibDebug_RegisterSandboxed` |
@@ -316,7 +320,7 @@ if (!ZrLibrary_NativeRegistry_Attach(global) ||
     !ZrVmLibIteration_Register(global) ||
     !ZrVmLibMath_Register(global) ||
     !ZrVmLibSystem_Register(global) ||
-    !ZrVmTask_Register(global)) {
+    !ZrCore_TaskRuntime_RegisterBuiltins(global)) {
     const TZrChar *message =
         ZrLibrary_NativeRegistry_GetLastErrorMessage(global);
     host_log("provider registration failed", message);
@@ -324,6 +328,8 @@ if (!ZrLibrary_NativeRegistry_Attach(global) ||
 }
 ```
 
+CLI 已使用 `ZrCore_TaskRuntime_RegisterBuiltins` 注册当前 `zr.task` v3 descriptor；
+`zr_vm_lib_task` 的旧入口未进入顶层构建，不能作为这个表格中的可链接注册函数。
 真实宿主应按构建配置决定是否注册 network/debug/thread/testing，并在每次失败后立即读取
 registry 错误；不要继续注册依赖失败 provider。共享库发行时由 loader 调用统一入口
 `ZrVm_GetNativeModule_v1()`，静态 getter 名称不会成为动态 ABI。

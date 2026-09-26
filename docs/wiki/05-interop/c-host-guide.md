@@ -1,10 +1,12 @@
 ---
 related_code:
+  - CMakeLists.txt
   - zr_vm_core/include/zr_vm_core/global.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/value.h
   - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/include/zr_vm_core/execution.h
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_library/include/zr_vm_library/common_state.h
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/include/zr_vm_library/native_registry.h
@@ -18,10 +20,12 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/common_state.c
   - zr_vm_library/src/zr_vm_library/project/project.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
+  - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
   - docs/core-runtime/state-lifecycle.md
   - docs/library-and-builtins/index.md
 tests:
@@ -29,6 +33,7 @@ tests:
   - tests/library/test_project_import_resolver.c
   - tests/library/test_project_module_specifier.c
   - tests/module/test_module_system.c
+  - tests/task/test_task_runtime.c
   - tests/ffi/test_native_extern_contract.c
 doc_type: integration-guide
 ---
@@ -86,12 +91,14 @@ ZrVmLibSystem_Register(global);
 ZrVmLibMath_Register(global);
 ZrVmLibContainer_Register(global);
 ZrVmLibIteration_Register(global);
-ZrVmTask_Register(global);
+ZrCore_TaskRuntime_RegisterBuiltins(global);
 ZrVmLibNetwork_Register(global);
 ZrVmLibFfi_Register(global);
 ~~~
 
-实际函数名按所链接 provider 的 module.h 为准。注册失败时读取：
+当前 `zr.task` 使用 `zr_vm_core/task_runtime.h` 的 `ZrCore_TaskRuntime_RegisterBuiltins`
+入口；保留在 `zr_vm_lib_task` 的 `ZrVmTask_Register` 未进入顶层构建。其余函数名以所链接
+provider 的 module.h 为准。注册失败时读取：
 
 ~~~c
 EZrLibNativeRegistryErrorCode code =
