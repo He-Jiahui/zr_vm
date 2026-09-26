@@ -69,7 +69,7 @@ typedef TZrBool (*FZrPoolInitialize)(
         void *context);
 /** @brief 仅在 initialize 失败时清理已获得的外部资源；回调需能处理部分构造对象。 */
 typedef void (*FZrPoolAbortInitialize)(void *destination, void *context);
-/** @brief 在最后一个 guard 释放后或销毁时析构池拥有的元素。 */
+/** @brief 回收无借用元素时立即析构；有借用则延后至最后一个 guard 释放，销毁也触发。 */
 typedef void (*FZrPoolDrop)(void *element, void *context);
 /** @brief 扫描池槽位中的 GC 引用；由布局扫描策略决定调用频率。 */
 typedef void (*FZrPoolScan)(void *element, void *context);
@@ -158,6 +158,7 @@ ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_CreateFromTypeLayout(
         SZrPool **outPool);
 
 /** @brief 退役全部实体并释放池；成功后清空调用方指针。
+ * @pre 调用方须先阻止其他线程持有原池指针进入 API；CONCURRENT 只保护池存活期间的内部状态。
  * @return 尚有 guard 时返回 POOL_BUSY，池保持可释放状态；先释放 guard 再重试销毁。
  */
 ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_Destroy(SZrPool **pool);

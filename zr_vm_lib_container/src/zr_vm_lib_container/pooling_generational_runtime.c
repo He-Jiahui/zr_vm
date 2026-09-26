@@ -136,6 +136,7 @@ static SZrPoolingGuardRuntime *pooling_guard_from_object(
     return (SZrPoolingGuardRuntime *)value->value.nativeObject.nativePointer;
 }
 
+/* 池布局的 scan 回调故意不重复标记：宿主 Pool 的 trace hook 用调用方 visitor 完整追踪槽位。 */
 static void pooling_value_scan(
         SZrState *state,
         SZrTypeValue *value,
@@ -188,6 +189,7 @@ static void pooling_barrier_value(
     }
 }
 
+/* 新 GC 引用位于非托管槽位内，写入后须以 Pool 宿主为父对象逐值补 GC 屏障。 */
 static void pooling_runtime_barrier_storage(
         SZrState *state,
         SZrObject *owner,
@@ -206,6 +208,7 @@ static void pooling_runtime_barrier_storage(
             ZR_CAST_RAW_OBJECT_AS_SUPER(owner));
 }
 
+/* 首次交付固定 T 的规范布局；后续内联交付须使用同一 registry 和兼容布局签名。 */
 static TZrBool pooling_runtime_layout_matches(
         const SZrPoolingRuntime *runtime,
         const ZrLibInlineArgumentView *inlineView) {
@@ -398,6 +401,7 @@ static TZrBool pooling_read_uint_field(
     return ZR_TRUE;
 }
 
+/* 将语言层 PoolHandle 的三元整数字段还原为 C 句柄，拒绝负数与平台宽度截断。 */
 static TZrBool pooling_read_handle(
         ZrLibCallContext *context,
         TZrSize argumentIndex,
@@ -444,6 +448,7 @@ static void pooling_set_uint_field(
     ZrLib_Object_SetFieldCString(state, object, name, &value);
 }
 
+/* 在交付句柄对象的字段写入期间保留临时 GC 根；失败由调用方回收已交付槽位。 */
 static SZrObject *pooling_new_handle(
         ZrLibCallContext *context,
         SZrPoolHandle handle,
@@ -569,8 +574,8 @@ static TZrBool pooling_guard_release(
     if (guardRuntime == ZR_NULL || guardRuntime->finalized) {
         return ZR_TRUE;
     }
-    /* TODO: 核实写回失败后的 guard 关闭契约。此处先标记 finalized，后续内联复制
-     * 失败也会释放底层借用；需故障注入 CopyObjectValueToInlineStorage 验证是否允许重试。
+    /* TODO: 明确写回失败仍关闭 guard 的公开契约。此处先标记 finalized，内联复制
+     * 失败也会释放借用并清空运行时，当前不能重试；需故障注入确认应丢弃修改还是保留恢复路径。
      */
     guardRuntime->finalized = ZR_TRUE;
     owner = pooling_runtime_object_field(

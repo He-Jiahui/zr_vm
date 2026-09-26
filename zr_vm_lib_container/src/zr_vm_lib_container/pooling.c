@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <stdint.h>
 
+/* 这些键与下方 BufferPool/PoolLease 描述符字段同名，GC 通过对象字段追踪所有权。 */
 static const TZrChar *kPoolAvailableField = "available";
 static const TZrChar *kPoolNextGenerationField = "nextGeneration";
 static const TZrChar *kPoolReturnCountField = "returnCount";
@@ -54,6 +55,7 @@ static SZrObject *pooling_object_field(
     return ZR_CAST_OBJECT(state, value->value.object);
 }
 
+/* 计数器和租约边界共用读取路径；缺失字段按零处理，超大无符号值饱和到 int64 上限。 */
 static TZrInt64 pooling_int_field(
         SZrState *state,
         SZrObject *object,
@@ -138,6 +140,7 @@ static void pooling_set_bool_field(
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
 }
 
+/* BufferPool 无自定义构造回调；首次 rent 才补齐计数器，并保留已有统计值。 */
 static void pooling_initialize_pool_state(
         SZrState *state,
         SZrObject *pool) {
@@ -168,6 +171,7 @@ static TZrBool pooling_array_set(
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* available 延迟创建，写入池字段前以临时根保护新数组。 */
 static SZrObject *pooling_ensure_available(
         SZrState *state,
         SZrObject *pool) {
@@ -283,6 +287,7 @@ static SZrObject *pooling_acquire_backing(
         return backing;
     }
 
+    /* 找不到同长度空闲数组时才创建；新数组在填充期间同样依赖调用方的根。 */
     {
         SZrObject *backing = ZrLib_Array_New(state);
         if (backing == ZR_NULL) {
@@ -301,7 +306,7 @@ static SZrObject *pooling_acquire_backing(
     }
 }
 
-/* 租约是唯一使用入口；发布前将 owner、backing 和代数一起写入受 GC 管理的对象。 */
+/* rent 把池内 backing 交给带代数的租约；两个临时根覆盖从 available 移除到结果发布的窗口。 */
 static TZrBool pooling_buffer_pool_rent(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -345,6 +350,8 @@ static TZrBool pooling_buffer_pool_rent(
         goto cleanup;
     }
 
+    /* TODO: backing 已从 available 移除后，租约创建或字段写入失败会直接走 cleanup；
+     * 需以分配/字段写入故障注入核对是否应归还 backing，以及 generation/reuseCount 的提交边界。 */
     lease = ZrLib_Type_NewInstance(
             context->state, "zr.pooling.PoolLease");
     if (lease == ZR_NULL) {
@@ -403,7 +410,8 @@ cleanup:
     return ZR_FALSE;
 }
 
-/* close 可重复调用；首次关闭清理元素并归还 backing，使旧 lease 及其 Span 无法再访问。 */
+/* 正常完成时首次 close 清空元素并归还 backing；重复 close 不重复计数。
+ * Span.source 指向 lease，后续索引通过本租约的关闭检查。 */
 static TZrBool pooling_pool_lease_close(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -428,6 +436,8 @@ static TZrBool pooling_pool_lease_close(
         !pooling_store_available(context->state, owner, backing)) {
         return ZR_FALSE;
     }
+    /* TODO: backing 入池后才将 lease 标记 returned 并清空引用；下列 void 字段写入可能失败。
+     * 需在 Object_SetFieldCString 故障注入下验证旧 lease 不会与复用中的 backing 同时可访问。 */
     pooling_set_bool_field(
             context->state, lease, kLeaseReturnedField, ZR_TRUE);
     pooling_set_object_field(
@@ -448,6 +458,7 @@ static TZrBool pooling_pool_lease_close(
     return context->state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 索引和 span 创建共用租约存活检查，关闭后即使旧视图仍持有 lease 也不得访问 backing。 */
 static SZrObject *pooling_require_active_backing(
         ZrLibCallContext *context,
         SZrObject **outLease) {
@@ -529,7 +540,7 @@ static TZrBool pooling_pool_lease_set_item(
     return ZR_TRUE;
 }
 
-/* Span.source 保留 lease 而非原始 backing，从而通过 lease 的索引元方法执行关闭检查。 */
+/* Span.source 保留 lease 而非原始 backing，避免视图绕开 lease 的关闭与索引边界检查。 */
 static TZrBool pooling_pool_lease_span(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -572,6 +583,7 @@ static TZrBool pooling_pool_lease_span(
     return context->state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 同一个 T 连接池、弱句柄、借用 guard 和租约的导入类型签名。 */
 static const ZrLibGenericParameterDescriptor kSingleGenericT[] = {
         {"T", ZR_NULL, ZR_NULL, 0u},
 };
@@ -607,6 +619,8 @@ static const ZrLibParameterDescriptor kPoolBorrowParameters[] = {
         {"view", "PoolRef<T>", "Receives the scoped writable guard.", ZR_LIB_PARAMETER_PASSING_MODE_OUT},
 };
 
+/* TODO: PoolHandle 声明为只读弱身份，但 ROLE_INIT 默认 isReadonly=false，元数据把字段发布为可写；
+ * 需用脚本赋值测试核对 poolId/slotIndex/generation 是否可被改写及其对身份验证的影响。 */
 static const ZrLibFieldDescriptor kPoolHandleFields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
                 "poolId",
@@ -625,6 +639,7 @@ static const ZrLibFieldDescriptor kPoolHandleFields[] = {
                 ZR_MEMBER_CONTRACT_ROLE_POOL_HANDLE_GENERATION),
 };
 
+/* 角色供编译器识别稳定槽操作；执行交给独立的 generational runtime 回调。 */
 static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
         {.name = "deliver",
          .minArgumentCount = 1u,
@@ -673,6 +688,7 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_WRITE},
 };
 
+/* guard 的值投影只供运行时持有；脚本通过 value 属性按读写权限访问。 */
 static const ZrLibFieldDescriptor kPoolRefFields[] = {
         {.name = "__zr_pool_guard_value",
          .typeName = "T",
@@ -700,6 +716,7 @@ static const ZrLibMethodDescriptor kPoolRefMethods[] = {
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
 };
 
+/* 只读 guard 复用关闭协议，但不导出可写引用，且 value 的接收者可只读。 */
 static const ZrLibFieldDescriptor kPoolReadRefFields[] = {
         {.name = "__zr_pool_guard_value",
          .typeName = "T",
@@ -737,6 +754,8 @@ static const ZrLibMetaMethodDescriptor kPoolRefMetaMethods[] = {
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
 };
 
+/* TODO: available 和计数器是池内部状态，字段描述符目前默认可写；
+ * 需核对脚本赋值是否可污染可复用数组或统计值，再决定公开写入契约。 */
 static const ZrLibFieldDescriptor kBufferPoolFields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT(
                 "available", "array", "Pool-owned reusable backing arrays."),
@@ -762,6 +781,8 @@ static const ZrLibMethodDescriptor kBufferPoolMethods[] = {
          .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT)},
 };
 
+/* TODO: owner/backing/length/returned 控制租约所有权和边界，但字段描述符目前默认可写；
+ * 需用脚本赋值验证外部能否绕开 close 的单次归还约束。 */
 static const ZrLibFieldDescriptor kPoolLeaseFields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT(
                 "owner", "BufferPool", "Pool that owns the backing allocation."),
@@ -818,7 +839,7 @@ static const ZrLibMetaMethodDescriptor kPoolLeaseMetaMethods[] = {
          .returnTypeName = "null"},
 };
 
-/* 类型描述符同时约束语言层构造权、泛型、协议和 guard 的 move-only/只读语义。 */
+/* 类型描述符向导入器发布构造权、泛型、协议位和 guard 属性；实际借用限制由编译器按角色执行。 */
 static const ZrLibTypeDescriptor kPoolingTypes[] = {
         {.name = "BufferPool",
          .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
@@ -893,6 +914,7 @@ static const ZrLibTypeDescriptor kPoolingTypes[] = {
          .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)},
 };
 
+/* 合同哈希随稳定槽协议发布，供跨提供者消费者核对布局版本。 */
 static const ZrLibConstantDescriptor kPoolingConstants[] = {
         {.name = "STABLE_SLOT_CONTRACT_HASH",
          .kind = ZR_LIB_CONSTANT_KIND_INT,
@@ -901,10 +923,12 @@ static const ZrLibConstantDescriptor kPoolingConstants[] = {
          .typeName = "uint"},
 };
 
+/* PoolLease.span 返回 zr.container 的 Span；materialize 池模块时必须能解析该模块链接。 */
 static const ZrLibModuleLinkDescriptor kPoolingModuleLinks[] = {
         {"container", "zr.container", "Span and ReadOnlySpan contracts."},
 };
 
+/* 注册器按 ABI、provider phase 和模块链接安装本描述符，再暴露两组池类型。 */
 static const ZrLibModuleDescriptor kPoolingModuleDescriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.pooling",

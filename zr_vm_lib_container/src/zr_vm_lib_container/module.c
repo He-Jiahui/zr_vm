@@ -19,6 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Array/Map/Set 的公开长度字段与隐藏 backing 分离；迭代器则通过隐藏 source
+ * 维持 backing 的可达性。字段名也是热槽选择键，修改时须同步下方缓存映射。
+ */
 static const TZrChar *kContainerItemsField = "__zr_items";
 static const TZrChar *kContainerEntriesField = "__zr_entries";
 static const TZrChar *kContainerSourceField = "__zr_source";
@@ -65,7 +68,9 @@ typedef struct ZrContainerHotMapLookupCacheSlot {
     SZrObject *entryObject;
 } ZrContainerHotMapLookupCacheSlot;
 
-/* 快速路径只保存派生查找结果；entries 身份及 memberVersion 变化时必须失效。 */
+/* Map 字符串键热路径只缓存 entries 中已有 Pair 的位置；同一 entries 的成员版本
+ * 变化后，旧位置与 Pair 指针都不能再用于查找。
+ */
 typedef struct ZrContainerHotMapLookupCache {
     TZrUInt64 cacheIdentity;
     SZrObject *entries;
@@ -145,8 +150,9 @@ static SZrString *zr_container_cache_field_string_once(SZrState *state,
     return fieldString;
 }
 
-/* TODO: 核实多个 GlobalState 并行使用容器方法的支持范围。此处及下方 hot cache
- * 是进程级可写缓存，仅按 cacheIdentity 顺序失效；需并行双 GlobalState 测试确认隔离与同步契约。
+/* TODO: 核实多个 GlobalState 并行使用容器方法的支持范围。字段字符串、
+ * Map 查找和迭代器原型均有进程级可写缓存，仅按 cacheIdentity 顺序失效；
+ * 需并行双 GlobalState 测试确认隔离与同步契约。
  */
 static SZrString *zr_container_cached_field_string(SZrState *state, const TZrChar *fieldName) {
     static TZrUInt64 cachedGlobalCacheIdentity = 0;
@@ -610,6 +616,9 @@ static ZR_FORCE_INLINE SZrString *zr_container_iterator_next_node_field_string_f
                             : ZR_NULL;
 }
 
+/* getIterator 返回的对象必须有 Iterator 协议和原生 moveNext 契约，才能被 VM
+ * 的统一迭代路径驱动。原型与闭包在所属 GlobalState 存续期间被永久标记。
+ */
 static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
                                                                    FZrNativeFunction moveNextFunction) {
     static TZrUInt64 cachedGlobalCacheIdentity = 0;
@@ -1024,6 +1033,9 @@ static ZR_FORCE_INLINE void zr_container_cache_string_lookup_pair_mru(SZrObject 
     object->cachedStringLookupPair = pair;
 }
 
+/* Pair 的已存在字段走非拥有值快写；只有双方值均满足 normalized/no-ownership
+ * 条件才跳过通用 setter，GC 值仍须对持有对象执行写屏障。
+ */
 static ZR_FORCE_INLINE TZrBool zr_container_try_set_existing_pair_value_plain_fast(SZrState *state,
                                                                                    SZrObject *object,
                                                                                    SZrHashKeyValuePair *pair,
@@ -1808,6 +1820,9 @@ static ZR_FORCE_INLINE TZrBool zr_container_result_copy_no_profile(SZrState *sta
     return state == ZR_NULL || state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* Pair.compareTo 先比较可解释的字符串、数值及对象协议；无协议时的哈希/类型
+ * 顺序只是容器的兜底排序，调用方不能把它当成跨运行实例的稳定序列化顺序。
+ */
 static TZrInt64 zr_container_values_compare(SZrState *state, const SZrTypeValue *lhs, const SZrTypeValue *rhs) {
     SZrTypeValue result;
     const TZrChar *lhsText;
@@ -1842,6 +1857,10 @@ static TZrInt64 zr_container_values_compare(SZrState *state, const SZrTypeValue 
         return strcmp(lhsText, rhsText);
     }
 
+    /* BUG: UInt64 经 nativeInt64 解释后大于 INT64_MAX 的值会变成负数；
+     * 64 位整数再转 double 还会使 2^53 与 2^53+1 失去顺序，甚至双向比较均返回 1。
+     * Pair.compareTo 通过 kPairMetaMethods 可达；需补齐有符号/无符号边界测试。
+     */
     if ((ZR_VALUE_IS_TYPE_INT(lhs->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(lhs->type) || ZR_VALUE_IS_TYPE_FLOAT(lhs->type)) &&
         (ZR_VALUE_IS_TYPE_INT(rhs->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rhs->type) || ZR_VALUE_IS_TYPE_FLOAT(rhs->type))) {
         lhsNumber = ZR_VALUE_IS_TYPE_FLOAT(lhs->type) ? lhs->value.nativeObject.nativeDouble
@@ -2097,6 +2116,9 @@ static TZrBool zr_container_storage_insert(SZrState *state, SZrObject *array, TZ
         }
     }
 
+    /* TODO: 后移期间忽略 storage_set 的失败结果；需以注入式写入失败验证
+     * Array.insert 是否会留下部分移动的 backing，并明确失败后的状态契约。
+     */
     for (TZrSize cursor = length; cursor > index; cursor--) {
         const SZrTypeValue *source = zr_container_array_get_value_fast(state, array, cursor - 1);
         if (source != ZR_NULL) {
@@ -2123,6 +2145,9 @@ static TZrBool zr_container_storage_remove_at(SZrState *state, SZrObject *array,
         return zr_container_storage_remove_at_raw_int_fast(state, array, index);
     }
 
+    /* TODO: 前移期间同样忽略 storage_set 的失败结果；需检查 Array.removeAt、
+     * Map.remove、Set.remove 的失败传播及元素顺序/计数是否仍一致。
+     */
     for (TZrSize cursor = index; cursor + 1 < length; cursor++) {
         const SZrTypeValue *source = zr_container_array_get_value_fast(state, array, cursor + 1);
         if (source != ZR_NULL) {
@@ -2266,7 +2291,9 @@ static SZrObject *zr_container_make_linked_node(SZrState *state, const SZrTypeVa
     return node;
 }
 
-/* Map 的字符串键优先按对象身份与版本缓存命中；其他键仍走 hash 与语言层相等性契约。 */
+/* Map 的字符串键优先按对象身份与版本缓存命中；短字符串由 core 实习化，
+ * 长字符串才需要同哈希后的内容比较。其他键仍走 hash 与语言层相等性契约。
+ */
 static TZrBool zr_container_map_find_index(SZrState *state,
                                            SZrObject *entries,
                                            const SZrTypeValue *key,
@@ -3424,6 +3451,9 @@ static TZrBool zr_container_map_get_item(ZrLibCallContext *context, SZrTypeValue
                                           result);
 }
 
+/* 只读内联派发只读取已经建立的 entries，避免一次下标访问隐式创建 backing；
+ * 未命中仍按 Map.get 的 null 语义返回，供执行器与普通 meta 回调保持一致。
+ */
 static ZR_FORCE_INLINE TZrBool zr_container_map_get_item_readonly_inline_fast(SZrState *state,
                                                                               const SZrTypeValue *selfValue,
                                                                               const SZrTypeValue *keyValue,
@@ -4019,6 +4049,9 @@ static const ZrLibMethodDescriptor kMapMethods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_map_get_iterator, "zr.iteration.Enumerator<Pair<K,V>>",
                                            ZR_NULL, ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
+/* Map 的下标操作同时提供普通 callback 与内联快路径；只读 get、无结果 set
+ * 由派发标志选择，新增路径必须保留相同的缺失键与插入/更新语义。
+ */
 static const ZrLibMetaMethodDescriptor kMapMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 0, zr_container_map_constructor, "Map<K,V>", ZR_NULL, ZR_NULL, 0},
         {.metaType = ZR_META_GET_ITEM,
@@ -4276,6 +4309,10 @@ static TZrBool zr_container_install_basic_array_method(SZrState *state,
     ZrCore_Value_InitAsRawObject(state, &closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closureValue.isNative = ZR_TRUE;
     ZrLib_Object_SetFieldCString(state, prototypeObject, methodName, &closureValue);
+    /* BUG: SetFieldCString 是 void，分配或写入失败时可提前返回；此处仍报成功，
+     * Register 可在内建 array 缺少 getIterator 时返回 true。证据见
+     * native_binding_dispatch.c 的 SetFieldCString 失败路径；需用故障注入覆盖。
+     */
     return ZR_TRUE;
 }
 

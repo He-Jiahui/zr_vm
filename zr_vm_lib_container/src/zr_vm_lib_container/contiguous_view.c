@@ -1,6 +1,4 @@
-//
-// Protocol-driven contiguous view runtime.
-//
+/* Span 和 ReadOnlySpan 共用运行时视图回调；索引可写性由各自元方法表决定。 */
 
 #include "contiguous_view.h"
 
@@ -11,10 +9,12 @@
 
 #include <limits.h>
 
+/* 字段名须与 module.c 的成员角色一致；PoolLease.span 也按此布局构造视图。 */
 static const TZrChar *kViewSourceField = "source";
 static const TZrChar *kViewStartField = "start";
 static const TZrChar *kViewLengthField = "length";
 
+/* Array.span 的接收者是数组，其余回调接收视图对象。 */
 static SZrObject *contiguous_view_context_object(
         const ZrLibCallContext *context) {
     SZrTypeValue *selfValue;
@@ -92,6 +92,7 @@ static TZrBool contiguous_view_store(
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 切片保留传入原型；跨可写性转换或 Array.span 才按类型名取得新原型。 */
 static SZrObject *contiguous_view_new(
         ZrLibCallContext *context,
         SZrObjectPrototype *prototype,
@@ -118,7 +119,8 @@ static SZrObject *contiguous_view_new(
     return view;
 }
 
-/* 每次访问重新解析 source，以便 PoolLease.close 后的 Span 通过源对象拒绝解引用。 */
+/* source 可为空以表示合法空视图；非空时仍保留原 source 对象，索引会继续走其元方法。
+ * 因此以 PoolLease 为 source 的视图不会绕过租约关闭检查。 */
 static TZrBool contiguous_view_read_state(
         ZrLibCallContext *context,
         SZrObject **outView,
@@ -314,7 +316,7 @@ TZrBool ZrVmLibContainer_ContiguousView_AsReadOnly(
     return ZR_TRUE;
 }
 
-/* 先校验视图相对边界，再委托 source 的索引契约检查其当前可用性。 */
+/* 相对区间校验只保证视图自身边界；底层数组长度或租约存活性在 source 索引时再检查。 */
 TZrBool ZrVmLibContainer_ContiguousView_GetItem(
         ZrLibCallContext *context,
         SZrTypeValue *result) {

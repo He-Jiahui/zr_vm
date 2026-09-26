@@ -7,7 +7,7 @@
 
 #include "zr_vm_lib_container/conf.h"
 
-/** @brief 供容器热路径回归测试读取的查找统计；只在调试构建中累计。 */
+/** @brief 供容器热路径回归测试读取的进程级查找统计；只在调试构建中累计。 */
 typedef struct ZrVmLibContainerDebugHotMapLookupStats {
     TZrUInt64 hotHitCount;
     TZrUInt64 memberVersionHitCount;
@@ -20,6 +20,7 @@ ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetModuleD
 ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetPoolingModuleDescriptor(void);
 /** @brief 按迭代模块、容器模块、池模块的依赖顺序注册，并为内建 array 安装迭代适配器。
  * @pre global 已创建主线程状态和内建类型原型。
+ * @note 失败时本接口不回滚已注册的前序模块，调用方重试前须处理部分注册状态。
  */
 ZR_VM_LIB_CONTAINER_API TZrBool ZrVmLibContainer_Register(SZrGlobalState *global);
 /** @brief 重置热查找统计，供测试隔离测量区间。 */
