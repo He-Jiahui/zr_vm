@@ -51,7 +51,7 @@ def worktree_paths() -> set[str]:
 
 
 def classify(path: str) -> tuple[str, str] | None:
-    """按首方可维护边界分类，避免把构建输出当作待注释源码。"""
+    """按首方可维护边界分类，排除构建输出及提交进仓的临时工作副本。"""
     parts = PurePosixPath(path).parts
     if not parts:
         return None
@@ -64,6 +64,8 @@ def classify(path: str) -> tuple[str, str] | None:
     if any(part in SKIP_PARTS for part in parts):
         return None
     name = parts[-1]
+    if ".__codex_tmp_" in name:
+        return None
     if name in {"package-lock.json", "Cargo.lock", "composer.lock"} or name.endswith("-lock.json"):
         return None
     suffix = PurePosixPath(path).suffix.lower()
