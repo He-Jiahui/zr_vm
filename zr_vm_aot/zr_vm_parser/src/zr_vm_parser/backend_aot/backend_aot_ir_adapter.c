@@ -286,6 +286,7 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
     outFacts->semanticSiteCount = instructionCount;
     outFacts->moduleHash = module->moduleHash;
     outFacts->sourceHash = lowering->sourceHash;
+    outFacts->loweringHash = lowering->loweringHash;
 
     for (TZrUInt32 index = 0u; index < lowering->count; ++index) {
         const SZrAotIrLoweringRecord *record = &lowering->records[index];
@@ -438,6 +439,7 @@ TZrBool backend_aot_ir_adapter_emit_target(
     outFacts->unsupportedCount = emitted.unsupportedCount;
     outFacts->moduleHash = module->moduleHash;
     outFacts->sourceHash = emitted.sourceHash;
+    outFacts->loweringHash = emitted.loweringHash;
     outFacts->contractHash = emitted.contractHash;
     return ZR_TRUE;
 }

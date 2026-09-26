@@ -55,6 +55,7 @@ typedef struct SZrBackendAotIrFacts {
     TZrUInt32 unsupportedCount;
     TZrUInt64 moduleHash;
     TZrUInt64 sourceHash;
+    TZrUInt64 loweringHash;
     TZrUInt64 contractHash;
 } SZrBackendAotIrFacts;
 

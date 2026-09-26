@@ -129,6 +129,7 @@ static void adapter_and_backend_facts_are_shared(void) {
     assert(llvmFacts.nativeLoweredCount == cFacts.nativeLoweredCount);
     assert(llvmFacts.runtimeBridgeCount == cFacts.runtimeBridgeCount);
     assert(llvmFacts.sourceHash == cFacts.sourceHash);
+    assert(llvmFacts.loweringHash == cFacts.loweringHash);
     assert(llvmFacts.contractHash != cFacts.contractHash);
     {
         SZrAotIrEmitOptions policyOptions = options;
