@@ -57,6 +57,7 @@ typedef struct SZrAotIrEmitResult {
     TZrUInt32 interpreterFallbackCount;
     TZrUInt32 unsupportedCount;
     TZrUInt64 sourceHash;
+    TZrUInt64 loweringHash;
     TZrUInt64 contractHash;
 } SZrAotIrEmitResult;
 

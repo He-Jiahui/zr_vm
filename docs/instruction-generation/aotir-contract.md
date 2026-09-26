@@ -100,6 +100,9 @@ they must not silently fall back to semantic decoding of `SZrInstruction`.
 Emitter contract hashes include the target, strict-floating mode, and both
 runtime-bridge and interpreter-fallback policies, so changing a permitted
 degradation path cannot reuse an artifact identity from another policy.
+The lowering result separately publishes a target-independent `loweringHash`;
+C and LLVM results must agree on it while their target-specific contract hashes
+may differ.
 
 The focused fixture is
 `tests/parser/test_ssa_aotir_contract.c`.  It exercises deterministic hashing,

@@ -184,6 +184,7 @@ static TZrBool aot_ir_emit_target(const SZrAotIrModule *module,
     }
     result->target = target;
     result->sourceHash = lowering.sourceHash;
+    result->loweringHash = lowering.loweringHash;
     /* Count every bridge class exactly once below.  The shared lowering
      * result only tracks the generic runtime-bridge kind; copying that value
      * here would double-count those records when the target walk accounts for

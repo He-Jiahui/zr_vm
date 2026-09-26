@@ -170,6 +170,7 @@ int main(void) {
     assert(cResult.nativeCount == llvmResult.nativeCount);
     assert(cResult.runtimeBridgeCount == llvmResult.runtimeBridgeCount);
     assert(cResult.sourceHash == llvmResult.sourceHash);
+    assert(cResult.loweringHash == llvmResult.loweringHash);
     assert(cResult.contractHash != llvmResult.contractHash);
     {
         SZrAotIrEmitOptions policyOptions = cOptions;
