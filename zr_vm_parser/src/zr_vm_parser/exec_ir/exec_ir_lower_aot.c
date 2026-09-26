@@ -34,9 +34,10 @@ void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection) {
     memset(projection, 0, sizeof(*projection));
 }
 
-TZrBool ZrParser_ExecIr_LowerAot(const SZrExecIrFunction *function,
-                                 SZrAotIrProjection *output,
-                                 SZrExecIrDiagnostic *diagnostic) {
+TZrBool ZrParser_ExecIr_LowerAotWithConstants(
+        const SZrExecIrFunction *function, const SZrExecIrConstant *constants,
+        TZrUInt32 constantCount, SZrAotIrProjection *output,
+        SZrExecIrDiagnostic *diagnostic) {
     SZrExecBcProjection prepared;
     SZrAotIrProjection candidate;
     if (output == ZR_NULL) {
@@ -44,7 +45,10 @@ TZrBool ZrParser_ExecIr_LowerAot(const SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     memset(&prepared, 0, sizeof(prepared));
-    if (!ZrParser_ExecIr_BuildProjection(function, &prepared, diagnostic)) return ZR_FALSE;
+    if (!ZrParser_ExecIr_BuildProjectionWithConstants(
+            function, constants, constantCount, &prepared, diagnostic)) {
+        return ZR_FALSE;
+    }
     memset(&candidate, 0, sizeof(candidate));
     ZrParser_ExecIr_MoveProjectionToAot(&prepared, &candidate);
     candidate.signatureHash = function->signatureHash;
@@ -73,4 +77,11 @@ TZrBool ZrParser_ExecIr_LowerAot(const SZrExecIrFunction *function,
     *output = candidate;
     ZrParser_ExecBcProjection_Free(&prepared);
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_ExecIr_LowerAot(const SZrExecIrFunction *function,
+                                 SZrAotIrProjection *output,
+                                 SZrExecIrDiagnostic *diagnostic) {
+    return ZrParser_ExecIr_LowerAotWithConstants(
+            function, ZR_NULL, 0u, output, diagnostic);
 }

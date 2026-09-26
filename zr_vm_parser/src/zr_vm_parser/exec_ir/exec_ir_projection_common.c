@@ -565,15 +565,17 @@ void ZrParser_ExecBcProjection_Free(SZrExecBcProjection *p) {
     memset(p, 0, sizeof(*p));
 }
 
-TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
-                                        SZrExecBcProjection *p,
-                                        SZrExecIrDiagnostic *d) {
+TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
+        const SZrExecIrFunction *f, const SZrExecIrConstant *constants,
+        TZrUInt32 constantCount, SZrExecBcProjection *p,
+        SZrExecIrDiagnostic *d) {
     TZrUInt32 i, j;
     TZrUInt32 splitCount = 0u;
     SZrProjectionSplitEdge *splits = ZR_NULL;
     size_t bytes;
     if (d != ZR_NULL) memset(d, 0, sizeof(*d));
-    if (p == ZR_NULL || !zr_projection_validate(f, d)) return ZR_FALSE;
+    if (p == ZR_NULL || (constantCount != 0u && constants == ZR_NULL) ||
+        !zr_projection_validate(f, d)) return ZR_FALSE;
     if (!zr_projection_count_critical_edges(f, &splitCount, d)) return ZR_FALSE;
     if (splitCount != 0u) {
         if (!zr_projection_bytes(splitCount, sizeof(*splits), &bytes)) {
@@ -648,6 +650,7 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
     p->phiCount = f->phiCount;
     p->phiIncomingCount = f->phiIncomingCount;
     p->sourceMapCount = f->sourceMapCount;
+    p->constantCount = constantCount;
     p->gcMapCount = f->gcMapCount;
     p->gcRootCount = f->gcRootCount;
     p->gcMapPresent = f->gcMap != ZR_NULL;
@@ -679,6 +682,12 @@ TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
         p->frameSlots = (SZrExecIrFrameSlot *)malloc(bytes);
         if (p->frameSlots == ZR_NULL) goto oom;
         memcpy(p->frameSlots, f->frameLayout->slots, bytes);
+    }
+    if (!zr_projection_bytes(p->constantCount, sizeof(*p->constants), &bytes)) goto overflow;
+    if (p->constantCount != 0u) {
+        p->constants = (SZrExecIrConstant *)malloc(bytes);
+        if (p->constants == ZR_NULL) goto oom;
+        memcpy(p->constants, constants, bytes);
     }
     if (p->gcMapPresent) {
         ZrCore_ExecIr_GcMapInit(&p->gcMap);
@@ -968,6 +977,12 @@ fail:
     free(splits);
     ZrParser_ExecBcProjection_Free(p);
     return ZR_FALSE;
+}
+
+TZrBool ZrParser_ExecIr_BuildProjection(const SZrExecIrFunction *f,
+                                        SZrExecBcProjection *p,
+                                        SZrExecIrDiagnostic *d) {
+    return ZrParser_ExecIr_BuildProjectionWithConstants(f, ZR_NULL, 0u, p, d);
 }
 
 void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,

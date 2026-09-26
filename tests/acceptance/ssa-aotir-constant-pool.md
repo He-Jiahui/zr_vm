@@ -8,15 +8,18 @@ owned module view; AOTIR validation rejects missing pools and zero type tokens,
 and semantic hashing covers every constant record. Schema version 5 marks the
 contract change.
 
-This is a descriptor/schema slice. The production ExecIR module-to-projection
-constant population path and C/LLVM constant consumers still need to replace
-legacy opcode/pool decoding, so no native artifact is claimed.
+Callers can use `ZrParser_ExecIr_LowerAotWithConstants` to deep-copy module
+constant rows into the owned projection before descriptor conversion. C/LLVM
+constant consumers still need to replace legacy opcode/pool decoding, so no
+native artifact is claimed.
 
 ## Evidence
 
 `tests/parser/test_ssa_aot_projection_descriptor.c` carries one typed constant
 through the projection descriptor, checks its copied payload and hash impact,
-and rejects a zero type token. The strict GCC descriptor and AOTIR contract
+and rejects a zero type token. `tests/parser/test_ssa_aotir_state_map.c` now
+exercises the constant-aware AOT lowering entry point and asserts the copied
+projection record is non-aliased. The strict GCC descriptor and AOTIR contract
 fixtures passed; modified AOTIR, projection, and descriptor sources compile
 with `-std=c11 -Wall -Wextra -Werror -pedantic`.
 
@@ -25,6 +28,6 @@ not support sanitizer flags. Configured WSL/MSVC matrix checks remain pending.
 
 ## Acceptance
 
-Accepted as the shared typed constant-pool schema and descriptor handoff gate.
-ExecIR module population, legacy decoder removal, C/LLVM lowering, and
+Accepted as the shared typed constant-pool schema, population, and descriptor
+handoff gate. Legacy decoder removal, C/LLVM lowering, and
 executable AOT parity remain open.

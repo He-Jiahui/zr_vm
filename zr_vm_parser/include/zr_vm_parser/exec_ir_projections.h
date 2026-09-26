@@ -214,6 +214,10 @@ ZR_PARSER_API void ZrParser_AotIrProjection_Free(SZrAotIrProjection *projection)
 ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerExecBc(
         const SZrExecIrFunction *function, SZrExecBcProjection *output,
         SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAotWithConstants(
+        const SZrExecIrFunction *function,
+        const SZrExecIrConstant *constants, TZrUInt32 constantCount,
+        SZrAotIrProjection *output, SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAot(
         const SZrExecIrFunction *function, SZrAotIrProjection *output,
         SZrExecIrDiagnostic *diagnostic);
@@ -223,6 +227,10 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAot(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildProjection(
         const SZrExecIrFunction *function, SZrExecBcProjection *output,
         SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_BuildProjectionWithConstants(
+        const SZrExecIrFunction *function,
+        const SZrExecIrConstant *constants, TZrUInt32 constantCount,
+        SZrExecBcProjection *output, SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API void ZrParser_ExecIr_MoveProjectionToAot(
         SZrExecBcProjection *source, SZrAotIrProjection *destination);
 
