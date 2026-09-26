@@ -427,6 +427,9 @@ TZrBool ZrParser_ExecBcProjection_Run(
                     break;
                 case ZR_EXEC_IR_OPCODE_RETURN:
                     if (!zr_execbc_operand(projection, instruction, candidate.slots, 0u, &candidate.returnValue)) goto invalid;
+                    candidate.currentBlock = current != ZR_NULL ? block : 0u;
+                    candidate.returnInstructionId = index + 1u;
+                    candidate.returnSourceId = instruction->sourceId;
                     candidate.returned = ZR_TRUE;
                     terminated = ZR_TRUE;
                     break;

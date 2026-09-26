@@ -47,11 +47,14 @@ tests:
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_oracle_parallel_edges.c
+  - tests/harness/ssa_differential_support.c
+  - tests/harness/ssa_differential_support.h
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-oracle-parallel-edges.md
   - tests/acceptance/ssa-projection-parallel-edges.md
   - tests/acceptance/ssa-projection-phi-schedule.md
   - tests/acceptance/ssa-execbc-scalar-runner.md
+  - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
 doc_type: module-detail
 ---
 
@@ -230,10 +233,20 @@ explicit step limit bounds loops; failed runs release the candidate slots
 without replacing an earlier result. Initial values are indexed by logical
 value ID, and the optional constants pool is indexed by `CONSTANT.layoutId`.
 The result owns its physical slots until `ZrParser_ExecBcExecutionResult_Free`.
+On return it also records the executed block, instruction ID, and source ID,
+allowing a differential fixture to emit a return event from the executed
+projection, not from an assumed source path. The parallel-edge fixture runs
+the verified ExecIR through the independent direct oracle and projected
+runner, compares actual result and return-event observations with
+`ZrTests_Ssa_Compare`, and records both backend identities. A separate
+successor range exercises the projected synthetic-edge rewrite for both
+conditional branches and switches. A test-only return-source corruption
+must fail at event index zero; no production fallback is involved.
 Only projections whose opcodes have a runner implementation are marked
 `runnable`; runtime effects and callbacks still require a later backend ABI.
 This small runner is not the VM's default ExecBC dispatcher, does not emit
-bytecode for it, and establishes no C/LLVM or effect-event parity.
+bytecode for it, and establishes no C/LLVM or effect-event parity. Only the
+scalar/control return observation is compared by this fixture.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a

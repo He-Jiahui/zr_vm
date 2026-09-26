@@ -16,6 +16,9 @@ typedef struct SZrExecBcExecutionResult {
     SZrExecIrOracleValue *slots;
     TZrUInt32 slotCount;
     TZrUInt32 executedInstructionCount;
+    TZrExecIrBlockId currentBlock;
+    TZrExecIrInstructionId returnInstructionId;
+    TZrExecIrSourceId returnSourceId;
     SZrExecIrOracleValue returnValue;
     TZrBool returned;
     TZrUInt32 ownershipTag;

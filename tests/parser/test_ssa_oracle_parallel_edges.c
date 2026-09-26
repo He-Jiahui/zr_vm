@@ -1,6 +1,7 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_projections.h"
 #include "zr_vm_parser/exec_ir_execbc.h"
+#include "ssa_differential_support.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -278,6 +279,138 @@ static void test_projections_preserve_parallel_phi_edges(void) {
     }
     ZrParser_AotIrProjection_Free(&aot);
     ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+typedef struct SZrParallelDiffFixture {
+    SZrSsaFixture fixture;
+    const SZrExecIrFunction *function;
+    SZrExecIrOracleValue condition;
+    TZrBool corruptReturnSource;
+} SZrParallelDiffFixture;
+
+static TZrBool parallel_diff_runner(const SZrSsaFixture *fixture,
+                                    TZrUInt32 backend,
+                                    SZrSsaObservation *observation) {
+    const SZrParallelDiffFixture *test = (const SZrParallelDiffFixture *)fixture;
+    SZrExecIrOracleValue value;
+    TZrExecIrSourceId returnSource;
+    SZrExecIrDiagnostic diagnostic;
+    if (backend == 0u) {
+        SZrExecIrOracleExecutionResult result;
+        SZrExecIrOracleInput input = {0};
+        input.function = test->function;
+        input.constants = &test->condition;
+        input.constantCount = 1u;
+        ZrCore_ExecIr_OracleResultInit(&result);
+        if (!ZrCore_ExecIr_RunOracleEx(&input, &result, &diagnostic) ||
+            !result.returned || result.currentBlock == 0u ||
+            result.currentBlock > test->function->blockCount) {
+            ZrCore_ExecIr_OracleResultFree(&result);
+            return ZR_FALSE;
+        }
+        value = result.returnValue;
+        {
+            TZrExecIrInstructionId returnId = test->function->blocks[
+                result.currentBlock - 1u].terminatorInstructionId;
+            returnSource = test->function->instructions[returnId - 1u].sourceId;
+        }
+        ZrCore_ExecIr_OracleResultFree(&result);
+    } else if (backend == 1u) {
+        SZrExecBcProjection projection = {0};
+        SZrExecBcExecutionResult result;
+        SZrExecBcExecutionInput input = {0};
+        input.constants = &test->condition;
+        input.constantCount = 1u;
+        if (!ZrParser_ExecIr_LowerExecBc(test->function, &projection, &diagnostic))
+            return ZR_FALSE;
+        ZrParser_ExecBcExecutionResult_Init(&result);
+        if (!ZrParser_ExecBcProjection_Run(&projection, &input, &result,
+                                            &diagnostic) || !result.returned ||
+            result.returnInstructionId == 0u ||
+            result.currentBlock == 0u) {
+            ZrParser_ExecBcExecutionResult_Free(&result);
+            ZrParser_ExecBcProjection_Free(&projection);
+            return ZR_FALSE;
+        }
+        value = result.returnValue;
+        returnSource = result.returnSourceId;
+        ZrParser_ExecBcExecutionResult_Free(&result);
+        ZrParser_ExecBcProjection_Free(&projection);
+    } else {
+        return ZR_FALSE;
+    }
+    ZrTests_Ssa_ObservationInit(observation);
+    observation->backend = backend;
+    observation->completed = ZR_TRUE;
+    if (value.kind != ZR_EXEC_IR_ORACLE_VALUE_SIGNED) return ZR_FALSE;
+    observation->resultType = ZR_SSA_RESULT_INTEGER;
+    observation->resultBits = (TZrUInt64)value.as.signedInteger;
+    if (backend == 1u && test->corruptReturnSource) ++returnSource;
+    return ZrTests_Ssa_ObservationAppendEvent(observation, ZR_SSA_EVENT_RETURN,
+                                               returnSource,
+                                               observation->resultBits, 0u);
+}
+
+static void test_oracle_execbc_parallel_phi_differential(void) {
+    SZrExecIrFunction function;
+    SZrParallelDiffFixture fixture = {0};
+    SZrExecIrDiagnostic executionDiagnostic;
+    SZrSsaObservation oracle = {0}, projected = {0};
+    SZrSsaDiffDiagnostic difference;
+    SZrSsaCoverage coverage;
+    SZrExecIrRange separateSuccessors;
+    TZrExecIrBlockId edges[2] = {2u, 2u};
+
+    build_parallel_phi(&function);
+    function.instructions[4].sourceId = 401u;
+    check(ZrCore_ExecIr_FunctionAppendSuccessors(&function, edges, 2u,
+                                                  &separateSuccessors),
+          "could not add independent terminator successors for differential test");
+    function.instructions[3].successorRange = separateSuccessors;
+    check(ZrCore_ExecIr_VerifyFunction(&function,
+              ZR_EXEC_IR_VERIFY_STRUCTURE | ZR_EXEC_IR_VERIFY_SSA,
+              &executionDiagnostic),
+          "parallel phi differential input is not verifier-valid");
+    fixture.fixture.name = "oracle-execbc-parallel-phi";
+    fixture.fixture.runner = parallel_diff_runner;
+    fixture.fixture.requiredBackends = 3u;
+    fixture.function = &function;
+    fixture.condition.kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
+
+    for (TZrUInt32 opcode = 0u; opcode < 2u; ++opcode) {
+        function.instructions[3].opcode = opcode == 0u
+            ? ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH : ZR_EXEC_IR_OPCODE_SWITCH;
+        for (TZrUInt32 condition = 0u; condition < 2u; ++condition) {
+            fixture.condition.as.boolean = (TZrBool)condition;
+            check(ZrTests_Ssa_RunFixture(&fixture.fixture, 0u, &oracle,
+                                          &difference) &&
+                  ZrTests_Ssa_RunFixture(&fixture.fixture, 1u, &projected,
+                                          &difference) &&
+                  ZrTests_Ssa_Compare(&oracle, &projected, &difference),
+                  "oracle and ExecBC disagree on a parallel CFG/phi edge");
+            check(projected.eventCount == 1u &&
+                  projected.events[0].sourceId == 401u &&
+                  projected.resultBits == (opcode == 0u
+                      ? (condition != 0u ? 11u : 22u)
+                      : (condition != 0u ? 22u : 11u)),
+                  "differential fixture chose the wrong phi incoming edge");
+            ZrTests_Ssa_CoverageInit(&coverage, fixture.fixture.requiredBackends);
+            ZrTests_Ssa_CoverageRecord(&coverage, 0u, &oracle, ZR_TRUE);
+            ZrTests_Ssa_CoverageRecord(&coverage, 1u, &projected, ZR_TRUE);
+            check(ZrTests_Ssa_CoverageComplete(&coverage),
+                  "actual oracle and projected backends were not covered");
+        }
+    }
+    fixture.corruptReturnSource = ZR_TRUE;
+    check(ZrTests_Ssa_RunFixture(&fixture.fixture, 1u, &projected,
+                                  &difference) &&
+          !ZrTests_Ssa_Compare(&oracle, &projected, &difference) &&
+          difference.reason == ZR_SSA_DIFF_EVENT_MISMATCH &&
+          difference.eventIndex == 0u &&
+          difference.expectedSourceId == 401u &&
+          difference.actualSourceId == 402u,
+          "differential harness missed a return event source mismatch");
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
@@ -600,6 +733,7 @@ int main(void) {
     test_branch_and_switch_parallel_edges_select_distinct_incomings();
     test_rejects_selected_edge_missing_from_source_adjacency();
     test_projections_preserve_parallel_phi_edges();
+    test_oracle_execbc_parallel_phi_differential();
     test_projection_schedules_cycles_and_dependencies();
     test_verified_loop_backedge_phi_swap();
     test_branch_phi_moves_have_distinct_edge_blocks();
