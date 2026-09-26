@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "zr_vm_core/aot_ir.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 
 static void fill_contract(SZrExecutionContract *contract,
                           TZrMetadataToken token,
@@ -26,9 +27,21 @@ int main(void) {
     const SZrAotIrPhiIncoming phiIncomingPool[] = {
         {1u, 1u}
     };
-    const SZrAotIrStateMapEntry stateMaps[] = {
-        {1u, 1u, UINT64_C(77)}
+    SZrExecIrStateMapEntry checkpointEntries[] = {
+        {.sourceId = 1u, .instructionId = 1u, .resumeId = 1u,
+         .phase = ZR_EXEC_IR_STATE_BEFORE_EFFECT,
+         .liveValues = {.start = 0u, .count = 1u},
+         .rootValues = {.start = 0u, .count = 1u},
+         .ownerStates = {.start = 0u, .count = 1u}},
+        {.sourceId = 1u, .instructionId = 1u, .resumeId = 1u,
+         .phase = ZR_EXEC_IR_STATE_AFTER_EFFECT,
+         .liveValues = {.start = 0u, .count = 1u},
+         .rootValues = {.start = 0u, .count = 1u},
+         .ownerStates = {.start = 0u, .count = 1u}}
     };
+    TZrExecIrValueId liveValues[] = {1u};
+    TZrExecIrValueId roots[] = {1u};
+    TZrUInt32 owners[] = {ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED};
     const SZrAotIrInstruction instructions[] = {
         {1u, ZR_EXEC_IR_OPCODE_PHI, 0u, {0u, 1u}, {0u, 1u},
          {0u, 0u}, {0u, 1u}, 0u, 0u, 1u, 0u, 0u, 0u}
@@ -39,9 +52,22 @@ int main(void) {
     };
     SZrAotIrFunction function;
     SZrAotIrModule module;
+    SZrExecIrStateMap logicalMap;
     SZrAotIrDiagnostic diagnostic;
     TZrUInt64 hash;
 
+    memset(&logicalMap, 0, sizeof(logicalMap));
+    logicalMap.functionToken = 1u;
+    logicalMap.signatureHash = UINT64_C(11);
+    logicalMap.generation = 1u;
+    logicalMap.entries = checkpointEntries;
+    logicalMap.entryCount = logicalMap.entryCapacity = 2u;
+    logicalMap.valuePool = liveValues;
+    logicalMap.valueCount = logicalMap.valueCapacity = 1u;
+    logicalMap.rootPool = roots;
+    logicalMap.rootCount = logicalMap.rootCapacity = 1u;
+    logicalMap.ownerStatePool = owners;
+    logicalMap.ownerStateCount = logicalMap.ownerStateCapacity = 1u;
     memset(&function, 0, sizeof(function));
     function.id = 1u;
     function.functionToken = 1u;
@@ -63,8 +89,7 @@ int main(void) {
     function.successorCount = 1u;
     function.phiIncomingPool = phiIncomingPool;
     function.phiIncomingCount = 1u;
-    function.stateMaps = stateMaps;
-    function.stateMapCount = 1u;
+    function.logicalStateMap = &logicalMap;
     fill_contract(&function.contract, function.functionToken, UINT64_C(33),
                   function.signatureHash, function.frameLayout.layoutHash);
 
@@ -84,6 +109,65 @@ int main(void) {
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);
     assert(hash == ZrCore_AotIr_HashModule(&module));
+    owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_UNKNOWN;
+    assert(hash != ZrCore_AotIr_HashModule(&module));
+    owners[0] = ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED;
+    checkpointEntries[0].cleanupState = 7u;
+    assert(hash != ZrCore_AotIr_HashModule(&module));
+    checkpointEntries[0].cleanupState = 0u;
+    liveValues[0] = roots[0] = 2u;
+    assert(hash != ZrCore_AotIr_HashModule(&module));
+    liveValues[0] = roots[0] = 1u;
+    checkpointEntries[1].deoptId = 7u;
+    assert(hash != ZrCore_AotIr_HashModule(&module));
+    checkpointEntries[1].deoptId = 0u;
+    assert(hash == ZrCore_AotIr_HashModule(&module));
+    {
+        SZrAotIrModule withoutCheckpoint = module;
+        SZrAotIrFunction withoutMap = function;
+        withoutMap.logicalStateMap = NULL;
+        withoutCheckpoint.functions = &withoutMap;
+        assert(ZrCore_AotIr_ValidateModule(&withoutCheckpoint, &diagnostic) ==
+               ZR_AOT_IR_OK);
+        assert(ZrCore_AotIr_HashModule(&withoutCheckpoint) != hash);
+    }
+    {
+        SZrExecIrStateMap wrongIdentity = logicalMap;
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        wrongIdentity.generation++;
+        malformedFunction.logicalStateMap = &wrongIdentity;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_CONTRACT);
+        assert(diagnostic.functionId == function.id);
+        assert(diagnostic.expected == function.contract.generation);
+        assert(diagnostic.actual == wrongIdentity.generation);
+    }
+    {
+        TZrExecIrValueId wrongRoots[] = {2u};
+        SZrExecIrStateMap wrongRootMap = logicalMap;
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        wrongRootMap.rootPool = wrongRoots;
+        malformedFunction.logicalStateMap = &wrongRootMap;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        assert(diagnostic.instructionId == checkpointEntries[0].instructionId);
+    }
+    {
+        TZrUInt32 wrongOwners[] = {ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT};
+        SZrExecIrStateMap wrongOwnerMap = logicalMap;
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        wrongOwnerMap.ownerStatePool = wrongOwners;
+        malformedFunction.logicalStateMap = &wrongOwnerMap;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_ID);
+        assert(diagnostic.actual == wrongOwners[0]);
+    }
     {
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
@@ -110,9 +194,12 @@ int main(void) {
     {
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
-        SZrAotIrStateMapEntry malformedState = stateMaps[0];
+        SZrExecIrStateMap malformedMap = logicalMap;
+        SZrExecIrStateMapEntry malformedState = checkpointEntries[0];
         malformedState.instructionId = 99u;
-        malformedFunction.stateMaps = &malformedState;
+        malformedMap.entries = &malformedState;
+        malformedMap.entryCount = malformedMap.entryCapacity = 1u;
+        malformedFunction.logicalStateMap = &malformedMap;
         malformed.functions = &malformedFunction;
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
                ZR_AOT_IR_INVALID_ID);
@@ -122,9 +209,12 @@ int main(void) {
     {
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
-        SZrAotIrStateMapEntry malformedState = stateMaps[0];
+        SZrExecIrStateMap malformedMap = logicalMap;
+        SZrExecIrStateMapEntry malformedState = checkpointEntries[0];
         malformedState.resumeId = ZR_AOT_IR_ID_INVALID;
-        malformedFunction.stateMaps = &malformedState;
+        malformedMap.entries = &malformedState;
+        malformedMap.entryCount = malformedMap.entryCapacity = 1u;
+        malformedFunction.logicalStateMap = &malformedMap;
         malformed.functions = &malformedFunction;
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
                ZR_AOT_IR_INVALID_ID);
@@ -133,21 +223,33 @@ int main(void) {
         assert(diagnostic.actual == malformedState.resumeId);
     }
     {
-        const SZrAotIrStateMapEntry duplicateStates[] = {
-            {1u, 1u, UINT64_C(77)},
-            {1u, 1u, UINT64_C(88)}
+        SZrExecIrStateMap duplicateMap = logicalMap;
+        SZrExecIrStateMapEntry duplicateStates[] = {
+            checkpointEntries[0], checkpointEntries[0]
         };
         SZrAotIrModule malformed = module;
         SZrAotIrFunction malformedFunction = function;
-        malformedFunction.stateMaps = duplicateStates;
-        malformedFunction.stateMapCount = 2u;
+        duplicateMap.entries = duplicateStates;
+        malformedFunction.logicalStateMap = &duplicateMap;
         malformed.functions = &malformedFunction;
         assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
                ZR_AOT_IR_DUPLICATE_ID);
         assert(diagnostic.functionId == function.id);
         assert(diagnostic.instructionId == duplicateStates[1].instructionId);
-        assert(diagnostic.expected == 0u);
         assert(diagnostic.actual == 1u);
+    }
+    {
+        SZrExecIrStateMap malformedMap = logicalMap;
+        SZrExecIrStateMapEntry malformedState = checkpointEntries[0];
+        SZrAotIrModule malformed = module;
+        SZrAotIrFunction malformedFunction = function;
+        malformedState.ownerStates.start = 2u;
+        malformedMap.entries = &malformedState;
+        malformedMap.entryCount = malformedMap.entryCapacity = 1u;
+        malformedFunction.logicalStateMap = &malformedMap;
+        malformed.functions = &malformedFunction;
+        assert(ZrCore_AotIr_ValidateModule(&malformed, &diagnostic) ==
+               ZR_AOT_IR_INVALID_RANGE);
     }
     {
         const TZrUInt32 malformedOperands[] = {ZR_AOT_IR_ID_INVALID};

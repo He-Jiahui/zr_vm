@@ -1,3 +1,21 @@
+---
+related_code:
+  - zr_vm_core/include/zr_vm_core/aot_ir.h
+  - zr_vm_core/src/zr_vm_core/aot_ir.c
+  - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
+implementation_files:
+  - zr_vm_core/include/zr_vm_core/aot_ir.h
+  - zr_vm_core/src/zr_vm_core/aot_ir.c
+plan_sources:
+  - docs/plans/ssa/07-aot-backends/01-aotir-contract.md
+tests:
+  - tests/parser/test_ssa_aotir_contract.c
+  - tests/acceptance/ssa-aotir-logical-map-schema.md
+doc_type: module-detail
+status: implemented-subset
+---
+
 # Shared AOTIR contract
 
 `zr_vm_core/include/zr_vm_core/aot_ir.h` defines the shared ABI projection
@@ -15,13 +33,26 @@ required capability mask may contain only known execution capabilities.
 The module and function execution contracts likewise reject unknown capability
 and effect bits before any backend lowering begins.
 
+Schema version 2 replaces the old `{resumeId, instructionId, stateHash}`
+checkpoint summary with a borrowed view of the complete ExecIR logical
+state map. A function without checkpoints may leave `logicalStateMap` null.
+With a map, the function token, signature hash and generation must match the
+function contract; the caller keeps map entries and all side pools alive for
+the lifetime of the AOTIR view. The per-function owned projection can supply
+that lifetime, but no producer connects it to this module yet. The content
+hash includes checkpoint phases, effect/handler/cleanup metadata and live,
+root and owner-state pools, not capacities, pointers or a caller-supplied
+summary hash. No physical native frame restoration is implied.
+
 The public records contain pointers only as in-memory views over caller-owned
 arrays.  Semantic references are numeric IDs and bounded ranges, so the
 canonical `ZrCore_AotIr_HashModule` ignores host addresses and is stable for
 identical input.  `ZrCore_AotIr_ValidateModule` checks schema/execution
 contract versions, target ABI, IDs, ranges, opcode bounds, CFG block instruction
 partition, last-in-block terminator opcode and edge-target membership,
-state-map instruction membership and unique resume identity, effect pairing, frame layout, phi incoming cardinality and ordered
+state-map storage shape, function identity, instruction/source membership,
+bounded live/root/owner pools and phase-aware resume identity, effect pairing,
+frame layout, phi incoming cardinality and ordered
 predecessor-edge membership in the containing block's predecessor edge range,
 nonzero state-map resume identity, and
 module/function hash identity. Effect tokens must be present together or both
@@ -57,7 +88,8 @@ degradation path cannot reuse an artifact identity from another policy.
 
 The focused fixture is
 `tests/parser/test_ssa_aotir_contract.c`.  It exercises deterministic hashing,
-contract validation (including state-map instruction references), and
+contract validation (including multiple phases per resume ID, deep map
+contents, malformed ranges and mismatched identities), and
 relocation rejection.  CMake registers it as `ssa_aotir_contract`; run it with:
 
 ```text

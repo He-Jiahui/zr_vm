@@ -143,6 +143,140 @@ static TZrUInt64 aot_ir_hash_contract(TZrUInt64 hash,
     return aot_ir_hash_u32(hash, contract->declaredEffects);
 }
 
+static TZrBool aot_ir_state_range_valid(SZrExecIrRange range, TZrUInt32 count) {
+    return (TZrBool)(range.start <= count && range.count <= count - range.start);
+}
+
+static EZrAotIrStatus aot_ir_validate_logical_map(
+        const SZrAotIrFunction *function, SZrAotIrDiagnostic *diagnostic) {
+    const SZrExecIrStateMap *map = function->logicalStateMap;
+    if (map == ZR_NULL) return ZR_AOT_IR_OK;
+    if (map->functionToken != function->functionToken) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id,
+                           0u, 0u, 0u, function->functionToken, map->functionToken);
+    }
+    if (map->signatureHash != function->signatureHash) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id,
+                           0u, 0u, 0u, function->signatureHash, map->signatureHash);
+    }
+    if (map->generation != function->contract.generation) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id,
+                           0u, 0u, 0u, function->contract.generation, map->generation);
+    }
+    if (!ZrCore_ExecIr_StateMapStorageValid(map)) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                           0u, 0u, 0u, 0u, map->entryCount);
+    }
+    for (TZrUInt32 i = 0u; i < map->entryCount; ++i) {
+        const SZrExecIrStateMapEntry *entry = &map->entries[i];
+        TZrBool instructionFound = ZR_FALSE;
+        if (entry->resumeId == ZR_AOT_IR_ID_INVALID ||
+            entry->instructionId == ZR_AOT_IR_ID_INVALID ||
+            entry->sourceId == ZR_AOT_IR_ID_INVALID ||
+            (TZrUInt32)entry->phase >= ZR_EXEC_IR_STATE_PHASE_COUNT) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                               0u, entry->instructionId, i, 1u, entry->resumeId);
+        }
+        if (!aot_ir_state_range_valid(entry->liveValues, map->valueCount) ||
+            !aot_ir_state_range_valid(entry->rootValues, map->rootCount) ||
+            !aot_ir_state_range_valid(entry->ownerStates, map->ownerStateCount) ||
+            entry->ownerStates.count != entry->liveValues.count) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, function->id,
+                               0u, entry->instructionId, i, entry->liveValues.count,
+                               entry->ownerStates.count);
+        }
+        for (TZrUInt32 j = 0u; j < function->instructionCount; ++j) {
+            const SZrAotIrInstruction *instruction = &function->instructions[j];
+            if (instruction->id == entry->instructionId &&
+                entry->sourceId == (instruction->sourceId != 0u
+                        ? instruction->sourceId : instruction->id)) {
+                instructionFound = ZR_TRUE;
+                break;
+            }
+        }
+        if (!instructionFound ||
+            (entry->handlerBlockId != 0u &&
+             !aot_ir_block_id_exists(function, entry->handlerBlockId))) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                               0u, entry->instructionId, i, function->instructionCount,
+                               entry->instructionId);
+        }
+        for (TZrUInt32 j = 0u; j < i; ++j) {
+            const SZrExecIrStateMapEntry *previous = &map->entries[j];
+            if (previous->resumeId == entry->resumeId &&
+                (previous->instructionId != entry->instructionId ||
+                 previous->sourceId != entry->sourceId ||
+                 previous->phase == entry->phase)) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_DUPLICATE_ID, function->id,
+                                   0u, entry->instructionId, i, j, i);
+            }
+        }
+        for (TZrUInt32 j = 0u; j < entry->liveValues.count; ++j) {
+            if (map->valuePool[entry->liveValues.start + j] == 0u) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                                   0u, entry->instructionId, i, 1u,
+                                   map->valuePool[entry->liveValues.start + j]);
+            }
+            if (map->ownerStatePool[entry->ownerStates.start + j] >=
+                    ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                                   0u, entry->instructionId, i,
+                                   ZR_EXEC_IR_STATE_MAP_OWNER_STATE_COUNT - 1u,
+                                   map->ownerStatePool[entry->ownerStates.start + j]);
+            }
+        }
+        for (TZrUInt32 j = 0u; j < entry->rootValues.count; ++j) {
+            TZrExecIrValueId root = map->rootPool[entry->rootValues.start + j];
+            TZrBool live = ZR_FALSE;
+            for (TZrUInt32 k = 0u; k < entry->liveValues.count; ++k) {
+                if (root != 0u &&
+                    root == map->valuePool[entry->liveValues.start + k]) {
+                    live = ZR_TRUE;
+                    break;
+                }
+            }
+            if (!live) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id,
+                                   0u, entry->instructionId, i, 1u, root);
+            }
+        }
+    }
+    return ZR_AOT_IR_OK;
+}
+
+static TZrUInt64 aot_ir_hash_logical_map(TZrUInt64 hash,
+                                         const SZrExecIrStateMap *map) {
+    hash = aot_ir_hash_u32(hash, map != ZR_NULL);
+    if (map == ZR_NULL) return hash;
+    hash = aot_ir_hash_u32(hash, map->functionToken);
+    hash = aot_ir_hash_u64(hash, map->signatureHash);
+    hash = aot_ir_hash_u64(hash, map->generation);
+    hash = aot_ir_hash_u32(hash, map->entryCount);
+    for (TZrUInt32 i = 0u; i < map->entryCount; ++i) {
+        const SZrExecIrStateMapEntry *entry = &map->entries[i];
+        const TZrUInt32 fields[] = {
+            entry->sourceId, entry->instructionId, entry->deoptId,
+            entry->resumeId, entry->cleanupState, entry->boundaryFlags,
+            (TZrUInt32)entry->phase, entry->liveValues.start,
+            entry->liveValues.count, entry->rootValues.start,
+            entry->rootValues.count, entry->ownerStates.start,
+            entry->ownerStates.count, entry->effectIn, entry->effectOut,
+            entry->handlerBlockId, entry->exceptionState};
+        for (TZrUInt32 j = 0u; j < (TZrUInt32)(sizeof(fields) / sizeof(fields[0])); ++j)
+            hash = aot_ir_hash_u32(hash, fields[j]);
+    }
+    hash = aot_ir_hash_u32(hash, map->valueCount);
+    for (TZrUInt32 i = 0u; i < map->valueCount; ++i)
+        hash = aot_ir_hash_u32(hash, map->valuePool[i]);
+    hash = aot_ir_hash_u32(hash, map->rootCount);
+    for (TZrUInt32 i = 0u; i < map->rootCount; ++i)
+        hash = aot_ir_hash_u32(hash, map->rootPool[i]);
+    hash = aot_ir_hash_u32(hash, map->ownerStateCount);
+    for (TZrUInt32 i = 0u; i < map->ownerStateCount; ++i)
+        hash = aot_ir_hash_u32(hash, map->ownerStatePool[i]);
+    return hash;
+}
+
 static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                                const SZrAotIrFunction *function,
                                                TZrUInt32 functionIndex,
@@ -226,8 +360,7 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
         ((function->operandCount > 0u) && (function->operandPool == ZR_NULL)) ||
         ((function->resultCount > 0u) && (function->resultPool == ZR_NULL)) ||
         ((function->phiIncomingCount > 0u) && (function->phiIncomingPool == ZR_NULL)) ||
-        ((function->successorCount > 0u) && (function->successorPool == ZR_NULL)) ||
-        ((function->stateMapCount > 0u) && (function->stateMaps == ZR_NULL))) {
+        ((function->successorCount > 0u) && (function->successorPool == ZR_NULL))) {
         return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT, function->id, 0u, 0u,
                            functionIndex, 0u, 0u);
     }
@@ -483,36 +616,7 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
             latestEffect = instruction->effectOut;
         }
     }
-    for (TZrUInt32 i = 0u; i < function->stateMapCount; ++i) {
-        const SZrAotIrStateMapEntry *state = &function->stateMaps[i];
-        TZrBool instructionFound = ZR_FALSE;
-        if (state->resumeId == ZR_AOT_IR_ID_INVALID) {
-            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
-                               state->instructionId, i, 1u, state->resumeId);
-        }
-        for (TZrUInt32 j = 0u; j < i; ++j) {
-            if (function->stateMaps[j].resumeId == state->resumeId) {
-                return aot_ir_fail(diagnostic, ZR_AOT_IR_DUPLICATE_ID, function->id, 0u,
-                                   state->instructionId, i, j, i);
-            }
-        }
-        if (state->instructionId == ZR_AOT_IR_ID_INVALID) {
-            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
-                               state->instructionId, i, 1u, state->instructionId);
-        }
-        for (TZrUInt32 j = 0u; j < function->instructionCount; ++j) {
-            if (function->instructions[j].id == state->instructionId) {
-                instructionFound = ZR_TRUE;
-                break;
-            }
-        }
-        if (!instructionFound) {
-            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID, function->id, 0u,
-                               state->instructionId, i, function->instructionCount,
-                               state->instructionId);
-        }
-    }
-    return ZR_AOT_IR_OK;
+    return aot_ir_validate_logical_map(function, diagnostic);
 }
 
 EZrAotIrStatus ZrCore_AotIr_ValidateTarget(const SZrAotIrTargetContract *target,
@@ -693,12 +797,7 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
         }
         hash = aot_ir_hash_u32(hash, function->successorCount);
         for (TZrUInt32 j = 0u; j < function->successorCount; ++j) hash = aot_ir_hash_u32(hash, function->successorPool[j]);
-        hash = aot_ir_hash_u32(hash, function->stateMapCount);
-        for (TZrUInt32 j = 0u; j < function->stateMapCount; ++j) {
-            hash = aot_ir_hash_u32(hash, function->stateMaps[j].resumeId);
-            hash = aot_ir_hash_u32(hash, function->stateMaps[j].instructionId);
-            hash = aot_ir_hash_u64(hash, function->stateMaps[j].stateHash);
-        }
+        hash = aot_ir_hash_logical_map(hash, function->logicalStateMap);
         hash = aot_ir_hash_u64(hash, function->gcMapHash);
         hash = aot_ir_hash_u64(hash, function->exceptionMapHash);
         hash = aot_ir_hash_u64(hash, function->debugMapHash);

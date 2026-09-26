@@ -735,7 +735,8 @@ endif ()
 if (NOT TARGET zr_vm_ssa_aotir_contract_test)
     add_executable(zr_vm_ssa_aotir_contract_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aotir_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c)
     target_include_directories(zr_vm_ssa_aotir_contract_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -748,6 +749,7 @@ if (NOT TARGET zr_vm_ssa_c_llvm_lowering_test)
     add_executable(zr_vm_ssa_c_llvm_lowering_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_c_llvm_lowering.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c)
     target_include_directories(zr_vm_ssa_c_llvm_lowering_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include

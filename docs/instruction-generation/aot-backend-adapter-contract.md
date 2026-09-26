@@ -83,6 +83,7 @@ gcc -std=c11 -Wall -Wextra -Wpedantic -Wstrict-prototypes -Wmissing-prototypes -
   -Izr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot \
   tests/parser/test_ssa_aot_backend_adapters.c \
   zr_vm_core/src/zr_vm_core/aot_ir.c \
+  zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c \
   zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c \
   zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_generic_policy.c \
   zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c \

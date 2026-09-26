@@ -45,11 +45,12 @@ The older module is therefore not the shared `SZrAotIrModule` contract.
 
 `SZrAotIrProjection` is a per-function, non-runnable owned view of ExecIR
 CFG/instructions/slots/source spans/logical state map. The independently
-defined `SZrAotIrModule` is a validated, caller-owned module descriptor;
+defined `SZrAotIrModule` is a validated, caller-owned module descriptor that
+borrows complete logical maps from its function producer;
 `backend_aot_ir_adapter` consumes it only to report lowering/coverage facts
 (`descriptorOnly`, `artifactAvailable = false`). No producer currently
 converts the owned projection into that module, and the archived production
 emitters still consume the legacy module. Connecting those representations
-must preserve the state-map entry and side-pool semantics instead of reducing
-them to a presence flag or hash. A C/LLVM artifact claim requires replacing
+must preserve the state-map entry and side-pool lifetimes. A C/LLVM artifact
+claim requires replacing
 the legacy reads family by family and validating an actual emitted artifact.
