@@ -136,6 +136,14 @@ int main(void) {
         assert(diagnostic.expected == ZR_AOT_IR_TARGET_ABI_VERSION);
         assert(diagnostic.actual == wrongTarget.abiVersion);
     }
+    {
+        SZrAotIrModule wrongContract = module;
+        wrongContract.contract.abiVersion++;
+        assert(ZrCore_AotIr_ValidateModule(&wrongContract, &diagnostic) ==
+               ZR_AOT_IR_VERSION_MISMATCH);
+        assert(diagnostic.expected == ZR_EXECUTION_CONTRACT_ABI_VERSION);
+        assert(diagnostic.actual == wrongContract.contract.abiVersion);
+    }
     assert(ZrCore_AotIr_IsRelocationFree(&module, &diagnostic));
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);

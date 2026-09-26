@@ -432,12 +432,12 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                            functionIndex, 1u, 0u);
     }
     if (function->contract.schemaVersion != ZR_EXECUTION_CONTRACT_SCHEMA_VERSION) {
-        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_VERSION_MISMATCH, function->id, 0u, 0u,
                            functionIndex, ZR_EXECUTION_CONTRACT_SCHEMA_VERSION,
                            function->contract.schemaVersion);
     }
     if (function->contract.abiVersion != ZR_EXECUTION_CONTRACT_ABI_VERSION) {
-        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, function->id, 0u, 0u,
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_VERSION_MISMATCH, function->id, 0u, 0u,
                            functionIndex, ZR_EXECUTION_CONTRACT_ABI_VERSION,
                            function->contract.abiVersion);
     }
@@ -964,12 +964,12 @@ EZrAotIrStatus ZrCore_AotIr_ValidateModule(const SZrAotIrModule *module,
         return diagnostic != ZR_NULL ? diagnostic->status : ZR_AOT_IR_INVALID_TARGET;
     }
     if (module->contract.schemaVersion != ZR_EXECUTION_CONTRACT_SCHEMA_VERSION) {
-        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_VERSION_MISMATCH, 0u, 0u, 0u, 0u,
                            ZR_EXECUTION_CONTRACT_SCHEMA_VERSION,
                            module->contract.schemaVersion);
     }
     if (module->contract.abiVersion != ZR_EXECUTION_CONTRACT_ABI_VERSION) {
-        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_CONTRACT, 0u, 0u, 0u, 0u,
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_VERSION_MISMATCH, 0u, 0u, 0u, 0u,
                            ZR_EXECUTION_CONTRACT_ABI_VERSION,
                            module->contract.abiVersion);
     }
