@@ -5,10 +5,12 @@
 #include "zr_vm_core/optimization_remark.h"
 
 /* 描述符的 code/id 被结构化诊断和 LSP 同时消费；表内编号属于跨层稳定标识。 */
+/* 所有描述符共享文档入口；LSP 按需把该链接复制进自己的诊断对象。 */
 #define ZR_DIAGNOSTIC_HELP_URI \
     "https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md"
 
-/* title/message key 与消息目录共享命名规则，新增 code 应同步核对两张表。 */
+/* title/message key 与消息目录共享命名规则；codeValue 必须是字符串字面量。 */
+/* 新增 code 应同步登记消息目录中的 title 和 message。 */
 #define ZR_DIAGNOSTIC_DESCRIPTOR(idValue, codeValue, severityValue, categoryValue) \
     { \
         (idValue), \
@@ -246,7 +248,7 @@ const SZrDiagnosticDescriptor *ZrParser_DiagnosticRegistry_FindByCode(const TZrC
     return ZR_NULL;
 }
 
-/* LSP 投影按已持有的 descriptorId 取分类、默认级别与帮助入口；返回静态借用指针。 */
+/* LSP 投影按已持有的 descriptorId 取帮助链接；分类和默认级别属于目录数据。返回静态借用指针。 */
 const SZrDiagnosticDescriptor *ZrParser_DiagnosticRegistry_FindById(TZrUInt32 id) {
     TZrSize index;
 

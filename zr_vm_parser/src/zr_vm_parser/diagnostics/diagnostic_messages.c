@@ -2,7 +2,8 @@
 
 #include <string.h>
 
-/* 消息键须与描述符中的 diagnostic.<code>.<title|message> 保持一致；文本由静态目录持有。 */
+/* 消息键须与描述符中的 diagnostic.<code>.<title|message> 保持一致；codeValue 必须是字符串字面量。 */
+/* 文本由静态目录持有，解析结果只借用指针。 */
 #define ZR_DIAGNOSTIC_MESSAGE_PAIR(codeValue, titleValue, messageValue) \
     {"diagnostic." codeValue ".title", (titleValue), ZR_NULL}, \
     {"diagnostic." codeValue ".message", (messageValue), ZR_NULL}
