@@ -76,5 +76,6 @@ doc_type: category-index
 | library 项目、绑定、SSA 与 ZRM 回归 | [287 项](coverage/tests_library.tsv) | 20 文件独立复核，569 个证据锚点有效，源码只改注释；WSL GCC 对 19 个 C 文件及头文件语法检查通过，未运行测试。ZRM CTest 注册缺口等 17 个 BUG 和 20 个 TODO 留证；SSA 失败输出因缺少调用契约已降为 TODO。 |
 | 调试协议、线程、快照与诊断回归 | [423 项](coverage/tests_debug.tsv) | 30 文件独立复核，源码仅增注释/空行；GCC/Clang 对 16 个 C 翻译单元语法检查通过，未运行 CTest。23 个 BUG 和 14 个 TODO 均有当前证据；Unity 失败时跳过线程和 VM 清理的路径已按 join 前后分开说明。 |
 | CLI 命令解析、编译、迁移与项目处理 | [280 项](coverage/zr_vm_cli_front.tsv) | 16 文件独立复核，192 个 C 定义和 48 个公开声明均入账；1322 处首方引用反向核对无缺，源码只改注释。WSL 8 个 C 文件语法检查通过，未运行 CLI 套件；记录 `recordSlot` 扩容悬空等 19 个 BUG 与 14 个 TODO。 |
+| Benchmark 性能套件编排 | [41 项](coverage/tests_cmake_performance_suite.tsv) | 1 个 CMake 脚本独立复核，18 个函数及 145 个证据锚点有效，源码仅增注释；脚本在预期缺少 CLI_EXE 前置条件处退出，未运行完整基准。旧 profile 误收、GC 配对门控及未筛选工具链预构建等 5 个 BUG 和 2 个 TODO 留证。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

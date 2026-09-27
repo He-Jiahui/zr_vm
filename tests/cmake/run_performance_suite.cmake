@@ -1,3 +1,7 @@
+# CTest performance_report、自定义目标和直接 cmake -P 调用共用此入口。
+# 调用方须提供已构建的三个基础可执行文件、首方 benchmark 注册目录及独占的生成目录；
+# steady 模式还要求已构建的 ZR benchmark server。
+# 脚本会执行外部工具链并覆盖该目录内的套件工作树和固定名称报告。
 if (NOT DEFINED CLI_EXE OR CLI_EXE STREQUAL "")
     message(FATAL_ERROR "CLI_EXE is required.")
 endif ()
@@ -18,6 +22,7 @@ if (NOT DEFINED GENERATED_DIR OR GENERATED_DIR STREQUAL "")
     message(FATAL_ERROR "GENERATED_DIR is required.")
 endif ()
 
+# 测量、持久会话、执行计划与环境判定是共享契约，报告组装稍后在结果字段齐备后载入。
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/benchmark_measurement_contract.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/benchmark_persistent_commands.cmake")
@@ -46,8 +51,10 @@ if (NOT IS_DIRECTORY "${BENCHMARKS_DIR}")
     message(FATAL_ERROR "Benchmarks directory does not exist: ${BENCHMARKS_DIR}")
 endif ()
 
+# registry 是 case、实现、tier、校验值及门控名单的来源；后续命令与正确性检查均按它生成。
 include("${BENCHMARKS_DIR}/registry.cmake")
 
+# tier 决定工作量和默认采样；显式 -DTIER 优先于环境，供定向脚本覆盖 CTest 配置。
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" PERF_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -104,6 +111,7 @@ if (DEFINED ENV{ZR_VM_PERF_ITERATIONS} AND NOT "$ENV{ZR_VM_PERF_ITERATIONS}" STR
     set(PERF_REQUESTED_ITERATIONS "$ENV{ZR_VM_PERF_ITERATIONS}")
 endif ()
 
+# Task3 统一限制 runner 的总采样预算，并把 profile 固定为不参与时间比较的单样本模式。
 zr_benchmark_task3_resolve_policy(
         "${PERF_SCOPE_MODE}"
         "${PERF_REQUESTED_TIER}"
@@ -128,6 +136,7 @@ if (NOT PERF_EXECUTION_SEED_VALID)
 endif ()
 set(PERF_BOOTSTRAP_SEED "${PERF_EXECUTION_SEED}")
 
+# profile 的可选计数口径写入热点报告；关闭缓存和分支模拟以聚焦指令数。
 # Callgrind: optional instruction-counting mode (no cache / branch simulation), via Valgrind flags.
 # See: valgrind --tool=callgrind --help (simulation options).
 set(PERF_CALLGRIND_COUNTING_MODE FALSE)
@@ -148,6 +157,7 @@ else ()
     set(PERF_CALLGRIND_JSON_BOOL "false")
 endif ()
 
+# 两个筛选器只缩小执行计划，常由 GC 定向脚本或诊断命令设置；最终顺序仍由 Python 计划器决定。
 # Optional: ZR_VM_PERF_ONLY_IMPLEMENTATIONS=comma-separated ids (e.g. zr_interp,zr_binary) to run a subset for diagnosis.
 set(PERF_ONLY_FILTER_ACTIVE FALSE)
 set(PERF_ONLY_IMPLEMENTATION_LIST "")
@@ -169,6 +179,7 @@ if (PERF_ONLY_CASES_FILTER_ACTIVE)
     message("ZR_VM_PERF_ONLY_CASES filter active: ${PERF_ONLY_CASE_LIST}")
 endif ()
 
+# process/steady 使用不同目录，避免两种计时口径互相覆盖；同一口径重复运行仍复用报告目录。
 if (PERF_SCOPE_MODE STREQUAL "steady")
     set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite_steady")
     set(PERF_REPORT_DIR "${GENERATED_DIR}/performance_steady")
@@ -184,9 +195,12 @@ else ()
 endif ()
 file(REMOVE_RECURSE "${PERF_SUITE_ROOT}")
 file(MAKE_DIRECTORY "${PERF_SUITE_ROOT}")
+# BUG: 复跑 profile 时旧报告目录未清理；若本轮 zr_interp 在正确性或测量阶段失败，
+# benchmark_task3_case_assembly.cmake 仍仅凭旧 profile 文件存在就将其收入本轮 instruction/hotspot 报告。
 file(MAKE_DIRECTORY "${PERF_REPORT_DIR}")
 file(MAKE_DIRECTORY "${PERF_TOOLCHAIN_DIR}")
 
+# 捕获 wrapper 尚未完成时允许 provisional 报告，最终可比性由 Task4 后处理重新判定。
 set(PERF_TASK4_ENVIRONMENT_REPORT "$ENV{ZR_VM_BENCHMARK_ENVIRONMENT_REPORT}")
 zr_benchmark_task4_resolve_environment(
         "${CMAKE_SYSTEM_NAME}"
@@ -199,6 +213,7 @@ if (NOT PERF_TASK4_ENVIRONMENT_VALID AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(WARNING "Task4 environment evidence is unavailable: ${PERF_TASK4_ENVIRONMENT_ISSUE}")
 endif ()
 
+# 正确性检查和跨宿主路径转换共用行结束符归一化；调用方再决定是否过滤诊断行。
 function(perf_normalize_output input_text out_var)
     string(REPLACE "\r\n" "\n" normalized "${input_text}")
     string(REPLACE "\r" "\n" normalized "${normalized}")
@@ -206,6 +221,7 @@ function(perf_normalize_output input_text out_var)
     set(${out_var} "${normalized}" PARENT_SCOPE)
 endfunction()
 
+# 从正确性 stdout 去掉 VM 模块初始化诊断及多余空行，维持 registry 的双行 banner/checksum 契约。
 function(perf_strip_contract_noise input_text out_var)
     set(filtered "${input_text}")
     string(REGEX REPLACE "(^|\n)\\[module-init\\][^\n]*" "" filtered "${filtered}")
@@ -214,6 +230,8 @@ function(perf_strip_contract_noise input_text out_var)
     set(${out_var} "${filtered}" PARENT_SCOPE)
 endfunction()
 
+# 手写报告字段和传给 Python 计划器的候选身份共用 JSON 字符串转义。
+# 输入应是受控的名称、路径或诊断文本；复杂 JSON 结构仍由 string(JSON) 或 Python 处理。
 function(perf_escape_json_string input_text out_var)
     set(escaped "${input_text}")
     string(REPLACE "\\" "\\\\" escaped "${escaped}")
@@ -224,6 +242,7 @@ function(perf_escape_json_string input_text out_var)
     set(${out_var} "${escaped}" PARENT_SCOPE)
 endfunction()
 
+# 将筛选列表和命令参数编码给 Python 计划器及报告；调用方以 CMake 列表传入独立元素。
 function(perf_json_array_from_list out_var)
     set(result "[")
     set(needs_comma FALSE)
@@ -239,6 +258,7 @@ function(perf_json_array_from_list out_var)
     set(${out_var} "${result}" PARENT_SCOPE)
 endfunction()
 
+# GC 成对报告用千分位整数计算小数，避免 CMake 缺少浮点运算带来的平台差异。
 function(perf_decimal_to_milli value out_var)
     string(REGEX MATCH "^([0-9]+)(\\.([0-9]+))?$" matched "${value}")
     if (matched STREQUAL "")
@@ -256,6 +276,7 @@ function(perf_decimal_to_milli value out_var)
     set(${out_var} "${milli}" PARENT_SCOPE)
 endfunction()
 
+# 与 perf_decimal_to_milli 配套，为 GC 比率和内存列保留固定三位小数。
 function(perf_format_milli_decimal milli_value out_var)
     math(EXPR whole "${milli_value} / 1000")
     math(EXPR frac "${milli_value} % 1000")
@@ -269,6 +290,7 @@ function(perf_format_milli_decimal milli_value out_var)
     set(${out_var} "${whole}.${frac_text}" PARENT_SCOPE)
 endfunction()
 
+# runner 的工作集字节值转为展示用 MiB；显式缺值保留为表格占位符。
 function(perf_bytes_to_mib byte_value out_var)
     if (byte_value STREQUAL "")
         set(${out_var} "-" PARENT_SCOPE)
@@ -282,6 +304,7 @@ function(perf_bytes_to_mib byte_value out_var)
     set(${out_var} "${mib_text}" PARENT_SCOPE)
 endfunction()
 
+# GC stress/baseline 比值只在两端有正基线时生成；函数名沿用旧的 C 相对比值命名。
 function(perf_relative_to_c value base out_var)
     if (value STREQUAL "" OR base STREQUAL "")
         set(${out_var} "null" PARENT_SCOPE)
@@ -300,6 +323,7 @@ function(perf_relative_to_c value base out_var)
     set(${out_var} "${ratio_text}" PARENT_SCOPE)
 endfunction()
 
+# 成对 GC 报告使用有符号差值表达时间或内存增减，空值留给上层决定是否比较。
 function(perf_decimal_delta value base out_var)
     if (value STREQUAL "" OR base STREQUAL "")
         set(${out_var} "null" PARENT_SCOPE)
@@ -319,6 +343,7 @@ function(perf_decimal_delta value base out_var)
     endif ()
 endfunction()
 
+# 在同一实现的 GC stress/baseline 均可计量时生成相对开销百分比。
 function(perf_overhead_percent value base out_var)
     if (value STREQUAL "" OR base STREQUAL "")
         set(${out_var} "null" PARENT_SCOPE)
@@ -345,6 +370,7 @@ function(perf_overhead_percent value base out_var)
     endif ()
 endfunction()
 
+# 执行计划仅接受 registry 声明属于所选 tier 的 case。
 function(perf_case_matches_tier case_name out_var)
     set(case_tiers "${ZR_VM_BENCHMARK_TIERS_${case_name}}")
     list(FIND case_tiers "${PERF_REQUESTED_TIER}" case_tier_index)
@@ -355,6 +381,7 @@ function(perf_case_matches_tier case_name out_var)
     endif ()
 endfunction()
 
+# profile 的逐 case 缩放与普通 tier 的统一缩放都由 registry 持有，不由运行器自行猜测。
 function(perf_case_scale case_name out_var)
     if (PERF_REQUESTED_TIER STREQUAL "profile")
         set(case_scale "${ZR_VM_BENCHMARK_PROFILE_SCALE_${case_name}}")
@@ -369,6 +396,7 @@ function(perf_case_scale case_name out_var)
     set(${out_var} "${case_scale}" PARENT_SCOPE)
 endfunction()
 
+# registry 的核心名单决定常规执行失败是否使整次套件失败；外围实现只作为诊断债务记录。
 function(perf_implementation_is_core_gated case_name implementation_id out_var)
     set(core_implementations "${ZR_VM_BENCHMARK_CORE_IMPLEMENTATIONS_${case_name}}")
     list(FIND core_implementations "${implementation_id}" implementation_index)
@@ -379,6 +407,7 @@ function(perf_implementation_is_core_gated case_name implementation_id out_var)
     endif ()
 endfunction()
 
+# 每个计划 case 只准备一次可写的 ZR 项目副本；编译和计时均指向副本，仓库 fixture 保持只读。
 function(perf_prepare_zr_case case_name out_project_dir_var out_project_file_var)
     set(source_dir "${BENCHMARKS_DIR}/cases/${case_name}/zr")
     set(destination_dir "${PERF_SUITE_ROOT}/cases/${case_name}/zr")
@@ -407,6 +436,7 @@ function(perf_prepare_zr_case case_name out_project_dir_var out_project_file_var
     set(${out_project_file_var} "${project_file}" PARENT_SCOPE)
 endfunction()
 
+# 将跳过与失败诊断分别积累到最终 Markdown；调用方负责同步设置状态及硬失败标志。
 function(perf_append_note kind case_name implementation_name note)
     set(entry "- `${case_name}` / `${implementation_name}`: ${note}")
     if (kind STREQUAL "failure")
@@ -416,6 +446,7 @@ function(perf_append_note kind case_name implementation_name note)
     endif ()
 endfunction()
 
+# 可选语言和分析工具需通过短时启动探针，避免仅凭 PATH 上的文件存在就安排运行任务。
 function(perf_probe_program candidate out_var)
     if (NOT candidate)
         set(${out_var} "" PARENT_SCOPE)
@@ -435,6 +466,8 @@ function(perf_probe_program candidate out_var)
     endif ()
 endfunction()
 
+# WSL 启动 Windows Java 可执行文件时，classpath 和源文件须传 Windows 路径；其余命令保留宿主路径。
+# 这一路径要求 UNIX 环境提供 wslpath，转换失败会阻止编译有歧义的 Java 结果。
 function(perf_translate_path_for_executable executable_path input_path out_var)
     if (input_path STREQUAL "")
         set(${out_var} "" PARENT_SCOPE)
@@ -459,6 +492,7 @@ function(perf_translate_path_for_executable executable_path input_path out_var)
     endif ()
 endfunction()
 
+# 只对 profile tier 的代表性 case 请求额外 Callgrind 采集，限制整套件分析开销。
 function(perf_case_is_hotspot_representative case_name out_var)
     if (PERF_REQUESTED_TIER STREQUAL "profile")
         list(FIND PERF_HOTSPOT_REPRESENTATIVE_CASES "${case_name}" representative_index)
@@ -471,6 +505,7 @@ function(perf_case_is_hotspot_representative case_name out_var)
     set(${out_var} FALSE PARENT_SCOPE)
 endfunction()
 
+# Python 是计划生成的必需工具；其余语言缺席时保留 SKIP 行，不改变计划中的 case 身份。
 find_program(PERF_PYTHON_EXE_CANDIDATE NAMES python python3)
 find_program(PERF_NODE_EXE_CANDIDATE NAMES node)
 find_program(PERF_QJS_EXE_CANDIDATE NAMES qjs quickjs)
@@ -517,6 +552,7 @@ set(PERF_EXECUTION_PLAN_SCRIPT
         "${CMAKE_CURRENT_LIST_DIR}/../../scripts/benchmark/benchmark_execution_plan.py")
 file(TO_CMAKE_PATH "${PERF_EXECUTION_PLAN_SCRIPT}" PERF_EXECUTION_PLAN_SCRIPT)
 
+# 先按 registry 构造候选，再由 Python 统一筛选和按种子洗牌；返回的 jobs 顺序就是执行顺序。
 set(PERF_CANDIDATE_JOBS_JSON "[")
 set(PERF_CANDIDATE_JOB_NEEDS_COMMA FALSE)
 foreach (candidate_case IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
@@ -557,6 +593,7 @@ zr_benchmark_task3_create_execution_plan(
         PERF_EXECUTION_PLAN_JSON)
 string(JSON PERF_EXECUTION_JOB_COUNT GET "${PERF_EXECUTION_PLAN_JSON}" job_count)
 math(EXPR PERF_EXECUTION_LAST_JOB "${PERF_EXECUTION_JOB_COUNT} - 1")
+# 将扁平 jobs 同时索引为按 case 的报告视图，执行与组装不得各自重新排序。
 set(PERF_CASE_ORDER "")
 foreach (plan_index RANGE 0 ${PERF_EXECUTION_LAST_JOB})
     string(JSON plan_case GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${plan_index} case)
@@ -568,6 +605,8 @@ foreach (plan_index RANGE 0 ${PERF_EXECUTION_LAST_JOB})
     list(APPEND "PERF_PLANNED_IMPLEMENTATIONS_${plan_case}" "${plan_implementation}")
 endforeach ()
 list(LENGTH PERF_CASE_ORDER PERF_CASE_COUNT)
+# TODO: 探针失败后仍恢复 PATH 候选工具的目的待核实；代表性 profile case 随后会将其当作可用工具运行。
+# 对照 perf_probe_program 的失败返回与 benchmark_task3_case_assembly.cmake 的 Callgrind 失败分支。
 if (NOT PERF_VALGRIND_EXE AND PERF_VALGRIND_EXE_CANDIDATE)
     set(PERF_VALGRIND_EXE "${PERF_VALGRIND_EXE_CANDIDATE}")
 endif ()
@@ -575,6 +614,7 @@ if (NOT PERF_CALLGRIND_ANNOTATE_EXE AND PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE)
     set(PERF_CALLGRIND_ANNOTATE_EXE "${PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE}")
 endif ()
 
+# Callgrind 代表集独立于执行计划；只有选中且生成了 interp profile 的 case 才能进入额外采集。
 set(PERF_HOTSPOT_REPRESENTATIVE_CASES
         "numeric_loops"
         "dispatch_loops"
@@ -585,6 +625,9 @@ if (NOT EXISTS "${PERF_HOTSPOT_SUMMARY_SCRIPT}")
     message(FATAL_ERROR "Missing hotspot summary script: ${PERF_HOTSPOT_SUMMARY_SCRIPT}")
 endif ()
 
+# 可用编译器在隔离的生成目录构建共享 runner；构建失败是套件配置失败，不能伪装成某个 case 的 SKIP。
+# BUG: 即使执行计划筛选为仅运行 c，仍会构建所有已探测到的 Rust/.NET/Java runner；
+# 未选中工具链的构建失败会在 C 作业启动前中止本次定向诊断。
 set(PERF_RUST_RUNNER_EXE "")
 if (PERF_CARGO_EXE)
     set(PERF_RUST_TARGET_DIR "${PERF_TOOLCHAIN_DIR}/rust")
@@ -659,6 +702,7 @@ message("Measured iterations: ${PERF_ITERATIONS}")
 message("Benchmarks root: ${BENCHMARKS_DIR}")
 message("==========")
 
+# 第一阶段保存每个计划 job 的原始执行结果，第二阶段才按 case 计算跨实现比值与附属报告。
 set(PERF_MARKDOWN_ROWS "")
 set(PERF_JSON_CASES "")
 set(PERF_SKIP_NOTES "")
@@ -675,6 +719,7 @@ set(PERF_GC_STRESS_CASE "gc_fragment_stress")
 set(PERF_GC_OVERHEAD_MARKDOWN_ROWS "")
 set(PERF_GC_OVERHEAD_JSON_ROWS "")
 
+# 每个作业先准备项目和核对正确性，再测量；失败行仍交给组装层，使报告保留诊断上下文。
 foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
     string(JSON case_name GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${PERF_EXECUTION_INDEX} case)
     string(JSON implementation_id GET "${PERF_EXECUTION_PLAN_JSON}" jobs ${PERF_EXECUTION_INDEX} implementation)
@@ -709,6 +754,7 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
     set(case_interp_working_directory "")
     set(case_interp_ready FALSE)
 
+        # 循环状态必须逐作业重置，防止上一个语言的命令、采样或可比性字段泄漏到 SKIP/FAIL 行。
         set(implementation_name "")
         set(language "")
         set(mode "")
@@ -742,6 +788,7 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
         set(mean_peak_mib "")
         set(max_peak_mib "")
 
+        # 计时范围、准备范围和复用声明来自共享协议，runner JSON 与后续比率门控依赖它们一致。
         zr_benchmark_measurement_contract_get(
                 "${implementation_id}"
                 measurement_scope
@@ -760,6 +807,7 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
             message(FATAL_ERROR "Invalid benchmark measurement contract for implementation '${implementation_id}'.")
         endif ()
 
+        # registry 的实现 id 映射为实际命令；ZR binary 在正确性检查前先做一次不计时编译。
         if (implementation_id STREQUAL "c")
             set(implementation_name "C")
             set(language "C")
@@ -899,6 +947,7 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
             set(case_interp_ready TRUE)
         endif ()
 
+        # 核对完整 banner/checksum，stderr 仅参与失败诊断；非核心实现失败作为跟进债务保留。
         if (should_measure)
             set(status "PENDING")
             if (NOT prepare_command STREQUAL "")
@@ -950,6 +999,8 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
                 endif ()
                 perf_normalize_output("${case_expected_output}" expected_output_normalized)
                 if (NOT correctness_result EQUAL 0)
+                    # BUG: zr_binary 属于 registry 的核心实现，但入口加载失败先被改为 SKIP；
+                    # runtime.c 的该错误可达，且这里未设置 PERF_HARD_FAILURE，套件可能以成功结束。
                     if (implementation_id STREQUAL "zr_binary" AND correctness_combined_output MATCHES "failed to load project entry") 
                         set(status "SKIP")
                         set(note "binary entry loader unavailable for this benchmark")
@@ -990,6 +1041,7 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
                 endif ()
             endif ()
 
+            # steady 仅对协议列出的 case/实现切换到持久会话；不支持的组合不能和进程计时混算。
             if (NOT status STREQUAL "FAIL" AND NOT status STREQUAL "SKIP")
                 set(measurement_command_list ${command_list})
                 set(measurement_scope_for_runner "${measurement_scope}")
@@ -1046,6 +1098,7 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
                 set(jit_state_reused "${jit_state_reused_for_runner}")
             endif ()
 
+            # runner 负责采样和统计；套件只消费其 JSON，不从控制台文本重建时间或内存数据。
             if (NOT status STREQUAL "FAIL" AND NOT status STREQUAL "SKIP")
                 set(perf_json_path "${PERF_REPORT_DIR}/${case_name}__${implementation_id}.json")
                 set(measurement_policy_runner_args
@@ -1168,6 +1221,8 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
             perf_append_note("skip" "${case_name}" "${implementation_name}" "${note}")
         endif ()
 
+        # 延迟组装需要当前作业的完整快照；动态字段名由 registry 中的 case/实现身份拼接。
+        # TODO: 计划器只拒绝重复的身份二元组；新增 registry 身份时须核查不同组合不会拼成同一字段键。
         set(result_prefix "PERF_RESULT_${case_name}_${implementation_id}")
         foreach (result_field IN ITEMS
                 implementation_name language mode status note working_directory
@@ -1199,12 +1254,16 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
         endif ()
     endforeach ()
 
+# include 在当前作用域消费 PERF_RESULT_*，生成主报告行及对比、指令、热点视图。
 include("${CMAKE_CURRENT_LIST_DIR}/benchmark_task3_case_assembly.cmake")
 
 if (PERF_CASE_COUNT EQUAL 0)
     message(FATAL_ERROR "performance_report selected zero benchmark cases for tier '${PERF_REQUESTED_TIER}'.")
 endif ()
 
+# GC 配对面向同一实现的 baseline/stress；前一阶段仅为稳定、可比且有门控资格的行缓存均值。
+# BUG: 环境证据缺失或不可比时此处未检查 PERF_TASK4_PROVISIONAL_COMPARABLE，仍生成 GC 原始 Markdown 比值；
+# Task4 最终化只修改 JSON 中的比值和门控字段，不重写 gc_overhead_report.md，故该文件可保留不合格比较。
 foreach (implementation_id IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATION_ORDER)
     set(base_status_var "PERF_GC_STATUS_${PERF_GC_BASELINE_CASE}_${implementation_id}")
     set(stress_status_var "PERF_GC_STATUS_${PERF_GC_STRESS_CASE}_${implementation_id}")
@@ -1226,6 +1285,8 @@ foreach (implementation_id IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATION_ORDER)
         set(language "-")
     endif ()
 
+    # BUG: 两端都 PASS 但任一行 UNSTABLE、不可比或不具门控资格时，缓存均值为空；
+    # 此处分支仍宣称 GC PASS，后续把辅助函数返回的 null 文本作为 JSON 字符串写入报告。
     if (base_status STREQUAL "PASS" AND stress_status STREQUAL "PASS")
         set(base_mean_var "PERF_GC_MEAN_WALL_${PERF_GC_BASELINE_CASE}_${implementation_id}")
         set(stress_mean_var "PERF_GC_MEAN_WALL_${PERF_GC_STRESS_CASE}_${implementation_id}")
@@ -1324,6 +1385,7 @@ if (PERF_GC_OVERHEAD_MARKDOWN_ROWS STREQUAL "")
     set(PERF_GC_OVERHEAD_MARKDOWN_ROWS "| none | - | SKIP | - | - | - | - | - | - | - | - |\n")
 endif ()
 
+# 固定名称报告供 CSV、聚合器和 Task4 环境最终化消费；所有报告写完后才上报硬失败。
 string(TIMESTAMP PERF_GENERATED_AT_UTC "%Y-%m-%dT%H:%M:%SZ" UTC)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/benchmark_report.md" PERF_MARKDOWN_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/benchmark_report.json" PERF_JSON_PATH_NORMALIZED)
@@ -1336,6 +1398,7 @@ file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/hotspot_report.json" PERF_HOTSPOT_JSON_PA
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/gc_overhead_report.md" PERF_GC_OVERHEAD_MARKDOWN_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/gc_overhead_report.json" PERF_GC_OVERHEAD_JSON_PATH_NORMALIZED)
 
+# 报告须解释进程采样与持久会话的计时、准备和内存口径，避免只凭数字做跨口径比较。
 if (PERF_SCOPE_MODE STREQUAL "steady")
     set(PERF_SCOPE_REPORT_LINE
             "- **Measurement scope:** Supported numeric/dispatch rows use `persistent_runtime`; one process serves all warmup and measured requests. Per-sample RSS is unavailable, and the final memory column is the session peak.\n")
@@ -1513,6 +1576,7 @@ else ()
     message("Callgrind counting mode: off (set ZR_VM_PERF_CALLGRIND_COUNTING=1 to enable)")
 endif ()
 
+# 即使核心作业失败，也尽量留下本轮聚合报告供 CTest/直接调用者定位失败行。
 if (PERF_HARD_FAILURE)
     message(FATAL_ERROR "performance_report encountered benchmark failures. See generated report for details.")
 endif ()
