@@ -1,5 +1,6 @@
 import * as std from "std";
 
+// QuickJS case 包装器共用算法与协议，server 模式复用进程但逐请求重跑用例。
 const MOD = 1000000007;
 const TIER_SCALES = {
     smoke: 1,
@@ -26,6 +27,7 @@ function parseScale(args) {
             if (index + 1 >= args.length) {
                 throw new Error("--scale requires a positive integer");
             }
+            // BUG: Number.parseInt 将 --scale 1x 解析为 1，错误输入仍进入工作负载；同构 Node 入口已复现。
             explicitScale = Number.parseInt(args[index + 1], 10);
             if (!Number.isFinite(explicitScale) || explicitScale < 1) {
                 throw new Error("--scale requires a positive integer");
@@ -483,6 +485,7 @@ export function runMain(caseName, args) {
     }
     const scale = parseScale(invocation.runnerArgs);
     if (invocation.serverMode) {
+        // 一次 READY 后逐请求重跑同一算法，校验重复结果才返回计时协议。
         std.out.puts(`READY benchmark-checksum-v1:${caseName}:${invocation.tier}\n`);
         std.out.flush();
         while (true) {

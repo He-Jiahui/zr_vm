@@ -1,3 +1,4 @@
+// 将链表任务去重后分桶汇总，校验容器构造、遍历和对象引用路径。
 let benchConfig = import("bench_config");
 let container = import("zr.container");
 let {Array, Map, Set, LinkedList} = import("zr.container");
@@ -36,6 +37,7 @@ while (index <= total - 1) {
 }
 
 while (queue.count > 0) {
+    // 直接摘除链表头节点并清断双向引用；下一轮只读取剩余链表。
     var head = queue.first;
     var task = head.value;
     var next = head.next;

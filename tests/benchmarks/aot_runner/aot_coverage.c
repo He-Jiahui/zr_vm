@@ -1,3 +1,4 @@
+/* 独立 AOT 运行器的语义站点覆盖计算，不依赖生成器或 VM 分配器。 */
 #include "aot_coverage.h"
 
 #include <string.h>

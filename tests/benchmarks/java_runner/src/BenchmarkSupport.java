@@ -1,3 +1,4 @@
+// Java case 只提供名称适配；算法和倍率规则在此与其它语言保持一致。
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;

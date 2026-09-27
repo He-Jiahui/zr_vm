@@ -1,3 +1,4 @@
+// 保持与 stress 用例相同的分配及幸存者形态，不主动触发收集，作为 GC 对照组。
 let benchConfig = import("bench_config");
 let system = import("zr.system");
 let container = import("zr.container");

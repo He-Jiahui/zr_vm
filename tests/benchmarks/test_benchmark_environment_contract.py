@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# 用隔离仓库和构建记录验证环境指纹、可比性及缓存键的失败关闭契约。
+# TODO: 当前 tests/CMakeLists.txt 未单独注册此测试模块；Task 4 仅导入辅助函数。
+# 核对外部 CI 是否执行本模块的 unittest 测试类，再决定是否补 CTest 入口。
 from __future__ import annotations
 
 import copy

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 从报告附加环境契约追到聚合、缓存和发布器，保护可比性判断。
 
 from __future__ import annotations
 

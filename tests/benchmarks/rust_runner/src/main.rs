@@ -1,3 +1,4 @@
+// 将 case 描述符绑定到共享 Rust 算法，统一解析倍率并输出校验协议。
 mod support;
 
 #[path = "../../cases/numeric_loops/rust/mod.rs"]

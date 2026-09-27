@@ -1,3 +1,4 @@
+// 通过嵌套整数循环和分支累积确定性校验值，供多语言性能报告核对正确性。
 let benchConfig = import("bench_config");
 let system = import("zr.system");
 

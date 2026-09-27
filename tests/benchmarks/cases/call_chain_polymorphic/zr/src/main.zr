@@ -1,3 +1,4 @@
+// 将分层调用、可调用对象派发和尾递归叠加为固定校验工作负载。
 let benchConfig = import("bench_config");
 
 class PolyAdder {

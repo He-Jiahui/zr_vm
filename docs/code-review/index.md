@@ -83,5 +83,6 @@ doc_type: category-index
 | CLI 脚本套件编排 | [53 项](coverage/tests_cmake_cli_suite.tsv) | 1 个 CMake 脚本独立复核，覆盖 13 个函数及 35 个案例，源码仅增注释；未知 `TIER` 空跑成功退出已标 BUG，另外保留 3 个 TODO。脚本定向检查通过，未运行完整 CLI 套件。 |
 | 项目 fixture 脚本套件编排 | [67 项](coverage/tests_cmake_projects_suite.tsv) | 1 个 CMake 脚本独立复核，覆盖 44 个项目案例与 9 个函数；源码仅增注释，脚本解析及未知 `TIER` 空跑复现通过。未知档位无案例仍成功退出已标 BUG，删除目标与 binary 回退保留 2 个 TODO。 |
 | 归档 AOT runtime、ABI 与测试脚本 | [875 项](coverage/zr_vm_aot_tests_runtime.tsv) | 33 文件独立复核，2351 个证据锚点有效，源码差异仅注释；根构建使用现役 runtime，归档 runtime 重接时的生成 helper 接口缺口已按非穷举集合标 BUG。累计保留 45 个 BUG、44 个 TODO；未运行完整构建或测试。 |
+| 多语言 benchmark runner、案例与注册检查 | [1015 项](coverage/tests_benchmarks.tsv) | 172 文件两轮独立复核，2477 个本地证据及 1830 个带行号 caller 引用有效；源码差异仅注释。8 个 BUG 和 1 个 TODO 留证；Node 缩放输入定向检查通过，未运行完整构建或 CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

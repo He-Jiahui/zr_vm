@@ -1,3 +1,4 @@
+/* 对同一 ZR 调用站点比较预绑定与仅缓存模式，并可由 Callgrind 取样。 */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

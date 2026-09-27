@@ -1,3 +1,4 @@
+/* 独立命令行壳层：生成的 AOT 条目需通过注册回调接入。 */
 #include "aot_runner.h"
 
 #include <errno.h>
@@ -135,5 +136,7 @@ int ZrTests_AotRunner_Main(int argc,
 }
 
 int main(int argc, char **argv) {
+    /* 此独立产物不含生成条目；无 provider 时应报告 unavailable，
+     * ssa-tests.cmake 因此不将其登记为通过的 CTest。 */
     return ZrTests_AotRunner_Main(argc, argv, ZR_NULL);
 }

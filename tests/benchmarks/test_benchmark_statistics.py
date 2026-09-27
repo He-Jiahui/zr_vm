@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 以固定数值向量检验样本统计、稳定性门槛和确定性序列化。
 from __future__ import annotations
 
 import json

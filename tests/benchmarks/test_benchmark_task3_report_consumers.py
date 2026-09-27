@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 验证聚合器与 CSV 消费者对测量范围和可比性标志采用相同门槛。
 
 from __future__ import annotations
 

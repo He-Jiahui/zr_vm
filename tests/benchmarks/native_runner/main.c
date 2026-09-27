@@ -1,3 +1,4 @@
+/* 原生基线入口按 registry 对应的 case 名选择描述符，并输出两行校验协议。 */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,6 +78,8 @@ int main(int argc, char **argv) {
             continue;
         }
         if (strcmp(argv[index], "--scale") == 0 && index + 1 < argc) {
+            /* BUG: atoi 接受 --scale 1x 的数字前缀，随后打印成功横幅；
+             * 此路径缺少完整字符串校验，见 Node 同构入口的复现。 */
             explicitScale = atoi(argv[++index]);
             continue;
         }

@@ -13,6 +13,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+/* 取样率以千分数表示；站点计数与实际指令条数不可互换。 */
 #define ZR_AOT_COVERAGE_FULL_SAMPLE_PERMILLE 1000u
 #define ZR_AOT_COVERAGE_MAX_SAMPLE_PERMILLE 1000u
 

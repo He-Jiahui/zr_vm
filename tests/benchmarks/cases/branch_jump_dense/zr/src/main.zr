@@ -1,3 +1,4 @@
+// 在嵌套循环中持续改变分支选择，校验控制流跳转和状态传播。
 let benchConfig = import("bench_config");
 
 var scale = benchConfig.scale();

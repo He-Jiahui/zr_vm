@@ -1,3 +1,4 @@
+// 根据 --case 选择 Java 算法并按双行协议输出成功横幅及校验值。
 import java.util.ArrayList;
 
 public final class BenchmarkRunner {

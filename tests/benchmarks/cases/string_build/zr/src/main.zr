@@ -1,3 +1,4 @@
+// 重复拼装片段并写入映射，校验字符串复制与键值聚合的结果。
 let benchConfig = import("bench_config");
 let container = import("zr.container");
 

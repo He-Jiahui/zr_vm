@@ -1,3 +1,4 @@
+// 在固定轮次内轮换调用不同 worker，测量动态派发和循环状态更新。
 let benchConfig = import("bench_config");
 let system = import("zr.system");
 

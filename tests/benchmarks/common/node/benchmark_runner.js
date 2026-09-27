@@ -1,5 +1,6 @@
 "use strict";
 
+// case 脚本只转发名称；这里集中实现工作负载和双行校验输出。
 const MOD = 1000000007;
 const TIER_SCALES = {
     smoke: 1,
@@ -26,6 +27,7 @@ function parseScale(argv) {
             if (index + 1 >= argv.length) {
                 throw new Error("--scale requires a positive integer");
             }
+            // BUG: --scale 1x 被 parseInt 接受为 1 并成功运行，违反整数参数契约；Node 入口已复现。
             explicitScale = Number.parseInt(argv[index + 1], 10);
             if (!Number.isFinite(explicitScale) || explicitScale < 1) {
                 throw new Error("--scale requires a positive integer");

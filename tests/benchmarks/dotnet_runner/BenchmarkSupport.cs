@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 
+// 所有 .NET case 的计算和倍率解析集中在此，Program 负责协议与选择。
 namespace BenchmarkRunner;
 
 internal readonly record struct BenchmarkCaseDescriptor(string Name, string PassBanner, Func<int, long> Run);

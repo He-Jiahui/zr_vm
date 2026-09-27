@@ -1,3 +1,4 @@
+/* 用假 AOT 条目验证后端身份、回退状态、覆盖计数和报告序列化。 */
 #include "aot_coverage.h"
 #include "aot_runner.h"
 #include "perf_report.h"

@@ -1,3 +1,4 @@
+// 对固定区间逐个试除并累积质数校验值，覆盖取模和分支热点。
 let benchConfig = import("bench_config");
 
 var scale = benchConfig.scale();

@@ -1,3 +1,4 @@
+// 用多种输入分布检验数组排序路径，按抽样位置折叠稳定校验值。
 let benchConfig = import("bench_config");
 let {Array} = import("zr.container");
 

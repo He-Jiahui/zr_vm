@@ -1,3 +1,4 @@
+// 用小输入反复递归计算 Fibonacci，隔离函数调用和返回开销。
 let benchConfig = import("bench_config");
 
 fn fib(n: int): int {

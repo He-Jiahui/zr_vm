@@ -1,3 +1,4 @@
+/* 检验不同后端指标口径的归一化、空值处理和报告字段。 */
 #include "perf_backend_metrics.h"
 
 #include <math.h>

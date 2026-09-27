@@ -1,3 +1,4 @@
+// 在扁平数组上完成二维矩阵加法和派生拷贝，验证索引及遍历路径。
 let benchConfig = import("bench_config");
 let container = import("zr.container");
 

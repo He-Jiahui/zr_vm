@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Summarize instruction-profile and callgrind artifacts for hotspot_report."""
 
+# 将两类离线剖析产物折成同一 JSON/Markdown 摘要，供性能报告消费者读取。
 from __future__ import annotations
 
 import argparse

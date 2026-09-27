@@ -1,3 +1,4 @@
+// Rust 基线算法与其它语言共享固定输入、模数和各 tier 的倍率约定。
 use std::collections::{HashMap, HashSet, VecDeque};
 
 pub const MOD: i64 = 1_000_000_007;

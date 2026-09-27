@@ -1,3 +1,4 @@
+// 混合对象字段更新与映射键访问，按固定顺序折叠读写结果。
 let benchConfig = import("bench_config");
 let {Map} = import("zr.container");
 

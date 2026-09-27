@@ -1,3 +1,4 @@
+// 高频读写同一可变对象的字段，观察成员访问及分支累积成本。
 let benchConfig = import("bench_config");
 
 class HotRecord {

@@ -1,3 +1,4 @@
+/* 跨语言基线的 C 工作负载：各入口只返回校验值，由 main 统一输出横幅。 */
 #include "benchmark_support.h"
 
 #include <inttypes.h>
@@ -388,6 +389,8 @@ ZrBenchInt zr_bench_run_string_build(int scale) {
         if ((index % 9) == 8) {
             keyIndex = zr_bench_find_string_key(keys, keyCount, assembled);
             if (keyIndex < 0) {
+                /* BUG: --scale 26 会生成 521 个不同键，超过 512 项容量；
+                 * main 接受该倍率，此处 keyCount 到 512 后继续写出数组边界。 */
                 keyIndex = keyCount++;
                 strncpy(keys[keyIndex], assembled, sizeof(keys[keyIndex]) - 1);
                 keys[keyIndex][sizeof(keys[keyIndex]) - 1] = '\0';
@@ -454,6 +457,7 @@ static char *zr_bench_gc_dup_string(const char *text) {
 }
 
 ZrBenchInt zr_bench_run_gc_fragment_baseline(int scale) {
+    /* 原生基线无托管收集器；两组保持同一分配形态供 ZR GC 差值比较。 */
     return zr_bench_run_gc_fragment_stress(scale);
 }
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 固定洗牌向量和序列化结果，保证筛选后的执行计划可复现。
 from __future__ import annotations
 
 import json

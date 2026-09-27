@@ -1,3 +1,4 @@
+// 与 baseline 使用同一分配和校验流程，并按周期主动触发 minor/full 收集。
 let benchConfig = import("bench_config");
 let system = import("zr.system");
 let container = import("zr.container");
@@ -86,6 +87,7 @@ var cycle = 0;
 var mod = 1000000007;
 
 system.gc.enable();
+// 固定较小预算并保留全局根，使显式收集时仍有老年代引用可扫描。
 system.gc.set_budget(400);
 gcArchiveRoot = oldArchive;
 gcLookupRoot = oldLookup;

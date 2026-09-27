@@ -3,6 +3,7 @@
 
 #include "aot_coverage.h"
 
+/* 仅在生成条目确实注册后才视为可运行 AOT 后端。 */
 #define ZR_AOT_RUNNER_MAX_ENTRIES 64u
 #define ZR_AOT_RUNNER_ENTRY_NAME_CAPACITY 64u
 

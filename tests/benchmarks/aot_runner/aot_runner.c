@@ -1,3 +1,4 @@
+/* 仅执行显式注册的 AOT 条目，并将解释器回退标成独立结果状态。 */
 #include "aot_runner.h"
 
 #include <string.h>

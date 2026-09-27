@@ -1,3 +1,4 @@
+/* 检查 registry 相关文件、各 case 的跨语言入口及若干约定标记。 */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

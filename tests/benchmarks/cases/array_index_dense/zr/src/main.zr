@@ -1,3 +1,4 @@
+// 反复读取相邻数组元素并写回中间位置，测量密集索引路径。
 let benchConfig = import("bench_config");
 let {Array} = import("zr.container");
 

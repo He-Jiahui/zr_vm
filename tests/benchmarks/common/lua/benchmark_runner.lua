@@ -1,3 +1,4 @@
+-- Lua case 包装器共用算法、倍率解析和双行校验协议。
 local M = {}
 
 local MOD = 1000000007
@@ -486,6 +487,7 @@ function M.run_main(case_name, args)
 
     local scale = parse_scale(runner_args)
     if server_mode then
+        -- 持续进程的每个请求都重跑同一算法，并拒绝重复结果不一致的样本。
         io.stdout:setvbuf("no")
         print("READY benchmark-checksum-v1:" .. case_name .. ":" .. tier)
         while true do

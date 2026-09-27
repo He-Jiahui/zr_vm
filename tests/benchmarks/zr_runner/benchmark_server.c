@@ -1,3 +1,4 @@
+/* steady 模式的 ZR 二进制服务：预加载入口，逐请求执行并走独立协议输出。 */
 #if !defined(_WIN32)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -50,6 +51,7 @@ typedef struct ZrBenchmarkExecuteRequest {
 } ZrBenchmarkExecuteRequest;
 
 static FILE *zr_benchmark_protocol_output_open(void) {
+    /* VM 用例可打印自身横幅；协议须占用原 stdout，并将用例输出重定向掉。 */
     int savedStdout;
     int nullOutput;
     FILE *protocolOutput;
@@ -341,6 +343,7 @@ static int zr_benchmark_run_protocol(FILE *protocolOutput,
             return 1;
         }
         checksum = 0;
+        /* 同一预加载入口可重复运行，但每次结果必须一致才可作为计时样本。 */
         for (repetition = 0U; repetition < repetitions; repetition++) {
             if (!zr_benchmark_execute(state, function, &repetitionChecksum)) {
                 fprintf(protocolOutput, "ERROR %d zr-execution-failed\n", index);

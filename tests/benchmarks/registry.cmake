@@ -1,3 +1,4 @@
+## 性能套件的唯一 case 清单：生成计划、选择语言及核验横幅/校验值都依赖这里。
 include(CMakeParseArguments)
 
 set(ZR_VM_BENCHMARK_CASE_NAMES "")
@@ -67,6 +68,7 @@ function(zr_vm_benchmark_aot_is_available implementation_id output_variable)
     endif ()
 endfunction()
 
+# 将每个 case 的语言集合、tier 与校验值写回父作用域，供套件生成执行计划。
 function(zr_vm_register_benchmark_case name)
     set(options "")
     set(oneValueArgs

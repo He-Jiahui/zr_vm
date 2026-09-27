@@ -5,6 +5,7 @@
 
 typedef int64_t ZrBenchInt;
 
+/* 所有语言的校验值按同一个模数折叠，防止运行时间比较混入错误结果。 */
 #define ZR_BENCH_MOD 1000000007LL
 
 int zr_bench_scale_from_tier(const char *tier);

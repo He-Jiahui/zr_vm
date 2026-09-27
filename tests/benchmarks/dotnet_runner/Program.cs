@@ -1,3 +1,4 @@
+// 依据 case 名选择静态适配器；server 模式以同一进程执行多次请求。
 using BenchmarkRunner;
 
 var argsList = Environment.GetCommandLineArgs().Skip(1).ToArray();

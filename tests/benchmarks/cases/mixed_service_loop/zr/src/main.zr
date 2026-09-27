@@ -1,3 +1,4 @@
+// 将服务对象调用、数组索引和分支更新放入同一循环，形成混合负载。
 let benchConfig = import("bench_config");
 let {Array} = import("zr.container");
 

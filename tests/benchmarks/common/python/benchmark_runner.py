@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# case 脚本仅选择名称；本模块实现算法、倍率解析及统一的双行输出协议。
 from collections import deque
 import sys
 
