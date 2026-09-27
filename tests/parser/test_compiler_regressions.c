@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
+/* 两个 Unity 目标复用本回归源；诊断 helper 只借用编译函数图。 */
 #include "unity.h"
 
 #include "call_chain_polymorphic_compile_fixture.h"
@@ -26,17 +26,17 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser.h"
-
+/* 仅记录单条用例的 CPU 时间，不持有测试资源。 */
 typedef struct SZrRegressionTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrRegressionTestTimer;
-
+/* 工程回调借用结果槽，并将线程终态回写给调用者。 */
 typedef struct ZrProjectRunRequest {
     SZrTypeValue *result;
     EZrThreadStatus status;
 } ZrProjectRunRequest;
-
+/* PIC 原型指针借用函数图；固定数组最多记录十六种接收者。 */
 typedef struct ZrMemberCallsiteStats {
     TZrUInt32 cacheEntryCount;
     TZrUInt32 totalPicSlots;
@@ -45,7 +45,7 @@ typedef struct ZrMemberCallsiteStats {
     const SZrObjectPrototype *receiverPrototypes[16];
     TZrUInt32 uniqueReceiverPrototypeCount;
 } ZrMemberCallsiteStats;
-
+/* 成功返回 malloc 文本给调用者；读取失败先关闭文件再返回空值。 */
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -87,7 +87,7 @@ static char *read_text_file_owned(const TZrChar *path) {
     fclose(file);
     return buffer;
 }
-
+/* 异常边界内运行工程，借用请求与结果槽并回写执行状态。 */
 static void run_project_body(SZrState *state, TZrPtr arguments) {
     ZrProjectRunRequest *request = (ZrProjectRunRequest *)arguments;
 
@@ -97,7 +97,7 @@ static void run_project_body(SZrState *state, TZrPtr arguments) {
 
     request->status = ZrLibrary_Project_Run(state, request->result);
 }
-
+/* 借用函数名供诊断；空函数或匿名函数显示占位文本。 */
 static const TZrChar *function_name_or_anonymous(const SZrFunction *function) {
     if (function == ZR_NULL || function->functionName == ZR_NULL) {
         return "<anonymous>";
@@ -105,7 +105,7 @@ static const TZrChar *function_name_or_anonymous(const SZrFunction *function) {
 
     return ZrCore_String_GetNativeString(function->functionName);
 }
-
+/* 按指针去重 PIC 接收者，诊断容量满后不再添加原型。 */
 static void member_callsite_stats_note_receiver(ZrMemberCallsiteStats *stats,
                                                 const SZrObjectPrototype *receiverPrototype) {
     TZrUInt32 index;
@@ -125,7 +125,7 @@ static void member_callsite_stats_note_receiver(ZrMemberCallsiteStats *stats,
         stats->receiverPrototypes[stats->uniqueReceiverPrototypeCount++] = receiverPrototype;
     }
 }
-
+/* 递归汇总函数图中的成员缓存与 PIC 命中，只借用缓存数据。 */
 static void collect_member_callsite_stats_recursive(const SZrFunction *function,
                                                     EZrFunctionCallSiteCacheKind kind,
                                                     const char *memberName,
@@ -180,7 +180,7 @@ static void collect_member_callsite_stats_recursive(const SZrFunction *function,
                                                 stats);
     }
 }
-
+/* 把统计写入调用者的有界缓冲区，不持有输出。 */
 static void format_member_callsite_stats(const char *label,
                                          const ZrMemberCallsiteStats *stats,
                                          char *buffer,
@@ -208,7 +208,7 @@ static void format_member_callsite_stats(const char *label,
         buffer[bufferSize - 1] = '\0';
     }
 }
-
+/* 直接执行真实工程入口前创建模块并投影编译函数原型。 */
 static void prepare_project_entry_runtime_module(SZrState *state,
                                                  SZrFunction *function,
                                                  SZrString *sourceName) {
@@ -226,11 +226,11 @@ static void prepare_project_entry_runtime_module(SZrState *state,
     ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
     ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, function);
 }
-
+/* 复用指令清单生成 opcode 名称，避免诊断枚举漂移。 */
 #define ZR_TEST_OPCODE_NAME_CASE(INSTRUCTION)                                                                         \
     case ZR_INSTRUCTION_ENUM(INSTRUCTION):                                                                            \
         return #INSTRUCTION;
-
+/* 从统一指令表返回诊断用名称；未知 opcode 使用稳定占位符。 */
 static const char *instruction_opcode_name(EZrInstructionCode opcode) {
     switch (opcode) {
         ZR_INSTRUCTION_DECLARE(ZR_TEST_OPCODE_NAME_CASE)
@@ -238,7 +238,7 @@ static const char *instruction_opcode_name(EZrInstructionCode opcode) {
             return "UNKNOWN_OPCODE";
     }
 }
-
+/* 沿函数图定位首个 opcode，输出函数指针仍由根函数持有。 */
 static TZrBool find_first_opcode_recursive(const SZrFunction *function,
                                            EZrInstructionCode opcode,
                                            TZrUInt32 depth,
@@ -280,7 +280,7 @@ static TZrBool find_first_opcode_recursive(const SZrFunction *function,
 
     return ZR_FALSE;
 }
-
+/* 按函数图遍历顺序寻找第 n 个 opcode，供指令窗口诊断。 */
 static TZrBool find_nth_opcode_recursive(const SZrFunction *function,
                                          EZrInstructionCode opcode,
                                          TZrUInt32 targetOrdinal,
@@ -334,7 +334,7 @@ static TZrBool find_nth_opcode_recursive(const SZrFunction *function,
 
     return ZR_FALSE;
 }
-
+/* 从当前函数成员表借用指定符号条目。 */
 static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFunction *function,
                                                                  const char *expectedSymbol) {
     TZrUInt32 index;
@@ -354,7 +354,7 @@ static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFuncti
 
     return ZR_NULL;
 }
-
+/* 递归查找同名子函数，返回值借用根函数图。 */
 static const SZrFunction *find_child_function_by_name_recursive(const SZrFunction *function,
                                                                 const char *expectedName,
                                                                 TZrUInt32 depth) {
@@ -384,7 +384,7 @@ static const SZrFunction *find_child_function_by_name_recursive(const SZrFunctio
 
     return ZR_NULL;
 }
-
+/* 将指令及源码位置追加到调用者缓冲区，供断言失败定位。 */
 static void append_instruction_window_line(char *buffer,
                                            size_t bufferSize,
                                            size_t *length,
@@ -432,7 +432,7 @@ static void append_instruction_window_line(char *buffer,
 
     *length += (size_t)written;
 }
-
+/* 将槽位变量、常量与类型线索追加到指令窗口。 */
 static void append_slot_metadata(char *buffer,
                                  size_t bufferSize,
                                  size_t *length,
@@ -597,7 +597,7 @@ static void append_slot_metadata(char *buffer,
         }
     }
 }
-
+/* 围绕首个目标 opcode 生成失败窗口，输出由调用者持有。 */
 static void build_opcode_window_message(const SZrFunction *rootFunction,
                                         EZrInstructionCode opcode,
                                         char *buffer,
@@ -657,7 +657,7 @@ static void build_opcode_window_message(const SZrFunction *rootFunction,
                              instruction->instruction.operand.operand1[1]);
     }
 }
-
+/* 围绕第 n 个目标 opcode 生成窗口，区分多个调用点。 */
 static void build_nth_opcode_window_message(const SZrFunction *rootFunction,
                                             EZrInstructionCode opcode,
                                             TZrUInt32 occurrence,
@@ -715,19 +715,19 @@ static void build_nth_opcode_window_message(const SZrFunction *rootFunction,
         append_instruction_window_line(buffer, bufferSize, &length, ownerFunction, index);
     }
 }
-
+/* 把整数数组读取的普通与 plain-dest 变体视作同一检查族。 */
 static TZrBool opcode_is_super_array_get_int_family(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT) ||
            opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST) ||
            opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS) ||
            opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST);
 }
-
+/* 识别整数数组写入的指令族供邻接重载断言使用。 */
 static TZrBool opcode_is_super_array_set_int_family(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT) ||
            opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS);
 }
-
+/* 扫描嵌套函数，阻止数组整数操作前保留可消除的临时重载。 */
 static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const SZrFunction *function, TZrUInt32 depth) {
     char message[256];
 
@@ -780,7 +780,7 @@ static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const S
         }
     }
 }
-
+/* 递归计数函数图 opcode；只借用编译产物，深度由断言限制。 */
 static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstructionCode opcode, TZrUInt32 depth) {
     TZrUInt32 count = 0;
 
@@ -801,7 +801,7 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
 
     return count;
 }
-
+/* 递归合计尾调用族，区分返回位置的调用降级。 */
 static TZrUInt32 count_tail_call_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     return count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL), depth) +
@@ -816,7 +816,7 @@ static TZrUInt32 count_tail_call_family_recursive(const SZrFunction *function, T
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED), depth);
 }
-
+/* 递归合计普通调用族，防止内层实参调用误走尾调用路径。 */
 static TZrUInt32 count_non_tail_call_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     return count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), depth) +
@@ -831,7 +831,7 @@ static TZrUInt32 count_non_tail_call_family_recursive(const SZrFunction *functio
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED), depth);
 }
-
+/* 收集 opcode 命中位置和函数名，区分根函数与子函数。 */
 static void append_opcode_hits_recursive(const SZrFunction *function,
                                          EZrInstructionCode opcode,
                                          TZrUInt32 depth,
@@ -979,7 +979,7 @@ static void append_opcode_hits_recursive(const SZrFunction *function,
         }
     }
 }
-
+/* 在调用者缓冲区汇总命中明细，不创建长期状态。 */
 static void build_opcode_hits_message(const SZrFunction *rootFunction,
                                       EZrInstructionCode opcode,
                                       char *buffer,
@@ -1006,7 +1006,7 @@ static void build_opcode_hits_message(const SZrFunction *rootFunction,
                  (unsigned int)hitCount);
     }
 }
-
+/* 按调试行映射限定计数，避免其他调用点掩盖目标源码行。 */
 static TZrUInt32 count_opcode_on_source_line_recursive(const SZrFunction *function,
                                                        EZrInstructionCode opcode,
                                                        TZrUInt32 lineNumber,
@@ -1036,7 +1036,7 @@ static TZrUInt32 count_opcode_on_source_line_recursive(const SZrFunction *functi
 
     return count;
 }
-
+/* 在指定源码行找 opcode，返回借用的函数和指令位置。 */
 static TZrBool find_first_opcode_on_source_line_recursive(const SZrFunction *function,
                                                           EZrInstructionCode opcode,
                                                           TZrUInt32 lineNumber,
@@ -1083,7 +1083,7 @@ static TZrBool find_first_opcode_on_source_line_recursive(const SZrFunction *fun
 
     return ZR_FALSE;
 }
-
+/* 将源码行过滤与指令窗口组合以定位真实基准热调用点。 */
 static void build_opcode_window_message_for_source_line(const SZrFunction *rootFunction,
                                                         EZrInstructionCode opcode,
                                                         TZrUInt32 lineNumber,
@@ -1138,7 +1138,7 @@ static void build_opcode_window_message_for_source_line(const SZrFunction *rootF
         append_instruction_window_line(buffer, bufferSize, &length, ownerFunction, index);
     }
 }
-
+/* 借用局部变量元数据供槽位和活跃区间断言。 */
 static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunction *function, const char *name) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NOT_NULL(name);
@@ -1158,7 +1158,7 @@ static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunc
 
     return ZR_NULL;
 }
-
+/* 借用导出变量元数据供工程编译结果核对。 */
 static const SZrFunctionExportedVariable *find_exported_variable_by_name(const SZrFunction *function, const char *name) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NOT_NULL(name);
@@ -1179,7 +1179,7 @@ static const SZrFunctionExportedVariable *find_exported_variable_by_name(const S
 
     return ZR_NULL;
 }
-
+/* 从调试位置表定位源码行首个指令偏移。 */
 static TZrUInt32 find_first_execution_location_offset_for_line(const SZrFunction *function, TZrUInt32 lineNumber) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NOT_NULL(function->executionLocationInfoList);
@@ -1192,18 +1192,18 @@ static TZrUInt32 find_first_execution_location_offset_for_line(const SZrFunction
 
     return UINT32_MAX;
 }
-
+/* 将有符号常量加法的普通与 plain-dest 形态合并计数。 */
 static TZrBool opcode_is_signed_add_const_family(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(ADD_INT_CONST) ||
            opcode == ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST) ||
            opcode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST) ||
            opcode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST);
 }
-
+/* 识别可折成右常量减法的原始 opcode 组合。 */
 static TZrBool opcode_is_signed_sub_right_constant_pair_opcode(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(SUB_INT) || opcode == ZR_INSTRUCTION_ENUM(SUB_SIGNED);
 }
-
+/* 统计循环中的读槽、常量自更新与回写三指令残留。 */
 static TZrUInt32 count_stack_self_update_int_const_triplets_recursive(const SZrFunction *function,
                                                                       TZrUInt32 depth) {
     TZrUInt32 count = 0;
@@ -1247,7 +1247,7 @@ static TZrUInt32 count_stack_self_update_int_const_triplets_recursive(const SZrF
 
     return count;
 }
-
+/* 仅将无副作用的纯结果指令列为直写最终槽候选。 */
 static TZrBool opcode_is_direct_result_store_fold_candidate(EZrInstructionCode opcode) {
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(ADD_INT):
@@ -1296,7 +1296,7 @@ static TZrBool opcode_is_direct_result_store_fold_candidate(EZrInstructionCode o
             return ZR_FALSE;
     }
 }
-
+/* 计数计算结果后立即复制入最终槽的冗余指令对。 */
 static TZrUInt32 count_direct_result_store_followed_by_set_stack_pairs_in_function_range(
         const SZrFunction *function,
         TZrUInt32 startIndex) {
@@ -1328,7 +1328,7 @@ static TZrUInt32 count_direct_result_store_followed_by_set_stack_pairs_in_functi
 
     return count;
 }
-
+/* 计数已知 VM 成员调用结果后的多余槽复制。 */
 static TZrUInt32 count_known_vm_member_call_result_store_pairs_in_function_range(
         const SZrFunction *function,
         TZrUInt32 startIndex) {
@@ -1358,7 +1358,7 @@ static TZrUInt32 count_known_vm_member_call_result_store_pairs_in_function_range
 
     return count;
 }
-
+/* 计数成员调用前多余接收者搬运的三指令形态。 */
 static TZrUInt32 count_known_vm_member_call_receiver_copy_triplets_in_function_range(
         const SZrFunction *function,
         TZrUInt32 startIndex) {
@@ -1391,7 +1391,7 @@ static TZrUInt32 count_known_vm_member_call_receiver_copy_triplets_in_function_r
 
     return count;
 }
-
+/* 在函数图中统计尚未折叠的右常量减法指令对。 */
 static TZrUInt32 count_sub_int_right_constant_pairs_recursive(const SZrFunction *function, TZrUInt32 depth) {
     TZrUInt32 count = 0;
 
@@ -1425,7 +1425,7 @@ static TZrUInt32 count_sub_int_right_constant_pairs_recursive(const SZrFunction 
 
     return count;
 }
-
+/* 显式识别旧槽读取；未知 opcode 碰到该槽时保守拒绝转发。 */
 static TZrBool test_instruction_supports_get_stack_copy_forward_rewrite(const TZrInstruction *instruction,
                                                                         TZrUInt32 oldSlot,
                                                                         TZrBool *outReadsSlot) {
@@ -1597,7 +1597,7 @@ static TZrBool test_instruction_supports_get_stack_copy_forward_rewrite(const TZ
     *outReadsSlot = readsSlot;
     return ZR_TRUE;
 }
-
+/* 只对已知目的槽编码判断写入，以界定复制传播有效期。 */
 static TZrBool test_instruction_writes_slot(const TZrInstruction *instruction, TZrUInt32 slot) {
     EZrInstructionCode opcode;
 
@@ -1736,7 +1736,7 @@ static TZrBool test_instruction_writes_slot(const TZrInstruction *instruction, T
             return ZR_FALSE;
     }
 }
-
+/* 结合读槽与写入屏障计数仍可安全消除的复制读取。 */
 static TZrUInt32 count_forwardable_get_stack_copy_reads_in_function_range(const SZrFunction *function,
                                                                           TZrUInt32 startIndex) {
     TZrUInt32 count = 0;
@@ -1819,7 +1819,7 @@ static TZrUInt32 count_forwardable_get_stack_copy_reads_in_function_range(const 
 
     return count;
 }
-
+/* 统计有符号小于等于比较后仍独立分支的残留。 */
 static TZrUInt32 count_less_equal_signed_jump_if_pairs_in_function_range(const SZrFunction *function,
                                                                          TZrUInt32 startIndex) {
     TZrUInt32 count = 0;
@@ -1849,7 +1849,7 @@ static TZrUInt32 count_less_equal_signed_jump_if_pairs_in_function_range(const S
 
     return count;
 }
-
+/* 检查对应循环守卫是否已使用专用有符号跳转。 */
 static TZrUInt32 count_jump_if_greater_signed_in_function_range(const SZrFunction *function, TZrUInt32 startIndex) {
     TZrUInt32 count = 0;
 
@@ -1868,7 +1868,7 @@ static TZrUInt32 count_jump_if_greater_signed_in_function_range(const SZrFunctio
 
     return count;
 }
-
+/* 仅在入口函数常量池按文本定位索引，供重复装载断言。 */
 static TZrInt32 find_top_level_string_constant_index(const SZrFunction *function, const char *text) {
     if (function == ZR_NULL || text == ZR_NULL || function->constantValueList == ZR_NULL) {
         return -1;
@@ -1890,7 +1890,7 @@ static TZrInt32 find_top_level_string_constant_index(const SZrFunction *function
 
     return -1;
 }
-
+/* 仅查顶层常量池中的整数，用于零初始化残留定位。 */
 static TZrInt32 find_top_level_int_constant_index(const SZrFunction *function, TZrInt64 value) {
     if (function == ZR_NULL || function->constantValueList == ZR_NULL) {
         return -1;
@@ -1906,7 +1906,7 @@ static TZrInt32 find_top_level_int_constant_index(const SZrFunction *function, T
 
     return -1;
 }
-
+/* 递归计数特定常量的装载，观察跨调用边界的重复读取。 */
 static TZrUInt32 count_get_constant_uses_recursive(const SZrFunction *function,
                                                    TZrUInt32 constantIndex,
                                                    TZrUInt32 depth) {
@@ -1932,7 +1932,7 @@ static TZrUInt32 count_get_constant_uses_recursive(const SZrFunction *function,
 
     return count;
 }
-
+/* 在指定范围计数常量装载后立即写栈的冗余对。 */
 static TZrUInt32 count_get_constant_set_stack_pairs_for_constant_in_function_range(const SZrFunction *function,
                                                                                    TZrUInt32 startIndex,
                                                                                    TZrUInt32 constantIndex) {
@@ -1964,7 +1964,7 @@ static TZrUInt32 count_get_constant_set_stack_pairs_for_constant_in_function_ran
 
     return count;
 }
-
+/* 用指针身份判断闭包目标是否由 childFunction 图可达。 */
 static TZrBool function_tree_contains_exact_child_pointer(const SZrFunction *function, const SZrFunction *target) {
     if (function == ZR_NULL || target == ZR_NULL || function->childFunctionList == ZR_NULL) {
         return ZR_FALSE;
@@ -1979,7 +1979,7 @@ static TZrBool function_tree_contains_exact_child_pointer(const SZrFunction *fun
 
     return ZR_FALSE;
 }
-
+/* 遍历函数常量与子函数图，校验每层指令常量索引。 */
 static void assert_function_constant_operands_in_range_recursive(SZrState *state,
                                                                  const SZrFunction *function,
                                                                  TZrUInt32 depth) {
@@ -2030,7 +2030,7 @@ static void assert_function_constant_operands_in_range_recursive(SZrState *state
         }
     }
 }
-
+/* 确认 CREATE_CLOSURE 目标确属可达子函数，防止常量池掩盖图缺口。 */
 static void assert_create_closure_targets_are_reachable_children_recursive(SZrState *state,
                                                                            const SZrFunction *function,
                                                                            TZrUInt32 depth) {
@@ -2089,7 +2089,7 @@ static void assert_create_closure_targets_are_reachable_children_recursive(SZrSt
         }
     }
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_class_member_nested_functions_keep_constant_indices_in_range(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Class Member Nested Functions Keep Constant Indices In Range";
@@ -2133,7 +2133,7 @@ void test_class_member_nested_functions_keep_constant_indices_in_range(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_lambda_create_closure_targets_are_reachable_from_child_function_graph(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Lambda Create Closure Targets Are Reachable From Child Function Graph";
@@ -2173,7 +2173,7 @@ void test_lambda_create_closure_targets_are_reachable_from_child_function_graph(
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_classes_full_module_compiles_without_static_and_receiver_signature_regressions(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Classes Full Module Compiles Without Static And Receiver Signature Regressions";
@@ -2215,7 +2215,7 @@ void test_classes_full_module_compiles_without_static_and_receiver_signature_reg
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_native_network_optional_argument_import_compiles_without_unknown_parameter_blowup(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Native Network Optional Argument Import Compiles Without Unknown Parameter Blowup";
@@ -2252,7 +2252,7 @@ void test_native_network_optional_argument_import_compiles_without_unknown_param
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_reserved_type_query_targets_compile_without_explicit_imports(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Static TypeId Targets Compile Without Explicit Imports";
@@ -2290,7 +2290,7 @@ void test_reserved_type_query_targets_compile_without_explicit_imports(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_qualified_container_types_compile_through_function_predeclaration_paths(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Qualified Container Types Compile Through Function Predeclaration Paths";
@@ -2340,7 +2340,7 @@ void test_qualified_container_types_compile_through_function_predeclaration_path
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_native_network_loopback_runtime_returns_expected_payload(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Native Network Loopback Runtime Returns Expected Payload";
@@ -2413,7 +2413,7 @@ void test_native_network_loopback_runtime_returns_expected_payload(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_native_network_loopback_project_run_returns_expected_payload(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Native Network Loopback Project Run Returns Expected Payload";
@@ -2462,7 +2462,7 @@ void test_native_network_loopback_project_run_returns_expected_payload(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototype_data(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Imported Source Module Type Stubs Stay Out Of Entry Prototype Data";
@@ -2513,7 +2513,7 @@ void test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototyp
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_project_local_struct_pair_shadows_native_pair_at_runtime(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Project Local Struct Pair Shadows Native Pair At Runtime";
@@ -2562,7 +2562,7 @@ void test_project_local_struct_pair_shadows_native_pair_at_runtime(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_lsp_language_feature_matrix_runtime_returns_expected_total(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "LSP Language Feature Matrix Runtime Returns Expected Total";
@@ -2612,7 +2612,7 @@ void test_lsp_language_feature_matrix_runtime_returns_expected_total(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captures_stable(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "LSP Language Feature Matrix Copy Runtime Keeps Top Level Closure Captures Stable";
@@ -2662,7 +2662,7 @@ void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captu
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_migrated_decorator_import_project_run_returns_expected_total(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Migrated Decorator Import Project Run Returns Expected Total";
@@ -2712,7 +2712,7 @@ void test_migrated_decorator_import_project_run_returns_expected_total(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Language Debug Gauntlet Project Run Returns Expected Banner And Checksum";
@@ -2760,7 +2760,7 @@ void test_language_debug_gauntlet_project_run_returns_expected_banner_and_checks
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_benchmark_numeric_loops_project_run_returns_expected_checksum(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Benchmark Numeric Loops Project Run Returns Expected Checksum";
@@ -2805,7 +2805,7 @@ void test_benchmark_numeric_loops_project_run_returns_expected_checksum(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverage(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Dispatch Loops Benchmark Runtime Keeps Step Member PIC Coverage";
@@ -2857,7 +2857,7 @@ void test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverag
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
     TEST_ASSERT_EQUAL_INT64(320214929, result.value.nativeObject.nativeInt64);
-
+    /* 先跑完真实工程再读 PIC；否则命中数和接收者原型并非热路径结果。 */
     memset(&stepStats, 0, sizeof(stepStats));
     collect_member_callsite_stats_recursive(function,
                                             ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET,
@@ -2878,7 +2878,7 @@ void test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverag
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_gc_fragment_stress_benchmark_project_run_returns_expected_checksum(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "GC Fragment Stress Benchmark Project Run Returns Expected Checksum";
@@ -2928,7 +2928,7 @@ void test_gc_fragment_stress_benchmark_project_run_returns_expected_checksum(voi
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_avoids_adjacent_temp_reloads_before_super_array_int_ops(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Avoids Adjacent Temp Reloads Before Super Array Int Ops";
@@ -2951,7 +2951,7 @@ void test_matrix_add_2d_compile_avoids_adjacent_temp_reloads_before_super_array_
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_folds_right_hand_int_constants_into_const_opcodes(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Folds Right Hand Int Constants Into Const Opcodes";
@@ -2989,7 +2989,7 @@ void test_matrix_add_2d_compile_folds_right_hand_int_constants_into_const_opcode
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_eliminates_temp_self_updates_for_add_int_const(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Eliminates Temp Self Updates For Add Int Const";
@@ -3013,7 +3013,7 @@ void test_matrix_add_2d_compile_eliminates_temp_self_updates_for_add_int_const(v
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_folds_loop_bounds_into_sub_int_const(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Folds Loop Bounds Into Sub Int Const";
@@ -3043,7 +3043,7 @@ void test_matrix_add_2d_compile_folds_loop_bounds_into_sub_int_const(void) {
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_eliminates_forwardable_get_stack_copy_reads(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Eliminates Forwardable Get Stack Copy Reads";
@@ -3075,7 +3075,7 @@ void test_matrix_add_2d_compile_eliminates_forwardable_get_stack_copy_reads(void
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_fuses_less_equal_signed_jump_if_loop_guards(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Fuses Less Equal Signed Jump If Loop Guards";
@@ -3111,7 +3111,7 @@ void test_matrix_add_2d_compile_fuses_less_equal_signed_jump_if_loop_guards(void
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_folds_direct_result_stores_into_final_slots(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Folds Direct Result Stores Into Final Slots";
@@ -3144,7 +3144,7 @@ void test_matrix_add_2d_compile_folds_direct_result_stores_into_final_slots(void
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_eliminates_zero_init_constant_copy_pairs(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Eliminates Zero Init Constant Copy Pairs";
@@ -3181,7 +3181,7 @@ void test_matrix_add_2d_compile_eliminates_zero_init_constant_copy_pairs(void) {
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_eliminates_generic_array_int_index_opcodes(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Eliminates Generic Array Int Index Opcodes";
@@ -3241,7 +3241,7 @@ void test_matrix_add_2d_compile_eliminates_generic_array_int_index_opcodes(void)
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_compile_emits_plain_destination_int_arithmetic_opcodes(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Compile Emits Plain Destination Int Arithmetic Opcodes";
@@ -3289,7 +3289,7 @@ void test_matrix_add_2d_compile_emits_plain_destination_int_arithmetic_opcodes(v
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* 聚合有符号加法及其常量、plain-dest 变体。 */
 static TZrUInt32 count_typed_signed_add_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Typed signed add recursion depth exceeded 64");
@@ -3299,7 +3299,7 @@ static TZrUInt32 count_typed_signed_add_family_recursive(const SZrFunction *func
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST), depth);
 }
-
+/* 聚合无符号加法及其常量、plain-dest 变体。 */
 static TZrUInt32 count_typed_unsigned_add_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Typed unsigned add recursion depth exceeded 64");
@@ -3309,7 +3309,7 @@ static TZrUInt32 count_typed_unsigned_add_family_recursive(const SZrFunction *fu
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST), depth);
 }
-
+/* 聚合有符号减法及其常量、plain-dest 变体。 */
 static TZrUInt32 count_typed_signed_sub_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Typed signed sub recursion depth exceeded 64");
@@ -3319,7 +3319,7 @@ static TZrUInt32 count_typed_signed_sub_family_recursive(const SZrFunction *func
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST), depth);
 }
-
+/* 聚合无符号减法及其常量、plain-dest 变体。 */
 static TZrUInt32 count_typed_unsigned_sub_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Typed unsigned sub recursion depth exceeded 64");
@@ -3329,7 +3329,7 @@ static TZrUInt32 count_typed_unsigned_sub_family_recursive(const SZrFunction *fu
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST), depth);
 }
-
+/* 递归统计有符号算术的 plain-dest 降级结果。 */
 static TZrUInt32 count_typed_signed_plain_destination_family_recursive(const SZrFunction *function, TZrUInt32 depth) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Typed signed plain-destination recursion depth exceeded 64");
@@ -3342,7 +3342,7 @@ static TZrUInt32 count_typed_signed_plain_destination_family_recursive(const SZr
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST), depth);
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Strongly Typed Compile Prefers Typed Arithmetic And Equality Opcodes";
@@ -3473,7 +3473,7 @@ void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(v
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_typed_quickening_promotes_const_and_plain_destination_variants(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Typed Quickening Promotes Const And Plain Destination Variants";
@@ -3526,7 +3526,7 @@ void test_typed_quickening_promotes_const_and_plain_destination_variants(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_known_native_calls_quicken_to_dedicated_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Known Native Calls Quicken To Dedicated Call Family";
@@ -3571,7 +3571,7 @@ void test_known_native_calls_quicken_to_dedicated_call_family(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Known Native Member Calls Quicken To Dedicated Member Call Opcode";
@@ -3618,7 +3618,7 @@ void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_static_native_box_member_call_executes_without_receiver_frame_rewrite(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Static Native Box Member Call Executes Without Receiver Frame Rewrite";
@@ -3663,7 +3663,7 @@ void test_static_native_box_member_call_executes_without_receiver_frame_rewrite(
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_loads(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Known VM Member Call Load1 Quickening Fuses Receiver And Argument Loads";
@@ -3728,7 +3728,7 @@ void test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_load
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Typed Member Calls Quicken To Known VM Call Family";
@@ -3809,7 +3809,7 @@ void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_typed_member_call_initializers_bind_directly_into_local_slots(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Typed Member Call Initializers Bind Directly Into Local Slots";
@@ -3880,7 +3880,7 @@ void test_typed_member_call_initializers_bind_directly_into_local_slots(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_typed_member_call_binary_operands_bind_directly_into_operand_slots(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Typed Member Call Binary Operands Bind Directly Into Operand Slots";
@@ -3945,7 +3945,7 @@ void test_typed_member_call_binary_operands_bind_directly_into_operand_slots(voi
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_nested_argument_calls_do_not_reuse_tail_call_lowering(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Nested Argument Calls Do Not Reuse Tail Call Lowering";
@@ -4018,7 +4018,7 @@ void test_nested_argument_calls_do_not_reuse_tail_call_lowering(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_known_vm_call_results_keep_typed_arithmetic_specialization(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Known VM Call Results Keep Typed Arithmetic Specialization";
@@ -4074,7 +4074,7 @@ void test_known_vm_call_results_keep_typed_arithmetic_specialization(void) {
                            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL), 0);
     genericAddCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD), 0);
     signedAddCount = count_typed_signed_add_family_recursive(function, 0);
-
+    /* 函数原型实例化后才能沿成员元数据确认 step/read 的返回类型。 */
     prototypesMaterialized = ZrCore_Module_CreatePrototypesFromData(state, ZR_NULL, function);
     if (prototypesMaterialized &&
         function->prototypeInstances != ZR_NULL &&
@@ -4151,7 +4151,7 @@ void test_known_vm_call_results_keep_typed_arithmetic_specialization(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_direct_child_function_calls_quicken_to_known_vm_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Direct Child Function Calls Quicken To Known VM Call Family";
@@ -4213,7 +4213,7 @@ void test_direct_child_function_calls_quicken_to_known_vm_call_family(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_loop_child_function_calls_quicken_to_known_vm_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Loop Child Function Calls Quicken To Known VM Call Family";
@@ -4282,7 +4282,7 @@ void test_loop_child_function_calls_quicken_to_known_vm_call_family(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 矩阵 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeMatrixAdd2dCompileFixture，遗留本用例资源。 */
 void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Matrix Add 2D Benchmark Project Compile Quickens Array Add Loop Calls";
@@ -4364,7 +4364,7 @@ void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Map Object Access Benchmark Project Compile Quickens LabelFor Loop Call";
@@ -4510,7 +4510,7 @@ void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_cal
     } else {
         snprintf(labelForSlotSummary, sizeof(labelForSlotSummary), "labelFor local binding not found");
     }
-
+    /* 同时限定 main.zr 的热行和全函数残留，防止其他已知调用掩盖目标退化。 */
     knownCallCount = count_opcode_on_source_line_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 33u, 0);
     genericCallCount = count_opcode_on_source_line_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 33u, 0) +
                        count_opcode_on_source_line_recursive(function,
@@ -4568,7 +4568,7 @@ void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_cal
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 调用链 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeCallChainPolymorphicCompileFixture，遗留本用例资源。 */
 void test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_calls(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Call Chain Polymorphic Benchmark Project Compile Quickens Loop Helper Calls";
@@ -4878,7 +4878,7 @@ void test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_
                  " | 4th-generic-tail-callee=%s",
                  fourthGenericTailCalleeSummary);
     }
-
+    /* 指定源码行必须直接降级；全工程 generic 数量仅作有界背景约束。 */
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, line79GenericCallCount, failureMessage);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, line81GenericCallCount, failureMessage);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, line83GenericCallCount, failureMessage);
@@ -4893,7 +4893,7 @@ void test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_
     ZrTests_FreeCallChainPolymorphicCompileFixture(&fixture);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: 调用链 fixture 建立后若 Unity 硬断言失败，会跳过末尾 FreeCallChainPolymorphicCompileFixture，遗留本用例资源。 */
 void test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_vm_call(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Call Chain Polymorphic Dispatch Callable Parameter Quickens To Known VM Call";
@@ -5090,7 +5090,7 @@ void test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_v
                              callableTempSlot);
         if (callableTempSlot < secondKnownVmInstruction->instruction.operandExtra &&
             callableTempSlot < secondKnownVmFunction->instructionsLength) {
-            /* no-op guard; source slot is recovered from the GET_STACK writer below */
+            /* TODO: 此空守卫未约束槽位；需核对旧检查意图与下方 GET_STACK 写入链是否等价。 */
         }
         if (secondKnownVmInstructionIndex > 0) {
             const TZrInstruction *callableTempWriter =
@@ -5150,7 +5150,7 @@ void test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_v
     ZrTests_FreeCallChainPolymorphicCompileFixture(&fixture);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_repeated_constructor_string_arguments_survive_quickening_across_calls(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Repeated Constructor String Arguments Survive Quickening Across Calls";
@@ -5194,7 +5194,7 @@ void test_repeated_constructor_string_arguments_survive_quickening_across_calls(
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_initializer_bound_local_is_visible_on_next_source_line(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Initializer Bound Local Is Visible On Next Source Line";
@@ -5242,7 +5242,7 @@ void test_initializer_bound_local_is_visible_on_next_source_line(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_noop_primitive_casts_do_not_emit_conversion_opcodes(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "No-op Primitive Casts Do Not Emit Conversion Opcodes";
@@ -5291,7 +5291,7 @@ void test_noop_primitive_casts_do_not_emit_conversion_opcodes(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
-
+/* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
 void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Logical Short Circuit Runtime Preserves Side Effect Boundaries";
