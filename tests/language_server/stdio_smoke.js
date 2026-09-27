@@ -6,14 +6,17 @@ const { pathToFileURL, fileURLToPath } = require('url');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
 const assertStrict = require('assert').strict;
 
+// 集成 smoke 同时约束响应正确性和子进程峰值工作集；阈值可供 CI 环境覆盖。
 const DEFAULT_STDIO_PEAK_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024;
 
+// 本文件将协议断言集中为同一种失败出口，交由入口清理临时工程后报告。
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+// 只接受安全正整数，避免测试环境变量无声地禁用资源上限。
 function peakMemoryLimitBytes() {
     const configured = process.env.ZR_LSP_STDIO_PEAK_MEMORY_LIMIT_BYTES;
 
@@ -29,6 +32,7 @@ function peakMemoryLimitBytes() {
     return bytes;
 }
 
+// Linux 读取内核记录的子进程高水位，而非采样时的瞬时 RSS。
 function readLinuxProcessPeakMemoryBytes(pid) {
     const statusPath = `/proc/${pid}/status`;
     const status = fs.readFileSync(statusPath, 'utf8');
@@ -39,6 +43,7 @@ function readLinuxProcessPeakMemoryBytes(pid) {
     return Number(peakMatch[1]) * 1024;
 }
 
+// Windows 通过独立 PowerShell 进程查询服务端峰值；探针失败须使性能门禁失败。
 function readWindowsProcessPeakMemoryBytes(pid) {
     const probe = spawnSync('powershell.exe', [
         '-NoLogo',
@@ -63,6 +68,7 @@ function readWindowsProcessPeakMemoryBytes(pid) {
     return bytes;
 }
 
+// 统一平台采样入口；不支持的平台显式失败，避免把零值当成达标。
 function readProcessPeakMemoryBytes(pid) {
     assert(Number.isInteger(pid) && pid > 0,
         'language server child process must have a valid pid for peak-memory accounting');
@@ -74,26 +80,31 @@ function readProcessPeakMemoryBytes(pid) {
         return readWindowsProcessPeakMemoryBytes(pid);
     }
 
-    throw new Error(`Peak-memory accounting is unsupported on ${process.platform}`);
+    throw new Error(`Peak-memory accounting is unsupported on ${process.platform}`); // TODO: CTest 未按平台跳过此项；若 macOS 在支持范围内，需补齐峰值探针。
 }
 
+// 资源门禁同时输出原始字节与便于人工阅读的 MiB。
 function formatMemoryMiB(bytes) {
     return (bytes / (1024 * 1024)).toFixed(2);
 }
 
+// 随协议阶段记录服务端峰值，并在正常退出后对 CI 预算作一次判定。
 class LspProcessPeakMemory {
+    // pid 属于 StdioProtocolClient 启动的服务端进程，阈值来自测试配置。
     constructor(pid, limitBytes) {
         this.pid = pid;
         this.limitBytes = limitBytes;
         this.peakBytes = 0;
     }
 
+    // 初始化和最终阶段均采样；当前调用者只需更新累计峰值。
     observe(label) {
         const bytes = readProcessPeakMemoryBytes(this.pid);
         this.peakBytes = Math.max(this.peakBytes, bytes);
         return { bytes, label };
     }
 
+    // 由 main 的正常收尾调用；先记录观测值再给出可诊断的失败信息。
     assertWithinBudget() {
         console.log(
             `LSP stdio peak working set: ${this.peakBytes} bytes ` +
@@ -104,6 +115,7 @@ class LspProcessPeakMemory {
     }
 }
 
+// 延迟样本按固定数量排序；调用方须提供非空样本和 0 到 1 的分位比例。
 function percentile(samples, percent) {
     const ordered = [...samples].sort((left, right) => left - right);
     const index = Math.min(ordered.length - 1, Math.ceil(ordered.length * percent) - 1);
@@ -111,6 +123,7 @@ function percentile(samples, percent) {
     return ordered[index];
 }
 
+// 预热后连续走真实 JSON-RPC 请求，衡量用户操作的服务端往返尾延迟。
 async function measureWarmRequestLatency(client, method, params, sampleCount = 20) {
     const samples = [];
 
@@ -128,6 +141,7 @@ async function measureWarmRequestLatency(client, method, params, sampleCount = 2
     };
 }
 
+// 各场景以 p95 而非最优一次请求判定预算，减少偶发快样本掩盖退化。
 function assertWarmRequestBudget(name, latency, limitMs) {
     assert(latency.p95 <= limitMs,
         name + ' warm p95 must be <= ' + limitMs + 'ms, got ' +
@@ -135,6 +149,8 @@ function assertWarmRequestBudget(name, latency, limitMs) {
         'p99=' + latency.p99.toFixed(2) + 'ms');
 }
 
+// 用版本递增的 didChange 到同版本 diagnostics 的闭环衡量增量诊断。
+// 调用前须已打开 uri 的版本一文档，且 baseText 保持无诊断。
 async function measureWarmDiagnosticsLatency(client, uri, baseText, sampleCount = 20) {
     const samples = [];
 
@@ -164,6 +180,7 @@ async function measureWarmDiagnosticsLatency(client, uri, baseText, sampleCount 
     };
 }
 
+// 服务端可能回传等价的 file URI 字节形式；测试跨平台按原生路径核对诊断来源。
 function diagnosticRelatedUriMatches(expectedUri, actualUri) {
     if (actualUri === expectedUri) {
         return true;
@@ -183,6 +200,7 @@ function diagnosticRelatedUriMatches(expectedUri, actualUri) {
     }
 }
 
+// 结构化 parser/语义诊断同时核对稳定 code 和面向用户的消息片段。
 function assertDiagnosticIncludes(diagnostics, code, messageFragment, reason) {
     assert(diagnostics && Array.isArray(diagnostics.diagnostics),
         `${reason}: diagnostics must be an array`);
@@ -197,6 +215,7 @@ function assertDiagnosticIncludes(diagnostics, code, messageFragment, reason) {
     return matchingDiagnostic;
 }
 
+// 构造 Windows 驱动器冒号编码形式，验证服务端与标准 file URI 的身份归一化。
 function uriWithEncodedWindowsDrive(uri) {
     if (process.platform !== 'win32') {
         return uri;
@@ -205,6 +224,7 @@ function uriWithEncodedWindowsDrive(uri) {
         `file:///${drive.toLowerCase()}%3A`);
 }
 
+// 允许其他打开文档先发布通知，但最多消费 16 条，避免错把任意诊断归属当前场景。
 async function waitForDiagnosticsUri(client, uri, message) {
     for (let attempt = 0; attempt < 16; attempt += 1) {
         const diagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
@@ -216,6 +236,7 @@ async function waitForDiagnosticsUri(client, uri, message) {
     throw new Error(message);
 }
 
+// 增量请求必须收到目标 URI 的目标版本，避免陈旧通知虚假满足延迟与一致性断言。
 async function waitForDiagnosticsUriVersion(client, uri, version, message) {
     for (let attempt = 0; attempt < 16; attempt += 1) {
         const diagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
@@ -228,6 +249,7 @@ async function waitForDiagnosticsUriVersion(client, uri, version, message) {
     throw new Error(message);
 }
 
+// 某些场景预期 MethodNotFound 或取消；只把 JSON-RPC 错误归一化，传输异常继续抛出。
 async function awaitLspRequestOutcome(promise) {
     try {
         return { result: await promise, error: null };
@@ -242,11 +264,13 @@ async function awaitLspRequestOutcome(promise) {
     }
 }
 
+// 从 workspace/diagnostic 多文档响应中定位指定版本，供快照代际断言使用。
 function workspaceDiagnosticsHasUriVersion(result, uri, version) {
     return result && Array.isArray(result.items) && result.items.some((report) =>
         report && diagnosticRelatedUriMatches(uri, report.uri) && report.version === version);
 }
 
+// 将仓内只读项目样例复制到独立临时目录，后续文件事件测试只修改副本。
 function copyPathSync(sourcePath, targetPath) {
     const stats = fs.statSync(sourcePath);
 
@@ -261,6 +285,7 @@ function copyPathSync(sourcePath, targetPath) {
     fs.copyFileSync(sourcePath, targetPath);
 }
 
+// 兼容旧 Node 的临时目录删除入口；仅由本文件创建的样例路径调用。
 function removePathSync(targetPath, options = {}) {
     if (typeof fs.rmSync === 'function') {
         fs.rmSync(targetPath, options);
@@ -283,6 +308,7 @@ function removePathSync(targetPath, options = {}) {
     fs.unlinkSync(targetPath);
 }
 
+// 从样例文本推导协议位置，减少硬编码行列在样例演化后的误报。
 function findPosition(text, substring, occurrence = 0, offset = 0) {
     let fromIndex = 0;
     let index = -1;
@@ -303,6 +329,7 @@ function findPosition(text, substring, occurrence = 0, offset = 0) {
     };
 }
 
+// 将 LSP delta 编码转为绝对位置，便于验证 token 类型和跨度契约。
 function decodeSemanticTokens(data) {
     let line = 0;
     let character = 0;
@@ -325,6 +352,7 @@ function decodeSemanticTokens(data) {
     return tokens;
 }
 
+// 对重点语法位置按完整 token 身份核对，避免只匹配 token 类型的假阳性。
 function hasSemanticToken(tokens, position, length, type, modifiers) {
     return tokens.some((token) => token.line === position.line &&
         token.character === position.character &&
@@ -333,6 +361,7 @@ function hasSemanticToken(tokens, position, length, type, modifiers) {
         token.modifiers === modifiers);
 }
 
+// 检查 full token 序列同一行的跨度不重叠，作为分类断言的前提。
 function assertSemanticTokensDoNotOverlap(tokens, reason) {
     let previous;
 
@@ -347,6 +376,7 @@ function assertSemanticTokensDoNotOverlap(tokens, reason) {
     }
 }
 
+// 同时接受 LSP 两种 WorkspaceEdit 表示，供重命名与 code action 场景提取目标文档编辑。
 function workspaceEditTextEdits(workspaceEdit, uri) {
     const documentChange = workspaceEdit && Array.isArray(workspaceEdit.documentChanges)
         ? workspaceEdit.documentChanges.find((change) => change &&
@@ -362,6 +392,7 @@ function workspaceEditTextEdits(workspaceEdit, uri) {
         : [];
 }
 
+// 跨文件重命名时核对精确范围和替换文本，避免仅凭非空 edit 误判成功。
 function workspaceEditContainsTextEdit(workspaceEdit, uri, start, end, newText) {
     return workspaceEditTextEdits(workspaceEdit, uri).some((edit) => edit && edit.range &&
             edit.range.start.line === start.line &&
@@ -371,6 +402,7 @@ function workspaceEditContainsTextEdit(workspaceEdit, uri, start, end, newText) 
             edit.newText === newText);
 }
 
+// 区分已打开 overlay 与未打开磁盘文件的版本约束，供文件重命名协议断言使用。
 function workspaceEditDocumentVersion(workspaceEdit, uri) {
     const documentChange = workspaceEdit &&
         Array.isArray(workspaceEdit.documentChanges)
@@ -380,6 +412,7 @@ function workspaceEditDocumentVersion(workspaceEdit, uri) {
     return documentChange ? documentChange.textDocument.version : undefined;
 }
 
+// 构造会经历创建、变更和删除事件的真实临时项目，验证索引与诊断随磁盘刷新。
 function createWatchedProjectFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-watch-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -411,6 +444,7 @@ function createWatchedProjectFixture() {
     };
 }
 
+// 构造约百文件工作区，让增量诊断预算覆盖有索引成本的现实规模。
 function createWorkspaceLatencyFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-latency-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -461,6 +495,7 @@ function createWorkspaceLatencyFixture() {
     };
 }
 
+// 双 importer 与 provider 的旧新边并存，用来检验文件重命名后的模块身份迁移。
 function createModuleIdentityRenameFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-module-rename-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -524,6 +559,8 @@ function createModuleIdentityRenameFixture() {
     };
 }
 
+// 用与 stdio 服务端配套的 CLI 重建临时项目二进制元数据，再让文件监听器感知变化。
+// 该步骤仅应在隔离的 rootPath 副本中运行。
 function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath, cliPathOptional) {
     const cliPath =
         typeof cliPathOptional === 'string' && cliPathOptional.length > 0
@@ -559,6 +596,7 @@ function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath, cliPathOpt
     }
 }
 
+// 复制仓内二进制图样例并重编译，使测试能验证 .zro/.zri 监听刷新而不改原样例。
 function createWatchedBinaryMetadataFixture(serverPath, cliPathOptional) {
     const sourceFixtureRoot = path.join(__dirname,
         '..',
@@ -592,6 +630,7 @@ function createWatchedBinaryMetadataFixture(serverPath, cliPathOptional) {
     };
 }
 
+// 用缺失的跨文件导出构造可追踪的诊断与 relatedInformation。
 function createImportDiagnosticsFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-import-diag-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -627,6 +666,7 @@ function createImportDiagnosticsFixture() {
     };
 }
 
+// 将构建目录中的原生描述符插件复制入临时项目，验证虚拟声明、引用和泛型签名。
 function createDescriptorPluginGenericCallableFixture(serverPath) {
     const buildRoot = path.dirname(path.dirname(serverPath));
     const fixtureCandidates = [
@@ -674,11 +714,13 @@ function createDescriptorPluginGenericCallableFixture(serverPath) {
     };
 }
 
+// 仅在临时文件遭短暂占用后的清理重试中阻塞，避免影响协议计时段。
 function sleepSync(milliseconds) {
     const waitArray = new Int32Array(new SharedArrayBuffer(4));
     Atomics.wait(waitArray, 0, 0, milliseconds);
 }
 
+// 收尾与异常入口共用临时目录清理；文件锁经有限次数重试后保留证据并告警。
 function cleanupPath(targetPath) {
     let lastError = null;
 
@@ -705,6 +747,7 @@ function cleanupPath(targetPath) {
     }
 }
 
+// 异常出口依靠这些已登记目录清理 fixture，赋值时机必须早于可能失败的后续步骤。
 let watchedFixtureRootToCleanup = null;
 let watchedBinaryFixtureRootToCleanup = null;
 let importDiagnosticsFixtureRootToCleanup = null;
@@ -713,11 +756,14 @@ let moduleIdentityRenameFixtureRootToCleanup = null;
 let descriptorPluginGenericFixtureRootToCleanup = null;
 let workspaceLatencyFixtureRootToCleanup = null;
 
+// 将底层 JSON-RPC envelope 包装成测试所需的 result Promise，同时保留可取消请求 ID。
 class LspClient extends StdioProtocolClient {
+    // 基类直接启动服务端子进程并管理 stdio 帧，主测试只持有这一客户端。
     constructor(serverPath) {
         super(serverPath);
     }
 
+    // 取消与并发快照场景要在请求完成前取得 ID，所以返回 {id,promise}。
     requestWithId(method, params, timeoutMs = 10000) {
         if (this.closed) {
             return {
@@ -736,27 +782,34 @@ class LspClient extends StdioProtocolClient {
         return { id, promise };
     }
 
+    // 常规 smoke 场景只关心 result，协议错误作为带 JSON 错误体的异常传播。
     request(method, params, timeoutMs = 10000) {
         return this.requestWithId(method, params, timeoutMs).promise;
     }
 
+    // 保留单一通知出口，确保测试与基类帧编码使用同一条链路。
     notify(method, params) {
         super.notify(method, params);
     }
 
+    // 等待基类缓存或后续到达的通知；需要特定 URI/版本时交由专门 helper 过滤。
     waitForNotification(method, timeoutMs = 10000) {
         return super.waitForNotification(method, timeoutMs);
     }
 
+    // shutdown 与 exit 之后等待真正的子进程退出，防止提前清理掩盖崩溃。
     waitForExit(timeoutMs = 10000) {
         return super.waitForExit(timeoutMs);
     }
 }
 
+// CTest 提供服务端路径和可选 CLI；一个进程内跨协议阶段运行，保留文档和项目状态关联。
 async function main() {
     const serverPath = process.argv[2];
     const cliPathOptional = process.argv[3];
     assert(serverPath, 'Expected server executable path as argv[2]');
+    // BUG: 所有目录都创建完才赋给异常清理变量；任一后续 fixture 复制或编译抛错时，
+    // 已创建的临时项目（包括当前失败的项目）不会被入口 catch 清理。
     const watchedFixture = createWatchedProjectFixture();
     const watchedBinaryFixture = createWatchedBinaryMetadataFixture(serverPath, cliPathOptional);
     const importDiagnosticsFixture = createImportDiagnosticsFixture();
@@ -1018,6 +1071,7 @@ async function main() {
         .replace('value = 1', 'valueName = 1')
         .replace('return value;', 'return valueName;');
 
+    // 先协商工作区、增量同步及可选扩展，再以返回的能力表约束后续请求是否合法。
     const initializeResult = await client.request('initialize', {
         processId: null,
         rootUri: null,
@@ -1160,6 +1214,7 @@ async function main() {
         initializeResult.capabilities.workspace.fileOperations.didDelete,
     'workspace.fileOperations must advertise didCreate/didDelete/didRename and the implemented willRename request');
 
+    // 进入 RUNNING 后再打开 overlay 文档；后续所有诊断与版本判断都依赖这次握手。
     client.notify('initialized', {});
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -1202,6 +1257,7 @@ async function main() {
     assert(changeDiagnostics.uri === documentUri, 'didChange diagnostics uri mismatch');
     assert(changeDiagnostics.version === 2, 'didChange diagnostics version mismatch');
 
+    // 定义、引用及编辑器辅助能力共享同一文档快照，检验位置映射和语义索引一致性。
     const definition = await client.request('textDocument/definition', {
         textDocument: { uri: documentUri },
         position: { line: 0, character: 4 },
@@ -1288,6 +1344,7 @@ async function main() {
         Array.isArray(stringMonikers) && stringMonikers.length === 0 &&
         Array.isArray(blockCommentMonikers) && blockCommentMonikers.length === 0,
     'textDocument/moniker must ignore identifiers inside comments and strings');
+    // 行内值跨声明、return 与表达式位置取数，避免仅靠文本匹配制造虚假语义。
     const inlineValues = await client.request('textDocument/inlineValue', {
         textDocument: { uri: documentUri },
         range: {
@@ -1424,6 +1481,7 @@ async function main() {
     const inlineCompletionDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(inlineCompletionDiagnostics.uri === inlineCompletionUri,
         'inline completion didOpen diagnostics uri mismatch');
+    // 行内补全同时验证代码前缀与注释/字符串过滤，之后更改文档版本复查结果。
     const functionInlineCompletions = await client.request('textDocument/inlineCompletion', {
         textDocument: { uri: inlineCompletionUri },
         position: { line: 0, character: 2 },
@@ -1525,6 +1583,7 @@ async function main() {
             item.range.end.character === 8),
     'textDocument/inlineCompletion must keep keyword completions active for longer typed prefixes');
 
+    // 基础悬停、补全 resolve、符号与重命名须使用同一已同步 overlay 的语义事实。
     const hover = await client.request('textDocument/hover', {
         textDocument: { uri: documentUri },
         position: { line: 0, character: 4 },
@@ -1711,6 +1770,7 @@ async function main() {
     assert(Array.isArray(docsDiagnostics.diagnostics) && docsDiagnostics.diagnostics.length === 0,
         'documentation fixture should open without diagnostics');
 
+    // 属性文档在 hover、候选详情和 resolve 后保持一致，保护用户可见的 API 说明。
     const docsHoverPosition = findPosition(documentationText, 'ScoreBoard.bonus;', 0, 11);
     const docsCompletionPosition = findPosition(documentationText, 'ScoreBoard.bonus;', 0, 11);
 
@@ -1782,6 +1842,7 @@ async function main() {
         Array.isArray(propertyContractDiagnostics.diagnostics) &&
         propertyContractDiagnostics.diagnostics.length === 0,
     'unified property contract fixture must open without diagnostics');
+    // 属性读访问必须保持定义位置与重命名边界，不把存储字段当成公开属性。
     const propertyUsagePosition = findPosition(propertyContractText, 'meter.value', 0, 6);
     const propertyHover = await client.request('textDocument/hover', {
         textDocument: { uri: propertyContractUri },
@@ -1836,6 +1897,7 @@ async function main() {
         Array.isArray(testCodeLensDiagnostics.diagnostics) &&
         testCodeLensDiagnostics.diagnostics.length === 0,
     'typed test CodeLens fixture must open without diagnostics');
+    // 测试属性的 CodeLens 可携带客户端命令，但 native 服务端不能接管该命令。
     const testCodeLenses = await client.request('textDocument/codeLens', {
         textDocument: { uri: testCodeLensUri },
     });
@@ -1864,6 +1926,7 @@ async function main() {
         error: { code: -32601, message: 'Method not found' },
     }, 'workspace/executeCommand must reject client-owned commands');
 
+    // 跨文件导入失败必须携带可定位的 relatedInformation，供编辑器跳转和后续修复使用。
     const importDiagnosticsText = fs.readFileSync(importDiagnosticsFixture.mainPath, 'utf8');
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -1914,6 +1977,7 @@ async function main() {
         },
     });
 
+    // parser 错误经 stdio 序列化后仍需保留结构化 code 与可执行建议。
     const parserDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(parserDiagnostics.uri === parserDiagnosticUri, 'parser diagnostics uri mismatch');
     const missingExpressionDiagnostic = assertDiagnosticIncludes(
@@ -1954,6 +2018,7 @@ async function main() {
         },
     });
 
+    // 泛型、常量参数与控制流语义由同一 fixture 贯通诊断、补全、定义和签名。
     const genericDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(genericDiagnostics.uri === genericUri, 'generic diagnostics uri mismatch');
     const genericReachabilityDiagnostic = assertDiagnosticIncludes(
@@ -2069,6 +2134,7 @@ async function main() {
             text: canonicalDisplayText,
         },
     });
+    // 未解析类型的显示名不能被任意推断污染，候选和悬停要使用一致的规范展示。
     const canonicalDisplayDiagnostics =
         await client.waitForNotification('textDocument/publishDiagnostics');
     assert(canonicalDisplayDiagnostics.uri === canonicalDisplayUri,
@@ -2108,6 +2174,7 @@ async function main() {
         },
     });
 
+    // 内建原生调用和接收者方法签名从描述符事实构建，禁止文本猜测参数类型。
     const nativeCallableDiagnostics =
         await client.waitForNotification('textDocument/publishDiagnostics');
     assert(nativeCallableDiagnostics.uri === nativeCallableUri,
@@ -2178,6 +2245,7 @@ async function main() {
             text: descriptorPluginGenericFixture.content,
         },
     });
+    // 动态描述符插件的虚拟声明文档、定义与引用必须回到同一项目身份。
     const genericPluginDiagnostics =
         await client.waitForNotification('textDocument/publishDiagnostics');
     assert(genericPluginDiagnostics.uri === descriptorPluginGenericFixture.mainUri &&
@@ -2249,6 +2317,7 @@ async function main() {
         diagnosticRelatedUriMatches(location.uri, descriptorPluginGenericFixture.mainUri)),
     'virtual plugin references must include exactly its declaration and owning project usage');
 
+    // 功能断言完成后才采样热请求，以免冷启动、索引构建混入交互延迟预算。
     const warmHoverLatency = await measureWarmRequestLatency(client, 'textDocument/hover', {
         textDocument: { uri: nativeCallableUri },
         position: findPosition(nativeCallableText, 'gc.set_budget(2000)', 0, 5),
@@ -2311,6 +2380,7 @@ async function main() {
         diagnosticsLatencyClosed.diagnostics.length === 0,
     'warm diagnostics fixture didClose must clear diagnostics');
 
+    // 对约百文件工作区先确认已索引，再评估单文档增量诊断的 p95。
     client.notify('workspace/didChangeWorkspaceFolders', {
         event: {
             added: [{ uri: workspaceLatencyFixture.rootUri, name: 'workspace-latency' }],
@@ -2393,6 +2463,7 @@ async function main() {
         nativeCallableCloseDiagnostics.diagnostics.length === 0,
     'native callable didClose must clear diagnostics');
 
+    // 关闭性能 fixture 后继续在保留的泛型 overlay 上检查可直接展示的行内提示。
     const genericInlayHints = await client.request('textDocument/inlayHint', {
         textDocument: { uri: genericUri },
         range: {
@@ -2424,6 +2495,7 @@ async function main() {
         },
     });
     await waitForDiagnosticsUri(client, formatEditUri, 'format edit diagnostics uri mismatch');
+    // 格式化覆盖有改动与无改动两类响应，避免空编辑制造虚假脏文档。
     const formatted = await client.request('textDocument/formatting', {
         textDocument: { uri: formatEditUri },
         options: { tabSize: 4, insertSpaces: true },
@@ -2483,6 +2555,7 @@ async function main() {
     assert(Array.isArray(onTypeFormatted),
         'textDocument/onTypeFormatting must return an edit array');
 
+    // 折叠、选择范围和文档链接按编辑器可见范围核对，并覆盖真实/虚拟模块链接。
     const folds = await client.request('textDocument/foldingRange', {
         textDocument: { uri: genericUri },
     });
@@ -2599,6 +2672,7 @@ async function main() {
         link && link.target === 'zr-decompiled:/zr.network.tcp.zr'),
     'textDocument/documentLink must expose virtual native module links');
 
+    // code action 先验证候选种类，再对有版本的编辑、resolve 和快照失效进行闭环检查。
     const codeActions = await client.request('textDocument/codeAction', {
         textDocument: { uri: genericUri },
         range: { start: { line: 0, character: 0 }, end: { line: genericText.split('\n').length, character: 0 } },
@@ -2676,6 +2750,7 @@ async function main() {
             'Document changed since this code action was computed',
     'codeAction/resolve must disable stale workspace edits instead of replaying them');
 
+    // 编辑后的导入集合应重新计算，先前 action 的快照不能继续产生旧版本编辑。
     const freshModuleImportActions = await client.request('textDocument/codeAction', {
         textDocument: { uri: moduleImportsUri },
         range: { start: { line: 0, character: 0 }, end: { line: moduleImportsText.split('\n').length, character: 0 } },
@@ -2829,6 +2904,7 @@ async function main() {
             diagnostic && diagnostic.code === 'missing_statement_semicolon'),
     'EOF variable declaration must publish missing_statement_semicolon before offering a quickfix');
 
+    // 快速修复必须使用 parser 诊断锚点，resolve 时再次验证文档版本。
     const quickFixActions = await client.request('textDocument/codeAction', {
         textDocument: { uri: semicolonFixtureUri },
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
@@ -3031,6 +3107,7 @@ async function main() {
         !sourceOnlyActions.some((action) => action && action.kind === 'quickfix'),
     'textDocument/codeAction must honor context.only filters');
 
+    // 层次查询先 prepare 再查入边/出边，确保响应项携带后续请求所需的身份。
     const callHierarchyItems = await client.request('textDocument/prepareCallHierarchy', {
         textDocument: { uri: genericUri },
         position: genericCallPosition,
@@ -3185,6 +3262,7 @@ async function main() {
     assert(Array.isArray(subtypes),
         'typeHierarchy/subtypes must return an array');
 
+    // pull diagnostics 的 resultId 与版本需匹配当前快照，unchanged 只可用于未变数据。
     const pullDiagnostics = await client.request('textDocument/diagnostic', {
         textDocument: { uri: genericUri },
     });
@@ -3204,6 +3282,7 @@ async function main() {
         !Object.prototype.hasOwnProperty.call(unchangedDiagnostics, 'items'),
     'textDocument/diagnostic must return unchanged reports for matching previousResultId');
 
+    // 工作区诊断覆盖多文档汇总、并发取消和编辑后的旧代际淘汰。
     const workspaceDiagnostics = await client.request('workspace/diagnostic', {});
     assert(workspaceDiagnostics && Array.isArray(workspaceDiagnostics.items),
         'workspace/diagnostic must return a workspace diagnostic report');
@@ -3237,7 +3316,7 @@ async function main() {
             await promise;
             return null;
         } catch (error) {
-            return JSON.parse(error.message);
+            return JSON.parse(error.message); // BUG: 超时或子进程退出的错误不是 JSON，此处解析异常会掩盖原始失败；应复用 awaitLspRequestOutcome。
         }
     }));
     assert(cancellationErrors.every((error) => error && error.code === -32800),
@@ -3294,6 +3373,7 @@ async function main() {
         '',
     ].join('\n');
     let rapidStaleVersion = 1;
+    // 反复开启/修改/关闭同一 URI，逼出取消请求与诊断快照代际竞争。
     for (let iteration = 0; iteration < 100; iteration += 1) {
         const openedVersion = rapidStaleVersion;
         const changedVersion = openedVersion + 1;
@@ -3362,6 +3442,7 @@ async function main() {
         ],
     });
 
+    // 监听到二进制元数据变化后，先从未打开文件的符号索引验证 bootstrap 结果。
     const watchedBootstrapSymbols = await client.request('workspace/symbol', {
         query: 'merged',
     });
@@ -3385,6 +3466,7 @@ async function main() {
         },
     });
 
+    // 打开引用二进制模块的源文件后，对定义、引用、悬停和刷新后的类型做同一链路核对。
     const watchedBinaryDiagnostics = await waitForDiagnosticsUri(
         client,
         watchedBinaryFixture.mainUri,
@@ -3501,6 +3583,7 @@ async function main() {
         ],
     });
 
+    // 新建项目事件应使未打开的磁盘源文件加入索引，而非依赖 didOpen 才发现。
     const watchedCreateSymbols = await client.request('workspace/symbol', {
         query: 'watched_before_refresh',
     });
@@ -3546,6 +3629,7 @@ async function main() {
         client,
         watchedOpenedUri,
         'watched project opened source diagnostics uri mismatch');
+    // 监听器更新与已打开 overlay 同时存在时，当前文档必须优先保留未保存内容。
     const watchedOpenedSymbols = await client.request('workspace/symbol', {
         query: 'opened_project_entry',
     });
@@ -3660,6 +3744,7 @@ async function main() {
         ],
     });
 
+    // 磁盘变更事件要淘汰旧导出，后续符号查询不得继续看到过期名称。
     const watchedChangeDiagnostics = await waitForDiagnosticsUri(
         client,
         watchedFixture.mainUri,
@@ -3690,6 +3775,7 @@ async function main() {
         ],
     });
 
+    // 删除事件清理项目缓存和发布诊断，避免已不存在文件仍贡献工作区符号。
     const watchedDeleteDiagnostics = await waitForDiagnosticsUri(
         client,
         watchedFixture.projectUri,
@@ -3725,6 +3811,7 @@ async function main() {
     assert(Array.isArray(watchedDeletedSymbols) && watchedDeletedSymbols.length === 0,
         'workspace/didChangeWatchedFiles delete must clear the final project index');
 
+    // 文件操作能力区分将要发生与已经发生；未实现的 willCreate 要返回 MethodNotFound。
     const willCreateFiles = await awaitLspRequestOutcome(client.request('workspace/willCreateFiles', {
         files: [
             { uri: fileOperationsFixture.projectUri },
@@ -3779,6 +3866,7 @@ async function main() {
         moduleIdentityRenameFixture.newUserUri,
         'module identity new importer diagnostics uri mismatch');
 
+    // 预重命名应对所有 importer 与模块声明生成版本合适的 edit，实际磁盘重命名后再查语义边。
     const moduleIdentityWillRename = await client.request('workspace/willRenameFiles', {
         files: [
             {
@@ -3902,6 +3990,7 @@ async function main() {
     assert(Array.isArray(fileOperationDeletedSymbols) && fileOperationDeletedSymbols.length === 0,
         'workspace/didDeleteFiles must clear deleted project indexes');
 
+    // semantic token 从标准 full 响应出发，覆盖当前词法、已移除语法和未解析成员的分类边界。
     const semanticTokens = await client.request('textDocument/semanticTokens/full', {
         textDocument: { uri: docsUri },
     });
@@ -4016,6 +4105,7 @@ async function main() {
             semanticTokenTypes.indexOf('property'),
             0),
     'semanticTokens/full must not infer an unresolved member token from punctuation');
+    // delta 同时检查陈旧 resultId 的全量替换、未变快照的空编辑和局部改名的最小编辑。
     const staleSemanticResultId = `zr-snapshot:0000000000000000:${semanticTokens.data.length}`;
     const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
         textDocument: { uri: docsUri },
@@ -4195,6 +4285,7 @@ async function main() {
         },
     });
 
+    // 批量关闭后逐一等待诊断清空，防止后台残留把关闭文档再次推送到编辑器。
     const expectedClosedUris = new Set([
         watchedBinaryFixture.mainUri,
         documentUri,
@@ -4224,6 +4315,7 @@ async function main() {
         clearedCloseCount += 1;
     }
 
+    // 正常结束须完成 shutdown/exit 握手、确认 stderr 为空，再判断内存预算并清理 fixture。
     const shutdown = await client.request('shutdown', undefined);
     assert(shutdown === null, 'shutdown must return null');
     peakMemory.observe('final');
@@ -4249,8 +4341,9 @@ async function main() {
     workspaceLatencyFixtureRootToCleanup = null;
 }
 
+// 直接执行由 CTest 驱动；被 outcome 单测导入时只暴露错误归一化 helper。
 if (require.main === module) {
-    main().catch((error) => {
+    main().catch((error) => { // 异常清理只覆盖已登记目录；初始化阶段的遗漏见 main 中的 BUG 标记。
         cleanupPath(watchedFixtureRootToCleanup);
         cleanupPath(watchedBinaryFixtureRootToCleanup);
         cleanupPath(importDiagnosticsFixtureRootToCleanup);
