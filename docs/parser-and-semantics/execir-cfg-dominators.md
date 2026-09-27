@@ -16,6 +16,7 @@ tests:
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-dominator-cfg.md
   - tests/acceptance/ssa-construction-builder-phi.md
+  - tests/acceptance/ssa-construction-builder-loop-phi.md
 doc_type: module-detail
 ---
 
@@ -78,9 +79,16 @@ and core ExecIR sources. The separate 01.03 structural verifier still owns
 the broader IR contract; this analysis validates edge symmetry before relying
 on its own cached predecessor information.
 
-The `ssa_construction` fixture now exercises a canonical SemanticIR diamond
-through the production builder and checks the join phi against both predecessor
-occurrences. This covers one builder integration path, not all exceptional,
-cleanup, suspend, or loop source paths. The full M1 four-backend parity remains
-open; see `tests/acceptance/ssa-dominator-cfg.md` for the standalone analysis
-and `tests/acceptance/ssa-construction-builder-phi.md` for the builder check.
+The `ssa_construction` fixture exercises both a canonical SemanticIR diamond
+and a four-block loop through the production builder. In the loop, an entry
+STORE and a backedge STORE supply the header phi in predecessor order; a header
+LOAD, a body ADD consuming that load, and an exit LOAD retain their SSA value
+identities after promotion. Deleting the entry STORE leaves the header phi
+without an incoming definition: the builder reports `INVALID_VALUE` at the
+header and preserves an already published output for retry. The standalone
+`ssa_place_promotion` fixture independently tests this lower-layer shape.
+These checks do not establish source-program loop execution, exceptional,
+cleanup, or suspend paths, or full M1 four-backend parity. See
+`tests/acceptance/ssa-dominator-cfg.md` for the standalone analysis and the
+`ssa-construction-builder-phi.md` and `ssa-construction-builder-loop-phi.md`
+records for the builder integrations.
