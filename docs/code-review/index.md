@@ -95,5 +95,6 @@ doc_type: category-index
 | AOT LLVM 文本生成与 lowering | [244 项](coverage/zr_vm_aot_llvm.tsv) | 42 个 C/H 文件独立复核，1228 个调用与证据锚点有效，源码仅改注释且去注释 token 与原版一致；未运行完整构建。最终写入错误漏报、模块字符串未转义已标 BUG；主构建边界和整型溢出契约保留 TODO。 |
 | parser 诊断构建、复制与消息目录 | [78 项](coverage/zr_vm_parser_diagnostics.tsv) | 8 个 C 文件独立复核，195 个证据锚点有效，源码仅新增注释；GCC C11 语法检查通过。94 个描述符与 71 对消息的缺口、测试中固定的 71 项预期均按现行代码标 BUG；另有 2 个 TODO，未运行诊断测试。 |
 | parser 旧语法迁移与非 SSA writer | [112 项](coverage/zr_vm_parser_migration_writer.tsv) | 10 个 C/H 文件独立复核，284 个证据锚点有效，源码仅改注释；GCC/Clang 对 7 个实现文件的语法检查通过。迁移词法边界和三个 writer 关闭失败路径已标 BUG，其他疑点保留 TODO；未运行可执行测试。 |
+| AOT IR 适配、可达性与链接档位 | [258 项](coverage/zr_vm_aot_ir_adapter.tsv) | 28 个 C/H 文件独立复核，529 个本地证据锚点有效，27 个改动文件仅改注释；GCC/Clang 对 15 个实现文件语法检查通过。自引用函数常量预扫描递归与禁止桥接时清零 descriptorOnly 已标 BUG，另保留 2 个 TODO；未运行完整 AOT 测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

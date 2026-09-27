@@ -37,6 +37,7 @@ TZrBool backend_aot_ir_llvm_emit_ex(
                                              options, outFacts, diagnostic)) {
         return ZR_FALSE;
     }
+    /* 共享 facade 的 LLVM 统计不含实际 LLVM module 或机器码。 */
     if (requireArtifact) {
         if (diagnostic != ZR_NULL) {
             diagnostic->status = ZR_BACKEND_AOT_IR_ARTIFACT_UNAVAILABLE;

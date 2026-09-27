@@ -129,6 +129,7 @@ EZrBackendAotIrStatus backend_aot_ir_adapter_validate(
     }
 
     (void)memset(&sourceDiagnostic, 0, sizeof(sourceDiagnostic));
+    /* 共享结构校验先于 relocation 检查；归档层只接收位置无关的标量契约。 */
     sourceStatus = ZrCore_AotIr_ValidateModule(module, &sourceDiagnostic);
     if (sourceStatus != ZR_AOT_IR_OK) {
         backend_aot_ir_adapter_copy_diagnostic(diagnostic, sourceStatus,
@@ -213,6 +214,8 @@ TZrBool backend_aot_ir_adapter_collect(
         }
         return ZR_FALSE;
     }
+    /* caller 持有 records；共享 lowering 只借用缓冲区，形状检查仅覆盖
+     * count/capacity 与非空指针，不延长缓冲区生命周期。 */
     outLowering->records = records;
     outLowering->capacity = capacity;
     (void)memset(&sourceDiagnostic, 0, sizeof(sourceDiagnostic));
@@ -267,9 +270,9 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
         }
         return ZR_FALSE;
     }
-    /* A caller may provide a hand-built lowering result instead of using
-     * backend_aot_ir_adapter_collect().  Re-check the pointer-free view at
-     * this boundary so no dangling record array can be treated as facts. */
+    /* TODO: 手构 lowering 只接受计数、非空 records 与非零 sourceHash 校验；
+     * LoweringIsPointerFree 不能验证记录内容及其对 module 的来源。需在
+     * AotIr lowering/facts 测试中构造同计数但异源记录，明确拒绝或调用方契约。 */
     if (!ZrParser_AotIr_LoweringIsPointerFree(lowering)) {
         if (diagnostic != ZR_NULL) {
             diagnostic->status = ZR_BACKEND_AOT_IR_INVALID_AOTIR;
@@ -288,6 +291,7 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
     outFacts->sourceHash = lowering->sourceHash;
     outFacts->loweringHash = lowering->loweringHash;
 
+    /* unsupportedCount 是静态注解；允许解释器回退时同一位点也计入 fallback。 */
     for (TZrUInt32 index = 0u; index < lowering->count; ++index) {
         const SZrAotIrLoweringRecord *record = &lowering->records[index];
         switch (record->kind) {
@@ -308,6 +312,10 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
                         diagnostic->instructionId = record->instructionId;
                         diagnostic->sourceId = record->sourceId;
                     }
+                    /* BUG: 含 runtime bridge 且 allowRuntimeBridge=false 时，此清零
+                     * 使 descriptorOnly=false，违反本适配层失败输出契约。现有
+                     * test_ssa_aot_backend_adapters.c 的三指令 lowering 含桥接位点；
+                     * 用该 fixture 调本入口即可观察，解释器禁用分支亦同。 */
                     (void)memset(outFacts, 0, sizeof(*outFacts));
                     return ZR_FALSE;
                 }
@@ -419,9 +427,7 @@ TZrBool backend_aot_ir_adapter_emit_target(
         }
         return ZR_FALSE;
     }
-    /* `unsupportedCount` is a static annotation.  When fallback is allowed,
-     * the same operation is also counted in interpreterFallbackCount, so it
-     * must not be subtracted twice from the semantic denominator. */
+    /* unsupportedCount 与允许回退的位点重叠，不能从语义分母中扣两次。 */
     accounted = emitted.nativeCount + emitted.interpreterFallbackCount;
     backend_aot_ir_adapter_clear_facts(outFacts);
     outFacts->target = target;
@@ -431,9 +437,8 @@ TZrBool backend_aot_ir_adapter_emit_target(
     outFacts->instructionCount = instructionCount;
     outFacts->semanticSiteCount = instructionCount;
     outFacts->nativeLoweredCount = emitted.nativeCount;
-    /* The parser facade's historical runtimeBridgeCount includes a temporary
-     * compatibility count.  Derive the canonical value from the complete
-     * semantic denominator so a bridge is never counted twice. */
+    /* facade 自行逐条累计桥接位点，未直接复制 lowering 的计数；此处以完整
+     * 语义位点数扣除互斥的 native/fallback，得到本层的桥接数。 */
     outFacts->runtimeBridgeCount = instructionCount - accounted;
     outFacts->interpreterFallbackCount = emitted.interpreterFallbackCount;
     outFacts->unsupportedCount = emitted.unsupportedCount;

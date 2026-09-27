@@ -100,6 +100,8 @@ static TZrBool backend_aot_reachability_validate_function_manifest(
         }
 
         retainedCount++;
+        /* 清单只接受能在 markCount 步内回到合法根的前驱链，避免把环或
+         * 指向未处理节点的链写成可解释的保留证据。 */
         for (TZrUInt32 depth = 0u; depth < markCount; depth++) {
             const SZrAotReachabilityMark *chainMark = &marks[cursor];
 
@@ -218,6 +220,8 @@ TZrBool backend_aot_reachability_compute(SZrAotReachabilityMark *marks,
         return ZR_FALSE;
     }
 
+    /* 先完整验证根、边和队列容量，再覆盖调用方 marks；首次发现的
+     * 前驱与原因会保留为清单中的一条可重建路径。 */
     backend_aot_reachability_init_marks(marks, markCount);
     for (TZrUInt32 rootIndex = 0u; rootIndex < rootCount; rootIndex++) {
         backend_aot_reachability_enqueue(roots[rootIndex],
@@ -263,6 +267,7 @@ TZrBool backend_aot_reachability_write_function_manifest(FILE *file,
         !backend_aot_reachability_validate_function_manifest(marks, markCount, &retainedCount)) {
         return ZR_FALSE;
     }
+    /* 格式为生成 C 源中的注释，不改变编译行为，但保留裁剪的审计轨迹。 */
     if (fprintf(file, "/* reachability.functionManifest.version = 1 */\n") < 0 ||
         fprintf(file,
                 "/* reachability.functionManifest.count = %u */\n",

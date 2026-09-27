@@ -45,6 +45,7 @@ TZrUInt32 backend_aot_exec_ir_debug_line_for_instruction(const SZrFunction *func
         return 0;
     }
 
+    /* 逐指令行最精确；缺失时沿有序位置记录取最近前项，最后退到函数起点。 */
     if (function->lineInSourceList != ZR_NULL && execInstructionIndex < function->instructionsLength) {
         bestLine = function->lineInSourceList[execInstructionIndex];
         if (bestLine > 0) {
@@ -115,6 +116,7 @@ static const SZrFunctionExecutionLocationInfo *backend_aot_exec_ir_location_for_
         return ZR_NULL;
     }
 
+    /* validate_source_locations 保证偏移单调，故最后一个不晚于指令的记录生效。 */
     for (TZrUInt32 index = 0; index < function->executionLocationInfoLength; index++) {
         const SZrFunctionExecutionLocationInfo *info = &function->executionLocationInfoList[index];
         if ((TZrUInt32)info->currentInstructionOffset > execInstructionIndex) {

@@ -101,9 +101,8 @@ TZrBool backend_aot_link_profile_mark_roots(
         TZrBool *retained,
         SZrAotReleasePolicyDiagnostic *diagnostic) {
     backend_aot_link_profile_clear_diagnostic(diagnostic);
-    /* Keep failure atomic from the caller's perspective.  The shared policy
-     * also clears this range, but only after its own argument checks; clear
-     * first so an invalid root kind cannot leave stale reachability bits. */
+    /* 共享策略只在参数通过检查后清零；这里先清空输出范围，保证根种类无效
+     * 时调用方也不会看到上一次链接尝试残留的保留位。 */
     if (retained != ZR_NULL && functionCount != 0u) {
         (void)memset(retained, 0, (TZrSize)functionCount * sizeof(*retained));
     }

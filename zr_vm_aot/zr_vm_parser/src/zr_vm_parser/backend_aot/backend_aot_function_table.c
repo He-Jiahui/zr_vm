@@ -19,6 +19,11 @@ static TZrUInt32 backend_aot_count_function_graph_capacity(SZrState *state, cons
         return ZR_AOT_COUNT_NONE;
     }
 
+    /* BUG: constantValueList 若含指向自身的函数值，本预扫描会无限递归并
+     * 最终栈溢出；展平阶段的去重到不了。test_aot_reachability.c 已使用
+     * ZrCore_Value_InitAsRawObject 构造函数常量，换成 owner 后经
+     * ZrCore_Closure_GetMetadataFunctionFromValue 可解析回自身；无子函数时
+     * RebindConstantFunctionValuesToChildren 不会移除该自引用。 */
     count = ZR_AOT_FUNCTION_TREE_ROOT_INDEX + 1U;
     for (constantIndex = 0; constantIndex < function->constantValueLength; constantIndex++) {
         const SZrFunction *constantFunction =
@@ -109,6 +114,8 @@ TZrBool backend_aot_build_function_table(SZrState *state,
     outTable->capacity = ZR_AOT_COUNT_NONE;
     outTable->indexSpace = ZR_AOT_COUNT_NONE;
 
+    /* 先将常量里的函数值绑定到最终子函数对象，保证按定义身份去重与
+     * 后续可达性扫描解析出的是同一批 SZrFunction 指针。 */
     ZrCore_Function_RebindConstantFunctionValuesToChildren((SZrFunction *)function);
     capacity = backend_aot_count_function_graph_capacity(state, function);
     if (capacity == 0) {
@@ -175,6 +182,7 @@ TZrBool backend_aot_filter_function_table_by_reachability(SZrAotFunctionTable *t
         return ZR_FALSE;
     }
 
+    /* 先验证所有原索引，避免扫描到后半段坏项时已覆盖前面的表项。 */
     for (TZrUInt32 readIndex = 0u; readIndex < table->count; readIndex++) {
         const SZrAotFunctionEntry *entry = &table->entries[readIndex];
         if (entry->flatIndex >= markCount) {

@@ -37,6 +37,7 @@ TZrBool backend_aot_ir_c_emit_ex(
                                              options, outFacts, diagnostic)) {
         return ZR_FALSE;
     }
+    /* 此入口只给描述；显式请求可落盘产物时保留统计事实但返回失败。 */
     if (requireArtifact) {
         if (diagnostic != ZR_NULL) {
             diagnostic->status = ZR_BACKEND_AOT_IR_ARTIFACT_UNAVAILABLE;

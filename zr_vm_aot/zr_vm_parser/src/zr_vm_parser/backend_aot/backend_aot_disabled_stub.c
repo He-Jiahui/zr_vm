@@ -1,5 +1,7 @@
 //
-// Built when ZR_VM_BUILD_AOT=OFF: satisfies writer.h AOT entry points without linking the full backend.
+// 历史 AOT 禁用入口；当前 parser CMake 显式排除此文件，只有独立编译时生效。
+// TODO: 下列诊断仍提示已移除的 ZR_VM_BUILD_AOT 开关；若重新启用此文件，
+// 先核对构建配置与 writer.h 消费者，再更新失效的配置建议。
 //
 
 #include "zr_vm_parser/writer.h"

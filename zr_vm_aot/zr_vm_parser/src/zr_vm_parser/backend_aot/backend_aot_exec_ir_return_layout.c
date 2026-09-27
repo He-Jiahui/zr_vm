@@ -169,6 +169,8 @@ TZrBool backend_aot_exec_ir_project_direct_inline_return_layout(
         if (resolvedTypeLayout == ZR_NULL) {
             return ZR_FALSE;
         }
+        /* union 或间接别名无法直接证明与返回缓冲区逐字节兼容；保留
+         * unknown 供调用方选择保守路径，而非错误声明一个内联 ABI。 */
         if (resolvedTypeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION ||
             (sourceLayout->reserved0 &
              ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u) {
@@ -182,6 +184,7 @@ TZrBool backend_aot_exec_ir_project_direct_inline_return_layout(
         if (directInlineReturnTypeLayoutId !=
                     ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
             directInlineReturnTypeLayoutId != sourceLayout->typeLayoutId) {
+            /* 不同布局 ID 即使字段可复制，也不能作为唯一的返回布局公布。 */
             if (!backend_aot_exec_ir_return_layouts_are_copy_compatible(
                         directInlineReturnTypeLayout, resolvedTypeLayout)) {
                 return ZR_FALSE;

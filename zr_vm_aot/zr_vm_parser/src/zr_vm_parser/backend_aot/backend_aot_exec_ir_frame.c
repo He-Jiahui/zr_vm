@@ -149,6 +149,8 @@ static TZrBool backend_aot_exec_ir_validate_required_borrowed_parameter_rows(
             binding->type.staticCType != ZR_STATIC_C_TYPE_STRUCT) {
             continue;
         }
+        /* 借用的 struct 参数由帧槽保存别名绑定，而不是结构体本体；
+         * 传参形式、类型布局和三个别名标志必须来自同一参数。 */
         layout = backend_aot_exec_ir_find_frame_layout_for_slot(
                 function, binding->stackSlot);
         if (binding->type.staticCTypeId ==
@@ -435,6 +437,7 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
         !backend_aot_exec_ir_is_power_of_two(function->frameByteAlign)) {
         return ZR_FALSE;
     }
+    /* 只有完整槽表才能逐槽核对 isParameter；稀疏表仍需校验每条现存行。 */
     hasCompleteSlotTable = (TZrBool)(
             function->frameSlotLayoutLength == function->stackSize);
 
@@ -442,7 +445,7 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
         const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
         const SZrFunctionTypedLocalBinding *parameterBinding = ZR_NULL;
         const SZrTypeLayout *typeLayout = ZR_NULL;
-        /* DIRECT_VALUE is derived runtime metadata and is not part of the AOT ABI. */
+        /* DIRECT_VALUE 是运行时派生信息，不属于 AOT 帧 ABI。 */
         const TZrUInt16 flags =
                 layout->reserved0 &
                 (TZrUInt16)~ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
@@ -574,6 +577,7 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
                       ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u) {
             return ZR_FALSE;
         }
+        /* 借用与间接别名在帧内实际占用的是绑定记录大小，而非结构体大小。 */
         if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
             const TZrUInt16 required =
                     ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
@@ -680,6 +684,7 @@ static TZrBool backend_aot_exec_ir_build_parameter_layouts(
             0,
             sizeof(SZrAotExecIrParameterLayout) * function->parameterCount);
 
+    /* 老函数可能只有按序参数元数据；有 typed binding 时以身份和栈槽为准。 */
     if (function->typedLocalBindingLength == 0u) {
         for (parameterIndex = 0u;
              parameterIndex < function->parameterCount;

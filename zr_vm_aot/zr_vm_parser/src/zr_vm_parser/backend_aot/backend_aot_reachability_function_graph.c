@@ -10,6 +10,9 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/ast.h"
 
+/* 函数图根来自入口、显式导出、反射注解、prototype 必需成员及 manifest；
+ * GET_CONSTANT/CREATE_CLOSURE/GET_SUB_FUNCTION 建边后交由 BFS 统一标记。 */
+
 static TZrBool backend_aot_static_reachability_has_entry(const SZrAotFunctionTable *table, TZrUInt32 flatIndex) {
     for (TZrUInt32 index = 0u; index < table->count; index++) {
         if (table->entries[index].flatIndex == flatIndex) {
@@ -45,6 +48,7 @@ static TZrBool backend_aot_static_reachability_append_root(TZrUInt32 *roots,
         return ZR_FALSE;
     }
 
+    /* 根去重保留第一条原因，避免同一函数在多种保留来源下占用多份容量。 */
     for (TZrUInt32 index = 0u; index < *rootCount; index++) {
         if (roots[index] == root) {
             return ZR_TRUE;
@@ -347,6 +351,7 @@ static TZrBool backend_aot_resolve_dynamic_dependency_method_token(const SZrAotF
         matchedTargetIndex = targetIndex;
     }
 
+    /* 元数据 token 必须唯一对应一个实际子函数，不能把歧义绑定误作裁剪根。 */
     if (matchedMethodTokenSymbolCount != 1u) {
         return ZR_FALSE;
     }
@@ -717,6 +722,8 @@ static TZrBool backend_aot_static_reachability_collect_required_member_roots_fro
     length = function->prototypeDataLength;
     memcpy(&prototypeCount, data, sizeof(prototypeCount));
 
+    /* prototypeData 是串行化的 prototype、继承/装饰数组及成员数组；
+     * 每次步进前检查剩余长度，再按成员常量索引寻找需强制保留的函数。 */
     for (TZrUInt32 prototypeIndex = 0u;
          prototypeIndex < prototypeCount;
          prototypeIndex++) {
@@ -872,6 +879,7 @@ static TZrBool backend_aot_static_reachability_scan_instruction(SZrState *state,
     EZrAotReachabilityReason reason =
             backend_aot_static_reachability_callable_materialization_reason(function, instruction);
 
+    /* 可调用值在栈上物化本身即可使目标函数逃逸，无需等到直接 CALL。 */
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
             if (backend_aot_resolve_callable_constant_function_index(table,
@@ -1011,6 +1019,7 @@ TZrBool backend_aot_compute_static_callable_reachability_with_preserve_roots(
         return ZR_FALSE;
     }
 
+    /* 根收集在边扫描之前完成：显式保留来源即使没有可见调用指令也要存活。 */
     if (!backend_aot_static_reachability_append_root(roots,
                                                      rootReasons,
                                                      rootCapacity,

@@ -74,6 +74,8 @@ static TZrUInt32 backend_aot_resolve_callable_closure_function_index(const SZrAo
     closure = &function->closureValueList[closureIndex];
     ownerFunction = function->ownerFunction;
 
+    /* 闭包可能直接捕获子函数，也可能经父帧栈槽或外层闭包转发；按最具体的
+     * 可静态证明来源回溯，任何一步含糊都交给 emitter 的动态路径。 */
     childFunction = backend_aot_find_owner_child_function_by_name(ownerFunction, closure->name);
     functionIndex = backend_aot_find_function_table_index(table, childFunction);
     if (functionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
@@ -180,6 +182,7 @@ TZrUInt32 backend_aot_resolve_callable_slot_function_index_before_instruction(co
         return ZR_AOT_INVALID_FUNCTION_INDEX;
     }
 
+    /* 只看调用点之前最后一次写入，避免把后续赋值误认为当前调用目标。 */
     for (scanIndex = instructionLimit; scanIndex > 0; scanIndex--) {
         const TZrInstruction *instruction = &function->instructionsList[scanIndex - 1];
         TZrUInt32 destinationSlot = instruction->instruction.operandExtra;

@@ -166,9 +166,8 @@ TZrBool backend_aot_ir_coverage_from_facts(
     outCoverage->runtimeHelperSiteCount = facts->runtimeBridgeCount;
     outCoverage->interpreterFallbackSiteCount =
             facts->interpreterFallbackCount;
-    /* An unsupported operation which is explicitly allowed to fall back is
-     * annotated in both fields.  Only the portion without a fallback remains
-     * uncovered in the mutually-exclusive coverage classes. */
+    /* 允许解释器回退的不支持位点同时出现在两种静态计数里；互斥覆盖分类
+     * 只把没有回退的部分归入 unsupported。 */
     uncoveredUnsupported = facts->unsupportedCount >
                                    facts->interpreterFallbackCount
                            ? facts->unsupportedCount -
@@ -183,8 +182,7 @@ static TZrUInt32 backend_aot_ir_coverage_ratio(TZrUInt64 count,
     TZrUInt32 result = 0u;
     TZrUInt64 remainder = 0u;
 
-    /* Repeated modular addition avoids count * 1000 overflow when a caller
-     * uses a near-maximum 64-bit semantic-site count. */
+    /* 逐步模加，避免在接近 UINT64_MAX 的分母下计算 count * 1000 溢出。 */
     for (TZrUInt32 step = 0u; step < 1000u; ++step) {
         if (remainder >= denominator - count) {
             remainder -= denominator - count;

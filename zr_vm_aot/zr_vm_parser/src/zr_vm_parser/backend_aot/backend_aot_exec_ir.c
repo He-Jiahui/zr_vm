@@ -296,6 +296,7 @@ static TZrUInt32 backend_aot_exec_ir_callsite_kind_from_cache_kind(TZrUInt32 cac
 static TZrUInt32 backend_aot_exec_ir_callsite_kind_for_instruction(const SZrFunction *function,
                                                                    TZrUInt32 execInstructionIndex,
                                                                    TZrUInt16 opcode) {
+    /* 预热调用点缓存保存比 opcode 更具体的分派意图，先消费缓存再退到指令分类。 */
     if (function != ZR_NULL && function->callSiteCaches != ZR_NULL) {
         for (TZrUInt32 cacheIndex = 0; cacheIndex < function->callSiteCacheLength; cacheIndex++) {
             const SZrFunctionCallSiteCacheEntry *cacheEntry = &function->callSiteCaches[cacheIndex];
@@ -457,6 +458,7 @@ static void backend_aot_exec_ir_find_block_successors(const SZrFunction *functio
         return;
     }
 
+    /* successorBlockIndices 最多两个；条件边先记录跳转目标，再去重落空边。 */
     fallthroughIndex = block->firstExecInstructionIndex + block->instructionCount;
     switch ((EZrAotExecIrTerminatorKind)block->terminatorKind) {
         case ZR_AOT_EXEC_IR_TERMINATOR_KIND_BRANCH:
@@ -540,6 +542,7 @@ static TZrBool backend_aot_exec_ir_build_basic_blocks(SZrState *state,
     for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
         instructionToBlockIndex[index] = ZR_AOT_EXEC_IR_INDEX_NONE;
     }
+    /* 从执行字节码而非 SemIR 建 CFG：跳转目标与控制流指令后继都是块边界。 */
     blockStarts[0] = ZR_TRUE;
 
     for (TZrUInt32 instructionIndex = 0; instructionIndex < function->instructionsLength; instructionIndex++) {
@@ -716,6 +719,8 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 每条 SemIR 保留其原执行指令索引和调试跨度；只有有效执行指令索引
+     * 才能归入 CFG 块，运行时契约则按语义 opcode 汇总。 */
     for (TZrUInt32 localInstructionIndex = 0; localInstructionIndex < entry->function->semIrInstructionLength;
          localInstructionIndex++) {
         const SZrSemIrInstruction *sourceInstruction = &entry->function->semIrInstructions[localInstructionIndex];
@@ -813,6 +818,7 @@ TZrBool backend_aot_exec_ir_build_module(SZrState *state, SZrFunction *function,
         ZrCore_Memory_RawSet(outModule->functions, 0, sizeof(*outModule->functions) * functionTable.count);
     }
 
+    /* 函数表先确定稳定扁平索引；模块数组按同一顺序分配并在失败时统一释放。 */
     for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
         if (functionTable.entries[functionIndex].function != ZR_NULL) {
             totalInstructionCount += functionTable.entries[functionIndex].function->semIrInstructionLength;
