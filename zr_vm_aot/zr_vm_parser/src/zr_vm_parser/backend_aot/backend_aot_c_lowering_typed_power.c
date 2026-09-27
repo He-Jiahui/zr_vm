@@ -2,6 +2,8 @@
 
 #include "backend_aot_c_scalar_locals.h"
 
+/* POW_SIGNED 的标量路径须同时满足两个输入已写入且结果槽可省略；
+ * 域错误与溢出回零策略要和下方装箱路径以及解释器保持一致。 */
 static TZrBool backend_aot_c_write_pow_signed_scalar_local(FILE *file,
                                                            const SZrAotExecIrFunction *functionIr,
                                                            TZrUInt32 destinationSlot,
@@ -75,6 +77,7 @@ static TZrBool backend_aot_c_write_pow_signed_scalar_local(FILE *file,
     return ZR_TRUE;
 }
 
+/* 无符号幂的标量路径遵循同样的局部值有效性前提，避免读取仅声明未写入的槽。 */
 static TZrBool backend_aot_c_write_pow_unsigned_scalar_local(FILE *file,
                                                              const SZrAotExecIrFunction *functionIr,
                                                              TZrUInt32 destinationSlot,
@@ -144,6 +147,7 @@ static TZrBool backend_aot_c_write_pow_unsigned_scalar_local(FILE *file,
     return ZR_TRUE;
 }
 
+/* 浮点幂仅在局部值分析证明值槽可省略时直接保留于 f64 局部值。 */
 static TZrBool backend_aot_c_write_pow_float_scalar_local(FILE *file,
                                                           const SZrAotExecIrFunction *functionIr,
                                                           TZrUInt32 destinationSlot,
@@ -170,6 +174,7 @@ static TZrBool backend_aot_c_write_pow_float_scalar_local(FILE *file,
     return ZR_TRUE;
 }
 
+/* 三个 POW opcode 在 function_body.c 选择相应入口；不满足标量路径时校验实际类型并写回栈值。 */
 void backend_aot_write_c_direct_pow_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,

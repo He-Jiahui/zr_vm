@@ -2,6 +2,11 @@
 
 #include "backend_aot_internal.h"
 
+/* 元数据绑定变化时，现役 runtime 经 CallStackValue 走普通调用；
+ * 结果仍需回读到 bool 标量局部值，供后续 AOT 指令继续使用。 */
+/* TODO: aot_runtime_sync.c 的 SyncBoolLocal 遇到非 bool 结果会返回成功但不更新 outValue；
+ * 需用调用绑定重配且新函数返回非 bool 的端到端用例确认 typed 候选是否可达，
+ * 若可达，后续指令可能读取过期的 zr_aot_b 局部值。 */
 static void backend_aot_write_c_static_direct_bool_deopt_fallback(FILE *file,
                                                                   TZrUInt32 destinationSlot,
                                                                   TZrUInt32 functionSlot,
@@ -33,6 +38,8 @@ static void backend_aot_write_c_static_direct_bool_deopt_fallback(FILE *file,
             (unsigned)destinationSlot);
 }
 
+/* typed_direct_calls.c 确认参数与返回标量槽后调用这一组入口；
+ * 仅在 runtime 验证调用绑定兼容时使用编译期 thunk，必要时同步目的栈槽。 */
 void backend_aot_write_c_static_direct_bool_no_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,

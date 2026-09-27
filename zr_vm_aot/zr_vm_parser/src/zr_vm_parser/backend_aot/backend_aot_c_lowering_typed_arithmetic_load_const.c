@@ -1,16 +1,19 @@
 #include "backend_aot_c_emitter.h"
 
+/* quickening 的加减法保留左值宽度，乘除取模提升为 int64。 */
 typedef enum EZrAotSignedLoadConstResultKind {
     ZR_AOT_SIGNED_LOAD_CONST_RESULT_LEFT_TYPE = 0,
     ZR_AOT_SIGNED_LOAD_CONST_RESULT_INT64
 } EZrAotSignedLoadConstResultKind;
 
+/* 除零和取模零须由生成代码在求值前报错；普通算术不引入额外分支。 */
 typedef enum EZrAotSignedLoadConstZeroGuard {
     ZR_AOT_SIGNED_LOAD_CONST_ZERO_GUARD_NONE = 0,
     ZR_AOT_SIGNED_LOAD_CONST_ZERO_GUARD_DIVIDE,
     ZR_AOT_SIGNED_LOAD_CONST_ZERO_GUARD_MODULO
 } EZrAotSignedLoadConstZeroGuard;
 
+/* 常量池只在编译期读取；非有符号整数常量生成明确的运行时失败路径。 */
 static TZrBool backend_aot_c_format_signed_load_const_integer_literal(char *buffer,
                                                                       TZrSize bufferSize,
                                                                       const SZrTypeValue *constantValue) {
@@ -26,6 +29,7 @@ static TZrBool backend_aot_c_format_signed_load_const_integer_literal(char *buff
     return ZR_TRUE;
 }
 
+/* LOAD_CONST 必须还原常量原来的窄整数标签，物化槽供后续指令观察。 */
 static const TZrChar *backend_aot_c_signed_load_const_value_type_literal(EZrValueType type) {
     switch (type) {
         case ZR_VALUE_TYPE_INT8:
@@ -53,6 +57,8 @@ static void backend_aot_write_c_direct_signed_load_const_unsupported(FILE *file)
             "    }\n");
 }
 
+/* TODO: 取模路径将负除数取反，常量为 INT64_MIN 时溢出；除法也只防零，
+ * INT64_MIN / -1 的有符号溢出仍待界定。核对解释器 execution_dispatch.c 的对应 opcode 并补边界测试。 */
 static void backend_aot_write_c_direct_signed_load_const_zero_guard(FILE *file,
                                                                     EZrAotSignedLoadConstZeroGuard zeroGuard) {
     if (file == ZR_NULL || zeroGuard == ZR_AOT_SIGNED_LOAD_CONST_ZERO_GUARD_NONE) {
@@ -77,6 +83,8 @@ static void backend_aot_write_c_direct_signed_load_const_zero_guard(FILE *file,
     }
 }
 
+/* LOAD_CONST 变体一边求值一边物化右侧常量槽；目的值标签按 opcode 的 resultKind 约定。 */
+/* TODO: 加减乘变体仍直接使用 C int64 运算，结果越界时需核对解释器与 AOT 的一致性。 */
 static void backend_aot_write_c_direct_signed_load_const_binary(FILE *file,
                                                                 const SZrFunction *function,
                                                                 const char *expressionText,
@@ -148,6 +156,7 @@ static void backend_aot_write_c_direct_signed_load_const_binary(FILE *file,
             expressionText);
 }
 
+/* LOAD_STACK_CONST 先把源值放入物化左槽，再计算结果；源值只能是 signed 整数。 */
 static void backend_aot_write_c_direct_signed_load_stack_const_binary(FILE *file,
                                                                       const SZrFunction *function,
                                                                       const char *expressionText,
@@ -212,6 +221,7 @@ static void backend_aot_write_c_direct_signed_load_stack_const_binary(FILE *file
             expressionText);
 }
 
+/* 组合变体同时物化左值和常量；后续 AOT 指令可按原 quickening 槽布局访问它们。 */
 static void backend_aot_write_c_direct_signed_load_stack_load_const_binary(FILE *file,
                                                                            const SZrFunction *function,
                                                                            const char *expressionText,

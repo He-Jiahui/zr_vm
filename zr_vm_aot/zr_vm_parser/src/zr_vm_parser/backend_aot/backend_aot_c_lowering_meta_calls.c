@@ -1,6 +1,9 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* META_CALL 系列先解析接收者的元调用，再走可直接调用或通用调用的统一恢复路径。
+ * 调用方需传入当前 ExecIR 函数；结果可能改变标量局部量，必须回读帧槽镜像。
+ */
 void backend_aot_write_c_meta_call(FILE *file,
                                    const SZrAotExecIrFunction *functionIr,
                                    TZrUInt32 destinationSlot,
@@ -15,6 +18,7 @@ void backend_aot_write_c_meta_call(FILE *file,
         return;
     }
 
+    /* 恢复目标可能跳过当前指令的后半段；仅在正常落入后同步调用结果。 */
     syncI64Local = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
     syncBoolLocal = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
     syncU64Local = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);

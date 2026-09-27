@@ -1,5 +1,6 @@
 #include "backend_aot_c_emitter.h"
 
+/* 作用域退出资源先登记到 runtime 清理链，异常和正常离开路径才能共享关闭顺序。 */
 void backend_aot_write_c_direct_mark_to_be_closed(FILE *file, TZrUInt32 slotIndex) {
     if (file == ZR_NULL) {
         return;
@@ -13,6 +14,7 @@ void backend_aot_write_c_direct_mark_to_be_closed(FILE *file, TZrUInt32 slotInde
             (unsigned)slotIndex);
 }
 
+/* CLOSE_SCOPE 使用字节码记录的清理数，实际关闭过程仍由 runtime 管理异常与所有权。 */
 void backend_aot_write_c_direct_close_scope(FILE *file, TZrUInt32 cleanupCount) {
     if (file == ZR_NULL) {
         return;

@@ -1,5 +1,7 @@
 #include "backend_aot_c_emitter.h"
 
+/* MOD_FLOAT 的直写分支在生成代码内保留运行时类型及零除数检查；
+ * 函数体分派器调用它后，结果直接写入目的值槽并失效可调用值来源。 */
 void backend_aot_write_c_direct_mod_float(FILE *file,
                                           TZrUInt32 destinationSlot,
                                           TZrUInt32 leftSlot,

@@ -2,6 +2,7 @@
 #include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_internal.h"
 
+/* 分派或恢复遇到未覆盖指令时，生成代码必须报告 AOT 不支持而非静默落入下一条。 */
 void backend_aot_write_c_unsupported_instruction_expr(FILE *file,
                                                       TZrUInt32 functionFlatIndex,
                                                       const char *instructionIndexExpression,
@@ -23,6 +24,7 @@ void backend_aot_write_c_unsupported_instruction_expr(FILE *file,
             opcodeExpression);
 }
 
+/* 固定索引和操作码的包装入口，供编译期已知的未支持字节码使用。 */
 void backend_aot_write_c_unsupported_instruction(FILE *file,
                                                  TZrUInt32 functionFlatIndex,
                                                  TZrUInt32 instructionIndex,
@@ -39,6 +41,7 @@ void backend_aot_write_c_unsupported_instruction(FILE *file,
     backend_aot_write_c_unsupported_instruction_expr(file, functionFlatIndex, instructionBuffer, opcodeBuffer);
 }
 
+/* 每条原始字节码都有稳定标签，异常和 finally 恢复索引经此中心分派器回到正确位置。 */
 void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 instructionCount) {
     TZrUInt32 instructionIndex;
 
@@ -63,6 +66,7 @@ void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, 
     fprintf(file, "    }\n");
 }
 
+/* return/break/continue 在 finally 内可被延迟；runtime 返回恢复索引后才能重新分派。 */
 static void backend_aot_write_c_pending_control_transfer(FILE *file,
                                                          const char *marker,
                                                          const char *helperCallFormat,
@@ -97,6 +101,7 @@ static void backend_aot_write_c_pending_control_transfer(FILE *file,
             (unsigned)functionFlatIndex);
 }
 
+/* TRY/END_TRY 成对维护 runtime 异常处理栈，handlerIndex 必须来自当前函数的处理表。 */
 void backend_aot_write_c_try(FILE *file, TZrUInt32 handlerIndex) {
     if (file == ZR_NULL) {
         return;
@@ -123,6 +128,7 @@ void backend_aot_write_c_end_try(FILE *file, TZrUInt32 handlerIndex) {
             (unsigned)handlerIndex);
 }
 
+/* 抛出后可能进入同函数 catch/finally；只在 runtime 给出恢复索引时跳回分派器。 */
 void backend_aot_write_c_throw(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -141,6 +147,7 @@ void backend_aot_write_c_throw(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt3
             (unsigned)functionFlatIndex);
 }
 
+/* 非空检查的异常路径沿用 THROW 的帧内恢复协议，不能直接跳过 finally。 */
 void backend_aot_write_c_require_non_null(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -159,6 +166,7 @@ void backend_aot_write_c_require_non_null(FILE *file, TZrUInt32 functionFlatInde
             (unsigned)functionFlatIndex);
 }
 
+/* catch 入口从 runtime 接收待处理异常值，同时完成异常状态的接管。 */
 void backend_aot_write_c_catch(FILE *file, TZrUInt32 destinationSlot) {
     if (file == ZR_NULL) {
         return;
@@ -172,6 +180,7 @@ void backend_aot_write_c_catch(FILE *file, TZrUInt32 destinationSlot) {
             (unsigned)destinationSlot);
 }
 
+/* finally 完成后由 runtime 决定继续正常执行、重新抛出还是恢复挂起的控制流。 */
 void backend_aot_write_c_end_finally(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 handlerIndex) {
     if (file == ZR_NULL) {
         return;
@@ -190,6 +199,7 @@ void backend_aot_write_c_end_finally(FILE *file, TZrUInt32 functionFlatIndex, TZ
             (unsigned)functionFlatIndex);
 }
 
+/* 三种挂起控制转移共用恢复协议；target 是字节码索引，不是生成 C 的行号。 */
 void backend_aot_write_c_set_pending_return(FILE *file,
                                             TZrUInt32 functionFlatIndex,
                                             TZrUInt32 sourceSlot,
@@ -225,6 +235,7 @@ void backend_aot_write_c_set_pending_continue(FILE *file,
                                                  ZR_FALSE);
 }
 
+/* 分配及回边按需生成安全点，让 runtime 能在长循环内观察 GC 请求。 */
 void backend_aot_write_c_gc_safepoint(FILE *file, const char *indent, const char *marker) {
     const char *lineIndent;
     const char *pointMarker;
@@ -243,6 +254,7 @@ void backend_aot_write_c_gc_safepoint(FILE *file, const char *indent, const char
             lineIndent);
 }
 
+/* 显式跳转与条件回边在改变 PC 前保留 GC 安全点；目标须属于当前函数。 */
 void backend_aot_write_c_direct_jump(FILE *file,
                                      TZrUInt32 functionIndex,
                                      TZrUInt32 targetInstructionIndex,
@@ -257,6 +269,7 @@ void backend_aot_write_c_direct_jump(FILE *file,
     fprintf(file, "    goto zr_aot_fn_%u_ins_%u;\n", (unsigned)functionIndex, (unsigned)targetInstructionIndex);
 }
 
+/* 仅在标量局部量已由前驱写入时直接比较；否则从运行时帧槽读取。 */
 void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 functionIndex,
@@ -319,6 +332,7 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
             (unsigned)targetInstructionIndex);
 }
 
+/* null 分支保留通用值槽的类型语义；回边仍需安全点。 */
 void backend_aot_write_c_direct_jump_if_null(FILE *file,
                                              TZrUInt32 functionIndex,
                                              TZrUInt32 valueSlot,
@@ -348,6 +362,7 @@ void backend_aot_write_c_direct_jump_if_null(FILE *file,
             (unsigned)targetInstructionIndex);
 }
 
+/* 有符号比较常量仅接纳可精确打印的整型；否则生成失败路径保持字节码语义。 */
 static TZrBool backend_aot_c_format_signed_branch_const_literal(char *buffer,
                                                                 TZrSize bufferSize,
                                                                 const SZrTypeValue *constantValue) {
@@ -363,6 +378,7 @@ static TZrBool backend_aot_c_format_signed_branch_const_literal(char *buffer,
     return ZR_TRUE;
 }
 
+/* 标量分支只读取已在此指令前定义的 i64 镜像，避免读未初始化的 C 局部量。 */
 static TZrBool backend_aot_c_signed_branch_operand_has_i64_local(const SZrAotExecIrFunction *functionIr,
                                                                  TZrUInt32 slot,
                                                                  TZrUInt32 execInstructionIndex) {
@@ -370,6 +386,7 @@ static TZrBool backend_aot_c_signed_branch_operand_has_i64_local(const SZrAotExe
                      backend_aot_c_scalar_locals_i64_written_before(functionIr, slot, execInstructionIndex));
 }
 
+/* signed 比较优先使用两个标量镜像；缺失镜像时回读值槽并检查类型。 */
 static void backend_aot_write_c_direct_signed_branch(FILE *file,
                                                      const SZrAotExecIrFunction *functionIr,
                                                      const char *expressionText,
@@ -466,6 +483,7 @@ static void backend_aot_write_c_direct_signed_branch(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 常量版只需验证左操作数；生成表达式与文字常量须使用同一种有符号语义。 */
 static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
                                                            const SZrAotExecIrFunction *functionIr,
                                                            const SZrFunction *function,
@@ -547,6 +565,7 @@ static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
             (unsigned)targetInstructionIndex);
 }
 
+/* 比较操作码包装层固定运算符，统一委托 signed 分支生成器维护回边与类型检查。 */
 void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
                                                        const SZrAotExecIrFunction *functionIr,
                                                        TZrUInt32 functionIndex,
@@ -629,6 +648,7 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
                                                    isBackEdge);
 }
 
+/* 通用返回交给 runtime 处理帧、作用域关闭及值所有权；不能直接 C return 源槽。 */
 void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -642,6 +662,7 @@ void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {
             (unsigned)sourceSlot);
 }
 
+/* 标量返回族把局部镜像交给专用 runtime 入口，绕开不必要的值槽物化。 */
 void backend_aot_write_c_direct_return_i64_local(FILE *file, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -698,6 +719,7 @@ void backend_aot_write_c_direct_return_f64_local(FILE *file, TZrUInt32 sourceSlo
             (unsigned)sourceSlot);
 }
 
+/* 尾返回在模块入口必须先发布导出，再执行普通 runtime 返回清理。 */
 void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool publishExports) {
     if (file == ZR_NULL) {
         return;
@@ -710,6 +732,7 @@ void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool p
     backend_aot_write_c_direct_return(file, sourceSlot);
 }
 
+/* 把编译期步进类别映射成 runtime 可观察的指令标记集合。 */
 static void backend_aot_write_c_step_flag_expr(FILE *file, TZrUInt32 stepFlags) {
     TZrBool wroteFlag = ZR_FALSE;
 
@@ -739,6 +762,9 @@ static void backend_aot_write_c_step_flag_expr(FILE *file, TZrUInt32 stepFlags) 
     }
 }
 
+/* 每条字节码入口重取 callInfo/slotBase，兼容前一条调用或清理造成的扩栈；
+ * 仅在调试和观察策略要求时发布 PC、源码行及 hook 事件。
+ */
 void backend_aot_write_c_begin_instruction(FILE *file, TZrUInt32 instructionIndex, TZrUInt32 stepFlags) {
     if (file == ZR_NULL) {
         return;

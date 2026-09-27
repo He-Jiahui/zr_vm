@@ -1,10 +1,15 @@
 #include "backend_aot_c_emitter.h"
 
+/* LOAD_STACK 的结果标签由 quickening 变体约定：加法沿用左值类型，乘法为 int64。 */
 typedef enum EZrAotSignedLoadStackResultKind {
     ZR_AOT_SIGNED_LOAD_STACK_RESULT_LEFT_TYPE = 0,
     ZR_AOT_SIGNED_LOAD_STACK_RESULT_INT64
 } EZrAotSignedLoadStackResultKind;
 
+/* 函数体分派器只传已具备两个物化栈槽的指令；生成代码仍验证槽与整数标签，
+ * 以免优化指令和实际运行时值偏离时读取错误的原生字段。 */
+/* TODO: 此变体直接用 C int64 加法或乘法；若结果越界，需核对解释器对应 quickening
+ * opcode 的语义并补跨执行路径边界值测试。 */
 static void backend_aot_write_c_direct_signed_load_stack_binary(FILE *file,
                                                                 const char *expressionText,
                                                                 TZrUInt32 destinationSlot,

@@ -1,6 +1,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* 常量版 opcode 从函数常量池读取数值，再生成独立于运行时常量池的 C 字面量。 */
 static TZrBool backend_aot_c_format_signed_integer_literal(char *buffer,
                                                            TZrSize bufferSize,
                                                            const SZrTypeValue *constantValue) {
@@ -31,6 +32,7 @@ static TZrBool backend_aot_c_format_unsigned_integer_literal(char *buffer,
     return ZR_TRUE;
 }
 
+/* 常量类型与 quickening 预期失配时生成运行时失败，不把错误类型读作整数。 */
 static void backend_aot_write_c_direct_typed_arithmetic_const_fail(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -43,6 +45,7 @@ static void backend_aot_write_c_direct_typed_arithmetic_const_fail(FILE *file) {
             "    }\n");
 }
 
+/* 表示哪些直写算术需要保持解释器可观察的零除数错误。 */
 typedef enum EZrAotTypedArithmeticZeroGuard {
     ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_NONE = 0,
     ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_DIVIDE,
@@ -74,6 +77,7 @@ static void backend_aot_write_c_direct_integer_zero_guard(FILE *file,
     }
 }
 
+/* 局部值已分配不代表可读；仅在两侧均于本指令前写入后使用标量路径。 */
 static TZrBool backend_aot_c_direct_signed_binary_can_use_scalar_operands(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 leftSlot,
@@ -85,6 +89,10 @@ static TZrBool backend_aot_c_direct_signed_binary_can_use_scalar_operands(
                      backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, execInstructionIndex));
 }
 
+/* 有符号算术对可省略值槽的 ExecIR 使用标量局部值，其余路径回写现役 VM 栈；
+ * 两条路径均保留运行时零除数检查，只有可观察的目的值槽才需物化。 */
+/* TODO: 直接生成的有符号加减乘及 INT64_MIN / -1 可能触发 C 有符号溢出；
+ * 核对解释器 execution_dispatch.c 的溢出语义，并以边界值比较解释器、C AOT、LLVM AOT。 */
 static void backend_aot_write_c_direct_signed_binary(FILE *file,
                                                      const SZrAotExecIrFunction *functionIr,
                                                      const char *expressionText,
@@ -191,6 +199,9 @@ static void backend_aot_write_c_direct_signed_binary(FILE *file,
             "    }\n");
 }
 
+/* 常量算术可复用已初始化的左标量值，但当前结果仍写回目的值槽，供后续非标量路径读取。 */
+/* TODO: 常量加减乘、INT64_MIN / -1 仍可能导致 C 有符号溢出；
+ * 需核对解释器同名 const opcode 并补边界测试。 */
 static void backend_aot_write_c_direct_signed_const_binary(FILE *file,
                                                            const SZrAotExecIrFunction *functionIr,
                                                            const SZrFunction *function,
@@ -272,6 +283,7 @@ static void backend_aot_write_c_direct_signed_const_binary(FILE *file,
             "    }\n");
 }
 
+/* unsigned opcode 独立检查实际类型，避免把有符号栈值按 uint64 字段解释。 */
 static void backend_aot_write_c_direct_unsigned_binary(FILE *file,
                                                        const char *expressionText,
                                                        TZrUInt32 destinationSlot,
@@ -358,6 +370,7 @@ static void backend_aot_write_c_direct_unsigned_const_binary(FILE *file,
             expressionText);
 }
 
+/* 浮点基础算术写回 double 栈值；MOD_FLOAT 的零除数处理在专用文件中。 */
 static void backend_aot_write_c_direct_float_binary(FILE *file,
                                                     const char *expressionText,
                                                     TZrUInt32 destinationSlot,
@@ -485,6 +498,7 @@ static void backend_aot_write_c_direct_float_unary(FILE *file,
             "    }\n");
 }
 
+/* 数值比较按 signed、unsigned、float 分开提取操作数，统一产出 bool 标签。 */
 static void backend_aot_write_c_direct_signed_comparison(FILE *file,
                                                          const char *expressionText,
                                                          TZrUInt32 destinationSlot,
@@ -888,6 +902,9 @@ void backend_aot_write_c_direct_mod_signed_const(FILE *file,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_MODULO);
 }
 
+/* ADD_SIGNED_MOD_CONST 是融合 opcode；保持单一目的槽写回与常量除数检查。 */
+/* TODO: 常量为 INT64_MIN 时的除数取反，以及两数之和越界时的 C 行为需核对；
+ * 对照 execution_dispatch.c 的融合 opcode 与 tests/parser 中的边界覆盖。 */
 void backend_aot_write_c_direct_add_signed_mod_const(FILE *file,
                                                      const SZrFunction *function,
                                                      TZrUInt32 destinationSlot,
@@ -1009,6 +1026,9 @@ void backend_aot_write_c_direct_div_float(FILE *file,
                                             ZR_TRUE);
 }
 
+/* NEG_SIGNED/NEG_FLOAT 有可省略值槽的专用标量路径，其他情况借助通用一元发射器。 */
+/* TODO: NEG_SIGNED 的源值为 INT64_MIN 时生成 C 直接取负会溢出；
+ * 核对解释器 EXECUTE_TYPED_NEG_SIGNED_BODY 及 AOT 边界值测试的语义。 */
 void backend_aot_write_c_direct_neg_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,

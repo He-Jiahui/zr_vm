@@ -1,8 +1,9 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
-/* backend_aot_c_lowering_generic_numeric_arithmetic.c */
+/* 泛型数值 opcode 先尝试已证明可用的标量局部变量，再通过 VM 值槽进入运行时类型分派。 */
 
+/* 运行时退路写回 boxed 目标后，刷新该槽的各类标量缓存供后续专用 lowering 复用。 */
 static void backend_aot_write_c_generic_numeric_sync_locals(FILE *file,
                                                             const SZrAotExecIrFunction *functionIr,
                                                             TZrUInt32 destinationSlot) {
@@ -41,6 +42,7 @@ static void backend_aot_write_c_generic_numeric_sync_locals(FILE *file,
     }
 }
 
+/* 二元退路保留运行时类型检查；调用者只有无法安全跳过值槽时才选此边界。 */
 static void backend_aot_write_c_generic_numeric_binary_boundary(FILE *file,
                                                                 const SZrAotExecIrFunction *functionIr,
                                                                 const char *runtimeHelper,
@@ -63,6 +65,7 @@ static void backend_aot_write_c_generic_numeric_binary_boundary(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 一元退路与二元退路共享“先 VM 运算、后同步缓存”的值表示协议。 */
 static void backend_aot_write_c_generic_numeric_unary_boundary(FILE *file,
                                                                const SZrAotExecIrFunction *functionIr,
                                                                const char *runtimeHelper,
@@ -83,6 +86,7 @@ static void backend_aot_write_c_generic_numeric_unary_boundary(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 记录已写入局部缓存的数值种类；NONE 强制回到 boxed 运行时路径。 */
 typedef enum EZrAotGenericNumericScalarLocalKind {
     ZR_AOT_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_NONE,
     ZR_AOT_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64,
@@ -90,6 +94,7 @@ typedef enum EZrAotGenericNumericScalarLocalKind {
     ZR_AOT_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_F64
 } EZrAotGenericNumericScalarLocalKind;
 
+/* 混合类型快路径必须先确认操作数缓存已在当前指令前写入。 */
 static EZrAotGenericNumericScalarLocalKind backend_aot_c_generic_numeric_written_scalar_kind(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 slot,
@@ -124,6 +129,9 @@ static TZrBool backend_aot_c_generic_numeric_scalar_kinds_form_mixed_i64_u64(
                       rightKind == ZR_AOT_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64));
 }
 
+/* 混合整数结果沿 signed 槽传播，表达式前缀映射与运行时 int64 提取规则耦合。 */
+/* TODO: unsigned 高位值的 signed 转换是实现定义；需与 aot_runtime_values.c
+ * 的泛型数值提取和解释器混合数值规则作极值对照。 */
 static const char *backend_aot_c_generic_numeric_i64_expression_prefix(
         EZrAotGenericNumericScalarLocalKind kind) {
     switch (kind) {
@@ -150,6 +158,7 @@ static const char *backend_aot_c_generic_numeric_f64_expression_prefix(
     }
 }
 
+/* 同类 float 缓存直接计算；目标值槽可跳过是避免 boxed 状态失配的必要条件。 */
 static TZrBool backend_aot_c_write_generic_numeric_f64_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -187,6 +196,9 @@ static TZrBool backend_aot_c_write_generic_numeric_f64_binary_scalar_local(
     return ZR_TRUE;
 }
 
+/* mixed i64/u64 使用 signed 结果槽，只有两个缓存都可证明已写入才短路运行时。 */
+/* BUG: mixed ADD/SUB/MUL 最终执行 signed C 运算；转型后结果越界会触发
+ * 未定义行为，需与纯 i64 路径一起补极值与 UBSan 回归。 */
 static TZrBool backend_aot_c_write_generic_numeric_mixed_i64_u64_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -239,6 +251,8 @@ static TZrBool backend_aot_c_write_generic_numeric_mixed_i64_u64_binary_scalar_l
     return ZR_TRUE;
 }
 
+/* mixed 整数除/模仍需在生成代码中保留零除诊断，语义须与 runtime 退路一致。 */
+/* BUG: 仅检查零除；INT64_MIN / -1 或取模仍进入 C signed 运算，触发未定义行为。 */
 static TZrBool backend_aot_c_write_generic_numeric_mixed_i64_u64_guarded_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -337,6 +351,7 @@ static TZrBool backend_aot_c_write_generic_numeric_mixed_i64_u64_mod_scalar_loca
             "modulo by zero");
 }
 
+/* 混合 float 与整数时结果采用 float 缓存，保持与运行时数字提升方向一致。 */
 static TZrBool backend_aot_c_write_generic_numeric_mixed_f64_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -506,6 +521,9 @@ static TZrBool backend_aot_c_write_generic_numeric_mixed_f64_mod_scalar_local(
     return ZR_TRUE;
 }
 
+/* signed 快路径绕过 runtime；结果及输入仅在静态缓存活性条件下成立。 */
+/* BUG: ADD/SUB/MUL 的 signed 溢出未经检查直接进入生成 C 表达式，触发
+ * 未定义行为；运行时退路也有同类问题，需统一极值语义与 UBSan 回归。 */
 static TZrBool backend_aot_c_write_generic_numeric_i64_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -543,6 +561,7 @@ static TZrBool backend_aot_c_write_generic_numeric_i64_binary_scalar_local(
     return ZR_TRUE;
 }
 
+/* unsigned 快路径可采用 C 模数算术，仍受目标值槽跳过判定约束。 */
 static TZrBool backend_aot_c_write_generic_numeric_u64_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -580,6 +599,8 @@ static TZrBool backend_aot_c_write_generic_numeric_u64_binary_scalar_local(
     return ZR_TRUE;
 }
 
+/* signed 取负保留在标量局部变量中以继续传播至下一个数值操作。 */
+/* BUG: 源为 INT64_MIN 时生成 C 取负溢出；此快路径和 runtime 退路均未防护。 */
 static TZrBool backend_aot_c_write_generic_numeric_i64_neg_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -609,6 +630,9 @@ static TZrBool backend_aot_c_write_generic_numeric_i64_neg_scalar_local(
     return ZR_TRUE;
 }
 
+/* unsigned 负号的目标改用 signed 缓存，匹配 runtime 的结果类型。 */
+/* TODO: UINT64 高位值先强转 signed 再取负；需确认语言期望的边界结果，
+ * 并与解释器及 runtime 的同一路径做极值对照。 */
 static TZrBool backend_aot_c_write_generic_numeric_u64_neg_to_i64_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -638,6 +662,8 @@ static TZrBool backend_aot_c_write_generic_numeric_u64_neg_to_i64_scalar_local(
     return ZR_TRUE;
 }
 
+/* signed 除法快路径在生成代码中负责零除诊断。 */
+/* BUG: INT64_MIN / -1 通过零除检查后进入 C 除法，触发未定义行为。 */
 static TZrBool backend_aot_c_write_generic_numeric_i64_div_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -676,6 +702,8 @@ static TZrBool backend_aot_c_write_generic_numeric_i64_div_scalar_local(
     return ZR_TRUE;
 }
 
+/* signed 模运算与除法共享运行期值域前提。 */
+/* BUG: INT64_MIN % -1 通过零除检查后进入 C 取模，触发未定义行为。 */
 static TZrBool backend_aot_c_write_generic_numeric_i64_mod_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -895,6 +923,11 @@ static TZrBool backend_aot_c_write_generic_numeric_f64_neg_scalar_local(
     return ZR_TRUE;
 }
 
+/* ADD 与 quickened ADD_STRING 共用此分派；数值快路径只适用于数值操作数。 */
+/* BUG: ADD_STRING 的字符串值在这里落到 GenericNumericAdd，而 runtime 要求
+ * 两侧均为 number 并报错；解释器会拼接字符串，模板字符串编译器会发出此 opcode。 */
+/* BUG: 泛型 ADD 的对象元方法也无法经数值退路执行；解释器有 ZR_META_ADD
+ * 分派，AOT 会以 unsupported generic numeric arithmetic 失败。 */
 void backend_aot_write_c_direct_add(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
@@ -969,6 +1002,8 @@ void backend_aot_write_c_direct_add(FILE *file,
                                                         rightSlot);
 }
 
+/* SUB 对已知数值选择标量局部路径，未知类型由运行时边界判断。 */
+/* BUG: 对象的 ZR_META_SUB 在解释器可调用，此退路只接受 number，AOT 报错。 */
 void backend_aot_write_c_direct_sub(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
@@ -1043,6 +1078,8 @@ void backend_aot_write_c_direct_sub(FILE *file,
                                                         rightSlot);
 }
 
+/* MUL 与 ADD/SUB 共用值槽和 scalar-local 活性前提。 */
+/* BUG: 对象的 ZR_META_MUL 在解释器可调用，此退路只接受 number，AOT 报错。 */
 void backend_aot_write_c_direct_mul(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
@@ -1117,6 +1154,8 @@ void backend_aot_write_c_direct_mul(FILE *file,
                                                         rightSlot);
 }
 
+/* DIV 将零除检查留在选中的快路径或 runtime，避免无诊断的生成 C 计算。 */
+/* BUG: 对象的 ZR_META_DIV 在解释器可调用，此退路只接受 number，AOT 报错。 */
 void backend_aot_write_c_direct_div(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
@@ -1176,6 +1215,8 @@ void backend_aot_write_c_direct_div(FILE *file,
                                                         rightSlot);
 }
 
+/* MOD 保留整数与浮点两类标量路径，其他值经 runtime 再做动态类型判定。 */
+/* BUG: 对象的 ZR_META_MOD 在解释器可调用，此退路只接受 number，AOT 报错。 */
 void backend_aot_write_c_direct_mod(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
@@ -1235,6 +1276,8 @@ void backend_aot_write_c_direct_mod(FILE *file,
                                                         rightSlot);
 }
 
+/* NEG 的输出种类由输入动态决定，静态可判时才选 i64/f64 缓存。 */
+/* BUG: 对象的 ZR_META_NEG 在解释器可调用，此退路只接受数值，AOT 报错。 */
 void backend_aot_write_c_direct_neg(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,

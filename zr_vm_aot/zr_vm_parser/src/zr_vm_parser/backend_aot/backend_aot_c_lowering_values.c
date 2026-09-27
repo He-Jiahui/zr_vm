@@ -4,6 +4,7 @@
 #include "backend_aot_c_scalar_stack_copy.h"
 
 #include "zr_vm_core/closure.h"
+/* 所有权指令族统一转交 runtime；生成器只传帧槽，生命周期转换不得在 C 字符串中复制实现。 */
 static void backend_aot_write_c_direct_ownership_helper_call(FILE *file,
                                                              const char *helperName,
                                                              TZrUInt32 destinationSlot,
@@ -22,6 +23,7 @@ static void backend_aot_write_c_direct_ownership_helper_call(FILE *file,
             (unsigned)sourceSlot);
 }
 
+/* UNIQUE/BORROW/LOAN 等包装入口由字节码分派器选择，源/目标槽遵守 runtime 的所有权契约。 */
 void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_helper_call(
             file,
@@ -70,6 +72,7 @@ void backend_aot_write_c_direct_own_degrade(FILE *file, TZrUInt32 destinationSlo
             sourceSlot);
 }
 
+/* DETACH 的实际资源转移委托 runtime；这里不能假设源槽复制后仍保有资源。 */
 void backend_aot_write_c_direct_own_detach(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_helper_call(
             file,
@@ -114,6 +117,7 @@ void backend_aot_write_c_direct_own_drop(FILE *file, TZrUInt32 destinationSlot, 
             sourceSlot);
 }
 
+/* runtime 转换后立即维护引用局部量镜像，供随后不读取通用值槽的路径使用。 */
 void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -138,6 +142,7 @@ void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot,
     fprintf(file, "    } while (0);\n");
 }
 
+/* 常量选择器的公共边界：只返回当前函数有效索引的值，供直写与 thunk 签名分析共用。 */
 const SZrTypeValue *backend_aot_c_get_constant_value(const SZrFunction *function, TZrInt32 constantIndex) {
     if (function == ZR_NULL || constantIndex < 0 || (TZrUInt32)constantIndex >= function->constantValueLength ||
         function->constantValueList == ZR_NULL) {
@@ -147,6 +152,7 @@ const SZrTypeValue *backend_aot_c_get_constant_value(const SZrFunction *function
     return &function->constantValueList[(TZrUInt32)constantIndex];
 }
 
+/* 闭包元数据常量需要生成真实 callable；其余值才可考虑直接字面量路径。 */
 TZrBool backend_aot_c_constant_requires_materialization(SZrState *state,
                                                         const SZrFunction *function,
                                                         TZrInt32 constantIndex) {
@@ -160,6 +166,7 @@ TZrBool backend_aot_c_constant_requires_materialization(SZrState *state,
     return ZrCore_Closure_GetMetadataFunctionFromValue(state, constantValue) != ZR_NULL;
 }
 
+/* 保留原字节码常量的窄整数/浮点类型标记，避免即时值路径一律扩大类型。 */
 static const TZrChar *backend_aot_c_value_type_literal(EZrValueType type) {
     switch (type) {
         case ZR_VALUE_TYPE_BOOL:
@@ -189,6 +196,7 @@ static const TZrChar *backend_aot_c_value_type_literal(EZrValueType type) {
     }
 }
 
+/* 只有无引用所有权的原始标量可写入生成 C；其他常量仍依赖值槽复制。 */
 TZrBool backend_aot_c_constant_can_emit_immediate(const SZrFunction *function, TZrInt32 constantIndex) {
     const SZrTypeValue *constantValue = backend_aot_c_get_constant_value(function, constantIndex);
 
@@ -200,6 +208,7 @@ TZrBool backend_aot_c_constant_can_emit_immediate(const SZrFunction *function, T
            ZR_VALUE_IS_TYPE_INT(constantValue->type) || ZR_VALUE_IS_TYPE_FLOAT(constantValue->type);
 }
 
+/* 被导出的槽是模块外可观察状态，不可因局部消费者已知而省略真实槽写入。 */
 static TZrBool backend_aot_c_function_exports_stack_slot(const SZrFunction *function, TZrUInt32 stackSlot) {
     TZrUInt32 exportIndex;
 
@@ -216,6 +225,7 @@ static TZrBool backend_aot_c_function_exports_stack_slot(const SZrFunction *func
     return ZR_FALSE;
 }
 
+/* TODO: 此处只匹配紧邻跳转等局部条件；跳过 reset 前仍需核查后继槽活性及旧值所有权。 */
 TZrBool backend_aot_c_reset_null_consumed_by_local_jump_if(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -259,6 +269,7 @@ TZrBool backend_aot_c_reset_null_consumed_by_local_jump_if(
                      targetInstructionIndex < (TZrInt64)function->instructionsLength);
 }
 
+/* TODO: reset->LOGICAL_NOT 只证实相邻及结果镜像；仍需核查 CFG 后继的源槽活性与旧值所有权。 */
 TZrBool backend_aot_c_reset_null_consumed_by_local_logical_not(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -300,6 +311,7 @@ TZrBool backend_aot_c_reset_null_consumed_by_local_logical_not(
             logicalNotInstructionIndex);
 }
 
+/* 只把已知 SET_STACK/GET_STACK 视为纯槽复制，供线性消费分析使用。 */
 static TZrBool backend_aot_c_reset_null_stack_copy_instruction_is_copy(const TZrInstruction *instruction) {
     EZrInstructionCode operationCode;
 
@@ -312,6 +324,7 @@ static TZrBool backend_aot_c_reset_null_stack_copy_instruction_is_copy(const TZr
                      operationCode == ZR_INSTRUCTION_ENUM(GET_STACK));
 }
 
+/* 省略 reset->copy 前验证紧邻关系、异常边界及两端槽都未导出。 */
 static TZrBool backend_aot_c_reset_null_stack_copy_candidate(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -354,6 +367,7 @@ static TZrBool backend_aot_c_reset_null_stack_copy_candidate(
     return ZR_TRUE;
 }
 
+/* TODO: reset->copy->not 只核对相邻模式；需查 CFG 后继槽活性与被略过的旧值清理。 */
 TZrBool backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -405,6 +419,7 @@ TZrBool backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(
             logicalNotInstructionIndex);
 }
 
+/* TODO: reset->copy->jump 只证实局部模式及跳转范围；需查 CFG 后继槽活性与旧值所有权。 */
 TZrBool backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -458,6 +473,7 @@ TZrBool backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(
                      targetInstructionIndex < (TZrInt64)function->instructionsLength);
 }
 
+/* TODO: 复制入口复用 reset->copy->not 局部判断；需查其他 CFG 后继槽活性与旧值所有权。 */
 TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 copiedSlot,
@@ -490,6 +506,7 @@ TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
             stackCopyInstructionIndex - 1u);
 }
 
+/* TODO: 复制入口复用 reset->copy->jump 局部判断；需查其他 CFG 后继槽活性与旧值所有权。 */
 TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 copiedSlot,
@@ -522,6 +539,7 @@ TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
             stackCopyInstructionIndex - 1u);
 }
 
+/* 直写原始标量前先释放目标中可能存在的引用所有权，维持值槽替换契约。 */
 static void backend_aot_c_write_direct_plain_value_replace_guard(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -534,6 +552,7 @@ static void backend_aot_c_write_direct_plain_value_replace_guard(FILE *file) {
             "        }\n");
 }
 
+/* NULL 也可能覆盖拥有资源的值槽，仍需走同一释放边界。 */
 static void backend_aot_c_write_direct_null_value(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -543,6 +562,7 @@ static void backend_aot_c_write_direct_null_value(FILE *file) {
     fprintf(file, "        ZrCore_Value_ResetAsNull(zr_aot_destination);\n");
 }
 
+/* 标量即时值要同时重置 GC/所有权字段，免得复用旧引用元数据。 */
 static void backend_aot_c_write_direct_plain_value_scalar_assign(FILE *file,
                                                                  const char *region,
                                                                  const char *dataExpression,
@@ -564,6 +584,7 @@ static void backend_aot_c_write_direct_plain_value_scalar_assign(FILE *file,
             dataExpression);
 }
 
+/* 值槽被写入时保持对应标量镜像一致，后继专用路径可能只读镜像。 */
 static void backend_aot_c_write_direct_primitive_constant_local_mirror(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -589,6 +610,9 @@ static void backend_aot_c_write_direct_primitive_constant_local_mirror(
     }
 }
 
+/* 常量即时路径可在经证明的相邻消费者前略去值槽；否则同时写值槽和镜像。
+ * TODO: 核查编译期常量能否包含 NaN/Inf；%.17g 对非有限值输出的 C 字面量未验证。
+ */
 void backend_aot_write_c_direct_primitive_constant(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
@@ -848,6 +872,7 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* SET_CONSTANT 保持解释器的浅赋值语义，修改的是当前函数元数据而非局部常量缓存。 */
 void backend_aot_write_c_direct_set_constant(FILE *file, TZrUInt32 sourceSlot, TZrUInt32 constantIndex) {
     if (file == ZR_NULL) {
         return;
@@ -870,6 +895,9 @@ void backend_aot_write_c_direct_set_constant(FILE *file, TZrUInt32 sourceSlot, T
             (unsigned)constantIndex);
 }
 
+/* 非即时常量复制同时照顾布局槽与 dense 值槽，保留后续引用/所有权路径的观察结果。
+ * TODO: 确认外部载入函数的常量索引在分派前已验证；生成 C 此处没有局部范围检查。
+ */
 void backend_aot_write_c_direct_constant_copy(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 constantIndex) {
     if (file == ZR_NULL) {
         return;
@@ -906,6 +934,7 @@ void backend_aot_write_c_direct_constant_copy(FILE *file, TZrUInt32 destinationS
             (unsigned)destinationSlot);
 }
 
+/* 解析到当前 AOT 函数表的 callable 常量转为 native closure，并保留原函数作 shim 元数据。 */
 void backend_aot_write_c_direct_callable_constant(FILE *file,
                                                   TZrUInt32 destinationSlot,
                                                   TZrUInt32 constantIndex,
@@ -939,6 +968,7 @@ void backend_aot_write_c_direct_callable_constant(FILE *file,
             (unsigned)callableFlatIndex);
 }
 
+/* 子函数闭包的捕获/身份规则由 runtime 实现；flat index 只负责关联生成函数。 */
 void backend_aot_write_c_direct_get_sub_function(FILE *file,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 childFunctionIndex,
@@ -963,6 +993,7 @@ void backend_aot_write_c_direct_get_sub_function(FILE *file,
             (unsigned)callableFlatIndex);
 }
 
+/* 通用 CREATE_CLOSURE 交给 runtime 处理捕获，不复用零捕获 callable 的直写路径。 */
 void backend_aot_write_c_create_closure(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 constantIndex) {
     if (file == ZR_NULL) {
         return;
@@ -977,6 +1008,7 @@ void backend_aot_write_c_create_closure(FILE *file, TZrUInt32 destinationSlot, T
             (unsigned)constantIndex);
 }
 
+/* 函数常量不能安全绑定到本模块 AOT 函数时显式报错，避免产生错误 callable 身份。 */
 void backend_aot_write_c_unsupported_callable_constant_materialization(FILE *file,
                                                                        TZrUInt32 destinationSlot,
                                                                        TZrUInt32 constantIndex) {
@@ -1004,6 +1036,7 @@ void backend_aot_write_c_unsupported_callable_constant_materialization(FILE *fil
             (unsigned)destinationSlot);
 }
 
+/* 子函数映射未解析的恢复路径保留原字节码诊断，不能随意造一个闭包。 */
 void backend_aot_write_c_unsupported_get_sub_function_materialization(FILE *file,
                                                                       TZrUInt32 destinationSlot,
                                                                       TZrUInt32 childFunctionIndex,
@@ -1036,6 +1069,7 @@ void backend_aot_write_c_unsupported_get_sub_function_materialization(FILE *file
             (unsigned)childFunctionIndex);
 }
 
+/* 捕获闭包无法匹配 AOT callable 时拒绝物化，防止绕过捕获语义。 */
 void backend_aot_write_c_unsupported_create_closure_materialization(FILE *file,
                                                                     TZrUInt32 destinationSlot,
                                                                     TZrUInt32 constantIndex,
@@ -1070,6 +1104,7 @@ void backend_aot_write_c_unsupported_create_closure_materialization(FILE *file,
             (unsigned)destinationSlot);
 }
 
+/* 栈槽复制后按来源可达标量种类同步目标镜像，避免下一条优化指令读到旧值。 */
 static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -1132,6 +1167,7 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
     }
 }
 
+/* GET_STACK 保留源槽，SET_STACK 沿用复制语义；跳过镜像同步只在调用方已证明可行时使用。 */
 void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
@@ -1157,6 +1193,7 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
     fprintf(file, "    } while (0);\n");
 }
 
+/* 以下 skip 发射器只留下审计标记；分派器依据相邻模式谓词选择入口。 */
 void backend_aot_write_c_string_constant_stack_copy_local_logical_not_skip(FILE *file,
                                                                            TZrUInt32 destinationSlot,
                                                                            TZrUInt32 sourceSlot) {
@@ -1209,6 +1246,7 @@ void backend_aot_write_c_null_constant_stack_copy_local_jump_if_skip(FILE *file,
             (unsigned)sourceSlot);
 }
 
+/* 闭包捕获槽的实际位置和生命周期由 runtime 解析，生成 C 只传捕获索引。 */
 void backend_aot_write_c_get_closure_value(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 closureIndex) {
     if (file == ZR_NULL) {
         return;
@@ -1237,6 +1275,7 @@ void backend_aot_write_c_set_closure_value(FILE *file, TZrUInt32 sourceSlot, TZr
             (unsigned)closureIndex);
 }
 
+/* 一般 RESET_STACK_NULL 交给 runtime 清理旧值；相邻模式谓词命中时分派器会跳过此调用。 */
 void backend_aot_write_c_direct_reset_stack_null(FILE *file, TZrUInt32 destinationSlot) {
     if (file == ZR_NULL) {
         return;
@@ -1250,6 +1289,7 @@ void backend_aot_write_c_direct_reset_stack_null(FILE *file, TZrUInt32 destinati
             (unsigned)destinationSlot);
 }
 
+/* reset-skip 家族记录省略理由；调用方须先排除导出槽、异常边界和非线性消费者。 */
 void backend_aot_write_c_reset_stack_null_scalar_local_skip(FILE *file, TZrUInt32 destinationSlot) {
     if (file == ZR_NULL) {
         return;
@@ -1328,6 +1368,7 @@ void backend_aot_write_c_reset_null_stack_copy_local_jump_if_skip(FILE *file,
             (unsigned)sourceSlot);
 }
 
+/* 双槽重置是单条字节码的原子清理边界；实际释放顺序保留给 runtime。 */
 void backend_aot_write_c_direct_reset_stack_null2(FILE *file, TZrUInt32 firstSlot, TZrUInt32 secondSlot) {
     if (file == ZR_NULL) {
         return;
@@ -1355,6 +1396,7 @@ void backend_aot_write_c_reset_stack_null2_scalar_local_skip(FILE *file,
             (unsigned)secondSlot);
 }
 
+/* 全局对象来自当前执行状态，不能在生成时烘焙为编译期对象指针。 */
 void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot) {
     if (file == ZR_NULL) {
         return;
@@ -1368,6 +1410,7 @@ void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot
             (unsigned)destinationSlot);
 }
 
+/* 对象/数组分配族在 runtime 成功写入值槽后设置 GC 安全点。 */
 void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot) {
     if (file == ZR_NULL) {
         return;
@@ -1396,6 +1439,7 @@ void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSl
     fprintf(file, "    } while (0);\n");
 }
 
+/* 内联数组布局 ID 与长度来自当前字节码，分配后仍保留安全点。 */
 void backend_aot_write_c_direct_create_inline_array(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 elementTypeLayoutId,
@@ -1415,6 +1459,7 @@ void backend_aot_write_c_direct_create_inline_array(FILE *file,
     fprintf(file, "    } while (0);\n");
 }
 
+/* 元素 place 是数组布局上的可写位置，绑定由 runtime 校验索引与所有权。 */
 void backend_aot_write_c_direct_bind_inline_array_element_place(FILE *file,
                                                                TZrUInt32 destinationSlot,
                                                                TZrUInt32 arraySlot,
@@ -1434,6 +1479,7 @@ void backend_aot_write_c_direct_bind_inline_array_element_place(FILE *file,
             (unsigned)indexSlot);
 }
 
+/* 类型查询交给 runtime 以保留动态值类别及错误语义。 */
 void backend_aot_write_c_direct_typeof(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -1448,6 +1494,7 @@ void backend_aot_write_c_direct_typeof(FILE *file, TZrUInt32 destinationSlot, TZ
             (unsigned)sourceSlot);
 }
 
+/* 转对象后立刻刷新引用局部量，后续专用 member 路径依赖该镜像仍然有效。 */
 void backend_aot_write_c_direct_to_object(FILE *file,
                                           TZrUInt32 destinationSlot,
                                           TZrUInt32 sourceSlot,
@@ -1482,6 +1529,7 @@ void backend_aot_write_c_direct_to_object(FILE *file,
     fprintf(file, "    } while (0);\n");
 }
 
+/* struct 转换需 runtime 按类型名常量校验布局，不能直接重解释对象槽。 */
 void backend_aot_write_c_direct_to_struct(FILE *file,
                                           TZrUInt32 destinationSlot,
                                           TZrUInt32 sourceSlot,

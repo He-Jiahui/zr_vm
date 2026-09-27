@@ -1,5 +1,6 @@
 #include "backend_aot_c_emitter.h"
 
+/* 字节码迭代协议统一经 runtime 执行，使动态迭代器和普通迭代器共享帧槽语义。 */
 void backend_aot_write_c_direct_iter_init(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 iterableSlot) {
     if (file == ZR_NULL) {
         return;
@@ -14,6 +15,7 @@ void backend_aot_write_c_direct_iter_init(FILE *file, TZrUInt32 destinationSlot,
             (unsigned)iterableSlot);
 }
 
+/* 结果留在帧槽，后续 ITER_CURRENT 或分支继续沿用同一个迭代器状态。 */
 void backend_aot_write_c_direct_iter_move_next(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 iteratorSlot) {
     if (file == ZR_NULL) {
         return;
@@ -28,6 +30,7 @@ void backend_aot_write_c_direct_iter_move_next(FILE *file, TZrUInt32 destination
             (unsigned)iteratorSlot);
 }
 
+/* 当前项读取交给 runtime，以保留迭代器类型与异常语义。 */
 void backend_aot_write_c_direct_iter_current(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 iteratorSlot) {
     if (file == ZR_NULL) {
         return;
@@ -42,6 +45,7 @@ void backend_aot_write_c_direct_iter_current(FILE *file, TZrUInt32 destinationSl
             (unsigned)iteratorSlot);
 }
 
+/* 复合迭代分支先由 runtime 写入布尔结果，再依分支结果跳转；回边必须保留 GC 安全点。 */
 void backend_aot_write_c_direct_iter_move_next_jump_if_false(FILE *file,
                                                              TZrUInt32 functionIndex,
                                                              TZrUInt32 destinationSlot,

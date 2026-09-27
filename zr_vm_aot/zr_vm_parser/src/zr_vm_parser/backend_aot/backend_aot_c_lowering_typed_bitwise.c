@@ -1,5 +1,6 @@
 #include "backend_aot_c_emitter.h"
 
+/* 位运算的有符号读取路径兼容 signed/unsigned 整数标签；结果统一写为 int64。 */
 static void backend_aot_write_c_integer_like_extract(FILE *file, const char *valueName, const char *outName) {
     if (file == ZR_NULL || valueName == ZR_NULL || outName == ZR_NULL) {
         return;
@@ -21,6 +22,7 @@ static void backend_aot_write_c_integer_like_extract(FILE *file, const char *val
             valueName);
 }
 
+/* 左移和逻辑右移改用 uint64 计算，避免左移负数的 C 未定义行为。 */
 static void backend_aot_write_c_unsigned_integer_like_extract(FILE *file,
                                                               const char *valueName,
                                                               const char *outName) {
@@ -44,6 +46,9 @@ static void backend_aot_write_c_unsigned_integer_like_extract(FILE *file,
             valueName);
 }
 
+/* 所有移位入口共用位宽检查，避免生成的 C 在负数或 >=64 的位数上触发未定义行为。 */
+/* TODO: 解释器 execution_dispatch.c 的 SHIFT_LEFT_INT/SHIFT_RIGHT_INT 未见相同的位数检查；
+ * 需确定语言对越界位数的规定，并用边界输入比较解释器与 C AOT 错误路径。 */
 static void backend_aot_write_c_shift_count_guard(FILE *file, const char *shiftCountName) {
     if (file == ZR_NULL || shiftCountName == ZR_NULL) {
         return;
@@ -121,6 +126,8 @@ static void backend_aot_write_c_direct_bitwise_binary(FILE *file,
             expressionText);
 }
 
+/* TODO: 负数算术右移仍依赖宿主 C 对负有符号数的实现定义语义；
+ * 核对解释器 SHIFT_RIGHT_INT 与生成 C 在受支持编译器上的一致性。 */
 static void backend_aot_write_c_direct_signed_shift(FILE *file,
                                                     const char *expressionText,
                                                     TZrUInt32 destinationSlot,
@@ -222,6 +229,8 @@ static void backend_aot_write_c_direct_unsigned_left_shift(FILE *file,
             "    }\n");
 }
 
+/* 通用 SHIFT opcode 先验证双侧都是整数，再复用类型提取与位数保护；
+ * 类型不匹配属于运行时失败，不应按 quickening 的静态类型直接读字段。 */
 static void backend_aot_write_c_direct_generic_shift(FILE *file,
                                                      const char *marker,
                                                      const char *expressionText,

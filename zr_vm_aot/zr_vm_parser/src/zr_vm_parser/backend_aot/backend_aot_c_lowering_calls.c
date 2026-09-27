@@ -2,6 +2,7 @@
 #include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_internal.h"
 
+/* 目标函数元数据不再满足 typed direct 条件时，从原始函数槽走通用调用并恢复 i64 镜像。 */
 static void backend_aot_write_c_static_direct_i64_deopt_fallback(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -33,6 +34,7 @@ static void backend_aot_write_c_static_direct_i64_deopt_fallback(FILE *file,
             (unsigned)destinationSlot);
 }
 
+/* u64 路径的去优化也必须恢复生成 C 的局部镜像，后续算术不能读取旧值。 */
 static void backend_aot_write_c_static_direct_u64_deopt_fallback(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -64,6 +66,7 @@ static void backend_aot_write_c_static_direct_u64_deopt_fallback(FILE *file,
             (unsigned)destinationSlot);
 }
 
+/* f64 路径回退时由 runtime 执行真实调用，再把值槽结果同步到标量局部量。 */
 static void backend_aot_write_c_static_direct_f64_deopt_fallback(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -95,6 +98,9 @@ static void backend_aot_write_c_static_direct_f64_deopt_fallback(FILE *file,
             (unsigned)destinationSlot);
 }
 
+/* typed direct 调用族由选择器保证 calleeFlatIndex、参数镜像及 thunk 形状匹配；
+ * 每次调用仍做元数据守卫。syncStackSlot 仅在后续消费者需要值槽时为真。
+ */
 void backend_aot_write_c_static_direct_i64_no_arg_function_call(FILE *file,
                                                                 TZrUInt32 destinationSlot,
                                                                 TZrUInt32 functionSlot,
@@ -140,6 +146,7 @@ void backend_aot_write_c_static_direct_i64_no_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 单参数 i64 thunk 使用已有的标量参数镜像，守卫失败时回退到原函数槽。 */
 void backend_aot_write_c_static_direct_i64_one_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -187,6 +194,7 @@ void backend_aot_write_c_static_direct_i64_one_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 双参数 i64 thunk 是否接收 state 取决于选定的 ABI 形状，不能只按参数个数推断。 */
 void backend_aot_write_c_static_direct_i64_two_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -246,6 +254,7 @@ void backend_aot_write_c_static_direct_i64_two_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 三参数 i64 入口与双参数入口共享元数据守卫、可选 state 和去优化契约。 */
 void backend_aot_write_c_static_direct_i64_three_arg_function_call(FILE *file,
                                                                    TZrUInt32 destinationSlot,
                                                                    TZrUInt32 functionSlot,
@@ -308,6 +317,7 @@ void backend_aot_write_c_static_direct_i64_three_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* u64 调用族保留无符号结果类型；通用调用回退后仍须同步 u64 镜像。 */
 void backend_aot_write_c_static_direct_u64_no_arg_function_call(FILE *file,
                                                                 TZrUInt32 destinationSlot,
                                                                 TZrUInt32 functionSlot,
@@ -353,6 +363,7 @@ void backend_aot_write_c_static_direct_u64_no_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 单参数 u64 thunk 由 typed-call 选择器在参数镜像已准备好时启用。 */
 void backend_aot_write_c_static_direct_u64_one_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -400,6 +411,7 @@ void backend_aot_write_c_static_direct_u64_one_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 双参数 u64 thunk 的 state 参数必须与编译出的签名一致。 */
 void backend_aot_write_c_static_direct_u64_two_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -459,6 +471,7 @@ void backend_aot_write_c_static_direct_u64_two_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 三参数 u64 入口仅用于选择器认可的静态目标；元数据变化时走去优化。 */
 void backend_aot_write_c_static_direct_u64_three_arg_function_call(FILE *file,
                                                                    TZrUInt32 destinationSlot,
                                                                    TZrUInt32 functionSlot,
@@ -521,6 +534,7 @@ void backend_aot_write_c_static_direct_u64_three_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* f64 调用族用 double 局部镜像和 ZR_VALUE_TYPE_DOUBLE 值槽协议。 */
 void backend_aot_write_c_static_direct_f64_no_arg_function_call(FILE *file,
                                                                 TZrUInt32 destinationSlot,
                                                                 TZrUInt32 functionSlot,
@@ -566,6 +580,7 @@ void backend_aot_write_c_static_direct_f64_no_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 单参数 f64 thunk 的参数与返回值都沿标量局部量流动。 */
 void backend_aot_write_c_static_direct_f64_one_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -613,6 +628,7 @@ void backend_aot_write_c_static_direct_f64_one_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 双参数 f64 thunk 仅在选择器确认 ABI 时选择带 state 的签名。 */
 void backend_aot_write_c_static_direct_f64_two_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 functionSlot,
@@ -672,6 +688,7 @@ void backend_aot_write_c_static_direct_f64_two_arg_function_call(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 三参数 f64 入口保留守卫与通用调用回退，避免目标元数据变化后继续直调旧 thunk。 */
 void backend_aot_write_c_static_direct_f64_three_arg_function_call(FILE *file,
                                                                    TZrUInt32 destinationSlot,
                                                                    TZrUInt32 functionSlot,

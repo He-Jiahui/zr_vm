@@ -1,8 +1,10 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
-/* backend_aot_c_lowering_generic_power.c */
+/* POW 的泛型形式允许非数字操作数；此入口必须经运行时处理元方法分派。 */
 
+/* BUG: 有 ZR_META_POW 的值可由 POW opcode 到达 GenericPower，但现役 runtime
+ * 对元方法一律报 unsupported；解释器会调用该元方法，AOT 结果不一致。 */
 void backend_aot_write_c_direct_pow(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,

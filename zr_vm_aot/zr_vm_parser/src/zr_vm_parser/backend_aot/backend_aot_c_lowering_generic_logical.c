@@ -2,8 +2,9 @@
 #include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_internal.h"
 
-/* backend_aot_c_lowering_generic_logical.c */
+/* 逻辑 lowering 在可证明的局部值上直接生成判断，其他值交由 runtime 的真值/相等协议。 */
 
+/* 字符串专用比较在生成 C 中读取 boxed 槽，不能从标量缓存推断对象内容。 */
 static void backend_aot_c_write_string_logical_operand(FILE *file,
                                                        const char *name,
                                                        TZrUInt32 stackSlot) {
@@ -17,6 +18,9 @@ static void backend_aot_c_write_string_logical_operand(FILE *file,
             (unsigned)stackSlot);
 }
 
+/* 相邻 TO_STRING 后可复用引用局部变量，避免重新取 boxed 值参与真值判断。 */
+/* TODO: 这里只核对字节码相邻和异常处理器，尚需确认跳转边是否可能直接进入
+ * 当前指令而绕过 TO_STRING；核查 CFG 入口与 ref-local 初始化规则。 */
 static TZrBool backend_aot_c_to_string_slot_written_immediately_before(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 stringSlot,
@@ -40,6 +44,8 @@ static TZrBool backend_aot_c_to_string_slot_written_immediately_before(
                      instruction->instruction.operandExtra == stringSlot);
 }
 
+/* 相邻 TO_OBJECT 的判断使用相同约束；引用局部变量必须确实来自该前驱指令。 */
+/* TODO: 与 TO_STRING 相同，需核对非顺序前驱能否越过 TO_OBJECT。 */
 static TZrBool backend_aot_c_to_object_slot_written_immediately_before(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 objectSlot,
@@ -63,6 +69,7 @@ static TZrBool backend_aot_c_to_object_slot_written_immediately_before(
                      instruction->instruction.operandExtra == objectSlot);
 }
 
+/* JUMP_IF 的解释器真值规则将空字符串视为假；LOGICAL_NOT 有独立规则，见下方 BUG。 */
 static void backend_aot_c_write_string_slot_truthiness(FILE *file, TZrUInt32 stringSlot) {
     if (file == ZR_NULL) {
         return;
@@ -79,6 +86,7 @@ static void backend_aot_c_write_string_slot_truthiness(FILE *file, TZrUInt32 str
             (unsigned)stringSlot);
 }
 
+/* 对象真值只依赖已建立的引用局部值是否为空，供 NOT 与 JUMP_IF 共用。 */
 static void backend_aot_c_write_object_slot_truthiness(FILE *file, TZrUInt32 objectSlot) {
     if (file == ZR_NULL) {
         return;
@@ -103,6 +111,7 @@ static void backend_aot_c_write_bool_binary_logical(FILE *file) {
             "        TZrBool zr_aot_right_bool = (TZrBool)(zr_aot_right->value.nativeObject.nativeBool != 0u);\n");
 }
 
+/* AND/OR 的布尔快路径要求两源缓存已写入且目标 boxed 槽可跳过。 */
 static TZrBool backend_aot_c_write_bool_binary_scalar_local(FILE *file,
                                                             const SZrAotExecIrFunction *functionIr,
                                                             TZrUInt32 destinationSlot,
@@ -131,6 +140,7 @@ static TZrBool backend_aot_c_write_bool_binary_scalar_local(FILE *file,
     return ZR_TRUE;
 }
 
+/* 字符串专用 EQ/NEQ 与解释器的内容比较对应，不能退化成指针身份比较。 */
 static void backend_aot_c_write_string_equality(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -162,6 +172,7 @@ static void backend_aot_c_write_string_equality(FILE *file) {
             "        }\n");
 }
 
+/* 比较结果可留在 bool 局部变量，但字符串操作数仍从 VM 值槽读取。 */
 static TZrBool backend_aot_c_write_string_bool_scalar_local(FILE *file,
                                                             const SZrAotExecIrFunction *functionIr,
                                                             TZrUInt32 destinationSlot,
@@ -212,6 +223,7 @@ static void backend_aot_c_write_bool_local_sync(FILE *file,
             resultExpression);
 }
 
+/* runtime 比较写入 boxed bool 后同步缓存，供紧随其后的布尔分支使用。 */
 static void backend_aot_c_write_bool_local_sync_from_slot(FILE *file,
                                                           const SZrAotExecIrFunction *functionIr,
                                                           TZrUInt32 destinationSlot) {
@@ -226,6 +238,10 @@ static void backend_aot_c_write_bool_local_sync_from_slot(FILE *file,
             (unsigned)destinationSlot);
 }
 
+/* NOT 按常量来源和已写入的局部类型挑选真值快路径，最后才退至 runtime。 */
+/* BUG: 解释器 LOGICAL_NOT 对任意字符串返回 false；此处的字符串常量及相邻 TO_STRING
+ * 快路径却对空串写 true。test_aot_c_generic_logical_not_numeric_local_smoke.c 构造了空串指令，
+ * 需用相同字节码对照解释器与 C AOT 的结果。 */
 static TZrBool backend_aot_c_write_generic_logical_not_scalar_local(FILE *file,
                                                                     const SZrAotExecIrFunction *functionIr,
                                                                     TZrUInt32 destinationSlot,
@@ -511,6 +527,7 @@ static TZrBool backend_aot_c_write_generic_primitive_compare_scalar_local(FILE *
     return ZR_TRUE;
 }
 
+/* 混合基本类型相等比较只在每个槽恰有一种已写缓存时才能常量折叠。 */
 static TZrBool backend_aot_c_generic_primitive_local_kind_written_before(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 slot,
@@ -557,6 +574,7 @@ static TZrBool backend_aot_c_generic_primitive_local_kind_written_before(
     return ZR_TRUE;
 }
 
+/* 与 core 值相等规则一致，类型不同的基本值直接比较为不等。 */
 static TZrBool backend_aot_c_write_generic_mixed_primitive_compare_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -596,6 +614,7 @@ static TZrBool backend_aot_c_write_generic_mixed_primitive_compare_scalar_local(
     return ZR_TRUE;
 }
 
+/* 只为已证明可用的标量条件生成直接分支，循环回边仍保留 GC 安全点。 */
 static TZrBool backend_aot_c_write_generic_jump_if_scalar_local(FILE *file,
                                                                 const SZrAotExecIrFunction *functionIr,
                                                                 TZrUInt32 functionIndex,
@@ -654,6 +673,9 @@ static TZrBool backend_aot_c_write_generic_jump_if_scalar_local(FILE *file,
     return ZR_TRUE;
 }
 
+/* 通用 EQ 保留不同基本类型的快速不等判断，未知值转交运行时。 */
+/* BUG: 两个动态字符串或对象进入 GenericPrimitiveLogicalEqual 时 runtime
+ * 报 unsupported；解释器的 ZrCore_Value_Equal 支持字符串内容与对象身份比较。 */
 void backend_aot_write_c_direct_logical_equal(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               TZrUInt32 destinationSlot,
@@ -708,6 +730,9 @@ void backend_aot_write_c_direct_logical_equal(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 通用 NEQ 与 EQ 共用运行时相等协议，取反后再同步 bool 缓存。 */
+/* BUG: 两个动态字符串或对象的 NEQ 仍会在 primitive runtime 退路报错，
+ * 而解释器按 ZrCore_Value_Equal 的反值返回布尔结果。 */
 void backend_aot_write_c_direct_logical_not_equal(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   TZrUInt32 destinationSlot,
@@ -762,6 +787,7 @@ void backend_aot_write_c_direct_logical_not_equal(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 已 quicken 为 STRING 的 EQ 独立走内容比较，避免通用 primitive 退路。 */
 void backend_aot_write_c_direct_logical_equal_string(FILE *file,
                                                      const SZrAotExecIrFunction *functionIr,
                                                      TZrUInt32 destinationSlot,
@@ -800,6 +826,7 @@ void backend_aot_write_c_direct_logical_equal_string(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 已 quicken 为 STRING 的 NEQ 复用同一比较，再反转布尔结果。 */
 void backend_aot_write_c_direct_logical_not_equal_string(FILE *file,
                                                          const SZrAotExecIrFunction *functionIr,
                                                          TZrUInt32 destinationSlot,
@@ -838,6 +865,7 @@ void backend_aot_write_c_direct_logical_not_equal_string(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* AND 的操作数按指令契约均为 bool；快路径和 boxed 路径都保持布尔结果。 */
 void backend_aot_write_c_direct_logical_and(FILE *file,
                                             const SZrAotExecIrFunction *functionIr,
                                             TZrUInt32 destinationSlot,
@@ -872,6 +900,7 @@ void backend_aot_write_c_direct_logical_and(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* OR 与 AND 共用 bool 快路径资格，未知缓存状态返回 boxed 值槽。 */
 void backend_aot_write_c_direct_logical_or(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
@@ -906,6 +935,9 @@ void backend_aot_write_c_direct_logical_or(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* 通用 NOT 可利用常量与相邻转换的局部来源，其他来源由 runtime 判断真值。 */
+/* BUG: 非相邻来源的字符串或对象落到 GenericPrimitiveLogicalNot 后报错；
+ * 解释器 LOGICAL_NOT 对字符串/对象有定义的真值结果。 */
 void backend_aot_write_c_direct_logical_not(FILE *file,
                                             const SZrAotExecIrFunction *functionIr,
                                             TZrUInt32 destinationSlot,
@@ -929,6 +961,9 @@ void backend_aot_write_c_direct_logical_not(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* JUMP_IF 在假值边跳转；循环回边的 GC 安全点须在实际跳转之前发出。 */
+/* BUG: 非相邻来源的字符串或对象条件落到 GenericPrimitiveIsTruthy 后报错；
+ * 解释器 execution_is_truthy 支持空字符串与对象条件。 */
 void backend_aot_write_c_direct_jump_if(FILE *file,
                                         const SZrAotExecIrFunction *functionIr,
                                         TZrUInt32 functionIndex,

@@ -1,6 +1,8 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* 布尔比较仅在两个输入局部值已由当前指令之前的路径写入，且目的值槽可省略时走标量路径；
+ * 否则仍写回装箱值，并同步已分配的布尔局部值，供后续短路/分支使用。 */
 static void backend_aot_write_c_direct_bool_comparison(FILE *file,
                                                        const char *expressionText,
                                                        const char *operatorText,
@@ -99,6 +101,7 @@ void backend_aot_write_c_direct_logical_not_equal_bool(FILE *file,
                                                execInstructionIndex);
 }
 
+/* LOGICAL_NOT_BOOL 与比较采用同一局部值前提；不能把仅有槽声明当作已初始化。 */
 void backend_aot_write_c_direct_logical_not_bool(FILE *file,
                                                  const SZrAotExecIrFunction *functionIr,
                                                  TZrUInt32 destinationSlot,

@@ -1,8 +1,9 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
-/* backend_aot_c_lowering_generic_conversion.c */
+/* 泛型转换的值槽仍由运行时负责；只有静态证明安全的 TO_BOOL 才完全留在标量局部变量。 */
 
+/* 运行时转换先写 VM 值槽，再刷新可能存在的标量缓存，供后续快路径读取同一结果。 */
 static void backend_aot_write_c_generic_conversion_sync_locals(FILE *file,
                                                                const SZrAotExecIrFunction *functionIr,
                                                                TZrUInt32 destinationSlot) {
@@ -49,6 +50,7 @@ static void backend_aot_write_c_generic_conversion_sync_locals(FILE *file,
     }
 }
 
+/* 仅在源缓存已写入且目标值槽可跳过时生成本地转换，避免从未物化的值槽读旧值。 */
 static TZrBool backend_aot_write_c_scalar_to_bool(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   TZrUInt32 destinationSlot,
@@ -108,6 +110,9 @@ static TZrBool backend_aot_write_c_scalar_to_bool(FILE *file,
     return ZR_TRUE;
 }
 
+/* TO_BOOL 优先沿标量链传播；未知来源交给现役 AOT runtime 判断并同步目标缓存。 */
+/* BUG: compile_expression.c 可把字符串或对象源转为 TO_BOOL；解释器支持字符串
+ * 真值、对象默认真及 ZR_META_TO_BOOL，现役 ConvertGenericToBool 对它们报错。 */
 void backend_aot_write_c_direct_to_bool(FILE *file,
                                         const SZrAotExecIrFunction *functionIr,
                                         TZrUInt32 destinationSlot,
@@ -131,6 +136,11 @@ void backend_aot_write_c_direct_to_bool(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* TO_INT 必须保留运行时类型分派，生成器不能从 opcode 推断源值一定是整数。 */
+/* BUG: 字符串、对象或 null 可由显式 cast 编译为 TO_INT；解释器可调用
+ * ZR_META_TO_INT 或返回默认 0，ConvertGenericToInt 对它们却报 unsupported。 */
+/* BUG: float 源可进入 ConvertGenericToInt，而该入口未检查 NaN、无穷及 int64
+ * 值域即执行 C 强转；AOT 执行在该 runtime 强转处有未定义行为，见 aot_runtime_values.c。 */
 void backend_aot_write_c_direct_to_int(FILE *file,
                                        const SZrAotExecIrFunction *functionIr,
                                        TZrUInt32 destinationSlot,
@@ -149,6 +159,11 @@ void backend_aot_write_c_direct_to_int(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* TO_UINT 与 TO_INT 共用“运行时写值槽、随后同步缓存”的跨层协议。 */
+/* BUG: 字符串、对象或 null 可进入 TO_UINT；解释器可调用 ZR_META_TO_UINT
+ * 或返回默认 0，ConvertGenericToUInt 对它们却报 unsupported。 */
+/* BUG: float 源可进入 ConvertGenericToUInt，而该入口未检查截断后仍小于零的
+ * 负数（如 -1.0）、NaN、无穷及 uint64 上界即执行 C 强转，导致未定义行为。 */
 void backend_aot_write_c_direct_to_uint(FILE *file,
                                         const SZrAotExecIrFunction *functionIr,
                                         TZrUInt32 destinationSlot,
@@ -167,6 +182,9 @@ void backend_aot_write_c_direct_to_uint(FILE *file,
     fprintf(file, "    }\n");
 }
 
+/* TO_FLOAT 在动态源类型下经运行时生成 boxed 结果，再供后续浮点局部快路径复用。 */
+/* BUG: 字符串、对象或 null 可进入 TO_FLOAT；解释器可调用 ZR_META_TO_FLOAT
+ * 或返回默认 0.0，ConvertGenericToFloat 对它们却报 unsupported。 */
 void backend_aot_write_c_direct_to_float(FILE *file,
                                          const SZrAotExecIrFunction *functionIr,
                                          TZrUInt32 destinationSlot,
