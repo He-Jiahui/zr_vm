@@ -11,13 +11,13 @@
 #include <ctype.h>
 #include <string.h>
 
-// Token 信息结构（合并关键字表和名称表）
+// token 拼写与编号的配对项；TokenToString 按编号查找，不依赖表顺序。
 typedef struct {
     const TZrChar *name;
     EZrToken token;
 } SZrTokenInfo;
 
-// Token 信息表（TokenToString 按 token 字段查找，不依赖数组顺序）
+// 诊断拼写表，覆盖关键字、符号及字面量占位名；单字符未知 token 另走静态缓冲。
 static const SZrTokenInfo zr_token_info[] = {
     // 关键字
     {"module", ZR_TK_MODULE},
@@ -130,7 +130,7 @@ static const SZrTokenInfo zr_token_info[] = {
     {"<eos>", ZR_TK_EOS},
 };
 
-// 关键字表（用于词法分析器查找关键字）
+// 标识符扫描后的保留词判定表，以空名字作为遍历终点。
 static const struct {
     const TZrChar *name;
     EZrToken token;
@@ -191,7 +191,7 @@ static const struct {
                    {"null", ZR_TK_NULL},
                    {ZR_NULL, ZR_TK_EOS}};
 
-// 辅助函数：获取下一个字符
+// 按 sourceLength 推进字节游标；CR 和 CRLF 对语法统一为换行并更新行首偏移。
 static TZrInt32 next_char(SZrLexState *ls) {
     if (ls->currentPos >= ls->sourceLength) {
         ls->currentChar = ZR_PARSER_LEXER_EOZ;
@@ -216,6 +216,7 @@ static TZrInt32 next_char(SZrLexState *ls) {
     return ls->currentChar;
 }
 
+// 空白与注释跳过后记录 token 起点，供 parser/LSP 的字节范围及增量 seek 使用。
 static void lexer_record_token_start(SZrLexState *ls) {
     if (ls == ZR_NULL) {
         return;
@@ -231,11 +232,12 @@ static void lexer_record_token_start(SZrLexState *ls) {
     ls->tokenStartOffset = ls->currentPos > 0 ? ls->currentPos - 1 : 0;
 }
 
-// 辅助函数：保存字符到缓冲区
+// 积累当前字面量文本；缓冲区归 lexer 所有，扩容后旧地址立即失效。
 static void save_char(SZrLexState *ls, TZrChar c) {
     if (ls->bufferLength + 1 >= ls->bufferSize) {
         TZrSize newSize = ls->bufferSize * ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR;
         TZrChar *newBuffer = ZrCore_Memory_RawMallocWithType(ls->state->global, newSize, ZR_MEMORY_NATIVE_TYPE_STRING);
+        // BUG: 分配器返回空时下方 memcpy 或写 buffer 会解引用空指针；长字面量触发扩容即可到达。
         if (ls->buffer) {
             memcpy(newBuffer, ls->buffer, ls->bufferLength);
             ZrCore_Memory_RawFreeWithType(ls->state->global, ls->buffer, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
@@ -247,7 +249,7 @@ static void save_char(SZrLexState *ls, TZrChar c) {
     ls->buffer[ls->bufferLength] = '\0';
 }
 
-// 辅助函数：重置缓冲区
+// 每个 token 扫描前清空临时文本，保持已分配容量供后续复用。
 static void reset_buffer(SZrLexState *ls) {
     ls->bufferLength = 0;
     if (ls->buffer) {
@@ -255,7 +257,7 @@ static void reset_buffer(SZrLexState *ls) {
     }
 }
 
-// 辅助函数：查找关键字
+// 用长度限制比较源片段，避免要求源文本在标识符之后有终止符。
 static EZrToken find_keyword(const TZrChar *name, TZrSize length) {
     for (TZrSize i = 0; zr_keywords[i].name != ZR_NULL; i++) {
         if (strlen(zr_keywords[i].name) == length && strncmp(zr_keywords[i].name, name, length) == 0) {
@@ -265,7 +267,7 @@ static EZrToken find_keyword(const TZrChar *name, TZrSize length) {
     return ZR_TK_IDENTIFIER;
 }
 
-// 读取标识符或关键字
+// 扫描 ASCII 标识符；普通名字复制进 VM 字符串，关键字只返回编号。
 static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
     TZrSize start = ls->currentPos - 1;
     while (isalnum(ls->currentChar) || ls->currentChar == '_') {
@@ -284,7 +286,7 @@ static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
     return token;
 }
 
-// 读取数字
+// 扫描数字拼写并同时填充值与 VM 字符串，供 AST 保留原始字面量。
 static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     TZrBool isFloat = ZR_FALSE;
     TZrBool isHex = ZR_FALSE;
@@ -293,6 +295,7 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     if (ls->currentChar == '0') {
         save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
+        // BUG: 0x 后未要求至少一位十六进制数字；`0x;` 被转为正常 INTEGER 0。
         if (ls->currentChar == 'x' || ls->currentChar == 'X') {
             isHex = ZR_TRUE;
             save_char(ls, (TZrChar) ls->currentChar);
@@ -305,6 +308,9 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
             }
             // 解析八进制
             TZrInt64 value = 0;
+            // BUG: `07` 恰在 sourceLength 结束时末位被排除而得 0；`07\r\n` 中
+            // next_char 一次跨过 CRLF，循环反而把 CR 当数字计入，得到 21。
+            // BUG: 足够长的八进制字面量没有范围检查，value * 8 会发生有符号溢出。
             for (TZrSize i = start; i < ls->currentPos - 1; i++) {
                 value = value * 8 + (ls->source[i] - '0');
             }
@@ -331,6 +337,7 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
         }
     }
 
+    // BUG: e 或 e+ 后未要求至少一位数字；`1e;` 和 `1e+;` 被转为正常 FLOAT 1。
     // 检查是否有指数
     if ((ls->currentChar == 'e' || ls->currentChar == 'E') && !isHex) {
         isFloat = ZR_TRUE;
@@ -353,6 +360,8 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
         next_char(ls);
     }
 
+    // BUG: 公开接口只保证 sourceLength 字节可读；若数字恰在无 NUL 的源切片末端，
+    // strtod/strtoull/strtoll 仍按 C 字符串向后找终止符，可读过调用方缓冲边界。
     // 解析数字
     if (isFloat) {
         seminfo->floatValue = strtod(&ls->source[start], ZR_NULL);
@@ -369,7 +378,7 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     }
 }
 
-// 读取字符串
+// 解码普通字符串转义；词法错误保存在当前 token 并由 parser 继续处理。
 static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     TZrInt32 delimiter = ls->currentChar;
     next_char(ls); // 跳过开始引号
@@ -424,6 +433,8 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
                                                                      : (tolower(ls->currentChar) - 'a' + 10));
                         next_char(ls); // 跳过十六进制字符
                     }
+                    // TODO: \uXXXX 目前截为一个 TZrChar；需核语言的 Unicode 契约及 VM
+                    // 字符串编码，并用非 ASCII 转义样例确认应编码还是拒绝。
                     // 简化处理：直接保存为字符（实际应该转换为 UTF-8）
                     save_char(ls, (TZrChar) code);
                     // 注意：这里不需要再调用 next_char，因为循环中已经调用了4次
@@ -472,7 +483,7 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
 }
 
-// 读取模板字符串（使用反引号包裹，允许换行，插值在 parser 中拆分）
+// 反引号允许跨行；这里只保留文本，插值拆分由 parser 的模板分支完成。
 static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     next_char(ls); // 跳过开始反引号
 
@@ -525,7 +536,7 @@ static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
 }
 
-// 读取字符
+// 解码单字符或转义字面量；格式错误通过当前 token 标志交给 parser。
 static void read_char(SZrLexState *ls, TZrSemInfo *seminfo) {
     next_char(ls); // 跳过开始引号
 
@@ -573,6 +584,7 @@ static void read_char(SZrLexState *ls, TZrSemInfo *seminfo) {
                                                                  : (tolower(ls->currentChar) - 'a' + 10));
                     next_char(ls); // 跳过十六进制字符
                 }
+                // TODO: 字符字面量也截断非 ASCII 码点；需核对字符值域与类型检查器的期望。
                 seminfo->charValue = (TZrChar) code;
                 break;
             }
@@ -609,7 +621,7 @@ static void read_char(SZrLexState *ls, TZrSemInfo *seminfo) {
     next_char(ls); // 跳过结束引号
 }
 
-// 跳过空白和注释
+// 在 token 边界前消耗空白与两类注释；行号由 next_char 唯一维护。
 static void skip_whitespace_and_comments(SZrLexState *ls) {
     for (;;) {
         while (isspace(ls->currentChar)) {
@@ -637,13 +649,15 @@ static void skip_whitespace_and_comments(SZrLexState *ls) {
                 // 注意：next_char 已经处理了换行符的行号增加，这里不需要重复处理
                 next_char(ls);
             }
+            // BUG: `/*` 到文件末尾时不报错，llex 随后返回 EOS；Parse 可返回空脚本。
+            // 语言词法文档要求未闭合块注释是源文件词法错误。
         } else {
             break;
         }
     }
 }
 
-// 主词法分析函数
+// 以已定位的当前字符分派扫描器；复合符号在此消费完整拼写。
 static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
     reset_buffer(ls);
     skip_whitespace_and_comments(ls);
@@ -875,7 +889,7 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
     return (EZrToken) c;
 }
 
-// 初始化词法分析器
+// 预读使 t 始终指向当前 token；source、sourceName 仍由调用方保管。
 void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName) {
     ZR_ASSERT(ls != ZR_NULL);
     ZR_ASSERT(state != ZR_NULL);
@@ -915,6 +929,7 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     // 分配初始缓冲区
     ls->bufferSize = ZR_PARSER_LEXER_BUFFER_INITIAL_SIZE;
     ls->buffer = ZrCore_Memory_RawMallocWithType(state->global, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
+    // BUG: 初始缓冲分配失败时立即写 buffer[0]，State_Init 无法以 hasError 报告该失败。
     ls->buffer[0] = '\0';
 
     // 初始化 token
@@ -932,6 +947,7 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     ZrParser_Lexer_Next(ls);
 }
 
+// 与 Init 成对，仅释放临时拼写缓冲；token 中的 VM 字符串不由此释放。
 void ZrParser_Lexer_Free(SZrLexState *ls) {
     if (ls == ZR_NULL) {
         return;
@@ -948,7 +964,7 @@ void ZrParser_Lexer_Free(SZrLexState *ls) {
     ls->bufferLength = 0u;
 }
 
-// 获取下一个 token
+// 消费缓存的前瞻 token 时恢复扫描后的完整游标，否则从当前字符重新扫描。
 void ZrParser_Lexer_Next(SZrLexState *ls) {
     // 如果 lookahead 已经被缓存，使用它而不是重新读取
     // 这样可以避免重复读取，提高性能，并且确保 lookahead 缓存被正确清除
@@ -976,7 +992,7 @@ void ZrParser_Lexer_Next(SZrLexState *ls) {
     }
 }
 
-// 查看下一个 token（不消费）
+// 扫描一次后保存游标终态，再恢复当前 token；下次 Next 才提交前瞻状态。
 EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
     if (ls->lookahead.token == ZR_TK_EOS) {
         // 保存当前状态（包括所有可能被 llex 修改的字段）
@@ -1024,13 +1040,13 @@ EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
     return ls->lookahead.token;
 }
 
-// 报告语法错误
-// 计算当前列号（从当前行开始到当前位置的字符数）
+// 诊断位置的列号回溯；与主扫描器的换行标准必须一致。
 static TZrInt32 calculate_column(SZrLexState *ls) {
     if (ls->source == ZR_NULL || ls->currentPos == 0) {
         return 1;
     }
 
+    // BUG: next_char 将裸 CR 当作换行，此处只认 LF；裸 CR 后的词法诊断列号跨前一行。
     // 从当前位置向前查找，直到找到行首或换行符
     TZrSize pos = ls->currentPos - 1;
     TZrInt32 column = 1;
@@ -1041,7 +1057,7 @@ static TZrInt32 calculate_column(SZrLexState *ls) {
     return column;
 }
 
-// 获取当前行的代码片段（前后各20个字符）
+// 为词法错误摘取有限长度的行片段及插入符列位。
 static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize bufferSize, TZrInt32 *errorColumn) {
     if (ls == ZR_NULL || ls->source == ZR_NULL || bufferSize == 0) {
         buffer[0] = '\0';
@@ -1054,6 +1070,7 @@ static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize buf
     TZrInt32 column = 1;
     TZrSize lineStart = pos;
 
+    // BUG: 主扫描器将裸 CR 当换行，此处只认 LF；裸 CR 后的错误片段会混入上一行。
     // 向前查找行首
     while (lineStart > 0 && ls->source[lineStart - 1] != '\n') {
         lineStart--;
@@ -1089,6 +1106,8 @@ static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize buf
         }
     }
 
+    // BUG: 长行中先将片段起点移到错误附近，随后又退回行首并截为 127 字节；
+    // 第 128 列后的错误位置不在片段内，^ 仍按原始列号打印。
     // 确保不越界
     if (snippetStart > lineStart) {
         snippetStart = lineStart;
@@ -1120,6 +1139,7 @@ static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize buf
     *errorColumn = displayColumn;
 }
 
+// 记录本 token 的第一条错误，供 t.hasLexError 与后续 parser 诊断消费。
 void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
     if (ls == ZR_NULL || msg == ZR_NULL) {
         return;
@@ -1147,6 +1167,8 @@ void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
     TZrInt32 displayColumn = 1;
     get_line_snippet_lexer(ls, snippet, sizeof(snippet), &displayColumn);
 
+    // BUG: 未闭合字符串可从 LSP 文档解析到达此处；无条件 printf 污染 JSON-RPC
+    // 共用的 stdout，且忽略 parserState.suppressErrorOutput（见 stdio_transport.c）。
     // 输出错误信息
     printf("  [%s:%d:%d] %s\n", fileName, ls->lineNumber, column, msg);
 
@@ -1161,7 +1183,7 @@ void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
     }
 }
 
-// Token 转字符串（用于错误消息）
+// 保留 token 用表中常量；单字符 token 用共享缓冲，只能在下次同类调用前借用。
 const TZrChar *ZrParser_Lexer_TokenToString(SZrLexState *ls, EZrToken token) {
     (void) ls;
 

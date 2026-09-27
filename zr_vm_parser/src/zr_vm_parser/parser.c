@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+// 首次读取 token 在此发生；编译器、LSP 和迁移入口随后配置各自的诊断回调。
 void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *source, TZrSize sourceLength,
                          SZrString *sourceName) {
     ZR_ASSERT(ps != ZR_NULL);
@@ -32,7 +33,7 @@ void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *sou
     ps->currentLocation = ZrParser_FileRange_Create(startPos, endPos, sourceName);
 }
 
-// 清理解析器状态
+// 只回收本状态分配的词法器，不接管源文本或已经交给调用方的 AST。
 
 void ZrParser_State_Free(SZrParserState *ps) {
     if (ps == ZR_NULL) {
@@ -46,7 +47,7 @@ void ZrParser_State_Free(SZrParserState *ps) {
     }
 }
 
-// 期望特定 token
+// 可恢复的脚本入口：错误语句通过同步 token 跳过，已成功构造的节点进入脚本数组。
 
 SZrAstNode *parse_script(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -60,6 +61,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
     // 解析语句列表
     SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     if (statements == ZR_NULL) {
+        // BUG: 前面的模块声明若已构造，此失败分支没有释放 moduleName；分配失败时泄漏子树。
         report_error(ps, "Failed to allocate statement array");
         return ZR_NULL;
     }
@@ -71,12 +73,15 @@ SZrAstNode *parse_script(SZrParserState *ps) {
         ZR_UNUSED_PARAMETER(ps->hasError);
         ZR_UNUSED_PARAMETER(ps->errorMessage);
 
+        // BUG: `var bad = ; var good = 1;` 中第二轮清除首轮语法错误；无回调的 AST-only
+        // 调用方仅检查非空 AST，会接受丢失 bad 声明的脚本（见 module_init_analysis.c）。
         // 重置错误状态（临时）
         ps->hasError = ZR_FALSE;
         ps->errorMessage = ZR_NULL;
 
         SZrAstNode *stmt = parse_top_level_statement(ps);
         if (stmt != ZR_NULL) {
+            // BUG: Add 返回 void 且扩容失败时静默返回；本处仍计数并继续，stmt 泄漏且语句从 AST 消失。
             ZrParser_AstNodeArray_Add(ps->state, statements, stmt);
             stmtCount++;
             errorCount = 0; // 重置错误计数
@@ -151,6 +156,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_SCRIPT, scriptLoc);
     if (node == ZR_NULL) {
+        // BUG: AstNodeArray_Free 只释放容器；先前收集的语句和 moduleName 均未回收。
         ZrParser_AstNodeArray_Free(ps->state, statements);
         return ZR_NULL;
     }
@@ -167,6 +173,7 @@ SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    // 旧语法禁用时，fatal 标志使整棵可恢复 AST 无效；普通错误仍按历史策略返回节点。
     ast = parse_script(ps);
     if (ps->hasFatalError && !ps->enableLegacyMigrationParsing) {
         if (ast != ZR_NULL) {
@@ -185,6 +192,7 @@ TZrBool ZrParser_State_SeekToTokenStart(
         return ZR_FALSE;
     }
 
+    // 增量重解析用顺序扫描寻找精确 token 边界，不复制或回退词法状态。
     while (ps->lexer->t.token != ZR_TK_EOS &&
            ps->lexer->tokenStartOffset < sourceOffset) {
         ZrParser_Lexer_Next(ps->lexer);
@@ -202,6 +210,7 @@ SZrAstNode *ZrParser_ParseTopLevelStatementWithState(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    // 局部重解析只能转移完整且无错误的子树，失败分支自行释放半成品。
     statement = parse_top_level_statement(ps);
     if (statement == ZR_NULL || ps->hasError ||
         (ps->hasFatalError && !ps->enableLegacyMigrationParsing)) {
@@ -214,7 +223,7 @@ SZrAstNode *ZrParser_ParseTopLevelStatementWithState(SZrParserState *ps) {
     return statement;
 }
 
-// 解析源代码，返回 AST 根节点
+// 简单入口把临时词法状态限制在本次调用内，AST 的释放责任仍交给调用者。
 
 SZrAstNode *ZrParser_Parse(SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName) {
     SZrParserState ps;

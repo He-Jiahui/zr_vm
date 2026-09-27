@@ -22,7 +22,7 @@ SZrFileRange ZrParser_FileRange_Create(SZrFilePosition start, SZrFilePosition en
 
 SZrFileRange ZrParser_FileRange_Merge(SZrFileRange range1, SZrFileRange range2) {
     SZrFileRange merged;
-    // 选择更早的起始位置
+    // 解析器和语义层传入同源范围；位置排序只看字节偏移，源名沿用第一个参数。
     if (range1.start.offset < range2.start.offset) {
         merged.start = range1.start;
     } else {
