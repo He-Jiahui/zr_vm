@@ -160,5 +160,6 @@ doc_type: category-index
 | core artifact 小端编码与公开身份 | [24 项](coverage/zr_vm_core_artifact_encoding_identity.tsv) | 2 个 C 文件独立复核，源码仅增注释；GCC/Clang 严格语法检查通过。公开 `StatusName` 对五个合法状态返回 `unknown` 已由最小 C 调用复现并标 BUG；4 个 TODO 行保留 token 诊断和跨 ABI 原始结构哈希等边界，关联 artifact 行台账锚点已校正。 |
 | core artifact 签名校验与文本往返 | [38 项](coverage/zr_vm_core_artifact_signature_text.tsv) | 2 个 C 文件独立复核，406 个有效锚点，源码仅增 33 行注释；GCC/Clang 定向语法检查通过。2 个 TODO 保留 WriteText/ReadText 输入输出缓冲区重叠契约，未运行完整测试。 |
 | core artifact 定长行编解码 | [28 项](coverage/zr_vm_core_artifact_rows.tsv) | 1 个 C 文件独立复核，24 个函数与 4 个风险块；GCC/Clang 严格语法检查通过。公开单行读取缺少节类型、数据范围校验且成功后保留旧诊断状态，最小 C 调用已复现并标 BUG；CallBinding 写入返回值与 DomainTransfer 哈希边界保留 TODO。关联 encoding 与 call binding 台账锚点已校正，旧 call binding 台账的其他锚点仍待迁移。 |
+| parser 编译器套件入口与调用降级入口 | [147 项](coverage/tests_parser_compiler_suite_mains.tsv) | 2 个 C 文件独立复核，732 个有效锚点；源码仅将空行替换为注释，GCC/Clang 定向语法检查通过。专项目标手工运行，integration 入口属于 language_pipeline CTest；1 个 BUG 记录 W2 pair 分类测试的断言比较方向，未运行完整测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

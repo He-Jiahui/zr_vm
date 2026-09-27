@@ -2,7 +2,7 @@
 
 #include "unity.h"
 #include "zr_test_log_macros.h"
-
+/** @brief 引用四个测试源文件的用例，由此入口统一交给 Unity 注册。 */
 extern void test_function_parameter_handling(void);
 extern void test_constant_deduplication(void);
 extern void test_global_object_access(void);
@@ -130,7 +130,7 @@ extern void test_noop_primitive_casts_do_not_emit_conversion_opcodes(void);
 extern void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void);
 extern void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
 extern void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
-
+/* language_pipeline 的编译器入口；仅组织用例，资源清理由各用例承担。 */
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
@@ -139,7 +139,7 @@ int main(void) {
     printf("\n");
 
     UNITY_BEGIN();
-
+    /* 基础编译路径先检查参数、常量、全局对象与作用域。 */
     printf("==========\n");
     printf("Basic Compiler Features Tests\n");
     printf("==========\n");
@@ -148,21 +148,21 @@ int main(void) {
     RUN_TEST(test_global_object_access);
     RUN_TEST(test_binary_expression_type_inference);
     RUN_TEST(test_nested_function_scope);
-
+    /* 表达式组覆盖闭包捕获、复杂左值与外部变量分析。 */
     printf("==========\n");
     printf("Expression Compilation Tests\n");
     printf("==========\n");
     RUN_TEST(test_closure_capture);
     RUN_TEST(test_complex_lvalue);
     RUN_TEST(test_external_variable_analysis);
-
+    /* 语句组覆盖解构遍历、分支选择与生成器。 */
     printf("==========\n");
     printf("Statement Compilation Tests\n");
     printf("==========\n");
     RUN_TEST(test_foreach_destructuring);
     RUN_TEST(test_switch_statement);
     RUN_TEST(test_generator_mechanism);
-
+    /* 本组还检查类型元数据、字节码写出、优化和逃逸摘要的编译链。 */
     printf("==========\n");
     printf("Type Inference Tests\n");
     printf("==========\n");
@@ -182,7 +182,7 @@ int main(void) {
     RUN_TEST(test_binary_writer_handles_exported_function_alias_with_unknown_parameter_types);
     RUN_TEST(test_compiler_escape_metadata_summarizes_capture_return_and_exports);
     RUN_TEST(test_binary_roundtrip_preserves_escape_metadata_summaries);
-
+    /* 高级组跨 using 清理、对象与接口规则、所有权以及插件守卫边界。 */
     printf("==========\n");
     printf("Advanced Features Tests\n");
     printf("==========\n");
@@ -239,7 +239,7 @@ int main(void) {
     RUN_TEST(test_ownership_wake_and_drop_runtime_follow_lifecycle_contract);
     RUN_TEST(test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry);
     RUN_TEST(test_ownership_into_gc_compile_rejects_shared_owner);
-
+    /* 下段回归用例使用工程夹具和真实运行时，包含 W2 调用路径。 */
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
     printf("Compiler Regression Tests\n");
@@ -293,7 +293,7 @@ int main(void) {
     RUN_TEST(test_logical_short_circuit_runtime_preserves_side_effect_boundaries);
     RUN_TEST(test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths);
     RUN_TEST(test_w2_load_typed_arithmetic_probe_reports_residual_candidates);
-
+    /* BUG: 此用例把总 pair 数当作 Unity threshold；分类数超计时本套件仍可能通过。 */
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
     printf("All Compiler Integration Tests Completed\n");
