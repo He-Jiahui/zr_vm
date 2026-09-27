@@ -1,11 +1,14 @@
 #include "zr_vm_core/hotpatch_profile.h"
 
+/* 把首个不兼容 section 位置带回受限 host，避免只返回笼统失败。 */
 static EZrHotPatchRestrictedStatus restricted_fail(SZrHotPatchRestrictedDiagnostic *d,
                                                     EZrHotPatchRestrictedStatus s, TZrUInt32 kind, TZrUInt32 index) {
     if (d) { d->status = s; d->sectionKind = kind; d->sectionIndex = index; }
     return s;
 }
 
+/* iOS/WASM 解释器入口只接纳可解释执行的 section；调用方应先获得
+ * 已解析且在调用期间稳定的 artifact view。 */
 EZrHotPatchRestrictedStatus ZrCore_HotPatch_ValidateRestrictedProfile(
         const SZrArtifactExecIrView *artifact, TZrUInt32 profile,
         SZrHotPatchRestrictedDiagnostic *diagnostic) {
@@ -23,6 +26,7 @@ EZrHotPatchRestrictedStatus ZrCore_HotPatch_ValidateRestrictedProfile(
     return restricted_fail(diagnostic, ZR_HOT_PATCH_RESTRICTED_OK, 0u, 0u);
 }
 
+/* 日志与测试诊断使用稳定状态名，不参与准入判断。 */
 const TZrChar *ZrCore_HotPatch_RestrictedStatusName(EZrHotPatchRestrictedStatus s) {
     switch (s) { case ZR_HOT_PATCH_RESTRICTED_OK: return "ok"; case ZR_HOT_PATCH_RESTRICTED_PROFILE_MISMATCH: return "profile-mismatch"; case ZR_HOT_PATCH_RESTRICTED_SECTION_FORBIDDEN: return "section-forbidden"; default: return "invalid-restricted-profile"; }
 }

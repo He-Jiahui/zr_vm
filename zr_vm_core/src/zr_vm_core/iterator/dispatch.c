@@ -1,6 +1,8 @@
 #include "zr_vm_core/iterator_runtime.h"
 #include "zr_vm_core/state.h"
 
+/* 外部推进入口只允许一次 producer 活动；producer 必须 Publish 或进入终态，
+ * BUG: producer/析构若异常跳出，isMoving 不复位，后续推进永久被拒。 */
 TZrBool ZrCore_IteratorFrame_MoveNext(SZrState *state, SZrIteratorFrame *frame) {
     if (state == ZR_NULL || frame == ZR_NULL || frame->isMoving ||
         frame->state == ZR_ITERATOR_FRAME_COMPLETED ||

@@ -4,6 +4,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
+/* 换项与终态共用释放路径，当前 GC root 与 owned value 不跨越下一次 yield。 */
 static void iterator_frame_clear_current(
         SZrState *state,
         SZrIteratorFrame *frame) {
@@ -18,6 +19,7 @@ static void iterator_frame_clear_current(
     ZrCore_Value_ResetAsNull(&frame->currentValue);
 }
 
+/* cleanup 是一次性 userData 归还钩子；置位先于回调，避免其重入时重复执行。 */
 static void iterator_frame_run_cleanup(
         SZrState *state,
         SZrIteratorFrame *frame) {
@@ -27,6 +29,7 @@ static void iterator_frame_run_cleanup(
     }
 }
 
+/* pool 只接纳已完成清理的终态 frame，活动 frame 保留原持有者。 */
 static TZrBool iterator_frame_is_terminal(const SZrIteratorFrame *frame) {
     return frame != ZR_NULL &&
            (frame->state == ZR_ITERATOR_FRAME_COMPLETED ||
@@ -34,6 +37,8 @@ static TZrBool iterator_frame_is_terminal(const SZrIteratorFrame *frame) {
             frame->state == ZR_ITERATOR_FRAME_CLOSED);
 }
 
+/* 先撤销当前值和 root，再发布终态并调用 cleanup；
+ * BUG: 当前值析构若抛异常，会跳过终态及 cleanup；MoveNext 也无法复位 isMoving。 */
 static void iterator_frame_finish(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -46,6 +51,8 @@ static void iterator_frame_finish(
     iterator_frame_run_cleanup(state, frame);
 }
 
+/* 初始化全新或已归还的 frame；producer/userData/cleanup 借用期覆盖整个活动期，
+ * 对仍持有当前值的活动 frame 重调 Init 会丢失其释放路径。 */
 void ZrCore_IteratorFrame_Init(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -64,6 +71,8 @@ void ZrCore_IteratorFrame_Init(
     frame->cleanup = cleanup;
 }
 
+/* 返回当前 yield 的借用快照；GC 对象经 root 解析搬迁后的地址。
+ * BUG: 普通 struct 克隆后按输入 root 覆盖输出，返回原对象而非复制值。 */
 TZrBool ZrCore_IteratorFrame_Current(
         SZrState *state,
         const SZrIteratorFrame *frame,
@@ -85,6 +94,8 @@ TZrBool ZrCore_IteratorFrame_Current(
     return ZR_TRUE;
 }
 
+/* producer 只能在 MoveNext 的 READY 阶段发布；BUG: 普通 struct 复制时会克隆，
+ * 但 root 仍绑定输入对象；复制失败也报告 YIELDED，掩盖失败。 */
 TZrBool ZrCore_IteratorFrame_Publish(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -106,24 +117,30 @@ TZrBool ZrCore_IteratorFrame_Publish(
     return ZR_TRUE;
 }
 
+/* 正常耗尽仍走统一终态释放，后续 MoveNext 不再调用 producer。 */
 void ZrCore_IteratorFrame_Complete(SZrState *state, SZrIteratorFrame *frame) {
     iterator_frame_finish(state, frame, ZR_ITERATOR_FRAME_COMPLETED);
 }
 
+/* 缺失 producer 或未按协议发布时，终止本 frame 并运行一次 cleanup。 */
 void ZrCore_IteratorFrame_Fault(SZrState *state, SZrIteratorFrame *frame) {
     iterator_frame_finish(state, frame, ZR_ITERATOR_FRAME_FAULTED);
 }
 
+/* 消费方提前停止时显式归还当前值和 producer 私有状态。 */
 void ZrCore_IteratorFrame_Close(SZrState *state, SZrIteratorFrame *frame) {
     iterator_frame_finish(state, frame, ZR_ITERATOR_FRAME_CLOSED);
 }
 
+/* 池的存储由调用方持有；只能在无未归还 frame 时重新初始化。 */
 void ZrCore_IteratorFramePool_Init(SZrIteratorFramePool *pool) {
     if (pool != ZR_NULL) {
         memset(pool, 0, sizeof(*pool));
     }
 }
 
+/* 从空闲链复用或按所属 state 的 allocator 建立新 frame；
+ * 返回后调用方独占活动租约，须终止并 Release 才能进 freeList。 */
 SZrIteratorFrame *ZrCore_IteratorFramePool_Acquire(
         SZrState *state,
         SZrIteratorFramePool *pool,
@@ -153,6 +170,8 @@ SZrIteratorFrame *ZrCore_IteratorFramePool_Acquire(
     return frame;
 }
 
+/* 仅将本池发放的终态 frame 归还；pool 不记录跨池所有权，
+ * 调用方必须保持同一 pool/state 并避免在 Free 后使用旧指针。 */
 TZrBool ZrCore_IteratorFramePool_Release(
         SZrState *state,
         SZrIteratorFramePool *pool,
@@ -168,6 +187,8 @@ TZrBool ZrCore_IteratorFramePool_Release(
     return ZR_TRUE;
 }
 
+/* 只释放已归还的 freeList；host 应先关闭并归还所有活动 frame，
+ * 且使用原分配所属 global，避免将原生分配留到 state 销毁后。 */
 void ZrCore_IteratorFramePool_Free(
         SZrState *state,
         SZrIteratorFramePool *pool) {

@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/* 主验证器和独立闭包入口共用诊断形状，供上层区分具体 token 的授权失败。 */
 static EZrHotPatchCapabilityStatus capability_fail(
         SZrHotPatchDiagnostic *diagnostic,
         EZrHotPatchCapabilityStatus status,
@@ -19,6 +20,8 @@ static EZrHotPatchCapabilityStatus capability_fail(
     return status;
 }
 
+/* 聚合 manifest 与逐 token 需求，同时将每项能力限制在 host 允许集合内；
+ * out 参数仅在全量检查通过后交给后续授权路径。 */
 EZrHotPatchCapabilityStatus ZrCore_HotPatch_ComputeCapabilityClosure(
         const SZrHotPatchCapabilityRequirement *requirements,
         TZrUInt32 requirementCount,
@@ -83,6 +86,7 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_ComputeCapabilityClosure(
     return capability_fail(diagnostic, ZR_HOT_PATCH_OK, 0u, 0u, 0u, 0u);
 }
 
+/* manifest 形入口先校验结构标记，再交由统一的需求遍历处理。 */
 EZrHotPatchCapabilityStatus ZrCore_HotPatch_ValidateCapabilityClosure(
         const SZrHotPatchCapabilityManifest *manifest,
         TZrUInt64 hostAllowedCapabilities,
@@ -103,6 +107,7 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_ValidateCapabilityClosure(
             outRequiredCapabilities, diagnostic);
 }
 
+/* 保留面向 host 的兼容名称；闭包限制仍由同一验证路径保证。 */
 EZrHotPatchCapabilityStatus ZrCore_HotPatch_ComputeRequiredCapabilities(
         const SZrHotPatchCapabilityManifest *manifest,
         TZrUInt64 hostAllowedCapabilities,
