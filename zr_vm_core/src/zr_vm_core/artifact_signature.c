@@ -4,6 +4,7 @@
 
 #include "artifact_schema_internal.h"
 
+/* 借用调用方的签名字节；offset 始终是本签名片段内的位置，诊断不拥有输入。 */
 typedef struct SZrArtifactSignatureReader {
     const TZrByte *bytes;
     TZrSize length;
@@ -11,6 +12,7 @@ typedef struct SZrArtifactSignatureReader {
     SZrArtifactDiagnostic *diagnostic;
 } SZrArtifactSignatureReader;
 
+/* 短读保留片段内失败游标，外层 schema 调用方再补上堆内起点与行号。 */
 static EZrArtifactStatus artifact_signature_truncated(SZrArtifactSignatureReader *reader) {
     return zr_artifact_fail(reader->diagnostic,
                             ZR_ARTIFACT_STATUS_TRUNCATED_BLOB,
@@ -19,6 +21,7 @@ static EZrArtifactStatus artifact_signature_truncated(SZrArtifactSignatureReader
                             (TZrUInt32)reader->offset);
 }
 
+/* 结构或枚举值不符合签名语法时，报告已消费到的片段内位置。 */
 static EZrArtifactStatus artifact_signature_invalid(SZrArtifactSignatureReader *reader) {
     return zr_artifact_fail(reader->diagnostic,
                             ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
@@ -27,6 +30,7 @@ static EZrArtifactStatus artifact_signature_invalid(SZrArtifactSignatureReader *
                             (TZrUInt32)reader->offset);
 }
 
+/* 只在剩余字节足够时推进游标，失败不改输出值。 */
 static EZrArtifactStatus artifact_signature_read_u8(SZrArtifactSignatureReader *reader,
                                                     TZrUInt8 *outValue) {
     if (reader->offset >= reader->length) {
@@ -36,6 +40,7 @@ static EZrArtifactStatus artifact_signature_read_u8(SZrArtifactSignatureReader *
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 线格式整数是小端；先检查完整四字节，再交给共用解码器。 */
 static EZrArtifactStatus artifact_signature_read_u32(SZrArtifactSignatureReader *reader,
                                                      TZrUInt32 *outValue) {
     if (reader->length - reader->offset < 4u) {
@@ -46,6 +51,7 @@ static EZrArtifactStatus artifact_signature_read_u32(SZrArtifactSignatureReader 
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* const 整数节点只需验证固定八字节存在，不在此处解释其有符号语义。 */
 static EZrArtifactStatus artifact_signature_skip_u64(SZrArtifactSignatureReader *reader) {
     if (reader->length - reader->offset < 8u) {
         return artifact_signature_truncated(reader);
@@ -63,6 +69,7 @@ static TZrBool artifact_signature_token_is(TZrMetadataToken token, TZrUInt32 tab
 static EZrArtifactStatus artifact_signature_validate_node(SZrArtifactSignatureReader *reader,
                                                           TZrUInt32 depth);
 
+/* 列表元素共享父节点深度；逐子节点递增一次并限制输入驱动的遍历宽度。 */
 static EZrArtifactStatus artifact_signature_validate_nodes(SZrArtifactSignatureReader *reader,
                                                            TZrUInt32 count,
                                                            TZrUInt32 depth) {
@@ -85,6 +92,7 @@ static EZrArtifactStatus artifact_signature_validate_nodes(SZrArtifactSignatureR
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 函数节点先验证 effect 与参数个数，再逐参数验证六项调用约束及类型子树。 */
 static EZrArtifactStatus artifact_signature_validate_function(SZrArtifactSignatureReader *reader,
                                                               TZrUInt32 depth) {
     TZrUInt8 receiver;
@@ -144,6 +152,7 @@ static EZrArtifactStatus artifact_signature_validate_function(SZrArtifactSignatu
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 按节点标签消费完整语法树；深度上限同时约束恶意输入造成的递归栈用量。 */
 static EZrArtifactStatus artifact_signature_validate_node(SZrArtifactSignatureReader *reader,
                                                           TZrUInt32 depth) {
     TZrUInt8 node;
@@ -226,6 +235,9 @@ static EZrArtifactStatus artifact_signature_validate_node(SZrArtifactSignatureRe
     }
 }
 
+/** @brief 验证一个完整、有界的签名片段，供 schema 堆切片与 parser 投影共用。
+ * @note 输入字节由调用方持有；诊断偏移相对本片段，失败不分配或写入签名。
+ * @return 只接受恰好消费完一个根节点的输入；短读、语法错误和限额分别报告。 */
 EZrArtifactStatus ZrCore_Artifact_ValidateSignature(const TZrByte *signature,
                                                     TZrSize signatureLength,
                                                     SZrArtifactDiagnostic *diagnostic) {
@@ -257,6 +269,9 @@ EZrArtifactStatus ZrCore_Artifact_ValidateSignature(const TZrByte *signature,
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/** @brief 从已验证的根函数签名提取契约表需要的 effect、参数数及 scoped 标记。
+ * @note 不保存输入指针；先清空输出并校验完整签名，非函数根节点返回 INVALID_SIGNATURE。
+ * @return 失败时输出保持零值，诊断偏移仍相对传入签名。 */
 EZrArtifactStatus ZrCore_Artifact_ReadCallableSignatureSummary(
         const TZrByte *signature,
         TZrSize signatureLength,
@@ -282,6 +297,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadCallableSignatureSummary(
                 0U,
                 0U);
     }
+    /* 先走完整语法校验，第二遍只汇总函数契约，避免部分参数形成可信摘要。 */
     status = ZrCore_Artifact_ValidateSignature(
             signature, signatureLength, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) {

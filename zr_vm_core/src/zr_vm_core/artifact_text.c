@@ -6,12 +6,14 @@
 
 #include "artifact_schema_internal.h"
 
+/* 借用调用方文本缓冲区；length 不含结尾 NUL，capacity 始终含其空间。 */
 typedef struct SZrArtifactTextWriter {
     TZrChar *buffer;
     TZrSize capacity;
     TZrSize length;
 } SZrArtifactTextWriter;
 
+/* 每次追加后保留 NUL 终止；容量不足时不追加当前字节块。 */
 static TZrBool artifact_text_append_bytes(SZrArtifactTextWriter *writer,
                                           const TZrChar *bytes,
                                           TZrSize length) {
@@ -26,6 +28,7 @@ static TZrBool artifact_text_append_bytes(SZrArtifactTextWriter *writer,
     return ZR_TRUE;
 }
 
+/* 格式化结果只有完整落入剩余容量才计入 length；失败缓冲区可能已有前缀。 */
 static TZrBool artifact_text_append_format(SZrArtifactTextWriter *writer,
                                            const TZrChar *format,
                                            ...) {
@@ -61,6 +64,7 @@ static const TZrChar *artifact_kind_name(EZrArtifactKind kind) {
     }
 }
 
+/* 节摘要仅供人阅读；语法树与语义 IR 的原文字节不作为读端的权威输入。 */
 static TZrBool artifact_text_append_section_preview(SZrArtifactTextWriter *writer,
                                                     const SZrArtifactSectionView *section) {
     const TZrChar *name = ZrCore_Artifact_SectionName(section->kind);
@@ -94,6 +98,9 @@ static TZrBool artifact_text_append_section_preview(SZrArtifactTextWriter *write
     return ZR_TRUE;
 }
 
+/** @brief 将已编码的 artifact 投影为可读摘要及可精确往返的十六进制 payload。
+ * @note 重新 Read 输入以验证二进制；输出缓冲区归调用方，失败时已写前缀可能保留，
+ * 但 *outWrittenSize 为零，诊断可省略。 */
 EZrArtifactStatus ZrCore_Artifact_WriteText(const SZrArtifactView *view,
                                             TZrChar *buffer,
                                             TZrSize bufferCapacity,
@@ -123,6 +130,8 @@ EZrArtifactStatus ZrCore_Artifact_WriteText(const SZrArtifactView *view,
     writer.buffer = buffer;
     writer.capacity = bufferCapacity;
     writer.length = 0u;
+    /* TODO: 核定 buffer 与 view->buffer 是否允许重叠；此后仍从源读节和 payload，
+     * 而这里已开始改写目标，当前仓内调用使用独立缓冲区。 */
     buffer[0] = '\0';
 
     if (!artifact_text_append_format(&writer,
@@ -161,6 +170,7 @@ EZrArtifactStatus ZrCore_Artifact_WriteText(const SZrArtifactView *view,
         }
     }
 
+    /* 预览原文可能含相同标记；读端选最后一个 payload-hex 作为二进制来源。 */
     if (!artifact_text_append_bytes(&writer, "payload-hex=", 12u)) {
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_BUFFER_TOO_SMALL, 0u, 0u, 0u);
     }
@@ -179,6 +189,7 @@ EZrArtifactStatus ZrCore_Artifact_WriteText(const SZrArtifactView *view,
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 从显式长度的文本中取最后一次匹配，避开 syntax/SemIR 预览中的同名标记。 */
 static TZrSize artifact_text_find(const TZrChar *text,
                                   TZrSize textLength,
                                   const TZrChar *needle,
@@ -203,6 +214,9 @@ static TZrInt32 artifact_text_hex_value(TZrChar value) {
     return -1;
 }
 
+/** @brief 从最后一次出现的 payload-hex 恢复二进制并交给 schema Read 再次验证。
+ * @note 可读 header 与节预览不用于重建；输入、输出均由调用方持有且按显式长度访问。
+ * @return 失败时 *outWrittenSize 为零，buffer 可能保留已解出的前缀。 */
 EZrArtifactStatus ZrCore_Artifact_ReadText(const TZrChar *text,
                                            TZrSize textLength,
                                            TZrByte *buffer,
@@ -255,6 +269,8 @@ EZrArtifactStatus ZrCore_Artifact_ReadText(const TZrChar *text,
                                 0u,
                                 (TZrUInt32)payloadOffset);
     }
+    /* TODO: 核定 text 与 buffer 是否允许重叠；逐字节写入会影响后续十六进制读取，
+     * 仓内往返测试使用独立输入和输出缓冲区。 */
     for (index = 0u; index < outputLength; ++index) {
         TZrInt32 high = artifact_text_hex_value(text[payloadOffset + index * 2u]);
         TZrInt32 low = artifact_text_hex_value(text[payloadOffset + index * 2u + 1u]);
@@ -267,6 +283,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadText(const TZrChar *text,
         }
         buffer[index] = (TZrByte)((high << 4) | low);
     }
+    /* 十六进制只证明字符可解码；二进制结构及身份仍以共用 Read 为准。 */
     status = ZrCore_Artifact_Read(buffer, outputLength, &view, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) {
         return status;
