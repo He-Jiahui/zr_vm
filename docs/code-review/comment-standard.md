@@ -46,9 +46,9 @@ doc_type: workflow-detail
 
 `file	unit	kind	callers	intent	constraints	evidence	decision	reason`
 
-`file` 用仓库相对路径；`unit` 用可检索的限定名，语句块另附所属函数和用途；`kind` 标识函数、类型、宏、状态或语句块。`callers` 列列出直接调用者及已查明的间接入口；`evidence` 列列出当前实现、测试、构建或复现路径。`decision` 只使用 `commented`、`no-comment`、`TODO`、`BUG`。`no-comment` 必须在 `reason` 中说明为何现有名称或注释已足够。字段内用分号分隔多个值，不插入制表符或换行。
+`file` 用仓库相对路径；`unit` 用可检索的限定名，语句块另附所属函数和用途；`kind` 标识函数、类型、宏、状态或语句块。`callers` 列列出直接调用者及已查明的间接入口；公共 API 至少给出有代表性的具体调用位置，或说明核查后的仓内调用范围（例如仅有内部调用、仓内未发现调用），不能只写“parser”“runtime”等泛称。仓内搜索不能排除仓外消费者。新批次及返工批次的 `evidence` 列使用当前实现、测试、构建或复现的仓库相对 `path:line` 锚点；每个锚点必须指向当前工作树中的非空、与结论直接相关的行，不能指向空行、无关括号或以纯叙述代替路径。旧批次中尚有路径或叙述式证据，随对应模块复审迁移，不能直接宣称已满足此项锚点规则。`decision` 只使用 `commented`、`no-comment`、`TODO`、`BUG`。`no-comment` 必须在 `reason` 中说明为何现有名称或注释已足够。字段内用分号分隔多个值，不插入制表符或换行。
 
-每个模块结束时核对台账与定义清单，确认没有未登记的审查单元；抽查调用点、注释和证据仍与当前工作树一致。若模块文档因此失真，依照文档现有的 `related_code`、`implementation_files`、`plan_sources` 和 `tests` 头部同步修正。
+每个新审或返工模块结束时核对台账与定义清单，确认没有未登记的审查单元；全量检查该批 `evidence` 锚点的存在、非空和语义对应，抽查 `callers` 的实际调用目的及注释是否仍与当前工作树一致。若模块文档因此失真，依照文档现有的 `related_code`、`implementation_files`、`plan_sources` 和 `tests` 头部同步修正。
 
 ## 分工、验证与提交
 
