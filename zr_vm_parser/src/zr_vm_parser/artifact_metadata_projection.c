@@ -5,6 +5,7 @@
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_library/native_binding.h"
 
+/* 统一 state 投影的失败诊断；具体失败分支决定 expected/actual 承载的比较值。 */
 static EZrArtifactStatus artifact_metadata_projection_fail(
         SZrArtifactDiagnostic *diagnostic,
         EZrArtifactStatus status,
@@ -20,6 +21,9 @@ static EZrArtifactStatus artifact_metadata_projection_fail(
     return status;
 }
 
+/* 只比较可公开反射的类别与原生原型种类；擦除态无成员语义，由上层限制保留级别。
+ * TODO: 原生注册把 INVALID 默认原型当作 CLASS，此处却落入拒绝分支；
+ * 当前 BuildState 调用未使用 INVALID，需确认默认原型是否允许进入此投影。 */
 static TZrBool artifact_metadata_native_category_matches(
         EZrReflectionTypeCategory category,
         EZrObjectPrototypeType prototypeType) {
@@ -37,6 +41,8 @@ static TZrBool artifact_metadata_native_category_matches(
                              category == ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT);
         case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
             return (TZrBool)(category == ZR_REFLECTION_TYPE_CATEGORY_ENUM);
+        /* TODO: 此处把 NATIVE 当资源类，运行时 reflection_type_category_for_prototype
+         * 却将它归入 ERASED；当前未发现此种原生类型描述符，需确认预留类别的公开契约。 */
         case ZR_OBJECT_PROTOTYPE_TYPE_NATIVE:
             return (TZrBool)(category == ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS);
         default:
@@ -44,6 +50,7 @@ static TZrBool artifact_metadata_native_category_matches(
     }
 }
 
+/* 借用描述符数组前核对 count/pointer 对，避免后续计数读取缺失的原生声明表。 */
 static TZrBool artifact_metadata_native_shape_is_valid(
         const ZrLibTypeDescriptor *descriptor) {
     return (TZrBool)((descriptor->fieldCount == 0u || descriptor->fields != ZR_NULL) &&
@@ -54,6 +61,11 @@ static TZrBool artifact_metadata_native_shape_is_valid(
                       descriptor->enumMembers != ZR_NULL));
 }
 
+/* 将多个方法声明映射到属性身份计数，供完整 metadata state 与原生描述符对账。
+ * BUG: 此处仅凭非空 propertyName 计数；原生注册还要求访问模式非 NONE 且方法有效。
+ * propertyName 非空、访问模式为 NONE 时，合法的零属性保留数被误拒、错误的一属性数被接受。
+ * test_artifact_schema_metadata_graph.c 的 propertyName="x" 夹具保留默认 NONE；
+ * 后续应与 native_registry_add_methods 的属性发布条件对齐。 */
 static TZrSize artifact_metadata_native_property_count(
         const ZrLibTypeDescriptor *descriptor) {
     TZrSize propertyCount = 0u;
@@ -65,6 +77,8 @@ static TZrSize artifact_metadata_native_property_count(
         TZrBool seen = ZR_FALSE;
 
         if (propertyName == ZR_NULL || propertyName[0] == '\0') continue;
+        /* TODO: 此处把同名声明折叠成一个属性，原生注册却逐次追加属性成员；
+         * 需核查 PropertyDef 的身份规则与 native_registry_add_methods 是否应共享去重约束。 */
         for (previousIndex = 0u; previousIndex < index; ++previousIndex) {
             const TZrChar *previousName =
                     descriptor->methods[previousIndex].propertyName;
@@ -78,6 +92,9 @@ static TZrSize artifact_metadata_native_property_count(
     return propertyCount;
 }
 
+/* 检查描述符表是否可读，并把原生声明数量限制到 artifact 行计数的整数范围。
+ * TODO: 此处直接累计字段/方法/元方法/枚举条目，而原生注册会跳过缺名、缺回调或
+ * 无效枚举值的条目；需核实 state 的 retainedMemberCount 应计声明槽位还是实际 MemberDef 行。 */
 static EZrArtifactStatus artifact_metadata_native_counts(
         const ZrLibTypeDescriptor *descriptor,
         TZrSize *outMemberCount,
@@ -108,6 +125,10 @@ static EZrArtifactStatus artifact_metadata_native_counts(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 把反射身份和保留级别投影成可供 artifact 图校验的 metadata state 摘要。
+ * identity、可选原生描述符均只借用，outState 不得与输入重叠；调用方须先确定保留的 MemberDef/PropertyDef/记录数，
+ * 并提供与布局、调用契约一致的稳定哈希。失败时清零 outState，不发布部分状态。
+ * 目前直接调用位于 source/native/binary 对照测试；完整文档写读还会独立复核交叉链接。 */
 EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState(
         const SZrReflectionTypeIdentity *identity,
         const ZrLibTypeDescriptor *nativeTypeDescriptor,
@@ -137,6 +158,7 @@ EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState(
         return artifact_metadata_projection_fail(
                 diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, 0u);
     }
+    /* 保留级别声明消费者能依赖的表：擦除态仅承诺身份，Members 不承诺元数据记录。 */
     if ((preservationState == ZR_ARTIFACT_METADATA_PRESERVATION_IDENTITY_ONLY &&
          (retainedMemberCount != 0u || retainedPropertyCount != 0u ||
           retainedMetaRecordCount != 0u)) ||
@@ -162,6 +184,9 @@ EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState(
                 &nativePropertyCount,
                 diagnostic);
         if (status != ZR_ARTIFACT_STATUS_OK) return status;
+        /* BUG: 仅属性数不符时，诊断仍报告相等的成员数；
+         * test_artifact_schema_metadata_graph.c 的 propertyName="x" 输入可到达此分支，
+         * expected/actual 会同为 1，未指出实际不符的属性数。 */
         if (preservationState != ZR_ARTIFACT_METADATA_PRESERVATION_IDENTITY_ONLY &&
             (nativeMemberCount != retainedMemberCount ||
              nativePropertyCount != retainedPropertyCount)) {
@@ -173,6 +198,7 @@ EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState(
         }
     }
 
+    /* 摘要在所有稳定字段就位后计算；图校验和二进制读取端会用相同字段序列复算。 */
     outState->typeToken = identity->typeToken;
     outState->preservationState = preservationState;
     outState->category = (EZrArtifactReflectionCategory)identity->category;
