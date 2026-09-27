@@ -285,6 +285,17 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
             continue;
         }
         lastIndex = block->instructionRange.start + block->instructionRange.count - 1u;
+        for (TZrUInt32 instructionIndex = block->instructionRange.start;
+             instructionIndex < lastIndex; ++instructionIndex) {
+            const SZrExecIrInstruction *earlier = &f->instructions[instructionIndex];
+            if ((ZrCore_ExecIr_OpcodeInfo(earlier->opcode)->flags &
+                 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR, f,
+                               block->id, instructionIndex + 1u, earlier->sourceId,
+                               lastIndex + 1u, instructionIndex + 1u);
+                return ZR_FALSE;
+            }
+        }
         terminator = &f->instructions[lastIndex];
         if ((ZrCore_ExecIr_OpcodeInfo(terminator->opcode)->flags &
              ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) == 0u) {

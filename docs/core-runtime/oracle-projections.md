@@ -134,6 +134,9 @@ The edge-occurrence lookup and two-phase phi entry live in
 `exec_ir_interpreter_phi.c`; `exec_ir_interpreter.c` owns instruction dispatch.
 `exec_ir_interpreter_validate.c` preflights the input graph, while
 `exec_ir_interpreter_run.c` owns result lifetime and the shared execution loop.
+Preflight rejects an early terminator in a block before execution allocates
+state; the common ExecBC/AOT projection preflight rejects the same shape
+without replacing a previously published projection.
 `exec_ir_interpreter_resume.c` validates checkpoints, restores live values and
 reconstructs the cursor. Their private header exposes these module boundaries;
 fresh execution and resumed execution use the same instruction semantics.

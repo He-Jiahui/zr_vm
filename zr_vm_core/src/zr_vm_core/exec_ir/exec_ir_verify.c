@@ -810,6 +810,18 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                                       block->instructionRange.count - 1u;
                 const SZrExecIrInstruction *terminator = &function->instructions[lastIndex];
                 const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(terminator->opcode);
+                for (TZrUInt32 instructionIndex = block->instructionRange.start;
+                     instructionIndex < lastIndex; ++instructionIndex) {
+                    const SZrExecIrOpcodeInfo *earlier = ZrCore_ExecIr_OpcodeInfo(
+                            function->instructions[instructionIndex].opcode);
+                    if ((earlier->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
+                        zr_exec_ir_set_diagnostic(diagnostic,
+                                                  ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR,
+                                                  function, instructionIndex + 1u, block->id,
+                                                  lastIndex + 1u, instructionIndex + 1u);
+                        return ZR_FALSE;
+                    }
+                }
                 if (info == ZR_NULL || (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) == 0u) {
                     zr_exec_ir_set_diagnostic(diagnostic,
                                               ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR,

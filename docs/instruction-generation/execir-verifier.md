@@ -59,7 +59,10 @@ pool; those diagnostics have no source position.
 
 `ZrCore_ExecIr_VerifyFunction` first runs storage, range, opcode-arity, value,
 and edge-ID checks.  When requested, the structural phase additionally checks
-entry/terminator shape.  The SSA phase is implemented in
+entry/terminator shape: a nonempty block must end in a terminator, and no
+earlier instruction in that block may terminate it. An early terminator reports
+`MISSING_TERMINATOR` at that instruction with the expected final instruction
+ID. The SSA phase is implemented in
 `exec_ir_verify_ssa.c`; it builds fresh CFG facts and then validates value
 definitions and uses.  The effect phase in `exec_ir_verify_effects.c` checks
 memory/effect token continuity and the stricter PHI predecessor count/order

@@ -385,6 +385,38 @@ static void test_structure_rejects_zero_value_phi_incoming(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_structure_rejects_early_terminator(void) {
+    SZrExecIrFunction function;
+    SZrExecIrInstruction ret = {0};
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 2u;
+    expect_true(ZrCore_ExecIr_FunctionAddBlock(&function,
+                    ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+                "early terminator fixture entry append failed");
+    ret.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    expect_true(ZrCore_ExecIr_FunctionAppendInstruction(&function, &ret, NULL),
+                "early terminator fixture first return append failed");
+    function.blocks[0].instructionRange.count = 1u;
+    function.blocks[0].terminatorInstructionId = 1u;
+    expect_true(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                              &diagnostic),
+                "single return fixture rejected");
+    expect_true(ZrCore_ExecIr_FunctionAppendInstruction(&function, &ret, NULL),
+                "early terminator fixture second return append failed");
+    function.blocks[0].instructionRange.count = 2u;
+    function.blocks[0].terminatorInstructionId = 2u;
+    expect_true(!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                               &diagnostic) &&
+                    diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR &&
+                    diagnostic.blockId == 1u && diagnostic.instructionId == 1u &&
+                    diagnostic.expectedVersion == 2u && diagnostic.actualVersion == 1u,
+                "structure accepted a terminator before the end of its block");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_empty_module_and_entry_block();
     test_value_builder_rejects_unknown_enums();
@@ -394,6 +426,7 @@ int main(void) {
     test_failed_module_clone_reclaims_partially_copied_function();
     test_structure_requires_reciprocal_cfg_edges();
     test_structure_rejects_zero_value_phi_incoming();
+    test_structure_rejects_early_terminator();
     puts("ssa core model PASS");
     return EXIT_SUCCESS;
 }

@@ -331,6 +331,15 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
             const SZrExecIrInstruction *last = &f->instructions[lastIndex];
             const SZrExecIrOpcodeInfo *info =
                     ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)last->opcode);
+            for (j = b->instructionRange.start; j < lastIndex; ++j) {
+                const SZrExecIrOpcodeInfo *earlier = ZrCore_ExecIr_OpcodeInfo(
+                        (EZrExecIrOpcode)f->instructions[j].opcode);
+                if ((earlier->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
+                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR, f,
+                                       b->id, j + 1u, lastIndex + 1u, j + 1u);
+                    return ZR_FALSE;
+                }
+            }
             if ((info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
                 if (last->successorRange.count != b->successorRange.count) {
                     zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,

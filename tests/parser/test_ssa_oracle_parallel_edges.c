@@ -858,6 +858,62 @@ static void test_projections_reject_unpaired_edge_without_replacing_output(void)
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_early_terminator_rejected_before_execution_or_projection(void) {
+    SZrExecIrFunction function;
+    SZrExecIrInstruction ret = {0};
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecBcProjection bytecode = {0};
+    SZrAotIrProjection aot = {0};
+    SZrExecIrOracleInput input = {0};
+    SZrExecIrOracleExecutionResult result;
+    SZrExecBcInstruction *publishedInstructions;
+    SZrExecBcInstruction *publishedAotInstructions;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 93u;
+    check(ZrCore_ExecIr_FunctionAddBlock(&function,
+                  ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+          "could not append early-terminator entry block");
+    function.entryBlockId = 1u;
+    ret.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    check(ZrCore_ExecIr_FunctionAppendInstruction(&function, &ret, NULL),
+          "could not append first return");
+    function.blocks[0].instructionRange.count = 1u;
+    function.blocks[0].terminatorInstructionId = 1u;
+    check(ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic),
+          "single return failed projection baseline");
+    publishedInstructions = bytecode.instructions;
+    publishedAotInstructions = aot.instructions;
+    check(ZrCore_ExecIr_FunctionAppendInstruction(&function, &ret, NULL),
+          "could not append second return");
+    function.blocks[0].instructionRange.count = 2u;
+    function.blocks[0].terminatorInstructionId = 2u;
+
+    input.function = &function;
+    ZrCore_ExecIr_OracleResultInit(&result);
+    check(!ZrCore_ExecIr_RunOracleEx(&input, &result, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 1u &&
+              result.values == NULL,
+          "oracle executed before checking for an early terminator");
+    ZrCore_ExecIr_OracleResultFree(&result);
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 1u &&
+              bytecode.instructions == publishedInstructions,
+          "ExecBC accepted an early terminator or replaced published output");
+    check(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MISSING_TERMINATOR &&
+              diagnostic.blockId == 1u && diagnostic.instructionId == 1u &&
+              aot.instructions == publishedAotInstructions,
+          "AOT accepted an early terminator or replaced published output");
+    ZrParser_AotIrProjection_Free(&aot);
+    ZrParser_ExecBcProjection_Free(&bytecode);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_branch_and_switch_parallel_edges_select_distinct_incomings();
     test_rejects_selected_edge_missing_from_source_adjacency();
@@ -868,6 +924,7 @@ int main(void) {
     test_verified_loop_backedge_phi_swap();
     test_branch_phi_moves_have_distinct_edge_blocks();
     test_projections_reject_unpaired_edge_without_replacing_output();
+    test_early_terminator_rejected_before_execution_or_projection();
     puts("ssa oracle parallel edges PASS");
     return EXIT_SUCCESS;
 }
