@@ -1,3 +1,6 @@
+# 原意是在 dispatch_loops 后段采样已知 VM 成员调用 PIC 的 receiver 与函数缓存。
+# BUG: 当前 execution_member_access.c:874 位于缓存 receiver-pair 取值函数的 result 断言；
+# cacheIndex、entry、receiver 不在此帧，原打印表达式与调用链已不符。
 set pagination off
 set breakpoint pending on
 set print thread-events off

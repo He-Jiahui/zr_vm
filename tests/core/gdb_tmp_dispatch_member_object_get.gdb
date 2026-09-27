@@ -1,3 +1,5 @@
+# 在 dispatch_loops 的实例字段对象查找 helper 中观察 descriptor、接收者和成员名的调用栈。
+# TODO: 目标是 static ZR_FORCE_INLINE；核查旧构建的 GDB 断点是否解析到该 helper，再解释采样结果。
 set pagination off
 set breakpoint pending on
 set print thread-events off

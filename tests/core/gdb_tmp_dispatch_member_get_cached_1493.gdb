@@ -1,3 +1,5 @@
+# 在 dispatch_loops 的后段采样成员读取 PIC 槽及命中/失配计数，避开最初的预热调用。
+# 当前行号处在接收者不相同后尝试同原型实例字段读取的分支；源码变动后须重查局部变量。
 set pagination off
 set breakpoint pending on
 set print thread-events off

@@ -1,3 +1,6 @@
+# 原意是在已知原生函数快速路径单测的旧栈槽断言点观察扩栈后的值。
+# BUG: 当前 test_object_call_known_native_fast_path.c:569 是模块描述符 documentation 字段，
+# staleCallableSlot/staleReceiverSlot/staleArgumentSlot 均不在该行作用域，断点已不能完成采样。
 set pagination off
 set confirm off
 break /mnt/e/Git/zr_vm/tests/core/test_object_call_known_native_fast_path.c:569

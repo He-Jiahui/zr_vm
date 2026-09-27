@@ -1,3 +1,5 @@
+# 在 dispatch_loops 的早期调用中追踪按名称查询对象自有字段的缓存路径。
+# TODO: 目标是 static ZR_FORCE_INLINE；核查旧 WSL gcc CLI 的 GDB 能否在该 helper 下断点。
 set pagination off
 set breakpoint pending on
 set print thread-events off

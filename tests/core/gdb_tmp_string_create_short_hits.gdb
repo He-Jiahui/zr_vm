@@ -1,3 +1,5 @@
+# 从已加载的 CLI 观察 map_object_access 的短字符串驻留热路径和上游调用栈。
+# 按 length 限定文本输出；断点指向 string.c 的 static helper，需可见调试符号。
 set pagination off
 set breakpoint pending on
 set $hits = 0

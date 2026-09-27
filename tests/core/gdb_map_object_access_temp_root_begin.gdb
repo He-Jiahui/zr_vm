@@ -1,3 +1,6 @@
+# 原意是在 map_object_access 的只读映射热路径之后才采样临时 GC 根创建，避免无关调用噪声。
+# TODO: 首断点指向 zr_vm_lib_container 的 static ZR_FORCE_INLINE 回调；核查旧 Release 构建的
+# GDB 是否能解析内联断点，否则预先禁用的第二断点始终不会被启用。
 set pagination off
 set breakpoint pending on
 set print thread-events off

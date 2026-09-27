@@ -1,3 +1,6 @@
+# 原意是在 dispatch_loops 后段采样成员写入 PIC 命中与槽状态。
+# BUG: 当前 execution_member_access.c:1541 落在成员读取的 getter 描述符分支，
+# receiverAndResult 不在此作用域；按脚本打印的命中记录会被误认作 set 路径。
 set pagination off
 set breakpoint pending on
 set print thread-events off

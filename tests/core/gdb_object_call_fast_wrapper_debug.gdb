@@ -1,3 +1,6 @@
+# 手工从已加载的已知原生函数快速路径单测采样一参、二参包装器返回后的状态。
+# 依赖空白断点表和带符号的 Linux x86-64 目标；断点编号及 ignore 次数依赖用例顺序。
+# BUG: commands 内的 finish 会恢复执行，GDB 忽略其后的 printf/continue；两段返回值采样均不会按原意执行。
 set pagination off
 set breakpoint pending on
 break ZrCore_Object_CallFunctionWithReceiverOneArgumentFast

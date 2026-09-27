@@ -1,3 +1,5 @@
+# 在 dispatch_loops 基准中追踪成员描述符缓存读取的上游调用栈；依赖旧 WSL gcc CLI 路径。
+# 该断点只说明函数被调用，不区分缓存命中或回退；第八次命中即停止。
 set pagination off
 set breakpoint pending on
 set print thread-events off

@@ -1,3 +1,5 @@
+# 以 map_object_access 的字符串键拼接触发数值执行层的 concat_values_to_destination，
+# 观察操作数类型和 safeMode；调用时须用 gdb --args 预装入带调试符号的 zr_vm_cli。
 set pagination off
 set breakpoint pending on
 set $concat_hits = 0

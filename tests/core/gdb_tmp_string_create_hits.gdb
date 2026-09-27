@@ -1,3 +1,5 @@
+# 从已加载的 CLI 运行 map_object_access，观察包括键名在内的字符串创建调用栈。
+# TODO: 此接口按 length 接收字节，x/s 按 NUL 终止读取；若输入改为切片，先核查原始缓冲区边界。
 set pagination off
 set breakpoint pending on
 set $hits = 0

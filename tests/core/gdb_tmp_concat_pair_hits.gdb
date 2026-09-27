@@ -1,3 +1,5 @@
+# 从已加载的 CLI 观察 map_object_access 拼接标签与 _slot 时的字符串配对和命中次数。
+# 基准键使用短字符串；若断点命中其他长字符串，shortStringLength 是标志值而非字节长度。
 set pagination off
 set breakpoint pending on
 set $hits = 0

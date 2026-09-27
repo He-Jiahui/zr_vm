@@ -1,3 +1,6 @@
+# 与早期样本配对，跳过前 199 次按名称读取以观察基准预热后的调用栈。
+# 第 200 至 205 次共六次采样后退出。
+# TODO: 目标是 static ZR_FORCE_INLINE；核查旧 WSL gcc CLI 的 GDB 能否在该 helper 下断点。
 set pagination off
 set breakpoint pending on
 set print thread-events off

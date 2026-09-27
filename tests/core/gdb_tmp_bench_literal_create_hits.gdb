@@ -1,3 +1,5 @@
+# 从已加载的 CLI 运行 map_object_access，筛选以 a/b/c/d 开头的两字节文本及以 _ 开头的五字节文本。
+# TODO: ZrCore_String_Create 接受显式 length；x/s 仍按 NUL 结尾读取，复用到非终止缓冲区前核查来源。
 set pagination off
 set breakpoint pending on
 set $hits = 0

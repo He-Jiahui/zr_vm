@@ -1,3 +1,6 @@
+# 手工复查历史 clang BITWISE_XOR 断言现场；由下方命令传入 CLI 和 hello_world 工程。
+# BUG: 当前 execution_dispatch.c:1766 位于成员缓存命中计数，而非 BITWISE_XOR；
+# 命中后 instruction/opA/opB 等打印表达式不在该作用域，输出不能用于原断言诊断。
 set pagination off
 set confirm off
 set print pretty on

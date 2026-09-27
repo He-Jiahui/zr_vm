@@ -1,3 +1,5 @@
+# 用 map_object_access 工程采样 ConcatPair 的上游调用栈；文件内固定了旧 WSL gcc 构建路径。
+# 需要对应二进制含该符号与调试信息，采样到第六次调用即退出调试器。
 set pagination off
 set breakpoint pending on
 set print thread-events off
