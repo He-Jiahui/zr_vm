@@ -81,5 +81,6 @@ doc_type: category-index
 | AOT ZRP 元数据裁剪与发布 | [341 项](coverage/zr_vm_aot_metadata.tsv) | 26 个 C/H 文件独立复核，924 个证据锚点有效，源码仅增注释；GCC/Clang 对 13 个实现文件的语法检查通过，未运行完整构建。空成员映射、签名重写借用期及发布失败边界已校正，保留 12 个 TODO。 |
 | core 调用绑定、持久化契约与导入重定位 | [111 项](coverage/zr_vm_core_call_binding.tsv) | 16 个 C/H 文件独立复核，源码仅改注释；GCC/Clang 对 12 个实现文件的语法检查通过，未运行完整测试。artifact 读端错误分类和链接分配失败的错误报告已标 2 个 BUG，另有 3 个 TODO。 |
 | CLI 脚本套件编排 | [53 项](coverage/tests_cmake_cli_suite.tsv) | 1 个 CMake 脚本独立复核，覆盖 13 个函数及 35 个案例，源码仅增注释；未知 `TIER` 空跑成功退出已标 BUG，另外保留 3 个 TODO。脚本定向检查通过，未运行完整 CLI 套件。 |
+| 项目 fixture 脚本套件编排 | [67 项](coverage/tests_cmake_projects_suite.tsv) | 1 个 CMake 脚本独立复核，覆盖 44 个项目案例与 9 个函数；源码仅增注释，脚本解析及未知 `TIER` 空跑复现通过。未知档位无案例仍成功退出已标 BUG，删除目标与 binary 回退保留 2 个 TODO。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

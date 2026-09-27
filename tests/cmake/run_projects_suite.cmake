@@ -1,3 +1,5 @@
+# CTest 的 projects 聚合入口传入 CLI、源 fixture 与构建目录；脚本在独立副本中
+# 编译和运行项目，避免回归用例把报告或字节码写回仓库中的 fixture。
 if (NOT DEFINED CLI_EXE OR CLI_EXE STREQUAL "")
     message(FATAL_ERROR "CLI_EXE is required.")
 endif()
@@ -16,6 +18,7 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
 
+# 非空 TIER 优先于非空 ZR_VM_TEST_TIER；两者皆空才执行全部注册项，含 using 专项。
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" PROJECT_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -23,6 +26,8 @@ elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL ""
 else ()
     set(PROJECT_REQUESTED_TIER "")
 endif ()
+# BUG: -DTIER=__invalid__ 时全部案例被跳过，脚本仍以 0 退出，CTest 会误报 projects 通过。
+# 复现：指定有效 PROJECT_FIXTURES_DIR、无效 CLI_EXE 和该档位运行 cmake -P，本脚本未调用 CLI。
 
 set(COMMON_FAIL_REGEX "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error")
 set(PROJECT_CASE_NAMES "")
@@ -31,6 +36,7 @@ set(PROJECT_FIXTURES_REL_PREFIX "tests/fixtures/projects/")
 set(PROJECT_SOURCE_FIXTURES_DIR "${PROJECT_FIXTURES_DIR}")
 set(PROJECT_SUITE_ROOT "${GENERATED_DIR}/projects_suite")
 set(PROJECT_FIXTURES_DIR "${PROJECT_SUITE_ROOT}/fixtures")
+# 每次从原始项目树重建副本；下面的路径改写、产物清理和预期文件删除只作用于副本。
 file(REMOVE_RECURSE "${PROJECT_SUITE_ROOT}")
 file(MAKE_DIRECTORY "${PROJECT_SUITE_ROOT}")
 execute_process(
@@ -54,6 +60,8 @@ endif()
 
 file(REMOVE_RECURSE "${PROJECT_FIXTURES_DIR}/.fixture_prepare")
 
+# 这两个项目把报告写到源码中的固定路径；改写副本并丢弃复制来的旧字节码，
+# 才能让后续的产物检查对应本次 CLI 执行，而非仓库中已有的 fixture 资产。
 set(native_numeric_pipeline_output_dir "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/bin/out")
 file(TO_CMAKE_PATH "${native_numeric_pipeline_output_dir}" native_numeric_pipeline_output_dir)
 set(native_numeric_pipeline_source_file "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/src/system_io.zr")
@@ -100,6 +108,8 @@ endif()
 file(REMOVE_RECURSE "${gc_fragment_stress_output_dir}")
 file(MAKE_DIRECTORY "${gc_fragment_stress_output_dir}")
 
+# 注册表仅在本脚本作用域内使用；名称须唯一，后续元数据覆盖与最终运行循环都以名称查找。
+# prepare 两项配对提供二进制导入前置产物，required_file 两项则约束运行后的文件副作用。
 function(register_project_case name project_rel pass_regex fail_regex prepare_source_rel prepare_output_rel required_file_rel required_file_regex)
     list(APPEND PROJECT_CASE_NAMES "${name}")
     set(PROJECT_CASE_NAMES "${PROJECT_CASE_NAMES}" PARENT_SCOPE)
@@ -116,16 +126,19 @@ function(register_project_case name project_rel pass_regex fail_regex prepare_so
     set("PROJECT_CASE_RUN_ARGS_${name}" "" PARENT_SCOPE)
 endfunction()
 
+# 注册之后补充档位和执行模式证据；未覆盖的案例默认只属于 core。
 function(set_project_case_metadata name tiers executed_via_regex)
     set("PROJECT_CASE_TIERS_${name}" "${tiers}" PARENT_SCOPE)
     set("PROJECT_CASE_EXECUTED_VIA_REGEX_${name}" "${executed_via_regex}" PARENT_SCOPE)
 endfunction()
 
+# 为需要明确解释器或字节码路径的案例追加 CLI 参数；二进制运行由执行器预先编译。
 function(set_project_case_execution name compile_args run_args)
     set("PROJECT_CASE_COMPILE_ARGS_${name}" "${compile_args}" PARENT_SCOPE)
     set("PROJECT_CASE_RUN_ARGS_${name}" "${run_args}" PARENT_SCOPE)
 endfunction()
 
+# 聚合 CTest 内逐项过滤；空档位意味着完整项目矩阵，非空档位只运行显式成员。
 function(project_case_matches_tier tiers out_var)
     if (PROJECT_REQUESTED_TIER STREQUAL "")
         set(${out_var} TRUE PARENT_SCOPE)
@@ -145,6 +158,8 @@ function(project_case_matches_tier tiers out_var)
     endif()
 endfunction()
 
+# 项目输出允许跨平台换行差异，先尝试原样匹配，再对多行规则作归一化比较。
+# 调用方仍需先检查退出码和失败标记；这里的正则命中不是完整输出相等。
 function(project_output_matches_pass_regex project_output pass_regex out_var)
     if ("${project_output}" MATCHES "${pass_regex}")
         set(${out_var} TRUE PARENT_SCOPE)
@@ -170,6 +185,8 @@ function(project_output_matches_pass_regex project_output pass_regex out_var)
     endif ()
 endfunction()
 
+# fixture 前缀指向构建树副本，其余路径按仓库根解析；执行器会在运行前删掉该文件。
+# TODO: 当前三个 required_file 注册项都命中副本；若新增仓库根路径，先确认它只指向可删除的生成物。
 function(project_case_resolve_required_file required_file_rel out_var)
     if (required_file_rel STREQUAL "")
         set(${out_var} "" PARENT_SCOPE)
@@ -187,6 +204,7 @@ function(project_case_resolve_required_file required_file_rel out_var)
     set(${out_var} "${REPO_ROOT}/${required_file_rel}" PARENT_SCOPE)
 endfunction()
 
+# 识别现有运行参数中的 binary 模式，为尚未显式编译的案例预备入口字节码。
 function(project_run_args_request_binary run_args out_var)
     set(args ${run_args})
     list(FIND args "--execution-mode" execution_mode_index)
@@ -198,6 +216,8 @@ function(project_run_args_request_binary run_args out_var)
     endif()
 endfunction()
 
+# 源码或目录在临时项目内编译，再把 .zro/.zri 拷入被测项目副本；
+# 这样 binary import 的输入来自当前 CLI，而不是预置快照。
 function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel)
     set(prepare_source "${PROJECT_FIXTURES_DIR}/${prepare_source_rel}")
     set(prepare_output "${PROJECT_FIXTURES_DIR}/${prepare_output_rel}")
@@ -223,6 +243,7 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel)
     file(MAKE_DIRECTORY "${temp_binary_dir}")
     file(MAKE_DIRECTORY "${prepare_output_dir}")
 
+    # 目录型 provider 可能产生多个模块产物，必须一同交给后续项目的导入解析。
     if (IS_DIRECTORY "${prepare_source}")
         set(copy_all_outputs ON)
         file(REMOVE_RECURSE "${temp_source_dir}")
@@ -318,6 +339,8 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel)
     file(REMOVE_RECURSE "${temp_project_root}")
 endfunction()
 
+# 单个注册案例的顺序契约：先筛选和预备依赖，再清除旧报告，必要时编译入口，
+# 最后运行项目并同时检查退出码、输出标记、执行模式与文件副作用。
 function(run_project_case case_name)
     set(project_rel "${PROJECT_CASE_PROJECT_${case_name}}")
     set(pass_regex "${PROJECT_CASE_PASS_${case_name}}")
@@ -343,6 +366,7 @@ function(run_project_case case_name)
         run_fixture_prepare("${case_name}" "${prepare_source_rel}" "${prepare_output_rel}")
     endif()
 
+    # 删除旧报告才能证明本次运行重新生成了文件；当前注册项都指向 fixture 副本。
     if (NOT required_file_rel STREQUAL "")
         project_case_resolve_required_file("${required_file_rel}" required_file)
         file(REMOVE "${required_file}")
@@ -371,6 +395,9 @@ function(run_project_case case_name)
         set(compile_requested TRUE)
     endif()
 
+    # 显式 binary 模式若没有单独的编译步骤，须先生成可执行入口产物。
+    # TODO: CLI 缺少 .zro 时可回退源码，却仍按请求模式打印 executed_via=binary；
+    # 当前只检查 --compile 的退出码，后续应校验入口产物或实际载入路径。
     project_run_args_request_binary("${run_args}" run_requires_binary)
     if (run_requires_binary AND NOT compile_requested)
         execute_process(
@@ -414,6 +441,7 @@ function(run_project_case case_name)
         message(FATAL_ERROR "Project case '${case_name}' failed with exit code ${project_result}.")
     endif()
 
+    # 先排除已知失败诊断，再判断成功标记，避免只因诊断包含预期数字而通过。
     set(project_output "${project_stdout}${project_stderr}")
     if (NOT fail_regex STREQUAL "" AND project_output MATCHES "${fail_regex}")
         message(FATAL_ERROR "Project case '${case_name}' matched fail regex '${fail_regex}'.\nOutput:\n${project_output}")
@@ -442,6 +470,7 @@ function(run_project_case case_name)
     endif()
 endfunction()
 
+# 基础解释执行、跨模块导入和 decorator/class 组合项目共享同一套退出码与结果判定。
 register_project_case("hello_world" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_basic" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("decorator_import" "decorator_import/decorator_import.zrp" "31" "${COMMON_FAIL_REGEX}" "" "" "" "")
@@ -457,12 +486,14 @@ register_project_case("classes_full" "classes_full/classes_full.zrp" "127" "${CO
 register_project_case("classes_static" "classes_static/classes_static.zrp" "82" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_super" "classes_super/classes_super.zrp" "42" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_properties" "classes_properties/classes_properties.zrp" "40" "${COMMON_FAIL_REGEX}" "" "" "" "")
+# binary import 用例先构建提供者模块，再运行消费项目；目录型 provider 需复制全部输出。
 register_project_case("import_binary" "import_binary/import_binary.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "import_binary/fixtures/greet_binary_source.zr" "import_binary/bin/greet.zro" "" "")
 register_project_case("import_binary_const" "import_binary_const/import_binary_const.zrp" "7" "${COMMON_FAIL_REGEX}" "import_binary_const/fixtures/greet_binary_source.zr" "import_binary_const/bin/greet.zro" "" "")
 register_project_case("decorator_import_binary" "decorator_import_binary/decorator_import_binary.zrp" "31" "${COMMON_FAIL_REGEX}" "decorator_import_binary/fixtures/decorated_user_module" "decorator_import_binary/bin/decorated_user.zro" "" "")
 register_project_case("decorator_compile_time_binary" "decorator_compile_time_binary/decorator_compile_time_binary.zrp" "31" "${COMMON_FAIL_REGEX}" "decorator_compile_time_binary/fixtures/decorated_user_module" "decorator_compile_time_binary/bin/decorated_user.zro" "" "")
 register_project_case("decorator_compile_time_deep_import_binary" "decorator_compile_time_deep_import_binary/decorator_compile_time_deep_import_binary.zrp" "43" "${COMMON_FAIL_REGEX}" "decorator_compile_time_deep_import_binary/fixtures/decorated_user_module" "decorator_compile_time_deep_import_binary/bin/decorated_user.zro" "" "")
 register_project_case("decorator_compile_time_provider_import_binary" "decorator_compile_time_provider_import_binary/decorator_compile_time_provider_import_binary.zrp" "71" "${COMMON_FAIL_REGEX}" "decorator_compile_time_provider_import_binary/fixtures/decorated_user_module" "decorator_compile_time_provider_import_binary/bin/decorated_user.zro" "" "")
+# Native 与跨模块闭包回归把 null/空函数诊断列为失败，即使进程退出码为零也不能放行。
 register_project_case("import_pub_function" "import_pub_function/import_pub_function.zrp" "7123" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
 register_project_case("import_capture_native" "import_capture_native/import_capture_native.zrp" "7005" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("import_capture_vector3" "import_capture_vector3/import_capture_vector3.zrp" "5" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
@@ -471,6 +502,7 @@ register_project_case("native_vector3_export_probe" "native_vector3_export_probe
 register_project_case("native_vector3_capture_probe" "native_vector3_capture_probe/native_vector3_capture_probe.zrp" "6" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("native_math_export_probe" "native_math_export_probe/native_math_export_probe.zrp" "9" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("native_complex_capture_probe" "native_complex_capture_probe/native_complex_capture_probe.zrp" "18" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+# 同一数值项目分开验证控制台标记、计算校验和及 VM 状态探针；前两项都要求重建报告。
 register_project_case("native_numeric_pipeline_banner" "native_numeric_pipeline/native_numeric_pipeline.zrp" "NATIVE_NUMERIC_PIPELINE_PASS" "${COMMON_FAIL_REGEX}|\\[closure\\]" "" "" "tests/fixtures/projects/native_numeric_pipeline/bin/out/report.txt" "NATIVE_NUMERIC_PIPELINE_PASS")
 register_project_case("native_numeric_pipeline_result" "native_numeric_pipeline/native_numeric_pipeline.zrp" "214" "${COMMON_FAIL_REGEX}|\\[closure\\]|null" "" "" "tests/fixtures/projects/native_numeric_pipeline/bin/out/report.txt" "checksum=214")
 register_project_case("native_numeric_pipeline_probe" "native_numeric_pipeline/native_numeric_pipeline_probe.zrp" "probe:vmState" "${COMMON_FAIL_REGEX}|\\[closure\\]" "" "" "" "")
@@ -486,19 +518,24 @@ peakRegionCount=[1-9][0-9]*
 peakOldLiveBytes=[0-9]+
 peakManagedMemoryBytes=[1-9][0-9]*
 peakGcDebtBytes=[0-9]+")
+# GC 压力项目要求实际采样和峰值报告；容器项目分别核验标记与返回校验和。
 register_project_case("gc_fragment_stress" "gc_fragment_stress/gc_fragment_stress.zrp" "GC_FRAGMENT_STRESS_PASS" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "tests/fixtures/projects/gc_fragment_stress/bin/out/report.txt" "${gc_fragment_stress_report_regex}")
 register_project_case("container_matrix_banner" "container_matrix/container_matrix.zrp" "CONTAINER_MATRIX_PASS" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("container_matrix_result" "container_matrix/container_matrix.zrp" "635" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+# 相同网络项目分别请求解释与 binary 模式；CLI 标记只证明请求模式，载入路径待核验。
 register_project_case("network_loopback" "network_loopback/network_loopback.zrp" "NETWORK_LOOPBACK_PASS ping pong echo" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("network_loopback_binary" "network_loopback/network_loopback.zrp" "NETWORK_LOOPBACK_PASS ping pong echo" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+# using 档位增加 union 专项项目；其中 normal/edge 两项不进入常规 smoke/core/stress。
 register_project_case("using_real_world_checkout" "using_real_world_checkout/using_real_world_checkout.zrp" "USING_REAL_WORLD_CHECKOUT_PASS 120" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("using_union_normal" "using_real_world_checkout/using_union_normal.zrp" "USING_UNION_NORMAL_PASS 125" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("using_union_edge_cases" "using_real_world_checkout/using_union_edge_cases.zrp" "USING_UNION_EDGE_PASS 77" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("using_feature_matrix" "using_feature_matrix/using_feature_matrix.zrp" "USING_FEATURE_MATRIX_PASS 276" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("using_edge_matrix" "using_edge_matrix/using_edge_matrix.zrp" "USING_EDGE_MATRIX_PASS 266" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+# 语法参考项目分别请求解释与 binary 模式，并比较两次运行的可观察结果。
 register_project_case("syntax_reference_v1_interp" "syntax_reference_v1/syntax_reference_v1.zrp" "7" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
 register_project_case("syntax_reference_v1_binary" "syntax_reference_v1/syntax_reference_v1.zrp" "7" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
 
+# 先完成全部注册再设档位，避免默认 core 掩盖冒烟覆盖或 using 专项边界。
 set_project_case_metadata("hello_world" "smoke;core;stress" "")
 set_project_case_metadata("import_basic" "smoke;core;stress" "")
 set_project_case_metadata("decorator_import" "smoke;core;stress" "")
@@ -544,6 +581,7 @@ set_project_case_metadata("using_edge_matrix" "smoke;core;stress;using" "")
 set_project_case_metadata("syntax_reference_v1_interp" "smoke;core;stress" "executed_via=interp")
 set_project_case_metadata("syntax_reference_v1_binary" "smoke;core;stress" "executed_via=binary")
 
+# 模式参数只绑定到对应的注册名；binary 案例因此触发 run_project_case 的预编译路径。
 set_project_case_execution("network_loopback_binary" "" "--execution-mode;binary;--emit-executed-via")
 set_project_case_execution("syntax_reference_v1_interp" "" "--execution-mode;interp;--emit-executed-via")
 set_project_case_execution("syntax_reference_v1_binary" "" "--execution-mode;binary;--emit-executed-via")
@@ -555,6 +593,7 @@ if (NOT PROJECT_REQUESTED_TIER STREQUAL "")
 endif()
 message("==========")
 
+# 注册顺序即执行顺序；首个失败立即让整个 projects CTest 失败。
 foreach(case_name IN LISTS PROJECT_CASE_NAMES)
     run_project_case("${case_name}")
 endforeach()
