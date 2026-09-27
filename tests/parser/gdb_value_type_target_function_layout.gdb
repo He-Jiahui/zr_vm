@@ -1,3 +1,5 @@
+# 原意在目标函数 pc=8 时导出其局部变量、内联帧布局和常量表以对照值类型调用槽。
+# BUG: execution_dispatch.c:6445 当前是 TO_UINT_FLOAT 分支，不是目标函数的调用入口；该断点不会按原意筛选布局。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

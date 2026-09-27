@@ -1,3 +1,5 @@
+# 原意是通过 pc=8 锁定目标函数，追踪已知调用与后续 GET_STACK 对槽 4 的影响。
+# BUG: execution_dispatch.c:6445 现是 TO_UINT_FLOAT，:4343/:4347 是缓存尾调用宏，三个断点均不对应所标调用/取槽操作。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

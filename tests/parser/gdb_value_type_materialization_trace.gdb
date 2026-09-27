@@ -1,3 +1,5 @@
+# 原意是在 value_type_runtime 的内联值与对象之间双向物化时比较字段来源和目标地址。
+# BUG: execution_inline_frame.c:622/690 当前位于 prototype 记录辅助逻辑，非物化函数；descriptor 等采样变量在断点处不可用。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

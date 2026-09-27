@@ -1,3 +1,5 @@
+# 原意是在字符串值类型的指令窗口追踪槽 2/3/4/5/6/8，观察成员读取前后的值流。
+# BUG: execution_dispatch.c:4311 当前属于尾调用宏，不是该字符串指令窗口；采样不能据此解释预期槽值流。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

@@ -1,3 +1,5 @@
+# 在 value_type_runtime 单测触发 C 断言时采集 VM 帧、槽布局和指令；用带符号的 GCC Debug 目标手工运行。
+# TODO: frame 1 仅在断言直接来自执行循环时才有 currentFunction/instruction/base；先看 bt 再确认帧和槽位。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

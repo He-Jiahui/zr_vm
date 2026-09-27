@@ -1,3 +1,5 @@
+# 在 value_type_runtime 的 C 断言现场展开解释器帧、槽布局和子函数指令；需带调试符号的 GCC 目标。
+# TODO: __assert_fail 只拦截 C 断言；单测字符串断言经 UnityFail，若目标是捕获测试断言失败需换入口；frame 1 局部量也需按 bt 确认。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

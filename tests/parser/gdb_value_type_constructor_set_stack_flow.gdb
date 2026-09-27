@@ -1,3 +1,6 @@
+# 原意是锁定特定构造器函数，并追踪调用、SET_STACK 与 GET_STACK 前的槽布局和值。
+# BUG: 下列三个固定行号现分别在 TO_UINT_FLOAT 与动态尾调用分支，不再是所标注的指令入口；采样会误指其他操作。
+# TODO: 改断点前还需验证 pc==8 这个旧函数指纹是否仍对应目标构造器。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

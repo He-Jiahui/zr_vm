@@ -1,3 +1,5 @@
+# 在 value_type_runtime 中观察不可调用值的错误入口及其调用栈；目标是定位失败调用的实参布局。
+# BUG: CallError 的直接调用方是 function_get_meta_call，frame 1 没有下面读取的执行循环局部变量；命中后首个执行帧 printf 报错，后续槽位采样失效。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

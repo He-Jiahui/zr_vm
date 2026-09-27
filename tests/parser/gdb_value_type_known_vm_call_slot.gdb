@@ -1,3 +1,5 @@
+# 原意是在已知 VM 调用前核对函数槽的逻辑值、物理值和内联帧布局。
+# BUG: execution_dispatch.c:6455 现在属于 TO_UINT_SIGNED 分支，不是 KNOWN_VM_CALL；打印出的槽位不是预期调用操作数。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

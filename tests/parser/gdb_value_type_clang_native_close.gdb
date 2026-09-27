@@ -1,3 +1,5 @@
+# 使用 clang Debug 目标追踪栈闭包捕获与关闭，比较关闭阈值、链表和调用帧边界。
+# BUG: closure.c:385 现在位于对象逃逸传播循环，不是关闭栈闭包的现场；该断点没有 stackPointer/closureValue，第二组采样不能工作。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-clang-debug/bin/zr_vm_value_type_runtime_test

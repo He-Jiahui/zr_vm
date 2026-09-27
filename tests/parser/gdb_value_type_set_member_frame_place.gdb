@@ -1,3 +1,5 @@
+# 原意是在成员写入前核对接收者槽、值来源与 frameBase 所指的物理位置。
+# BUG: execution_inline_frame.c:1026 当前是 union 字段元数据失败分支，非成员写入；receiverSlot/receiverLayout 等不在此作用域。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

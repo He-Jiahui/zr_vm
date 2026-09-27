@@ -1,3 +1,5 @@
+# 原意是在已知 VM 调用的断言现场检查执行帧、全部逻辑槽和指令列表。
+# BUG: execution_dispatch.c:6367 现落在元调用缓存参数处，非 KNOWN_VM_CALL 入口；此停点不能代表预期断言路径。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

@@ -1,3 +1,5 @@
+# 原意是在已知 VM 调用的非法 callable 分支核对 opA 与参数窗口。
+# BUG: execution_dispatch.c:2201 现在是模块导出变量绑定扫描，不在执行循环；currentFunction/instruction/opA/nextCallInfo__ 均不在此作用域。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

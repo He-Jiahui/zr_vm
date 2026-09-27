@@ -1,3 +1,5 @@
+# 原意是在短构造函数和长函数的成员赋值中观察接收者位置与赋入值。
+# BUG: execution_inline_frame.c:1037 当前处理 union 字段元数据，非 set-member helper；下面的 function/memberName/assignedValue 等局部量不可用。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

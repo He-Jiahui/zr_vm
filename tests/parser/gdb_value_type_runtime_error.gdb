@@ -1,3 +1,5 @@
+# 在 value_type_runtime 的 VM 错误入口查看错误格式、调用栈及执行帧布局；只在目标实际报错时有诊断数据。
+# BUG: 无条件切到 frame 1 并读取执行循环局部量；调用元数据校验可在这些变量建立前就报错，该路径的打印无法完成。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

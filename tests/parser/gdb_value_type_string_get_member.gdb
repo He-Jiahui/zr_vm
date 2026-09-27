@@ -1,3 +1,6 @@
+# 在特定长函数的成员读取处查看调用点缓存、接收者/目标槽，并在字段装载返回后比较目标值。
+# 此脚本的 finish 是顶层命令；末尾 $rax 取返回值只适用于相应的 x86-64 调试 ABI。
+# TODO: 旧函数长度、操作码和槽号指纹需用当前二进制核对；同时确认布局查询非空且临时字段断点属于同一次读取。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test
@@ -12,6 +15,7 @@ while $ci < function->callSiteCacheLength
     printf "cache %u: kind=%u instructionIndex=%u memberEntryIndex=%u argCount=%u picCount=%u runtimeHit=%u runtimeMiss=%u\n", $ci, function->callSiteCaches[$ci].kind, function->callSiteCaches[$ci].instructionIndex, function->callSiteCaches[$ci].memberEntryIndex, function->callSiteCaches[$ci].argumentCount, function->callSiteCaches[$ci].picSlotCount, function->callSiteCaches[$ci].runtimeHitCount, function->callSiteCaches[$ci].runtimeMissCount
     if function->callSiteCaches[$ci].memberEntryIndex < function->memberEntryLength && function->memberEntries[function->callSiteCaches[$ci].memberEntryIndex].symbol != 0
         set $memberString = function->memberEntries[function->callSiteCaches[$ci].memberEntryIndex].symbol
+# BUG: 当前测试的 text 名称只有四字节；固定打印八个字符还包含结束符及非名称字节，不能把输出当成成员名。
         printf "  memberSymbol=%p shortLen=%u bytes=%c%c%c%c%c%c%c%c\n", $memberString, $memberString->shortStringLength, $memberString->stringDataExtend[0], $memberString->stringDataExtend[1], $memberString->stringDataExtend[2], $memberString->stringDataExtend[3], $memberString->stringDataExtend[4], $memberString->stringDataExtend[5], $memberString->stringDataExtend[6], $memberString->stringDataExtend[7]
     end
     if function->callSiteCaches[$ci].picSlotCount > 0

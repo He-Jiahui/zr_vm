@@ -1,3 +1,5 @@
+# 针对 invalid known VM callable 错误筛选运行时错误入口，再到调用方执行帧检查调用窗口的逻辑/物理槽。
+# 仅当目标实际触发该错误才会继续打印；正常通过的 value_type_runtime 单测不提供这些故障数据。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

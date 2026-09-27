@@ -1,3 +1,5 @@
+# 原意在 compiler_integration 单测编译 typed local 与 this 时观察当前类型及局部变量槽位。
+# BUG: compiler_typed_metadata.c:1120/1132 当前处理导出函数参数类型，非 typed-local 绑定；第二断点没有 localVar。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_compiler_integration_test

@@ -1,3 +1,6 @@
+# 关联 value_type_runtime 中短构造函数的执行入口、成员赋值和返回值复制，比较逻辑/物理槽。
+# BUG: ZrCore_Execute 入口条件引用仅在执行循环内部声明的 currentFunction；第一断点无法按四指令构造器筛选。
+# TODO: 其余两个符号断点的参数仍存在，但四指令、一参数的历史筛选是否命中当前测试需带符号构建验证。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

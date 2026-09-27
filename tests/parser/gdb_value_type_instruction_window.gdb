@@ -1,3 +1,6 @@
+# 原意是在已知 VM 调用处查看调用槽并扫描当前函数的指令窗口。
+# BUG: execution_dispatch.c:6445 现为 TO_UINT_FLOAT 分支，不是 KNOWN_VM_CALL；命中数据不能解释为调用窗口。
+# BUG: functionName 的 SZrString 没有 string 字段，下面的 name 表达式即使在正确断点也无法求值。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

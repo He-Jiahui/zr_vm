@@ -1,3 +1,5 @@
+# 对 value_type_runtime 的内联值槽拷贝入口采样，比较来源和目标的布局及物理值；C 断言另作停止点。
+# TODO: 长度 19 和目标槽 2/3/5 是旧用例的函数指纹，需运行当前带符号目标确认是否仍筛中预期场景。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

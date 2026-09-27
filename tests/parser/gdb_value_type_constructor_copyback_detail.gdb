@@ -1,3 +1,5 @@
+# 原意是在构造器回写布局匹配处观察接收者和调用方目标槽的物理值。
+# BUG: function.c:2049 现在是泛型参数有效性检查，缺少 callerArgumentStartSlot/receiverLayout/destinationLayout；采样表达式失效。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

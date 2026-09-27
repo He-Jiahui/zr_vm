@@ -1,3 +1,5 @@
+# 原意是在特定长函数的 SET_STACK 指令前记录来源、目标及内联值槽状态。
+# BUG: execution_dispatch.c:3070 当前是 SET_MEMBER_SLOT_FAST 宏定义附近，非 SET_STACK 指令入口；该停点不能代表预期槽拷贝。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test

@@ -1,3 +1,6 @@
+# 原意是在构造器接收者回写时比对调用方实参槽与返回目标槽的布局。
+# BUG: function.c:2021 现在属于泛型调用包装器参数声明，不在回写函数内；断点命中后 callInfo 等局部量不可用。
+# TODO: 迁移到当前回写入口后仍需按 hasArgumentSourceFrame/argumentSourceStartSlot 计算实参源槽，不能一律用相邻帧指针差。
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test
