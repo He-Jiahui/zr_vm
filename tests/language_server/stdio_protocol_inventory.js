@@ -6,8 +6,10 @@ const { StdioProtocolClient } = require('./stdio_protocol_client');
 const { validateNativeInventory } = require('./lsp_native_inventory_contract');
 const { checkInventoryMutations } = require('./lsp_native_inventory_mutations');
 
+/** native 初始化与注册能力检查可读取构建产物，允许比普通协议快测更长等待。 */
 const REQUEST_TIMEOUT_MS = 10000;
 
+/** 读取外部探针或 CTest 的 JSON 清单；非零退出应中止契约比对。 */
 function runJson(command, args) {
     const result = spawnSync(command, args, {
         encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
@@ -17,6 +19,10 @@ function runJson(command, args) {
     return JSON.parse(result.stdout);
 }
 
+/**
+ * 每种客户端能力组合独占一个服务端进程，核对 native/WASM 注册清单与实际
+ * initialize 发布结果，并验证已撤回能力确实返回 Method not found。
+ */
 async function inspectProfile(serverPath, profile, inventory, registeredTests, wasmInventory) {
     const client = new StdioProtocolClient(serverPath);
     let cleanExit = false;
@@ -69,6 +75,10 @@ async function inspectProfile(serverPath, profile, inventory, registeredTests, w
     }
 }
 
+/**
+ * 汇总编译探针、WASM 静态映射和 CTest 注册用例后依次运行协议配置。
+ * 输出 remaining 项明示此清单只覆盖能力映射，不等同于完整语义行为验收。
+ */
 async function main() {
     const [serverPath, probePath, buildDirectory, ctestPath, configuration] = process.argv.slice(2);
     assert.ok(serverPath && probePath && buildDirectory && ctestPath,
@@ -87,6 +97,7 @@ async function main() {
     assert.ok(Array.isArray(ctest.tests) && ctest.tests.length > 0, 'configured CTest inventory must be nonempty');
     const registeredTests = new Set(ctest.tests.filter(test =>
         Array.isArray(test.command) && test.command.length > 0).map(test => test.name));
+    // 四种协商组合覆盖默认能力及两个可选能力的独立、共同启用路径。
     const profiles = [
         { name: '3.17', inlineCompletion: false, rangesFormatting: false },
         { name: 'inline-only', inlineCompletion: true, rangesFormatting: false },
@@ -115,6 +126,7 @@ async function main() {
     assert.equal(failures.length, 0, 'compiled native inventory profile failures');
 }
 
+/** 外部清单读取失败或 profile 验收失败均由非零退出码传给 CTest。 */
 main().catch(error => {
     console.error(error.stack || String(error));
     process.exitCode = 1;

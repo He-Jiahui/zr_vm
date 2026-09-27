@@ -1,3 +1,7 @@
+/**
+ * 为 initialize 契约测试提供独立的预期快照；能力差异必须由测试显式比较，
+ * 不能直接从服务端的注册表再生成预期值，否则两端同错会被掩盖。
+ */
 function expectedCapabilities(inlineCompletion, rangesFormatting) {
     const fileOperation = { filters: [{ pattern: { glob: '**/*.{zr,zrp,zro,dll,so,dylib}' } }] };
     const capabilities = {

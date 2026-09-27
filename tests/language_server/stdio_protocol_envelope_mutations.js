@@ -2,7 +2,9 @@ const assert = require('assert').strict;
 const { StdioProtocolClient } = require('./stdio_protocol_client');
 const { protocolCases } = require('./stdio_protocol_conformance');
 
+// 与正向协议套件共用真实服务器场景，变异结果才能约束同一个响应入口。
 const cases = new Map(protocolCases());
+// 每项只破坏一个信封契约；元组中的 id 与成员定位要与原用例响应一致。
 const mutations = [
     ['duplicate error missing version', 'duplicate request id', 'duplicate-request', 'error',
      (response) => { delete response.jsonrpc; }],
@@ -28,12 +30,16 @@ const mutations = [
      (response) => { response.error = null; }],
 ];
 
+/**
+ * 临时替换进程内共享的 dispatch，只改写目标响应后运行原正向用例。
+ * monkey patch 在 finally 中恢复，因此此用例必须串行执行，不能并行共享客户端类。
+ */
 async function rejectsMutatedEnvelope(serverPath, fixture) {
     const [label, caseName, id, member, mutate] = fixture;
     const originalDispatch = StdioProtocolClient.prototype.dispatch;
     let injected = 0;
     let failure;
-    // Alter decoded server output so the production case must reject the bad envelope.
+    // 在客户端分派前改写真实响应，使正向用例必须以信封错误而非超时失败。
     StdioProtocolClient.prototype.dispatch = function (response) {
         if (response && response.id === id &&
             Object.prototype.hasOwnProperty.call(response, member)) {
@@ -55,6 +61,7 @@ async function rejectsMutatedEnvelope(serverPath, fixture) {
                  `${label}: failure must identify the envelope, not a timeout or semantic assertion`);
 }
 
+/** 先运行未变异对照，再逐一核对非法信封由协议断言而非超时拒绝。 */
 async function main() {
     const serverPath = process.argv[2];
     assert.ok(serverPath, 'usage: node stdio_protocol_envelope_mutations.js <stdio-server>');
@@ -76,6 +83,7 @@ async function main() {
     console.log(`Protocol envelope mutations: ${mutations.length}/${mutations.length} rejected`);
 }
 
+/** 让所有正向对照或负例断言失败转为 CTest 可见的退出码。 */
 main().catch((error) => {
     console.error(error.stack || String(error));
     process.exitCode = 1;
