@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assetLayout = require('../asset-layout.json');
 
+/** 将共享清单中的路径模板限制为相对片段，供构建和安装目录复用。 */
 function templatePathSegments(template, replacements) {
     const rendered = Object.entries(replacements).reduce(
         (value, [key, replacement]) => value.replace(new RegExp(`\\{${key}\\}`, 'g'), replacement),
@@ -12,6 +13,7 @@ function templatePathSegments(template, replacements) {
         .filter((segment) => segment.length > 0 && segment !== '.');
 }
 
+/** 打包目录与源目录均使用同一模板语义；空模板代表当前基目录。 */
 function resolveRelativePathTemplate(template, replacements = {}) {
     const segments = templatePathSegments(template, replacements);
     if (segments.length === 0) {
@@ -21,6 +23,7 @@ function resolveRelativePathTemplate(template, replacements = {}) {
     return path.join(...segments);
 }
 
+/** 把清单里的候选子目录锚定到指定构建根，保留声明顺序。 */
 function resolveSubdirTemplates(baseDir, templates, replacements = {}) {
     return templates.map((template) => {
         const relativePath = resolveRelativePathTemplate(template, replacements);
@@ -30,6 +33,7 @@ function resolveSubdirTemplates(baseDir, templates, replacements = {}) {
     });
 }
 
+/** 合并显式和扫描候选时去重，但不改变前者优先级。 */
 function dedupeAbsolutePaths(values) {
     const seen = new Set();
     const result = [];
@@ -51,6 +55,7 @@ function dedupeAbsolutePaths(values) {
     return result;
 }
 
+/** 按目标平台读取打包入口名，使运行时与构建脚本不用各自猜测后缀。 */
 function nativeExecutableName(kind, platform = process.platform) {
     const entry = assetLayout.native.executables[kind];
     if (!entry) {
@@ -60,11 +65,18 @@ function nativeExecutableName(kind, platform = process.platform) {
     return entry[platform] ?? entry.default;
 }
 
+/** 返回完整原生目录所需的文件清单，供同步和开发资产筛选共用。
+ * TODO: 清单无有效平台数组时这里返回空数组；核查调用方是否应拒绝空要求，
+ * 以免把任意现存目录视为完整资产。
+ */
 function nativeRequiredRuntimeFiles(platform = process.platform) {
     const files = assetLayout.native.requiredRuntimeFiles[platform] ?? assetLayout.native.requiredRuntimeFiles.default;
     return Array.isArray(files) ? [...files] : [];
 }
 
+/** 首先纳入调用者指定的构建目录，再扫描仓库 build 下其他配置产物。
+ * 缺失的扫描根不妨碍已知构建目录被后续完整性检查使用。
+ */
 function collectNativeBuildCandidateDirs(buildRoot, nativeBuildDir, nativeBuildConfig) {
     const candidates = [
         ...resolveSubdirTemplates(nativeBuildDir, assetLayout.native.buildSubdirs, {
@@ -86,12 +98,15 @@ function collectNativeBuildCandidateDirs(buildRoot, nativeBuildDir, nativeBuildC
             );
         }
     } catch {
-        // Ignore missing build roots and fall back to bundled assets.
+        // 扫描失败仍保留显式候选和已收集候选，交由完整性检查决定能否使用。
     }
 
     return dedupeAbsolutePaths(candidates);
 }
 
+/** 发布构建、同步脚本与测试共享的资产布局快照。
+ * @note options 可覆盖仓库根、构建根、配置和目标平台；此函数不要求产物已存在。
+ */
 function createArtifactLayout(options = {}) {
     const repositoryRoot = path.resolve(options.repositoryRoot ?? path.join(__dirname, '..', '..'));
     const extensionRoot = path.resolve(options.extensionRoot ?? path.join(repositoryRoot, 'zr_vm_language_server_extension'));
@@ -118,6 +133,7 @@ function createArtifactLayout(options = {}) {
             )),
     ];
 
+    // 同一仓库与扩展根下的 native/wasm 布局供构建、同步及测试跨阶段传递。
     return {
         repositoryRoot,
         extensionRoot,
