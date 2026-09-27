@@ -21,6 +21,7 @@ static TZrUInt32 debug_evaluation_context_current_instruction_offset(
     return (TZrUInt32)(callInfo->context.context.programCounter - function->instructionsList);
 }
 
+/* 先在当前调用链查找指针，再读取帧元数据，防止已弹出帧被解引用。 */
 EZrDebugEvaluationContextStatus debug_evaluation_context_validate(
         SZrState *state,
         const SZrDebugEvaluationContext *context,

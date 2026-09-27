@@ -121,6 +121,7 @@ static TZrUInt64 native_call_hash_u64(TZrUInt64 hash, TZrUInt64 value) {
     return hash;
 }
 
+/* 只散列可缓存的标量字段，任何地址都必须在调用现场重新解析。 */
 static TZrUInt64 native_call_plan_hash(const SZrNativeCallPlan *plan) {
     TZrUInt64 hash = UINT64_C(1469598103934665603);
     TZrUInt32 index;
@@ -305,6 +306,7 @@ static TZrBool native_call_enum_ranges_valid(const SZrNativeCallPlan *plan) {
     return ZR_TRUE;
 }
 
+/* 缓存读取侧重算参数义务、派生标志和哈希，防止绕过 Prepare 的约束。 */
 TZrBool ZrCore_NativeCall_ValidatePlan(
         const SZrNativeCallPlan *plan,
         SZrNativeCallDiagnostic *diagnostic) {
@@ -890,6 +892,7 @@ TZrUInt64 ZrCore_NativeCall_ComputeLayoutHash(
     return native_call_layout_hash(contract);
 }
 
+/* 导入契约可用后，拒绝分支保留其 sourceId；失败的半成品计划清零。 */
 TZrBool ZrCore_NativeCall_Prepare(
         const SZrNativeCallRequest *request,
         SZrNativeCallPlan *plan,
@@ -1537,6 +1540,7 @@ TZrBool ZrCore_NativeCall_Prepare(
      * example, transfer/shared ownership turns a pinned direct view into a
      * copied bridge).  Recompute the aggregate lifetime flags from the final
      * operations so no stale pin/root obligation survives that downgrade. */
+    /* 最终 marshal lane 可能已降级；按成品 op 重新统计资源义务。 */
     plan->pinCount = 0u;
     plan->rootCount = 0u;
     plan->flags &= (TZrUInt32)~(ZR_NATIVE_CALL_PLAN_FLAG_REQUIRES_PIN |
@@ -1590,6 +1594,7 @@ prepare_fail:
     return ZR_FALSE;
 }
 
+/* invoker 只能借用活跃 lease；所有返回状态都汇合到 LeaseEnd。 */
 TZrBool ZrCore_NativeCall_InvokeResolved(
         SZrState *state,
         const SZrNativeCallPlan *plan,

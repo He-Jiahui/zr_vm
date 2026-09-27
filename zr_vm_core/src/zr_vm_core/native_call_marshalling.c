@@ -236,6 +236,7 @@ TZrBool ZrCore_NativeCall_MarshalArgument(
                 op->byteAlignment, (TZrUInt64)(uintptr_t)request->destination);
         return ZR_FALSE;
     }
+    /* COPY/BRIDGE 的临时目标归调用方所有；OUT 或可空输入清零以免传入旧字节。 */
     if (sourceInitialized &&
         (op->direction == ZR_FFI_CONTRACT_DIRECTION_IN ||
          op->direction == ZR_FFI_CONTRACT_DIRECTION_REF)) {
@@ -288,6 +289,9 @@ TZrBool ZrCore_NativeCall_WriteBackArgument(
                 op->byteSize, temporarySize);
         return ZR_FALSE;
     }
+    /* BUG: Prepare 允许 packed REF/OUT 源改走 COPY，MarshalArgument 也把它
+     * 复制到对齐临时区；此处却要求原目标自然对齐，使合法的 packed
+     * REF/OUT 计划在写回阶段必然失败。 */
     if (!native_call_marshal_pointer_aligned(temporary, op->byteAlignment) ||
         !native_call_marshal_pointer_aligned(destination, op->byteAlignment)) {
         native_call_marshal_set_diagnostic(

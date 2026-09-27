@@ -29,6 +29,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+/* TODO: type 为零时掩码含 LINE_TABLE，但 GetInfo 尚无对应填充分支；
+ * 核对该位是否为遗留占位。PUSH_FUNCTION 是唯一会改动 VM 栈的位。 */
 #define ZR_DEBUG_INFO_ALL_BITS                                                                                         \
     (ZR_DEBUG_INFO_SOURCE_FILE | ZR_DEBUG_INFO_LINE_NUMBER | ZR_DEBUG_INFO_CLOSURE | ZR_DEBUG_INFO_TAIL_CALL |         \
      ZR_DEBUG_INFO_FUNCTION_NAME | ZR_DEBUG_INFO_RETURN_VALUE | ZR_DEBUG_INFO_LINE_TABLE | ZR_DEBUG_INFO_PUSH_FUNCTION)
@@ -115,6 +117,7 @@ static TZrBool debug_typed_local_binding_has_canonical_identity(const SZrFunctio
                      binding->placeId != 0u);
 }
 
+/* 活跃变量必须同时拥有局部生命周期和规范 typed 绑定，否则不发布半完整身份。 */
 static EZrDebugEvaluationContextStatus debug_evaluation_context_find_active_binding(
         const SZrFunction *function,
         TZrUInt32 programCounter,
@@ -240,6 +243,7 @@ static SZrTypeValue *debug_get_frame_value_slot(SZrState *state,
     return ZrCore_Stack_GetValue(frameBase + stackSlot);
 }
 
+/* 调试快照沿用对象指针但不继承帧值的所有权控制。 */
 void debug_evaluation_context_snapshot_value(
         SZrState *state,
         SZrTypeValue *destination,
@@ -627,6 +631,9 @@ TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
         if (callableValue == ZR_NULL) {
             return ZR_FALSE;
         }
+        /* BUG: 栈不足时 CheckStackAndGc 可重分配并迁移栈；下面仍从扩栈前的
+         * callableValue 读取，脚本 getinfo("f") 会得到悬空地址并可能崩溃。
+         * 库侧 getinfo 同时保存了原始 stackTop 指针，调用后也会访问失效指针。 */
         ZrCore_Function_CheckStackAndGc(state, 1, state->stackTop.valuePointer);
         stackValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
         if (stackValue == ZR_NULL) {
@@ -678,6 +685,7 @@ void ZrCore_Debug_SetHook(struct SZrState *state, FZrDebugHook hook, TZrUInt32 m
     state->debugLastFunction = ZR_NULL;
     state->debugLastLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;
 
+    /* 已在栈上的 VM 帧也必须同步 trap，下一条指令才能立即遵守新订阅。 */
     trapSignal = debug_instruction_trap_from_hook_signal(effectiveMask);
     debug_settraps(state->callInfoList, trapSignal);
 }
@@ -834,6 +842,8 @@ TZrNativeString ZrCore_Debug_GetLocal(struct SZrState *state,
     }
 
     if (debug_frame_slot_is_inline_struct(function, local->stackSlot)) {
+        /* BUG: 帧槽物化失败时输出值为 null，仍返回变量名；脚本 getlocal
+         * 会把分配或布局失败误报为成功读取的 null 局部值。 */
         (void)ZrCore_Function_CopyFrameSlotInlineToObjectValue(state, function, frameBase, local->stackSlot, outValue);
         return name;
     }
@@ -1012,6 +1022,7 @@ TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInst
         return ZR_DEBUG_SIGNAL_NONE;
     }
 
+    /* 暂停上下文以执行后的 PC 为身份；求值接口用此偏移拒绝旧帧快照。 */
     callInfo->context.context.programCounter = currentProgramCounter;
     currentInstructionOffset = (TZrUInt32)(currentProgramCounter - function->instructionsList);
     state->previousProgramCounter = currentInstructionOffset;
@@ -1147,9 +1158,12 @@ void ZrCore_Debug_Hook(struct SZrState *state, EZrDebugHookEvent event, TZrUInt3
         if (ZR_CALL_INFO_IS_VM(callInfo) && state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
             state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
         }
+        /* 钩子在解锁后执行，暂时禁止同一状态再次递归进入调试钩子。 */
         state->allowDebugHook = ZR_FALSE;
         callInfo->callStatus |= mask;
         ZR_THREAD_UNLOCK(state);
+        /* BUG: 测试钩子的 Unity 断言失败会 longjmp 越过下方重锁、栈顶
+         * 和 callStatus 恢复；后续 VM 执行看到的是未复原的暂停状态。 */
         hook(state, &debugInfo);
         ZR_THREAD_LOCK(state);
 
@@ -1425,6 +1439,8 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
             (unsigned int) prototypeCount);
 
     // 读取prototype数据（跳过头部的prototypeCount）
+    /* TODO: writer 只检查非空与正计数，尚未确认所有装载路径都保证
+     * prototypeDataLength 至少包含头部；否则下方减法下溢并绕过长度检查。 */
     const TZrByte *prototypeData = entryFunction->prototypeData + sizeof(TZrUInt32);
     TZrSize remainingDataSize = entryFunction->prototypeDataLength - sizeof(TZrUInt32);
     const TZrByte *currentPos = prototypeData;

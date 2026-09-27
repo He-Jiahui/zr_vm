@@ -12,6 +12,7 @@
 #include <stdarg.h>
 #include <string.h>
 
+/* 进程级递归锁同时保护默认 sink 与回调，允许回调在同线程再次写日志。 */
 #if defined(_WIN32)
 #include <windows.h>
 #else
@@ -95,6 +96,7 @@ static void zr_log_write_default_sink(EZrOutputChannel channel, TZrNativeString 
     fflush(stream);
 }
 
+/* 小消息使用栈缓冲区，超长消息的临时堆缓冲区在回调返回后释放。 */
 static void zr_log_vwritef(struct SZrState *state,
                            EZrLogLevel level,
                            EZrOutputChannel channel,
@@ -149,6 +151,7 @@ void ZrCore_Log_Write(struct SZrState *state,
                       TZrNativeString message) {
     SZrGlobalState *global = zr_log_resolve_global(state);
 
+    /* 默认流与观察回调共享递归锁，保证一次消息的输出顺序完整。 */
     zr_log_lock();
     zr_log_write_default_sink(channel, message);
     if (global != ZR_NULL && global->logFunction != ZR_NULL) {

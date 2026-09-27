@@ -28,6 +28,8 @@ static void native_call_lease_set_diagnostic(
     diagnostic->actual = actual;
 }
 
+/* 拒绝活跃 lease 或非活跃记录中残留的 state、计数和来源身份；
+ * 验证计划后才进入 GC 原生区，失败不发布活跃记录。 */
 TZrBool ZrCore_NativeCall_LeaseBegin(
         SZrState *state,
         const SZrNativeCallPlan *plan,
@@ -265,6 +267,7 @@ TZrBool ZrCore_NativeCall_LeaseRootObject(
     return ZR_TRUE;
 }
 
+/* 实际根和 pin 与已确认义务分别计数，结束时只释放实际创建的句柄。 */
 void ZrCore_NativeCall_LeaseEnd(
         SZrNativeCallLease *lease,
         SZrNativeCallDiagnostic *diagnostic) {

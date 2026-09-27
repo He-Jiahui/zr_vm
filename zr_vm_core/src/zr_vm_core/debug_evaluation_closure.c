@@ -9,6 +9,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
+/* 只接受实际暂停的 VM 闭包，不能仅凭函数元数据猜测捕获槽。 */
 static SZrClosure *debug_evaluation_context_get_vm_closure(
         SZrState *state,
         SZrCallInfo *callInfo,

@@ -234,6 +234,8 @@ void ZrCore_NativeCallback_Leave(SZrNativeCallbackSlot *slot) {
     if (slot == ZR_NULL || slot->reserved0 != 0u) {
         return;
     }
+    /* BUG: 若锁持有者在这里超过有界自旋窗口，Leave 直接放弃递减
+     * inFlight；随后 FinishUnregister 永远观察到在途调用并拒绝释放槽。 */
     if (!native_callback_lock(slot)) {
         return;
     }

@@ -9,14 +9,17 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
+/* 堆诊断只展示前 64 个不同 prototype，避免为观测本身分配堆内存。 */
 #define ZR_DEBUG_HEAP_PROTOTYPE_SUMMARY_CAPACITY 64u
 
+/* 仅借用 prototype 指针，计数和字节数来自本次活动堆扫描。 */
 typedef struct SZrDebugHeapPrototypeSummary {
     const SZrObjectPrototype *prototype;
     TZrUInt64 count;
     TZrUInt64 bytes;
 } SZrDebugHeapPrototypeSummary;
 
+/* 输出只列固定的已知类型；累计数组另由对象类型范围检查保护。 */
 static const EZrRawObjectType ZR_DEBUG_HEAP_KNOWN_TYPES[] = {
         ZR_RAW_OBJECT_TYPE_STRING,
         ZR_RAW_OBJECT_TYPE_BUFFER,
@@ -96,6 +99,7 @@ static const TZrChar *debug_heap_collection_phase_name(EZrGarbageCollectCollecti
     }
 }
 
+/* 统计跳过已释放与未引用对象，避免把 GC 链表的遗留节点算作活跃对象。 */
 static TZrBool debug_heap_object_is_active(const SZrRawObject *object) {
     if (object == ZR_NULL ||
         object->type <= ZR_RAW_OBJECT_TYPE_INVALID ||

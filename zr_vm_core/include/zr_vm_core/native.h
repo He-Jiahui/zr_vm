@@ -9,6 +9,7 @@
 #include "zr_vm_core/value.h"
 
 
+/** @brief 托管原生载荷对象；valueLength 决定尾随 valueExtend 的有效元素数。 */
 struct ZR_STRUCT_ALIGN SZrNativeData {
     SZrRawObject super;
     TZrUInt32 valueLength;

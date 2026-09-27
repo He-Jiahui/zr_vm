@@ -121,5 +121,6 @@ doc_type: category-index
 | parser 错误恢复与 AST 清理测试 | [23 项](coverage/tests_parser_recovery_ownership.tsv) | 1 个 C 文件独立复核，85 个证据锚点有效，源码仅增注释；GCC 语法检查通过。2 个 BUG 行记录装饰器和可变形参 fixture 没有触及声称的路径；未运行运行时测试。 |
 | parser 表达式、字面量与插值语法 | [111 项](coverage/zr_vm_parser_syntax_expressions.tsv) | 5 个 C 文件独立复核，567 个证据锚点有效，源码仅增 114 行注释；GCC/Clang 语法检查通过。37 个 BUG 行含计算式对象键空指针解引用及失败路径子树泄漏，另有 4 个 TODO；未运行运行时测试。 |
 | parser 引用语法与表达式片段测试 | [49 项](coverage/tests_parser_reference_expression_fragment.tsv) | 2 个 C 文件独立复核，152 个证据锚点有效，源码仅增 23 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行标记同一处准确 token/范围断言缺口，另有 2 个自动测试归属 TODO；未运行测试二进制。 |
+| core 调试、日志与原生调用契约 | [312 项](coverage/zr_vm_core_debug_native_log.tsv) | 16 个 C/H 文件独立复核，956 个证据锚点有效，15 个文件仅改注释；GCC/Clang 对 11 个 C 文件语法检查通过。5 个 BUG 行记录扩栈悬挂指针、物化失败误报、钩子非局部退出、回调计数遗漏和 packed 写回拒绝，另有 3 个 TODO；缺少既有测试二进制，未运行 CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

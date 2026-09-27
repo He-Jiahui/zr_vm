@@ -7,9 +7,11 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/task_frame_runtime.h"
 
+/* 默认预算保留首尾帧和折叠标记，让有限缓冲区仍显示异常来源。 */
 #define ZR_DEBUG_TRACEBACK_DEFAULT_MAX_FRAMES 21u
 #define ZR_DEBUG_TRACEBACK_FOLD_MARKER_FRAME_COST 1u
 
+/* length 只计入已写入字符，容量内始终为结尾的 NUL 留位。 */
 typedef struct SZrDebugTracebackWriter {
     TZrChar *buffer;
     TZrSize capacity;
@@ -137,6 +139,7 @@ static void debug_traceback_append_skip(SZrDebugTracebackWriter *writer, TZrUInt
     debug_traceback_append_cstr(writer, " levels)\n");
 }
 
+/* 帧数超预算时保留栈顶和根部，并以单个标记表示中间省略区。 */
 static void debug_traceback_append_frames(struct SZrState *state,
                                           SZrDebugTracebackWriter *writer,
                                           TZrUInt32 level,
@@ -315,6 +318,7 @@ TZrBool ZrCore_Debug_AsyncSchedulerContractsEqual(
         left->schedulerContractHash != right->schedulerContractHash) {
         return ZR_FALSE;
     }
+    /* 产物行没有源码成员和签名令牌；仅在两侧均来自源码时比较这些字段。 */
     if (left->origin == ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT &&
         right->origin == ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT) {
         return left->scheduleMemberToken == right->scheduleMemberToken &&
