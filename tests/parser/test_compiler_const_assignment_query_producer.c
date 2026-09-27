@@ -12,6 +12,7 @@
 
 #include "harness/runtime_support.h"
 
+/* Unity 每个用例独立创建运行时；AST 与编译器状态由测试另行释放。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -20,12 +21,17 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: Unity 断言失败会跳过测试尾部的 Ast_Free/CompilerState_Free；
+     * 这里只销毁运行时，无法完成局部原生资源的清理。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
 }
 
+/** @brief 从测试脚本安全取得语句，供声明与赋值用例共用。
+ * @note 返回节点借用自 script，直到 Ast_Free 前有效。
+ */
 static SZrAstNode *script_statement_at(SZrAstNode *script, TZrSize index) {
     if (script == ZR_NULL || script->type != ZR_AST_SCRIPT ||
         script->data.script.statements == ZR_NULL ||
@@ -35,6 +41,9 @@ static SZrAstNode *script_statement_at(SZrAstNode *script, TZrSize index) {
     return script->data.script.statements->nodes[index];
 }
 
+/** @brief 取得表达式语句的表达式，供赋值用例定位写入节点。
+ * @note 返回表达式借用自 script；调用方仍须校验具体赋值类型。
+ */
 static SZrAstNode *assignment_at(SZrAstNode *script, TZrSize index) {
     SZrAstNode *statement = script_statement_at(script, index);
 
@@ -44,6 +53,9 @@ static SZrAstNode *assignment_at(SZrAstNode *script, TZrSize index) {
     return statement->data.expressionStatement.expr;
 }
 
+/** @brief 验证同名符号记录指向不同声明时，发布器按引用的符号 ID 识别只读目标。
+ * @note 此 API 的仓内生产调用在 LSP；常规编译经独立的诊断构建路径。
+ */
 static void test_publisher_resolves_const_target_by_symbol_id(void) {
     static TZrChar source[] =
             "let frozen: int = 1;\n"
@@ -83,6 +95,7 @@ static void test_publisher_resolves_const_target_by_symbol_id(void) {
     compiler.suppressErrorOutput = ZR_TRUE;
     compiler.scriptAst = script;
 
+    /* 先登记同名可变符号，再让写入事实明确指向只读符号 ID。 */
     TEST_ASSERT_NOT_EQUAL(
             ZR_SEMANTIC_ID_INVALID,
             ZrParser_Semantic_RegisterSymbol(
@@ -114,6 +127,7 @@ static void test_publisher_resolves_const_target_by_symbol_id(void) {
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
             compiler.semanticContext, &reference));
 
+    /* 诊断事实由语义上下文持有；物化查询返回借用视图并保留赋值和声明范围。 */
     TEST_ASSERT_TRUE(ZrParser_ConstAssignment_PublishDiagnostic(
             &compiler, script, assignment));
     TEST_ASSERT_FALSE(compiler.hasError);
@@ -148,6 +162,7 @@ static void test_publisher_resolves_const_target_by_symbol_id(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/** @brief 构造已解析但未注册目标 ID 的写入事实，检查发布失败且查询为空。 */
 static void test_publisher_rejects_missing_symbol_record(void) {
     static TZrChar source[] =
             "let frozen: int = 1;\n"
@@ -167,6 +182,8 @@ static void test_publisher_rejects_missing_symbol_record(void) {
 
     TEST_ASSERT_NOT_NULL(script);
     TEST_ASSERT_NOT_NULL(assignment);
+    /* TODO: 这里仍需断言 ZR_AST_ASSIGNMENT_EXPRESSION；若解析形状回归，
+     * 随后读取 assignmentExpression 联合体成员将失去类型前提。 */
     target = assignment->data.assignmentExpression.left;
     TEST_ASSERT_NOT_NULL(target);
 
@@ -186,6 +203,8 @@ static void test_publisher_rejects_missing_symbol_record(void) {
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(
             compiler.semanticContext, &reference));
 
+    /* TODO: 需先断言 SymbolAt 命中该引用且返回 ID 999；否则下面的 false
+     * 也可能来自查询未命中，不能证明走到缺失符号记录的分支。 */
     TEST_ASSERT_FALSE(ZrParser_ConstAssignment_PublishDiagnostic(
             &compiler, script, assignment));
     ZrParser_SemanticQueryScope_Module(&scope);
@@ -200,6 +219,8 @@ static void test_publisher_rejects_missing_symbol_record(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* TODO: 此目标已在 tests/CMakeLists.txt 建立，但尚无 add_test 注册，
+ * 当前不会作为 CTest 用例运行；需确认 CI 是否直接运行该目标，或补注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_publisher_resolves_const_target_by_symbol_id);

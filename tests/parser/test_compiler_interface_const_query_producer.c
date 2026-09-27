@@ -10,6 +10,7 @@
 
 #include "harness/runtime_support.h"
 
+/* Unity 每个用例独立创建运行时；AST、编译器及临时原型数组另有释放责任。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -18,12 +19,17 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: Unity 断言失败会跳过测试尾部的 Ast_Free/CompilerState_Free；
+     * 原型数组若尚未转交 compiler.typePrototypes，也会随栈帧丢失。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
 }
 
+/** @brief 为 query producer 构造最小原型，模拟编译器已登记的接口/类关系。
+ * @note 嵌套数组持有原生内存；浅拷贝转交 compiler.typePrototypes 后由编译器释放。
+ */
 static void init_prototype(
         SZrTypePrototypeInfo *prototype,
         SZrString *name,
@@ -53,6 +59,9 @@ static void init_prototype(
             1U);
 }
 
+/** @brief 将解析所得接口字段登记为原型成员，保留 const 与声明节点供违规定位。
+ * @note 字段名和声明节点借用 AST；成员数组归原型所有。
+ */
 static void append_interface_field(
         SZrTypePrototypeInfo *prototype,
         SZrAstNode *fieldNode) {
@@ -70,6 +79,9 @@ static void append_interface_field(
     ZrCore_Array_Push(g_state, &prototype->members, &member);
 }
 
+/** @brief 将实现类字段登记到原型，使发布器比较接口要求与实际可变性。
+ * @note 字段名和声明节点借用 AST；成员数组归原型所有。
+ */
 static void append_class_field(
         SZrTypePrototypeInfo *prototype,
         SZrAstNode *fieldNode) {
@@ -86,10 +98,13 @@ static void append_class_field(
     ZrCore_Array_Push(g_state, &prototype->members, &member);
 }
 
+/** @brief 从模块查询借用视图统计并核对 const 接口违约诊断的共同元数据。 */
 static TZrSize count_interface_const_diagnostics(
         const SZrParserSemanticQueryDiagnostics *diagnostics) {
     TZrSize count = 0U;
 
+    /* TODO: 只核对总数与共同字段，尚不能证明 version 和 generation 均各有诊断；
+     * 需按两处接口声明或实现范围逐项核对位置及原因。 */
     for (TZrSize index = 0U;
          diagnostics != ZR_NULL && index < diagnostics->count;
          index++) {
@@ -112,6 +127,9 @@ static TZrSize count_interface_const_diagnostics(
     return count;
 }
 
+/** @brief 直接验证 LSP 使用的发布器会追加两条接口 const 违规且保留已有编译错误。
+ * @note 常规类编译另走首项校验；查询视图须在编译器释放前读取。
+ */
 static void test_publisher_emits_all_interface_const_violations(void) {
     static TZrChar source[] =
             "interface Versioned {\n"
@@ -166,6 +184,7 @@ static void test_publisher_emits_all_interface_const_violations(void) {
     append_interface_field(
             &interfacePrototype,
             interfaceNode->data.interfaceDeclaration.members->nodes[1U]);
+    /* 浅拷贝转交原型后，嵌套数组由 CompilerState_Free 统一释放。 */
     ZrCore_Array_Push(
             g_state, &compiler.typePrototypes, &interfacePrototype);
 
@@ -184,6 +203,7 @@ static void test_publisher_emits_all_interface_const_violations(void) {
             classNode->data.classDeclaration.members->nodes[0U]);
     ZrCore_Array_Push(g_state, &compiler.typePrototypes, &classPrototype);
 
+    /* 发布器应只追加语义事实，不能改写先前编译错误的状态和消息。 */
     compiler.hasError = ZR_TRUE;
     compiler.hasStructuredError = ZR_FALSE;
     compiler.errorMessage = existingError;
@@ -206,6 +226,8 @@ static void test_publisher_emits_all_interface_const_violations(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* TODO: 此目标已在 tests/CMakeLists.txt 建立，但尚无 add_test 注册，
+ * 当前不会作为 CTest 用例运行；需确认 CI 是否直接运行该目标，或补注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_publisher_emits_all_interface_const_violations);
