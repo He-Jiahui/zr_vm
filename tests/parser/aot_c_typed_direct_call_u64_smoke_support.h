@@ -3,6 +3,7 @@
 
 #include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
 
+/* u64 用例提供源码针脚、返回边界选项与运行值类型预期。 */
 typedef struct SZrAotTypedDirectCallU64SmokeCase {
     const char *source;
     const char *projectName;
@@ -21,6 +22,7 @@ typedef struct SZrAotTypedDirectCallU64SmokeCase {
 } SZrAotTypedDirectCallU64SmokeCase;
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 拼接项目子目录，并用断言拒绝路径缓冲区截断。 */
 static void format_aot_c_typed_direct_call_u64_path(char *buffer,
                                                     size_t bufferSize,
                                                     const char *projectDirectory,
@@ -38,6 +40,7 @@ static void format_aot_c_typed_direct_call_u64_path(char *buffer,
 }
 #endif
 
+/* 按返回类型及回退选项检查生成 C，再执行 Unix AOT 共享库。 */
 static void run_aot_c_typed_direct_call_u64_smoke_with_options(
         const SZrAotTypedDirectCallU64SmokeCase *testCase,
         const char *returnBoundaryNeedle,
@@ -109,6 +112,7 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
                               testCase->projectName) > 0);
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
+    /* BUG: 针脚断言失败漏 generatedCText/function；执行阶段失败跳过 project/blob/state 清理。 */
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, testCase->source, "main.zr");
     TEST_ASSERT_NOT_NULL(function);
@@ -246,6 +250,7 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
 #endif
 }
 
+/* 常规 u64 用例不额外要求返回边界，并禁止运行时调用回退。 */
 static void run_aot_c_typed_direct_call_u64_smoke(const SZrAotTypedDirectCallU64SmokeCase *testCase) {
     run_aot_c_typed_direct_call_u64_smoke_with_options(testCase,
                                                        ZR_NULL,

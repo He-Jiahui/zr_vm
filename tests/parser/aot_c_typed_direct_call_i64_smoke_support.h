@@ -3,6 +3,7 @@
 
 #include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
 
+/* i64 用例提供脚本、生成 C 针脚、禁止回退标记及预期执行值。 */
 typedef struct SZrAotTypedDirectCallI64SmokeCase {
     const char *source;
     const char *projectJson;
@@ -17,6 +18,7 @@ typedef struct SZrAotTypedDirectCallI64SmokeCase {
     TZrInt64 expectedResult;
 } SZrAotTypedDirectCallI64SmokeCase;
 
+/* 拼接项目子目录，并用断言拒绝路径缓冲区截断。 */
 static void aot_c_i64_smoke_format_child_path(char *buffer,
                                               size_t bufferSize,
                                               const char *base,
@@ -33,6 +35,7 @@ static void aot_c_i64_smoke_format_child_path(char *buffer,
     TEST_ASSERT_TRUE((size_t)written < bufferSize);
 }
 
+/* Unix 下从脚本写出 AOT C 并加载共享库，对照直接调用形态与运行结果。 */
 static void aot_c_i64_smoke_run_case(const SZrAotTypedDirectCallI64SmokeCase *testCase) {
 #if !defined(ZR_PLATFORM_UNIX)
     (void)testCase;
@@ -66,6 +69,7 @@ static void aot_c_i64_smoke_run_case(const SZrAotTypedDirectCallI64SmokeCase *te
     TEST_ASSERT_NOT_NULL(testCase->projectArtifactName);
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
+    /* BUG: 针脚断言失败漏 generatedCText；后续失败跳过尚未释放的 project/blob/function/state。 */
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, testCase->source, "main.zr");
     TEST_ASSERT_NOT_NULL(function);

@@ -20,27 +20,34 @@
 #include "zr_vm_parser/writer.h"
 
 #ifndef ZR_VM_TESTS_C_COMPILER
+/* CMake 通常注入当前 C 编译器；独立构建时退回系统 cc。 */
 #define ZR_VM_TESTS_C_COMPILER "cc"
 #endif
 
 #ifndef ZR_VM_TESTS_REPO_ROOT
+/* 生成共享库命令使用仓库根目录定位三个公共头目录。 */
 #define ZR_VM_TESTS_REPO_ROOT "."
 #endif
 
 #ifndef ZR_VM_TESTS_BUILD_LIB_DIR
+/* 生成共享库通过此目录链接并定位运行时库。 */
 #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
 
 #ifndef ZR_TESTS_ARRAY_COUNT
+/* 计算固定针脚数组长度；不适用于指针。 */
 #define ZR_TESTS_ARRAY_COUNT(values) (sizeof(values) / sizeof((values)[0]))
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
+/* 共享头被多个测试源包含时，压制未使用辅助函数的诊断。 */
 #define ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED __attribute__((unused))
 #else
+/* 非 GNU 编译器保持空修饰，供同一函数声明使用。 */
 #define ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED
 #endif
 
+/* 每例提供脚本、项目定位、生成 C 必需针脚和运行结果。 */
 typedef struct SZrAotTypedDirectCallArithmeticSmokeCase {
     const char *source;
     const char *projectJson;
@@ -52,6 +59,7 @@ typedef struct SZrAotTypedDirectCallArithmeticSmokeCase {
 } SZrAotTypedDirectCallArithmeticSmokeCase;
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 执行生成共享库的编译命令，并在失败时打印完整命令供诊断。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -64,10 +72,13 @@ static int run_command_expect_success(const char *command) {
 }
 #endif
 
+/* Unity 每例初始化钩子；本组不持有跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行失败路径资源回收。 */
 void tearDown(void) {}
 
+/* 将同一脚本编译成函数对象，供二进制与 AOT C writer 连续消费。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -80,6 +91,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 将项目声明或脚本写入生成产物目录。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -89,10 +101,12 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
 
     file = fopen(path, "wb");
     TEST_ASSERT_NOT_NULL(file);
+    /* BUG: 写入断言失败会经 Unity 跳出，跳过 fclose，留下打开的文件。 */
     TEST_ASSERT_EQUAL_size_t(strlen(text), fwrite(text, 1u, strlen(text), file));
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* 读取完整生成 C 文件，返回缓冲区由调用方释放。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     TZrBytePtr bytes = ZR_NULL;
     TZrSize byteLength = 0u;
@@ -100,6 +114,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 
     TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(path, &bytes, &byteLength));
     text = (char *)malloc((size_t)byteLength + 1u);
+    /* BUG: 分配断言失败会跳过此前读入的 bytes 释放。 */
     TEST_ASSERT_NOT_NULL(text);
     if (byteLength > 0u) {
         memcpy(text, bytes, (size_t)byteLength);
@@ -109,6 +124,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return text;
 }
 
+/* 流式计算 ZRO 的稳定哈希，供嵌入 AOT C 的输入身份核对。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -129,11 +145,13 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
             hash *= ZR_STABLE_HASH_FNV1A64_PRIME;
         }
     }
+    /* BUG: feof 断言失败会经 Unity 跳出，跳过随后的 fclose。 */
     TEST_ASSERT_TRUE(feof(file));
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* Unix 下生成 ZRO 与 AOT C，共享库执行后同时检查 typed 算术形态及结果。 */
 static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
         const SZrAotTypedDirectCallArithmeticSmokeCase *testCase) {
 #if !defined(ZR_PLATFORM_UNIX)
@@ -178,6 +196,7 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
     TEST_ASSERT_NOT_NULL(testCase->requiredGeneratedCNeedles);
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
+    /* BUG: 针脚断言失败漏 generatedCText；后续失败跳过尚未释放的 project/blob/function/state，空 tearDown 不回收。 */
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, testCase->source, "main.zr");
     TEST_ASSERT_NOT_NULL(function);

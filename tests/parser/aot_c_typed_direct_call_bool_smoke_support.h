@@ -3,6 +3,7 @@
 
 #include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
 
+/* bool 用例同时指定源码针脚、可选 full AOT 守卫与运行结果。 */
 typedef struct SZrAotTypedDirectCallBoolSmokeCase {
     const char *source;
     const char *projectName;
@@ -21,6 +22,7 @@ typedef struct SZrAotTypedDirectCallBoolSmokeCase {
 } SZrAotTypedDirectCallBoolSmokeCase;
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 拼接项目子目录，并用断言拒绝路径缓冲区截断。 */
 static void format_aot_c_typed_direct_call_bool_path(char *buffer,
                                                      size_t bufferSize,
                                                      const char *projectDirectory,
@@ -38,6 +40,7 @@ static void format_aot_c_typed_direct_call_bool_path(char *buffer,
 }
 #endif
 
+/* 按选项约束返回边界、元数据守卫和运行时回退，再执行 Unix 共享库。 */
 static void run_aot_c_typed_direct_call_bool_smoke_with_options(
         const SZrAotTypedDirectCallBoolSmokeCase *testCase,
         const char *returnBoundaryNeedle,
@@ -105,6 +108,7 @@ static void run_aot_c_typed_direct_call_bool_smoke_with_options(
                               testCase->projectName) > 0);
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
+    /* BUG: 针脚断言失败漏 generatedCText；后续失败跳过尚未释放的 project/blob/function/state。 */
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, testCase->source, "main.zr");
     TEST_ASSERT_NOT_NULL(function);
@@ -230,6 +234,7 @@ static void run_aot_c_typed_direct_call_bool_smoke_with_options(
 #endif
 }
 
+/* 常规 bool 用例不额外要求返回边界，且禁止运行时调用回退。 */
 static void run_aot_c_typed_direct_call_bool_smoke(const SZrAotTypedDirectCallBoolSmokeCase *testCase) {
     run_aot_c_typed_direct_call_bool_smoke_with_options(testCase, ZR_NULL, ZR_FALSE);
 }

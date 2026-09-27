@@ -3,6 +3,7 @@
 
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h"
 
+/* 定位 caller 的 returned 栈拷贝，防止所有权结果继承复用槽的 typed 标量类别。 */
 static void assert_call_result_copy_is_not_scalar(SZrState *state,
                                                   SZrFunction *function,
                                                   const char *callerName) {
@@ -13,6 +14,7 @@ static void assert_call_result_copy_is_not_scalar(SZrState *state,
 
     memset(&module, 0, sizeof(module));
     TEST_ASSERT_TRUE(backend_aot_exec_ir_build_module(state, function, &module));
+    /* BUG: 后续断言失败会由 Unity 跳出，跳过末尾的 ExecIR 模块释放。 */
     for (TZrUInt32 index = 0u; index < module.functionCount; index++) {
         const SZrFunction *candidate = module.functions[index].function;
         if (candidate->functionName != ZR_NULL &&
@@ -49,6 +51,7 @@ static void assert_call_result_copy_is_not_scalar(SZrState *state,
     backend_aot_exec_ir_release_module(state, &module);
 }
 
+/* 共享与弱引用调用结果都经栈拷贝，检验回收后的结果不被当成旧标量槽。 */
 static void test_aot_c_never_scalarizes_owned_call_result_copy(void) {
     static const char *source =
             "resource class Leaf {\n"
@@ -70,6 +73,7 @@ static void test_aot_c_never_scalarizes_owned_call_result_copy(void) {
             " drop(returned); return 0;\n"
             "}\n"
             "return sharedCaller() + weakCaller();\n";
+    /* BUG: 以下断言失败会跳过 function/state 释放；宿主的空 tearDown 不会回收。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
 

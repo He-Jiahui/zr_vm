@@ -3,6 +3,7 @@
 
 #include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
 
+/* f64 用例提供直调针脚及脚本的最终整数结果。 */
 typedef struct SZrAotTypedDirectCallF64SmokeCase {
     const char *source;
     const char *projectName;
@@ -18,6 +19,7 @@ typedef struct SZrAotTypedDirectCallF64SmokeCase {
 } SZrAotTypedDirectCallF64SmokeCase;
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 拼接项目子目录，并用断言拒绝路径缓冲区截断。 */
 static void format_aot_c_typed_direct_call_f64_path(char *buffer,
                                                     size_t bufferSize,
                                                     const char *projectDirectory,
@@ -35,6 +37,7 @@ static void format_aot_c_typed_direct_call_f64_path(char *buffer,
 }
 #endif
 
+/* 从参数个数直调标记映射到对应 full AOT 标记，拒绝未知形态。 */
 static const char *full_aot_f64_marker_for_direct_call_marker(const char *directCallMarkerNeedle) {
     TEST_ASSERT_NOT_NULL(directCallMarkerNeedle);
     if (strstr(directCallMarkerNeedle, "no_arg") != ZR_NULL) {
@@ -53,6 +56,7 @@ static const char *full_aot_f64_marker_for_direct_call_marker(const char *direct
     return ZR_NULL;
 }
 
+/* 核对 f64 full AOT 直调及可选返回边界，再运行共享库比较结果。 */
 static void run_aot_c_typed_direct_call_f64_smoke_with_options(
         const SZrAotTypedDirectCallF64SmokeCase *testCase,
         const char *returnBoundaryNeedle,
@@ -120,6 +124,7 @@ static void run_aot_c_typed_direct_call_f64_smoke_with_options(
                               testCase->projectName) > 0);
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
+    /* BUG: 针脚断言失败漏 generatedCText；后续失败跳过尚未释放的 project/blob/function/state。 */
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, testCase->source, "main.zr");
     TEST_ASSERT_NOT_NULL(function);
@@ -242,6 +247,7 @@ static void run_aot_c_typed_direct_call_f64_smoke_with_options(
 #endif
 }
 
+/* 常规 f64 用例不额外要求返回边界，且禁止运行时调用回退。 */
 static void run_aot_c_typed_direct_call_f64_smoke(const SZrAotTypedDirectCallF64SmokeCase *testCase) {
     run_aot_c_typed_direct_call_f64_smoke_with_options(testCase, ZR_NULL, ZR_FALSE);
 }

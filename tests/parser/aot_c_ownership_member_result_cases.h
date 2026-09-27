@@ -3,23 +3,29 @@
 
 #include "zr_vm_library/aot_runtime.h"
 
+/* 模拟生成帧的四个直接 value 槽位，后半存储承载帧布局。 */
 enum { AOT_MEMBER_FRAME_SLOT_COUNT = 4u };
 
+/* 记录注册为待关闭的接收者析构次数，由每个夹具初始化时清零。 */
 static TZrUInt32 g_aot_member_owner_drops;
+/* 记录成员结果析构次数，以验证它可独立于接收者存活。 */
 static TZrUInt32 g_aot_member_leaf_drops;
 
+/* 资源对象的 native 析构回调，供接收者关闭次数断言。 */
 static TZrInt64 aot_member_owner_drop(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     ++g_aot_member_owner_drops;
     return 0;
 }
 
+/* 成员资源的 native 析构回调，供返回值释放次数断言。 */
 static TZrInt64 aot_member_leaf_drop(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     ++g_aot_member_leaf_drops;
     return 0;
 }
 
+/* 给新资源安装析构回调，再把唯一所有权转为调用方持有的 shared 值。 */
 static void aot_member_create_shared(SZrTypeValue *shared, TZrInt64 (*drop)(SZrState *)) {
     SZrTypeValue unique;
     SZrObject *object = create_resource_object();
@@ -34,6 +40,7 @@ static void aot_member_create_shared(SZrTypeValue *shared, TZrInt64 (*drop)(SZrS
     TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(g_state, shared, &unique));
 }
 
+/* 构造带直接 value 槽的生成帧与调用信息，并重置析构计数。 */
 static void aot_member_prepare_frame(ZrAotGeneratedFrame *frame) {
     SZrFunction *function = ZrCore_Function_New(g_state);
     SZrCallInfo *callInfo = g_state->callInfoList;
@@ -83,6 +90,7 @@ static void aot_member_prepare_frame(ZrAotGeneratedFrame *frame) {
     g_aot_member_leaf_drops = 0u;
 }
 
+/* 关闭已登记接收者后，成员读取结果仍持有独立 shared 引用，直至显式 drop。 */
 static void test_aot_member_result_outlives_registered_receiver(void) {
     ZrAotGeneratedFrame frame;
     SZrTypeValue owner;
@@ -138,6 +146,7 @@ static void test_aot_member_result_outlives_registered_receiver(void) {
     TEST_ASSERT_EQUAL_UINT32(1u, g_aot_member_leaf_drops);
 }
 
+/* 关闭待清理接收者时，同时清空与其对应的帧槽，避免残留已析构值。 */
 static void test_aot_registered_shared_owner_closes_all_matching_storage(void) {
     ZrAotGeneratedFrame frame;
     SZrTypeValue owner;
@@ -150,6 +159,7 @@ static void test_aot_registered_shared_owner_closes_all_matching_storage(void) {
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(ZrCore_Stack_GetValue(frame.slotBase)->type));
 }
 
+/* 显式 drop 已登记接收者后再关闭作用域，不应二次调用析构。 */
 static void test_aot_registered_shared_owner_drops_immediately(void) {
     ZrAotGeneratedFrame frame;
     SZrTypeValue owner;

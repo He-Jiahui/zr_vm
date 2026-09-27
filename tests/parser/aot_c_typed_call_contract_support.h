@@ -8,9 +8,11 @@
 #include "unity.h"
 
 #ifndef ARRAY_COUNT
+/* 供固定数组合同针脚求元素数；指针参数不适用。 */
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 #endif
 
+/* 读取完整源码文本，成功返回的缓冲区交调用方释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -53,6 +55,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 优先由 __FILE__ 定位仓库根目录；路径标记缺失时按当前目录读取。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -83,11 +86,13 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 逐项核对生成器源码针脚，失败时指出缺失片段。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
     for (index = 0; index < needleCount; index++) {
         if (strstr(text, needles[index]) == NULL) {
+            /* BUG: Unity 失败跳转会跳过调用方末尾的源码缓冲区释放。 */
             printf("Missing source contract text: %s\n", needles[index]);
             TEST_FAIL_MESSAGE("missing required source contract text");
         }
