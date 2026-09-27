@@ -176,5 +176,6 @@ doc_type: category-index
 | language server stdio 帧与 JSON-RPC 信封 | [26 项](coverage/zr_vm_language_server_stdio_frame_envelope.tsv) | 4 个 C/H 文件独立复核，90 个证据锚点、43 个调用条目，源码仅增注释；GCC/Clang 对两份 C 文件的严格语法检查通过。1 个 TODO 保留 Content-Type 媒体类型判定范围疑问；目标生命周期测试未构建运行。 |
 | language server stdio 生命周期状态机 | [20 项](coverage/zr_vm_language_server_stdio_lifecycle.tsv) | 2 个 C/H 文件独立复核，接口、状态和通知字段均有调用证据，源码仅增注释；GCC/Clang 严格语法检查通过。1 个 TODO 记录 initialized 通知标志目前仅由测试读取、是否需保留外部可观测状态的疑问。同步校正前一批 stdio 台账的 3 处调用锚点；目标生命周期测试未构建运行。 |
 | core GC 域公共契约 | [49 项](coverage/zr_vm_core_gc_domain_public_contracts.tsv) | 2 个 H 文件独立复核，216 个证据锚点，源码仅增注释；GCC/Clang C11 头文件语法检查通过。4 个 TODO 保留公开证明、调用时序和所有权约束疑问；GC 辅助台账的 2 处反向锚点已按当前声明及证明字段校正。 |
+| parser CFG 数值条件测试 | [61 项](coverage/tests_parser_cfg_numeric_conditions.tsv) | 2 个 C 测试文件独立复核，385 个证据锚点，覆盖 17 个 Unity 注册；源码仅增 62 行注释，GCC/Clang 四项定向语法检查通过。13 个 BUG 行记录失败断言后跳过资源释放的可达路径，1 个 TODO 保留边界测试缺口。目标测试构建触发大量不相关重编译并已停止，未运行对应可执行测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

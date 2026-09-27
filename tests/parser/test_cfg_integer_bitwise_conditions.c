@@ -12,13 +12,16 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 每个 Unity 用例独享状态；手工 AST 与 CFG 事实都使用其分配器。 */
 static SZrState *g_state;
 
+/* 为本组直接 CFG 测试创建状态，不经过源代码编译或 VM 执行。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* 销毁状态；测试体借原生分配的 AST、CFG、语义上下文需先自行释放。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,6 +29,7 @@ void tearDown(void) {
     }
 }
 
+/* 以同一虚拟源文件和单行偏移构造节点位置及事实查询位置。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -41,12 +45,14 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 原生申请一个零初始化 AST 节点；最终由脚本根递归释放。 */
 static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *node = (SZrAstNode *)ZrCore_Memory_RawMallocWithType(
         g_state->global,
         sizeof(SZrAstNode),
         ZR_MEMORY_NATIVE_TYPE_ARRAY);
 
+    /* BUG: 后续节点申请失败时 Unity 跳过测试体，先前已建的 AST 子树泄漏。 */
     TEST_ASSERT_NOT_NULL(node);
     memset(node, 0, sizeof(*node));
     node->type = type;
@@ -54,27 +60,32 @@ static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize e
     return node;
 }
 
+/* 把已建 if 交给脚本根，成功后由根节点承担递归析构。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 80);
 
     script->data.script.statements = ZrParser_AstNodeArray_New(g_state, 1);
+    /* BUG: 数组申请失败经 Unity 跳出，script 和传入语句尚未形成可清理树，原生块泄漏。 */
     TEST_ASSERT_NOT_NULL(script->data.script.statements);
     ZrParser_AstNodeArray_Add(g_state, script->data.script.statements, statement);
     return script;
 }
 
+/* 为 then 或 else 建语句态块体，并接管传入语句。 */
 static SZrAstNode *block_with_statement(SZrAstNode *statement,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
     SZrAstNode *block = test_node(ZR_AST_BLOCK, startOffset, endOffset);
 
     block->data.block.body = ZrParser_AstNodeArray_New(g_state, 1);
+    /* BUG: 块体数组申请失败时断言跳过调用方尾部释放，block 和传入语句泄漏。 */
     TEST_ASSERT_NOT_NULL(block->data.block.body);
     block->data.block.isStatement = ZR_TRUE;
     ZrParser_AstNodeArray_Add(g_state, block->data.block.body, statement);
     return block;
 }
 
+/* 用直接赋值的整数叶节点隔离 CFG 折叠逻辑。 */
 static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_INTEGER_LITERAL, startOffset, endOffset);
 
@@ -82,6 +93,7 @@ static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize 
     return literal;
 }
 
+/* 将操作数交给二元节点，供位运算与外层等值比较复用。 */
 static SZrAstNode *binary_expression(SZrAstNode *left,
                                      const TZrChar *op,
                                      SZrAstNode *right,
@@ -95,6 +107,7 @@ static SZrAstNode *binary_expression(SZrAstNode *left,
     return expression;
 }
 
+/* 为已知真条件提供两侧分支，以 else 不可达事实观察折叠结果。 */
 static SZrAstNode *if_statement(SZrAstNode *condition,
                                 SZrAstNode *thenBlock,
                                 SZrAstNode *elseBlock) {
@@ -107,6 +120,7 @@ static SZrAstNode *if_statement(SZrAstNode *condition,
     return ifNode;
 }
 
+/* 在语句内部而非节点边界按位置读取可达性事实。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(SZrSemanticContext *context,
                                                                SZrAstNode *node) {
     return ZrParser_SemanticFacts_FindReachabilityAtPosition(
@@ -114,6 +128,9 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(SZrSemanticContex
         test_range(node->location.start.offset + 1, node->location.start.offset + 1));
 }
 
+/* TODO: 当前仅覆盖非负操作数与合法移位计数；需对照 cfg_constants 的拒绝分支，
+ * 补负数、63 及更大计数、左移溢出时两侧保持未知的 CFG 事实用例。 */
+/* 6 & 3 得 2，真条件应只把 else 标为常量分支不可达。 */
 static void test_cfg_folds_nonnegative_integer_bitwise_and_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -134,6 +151,7 @@ static void test_cfg_folds_nonnegative_integer_bitwise_and_equality_true_if_cond
     const SZrSemanticReachabilityFact *elseFact;
 
     TEST_ASSERT_NOT_NULL(context);
+    /* BUG: 断言失败会跳过本用例尾部 Cfg/Ast/SemanticContext_Free，已分配的原生资源泄漏。 */
     ZrParser_Cfg_Init(g_state, &cfg);
 
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
@@ -152,6 +170,7 @@ static void test_cfg_folds_nonnegative_integer_bitwise_and_equality_true_if_cond
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 4 | 1 得 5，验证或运算结果进入外层等值条件。 */
 static void test_cfg_folds_nonnegative_integer_bitwise_or_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -172,6 +191,7 @@ static void test_cfg_folds_nonnegative_integer_bitwise_or_equality_true_if_condi
     const SZrSemanticReachabilityFact *elseFact;
 
     TEST_ASSERT_NOT_NULL(context);
+    /* BUG: 断言失败会跳过本用例尾部 Cfg/Ast/SemanticContext_Free，已分配的原生资源泄漏。 */
     ZrParser_Cfg_Init(g_state, &cfg);
 
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
@@ -190,6 +210,7 @@ static void test_cfg_folds_nonnegative_integer_bitwise_or_equality_true_if_condi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 6 ^ 3 得 5，验证异或后的真分支事实及原条件归因。 */
 static void test_cfg_folds_nonnegative_integer_bitwise_xor_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -210,6 +231,7 @@ static void test_cfg_folds_nonnegative_integer_bitwise_xor_equality_true_if_cond
     const SZrSemanticReachabilityFact *elseFact;
 
     TEST_ASSERT_NOT_NULL(context);
+    /* BUG: 断言失败会跳过本用例尾部 Cfg/Ast/SemanticContext_Free，已分配的原生资源泄漏。 */
     ZrParser_Cfg_Init(g_state, &cfg);
 
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
@@ -228,6 +250,7 @@ static void test_cfg_folds_nonnegative_integer_bitwise_xor_equality_true_if_cond
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 合法左移 3 << 2 得 12，折叠后裁去 else。 */
 static void test_cfg_folds_nonnegative_integer_left_shift_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -248,6 +271,7 @@ static void test_cfg_folds_nonnegative_integer_left_shift_equality_true_if_condi
     const SZrSemanticReachabilityFact *elseFact;
 
     TEST_ASSERT_NOT_NULL(context);
+    /* BUG: 断言失败会跳过本用例尾部 Cfg/Ast/SemanticContext_Free，已分配的原生资源泄漏。 */
     ZrParser_Cfg_Init(g_state, &cfg);
 
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
@@ -266,6 +290,7 @@ static void test_cfg_folds_nonnegative_integer_left_shift_equality_true_if_condi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 合法右移 12 >> 2 得 3，保留 then、裁去 else。 */
 static void test_cfg_folds_nonnegative_integer_right_shift_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -286,6 +311,7 @@ static void test_cfg_folds_nonnegative_integer_right_shift_equality_true_if_cond
     const SZrSemanticReachabilityFact *elseFact;
 
     TEST_ASSERT_NOT_NULL(context);
+    /* BUG: 断言失败会跳过本用例尾部 Cfg/Ast/SemanticContext_Free，已分配的原生资源泄漏。 */
     ZrParser_Cfg_Init(g_state, &cfg);
 
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
@@ -304,6 +330,7 @@ static void test_cfg_folds_nonnegative_integer_right_shift_equality_true_if_cond
     ZrParser_SemanticContext_Free(context);
 }
 
+/* Unity 注册五个非负位运算与移位用例；目标进入 language_pipeline 套件。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_folds_nonnegative_integer_bitwise_and_equality_true_if_condition);
