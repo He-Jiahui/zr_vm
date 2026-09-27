@@ -2,6 +2,7 @@
 
 #include "artifact_schema_internal.h"
 
+/* 身份边界的哈希失败保留预期值和实际值，供调用方识别不兼容字段。 */
 static EZrArtifactStatus artifact_identity_hash_mismatch(SZrArtifactDiagnostic *diagnostic,
                                                          EZrArtifactStatus status,
                                                          TZrUInt64 expected,
@@ -14,6 +15,7 @@ static EZrArtifactStatus artifact_identity_hash_mismatch(SZrArtifactDiagnostic *
     return status;
 }
 
+/* Canonical consumer 在完整解码后核对外部预期的根身份；这里只比较描述符，不复验原始字节。 */
 EZrArtifactStatus ZrCore_Artifact_ValidatePublicIdentity(const SZrArtifactView *view,
                                                          const SZrArtifactPublicIdentity *expected,
                                                          SZrArtifactDiagnostic *diagnostic) {
@@ -47,6 +49,7 @@ EZrArtifactStatus ZrCore_Artifact_ValidatePublicIdentity(const SZrArtifactView *
     if (expected->moduleHash != view->identity.moduleHash)
         return artifact_identity_hash_mismatch(diagnostic, ZR_ARTIFACT_STATUS_MODULE_HASH_MISMATCH,
                                                expected->moduleHash, view->identity.moduleHash);
+    /* TODO: 根 ID 或 token 失配只给 ILLEGAL_TOKEN；需确认诊断是否应填 expectedToken/actualToken。 */
     if (expected->canonicalTypeId != view->identity.canonicalTypeId ||
         expected->typeRefToken != view->identity.typeRefToken ||
         expected->typeSpecToken != view->identity.typeSpecToken ||
@@ -55,6 +58,8 @@ EZrArtifactStatus ZrCore_Artifact_ValidatePublicIdentity(const SZrArtifactView *
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 签名和传输指纹共享的确定性字节哈希；调用方须提供有效字节范围，空指针配正长度返回零。 */
+/* TODO: scheduler 指纹调用方直接哈希 C 结构；跨 ABI 复用产物前需核对字段布局、填充和端序。 */
 TZrUInt64 ZrCore_Artifact_HashBytes(const TZrByte *bytes, TZrSize byteLength) {
     TZrUInt64 hash = 1469598103934665603ULL;
     TZrSize index;
@@ -66,6 +71,7 @@ TZrUInt64 ZrCore_Artifact_HashBytes(const TZrByte *bytes, TZrSize byteLength) {
     return hash;
 }
 
+/* 元数据摘要按线格式字段顺序吸收整数，避免依赖主机端序。 */
 static void artifact_hash_u32(TZrUInt64 *hash, TZrUInt32 value) {
     TZrUInt32 shift;
 
@@ -75,6 +81,7 @@ static void artifact_hash_u32(TZrUInt64 *hash, TZrUInt32 value) {
     }
 }
 
+/* 与 32 位字段使用同一摘要规则，供元数据状态吸收各身份哈希。 */
 static void artifact_hash_u64(TZrUInt64 *hash, TZrUInt64 value) {
     TZrUInt32 shift;
 
@@ -84,6 +91,7 @@ static void artifact_hash_u64(TZrUInt64 *hash, TZrUInt64 value) {
     }
 }
 
+/* 投影方产生状态摘要，图校验方复算；排除摘要字段本身，以零表示无输入。 */
 TZrUInt64 ZrCore_Artifact_ComputeMetadataStateHash(
         const SZrArtifactMetadataStateRow *state) {
     TZrUInt64 hash = 1469598103934665603ULL;
@@ -103,6 +111,8 @@ TZrUInt64 ZrCore_Artifact_ComputeMetadataStateHash(
     return hash;
 }
 
+/* 将记录身份、blob 内偏移和载荷绑定，供 metadata graph 检测被移动或改写的记录。 */
+/* 调用方保持 payload 在调用期可读；长度不匹配或非空长度配空指针时返回零。 */
 TZrUInt64 ZrCore_Artifact_ComputeMetadataRecordHash(
         const SZrArtifactMetadataRecordRow *record,
         const TZrByte *payload,
@@ -129,6 +139,8 @@ TZrUInt64 ZrCore_Artifact_ComputeMetadataRecordHash(
     return hash;
 }
 
+/* 将公开状态映射为稳定的静态诊断文本；仓内尚无直接调用，外部调用者可查询任意状态。 */
+/* BUG: 新增的五种 scheduler/transport 失配状态在此表缺席，合法状态会被报告为 unknown。 */
 const TZrChar *ZrCore_Artifact_StatusName(EZrArtifactStatus status) {
     static const TZrChar *names[] = {
             "ok", "invalid-argument", "bad-magic", "unsupported-version", "invalid-kind",
@@ -142,6 +154,7 @@ const TZrChar *ZrCore_Artifact_StatusName(EZrArtifactStatus status) {
     return names[status];
 }
 
+/* 文本产物展示已知节名；未知可选节保留 unknown，不影响二进制解码。 */
 const TZrChar *ZrCore_Artifact_SectionName(TZrUInt32 sectionKind) {
     static const TZrChar *names[] = {
             "invalid", "string-heap", "type-def-table", "type-ref-table", "type-spec-table",

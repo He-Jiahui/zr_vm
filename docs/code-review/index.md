@@ -157,5 +157,6 @@ doc_type: category-index
 | core 执行预算、异步帧与等待/编译状态 | [104 项](coverage/zr_vm_core_execution_budget.tsv) | 3 个 C/H 文件独立复核，265 个有效锚点，源码仅改注释；GCC/Clang 定向语法及独立 SSA 异步帧测试通过。1 个 TODO 待明确跨线程取消的同步契约，未发现可证实的新 BUG；两份依赖台账的行号证据已校正。 |
 | core GC 公开契约、主调度与显式根 | [132 项](coverage/zr_vm_core_gc_main.tsv) | 2 个 C/H 文件独立复核，源码非注释 token 不变；GCC/Clang 定向语法检查通过。37 个 BUG 行记录构造/区段 OOM、异常清理、并发根和遥测、AOT 根帧及 native pin 失败链，8 个 TODO 行保留未接入宏和重叠保活契约；8 份依赖台账的旧 GC 锚点已复位，legacy 台账仍待格式迁移，未运行动态测试。 |
 | core 元数据 token 与 ZRP 表格式 | [44 项](coverage/zr_vm_core_metadata_format_headers.tsv) | 2 个头文件独立复核，283 个有效锚点，源码仅改注释；GCC/Clang 定向语法检查通过。1 个 BUG 标出合法但未对齐的 TypeSpec section 被强转读取，3 个 TODO 保留 RID 截断、AOT token 指针序列化及跨 ABI 行格式疑问；未运行动态测试。 |
+| core artifact 小端编码与公开身份 | [24 项](coverage/zr_vm_core_artifact_encoding_identity.tsv) | 2 个 C 文件独立复核，源码仅增注释；GCC/Clang 严格语法检查通过。公开 `StatusName` 对五个合法状态返回 `unknown` 已由最小 C 调用复现并标 BUG；4 个 TODO 行保留 token 诊断和跨 ABI 原始结构哈希等边界，关联 artifact 行台账锚点已校正。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
