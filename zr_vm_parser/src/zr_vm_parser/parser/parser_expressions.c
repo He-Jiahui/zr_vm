@@ -1,5 +1,7 @@
 #include "parser_internal.h"
 
+// 从类型解析器取得 SZrType 并包装为表达式节点；成功后类型所有权转移给 AST。
+// TODO: 当前 parser 源码仅见此 static 定义，需核对类型字面量语法是否仍需该旧入口，再决定接入或移除。
 static SZrAstNode *parse_type_literal_expression(SZrParserState *ps) {
     SZrType *typeInfo;
     SZrAstNode *node;
@@ -27,6 +29,7 @@ static SZrAstNode *parse_type_literal_expression(SZrParserState *ps) {
     return node;
 }
 
+// 用左右子树合并表达式范围，并为错误恢复中的空侧保留有效位置。
 static SZrFileRange parser_expression_node_range(SZrAstNode *left, SZrAstNode *right) {
     if (left == ZR_NULL) {
         return right != ZR_NULL ? right->location : (SZrFileRange){{0, 1, 1}, {0, 1, 1}, ZR_NULL};
@@ -37,6 +40,7 @@ static SZrFileRange parser_expression_node_range(SZrAstNode *left, SZrAstNode *r
     return ZrParser_FileRange_Merge(left->location, right->location);
 }
 
+// 给缺失操作数诊断提供起始 token 集，避免把分隔符继续当右操作数解析。
 static TZrBool parser_token_can_start_expression(EZrToken token) {
     switch (token) {
         case ZR_TK_IDENTIFIER:
@@ -78,6 +82,7 @@ static TZrBool parser_token_can_start_expression(EZrToken token) {
     }
 }
 
+// typeid 接类型、typeof 接表达式；括号或节点构造失败时释放对应操作数。
 static SZrAstNode *parse_reflection_type_query_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     EZrTypeQueryKind kind;
@@ -140,6 +145,7 @@ static SZrAstNode *parse_reflection_type_query_expression(SZrParserState *ps) {
     return node;
 }
 
+// 先检查右操作数起始 token 并报告结构化缺失，再调用传入的下一优先级解析器。
 static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
                                                 const TZrChar *operatorText,
                                                 SZrFileRange operatorLocation,
@@ -156,6 +162,7 @@ static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
     return parseOperand(ps);
 }
 
+// 处理 type query、await/ref、构造、显式类型转换和前缀运算，再下沉到主表达式。
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
@@ -244,6 +251,7 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
                     }
                 }
 
+                // BUG: cast 节点分配失败只释放 targetType，已解析的 expression 泄漏；游标未复原且分配错误仍留在状态中。
                 // 如果创建节点失败，释放类型
                 if (targetType != ZR_NULL) {
                     free_owned_type(ps->state, targetType);
@@ -317,6 +325,7 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
                                      ? ZrParser_FileRange_Merge(startLoc, argument->location)
                                      : startLoc;
         SZrAstNode *node = create_ast_node(ps, ZR_AST_UNARY_EXPRESSION, unaryLoc);
+        // BUG: 节点分配失败时 argument 尚未移交，直接返回会泄漏该子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -331,6 +340,7 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
 
 // 解析乘法表达式
 
+// 左结合建立乘除模节点；右侧采用一元层，缺失右操作数时释放已有左树。
 SZrAstNode *parse_multiplicative_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_unary_expression(ps);
     if (left == ZR_NULL) {
@@ -352,6 +362,7 @@ SZrAstNode *parse_multiplicative_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败后直接返回，已解析的 left/right 未交给节点也未释放。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -367,6 +378,7 @@ SZrAstNode *parse_multiplicative_expression(SZrParserState *ps) {
 
 // 解析加法表达式
 
+// 左结合建立加减节点，以乘法层为操作数保持优先级。
 SZrAstNode *parse_additive_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_multiplicative_expression(ps);
     if (left == ZR_NULL) {
@@ -387,6 +399,7 @@ SZrAstNode *parse_additive_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -402,6 +415,7 @@ SZrAstNode *parse_additive_expression(SZrParserState *ps) {
 
 // 解析位移表达式
 
+// 左结合建立移位节点，以加法层为操作数保持优先级。
 SZrAstNode *parse_shift_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_additive_expression(ps);
     if (left == ZR_NULL) {
@@ -422,6 +436,7 @@ SZrAstNode *parse_shift_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -437,6 +452,7 @@ SZrAstNode *parse_shift_expression(SZrParserState *ps) {
 
 // 解析关系表达式
 
+// 左结合建立大小关系节点，以移位层为操作数保持优先级。
 SZrAstNode *parse_relational_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_shift_expression(ps);
     if (left == ZR_NULL) {
@@ -458,6 +474,7 @@ SZrAstNode *parse_relational_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -473,6 +490,7 @@ SZrAstNode *parse_relational_expression(SZrParserState *ps) {
 
 // 解析相等表达式
 
+// 左结合建立相等关系节点，以关系层为操作数保持优先级。
 SZrAstNode *parse_equality_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_relational_expression(ps);
     if (left == ZR_NULL) {
@@ -493,6 +511,7 @@ SZrAstNode *parse_equality_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -508,6 +527,7 @@ SZrAstNode *parse_equality_expression(SZrParserState *ps) {
 
 // 解析按位与表达式
 
+// 左结合建立按位与节点，以相等层为操作数保持优先级。
 SZrAstNode *parse_binary_and_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_equality_expression(ps);
     if (left == ZR_NULL) {
@@ -528,6 +548,7 @@ SZrAstNode *parse_binary_and_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -543,6 +564,7 @@ SZrAstNode *parse_binary_and_expression(SZrParserState *ps) {
 
 // 解析按位异或表达式
 
+// 左结合建立按位异或节点，以按位与层为操作数保持优先级。
 SZrAstNode *parse_binary_xor_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_binary_and_expression(ps);
     if (left == ZR_NULL) {
@@ -563,6 +585,7 @@ SZrAstNode *parse_binary_xor_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -578,6 +601,7 @@ SZrAstNode *parse_binary_xor_expression(SZrParserState *ps) {
 
 // 解析按位或表达式
 
+// 左结合建立按位或节点，以异或层为操作数保持优先级。
 SZrAstNode *parse_binary_or_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_binary_xor_expression(ps);
     if (left == ZR_NULL) {
@@ -598,6 +622,7 @@ SZrAstNode *parse_binary_or_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -613,6 +638,7 @@ SZrAstNode *parse_binary_or_expression(SZrParserState *ps) {
 
 // 解析逻辑与表达式
 
+// 建立短路逻辑与 AST；左右操作数分别归组合节点拥有。
 SZrAstNode *parse_logical_and_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_binary_or_expression(ps);
     if (left == ZR_NULL) {
@@ -631,6 +657,7 @@ SZrAstNode *parse_logical_and_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 逻辑节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -646,6 +673,7 @@ SZrAstNode *parse_logical_and_expression(SZrParserState *ps) {
 
 // 解析逻辑或表达式
 
+// 建立短路逻辑或 AST；右侧采用逻辑与层保留优先级。
 SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_logical_and_expression(ps);
     if (left == ZR_NULL) {
@@ -664,6 +692,7 @@ SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 逻辑节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -679,6 +708,7 @@ SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
 
 // 解析条件表达式（三元运算符）
 
+// 条件分支的 consequent 允许完整表达式，alternate 递归本层保证右结合。
 SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
     SZrAstNode *test = parse_logical_or_expression(ps);
     if (test == ZR_NULL) {
@@ -733,6 +763,7 @@ SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
         SZrAstNode *node = create_ast_node(ps,
                                            ZR_AST_CONDITIONAL_EXPRESSION,
                                            parser_expression_node_range(test, alternate));
+        // BUG: 三元节点分配失败时 test/consequent/alternate 均未移交，直接返回会泄漏三棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -748,6 +779,7 @@ SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
 
 // 解析赋值表达式
 
+// 赋值右侧递归本层形成右结合 AST，并在缺右侧时释放左树。
 SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
     SZrAstNode *left = parse_conditional_expression(ps);
     if (left == ZR_NULL) {
@@ -771,6 +803,7 @@ SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
 
         SZrAstNode *node =
             create_ast_node(ps, ZR_AST_ASSIGNMENT_EXPRESSION, parser_expression_node_range(left, right));
+        // BUG: 赋值节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -786,4 +819,5 @@ SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
 
 // 解析表达式（入口函数）
 
+// 完整表达式从最低优先级的赋值层进入，由各层逐级收紧操作数。
 SZrAstNode *parse_expression(SZrParserState *ps) { return parse_assignment_expression(ps); }

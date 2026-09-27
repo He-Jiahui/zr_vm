@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+// 统一分配并清零 AST 节点，分配失败设置 parser 错误；子树所有权由具体构造器赋予。
 SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRange location) {
     SZrAstNode *node =
             ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrAstNode), ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -14,6 +15,7 @@ SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRang
     return node;
 }
 
+// 把词法名称与精确源位置装入标识符节点；名称由 VM 状态持有。
 SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *name, SZrFileRange location) {
     SZrAstNode *node = create_ast_node(ps, ZR_AST_IDENTIFIER_LITERAL, location);
     if (node == ZR_NULL) {
@@ -24,11 +26,14 @@ SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *
     return node;
 }
 
+// 为当前 lexer 位置创建标识符节点，供不需要显式位置的解析分支使用。
+// TODO: 当前仅见内部声明与此定义，需核对调用者是否已统一使用显式位置构造，再决定保留或清理。
 SZrAstNode *create_identifier_node(SZrParserState *ps, SZrString *name) {
     SZrFileRange loc = get_current_location(ps);
     return create_identifier_node_with_location(ps, name, loc);
 }
 
+// 将布尔 token 的值放入叶子 AST，位置由调用方按 token 修正。
 SZrAstNode *create_boolean_literal_node(SZrParserState *ps, TZrBool value) {
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_BOOLEAN_LITERAL, loc);
@@ -40,6 +45,7 @@ SZrAstNode *create_boolean_literal_node(SZrParserState *ps, TZrBool value) {
     return node;
 }
 
+// 保留整数值和原始拼写，后续诊断与类型阶段可区分源码表示。
 SZrAstNode *create_integer_literal_node(SZrParserState *ps, TZrInt64 value, SZrString *literal) {
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTEGER_LITERAL, loc);
@@ -52,6 +58,7 @@ SZrAstNode *create_integer_literal_node(SZrParserState *ps, TZrInt64 value, SZrS
     return node;
 }
 
+// 保留浮点值、原始拼写与单精度后缀标志。
 SZrAstNode *create_float_literal_node(SZrParserState *ps, TZrDouble value, SZrString *literal,
                                              TZrBool isSingle) {
     SZrFileRange loc = get_current_location(ps);
@@ -66,12 +73,14 @@ SZrAstNode *create_float_literal_node(SZrParserState *ps, TZrDouble value, SZrSt
     return node;
 }
 
+// 将解析后的字符串和词法错误位交给带位置的通用字符串构造器。
 SZrAstNode *create_string_literal_node(SZrParserState *ps, SZrString *value, TZrBool hasError,
                                               SZrString *literal) {
     SZrFileRange loc = get_current_location(ps);
     return create_string_literal_node_with_location(ps, value, hasError, literal, loc);
 }
 
+// 构造字符串叶子并记录词法错误，保留调用方给出的 token 范围。
 SZrAstNode *create_string_literal_node_with_location(SZrParserState *ps,
                                                             SZrString *value,
                                                             TZrBool hasError,
@@ -88,6 +97,7 @@ SZrAstNode *create_string_literal_node_with_location(SZrParserState *ps,
     return node;
 }
 
+// 构造字符叶子并保留词法错误与原始拼写。
 SZrAstNode *create_char_literal_node(SZrParserState *ps, TZrChar value, TZrBool hasError, SZrString *literal) {
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CHAR_LITERAL, loc);
@@ -101,11 +111,13 @@ SZrAstNode *create_char_literal_node(SZrParserState *ps, TZrChar value, TZrBool 
     return node;
 }
 
+// 空值字面量无子树，直接返回当前源位置的叶子节点。
 SZrAstNode *create_null_literal_node(SZrParserState *ps) {
     SZrFileRange loc = get_current_location(ps);
     return create_ast_node(ps, ZR_AST_NULL_LITERAL, loc);
 }
 
+// 成功时接管静态及插值片段数组，由模板节点的递归释放处理。
 SZrAstNode *create_template_string_literal_node(SZrParserState *ps, SZrAstNodeArray *segments) {
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_TEMPLATE_STRING_LITERAL, loc);
@@ -117,6 +129,7 @@ SZrAstNode *create_template_string_literal_node(SZrParserState *ps, SZrAstNodeAr
     return node;
 }
 
+// 成功时接管内嵌表达式节点，作为模板段的子树。
 SZrAstNode *create_interpolated_segment_node(SZrParserState *ps, SZrAstNode *expression) {
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERPOLATED_SEGMENT, loc);
@@ -128,6 +141,7 @@ SZrAstNode *create_interpolated_segment_node(SZrParserState *ps, SZrAstNode *exp
     return node;
 }
 
+// 按短/长字符串布局取得借用的字节视图与长度；不转移字符串所有权。
 void get_string_native_parts(SZrString *value, TZrNativeString *nativeValue, TZrSize *length) {
     if (nativeValue == ZR_NULL || length == ZR_NULL) {
         return;
@@ -148,6 +162,7 @@ void get_string_native_parts(SZrString *value, TZrNativeString *nativeValue, TZr
     }
 }
 
+// 长度先行后逐字节比较，避免把 VM 字符串当零终止文本。
 TZrBool zr_string_equals_literal(SZrString *value, const TZrChar *literal) {
     TZrNativeString nativeValue;
     TZrSize length;
@@ -166,6 +181,7 @@ TZrBool zr_string_equals_literal(SZrString *value, const TZrChar *literal) {
     return memcmp(nativeValue, literal, literalLength) == 0;
 }
 
+// 为模板插值建立独立 lexer 与源码副本；成功 AST 交外层模板段。
 SZrAstNode *parse_embedded_expression(SZrParserState *ps, const TZrChar *source, TZrSize sourceLength) {
     SZrParserState nestedParser;
     SZrAstNode *expression = ZR_NULL;
@@ -188,6 +204,7 @@ SZrAstNode *parse_embedded_expression(SZrParserState *ps, const TZrChar *source,
     if (!nestedParser.hasError) {
         expression = parse_expression(&nestedParser);
         if (nestedParser.hasError || expression == ZR_NULL || nestedParser.lexer->t.token != ZR_TK_EOS) {
+            // BUG: 解析已返回 AST 但仍有余 token/错误时直接丢指针；State_Free 只释放 lexer，不回收该子树。
             expression = ZR_NULL;
         }
     }
@@ -197,6 +214,7 @@ SZrAstNode *parse_embedded_expression(SZrParserState *ps, const TZrChar *source,
     return expression;
 }
 
+// 将静态文本复制为 VM 字符串并追加为模板片段，片段 AST 随数组转移。
 TZrBool append_template_static_segment(SZrParserState *ps, SZrAstNodeArray *segments, const TZrChar *text,
                                               TZrSize length) {
     SZrString *segmentString;
@@ -216,10 +234,12 @@ TZrBool append_template_static_segment(SZrParserState *ps, SZrAstNodeArray *segm
         return ZR_FALSE;
     }
 
+    // BUG: Add 扩容失败会静默返回；函数仍报成功，segmentNode 泄漏且模板缺段。
     ZrParser_AstNodeArray_Add(ps->state, segments, segmentNode);
     return ZR_TRUE;
 }
 
+// 扫描嵌套花括号、字符串与注释边界后分别解析静态段和插值表达式。
 SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValue) {
     TZrNativeString rawText;
     TZrSize rawLength;
@@ -249,6 +269,7 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
             TZrInt32 stringDelimiter = 0;
 
             if (!append_template_static_segment(ps, segments, rawText + segmentStart, index - segmentStart)) {
+                // BUG: 这里只浅释放 segments，先前成功加入的片段 AST 不会被回收。
                 ZrParser_AstNodeArray_Free(ps->state, segments);
                 return ZR_NULL;
             }
@@ -307,6 +328,7 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
 
             if (cursor >= rawLength || braceDepth != 0) {
                 report_error(ps, "Unterminated template string interpolation");
+                // BUG: 未闭合插值的错误路径只浅释放 segments，已加入的片段 AST 泄漏。
                 ZrParser_AstNodeArray_Free(ps->state, segments);
                 return ZR_NULL;
             }
@@ -318,6 +340,7 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
 
                 if (expression == ZR_NULL) {
                     report_error(ps, "Failed to parse template string interpolation");
+                    // BUG: 插值解析失败只浅释放 segments，先前片段 AST 泄漏。
                     ZrParser_AstNodeArray_Free(ps->state, segments);
                     return ZR_NULL;
                 }
@@ -325,10 +348,12 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
                 segmentNode = create_interpolated_segment_node(ps, expression);
                 if (segmentNode == ZR_NULL) {
                     ZrParser_Ast_Free(ps->state, expression);
+                    // BUG: 当前 expression 已释放，但先前加入的 segments 元素仍因浅释放泄漏。
                     ZrParser_AstNodeArray_Free(ps->state, segments);
                     return ZR_NULL;
                 }
 
+                // BUG: Add 扩容失败时静默丢弃新插值段，节点泄漏且解析结果缺段。
                 ZrParser_AstNodeArray_Add(ps->state, segments, segmentNode);
             }
 
@@ -341,15 +366,18 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
     }
 
     if (!append_template_static_segment(ps, segments, rawText + segmentStart, rawLength - segmentStart)) {
+        // BUG: 尾段追加失败只浅释放 segments，先前片段 AST 泄漏。
         ZrParser_AstNodeArray_Free(ps->state, segments);
         return ZR_NULL;
     }
 
+    // BUG: 根节点分配失败时未释放 segments 及其元素，所有模板片段泄漏。
     return create_template_string_literal_node(ps, segments);
 }
 
 // ==================== 字面量解析 ====================
 
+// 按 token 创建字面量叶子并消费 token；数值保留原始文本供后续阶段使用。
 SZrAstNode *parse_literal(SZrParserState *ps) {
     ZR_UNUSED_PARAMETER(get_current_location(ps));
     EZrToken token = ps->lexer->t.token;
@@ -480,6 +508,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
     }
 }
 
+// 保留 token 原始位置和 VM 字符串；所有权内建词在普通命名空间被拒绝。
 SZrAstNode *parse_identifier(SZrParserState *ps) {
     SZrFileRange identifierLoc;
     SZrString *name;
@@ -509,6 +538,7 @@ SZrAstNode *parse_identifier(SZrParserState *ps) {
 
 // ==================== 表达式解析（按优先级从低到高）====================
 
+// 数组元素禁赋值的 token 判别与赋值表达式层保持一致。
 static TZrBool parser_array_literal_token_is_assignment(EZrToken token) {
     return token == ZR_TK_EQUALS ||
            token == ZR_TK_PLUS_EQUALS ||
@@ -518,6 +548,7 @@ static TZrBool parser_array_literal_token_is_assignment(EZrToken token) {
            token == ZR_TK_PERCENT_EQUALS;
 }
 
+// 在数组分隔符错误处判断下一个 token 是否可能开始元素。
 static TZrBool parser_array_literal_token_can_start_element(EZrToken token) {
     switch (token) {
         case ZR_TK_IDENTIFIER:
@@ -551,6 +582,7 @@ static TZrBool parser_array_literal_token_can_start_element(EZrToken token) {
     }
 }
 
+// 数组元素只允许条件表达式；若后接赋值操作符，释放节点并报错。
 static SZrAstNode *parse_array_literal_value_element(SZrParserState *ps) {
     SZrAstNode *element = parse_conditional_expression(ps);
 
@@ -563,6 +595,7 @@ static SZrAstNode *parse_array_literal_value_element(SZrParserState *ps) {
     return element;
 }
 
+// 对象属性缺分隔符时识别合法键起始 token，包括计算键。
 static TZrBool parser_object_literal_token_can_start_property_key(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || is_ownership_intrinsic_token(token) ||
            token == ZR_TK_STRING || token == ZR_TK_LBRACKET;
@@ -570,6 +603,7 @@ static TZrBool parser_object_literal_token_can_start_property_key(EZrToken token
 
 // 解析数组字面量
 
+// 解析逗号或分号分隔的数组元素；成功后数组节点接管元素列表。
 SZrAstNode *parse_array_literal(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     expect_token(ps, ZR_TK_LBRACKET);
@@ -601,6 +635,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
             // 数组元素不应该包含赋值表达式，使用 conditional_expression
             SZrAstNode *elem = parse_array_literal_value_element(ps);
             if (elem != ZR_NULL) {
+                // BUG: 后续元素的 Add 扩容失败也会静默丢弃 elem。
                 ZrParser_AstNodeArray_Add(ps->state, elements, elem);
             } else {
                 free_ast_node_array_with_elements(ps->state, elements);
@@ -642,6 +677,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
 
 // 解析对象字面量
 
+// 解析普通或计算键及其值；成功后对象节点接管键值对列表。
 SZrAstNode *parse_object_literal(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     expect_token(ps, ZR_TK_LBRACE);
@@ -696,6 +732,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         }
 
         // 创建键值对节点
+        // BUG: 计算键只校验右中括号，不校验 parse_expression 返回的 key；{[]: 1} 可在此解引用 NULL。
         SZrFileRange kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
         SZrAstNode *kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
         if (kvNode == ZR_NULL) {
@@ -751,6 +788,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
                 break;
             }
 
+            // BUG: 后续计算键同样可为空，仍直接读取 key->location。
             kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
             kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
             if (kvNode == ZR_NULL) {
@@ -761,6 +799,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             kvNode->data.keyValuePair.key = key;
             kvNode->data.keyValuePair.value = value;
             kvNode->data.keyValuePair.keyIsComputed = keyIsComputed;
+            // BUG: 后续属性触发 Add 扩容失败时静默丢弃 kvNode，其键值子树泄漏且成功对象缺属性。
             ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
         }
     }

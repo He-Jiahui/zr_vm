@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+// 片段入口要求整个 token 流恰好是一条表达式；成功 AST 归调用者，失败或多余 token 时由本层释放。
 SZrAstNode *ZrParser_ParseExpressionWithState(SZrParserState *ps) {
     SZrAstNode *expression;
 

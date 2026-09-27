@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+// 只把以非计算成员结束的主表达式视为可接花括号实参的目标；普通块/对象仍走外层分支。
 static TZrBool primary_base_accepts_braced_member(SZrAstNode *base) {
     SZrPrimaryExpression *primary;
     SZrAstNode *lastMember;
@@ -21,6 +22,7 @@ static TZrBool primary_base_accepts_braced_member(SZrAstNode *base) {
            !lastMember->data.memberExpression.computed;
 }
 
+// 识别 member 后的对象字面量并交给主表达式链；outHandled 区分不适用与已消费后失败。
 SZrAstNode *try_parse_braced_primary_member(SZrParserState *ps,
                                             SZrAstNode *base,
                                             SZrFileRange startLoc,
@@ -45,5 +47,6 @@ SZrAstNode *try_parse_braced_primary_member(SZrParserState *ps,
         return ZR_NULL;
     }
 
+    // BUG: append_primary_member 分配失败时只返回 base，已解析的 objectNode 未被接管或释放。
     return append_primary_member(ps, base, objectNode, startLoc);
 }

@@ -1,6 +1,7 @@
 #include "parser_internal.h"
 #include "zr_vm_parser/type_system.h"
 
+// 把源码所有权限定词映射为 AST 枚举，未匹配时保持 NONE 供普通标识符路径继续处理。
 TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qualifier) {
     if (qualifier == ZR_NULL) {
         return ZR_FALSE;
@@ -43,12 +44,14 @@ TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qual
     return ZR_FALSE;
 }
 
+// 将成员节点接入既有主表达式或新包装节点；成功后成员和原 base 由返回的 AST 根拥有。
 SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode,
                                          SZrFileRange startLoc) {
     if (ps == ZR_NULL || base == ZR_NULL || memberNode == ZR_NULL) {
         return base;
     }
 
+    // BUG: 包装节点或成员数组分配/扩容失败仍返回 base，memberNode 无人释放；后者还可能泄漏已分配的 primaryNode 或静默丢失成员。
     if (base->type == ZR_AST_PRIMARY_EXPRESSION) {
         if (base->data.primaryExpression.members == ZR_NULL) {
             base->data.primaryExpression.members = ZrParser_AstNodeArray_New(ps->state, 1);
@@ -73,6 +76,7 @@ SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNo
     return primaryNode;
 }
 
+// 仅向前扫描配对括号后的箭头并恢复 lexer 游标，避免把分组调用误判为旧式 lambda。
 TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
     SZrParserCursor savedCursor;
     TZrInt32 depth = 0;
@@ -107,6 +111,7 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
     return isLambda;
 }
 
+// 为无参构造或借用表达式建立独立数组，避免共享可变 AST 容器。
 SZrAstNodeArray *create_empty_argument_list(SZrParserState *ps) {
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -115,6 +120,7 @@ SZrAstNodeArray *create_empty_argument_list(SZrParserState *ps) {
     return ZrParser_AstNodeArray_New(ps->state, 0);
 }
 
+// 构造语法只接受位置实参；逐项查名后释放临时名称数组并报告拒绝原因。
 TZrBool reject_named_construct_arguments(SZrParserState *ps, SZrArray *argNames, SZrFileRange location) {
     if (ps == ZR_NULL || argNames == ZR_NULL || argNames->length == 0) {
         return ZR_TRUE;
@@ -137,6 +143,8 @@ TZrBool reject_named_construct_arguments(SZrParserState *ps, SZrArray *argNames,
     return ZR_TRUE;
 }
 
+// 把已解析目标移交给 prototype-reference AST，返回节点负责其递归释放。
+// TODO: 当前仅见内部声明与此定义，需核对 prototype 构造语法是否仍需该包装入口，再决定保留或清理。
 SZrAstNode *create_prototype_reference_node(SZrParserState *ps, SZrAstNode *target, SZrFileRange location) {
     SZrAstNode *node;
 
@@ -153,6 +161,7 @@ SZrAstNode *create_prototype_reference_node(SZrParserState *ps, SZrAstNode *targ
     return node;
 }
 
+// 统一承载 new、own 与 ref 的目标、实参与所有权标志；成功后子树归构造节点。
 SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *target, SZrAstNodeArray *args,
                                                     EZrOwnershipQualifier ownershipQualifier, TZrBool isUsing,
                                                     TZrBool isNew, EZrOwnershipBuiltinKind builtinKind,
@@ -178,6 +187,7 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
     return node;
 }
 
+// 释放参数名索引容器；名称字符串属于 VM 状态而非数组容器。
 static void free_argument_name_array(SZrParserState *ps, SZrArray *argNames) {
     if (ps == ZR_NULL || argNames == ZR_NULL) {
         return;
@@ -190,6 +200,7 @@ static void free_argument_name_array(SZrParserState *ps, SZrArray *argNames) {
                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
 }
 
+// 拦截旧式 ownership 泛型构造并释放探测得到的实参与类型参数；由诊断决定拒绝。
 static TZrBool reject_legacy_ownership_generic_call(SZrParserState *ps,
                                                     SZrAstNode *base,
                                                     SZrAstNodeArray *genericArguments,
@@ -228,6 +239,7 @@ static TZrBool reject_legacy_ownership_generic_call(SZrParserState *ps,
     return ZR_TRUE;
 }
 
+// 解析 Type<...> 构造目标并包装为类型 AST；包装失败时释放临时泛型树。
 static SZrAstNode *parse_generic_construct_target(SZrParserState *ps) {
     SZrAstNode *genericNode;
     SZrAstNode *typeNode;
@@ -253,6 +265,7 @@ static SZrAstNode *parse_generic_construct_target(SZrParserState *ps) {
     return typeNode;
 }
 
+// 投机识别泛型类型后的点号成员根；不匹配时释放目标并完整回滚游标与诊断回调。
 static SZrAstNode *try_parse_generic_type_member_root(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -291,6 +304,7 @@ static SZrAstNode *try_parse_generic_type_member_root(SZrParserState *ps) {
     if (target != ZR_NULL) {
         ZrParser_Ast_Free(ps->state, target);
     }
+    // BUG: 泛型目标节点分配失败已设置 parser 错误，回滚游标会抹去该错误并按普通表达式重试。
     restore_parser_cursor(ps, &cursor);
     ps->suppressErrorOutput = savedSuppressErrorOutput;
     ps->errorCallback = savedErrorCallback;
@@ -299,6 +313,7 @@ static SZrAstNode *try_parse_generic_type_member_root(SZrParserState *ps) {
     return ZR_NULL;
 }
 
+// 解析构造目标的点分路径；已形成的 base 在错误时返回给上层统一处理。
 SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
     SZrAstNode *base;
     SZrFileRange startLoc;
@@ -355,6 +370,7 @@ SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
     return base;
 }
 
+// 消费 new 目标与可选实参，拒绝命名参数后把子树交给构造节点。
 SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               SZrFileRange startLoc,
                                               EZrOwnershipQualifier ownershipQualifier,
@@ -395,6 +411,7 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
         args = parse_argument_list(ps, &argNames, ZR_NULL);
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
+        // BUG: 拒绝命名参数后这里只浅释放 args 容器，已解析的实参 AST 不随之释放。
         if (!reject_named_construct_arguments(ps, argNames, startLoc)) {
             if (args != ZR_NULL) {
                 ZrParser_AstNodeArray_Free(ps->state, args);
@@ -415,6 +432,7 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                                      ZR_TRUE,
                                                      builtinKind,
                                                      fullLoc);
+    // BUG: 构造节点分配失败只浅释放 args，已解析的实参节点泄漏。
     if (constructNode == ZR_NULL) {
         if (args != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, args);
@@ -426,6 +444,7 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
     return constructNode;
 }
 
+// 解析 own Type(...) 资源表面语法，并标识唯一所有权构造供后续阶段区分。
 static SZrAstNode *parse_resource_own_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *target;
@@ -457,6 +476,7 @@ static SZrAstNode *parse_resource_own_expression(SZrParserState *ps) {
     args = parse_argument_list(ps, &argNames, ZR_NULL);
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
+    // BUG: 拒绝命名参数后仅浅释放 args 容器，已解析的实参 AST 不随之释放。
     if (!reject_named_construct_arguments(ps, argNames, startLoc)) {
         if (args != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, args);
@@ -477,9 +497,11 @@ static SZrAstNode *parse_resource_own_expression(SZrParserState *ps) {
     if (node != ZR_NULL) {
         node->data.constructExpression.isResourceSurface = ZR_TRUE;
     }
+    // BUG: 节点分配失败时 target 和 args 未被移交也未释放，调用方只能收到 NULL。
     return node;
 }
 
+// 把 ref operand 降为无参借用构造节点；拒绝 ref ref 并在创建失败时回收目标。
 SZrAstNode *parse_reference_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *target;
@@ -525,6 +547,7 @@ SZrAstNode *parse_reference_expression(SZrParserState *ps) {
     return node;
 }
 
+// 仅接受带括号的静态 import 路径，规范化后的路径由导入节点拥有。
 SZrAstNode *parse_reserved_import_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *modulePath;
@@ -563,11 +586,13 @@ SZrAstNode *parse_reserved_import_expression(SZrParserState *ps) {
     return node;
 }
 
+// 限定类型字面量投机解析的起始 token，减少与一般表达式的竞争。
 static TZrBool type_literal_probe_can_start(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET ||
            token == ZR_TK_LPAREN;
 }
 
+// 裸数组类型只允许内建名称，以免把普通变量索引误识为类型字面量。
 static TZrBool type_literal_probe_identifier_supports_bare_array_literal(SZrString *name) {
     if (name == ZR_NULL) {
         return ZR_FALSE;
@@ -601,6 +626,7 @@ static TZrBool type_literal_probe_identifier_supports_bare_array_literal(SZrStri
            zr_string_equals_literal(name, "Module");
 }
 
+// 要求所有权、数组或复合类型标志足以排除普通标识符表达式。
 static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo) {
     if (typeInfo == ZR_NULL) {
         return ZR_FALSE;
@@ -627,11 +653,13 @@ static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo
     return typeInfo->subType != ZR_NULL ? type_literal_probe_has_unambiguous_marker(typeInfo->subType) : ZR_FALSE;
 }
 
+// 仅在完整类型后接表达式终止 token 时提交类型字面量探测。
 static TZrBool type_literal_probe_is_terminator(EZrToken token) {
     return token == ZR_TK_SEMICOLON || token == ZR_TK_COMMA || token == ZR_TK_RPAREN ||
            token == ZR_TK_RBRACE || token == ZR_TK_RBRACKET || token == ZR_TK_DOT || token == ZR_TK_EOS;
 }
 
+// 投机解析无歧义类型字面量；拒绝分支释放类型并恢复词法与诊断状态。
 static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -684,6 +712,7 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
                            ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (node == ZR_NULL) {
         free_owned_type(ps->state, typeInfo);
+        // BUG: create_ast_node 的分配错误被游标回滚清除；随后按普通表达式重试，掩盖真实失败。
         restore_parser_cursor(ps, &cursor);
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
@@ -698,6 +727,7 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
 
 // 解析成员访问和函数调用
 
+// 成员名位置允许特定关键字与所有权内建词，区别于普通词法标识符。
 static TZrBool is_member_name_token(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
            token == ZR_TK_UNION || token == ZR_TK_FN || token == ZR_TK_REF ||
@@ -707,6 +737,7 @@ static TZrBool is_member_name_token(EZrToken token) {
            (token >= ZR_TK_MODULE && token <= ZR_TK_NAN);
 }
 
+// 把允许的关键字或标识符转成带原始位置的成员名称 AST。
 static SZrAstNode *parse_member_name(SZrParserState *ps) {
     SZrFileRange memberLoc;
     EZrToken token;
@@ -746,6 +777,7 @@ static SZrAstNode *parse_member_name(SZrParserState *ps) {
     return create_identifier_node_with_location(ps, name, memberLoc);
 }
 
+// 仅在 <...> 后紧跟调用括号时提交泛型实参；否则释放试探树并回滚。
 static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -775,6 +807,7 @@ static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState
         if (genericArguments != ZR_NULL) {
             free_ast_node_array_with_elements(ps->state, genericArguments);
         }
+        // TODO: 泛型实参数组分配失败也进入探测回滚；需注入分配失败核对是否被当作普通语法分支继续。
         restore_parser_cursor(ps, &cursor);
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
@@ -792,6 +825,7 @@ static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState
     return genericArguments;
 }
 
+// 逐段扩展可选/直接成员、索引、泛型调用与花括号成员链；返回根拥有全部子段。
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
     SZrFileRange startLoc = base->location;
 
@@ -945,6 +979,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             args = parse_argument_list(ps, &argNames, &argumentMarkers);
             if (ps->lexer->t.token != ZR_TK_RPAREN) {
                 report_missing_call_close(ps, callOpenLocation);
+                // BUG: args 仅浅释放容器；已解析的实参节点仍由该数组独占，错误返回时泄漏。
                 if (args != ZR_NULL) {
                     ZrParser_AstNodeArray_Free(ps->state, args);
                 }
@@ -990,6 +1025,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     ZR_AST_FUNCTION_CALL,
                     ZrParser_FileRange_Merge(callOpenLocation, callCloseLocation));
             if (callNode == ZR_NULL) {
+                // BUG: 节点分配失败仍只浅释放 args；genericArguments 的深释放不能回收普通实参。
                 if (args != ZR_NULL) {
                     ZrParser_AstNodeArray_Free(ps->state, args);
                 }
@@ -1063,6 +1099,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
 
 // 解析主表达式
 
+// 按保留构造、字面量、标识符、分组与花括号类别选择主表达式，再接后缀链。
 SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     ZR_UNUSED_PARAMETER(get_current_location(ps));
     EZrToken token = ps->lexer->t.token;
