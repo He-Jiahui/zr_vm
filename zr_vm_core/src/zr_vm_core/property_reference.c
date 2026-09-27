@@ -6,6 +6,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
+/* 引用以普通对象承载定位字段；不同种类只读取各自需要的字段集合。 */
 #define ZR_PROPERTY_REFERENCE_BASE_MEMBER "__zr_property_ref_base"
 #define ZR_PROPERTY_REFERENCE_KIND_FIELD "__zr_property_ref_kind"
 #define ZR_PROPERTY_REFERENCE_KEY_MEMBER "__zr_property_ref_key"
@@ -16,6 +17,7 @@
 #define ZR_PROPERTY_REFERENCE_FRAME_SLOT_MEMBER "__zr_property_ref_frame_slot"
 #define ZR_PROPERTY_REFERENCE_FRAME_FIELD_MEMBER "__zr_property_ref_frame_field"
 
+/* MEMBER 缓存描述符，INDEX 保存键；帧种类保存函数与可重定位栈锚。 */
 typedef enum EZrPropertyReferenceKind {
     ZR_PROPERTY_REFERENCE_KIND_MEMBER = 1,
     ZR_PROPERTY_REFERENCE_KIND_INDEX = 2,
@@ -23,6 +25,7 @@ typedef enum EZrPropertyReferenceKind {
     ZR_PROPERTY_REFERENCE_KIND_FRAME_SLOT = 4
 } EZrPropertyReferenceKind;
 
+/* 从实例或原型对象取得成员搜索的起点，结果只作借用。 */
 static SZrObjectPrototype *property_reference_receiver_prototype(
         SZrState *state,
         const SZrTypeValue *base) {
@@ -40,6 +43,7 @@ static SZrObjectPrototype *property_reference_receiver_prototype(
     return object->prototype;
 }
 
+/* 逐级检查本层描述符，记录真正拥有该描述符的原型与数组索引。 */
 static TZrBool property_reference_resolve_symbol_descriptor(
         SZrState *state,
         const SZrTypeValue *base,
@@ -72,6 +76,7 @@ static TZrBool property_reference_resolve_symbol_descriptor(
     return ZR_FALSE;
 }
 
+/* 把内部字段名转换为对象成员 API 使用的 GC 字符串。 */
 static SZrString *property_reference_member_name(
         SZrState *state,
         const TZrChar *name) {
@@ -81,6 +86,7 @@ static SZrString *property_reference_member_name(
     return ZrCore_String_CreateFromNative(state, (TZrNativeString)name);
 }
 
+/* 构造路径统一通过对象成员 API 写入定位字段。 */
 static TZrBool property_reference_set_member(
         SZrState *state,
         SZrTypeValue *reference,
@@ -88,10 +94,13 @@ static TZrBool property_reference_set_member(
         const SZrTypeValue *value) {
     SZrString *memberName = property_reference_member_name(state, name);
 
+    /* BUG: Object_Init 的桶分配失败不向上返回；SetMember 在 HashSet_Add 失败后
+     * 仅记录错误，底层仍返回真。此处会把缺字段的引用当成创建成功。 */
     return (TZrBool)(memberName != ZR_NULL &&
                      ZrCore_Object_SetMember(state, reference, memberName, value));
 }
 
+/* 读取内部字段时重建键名，缺失字段直接让上层解析失败。 */
 static TZrBool property_reference_get_member(
         SZrState *state,
         SZrTypeValue *reference,
@@ -106,6 +115,7 @@ static TZrBool property_reference_get_member(
     return ZrCore_Object_GetMember(state, reference, memberName, value);
 }
 
+/* 先把新对象放进结果槽，再写公共 base/kind 字段供所有种类解码。 */
 static TZrBool property_reference_create_shell(
         SZrState *state,
         const SZrTypeValue *base,
@@ -121,6 +131,8 @@ static TZrBool property_reference_create_shell(
     if (object == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* BUG: 初始化失败会留下 isValid=false 的 nodeMap，但这里仍继续构造；
+     * 字段写入可能虚报成功，调用方最终收到缺少 base/kind 的对象。 */
     ZrCore_Object_Init(state, object);
     ZrCore_Value_InitAsRawObject(
             state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
@@ -137,6 +149,7 @@ static TZrBool property_reference_create_shell(
                              &kindValue));
 }
 
+/* 把已解析的原型及描述符索引附加到公共引用外壳。 */
 static TZrBool property_reference_create_resolved_member(
         SZrState *state,
         const SZrTypeValue *base,
@@ -170,6 +183,7 @@ static TZrBool property_reference_create_resolved_member(
                              &descriptorValue));
 }
 
+/* 名称入口与函数成员表入口共用描述符引用格式。 */
 TZrBool ZrCore_PropertyReference_CreateMemberByName(
         SZrState *state,
         const SZrTypeValue *base,
@@ -199,6 +213,7 @@ TZrBool ZrCore_PropertyReference_CreateMemberByName(
                              result));
 }
 
+/* 优先把内联结构字段绑定到来源帧，否则缓存静态或符号成员描述符。 */
 TZrBool ZrCore_PropertyReference_CreateMember(
         SZrState *state,
         SZrFunction *function,
@@ -291,6 +306,7 @@ TZrBool ZrCore_PropertyReference_CreateMember(
                                      &fieldValue));
         }
     }
+    /* 绑定成员在需要时物化原型实例；符号成员沿接收者原型链定位。 */
     if (entry->entryKind == ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR) {
         prototypeOwner = function;
         while (prototypeOwner != ZR_NULL &&
@@ -358,6 +374,7 @@ TZrBool ZrCore_PropertyReference_CreateMember(
                              &descriptorValue));
 }
 
+/* 索引引用延迟执行取值或赋值，保留调用时的基值与键。 */
 TZrBool ZrCore_PropertyReference_CreateIndex(
         SZrState *state,
         const SZrTypeValue *base,
@@ -373,6 +390,7 @@ TZrBool ZrCore_PropertyReference_CreateIndex(
                              key));
 }
 
+/* 内联结构槽先追踪别名来源；普通槽保存当前函数和相对栈基址。 */
 TZrBool ZrCore_PropertyReference_CreateFrameSlot(
         SZrState *state,
         SZrFunction *function,
@@ -451,6 +469,7 @@ TZrBool ZrCore_PropertyReference_CreateFrameSlot(
                              &frameSlotValue));
 }
 
+/* 只检查引用外壳的 base/kind，不推断种类专属字段或目标有效性。 */
 static TZrBool property_reference_get_payload(
         SZrState *state,
         SZrTypeValue *reference,
@@ -458,6 +477,8 @@ static TZrBool property_reference_get_payload(
         EZrPropertyReferenceKind *kind) {
     SZrTypeValue kindValue;
 
+    /* TODO: base 先读入 C 局部，再创建 kind 字段名；当前对象 GC 路径保持地址。
+     * 需核其他 GC 模式及未扎根宿主调用，并用强制 GC 测试验证有效期。 */
     if (state == ZR_NULL || reference == ZR_NULL || base == ZR_NULL ||
         kind == ZR_NULL || reference->type != ZR_VALUE_TYPE_OBJECT ||
         reference->value.object == ZR_NULL ||
@@ -480,15 +501,19 @@ static TZrBool property_reference_get_payload(
     return ZR_TRUE;
 }
 
+/* FFI 写回用此门槛识别托管引用；具体目标仍交给 Store 校验。 */
 TZrBool ZrCore_PropertyReference_IsValid(
         SZrState *state,
         SZrTypeValue *reference) {
     SZrTypeValue base;
     EZrPropertyReferenceKind kind;
 
+    /* TODO: 普通对象若写入同名 base/kind 字段也可通过外形检查；需核对语言层
+     * 保留名访问约束，并给 FFI ref/out 补字段碰撞及缺少专属绑定的测试。 */
     return property_reference_get_payload(state, reference, &base, &kind);
 }
 
+/* 解码帧槽记录并从当前 state 栈基址恢复来源帧位置。 */
 static TZrBool property_reference_get_frame_slot_binding(
         SZrState *state,
         SZrTypeValue *reference,
@@ -527,11 +552,14 @@ static TZrBool property_reference_get_frame_slot_binding(
     *function = ZR_CAST_FUNCTION(state, functionValue.value.object);
     frameAnchor.offset =
             (TZrMemoryOffset)frameOffsetValue.value.nativeObject.nativeInt64;
+    /* TODO: Restore 仅做基址加偏移，未核查来源帧是否仍活动；编译测试只拒绝
+     * 局部临时 ref 返回。需核 AOT/FFI/native 路径及帧退出后的槽复用。 */
     *frameBase = ZrCore_Function_StackAnchorRestore(state, &frameAnchor);
     *stackSlot = (TZrUInt32)frameSlotValue.value.nativeObject.nativeUInt64;
     return (TZrBool)(*function != ZR_NULL && *frameBase != ZR_NULL);
 }
 
+/* 有布局的值槽用布局地址；旧式普通槽回退到栈值地址。 */
 static SZrTypeValue *property_reference_get_frame_slot_value(
         SZrState *state,
         SZrFunction *function,
@@ -557,6 +585,7 @@ static SZrTypeValue *property_reference_get_frame_slot_value(
     return ZrCore_Stack_GetValueNoProfile(frameBase + stackSlot);
 }
 
+/* 帧成员在槽定位之外，还要求保存的字段名可还原为字符串。 */
 static TZrBool property_reference_get_frame_binding(
         SZrState *state,
         SZrTypeValue *reference,
@@ -584,6 +613,7 @@ static TZrBool property_reference_get_frame_binding(
                      *memberName != ZR_NULL);
 }
 
+/* 缓存的原型描述符索引在使用前仍需验证数组边界。 */
 static TZrBool property_reference_get_member_binding(
         SZrState *state,
         SZrTypeValue *reference,
@@ -615,6 +645,7 @@ static TZrBool property_reference_get_member_binding(
                      *descriptorIndex < (*ownerPrototype)->memberDescriptorCount);
 }
 
+/* 按种类分派到内联字段、帧槽、缓存描述符或动态索引读取。 */
 TZrBool ZrCore_PropertyReference_Load(
         SZrState *state,
         SZrTypeValue *reference,
@@ -687,6 +718,7 @@ TZrBool ZrCore_PropertyReference_Load(
     }
 }
 
+/* 复用读取时的定位规则，且在成员分支额外检查写权限。 */
 TZrBool ZrCore_PropertyReference_Store(
         SZrState *state,
         SZrTypeValue *reference,
@@ -730,6 +762,7 @@ TZrBool ZrCore_PropertyReference_Store(
             return ZR_FALSE;
         }
         ZrCore_Value_Copy(state, destination, value);
+        /* 关闭语义读取物理栈槽；布局值槽不同时保持两份值一致。 */
         cleanupMirror = frameBase + stackSlot;
         if (cleanupMirror->toBeClosedValueOffset != 0u &&
             destination != &cleanupMirror->value) {
