@@ -1,6 +1,10 @@
-# Task 4 environment bridge. The capture wrapper owns finalization; this helper
-# gives the CMake suite an explicit provisional state until the wrapper exits.
+# 环境捕获 wrapper 负责最终报告；套件只读取已有快照并将尚未完成的隔离状态标成 provisional。
+# Windows 当前没有等价的亲和性证据，因此调用方只能将其结果列为不可比较。
 
+# 主套件和定向契约测试共享此判定；valid 表示输入报告可解释，comparable 表示有最终隔离证据。
+# report_path 来自调用方配置，输出 JSON 中仍包含该路径。
+# BUG: Linux 上已存在的报告路径若含双引号，这里的直接插值会使最终 benchmark_report.json 无效；
+# run_performance_suite.cmake 从环境变量接收路径并原样嵌入本函数结果，须对 JSON 字符串转义。
 function(zr_benchmark_task4_resolve_environment
         platform_name
         report_path

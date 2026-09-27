@@ -1,3 +1,5 @@
+# 主套件按 case、实现及已发现的宿主可执行文件选择持久会话命令。
+# 未支持的组合返回 FALSE；返回命令是 CMake 列表，调用方须以列表参数传给进程启动器。
 function(zr_benchmark_persistent_command_get
         implementation_id
         case_name

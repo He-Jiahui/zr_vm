@@ -68,5 +68,6 @@ doc_type: category-index
 | 容器、代际池与临时值根回归 | [266 项](coverage/tests_container.tsv) | 15 文件独立复核，547 个证据锚点有效；源码只新增 162 行注释，CMake 配置通过，未完成编译或运行测试。池扫描回调、线程入口和跨目录公共 helper 的调用方已核准，7 处待查边界标为 TODO。 |
 | 性能采样、报告与 persistent 协议回归 | [191 项](coverage/tests_performance.tsv) | 14 文件独立复核，320 个证据锚点有效；源码仅改注释，本机 GCC Windows 分支语法检查通过。退出码、内存采样、const 写入与 OOM 中位数等 7 处 BUG 和 5 处 TODO 已有静态证据；完整构建和运行测试未执行。 |
 | 编译期、函数、指令、系统与测试入口余项 | [541 项](coverage/tests_small_remaining.tsv) | 33 文件独立复核，源码仅改注释；Clang 对 12 个 C 文件及 GCC 对 test_runner 的语法检查通过。`test_runner` 的退出码截断和参数未转义已在 WSL 复现；Unity 失败后清理跳过、文件写入错误漏报及停用的子目录 CMake 等风险已标 BUG/TODO。system_fs 直接语法检查缺生成头文件；未运行完整套件。 |
+| Benchmark 计时口径、持久命令、采样策略与环境证据 | [21 项](coverage/tests_cmake_benchmark_contracts.tsv) | 4 个 CMake helper 独立复核，源码仅改注释；四个脚本解析以及 Task 3、Task 4 定向契约脚本通过。Linux 环境报告路径含双引号导致最终 JSON 无效的可达缺陷已标 BUG，未修改行为。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

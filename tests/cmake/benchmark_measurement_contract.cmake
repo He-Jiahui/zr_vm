@@ -1,3 +1,4 @@
+# 为主套件和 support 契约测试统一描述各实现的计时边界；未知实现留空，交由调用方判为不可比较。
 function(zr_benchmark_measurement_contract_get
         implementation_id
         out_measurement_scope
@@ -41,6 +42,7 @@ function(zr_benchmark_measurement_contract_get
     endif ()
 endfunction()
 
+# 检查 runner 报告中的计时范围和复用标志是否属于协议词汇；不替调用方决定某次运行是否可信。
 function(zr_benchmark_measurement_contract_validate
         measurement_scope
         prepare_scope
@@ -77,6 +79,7 @@ function(zr_benchmark_measurement_contract_validate
     set(${out_valid} ${valid} PARENT_SCOPE)
 endfunction()
 
+# 比率计算只接受 runner 报告使用的三位小数，避免 CMake 浮点运算产生平台差异。
 function(zr_benchmark_measurement_contract_decimal_to_milli value out_var)
     string(REGEX MATCH "^([0-9]+)\\.([0-9][0-9][0-9])$" matched "${value}")
     if (matched STREQUAL "")
@@ -87,6 +90,7 @@ function(zr_benchmark_measurement_contract_decimal_to_milli value out_var)
     set(${out_var} "${milli}" PARENT_SCOPE)
 endfunction()
 
+# 与 decimal_to_milli 配套，确保报告中的比率保持固定三位小数。
 function(zr_benchmark_measurement_contract_format_milli milli_value out_var)
     math(EXPR whole "${milli_value} / 1000")
     math(EXPR fraction "${milli_value} % 1000")
@@ -100,6 +104,7 @@ function(zr_benchmark_measurement_contract_format_milli milli_value out_var)
     set(${out_var} "${whole}.${fraction_text}" PARENT_SCOPE)
 endfunction()
 
+# case assembly 仅比较同一计时范围的结果；缺值、零基线或口径不同都输出 JSON null。
 function(zr_benchmark_measurement_contract_ratio
         value
         base

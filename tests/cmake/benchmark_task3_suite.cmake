@@ -1,11 +1,13 @@
 include_guard(GLOBAL)
 
+# 执行计划和 runner 的共同上限；调度器与额外采样都依赖这组版本和预算保持一致。
 set(ZR_BENCHMARK_TASK3_EXECUTION_PLAN_SCHEMA_VERSION 1)
 set(ZR_BENCHMARK_TASK3_EXECUTION_PLAN_ALGORITHM "fisher_yates_splitmix64")
 set(ZR_BENCHMARK_TASK3_EXECUTION_PLAN_VERSION 1)
 set(ZR_BENCHMARK_TASK3_MAX_TOTAL_SAMPLES 20)
 set(ZR_BENCHMARK_TASK3_MAX_EXTRA_SAMPLES 10)
 
+# 主套件与定向契约测试共用采样政策；profile 强制单样本，其余模式不得超过 runner 的总预算。
 function(zr_benchmark_task3_resolve_policy
          scope tier process_default_warmup process_default_iterations requested_warmup requested_iterations
          out_warmup out_iterations out_extra_samples out_profile out_minimum_mode)
@@ -62,6 +64,7 @@ function(zr_benchmark_task3_resolve_policy
     set(${out_minimum_mode} "${minimum_mode}" PARENT_SCOPE)
 endfunction()
 
+# 计划脚本按无符号 64 位种子重放顺序；在交给 Python 前拒绝符号、前导零和越界文本。
 function(zr_benchmark_task3_validate_seed seed out_valid)
     set(valid FALSE)
     if (seed MATCHES "^(0|[1-9][0-9]*)$")
@@ -75,6 +78,7 @@ function(zr_benchmark_task3_validate_seed seed out_valid)
     set(${out_valid} "${valid}" PARENT_SCOPE)
 endfunction()
 
+# 只有同一 .NET 持久会话已校准或预热时，报告才能声明复用 JIT 状态。
 function(zr_benchmark_task3_dotnet_jit_state_reused
          persistent warmup calibration_enabled out_reused)
     set(reused false)
@@ -84,6 +88,8 @@ function(zr_benchmark_task3_dotnet_jit_state_reused
     set(${out_reused} "${reused}" PARENT_SCOPE)
 endfunction()
 
+# 从 CMake 套件跨到 Python 调度器，并在消费计划前核对版本、种子和 jobs 数量。
+# request/plan 文件由套件输出目录持有；失败直接中止基准，避免使用旧计划。
 function(zr_benchmark_task3_create_execution_plan
          python_executable execution_plan_script jobs_json seed cases_json implementations_json output_path out_json)
     zr_benchmark_task3_validate_seed("${seed}" seed_valid)
@@ -148,6 +154,7 @@ function(zr_benchmark_task3_create_execution_plan
     set(${out_json} "${plan_json}" PARENT_SCOPE)
 endfunction()
 
+# runner 报告的必需字段缺失时终止整次套件，防止后续汇总默默使用空值。
 function(_zr_benchmark_task3_json_get_required json out_var)
     string(JSON value ERROR_VARIABLE json_error GET "${json}" ${ARGN})
     if (NOT json_error STREQUAL "NOTFOUND")
@@ -157,6 +164,7 @@ function(_zr_benchmark_task3_json_get_required json out_var)
     set(${out_var} "${value}" PARENT_SCOPE)
 endfunction()
 
+# 允许协议规定的显式 null；缺字段仍是结构错误，不等同于该次采样无数据。
 function(_zr_benchmark_task3_json_get_nullable json out_var)
     string(JSON value_type ERROR_VARIABLE type_error TYPE "${json}" ${ARGN})
     if (NOT type_error STREQUAL "NOTFOUND")
@@ -171,6 +179,8 @@ function(_zr_benchmark_task3_json_get_nullable json out_var)
     set(${out_var} "${value}" PARENT_SCOPE)
 endfunction()
 
+# 将 runner JSON 拆成调用方作用域中的固定字段，供 case assembly 与最终汇总使用。
+# 字段名是跨 C runner、CMake 套件和 Python 报告消费者的契约。
 function(zr_benchmark_task3_parse_runner_report json prefix)
     foreach (field IN ITEMS iterations sample_count extra_sample_count repetitions warmup stability comparable gate_eligible)
         _zr_benchmark_task3_json_get_required("${json}" value "${field}")
