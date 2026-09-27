@@ -50,6 +50,8 @@ doc_type: workflow-detail
 
 每个新审或返工模块结束时核对台账与定义清单，确认没有未登记的审查单元；运行 `python scripts/code_review_inventory.py check-batch docs/code-review/coverage/<模块>.tsv` 检查九列、重复单元及 `evidence` 锚点的存在和非空，再逐条核对锚点与结论的语义对应，抽查 `callers` 的实际调用目的及注释是否仍与当前工作树一致。若模块文档因此失真，依照文档现有的 `related_code`、`implementation_files`、`plan_sources` 和 `tests` 头部同步修正。
 
+源码新增注释会移动其他模块台账中的行号。提交前按本批改动路径搜索 `coverage/` 的反向引用，复核已审批次的 `callers`、`evidence` 是否仍指向同一调用与语句；对已使用规范锚点的批次重跑 `check-batch`，并在本次提交中修正漂移。旧批次的范围、符号名或叙述式证据须随其模块返工迁移，不能以非空行号替代语义复核。
+
 ## 分工、验证与提交
 
 多位 subagents 可并行进行只读调用链调查；写注释时每个文件只有一名负责者。独立 reviewer 核对注释是否从当前调用证据得出，是否遗漏单元或误用问题标签。活跃 SSA、LSP 等会话拥有的文件只读审查，待文件归属释放后再写入。
