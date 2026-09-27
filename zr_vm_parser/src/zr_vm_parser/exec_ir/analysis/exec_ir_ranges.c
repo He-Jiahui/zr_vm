@@ -136,6 +136,8 @@ TZrBool ZrParser_ExecIr_RangeProvesBounds(
     if (index == ZR_NULL || length == ZR_NULL || !index->hasLower ||
         !index->hasUpper || !length->hasLower || !length->hasUpper ||
         index->overflowed || length->overflowed || index->lengthMutable ||
+        length->lengthMutable || index->lower > index->upper ||
+        length->lower > length->upper ||
         index->generation == 0u || index->generation != length->generation ||
         index->lower < 0 || length->lower < 0) {
         return ZR_FALSE;

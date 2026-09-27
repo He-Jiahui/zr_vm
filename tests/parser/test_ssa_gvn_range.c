@@ -89,6 +89,9 @@ static void test_range_facts_require_both_bounds(void) {
     assert(ZrParser_ExecIr_AnalysisFacts_AddRange(&facts, &index));
     assert(ZrParser_ExecIr_AnalysisFacts_AddRange(&facts, &length));
     assert(ZrParser_ExecIr_RangeProvesBounds(&index, &length));
+    length.lengthMutable = ZR_TRUE;
+    assert(!ZrParser_ExecIr_RangeProvesBounds(&index, &length));
+    length.lengthMutable = ZR_FALSE;
     index.hasLower = ZR_FALSE;
     assert(!ZrParser_ExecIr_RangeProvesBounds(&index, &length));
     ZrParser_ExecIr_AnalysisFactsFree(&facts);
@@ -151,7 +154,28 @@ static void test_bounds_check_api_is_conservative(void) {
                                  ZR_FALSE, ZR_FALSE};
     SZrExecIrDiagnostic diagnostic;
     assert(ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
+    length.lengthMutable = ZR_TRUE;
+    assert(!ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
+    length.lengthMutable = ZR_FALSE;
     index.upper = 4;
+    assert(!ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
+}
+
+static void test_direct_bounds_proof_rejects_inverted_intervals(void) {
+    SZrExecIrRangeFact index = {1u, 0, 2, 1u, ZR_TRUE, ZR_TRUE,
+                                ZR_FALSE, ZR_FALSE};
+    SZrExecIrRangeFact length = {2u, 3, 3, 1u, ZR_TRUE, ZR_TRUE,
+                                 ZR_FALSE, ZR_FALSE};
+    SZrExecIrDiagnostic diagnostic;
+    index.lower = 4;
+    assert(!ZrParser_ExecIr_RangeProvesBounds(&index, &length));
+    assert(!ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
+    index.lower = 0;
+    length.upper = 1;
+    assert(!ZrParser_ExecIr_RangeProvesBounds(&index, &length));
     assert(!ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
     assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
 }
@@ -383,6 +407,7 @@ int main(void) {
     test_shape_fact_invalidates_on_generation_change();
     test_nullability_fact_is_generation_scoped();
     test_bounds_check_api_is_conservative();
+    test_direct_bounds_proof_rejects_inverted_intervals();
     test_gvn_rewrites_only_duplicate_pure_definitions();
     test_gvn_keys_type_tests_by_canonical_match_type();
     test_gvn_preserves_conversion_result_type_when_instruction_type_is_implicit();

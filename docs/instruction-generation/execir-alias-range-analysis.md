@@ -13,6 +13,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_gvn_range.c
   - tests/acceptance/ssa-gvn-conversion-result-type.md
+  - tests/acceptance/ssa-bounds-proof-mutable-length.md
 doc_type: implementation-note
 status: implemented
 ---
@@ -37,8 +38,15 @@ guards whenever the query is not a positive proof.
 Range and shape facts are generation-scoped. A bounds proof requires known
 lower and upper bounds for both index and length, matching generations, no
 arithmetic overflow, non-negative bounds, and `index.upper < length.lower`.
-Missing lower bounds, mutable lengths, overflow, or stale generations return
-false. Shape facts require nonzero type/layout/shape identities and are
+Missing lower bounds, an inverted index or length interval, a mutable length
+fact on either operand, overflow, or mismatched generations return false, even
+when callers bypass the fact container and query the proof function directly.
+The direct query cannot distinguish two equally stale generations from the
+active generation; callers must validate fact freshness against their current
+analysis container before using a positive proof.
+The proof-only bounds-elision API then returns false without reporting an
+execution error; callers must retain the check. Shape facts require nonzero
+type/layout/shape identities and are
 discarded on generation invalidation. Edge-sensitive range propagation remains
 a subsequent stage; the current GVN boundary is described below.
 
