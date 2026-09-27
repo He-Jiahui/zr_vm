@@ -601,6 +601,13 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
         return ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
     }
 
+    if (spec->resultValueId != ZR_VALUE_ID_INVALID &&
+        ZrParser_SemanticIr_Value(function, spec->resultValueId)
+                        ->definitionInstructionId !=
+                ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+        return ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
+    }
+
     memset(&instruction, 0, sizeof(instruction));
     instruction.id =
             (TZrSemanticInstructionId)(function->instructions.length + 1U);
@@ -683,6 +690,15 @@ TZrBool ZrParser_SemanticIr_Validate(
             value->definitionInstructionId > function->instructions.length ||
             !ZrParser_SemanticValueFacts_Validate(&value->facts, value->typeId)) {
             return ZR_FALSE;
+        }
+        if (value->definitionInstructionId !=
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+            const SZrSemanticIrInstruction *definition =
+                    ZrParser_SemanticIr_InstructionAt(
+                            function, value->definitionInstructionId - 1U);
+            if (definition == ZR_NULL || definition->resultValueId != value->id) {
+                return ZR_FALSE;
+            }
         }
     }
     for (index = 0; index < function->regions.length; index++) {
@@ -851,6 +867,12 @@ TZrBool ZrParser_SemanticIr_Validate(
             (instruction->targetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
              function->cfg.blocks.length > 0U &&
              instruction->targetBlockId >= function->cfg.blocks.length)) {
+            return ZR_FALSE;
+        }
+
+        if (instruction->resultValueId != ZR_VALUE_ID_INVALID &&
+            ZrParser_SemanticIr_Value(function, instruction->resultValueId)
+                            ->definitionInstructionId != instruction->id) {
             return ZR_FALSE;
         }
 

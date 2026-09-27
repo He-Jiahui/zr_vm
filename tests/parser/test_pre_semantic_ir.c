@@ -172,8 +172,8 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         "49 mul type=5 place=1 value=1 result=2\n"
         "50 div type=5 place=1 value=1 result=2\n";
     SZrSemanticIrFunction function;
+    SZrSemanticIrInstruction instruction;
     SZrParserPlaceBase base;
-    SZrSemanticIrInstructionSpec spec;
     TZrPlaceId placeId;
     TZrValueId sourceValueId;
     TZrValueId resultValueId;
@@ -193,15 +193,20 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
     TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, resultValueId);
 
     for (index = 0; index < ZR_ARRAY_COUNT(opcodes); index++) {
-        spec = instruction_spec(
-                opcodes[index], placeId, sourceValueId, resultValueId, 5U);
+        memset(&instruction, 0, sizeof(instruction));
+        instruction.id = (TZrSemanticInstructionId)(index + 1u);
+        instruction.opcode = opcodes[index];
+        instruction.placeId = placeId;
+        instruction.valueId = sourceValueId;
+        instruction.resultValueId = resultValueId;
+        instruction.typeId = 5u;
         if (opcodes[index] == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
-            spec.constructorId = 0x06000042U;
+            instruction.constructorId = 0x06000042U;
         }
         if (opcodes[index] == ZR_SEMANTIC_IR_TYPE_TEST) {
-            spec.matchTypeId = 6U;
+            instruction.matchTypeId = 6U;
         }
-        emit_instruction(&function, spec);
+        ZrCore_Array_Push(g_state, &function.instructions, &instruction);
     }
 
     TEST_ASSERT_TRUE(ZrParser_SemanticIr_FormatGolden(
@@ -300,6 +305,60 @@ static void test_type_test_requires_canonical_match_type_identity(void) {
     TEST_ASSERT_EQUAL_UINT32(
             ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
             ZrParser_SemanticIr_Emit(&function, &spec));
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+}
+
+static void test_semantic_result_has_one_definition(void) {
+    SZrSemanticIrFunction function;
+    SZrSemanticIrInstructionSpec spec;
+    SZrSemanticIrValue *result;
+    TZrValueId first;
+    TZrValueId second;
+    TZrValueId external;
+    SZrSemanticIrValue *entry;
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 1u, 0u);
+    first = ZrParser_SemanticIr_AddValue(&function, 1u, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, first);
+    spec = instruction_spec(ZR_SEMANTIC_IR_CONSTANT, ZR_PLACE_ID_INVALID,
+                            ZR_VALUE_ID_INVALID, first, 1u);
+    TEST_ASSERT_EQUAL_UINT32(1u, ZrParser_SemanticIr_Emit(&function, &spec));
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+
+    result = (SZrSemanticIrValue *)ZrCore_Array_Get(&function.values, first - 1u);
+    TEST_ASSERT_NOT_NULL(result);
+    result->definitionInstructionId = 0u;
+    TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
+    result->definitionInstructionId = 1u;
+    spec.opcode = ZR_SEMANTIC_IR_ADD;
+    spec.valueId = first;
+    spec.operands = &first;
+    spec.operandCount = 1u;
+    TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+                             ZrParser_SemanticIr_Emit(&function, &spec));
+    TEST_ASSERT_EQUAL_UINT32(1u, function.instructions.length);
+    TEST_ASSERT_EQUAL_UINT32(0u, function.valueOperands.length);
+    TEST_ASSERT_EQUAL_UINT32(1u, function.sourceMap.length);
+    TEST_ASSERT_EQUAL_UINT32(1u, result->definitionInstructionId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+
+    second = ZrParser_SemanticIr_AddValue(&function, 1u, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, second);
+    spec.resultValueId = second;
+    TEST_ASSERT_EQUAL_UINT32(2u, ZrParser_SemanticIr_Emit(&function, &spec));
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+    result = (SZrSemanticIrValue *)ZrCore_Array_Get(&function.values, first - 1u);
+    result->definitionInstructionId = 2u;
+    TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
+    result->definitionInstructionId = 1u;
+    external = ZrParser_SemanticIr_AddValue(&function, 1u, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, external);
+    entry = (SZrSemanticIrValue *)ZrCore_Array_Get(&function.values, external - 1u);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+    entry->definitionInstructionId = 1u;
+    TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
+
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
@@ -769,23 +828,29 @@ static void test_flow_join_keeps_dimensions_separate_and_reports_negative_uses(v
 
     spec = instruction_spec(ZR_SEMANTIC_IR_INITIALIZE, initPlace, valueId, 0U, 5U);
     emit_instruction(&function, spec);
-    spec = instruction_spec(ZR_SEMANTIC_IR_MOVE, movePlace, 0U, valueId, 5U);
+    spec = instruction_spec(ZR_SEMANTIC_IR_MOVE, movePlace, 0U,
+                            ZrParser_SemanticIr_AddValue(&function, 5U, empty_range()), 5U);
     emit_instruction(&function, spec);
-    spec = instruction_spec(ZR_SEMANTIC_IR_BORROW_SHARED, loanPlace, 0U, valueId, 5U);
+    spec = instruction_spec(ZR_SEMANTIC_IR_BORROW_SHARED, loanPlace, 0U,
+                            ZrParser_SemanticIr_AddValue(&function, 5U, empty_range()), 5U);
     spec.loanId = sharedLoanId;
     emit_instruction(&function, spec);
     spec = instruction_spec(ZR_SEMANTIC_IR_CALL_TYPED, escapePlace, valueId, 0U, 5U);
     spec.escape = ZR_SEMANTIC_ESCAPE_CALLER;
     emit_instruction(&function, spec);
 
-    spec = instruction_spec(ZR_SEMANTIC_IR_LOAD, initPlace, 0U, valueId, 5U);
+    spec = instruction_spec(ZR_SEMANTIC_IR_LOAD, initPlace, 0U,
+                            ZrParser_SemanticIr_AddValue(&function, 5U, empty_range()), 5U);
     emit_instruction(&function, spec);
-    spec = instruction_spec(ZR_SEMANTIC_IR_COPY, movePlace, 0U, valueId, 5U);
+    spec = instruction_spec(ZR_SEMANTIC_IR_COPY, movePlace, 0U,
+                            ZrParser_SemanticIr_AddValue(&function, 5U, empty_range()), 5U);
     emit_instruction(&function, spec);
-    spec = instruction_spec(ZR_SEMANTIC_IR_BORROW_MUT, loanPlace, 0U, valueId, 5U);
+    spec = instruction_spec(ZR_SEMANTIC_IR_BORROW_MUT, loanPlace, 0U,
+                            ZrParser_SemanticIr_AddValue(&function, 5U, empty_range()), 5U);
     spec.loanId = mutableLoanId;
     emit_instruction(&function, spec);
-    spec = instruction_spec(ZR_SEMANTIC_IR_BORROW_SHARED, escapePlace, 0U, valueId, 5U);
+    spec = instruction_spec(ZR_SEMANTIC_IR_BORROW_SHARED, escapePlace, 0U,
+                            ZrParser_SemanticIr_AddValue(&function, 5U, empty_range()), 5U);
     spec.loanId = escapingLoanId;
     emit_instruction(&function, spec);
 
@@ -1365,6 +1430,7 @@ int main(void) {
     RUN_TEST(test_pre_semantic_ir_opcode_golden_covers_supported_families);
     RUN_TEST(test_value_construct_requires_destination_place_and_constructor_identity);
     RUN_TEST(test_type_test_requires_canonical_match_type_identity);
+    RUN_TEST(test_semantic_result_has_one_definition);
     RUN_TEST(test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar);
     RUN_TEST(test_source_if_emits_typed_semantic_control_flow);
     RUN_TEST(test_nested_source_if_covers_each_instruction_once);

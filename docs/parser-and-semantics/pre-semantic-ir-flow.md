@@ -84,6 +84,7 @@ tests:
   - tests/parser/test_ssa_source_value_facts.c
   - tests/acceptance/ssa-value-facts.md
   - tests/parser/test_pre_semantic_ir.c
+  - tests/acceptance/ssa-semantic-definition-identity.md
   - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
@@ -202,6 +203,17 @@ lifecycle markers become source-mapped `NOP`. Values with no instruction
 definition are explicit external-entry values; instruction result references
 remain the compatibility authority for older synthetic fixtures whose cached
 definition field is zero.
+
+Production `ZrParser_SemanticIr_Emit` rejects a second result for an already
+defined ValueId before extending the operand, instruction, or source-map pools.
+`ZrParser_SemanticIr_Validate` checks both directions: every instruction result
+has a cached definition pointing to that instruction, and every nonzero cached
+definition identifies an instruction that actually produces that value. Zero
+remains valid for an actual external-entry value with no result instruction;
+a missing or stale cache cannot disguise an instruction result as external or
+hide a duplicate writer.
+Formatting-only synthetic fixtures can format instruction arrays directly;
+they do not assert the emission or validation contract.
 
 Each identifier `LOAD` defines a ValueId and materializes its result stack slot
 as a distinct temporary Place initialized with that *same* value. A later
