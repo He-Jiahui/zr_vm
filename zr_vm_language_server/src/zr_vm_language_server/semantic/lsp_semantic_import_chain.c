@@ -7,10 +7,13 @@
 #include <ctype.h>
 #include <string.h>
 
+/** @brief 仅在引用目标没有打开文档快照时，把文件 URI 转为磁盘读取路径。 */
 static TZrBool semantic_import_chain_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
     return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
+/** @brief 为跨文件引用查询取得当前 URI 的 AST；打开文档内容优先于磁盘内容。
+ *  @note 返回的 analyzer 由 LSP 上下文持有；读取快照和磁盘缓冲区都在更新缓存后释放。 */
 static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -38,6 +41,7 @@ static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* 项目枚举会遇到未打开的源文件；已有文档则必须以编辑器快照为准，不能用旧磁盘文本覆盖。 */
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         sourceBuffer = snapshot.content;
@@ -93,6 +97,7 @@ static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
     return ZR_FALSE;
 }
 
+/** @brief 用源坐标判定光标是否落在别名或成员标识符上，兼容缺少字节偏移的 AST 范围。 */
 static TZrBool semantic_import_chain_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL && position.source != ZR_NULL) {
@@ -110,12 +115,14 @@ static TZrBool semantic_import_chain_range_contains_position(SZrFileRange range,
             (position.end.line == range.end.line && position.end.column <= range.end.column));
 }
 
+/** @brief 将原生模块描述符里的名字纳入语义查询所使用的 SZrString 表示。 */
 static SZrString *semantic_import_chain_create_const_string(SZrState *state, const TZrChar *text) {
     return state != ZR_NULL && text != ZR_NULL
                ? ZrCore_String_Create(state, (TZrNativeString)text, strlen(text))
                : ZR_NULL;
 }
 
+/** @brief 只有元数据明确把成员认作子模块时，才把其目标名交给下一段链查询。 */
 static SZrString *semantic_import_chain_next_module_name(SZrState *state,
                                                          const SZrLspResolvedMetadataMember *resolvedMember) {
     if (state == ZR_NULL || resolvedMember == ZR_NULL ||
@@ -131,6 +138,7 @@ static SZrString *semantic_import_chain_next_module_name(SZrState *state,
     return resolvedMember->resolvedTypeText;
 }
 
+/** @brief 统一点号链、光标解析和引用扫描使用的成员元数据来源，避免各入口分别猜测模块链接。 */
 static TZrBool semantic_import_chain_resolve_linked_member_internal(
     SZrState *state,
     SZrLspMetadataProvider *provider,
@@ -166,6 +174,7 @@ static TZrBool semantic_import_chain_resolve_linked_member_internal(
     return ZR_TRUE;
 }
 
+/** @brief 将 AST 源位置转换为目标文档的 LSP 位置，交给调用方持有的引用结果数组。 */
 static TZrBool semantic_import_chain_append_location(SZrState *state,
                                                      SZrLspMetadataProvider *provider,
                                                      SZrArray *result,
@@ -194,6 +203,8 @@ static TZrBool semantic_import_chain_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 从导入别名起逐段解析静态成员链，并在光标命中处停下供语义查询消费。
+ *  @note 计算属性与非成员节点终止链；函数调用节点被略过，不负责表达式值的动态类型。 */
 static TZrBool semantic_import_chain_resolve_primary_expression(SZrState *state,
                                                                 SZrLspMetadataProvider *provider,
                                                                 SZrSemanticAnalyzer *analyzer,
@@ -226,6 +237,7 @@ static TZrBool semantic_import_chain_resolve_primary_expression(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 别名来自同一 AST 的 import 声明；后续每一段只能由元数据确认其子模块身份。 */
     currentModuleName = binding->moduleName;
     if (semantic_import_chain_range_contains_position(receiverNode->location, queryRange)) {
         outHit->moduleName = currentModuleName;
@@ -286,6 +298,7 @@ static TZrBool semantic_import_chain_resolve_primary_expression(SZrState *state,
     return ZR_FALSE;
 }
 
+/** @brief 反向扫描一个表达式中的导入链成员，将匹配的每个标识符加入引用结果。 */
 static TZrBool semantic_import_chain_append_primary_expression_matches(SZrState *state,
                                                                        SZrLspMetadataProvider *provider,
                                                                        SZrSemanticAnalyzer *analyzer,
@@ -410,6 +423,7 @@ static TZrBool semantic_import_chain_append_recursive(SZrState *state,
                                                       SZrString *targetMemberName,
                                                       SZrArray *result);
 
+/** @brief 按 AST 形状查找单个光标命中；找到第一处后可以停止搜索。 */
 static TZrBool semantic_import_chain_resolve_recursive(SZrState *state,
                                                        SZrLspMetadataProvider *provider,
                                                        SZrSemanticAnalyzer *analyzer,
@@ -998,6 +1012,9 @@ static TZrBool semantic_import_chain_resolve_recursive(SZrState *state,
     return ZR_FALSE;
 }
 
+/** @brief 遍历当前 AST 子树，收集匹配导入成员的所有位置，供项目导航聚合。
+ *  BUG: 多子节点分支把有副作用的递归调用放在 || 左侧；例如二元表达式左侧命中后右侧不再访问，
+ *  导致同一表达式中第二处成员引用遗漏。入口为项目导航的描述符成员引用查询。 */
 static TZrBool semantic_import_chain_append_recursive(SZrState *state,
                                                       SZrLspMetadataProvider *provider,
                                                       SZrSemanticAnalyzer *analyzer,
@@ -1735,6 +1752,7 @@ static TZrBool semantic_import_chain_append_recursive(SZrState *state,
     return appended;
 }
 
+/** @brief 对数组中的所有 AST 节点收集引用；局部命中不会提前结束整组扫描。 */
 static TZrBool semantic_import_chain_append_in_node_array(SZrState *state,
                                                           SZrLspMetadataProvider *provider,
                                                           SZrSemanticAnalyzer *analyzer,
@@ -1768,6 +1786,9 @@ static TZrBool semantic_import_chain_append_in_node_array(SZrState *state,
     return appended;
 }
 
+/** @brief 在尚未形成完整 AST 成员节点的补全位置，从文本前缀还原导入子模块链。
+ *  TODO: 当前按单字节 ctype 规则识别字母、数字及下划线；需对照词法器的标识符规则和补全用例，
+ *  确认非 ASCII 别名或成员是否应进入此元数据路径。 */
 static TZrBool semantic_import_chain_resolve_completion_module_internal(SZrState *state,
                                                                         SZrLspMetadataProvider *provider,
                                                                         SZrSemanticAnalyzer *analyzer,
@@ -1897,6 +1918,7 @@ static TZrBool semantic_import_chain_resolve_completion_module_internal(SZrState
                                                                       outResolvedModule);
 }
 
+/** @brief 对外提供逐段元数据解析；由包装层建立 provider 后复用内部实现。 */
 TZrBool ZrLanguageServer_LspSemanticImportChain_ResolveLinkedMember(
     SZrState *state,
     SZrLspContext *context,
@@ -1923,6 +1945,7 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_ResolveLinkedMember(
                                                                 outNextModuleName);
 }
 
+/** @brief 供语义补全入口把光标前的导入链指向可枚举成员的模块。 */
 TZrBool ZrLanguageServer_LspSemanticImportChain_ResolveCompletionModuleAtOffset(
     SZrState *state,
     SZrLspContext *context,
@@ -1952,6 +1975,7 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_ResolveCompletionModuleAtOffset(
                                                                     outResolvedModule);
 }
 
+/** @brief 在当前 analyzer 的 AST 中找到光标上的导入链段；命中别名时不构造成员元数据。 */
 TZrBool ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(SZrState *state,
                                                                SZrLspContext *context,
                                                                SZrLspProjectIndex *projectIndex,
@@ -1980,6 +2004,9 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(SZrState *state,
                                                    outHit);
 }
 
+/** @brief 从项目源文件收集某模块成员的语义导入链引用，必要时先建立目标 URI 的 analyzer。
+ *  BUG: 无匹配文件返回 FALSE，而项目导航的单文件回调将 FALSE 解释为扫描失败并停止目录遍历；
+ *  项目中先遇到不引用该成员的 .zr 文件时，后续文件的真实引用会被漏掉。 */
 TZrBool ZrLanguageServer_LspSemanticImportChain_AppendMatchingLocationsForUri(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrLspProjectIndex *projectIndex,
@@ -2023,6 +2050,7 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_AppendMatchingLocationsForUri(SZ
     return appended;
 }
 
+/** @brief 光标解析只需首个匹配节点；用于解析器产生的语句和表达式数组。 */
 static TZrBool semantic_import_chain_resolve_in_node_array(SZrState *state,
                                                            SZrLspMetadataProvider *provider,
                                                            SZrSemanticAnalyzer *analyzer,
