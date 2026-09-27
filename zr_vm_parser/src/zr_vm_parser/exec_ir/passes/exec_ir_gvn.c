@@ -57,6 +57,7 @@ static TZrBool same_key(const SZrExecIrFunction *function,
                         const SZrExecIrInstruction *left,
                         const SZrExecIrInstruction *right) {
     TZrUInt32 index;
+    TZrExecIrValueId leftResult, rightResult;
     if (!range_valid(left->operandRange, function->operandCount) ||
         !range_valid(right->operandRange, function->operandCount) ||
         !range_valid(left->resultRange, function->resultCount) ||
@@ -69,6 +70,20 @@ static TZrBool same_key(const SZrExecIrFunction *function,
         left->layoutId != right->layoutId ||
         left->operandRange.count != right->operandRange.count ||
         left->resultRange.count != 1u || right->resultRange.count != 1u) {
+        return ZR_FALSE;
+    }
+    leftResult = function->resultPool[left->resultRange.start];
+    rightResult = function->resultPool[right->resultRange.start];
+    if (leftResult == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        rightResult == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        leftResult > function->valueCount || rightResult > function->valueCount) {
+        return ZR_FALSE;
+    }
+    /* CONVERT can leave its instruction type implicit: execution then uses
+     * the result Value's canonical type. Equal instruction fields alone do
+     * not establish equal result semantics. */
+    if (function->values[leftResult - 1u].typeToken !=
+        function->values[rightResult - 1u].typeToken) {
         return ZR_FALSE;
     }
     for (index = 0u; index < left->operandRange.count; ++index) {
@@ -124,10 +139,12 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
         (function->instructionCount != 0u && function->instructions == ZR_NULL) ||
         (function->operandCount != 0u && function->operandPool == ZR_NULL) ||
         (function->resultCount != 0u && function->resultPool == ZR_NULL) ||
+        (function->valueCount != 0u && function->values == ZR_NULL) ||
         (function->blockCount != 0u && function->blocks == ZR_NULL) ||
         function->instructionCount > function->instructionCapacity ||
         function->operandCount > function->operandCapacity ||
         function->resultCount > function->resultCapacity ||
+        function->valueCount > function->valueCapacity ||
         function->blockCount > function->blockCapacity) {
         if (diagnostic != ZR_NULL) {
             diagnostic->code = ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT;

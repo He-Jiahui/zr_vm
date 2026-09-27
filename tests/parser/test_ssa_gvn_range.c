@@ -281,6 +281,97 @@ static void test_gvn_keys_type_tests_by_canonical_match_type(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_gvn_preserves_conversion_result_type_when_instruction_type_is_implicit(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrValueId source, integer, floating, repeated;
+    SZrExecIrRange operands, result, returned;
+    SZrExecIrInstruction instruction;
+    TZrExecIrInstructionId id;
+    TZrExecIrBlockId block;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 1u;
+    block = ZrCore_ExecIr_FunctionAddBlock(
+            &function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    function.entryBlockId = block;
+    source = ZrCore_ExecIr_FunctionAddExternalValue(
+            &function, ZR_VALUE_TYPE_INT64, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    integer = ZrCore_ExecIr_FunctionAddValue(
+            &function, ZR_VALUE_TYPE_INT64, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    floating = ZrCore_ExecIr_FunctionAddValue(
+            &function, ZR_VALUE_TYPE_DOUBLE, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    repeated = ZrCore_ExecIr_FunctionAddValue(
+            &function, ZR_VALUE_TYPE_DOUBLE, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(source != 0u && integer != 0u && floating != 0u && repeated != 0u);
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            &function, &source, 1u, &operands));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CONVERT;
+    instruction.operands = operands;
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            &function, &integer, 1u, &result));
+    instruction.results = result;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(
+            &function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            &function, &floating, 1u, &result));
+    instruction.results = result;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(
+            &function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendResults(
+            &function, &repeated, 1u, &result));
+    instruction.results = result;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(
+            &function, &instruction, &id));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(
+            &function, &repeated, 1u, &returned));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operands = returned;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(
+            &function, &instruction, &id));
+    function.blocks[0].instructionRange.start = 0u;
+    function.blocks[0].instructionRange.count = function.instructionCount;
+    assert(ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    assert(ZrParser_ExecIr_RunGvnCse(
+            &function, ZR_NULL, ZR_NULL, &diagnostic));
+    assert(function.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONVERT);
+    assert(function.instructions[2].opcode == ZR_EXEC_IR_OPCODE_COPY);
+    assert(function.operands[function.instructions[2].operands.start] == floating);
+    assert(ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_gvn_rejects_missing_value_storage(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrUInt32 originalCount;
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.valueCount = function.valueCapacity = 1u;
+    assert(!ZrParser_ExecIr_RunGvnCse(
+            &function, ZR_NULL, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT);
+    function.valueCount = function.valueCapacity = 0u;
+    assert(ZrCore_ExecIr_FunctionAddValue(
+            &function, ZR_VALUE_TYPE_INT64, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN) != 0u);
+    originalCount = function.valueCount;
+    function.valueCount = function.valueCapacity + 1u;
+    assert(!ZrParser_ExecIr_RunGvnCse(
+            &function, ZR_NULL, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT);
+    function.valueCount = originalCount;
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_identical_locations_must_alias();
     test_distinct_stable_allocations_are_disjoint();
@@ -294,5 +385,7 @@ int main(void) {
     test_bounds_check_api_is_conservative();
     test_gvn_rewrites_only_duplicate_pure_definitions();
     test_gvn_keys_type_tests_by_canonical_match_type();
+    test_gvn_preserves_conversion_result_type_when_instruction_type_is_implicit();
+    test_gvn_rejects_missing_value_storage();
     return 0;
 }
