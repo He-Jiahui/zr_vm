@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+/** 开发构建的单文件回退选最近更新者；时间相同时保留先出现的候选。
+ * @note 注入文件系统查询仅供不依赖真实构建目录的调用或测试。
+ */
 export function pickLatestExistingPath(
     candidates: string[],
     options?: {
@@ -34,6 +37,7 @@ export function pickLatestExistingPath(
     return bestCandidate;
 }
 
+/** 捆绑资产的优先级由候选顺序指定，时间戳不覆盖该顺序。 */
 export function pickFirstExistingPath(
     candidates: string[],
     options?: {
@@ -53,6 +57,9 @@ export function pickFirstExistingPath(
     return undefined;
 }
 
+/** 仅在所需文件全部存在时选择开发构建目录，避免跨目录拼接运行时依赖。
+ * @note 用所需文件的最新修改时间比较目录；同分沿用候选顺序。
+ */
 export function pickLatestExistingDirectoryWithFiles(
     candidates: string[],
     requiredFiles: string[],
@@ -97,6 +104,7 @@ export function pickLatestExistingDirectoryWithFiles(
     return bestCandidate;
 }
 
+/** 对捆绑候选按声明顺序找完整目录，返回规范化的绝对路径。 */
 export function pickFirstExistingDirectoryWithFiles(
     candidates: string[],
     requiredFiles: string[],

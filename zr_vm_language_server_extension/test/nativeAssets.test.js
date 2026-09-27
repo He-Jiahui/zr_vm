@@ -19,6 +19,7 @@ const {
     createArtifactLayout,
 } = require('../scripts/artifact-layout.js');
 
+// 公共运行设置与旧调试设置并存时，运行和调试必须选择同一首选 CLI。
 test('resolvePreferredCliSetting prefers zr.executablePath over the legacy debug setting', () => {
     const resolved = resolvePreferredCliSetting({
         executablePath: 'D:/tools/new-zr_vm_cli.exe',
@@ -28,6 +29,7 @@ test('resolvePreferredCliSetting prefers zr.executablePath over the legacy debug
     assert.equal(resolved, 'D:/tools/new-zr_vm_cli.exe');
 });
 
+// 迁移期旧设置仍可用，空白新设置不应遮蔽它。
 test('resolvePreferredCliSetting falls back to zr.debug.cli.path when zr.executablePath is empty', () => {
     const resolved = resolvePreferredCliSetting({
         executablePath: '   ',
@@ -37,6 +39,7 @@ test('resolvePreferredCliSetting falls back to zr.debug.cli.path when zr.executa
     assert.equal(resolved, 'D:/tools/old-zr_vm_cli.exe');
 });
 
+// 多根工作区先于扩展安装目录解析相对设置，避免同名工具意外落入捆绑目录。
 test('configuredPathCandidates resolves relative executable settings against workspace folders before the extension install', () => {
     const workspaceFolderPaths = [
         path.join('E:', 'Git', 'workspace-a'),
@@ -57,6 +60,7 @@ test('configuredPathCandidates resolves relative executable settings against wor
     ]);
 });
 
+// 真实文件系统验证优先级，保证相对配置最终选到工作区里的可执行文件。
 test('resolveConfiguredPath prefers a workspace-relative executable over the extension-relative fallback', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-configured-path-'));
 
@@ -84,6 +88,7 @@ test('resolveConfiguredPath prefers a workspace-relative executable over the ext
     }
 });
 
+// 没有完整运行时可用时，单文件开发构建回退按文件时间选最新候选。
 test('pickLatestExistingPath prefers the newest existing native asset candidate', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-native-assets-'));
 
@@ -107,6 +112,7 @@ test('pickLatestExistingPath prefers the newest existing native asset candidate'
     }
 });
 
+// 新构建若缺少依赖文件不能顶替完整目录，避免在启动时才遇到缺件。
 test('pickLatestExistingDirectoryWithFiles ignores newer incomplete native asset directories', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-native-asset-dir-'));
 
@@ -169,6 +175,7 @@ test('pickLatestExistingDirectoryWithFiles ignores newer incomplete native asset
     }
 });
 
+// 捆绑入口优先级固定，开发产物时间戳不应改变其顺序选择。
 test('pickFirstExistingPath returns the first existing candidate without preferring newer timestamps', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-first-path-'));
 
@@ -192,6 +199,9 @@ test('pickFirstExistingPath returns the first existing candidate without preferr
     }
 });
 
+// 完整捆绑目录应保持优先，防止已安装扩展加载工作树中的二进制。
+// BUG: 该用例只把开发文件时间固定在 2026-01-01，捆绑文件保留创建时间；当
+// 测试时钟晚于该日期，开发文件实际更旧，断言不能覆盖标题声称的较新构建场景。
 test('pickFirstExistingDirectoryWithFiles prefers bundled native assets over newer development builds', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-first-dir-'));
 
@@ -228,6 +238,7 @@ test('pickFirstExistingDirectoryWithFiles prefers bundled native assets over new
     }
 });
 
+// 打包布局按共享清单给出平台目录和显式构建候选；宿主另读取同一清单。
 test('createArtifactLayout exposes a single relative bundle layout for native and wasm assets', () => {
     const repositoryRoot = path.join('E:', 'Git', 'zr_vm');
     const extensionRoot = path.join(repositoryRoot, 'zr_vm_language_server_extension');

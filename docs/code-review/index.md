@@ -199,5 +199,6 @@ doc_type: category-index
 | core GC mutator 与暂停协调 | [70 项](coverage/zr_vm_core_gc_domain_mutator.tsv) | 2 个 C/H 文件独立复核，覆盖 31 个实现函数、19 个头部声明、6 个类型、3 个宏和 11 个关键块；源码仅增注释，GCC/Clang C11 严格语法检查通过。14 个 BUG 记录连续暂停代际、并发停顿互等、异常后 worker 状态及诊断帧数据竞争等可达问题，8 个 TODO 保留边界契约疑问。六份旧台账的 80 个行号引用已映射到逐字相同的源码行；目标运行测试未执行。 |
 | VS Code Web 文档同步与 WASM 响应 | [48 项](coverage/zr_vm_language_server_extension_web_document_sync.tsv) | 3 个 TS/JS 文件独立复核，覆盖 Worker 文档同步、WASM 响应与 12 个现有测试；源码仅增注释，Worker TypeScript `--noEmit`、12 个 Node 测试与 JS 语法检查通过。1 个 TODO 保留响应泛型的运行时业务载荷核查缺口。 |
 | VS Code 引用 CodeLens 点击入口 | [6 项](coverage/zr_vm_language_server_extension_reference_codelens.tsv) | 1 个 TS 文件独立复核，追踪双宿主注册、服务端生成与 stdio/WASM 参数序列化；源码仅增注释，TypeScript `--noEmit` 通过。2 个 TODO 保留非法数值坐标及真实点击链的宿主验证缺口。 |
+| VS Code 原生资产发现与路径选择 | [34 项](coverage/zr_vm_language_server_extension_native_assets.tsv) | 3 个 TS/JS 文件独立复核，源码仅增注释，TypeScript `--noEmit`、9 个 Node 测试与 JS 语法检查通过。2 个 BUG 标明显式配置目录被当作可执行文件及测试用固定时钟导致较新构建判断失真；3 个 TODO 保留路径契约疑问。旧 fixture 台账的 2 个引用已映射到等价源码行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
