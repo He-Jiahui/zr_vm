@@ -145,24 +145,25 @@ domain separation, collision-equality gating, map layout finalization,
 custom-equality rejection, SSO/intern/builder eligibility, identity rejection,
 and measured/budgeted rope candidates. Existing dense hash-set, string-layout,
 and builder tests remain the semantic regression suite for the underlying
-implementations. The focused fixture is intentionally standalone in this
-slice; CMake/CTest registration is left to the integration owner.
+implementations. The focused fixture is registered as `ssa_maps_strings` in
+`tests/cmake/ssa-tests.cmake`, which the parent test manifest includes.
 
 ## Plan Sources
 
 This is the conservative core/library portion of
 `docs/plans/ssa/05-data-layout/03-maps-strings.md`. It covers the storage
-contract and negative gates in batches 1–2. Parser lowering, measured benchmark
-promotion, and any actual rope representation remain separate work.
+contract and negative gates in batches 1–2. The parser now consumes the storage
+facts while building and validating specialization candidates. Measured benchmark
+promotion and any actual rope representation remain separate work.
 
 ## Open Issues or Follow-up
 
-The parent integration should register `test_ssa_maps_strings.c` as
-`ssa_maps_strings` after the shared test manifest is stable, then run the
-collision/Unicode/allocation benchmark matrix. A later parser pass may consume
+The registered `ssa_maps_strings` target still needs the broader
+collision/Unicode/allocation benchmark matrix. The parser admission pass consumes
 `SZrStringStorageFacts`; it must preserve the generic path for unknown custom
 equality and must not publish a builder or rope merely because a candidate
-record validates.
+record validates. Current rope strategy selection can admit custom equality
+that candidate validation rejects; see the reviewed core storage contract.
 
 This slice has no allocation, cancellation, or partially initialized managed
 object entry point: all records are caller-owned scalar values, and failure

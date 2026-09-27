@@ -4,14 +4,17 @@
 #include <string.h>
 
 /*
- * This file intentionally has no allocator or object access.  The contract is
- * a scalar witness consumed by the real hash-set/string implementations; a
- * rejected witness simply leaves those implementations on their generic path.
+ * 本层只裁定标量事实是否允许规划特化，不分配也不访问 map/string 对象。
+ * 当前仓内消费者是 ExecIR 计划构建与复验；被拒绝的见证交由上层决定是否回退。
+ * TODO: ExecIR 的 SpecializeContainers 目前不改写容器指令；接入真正的
+ * 存储执行路径时，核查候选到布局/字符串实现的绑定和失败后通用路径。
  */
 
+/* 探测哈希和候选摘要共用固定字节序的非密码学混合；摘要不作认证。 */
 #define ZR_CONTAINER_STORAGE_FNV_OFFSET UINT64_C(1469598103934665603)
 #define ZR_CONTAINER_STORAGE_FNV_PRIME UINT64_C(1099511628211)
 
+/* 诊断字段号在 Core 与 ExecIR 之间作为值传递，不引用原对象的字段地址。 */
 enum {
     ZR_CONTAINER_STORAGE_FIELD_FLAGS = 1u,
     ZR_CONTAINER_STORAGE_FIELD_HASH = 2u,
@@ -24,6 +27,7 @@ enum {
     ZR_CONTAINER_STORAGE_FIELD_BUDGET = 9u
 };
 
+/* 失败路径可省略诊断输出；因此所有拒绝分支共用可空写入点。 */
 static void container_storage_diag_set(SZrContainerStorageDiagnostic *diagnostic,
                                        EZrContainerStorageDiagnosticCode code,
                                        TZrUInt32 field,
@@ -77,6 +81,7 @@ const TZrChar *ZrCore_ContainerStorage_DiagnosticName(
     }
 }
 
+/* 字节转录必须在 GCC、Clang 和 MSVC 下具有同一模 2^64 结果。 */
 static TZrUInt64 container_storage_hash_mul_mod_u64(TZrUInt64 left,
                                                      TZrUInt64 right) {
     /* FNV-1a is defined over the low 64 bits.  Tell integer sanitizers that
@@ -122,6 +127,7 @@ static TZrBool container_storage_power_of_two_size(TZrSize value) {
     return (TZrBool)(value != 0u && (value & (value - 1u)) == 0u);
 }
 
+/* 基本格式检查与 CanCacheHash 的优化许可分开：有些见证可用于探测但不可缓存。 */
 static TZrBool compact_map_hash_well_formed(const SZrCompactMapHash *hash) {
     if (hash == ZR_NULL) {
         return ZR_FALSE;
@@ -202,6 +208,7 @@ TZrSize ZrCore_CompactMap_BucketIndex(TZrUInt64 hash, TZrSize bucketCount) {
     return (TZrSize)(hash & (bucketCount - 1u));
 }
 
+/* 在封存和消费两个方向复用布局审查，避免缓存记录绕过所有权及槽位约束。 */
 static TZrBool compact_map_layout_valid(const SZrCompactMapCandidate *candidate,
                                         SZrContainerStorageDiagnostic *diagnostic) {
     const SZrCompactMapLayout *layout;
@@ -227,6 +234,9 @@ static TZrBool compact_map_layout_valid(const SZrCompactMapCandidate *candidate,
                                    ZR_CONTAINER_STORAGE_FIELD_LAYOUT, 1u, 0u);
         return ZR_FALSE;
     }
+    /* BUG: entrySize=25、entryAlignment=8、槽位偏移 0/8/16 可通过此校验
+     * 及 Finalize/Validate；若按 entrySize 连续实体化，第二项基址不再
+     * 满足 8 字节对齐。这里仍缺 entrySize 对 entryAlignment 的整除约束。 */
     if (layout->hashOffset > layout->entrySize - sizeof(TZrUInt64) ||
         layout->keyOffset > layout->entrySize - sizeof(TZrUInt64) ||
         layout->valueOffset > layout->entrySize - sizeof(TZrUInt64) ||
@@ -298,6 +308,7 @@ static TZrBool compact_map_layout_valid(const SZrCompactMapCandidate *candidate,
     return ZR_TRUE;
 }
 
+/* 布局摘要独立于外层候选，使跨层复制后能区分槽位变化和策略变化。 */
 static TZrUInt64 compact_map_layout_hash(const SZrCompactMapCandidate *candidate) {
     TZrUInt64 result = ZR_CONTAINER_STORAGE_FNV_OFFSET;
     const SZrCompactMapLayout *layout;
@@ -321,6 +332,7 @@ static TZrUInt64 compact_map_layout_hash(const SZrCompactMapCandidate *candidate
     return result == 0u ? UINT64_C(1) : result;
 }
 
+/* 将域见证、布局摘要和许可标志绑定为单个候选值；碰撞仍由上层语义处理。 */
 static TZrUInt64 compact_map_candidate_hash(const SZrCompactMapCandidate *candidate) {
     TZrUInt64 result = ZR_CONTAINER_STORAGE_FNV_OFFSET;
 
@@ -443,6 +455,7 @@ TZrBool ZrCore_CompactMapCandidate_Finalize(
                                    ZR_COMPACT_MAP_TOMBSTONE_BACKSHIFT);
         return ZR_FALSE;
     }
+    /* 全部前提通过后才发布摘要；失败不会留下部分封存的新状态。 */
     candidate->layoutHash = compact_map_layout_hash(candidate);
     candidate->candidateHash = compact_map_candidate_hash(candidate);
     return ZR_TRUE;
@@ -543,6 +556,7 @@ TZrBool ZrCore_CompactMapCandidate_Validate(
                                    ZR_COMPACT_MAP_TOMBSTONE_BACKSHIFT);
         return ZR_FALSE;
     }
+    /* 即使记录携带自洽摘要，仍先复验语义前提再比较两层摘要。 */
     expectedLayoutHash = compact_map_layout_hash(candidate);
     if (candidate->layoutHash == 0u || candidate->layoutHash != expectedLayoutHash) {
         container_storage_diag_set(diagnostic,
@@ -570,6 +584,7 @@ void ZrCore_StringStorageFacts_Init(SZrStringStorageFacts *facts) {
     facts->shortStringLimit = ZR_STRING_STORAGE_DEFAULT_SHORT_LIMIT;
 }
 
+/* 这些观察点使替换物理存储可能改变语言可见身份、逃逸或异常顺序。 */
 static TZrBool string_storage_observable(const SZrStringStorageFacts *facts,
                                          SZrContainerStorageDiagnostic *diagnostic) {
     TZrUInt32 observableFlags = ZR_STRING_STORAGE_FLAG_IDENTITY_OBSERVED |
@@ -654,6 +669,7 @@ TZrBool ZrCore_StringStorage_Validate(
     return ZR_TRUE;
 }
 
+/* 各策略先共用格式与不可变性门槛，再分别验证身份和资源预算。 */
 static TZrBool string_storage_common_eligibility(
         const SZrStringStorageFacts *facts,
         SZrContainerStorageDiagnostic *diagnostic) {
@@ -813,6 +829,9 @@ TZrBool ZrCore_StringStorage_CanUseRope(
                                    facts->measuredCopyBytes, facts->projectedRopeBytes);
         return ZR_FALSE;
     }
+    /* BUG: CUSTOM_EQUALITY 可在这里通过 rope，SelectStrategy/BuildCandidate
+     * 因而产出候选；ValidateCandidate 却无条件拒绝该标志，ExecIR 建计划
+     * 成功后复验失败。应统一准入与复验对自定义相等性的契约。 */
     return ZR_TRUE;
 }
 
@@ -848,6 +867,7 @@ EZrStringStorageStrategy ZrCore_StringStorage_SelectStrategy(
     return ZR_STRING_STORAGE_STRATEGY_GENERIC;
 }
 
+/* 候选摘要覆盖策略与预算，但不替上层绑定事实代次或验证运行时字符串。 */
 static TZrUInt64 string_storage_candidate_hash(const SZrStringStorageCandidate *candidate) {
     TZrUInt64 result = ZR_CONTAINER_STORAGE_FNV_OFFSET;
 
@@ -913,6 +933,7 @@ TZrBool ZrCore_StringStorage_BuildCandidate(
     candidate->replacementEffects = facts->replacementEffects;
     candidate->intermediateCount = facts->intermediateCount;
     candidate->maxBuilderBytes = facts->maxBuilderBytes;
+    /* 策略许可确定后才发布标量快照，供 ExecIR 计划复验。 */
     candidate->candidateHash = string_storage_candidate_hash(candidate);
     return ZR_TRUE;
 }
