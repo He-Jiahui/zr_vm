@@ -37,6 +37,7 @@ void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
     cursor->tokenStartOffset = ps->lexer->tokenStartOffset;
     cursor->tokenStartLineStart = ps->lexer->tokenStartLineStart;
     cursor->tokenStartLine = ps->lexer->tokenStartLine;
+    /* token 与 lookahead 负载沿用 lexer/state 的寿命，回滚不复制字符串。 */
     cursor->token = ps->lexer->t;
     cursor->lookahead = ps->lexer->lookahead;
     cursor->lookaheadPos = ps->lexer->lookaheadPos;
@@ -97,6 +98,7 @@ TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text) {
     return nameStr != ZR_NULL && strcmp(nameStr, text) == 0;
 }
 
+/* 旧百分号写法仅用于迁移诊断；表项不参与生产语法接受。 */
 typedef struct SZrRemovedPercentSyntaxRule {
     const TZrChar *name;
     const TZrChar *suggestion;
@@ -131,6 +133,7 @@ static const SZrRemovedPercentSyntaxRule k_removed_percent_syntax_rules[] = {
         {"using", "Use the ordinary `using` statement only for the supported resource lifetime form."},
 };
 
+/* 仅识别已登记的旧拼写；生产入口将其标为 fatal，迁移入口保留诊断。 */
 TZrBool report_removed_percent_syntax(SZrParserState *ps) {
     const TZrChar *source;
     TZrSize sourceLength;
@@ -381,6 +384,7 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
     startLoc = get_current_token_location(ps);
     endLoc = startLoc;
 
+    /* 字符串由 VM 管理，返回的 AST 节点引用它；先约束缓冲区再创建。 */
     while (is_module_path_segment_token(ps->lexer->t.token)) {
         EZrToken segmentToken = ps->lexer->t.token;
         SZrString *segment = ps->lexer->t.seminfo.stringValue;
@@ -497,6 +501,7 @@ TZrBool consume_type_closing_angle(SZrParserState *ps) {
         return ZR_TRUE;
     }
 
+    /* 嵌套泛型中的 >> 先消费一个 >，把剩余字符交回 lexer。 */
     if (ps->lexer->t.token == ZR_TK_RIGHT_SHIFT) {
         if (ps->lexer->currentPos > 0) {
             ps->lexer->currentPos--;
@@ -517,6 +522,8 @@ SZrFileRange get_current_location(SZrParserState *ps) {
     TZrInt32 column = 1;
     if (ps->lexer->source != ZR_NULL && ps->lexer->currentPos > 0) {
         TZrSize pos = ps->lexer->currentPos - 1;
+        /* BUG: 首行从非零偏移回溯时循环在 pos==0 停止，未计入首字节；
+         * parse_script 等入口据此生成 AST 范围，结束列会比 1-based 列少一。 */
         while (pos > 0 && ps->lexer->source[pos] != '\n' && ps->lexer->source[pos] != '\r') {
             pos--;
             column++;
@@ -568,6 +575,8 @@ SZrFilePosition get_file_position_from_offset(SZrLexState *lexer, TZrSize offset
         lineStart = lexer->filePositionCacheLineStart;
     }
 
+    /* BUG: lexer 将单独的 \r 视为换行，而此处只计 \n；旧属性迁移诊断以本
+     * 函数生成名称/类型范围，含单独 CR 的源文件会得到上一行的行列。 */
     for (; index < offset; index++) {
         if (lexer->source[index] == '\n') {
             line++;
@@ -611,6 +620,8 @@ static SZrFilePosition file_position_advance_over_span(SZrLexState *lexer,
         endOffset = lexer->sourceLength;
     }
 
+    /* BUG: 模板字符串可跨单独 CR 换行，lexer 为其增行；此扫描只计 LF，
+     * get_current_token_location 得到的模板 token 结束行因此偏前。 */
     for (TZrSize index = startOffset; index < endOffset; index++) {
         if (lexer->source[index] == '\n') {
             line++;
@@ -707,6 +718,7 @@ SZrFileRange get_current_token_location(SZrParserState *ps) {
     if (startOffset > endOffset) {
         startOffset = endOffset;
     }
+    /* 语义 token 文本仅用于校准偏移；须与原始源片段相符才可替代 lexer 边界。 */
     if (get_current_token_source_text(ps, &tokenText, &tokenLength) &&
         ps->lexer->source != ZR_NULL &&
         startOffset + tokenLength <= ps->lexer->sourceLength &&
@@ -745,6 +757,8 @@ void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, T
     TZrInt32 column = 1;
     TZrSize lineStart = pos;
 
+    /* BUG: lexer 把单独 CR 当换行，这里的行首/行尾扫描只认 LF；
+     * 裸 CR 后的语法错误会把相邻两行拼成一段并错置插入符。 */
     // 向前查找行首
     while (lineStart > 0 && ps->lexer->source[lineStart - 1] != '\n') {
         lineStart--;
@@ -780,6 +794,8 @@ void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, T
         }
     }
 
+    // BUG: 长行上这里把片段起点退回行首，后续最多复制 127 字节却保留原始列号；
+    // 从第 128 列起错误 token 不在片段内，日志中的 ^ 会落在片段右侧。
     // 确保不越界
     if (snippetStart > lineStart) {
         snippetStart = lineStart;
@@ -817,6 +833,8 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
     SZrFileRange errorRange;
 
     ps->hasError = ZR_TRUE;
+    /* BUG: expect_token 或模块路径错误会传入栈上 errorMsg；公开的单语句
+     * 解析入口返回后仍可读取 ps->errorMessage，该指针已悬空，文本可能损坏。 */
     ps->errorMessage = msg;
     errorRange = get_current_token_location(ps);
 
@@ -951,6 +969,7 @@ void report_structured_parser_error(SZrParserState *ps,
         suggestion = ZrCore_String_GetNativeString(diagnostic->suggestion);
     }
 
+    /* 回调只借用 diagnostic；构建方在本函数返回后释放其数组存储。 */
     if (ps->structuredErrorCallback != ZR_NULL) {
         ps->structuredErrorCallback(ps->errorUserData, diagnostic, token);
     }

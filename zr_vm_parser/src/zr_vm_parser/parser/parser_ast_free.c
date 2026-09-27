@@ -34,6 +34,7 @@ void free_identifier_node_from_ptr(SZrState *state, SZrIdentifier *identifier) {
         return;
     }
 
+    /* 字段嵌在 AST 联合体内；减去成员偏移后才可按节点类型递归释放。 */
     SZrAstNode *nameNode = (SZrAstNode *) ((char *) identifier - offsetof(SZrAstNode, data.identifier));
     if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
         ZrParser_Ast_Free(state, nameNode);
@@ -69,7 +70,7 @@ void free_generic_declaration(SZrState *state, SZrGenericDeclaration *generic) {
     ZrCore_Memory_RawFreeWithType(state->global, generic, sizeof(SZrGenericDeclaration), ZR_MEMORY_NATIVE_TYPE_ARRAY);
 }
 
-// 释放 AST 节点（递归释放所有子节点）
+// 按节点种类释放其拥有的子树；数组容器的 Free 本身不会释放元素。
 
 void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -420,7 +421,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
         }
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *call = &node->data.functionCall;
-            // 注意：SZrFunctionCall没有callee成员，函数调用在primary expression中处理
+            /* callee 由 primary expression 持有；此节点只拥有实参和并行元数据。 */
             if (call->args != ZR_NULL) {
                 for (TZrSize i = 0; i < call->args->count; i++) {
                     ZrParser_Ast_Free(state, call->args->nodes[i]);
@@ -853,6 +854,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                 }
                 ZrParser_AstNodeArray_Free(state, generic->params);
             }
+            /* name 借指向标识符字段，实际分配的是其 AST 外层节点。 */
             if (generic->name != ZR_NULL) {
                 SZrAstNode *nameNode = (SZrAstNode *) ((char *) generic->name - offsetof(SZrAstNode, data.identifier));
                 if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -871,9 +873,10 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
-        // 其他节点类型（字面量、标识符等）通常没有子节点，不需要递归释放
+        // 标量字面量等节点没有独立拥有的子树。
         default:
-            // TODO: 对于未知节点类型，暂时不释放子节点（避免错误）
+            // TODO: parse_meta_identifier 当前没有生产调用，但会构造持有 name
+            // 的 META_IDENTIFIER 节点；接入调用链前核对其所有权并补析构测试。
             break;
     }
 

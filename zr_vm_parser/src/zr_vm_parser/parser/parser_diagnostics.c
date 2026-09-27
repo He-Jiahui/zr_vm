@@ -1,5 +1,7 @@
 #include "parser_internal.h"
 
+/* 当前 token 可能已经越过缺失分号的位置；用独立 lexer 找到前一 token 的末尾，
+ * 不改变正在恢复的 parser 游标。 */
 static SZrFileRange missing_semicolon_fix_location(
         SZrParserState *ps,
         SZrFileRange diagnosticLocation) {
@@ -38,6 +40,7 @@ static SZrFileRange missing_semicolon_fix_location(
     return fixLocation;
 }
 
+/* builder 失败时保留纯文本错误；成功时回调先借用诊断，再由本层释放其数组。 */
 static void report_conditional_diagnostic(
         SZrParserState *ps,
         SZrFileRange location,
@@ -108,6 +111,7 @@ void report_missing_statement_semicolon(SZrParserState *ps, const TZrChar *state
         return;
     }
 
+    /* 插入修复锚在已消费 token 的末尾，不能直接使用当前错误 token 的起点。 */
     fixLocation = missing_semicolon_fix_location(ps, location);
     if (!ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(
                 ps->state,
