@@ -17,6 +17,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/compiler.h"
 
+/* 为当前测试 VM 编译脚本；成功结果由用例在销毁 VM 前释放。 */
 static SZrFunction *compile_span_gc_source(
         SZrState *state,
         const char *path,
@@ -36,6 +37,7 @@ static SZrFunction *compile_span_gc_source(
             state, source, strlen(source), sourceName);
 }
 
+/* native 调用中请求 full GC，并把零写回当前调用的返回槽。 */
 static TZrInt64 force_span_gc_native(SZrState *state) {
     SZrCallInfo *nativeCallInfo;
     TZrStackValuePointer resultSlot;
@@ -50,12 +52,14 @@ static TZrInt64 force_span_gc_native(SZrState *state) {
         return 0;
     }
 
+    /* resultSlot 属于 VM 调用帧，GcFull 调用返回后仍用该槽返回。 */
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
     ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(resultSlot), 0);
     state->stackTop.valuePointer = resultSlot + 1;
     return 1;
 }
 
+/* 把 native GC 探针挂到全局 zr 对象；closure 在整例 VM 生命周期内常驻。 */
 static void install_span_gc_probe(SZrState *state) {
     SZrObject *globalObject;
     SZrClosureNative *closure;
@@ -74,6 +78,7 @@ static void install_span_gc_probe(SZrState *state) {
     closure = ZrCore_ClosureNative_New(state, 0);
     TEST_ASSERT_NOT_NULL(closure);
     closure->nativeFunction = force_span_gc_native;
+    /* full GC 期间 native 回调目标不能被回收或移动。 */
     ZrCore_RawObject_MarkAsPermanent(
             state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 
@@ -94,6 +99,9 @@ static void install_span_gc_probe(SZrState *state) {
     ZrCore_Object_SetValue(state, globalObject, &key, &value);
 }
 
+/* 数组与 Span 都是脚本局部；请求 full GC 后继续通过 view 写入并读回。 */
+/* TODO: xs 是否仍构成独立 GC 根、回收是否完成及压缩是否发生均未断言；
+ * 需核对栈槽活性和 GC telemetry，GcFull 可在暂停域获取失败时提前返回。 */
 void test_span_array_source_survives_gc_compaction_while_view_is_live(void) {
     static const char kSource[] =
             "var container = import(\"zr.container\");\n"
@@ -117,6 +125,7 @@ void test_span_array_source_survives_gc_compaction_while_view_is_live(void) {
             state, function, &result));
     TEST_ASSERT_EQUAL_INT64(42, result);
 
+    /* 成功路径先释放函数原生数据，再销毁探针和数组所属的整个 VM。 */
     ZrCore_Function_Free(state, function);
     ZrContainerTests_DestroyState(state);
 }

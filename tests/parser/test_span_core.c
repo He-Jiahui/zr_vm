@@ -19,6 +19,7 @@
 #include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* 从容器模块描述符借用指定公开类型，用于核对 native 契约投影。 */
 static const ZrLibTypeDescriptor *find_type_descriptor(
         const ZrLibModuleDescriptor *module,
         const char *name) {
@@ -35,6 +36,7 @@ static const ZrLibTypeDescriptor *find_type_descriptor(
     return NULL;
 }
 
+/* 在类型描述符内按 contract role 查借用字段，不依赖声明顺序。 */
 static const ZrLibFieldDescriptor *find_field_descriptor(
         const ZrLibTypeDescriptor *type,
         TZrUInt32 contractRole) {
@@ -50,6 +52,7 @@ static const ZrLibFieldDescriptor *find_field_descriptor(
     return NULL;
 }
 
+/* 在类型描述符内按 contract role 查借用方法。 */
 static const ZrLibMethodDescriptor *find_method_descriptor(
         const ZrLibTypeDescriptor *type,
         TZrUInt32 contractRole) {
@@ -65,6 +68,7 @@ static const ZrLibMethodDescriptor *find_method_descriptor(
     return NULL;
 }
 
+/* 按 meta 类型检验可变与只读视图暴露的索引能力。 */
 static const ZrLibMetaMethodDescriptor *find_meta_descriptor(
         const ZrLibTypeDescriptor *type,
         EZrMetaType metaType) {
@@ -80,6 +84,7 @@ static const ZrLibMetaMethodDescriptor *find_meta_descriptor(
     return NULL;
 }
 
+/* 借用编译器类型原型内的成员，核对导入后的 role 是否保留。 */
 static const SZrTypeMemberInfo *find_member_by_role(
         const SZrTypePrototypeInfo *type,
         TZrUInt32 contractRole) {
@@ -98,6 +103,7 @@ static const SZrTypeMemberInfo *find_member_by_role(
     return NULL;
 }
 
+/* 创建带文件名的 AST；调用方在销毁测试 VM 前负责 Ast_Free。 */
 static SZrAstNode *parse_source(
         SZrState *state,
         const char *path,
@@ -116,6 +122,7 @@ static SZrAstNode *parse_source(
     return ZrParser_Parse(state, source, strlen(source), sourceName);
 }
 
+/* 编译容器脚本；成功返回函数由用例在 VM 仍有效时释放。 */
 static SZrFunction *compile_source(
         SZrState *state,
         const char *path,
@@ -135,6 +142,7 @@ static SZrFunction *compile_source(
             state, source, strlen(source), sourceName);
 }
 
+/* 只统计映射到指定源码行的 opcode，隔离 slice 表达式的降级形态。 */
 static TZrSize count_opcode_on_source_line(
         SZrFunction *function,
         EZrInstructionCode opcode,
@@ -154,6 +162,7 @@ static TZrSize count_opcode_on_source_line(
     return count;
 }
 
+/* 在当前函数指令表计数 opcode，比较常量与动态边界路径。 */
 static TZrSize count_opcode(
         const SZrFunction *function,
         EZrInstructionCode opcode) {
@@ -171,6 +180,7 @@ static TZrSize count_opcode(
     return count;
 }
 
+/* 数内联 struct 栈槽，确认 Span 与切片保留值布局。 */
 static TZrSize count_inline_frame_slots(const SZrFunction *function) {
     TZrSize count = 0u;
 
@@ -186,6 +196,7 @@ static TZrSize count_inline_frame_slots(const SZrFunction *function) {
     return count;
 }
 
+/* 按变长记录步进编译产物的 prototype blob，返回其中的借用记录。 */
 static const SZrCompiledPrototypeInfo *compiled_prototype_at(
         const SZrFunction *function,
         TZrUInt32 targetIndex) {
@@ -224,6 +235,7 @@ static const SZrCompiledPrototypeInfo *compiled_prototype_at(
     return NULL;
 }
 
+/* native 描述符须公开 ref-like、可变性、布局字段和只读能力边界。 */
 static void test_span_descriptors_publish_ref_like_contiguous_view_contracts(void) {
     const ZrLibModuleDescriptor *module = ZrVmLibContainer_GetModuleDescriptor();
     const ZrLibTypeDescriptor *span;
@@ -300,6 +312,7 @@ static void test_span_descriptors_publish_ref_like_contiguous_view_contracts(voi
     TEST_ASSERT_NULL(find_meta_descriptor(readOnlySpan, ZR_META_SET_ITEM));
 }
 
+/* 容器模块导入后，运行时 Span 原型应保留描述符的协议位。 */
 static void test_span_runtime_prototypes_preserve_contiguous_view_protocols(void) {
     SZrState *state = ZrContainerTests_CreateState();
     SZrObjectModule *module;
@@ -338,6 +351,7 @@ static void test_span_runtime_prototypes_preserve_contiguous_view_protocols(void
     ZrContainerTests_DestroyState(state);
 }
 
+/* 编译器导入原型须保留 ref-like、禁止装箱及成员 role。 */
 static void test_span_compiler_prototypes_project_ref_like_member_contracts(void) {
     static const char kSource[] =
             "var {Span, ReadOnlySpan} = import(\"zr.container\");\n";
@@ -383,6 +397,7 @@ static void test_span_compiler_prototypes_project_ref_like_member_contracts(void
     TEST_ASSERT_NOT_NULL(find_member_by_role(
             span, ZR_MEMBER_CONTRACT_ROLE_READONLY_VIEW_CONVERSION));
 
+    /* 函数及 AST 依赖 VM，先清理它们再清理编译状态和 VM。 */
     ZrCore_Function_Free(state, compiler->currentFunction);
     compiler->currentFunction = NULL;
     ZrParser_Ast_Free(state, script);
@@ -390,6 +405,7 @@ static void test_span_compiler_prototypes_project_ref_like_member_contracts(void
     ZrContainerTests_DestroyState(state);
 }
 
+/* 可变 Span、其切片和只读视图应共享同一数组后备存储。 */
 static void test_span_array_runtime_mutation_slice_and_readonly_view_share_storage(void) {
     static const char kSource[] =
             "var container = import(\"zr.container\");\n"
@@ -418,6 +434,7 @@ static void test_span_array_runtime_mutation_slice_and_readonly_view_share_stora
     ZrContainerTests_DestroyState(state);
 }
 
+/* 默认空 Span 与 ReadOnlySpan 可切出零长视图且长度仍为零。 */
 static void test_span_default_and_empty_slice_are_legal(void) {
     static const char kSource[] =
             "var container = import(\"zr.container\");\n"
@@ -441,6 +458,7 @@ static void test_span_default_and_empty_slice_are_legal(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 在独立 VM 中分别验证越界索引与越界切片会在执行期失败。 */
 static void test_span_index_and_slice_reject_out_of_range_access(void) {
     static const char kIndexSource[] =
             "var container = import(\"zr.container\");\n"
@@ -477,6 +495,7 @@ static void test_span_index_and_slice_reject_out_of_range_access(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* ReadOnlySpan 的下标写入应在编译阶段被拒绝。 */
 static void test_readonly_span_rejects_index_assignment(void) {
     static const char kSource[] =
             "var container = import(\"zr.container\");\n"
@@ -494,6 +513,7 @@ static void test_readonly_span_rejects_index_assignment(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 同元素类型的可变视图可弱化为只读视图，读值仍来自原数组。 */
 static void test_span_implicitly_weakens_to_readonly_span_with_same_element_type(void) {
     static const char kSource[] =
             "var container = import(\"zr.container\");\n"
@@ -516,6 +536,7 @@ static void test_span_implicitly_weakens_to_readonly_span_with_same_element_type
     ZrContainerTests_DestroyState(state);
 }
 
+/* 两次独立编译分别拒绝只读到可变的增强及元素类型替换。 */
 static void test_span_rejects_capability_strengthening_and_element_type_change(void) {
     static const char kStrengtheningSource[] =
             "var container = import(\"zr.container\");\n"
@@ -545,6 +566,7 @@ static void test_span_rejects_capability_strengthening_and_element_type_change(v
     ZrContainerTests_DestroyState(state);
 }
 
+/* 构造两组候选形参后，精确 Span<int> 重载应胜过只读弱化候选。 */
 static void test_span_exact_overload_wins_over_readonly_weakening(void) {
     static const char kImportSource[] =
             "var {Span, ReadOnlySpan} = import(\"zr.container\");\n";
@@ -604,6 +626,7 @@ static void test_span_exact_overload_wins_over_readonly_weakening(void) {
             state, &readOnlySpanType.elementTypes, &readOnlyElementType);
     ZrCore_Array_Init(state, &spanParameters, sizeof(SZrInferredType), 1u);
     ZrCore_Array_Init(state, &readOnlyParameters, sizeof(SZrInferredType), 1u);
+    /* 参数数组借用这些推断类型的值内容；清理顺序须留到推断完成后。 */
     ZrCore_Array_Push(state, &spanParameters, &spanType);
     ZrCore_Array_Push(state, &readOnlyParameters, &readOnlySpanType);
     pickName = ZrCore_String_CreateFromNative(state, "pick");
@@ -635,6 +658,7 @@ static void test_span_exact_overload_wins_over_readonly_weakening(void) {
             compiler, callExpression, &resultType));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, resultType.baseType);
 
+    /* 先清结果与调用 AST，再清参数类型；最后释放函数、导入 AST、编译器和 VM。 */
     ZrParser_InferredType_Free(state, &resultType);
     ZrParser_Ast_Free(state, callScript);
     ZrCore_Array_Free(state, &readOnlyParameters);
@@ -650,6 +674,7 @@ static void test_span_exact_overload_wins_over_readonly_weakening(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* slice 应使用内联值槽与成员写入，不创建 wrapper 或调用 native 方法。 */
 static void test_span_slice_lowers_inline_without_native_callback_or_wrapper(void) {
     static const char kSource[] =
             "var {Span} = import(\"zr.container\");\n"
@@ -685,6 +710,7 @@ static void test_span_slice_lowers_inline_without_native_callback_or_wrapper(voi
     ZrContainerTests_DestroyState(state);
 }
 
+/* 导入后的内联布局应解析回 provider 的 Span 原型而非复制原型。 */
 static void test_imported_span_inline_layout_reuses_provider_prototype(void) {
     static const char kSource[] =
             "var {Span} = import(\"zr.container\");\n"
@@ -709,6 +735,7 @@ static void test_imported_span_inline_layout_reuses_provider_prototype(void) {
 
     function = compile_source(state, "span_imported_inline_layout.zr", kSource);
     TEST_ASSERT_NOT_NULL(function);
+    /* 仅检查带 imported-layout 标记的内联槽，避免混入其他 frame slot。 */
     for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
         const SZrFunctionFrameSlotLayout *slot = &function->frameSlotLayouts[index];
         const SZrCompiledPrototypeInfo *prototype;
@@ -739,6 +766,7 @@ static void test_imported_span_inline_layout_reuses_provider_prototype(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 常量索引可消去已证明检查，动态索引仍必须保留额外上下界检查。 */
 static void test_span_constant_slice_index_elides_only_proven_bounds_checks(void) {
     static const char kConstantIndexSource[] =
             "var container = import(\"zr.container\");\n"
@@ -798,6 +826,7 @@ static void test_span_constant_slice_index_elides_only_proven_bounds_checks(void
     ZrContainerTests_DestroyState(state);
 }
 
+/* 编译后的 pre-SemIR 应记录视图来源、region、范围证明与消除决策。 */
 static void test_span_compiler_publishes_structured_view_and_bounds_facts(void) {
     static const char kSource[] =
             "var container = import(\"zr.container\");\n"
@@ -825,6 +854,7 @@ static void test_span_compiler_publishes_structured_view_and_bounds_facts(void) 
     compiler->currentFunction = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(compiler->currentFunction);
 
+    /* 逐顶层语句编译后统一验证事实，避免只检查 AST 表面形态。 */
     for (TZrSize index = 0u;
          index < script->data.script.statements->count;
          index++) {
@@ -858,6 +888,7 @@ static void test_span_compiler_publishes_structured_view_and_bounds_facts(void) 
             }
         }
     }
+    /* 将 bounds fact 反查到具体 view fact，确认消除关联的是该数组切片。 */
     boundsFact = ZrParser_SemanticIr_BoundsFactAt(semanticIr, 0u);
     TEST_ASSERT_NOT_NULL(boundsFact);
     TEST_ASSERT_EQUAL_INT(
@@ -892,10 +923,15 @@ static void test_span_compiler_publishes_structured_view_and_bounds_facts(void) 
     ZrContainerTests_DestroyState(state);
 }
 
+/* 用例自行创建 VM，Unity 没有共享 fixture 状态。 */
 void setUp(void) {}
 
+/* BUG: 用例内任一资源创建后的断言失败会经 Unity longjmp 跳过尾部清理；
+ * 此空钩子拿不到局部函数、AST、编译状态或 VM，失败用例会泄漏资源。 */
 void tearDown(void) {}
 
+/* Unity 入口组合核心用例、GC 用例和语义 IR 用例。 */
+/* TODO: CMake 构建了该目标但未见 add_test；需确认是手动验收还是应纳入 CTest。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_span_descriptors_publish_ref_like_contiguous_view_contracts);
