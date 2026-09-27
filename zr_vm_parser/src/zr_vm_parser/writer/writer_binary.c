@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_version_info.h"
 #include "zr_vm_core/string.h"
 
+/* .zro 头的模块名和哈希与 core reader 的原生长度前缀字符串字段配对。 */
 static void writer_binary_write_native_string_with_length(FILE *file, const TZrChar *text) {
     TZrSize length = 0;
 
@@ -23,6 +24,8 @@ static void writer_binary_write_native_string_with_length(FILE *file, const TZrC
     }
 }
 
+/* CLI 编译器和测试把函数树发布成单模块 .zro；options 提供项目模块身份，
+ * 缺省调用仍保留简单模块名，头的版本、平台布局和 debug 标志须匹配 core reader。 */
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state,
                                                                  SZrFunction *function,
                                                                  const TZrChar *filename,
@@ -60,6 +63,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
         return ZR_FALSE;
     }
 
+    /* 先发布文件头和模块身份，再写入口函数树；读取端依相同顺序定位后续小节。 */
     fwrite(ZR_IO_SOURCE_SIGNATURE, sizeof(TZrUInt8), ZR_IO_SOURCE_SIGNATURE_LENGTH, file);
     fwrite(&versionMajor, sizeof(TZrUInt32), 1, file);
     fwrite(&versionMinor, sizeof(TZrUInt32), 1, file);
@@ -85,10 +89,13 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
         return ZR_FALSE;
     }
 
+    /* BUG: /dev/full 等缓冲写入目标可在 fclose 才报告错误，此处忽略失败并返回真，
+     * CLI 编译路径因此可能把未落盘的 .zro 视为成功；见编译器调用点及本函数 fopen/fclose。 */
     fclose(file);
     return ZR_TRUE;
 }
 
+/* 直接测试和轻量调用方沿用无模块选项入口，统一委托给同一格式 writer。 */
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFunction *function, const TZrChar *filename) {
     return ZrParser_Writer_WriteBinaryFileWithOptions(state, function, filename, ZR_NULL);
 }

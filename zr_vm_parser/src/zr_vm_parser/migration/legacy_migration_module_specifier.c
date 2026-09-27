@@ -14,6 +14,7 @@ static TZrBool module_specifier_span_equals(
            memcmp(source + start, expected, expectedLength) == 0;
 }
 
+/* 仅在 import 调用的 token 间跨过空白或注释，不进入模块字符串内部。 */
 static TZrSize module_specifier_skip_trivia(
         const TZrChar *source,
         TZrSize sourceLength,
@@ -48,6 +49,7 @@ static TZrSize module_specifier_skip_trivia(
     }
 }
 
+/* 规划器只消费成功匹配的字节区间，其他调用仍走常规词法扫描。 */
 TZrBool ZrParser_LegacyMigrationModuleSpecifier_TryMatchBareDebugImport(
         const TZrChar *source,
         TZrSize sourceLength,

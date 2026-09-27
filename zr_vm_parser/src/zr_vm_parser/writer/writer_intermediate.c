@@ -23,6 +23,7 @@
 #include "zr_vm_core/constant_reference.h"
 #include "writer_intermediate_generated_source_map.h"
 
+/* 类型表、导出签名和编译期声明共用同一份可读类型名称。 */
 static const TZrChar *writer_intermediate_primitive_type_name(EZrValueType baseType) {
     switch (baseType) {
         case ZR_VALUE_TYPE_NULL:
@@ -70,6 +71,7 @@ static void writer_intermediate_write_indent(FILE *file, TZrUInt32 indentLevel) 
     }
 }
 
+/* 把内部 TypeRef 降为稳定的诊断文本；缺失的可选类型按 object 展示。 */
 static void writer_intermediate_format_type_ref(const SZrFunctionTypedTypeRef *typeRef,
                                                 TZrChar *buffer,
                                                 TZrSize bufferSize) {
@@ -107,6 +109,7 @@ static void writer_intermediate_format_type_ref(const SZrFunctionTypedTypeRef *t
     snprintf(buffer, bufferSize, "%s", baseName);
 }
 
+/* 默认值只用于查看编译期签名，不作为可重新加载的常量序列化格式。 */
 static void writer_intermediate_write_metadata_parameter_default_value(FILE *file,
                                                                       SZrState *state,
                                                                       const SZrFunctionMetadataParameter *parameter) {
@@ -194,6 +197,7 @@ static const TZrChar *writer_intermediate_module_effect_kind_name(TZrUInt8 kind)
     }
 }
 
+/* 集中投影模块导出、入口效果和编译期绑定，供 .zri 审查源级语义事实。 */
 static void writer_intermediate_write_type_metadata(FILE *file,
                                                     SZrState *state,
                                                     SZrFunction *function,
@@ -505,6 +509,7 @@ static const TZrChar *writer_intermediate_semir_ownership_name(TZrUInt32 state) 
     }
 }
 
+/* 保留类型、所有权、效果、基本块和 deopt 表的索引关系，便于对照指令流定位语义事实。 */
 static void writer_intermediate_write_semir_metadata(FILE *file,
                                                      SZrState *state,
                                                      SZrFunction *function,
@@ -618,6 +623,7 @@ static const TZrChar *writer_intermediate_callsite_cache_kind_name(TZrUInt32 kin
     }
 }
 
+/* 将调用点 PIC 与命中统计作为运行时观察信息写入诊断投影。 */
 static void writer_intermediate_write_callsite_cache_table(FILE *file, SZrFunction *function, TZrUInt32 indentLevel) {
     writer_intermediate_write_indent(file, indentLevel);
     fprintf(file, "CALLSITE_CACHE_TABLE (%u):\n", function->callSiteCacheLength);
@@ -669,6 +675,7 @@ static void writer_intermediate_write_eh_table(FILE *file, SZrFunction *function
     fprintf(file, "\n");
 }
 
+/* 只输出常量的可读摘要；对象和闭包不在 .zri 中承担可执行载荷。 */
 static void writer_intermediate_write_constant(FILE *file, SZrState *state, const SZrTypeValue *constant) {
     if (file == ZR_NULL || constant == ZR_NULL) {
         return;
@@ -733,6 +740,7 @@ static void writer_intermediate_write_constant(FILE *file, SZrState *state, cons
     }
 }
 
+/* 与入口函数投影相同的语义章节用于子函数，层级由父函数的 childFunctionList 决定。 */
 static void writer_intermediate_write_nested_function(FILE *file,
                                                       SZrState *state,
                                                       SZrFunction *function,
@@ -1370,10 +1378,12 @@ static void writer_intermediate_write_nested_function(FILE *file,
     }
 }
 
+/* CLI 的 emitIntermediate 和诊断测试调用此入口；写入期间须保持 state 与函数树有效。 */
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZrFunction *function, const TZrChar *filename) {
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 校验必须早于 fopen：畸形 prototype 不得截断已有目标或创建半份新文件。 */
     if (!writer_intermediate_validate_function_prototype_data(function)) {
         return ZR_FALSE;
     }
@@ -2569,6 +2579,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
         fprintf(file, "\n");
     }
     
+    /* BUG: 写入期间磁盘满或目标为 /dev/full 时，fclose 可失败；当前仍返回成功，
+     * CLI 的 emitIntermediate 会把不完整的 .zri 当作已生成。见 compiler.c:933-935。 */
     fclose(file);
     return ZR_TRUE;
 }

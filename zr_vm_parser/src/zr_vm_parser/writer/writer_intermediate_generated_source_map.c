@@ -7,6 +7,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 
+/* 仅在遍历单个成员期间借用常量池字符串；来源标识和行号来自其 decorator 元数据。 */
 typedef struct SZrWriterGeneratedSourceMap {
     const TZrChar *typeName;
     const TZrChar *memberName;
@@ -21,6 +22,7 @@ static void generated_source_map_write_indent(FILE *file, TZrUInt32 indentLevel)
     }
 }
 
+/* 映射行借用现有常量池名称，不在诊断输出期间建立额外的字符串所有权。 */
 static const TZrChar *generated_source_map_string_constant(
         SZrState *state,
         const SZrFunction *function,
@@ -39,6 +41,7 @@ static const TZrChar *generated_source_map_string_constant(
             ZR_CAST_STRING(state, value->value.object));
 }
 
+/* 生成字段元数据保存在通用对象的哈希表中；按字段名取值而不依赖桶顺序。 */
 static const SZrTypeValue *generated_source_map_object_field(
         SZrState *state,
         const SZrObject *object,
@@ -88,6 +91,7 @@ static TZrBool generated_source_map_read_uint(
     return ZR_FALSE;
 }
 
+/* 只接受编译期声明补丁写入的完整来源四元组，避免把普通 decorator 当成生成字段。 */
 static TZrBool generated_source_map_from_member(
         SZrState *state,
         const SZrFunction *function,
@@ -139,6 +143,7 @@ static TZrBool generated_source_map_from_member(
     return result->typeName != ZR_NULL && result->memberName != ZR_NULL;
 }
 
+/* 先核对打包协议的计数、乘法和剩余字节，再允许后续遍历成员记录。 */
 static TZrBool generated_source_map_prototype_size(
         const SZrCompiledPrototypeInfo *prototype,
         TZrSize remaining,
@@ -172,6 +177,7 @@ static TZrBool generated_source_map_prototype_size(
     return ZR_TRUE;
 }
 
+/* 顶层和子函数共享同一 prototype 布局检查，拒绝截断或尾随数据。 */
 static TZrBool generated_source_map_validate_prototype_payload(
         const SZrFunction *function) {
     const TZrByte *cursor;
@@ -215,6 +221,7 @@ static TZrBool generated_source_map_validate_prototype_payload(
     return remaining == 0U;
 }
 
+/* 文件尚未打开时递归核验，防止某个深层子函数损坏后留下半份 .zri。 */
 TZrBool writer_intermediate_validate_function_prototype_data(
         const SZrFunction *function) {
     if (!generated_source_map_validate_prototype_payload(function)) {
@@ -235,6 +242,7 @@ TZrBool writer_intermediate_validate_function_prototype_data(
     return ZR_TRUE;
 }
 
+/* 按 prototype 和成员的序列化顺序遍历；空 file 用于预先计算是否需要输出段头。 */
 static TZrSize generated_source_map_visit(
         FILE *file,
         SZrState *state,
@@ -305,6 +313,7 @@ static TZrSize generated_source_map_visit(
     return mapCount;
 }
 
+/* 两次遍历使用同一筛选条件，使段头数量与后续行号一致，并省略空段。 */
 void writer_intermediate_write_generated_source_maps(
         FILE *file,
         SZrState *state,

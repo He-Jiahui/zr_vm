@@ -2,12 +2,15 @@
 
 #include "zr_vm_core/call_binding.h"
 
+/* call-binding 小节的索引、位置与版本字段固定为小端 u32，不能依赖宿主字节序。 */
 static TZrBool write_u32(FILE *file, TZrUInt32 value) {
     TZrByte bytes[4] = {(TZrByte)value, (TZrByte)(value >> 8u),
                        (TZrByte)(value >> 16u), (TZrByte)(value >> 24u)};
     return fwrite(bytes, 1u, sizeof(bytes), file) == sizeof(bytes);
 }
 
+/* 与 ZrCore_Io_ReadCallBindings 的头和 84 字节记录成对；只发布有绑定的缓存项，
+ * 其余项由读取端初始化为未绑定，具体目标在导入/链接阶段重新解析。 */
 TZrBool ZrParser_Writer_WriteCallBindings(FILE *file, const SZrFunction *function) {
     TZrUInt32 count = 0u;
     if (file == ZR_NULL || function == ZR_NULL ||

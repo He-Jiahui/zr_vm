@@ -10,6 +10,7 @@
 
 #include "legacy_migration_module_specifier.h"
 
+/* 迁移扫描只在代码区生成候选；注释和字符串状态避免把示例文本当成旧语法。 */
 typedef enum EZrLegacyMigrationLexState {
     ZR_LEGACY_MIGRATION_LEX_CODE = 0,
     ZR_LEGACY_MIGRATION_LEX_LINE_COMMENT,
@@ -18,6 +19,7 @@ typedef enum EZrLegacyMigrationLexState {
     ZR_LEGACY_MIGRATION_LEX_BACKTICK_STRING
 } EZrLegacyMigrationLexState;
 
+/* 规则表把旧指令的归属计划与自动化等级放在一起，供报告和编辑共用。 */
 typedef struct SZrLegacyMigrationDirectiveRule {
     const TZrChar *directive;
     const TZrChar *oldConstructKind;
@@ -175,6 +177,7 @@ static TZrBool legacy_migration_span_equals(
            memcmp(source + start, expected, expectedLength) == 0;
 }
 
+/* 仅凭 '%' 字符不足以识别旧指令：表达式尾部的 '%' 仍可能是取模运算。 */
 static TZrBool legacy_migration_percent_starts_directive(
         const TZrChar *source,
         TZrSize percentOffset) {
@@ -237,6 +240,7 @@ static const SZrLegacyMigrationDirectiveRule *legacy_migration_find_directive_ru
     return ZR_NULL;
 }
 
+/* 诊断和修复都以原始字节偏移为准，再映射到编辑器可展示的位置。 */
 static SZrFilePosition legacy_migration_position_from_offset(
         const TZrChar *source,
         TZrSize offset) {
@@ -266,6 +270,7 @@ static SZrFileRange legacy_migration_range(
             sourceName);
 }
 
+/* 计划绑定创建时的源码；应用前重新计算，阻止对不同版本套用旧偏移。 */
 static TZrUInt64 legacy_migration_hash(const TZrChar *source, TZrSize sourceLength) {
     TZrUInt64 result = 1469598103934665603ULL;
     TZrSize index;
@@ -301,6 +306,7 @@ static TZrChar *legacy_migration_format_unary_call(
     return result;
 }
 
+/* 动态构造只能提出待审核建议，调用方不得将返回文本标成机器安全修复。 */
 static TZrChar *legacy_migration_format_dynamic_construct(
         SZrState *state,
         const TZrChar *source,
@@ -344,6 +350,10 @@ static TZrChar *legacy_migration_format_dynamic_construct(
     return result;
 }
 
+/* %test 与旧式调用共用结构边界；只有确定边界后才可形成替换区间。
+ * BUG: 这里未把单引号字符字面量纳入词法状态。`%test("x") { let c = '}'; return 0; }`
+ * 会在字符中的 `}` 提前结束块扫描，遗漏后面的 return，并把本应人工审核的测试标为机器可用。
+ * tests/parser/test_char_and_type_cast.c 的字符字面量测试与下方 append_percent_test 的 return 检查可核对该路径。 */
 static TZrBool legacy_migration_find_balanced_end(
         const TZrChar *source,
         TZrSize sourceLength,
@@ -422,6 +432,7 @@ static TZrBool legacy_migration_find_call_end(
             source, sourceLength, openOffset, '(', ')', outEnd);
 }
 
+/* 所有候选经此入口取得统一的来源、适用性和可选 fix，供 CLI 报告与应用器共享。 */
 static TZrBool legacy_migration_append_item(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -478,6 +489,7 @@ static TZrBool legacy_migration_append_item(
     return ZR_TRUE;
 }
 
+/* 解析器诊断回调只在本次同步解析期间借用这些上下文；计划持有复制后的候选。 */
 typedef struct SZrLegacyMigrationPropertyCapture {
     SZrState *state;
     SZrLegacyMigrationPlan *plan;
@@ -485,6 +497,7 @@ typedef struct SZrLegacyMigrationPropertyCapture {
     SZrString *sourceName;
 } SZrLegacyMigrationPropertyCapture;
 
+/* 配对 property 的替换文本由解析器掌握，本层只投影其结构化诊断和适用性。 */
 static void legacy_migration_capture_property_diagnostic(
         TZrPtr userData,
         const SZrStructuredDiagnostic *diagnostic,
@@ -512,6 +525,8 @@ static void legacy_migration_capture_property_diagnostic(
             editText = ZrCore_String_GetNativeString(fix->editText);
         }
     }
+    /* TODO: append_item 失败目前被回调吞掉；核查分配失败时是否应让 PlanSource
+     * 返回失败，而不是输出缺少 parser-owned property 候选的成功计划。 */
     (void)legacy_migration_append_item(
             capture->state,
             capture->plan,
@@ -533,6 +548,7 @@ static void legacy_migration_capture_property_diagnostic(
             editText);
 }
 
+/* 先运行允许旧 property 的解析路径，以便后续词法扫描不自行猜测配对修复。 */
 static void legacy_migration_capture_property_facts(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -561,6 +577,9 @@ static void legacy_migration_capture_property_facts(
     ZrParser_State_Free(&parserState);
 }
 
+/* 词法 fallback 只在解析器没有产生 property 候选时生效。
+ * TODO: 当前按整份计划判断，尚需用含多组 property 且仅部分组可解析的样例确认
+ * 是否会压掉其余组的 review-only 提示；核查 parser_property_migration_collection_publish_and_free。 */
 static TZrBool legacy_migration_has_item_kind(
         const SZrLegacyMigrationPlan *plan,
         const TZrChar *kind) {
@@ -582,6 +601,9 @@ static TZrBool legacy_migration_has_item_kind(
     return ZR_FALSE;
 }
 
+/* 旧 %test 的返回约定必须人工判断；此检查只在非字符串区寻找独立标识符。
+ * BUG: 单引号字符中的 `"` 被当作双引号字符串起点。`%test("x") { let a = '"';
+ * return 0; let b = '"'; }` 的 return 因而被跳过，候选误标机器可用。 */
 static TZrBool legacy_migration_range_has_identifier(
         const TZrChar *source,
         TZrSize start,
@@ -656,6 +678,9 @@ static TZrBool legacy_migration_range_has_identifier(
     return ZR_FALSE;
 }
 
+/* BUG: 这里未跳过注释。`%test("x") { // %release(owner)\n}` 中注释的 `%release`
+ * 会被 percent_starts_directive 认作嵌套指令，使原本可自动改写的测试误报为需人工审核。
+ * 应与 PlanSource 的注释词法状态使用同一判定边界。 */
 static TZrBool legacy_migration_range_has_percent_directive(
         const TZrChar *source,
         TZrSize start,
@@ -670,6 +695,7 @@ static TZrBool legacy_migration_range_has_percent_directive(
     return ZR_FALSE;
 }
 
+/* 从旧测试展示名生成普通函数名；碰撞时上层只给待审核建议。 */
 static TZrChar *legacy_migration_test_identifier(
         SZrState *state,
         const TZrChar *source,
@@ -710,6 +736,8 @@ static TZrChar *legacy_migration_test_identifier(
     return identifier;
 }
 
+/* BUG: 当前按原文字节查重，`// testFoo` 或 `"testFoo"` 也会让
+ * `%test("foo") {}` 的提案降级为人工审核，虽然它们不是声明；需要符号级查重。 */
 static TZrBool legacy_migration_identifier_occurs(
         const TZrChar *source,
         TZrSize sourceLength,
@@ -727,6 +755,7 @@ static TZrBool legacy_migration_identifier_occurs(
     return ZR_FALSE;
 }
 
+/* 将旧测试提议为普通测试函数；返回约定和命名碰撞决定是否降级为人工审核。 */
 static TZrBool legacy_migration_append_percent_test(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -765,6 +794,9 @@ static TZrBool legacy_migration_append_percent_test(
     argumentStart = legacy_migration_skip_whitespace(
             source, callEnd - 1U, openOffset + 1U);
     argumentEnd = legacy_migration_trim_end(source, argumentStart, callEnd - 1U);
+    /* BUG: 首尾引号不能证明括号内恰好只有一个静态字符串。
+     * `%test("a", "b") {}` 通过此检查并获得 MACHINE_APPLICABLE，随后被改写成
+     * `fn testAB(): void {}`；需让解析器或完整 token 检查确认唯一实参。 */
     if (argumentEnd <= argumentStart + 1U || source[argumentStart] != '"' ||
         source[argumentEnd - 1U] != '"') {
         return legacy_migration_append_item(
@@ -805,6 +837,7 @@ static TZrBool legacy_migration_append_percent_test(
     if (identifier == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 名称碰撞可能改变测试发现结果，因此带稳定后缀的提案仍需人工确认。 */
     collision = legacy_migration_identifier_occurs(source, sourceLength, identifier);
     if (collision) {
         TZrSize baseLength = strlen(identifier);
@@ -866,6 +899,7 @@ static TZrBool legacy_migration_append_percent_test(
     return result;
 }
 
+/* 规则表先决定语义归属；只有已提升且结构足够明确的旧指令生成机器修复。 */
 static TZrBool legacy_migration_append_directive(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -1150,6 +1184,7 @@ static TZrBool legacy_migration_is_line_word_start(
     return index == offset;
 }
 
+/* 当前 fn 可调用形态的箭头不是迁移项，避免把新语法报告成旧定义箭头。 */
 static TZrBool legacy_migration_callable_open_preceded_by_fn(
         const TZrChar *source,
         TZrSize arrowOffset) {
@@ -1230,6 +1265,7 @@ static TZrBool legacy_migration_append_word_item(
             editText);
 }
 
+/* 动态目标需要类型身份与实参装箱证明；即便能给出文本，也只供人工审核。 */
 static TZrBool legacy_migration_append_dynamic_dollar_construct(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -1341,6 +1377,7 @@ static TZrBool legacy_migration_append_dynamic_dollar_construct(
     return appended;
 }
 
+/* 仅迁移已知的 draft 测试角色，保持属性参数并转到 zr.testing 提供者。 */
 static TZrBool legacy_migration_append_old_test_attribute(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -1442,6 +1479,7 @@ static TZrBool legacy_migration_word_is_test_function_prefix(
     return legacy_migration_span_equals(source, next, nextEnd, "fn");
 }
 
+/* 只替换裸 import 的模块字面量，不建立旧 debug 模块的运行时别名。 */
 static TZrBool legacy_migration_append_bare_debug_import(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -1488,6 +1526,10 @@ static TZrBool legacy_migration_append_bare_debug_import(
     return ZR_TRUE;
 }
 
+/* 应用器要求按源偏移顺序排列的非重叠机器编辑。
+ * BUG: property 修复先由解析器加入，其他修复再按源码顺序加入；若裸
+ * `import("debug")` 位于配对 property 之前，两个不相交的编辑会被误判为重叠，
+ * `ApplyMachineEdits` 因 hasOverlap 拒绝整份计划；现有测试分别覆盖这两类修复。 */
 static TZrBool legacy_migration_has_machine_overlap(const SZrLegacyMigrationPlan *plan) {
     TZrSize index;
     TZrSize previousEnd = 0U;
@@ -1511,6 +1553,8 @@ static TZrBool legacy_migration_has_machine_overlap(const SZrLegacyMigrationPlan
     return ZR_FALSE;
 }
 
+/* CLI、LSP 格式化入口和迁移测试共用的候选生产入口：先投影解析器掌握的 property 事实，
+ * 再扫描其他旧表层；失败时清理计划，成功时由调用方负责 PlanFree。 */
 ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
         SZrState *state,
         const TZrChar *source,
@@ -1585,6 +1629,8 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
         if (current == '#') {
             TZrSize attributeEnd = index;
 
+            /* TODO: helper 用同一个 false 表示非匹配与分配失败；核查内存失败时
+             * 是否应终止规划，避免静默略过本应生成的旧测试属性候选。 */
             if (legacy_migration_append_old_test_attribute(
                         state,
                         outPlan,
@@ -1875,6 +1921,7 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
     return ZR_TRUE;
 }
 
+/* CLI、LSP 和测试均在使用后清理计划；它也可用于部分构造后的失败路径。 */
 ZR_PARSER_API void ZrParser_LegacyMigration_PlanFree(
         SZrState *state,
         SZrLegacyMigrationPlan *plan) {
@@ -1887,6 +1934,8 @@ ZR_PARSER_API void ZrParser_LegacyMigration_PlanFree(
     memset(plan, 0, sizeof(*plan));
 }
 
+/* 仅处理机器可用的 fix；源哈希与重叠标记保护旧偏移，结果由调用方 RawFree。
+ * 逆序复制以保持每项相对原始源码的区间有效，review-only 候选原样保留。 */
 ZR_PARSER_API TZrBool ZrParser_LegacyMigration_ApplyMachineEdits(
         SZrState *state,
         const SZrLegacyMigrationPlan *plan,

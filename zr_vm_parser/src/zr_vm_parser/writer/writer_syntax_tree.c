@@ -19,6 +19,7 @@
 
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_core/constant_reference.h"
+/* .zrs 使用稳定的节点类别名供调试快照比较；未知类别仍保留 UNKNOWN 标记。 */
 static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
     switch (type) {
         case ZR_AST_SCRIPT: return "SCRIPT";
@@ -104,10 +105,8 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
     }
 }
 
-// 注意：由于字符串对象可能已被垃圾回收，我们不在 print_ast_node 中打印字符串内容
-// 这可以避免段错误。如果需要打印字符串内容，需要确保字符串对象在打印期间有效
-
-// 递归打印 AST 节点
+/* 递归投影 AST 的结构与少量可读值；调用方须保持 state 和 AST 在写入期间有效。
+ * 这里会读取 identifier/string 的原生字符串，文件名则只用数值位置代替。 */
 static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSize indent) {
     if (node == ZR_NULL) {
         for (TZrSize i = 0; i < indent; i++) fprintf(file, "  ");
@@ -466,7 +465,7 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
     }
 }
 
-// 写入语法树文件 (.zrs)
+/* 测试及调试工具用 .zrs 检查解析结构；这是诊断文本，非可重载的二进制 AST。 */
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TZrChar *filename) {
     if (state == ZR_NULL || ast == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
@@ -482,6 +481,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAs
     
     print_ast_node(state, file, ast, 0);
     
+    /* BUG: /dev/full 等目标的缓冲写入可在 fclose 才失败，忽略返回值会让
+     * .zrs 未成功落盘时仍报告真；调用方如只看布尔结果会误认快照生成成功。 */
     fclose(file);
     return ZR_TRUE;
 }
