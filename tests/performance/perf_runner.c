@@ -9,6 +9,7 @@
 #include "perf_report.h"
 #include "perf_statistics.h"
 
+/* 限定追加采样、CV 稳定门槛、Bootstrap 参数和单进程默认超时。 */
 #define ZR_PERF_MAX_EXTRA_SAMPLES 10
 #define ZR_PERF_MAXIMUM_CV 0.05
 #define ZR_PERF_BOOTSTRAP_RESAMPLES 10000U
@@ -100,6 +101,7 @@ static int zr_perf_parse_non_negative_int(const char *text, int *outValue) {
     return 1;
 }
 
+/* 按每次逻辑样本耗时的 CV 决定是否追加样本，不把校准和预热混入统计。 */
 static int zr_perf_evaluate_stability(const SZrPerfRunSample *samples,
                                       int sampleCount,
                                       int initialSampleCount,
@@ -306,6 +308,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* 作用域和复用标记是报告的可比性契约，必须与实际执行模式一致。 */
     if (persistentMode && processTimeoutExplicit) {
         fprintf(stderr, "--process-timeout-ms is a process-only option.\n");
         return 1;
@@ -351,6 +354,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* 持久模式仅启动一次服务器：校准/预热/测量都经同一协议会话。 */
     if (persistentMode) {
         SZrPerfPersistentOptions persistentOptions;
         SZrPerfPersistentSession session;
@@ -370,6 +374,7 @@ int main(int argc, char **argv) {
             free(samples);
             return 1;
         }
+        /* 倍增单请求重复次数，直到总耗时达到最短样本门槛。 */
         if (minimumSampleMs > 0) {
             while (1) {
                 SZrPerfPersistentSample calibrationSample;
@@ -479,6 +484,7 @@ int main(int argc, char **argv) {
             return 1;
         }
     } else {
+        /* process 模式每次重复都重新启动进程，并把校准与预热排除在结果外。 */
         if (minimumSampleMs > 0) {
             while (1) {
                 SZrPerfRunSample calibrationSample;
@@ -602,6 +608,7 @@ int main(int argc, char **argv) {
     metadata.minimumSampleMs = (double)minimumSampleMs;
     metadata.calibrationAggregateWallMs = calibrationAggregateWallMs;
     metadata.comparable = !profileMode;
+    /* profile 结果不可比较；普通结果仍需十个稳定样本才能进入 gate。 */
     metadata.gateEligible = !profileMode && sampleCount >= (int)ZR_PERF_MIN_GATE_SAMPLES &&
                             stability == ZR_PERF_STABILITY_STABLE;
     metadata.stability = profileMode

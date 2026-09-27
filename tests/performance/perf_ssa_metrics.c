@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 固定长度文本必须终止并保持可打印 ASCII，避免报告比较越界。 */
 static size_t zr_perf_metrics_bounded_length(const TZrChar *text, size_t capacity) {
     size_t length = 0u;
 
@@ -37,8 +38,8 @@ static TZrBool zr_perf_metrics_text_is_valid(const TZrChar *text, size_t capacit
 
 static void zr_perf_metrics_set_status(const SZrPerfBackendMetrics *sample,
                                        EZrPerfMetricsStatus status) {
-    /* The public validation API is const so callers can validate read-only reports. The
-     * status is a derived diagnostic field and is the only field changed by validation. */
+    /* BUG: 公开校验接口接受 const 样本，这里强转写 status。传入只读静态样本
+     * 或比较只读报告会产生未定义行为；应改为纯校验并由调用方持有派生状态。 */
     if (sample != ZR_NULL) {
         ((SZrPerfBackendMetrics *)(void *)sample)->status = status;
     }
@@ -167,6 +168,7 @@ TZrBool ZrTests_Perf_ValidateMetrics(const SZrPerfBackendMetrics *sample) {
         }
     }
 
+    /* 枚举定义目前占低 16 位；未知位可能表示跨版本报告，不能当作零值指标。 */
     knownMetrics = 0u;
     for (metric = 0u; metric < 16u; ++metric) {
         knownMetrics |= (TZrUInt32)1u << metric;
@@ -249,6 +251,7 @@ TZrBool ZrTests_Perf_ComparePaired(const SZrPerfBackendMetrics *baseline,
     }
     result->deoptCount = baseline->deoptCount + candidate->deoptCount;
 
+    /* 先证明环境、负载、阶段和指标集合一致，再进行统计推断。 */
     if (strcmp(baseline->environmentFingerprint, candidate->environmentFingerprint) != 0) {
         zr_perf_comparison_set_status(result,
                                       ZR_PERF_COMPARISON_INCOMPARABLE,
@@ -346,11 +349,9 @@ TZrBool ZrTests_Perf_ComparePaired(const SZrPerfBackendMetrics *baseline,
         }
     }
 
-    /* A median improvement is only a candidate signal.  Promote it to the
-     * merge gate when the conservative lower confidence bound also clears the
-     * threshold; this prevents a small, noisy sample from being reported as a
-     * real gain.  If bootstrap was unavailable, improvementLow is the raw
-     * estimate and the caller still gets a deterministic result. */
+    /* 中位数收益只是候选信号；有效置信下界过门槛才应进入 gate。
+     * TODO: Bootstrap 失败、基线下界非正或收益界非有限时，点估计仍可让
+     * gateEligible 为真；核查 gate 是否要求有效置信区间。 */
     if (result->improvementLow >= ZR_PERF_METRICS_MIN_IMPROVEMENT) {
         zr_perf_comparison_set_status(result,
                                       ZR_PERF_COMPARISON_COMPARABLE,

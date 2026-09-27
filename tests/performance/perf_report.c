@@ -30,6 +30,8 @@ static double zr_perf_report_median_u64(const uint64_t *values, int count) {
         return 0.0;
     }
     sortedValues = (uint64_t *)malloc((size_t)count * sizeof(*sortedValues));
+    /* BUG: 临时分配失败会返回合法的 0 中位数，而 ComputeSummary 仍返回成功。
+     * 内存紧张时 JSON 内存统计被静默误报；应向上层传递失败状态。 */
     if (sortedValues == NULL) {
         return 0.0;
     }
@@ -80,6 +82,7 @@ int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
             summary->maxPeakWorkingSetBytes = samples[index].peakWorkingSetBytes;
         }
     }
+    /* 时间统计和置信区间应共同成功，才能生成可比较的 summary。 */
     if (!ZrPerfStatistics_Compute(wallValues, (size_t)count, &statistics) ||
         !ZrPerfStatistics_BootstrapMedian95(wallValues,
                                            (size_t)count,
@@ -103,6 +106,7 @@ int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
     return 1;
 }
 
+/* 命令行和工作目录逐字转义，避免跨语言 suite 读取格式被引号破坏。 */
 static void zr_perf_report_json_escaped(FILE *file, const char *text) {
     const unsigned char *cursor = (const unsigned char *)text;
     fputc('"', file);
@@ -152,6 +156,7 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
         (persistentMode && persistentSession == NULL)) {
         return 0;
     }
+    /* 持久模式报告的是同一服务器的 PID 与会话峰值，不应伪造逐样本 RSS。 */
     if (persistentMode) {
         for (index = 0; index < metadata->sampleCount; index++) {
             if (samples[index].processId != persistentSession->processId) return 0;
@@ -223,6 +228,7 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
     return fclose(file) == 0;
 }
 
+/* 固定长 AOT 文本须终止且仅含报告可安全承载的 ASCII。 */
 static int zr_perf_report_aot_text_valid(const TZrChar *text,
                                          size_t capacity,
                                          int required) {
@@ -309,6 +315,7 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
          * process invocation. */
         return 0;
     }
+    /* 无覆盖率时以 -1 与零计数表示不可用；有覆盖率时分项之和须精确匹配。 */
     if (report->coverageAvailable == ZR_FALSE) {
         if (report->nativeCoverage != -1.0 || report->semanticSites != 0u ||
             report->executedSemanticSites != 0u || report->nativeSites != 0u ||

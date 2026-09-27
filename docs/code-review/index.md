@@ -66,5 +66,6 @@ doc_type: category-index
 | 测试 harness、fixture reader 与崩溃保护 | [195 项](coverage/tests_harness.tsv) | 14 文件独立复核，487 个路径行号有效，源码仅改注释；堆/栈 reader 的关闭所有权、Unity 崩溃后的 teardown 跳过和公共 helper 调用者已核准。长 JSON 字段截断假阴性等 2 处 BUG 已标记；构建与运行测试未执行。 |
 | 元数据 API 回归与目标注册 | [68 项](coverage/tests_meta.tsv) | 2 文件独立复核，211 个证据锚点有效；GCC C 语法检查通过。重复注册、成功路径假阳性和断言中止后的清理缺口已标 BUG，孤立子目录 CMake 与分配器边界已标 TODO；运行测试未执行。 |
 | 容器、代际池与临时值根回归 | [266 项](coverage/tests_container.tsv) | 15 文件独立复核，547 个证据锚点有效；源码只新增 162 行注释，CMake 配置通过，未完成编译或运行测试。池扫描回调、线程入口和跨目录公共 helper 的调用方已核准，7 处待查边界标为 TODO。 |
+| 性能采样、报告与 persistent 协议回归 | [191 项](coverage/tests_performance.tsv) | 14 文件独立复核，320 个证据锚点有效；源码仅改注释，本机 GCC Windows 分支语法检查通过。退出码、内存采样、const 写入与 OOM 中位数等 7 处 BUG 和 5 处 TODO 已有静态证据；完整构建和运行测试未执行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

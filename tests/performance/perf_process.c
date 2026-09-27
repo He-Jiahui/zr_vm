@@ -78,6 +78,7 @@ static int zr_perf_process_windows_text(char *buffer,
     return 1;
 }
 
+/* 按 CreateProcess/CRT 的反斜杠加引号规则保留 argv 边界。 */
 static int zr_perf_process_windows_argument(char *buffer,
                                             size_t capacity,
                                             size_t *length,
@@ -143,6 +144,7 @@ static char *zr_perf_process_windows_command_line(char *const *command) {
     return line;
 }
 
+/* 子进程先挂入 kill-on-close Job 再恢复运行，超时也能清理后代。 */
 static int zr_perf_process_run_once(const char *workingDirectory,
                                     char *const *command,
                                     uint32_t processTimeoutMs,
@@ -241,7 +243,7 @@ static int zr_perf_process_run_once(const char *workingDirectory,
     }
     counters.cb = sizeof(counters);
     if (!GetProcessMemoryInfo(process.hProcess, &counters, sizeof(counters))) {
-        counters.PeakWorkingSetSize = 0U;
+        counters.PeakWorkingSetSize = 0U; /* BUG: 查询失败时假报 0 RSS，runner 和 JSON 仍视为有效样本。 */
     }
     sample->wallMs = ((double)(endTime.QuadPart - startTime.QuadPart) * 1000.0) /
                      (double)frequency.QuadPart;
@@ -270,6 +272,7 @@ static double zr_perf_process_timespec_diff_ms(const struct timespec *startTime,
            (double)(endTime->tv_nsec - startTime->tv_nsec) / 1000000.0;
 }
 
+/* 用独立进程组包住一次执行，超时按组杀死并回收直接子进程。 */
 static int zr_perf_process_run_once(const char *workingDirectory,
                                     char *const *command,
                                     uint32_t processTimeoutMs,
@@ -367,6 +370,7 @@ static int zr_perf_process_run_once(const char *workingDirectory,
 }
 #endif
 
+/* 校准时重复启动进程；非零退出保留在 sample 供 runner 停止采样。 */
 int ZrPerfProcess_RunAggregate(const char *workingDirectory,
                                char *const *command,
                                uint32_t repetitions,

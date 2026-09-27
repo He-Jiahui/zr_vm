@@ -72,6 +72,7 @@ static int fixture_wait_for_process_death(uint64_t processId) {
     return !fixture_process_is_alive(processId);
 }
 
+/* 生成长时间存活的后代，用于断言 runner 超时清理覆盖整个进程树。 */
 static int fixture_run_hanging_process(const char *executable, const char *pidFile) {
 #if defined(_WIN32)
     STARTUPINFOA startup;
@@ -131,6 +132,7 @@ static int fixture_parse_positive_u64(const char *text, uint64_t maximum, uint64
     return 1;
 }
 
+/* 先解析再重建规范形式，拒绝空格、前导零和越界 repetitions。 */
 static int fixture_parse_request(const char *line,
                                  char *kind,
                                  size_t kindSize,
@@ -164,6 +166,7 @@ static int fixture_parse_request(const char *line,
     return 1;
 }
 
+/* 通过 behavior 注入握手、响应、校验和及 STOP 失败，供 CMake 驱动黑盒检查。 */
 static int fixture_run_server(const char *behavior, unsigned int sleepMs) {
     char line[256];
 
@@ -230,6 +233,7 @@ static int fixture_run_server(const char *behavior, unsigned int sleepMs) {
             fflush(stdout);
             return 14;
         }
+        /* 重复执行期间 checksum 不变才允许返回 DONE。 */
         for (repetition = 0U; repetition < repetitions; repetition++) {
             const uint64_t currentChecksum = strcmp(behavior, "repetition_checksum_mismatch") == 0 && repetition == 1U
                                                      ? UINT64_C(424243)

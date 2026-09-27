@@ -58,6 +58,7 @@ int ZrPerfStatistics_Compute(const double *values, size_t count, SZrPerfStatisti
         }
         scratch[index] = values[index];
     }
+    /* 先除以最大值再累加，避免极大但有限的样本在求和时溢出。 */
     if (maximumValue > 0.0) {
         for (index = 0U; index < count; index++) {
             normalizedSum += values[index] / maximumValue;
@@ -67,6 +68,7 @@ int ZrPerfStatistics_Compute(const double *values, size_t count, SZrPerfStatisti
     qsort(scratch, count, sizeof(*scratch), zr_perf_statistics_compare_double);
     statistics->median = zr_perf_statistics_sorted_median(scratch, count);
 
+    /* 缩放后的平方和避免大偏差平方溢出，同时复用 scratch 求 MAD。 */
     for (index = 0U; index < count; index++) {
         const double deviation = fabs(values[index] - statistics->mean);
         if (deviation > 0.0) {
@@ -124,6 +126,7 @@ int ZrPerfStatistics_BootstrapMedian95(const double *values,
         free(medians);
         return 0;
     }
+    /* 固定 PRNG 序列让相同输入和 seed 的报告跨运行可复现。 */
     for (bootstrapIndex = 0U; bootstrapIndex < resampleCount; bootstrapIndex++) {
         for (valueIndex = 0U; valueIndex < count; valueIndex++) {
             const size_t sourceIndex = (size_t)(zr_perf_statistics_splitmix64_next(&state) % (uint64_t)count);

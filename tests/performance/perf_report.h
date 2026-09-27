@@ -8,6 +8,7 @@
 #include "perf_statistics.h"
 #include "zr_vm_common/zr_common_conf.h"
 
+/** @brief 单次逻辑样本；aggregateWallMs 可包含多次启动或协议重复。 */
 typedef struct SZrPerfRunSample {
     double wallMs;
     double aggregateWallMs;
@@ -16,6 +17,7 @@ typedef struct SZrPerfRunSample {
     int exitCode;
 } SZrPerfRunSample;
 
+/** @brief 对测量样本汇总的时间分布与内存峰值统计。 */
 typedef struct SZrPerfSummary {
     double meanWallMs;
     double medianWallMs;
@@ -31,6 +33,7 @@ typedef struct SZrPerfSummary {
     uint64_t maxPeakWorkingSetBytes;
 } SZrPerfSummary;
 
+/** @brief 报告消费方判断可比性和 gate 资格所需的采样策略。 */
 typedef struct SZrPerfMeasurementMetadata {
     int initialSampleCount;
     int sampleCount;
@@ -46,15 +49,11 @@ typedef struct SZrPerfMeasurementMetadata {
     size_t bootstrapResampleCount;
 } SZrPerfMeasurementMetadata;
 
-/*
- * Standalone AOT phase report.  The normal process/persistent report above is
- * intentionally unchanged; this value-only extension lets the AOT runner
- * publish compile/link/load/startup/run costs without folding them into the
- * steady-state sample.  A negative phase value means unavailable, while zero
- * remains a valid measured duration.
- */
+/* 独立 AOT 阶段报告不把编译、链接、加载或启动混入稳态样本。
+ * 阶段值 -1 表示不可用；零仍是有效测量。 */
 #define ZR_PERF_AOT_REPORT_TEXT_CAPACITY 128U
 
+/** @brief AOT 产物运行、回退、不可用及失败的报告状态。 */
 typedef enum EZrPerfAotReportStatus {
     ZR_PERF_AOT_REPORT_INVALID = 0,
     ZR_PERF_AOT_REPORT_RAN,
@@ -64,6 +63,7 @@ typedef enum EZrPerfAotReportStatus {
     ZR_PERF_AOT_REPORT_STATUS_COUNT
 } EZrPerfAotReportStatus;
 
+/** @brief AOT 阶段成本和覆盖率快照，文本字段必须 NUL 终止且为可打印 ASCII。 */
 typedef struct SZrPerfAotPhaseReport {
     EZrPerfAotReportStatus status;
     int processExitCode;
@@ -96,17 +96,23 @@ typedef struct SZrPerfAotPhaseReport {
     double nativeCoverage;
 } SZrPerfAotPhaseReport;
 
+/** @brief 返回 AOT 报告状态的固定 JSON 文本值。 */
 const TZrChar *ZrPerfReport_AotStatusName(EZrPerfAotReportStatus status);
+/** @brief 验证状态、阶段值和覆盖率分项的一致性。 */
 int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report);
+/** @brief 将已验证的 AOT 阶段快照写成独立 JSON 文件。 */
 int ZrPerfReport_WriteAotJson(const char *jsonPath,
                               const SZrPerfAotPhaseReport *report);
 
+/** @brief 汇总 1 至 20 个样本并生成确定性 Bootstrap 中位数区间。 */
 int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
                                 int count,
                                 uint64_t bootstrapSeed,
                                 size_t bootstrapResampleCount,
                                 SZrPerfSummary *summary);
 
+/** @brief 将 runner 的采样与作用域元数据写成跨语言 suite 消费的 JSON。
+ * @note persistentMode 下每个样本 PID 必须等于已退出会话的 PID。 */
 int ZrPerfReport_WriteJson(const char *jsonPath,
                            const char *caseName,
                            const char *workingDirectory,

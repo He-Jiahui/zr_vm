@@ -20,6 +20,7 @@ static void zr_test_expect_close(double actual, double expected, const char *mes
     }
 }
 
+/* 固定数据钉住样本标准差的 n-1 分母和中位数绝对偏差。 */
 static void zr_test_fixed_statistics(void) {
     const double values[] = {1.0, 2.0, 3.0, 4.0};
     SZrPerfStatistics statistics = {0};
@@ -46,6 +47,7 @@ static void zr_test_zero_mean_cv(void) {
     zr_test_expect_close(statistics.coefficientOfVariation, 0.0, "constant zero samples have zero CV");
 }
 
+/* 极大有限样本防止求均值和偶数项中位数时先溢出。 */
 static void zr_test_large_finite_statistics(void) {
     const double equalValues[] = {DBL_MAX, DBL_MAX};
     const double spreadValues[] = {DBL_MAX / 2.0, DBL_MAX};
@@ -62,6 +64,7 @@ static void zr_test_large_finite_statistics(void) {
     }
 }
 
+/* 保护标准差的缩放平方和路径，避免 DBL_MAX 偏差平方溢出。 */
 static void zr_test_large_deviation_norm(void) {
     double values[ZR_PERF_MAX_TOTAL_SAMPLES];
     SZrPerfStatistics statistics = {0};
@@ -78,6 +81,7 @@ static void zr_test_large_deviation_norm(void) {
     }
 }
 
+/* 相邻次正规数的中点不能被浮点求和误折叠到较小端点。 */
 static void zr_test_subnormal_midpoint(void) {
     const double smallest = nextafter(0.0, 1.0);
     const double values[] = {smallest, smallest * 2.0};
@@ -100,6 +104,7 @@ static void zr_test_sample_limit(void) {
     }
 }
 
+/* 同一种子应产生完全相同的区间和元数据，供性能报告复现。 */
 static void zr_test_deterministic_bootstrap(void) {
     const double values[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0};
     const uint64_t seed = UINT64_C(0x123456789abcdef0);
@@ -127,6 +132,7 @@ static void zr_test_deterministic_bootstrap(void) {
     zr_test_expect_close(second.high, first.high, "same seed reproduces upper percentile");
 }
 
+/* 覆盖稳定、追加采样后收敛及预算耗尽三类 runner 决策。 */
 static void zr_test_stability_classification(void) {
     const double stableValues[] = {100.0, 101.0, 99.0, 100.0, 101.0,
                                    99.0, 100.0, 101.0, 99.0, 100.0};

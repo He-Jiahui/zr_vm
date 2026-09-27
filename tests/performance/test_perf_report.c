@@ -10,6 +10,7 @@ static void zr_test_fail(const char *message) {
     exit(1);
 }
 
+/* 报告层不得绕过统计层的 20 个样本硬上限。 */
 static void zr_test_summary_rejects_too_many_samples(void) {
     SZrPerfRunSample samples[ZR_PERF_MAX_TOTAL_SAMPLES + 1U] = {{0}};
     SZrPerfSummary summary = {0};
@@ -23,6 +24,7 @@ static void zr_test_summary_rejects_too_many_samples(void) {
     }
 }
 
+/* 错误的初始、追加和总样本数不能产生看似成功的 JSON。 */
 static void zr_test_report_rejects_inconsistent_sample_counts(void) {
     SZrPerfRunSample samples[2] = {{0}};
     SZrPerfSummary summary = {0};
@@ -44,6 +46,7 @@ static void zr_test_report_rejects_inconsistent_sample_counts(void) {
     }
 }
 
+/* /dev/full 验证缓冲写入失败也会传递给调用方；Windows 无同等设备。 */
 static void zr_test_report_detects_output_failure(void) {
 #if defined(_WIN32)
     puts("perf report /dev/full check SKIP: unavailable on Windows");

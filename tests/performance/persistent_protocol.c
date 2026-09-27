@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 限定 READY/DONE/ERROR 单行长度，避免失控服务器耗尽父进程缓冲区。 */
 #define ZR_PERF_PROTOCOL_MAX_LINE 512U
 
 static void zr_perf_protocol_error(char *buffer, size_t bufferSize, const char *message) {
@@ -69,6 +70,7 @@ static int zr_perf_protocol_validate_ready(const char *line, const char *expecte
            strcmp(line + prefixLength, expectedContract) == 0;
 }
 
+/* 响应必须是规范十进制索引和预期 checksum，不能只依赖子进程退出码。 */
 static int zr_perf_protocol_validate_response(const char *line,
                                               int expectedIndex,
                                               const char *expectedChecksum,
@@ -152,6 +154,7 @@ static int zr_perf_protocol_validate_response(const char *line,
 #include <windows.h>
 #include <psapi.h>
 
+/* Windows Job 与匿名管道的拥有者；Job 关闭时会清理后代。 */
 typedef struct SZrPerfPersistentPlatformSession {
     HANDLE process;
     HANDLE thread;
@@ -187,6 +190,7 @@ static int zr_perf_windows_append(char *buffer, size_t capacity, size_t *length,
     return 1;
 }
 
+/* 与进程模式一致地转义 Windows argv，防止路径中的空格改变参数边界。 */
 static int zr_perf_windows_append_arg(char *buffer, size_t capacity, size_t *length, const char *argument) {
     const char *cursor;
     size_t slashCount = 0U;
@@ -241,6 +245,8 @@ static int zr_perf_windows_append_arg(char *buffer, size_t capacity, size_t *len
     return zr_perf_windows_append(buffer, capacity, length, '"');
 }
 
+/* TODO: capacity 累加未检查 size_t 溢出；应参照 perf_process 的检查，
+ * 从 ZrPerfPersistentSession_Start 的任意长 argv 调用路径验证。 */
 static char *zr_perf_windows_command_line(char *const *command) {
     size_t capacity = 1U;
     size_t length = 0U;
@@ -265,6 +271,7 @@ static char *zr_perf_windows_command_line(char *const *command) {
     return line;
 }
 
+/* 先终止直接子进程，再关闭 Job 与管道，统一覆盖启动中途失败和正常退出。 */
 static void zr_perf_protocol_platform_cleanup(SZrPerfPersistentPlatformSession *session, int terminate) {
     if (session == NULL) {
         return;
@@ -454,8 +461,8 @@ static int zr_perf_protocol_platform_finish(SZrPerfPersistentPlatformSession *se
         zr_perf_protocol_error(errorBuffer, errorBufferSize, "persistent STOP timeout");
         return 0;
     }
-    GetExitCodeProcess(session->process, &exitCode);
-    GetProcessMemoryInfo(session->process, &counters, sizeof(counters));
+    GetExitCodeProcess(session->process, &exitCode); /* BUG: 查询失败时初值 0 被当成成功退出。 */
+    GetProcessMemoryInfo(session->process, &counters, sizeof(counters)); /* BUG: 失败后仍成功报告 0 RSS。 */
     info->processId = (uint64_t)session->processId;
     info->peakWorkingSetBytes = (uint64_t)counters.PeakWorkingSetSize;
     info->exitCode = (int)exitCode;
@@ -477,6 +484,7 @@ static int zr_perf_protocol_platform_finish(SZrPerfPersistentPlatformSession *se
 #include <time.h>
 #include <unistd.h>
 
+/* POSIX 进程组及两条管道的拥有者；恢复原 SIGPIPE 处理属于会话清理。 */
 typedef struct SZrPerfPersistentPlatformSession {
     pid_t processId;
     pid_t processGroupId;
@@ -502,6 +510,7 @@ static uint64_t zr_perf_protocol_now_high_resolution(void) {
     return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
 }
 
+/* Abort 对整个进程组发 SIGKILL，并回收直接子进程。 */
 static void zr_perf_protocol_platform_cleanup(SZrPerfPersistentPlatformSession *session, int terminate) {
     int status;
     if (session == NULL) return;
@@ -540,6 +549,8 @@ static int zr_perf_protocol_platform_start(const SZrPerfPersistentOptions *optio
     memset(&ignoreSigpipe, 0, sizeof(ignoreSigpipe));
     ignoreSigpipe.sa_handler = SIG_IGN;
     sigemptyset(&ignoreSigpipe.sa_mask);
+    /* TODO: SIGPIPE disposition 是进程级状态；两个并发会话或其他线程改写它时，
+     * 最后结束的会话可能恢复过期处理器。核查 runner 是否允许并发会话。 */
     if (sigaction(SIGPIPE, &ignoreSigpipe, &session->oldSigpipeAction) != 0) {
         zr_perf_protocol_error(errorBuffer, errorBufferSize, "failed to ignore SIGPIPE for persistent transport");
         return 0;
@@ -600,6 +611,7 @@ static int zr_perf_protocol_platform_start(const SZrPerfPersistentOptions *optio
     return 1;
 }
 
+/* 共享绝对截止时间，防止分段读写每字节重新获得完整超时预算。 */
 static int zr_perf_protocol_poll(int fd, short events, uint64_t deadline, pid_t processId,
                                  char *errorBuffer, size_t errorBufferSize) {
     while (1) {
@@ -733,11 +745,13 @@ static int zr_perf_protocol_platform_finish(SZrPerfPersistentPlatformSession *se
 }
 #endif
 
+/* options 只浅拷贝，字符串和 argv 的生命周期仍归调用方管理。 */
 typedef struct SZrPerfPersistentSessionImplementation {
     SZrPerfPersistentPlatformSession platform;
     SZrPerfPersistentOptions options;
 } SZrPerfPersistentSessionImplementation;
 
+/* 只计同步命令到应答的耗时；READY/STOP 和预热都不进入 measured sample。 */
 static int zr_perf_protocol_send_request(SZrPerfPersistentPlatformSession *session,
                                          const SZrPerfPersistentOptions *options,
                                          const char *kind,
@@ -798,6 +812,7 @@ int ZrPerfPersistentSession_Start(SZrPerfPersistentSession *session,
         zr_perf_protocol_error(errorBuffer, errorBufferSize, "failed to allocate persistent session");
         return 0;
     }
+    /* 会话持有平台资源，但借用调用方传入的命令及契约文本。 */
     implementation->options = *options;
     if (!zr_perf_protocol_platform_start(options, &implementation->platform, errorBuffer, errorBufferSize) ||
         !zr_perf_protocol_platform_read_line(&implementation->platform,
@@ -858,6 +873,7 @@ int ZrPerfPersistentSession_Finish(SZrPerfPersistentSession *session,
     }
     implementation = (SZrPerfPersistentSessionImplementation *)session->implementation;
     memset(sessionInfo, 0, sizeof(*sessionInfo));
+    /* STOP 失败仍进入 terminate 清理，不能把尚存活的服务器留给下一用例。 */
     succeeded = zr_perf_protocol_platform_write(&implementation->platform,
                                                 "STOP\n",
                                                 implementation->options.stopTimeoutMs,
