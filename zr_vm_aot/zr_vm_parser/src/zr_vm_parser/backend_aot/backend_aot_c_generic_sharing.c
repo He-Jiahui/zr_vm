@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <string.h>
 
+/* typeName 借用函数绑定中的字符串；候选仅在遍历该函数表期间有效。 */
 typedef struct SZrAotCGenericSharingCandidate {
     const SZrFunction *function;
     TZrUInt32 entryIndex;
@@ -96,6 +97,8 @@ static TZrBool backend_aot_c_generic_sharing_all_args_reference_like(const TZrCh
         return ZR_FALSE;
     }
 
+    /* TODO: 这里仅以文本排除内置值类型和字面量；用户自定义值类型实参是否会被误判，
+     * 需沿 typedLocalBindings 的泛型实参类型来源与相应 AOT 生成测试核对。 */
     open = strchr(typeName, '<');
     if (open == ZR_NULL) {
         return ZR_FALSE;
@@ -195,6 +198,7 @@ static TZrBool backend_aot_c_generic_sharing_candidate_from_binding(
     typeName = backend_aot_c_generic_sharing_type_name_text(&binding->type);
     slotLayout = backend_aot_c_generic_sharing_find_slot_layout(function, binding->stackSlot);
 
+    /* 共享候选必须是引用值，内联结构体由单态化布局路径承担。 */
     if (!backend_aot_c_generic_sharing_type_name_is_closed(typeName) ||
         binding->type.baseType != ZR_VALUE_TYPE_OBJECT ||
         !backend_aot_c_generic_sharing_all_args_reference_like(typeName) ||

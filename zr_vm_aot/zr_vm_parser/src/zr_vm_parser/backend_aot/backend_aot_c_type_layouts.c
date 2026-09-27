@@ -9,6 +9,7 @@
 
 #include <string.h>
 
+/* 字段声明回调维护生成游标；failed 后不再继续追加字段。 */
 typedef struct SZrAotCTypeLayoutEmitContext {
     FILE *file;
     TZrUInt32 cursor;
@@ -285,6 +286,7 @@ TZrBool backend_aot_c_type_layout_collect_dynamic_dependency_roots(SZrState *sta
         return ZR_FALSE;
     }
 
+    /* 动态访问只保留可由当前函数表解析的布局；元数据令牌失败时不猜测布局。 */
     for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
         const SZrFunction *function = table->entries[entryIndex].function;
         TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;

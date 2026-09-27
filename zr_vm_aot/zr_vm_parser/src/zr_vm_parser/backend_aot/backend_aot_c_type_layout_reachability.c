@@ -6,13 +6,16 @@
 
 #include <stdint.h>
 
+/* 显式根没有前驱函数，清单用此值区别帧布局边。 */
 #define ZR_AOT_C_TYPE_LAYOUT_REACHABILITY_NO_FUNCTION UINT32_MAX
 
+/* 显式元数据根优先于帧布局引用，避免相同布局出现两个原因。 */
 typedef enum EZrAotCTypeLayoutReachabilityReason {
     ZR_AOT_C_TYPE_LAYOUT_REACHABILITY_REASON_ROOT_REFLECTION_ANNOTATION = 1,
     ZR_AOT_C_TYPE_LAYOUT_REACHABILITY_REASON_EDGE_FRAME_LAYOUT = 2
 } EZrAotCTypeLayoutReachabilityReason;
 
+/* 根行的 predecessorFunction 为无函数哨兵，帧边行保存扁平函数索引。 */
 typedef struct SZrAotCTypeLayoutReachabilityRow {
     TZrUInt32 typeLayoutId;
     EZrAotCTypeLayoutReachabilityReason reason;
@@ -208,6 +211,7 @@ static TZrBool backend_aot_c_type_layout_reachability_collect(
         return ZR_FALSE;
     }
 
+    /* 按布局 ID 排序输出，根优先于帧引用决定清单中的可达原因。 */
     for (TZrUInt32 typeLayoutId = 0u; typeLayoutId <= maximumTypeLayoutId; typeLayoutId++) {
         TZrUInt32 predecessorFunction = ZR_AOT_C_TYPE_LAYOUT_REACHABILITY_NO_FUNCTION;
         TZrBool rooted = backend_aot_c_type_layout_reachability_is_rooted(

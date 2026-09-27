@@ -13,6 +13,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_meta_conf.h"
 
+/* 候选类型可暂时并存；只有路径合流后仍能证明的位才可直接读取。 */
 typedef enum EZrAotScalarLocalKind {
     ZR_AOT_SCALAR_LOCAL_KIND_NONE = 0,
     ZR_AOT_SCALAR_LOCAL_KIND_BOOL = 1u << 0,
@@ -3365,6 +3366,7 @@ static TZrBool backend_aot_c_scalar_locals_compute_block_entry_state(
         return ZR_FALSE;
     }
 
+    /* 声明候选类型来自静态事实，到达写入仍须沿可达 CFG 边取交集。 */
     backend_aot_c_scalar_locals_record_all(declaredKinds, slotCount, function);
     backend_aot_c_scalar_locals_mark_reachable_blocks(functionIr, reachableBlocks);
     for (blockIndex = 1u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
@@ -3413,6 +3415,7 @@ static TZrBool backend_aot_c_scalar_locals_compute_block_entry_state(
                             continue;
                         }
                         predecessorOut = blockOutKinds + (size_t)predecessorIndex * slotCount;
+                        /* 仅保留每条可达前驱都已定义的标量种类。 */
                         if (!hasReachablePredecessor) {
                             memcpy(mergedKinds,
                                    predecessorOut,
@@ -6206,6 +6209,7 @@ static TZrBool backend_aot_c_scalar_locals_result_can_skip_value_slot_kind(
         return ZR_FALSE;
     }
 
+    /* 先扫当前块的后缀，再沿所有可达后继排除值槽读取。 */
     result = backend_aot_c_scalar_locals_result_scan_live_value_block(functionIr,
                                                                      function,
                                                                      slot,
@@ -6599,6 +6603,7 @@ TZrBool backend_aot_c_scalar_locals_reset2_can_skip_value_slots(const SZrAotExec
 
     (void)blockStart;
 
+    /* 两个复位槽独立存活，后继遍历以块和存活掩码共同去重。 */
     liveMask = 3u;
     result = backend_aot_c_scalar_locals_reset_scan_dead_slot_pair_block(
             functionIr,

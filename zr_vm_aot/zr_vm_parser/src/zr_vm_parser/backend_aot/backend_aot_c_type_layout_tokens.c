@@ -889,6 +889,7 @@ void backend_aot_write_c_type_layout_token_table(FILE *file,
     for (TZrUInt32 typeLayoutId = 0u; typeLayoutId < typeLayoutIndexSpace; typeLayoutId++) {
         TZrMetadataToken token = backend_aot_c_type_layout_token_from_table(state, table, typeLayoutId);
 
+        /* 只有显式保留的布局才允许从裁剪后的元数据表补全令牌。 */
         if (token == 0u &&
             backend_aot_c_type_layout_token_is_rooted(typeLayoutRoots, typeLayoutRootCount, typeLayoutId)) {
             token = backend_aot_c_type_layout_token_from_metadata_blob(metadataBlob,

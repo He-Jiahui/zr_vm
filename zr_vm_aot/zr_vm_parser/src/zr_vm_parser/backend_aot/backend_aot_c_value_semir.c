@@ -172,6 +172,7 @@ static TZrBool backend_aot_try_write_c_value_copy_exec(
         return ZR_FALSE;
     }
 
+    /* 源码注解可展示 memmove 形状；真正执行仍按运行时布局选择 POD 或字段复制。 */
     fprintf(file,
             "    /* zr_aot_value_exec_inline_copy dstSlot=%u sourceSlot=%u */\n"
             "    {\n"

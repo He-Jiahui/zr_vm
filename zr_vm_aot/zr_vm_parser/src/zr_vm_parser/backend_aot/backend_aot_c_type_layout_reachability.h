@@ -5,6 +5,7 @@
 
 #include "backend_aot_function_table.h"
 
+/** @brief 校验并输出布局可达性清单；保留计数必须与 emitter 的统计一致。 */
 TZrBool backend_aot_c_type_layout_reachability_write_manifest(
         FILE *file,
         SZrState *state,

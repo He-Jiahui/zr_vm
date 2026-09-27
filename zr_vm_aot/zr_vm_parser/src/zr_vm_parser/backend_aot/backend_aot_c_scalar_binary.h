@@ -5,6 +5,7 @@
 
 #include "backend_aot_exec_ir.h"
 
+/** @brief 尝试按 SemIR 类型和执行操作码生成标量算术；不匹配时交还通用 lowering。 */
 TZrBool backend_aot_try_write_c_scalar_binary(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               const SZrAotExecIrInstruction *semIrInstruction,
