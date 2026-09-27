@@ -24,29 +24,37 @@
 #include "zr_vm_parser/writer.h"
 #include "test_support.h"
 
+// 主测试文件的计时状态只用于报告耗时，不影响语义断言。
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrExecBcAotTestTimer;
 
+// 将内存中的二进制 fixture 暴露给核心 IO 回调；bytes 由测试持有，读取只消费一次。
 typedef struct {
     TZrByte *bytes;
     TZrSize length;
     TZrBool consumed;
 } SZrBinaryFixtureReader;
 
+// 收集行事件供 AOT 调试信号用例断言；测试入口必须先重置全局捕获状态。
+// TODO: lines[] 已记录前八个事件但现有用例只断言计数/最后行；增加顺序断言后再依赖它验证事件序列。
 typedef struct {
     TZrUInt32 eventCount;
     TZrUInt32 lastLine;
     TZrUInt32 lines[8];
 } SZrAotDebugHookCapture;
 
+// 源码同步矩阵绑定 opcode 和预期后端/运行时入口；可选 C 直接 lowering 允许空值。
 typedef struct {
     const char *opcodeName;
     const char *runtimeHelperName;
     const char *cDirectLoweringName;
 } SZrAotSourceSyncExpectation;
 
+// 模拟当前根库的私有项目记录，供生成函数帧测试注入临时项目。
+// 当前字段次序与根库 aot_runtime.c 的记录一致，包括 codeRegistration、functionPins 和 modulePin。
+// TODO: 类型未公开；库内字段变更时同步此镜像，并以 sizeof/offsetof 检查阻止静默漂移。
 typedef struct {
     EZrAotBackendKind backendKind;
     TZrChar *moduleName;
@@ -67,6 +75,8 @@ typedef struct {
     TZrBool moduleExecuted;
 } SZrExecBcAotTestLoadedModule;
 
+// 项目 AOT 状态镜像供测试直接装配 records；当前与根库私有状态同布局。
+// TODO: 此跨模块私有 ABI 依赖无编译期校验；同步根库记录结构变化。
 typedef struct {
     EZrLibraryProjectExecutionMode configuredExecutionMode;
     EZrLibraryExecutedVia executedVia;
@@ -79,12 +89,15 @@ typedef struct {
     SZrExecBcAotTestLoadedModule *activeRecord;
 } SZrExecBcAotTestRuntimeState;
 
+// 调试回调共享捕获槽；相关 Unity 用例串行执行并在注册回调前清零。
 static SZrAotDebugHookCapture g_aotDebugHookCapture;
 
+// 与指令声明表同步生成诊断名称，避免 trace 为新 opcode 维护第二份枚举表。
 #define ZR_EXECBC_TEST_OPCODE_NAME_CASE(INSTRUCTION)                                                                  \
     case ZR_INSTRUCTION_ENUM(INSTRUCTION):                                                                            \
         return #INSTRUCTION;
 
+// 将指令声明表映射为可读诊断名，供可选树形 trace 使用。
 static const char *execbc_test_instruction_opcode_name(EZrInstructionCode opcode) {
     switch (opcode) {
         ZR_INSTRUCTION_DECLARE(ZR_EXECBC_TEST_OPCODE_NAME_CASE)
@@ -93,6 +106,7 @@ static const char *execbc_test_instruction_opcode_name(EZrInstructionCode opcode
     }
 }
 
+// 按进程环境变量控制测试 trace；首次查询后缓存结果，运行期间修改环境不会生效。
 static TZrBool execbc_test_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -105,6 +119,7 @@ static TZrBool execbc_test_trace_enabled(void) {
     return enabled;
 }
 
+// 只在 trace 开启时递归打印函数树与中间码，帮助定位 quickening 断言失败。
 static void execbc_test_dump_function_tree(const SZrFunction *function, TZrUInt32 depth) {
     const char *functionName;
     TZrUInt32 index;
@@ -147,16 +162,19 @@ static void execbc_test_dump_function_tree(const SZrFunction *function, TZrUInt3
     }
 }
 
+// 为手工项目记录提供最小可调用入口，使生成帧测试不依赖真实动态库。
 static TZrInt64 aot_runtime_test_dummy_entry_thunk(struct SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     return 1;
 }
 
+// 在每个调试事件用例前清空共享捕获槽，避免上个测试的行事件污染断言。
 static void aot_debug_hook_capture_reset(void) {
     memset(&g_aotDebugHookCapture, 0, sizeof(g_aotDebugHookCapture));
     g_aotDebugHookCapture.lastLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;
 }
 
+// 作为运行时 debug hook 接收行事件，仅保留计数、最后行号和前八次样本。
 static void aot_debug_hook_capture(struct SZrState *state, SZrDebugInfo *debugInfo) {
     ZR_UNUSED_PARAMETER(state);
 
@@ -202,6 +220,7 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state);
 static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state);
 static SZrFunction *compile_exception_control_fixture(SZrState *state);
 
+// 读取生成工件的文本快照；调用测试持有并释放返回缓冲，失败时返回 NULL。
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -244,6 +263,7 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+// 集中约束生成 C 文本采用新的函数表与入口形态，供多组 fixture 复用。
 static void assert_generated_aot_c_text_uses_new_code_shape(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NULL(strstr(text, "if (zr_aot_direct_call.prepared) {"));
@@ -256,12 +276,14 @@ static void assert_generated_aot_c_text_uses_new_code_shape(const char *text) {
                      strstr(text, "ZrLibrary_AotRuntime_FailGeneratedFunction") != ZR_NULL);
 }
 
+// 核对 LLVM 输出为独立后端产物，避免退回嵌入式或占位实现。
 static void assert_generated_aot_llvm_text_uses_true_backend_shape(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NULL(strstr(text, "ZrLibrary_AotRuntime_InvokeActiveShim"));
     TEST_ASSERT_NOT_NULL(strstr(text, "define internal i64 @zr_aot_fn_0(ptr %state)"));
 }
 
+// 守护 LLVM 的栈值布局与运行时 ABI 对齐，防止文本工件仍能生成却访问错位。
 static void assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(strstr(text, "%SZrTypeValue = type { ["));
@@ -273,6 +295,7 @@ static void assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(const
     TEST_ASSERT_NOT_NULL(strstr(text, "getelementptr i8, ptr"));
 }
 
+// 用最短返回路径确认 LLVM 正常发出可执行入口与返回约定。
 static void assert_generated_aot_llvm_text_lowers_simple_return_path(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(strstr(text, "@ZrLibrary_AotRuntime_BeginGeneratedFunction"));
@@ -281,6 +304,7 @@ static void assert_generated_aot_llvm_text_lowers_simple_return_path(const char 
     TEST_ASSERT_NOT_NULL(strstr(text, "@ZrLibrary_AotRuntime_Return"));
 }
 
+// 检查 LLVM 静态目标调用遵守直达帧协议，供多个调用测试复用。
 static void assert_generated_aot_llvm_text_lowers_static_direct_call_path(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(strstr(text, "@ZrLibrary_AotRuntime_PrepareStaticDirectCall"));
@@ -288,6 +312,7 @@ static void assert_generated_aot_llvm_text_lowers_static_direct_call_path(const 
     TEST_ASSERT_NOT_NULL(strstr(text, "@ZrLibrary_AotRuntime_FinishDirectCall"));
 }
 
+// 检测 LLVM 工件对指定 opcode 的 unsupported 标记；文本匹配不等于执行验证。
 static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode) {
     const char *unsupportedPrefix = "call i64 @ZrLibrary_AotRuntime_ReportUnsupportedInstruction(ptr %state";
     const char *cursor = text;
@@ -310,6 +335,7 @@ static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUI
     return ZR_FALSE;
 }
 
+// 检测 C 工件对指定 opcode 的 unsupported 标记；需结合运行测试解释结果。
 static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode) {
     const char *unsupportedPrefix = "ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state,";
     const char *cursor = text;
@@ -332,12 +358,14 @@ static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt3
     return ZR_FALSE;
 }
 
+// 限定无观察需求时的 C 后端输出，防止每条指令都引入调试开销。
 static void assert_generated_aot_c_elides_instruction_observation(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NULL(strstr(text, "/* zr_aot_begin_instruction */"));
     TEST_ASSERT_NULL(strstr(text, "ZrLibrary_AotRuntime_BeginInstruction"));
 }
 
+// 核对 LLVM 指令观察标记映射，确保异常、调用等观察请求未被静默丢弃。
 static void assert_generated_aot_llvm_begin_instruction_step_flags(const char *text,
                                                                    TZrUInt32 instructionIndex,
                                                                    TZrUInt32 stepFlags) {
@@ -353,6 +381,7 @@ static void assert_generated_aot_llvm_begin_instruction_step_flags(const char *t
     TEST_ASSERT_NOT_NULL(strstr(text, expected));
 }
 
+// 手工 opcode fixture 的基础构造器，用于隔离后端 lowering 与源编译器选择。
 static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra) {
     TZrInstruction instruction;
 
@@ -362,6 +391,7 @@ static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZ
     return instruction;
 }
 
+// 构造引用常量表的手工指令；调用方负责保证常量索引有效。
 static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcode,
                                                         TZrUInt16 operandExtra,
                                                         TZrInt32 operandA2) {
@@ -371,6 +401,7 @@ static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcod
     return instruction;
 }
 
+// 构造带栈槽操作数的手工指令；槽布局由 fixture 初始化函数提供。
 static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode,
                                                      TZrUInt16 operandExtra,
                                                      TZrUInt16 operandA1,
@@ -382,10 +413,12 @@ static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode,
     return instruction;
 }
 
+// 为手工函数追加可观测返回，使执行路径能够终止并比对结果。
 static TZrInstruction make_instruction_return(TZrUInt16 sourceSlot) {
     return make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, sourceSlot, 0);
 }
 
+// 保留源编译阶段的原始中间码，供测试对照 quickening 前后的契约。
 static SZrFunction *compile_source_without_quickening(SZrState *state,
                                                       const char *source,
                                                       const char *sourcePath) {
@@ -455,6 +488,7 @@ static SZrFunction *compile_source_without_quickening(SZrState *state,
     return func;
 }
 
+// 使用 state 所在 global 的项目分配器建立镜像，使根库项目释放路径接管这些缓冲。
 static void *aot_runtime_test_project_alloc(SZrState *state, TZrSize size) {
     if (state == ZR_NULL || state->global == ZR_NULL || state->global->allocator == ZR_NULL) {
         return ZR_NULL;
@@ -467,6 +501,7 @@ static void *aot_runtime_test_project_alloc(SZrState *state, TZrSize size) {
                                     ZR_MEMORY_NATIVE_TYPE_PROJECT);
 }
 
+// 为四个生成帧/索引用例按当前根库布局注入项目记录并挂到项目对象。
 static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZrState *state,
                                                                               SZrLibrary_Project *project,
                                                                               SZrFunction *function,
@@ -525,6 +560,7 @@ static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZr
     records[0].functionCapacity = functionCount;
     records[0].generatedFrameSlotCounts = generatedFrameSlotCounts;
 
+    // TODO: records 被根库按私有布局解释；库内类型变化时须同步镜像并校验偏移。
     runtimeState->records = records;
     runtimeState->recordCount = 1;
     runtimeState->recordCapacity = 1;
@@ -532,6 +568,7 @@ static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZr
     return runtimeState;
 }
 
+// 测试结束时让根库释放项目状态，再断开 global 对项目对象的借用引用。
 static void aot_runtime_test_remove_project_record(SZrState *state, SZrLibrary_Project *project) {
     if (state == ZR_NULL || state->global == ZR_NULL || project == ZR_NULL) {
         return;
@@ -543,6 +580,7 @@ static void aot_runtime_test_remove_project_record(SZrState *state, SZrLibrary_P
     state->global->userData = ZR_NULL;
 }
 
+// 建立可供 VM 与后端共用的最小手工函数；调用方须随后填充有效指令及常量。
 static void init_manual_test_function(SZrFunction *function,
                                       TZrInstruction *instructions,
                                       TZrUInt32 instructionCount,
@@ -565,6 +603,7 @@ static void init_manual_test_function(SZrFunction *function,
     function->lineInSourceEnd = 1;
 }
 
+// 对双后端工件做共同的 opcode 支持性门禁，防止静默生成占位路径。
 static void assert_generated_aot_texts_do_not_report_unsupported_opcodes(const char *cText,
                                                                          const char *llvmText,
                                                                          const EZrInstructionCode *opcodes,
@@ -581,10 +620,12 @@ static void assert_generated_aot_texts_do_not_report_unsupported_opcodes(const c
     }
 }
 
+// 经 fixture 路径辅助层读取仓库参考文件，返回堆缓冲由调用方释放。
 static char *read_reference_file(const char *relativePath, size_t *outSize) {
     return ZrTests_Reference_ReadFixture(relativePath, outSize);
 }
 
+// 将仓库相对路径转成可读取文本，供源码拆分与同步契约测试使用。
 static char *read_repo_file_owned(const char *repoRelativePath) {
     char pathBuffer[1024];
     char *text;
@@ -606,6 +647,7 @@ static char *read_repo_file_owned(const char *repoRelativePath) {
     return text;
 }
 
+// 统计文本锚点次数，源码拆分测试借此约束唯一归属而非仅检查存在。
 static TZrUInt32 count_substring_occurrences(const char *text, const char *needle) {
     TZrUInt32 count = 0;
     const char *cursor;
@@ -625,6 +667,7 @@ static TZrUInt32 count_substring_occurrences(const char *text, const char *needl
     return count;
 }
 
+// 为跨文件源码同步断言拼接多个实现文件，并返回调用方持有的缓冲。BUG: 两遍读取之间任一文件增长时，第二遍 memcpy 可超出首次统计的分配长度。
 static char *join_repo_files_owned(const char *const *repoRelativePaths, TZrSize pathCount) {
     TZrSize index;
     size_t totalLength = 1;
@@ -652,6 +695,7 @@ static char *join_repo_files_owned(const char *const *repoRelativePaths, TZrSize
     }
 
     writeCursor = joinedText;
+    // BUG: 第二次读取未校验首次分配容量；并发编辑使文件变长时可写过 joinedText。
     for (index = 0; index < pathCount; index++) {
         char *fileText = read_repo_file_owned(repoRelativePaths[index]);
         size_t fileLength;
@@ -672,6 +716,7 @@ static char *join_repo_files_owned(const char *const *repoRelativePaths, TZrSize
     return joinedText;
 }
 
+// 读取二进制 fixture 并返回长度；调用方释放缓冲，禁止按 C 字符串使用。
 static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) {
     FILE *file;
     long fileSize;
@@ -719,6 +764,7 @@ static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) 
     return buffer;
 }
 
+// 从仓库相对路径获取二进制 fixture，供加载器与 roundtrip 测试共用。
 static TZrByte *read_repo_binary_file_owned(const char *repoRelativePath, TZrSize *outLength) {
     char pathBuffer[1024];
 
@@ -733,6 +779,7 @@ static TZrByte *read_repo_binary_file_owned(const char *repoRelativePath, TZrSiz
     return read_binary_file_owned(pathBuffer, outLength);
 }
 
+// 生成携带二进制模块的 C 工件，以验证嵌入路径仍保留直达 lowering。
 static TZrBool write_embedded_aot_c_file(SZrState *state,
                                          SZrFunction *function,
                                          const TZrChar *moduleName,
@@ -771,6 +818,7 @@ static TZrBool write_embedded_aot_c_file(SZrState *state,
     return success;
 }
 
+// 用无嵌入模块的严格模式生成 C 工件，防止运行时 shim 掩盖 opcode 缺口。
 static TZrBool write_standalone_strict_aot_c_file(SZrState *state,
                                                   SZrFunction *function,
                                                   const TZrChar *moduleName,
@@ -789,6 +837,7 @@ static TZrBool write_standalone_strict_aot_c_file(SZrState *state,
     return ZrParser_Writer_WriteAotCFileWithOptions(state, function, filename, &options);
 }
 
+// 为相同 fixture 生成严格 LLVM 工件，与 C 后端支持矩阵对照。
 static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state,
                                                      SZrFunction *function,
                                                      const TZrChar *moduleName,
@@ -807,6 +856,7 @@ static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state,
     return ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, filename, &options);
 }
 
+// 向核心 IO 提供一次性借用的二进制视图；bytes 仍归测试所有，后续读取返回 EOF。
 static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size) {
     SZrBinaryFixtureReader *reader = (SZrBinaryFixtureReader *)customData;
 
@@ -821,11 +871,13 @@ static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr cust
     return reader->bytes;
 }
 
+// 核心 IO 的 close 回调不释放借用的字节缓冲；实际所有权仍归调用测试。
 static void binary_fixture_reader_close(struct SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(customData);
 }
 
+// 只查当前函数的 ExecBC 指令；嵌套 fixture 必须改用函数树查询。
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -842,6 +894,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+// 汇总整数数组读取快路径家族，允许优化选择等价变体。
 static TZrBool function_contains_super_array_get_int_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST)) ||
@@ -849,11 +902,13 @@ static TZrBool function_contains_super_array_get_int_family(const SZrFunction *f
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST));
 }
 
+// 汇总整数数组写入快路径家族，避免对具体变体编码过严。
 static TZrBool function_contains_super_array_set_int_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS));
 }
 
+// 将整数加法的多个快路径视为同一语义族，供优化用例断言。
 static TZrBool function_contains_add_int_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST)) ||
@@ -861,6 +916,7 @@ static TZrBool function_contains_add_int_family(const SZrFunction *function) {
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST));
 }
 
+// 识别有符号加法族，覆盖类型专门化后可能不同的寄存器形态。
 static TZrBool function_contains_add_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST)) ||
@@ -873,6 +929,7 @@ static TZrBool function_contains_add_signed_family(const SZrFunction *function) 
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST));
 }
 
+// 识别无符号加法族，供数值 lowering 矩阵检查。
 static TZrBool function_contains_add_unsigned_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST)) ||
@@ -880,6 +937,7 @@ static TZrBool function_contains_add_unsigned_family(const SZrFunction *function
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST));
 }
 
+// 汇总整数减法优化族，避免用例依赖单一编码变体。
 static TZrBool function_contains_sub_int_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST)) ||
@@ -887,6 +945,7 @@ static TZrBool function_contains_sub_int_family(const SZrFunction *function) {
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT_CONST_PLAIN_DEST));
 }
 
+// 识别有符号减法族，核对后端与 quickening 的类型选择。
 static TZrBool function_contains_sub_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST)) ||
@@ -896,6 +955,7 @@ static TZrBool function_contains_sub_signed_family(const SZrFunction *function) 
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST));
 }
 
+// 识别无符号减法族，核对后端与 quickening 的类型选择。
 static TZrBool function_contains_sub_unsigned_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST)) ||
@@ -903,6 +963,7 @@ static TZrBool function_contains_sub_unsigned_family(const SZrFunction *function
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST));
 }
 
+// 识别有符号乘法族，供 benchmark 风格算术路径用例使用。
 static TZrBool function_contains_mul_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST)) ||
@@ -913,6 +974,7 @@ static TZrBool function_contains_mul_signed_family(const SZrFunction *function) 
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK));
 }
 
+// 识别有符号除法族，供除法快路径与回退检查。
 static TZrBool function_contains_div_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST)) ||
@@ -921,6 +983,7 @@ static TZrBool function_contains_div_signed_family(const SZrFunction *function) 
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST));
 }
 
+// 识别有符号取模族，供数值综合用例检查。
 static TZrBool function_contains_mod_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)) ||
@@ -929,6 +992,7 @@ static TZrBool function_contains_mod_signed_family(const SZrFunction *function) 
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST));
 }
 
+// 按成员名确认访问指令实际关联目标字段，防止只见 opcode 却指向错符号。
 static TZrBool function_contains_get_member_name(const SZrFunction *function, const TZrChar *memberName) {
     TZrUInt32 index;
 
@@ -959,6 +1023,7 @@ static TZrBool function_contains_get_member_name(const SZrFunction *function, co
     return ZR_FALSE;
 }
 
+// 把 ExecBC 指令索引映射回调试行号，供二进制 roundtrip 对照。
 static TZrUInt32 function_find_debug_line_for_instruction(const SZrFunction *function, TZrUInt32 instructionIndex) {
     TZrUInt32 bestLine = 0;
     TZrUInt32 index;
@@ -982,10 +1047,12 @@ static TZrUInt32 function_find_debug_line_for_instruction(const SZrFunction *fun
     return bestLine;
 }
 
+// 为加载前后字符串字段提供空值安全比较，避免指针身份替代内容比较。
 static TZrBool execbc_aot_pipeline_string_equal(const SZrString *string1, const SZrString *string2) {
     return ZrCore_String_Equal((SZrString *)string1, (SZrString *)string2);
 }
 
+// 递归比较源函数与二进制加载后函数的关键元数据，防止 roundtrip 丢失运行时契约。
 static void assert_runtime_function_matches_source_function(const SZrFunction *expected,
                                                             const SZrFunction *actual) {
     TZrUInt32 index;
@@ -1045,6 +1112,7 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
     }
 }
 
+// 比较可空字符串字段，供加载后函数元数据断言复用。
 static void assert_optional_string_equal(const SZrString *expected, const SZrString *actual) {
     if (expected == ZR_NULL || actual == ZR_NULL) {
         TEST_ASSERT_EQUAL_PTR(expected, actual);
@@ -1054,6 +1122,7 @@ static void assert_optional_string_equal(const SZrString *expected, const SZrStr
     TEST_ASSERT_TRUE(execbc_aot_pipeline_string_equal(expected, actual));
 }
 
+// 比较类型引用元数据，确保二进制回读保留类型化调用信息。
 static void assert_typed_type_ref_equal(const SZrFunctionTypedTypeRef *expected, const SZrFunctionTypedTypeRef *actual) {
     TEST_ASSERT_NOT_NULL(expected);
     TEST_ASSERT_NOT_NULL(actual);
@@ -1066,6 +1135,7 @@ static void assert_typed_type_ref_equal(const SZrFunctionTypedTypeRef *expected,
     assert_optional_string_equal(expected->elementTypeName, actual->elementTypeName);
 }
 
+// 从模块入口递归扫描子函数的 ExecBC opcode，覆盖实际执行体。
 static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 childIndex;
     TZrUInt32 constantIndex;
@@ -1101,12 +1171,14 @@ static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrIns
     return ZR_FALSE;
 }
 
+// 只查当前函数调用点缓存类型，供本层 quickening 断言。
 static TZrBool function_contains_callsite_cache_kind(const SZrFunction *function,
                                                      EZrFunctionCallSiteCacheKind kind) {
     return function != ZR_NULL && function->callSiteCaches != ZR_NULL &&
            function_count_callsite_cache_kind(function, kind) > 0;
 }
 
+// 递归查找调用缓存类型，覆盖闭包与成员方法子函数。
 static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *function,
                                                           EZrFunctionCallSiteCacheKind kind) {
     TZrUInt32 childIndex;
@@ -1127,6 +1199,7 @@ static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *fun
     return ZR_FALSE;
 }
 
+// 统计当前函数的目标缓存数量，用来约束 quickening 没有重复建项。
 static TZrUInt32 function_count_callsite_cache_kind(const SZrFunction *function,
                                                     EZrFunctionCallSiteCacheKind kind) {
     TZrUInt32 index;
@@ -1145,6 +1218,7 @@ static TZrUInt32 function_count_callsite_cache_kind(const SZrFunction *function,
     return count;
 }
 
+// 查询本函数的 SemIR opcode，供编译前后契约对照。
 static TZrBool semir_contains_opcode(const SZrFunction *function, EZrSemIrOpcode opcode) {
     TZrUInt32 index;
 
@@ -1161,6 +1235,7 @@ static TZrBool semir_contains_opcode(const SZrFunction *function, EZrSemIrOpcode
     return ZR_FALSE;
 }
 
+// 递归查询函数树的 SemIR 和 deopt 备份路径，避免忽略嵌套函数。
 static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function,
                                                      EZrSemIrOpcode opcode,
                                                      TZrBool requireDeopt) {
@@ -1182,6 +1257,7 @@ static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function
     return ZR_FALSE;
 }
 
+// 把 SemIR 正常路径与 deopt 路径一同检查，保证优化回退契约。
 static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 EZrSemIrOpcode opcode,
                                                 TZrBool requireDeopt) {
@@ -1204,6 +1280,7 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
     return ZR_FALSE;
 }
 
+// 递归返回首个指定缓存；调用方若使用索引，必须同步识别其所属函数。
 static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_cache_kind(
         const SZrFunction *function,
         EZrFunctionCallSiteCacheKind kind) {
@@ -1232,6 +1309,7 @@ static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_ca
     return ZR_NULL;
 }
 
+// 撤销 fixture 中的元访问缓存 quickening，以隔离测试纯元访问 helper lowering。
 static TZrUInt32 rewrite_cached_meta_access_tree_to_plain(SZrFunction *function) {
     TZrUInt32 index;
     TZrUInt32 childIndex;
@@ -1278,6 +1356,7 @@ static TZrUInt32 rewrite_cached_meta_access_tree_to_plain(SZrFunction *function)
     return rewritten;
 }
 
+// 按符号名查函数成员表，为类型化成员缓存断言定位元数据。
 static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFunction *function,
                                                                  const char *expectedSymbol) {
     TZrUInt32 index;
@@ -1298,6 +1377,7 @@ static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFuncti
     return ZR_NULL;
 }
 
+// 核对符号与成员标志位，避免仅凭 opcode 判断接收者绑定正确。
 static void assert_member_entry_symbol_flags(const SZrFunction *function,
                                              const char *expectedSymbol,
                                              TZrUInt8 expectedFlags) {
@@ -1326,6 +1406,7 @@ static void assert_member_entry_symbol_flags(const SZrFunction *function,
     TEST_ASSERT_EQUAL_UINT8(expectedFlags, entry->reserved0);
 }
 
+// 把缓存项与成员表符号绑定作交叉断言。TODO: 树搜索可返回子函数缓存，但这里按根函数成员表解释索引；新增子函数调用场景前需传回所属函数。
 static void assert_first_callsite_cache_member_binding(const SZrFunction *function,
                                                        EZrFunctionCallSiteCacheKind kind,
                                                        const char *expectedSymbol,
@@ -1333,6 +1414,7 @@ static void assert_first_callsite_cache_member_binding(const SZrFunction *functi
     const SZrFunctionCallSiteCacheEntry *entry = function_tree_find_first_callsite_cache_kind(function, kind);
 
     TEST_ASSERT_NOT_NULL(entry);
+    // TODO: entry 可能来自子函数，此处只能在缓存确属根函数时使用根成员表。
     TEST_ASSERT_TRUE(entry->memberEntryIndex < function->memberEntryLength);
     TEST_ASSERT_NOT_NULL(function->memberEntries);
     TEST_ASSERT_NOT_NULL(function->memberEntries[entry->memberEntryIndex].symbol);
@@ -1341,6 +1423,7 @@ static void assert_first_callsite_cache_member_binding(const SZrFunction *functi
     TEST_ASSERT_EQUAL_UINT8(expectedFlags, function->memberEntries[entry->memberEntryIndex].reserved0);
 }
 
+// 从访问语法到 ExecBC 再到 VM 结果核对成员、索引和类型查询仍走独立指令。
 static void test_access_lowering_preserves_explicit_member_and_index_ops(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Access Lowering Preserves Explicit Member And Index Ops";
@@ -1394,6 +1477,7 @@ static void test_access_lowering_preserves_explicit_member_and_index_ops(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 同一访问 fixture 在严格 C/LLVM 后端均保留运行时契约，防止借嵌入执行隐藏缺失的 lowering。
 static void test_aot_backends_preserve_runtime_contract_artifacts_under_strict_aot_c(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Preserve Runtime Contract Artifacts Under Strict AOT C";
@@ -1465,6 +1549,7 @@ static void test_aot_backends_preserve_runtime_contract_artifacts_under_strict_a
     ZR_TEST_DIVIDER();
 }
 
+// 确保局部函数常量对应可调用子函数入口，防止生成的模块只保留根函数。
 static void test_aot_c_backend_emits_child_thunks_for_callable_constants(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Emits Child Thunks For Callable Constants";
@@ -1536,6 +1621,7 @@ static void test_aot_c_backend_emits_child_thunks_for_callable_constants(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 验证 LLVM 最简入口/返回工件结构，作为更复杂 lowering 的基线。
 static void test_aot_llvm_backend_lowers_simple_entry_execution_path(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Simple Entry Execution Path";
@@ -1584,6 +1670,7 @@ static void test_aot_llvm_backend_lowers_simple_entry_execution_path(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 确保已知静态目标按 LLVM 直达调用帧协议生成，而非走动态分派。
 static void test_aot_llvm_backend_lowers_static_direct_call_protocol(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Static Direct Call Protocol";
@@ -1633,6 +1720,7 @@ static void test_aot_llvm_backend_lowers_static_direct_call_protocol(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 闭包捕获读取保留环境访问契约。
 static void test_aot_llvm_backend_lowers_closure_capture_access(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Closure Capture Access";
@@ -1685,6 +1773,7 @@ static void test_aot_llvm_backend_lowers_closure_capture_access(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 新对象创建将类型与运行时分配路径正确连接。
 static void test_aot_llvm_backend_lowers_object_creation_path(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Object Creation Path";
@@ -1734,6 +1823,7 @@ static void test_aot_llvm_backend_lowers_object_creation_path(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 对对象转换保留必要运行时辅助调用。
 static void test_aot_llvm_backend_lowers_to_object_with_runtime_helper(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers ToObject With Runtime Helper";
@@ -1793,6 +1883,7 @@ static void test_aot_llvm_backend_lowers_to_object_with_runtime_helper(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 确认 C 模块描述符暴露本机入口，避免回退到解释器 shim。
 static void test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_invoke(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Emits Native Entry Descriptor Instead Of Shim Invoke";
@@ -1855,6 +1946,7 @@ static void test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_inv
     ZR_TEST_DIVIDER();
 }
 
+// 用静态槽位与整数运算 fixture 守护 C 后端直接 lowering。
 static void test_aot_c_backend_directly_lowers_static_slot_and_int_ops(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Directly Lowers Static Slot And Int Ops";
@@ -1929,6 +2021,7 @@ static void test_aot_c_backend_directly_lowers_static_slot_and_int_ops(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用基础字面量矩阵核对 C 后端直接构造原始值。
 static void test_aot_c_backend_directly_lowers_primitive_literal_constants(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Directly Lowers Primitive Literal Constants";
@@ -1996,6 +2089,7 @@ static void test_aot_c_backend_directly_lowers_primitive_literal_constants(void)
     ZR_TEST_DIVIDER();
 }
 
+// 让泛型加法同时保留快路径与类型不匹配时的 helper 回退。
 static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fallback(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Generic Add With Fast Path And Helper Fallback";
@@ -2061,6 +2155,7 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
     ZR_TEST_DIVIDER();
 }
 
+// 与 C 后端同场景验证 LLVM 的静态槽位及整数运算直接 lowering。
 static void test_aot_llvm_backend_directly_lowers_static_slot_and_int_ops(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Directly Lowers Static Slot And Int Ops";
@@ -2134,6 +2229,7 @@ static void test_aot_llvm_backend_directly_lowers_static_slot_and_int_ops(void) 
     ZR_TEST_DIVIDER();
 }
 
+// 确保 LLVM 泛型加法兼有数值快路径与运行时回退。
 static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_fallback(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Generic Add With Fast Path And Helper Fallback";
@@ -2195,6 +2291,7 @@ static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_f
     ZR_TEST_DIVIDER();
 }
 
+// 确认局部可调用常量在 C 工件中形成直达函数入口。
 static void test_aot_c_backend_directly_lowers_local_callable_constants(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Directly Lowers Local Callable Constants";
@@ -2253,6 +2350,7 @@ static void test_aot_c_backend_directly_lowers_local_callable_constants(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 核对仓库中已生成模块图 fixture 的本地 AOT 函数调用形态。TODO: 当前读取静态工件，需用即时生成工件补证。
 static void test_aot_c_backend_directly_lowers_local_aot_function_calls(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Directly Lowers Local AOT Function Calls";
@@ -2287,6 +2385,7 @@ static void test_aot_c_backend_directly_lowers_local_aot_function_calls(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 对来源已证明的本地函数调用检查静态直达 lowering，防止退回通用调用。
 static void test_aot_c_backend_statically_lowers_proven_local_aot_function_calls(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Statically Lowers Proven Local AOT Function Calls";
@@ -2353,6 +2452,7 @@ static void test_aot_c_backend_statically_lowers_proven_local_aot_function_calls
     ZR_TEST_DIVIDER();
 }
 
+// 检验缓存元调用在 C 后端采用直达帧协议而不丢失元方法接收者。
 static void test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Cached Meta Calls With Direct Call Frames";
@@ -2423,6 +2523,7 @@ static void test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames(
     ZR_TEST_DIVIDER();
 }
 
+// 检验 LLVM 缓存元调用的直达帧协议，与 C 后端交叉约束。
 static void test_aot_llvm_backend_lowers_cached_meta_calls_with_direct_call_frames(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Cached Meta Calls With Direct Call Frames";
@@ -2488,6 +2589,7 @@ static void test_aot_llvm_backend_lowers_cached_meta_calls_with_direct_call_fram
     ZR_TEST_DIVIDER();
 }
 
+// 先撤销缓存化再生成 C，隔离纯元属性读写所需的运行时 helper。
 static void test_aot_c_backend_lowers_plain_meta_get_set_with_runtime_helpers(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Plain Meta Get Set With Runtime Helpers";
@@ -2551,6 +2653,7 @@ static void test_aot_c_backend_lowers_plain_meta_get_set_with_runtime_helpers(vo
     ZR_TEST_DIVIDER();
 }
 
+// 验证 LLVM 元尾调用保留直达帧和尾调用控制流。
 static void test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Meta Tail Calls With Direct Call Frames";
@@ -2597,6 +2700,7 @@ static void test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames
     ZR_TEST_DIVIDER();
 }
 
+// 确认 LLVM 异常控制转移与运行时异常辅助层接通。
 static void test_aot_llvm_backend_lowers_exception_control_transfer_helpers(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT LLVM Backend Lowers Exception Control Transfer Helpers";
@@ -2653,6 +2757,7 @@ static void test_aot_llvm_backend_lowers_exception_control_transfer_helpers(void
     ZR_TEST_DIVIDER();
 }
 
+// 检查 C 缓存动态尾调用在转移前准备运行时调用帧。
 static void test_aot_c_backend_lowers_cached_dynamic_tail_calls_with_runtime_prepare(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Cached Dynamic Tail Calls With Runtime Prepare";
@@ -2719,6 +2824,7 @@ static void test_aot_c_backend_lowers_cached_dynamic_tail_calls_with_runtime_pre
     ZR_TEST_DIVIDER();
 }
 
+// 确认非导出子函数返回在 C 工件内闭合，不误走模块导出返回协议。
 static void test_aot_c_backend_directly_lowers_non_export_return(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Directly Lowers Non Export Return";
@@ -2775,6 +2881,7 @@ static void test_aot_c_backend_directly_lowers_non_export_return(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查 C 对象转换保留运行时辅助路径。
 static void test_aot_c_backend_lowers_to_object_with_runtime_helper(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers ToObject With Runtime Helper";
@@ -2835,6 +2942,7 @@ static void test_aot_c_backend_lowers_to_object_with_runtime_helper(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查 C 结构化转换保留运行时辅助路径。
 static void test_aot_c_backend_lowers_to_struct_with_runtime_helper(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers ToStruct With Runtime Helper";
@@ -2890,6 +2998,7 @@ static void test_aot_c_backend_lowers_to_struct_with_runtime_helper(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 覆盖有符号比较、除法和取负在 C 后端的专门化路径。
 static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Signed Compare Div And Neg Paths";
@@ -2957,6 +3066,7 @@ static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用 benchmark 风格组合表达式交叉检查取模、字符串与比较 lowering，并执行解释器结果。
 static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Lower Benchmark Style Mod String And Compare Paths";
@@ -3051,6 +3161,7 @@ static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths
     ZR_TEST_DIVIDER();
 }
 
+// 手工构造目标槽与左操作数重叠的字符串相等指令，捕获覆盖顺序错误。
 static void test_string_equality_allows_destination_aliasing_left_operand(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "String Equality Allows Destination Aliasing Left Operand";
@@ -3107,6 +3218,7 @@ static void test_string_equality_allows_destination_aliasing_left_operand(void) 
     ZR_TEST_DIVIDER();
 }
 
+// 用通用减法 workload 检验两个后端的快路径和回退保真。
 static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Lower Benchmark Style Generic Sub Paths";
@@ -3202,6 +3314,7 @@ static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用通用乘法 workload 检验两个后端的快路径和回退保真。
 static void test_aot_backends_lower_benchmark_style_generic_mul_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Lower Benchmark Style Generic Mul Paths";
@@ -3287,6 +3400,7 @@ static void test_aot_backends_lower_benchmark_style_generic_mul_paths(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用通用除法 workload 检验两个后端的快路径和回退保真。
 static void test_aot_backends_lower_benchmark_style_generic_div_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Lower Benchmark Style Generic Div Paths";
@@ -3368,6 +3482,7 @@ static void test_aot_backends_lower_benchmark_style_generic_div_paths(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用位异或 workload 检验有符号/无符号分派后的双后端支持。
 static void test_aot_backends_lower_benchmark_style_bitwise_xor_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Lower Benchmark Style Bitwise Xor Paths";
@@ -3453,6 +3568,7 @@ static void test_aot_backends_lower_benchmark_style_bitwise_xor_paths(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查两个 state 的观察策略互不污染。TODO: 当前两对象仍在同一线程顺序调用，尚未验证线程局部隔离；需增加并发交错测试。
 static void test_aot_runtime_observation_policy_is_thread_local(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime Observation Policy Is Thread Local";
@@ -3463,6 +3579,7 @@ static void test_aot_runtime_observation_policy_is_thread_local(void) {
                  "Testing that each state resolves its own AOT observation/debug policy without leaking publish-all or mask overrides across threads");
 
     {
+        // TODO: 两个 state 在同一线程顺序使用；要验证线程隔离需跨线程交错读写。
         SZrState *left = ZrTests_Runtime_State_Create(ZR_NULL);
         SZrState *right = ZrTests_Runtime_State_Create(ZR_NULL);
         TZrUInt32 leftMask = 0;
@@ -3507,6 +3624,7 @@ static void test_aot_runtime_observation_policy_is_thread_local(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 注入项目记录后检验生成函数帧的槽数缓存与栈重定位后边界。
 static void test_aot_runtime_begin_generated_function_caches_slot_count_and_preserves_bounds_after_refresh(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -3606,6 +3724,7 @@ static void test_aot_runtime_begin_generated_function_caches_slot_count_and_pres
     ZR_TEST_DIVIDER();
 }
 
+// 验证静态直达调用按被调函数缓存槽数备帧。
 static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_count(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime PrepareStaticDirectCall Uses Cached Callee Slot Count";
@@ -3727,6 +3846,7 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
     ZR_TEST_DIVIDER();
 }
 
+// 验证整数数组追加可忽略目标槽而仍保持副作用。
 static void test_aot_runtime_super_array_add_int_allows_ignored_destination_slot(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime SuperArrayAddInt Allows Ignored Destination Slot";
@@ -3838,6 +3958,7 @@ static void test_aot_runtime_super_array_add_int_allows_ignored_destination_slot
     ZR_TEST_DIVIDER();
 }
 
+// 检验原生绑定导致栈重定位后索引 helper 刷新帧。
 static void test_aot_runtime_index_helpers_refresh_frame_for_native_binding_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime Index Helpers Refresh Frame For Native Binding Paths";
@@ -3956,6 +4077,7 @@ static void test_aot_runtime_index_helpers_refresh_frame_for_native_binding_path
     ZR_TEST_DIVIDER();
 }
 
+// 交叉检查生成指令入口的观察掩码与全量发布策略。
 static void test_aot_runtime_begin_instruction_respects_resolved_observation_policy(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime BeginInstruction Respects Resolved Observation Policy";
@@ -4035,6 +4157,7 @@ static void test_aot_runtime_begin_instruction_respects_resolved_observation_pol
     ZR_TEST_DIVIDER();
 }
 
+// 通过实际 debug hook 观察生成指令入口发布的行事件及最后行号。
 static void test_aot_runtime_begin_instruction_publishes_line_debug_events(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime BeginInstruction Publishes Line Debug Events";
@@ -4123,6 +4246,7 @@ static void test_aot_runtime_begin_instruction_publishes_line_debug_events(void)
     ZR_TEST_DIVIDER();
 }
 
+// 验证运行期动态开启行信号后生成函数继续发布调试事件。
 static void test_aot_runtime_begin_instruction_honors_dynamic_line_signal_enablement(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime BeginInstruction Honors Dynamic Line Signal Enablement";
@@ -4194,6 +4318,7 @@ static void test_aot_runtime_begin_instruction_honors_dynamic_line_signal_enable
     ZR_TEST_DIVIDER();
 }
 
+// 在有嵌入模块时检查入口函数索引访问仍被 C 后端直接 lowering。
 static void test_aot_c_backend_lowers_indexed_entry_access_even_with_embedded_blob(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Indexed Entry Access Even With Embedded Blob";
@@ -4250,6 +4375,7 @@ static void test_aot_c_backend_lowers_indexed_entry_access_even_with_embedded_bl
     ZR_TEST_DIVIDER();
 }
 
+// 在无嵌入模块时检查入口函数索引访问仍被 C 后端直接 lowering。
 static void test_aot_c_backend_lowers_indexed_entry_access_without_embedded_blob(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Indexed Entry Access Without Embedded Blob";
@@ -4304,6 +4430,7 @@ static void test_aot_c_backend_lowers_indexed_entry_access_without_embedded_blob
     ZR_TEST_DIVIDER();
 }
 
+// 在有嵌入模块时检查子函数索引访问的 C 后端路径。
 static void test_aot_c_backend_lowers_indexed_child_access_even_with_embedded_blob(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Indexed Child Access Even With Embedded Blob";
@@ -4362,6 +4489,7 @@ static void test_aot_c_backend_lowers_indexed_child_access_even_with_embedded_bl
     ZR_TEST_DIVIDER();
 }
 
+// 在无嵌入模块时检查子函数索引访问的 C 后端路径。
 static void test_aot_c_backend_lowers_indexed_child_access_without_embedded_blob(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Backend Lowers Indexed Child Access Without Embedded Blob";
@@ -4418,6 +4546,7 @@ static void test_aot_c_backend_lowers_indexed_child_access_without_embedded_blob
     ZR_TEST_DIVIDER();
 }
 
+// 扫描已提交 C 工件的入口与函数表形态，作为生成代码回归哨兵。
 static void test_checked_in_aot_c_fixtures_use_new_code_shape(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Checked In AOT C Fixtures Use New Code Shape";
@@ -4455,6 +4584,7 @@ static void test_checked_in_aot_c_fixtures_use_new_code_shape(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 扫描已提交 LLVM 工件，防止真实后端退化为占位或嵌入执行。
 static void test_checked_in_aot_llvm_fixtures_use_true_backend_shape(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Checked In AOT LLVM Fixtures Use True Backend Shape";
@@ -4497,6 +4627,7 @@ static void test_checked_in_aot_llvm_fixtures_use_true_backend_shape(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 扫描源目录归属，约束执行 IR 已按函数持有 CFG 与帧布局。
 static void test_backend_aot_source_split_promotes_exec_ir_to_per_function_cfg_and_frame_layout(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Promotes ExecIR To Per Function CFG And Frame Layout";
@@ -4537,6 +4668,7 @@ static void test_backend_aot_source_split_promotes_exec_ir_to_per_function_cfg_a
     ZR_TEST_DIVIDER();
 }
 
+// 检查运行时源码不再依赖后端特例描述符门禁。
 static void test_aot_runtime_source_removes_backend_specific_true_aot_descriptor_gate(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime Source Removes Backend Specific True AOT Descriptor Gate";
@@ -4563,6 +4695,7 @@ static void test_aot_runtime_source_removes_backend_specific_true_aot_descriptor
     ZR_TEST_DIVIDER();
 }
 
+// 扫描生成器源文件，约束 LLVM 发射器不回流到 C 后端主体。
 static void test_backend_aot_source_split_moves_llvm_emitter_out_of_backend_aot_c(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Moves LLVM Emitter Out Of Backend AOT C";
@@ -4601,6 +4734,7 @@ static void test_backend_aot_source_split_moves_llvm_emitter_out_of_backend_aot_
     ZR_TEST_DIVIDER();
 }
 
+// 约束 C/LLVM writer 入口归属独立单元，防止主体再次膨胀。
 static void test_backend_aot_source_split_moves_backend_writer_entrypoints_out_of_backend_aot_c(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Moves Backend Writer Entrypoints Out Of Backend AOT C";
@@ -4646,6 +4780,7 @@ static void test_backend_aot_source_split_moves_backend_writer_entrypoints_out_o
     ZR_TEST_DIVIDER();
 }
 
+// 约束共享函数表及可调用来源分析归属公共层。
 static void test_backend_aot_source_split_moves_shared_function_table_and_callable_provenance_out_of_backend_aot_c(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Moves Shared Function Table And Callable Provenance Out Of Backend AOT C";
@@ -4715,6 +4850,7 @@ static void test_backend_aot_source_split_moves_shared_function_table_and_callab
     ZR_TEST_DIVIDER();
 }
 
+// 按 lowering 家族检查 C 发射器拆分后的职责边界。
 static void test_backend_aot_source_split_moves_aot_c_lowering_families_out_of_backend_aot_c_emitter(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Moves AOT C Lowering Families Out Of Backend AOT C Emitter";
@@ -4770,6 +4906,7 @@ static void test_backend_aot_source_split_moves_aot_c_lowering_families_out_of_b
     ZR_TEST_DIVIDER();
 }
 
+// 按 lowering 家族检查 LLVM 发射器拆分后的职责边界。
 static void test_backend_aot_source_split_moves_aot_llvm_lowering_families_out_of_backend_aot_llvm_emitter(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Moves AOT LLVM Lowering Families Out Of Backend AOT LLVM Emitter";
@@ -4978,6 +5115,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_lowering_families_out_o
     ZR_TEST_DIVIDER();
 }
 
+// 约束 LLVM 对象 lowering 的细分归属，避免单文件重新承载全部对象操作。
 static void test_backend_aot_source_split_moves_aot_llvm_object_subfamilies_out_of_object_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5062,6 +5200,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_object_subfamilies_out_
     ZR_TEST_DIVIDER();
 }
 
+// 约束 LLVM 成员与索引 lowering 的细分归属。
 static void test_backend_aot_source_split_moves_aot_llvm_member_index_subfamilies_out_of_member_index_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5110,6 +5249,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_member_index_subfamilie
     ZR_TEST_DIVIDER();
 }
 
+// 约束 LLVM 调用 lowering 各子家族的文件归属。
 static void test_backend_aot_source_split_moves_aot_llvm_call_subfamilies_out_of_call_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5160,6 +5300,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_call_subfamilies_out_of
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 文本发射 helper 已脱离控制流 lowering 文件。
 static void test_backend_aot_source_split_moves_aot_llvm_text_emit_helpers_out_of_control_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Backend AOT Source Split Moves AOT LLVM Text Emit Helpers Out Of Control Lowering";
@@ -5226,6 +5367,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_text_emit_helpers_out_o
     ZR_TEST_DIVIDER();
 }
 
+// 约束 LLVM 模块工件生成与核心 emitter 的职责分离。
 static void test_backend_aot_source_split_moves_aot_llvm_module_artifacts_out_of_emitter(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5289,6 +5431,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_module_artifacts_out_of
     ZR_TEST_DIVIDER();
 }
 
+// 约束 LLVM 模块前导 helper 与工件组装的职责分离。
 static void test_backend_aot_source_split_moves_aot_llvm_module_prelude_helpers_out_of_module_artifacts(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5342,6 +5485,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_module_prelude_helpers_
     ZR_TEST_DIVIDER();
 }
 
+// 约束 LLVM 流程文本 helper 与一般文本发射的职责分离。
 static void test_backend_aot_source_split_moves_aot_llvm_flow_text_helpers_out_of_text_emit(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5422,6 +5566,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_flow_text_helpers_out_o
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 流程文本已分到具体子家族。
 static void test_backend_aot_source_split_moves_aot_llvm_flow_subfamilies_out_of_text_flow(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5485,6 +5630,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_flow_subfamilies_out_of
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 控制流 lowering 的子家族归属。
 static void test_backend_aot_source_split_moves_aot_llvm_control_subfamilies_out_of_control_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5535,6 +5681,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_control_subfamilies_out
     ZR_TEST_DIVIDER();
 }
 
+// 检查 LLVM 闭包 lowering 的子家族归属。
 static void test_backend_aot_source_split_moves_aot_llvm_closure_subfamilies_out_of_closure_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -5585,6 +5732,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_closure_subfamilies_out
     ZR_TEST_DIVIDER();
 }
 
+// 以零参调用验证 ExecBC 可专门化而 SemIR 原始语义保持稳定。
 static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_contracts(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC Quickens Zero Arg Call Sites Without Changing SemIR Contracts";
@@ -5656,6 +5804,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
     ZR_TEST_DIVIDER();
 }
 
+// 用类型化数值及相等矩阵检验 quickening 与严格双后端覆盖一致。
 static void test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC True AOT Lowers Typed Signed Unsigned And Equality Opcodes";
@@ -5780,6 +5929,7 @@ static void test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcod
     ZR_TEST_DIVIDER();
 }
 
+// 覆盖已知 native 调用族在 ExecBC 与双后端的目标来源和调用协议。
 static void test_execbc_true_aot_lowers_known_native_call_family(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC True AOT Lowers Known Native Call Family";
@@ -5860,6 +6010,7 @@ static void test_execbc_true_aot_lowers_known_native_call_family(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 把元/动态调用缓存 quickening 与二进制回读并测，防止序列化丢失缓存元数据。
 static void test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC Quickens Cached Meta And Dynamic Call Sites And Preserves Binary Metadata";
@@ -5960,6 +6111,7 @@ static void test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserve
     ZR_TEST_DIVIDER();
 }
 
+// 序列化并重载固定数组 helper fixture，核对参数值未被索引重映射。
 static void test_binary_roundtrip_preserves_fixed_array_helper_argument_values(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Fixed Array Helper Argument Values";
@@ -6024,6 +6176,7 @@ static void test_binary_roundtrip_preserves_fixed_array_helper_argument_values(v
     ZR_TEST_DIVIDER();
 }
 
+// 跨二进制 roundtrip 核对容器矩阵的 native 调用参数顺序和值。
 static void test_binary_roundtrip_preserves_container_matrix_native_call_arguments(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Container Matrix Native Call Arguments";
@@ -6089,6 +6242,7 @@ static void test_binary_roundtrip_preserves_container_matrix_native_call_argumen
     ZR_TEST_DIVIDER();
 }
 
+// 加载序列化模块后核对指令调试行号与调用缓存信息。
 static void test_binary_roundtrip_preserves_debug_line_metadata_for_runtime_loading(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Debug Line Metadata For Runtime Loading";
@@ -6165,6 +6319,7 @@ static void test_binary_roundtrip_preserves_debug_line_metadata_for_runtime_load
     ZR_TEST_DIVIDER();
 }
 
+// 让 Map 内的数组经历编译/序列化/加载/执行，保护动态迭代器契约。
 static void test_binary_roundtrip_preserves_map_stored_array_iterable_contract(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Map Stored Array Iterable Contract";
@@ -6283,6 +6438,7 @@ static void test_binary_roundtrip_preserves_map_stored_array_iterable_contract(v
     ZR_TEST_DIVIDER();
 }
 
+// 核对链式 pair helper 在二进制回读后仍传递正确值。
 static void test_binary_roundtrip_preserves_linked_pair_helper_values(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Linked Pair Helper Values";
@@ -6347,6 +6503,7 @@ static void test_binary_roundtrip_preserves_linked_pair_helper_values(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 核对 Set 中 pair 的哈希及迭代结果在回读后保持。
 static void test_binary_roundtrip_preserves_set_pair_hash_and_iteration(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Set Pair Hash And Iteration";
@@ -6411,6 +6568,7 @@ static void test_binary_roundtrip_preserves_set_pair_hash_and_iteration(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 核对 Set 转 Map 的 bucket 值在回读与执行后保持。
 static void test_binary_roundtrip_preserves_set_to_map_bucket_values(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Set To Map Bucket Values";
@@ -6476,6 +6634,7 @@ static void test_binary_roundtrip_preserves_set_to_map_bucket_values(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 为元属性 get/set 与原始字段访问构造统一源码，供缓存和纯 helper 两条路径对照。
 static SZrFunction *compile_meta_access_fixture(SZrState *state) {
     const char *source =
             "class Box {\n"
@@ -6506,6 +6665,7 @@ static SZrFunction *compile_meta_access_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造类型化成员槽访问，检验缓存项和槽 opcode 的编译期选择。
 static SZrFunction *compile_member_slot_quickening_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -6529,6 +6689,7 @@ static SZrFunction *compile_member_slot_quickening_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造类型化成员方法调用，连接成员缓存与已知 VM 调用族。
 static SZrFunction *compile_typed_member_known_call_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -6560,6 +6721,7 @@ static SZrFunction *compile_typed_member_known_call_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造接收者类型不确定的成员访问，检验编译器保留通用路径。
 static SZrFunction *compile_dynamic_object_member_fallback_fixture(SZrState *state) {
     const char *source =
             "var payload = {a: 1, b: 1.0};\n"
@@ -6579,6 +6741,7 @@ static SZrFunction *compile_dynamic_object_member_fallback_fixture(SZrState *sta
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造连续类型化成员访问，检查嵌套链每一级的槽选择。
 static SZrFunction *compile_nested_member_slot_quickening_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -6606,6 +6769,7 @@ static SZrFunction *compile_nested_member_slot_quickening_fixture(SZrState *stat
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造对象解构 fixture，检验解构读成员仍使用类型化槽。
 static SZrFunction *compile_typed_destructuring_member_slot_fixture(SZrState *state) {
     const char *source =
             "class Point {\n"
@@ -6631,6 +6795,7 @@ static SZrFunction *compile_typed_destructuring_member_slot_fixture(SZrState *st
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造基类成员查找与元调用组合，区分直接基类查找和动态分派。
 static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
     const char *source =
             "class BaseCounter {\n"
@@ -6676,6 +6841,7 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造静态已知元属性访问，供调用点缓存专门化用例。
 static SZrFunction *compile_static_meta_access_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -6700,6 +6866,7 @@ static SZrFunction *compile_static_meta_access_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 按参考脚本路径编译源码，为已提交语义样例的工件检查提供统一入口。
 static SZrFunction *compile_reference_fixture(SZrState *state,
                                               const char *relativePath,
                                               const char *sourceLabel) {
@@ -6734,6 +6901,7 @@ static SZrFunction *compile_reference_fixture(SZrState *state,
     return function;
 }
 
+// 构造零参尾调用，供 SemIR/ExecBC 与后端协议对照。
 static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
     const char *source =
             "fn answer(): int {\n"
@@ -6773,6 +6941,7 @@ static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造异常控制转移 fixture，检验后端异常 helper 路径。
 static SZrFunction *compile_exception_control_fixture(SZrState *state) {
     const char *source =
             "fn guarded(flag: int): int {\n"
@@ -6805,6 +6974,7 @@ static SZrFunction *compile_exception_control_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造共享的元/动态缓存调用点，供 quickening 与二进制元数据回读测试。
 static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *state) {
     const char *source =
             "class Adder {\n"
@@ -6836,6 +7006,7 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造拥有者与引用视图场景，检查专用 ownership 指令贯穿后端。
 static SZrFunction *compile_ownership_intrinsics_reference_views_fixture(SZrState *state) {
     const char *source =
             "resource class Box {}\n"
@@ -6882,6 +7053,7 @@ static SZrFunction *compile_ownership_intrinsics_reference_views_fixture(SZrStat
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造资源唯一持有与释放顺序场景，供 VM 和 AOT 对照。
 static SZrFunction *compile_resource_unique_drop_fixture(SZrState *state) {
     const char *source =
             "resource class Tracer {\n"
@@ -6914,6 +7086,7 @@ static SZrFunction *compile_resource_unique_drop_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造固定数组 helper 参数场景，突出序列化后的实参一致性。
 static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state) {
     const char *source =
             "fn labelFor(value: int) {\n"
@@ -6948,6 +7121,7 @@ static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造容器矩阵与 native 调用参数场景，跨二进制回读验证。
 static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7035,6 +7209,7 @@ static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造整数数组读写源码，观察索引快路径选择。
 static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7070,6 +7245,7 @@ static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造连续整数数组追加，检验批量指令专门化。
 static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7107,6 +7283,7 @@ static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造整数数组填充循环，检验循环到批量派发的专门化。
 static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7150,6 +7327,7 @@ static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造 Map 内数组可迭代场景，隔离容器嵌套后的协议保持。
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7189,6 +7367,7 @@ static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造链式 pair helper 输入，检验二进制回读的值传递。
 static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7236,6 +7415,7 @@ static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造 Set 中 pair 哈希/迭代场景，检验回读保持集合契约。
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7272,6 +7452,7 @@ static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造 Set 转 Map bucket 场景，核对回读后键值对应关系。
 static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state) {
     const char *source =
             "let container = import(\"zr.container\");\n"
@@ -7333,6 +7514,7 @@ static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 从元属性源码核对 SemIR、ExecBC 与严格 C 工件的专用 get/set 协议。
 static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Meta Access SemIR And True AOT C Preserve Dedicated Meta Get Set Opcodes";
@@ -7479,6 +7661,7 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
     ZR_TEST_DIVIDER();
 }
 
+// 检查静态元访问 quickening 分配相应调用点缓存而非通用路径。
 static void test_static_meta_access_quickens_to_static_callsite_cache_variants(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Static Meta Access Quickens To Static Callsite Cache Variants";
@@ -7603,6 +7786,7 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
     ZR_TEST_DIVIDER();
 }
 
+// 验证 super 的方法、属性和元调用都从基类直接查找，避免回到子类分派。
 static void test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Super Member Dispatch Uses Direct Base Lookup For Methods Properties And Meta Calls";
@@ -7635,6 +7819,7 @@ static void test_super_member_dispatch_uses_direct_base_lookup_for_methods_prope
     ZR_TEST_DIVIDER();
 }
 
+// 核对类型化成员访问的缓存与符号绑定，防止索引存在却指向错成员。
 static void test_typed_member_access_allocates_member_callsite_cache_entries(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Typed Member Access Allocates Member Callsite Cache Entries";
@@ -7720,6 +7905,7 @@ static void test_typed_member_access_allocates_member_callsite_cache_entries(voi
     ZR_TEST_DIVIDER();
 }
 
+// 让类型化成员方法走已知 VM 调用族，同时保留成员接收者信息。
 static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Typed Member Calls Quicken To Known VM Call Family";
@@ -7805,6 +7991,7 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 动态对象接收者应保留通用成员 opcode，防止过早套用类型化槽。
 static void test_dynamic_object_member_access_stays_on_generic_member_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Dynamic Object Member Access Stays On Generic Member Opcodes";
@@ -7883,6 +8070,7 @@ static void test_dynamic_object_member_access_stays_on_generic_member_opcodes(vo
     ZR_TEST_DIVIDER();
 }
 
+// 逐层核对嵌套类型化成员链的槽访问选择。
 static void test_nested_typed_member_chain_emits_member_slot_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Nested Typed Member Chain Emits Member Slot Opcodes";
@@ -7966,6 +8154,7 @@ static void test_nested_typed_member_chain_emits_member_slot_opcodes(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检验类型化对象解构的读成员路径复用专用槽指令。
 static void test_typed_object_destructuring_emits_member_slot_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Typed Object Destructuring Emits Member Slot Opcodes";
@@ -8056,6 +8245,7 @@ static void test_typed_object_destructuring_emits_member_slot_opcodes(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用仓库属性参考样例校验元访问工件和严格 C lowering 的一致性。
 static void test_reference_property_fixture_preserves_meta_access_artifacts_with_true_aot_c_lowering(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Reference Property Fixture Preserves Meta Access Artifacts With True AOT C Lowering";
@@ -8139,6 +8329,7 @@ static void test_reference_property_fixture_preserves_meta_access_artifacts_with
     ZR_TEST_DIVIDER();
 }
 
+// 用仓库参考样例守护成员/索引访问拆分后的工件形态。
 static void test_reference_member_index_fixture_preserves_split_access_artifacts(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Reference Member Index Fixture Preserves Split Access Artifacts";
@@ -8190,6 +8381,7 @@ static void test_reference_member_index_fixture_preserves_split_access_artifacts
     ZR_TEST_DIVIDER();
 }
 
+// 用仓库 foreach 参考样例守护迭代协议的双后端工件。
 static void test_reference_foreach_fixture_preserves_iter_contract_artifacts(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Reference Foreach Fixture Preserves Iterator Contract Artifacts";
@@ -8247,6 +8439,7 @@ static void test_reference_foreach_fixture_preserves_iter_contract_artifacts(voi
     ZR_TEST_DIVIDER();
 }
 
+// 零参尾调用 quickening 只改变 ExecBC 形态，SemIR 原始契约须稳定。
 static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir_contracts(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC Quickens Zero Arg Tail Call Sites Without Changing SemIR Contracts";
@@ -8299,6 +8492,7 @@ static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir
     ZR_TEST_DIVIDER();
 }
 
+// 数组整数索引快路径须被 quicken，并得到严格 C/LLVM helper 支持。
 static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC Quickens Array Int Add Index Sites And True AOT Lowers Specialized Helpers";
@@ -8458,6 +8652,7 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
     ZR_TEST_DIVIDER();
 }
 
+// 连续整数数组追加应融合为专用派发 opcode，并保持结果。
 static void test_execbc_quickens_array_int_add_bursts_to_dedicated_dispatch_opcode(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC Quickens Consecutive Array Int Adds To Burst Opcode And AOT Lowers The Helper";
@@ -8558,6 +8753,7 @@ static void test_execbc_quickens_array_int_add_bursts_to_dedicated_dispatch_opco
     ZR_TEST_DIVIDER();
 }
 
+// 填充循环应被识别为批量派发路径，同时保留循环结果。
 static void test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "ExecBC Quickens Array Int Fill Loops To Bulk Opcode And AOT Lowers The Helper";
@@ -8654,6 +8850,7 @@ static void test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode(vo
     ZR_TEST_DIVIDER();
 }
 
+// 交叉检查引用视图 ownership 指令从 SemIR 到严格双后端未退化。
 static void test_ownership_intrinsics_reference_views_semir_and_true_aot_preserve_dedicated_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary =
@@ -8770,6 +8967,7 @@ static void test_ownership_intrinsics_reference_views_semir_and_true_aot_preserv
     ZR_TEST_DIVIDER();
 }
 
+// 验证可选/直接弱接收者守卫在真实 AOT 中保留失效分支。
 static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_true_aot(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Receiver Guards Preserve Optional And Direct Weak Contracts In True AOT";
@@ -8921,6 +9119,7 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
     ZR_TEST_DIVIDER();
 }
 
+// 比较 VM 与 AOT 的唯一资源释放顺序，防止优化改变清理时序。
 static void test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Resource Unique Drop VM And AOT Preserve Cleanup Order Contract";
@@ -9010,6 +9209,7 @@ static void test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract
     ZR_TEST_DIVIDER();
 }
 
+// 只验证 benchmark 字符串构建模块能序列化并加载入口。TODO: 当前不执行基准主体，不能证明运行时拼接行为。
 static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Benchmark String Build Binary Roundtrip Loads Runtime Entry";
@@ -9059,6 +9259,7 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
     ZR_TEST_DIVIDER();
 }
 
+// 手工构造扩展数值 opcode 并检查严格双后端均无 unsupported 标记；运行时语义仍需独立执行验证。
 static void test_aot_backends_lower_manual_extended_numeric_opcode_fixture(void) {
     static const EZrInstructionCode coveredOpcodes[] = {
             ZR_INSTRUCTION_ENUM(TO_BOOL),
@@ -9230,6 +9431,7 @@ static void test_aot_backends_lower_manual_extended_numeric_opcode_fixture(void)
     ZR_TEST_DIVIDER();
 }
 
+// 用常量除/模场景核对 C 观察消除与 LLVM 观察标记，不掩盖零除异常。
 static void test_aot_c_observation_elision_and_llvm_flags_preserve_const_div_mod_contract(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT C Observation Elision And LLVM Flags Preserve Const Div Mod Contract";
@@ -9332,6 +9534,7 @@ static void test_aot_c_observation_elision_and_llvm_flags_preserve_const_div_mod
     ZR_TEST_DIVIDER();
 }
 
+// 手工构造状态和作用域管理 opcode，覆盖源码通常难以稳定产生的 lowering 分支。
 static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) {
     static const EZrInstructionCode coveredOpcodes[] = {
             ZR_INSTRUCTION_ENUM(SET_CONSTANT),
@@ -9440,6 +9643,7 @@ static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) 
     ZR_TEST_DIVIDER();
 }
 
+// 跨运行时与双后端源码扫描扩展 opcode 支持入口。TODO: 字符串存在性易受无关注释/死代码影响，需以构建或执行检查补证。
 static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
     static const SZrAotSourceSyncExpectation expectations[] = {
             {"SET_CONSTANT", "ZrLibrary_AotRuntime_SetConstant"},
@@ -9527,6 +9731,7 @@ static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeSourceText);
 
+    // TODO: 全文存在性断言可能命中注释或未使用分支；需要对生成工件的可达路径补证。
     for (index = 0; index < (TZrSize)(sizeof(expectations) / sizeof(expectations[0])); index++) {
         char opcodeToken[96];
 
@@ -9570,6 +9775,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 完整 Unity 矩阵入口；环境开关可选 ownership/resource 子集，独立手工 opcode 可执行文件复用本文件静态用例。
 int main(void) {
     UNITY_BEGIN();
     if (getenv("ZR_VM_OWNERSHIP_OPCODE_FOCUSED") != ZR_NULL) {

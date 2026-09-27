@@ -23,6 +23,7 @@ run3() {
     done
 }
 
+# 把解释执行、工件编译和 AOT 运行分别计时，避免将一次性编译开销误作运行时开销。
 run3 "ZR interp" "$CLI" "$PROJ"
 echo
 echo "=== prepare aot_c (zr_vm_cli --compile --emit-aot-c) ==="

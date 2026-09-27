@@ -11,11 +11,13 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
+// 用例局部计时状态；用于观察尾调用测试耗时，不承担栈帧复用断言。
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTailCallPipelineTimer;
 
+// 运行期测量调用帧链长度，用于判断尾调用是否复用已有 call info 帧。
 static TZrUInt32 count_call_info_chain_nodes(const SZrState *state) {
     TZrUInt32 count = 0;
     const SZrCallInfo *callInfo;
@@ -31,6 +33,7 @@ static TZrUInt32 count_call_info_chain_nodes(const SZrState *state) {
     return count;
 }
 
+// 检查当前函数的 ExecBC opcode；递归场景若位于子函数须使用树搜索。
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -47,6 +50,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+// 递归检查尾调用 fixture 的嵌套函数，防止只验证模块入口。
 static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 childIndex;
 
@@ -66,6 +70,7 @@ static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrIns
     return ZR_FALSE;
 }
 
+// 同时覆盖 SemIR 主路径和 deopt 备份路径中的尾调用标记。
 static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 EZrSemIrOpcode opcode,
                                                 TZrBool requireDeopt) {
@@ -88,6 +93,7 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
     return ZR_FALSE;
 }
 
+// 从模块递归寻找尾调用 SemIR 契约，包括嵌套函数和回退路径。
 static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function,
                                                      EZrSemIrOpcode opcode,
                                                      TZrBool requireDeopt) {
@@ -109,6 +115,7 @@ static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function
     return ZR_FALSE;
 }
 
+// 验证动态或元尾调用的缓存类型是否出现在任意嵌套函数。
 static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *function,
                                                           EZrFunctionCallSiteCacheKind kind) {
     TZrUInt32 index;
@@ -134,6 +141,7 @@ static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *fun
     return ZR_FALSE;
 }
 
+// 提供首个匹配调用缓存供用例检查；返回索引属于缓存所在函数。
 static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_cache_kind(
         const SZrFunction *function,
         EZrFunctionCallSiteCacheKind kind) {
@@ -162,6 +170,7 @@ static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_ca
     return ZR_NULL;
 }
 
+// 读取生成的后端文本；调用测试负责释放返回缓冲并清理工件。
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -204,6 +213,7 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+// 构造动态目标尾调用，用于观察 prepare/dispatch 协议及缓存变化。
 static SZrFunction *compile_dynamic_tail_call_fixture(SZrState *state) {
     const char *source =
             "fn makeAdder(base: int) {\n"
@@ -228,6 +238,7 @@ static SZrFunction *compile_dynamic_tail_call_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造直接递归尾调用，用运行时帧链计数检验复用。
 static SZrFunction *compile_direct_tail_reuse_fixture(SZrState *state) {
     const char *source =
             "fn loop(n: int, acc: int): int {\n"
@@ -251,6 +262,7 @@ static SZrFunction *compile_direct_tail_reuse_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造元调用尾调用，区分元分派与一般动态目标。
 static SZrFunction *compile_meta_tail_call_fixture(SZrState *state) {
     const char *source =
             "class Adder {\n"
@@ -278,6 +290,7 @@ static SZrFunction *compile_meta_tail_call_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造递归元调用场景，供运行时检查帧链复用。
 static SZrFunction *compile_meta_tail_reuse_fixture(SZrState *state) {
     const char *source =
             "class Loop {\n"
@@ -304,6 +317,7 @@ static SZrFunction *compile_meta_tail_reuse_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 检查动态尾调用在 SemIR、ExecBC 的协议及缓存形态，保护非普通调用路径。
 static void test_dynamic_tail_call_emits_semir_runtime_contracts(void) {
     SZrTailCallPipelineTimer timer = {0};
     const char *testSummary = "Dynamic Tail Call Emits SemIR Runtime Contracts";
@@ -359,6 +373,7 @@ static void test_dynamic_tail_call_emits_semir_runtime_contracts(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 检查元尾调用的中间码与缓存，避免失去尾调用语义或元分派。
 static void test_meta_tail_call_emits_semir_runtime_contracts(void) {
     SZrTailCallPipelineTimer timer = {0};
     const char *testSummary = "Meta Tail Call Emits SemIR Runtime Contracts";
@@ -415,6 +430,7 @@ static void test_meta_tail_call_emits_semir_runtime_contracts(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 核对 C/LLVM 工件的尾调用运行时入口。TODO: 仅检索生成文本，仍需执行工件补证。
 static void test_tail_call_aot_backends_emit_runtime_contracts(void) {
     SZrTailCallPipelineTimer timer = {0};
     const char *testSummary = "Tail Call AOT Backends Emit Runtime Contracts";
@@ -486,6 +502,7 @@ static void test_tail_call_aot_backends_emit_runtime_contracts(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 通过递归返回结果与调用帧链检验直接尾调用复用。TODO: 当前只运行浅层输入且 opcode 搜索限根函数，需对递归子函数和深度压力补证。
 static void test_direct_tail_call_reuses_call_info_frame(void) {
     SZrTailCallPipelineTimer timer = {0};
     const char *testSummary = "Direct Tail Call Reuses Call Info Frame";
@@ -526,6 +543,7 @@ static void test_direct_tail_call_reuses_call_info_frame(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 执行元调用递归并检查运行后的调用帧链上界。TODO: 当前 fixture 仅执行 loop(8, 0)，且 opcode 断言只查根函数；需核对 @call 子函数与深度压力下的帧链，才能证明递归复用。
 static void test_meta_tail_call_reuses_call_info_frame(void) {
     SZrTailCallPipelineTimer timer = {0};
     const char *testSummary = "Meta Tail Call Reuses Call Info Frame";
@@ -567,6 +585,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// Unity 入口依次验证动态、元、直接尾调用的中间码、后端文本和运行时帧复用。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_dynamic_tail_call_emits_semir_runtime_contracts);

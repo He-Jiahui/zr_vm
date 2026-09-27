@@ -36,6 +36,8 @@
 #include <dlfcn.h>
 #endif
 
+// 一个已验证模块的库句柄、函数索引表和公开模块对象共用同一生命周期。
+// records 扩容会搬移此结构，活动调用帧中的指针不能跨 append_record 直接持有。
 typedef struct SZrLibraryAotLoadedModule {
     EZrAotBackendKind backendKind;
     TZrChar *moduleName;
@@ -53,6 +55,7 @@ typedef struct SZrLibraryAotLoadedModule {
     TZrBool moduleExecuted;
 } SZrLibraryAotLoadedModule;
 
+// 项目级加载缓存；activeRecord 为生成 thunk 提供当前模块上下文，嵌套 import 会临时切换它。
 typedef struct SZrLibraryAotRuntimeState {
     EZrLibraryProjectExecutionMode configuredExecutionMode;
     EZrLibraryExecutedVia executedVia;
@@ -65,12 +68,14 @@ typedef struct SZrLibraryAotRuntimeState {
     SZrLibraryAotLoadedModule *activeRecord;
 } SZrLibraryAotRuntimeState;
 
+// 库内 thunk 可能仍被 GC 对象引用，句柄交给 GC 后置清理阶段再统一卸载。
 typedef struct SZrLibraryAotRetiredLibraries {
     void **handles;
     TZrSize count;
     TZrSize capacity;
 } SZrLibraryAotRetiredLibraries;
 
+// ExecuteEntry 的受保护回调参数；入口结果和成功状态由同一次 VM 调用填回。
 typedef struct ZrLibraryAotEntryRequest {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrLibraryAotLoadedModule *record;
@@ -335,6 +340,7 @@ static void aot_runtime_fail(SZrState *state, SZrLibraryAotRuntimeState *runtime
     }
 }
 
+// 运行时状态借项目对象存储，使入口执行与 import 回调共享同一加载缓存。
 static SZrLibraryAotRuntimeState *aot_runtime_ensure_state(SZrGlobalState *global) {
     SZrLibrary_Project *project;
     SZrLibraryAotRuntimeState *runtimeState;
@@ -361,7 +367,7 @@ static SZrLibraryAotRuntimeState *aot_runtime_ensure_state(SZrGlobalState *globa
     return runtimeState;
 }
 
-/* remaining helpers and exported functions are appended below */
+// 文件名解析必须与项目加载器及生成物命名约定一致。
 static TZrBool aot_runtime_normalize_module_name(const TZrChar *moduleName, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize length;
     TZrSize writeIndex = 0;
@@ -370,6 +376,7 @@ static TZrBool aot_runtime_normalize_module_name(const TZrChar *moduleName, TZrC
         return ZR_FALSE;
     }
 
+    // TODO: 超过 bufferSize 的名称在下方循环被静默截断，需核对项目层是否有同名碰撞防护。
     length = strlen(moduleName);
     while (length > 0 && (moduleName[length - 1] == '/' || moduleName[length - 1] == '\\')) {
         length--;
@@ -532,6 +539,8 @@ static TZrBool aot_runtime_manifest_export_entry_is_valid(const SZrAotManifestEx
     return ZR_TRUE;
 }
 
+// 根据后端与模块名寻找归档生成的动态库；路径必须与生成器输出布局一致。
+// TODO: 内层拼接结果未逐级检查截断，需用超长项目/模块名核对候选路径是否会碰撞。
 static TZrBool aot_runtime_resolve_library_path(const SZrLibrary_Project *project,
                                                 EZrAotBackendKind backendKind,
                                                 const TZrChar *moduleName,
@@ -581,6 +590,7 @@ static TZrBool aot_runtime_resolve_library_path(const SZrLibrary_Project *projec
                     libraryExtension) < (int)bufferSize;
 }
 
+// 加载前与描述符输入哈希对照；调用方必须将读取失败视为验证失败。
 static TZrBool aot_runtime_hash_file(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -602,6 +612,9 @@ static TZrBool aot_runtime_hash_file(const TZrChar *path, TZrChar *buffer, TZrSi
             hash *= ZR_STABLE_HASH_FNV1A64_PRIME;
         }
     }
+    // BUG: 归档 runtime 重接后，fread 因 I/O 错误返回 0 时此处未检查 ferror；
+    // 仍将已读前缀的哈希当作完整文件哈希返回成功。若描述符哈希恰好匹配该前缀，
+    // prepare_record 会放行未经完整读取的输入；关闭文件前须区分 EOF 与读错。
     fclose(file);
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
     return ZR_TRUE;
@@ -647,6 +660,7 @@ static void aot_runtime_close_retired_libraries(SZrGlobalState *global, TZrPtr s
     aot_runtime_reallocate(global, retired, sizeof(*retired), 0u);
 }
 
+// 让库句柄活到 GC 不再持有库内 native thunk；注册清理回调失败时调用方须处理句柄。
 static TZrBool aot_runtime_retire_library(SZrGlobalState *global, void *handle) {
     SZrLibraryAotRetiredLibraries *retired;
 
@@ -712,6 +726,7 @@ static FZrVmGetAotCompiledModule aot_runtime_cast_descriptor_symbol(TZrPtr symbo
     return symbol;
 }
 
+// 将动态库持有的内嵌模块字节借给一次性 IO 回调；关闭回调不释放这段字节。
 typedef struct SZrAotRuntimeBlobReader {
     const TZrByte *bytes;
     TZrSize length;
@@ -755,6 +770,9 @@ static SZrLibraryAotLoadedModule *aot_runtime_find_record(SZrLibraryAotRuntimeSt
     return ZR_NULL;
 }
 
+// BUG: 归档运行时重新接入后，第 5 个嵌套加载模块触发 records 扩容时，活动 thunk
+// 的 activeRecord、frame.recordHandle 和外层 ModuleLoader 的 record 会悬空；
+// call_record_direct 允许 thunk 经 import 再进入此函数，须改为稳定句柄或索引。
 static TZrBool aot_runtime_append_record(SZrGlobalState *global,
                                          SZrLibraryAotRuntimeState *runtimeState,
                                          const SZrLibraryAotLoadedModule *record,
@@ -819,6 +837,7 @@ static TZrBool aot_runtime_load_zro_function(SZrState *state, const TZrChar *zro
     return *outFunction != ZR_NULL;
 }
 
+// 优先从描述符内嵌 zro 还原函数元数据，避免运行时依赖外部字节码文件。
 static TZrBool aot_runtime_load_embedded_function(SZrState *state,
                                                   const TZrByte *blob,
                                                   TZrSize blobLength,
@@ -895,6 +914,9 @@ static TZrUInt32 aot_runtime_count_function_graph_capacity(SZrState *state, cons
     return count;
 }
 
+// BUG: 归档加载器重建函数表时只按名称/形参/指令数/源码行合并；后端
+// backend_aot_function_table.c 使用 HasSameDefinition 比较实际指令和常量。
+// 不同函数恰好共享这些浅字段时，thunk 索引会与生成物错位。
 static TZrBool aot_runtime_functions_equivalent(const SZrFunction *left, const SZrFunction *right) {
     TZrBool sameFunctionName;
 
@@ -930,6 +952,7 @@ static TZrBool aot_runtime_function_table_contains(SZrFunction *const *functions
     return ZR_FALSE;
 }
 
+// 展平常量与子函数构成的函数图，索引顺序必须与后端生成的 thunk 表完全一致。
 static void aot_runtime_flatten_function_graph(SZrState *state,
                                                SZrFunction *function,
                                                SZrFunction **functions,
@@ -1003,6 +1026,7 @@ static TZrBool aot_runtime_build_function_table(SZrState *state,
     return ZR_TRUE;
 }
 
+// 用生成帧布局记录每个 thunk 可访问的槽上界，供 frame_slot 阻止越界访问。
 static TZrBool aot_runtime_build_generated_slot_count_table(SZrGlobalState *global,
                                                             SZrFunction *const *functionTable,
                                                             TZrUInt32 functionCount,
@@ -1110,6 +1134,7 @@ static const SZrTypeValue *aot_runtime_frame_constant(const ZrAotGeneratedFrame 
     return &frame->function->constantValueList[constantIndex];
 }
 
+// VM 扩栈或跨帧调用后，从 callInfo 重新取得可搬移的栈槽基址。
 static TZrBool aot_runtime_refresh_frame_from_callinfo(SZrState *state, ZrAotGeneratedFrame *frame, SZrCallInfo *callInfo) {
     if (state == ZR_NULL || frame == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
         return ZR_FALSE;
@@ -1175,6 +1200,7 @@ static TZrBool aot_runtime_frame_resume_index(const ZrAotGeneratedFrame *frame,
     return ZR_TRUE;
 }
 
+// 生成 thunk 不运行解释器派发循环，异常处理目标须显式换算为本函数的指令索引。
 static TZrBool aot_runtime_resume_exception_in_current_frame(SZrState *state,
                                                              ZrAotGeneratedFrame *frame,
                                                              TZrUInt32 *outResumeInstructionIndex) {
@@ -1208,6 +1234,7 @@ static TZrBool aot_runtime_resume_exception_in_current_frame(SZrState *state,
     return aot_runtime_frame_resume_index(frame, callInfo, outResumeInstructionIndex);
 }
 
+// finally 之后的 return/break/continue 由 VM pendingControl 恢复到生成代码标签。
 static TZrBool aot_runtime_resume_pending_control_in_current_frame(SZrState *state,
                                                                    ZrAotGeneratedFrame *frame,
                                                                    TZrUInt32 *outResumeInstructionIndex) {
@@ -1244,6 +1271,7 @@ static TZrBool aot_runtime_resume_pending_control_in_current_frame(SZrState *sta
     return aot_runtime_frame_resume_index(frame, callInfo, outResumeInstructionIndex);
 }
 
+// 在本机闭包和 VM 闭包之间解析同一捕获单元，并返回写屏障所需的 owner。
 static TZrBool aot_runtime_resolve_current_closure_capture(SZrState *state,
                                                            const ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 closureIndex,
@@ -1404,6 +1432,7 @@ static TZrBool aot_runtime_materialize_static_direct_call_base(
     return ZR_TRUE;
 }
 
+// 直接本机调用仍需建立 VM callInfo，以保持异常、闭包和返回目标的共同语义。
 static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
                                                         ZrAotGeneratedFrame *frame,
                                                         TZrUInt32 destinationSlot,
@@ -1587,6 +1616,7 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
     return ZR_TRUE;
 }
 
+// 动态 callable 仅在元数据函数能对应当前已加载 thunk 时转入直接调用。
 static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
                                                           ZrAotGeneratedFrame *frame,
                                                           TZrUInt32 destinationSlot,
@@ -1653,6 +1683,8 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
     return ZR_TRUE;
 }
 
+// @call 将接收者插入调用参数窗，使元方法看到与解释器一致的参数顺序。
+// TODO: 参数右移前未见独立的容量预留；须核对归档 C/LLVM lowering 是否保证尾部空槽。
 static TZrBool aot_runtime_prepare_meta_target(SZrState *state,
                                                TZrStackValuePointer callBase,
                                                TZrUInt32 argumentCount,
@@ -1845,6 +1877,7 @@ static SZrRawObject *aot_runtime_get_closure_capture_owner_from_value(SZrState *
     }
 }
 
+// 旧式 VM shim 执行时将本机闭包捕获映射回元数据函数的闭包槽。
 static TZrBool aot_runtime_project_closure_into_vm_shim(SZrState *state,
                                                         const SZrTypeValue *sourceClosureValue,
                                                         SZrFunction *shimFunction,
@@ -2000,6 +2033,7 @@ static TZrBool aot_runtime_bind_native_closure_captures_from_frame(SZrState *sta
     return ZR_TRUE;
 }
 
+// 函数常量出口须绑定正确记录、捕获环境和 thunk，避免把元数据函数当作普通对象导出。
 static TZrBool aot_runtime_materialize_callable_constant_with_context(SZrState *state,
                                                                       SZrLibraryAotLoadedModule *record,
                                                                       const SZrTypeValue *source,
@@ -2087,6 +2121,7 @@ static TZrBool aot_runtime_materialize_callable_constant(SZrState *state,
                                                                   destination);
 }
 
+// 模块入口只在完成后发布导出，函数值要先转为能跨模块调用的闭包。
 static TZrBool aot_runtime_materialize_exports(SZrState *state,
                                                SZrLibraryAotLoadedModule *record,
                                                TZrStackValuePointer slotBase) {
@@ -2139,6 +2174,8 @@ static TZrBool aot_runtime_materialize_exports(SZrState *state,
     return ZR_TRUE;
 }
 
+// 模块入口以 VM native closure 运行，以便保留异常、调用帧与回收语义。
+// BUG: 若入口递归 import 使 records 扩容，保存的 activeRecord 和传入 record 都会失效。
 static TZrBool aot_runtime_call_record_direct(SZrState *state,
                                               SZrLibraryAotRuntimeState *runtimeState,
                                               SZrLibraryAotLoadedModule *record,
@@ -2207,6 +2244,7 @@ static EZrLibraryExecutedVia aot_runtime_backend_to_executed_via(EZrAotBackendKi
     }
 }
 
+// 入口执行和 import 共用此加载器：打开库、核对描述符与输入、恢复函数图并缓存记录。
 static TZrBool aot_runtime_prepare_record(SZrState *state,
                                           SZrLibraryAotRuntimeState *runtimeState,
                                           EZrAotBackendKind backendKind,
@@ -2309,6 +2347,8 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         return ZR_FALSE;
     }
 
+    // BUG: 归档 ABI 头的 ZrAotCompiledModule 没有 codeRegistration 及下列元数据字段；
+    // 归档 loader 与归档 ABI 同时重新接入构建时在此编译失败，须先统一描述符布局。
     if (descriptor->codeRegistration == ZR_NULL) {
         aot_runtime_close_library(handle);
         aot_runtime_fail(state,
@@ -2463,6 +2503,8 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         return ZR_FALSE;
     }
 
+    // BUG: 输入文件存在但 hash_file 因 fopen 失败时，短路条件会跳过失配检查，
+    // 归档 AOT 重启用后仍可能接受未核验的生成物；二进制输入分支同理。
     if ((EZrAotInputKind)descriptor->inputKind == ZR_AOT_INPUT_KIND_SOURCE && sourceExists &&
         descriptor->inputHash != ZR_NULL && descriptor->inputHash[0] != '\0' &&
         aot_runtime_hash_file(sourcePath, sourceHash, sizeof(sourceHash)) &&
@@ -2587,6 +2629,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     return ZR_TRUE;
 }
 
+// 在 VM 保护边界内调用本机模块入口，使抛错沿项目入口的统一状态返回。
 static void aot_runtime_execute_entry_body(SZrState *state, TZrPtr arguments) {
     ZrLibraryAotEntryRequest *request = (ZrLibraryAotEntryRequest *)arguments;
 
@@ -2635,6 +2678,8 @@ void ZrLibrary_AotRuntime_FreeProjectState(SZrState *state, SZrLibrary_Project *
 
     for (TZrSize index = 0; index < runtimeState->recordCount; index++) {
         SZrLibraryAotLoadedModule *record = &runtimeState->records[index];
+        // BUG: 归档运行时重接后，若 GC 清理回调冲突或登记分配失败，retire 返回 false；
+        // 此处仍清空唯一库句柄，动态库既未卸载也未登记延期卸载，造成句柄泄漏。
         (void)aot_runtime_retire_library(global, record->libraryHandle);
         record->libraryHandle = ZR_NULL;
         aot_runtime_free_string(global, record->moduleName);
@@ -2693,6 +2738,7 @@ const TZrChar *ZrLibrary_AotRuntime_GetLastError(SZrGlobalState *global) {
     return runtimeState->lastError;
 }
 
+// import 复用加载记录并仅执行一次模块入口；返回记录中的模块对象供后续 import 使用。
 SZrObjectModule *ZrLibrary_AotRuntime_ModuleLoader(SZrState *state, SZrString *moduleName, TZrPtr userData) {
     SZrLibraryAotRuntimeState *runtimeState = (SZrLibraryAotRuntimeState *)userData;
     EZrAotBackendKind backendKind;
@@ -2720,6 +2766,8 @@ SZrObjectModule *ZrLibrary_AotRuntime_ModuleLoader(SZrState *state, SZrString *m
         return ZR_NULL;
     }
 
+    // BUG: 若模块入口递归 import 触发 records 扩容，record 可能已悬空；
+    // 归档运行时重新接入后，此处读取模块对象可访问已释放内存。
     return record->module;
 }
 
@@ -2789,6 +2837,7 @@ static void aot_runtime_resolve_observation_policy(const SZrState *state,
     }
 }
 
+// 条件跳转和 ToBool 共用此真值规则；元方法与内置值的判定须与解释器一致。
 static TZrBool aot_runtime_value_is_truthy(SZrState *state, const SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
@@ -2954,6 +3003,8 @@ TZrBool ZrLibrary_AotRuntime_BeginGeneratedFunction(SZrState *state,
     }
 
     runtimeState->executedVia = aot_runtime_backend_to_executed_via(record->backendKind);
+    // BUG: 归档 AOT 嵌套 import 加载第 5 个模块时 records 扩容，活动帧持有的
+    // recordHandle 随之失效；后续 Return/静态直调再次读取时可访问已释放内存。
     frame->recordHandle = record;
     frame->function = metadataFunction;
     frame->callInfo = callInfo;
@@ -3493,6 +3544,7 @@ TZrBool ZrLibrary_AotRuntime_MetaGet(SZrState *state,
     return ZR_TRUE;
 }
 
+// 属性 setter 可执行用户代码；调用结果还要写回赋值槽，因此必须遵守栈搬移契约。
 TZrBool ZrLibrary_AotRuntime_MetaSet(SZrState *state,
                                      ZrAotGeneratedFrame *frame,
                                      TZrUInt32 receiverAndResultSlot,
@@ -3538,6 +3590,8 @@ TZrBool ZrLibrary_AotRuntime_MetaSet(SZrState *state,
         return ZR_FALSE;
     }
 
+    // BUG: 归档 AOT setter 经 InvokeMember 增长 VM 栈时，receiverValue 是调用前的旧槽地址；
+    // 解释器在受保护调用后重新取目标槽，此处写回可能落在已释放的栈缓冲。
     ZrCore_Value_Copy(state, receiverValue, &stableAssignedValue);
     return ZR_TRUE;
 }
@@ -3591,6 +3645,7 @@ static TZrBool aot_runtime_meta_get_cached_internal(SZrState *state,
     return ZR_TRUE;
 }
 
+// 缓存版本按元数据缓存校验成员绑定，其 setter 调用仍可能进入任意用户代码。
 static TZrBool aot_runtime_meta_set_cached_internal(SZrState *state,
                                                     ZrAotGeneratedFrame *frame,
                                                     TZrUInt32 receiverAndResultSlot,
@@ -3648,6 +3703,7 @@ static TZrBool aot_runtime_meta_set_cached_internal(SZrState *state,
         return ZR_FALSE;
     }
 
+    // BUG: 与 MetaSet 相同，setter 扩栈后未刷新赋值槽；仅在归档生成物走缓存 setter 时触发。
     ZrCore_Value_Copy(state, receiverValue, &stableAssignedValue);
     return ZR_TRUE;
 }
@@ -3780,6 +3836,9 @@ TZrBool ZrLibrary_AotRuntime_OwnDegrade(SZrState *state,
     return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_DegradeValue);
 }
 
+// BUG: 保留 OWN_DETACH 的历史生成物调用此归档入口时，直接执行 DetachValue；
+// 解释器先 IntoGcBoxValue 再 DetachValue，当前源码 lowering 已改用 OWN_INTO_GC_BOX。
+// 对尚无 ownershipControl 的 unique 资源，此处得到 null 而解释器返回 GC box。
 TZrBool ZrLibrary_AotRuntime_OwnDetach(SZrState *state,
                                        ZrAotGeneratedFrame *frame,
                                        TZrUInt32 destinationSlot,
@@ -4706,6 +4765,7 @@ TZrBool ZrLibrary_AotRuntime_Mul(SZrState *state,
     return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
 }
 
+// 通用 DIV 同时处理内置数值和动态元方法，不与 DIV_SIGNED/UNSIGNED 的零除语义混用。
 TZrBool ZrLibrary_AotRuntime_Div(SZrState *state,
                                  ZrAotGeneratedFrame *frame,
                                  TZrUInt32 destinationSlot,
@@ -4744,6 +4804,8 @@ TZrBool ZrLibrary_AotRuntime_Div(SZrState *state,
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type)) {
         leftInt = leftValue->value.nativeObject.nativeInt64;
         rightInt = rightValue->value.nativeObject.nativeInt64;
+        // BUG: 归档通用 DIV 的零除在此抛错，解释器通用 DIV 写入 null；
+        // 专项 DIV_SIGNED/UNSIGNED 在解释器中也抛错，不属于此问题。
         if (rightInt == 0) {
             ZrCore_Debug_RunError(state, "divide by zero");
         }
@@ -5031,6 +5093,7 @@ static TZrBool aot_runtime_apply_float_compare_operation(SZrState *state,
     return ZR_TRUE;
 }
 
+// 元方法临时调用窗从当前函数顶部预留，扩栈后会刷新 frame 槽基址。
 static TZrBool aot_runtime_reserve_temp_call_base(SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 scratchSlotCount,
@@ -5122,6 +5185,7 @@ static TZrBool aot_runtime_call_temp_base_without_yield(SZrState *state,
     return ZR_TRUE;
 }
 
+// 将一元元方法作为本机直调或 VM 调用执行，调用期间的槽与记录必须可恢复。
 static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
                                              ZrAotGeneratedFrame *frame,
                                              TZrUInt32 destinationSlot,
@@ -5148,6 +5212,8 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
         return ZR_FALSE;
     }
 
+    // BUG: reserve_temp_call_base 可扩栈，receiverValue 来自扩栈前的 VM 槽；
+    // 归档 AOT 一元元方法在空间不足时会从陈旧地址读取接收者。
     stableReceiver = *receiverValue;
     ZrCore_Value_InitAsRawObject(state, functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataFunction));
     ZrCore_Stack_CopyValue(state, callBase + 1, &stableReceiver);
@@ -5189,6 +5255,7 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
     return aot_runtime_call_temp_base_without_yield(state, frame, destinationSlot, callBase, 1);
 }
 
+// 二元元方法同用临时调用窗；接收者及参数都必须跨窗口预留保持有效。
 static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -5217,6 +5284,8 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
         return ZR_FALSE;
     }
 
+    // BUG: reserve_temp_call_base 可搬移 VM 栈，以下两个参数仍指向预留前的槽；
+    // 归档 AOT 二元元方法在扩栈时会读取失效内存。
     stableReceiver = *receiverValue;
     stableArgument = *argumentValue;
     ZrCore_Value_InitAsRawObject(state, functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataFunction));
@@ -5973,6 +6042,8 @@ TZrBool ZrLibrary_AotRuntime_Neg(SZrState *state,
         return ZR_FALSE;
     }
 
+    // TODO: INT64_MIN 的一元取负超出有符号范围；解释器同类 opcode 也需核对，
+    // 归档运行时重新接入前应明确溢出语义与生成器允许的输入范围。
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(sourceValue->type)) {
         ZR_VALUE_FAST_SET(destinationValue,
                           nativeInt64,
@@ -6059,6 +6130,7 @@ TZrBool ZrLibrary_AotRuntime_Mod(SZrState *state,
                 ZrCore_Debug_RunError(state, "modulo by zero");
             }
             if (rightInt < 0) {
+                // TODO: rightInt 为 INT64_MIN 时取绝对值不合法，需核对解释器取模域及测试输入。
                 rightInt = -rightInt;
             }
             ZrCore_Value_InitAsInt(state, destinationValue, leftInt % rightInt);
@@ -6120,6 +6192,7 @@ TZrBool ZrLibrary_AotRuntime_ModSignedConst(SZrState *state,
             ZrCore_Debug_RunError(state, "modulo by zero");
         }
         if (rightInt < 0) {
+            // TODO: 常量为 INT64_MIN 时同样不能直接取绝对值，需与后端常量折叠保持一致。
             rightInt = -rightInt;
         }
         ZrCore_Value_InitAsInt(state, destinationValue, leftInt % rightInt);
@@ -6412,6 +6485,7 @@ TZrBool ZrLibrary_AotRuntime_SetMember(SZrState *state,
     return ZR_TRUE;
 }
 
+// 省略写屏障只适用于尚未逃逸的新 owner，约束须由后端静态证明。
 TZrBool ZrLibrary_AotRuntime_SetMemberNewOwnerNoWriteBarrier(SZrState *state,
                                                              ZrAotGeneratedFrame *frame,
                                                              TZrUInt32 sourceSlot,
@@ -6699,6 +6773,7 @@ TZrBool ZrLibrary_AotRuntime_SetByIndex(SZrState *state,
     return ZR_TRUE;
 }
 
+// 与普通索引赋值共用对象语义，但新 owner 的生命周期允许省略 GC 写屏障。
 TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(SZrState *state,
                                                               ZrAotGeneratedFrame *frame,
                                                               TZrUInt32 sourceSlot,
@@ -7268,6 +7343,7 @@ TZrBool ZrLibrary_AotRuntime_IterCurrent(SZrState *state,
     return ZR_TRUE;
 }
 
+// 通用调用用于无法绑定本机 thunk 的 callable，须在被调用者返回后恢复调用方槽。
 TZrBool ZrLibrary_AotRuntime_Call(SZrState *state,
                                   ZrAotGeneratedFrame *frame,
                                   TZrUInt32 destinationSlot,
@@ -7313,6 +7389,8 @@ TZrBool ZrLibrary_AotRuntime_Call(SZrState *state,
         callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     }
 
+    // BUG: 这里只锚定 callBase；被调用者扩栈后 destinationPointer 和 callableValue
+    // 仍指向旧栈，成功路径写回及失败日志读取都可能访问失效地址。
     callBase = ZrCore_Function_CallAndRestoreAnchor(state, &callAnchor, 1);
     if (callBase == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE || state->callInfoList == ZR_NULL) {
         aot_runtime_fail(state,
@@ -7333,6 +7411,8 @@ TZrBool ZrLibrary_AotRuntime_Call(SZrState *state,
     return ZR_TRUE;
 }
 
+// BUG: 此处缺少 WithResume 变体只是归档 API 缺口之一；当前 backend 还生成
+// CallStackValue、ReturnI64 等未导出 helper，重接归档 runtime 前须校验完整符号集。
 TZrBool ZrLibrary_AotRuntime_CallPreparedOrGeneric(SZrState *state,
                                                    ZrAotGeneratedFrame *frame,
                                                    ZrAotGeneratedDirectCall *directCall,
@@ -7378,6 +7458,7 @@ TZrBool ZrLibrary_AotRuntime_PrepareDirectCall(SZrState *state,
                                                       directCall);
 }
 
+// 生成的元调用先解析 @call，再尝试绑定已加载的本机函数以保留直接调用收益。
 TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(SZrState *state,
                                              ZrAotGeneratedFrame *frame,
                                              TZrUInt32 destinationSlot,
@@ -7530,6 +7611,7 @@ TZrBool ZrLibrary_AotRuntime_FinishDirectCall(SZrState *state,
     return ZR_TRUE;
 }
 
+// 生成 thunk 自己驱动跳转，VM handler 栈仍是异常对象及 finally 顺序的权威状态。
 TZrBool ZrLibrary_AotRuntime_Try(SZrState *state, ZrAotGeneratedFrame *frame, TZrUInt32 handlerIndex) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo;
@@ -7699,6 +7781,7 @@ TZrBool ZrLibrary_AotRuntime_Catch(SZrState *state, ZrAotGeneratedFrame *frame, 
     return ZR_TRUE;
 }
 
+// finally 结束时统一处理异常传播或延迟的 return/break/continue 目标。
 TZrBool ZrLibrary_AotRuntime_EndFinally(SZrState *state,
                                         ZrAotGeneratedFrame *frame,
                                         TZrUInt32 handlerIndex,
@@ -7866,6 +7949,7 @@ TZrBool ZrLibrary_AotRuntime_SetConstant(SZrState *state,
     return ZR_TRUE;
 }
 
+// 子函数须继承父闭包捕获列表，否则生成代码返回的闭包与解释器观察不同。
 TZrBool ZrLibrary_AotRuntime_GetSubFunction(SZrState *state,
                                             ZrAotGeneratedFrame *frame,
                                             TZrUInt32 destinationSlot,
@@ -8612,6 +8696,8 @@ TZrBool ZrLibrary_AotRuntime_ShiftLeftInt(SZrState *state,
         return ZR_FALSE;
     }
 
+    // TODO: 归档专项左移未校验次数，也未排除负左值或超出 int64 的结果；
+    // 解释器同样直接使用 C 移位，需共同确定字节码的有效输入域。
     ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt << rightInt, ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
@@ -8690,6 +8776,7 @@ TZrBool ZrLibrary_AotRuntime_ShiftRightInt(SZrState *state,
         return ZR_FALSE;
     }
 
+    // TODO: 专项右移同样未限制移位次数；需与解释器及语言规范确认负数右移语义。
     ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt >> rightInt, ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
@@ -9180,6 +9267,8 @@ TZrBool ZrLibrary_AotRuntime_BitwiseShiftLeft(SZrState *state,
         return ZR_FALSE;
     }
 
+    // TODO: 位左移次数为负或达到位宽、左值为负或结果溢出均越过 C 定义域；
+    // 解释器也直接移位，需共同确定生成器或运行时负责的输入约束。
     ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt << rightInt, ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
@@ -9220,10 +9309,12 @@ TZrBool ZrLibrary_AotRuntime_BitwiseShiftRight(SZrState *state,
         return ZR_FALSE;
     }
 
+    // TODO: 无符号右移仍要求次数小于位宽，归档 lowering 未在此处提供范围证明。
     ZR_VALUE_FAST_SET(destinationValue, nativeInt64, (TZrInt64)(leftUInt >> rightUInt), ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
 
+// 生成函数的返回边界：入口导出、拥有权逃逸、待关闭捕获和 VM 结果槽在此汇合。
 TZrInt64 ZrLibrary_AotRuntime_Return(SZrState *state,
                                      ZrAotGeneratedFrame *frame,
                                      TZrUInt32 sourceSlot,
@@ -9340,6 +9431,7 @@ TZrInt64 ZrLibrary_AotRuntime_InvokeActiveShim(SZrState *state, EZrAotBackendKin
     return 1;
 }
 
+// 兼容旧生成物的闭包入口：按当前 native 闭包元数据重建 VM 调用并传递实参。
 TZrInt64 ZrLibrary_AotRuntime_InvokeCurrentClosureShim(SZrState *state, EZrAotBackendKind backendKind) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrLibraryAotLoadedModule *record;

@@ -1,4 +1,5 @@
 set pagination off
+# 在测试 panic 派发处停下，关联 Unity 用例名与触发时的调用栈。
 set confirm off
 set print thread-events off
 set env LD_LIBRARY_PATH=/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug/lib

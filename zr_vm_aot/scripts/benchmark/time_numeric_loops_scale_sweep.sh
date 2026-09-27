@@ -14,6 +14,7 @@ set -euo pipefail
 
 BUILD_ROOT="${1:-/mnt/e/Git/zr_vm/build/benchmark-gcc-release}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BUG: 默认 REPO_ROOT 仅上溯到 zr_vm_aot；未传第二参数时 SRC_CASE 指向不存在的 zr_vm_aot/tests/benchmarks，脚本在基准准备阶段退出。
 REPO_ROOT="${2:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 CLI="${BUILD_ROOT}/bin/zr_vm_cli"
 SRC_CASE="${REPO_ROOT}/tests/benchmarks/cases/numeric_loops/zr"
@@ -33,6 +34,7 @@ WARMUP_RUNS="${WARMUP_RUNS:-1}"
 
 # Run CLI from project directory (relative .zrp). Absolute paths to /mnt/e/ projects can fail on WSL without cwd.
 mean_seconds_n() {
+    # 同一份已编译临时项目承受预热和正式采样，使比例主要反映执行模式差异。
     local n=$1
     work_dir=$2
     shift 2
@@ -59,6 +61,7 @@ printf "%-8s %12s %12s %10s %14s\n" "scale" "interp_mean_s" "aot_c_mean_s" "aot/
 echo "--------------------------------------------------------------------------------"
 
 for SCALE in $SCALE_LIST; do
+    # BUG: 编译或正式采样命令失败时 set -e 会在循环尾的 rm 前退出，留下该轮 WORK 临时项目；需核对统一退出清理入口。
     WORK=$(mktemp -d /tmp/zr_numeric_scale_XXXXXX)
     cp -a "${SRC_CASE}/." "$WORK/"
     cat >"${WORK}/src/bench_config.zr" <<EOF

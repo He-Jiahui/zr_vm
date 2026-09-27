@@ -15,6 +15,7 @@ set -euo pipefail
 
 BUILD_ROOT="${1:-/mnt/e/Git/zr_vm/build/benchmark-gcc-release}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BUG: 默认路径只上溯到 zr_vm_aot，随后复制的 tests/benchmarks 或根 tests/fixtures 因此找不到；从仓库根目录调用且未传 repo_root 时即触发。
 REPO_ROOT="${2:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 OUT_BASE="${3:-/tmp/zr_callgrind_aot_c}"
 

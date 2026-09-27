@@ -9,6 +9,7 @@
 
 set -euo pipefail
 
+# BUG: 此目录在 zr_vm_aot/scripts/benchmark，下方默认 ROOT 落在 zr_vm_aot；无显式 build-dir 时会向错误的构建目录请求 performance_report。
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${1:-${ROOT}/build/benchmark-gcc-release}"
 

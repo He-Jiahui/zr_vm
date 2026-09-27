@@ -17,11 +17,13 @@
 #include "zr_vm_parser/writer.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
+// 已知调用矩阵的局部计时状态；时间值不参与 opcode 正确性判断。
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrKnownCallPipelineTimer;
 
+// 手工构造不同函数来源，检验 quickening 能否恢复 VM/native 调用目标。
 typedef enum {
     ZR_KNOWN_CALL_PROVENANCE_GET_SUB_FUNCTION = 0,
     ZR_KNOWN_CALL_PROVENANCE_CREATE_CLOSURE = 1,
@@ -32,12 +34,14 @@ typedef enum {
     ZR_KNOWN_CALL_PROVENANCE_NATIVE_POINTER_CONSTANT = 6
 } EZrKnownCallQuickeningProvenanceKind;
 
+// 模拟值经栈槽复制传播后的别名路径，约束来源追踪用例。
 typedef enum {
     ZR_KNOWN_CALL_ALIAS_NONE = 0,
     ZR_KNOWN_CALL_ALIAS_GET_STACK = 1,
     ZR_KNOWN_CALL_ALIAS_SET_STACK = 2
 } EZrKnownCallAliasKind;
 
+// 一行编译期用例同时绑定来源、别名、尾调用和预期 opcode。
 typedef struct {
     const char *name;
     EZrKnownCallQuickeningProvenanceKind provenance;
@@ -47,6 +51,7 @@ typedef struct {
     EZrInstructionCode expectedOpcode;
 } SZrKnownCallQuickeningCase;
 
+// 一行运行期用例绑定手工 opcode 的目标类型与预期返回值。
 typedef struct {
     const char *name;
     EZrInstructionCode opcode;
@@ -56,6 +61,7 @@ typedef struct {
     TZrInt64 expectedResult;
 } SZrKnownCallRuntimeCase;
 
+// 一行后端用例把 opcode 名称与目标类型绑定，供 C/LLVM 双后端生成检查。
 typedef struct {
     const char *name;
     const char *opcodeName;
@@ -65,6 +71,7 @@ typedef struct {
     TZrBool zeroArg;
 } SZrKnownCallAotCase;
 
+// 作为已知 native 目标的稳定返回值，用来区分目标解析正确与误绑定。
 static TZrInt64 known_call_native_return_73(struct SZrState *state) {
     SZrCallInfo *callInfo;
     SZrTypeValue *resultValue;
@@ -84,6 +91,7 @@ static TZrInt64 known_call_native_return_73(struct SZrState *state) {
     return 1;
 }
 
+// 提供第二个 native 返回值，令来源追踪用例能发现目标混淆。
 static TZrInt64 known_call_native_return_91(struct SZrState *state) {
     SZrCallInfo *callInfo;
     SZrTypeValue *resultValue;
@@ -103,6 +111,7 @@ static TZrInt64 known_call_native_return_91(struct SZrState *state) {
     return 1;
 }
 
+// 读取 C/LLVM 工件供 opcode 支持性断言；返回缓冲由各测试释放。
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -145,6 +154,7 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+// 识别 C 后端对某 opcode 生成的 unsupported 标记，供矩阵用例逐项拒绝回退。TODO: 文本扫描不能证明可执行语义。
 static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode) {
     const char *unsupportedPrefix = "ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state,";
     const char *cursor = text;
@@ -167,6 +177,7 @@ static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt3
     return ZR_FALSE;
 }
 
+// 识别 LLVM 后端 unsupported 标记，与 C 后端同一矩阵逐项比对。TODO: 文本扫描不能证明可执行语义。
 static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode) {
     const char *unsupportedPrefix = "call i64 @ZrLibrary_AotRuntime_ReportUnsupportedInstruction(ptr %state";
     const char *cursor = text;
@@ -189,6 +200,7 @@ static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUI
     return ZR_FALSE;
 }
 
+// 以严格且独立的 AOT C 模式生成用例工件，禁止借助嵌入式执行替代 lowering。
 static TZrBool write_standalone_strict_aot_c_file(SZrState *state,
                                                   SZrFunction *function,
                                                   const TZrChar *moduleName,
@@ -207,6 +219,7 @@ static TZrBool write_standalone_strict_aot_c_file(SZrState *state,
     return ZrParser_Writer_WriteAotCFileWithOptions(state, function, filename, &options);
 }
 
+// 以严格且独立的 LLVM 模式生成工件，与 C 后端保持同一输入边界。
 static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state,
                                                      SZrFunction *function,
                                                      const TZrChar *moduleName,
@@ -225,6 +238,7 @@ static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state,
     return ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, filename, &options);
 }
 
+// 为手工 opcode 矩阵准备无槽操作数指令，绕过源编译器的自动选择。
 static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra) {
     TZrInstruction instruction;
 
@@ -234,6 +248,7 @@ static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZ
     return instruction;
 }
 
+// 为常量目标调用准备指令，隔离目标来源与常量索引编码。
 static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcode,
                                                         TZrUInt16 operandExtra,
                                                         TZrInt32 operandA2) {
@@ -243,6 +258,7 @@ static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcod
     return instruction;
 }
 
+// 为调用操作数准备槽位指令，以覆盖别名传播和参数位置。
 static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode,
                                                      TZrUInt16 operandExtra,
                                                      TZrUInt16 operandA1,
@@ -254,10 +270,12 @@ static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode,
     return instruction;
 }
 
+// 为手工函数提供终止路径，确保运行期矩阵可观察结果。
 static TZrInstruction make_instruction_return(TZrUInt16 sourceSlot) {
     return make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, sourceSlot, 0);
 }
 
+// 建立最小手工函数骨架，供 quickening、运行时和后端矩阵共用。
 static void init_manual_test_function(SZrFunction *function,
                                       TZrInstruction *instructions,
                                       TZrUInt32 instructionCount,
@@ -280,6 +298,7 @@ static void init_manual_test_function(SZrFunction *function,
     function->lineInSourceEnd = 1;
 }
 
+// 在单一 ExecBC 函数中确认预期 opcode，用于检查 quickening 的最终选择。
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -296,6 +315,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+// 递归扫描子函数，覆盖成员方法与闭包中的已知调用 opcode。
 static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 childIndex;
 
@@ -315,6 +335,7 @@ static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrIns
     return ZR_FALSE;
 }
 
+// 从类型化成员调用源码生成真实编译器样例，与手工矩阵互相印证。
 static SZrFunction *compile_typed_member_known_call_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -341,6 +362,7 @@ static SZrFunction *compile_typed_member_known_call_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 为运行时矩阵构造有所有权的 VM/native 函数值，交由 state 生命周期管理。
 static void init_function_value(SZrState *state, SZrTypeValue *value, SZrFunction *function, TZrBool isNative) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(value);
@@ -351,6 +373,7 @@ static void init_function_value(SZrState *state, SZrTypeValue *value, SZrFunctio
     value->isNative = isNative;
 }
 
+// 为手工矩阵借用已有函数对象；调用方必须保证函数活到断言完成。
 static void init_borrowed_function_value(SZrTypeValue *value, SZrFunction *function, TZrBool isNative) {
     TEST_ASSERT_NOT_NULL(value);
     TEST_ASSERT_NOT_NULL(function);
@@ -365,6 +388,7 @@ static void init_borrowed_function_value(SZrTypeValue *value, SZrFunction *funct
     value->ownershipWeakRef = ZR_NULL;
 }
 
+// 构造带环境的函数目标，检验已知调用识别不丢失闭包来源。
 static void init_closure_value(SZrState *state, SZrTypeValue *value, SZrClosure *closure, TZrBool isNative) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(value);
@@ -375,6 +399,7 @@ static void init_closure_value(SZrState *state, SZrTypeValue *value, SZrClosure 
     value->isNative = isNative;
 }
 
+// 构造 native 闭包目标，区分它与普通 native 函数指针。
 static void init_native_closure_value(SZrState *state,
                                       SZrTypeValue *value,
                                       EZrValueType valueType,
@@ -394,6 +419,7 @@ static void init_native_closure_value(SZrState *state,
     value->isNative = ZR_TRUE;
 }
 
+// 通过测试 state 分配手工指令数组，所有权与函数 fixture 生命周期一致。
 static TZrInstruction *allocate_function_instructions(SZrState *state, TZrUInt32 count) {
     TZrInstruction *instructions;
 
@@ -407,6 +433,7 @@ static TZrInstruction *allocate_function_instructions(SZrState *state, TZrUInt32
     return instructions;
 }
 
+// 为手工函数准备可追踪目标常量表；调用方需填满被索引项。
 static SZrTypeValue *allocate_function_constants(SZrState *state, TZrUInt32 count) {
     SZrTypeValue *constants;
 
@@ -420,6 +447,7 @@ static SZrTypeValue *allocate_function_constants(SZrState *state, TZrUInt32 coun
     return constants;
 }
 
+// 分配子函数表供闭包与成员来源矩阵使用，索引须与构造用例一致。
 static SZrFunction *allocate_child_functions(SZrState *state, TZrUInt32 count) {
     SZrFunction *functions;
 
@@ -433,6 +461,7 @@ static SZrFunction *allocate_child_functions(SZrState *state, TZrUInt32 count) {
     return functions;
 }
 
+// 构造可调用的叶子函数，让运行期矩阵通过返回值辨别错误目标。
 static SZrFunction *build_heap_leaf_function_returning_constant(SZrState *state,
                                                                 TZrUInt16 parameterCount,
                                                                 TZrInt64 returnValue) {
@@ -457,6 +486,7 @@ static SZrFunction *build_heap_leaf_function_returning_constant(SZrState *state,
     return function;
 }
 
+// 按矩阵行拼装 VM/native 调用函数，覆盖零参、尾调用和非尾调用执行。
 static SZrFunction *build_runtime_known_call_fixture(SZrState *state,
                                                      const SZrKnownCallRuntimeCase *testCase,
                                                      SZrFunction **ownedLeafFunction) {
@@ -514,6 +544,7 @@ static SZrFunction *build_runtime_known_call_fixture(SZrState *state,
     return rootFunction;
 }
 
+// 手工设置调用目标来源与别名路径，再由 quickening 恢复预期 opcode。
 static void build_manual_quickening_fixture(SZrState *state,
                                             const SZrKnownCallQuickeningCase *testCase,
                                             SZrFunction *rootFunction,
@@ -658,6 +689,7 @@ static void build_manual_quickening_fixture(SZrState *state,
                               resultSlot + 1u);
 }
 
+// 按 opcode 矩阵构造严格 AOT 输入，避免源编译阶段跳过冷门指令。
 static void build_manual_aot_fixture(SZrState *state,
                                      const SZrKnownCallAotCase *testCase,
                                      SZrFunction *rootFunction,
@@ -731,6 +763,7 @@ static void build_manual_aot_fixture(SZrState *state,
                               resultSlot + 1u);
 }
 
+// 逐项验证 VM 函数来源经别名传播仍 quicken 到正确调用族。
 static void test_known_call_quickening_recovers_vm_provenance_matrix(void) {
     static const SZrKnownCallQuickeningCase cases[] = {
             {"get_sub_function_direct", ZR_KNOWN_CALL_PROVENANCE_GET_SUB_FUNCTION, ZR_KNOWN_CALL_ALIAS_NONE, ZR_FALSE, 1,
@@ -809,6 +842,7 @@ static void test_known_call_quickening_recovers_vm_provenance_matrix(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 逐项验证 native 函数、闭包与指针来源不会误归 VM 调用族。
 static void test_known_call_quickening_recovers_native_provenance_matrix(void) {
     static const SZrKnownCallQuickeningCase cases[] = {
             {"native_function_constant", ZR_KNOWN_CALL_PROVENANCE_NATIVE_FUNCTION_CONSTANT, ZR_KNOWN_CALL_ALIAS_NONE,
@@ -879,6 +913,7 @@ static void test_known_call_quickening_recovers_native_provenance_matrix(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 实际运行手工已知调用矩阵并对照返回值，覆盖后端文本断言之外的解释执行。
 static void test_known_call_runtime_executes_manual_opcode_matrix(void) {
     static const SZrKnownCallRuntimeCase cases[] = {
             {"known_vm_call", ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), ZR_FALSE, ZR_FALSE, ZR_FALSE, 41},
@@ -928,6 +963,7 @@ static void test_known_call_runtime_executes_manual_opcode_matrix(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用真实类型化成员源码确认编译器产生已知 VM 成员调用族。
 static void test_typed_member_calls_quicken_to_known_vm_member_call_family(void) {
     SZrKnownCallPipelineTimer timer = {0};
     const char *testSummary = "Typed Member Calls Quicken To Known VM Member Call Family";
@@ -963,6 +999,7 @@ static void test_typed_member_calls_quicken_to_known_vm_member_call_family(void)
     ZR_TEST_DIVIDER();
 }
 
+// 以手工 opcode 矩阵核对严格 C/LLVM 工件没有 unsupported 路径。TODO: 需补生成工件的执行验证。
 static void test_known_call_aot_backends_support_full_opcode_matrix(void) {
     static const SZrKnownCallAotCase cases[] = {
             {"known_vm_call", "KNOWN_VM_CALL", ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), ZR_FALSE, ZR_FALSE, ZR_FALSE},
@@ -1109,6 +1146,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// Unity 入口依序覆盖 VM/native quickening、手工运行时、真实成员编译及双后端矩阵。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_known_call_quickening_recovers_vm_provenance_matrix);

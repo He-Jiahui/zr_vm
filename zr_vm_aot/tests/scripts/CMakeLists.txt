@@ -1,3 +1,4 @@
+# TODO: 根测试配置未进入本目录；若重新接入，先核对缺失的 test_comprehensive.c 和当前未定义的 zr_configure_unity_test，再明确这批工件 golden 的维护入口。
 # ZR-VM Scripts Comprehensive Tests CMakeLists.txt
 
 set(SCRIPTS_SOURCE_DIR_NORMALIZED "${CMAKE_CURRENT_SOURCE_DIR}")

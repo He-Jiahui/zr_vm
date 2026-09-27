@@ -37,7 +37,7 @@ TZrChar* load_zr_file(const TZrChar* filepath, TZrSize* outLength) {
     return ZrTests_ReadTextFile(filepath, outLength);
 }
 
-// 解析并编译zr代码
+// golden 用例复用同一 VM 状态中的 AST 与函数；失败结果也保留错误阶段供断言诊断。
 SZrTestResult* parse_and_compile(SZrState* state, const TZrChar* source, TZrSize sourceLength, const TZrChar* sourceName) {
     if (state == ZR_NULL || source == ZR_NULL) {
         return ZR_NULL;
@@ -103,12 +103,13 @@ void get_test_case_path(const TZrChar* fileName, TZrChar* outPath, TZrSize maxLe
         return;
     }
 
+    // BUG: 重新接入本归档测试目标后，此共享 helper 指向根 tests/fixtures/scripts；当前脚本样例只在 zr_vm_aot/tests/fixtures/scripts，首个读取即失败。
     if (!ZrTests_Path_GetFixture("scripts", fileName, outPath, maxLen)) {
         outPath[0] = '\0';
     }
 }
 
-// 辅助函数：将AST节点序列化为JSON（简化版本）
+// 辅助 JSON 只记录稳定节点类型和位置，不作为完整 AST 持久化格式。
 static cJSON* ast_node_to_json(SZrState* state, SZrAstNode* node) {
     ZR_UNUSED_PARAMETER(state);
 
@@ -314,6 +315,7 @@ TZrBool dump_aot_c_to_file(SZrState* state, SZrFunction* function, const TZrChar
     memset(&options, 0, sizeof(options));
     options.moduleName = basePath;
     options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    // 此处只生成可重复比较的 golden 文本；基名不是真实源码 hash，生成物不能作为 loader 的 hash 验证样例。
     options.inputHash = basePath;
     options.embeddedModuleBlob = embeddedModuleBlob;
     options.embeddedModuleBlobLength = embeddedModuleBlobLength;
@@ -404,7 +406,7 @@ TZrBool compare_values(SZrState* state, SZrTypeValue* a, SZrTypeValue* b) {
     return ZrCore_Value_Equal(state, a, b);
 }
 
-// 释放测试结果
+// AST 随结果包装释放；函数仍由调用方持有的 VM 状态管理。
 void free_test_result(SZrTestResult* result) {
     if (result == ZR_NULL) {
         return;

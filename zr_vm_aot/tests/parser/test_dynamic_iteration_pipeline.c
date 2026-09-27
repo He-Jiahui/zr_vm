@@ -11,11 +11,13 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
+// 用例局部计时状态；仅服务本测试的性能诊断，不进入编译器或运行时。
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrDynamicIterationTimer;
 
+// 仅检查单个 ExecBC 函数的 opcode；动态迭代用例用它确认 quickening 未吞掉关键指令。
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -32,6 +34,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+// 把普通 SemIR 与 deopt 备份路径一并纳入搜索，确保动态迭代契约在回退后仍可观察。
 static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 EZrSemIrOpcode opcode,
                                                 TZrBool requireDeopt) {
@@ -54,6 +57,7 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
     return ZR_FALSE;
 }
 
+// 读取生成的 AOT 文本供契约断言使用；返回堆缓冲由测试释放，失败返回 NULL。
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -96,6 +100,7 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+// 从动态容器 foreach 源码建立可供 SemIR、ExecBC 和后端共享的编译输入。
 static SZrFunction *compile_dynamic_foreach_fixture(SZrState *state) {
     const char *source =
             "fn makeValues() {\n"
@@ -121,6 +126,7 @@ static SZrFunction *compile_dynamic_foreach_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 检验动态 foreach 在 SemIR 和 ExecBC 中保留运行时迭代协议，避免优化误选静态容器路径。
 static void test_dynamic_foreach_emits_semir_dynamic_iterator_contracts(void) {
     SZrDynamicIterationTimer timer = {0};
     const char *testSummary = "Dynamic Foreach Emits SemIR Dynamic Iterator Contracts";
@@ -174,6 +180,7 @@ static void test_dynamic_foreach_emits_semir_dynamic_iterator_contracts(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 用同一动态 foreach 输入核对 C/LLVM 工件仍调用迭代协议。TODO: 当前按生成文本匹配，需用可执行工件补证实际控制流。
 static void test_dynamic_foreach_aot_backends_emit_iterator_runtime_contracts(void) {
     SZrDynamicIterationTimer timer = {0};
     const char *testSummary = "Dynamic Foreach AOT Backends Emit Iterator Runtime Contracts";
@@ -233,6 +240,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// Unity 入口依次运行动态迭代的中间码与双后端契约用例。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_dynamic_foreach_emits_semir_dynamic_iterator_contracts);

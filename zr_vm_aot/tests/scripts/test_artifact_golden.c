@@ -1,5 +1,5 @@
 //
-// Artifact golden regression test for .zrs/.zri/.zro outputs.
+// 同一份脚本依次产生中间码、二进制及 AOT 工件，并与仓库 golden 对比；该目标仅在本目录被接入构建时运行。
 //
 
 #include <stdlib.h>
@@ -13,12 +13,14 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 输入文件与工件基名保持配对，避免路径解析与 golden 选择使用不同场景。 */
 typedef struct {
     const TZrChar* sourceFileName;
     const TZrChar* baseName;
 } SZrArtifactGoldenCase;
 
 static const SZrArtifactGoldenCase ZR_ARTIFACT_GOLDEN_CASES[] = {
+    /* BUG: 三个装饰器输入文件当前均未签入；若恢复本归档测试，run_artifact_case 在读取第一项时就无法进入工件比较。 */
     {"compile_time_decorator_artifact_baseline.zr", "compile_time_decorator_artifact_baseline"},
     {"compile_time_parameter_decorator_artifact_baseline.zr", "compile_time_parameter_decorator_artifact_baseline"},
     {"decorator_artifact_baseline.zr", "decorator_artifact_baseline"},
@@ -28,6 +30,7 @@ static const SZrArtifactGoldenCase ZR_TRUE_AOT_C_GOLDEN_CASES[] = {
     {"aot_closure_export.zr", "aot_closure_export"},
 };
 
+/* 文本工件可跨平台统一换行；二进制 .zro 必须保留原字节以识别格式退化。 */
 static TZrBool is_text_artifact_extension(const TZrChar* extension) {
     if (extension == ZR_NULL) {
         return ZR_FALSE;
@@ -38,6 +41,7 @@ static TZrBool is_text_artifact_extension(const TZrChar* extension) {
            strcmp(extension, ".c") == 0 || strcmp(extension, ".ll") == 0;
 }
 
+/* 消除 Windows 与 Linux 的换行差异，使 golden 断言仍聚焦于工件内容。 */
 static TZrBool normalize_text_newlines(const TZrBytePtr buffer,
                                      TZrSize length,
                                      TZrBytePtr* outBuffer,
@@ -70,6 +74,7 @@ static TZrBool normalize_text_newlines(const TZrBytePtr buffer,
     return ZR_TRUE;
 }
 
+/* LLVM 文本中嵌入的模块字节已由 .zro golden 独立覆盖，此处排除其平台相关布局。 */
 static TZrBool artifact_remove_aot_llvm_embedded_blob_for_compare(const TZrBytePtr in,
                                                                   TZrSize inLen,
                                                                   TZrBytePtr* out,
@@ -117,6 +122,7 @@ static TZrBool artifact_remove_aot_llvm_embedded_blob_for_compare(const TZrByteP
     return ZR_TRUE;
 }
 
+/* BUG: .ll 比较把所有十进制串归一化，`ret i64 1` 与 `ret i64 2` 等语义不同的输出会比较相等；应只屏蔽已确认的平台布局字段。 */
 static TZrBool artifact_mask_decimal_runs_for_compare(const TZrBytePtr in,
                                                       TZrSize inLen,
                                                       TZrBytePtr* out,
@@ -189,6 +195,7 @@ static TZrBool artifact_mask_decimal_runs_for_compare(const TZrBytePtr in,
     return ZR_TRUE;
 }
 
+/* 消除 LLVM writer 或工具链留下的行末空白，保留行内空白供比较。 */
 static void artifact_trim_trailing_spaces_on_each_line(TZrBytePtr buffer, TZrSize* ioLength) {
     TZrSize readIndex;
     TZrSize writeIndex;
@@ -225,6 +232,7 @@ static void artifact_trim_trailing_spaces_on_each_line(TZrBytePtr buffer, TZrSiz
     *ioLength = writeIndex;
 }
 
+/* golden 与生成工件统一按字节读取；调用方拥有带 NUL 尾字节的缓冲区。 */
 static TZrBool read_file_bytes(const TZrChar* path, TZrBytePtr* outBuffer, TZrSize* outLength) {
     if (path == ZR_NULL || outBuffer == ZR_NULL || outLength == ZR_NULL) {
         return ZR_FALSE;
@@ -269,6 +277,7 @@ static TZrBool artifact_text_equals(const TZrChar* left, const TZrChar* right) {
     return left != ZR_NULL && right != ZR_NULL && strcmp(left, right) == 0;
 }
 
+/* 只在已列出的偏移抹去非稳定字段；新增二进制布局前必须重新核对这些偏移对应的字段。 */
 static void normalize_binary_words_at_offsets(const TZrSize* offsets,
                                               TZrSize offsetCount,
                                               TZrSize wordSize,
@@ -292,6 +301,7 @@ static void normalize_binary_words_at_offsets(const TZrSize* offsets,
     }
 }
 
+/* TODO: 这些硬编码字节偏移来自旧 golden，需用当前 .zro 格式解析确认仍只覆盖不稳定字段；否则会掩盖真实格式变化。 */
 static void normalize_known_volatile_binary_words(const TZrChar* baseName,
                                                   const TZrChar* subDir,
                                                   const TZrChar* extension,
@@ -331,6 +341,7 @@ static void normalize_known_volatile_binary_words(const TZrChar* baseName,
     }
 }
 
+/* 记录 C 数组中每个十六进制字节的位置，使嵌入 .zro 的局部屏蔽不影响其他生成代码。 */
 typedef struct {
     TZrSize tokenStart;
     TZrByte value;
@@ -372,6 +383,7 @@ static TZrBool artifact_parse_hex_byte(const TZrByte* cursor, TZrByte* outValue)
     return ZR_TRUE;
 }
 
+/* 仅定位生成的模块字节数组；调用方负责释放返回的 token 列表。 */
 static TZrBool artifact_collect_embedded_blob_tokens(const TZrBytePtr buffer,
                                                      TZrSize length,
                                                      SZrArtifactHexToken** outTokens,
@@ -440,6 +452,7 @@ static TZrBool artifact_collect_embedded_blob_tokens(const TZrBytePtr buffer,
     return tokenIndex == count;
 }
 
+/* AOT C 的嵌入 .zro 只屏蔽已知易变字。TODO: 234/1079/1108 是旧 token 序号，需解析当前 .zro 确认仍只覆盖布局字段，否则可能漏检真实变化。 */
 static void normalize_known_volatile_aot_embedded_blob_words(const TZrChar* baseName,
                                                              const TZrChar* subDir,
                                                              const TZrChar* extension,
@@ -492,6 +505,7 @@ static void normalize_known_volatile_aot_embedded_blob_words(const TZrChar* base
     free(goldenTokens);
 }
 
+/* 在长度一致之后才做有限的字段屏蔽，避免尾部截断被误判为相同工件。 */
 static TZrBool artifact_buffers_match_after_known_normalization(const TZrChar* baseName,
                                                                 const TZrChar* subDir,
                                                                 const TZrChar* extension,
@@ -538,6 +552,7 @@ static TZrBool artifact_buffers_match_after_known_normalization(const TZrChar* b
     return matches;
 }
 
+/* 把 writer 输出与仓库 golden 对齐；Unity 断言失败会跳过本函数尾部的缓冲区清理。 */
 static void assert_file_matches_golden(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension) {
     TZrChar generatedPath[1024];
     TZrChar goldenPath[1024];
@@ -639,6 +654,7 @@ static void assert_file_matches_golden(const TZrChar* baseName, const TZrChar* s
     free(goldenBuffer);
 }
 
+/* JSON golden 尚非必备工件，只在仓库存在相应快照时执行严格比较。 */
 static void assert_file_matches_golden_if_present(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension) {
     TZrChar goldenPath[1024];
 
@@ -648,6 +664,7 @@ static void assert_file_matches_golden_if_present(const TZrChar* baseName, const
     }
 }
 
+/* 在完整 golden 之外锁定装饰器/AOT 输出必须保留的局部语义标记。 */
 static void assert_generated_text_contains(const TZrChar* baseName,
                                            const TZrChar* subDir,
                                            const TZrChar* extension,
@@ -663,6 +680,7 @@ static void assert_generated_text_contains(const TZrChar* baseName,
     free(generatedBuffer);
 }
 
+/* 限制生成代码退回逐条 helper 调用的旧形态；调用方仍用完整 golden 复核其余文本。 */
 static void assert_generated_text_not_contains(const TZrChar* baseName,
                                                const TZrChar* subDir,
                                                const TZrChar* extension,
@@ -678,6 +696,7 @@ static void assert_generated_text_not_contains(const TZrChar* baseName,
     free(generatedBuffer);
 }
 
+/* 单个脚本在同一 VM 状态下经解析、编译和多工件输出，确保比较对象来自同一份源码。 */
 static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     TZrChar sourcePath[1024];
     TZrSize sourceLength = 0;
@@ -721,6 +740,7 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     destroy_test_state(state);
 }
 
+/* AOT C 场景额外检查可执行 lowering 的 guard 形态，而不止校验工件能否写出。 */
 static void run_true_aot_c_case(const SZrArtifactGoldenCase* testCase) {
     TZrChar sourcePath[1024];
     TZrSize sourceLength = 0;
@@ -750,6 +770,7 @@ static void run_true_aot_c_case(const SZrArtifactGoldenCase* testCase) {
     destroy_test_state(state);
 }
 
+/* 共享一组 golden 用例，覆盖装饰器语法和编译时常量在不同工件中的稳定表示。 */
 static void test_artifact_outputs_match_goldens(void) {
     TZrSize i;
 
@@ -758,6 +779,7 @@ static void test_artifact_outputs_match_goldens(void) {
     }
 }
 
+/* 独立核对闭包导出的 AOT C 工件，避免与一般语法工件的期待混淆。 */
 static void test_true_aot_c_outputs_match_goldens(void) {
     TZrSize i;
 
@@ -766,6 +788,7 @@ static void test_true_aot_c_outputs_match_goldens(void) {
     }
 }
 
+/* 两组 Unity 用例分别验证常规工件与严格 AOT C 的闭包导出工件。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_artifact_outputs_match_goldens);

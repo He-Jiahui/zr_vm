@@ -11,11 +11,13 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
+// 用例局部计时状态；统计本组元调用编译/生成步骤，不参与语义判定。
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrMetaCallPipelineTimer;
 
+// 只检查当前 ExecBC 函数；元调用用例据此区分本层指令和子函数指令。
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -32,6 +34,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+// 递归跨子函数查找 ExecBC opcode，以覆盖闭包或方法体中的元调用。
 static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 childIndex;
 
@@ -51,6 +54,7 @@ static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrIns
     return ZR_FALSE;
 }
 
+// 同时搜索 SemIR 正常路径及 deopt 路径，确认回退仍保留元调用语义。
 static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 EZrSemIrOpcode opcode,
                                                 TZrBool requireDeopt) {
@@ -73,6 +77,7 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
     return ZR_FALSE;
 }
 
+// 递归核对子函数的 SemIR 与 deopt 指令，避免只看顶层模块遗漏调用体。
 static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function,
                                                      EZrSemIrOpcode opcode,
                                                      TZrBool requireDeopt) {
@@ -94,6 +99,7 @@ static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function
     return ZR_FALSE;
 }
 
+// 定位任意层函数的调用点缓存类型，验证 quickening 为元调用选择专用缓存。
 static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *function,
                                                           EZrFunctionCallSiteCacheKind kind) {
     TZrUInt32 index;
@@ -119,6 +125,7 @@ static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *fun
     return ZR_FALSE;
 }
 
+// 返回树中首个指定缓存供字段断言使用；调用方须知道缓存所属函数再解释索引。
 static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_cache_kind(
         const SZrFunction *function,
         EZrFunctionCallSiteCacheKind kind) {
@@ -147,6 +154,7 @@ static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_ca
     return ZR_NULL;
 }
 
+// 读取后端生成文本用于契约检查；缓冲所有权交给调用测试，失败返回 NULL。
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -189,6 +197,7 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+// 构造带元调用的共享源 fixture，使编译器与 AOT 后端面对相同语义输入。
 static SZrFunction *compile_meta_call_fixture(SZrState *state) {
     const char *source =
             "class Adder {\n"
@@ -217,6 +226,7 @@ static SZrFunction *compile_meta_call_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 构造动态调用 fixture，对比普通调用、缓存变体及后端运行时入口。
 static SZrFunction *compile_dynamic_call_fixture(SZrState *state) {
     const char *source =
             "class Adder {\n"
@@ -248,6 +258,7 @@ static SZrFunction *compile_dynamic_call_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 检查元调用从源码到 SemIR/ExecBC 的专用协议及调用点缓存，防止退化成普通调用。
 static void test_meta_call_emits_semir_meta_runtime_contracts(void) {
     SZrMetaCallPipelineTimer timer = {0};
     const char *testSummary = "Meta Call Emits SemIR Meta Runtime Contracts";
@@ -302,6 +313,7 @@ static void test_meta_call_emits_semir_meta_runtime_contracts(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 确认动态调用的 SemIR 运行时协议与 ExecBC 缓存变体同时存在，保护回退路径。
 static void test_dynamic_call_emits_semir_runtime_contracts_and_cached_execbc_variants(void) {
     SZrMetaCallPipelineTimer timer = {0};
     const char *testSummary = "Dynamic Call Emits SemIR Runtime Contracts And Cached ExecBC Variants";
@@ -350,6 +362,7 @@ static void test_dynamic_call_emits_semir_runtime_contracts_and_cached_execbc_va
     ZR_TEST_DIVIDER();
 }
 
+// 核对元调用的 C/LLVM 生成文本包含运行时协定。TODO: 文本匹配尚不证明生成工件实际执行路径。
 static void test_meta_call_aot_backends_emit_runtime_contracts(void) {
     SZrMetaCallPipelineTimer timer = {0};
     const char *testSummary = "Meta Call AOT Backends Emit Runtime Contracts";
@@ -401,6 +414,7 @@ static void test_meta_call_aot_backends_emit_runtime_contracts(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 核对动态调用双后端的运行时入口与缓存参数。TODO: 后续增加可执行工件验证。
 static void test_dynamic_call_aot_backends_emit_runtime_contracts(void) {
     SZrMetaCallPipelineTimer timer = {0};
     const char *testSummary = "Dynamic Call AOT Backends Emit Runtime Contracts";
@@ -456,6 +470,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// Unity 入口将元调用和动态调用各自的中间码与 AOT 检查成对运行。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_meta_call_emits_semir_meta_runtime_contracts);

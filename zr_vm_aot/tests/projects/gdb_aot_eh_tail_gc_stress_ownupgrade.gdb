@@ -2,6 +2,7 @@ set pagination off
 set confirm off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
+# BUG: 从仓库根目录运行时，此根 tests 项目路径不存在；CLI 在触发 OwnUpgrade 条件断点前即无法加载样例。
 set args --execution-mode aot_c --require-aot-path --emit-executed-via ./tests/fixtures/projects/aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp
 break ZrLibrary_AotRuntime_OwnUpgrade if destinationSlot==14
 commands
