@@ -1,3 +1,4 @@
+// 源级 extern 声明原生库入口名；当前参考测试只解析此文件，不由项目 main 调用。
 native extern("syntax_reference_native") {
     #zr.ffi.entry("syntax_reference_render_value")#
     fn syntaxReferenceNativeValue(): i32;

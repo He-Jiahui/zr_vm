@@ -1,3 +1,4 @@
+// 模拟结算：import guard 成功后逐层拆出折扣、积分和运费，并用总价保护绑定顺序。
 union Coupon {
     Missing;
     @Found { amount: int; code: int; }

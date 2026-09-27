@@ -1,3 +1,4 @@
+// CLI test 命令从这些标记生成测试清单，分别覆盖普通、参数化、跳过和异步条目。
 let testing = import("zr.testing");
 let task = import("zr.task");
 

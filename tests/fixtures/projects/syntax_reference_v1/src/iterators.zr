@@ -1,3 +1,4 @@
+// 两次 yield 展示连续产值的迭代器语法，供当前语法参考解析测试读取。
 let iteration = import("zr.iteration");
 
 fn syntaxReferenceValues(value: int): iteration.Iterator<int> {

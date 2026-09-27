@@ -1,5 +1,6 @@
 module local_pair;
 
+// 编译器回归使用这个项目内的 Pair 构造器和字段，区别于 zr.container 的同名原生类型。
 pub struct Pair {
     pub var left: int;
     pub var right: int;

@@ -1,3 +1,4 @@
+// 同一逻辑名的工作区模块与 native provider、别名、包及磁盘产物分别走不同定位域。
 let fixtureWorkspace = import("engine.render");
 let fixtureNative = import("native:engine.render");
 let fixtureNativeAlias = import("#nativeRender");

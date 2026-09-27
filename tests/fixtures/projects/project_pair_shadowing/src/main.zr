@@ -1,3 +1,4 @@
+// 入口同时装载本地 Pair 和导入 zr.container 的兄弟模块，验证类型名不会跨模块串用。
 let local = import("local_pair");
 let native = import("native_imports");
 

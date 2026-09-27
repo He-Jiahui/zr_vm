@@ -1,5 +1,6 @@
 module main;
 
+// 项目套件和编译器回归都从这里验证原生网络模块：TCP 双向传输和 UDP 自发自收共用系统分配的回环端口。
 let network = import("zr.network");
 let lib = import("lib");
 
@@ -26,6 +27,7 @@ var socket = udp.bind("127.0.0.1", 0);
 var sentEcho = socket.send("127.0.0.1", socket.port(), echo);
 var packet = socket.receive(16, 3000);
 
+// 先关闭四个原生句柄，再检查结果；失败返回也不得让测试进程保留监听端口。
 server.close();
 client.close();
 listener.close();

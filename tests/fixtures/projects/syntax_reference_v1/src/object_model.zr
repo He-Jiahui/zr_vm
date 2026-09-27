@@ -1,3 +1,4 @@
+// 属性公开读、私有写；此样例同时保留只读与可变接收者方法的语法形状。
 class SyntaxReferenceCounter {
     pri var stored: int = 0;
 

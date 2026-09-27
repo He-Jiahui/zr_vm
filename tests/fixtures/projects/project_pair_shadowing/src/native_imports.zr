@@ -1,5 +1,6 @@
 module native_imports;
 
+// 只装载原生容器模块，不在这里构造 Pair；与 local_pair 同时解析可暴露类型名污染。
 let container = import("zr.container");
 
 pub fn touch(): int {

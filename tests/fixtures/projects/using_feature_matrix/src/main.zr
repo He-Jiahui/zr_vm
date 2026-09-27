@@ -1,3 +1,4 @@
+// 项目套件的正向矩阵：无块 using 从泛型元组和结构体字段中绑定值，再与普通 switch 汇总校验。
 union Option<T> {
     None;
     @Some(value: T);

@@ -1,5 +1,6 @@
 let declaration = import("zr.compile.declaration");
 
+// 编译期变换声明字段与属性补丁，供属性和变换路径的编译测试读取。
 #zr.reflection.attributeUsage(
     targets: zr.reflection.AttributeTargets.type,
     retention: zr.reflection.AttributeRetention.artifact,

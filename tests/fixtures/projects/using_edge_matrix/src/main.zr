@@ -1,3 +1,4 @@
+// 边界矩阵保留外层同名变量，检查字段别名和直接泛型解构不会误用旧绑定。
 union Option<T> {
     None;
     @Some(value: T);

@@ -1,3 +1,4 @@
+// 反射样例分别覆盖可构造类型、typeid 解析和运行时 typeof 的返回类型。
 let reflection = import("zr.reflection");
 
 struct SyntaxReferenceReflectionPoint {

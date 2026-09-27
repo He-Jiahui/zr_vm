@@ -1,3 +1,4 @@
+// 独立项目入口覆盖空变体守卫的成功/失败边、零与负值，以及八元组拆包。
 union Edge {
     Empty;
     Point(value: int);

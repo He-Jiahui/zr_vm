@@ -1,3 +1,4 @@
+// PoolRef 通过 out 参数借出，回收另走 handle 路径；当前只验证接口形状可解析。
 let pooling = import("zr.pooling");
 
 fn syntaxReferenceBorrowPooled(

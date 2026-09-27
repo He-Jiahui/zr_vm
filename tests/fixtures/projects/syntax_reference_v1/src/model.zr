@@ -1,3 +1,4 @@
+// 此文件是类型与构造语法证据；入口只运行 host，编译器仍须解析这些声明。
 ref struct SyntaxReferenceView {
     var value: int;
 }

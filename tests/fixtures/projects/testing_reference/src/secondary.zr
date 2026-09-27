@@ -1,3 +1,4 @@
+// 第二个源模块用于确认 CLI test 会收集入口之外的测试条目。
 let testing = import("zr.testing");
 
 #zr.testing.test#

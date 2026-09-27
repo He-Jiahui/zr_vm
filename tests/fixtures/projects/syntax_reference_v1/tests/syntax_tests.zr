@@ -1,3 +1,4 @@
+// manifest 的 testSource 指向本目录；样例声明普通测试和两个参数 case。
 let testing = import("zr.testing");
 
 #zr.testing.test#

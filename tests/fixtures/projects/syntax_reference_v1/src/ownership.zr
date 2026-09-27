@@ -1,3 +1,4 @@
+// resource 声明和 own -> GcBox 桥接放在同一文件，供桥接类型检查读取。
 resource class SyntaxReferenceOwned {
     var value: int;
 
