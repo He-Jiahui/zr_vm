@@ -12,13 +12,16 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* Unity 每例持有独立 VM；手工 AST、CFG 与语义事实只在该资源域内有效。 */
 static SZrState *g_state;
 
+/* 每个 try/catch 场景重新建状态，隔离 GC 对象和事实数组。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* 断言中止后仍由 Unity 调用；状态析构不替代局部原生结构的显式释放。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,6 +29,7 @@ void tearDown(void) {
     }
 }
 
+/* 给 AST 和事实位置查询提供同一虚拟源文件，避免跨源同偏移命中。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -39,6 +43,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 绕过解析器构造最小 AST；挂入脚本后由 Ast_Free 递归释放原生节点。 */
 static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *node = (SZrAstNode *)ZrCore_Memory_RawMallocWithType(
             g_state->global,
@@ -52,7 +57,10 @@ static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize e
     return node;
 }
 
+/* 把一个 try 语句挂为 CFG 根，独立观察异常边及 catch 可达性。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
+    /* TODO: 三、四 catch 用例的 try 范围分别到 112、128，均超过脚本固定的 96；
+     * 若查询父节点位置，先核对并统一父子范围。 */
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 96);
 
     script->data.script.statements = ZrParser_AstNodeArray_New(g_state, 1);
@@ -61,6 +69,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/* 用单语句块固定 try/catch 体的观测位置，使事实落到内部语句。 */
 static SZrAstNode *block_with_statement(SZrAstNode *statement,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
@@ -73,6 +82,7 @@ static SZrAstNode *block_with_statement(SZrAstNode *statement,
     return block;
 }
 
+/* 保留声明到 throw 的顺序，让抛出类型分析读取前面的局部绑定。 */
 static SZrAstNode *block_with_two_statements(SZrAstNode *firstStatement,
                                              SZrAstNode *secondStatement,
                                              TZrSize startOffset,
@@ -87,11 +97,14 @@ static SZrAstNode *block_with_two_statements(SZrAstNode *firstStatement,
     return block;
 }
 
+/* 保留声明、赋值、throw 的次序，验证较新的绑定覆盖初始类型。 */
 static SZrAstNode *block_with_three_statements(SZrAstNode *firstStatement,
                                                SZrAstNode *secondStatement,
                                                SZrAstNode *thirdStatement,
                                                TZrSize startOffset,
                                                TZrSize endOffset) {
+    /* TODO: 此夹具未像一、二语句块置 isStatement；CFG 当前只遍历 body，复用到
+     * 语义编译前需核对语句块标志契约。 */
     SZrAstNode *block = test_node(ZR_AST_BLOCK, startOffset, endOffset);
 
     block->data.block.body = ZrParser_AstNodeArray_New(g_state, 3);
@@ -102,6 +115,7 @@ static SZrAstNode *block_with_three_statements(SZrAstNode *firstStatement,
     return block;
 }
 
+/* 单 catch 夹具区分无抛出、显式 throw 与可能抛出的调用。 */
 static SZrAstNode *try_statement_with_catch(SZrAstNode *body, SZrAstNode *catchNode) {
     SZrAstNode *tryNode = test_node(ZR_AST_TRY_CATCH_FINALLY_STATEMENT, 0, 80);
 
@@ -116,6 +130,7 @@ static SZrAstNode *try_statement_with_catch(SZrAstNode *body, SZrAstNode *catchN
     return tryNode;
 }
 
+/* 两个 catch 保留原始顺序，用来验证 catch-all 或类型匹配对后继的遮蔽。 */
 static SZrAstNode *try_statement_with_two_catches(SZrAstNode *body,
                                                   SZrAstNode *firstCatchNode,
                                                   SZrAstNode *secondCatchNode) {
@@ -136,6 +151,7 @@ static SZrAstNode *try_statement_with_two_catches(SZrAstNode *body,
     return tryNode;
 }
 
+/* 三个 catch 让前两支按类型分流，最后一支观测剩余异常是否存在。 */
 static SZrAstNode *try_statement_with_three_catches(SZrAstNode *body,
                                                     SZrAstNode *firstCatchNode,
                                                     SZrAstNode *secondCatchNode,
@@ -161,6 +177,7 @@ static SZrAstNode *try_statement_with_three_catches(SZrAstNode *body,
     return tryNode;
 }
 
+/* 四支 catch 同时观测不匹配、分别消费两种已知异常及最终 catch-all。 */
 static SZrAstNode *try_statement_with_four_catches(SZrAstNode *body,
                                                    SZrAstNode *firstCatchNode,
                                                    SZrAstNode *secondCatchNode,
@@ -191,13 +208,17 @@ static SZrAstNode *try_statement_with_four_catches(SZrAstNode *body,
     return tryNode;
 }
 
+/* 空 pattern 表示 catch-all；参数型场景随后由 add_catch_parameter 补齐。 */
 static SZrAstNode *catch_clause(SZrAstNode *body) {
+    /* TODO: 多 catch 用例的后续 body 可到偏移 112，此节点范围仍固定为 40..72；
+     * 目前只查内部语句，增加 catch 节点位置查询前需按子树位置修正。 */
     SZrAstNode *catchNode = test_node(ZR_AST_CATCH_CLAUSE, 40, 72);
 
     catchNode->data.catchClause.block = body;
     return catchNode;
 }
 
+/* 复用标识符节点表示 catch 参数、局部变量与未知条件，名称由当前 VM 持有。 */
 static SZrAstNode *identifier_node(const char *name,
                                    TZrSize nameLength,
                                    TZrSize startOffset,
@@ -211,6 +232,7 @@ static SZrAstNode *identifier_node(const char *name,
     return identifier;
 }
 
+/* 无 typeInfo 的单参数在 CFG 匹配中等同 catch-all；参数持有姓名标识符节点并负责析构。 */
 static SZrAstNode *untyped_parameter(const char *name,
                                      TZrSize nameLength,
                                      TZrSize startOffset,
@@ -236,6 +258,7 @@ static SZrAstNode *untyped_parameter(const char *name,
     return parameter;
 }
 
+/* 仅构造 CFG 可识别的简单类型名；原生 SZrType 转入参数、声明或转换 AST 并随其释放。 */
 static SZrType *type_info_named(const char *typeName,
                                 TZrSize typeNameLength,
                                 TZrSize startOffset,
@@ -261,6 +284,7 @@ static SZrType *type_info_named(const char *typeName,
     return typeInfo;
 }
 
+/* 把单参数限定为具名异常类型，供已知 throw kind 的精确匹配。 */
 static SZrAstNode *typed_parameter(const char *name,
                                    TZrSize nameLength,
                                    const char *typeName,
@@ -277,6 +301,7 @@ static SZrAstNode *typed_parameter(const char *name,
     return parameter;
 }
 
+/* 在 try 体前段建立具名局部绑定，供后续 throw 标识符解析其已知类型。 */
 static SZrAstNode *typed_variable_declaration(const char *name,
                                               TZrSize nameLength,
                                               const char *typeName,
@@ -302,6 +327,7 @@ static SZrAstNode *typed_variable_declaration(const char *name,
     return declaration;
 }
 
+/* 将参数交给 catch pattern 持有；CFG 依据 typeInfo 判断是否吞掉后续异常。 */
 static void add_catch_parameter(SZrAstNode *catchNode, SZrAstNode *parameter) {
     TEST_ASSERT_NOT_NULL(catchNode);
     TEST_ASSERT_EQUAL_INT(ZR_AST_CATCH_CLAUSE, catchNode->type);
@@ -311,6 +337,7 @@ static void add_catch_parameter(SZrAstNode *catchNode, SZrAstNode *parameter) {
     ZrParser_AstNodeArray_Add(g_state, catchNode->data.catchClause.pattern, parameter);
 }
 
+/* 提供已知整数 throw kind，隔离 catch 过滤与表达式求值。 */
 static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_INTEGER_LITERAL, startOffset, endOffset);
 
@@ -319,6 +346,7 @@ static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize 
     return literal;
 }
 
+/* 提供已知字符串 throw kind；GC 字符串随测试状态存活。 */
 static SZrAstNode *string_literal(const char *value,
                                   TZrSize valueLength,
                                   TZrSize startOffset,
@@ -333,6 +361,7 @@ static SZrAstNode *string_literal(const char *value,
     return literal;
 }
 
+/* 显式目标类型为抛出值提供 CFG 可读的类型来源，测试不运行真实转换。 */
 static SZrAstNode *type_cast_expression(SZrAstNode *expr,
                                         const char *typeName,
                                         TZrSize typeNameLength,
@@ -348,6 +377,7 @@ static SZrAstNode *type_cast_expression(SZrAstNode *expr,
     return castExpr;
 }
 
+/* 让 try 体中的赋值改变本地类型绑定，随后由 throw 读取最新绑定。 */
 static SZrAstNode *assignment_expression(SZrAstNode *left,
                                          SZrAstNode *right,
                                          const TZrChar *op,
@@ -363,6 +393,7 @@ static SZrAstNode *assignment_expression(SZrAstNode *left,
     return assignment;
 }
 
+/* 将赋值接入 try 语句序列，供异常源扫描按执行顺序遍历。 */
 static SZrAstNode *expression_statement(SZrAstNode *expr,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
@@ -374,6 +405,7 @@ static SZrAstNode *expression_statement(SZrAstNode *expr,
     return statement;
 }
 
+/* 显式 throw 保留表达式种类，驱动 CFG 的已知异常类型画像。 */
 static SZrAstNode *throw_statement_with_expr(SZrAstNode *expr,
                                              TZrSize startOffset,
                                              TZrSize endOffset) {
@@ -383,6 +415,7 @@ static SZrAstNode *throw_statement_with_expr(SZrAstNode *expr,
     return throwStmt;
 }
 
+/* 未知条件分出两条 throw 路径，验证类型画像合并而非只看首支。 */
 static SZrAstNode *if_statement(SZrAstNode *condition,
                                 SZrAstNode *thenBody,
                                 SZrAstNode *elseBody,
@@ -397,6 +430,7 @@ static SZrAstNode *if_statement(SZrAstNode *condition,
     return ifNode;
 }
 
+/* 返回 context 中的借用事实；本组用例以 null 表示语句未被标为不可达。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(
         SZrSemanticContext *context,
         SZrAstNode *node) {
@@ -405,6 +439,7 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(
             test_range(node->location.start.offset, node->location.start.offset));
 }
 
+/* try 体没有异常源时不应连到 catch；不可达事实的原因保持 unknown。 */
 static void test_cfg_marks_catch_body_unreachable_when_try_has_no_throw(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -417,6 +452,9 @@ static void test_cfg_marks_catch_body_unreachable_when_try_has_no_throw(void) {
     SZrAstNode *script = script_with_statement(tryNode);
     const SZrSemanticReachabilityFact *fact;
 
+    /* BUG: 本文件各用例在取得原生 AST、CFG 或 context 后以 Unity 断言；失败时
+     * longjmp 跳过下方三个 Free，tearDown 只销毁 VM，已申请的原生块会泄漏。
+     * 需让失败路径也经过局部清理。 */
     TEST_ASSERT_NOT_NULL(context);
     ZrParser_Cfg_Init(g_state, &cfg);
 
@@ -433,6 +471,7 @@ static void test_cfg_marks_catch_body_unreachable_when_try_has_no_throw(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 显式 throw 允许进入 catch，即使未提供可区分的异常值。 */
 static void test_cfg_keeps_catch_body_reachable_when_try_has_explicit_throw(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -456,6 +495,7 @@ static void test_cfg_keeps_catch_body_reachable_when_try_has_explicit_throw(void
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 未知函数调用被保守视为可能抛出，不能凭缺少显式 throw 删掉 catch。 */
 static void test_cfg_keeps_catch_body_reachable_when_try_has_call_expression(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -485,6 +525,7 @@ static void test_cfg_keeps_catch_body_reachable_when_try_has_call_expression(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 首支无 pattern 吞掉所有异常，后继 catch 必须记为常量分支不可达。 */
 static void test_cfg_marks_catch_after_catch_all_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -518,6 +559,7 @@ static void test_cfg_marks_catch_after_catch_all_unreachable(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 未标类型的 catch 参数也应吞掉异常，防止后继错误保留异常边。 */
 static void test_cfg_treats_untyped_catch_parameter_as_catch_all(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -554,6 +596,7 @@ static void test_cfg_treats_untyped_catch_parameter_as_catch_all(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 整数字面量不会进入 string catch；后继 catch 仍保留可达。 */
 static void test_cfg_skips_typed_catch_when_literal_throw_type_mismatches(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -593,6 +636,7 @@ static void test_cfg_skips_typed_catch_when_literal_throw_type_mismatches(void) 
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 已知整数 throw 被 int catch 消费后，后继 catch 应被遮蔽。 */
 static void test_cfg_treats_matching_typed_catch_as_consuming_literal_throw(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -632,6 +676,7 @@ static void test_cfg_treats_matching_typed_catch_as_consuming_literal_throw(void
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 未知 if 条件产生整数和字符串两种异常；各自匹配的 catch 均须可达。 */
 static void test_cfg_tracks_multiple_known_throw_types_across_typed_catches(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -682,6 +727,7 @@ static void test_cfg_tracks_multiple_known_throw_types_across_typed_catches(void
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
     TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
 
+    /* bool 不匹配；int 与 string 各消费一种已知异常，最终 catch-all 没有剩余类型。 */
     fact = reachability_fact_at(context, boolCatchStmt);
     TEST_ASSERT_NOT_NULL(fact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, fact->state);
@@ -699,6 +745,7 @@ static void test_cfg_tracks_multiple_known_throw_types_across_typed_catches(void
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 抛出显式 string 转换时，仅 string catch 保留；此例不验证转换执行。 */
 static void test_cfg_uses_explicit_cast_throw_type_for_typed_catch_matching(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -755,6 +802,7 @@ static void test_cfg_uses_explicit_cast_throw_type_for_typed_catch_matching(void
     ZrParser_SemanticContext_Free(context);
 }
 
+/* throw 局部标识符时沿前面的 string 声明取类型，排除 int catch。 */
 static void test_cfg_uses_local_variable_type_for_typed_catch_matching(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -821,7 +869,10 @@ static void test_cfg_uses_local_variable_type_for_typed_catch_matching(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* throw 局部变量时以最近赋值的 string 类型覆盖最初的 int 声明。 */
 static void test_cfg_uses_latest_assignment_type_for_typed_catch_matching(void) {
+    /* TODO: 此夹具让 int 声明接收 string 值，未运行语义类型检查；把它当成
+     * 源语言有效路径前，需用解析与语义集成测试确认该赋值是否合法。 */
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
     SZrAstNode *declaration = typed_variable_declaration(
@@ -897,6 +948,7 @@ static void test_cfg_uses_latest_assignment_type_for_typed_catch_matching(void) 
     ZrParser_SemanticContext_Free(context);
 }
 
+/* Unity 注册全部异常边回归场景，CMake 将独立目标纳入语言流水线。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_marks_catch_body_unreachable_when_try_has_no_throw);
