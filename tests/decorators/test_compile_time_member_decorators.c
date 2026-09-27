@@ -5,6 +5,10 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
 
+/** @brief Compile a legacy decorator fixture to prove the removed syntax stays unavailable.
+ * BUG: Unity assertion failure skips State_Destroy while the empty tearDown owns no
+ * state, so an unexpectedly accepted fixture leaks this VM global until process exit.
+ */
 static void assert_legacy_decorator_source_is_rejected(
         const TZrChar *source,
         const TZrChar *sourceNameText) {
@@ -26,6 +30,7 @@ static void assert_legacy_decorator_source_is_rejected(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/** @brief Reject class member patches written with the removed comptime @decorate form. */
 static void test_legacy_compile_time_member_decorators_are_rejected(void) {
     static const TZrChar *source =
             "comptime class MarkField {\n"
@@ -43,6 +48,7 @@ static void test_legacy_compile_time_member_decorators_are_rejected(void) {
             "legacy_compile_time_member_decorator.zr");
 }
 
+/** @brief Reject parameter patches written with the same removed decorator form. */
 static void test_legacy_compile_time_parameter_decorators_are_rejected(void) {
     static const TZrChar *source =
             "comptime class MarkParameter {\n"
@@ -59,6 +65,7 @@ static void test_legacy_compile_time_parameter_decorators_are_rejected(void) {
             "legacy_compile_time_parameter_decorator.zr");
 }
 
+/** @brief Reject the removed @decorate meta method even without an application site. */
 static void test_legacy_decorate_meta_method_is_rejected_directly(void) {
     static const TZrChar *source =
             "class LegacyDecorator {\n"
@@ -71,10 +78,12 @@ static void test_legacy_decorate_meta_method_is_rejected_directly(void) {
             "legacy_decorate_meta_method.zr");
 }
 
+/* Unity requires both hooks; these do not own the helper's local VM state. */
 void setUp(void) {}
 
 void tearDown(void) {}
 
+/** @brief Run the three legacy-syntax rejection contracts in the decorator pipeline target. */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_legacy_compile_time_member_decorators_are_rejected);

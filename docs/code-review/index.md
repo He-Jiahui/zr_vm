@@ -54,5 +54,6 @@ doc_type: category-index
 | AOT runtime、typed call 与生命周期边界 | [624 项](coverage/zr_vm_library_aot.tsv) | 11 文件独立复核，非注释词法流不变，Clang C11 语法和 MSVC Debug 共享库构建通过；生成器未引用的 shim 风险记为 TODO，已证实的调用/清理问题记为 BUG。WSL GCC 检查因 I/O 阻塞中断，未计通过。 |
 | library 基础状态、批处理、文件与任务运行时 | [312 项](coverage/zr_vm_library.tsv) | 14 文件独立复核，9 个改动源码文件的非注释内容不变；补准 Map 原位布局、global 初始化、ReadAll 释放后访问及整数比较精度问题的契约与 BUG。作者此前 GCC/Clang 语法自检通过；独立编译受本机头文件和 WSL I/O 限制，未计通过。 |
 | 异常处理编译与运行时回归 | [31 项](coverage/tests_exceptions.tsv) | 2 文件独立复核，仅改注释；Clang C11 语法检查通过。Unity 断言中断后的 VM 状态清理缺口已标 BUG，两个覆盖疑问及孤立的子目录 CMake 配方已标 TODO；测试目标未完成构建或运行。 |
+| 迁移、reference、decorator 与项目调试小边界 | [24 项](coverage/tests_small_contracts.tsv) | 5 文件独立复核，3 个 C 文件仅加注释且 Clang C11 语法通过；迁移缓冲区、reference 文本及 decorator 测试失败后的资源泄漏和过期 GDB 断点已标 BUG。生成 suite 清单只登记来源，未改动；运行测试未执行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

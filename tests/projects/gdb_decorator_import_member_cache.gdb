@@ -1,3 +1,7 @@
+# Probe the project import member cache while the CLI runs decorator_import.zrp.
+# BUG: the breakpoint at execution_dispatch.c:321 no longer targets
+# execution_resolve_cached_member_symbol (now near line 1674); the command
+# block expects cacheIndex/expectedKind and cannot inspect the intended frame.
 set pagination off
 set breakpoint pending on
 

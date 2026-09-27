@@ -9,13 +9,16 @@
 #include "zr_vm_parser/legacy_migration.h"
 #include "zr_vm_parser/test_contract.h"
 
+/* Unity owns one migration state per test so failed assertions still reach tearDown. */
 static SZrState *g_state;
 
+/** @brief Allocate the per-case VM used by migration planning and compiler checks. */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/** @brief Release the VM even when Unity aborts a test body on an assertion. */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -23,6 +26,9 @@ void tearDown(void) {
     }
 }
 
+/** @brief Locate a migration diagnostic by old syntax kind before its owning plan is freed.
+ * @return A borrowed plan item; callers must not retain it after PlanFree.
+ */
 static const SZrLegacyMigrationItem *find_item(
         const SZrLegacyMigrationPlan *plan,
         const TZrChar *kind) {
@@ -40,6 +46,12 @@ static const SZrLegacyMigrationItem *find_item(
     return ZR_NULL;
 }
 
+/* BUG: Each case frees the RawFree-owned migrated buffer only after its last
+ * assertion. Unity longjmp on a failed later assertion skips that free;
+ * tearDown releases the VM state but does not own migrated. */
+/** @brief Verify machine migration creates a typed test function that the test compiler manifests.
+ * A second plan checks that the rewritten source no longer requests migration.
+ */
 static void test_percent_test_becomes_typed_ordinary_function(void) {
     static const TZrChar source[] =
             "%test(\"parses empty-input\") {\n"
@@ -101,6 +113,7 @@ static void test_percent_test_becomes_typed_ordinary_function(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/** @brief Keep legacy return-value tests in manual review while applying independent safe edits. */
 static void test_return_convention_requires_review_and_is_not_applied(void) {
     static const TZrChar source[] =
             "%test(\"legacy result\") { return 0; }\n"
@@ -135,6 +148,7 @@ static void test_return_convention_requires_review_and_is_not_applied(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/** @brief Verify draft test declarations and zr.test attributes converge on zr.testing names. */
 static void test_draft_test_functions_and_attributes_migrate_idempotently(void) {
     static const TZrChar source[] =
             "test fn drafted(): void {}\n"
@@ -178,6 +192,7 @@ static void test_draft_test_functions_and_attributes_migrate_idempotently(void) 
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/** @brief Prevent an auto-fix from overwriting a function whose generated test name already exists. */
 static void test_generated_identifier_collision_never_auto_applies(void) {
     static const TZrChar source[] =
             "fn testCollision(): void {}\n"
@@ -210,6 +225,7 @@ static void test_generated_identifier_collision_never_auto_applies(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/** @brief Rewrite only bare debug import calls, preserving strings and comments with similar text. */
 static void test_bare_debug_import_migrates_to_canonical_module_idempotently(void) {
     static const TZrChar source[] =
             "let debug = import(\"debug\");\n"
@@ -256,6 +272,7 @@ static void test_bare_debug_import_migrates_to_canonical_module_idempotently(voi
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/** @brief Run the five migration contracts under the root CMake Unity target. */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_percent_test_becomes_typed_ordinary_function);

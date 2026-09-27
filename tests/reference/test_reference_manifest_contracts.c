@@ -4,6 +4,11 @@
 
 #include "reference_support.h"
 
+/** @brief Keep full-stack reference manifests explicit about missing per-case binary parity.
+ * The fixture reader returns heap text; each manifest must be freed before the next case.
+ * BUG: A Unity assertion after ReadFixture succeeds skips free(manifestText),
+ * leaking that buffer until this standalone test process exits.
+ */
 static void test_reference_full_stack_backend_skip_reasons_use_binary_parity_wording(void) {
     static const char *kManifestPaths[] = {
         "core_semantics/lexing_literals_diagnostics/manifest.json",
@@ -41,6 +46,7 @@ static void test_reference_full_stack_backend_skip_reasons_use_binary_parity_wor
     }
 }
 
+/** @brief Run the manifest wording contract as a standalone Unity target. */
 int main(void) {
     UNITY_BEGIN();
 
