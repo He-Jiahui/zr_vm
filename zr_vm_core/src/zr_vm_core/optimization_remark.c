@@ -6,6 +6,7 @@
 
 #define ZR_OPTIMIZATION_REMARK_DEFAULT_MAX_RECORDS ((TZrUInt32)4096u)
 
+/* 统一分配上界，使 store 与 page 的乘法检查使用同一 TZrSize 范围。 */
 /* Keep allocation arithmetic in the project's size type.  Some supported
  * host toolchains expose SIZE_MAX with a wider integer type than size_t;
  * comparing a TZrSize directly with that macro then triggers -Wtype-limits
@@ -146,6 +147,7 @@ TZrBool ZrCore_OptimizationRemark_Validate(
                               ZR_OPTIMIZATION_REMARK_SCHEMA_VERSION,
                               remark->schemaVersion);
     }
+    /* 外部可写 POD 在排序/序列化前必须有界终止，避免 strcmp 越界。 */
     if (remark->pass[0] == '\0' ||
         memchr(remark->pass, '\0', sizeof(remark->pass)) == ZR_NULL ||
         (remark->module[0] != '\0' &&
@@ -266,6 +268,7 @@ static TZrBool zr_remark_store_reserve(SZrOptimizationRemarkStore *store,
                                       (TZrSize)sizeof(*replacement)),
                               capacity);
     }
+    /* realloc 失败时不改原缓冲和容量，成功后才发布新地址。 */
     replacement = (SZrOptimizationRemark *)realloc(
             store->items, (TZrSize)capacity * sizeof(*replacement));
     if (replacement == ZR_NULL) {
@@ -302,6 +305,9 @@ TZrBool ZrCore_OptimizationRemarks_Append(
         if (store->droppedCount != UINT64_MAX) store->droppedCount++;
         return ZR_TRUE;
     }
+    /* BUG: 满容量时传入 &store->items[i]，reserve 的 realloc 使 remark
+     * 失效，后面的按值复制会读取旧指针；用 16 条记录填满初始容量后
+     * 从 items[0] 追加第 17 条即可到达。 */
     if (store->count == UINT32_MAX ||
         !zr_remark_store_reserve(store, store->count + 1u, diagnostic)) {
         return ZR_FALSE;
@@ -361,6 +367,7 @@ static TZrBool zr_remark_matches(const SZrOptimizationRemark *remark,
     return ZR_TRUE;
 }
 
+/* 先按源位置与可读结论排序，再以身份及事实字段消除跨模块并列项。 */
 static int zr_remark_compare(const void *left, const void *right) {
     const SZrOptimizationRemark *a = (const SZrOptimizationRemark *)left;
     const SZrOptimizationRemark *b = (const SZrOptimizationRemark *)right;
@@ -538,7 +545,7 @@ TZrBool ZrCore_OptimizationRemarks_Query(
                               4u, limit, 0u);
     }
 
-    /* Build a sorted matching list before applying pagination. */
+    /* 先对所有匹配行排序再取页，保证不同 pageOffset 的结果顺序一致。 */
     {
         SZrOptimizationRemark *matches = (SZrOptimizationRemark *)malloc(
                 (TZrSize)matchCount * sizeof(*matches));
@@ -598,6 +605,9 @@ TZrBool ZrCore_OptimizationRemarks_InvalidateSourceVersion(
         writeIndex++;
     }
     store->count = writeIndex;
+    /* TODO: 删除某源版本后仍保留 store 级 droppedCount/truncated，后续
+     * 新版本查询也会显示旧丢弃数；核对这两个字段应表示 store 生命周期
+     * 总量还是当前有效记录范围，并补跨版本失效查询测试。 */
     if (!removed) {
         return zr_remark_fail(diagnostic,
                               ZR_OPTIMIZATION_REMARK_DIAGNOSTIC_NOT_FOUND,
@@ -742,6 +752,7 @@ static TZrBool zr_writer_finish(SZrRemarkWriter *writer,
                                 TZrSize capacity,
                                 TZrSize *outWrittenSize,
                                 SZrOptimizationRemarkDiagnostic *diagnostic) {
+    /* 无输出缓冲时仍统计完整长度；有缓冲时只在容纳 NUL 后宣告成功。 */
     if (outWrittenSize != ZR_NULL) *outWrittenSize = writer->length;
     if (buffer != ZR_NULL && capacity > writer->length) {
         buffer[writer->length] = '\0';
