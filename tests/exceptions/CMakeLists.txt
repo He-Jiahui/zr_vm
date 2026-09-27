@@ -1,6 +1,6 @@
-# TODO: The root tests/CMakeLists.txt builds this source directly; no parent adds
-# this directory. If this local recipe is reactivated, replace the undefined
-# zr_configure_unity_test helper and link the zr.system provider used by the tests.
+# TODO: 顶层 tests/CMakeLists.txt 直接构建该源码，当前没有父目录包含这里。
+# 如重新启用本地配方，需要替换未定义的 zr_configure_unity_test，并链接
+# 测试实际使用的 zr.system provider。
 # ZR-VM Exceptions Tests CMakeLists.txt
 
 # 添加异常测试源文件

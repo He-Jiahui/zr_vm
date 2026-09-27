@@ -9,16 +9,16 @@
 #include "zr_vm_parser/legacy_migration.h"
 #include "zr_vm_parser/test_contract.h"
 
-/* Unity owns one migration state per test so failed assertions still reach tearDown. */
+/* Unity 为每个迁移用例管理一个状态，使断言失败后仍能进入 tearDown。 */
 static SZrState *g_state;
 
-/** @brief Allocate the per-case VM used by migration planning and compiler checks. */
+/** @brief 为迁移规划和编译器检查创建用例专属 VM。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
-/** @brief Release the VM even when Unity aborts a test body on an assertion. */
+/** @brief 即使 Unity 因断言中断用例体，也释放该 VM。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,8 +26,8 @@ void tearDown(void) {
     }
 }
 
-/** @brief Locate a migration diagnostic by old syntax kind before its owning plan is freed.
- * @return A borrowed plan item; callers must not retain it after PlanFree.
+/** @brief 在所属迁移计划释放前，按旧语法类别定位诊断项。
+ * @return 借用的计划项；PlanFree 之后调用方不得继续持有。
  */
 static const SZrLegacyMigrationItem *find_item(
         const SZrLegacyMigrationPlan *plan,
@@ -46,11 +46,11 @@ static const SZrLegacyMigrationItem *find_item(
     return ZR_NULL;
 }
 
-/* BUG: Each case frees the RawFree-owned migrated buffer only after its last
- * assertion. Unity longjmp on a failed later assertion skips that free;
- * tearDown releases the VM state but does not own migrated. */
-/** @brief Verify machine migration creates a typed test function that the test compiler manifests.
- * A second plan checks that the rewritten source no longer requests migration.
+/* BUG: 每个用例只在最后一次断言后释放由 RawFree 管理的 migrated 缓冲区。
+ * 后续断言失败触发 Unity longjmp 会跳过释放；tearDown 只释放 VM 状态，
+ * 不持有 migrated。 */
+/** @brief 验证机器迁移产出带类型的测试函数，并被测试编译器写入清单。
+ * 第二次规划应确认改写后的源码不再需要迁移。
  */
 static void test_percent_test_becomes_typed_ordinary_function(void) {
     static const TZrChar source[] =
@@ -113,7 +113,7 @@ static void test_percent_test_becomes_typed_ordinary_function(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
-/** @brief Keep legacy return-value tests in manual review while applying independent safe edits. */
+/** @brief 应用独立的安全改写，同时让旧式返回值测试继续留待人工复核。 */
 static void test_return_convention_requires_review_and_is_not_applied(void) {
     static const TZrChar source[] =
             "%test(\"legacy result\") { return 0; }\n"
@@ -148,7 +148,7 @@ static void test_return_convention_requires_review_and_is_not_applied(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
-/** @brief Verify draft test declarations and zr.test attributes converge on zr.testing names. */
+/** @brief 验证草案测试声明和 zr.test 属性收敛到 zr.testing 名称。 */
 static void test_draft_test_functions_and_attributes_migrate_idempotently(void) {
     static const TZrChar source[] =
             "test fn drafted(): void {}\n"
@@ -192,7 +192,7 @@ static void test_draft_test_functions_and_attributes_migrate_idempotently(void) 
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
-/** @brief Prevent an auto-fix from overwriting a function whose generated test name already exists. */
+/** @brief 当生成的测试名称已存在时，阻止自动修复覆盖已有函数。 */
 static void test_generated_identifier_collision_never_auto_applies(void) {
     static const TZrChar source[] =
             "fn testCollision(): void {}\n"
@@ -225,7 +225,7 @@ static void test_generated_identifier_collision_never_auto_applies(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
-/** @brief Rewrite only bare debug import calls, preserving strings and comments with similar text. */
+/** @brief 仅改写裸 debug 导入调用，保留含相似文本的字符串和注释。 */
 static void test_bare_debug_import_migrates_to_canonical_module_idempotently(void) {
     static const TZrChar source[] =
             "let debug = import(\"debug\");\n"
@@ -272,7 +272,7 @@ static void test_bare_debug_import_migrates_to_canonical_module_idempotently(voi
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
-/** @brief Run the five migration contracts under the root CMake Unity target. */
+/** @brief 在顶层 CMake 的 Unity 目标中运行五项迁移契约。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_percent_test_becomes_typed_ordinary_function);

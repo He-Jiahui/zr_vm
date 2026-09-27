@@ -5,9 +5,9 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
 
-/** @brief Compile a legacy decorator fixture to prove the removed syntax stays unavailable.
- * BUG: Unity assertion failure skips State_Destroy while the empty tearDown owns no
- * state, so an unexpectedly accepted fixture leaks this VM global until process exit.
+/** @brief 编译旧 decorator 样例，确认已移除的语法仍不可用。
+ * BUG: Unity 断言失败会跳过 State_Destroy，而空的 tearDown 不持有该状态；
+ * 意外被接受的样例使 VM 全局状态泄漏至进程退出。
  */
 static void assert_legacy_decorator_source_is_rejected(
         const TZrChar *source,
@@ -30,7 +30,7 @@ static void assert_legacy_decorator_source_is_rejected(
     ZrTests_Runtime_State_Destroy(state);
 }
 
-/** @brief Reject class member patches written with the removed comptime @decorate form. */
+/** @brief 拒绝使用已移除 comptime @decorate 形式的类成员补丁。 */
 static void test_legacy_compile_time_member_decorators_are_rejected(void) {
     static const TZrChar *source =
             "comptime class MarkField {\n"
@@ -48,7 +48,7 @@ static void test_legacy_compile_time_member_decorators_are_rejected(void) {
             "legacy_compile_time_member_decorator.zr");
 }
 
-/** @brief Reject parameter patches written with the same removed decorator form. */
+/** @brief 拒绝使用同一旧式 decorator 形式的参数补丁。 */
 static void test_legacy_compile_time_parameter_decorators_are_rejected(void) {
     static const TZrChar *source =
             "comptime class MarkParameter {\n"
@@ -65,7 +65,7 @@ static void test_legacy_compile_time_parameter_decorators_are_rejected(void) {
             "legacy_compile_time_parameter_decorator.zr");
 }
 
-/** @brief Reject the removed @decorate meta method even without an application site. */
+/** @brief 即使没有应用位置，也拒绝已移除的 @decorate 元方法。 */
 static void test_legacy_decorate_meta_method_is_rejected_directly(void) {
     static const TZrChar *source =
             "class LegacyDecorator {\n"
@@ -78,12 +78,12 @@ static void test_legacy_decorate_meta_method_is_rejected_directly(void) {
             "legacy_decorate_meta_method.zr");
 }
 
-/* Unity requires both hooks; these do not own the helper's local VM state. */
+/* Unity 要求提供两个 hook；它们都不持有辅助函数的局部 VM 状态。 */
 void setUp(void) {}
 
 void tearDown(void) {}
 
-/** @brief Run the three legacy-syntax rejection contracts in the decorator pipeline target. */
+/** @brief 在 decorator 流水线目标中运行三项旧语法拒绝契约。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_legacy_compile_time_member_decorators_are_rejected);

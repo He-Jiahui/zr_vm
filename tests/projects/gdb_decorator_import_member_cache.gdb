@@ -1,7 +1,7 @@
-# Probe the project import member cache while the CLI runs decorator_import.zrp.
-# BUG: the breakpoint at execution_dispatch.c:321 no longer targets
-# execution_resolve_cached_member_symbol (now near line 1674); the command
-# block expects cacheIndex/expectedKind and cannot inspect the intended frame.
+# CLI 运行 decorator_import.zrp 时检查项目导入的成员缓存。
+# BUG: execution_dispatch.c:321 已不是
+# execution_resolve_cached_member_symbol（现位于约 1674 行）；命令块
+# 需要 cacheIndex/expectedKind，因此无法检查预期的调用帧。
 set pagination off
 set breakpoint pending on
 

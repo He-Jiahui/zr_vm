@@ -1,5 +1,5 @@
 //
-// The root tests/CMakeLists.txt runs these compiler/runtime exception contracts in one Unity binary.
+// 顶层 tests/CMakeLists.txt 将编译器与运行时异常契约放在同一个 Unity 目标中执行。
 //
 
 #include <stdio.h>
@@ -20,7 +20,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 
-/* Active logging macros supplement Unity assertions; the unused TEST_FAIL_CUSTOM can set Unity's failure flag. */
+/* 当前使用的日志宏只补充 Unity 断言；未使用的 TEST_FAIL_CUSTOM 仍可设置 Unity 失败标志。 */
 #define TEST_START(summary)                                                                                            \
     do {                                                                                                               \
         printf("Unit Test - %s\n", summary);                                                                           \
@@ -61,13 +61,13 @@
         fflush(stdout);                                                                                                \
     } while (0)
 
-/** @brief Keep expected uncaught-exception tests inside the harness failure path instead of aborting the process. */
+/** @brief 让预期的未捕获异常进入测试框架的失败路径，避免直接终止进程。 */
 static void test_panic_handler(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
 }
 
-/** @brief Give each test a fresh parser and zr.system.exception registry for compile and runtime assertions.
- * @return A state owned by the test; the caller must pass it to destroy_test_state.
+/** @brief 为每个用例创建独立的解析器和 zr.system.exception 注册环境。
+ * @return 测试用例拥有的状态；调用方必须交给 destroy_test_state 释放。
  */
 static SZrState *create_test_state(void) {
     SZrState *state = ZrTests_State_Create(test_panic_handler);
@@ -78,13 +78,13 @@ static SZrState *create_test_state(void) {
     return state;
 }
 
-/** @brief Release the per-test global, including GC-owned compiled functions and registered provider state. */
+/** @brief 释放用例的全局状态，包括 GC 管理的编译函数和已注册的 provider 状态。 */
 static void destroy_test_state(SZrState *state) {
     ZrTests_State_Destroy(state);
 }
 
-/** @brief Inspect compiler output when runtime behavior alone cannot prove the emitted exception boundary.
- * @note Used only by the metadata and ordinary-function tests; it does not prove control-flow execution.
+/** @brief 运行结果不足以证明异常边界的发射形式时，检查编译器输出。
+ * @note 仅供元数据和普通函数测试使用；出现某指令不等于证明该控制流已执行。
  */
 static TZrBool function_contains_opcode(SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
@@ -102,8 +102,8 @@ static TZrBool function_contains_opcode(SZrFunction *function, EZrInstructionCod
     return ZR_FALSE;
 }
 
-/** @brief Select the nested function whose closure or exception opcodes the tests need to inspect.
- * @return A borrowed child inside function; it becomes invalid when the parent function is freed.
+/** @brief 定位需要检查闭包或异常指令的嵌套函数。
+ * @return 借用的子函数指针；父函数释放后即失效。
  */
 static SZrFunction *find_child_function_by_name(SZrFunction *function, const TZrChar *nameLiteral) {
     TZrUInt32 index;
@@ -129,8 +129,8 @@ static SZrFunction *find_child_function_by_name(SZrFunction *function, const TZr
     return ZR_NULL;
 }
 
-/** @brief Compile a named source fixture into the function inspected or executed by an exception test.
- * @note On success *function belongs to the caller until Function_Free or global teardown.
+/** @brief 将具名源码样例编译成供异常测试检查或执行的函数。
+ * @note 成功后调用方负责保留 *function，直至 Function_Free 或全局状态销毁。
  */
 static TZrBool compile_source_to_function(SZrState *state,
                                           const TZrChar *source,
@@ -151,8 +151,8 @@ static TZrBool compile_source_to_function(SZrState *state,
     return *function != ZR_NULL;
 }
 
-/** @brief Exercise parser, compiler and VM together, then release the temporary compiled function.
- * @return False for compile, execution or integer-result failure; the caller owns state and result.
+/** @brief 串联解析器、编译器和 VM 执行，并释放临时编译函数。
+ * @return 编译、执行或整数结果验证失败时返回 false；state 和 result 仍由调用方持有。
  */
 static TZrBool execute_source_expect_int64(SZrState *state,
                                            const TZrChar *source,
@@ -175,14 +175,14 @@ static TZrBool execute_source_expect_int64(SZrState *state,
     return success;
 }
 
-/* Unity invokes tearDown even after an assertion aborts the current test body.
- * BUG: tearDown owns no state, so an assertion after create_test_state skips the
- * test body's destroy_test_state and leaks that VM global until process exit. */
+/* Unity 在断言中断用例体后仍会调用 tearDown。
+ * BUG: tearDown 不持有状态；create_test_state 之后的断言失败会跳过用例体的
+ * destroy_test_state，使该 VM 全局状态泄漏至测试进程退出。 */
 void setUp(void) {}
 
 void tearDown(void) {}
 
-/** @brief Verify scalar throws are boxed into Error-compatible catch values. */
+/** @brief 验证标量抛出值会封装成兼容 Error 的捕获值。 */
 static void test_throw_string_is_boxed_and_caught_by_base_error(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -217,7 +217,7 @@ static void test_throw_string_is_boxed_and_caught_by_base_error(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Check ordered typed-catch dispatch against the registered zr.system.exception prototypes. */
+/** @brief 根据已注册的 zr.system.exception 原型验证有序类型捕获分派。 */
 static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -252,8 +252,8 @@ static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Check that qualified catch syntax records the member type, not the imported module name.
- * @note This test inspects compiler metadata only; it does not execute the qualified handler.
+/** @brief 验证限定类型捕获记录成员类型，而非导入模块名称。
+ * @note 此测试只检查编译元数据，不执行限定类型的处理分支。
  */
 static void test_qualified_exception_catch_uses_member_type_name(void) {
     SZrTestTimer timer = {0};
@@ -297,7 +297,7 @@ static void test_qualified_exception_catch_uses_member_type_name(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Run independent fixtures for normal completion, return and throw unwinding through finally. */
+/** @brief 用独立样例验证正常结束、return 和 throw 路径都会经过 finally。 */
 static void test_finally_runs_for_normal_return_and_throw_paths(void) {
     SZrTestTimer timer = {0};
     const TZrChar *normalSource =
@@ -364,8 +364,8 @@ static void test_finally_runs_for_normal_return_and_throw_paths(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Inspect nested finally capture metadata and run a separate sibling-call visibility fixture.
- * TODO: The closure fixture is compiled but never run, so its captured marker update is unverified.
+/** @brief 检查嵌套 finally 的捕获元数据，并另行执行兄弟函数可见性样例。
+ * TODO: 闭包样例只编译未执行，捕获的 marker 更新尚未得到运行时验证。
  */
 static void test_named_function_finally_closure_and_sibling_function_metadata(void) {
     SZrTestTimer timer = {0};
@@ -417,7 +417,7 @@ static void test_named_function_finally_closure_and_sibling_function_metadata(vo
     TEST_DIVIDER();
 }
 
-/** @brief Ensure return through catch/finally leaves no handler on the caller's following loop. */
+/** @brief 验证经过 catch/finally 返回后，调用方后续循环不再受旧异常处理器影响。 */
 static void test_return_from_catch_discards_frame_exception_handlers(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -464,7 +464,7 @@ static void test_return_from_catch_discards_frame_exception_handlers(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Check the caught Error exposes the throwing frame before its caller and keeps source identity. */
+/** @brief 验证捕获的 Error 先呈现抛出帧再呈现调用帧，并保留源码身份。 */
 static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -507,8 +507,8 @@ static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Keep ordinary functions outside test-only exception wrapping, both in bytecode and execution.
- * TODO: Execution asserts only failure; capture and assert the escaping error value to prove its identity.
+/** @brief 从字节码和执行结果核对普通函数没有被测试专用异常包装覆盖。
+ * TODO: 当前只断言执行失败；应捕获逃逸的错误值并核验其身份。
  */
 static void test_ordinary_function_throw_is_not_wrapped(void) {
     SZrTestTimer timer = {0};
@@ -547,7 +547,7 @@ static void test_ordinary_function_throw_is_not_wrapped(void) {
     TEST_DIVIDER();
 }
 
-/** @brief Run all eight exception contracts through Unity; the root CMake target provides the harness. */
+/** @brief 通过 Unity 执行八项异常契约；测试框架由顶层 CMake 目标提供。 */
 int main(void) {
     UNITY_BEGIN();
 
