@@ -163,5 +163,7 @@ doc_type: category-index
 | parser 编译器套件入口与调用降级入口 | [147 项](coverage/tests_parser_compiler_suite_mains.tsv) | 2 个 C 文件独立复核，732 个有效锚点；源码仅将空行替换为注释，GCC/Clang 定向语法检查通过。专项目标手工运行，integration 入口属于 language_pipeline CTest；1 个 BUG 记录 W2 pair 分类测试的断言比较方向，未运行完整测试。 |
 | parser 编译器回归用例主体 | [115 项](coverage/tests_parser_compiler_regressions.tsv) | 1 个大型 C 测试文件独立复核，源码只把原有空行替换为注释且行号保持；GCC/Clang 定向语法检查通过。48 个 BUG 记录 Unity 硬断言失败跳过尾部资源清理的可达路径，1 个 TODO 保留空守卫语义，未运行完整测试。关联现代台账锚点有效，旧夹具与通用台账仍需迁移格式。 |
 | parser 数值 foreach 基数与符号系数读取 | [30 项](coverage/tests_parser_numeric_cardinality_symbolic.tsv) | 2 个 C 测试文件独立复核，214 个证据锚点，源码仅增 35 行注释；GCC/Clang 定向语法检查通过。3 个 BUG 记录 Unity 断言后跳过资源清理及 Array 初始化失败后的 Push 风险，未运行动态测试。 |
+| core GC 分片预算与宿主累计 | [56 项](coverage/zr_vm_core_gc_budget.tsv) | 3 个 C/H 文件独立复核，181 个证据锚点，GCC/Clang 定向语法与两项既有预算测试通过。10 个 BUG 记录未初始化预算字段、无效输入后复制结果及阶段诊断等可达缺陷；6 个 TODO 保留位宽、并发和累计语义边界。旧 GC 台账中预算与 ownership 的行号已校正。 |
+| core 所有权控制块与 GC 交接 | [73 项](coverage/zr_vm_core_ownership_core.tsv) | 2 个 C/H 文件独立复核，255 个证据锚点；GCC/Clang 对源和头文件的定向语法检查通过。2 个 BUG 记录 SharePlain 后 Unique 重置 strong 及 Value_Copy 后 ReturnToGc 的半提交，1 个 TODO 保留外部 ignore 根契约；7 份关联旧台账的 ownership 行号已重锚，部分旧台账仍有不属于本批的格式/漂移问题。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

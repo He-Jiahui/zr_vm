@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
+/* 预算验证与步骤评估共用这些字段编号；账本另有自己的诊断编号。 */
 enum {
     ZR_GC_BUDGET_FIELD_MAGIC = 1u,
     ZR_GC_BUDGET_FIELD_SCHEMA = 2u,
@@ -17,6 +18,7 @@ enum {
     ZR_GC_BUDGET_FIELD_OVERFLOW = 11u
 };
 
+/* 诊断输出可省略，使同一契约可用于仅需布尔结果的宿主入口。 */
 static void gc_budget_set_diagnostic(
         SZrGcBudgetDiagnostic *diagnostic,
         EZrGcBudgetDiagnosticCode code,
@@ -100,6 +102,8 @@ TZrBool ZrCore_GcBudget_Validate(
     }
     if ((budget->flags & ~ZR_GC_BUDGET_FLAG_KNOWN_MASK) != 0u ||
         budget->reserved != 0u) {
+        /* BUG: 仅 reserved 非零时仍报告 FLAGS，且 actual=合法的 flags；
+         * Init 后设置 reserved=1 再 Validate 会给出错误的失败字段和值。 */
         gc_budget_set_diagnostic(diagnostic,
                                  ZR_GC_BUDGET_DIAGNOSTIC_UNKNOWN_FLAGS,
                                  ZR_GC_BUDGET_FIELD_FLAGS,
@@ -126,11 +130,13 @@ TZrBool ZrCore_GcBudget_Validate(
     return ZR_TRUE;
 }
 
+/* 这里只检验活动阶段范围；major 调用路径另行验证阶段顺序。 */
 static TZrBool gc_budget_phase_valid(EZrGcBudgetPhase phase) {
     return phase >= ZR_GC_BUDGET_PHASE_INITIAL_SNAPSHOT &&
            phase <= ZR_GC_BUDGET_PHASE_COMPACT;
 }
 
+/* 游标不得回绕，避免账本或 major 状态机将旧工作误作新切片。 */
 static TZrBool gc_budget_add_u64(TZrUInt64 left, TZrUInt64 right, TZrUInt64 *out) {
     if (right > UINT64_MAX - left) {
         return ZR_FALSE;
@@ -139,6 +145,7 @@ static TZrBool gc_budget_add_u64(TZrUInt64 left, TZrUInt64 right, TZrUInt64 *out
     return ZR_TRUE;
 }
 
+/* 零上限只关闭该维度约束，不代表该维度禁止工作。 */
 static TZrBool gc_budget_exceeds(TZrUInt64 value, TZrUInt64 limit) {
     return limit != 0u && value > limit;
 }
@@ -158,6 +165,8 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
     TZrUInt64 nextCursor;
 
     ZrCore_GcBudget_DiagnosticClear(diagnostic);
+    /* BUG: 非空 result 遇到无效 budget 时在清零之前返回；
+     * GcMajor_Step 的局部 result 未初始化却在失败分支复制给宿主输出。 */
     if (result == ZR_NULL ||
         !ZrCore_GcBudget_Validate(budget, diagnostic)) {
         if (result == ZR_NULL && diagnostic != ZR_NULL) {
@@ -180,6 +189,8 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
     result->consistentBoundary = ZR_TRUE;
 
     if (!gc_budget_phase_valid(phase) || workUnits == 0u) {
+        /* BUG: 有符号枚举实现下的负数 phase 被归类为 WORK 错误；即使
+         * phase=IDLE，actual 也写成 workUnits，不能准确定位拒绝原因。 */
         gc_budget_set_diagnostic(diagnostic,
                                  phase == ZR_GC_BUDGET_PHASE_IDLE ||
                                          phase >= ZR_GC_BUDGET_PHASE_COUNT
@@ -200,6 +211,7 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
         return ZR_FALSE;
     }
 
+    /* 压缩不能在未获许可或超出搬迁字节预算时被当作普通切片执行。 */
     if (phase == ZR_GC_BUDGET_PHASE_COMPACT &&
         ((budget->flags & ZR_GC_BUDGET_FLAG_ALLOW_COMPACT) == 0u ||
          bytes > budget->compactBudgetBytes)) {
@@ -208,6 +220,7 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
         result->compactDeferredCount = 1u;
         return ZR_TRUE;
     }
+    /* 普通超限拒绝该切片，保留旧游标供上层选择回退调度。 */
     if (gc_budget_exceeds(elapsedUs, budget->maxElapsedUs) ||
         gc_budget_exceeds(workUnits, budget->maxWorkUnits) ||
         gc_budget_exceeds(bytes, budget->maxBytes) ||
@@ -219,6 +232,7 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
     result->status = ZR_GC_BUDGET_STEP_ACCEPTED;
     result->nextCursor = nextCursor;
     result->workDone = workUnits;
+    /* 原子暂停超限发生在工作已完成后，故保留已推进的见证并标记超限。 */
     if (budget->maxAtomicPauseUs != 0u &&
         atomicPauseUs > budget->maxAtomicPauseUs) {
         result->status = ZR_GC_BUDGET_STEP_OVER_BUDGET;

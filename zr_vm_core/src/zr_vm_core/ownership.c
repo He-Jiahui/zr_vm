@@ -62,6 +62,7 @@ static void ownership_set_weak_value(SZrTypeValue *value,
         return;
     }
     value->type = targetType;
+    /* weak 只保留控制块身份，不把已可回收的对象重新暴露为 GC 指针。 */
     value->value.nativeObject.nativePointer = control;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
@@ -73,6 +74,8 @@ static void ownership_set_weak_value(SZrTypeValue *value,
 static void ownership_notify_strong_ref_delta(SZrState *state,
                                               SZrRawObject *object,
                                               TZrInt32 delta) {
+    /* 向模块卸载门禁及宿主观察者发送强引用差值；普通增减先改计数，
+     * GC 回收先通知，再使控制块失效。 */
     if (state == ZR_NULL ||
         state->global == ZR_NULL ||
         object == ZR_NULL ||
@@ -103,6 +106,9 @@ static TZrBool ownership_set_initial_strong_ref(SZrState *state, SZrOwnershipCon
     if (!ZrCore_OwnershipShared_SetInitialStrong(state, control, &previousCount)) {
         return ZR_FALSE;
     }
+    /* BUG: SharePlainValue 保留普通源及 shared 槽，随后对普通源执行 UniqueValue
+     * 可复用同一控制块；SetInitialStrong 把已有 strong 数重置为 1，先释放的 owner
+     * 会撤 GC 根并使控制块失效；无外部 weak 时，剩余 owner 的控制块指针悬空。 */
     if (previousCount == 0) {
         ownership_notify_strong_ref_delta(state, object, 1);
     } else if (previousCount > 1) {
@@ -137,6 +143,8 @@ static TZrBool ownership_ignore_object_if_needed(struct SZrState *state, SZrOwne
         return ZrCore_GcDomain_RegisterOwnershipRoot(state, control->object);
     }
 
+    /* TODO: IgnoreObject 的显式根不计引用数；若宿主此前已登记同一对象，
+     * 此处也认领其撤根责任。需确认 InitUnique/SharePlain 的外部根契约并补重叠根测试。 */
     if (!control->ownsGcIgnore) {
         if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, control->object)) {
             control->ownsGcIgnore = ZR_TRUE;
@@ -154,6 +162,7 @@ static TZrBool ownership_ignore_object_if_needed(struct SZrState *state, SZrOwne
 static void ownership_return_object_to_gc(struct SZrState *state,
                                           SZrOwnershipControl *control,
                                           SZrRawObject *object) {
+    /* 控制块只撤销自己认领的 ignore；资源对象走 domain root/drop 路径。 */
     if (state == ZR_NULL || control == ZR_NULL || object == ZR_NULL) {
         return;
     }
@@ -182,6 +191,7 @@ static void ownership_copy_plain_bits(SZrTypeValue *destination, const SZrTypeVa
 }
 
 static TZrBool ownership_copy_plain_value(SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
+    /* 普通 struct 值需要克隆其字段存储；克隆失败只清目标，不接管源。 */
     SZrObject *sourceObject;
     SZrObject *clonedStruct;
 
@@ -211,6 +221,7 @@ static TZrBool ownership_copy_plain_value(SZrState *state, SZrTypeValue *destina
 }
 
 static TZrBool ownership_prepare_destination(struct SZrState *state, SZrTypeValue *destination) {
+    /* 覆盖前先释放旧 owner，故后续源校验失败也不会恢复目标原值。 */
     ZR_ASSERT(destination != ZR_NULL);
 
     if (destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE) {
@@ -237,6 +248,7 @@ TZrBool ZrCore_Ownership_InitUniqueValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 资源对象以 domain root 管理；普通对象才建立 strong/weak 控制块。 */
     if (ZrCore_OwnershipResource_IsObject(object)) {
         return ZrCore_OwnershipResource_InitUnique(state, destination, object);
     }
@@ -430,6 +442,7 @@ TZrBool ZrCore_Ownership_ShareValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 直接 unique 资源首次共享时也建立控制块；直到根登记成功才清空源。 */
     if (control == ZR_NULL) {
         control = ZrCore_OwnershipShared_GetOrCreateControl(state, object);
         if (control == ZR_NULL || !ownership_set_initial_strong_ref(state, control)) {
@@ -613,6 +626,9 @@ TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    /* BUG: Value_Copy 可留下 unique 源并生成 shared 别名（见
+     * tests/core/test_type_layout_inline_copy.c:194）；这里仅拦截 shared 多引用。
+     * unique 多引用会先撤 GC 根、减计数后返回失败，源仍持有未计数的控制块。 */
     if (source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED && control->strongRefCount != 1) {
         return ZR_FALSE;
     }
@@ -647,6 +663,7 @@ TZrBool ZrCore_Ownership_IntoGcBoxValue(struct SZrState *state,
     if (!ZrCore_GcDomain_ObjectBelongsToState(state, object)) {
         return ZR_FALSE;
     }
+    /* 先把直接 owner 的 domain root 交还 GC，再把 GC box 发布到目标槽。 */
     ZrCore_GcDomain_UnregisterOwnershipRoot(state, object);
     object->isGcBox = ZR_TRUE;
     ownership_reset_value_storage(source);
@@ -669,6 +686,7 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
         return;
     }
 
+    /* shared/weak 控制块绑定原 state；跨域释放不得清空仍由原域持有的值。 */
     if ((value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
          value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK) &&
         !ZrCore_OwnershipShared_IsInIsolationDomain(state, value->ownershipControl)) {
@@ -690,6 +708,7 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
     control = value->ownershipControl;
     kind = value->ownershipKind;
     object = ownership_value_has_object(value) ? value->value.object : ZR_NULL;
+    /* 先清源槽，再执行可能抛异常的资源 drop，避免异常回退重复释放。 */
     ownership_reset_value_storage(value);
     if (control == ZR_NULL &&
         (kind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
@@ -707,6 +726,7 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
          kind == ZR_OWNERSHIP_VALUE_KIND_LOANED) &&
         control->strongRefCount > 0) {
         SZrRawObject *finalObject = ZR_NULL;
+        /* 最后一份强引用先使 weak 无法唤醒，再保护性 drop 或撤除 GC ignore。 */
         if (ownership_release_strong_ref(state, control, &finalObject)) {
             EZrThreadStatus dropStatus = ZR_THREAD_STATUS_FINE;
             if (ZrCore_OwnershipResource_IsObject(finalObject)) {
@@ -805,6 +825,7 @@ void ZrCore_Ownership_AssignValue(struct SZrState *state,
         case ZR_OWNERSHIP_VALUE_KIND_UNIQUE:
         case ZR_OWNERSHIP_VALUE_KIND_LOANED:
             control = source->ownershipControl;
+            /* 普通 unique 的复制变为 shared，loaned 保持 loaned；直接资源只复制镜像槽位。 */
             if (ZrCore_OwnershipResource_IsDirectUniqueValue(source)) {
                 ZrCore_OwnershipResource_CopyUnique(destination, source);
                 break;
@@ -840,6 +861,8 @@ void ZrCore_Ownership_NotifyObjectReleased(struct SZrState *state, struct SZrRaw
         return;
     }
 
+    /* GC box 恢复资源根成功时才 drop；正常返回后使残存 weak 控制块失效。
+     * drop 抛异常会中断后续失效。 */
     if (object->isGcBox) {
         object->isGcBox = ZR_FALSE;
         ZrCore_RawObject_MarkAsInit(state, object);
@@ -862,6 +885,7 @@ void ZrCore_Ownership_NotifyObjectReleased(struct SZrState *state, struct SZrRaw
 }
 
 static TZrBool ownership_native_get_argument(struct SZrState *state, SZrTypeValue **outResult, SZrTypeValue **outArg) {
+    /* native 包装的 functionBase 和下一槽分别承载结果及实参。 */
     TZrStackValuePointer base;
 
     if (state == ZR_NULL || state->callInfoList == ZR_NULL || outResult == ZR_NULL || outArg == ZR_NULL) {
