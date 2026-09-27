@@ -12,9 +12,9 @@ static TZrBool alias_base_is_external(EZrExecIrAliasBaseKind kind) {
                      kind == ZR_EXEC_IR_ALIAS_BASE_PARAMETER);
 }
 
-static TZrBool alias_generation_conflicts(const SZrExecIrAliasLocation *left,
-                                          const SZrExecIrAliasLocation *right) {
-    return (TZrBool)(left->generation != 0u && right->generation != 0u &&
+static TZrBool alias_generation_unproven(const SZrExecIrAliasLocation *left,
+                                         const SZrExecIrAliasLocation *right) {
+    return (TZrBool)(left->generation == 0u || right->generation == 0u ||
                      left->generation != right->generation);
 }
 
@@ -29,9 +29,9 @@ EZrExecIrAliasRelation ZrParser_ExecIr_AliasQuery(
         left->baseId == 0u || right->baseId == 0u) {
         return ZR_EXEC_IR_ALIAS_UNKNOWN;
     }
-    /* A generation mismatch means that a previously valid shape/layout
-     * identity is stale.  Never turn stale evidence into a disjoint proof. */
-    if (alias_generation_conflicts(left, right)) {
+    /* Missing or mismatched generations cannot establish a current
+     * shape/layout identity or a disjointness proof. */
+    if (alias_generation_unproven(left, right)) {
         return ZR_EXEC_IR_ALIAS_UNKNOWN;
     }
     if (left->unknownWrite || right->unknownWrite) {

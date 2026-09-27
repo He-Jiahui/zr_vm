@@ -3,6 +3,7 @@
 #include "zr_vm_parser/exec_ir_gvn.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -67,6 +68,43 @@ static void test_disjoint_field_projection_requires_layout_proof(void) {
     right.projectionDisjoint = ZR_TRUE;
     assert(ZrParser_ExecIr_AliasQuery(&left, &right) ==
            ZR_EXEC_IR_ALIAS_DISJOINT);
+}
+
+static void test_zero_generation_cannot_prove_alias_relation(void) {
+    SZrExecIrAliasLocation left[3];
+    SZrExecIrAliasLocation right[3];
+    const char *caseName[3] = {"same projection", "distinct allocation",
+                               "disjoint projection"};
+    TZrUInt32 caseIndex;
+    TZrUInt32 zeroMask;
+    TZrUInt32 unsafeProofs = 0u;
+
+    left[0] = location(ZR_EXEC_IR_ALIAS_BASE_ALLOCATION, 7u, 3u);
+    right[0] = left[0];
+    left[1] = location(ZR_EXEC_IR_ALIAS_BASE_ALLOCATION, 7u, 0u);
+    right[1] = location(ZR_EXEC_IR_ALIAS_BASE_ALLOCATION, 8u, 0u);
+    left[2] = location(ZR_EXEC_IR_ALIAS_BASE_ALLOCATION, 7u, 3u);
+    right[2] = location(ZR_EXEC_IR_ALIAS_BASE_ALLOCATION, 7u, 4u);
+    left[2].projectionDisjoint = ZR_TRUE;
+    right[2].projectionDisjoint = ZR_TRUE;
+
+    for (caseIndex = 0u; caseIndex < 3u; ++caseIndex) {
+        for (zeroMask = 1u; zeroMask <= 3u; ++zeroMask) {
+            SZrExecIrAliasLocation queryLeft = left[caseIndex];
+            SZrExecIrAliasLocation queryRight = right[caseIndex];
+            EZrExecIrAliasRelation relation;
+            if ((zeroMask & 1u) != 0u) queryLeft.generation = 0u;
+            if ((zeroMask & 2u) != 0u) queryRight.generation = 0u;
+            relation = ZrParser_ExecIr_AliasQuery(&queryLeft, &queryRight);
+            if (relation != ZR_EXEC_IR_ALIAS_UNKNOWN) {
+                fprintf(stderr, "%s, zero mask %u: %s\n", caseName[caseIndex],
+                        (unsigned int)zeroMask,
+                        ZrParser_ExecIr_AliasRelationName(relation));
+                ++unsafeProofs;
+            }
+        }
+    }
+    assert(unsafeProofs == 0u);
 }
 
 static void test_range_facts_require_both_bounds(void) {
@@ -402,6 +440,7 @@ int main(void) {
     test_unknown_external_alias_is_conservative();
     test_escaped_allocations_are_not_proven_disjoint();
     test_disjoint_field_projection_requires_layout_proof();
+    test_zero_generation_cannot_prove_alias_relation();
     test_range_facts_require_both_bounds();
     test_range_facts_reject_overflow_and_stale_generation();
     test_shape_fact_invalidates_on_generation_change();

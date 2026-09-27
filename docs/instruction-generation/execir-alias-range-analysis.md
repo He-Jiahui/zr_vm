@@ -14,6 +14,7 @@ tests:
   - tests/parser/test_ssa_gvn_range.c
   - tests/acceptance/ssa-gvn-conversion-result-type.md
   - tests/acceptance/ssa-bounds-proof-mutable-length.md
+  - tests/acceptance/ssa-alias-zero-generation.md
 doc_type: implementation-note
 status: implemented
 ---
@@ -31,9 +32,14 @@ because callers and FFI may alias them. Distinct projections are disjoint only
 when lowering supplies an explicit layout proof (`projectionDisjoint`) for the
 same layout; projection IDs alone are not evidence.
 
-Unknown writes, stale generation identities, invalid/unknown bases, or escaped
-external locations force `unknown`. Consumers must therefore retain loads and
-guards whenever the query is not a positive proof.
+Unknown writes, missing (`generation == 0`) or mismatched generation identities,
+invalid/unknown bases, or escaped external locations force `unknown`. A stable
+base, layout, and projection still cannot prove `must-alias` or `disjoint`
+without a matching nonzero generation on both locations. Consumers must retain
+loads and guards whenever the query is not a positive proof. The two-location
+query has no active analysis-generation argument, so callers must separately
+check freshness against their current analysis state; two matching but stale
+nonzero generations cannot be detected by this query alone.
 
 Range and shape facts are generation-scoped. A bounds proof requires known
 lower and upper bounds for both index and length, matching generations, no
