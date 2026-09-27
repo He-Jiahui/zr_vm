@@ -214,6 +214,341 @@ static void test_source_optional_value_merges_present_and_absent_paths(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static TZrUInt32 count_optional_block_opcode(
+        const SZrSemanticIrFunction *function,
+        const SZrParserCfgBlock *block,
+        EZrSemanticIrOpcode opcode) {
+    TZrUInt32 count = 0U;
+    TZrUInt32 offset;
+
+    for (offset = 0U; offset < block->instructionCount; ++offset) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(
+                        function, block->firstInstructionIndex + offset);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == opcode) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+static void test_direct_weak_optional_call_keeps_source_cfg(void) {
+    static const TZrChar source[] =
+            "resource class Service {\n"
+            "    pub const fn consume(value: bool): void {}\n"
+            "}\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var side: bool = false;\n"
+            "weak?.consume(side = true);\n";
+    SZrString *name = ZrCore_String_CreateFromNative(
+            g_state, "direct_weak_optional_cfg.zr");
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrReceiverGuardFact *guard;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *present;
+    const SZrParserCfgBlock *join;
+    const SZrParserCfgBlock *exception = ZR_NULL;
+    SZrAstNode *statement;
+    SZrAstNode *expression;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrValueId wakeValueId = ZR_VALUE_ID_INVALID;
+    TZrUInt32 wakeCount = 0U;
+    TZrUInt32 guardedStoreCount = 0U;
+    TZrUInt32 normalDropCount = 0U;
+    TZrUInt32 execDropCount = 0U;
+    TZrUInt32 execInvokeCount = 0U;
+    TZrUInt32 execThrowCount = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; ++index) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
+        TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(
+            compiler.preSemanticIrCfgActive, "weak CFG abandoned during lowering");
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    statement = ast->data.script.statements->nodes[
+            ast->data.script.statements->count - 1U];
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, statement->type);
+    expression = statement->data.expressionStatement.expr;
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expression->type);
+    TEST_ASSERT_NOT_NULL(expression->data.primaryExpression.members);
+    TEST_ASSERT_GREATER_THAN_UINT32(
+            0U, expression->data.primaryExpression.members->count);
+    guard = ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            compiler.semanticContext,
+            expression->data.primaryExpression.members->nodes[0]);
+    TEST_ASSERT_NOT_NULL(guard);
+    TEST_ASSERT_EQUAL_INT(ZR_RECEIVER_GUARD_WEAK_WAKE, guard->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_RECEIVER_GUARD_OPTIONAL, guard->mode);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_GREATER_THAN_UINT32(2U, function->cfg.blocks.length);
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->kind);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->toBlockId);
+    TEST_ASSERT_NOT_NULL(join);
+    present = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->toBlockId);
+    TEST_ASSERT_NOT_NULL(present);
+    for (index = 0U; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
+            instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_WAKE) {
+            ++wakeCount;
+            wakeValueId = instruction->resultValueId;
+            TEST_ASSERT_LESS_THAN_UINT32(
+                    entry->firstInstructionIndex + entry->instructionCount,
+                    (TZrUInt32)index);
+        }
+        if (instruction->opcode == ZR_SEMANTIC_IR_STORE &&
+            instruction->sourceRange.start.line == 8U) {
+            ++guardedStoreCount;
+            TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+                    present->firstInstructionIndex, (TZrUInt32)index);
+            TEST_ASSERT_LESS_THAN_UINT32(
+                    present->firstInstructionIndex + present->instructionCount,
+                    (TZrUInt32)index);
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(1U, wakeCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, guardedStoreCount);
+    for (index = 0U; index < function->cfg.blocks.length; ++index) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        if (block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_THROW) {
+            exception = block;
+        } else if (block != join) {
+            normalDropCount += count_optional_block_opcode(
+                    function, block, ZR_SEMANTIC_IR_DROP);
+        }
+    }
+    TEST_ASSERT_NOT_NULL(exception);
+    TEST_ASSERT_EQUAL_UINT32(1U, normalDropCount);
+    TEST_ASSERT_EQUAL_UINT32(0U, count_optional_block_opcode(
+            function, join, ZR_SEMANTIC_IR_DROP));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, exception, ZR_SEMANTIC_IR_THROW));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, exception, ZR_SEMANTIC_IR_DROP));
+    {
+        const SZrSemanticIrInstruction *branch =
+                ZrParser_SemanticIr_InstructionAt(
+                        function, entry->firstInstructionIndex +
+                                      entry->instructionCount - 1U);
+        const TZrValueId *operand;
+        TEST_ASSERT_NOT_NULL(branch);
+        TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_BRANCH, branch->opcode);
+        TEST_ASSERT_EQUAL_UINT32(1U, branch->operandCount);
+        operand = (const TZrValueId *)ZrCore_Array_Get(
+                (SZrArray *)&function->valueOperands, branch->operandStart);
+        TEST_ASSERT_NOT_NULL(operand);
+        TEST_ASSERT_EQUAL_UINT32(wakeValueId, *operand);
+    }
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    for (index = 0U; index < output.instructionCount; ++index) {
+        switch ((EZrExecIrOpcode)output.instructions[index].opcode) {
+            case ZR_EXEC_IR_OPCODE_DROP: ++execDropCount; break;
+            case ZR_EXEC_IR_OPCODE_INVOKE: ++execInvokeCount; break;
+            case ZR_EXEC_IR_OPCODE_THROW: ++execThrowCount; break;
+            default: break;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(2U, execDropCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, execInvokeCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, execThrowCount);
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_direct_weak_optional_value_merges_after_guard(void) {
+    static const TZrChar source[] =
+            "resource class Service {\n"
+            "    pub const fn read(): int { return 7; }\n"
+            "}\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var result = weak?.read();\n";
+    SZrString *name = ZrCore_String_CreateFromNative(
+            g_state, "direct_weak_optional_value.zr");
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *join;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+    TZrUInt32 wakeCount = 0U;
+    TZrUInt32 joinLoads = 0U;
+    TZrUInt32 normalDropCount = 0U;
+    TZrUInt32 exceptionDropCount = 0U;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; ++index) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
+        TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(
+            compiler.preSemanticIrCfgActive, "weak value CFG abandoned during lowering");
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(2U, join->predecessorCount);
+    for (index = 0U; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
+            instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_WAKE) {
+            ++wakeCount;
+        }
+        if (instruction->opcode == ZR_SEMANTIC_IR_LOAD &&
+            index >= join->firstInstructionIndex &&
+            index < join->firstInstructionIndex + join->instructionCount) {
+            ++joinLoads;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(1U, wakeCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, joinLoads);
+    TEST_ASSERT_EQUAL_UINT32(0U, count_optional_block_opcode(
+            function, join, ZR_SEMANTIC_IR_DROP));
+    for (index = 0U; index < function->cfg.blocks.length; ++index) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&function->cfg.blocks, index);
+        if (block->terminatorKind == ZR_PARSER_CFG_TERMINATOR_THROW) {
+            exceptionDropCount += count_optional_block_opcode(
+                    function, block, ZR_SEMANTIC_IR_DROP);
+        } else if (block != join) {
+            normalDropCount += count_optional_block_opcode(
+                    function, block, ZR_SEMANTIC_IR_DROP);
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(1U, normalDropCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, exceptionDropCount);
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    ZrCore_ExecIr_FreeFunction(&output);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unmodeled_weak_optional_value_abandons_source_cfg(void) {
+    static const TZrChar source[] =
+            "resource class Service {\n"
+            "    pub const fn read(): int { return 7; }\n"
+            "}\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var result = weak?.read();\n";
+    SZrString *name = ZrCore_String_CreateFromNative(
+            g_state, "weak_optional_fallback.zr");
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    TZrSize index;
+    TZrUInt32 wakeCount = 0U;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.preSemanticIrCfgStartupSuppressed = ZR_TRUE;
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; ++index) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
+        TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    }
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_BRANCH));
+    for (index = 0U; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
+            instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_WAKE) {
+            ++wakeCount;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(0U, wakeCount);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_unmodeled_optional_value_abandons_partial_source_cfg(void) {
     static const TZrChar source[] =
             "var flag: bool = true;\n"

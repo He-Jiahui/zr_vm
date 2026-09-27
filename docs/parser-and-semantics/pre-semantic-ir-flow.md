@@ -105,6 +105,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-short-circuit-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
+  - tests/acceptance/ssa-compiler-source-direct-weak-optional-cfg.md
   - tests/acceptance/ssa-compiler-source-general-call-cfg.md
   - tests/acceptance/ssa-compiler-source-exception-fallback.md
   - tests/acceptance/ssa-compiler-source-throw-cfg.md
@@ -521,15 +522,23 @@ transfer.
 uses a typed temporary Place: the normal block converts and stores the call
 result, the dedicated absent block stores a typed null constant, and the join
 restores the pre-branch slot snapshot and loads one merged ValueId. The
-exception continuation is an explicit zero-instruction propagation sink and
-does not reach that merge. SemanticIR can represent an edge-defined exception
-payload for a real handler, but this propagation-only producer does not invent
-or consume one as a normal-entry value for `THROW`. Ownership results remain
-bound to their result slots so an explicitly
-awakened nullable receiver can be the branch operand. Weak-wake guard frames
-and calls missing a canonical result type, symbol, callable, or explicit
-argument value remain outside this subset; after a source graph has started,
-they abandon the partial CFG and remove its synthetic branches.
+exception continuation for nullable guards is an explicit zero-instruction
+propagation sink and does not reach that merge. The compiler does not invent a
+normal-entry exception payload for this sink. Ownership results remain bound to
+their result slots so an explicitly awakened nullable receiver can be the branch
+operand.
+
+A direct `weak?.method(arguments)` guard with a canonical weak source value and
+a supported known call instead emits a nullable `WAKE` ownership result before
+branching on that result. The absent path skips arguments and the call. On the
+present path the call's normal continuation drops the temporary wake owner
+before joining; its exceptional continuation reads `EXCEPTION_PAYLOAD`, drops
+the same owner, and explicitly rethrows the payload. No drop is emitted at the
+join, which is also reachable when the wake failed. An unavailable canonical
+source or suppressed CFG startup does not synthesize a partial WAKE graph.
+Unsupported calls still abandon a started graph and remove synthetic branches.
+ExecIR currently projects semantic `WAKE` as `COPY`; this source-CFG checkpoint
+does not establish runtime wake/drop equivalence across backends.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 

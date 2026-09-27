@@ -13,11 +13,13 @@ typedef struct SZrReceiverGuardLoweringFrame {
     SZrFileRange range;
     TZrUInt32 semanticAbsentBlock;
     TZrUInt32 semanticJoinBlock;
+    TZrUInt32 semanticExceptionBlock;
     SZrArray semanticSlotSnapshot;
     TZrBool hasOptionalBranch;
     TZrBool hasWakeCleanup;
     TZrBool hasSemanticCfg;
     TZrBool hasSemanticSlotSnapshot;
+    TZrBool previousCatchUsed;
 } SZrReceiverGuardLoweringFrame;
 
 static TZrBool receiver_guard_segment_is_optional(const SZrAstNode *segment) {
@@ -465,6 +467,8 @@ TZrBool compiler_receiver_guard_begin_segment(
                 (TZrBool)(fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE);
         frame.semanticAbsentBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
         frame.semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        frame.semanticExceptionBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        frame.previousCatchUsed = cs->preSemanticIrCfgCatchUsed;
         if (frame.mergeSlot == ZR_PARSER_SLOT_NONE ||
             frame.guardedSlot == ZR_PARSER_SLOT_NONE ||
             frame.nullLabelId == ZR_PARSER_LABEL_ID_NONE ||
@@ -477,7 +481,16 @@ TZrBool compiler_receiver_guard_begin_segment(
         }
 
         supportsSemanticCfg = (TZrBool)(
-                fact->kind == ZR_RECEIVER_GUARD_NULL &&
+                (fact->kind == ZR_RECEIVER_GUARD_NULL ||
+                 fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE) &&
+                (fact->kind != ZR_RECEIVER_GUARD_WEAK_WAKE ||
+                 ((cs->preSemanticIrCfgActive ||
+                   (!cs->preSemanticIrCfgStartupSuppressed &&
+                    !cs->preSemanticIrCfgStartupBlocked)) &&
+                  cs->preSemanticIrCfgCatchBlock ==
+                          ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+                  compiler_semantic_ir_slot_value(cs, sourceSlot) !=
+                          ZR_VALUE_ID_INVALID)) &&
                 (fact->resultLift == ZR_RECEIVER_GUARD_RESULT_VOID_NOOP ||
                  fact->resultLift == ZR_RECEIVER_GUARD_RESULT_NULLABLE) &&
                 receiver_guard_chain_ends_in_call(context, fact));
@@ -498,8 +511,13 @@ TZrBool compiler_receiver_guard_begin_segment(
                     return ZR_FALSE;
                 }
             }
-            if (!compiler_semantic_ir_transfer_expression_result(
-                        cs, sourceSlot, frame.guardedSlot, fact->range)) {
+            if (!(frame.hasWakeCleanup
+                          ? compiler_semantic_ir_wake_optional_receiver(
+                                    cs, sourceSlot, frame.wakeCleanupSlot,
+                                    &fact->guardedType, fact->range)
+                          : compiler_semantic_ir_transfer_expression_result(
+                                    cs, sourceSlot, frame.guardedSlot,
+                                    fact->range))) {
                 ZrParser_Compiler_Error(
                         cs,
                         "Failed to record semantic optional receiver value",
@@ -508,7 +526,7 @@ TZrBool compiler_receiver_guard_begin_segment(
             }
             frame.hasSemanticCfg = compiler_semantic_cfg_begin_optional_guard(
                     cs,
-                    sourceSlot,
+                    frame.hasWakeCleanup ? frame.wakeCleanupSlot : sourceSlot,
                     segment,
                     &semanticPresentBlock,
                     fact->resultLift == ZR_RECEIVER_GUARD_RESULT_NULLABLE
@@ -533,6 +551,21 @@ TZrBool compiler_receiver_guard_begin_segment(
                             "Failed to snapshot semantic optional receiver values",
                             fact->range);
                     return ZR_FALSE;
+                }
+                if (frame.hasWakeCleanup) {
+                    frame.semanticExceptionBlock = ZrParser_Cfg_AppendBlock(
+                            cs->state, &cs->preSemanticIr.cfg,
+                            ZR_PARSER_CFG_BLOCK_STATEMENT, segment);
+                    if (frame.semanticExceptionBlock ==
+                            ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+                        ZrParser_Compiler_Error(
+                                cs, "Failed to prepare semantic weak cleanup",
+                                fact->range);
+                        return ZR_FALSE;
+                    }
+                    cs->preSemanticIrCfgCatchBlock =
+                            frame.semanticExceptionBlock;
+                    cs->preSemanticIrCfgCatchUsed = ZR_FALSE;
                 }
             }
         } else if (cs->preSemanticIrCfgActive &&
@@ -566,6 +599,14 @@ TZrBool compiler_receiver_guard_begin_segment(
                 return ZR_FALSE;
             }
             guardedSlot = frame.guardedSlot;
+            if (frame.hasSemanticCfg &&
+                !compiler_semantic_ir_transfer_expression_result(
+                        cs, frame.wakeCleanupSlot, guardedSlot, fact->range)) {
+                ZrParser_Compiler_Error(
+                        cs, "Failed to record semantic weak receiver view",
+                        fact->range);
+                return ZR_FALSE;
+            }
         }
         ZrCore_Array_Push(cs->state, &context->frames, &frame);
     } else {
@@ -742,6 +783,14 @@ TZrBool compiler_receiver_guard_finish(
                         frame->range);
                 return ZR_FALSE;
             }
+            if (frame->hasWakeCleanup &&
+                !compiler_semantic_ir_drop_optional_receiver(
+                        cs, frame->wakeCleanupSlot, frame->range)) {
+                ZrParser_Compiler_Error(
+                        cs, "Failed to close semantic weak receiver",
+                        frame->range);
+                return ZR_FALSE;
+            }
             if (!compiler_semantic_cfg_jump(
                         cs, frame->semanticJoinBlock, frame->range) ||
                 !compiler_semantic_cfg_restore_slots(
@@ -751,6 +800,55 @@ TZrBool compiler_receiver_guard_finish(
                         "Failed to finish semantic optional receiver CFG",
                         frame->range);
                 return ZR_FALSE;
+            }
+            if (frame->semanticExceptionBlock !=
+                ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+                SZrSemanticIrInstructionSpec throwSpec;
+                TZrTypeId payloadTypeId;
+                TZrValueId payloadValueId;
+
+                if (!cs->preSemanticIrCfgCatchUsed) {
+                    ZrParser_Compiler_Error(
+                            cs, "Semantic weak guard has no exceptional call",
+                            frame->range);
+                    return ZR_FALSE;
+                }
+                compiler_semantic_cfg_enter(
+                        cs, frame->semanticExceptionBlock);
+                if (!compiler_semantic_cfg_emit_exception_payload(
+                            cs, frame->range, &payloadTypeId, &payloadValueId) ||
+                    !compiler_semantic_ir_drop_optional_receiver(
+                            cs, frame->wakeCleanupSlot, frame->range) ||
+                    !compiler_semantic_cfg_restore_slots(
+                            cs, &frame->semanticSlotSnapshot)) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to close semantic weak exception",
+                            frame->range);
+                    return ZR_FALSE;
+                }
+                memset(&throwSpec, 0, sizeof(throwSpec));
+                throwSpec.opcode = ZR_SEMANTIC_IR_THROW;
+                throwSpec.typeId = payloadTypeId;
+                throwSpec.operands = &payloadValueId;
+                throwSpec.operandCount = 1U;
+                throwSpec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+                throwSpec.sourceRange = frame->range;
+                if (!compiler_semantic_ir_emit(cs, &throwSpec) ||
+                    !ZrParser_SemanticIr_BindBlockRange(
+                            &cs->preSemanticIr, &cs->preSemanticIr.cfg,
+                            frame->semanticExceptionBlock,
+                            cs->preSemanticIrCfgStart,
+                            (TZrUInt32)cs->preSemanticIr.instructions.length -
+                                    cs->preSemanticIrCfgStart,
+                            ZR_PARSER_CFG_TERMINATOR_THROW)) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to close semantic weak exception",
+                            frame->range);
+                    return ZR_FALSE;
+                }
+                cs->preSemanticIrCfgCatchBlock =
+                        ZR_PARSER_CFG_INVALID_BLOCK_ID;
+                cs->preSemanticIrCfgCatchUsed = frame->previousCatchUsed;
             }
             if (frame->resultLift == ZR_RECEIVER_GUARD_RESULT_NULLABLE) {
                 compiler_semantic_cfg_enter(

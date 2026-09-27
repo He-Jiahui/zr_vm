@@ -4466,9 +4466,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         !compiler_semantic_cfg_try_call_arguments_are_exact(
                                 cs,
                                 call,
-                                hasResolvedFunctionSignature
-                                        ? &resolvedFunctionSignature
-                                        : ZR_NULL,
+                                activeCallMemberInfo != ZR_NULL
+                                        ? (hasResolvedMemberSignature
+                                                   ? &resolvedMemberSignature
+                                                   : ZR_NULL)
+                                        : (hasResolvedFunctionSignature
+                                                   ? &resolvedFunctionSignature
+                                                   : ZR_NULL),
                                 argBaseSlot)) {
                         semanticCallSupported = ZR_FALSE;
                     }

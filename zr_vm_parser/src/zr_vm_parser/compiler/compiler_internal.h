@@ -191,6 +191,16 @@ TZrBool compiler_semantic_ir_prepare_optional_merge(
         TZrUInt32 mergeSlot,
         const SZrInferredType *resultType,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_wake_optional_receiver(
+        SZrCompilerState *cs,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 wakeSlot,
+        const SZrInferredType *guardedType,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_drop_optional_receiver(
+        SZrCompilerState *cs,
+        TZrUInt32 wakeSlot,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_store_optional_present(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,

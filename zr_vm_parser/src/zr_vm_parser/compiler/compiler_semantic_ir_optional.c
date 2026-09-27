@@ -1,5 +1,79 @@
 #include "compiler_internal.h"
 
+TZrBool compiler_semantic_ir_wake_optional_receiver(
+        SZrCompilerState *cs,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 wakeSlot,
+        const SZrInferredType *guardedType,
+        SZrFileRange sourceRange) {
+    const SZrCompilerSemanticIrSlot *source;
+    SZrInferredType wakeType;
+    SZrSemanticIrInstructionSpec spec;
+    TZrTypeId wakeTypeId;
+    TZrValueId wakeValueId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        guardedType == ZR_NULL || wakeSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    source = compiler_semantic_ir_find_slot(cs, sourceSlot);
+    if (source == ZR_NULL || source->valueId == ZR_VALUE_ID_INVALID ||
+        source->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    wakeType = *guardedType;
+    wakeType.isNullable = ZR_TRUE;
+    wakeTypeId = ZrParser_Semantic_RegisterInferredType(
+            cs->semanticContext, &wakeType, ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+            ZR_NULL, ZR_NULL);
+    if (wakeTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    wakeValueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, wakeTypeId, sourceRange);
+    if (wakeValueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
+    spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_WAKE;
+    spec.typeId = wakeTypeId;
+    spec.placeId = source->placeId;
+    spec.valueId = source->valueId;
+    spec.resultValueId = wakeValueId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    return (TZrBool)(compiler_semantic_ir_emit(cs, &spec) &&
+            compiler_semantic_ir_bind_result_value(
+                    cs, wakeSlot, wakeTypeId, wakeValueId, sourceRange));
+}
+
+TZrBool compiler_semantic_ir_drop_optional_receiver(
+        SZrCompilerState *cs,
+        TZrUInt32 wakeSlot,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *slot;
+    SZrSemanticIrInstructionSpec spec;
+
+    slot = compiler_semantic_ir_find_slot(cs, wakeSlot);
+    if (slot == ZR_NULL || slot->placeId == ZR_PLACE_ID_INVALID ||
+        slot->valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_DROP;
+    spec.typeId = slot->typeId;
+    spec.placeId = slot->placeId;
+    spec.valueId = slot->valueId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+    slot->valueId = ZR_VALUE_ID_INVALID;
+    return ZR_TRUE;
+}
+
 TZrBool compiler_semantic_ir_prepare_optional_merge(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,

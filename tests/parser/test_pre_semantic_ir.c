@@ -10,6 +10,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_ir.h"
 #define emit_instruction compiler_internal_emit_instruction
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
@@ -1474,6 +1475,9 @@ int main(void) {
     RUN_TEST(test_unmodeled_short_circuit_rhs_keeps_legacy_cfg);
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
     RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);
+    RUN_TEST(test_direct_weak_optional_call_keeps_source_cfg);
+    RUN_TEST(test_direct_weak_optional_value_merges_after_guard);
+    RUN_TEST(test_unmodeled_weak_optional_value_abandons_source_cfg);
     RUN_TEST(test_unmodeled_optional_value_abandons_partial_source_cfg);
     RUN_TEST(test_source_resolved_function_call_emits_typed_invoke_cfg);
     RUN_TEST(test_nested_calls_do_not_restart_abandoned_source_cfg);
