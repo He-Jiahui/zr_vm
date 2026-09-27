@@ -1,6 +1,4 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+// Unity 用例直接调用 core 元方法，覆盖基础类型的转换、算术和比较契约。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,13 +20,13 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
-// 测试时间测量结构
+// clock() 记录进程 CPU 时间，仅供日志使用，不参与断言。
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
-// 测试日志宏（符合测试规范）
+// 附加日志；失败宏设置 Unity 的失败标志后仍返回当前用例，允许正常路径清理 state。
 #define TEST_START(summary)                                                                                            \
     do {                                                                                                               \
         printf("Unit Test - %s\n", summary);                                                                           \
@@ -69,7 +67,9 @@ typedef struct {
         fflush(stdout);                                                                                                \
     } while (0)
 
-// 简单的测试分配器
+// GlobalState_New 使用的测试分配器；内存由 global 的释放路径回交给此函数。
+// TODO: 0x1000 低地址过滤沿用测试夹具约定，但合法低地址分配及跨平台指针比较
+// 尚未验证；核查分配器返回范围后再决定是否保留此判断。
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
@@ -93,7 +93,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
-// 创建测试用的SZrState
+// 每个用例独立创建 global；返回的主线程 state 由 global 持有，须经 destroy_test_state 释放。
 static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -108,7 +108,7 @@ static SZrState *create_test_state(void) {
     return mainState;
 }
 
-// 销毁测试用的SZrState
+// 释放 state 所属的 global，不单独释放由 global 持有的主线程 state。
 static void destroy_test_state(SZrState *state) {
     if (!state)
         return;
@@ -119,7 +119,7 @@ static void destroy_test_state(SZrState *state) {
     }
 }
 
-// 调用元方法并获取结果的辅助函数
+// 将无操作数和单个右操作数的测试统一转发给 VM 的可变参数元方法入口。
 static TZrBool call_meta_method(SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
                              SZrTypeValue *arg) {
     if (state == ZR_NULL || value == ZR_NULL) {
@@ -132,9 +132,11 @@ static TZrBool call_meta_method(SZrState *state, SZrTypeValue *value, EZrMetaTyp
     return ZrCore_Value_CallMetaMethod(state, value, metaType, result, 0);
 }
 
-// 测试初始化和清理
+// 用例没有共享初始化数据；每例创建的 global 仍需在断言失败时得到清理。
 void setUp(void) {}
 
+// BUG: Unity 断言失败会跳过用例尾部的 destroy_test_state，空 tearDown 无法释放
+// 已创建的 global；任一断言在创建 state 后失败即泄漏，需引入失败路径清理。
 void tearDown(void) {}
 
 // ==================== TO_STRING 元方法测试 ====================
@@ -203,6 +205,7 @@ static void test_meta_to_string_bool(void) {
         TEST_ASSERT_EQUAL_STRING("false", strStr);
     }
 
+    // BUG: 若调用都成功但任一结果类型不是 STRING，上面的断言会跳过，仍报告通过。
     if (successTrue && successFalse) {
         TEST_PASS_CUSTOM(timer, "TO_STRING meta method for BOOL type");
     } else {
@@ -263,6 +266,7 @@ static void test_meta_to_string_number(void) {
         TEST_ASSERT(strstr(strStr, "3.14") != ZR_NULL);
     }
 
+    // BUG: 成功标志不保证结果类型；任一非 STRING 结果会绕过断言并误报通过。
     if (successInt && successUInt && successFloat) {
         TEST_PASS_CUSTOM(timer, "TO_STRING meta method for number types");
     } else {
@@ -364,6 +368,7 @@ static void test_meta_to_bool_number(void) {
         TEST_ASSERT_FALSE(resultZero.value.nativeObject.nativeBool);
     }
 
+    // BUG: 若调用都成功但任一结果类型不是 BOOL，跳过的断言不会阻止通过日志。
     if (successNonZero && successZero) {
         TEST_PASS_CUSTOM(timer, "TO_BOOL meta method for number types");
     } else {
@@ -406,6 +411,7 @@ static void test_meta_to_bool_string(void) {
         TEST_ASSERT_FALSE(resultEmpty.value.nativeObject.nativeBool);
     }
 
+    // BUG: 若调用都成功但任一结果类型不是 BOOL，跳过的断言不会阻止通过日志。
     if (successNonEmpty && successEmpty) {
         TEST_PASS_CUSTOM(timer, "TO_BOOL meta method for STRING type");
     } else {
@@ -774,6 +780,7 @@ static void test_meta_sub_string_int(void) {
     TEST_DIVIDER();
 }
 
+// 用 3 字节与 4 字节 UTF-8 字符验证减 1 按码点而非字节截尾。
 static void test_meta_sub_string_int_truncates_utf8_by_code_point(void) {
     TEST_START("SUB meta method for STRING type truncates UTF-8 by code point");
     SZrTestTimer timer;
@@ -1465,6 +1472,7 @@ int main(void) {
     // NEG 元方法测试
     RUN_TEST(test_meta_neg_bool);
 
+    // BUG: 这两例已分别在 TO_STRING 与 TO_BOOL 分组注册；再次 RUN_TEST 会重复执行并计数。
     // OBJECT 元方法测试
     RUN_TEST(test_meta_to_string_object);
     RUN_TEST(test_meta_to_bool_object);

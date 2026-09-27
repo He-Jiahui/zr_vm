@@ -64,5 +64,6 @@ doc_type: category-index
 | reference、parser 与语法迁移 fixture | [168 项](coverage/tests_fixtures_reference_parser.tsv) | 73 文件独立复核，6 个 `.zr` 仅增 7 行注释；迁移输入与 golden 未改。JS smoke 复现旧 `%module` golden 偏差并标 BUG；Python 迁移测试本轮 9/11，另两项分别因 Wiki 旧语法及并行工作树两次扫描不一致失败。 |
 | Native binding 注册、分派与元数据 | [664 项](coverage/zr_vm_library_native.tsv) | 23 文件独立复核，非注释 token 不变；GCC、Clang 对 16 个 C 文件语法检查通过，未运行时测试。插件描述符生存期、分配失败路径和公开 API 限制已逐项记录，三个 GC 保活窗口保留 TODO。 |
 | 测试 harness、fixture reader 与崩溃保护 | [195 项](coverage/tests_harness.tsv) | 14 文件独立复核，487 个路径行号有效，源码仅改注释；堆/栈 reader 的关闭所有权、Unity 崩溃后的 teardown 跳过和公共 helper 调用者已核准。长 JSON 字段截断假阴性等 2 处 BUG 已标记；构建与运行测试未执行。 |
+| 元数据 API 回归与目标注册 | [68 项](coverage/tests_meta.tsv) | 2 文件独立复核，211 个证据锚点有效；GCC C 语法检查通过。重复注册、成功路径假阳性和断言中止后的清理缺口已标 BUG，孤立子目录 CMake 与分配器边界已标 TODO；运行测试未执行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
