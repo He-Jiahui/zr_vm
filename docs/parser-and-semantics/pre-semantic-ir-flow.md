@@ -76,7 +76,10 @@ tests:
   - tests/parser/test_canonical_type_graph.c
   - tests/parser/test_canonical_type_graph_union_cases.h
   - tests/parser/test_ssa_source_straight_line_cfg.c
+  - tests/parser/test_ssa_source_while_short_circuit.c
+  - tests/parser/test_ssa_source_for_short_circuit.c
   - tests/acceptance/ssa-source-straight-line-cfg.md
+  - tests/acceptance/ssa-source-nested-short-circuit.md
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_source_value_facts.c
   - tests/acceptance/ssa-value-facts.md
@@ -263,7 +266,11 @@ emits a `LOAD` into one fresh result slot, so later consumers see a single
 defined ValueId while the skipped path never owns the RHS side effects. `&&`
 uses true-to-RHS/false-to-join edges; `||` uses true-to-join/false-to-RHS.
 This temporary is not a scalar source local and is intentionally not eligible
-for local Place promotion.
+for local Place promotion. The source CFG preflight accepts nested `&&`/`||`
+operands only when every leaf is an already supported linear expression. Each
+nested expression has its own RHS and join; the parent branches on its result
+after that join. A nested unsupported leaf disables source CFG for the whole
+loop without making the analysis-only graph eligible for ExecIR construction.
 
 A source-owned `while` may now end its direct body with `break;` or
 `continue;`. The active loop label carries semantic block targets alongside

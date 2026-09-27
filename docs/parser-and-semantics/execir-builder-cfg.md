@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
   - zr_vm_core/include/zr_vm_core/exec_ir.h
@@ -46,6 +47,7 @@ tests:
   - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/acceptance/ssa-source-while-short-circuit.md
   - tests/acceptance/ssa-source-for-short-circuit.md
+  - tests/acceptance/ssa-source-nested-short-circuit.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
   - tests/acceptance/ssa-builder-module-transaction.md
   - tests/acceptance/ssa-builder-canonical-input-shape.md
@@ -88,17 +90,18 @@ and no missing source operation is reconstructed from ExecBC. See
 `source-cfg-finalization.md` for producer completeness and repeat-validation
 contracts.
 
-For supported statement-form `while` loops, a top-level `&&` or `||` with
-linear operands composes the logical RHS/join blocks with the loop's
-body/exit branch. The body backedge targets the original condition block,
+For supported statement-form `while` loops, each `&&` or `||` node with linear
+or recursively supported logical operands composes its RHS/join with the
+loop's body/exit branch. The body backedge targets the condition block,
 not the logical join, so each iteration reevaluates the left operand. An
-unmodeled RHS still abandons executable source CFG production. The focused
-source regression checks graph ownership, strict build, and actual short-
-circuit execution through the Oracle; it does not expand the builder's
-accepted instruction families.
+unmodeled leaf still abandons executable source CFG production. Nested left
+and right conditions keep their separate short-circuit branches; the source
+regression checks graph ownership, strict build, and skipped RHS stores
+through the Oracle. This does not expand the builder's accepted instruction
+families.
 
-The statement-form `for` producer uses the same short-circuit topology, but
-routes body/continue through its step block before returning to the original
+The statement-form `for` producer uses the same nested short-circuit topology,
+but routes body/continue through its step block before returning to the original
 condition entry. A shared source slot-transfer correction prevents a reused
 temporary from supplying the wrong initializer value before this CFG is built.
 The focused Oracle fixture verifies the short-circuit RHS and step events;

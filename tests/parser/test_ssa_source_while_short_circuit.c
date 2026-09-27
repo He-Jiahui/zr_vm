@@ -139,6 +139,41 @@ static void test_while_or_keeps_conditional_right_side_and_backedge(void) {
             "var after: bool = side;\n", ZR_FALSE);
 }
 
+static void test_nested_while_conditions_keep_both_rhs_branches(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler,
+            "var flag: bool = true;\nvar middle: bool = false;\n"
+            "var side: bool = false;\n"
+            "while ((flag && (middle = true)) && (side = true)) { flag = false; }\n"
+            "return side;\n");
+    const SZrSemanticIrFunction *function;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_EQUAL_UINT32(8u, function->cfg.blocks.length);
+    assert_edge(block_at(function, 1u), 0u, 4u,
+                ZR_PARSER_CFG_EDGE_TRUE_BRANCH);
+    assert_edge(block_at(function, 4u), 0u, 5u,
+                ZR_PARSER_CFG_EDGE_NORMAL);
+    assert_edge(block_at(function, 5u), 0u, 6u,
+                ZR_PARSER_CFG_EDGE_TRUE_BRANCH);
+    assert_edge(block_at(function, 6u), 0u, 7u,
+                ZR_PARSER_CFG_EDGE_NORMAL);
+    assert_edge(block_at(function, 7u), 0u, 2u,
+                ZR_PARSER_CFG_EDGE_TRUE_BRANCH);
+    assert_edge(block_at(function, 2u), 0u, 1u,
+                ZR_PARSER_CFG_EDGE_NORMAL);
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
+}
+
 static void test_unmodeled_while_rhs_remains_analysis_only(void) {
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler,
@@ -149,6 +184,24 @@ static void test_unmodeled_while_rhs_remains_analysis_only(void) {
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
     TEST_ASSERT_EQUAL_UINT32(2u, compiler.preSemanticIr.cfg.blocks.length);
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_Build(
+            &compiler.preSemanticIr, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
+}
+
+static void test_nested_unmodeled_rhs_remains_analysis_only(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler,
+            "var flag: bool = true;\nvar side: bool = false;\n"
+            "while (flag && (side && (1 == 1))) { flag = false; }\n");
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
     ZrCore_ExecIr_FunctionInit(&output);
     TEST_ASSERT_FALSE(ZrParser_ExecIr_Build(
             &compiler.preSemanticIr, ZR_NULL, &output, &diagnostic));
@@ -213,8 +266,11 @@ static TZrBool loop_memory_provider(
     return ZR_TRUE;
 }
 
-static void assert_loop_execution(const char *source, TZrBool expectedResult,
-                                  TZrUInt32 expectedConditionStores) {
+static void assert_loop_execution_at(const char *source, TZrBool expectedResult,
+                                     TZrUInt32 expectedConditionStores,
+                                     TZrUInt32 trackedBlock,
+                                     TZrBool trackNestedLeft,
+                                     TZrBool trackNestedRight) {
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler, source);
     SZrExecIrFunction output;
@@ -225,6 +281,7 @@ static void assert_loop_execution(const char *source, TZrBool expectedResult,
     SZrExecIrOracleValue initial[128] = {{0}};
     SZrLoopOracleMemory memory = {0};
     const SZrAstNode *loop;
+    const SZrAstNode *condition;
     const SZrParserCfgBlock *right;
     TZrSize index;
 
@@ -257,15 +314,27 @@ static void assert_loop_execution(const char *source, TZrBool expectedResult,
         }
     }
     memory.source = &compiler.preSemanticIr;
-    right = block_at(memory.source, 4u);
+    right = block_at(memory.source, trackedBlock);
     TEST_ASSERT_NOT_NULL(right);
     memory.rightFirstInstruction = right->firstInstructionIndex;
     memory.rightInstructionCount = right->instructionCount;
-    loop = ast->data.script.statements->nodes[2];
+    loop = ZR_NULL;
+    for (index = 0u; index < ast->data.script.statements->count; ++index) {
+        const SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement != ZR_NULL && statement->type == ZR_AST_WHILE_LOOP) {
+            loop = statement;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(loop);
     TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, loop->type);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_LOGICAL_EXPRESSION, loop->data.whileLoop.cond->type);
-    memory.rhsAssignmentColumn = loop->data.whileLoop.cond->data.logicalExpression.right->location.start.column;
-    memory.rhsAssignmentEndColumn = loop->data.whileLoop.cond->data.logicalExpression.right->location.end.column;
+    condition = loop->data.whileLoop.cond;
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LOGICAL_EXPRESSION, condition->type);
+    if (trackNestedLeft) condition = condition->data.logicalExpression.left;
+    if (trackNestedRight) condition = condition->data.logicalExpression.right;
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LOGICAL_EXPRESSION, condition->type);
+    memory.rhsAssignmentColumn = condition->data.logicalExpression.right->location.start.column;
+    memory.rhsAssignmentEndColumn = condition->data.logicalExpression.right->location.end.column;
     TEST_ASSERT_GREATER_THAN_INT(0, memory.rhsAssignmentColumn);
     TEST_ASSERT_GREATER_OR_EQUAL_INT(memory.rhsAssignmentColumn, memory.rhsAssignmentEndColumn);
     input.function = &output;
@@ -287,6 +356,45 @@ static void assert_loop_execution(const char *source, TZrBool expectedResult,
     ZrCore_ExecIr_OracleResultFree(&result);
     ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
+}
+
+static void assert_loop_execution(const char *source, TZrBool expectedResult,
+                                  TZrUInt32 expectedConditionStores) {
+    assert_loop_execution_at(source, expectedResult,
+                             expectedConditionStores, 4u, ZR_FALSE, ZR_FALSE);
+}
+
+static void test_nested_rhs_runs_only_after_its_own_left_branch(void) {
+    assert_loop_execution_at(
+            "var flag: bool = false;\nvar middle: bool = true;\n"
+            "var side: bool = false;\n"
+            "while ((flag && (middle = true)) && (side = true)) { flag = false; }\n"
+            "return middle;\n", ZR_TRUE, 0u, 4u, ZR_TRUE, ZR_FALSE);
+    assert_loop_execution_at(
+            "var flag: bool = true;\nvar middle: bool = false;\n"
+            "var side: bool = false;\n"
+            "while ((flag && (middle = true)) && (side = true)) { flag = false; }\n"
+            "return middle;\n", ZR_TRUE, 1u, 4u, ZR_TRUE, ZR_FALSE);
+    assert_loop_execution_at(
+            "var flag: bool = false;\nvar middle: bool = true;\n"
+            "var side: bool = false;\n"
+            "while (flag && (middle && (side = true))) { flag = false; }\n"
+            "return side;\n", ZR_FALSE, 0u, 6u, ZR_FALSE, ZR_TRUE);
+    assert_loop_execution_at(
+            "var flag: bool = true;\nvar middle: bool = true;\n"
+            "var side: bool = false;\n"
+            "while (flag && (middle && (side = true))) { flag = false; }\n"
+            "return side;\n", ZR_TRUE, 1u, 6u, ZR_FALSE, ZR_TRUE);
+    assert_loop_execution_at(
+            "var flag: bool = true;\nvar middle: bool = false;\n"
+            "var side: bool = false;\n"
+            "while ((flag || (middle = true)) && side) { flag = false; }\n"
+            "return middle;\n", ZR_FALSE, 0u, 4u, ZR_TRUE, ZR_FALSE);
+    assert_loop_execution_at(
+            "var flag: bool = false;\nvar middle: bool = false;\n"
+            "var side: bool = false;\n"
+            "while ((flag || (middle = true)) && side) { flag = false; }\n"
+            "return middle;\n", ZR_TRUE, 1u, 4u, ZR_TRUE, ZR_FALSE);
 }
 
 static void test_and_rhs_runs_only_when_left_is_true(void) {
@@ -315,8 +423,11 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_while_and_keeps_conditional_right_side_and_backedge);
     RUN_TEST(test_while_or_keeps_conditional_right_side_and_backedge);
+    RUN_TEST(test_nested_while_conditions_keep_both_rhs_branches);
     RUN_TEST(test_unmodeled_while_rhs_remains_analysis_only);
+    RUN_TEST(test_nested_unmodeled_rhs_remains_analysis_only);
     RUN_TEST(test_and_rhs_runs_only_when_left_is_true);
     RUN_TEST(test_or_rhs_runs_only_when_left_is_false);
+    RUN_TEST(test_nested_rhs_runs_only_after_its_own_left_branch);
     return UNITY_END();
 }

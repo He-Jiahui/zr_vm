@@ -96,18 +96,22 @@ TZrBool compiler_semantic_cfg_expression_is_linear(
 TZrBool compiler_semantic_cfg_short_circuit_is_supported(
         const SZrAstNode *node) {
     const TZrChar *op;
+    const SZrAstNode *left;
+    const SZrAstNode *right;
 
     if (node == ZR_NULL || node->type != ZR_AST_LOGICAL_EXPRESSION) {
         return ZR_FALSE;
     }
     op = node->data.logicalExpression.op;
+    left = node->data.logicalExpression.left;
+    right = node->data.logicalExpression.right;
     return (TZrBool)(
             op != ZR_NULL &&
             (strcmp(op, "&&") == 0 || strcmp(op, "||") == 0) &&
-            compiler_semantic_cfg_expression_is_linear(
-                    node->data.logicalExpression.left) &&
-            compiler_semantic_cfg_expression_is_linear(
-                    node->data.logicalExpression.right));
+            (compiler_semantic_cfg_expression_is_linear(left) ||
+             compiler_semantic_cfg_short_circuit_is_supported(left)) &&
+            (compiler_semantic_cfg_expression_is_linear(right) ||
+             compiler_semantic_cfg_short_circuit_is_supported(right)));
 }
 
 /* Pending-completion cleanup and suspension edges are not represented here;

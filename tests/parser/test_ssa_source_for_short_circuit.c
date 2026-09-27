@@ -168,6 +168,32 @@ static void test_unmodeled_for_rhs_remains_analysis_only(void) {
     free_source(&compiler, ast);
 }
 
+static void test_nested_for_condition_keeps_source_cfg(void) {
+    SZrCompilerState compiler;
+    SZrAstNode *ast = compile_source(&compiler,
+            "var flag: bool = true;\nvar middle: bool = true;\n"
+            "var side: bool = false;\nvar step: int = 0;\n"
+            "for (; flag && (middle && (side = true)); step = 1) "
+            "{ flag = false; }\nreturn side;\n");
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *header;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    header = block_at(function, 1u);
+    TEST_ASSERT_NOT_NULL(header);
+    TEST_ASSERT_EQUAL_UINT32(2u, header->predecessorCount);
+    ZrCore_ExecIr_FunctionInit(&output);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    free_source(&compiler, ast);
+}
+
 static void test_reused_initializer_slot_preserves_its_own_value(void) {
     SZrCompilerState compiler;
     SZrAstNode *ast = compile_source(&compiler,
@@ -379,6 +405,7 @@ int main(void) {
     RUN_TEST(test_for_and_preserves_rhs_and_step_backedge);
     RUN_TEST(test_for_or_preserves_rhs_and_step_backedge);
     RUN_TEST(test_unmodeled_for_rhs_remains_analysis_only);
+    RUN_TEST(test_nested_for_condition_keeps_source_cfg);
     RUN_TEST(test_reused_initializer_slot_preserves_its_own_value);
     RUN_TEST(test_reused_temporary_keeps_string_declaration_buildable);
     RUN_TEST(test_for_and_executes_rhs_and_step_only_after_entry);
