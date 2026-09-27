@@ -2,6 +2,7 @@
 #include "stdio_request_progress.h"
 #include "unity.h"
 
+/* 独立 Unity 可执行程序串行驱动请求；JSON 树由夹具持有，通知替身仅转移所有权。 */
 static SZrStdioServer g_server;
 static SZrLspContext g_context;
 static cJSON *g_notifications;
@@ -12,11 +13,13 @@ static cJSON *g_result;
 static int g_partialCount;
 static int g_cancelAtBatch;
 static EZrStdioSendStatus g_sendStatus;
+/* cJSON 全局分配钩子只在目标调用期间启用；不覆盖 registry 的 libc 分配。 */
 static size_t g_jsonAttempts;
 static size_t g_jsonFailAt;
 static size_t g_jsonFailures;
 static TZrBool g_persistentFailure;
 
+/* 支持单点和持续 OOM，验证通知构造在每一个分配点都能保留调用方结果。 */
 static void *json_malloc(size_t size) {
     g_jsonAttempts++;
     if (g_jsonFailAt != 0 &&
@@ -27,6 +30,7 @@ static void *json_malloc(size_t size) {
     return malloc(size);
 }
 
+/* 在夹具建好后开启故障注入，避免把 setup 失败误记为被测发布路径的失败。 */
 static void begin_json_tracking(size_t failAt, TZrBool persistent) {
     cJSON_Hooks hooks = {json_malloc, free};
     g_jsonAttempts = 0;
@@ -36,13 +40,14 @@ static void begin_json_tracking(size_t failAt, TZrBool persistent) {
     cJSON_InitHooks(&hooks);
 }
 
+/* 代替 stdio 主循环安装的取消回调，把当前 ID 的注册表状态暴露给 progress。 */
 static TZrBool request_is_cancelled(void *userData) {
     SZrStdioServer *server = (SZrStdioServer *)userData;
     return ZrLanguageServer_StdioRequestRegistry_IsCancelled(server->requestRegistry,
                                                             server->activeRequestId);
 }
 
-/* Control publication and cancellation at an exact send boundary. */
+/* 链接替身消费 params，并在可重复的发送边界触发取消；不验证真实帧写出。 */
 EZrStdioSendStatus send_notification(const char *method, cJSON *params) {
     const cJSON *value;
     const cJSON *items;
@@ -67,6 +72,7 @@ EZrStdioSendStatus send_notification(const char *method, cJSON *params) {
     return ZR_STDIO_SEND_OK;
 }
 
+/* 每例预留数值 ID 7 并安装回调，模拟主循环激活一个请求后的状态。 */
 void setUp(void) {
     memset(&g_server, 0, sizeof(g_server));
     memset(&g_context, 0, sizeof(g_context));
@@ -92,6 +98,7 @@ void setUp(void) {
                                                            &g_server);
 }
 
+/* 先恢复全局钩子并解绑回调，再释放树和注册表，隔离断言提前退出后的下一例。 */
 void tearDown(void) {
     cJSON_InitHooks(ZR_NULL);
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(&g_context, ZR_NULL, ZR_NULL);
@@ -103,6 +110,7 @@ void tearDown(void) {
     cJSON_Delete(g_result);
 }
 
+/* 统一构造数组或 workspace diagnostic 对象，begin 通知固定占通知列表第零项。 */
 static void prepare_result(const char *method, int itemCount) {
     cJSON *items = cJSON_CreateArray();
     TEST_ASSERT_NOT_NULL(items);
@@ -119,6 +127,7 @@ static void prepare_result(const char *method, int itemCount) {
     TEST_ASSERT_TRUE(stdio_request_progress_begin(&g_server, method));
 }
 
+/* 借用捕获通知中的数组并核对 token；普通数组和 diagnostic.items 共用断言入口。 */
 static const cJSON *partial_items(int notificationIndex, TZrBool workspaceDiagnostic) {
     const cJSON *params = cJSON_GetArrayItem(g_notifications, notificationIndex);
     const cJSON *token = cJSON_GetObjectItemCaseSensitive(params, ZR_LSP_FIELD_TOKEN);
@@ -128,6 +137,7 @@ static const cJSON *partial_items(int notificationIndex, TZrBool workspaceDiagno
                                : value;
 }
 
+/* 成功和取消路径都必须配对 begin/end，并结束对 params 内 token 的借用。 */
 static void expect_progress_ended(void) {
     const cJSON *begin;
     const cJSON *end;
@@ -149,6 +159,7 @@ static void expect_progress_ended(void) {
     TEST_ASSERT_FALSE(g_server.requestProgress.workDoneBegan);
 }
 
+/* 首批后的取消不得继续发送余项，也不能提前消费原结果。 */
 static void test_cancel_at_first_batch_stops_remaining_results(void) {
     cJSON *original;
     g_cancelAtBatch = 1;
@@ -163,6 +174,7 @@ static void test_cancel_at_first_batch_stops_remaining_results(void) {
     expect_progress_ended();
 }
 
+/* 末批发布边界仍可能收到取消，不能因为已发完就提交成功完成值。 */
 static void test_cancel_at_last_batch_does_not_complete_with_null(void) {
     cJSON *original;
     g_cancelAtBatch = 2;
@@ -176,6 +188,7 @@ static void test_cancel_at_last_batch_does_not_complete_with_null(void) {
     expect_progress_ended();
 }
 
+/* 对象包裹的 diagnostic 批次也必须遵守末批取消检查。 */
 static void test_workspace_diagnostic_last_batch_observes_cancellation(void) {
     cJSON *original;
     g_cancelAtBatch = 1;
@@ -189,6 +202,7 @@ static void test_workspace_diagnostic_last_batch_observes_cancellation(void) {
     expect_progress_ended();
 }
 
+/* 字符串 "7" 与数值 7 的预留独立，取消通知不能跨 ID 类型误伤。 */
 static void test_string_id_cancellation_does_not_cancel_numeric_request(void) {
     g_cancelId = cJSON_CreateString("7");
     TEST_ASSERT_NOT_NULL(g_cancelId);
@@ -207,6 +221,7 @@ static void test_string_id_cancellation_does_not_cancel_numeric_request(void) {
     expect_progress_ended();
 }
 
+/* 跨越 64 项边界，锁定 diagnostic.items 的封装、顺序与最终空报告形状。 */
 static void test_workspace_diagnostic_batches_preserve_items_and_order(void) {
     const cJSON *first;
     const cJSON *last;
@@ -227,6 +242,7 @@ static void test_workspace_diagnostic_batches_preserve_items_and_order(void) {
     expect_progress_ended();
 }
 
+/* 空报告无需 partial 通知，最终响应仍保留 WorkspaceDiagnosticReport 对象。 */
 static void test_empty_workspace_diagnostic_completes_with_empty_report(void) {
     prepare_result(ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC, 0);
     TEST_ASSERT_TRUE(stdio_request_progress_publish_partial_result(
@@ -238,6 +254,7 @@ static void test_empty_workspace_diagnostic_completes_with_empty_report(void) {
     expect_progress_ended();
 }
 
+/* 缺少 partial token 时只能走完整对象响应，work-done 进度仍正常配对。 */
 static void test_workspace_diagnostic_without_partial_token_preserves_full_report(void) {
     cJSON *original;
     cJSON_DeleteItemFromObjectCaseSensitive(g_params, ZR_LSP_FIELD_PARTIAL_RESULT_TOKEN);
@@ -251,6 +268,7 @@ static void test_workspace_diagnostic_without_partial_token_preserves_full_repor
     expect_progress_ended();
 }
 
+/* 普通数组也不因 workDoneToken 存在就被错误地流式消费。 */
 static void test_omitted_partial_token_preserves_ordinary_result(void) {
     cJSON *original;
     cJSON_DeleteItemFromObjectCaseSensitive(g_params, ZR_LSP_FIELD_PARTIAL_RESULT_TOKEN);
@@ -264,6 +282,7 @@ static void test_omitted_partial_token_preserves_ordinary_result(void) {
     expect_progress_ended();
 }
 
+/* 输出失败不能建立已开始状态，避免后续错误路径发出无对应 begin 的 end。 */
 static void test_work_done_begin_does_not_commit_when_publication_fails(void) {
     TEST_ASSERT_TRUE(stdio_request_progress_prepare(
             &g_server, ZR_LSP_METHOD_WORKSPACE_SYMBOL, g_params));
@@ -274,6 +293,7 @@ static void test_work_done_begin_does_not_commit_when_publication_fails(void) {
     stdio_request_progress_clear(&g_server);
 }
 
+/* 发布失败后调用方仍持有原结果，才能走统一错误清理路径。 */
 static void test_partial_result_publication_failure_preserves_result(void) {
     cJSON *original;
 
@@ -289,6 +309,7 @@ static void test_partial_result_publication_failure_preserves_result(void) {
     expect_progress_ended();
 }
 
+/* 一次运行只注入 begin 构造阶段；零故障调用提供后续逐点扫描的动态上界。 */
 static size_t run_work_done_allocation_case(size_t failAt, TZrBool persistent) {
     TZrBool success;
 
@@ -313,6 +334,7 @@ static size_t run_work_done_allocation_case(size_t failAt, TZrBool persistent) {
     return g_jsonAttempts;
 }
 
+/* 同时扫描单次 OOM 与持续 OOM，防止失败恢复分支再次分配时漏掉错误。 */
 static void test_work_done_allocation_failures_do_not_publish(void) {
     size_t count = run_work_done_allocation_case(0, ZR_FALSE);
 
@@ -323,6 +345,7 @@ static void test_work_done_allocation_failures_do_not_publish(void) {
     printf("work-done begin: %zu allocation points\n", count);
 }
 
+/* 已发送批次不可撤回；失败仍须保留原结果，并保证捕获到的每一批完整有序。 */
 static size_t run_partial_allocation_case(const char *method, size_t failAt, TZrBool persistent) {
     cJSON *original;
     TZrBool success;
@@ -364,6 +387,7 @@ static size_t run_partial_allocation_case(const char *method, size_t failAt, TZr
     return g_jsonAttempts;
 }
 
+/* 用同一故障矩阵覆盖普通数组与 diagnostic 对象的不同所有权转移路径。 */
 static void sweep_partial_allocations(const char *method) {
     size_t count = run_partial_allocation_case(method, 0, ZR_FALSE);
 
@@ -374,14 +398,18 @@ static void sweep_partial_allocations(const char *method) {
     printf("partial result %s: %zu allocation points\n", method, count);
 }
 
+/* 数组 partial 的任意分配失败不得替换调用方结果。 */
 static void test_array_partial_allocation_failures_preserve_result(void) {
     sweep_partial_allocations(ZR_LSP_METHOD_WORKSPACE_SYMBOL);
 }
 
+/* diagnostic 额外对象和最终空 items 的分配失败也须维持同一所有权契约。 */
 static void test_workspace_diagnostic_partial_allocation_failures_preserve_result(void) {
     sweep_partial_allocations(ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC);
 }
 
+/* CMake 通过 zr_vm_lsp_stdio_progress_tests.cmake 注册此 Unity 可执行程序。
+ * 这里集中列出取消、批次和分配失败的回归场景。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cancel_at_first_batch_stops_remaining_results);

@@ -2,8 +2,10 @@
 #include "stdio_json_builder.h"
 #include "zr_vm_language_server/lsp_capability_registry.h"
 
+/* 客户端扩展字段只影响多范围格式化的响应形状与服务端分派开关。 */
 static const char ZR_STDIO_FIELD_RANGES_SUPPORT[] = "rangesSupport";
 
+/* 缺席或形状不符的可选能力不阻断 initialize，只按未协商处理。 */
 static TZrBool optional_editor_capability_is_valid(const cJSON *capability) {
     const cJSON *dynamicRegistration = get_object_item(capability, "dynamicRegistration");
 
@@ -12,6 +14,8 @@ static TZrBool optional_editor_capability_is_valid(const cJSON *capability) {
                    ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 供 initialize Result 构造器使用：本段能力节点完成后先写入请求分派开关；
+ * 后续 Result 构造失败由处理器回滚，失败 JSON 子树由调用者回收。 */
 TZrBool add_advanced_editor_capabilities(SZrStdioServer *server,
                                          const cJSON *params,
                                          cJSON *capabilities) {
@@ -50,6 +54,7 @@ TZrBool add_advanced_editor_capabilities(SZrStdioServer *server,
         return ZR_FALSE;
     }
 
+    /* 支持 ranges 扩展的客户端接收对象形状；其他客户端仍接收标准布尔形状。 */
     if (supportsRangesFormatting) {
         rangeFormattingProvider = cJSON_AddObjectToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_RANGE_FORMATTING_PROVIDER);
         if (rangeFormattingProvider == NULL ||

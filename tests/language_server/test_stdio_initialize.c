@@ -6,6 +6,7 @@
 #include "stdio_frame_reader.h"
 #include "unity.h"
 
+/* 输出重定向测试只借用平台的描述符接口，统一通过同一组测试调用点恢复 stdout。 */
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -21,6 +22,8 @@
 #define test_fileno fileno
 #endif
 
+/* Unity 单测试独占的服务器、JSON 故障注入状态和 stdout 捕获资源；
+ * cJSON hooks 属于进程全局状态，必须由 tearDown 在下一用例前复原。 */
 static SZrStdioServer *g_server;
 static cJSON *g_params;
 static cJSON *g_id;
@@ -38,6 +41,8 @@ static int g_savedStdout;
 static int g_stdoutMode;
 #endif
 
+/* 作为 cJSON hook 记录每个分配点；失败序号与取消序号让测试走到
+ * 构造、响应封装的不同阶段，并由配对 free 核对所有权。 */
 static void *tracked_json_malloc(size_t size) {
     void *result;
     g_attempts++;
@@ -56,6 +61,7 @@ static void *tracked_json_malloc(size_t size) {
     return result;
 }
 
+/* 与故障注入分配器配对，确认失败路径没有遗留 JSON 树。 */
 static void tracked_json_free(void *pointer) {
     if (pointer != ZR_NULL) {
         g_liveJson--;
@@ -63,6 +69,7 @@ static void tracked_json_free(void *pointer) {
     }
 }
 
+/* 在单个请求调用前安装全局 hook；persistent 模式覆盖持续 OOM 的回退路径。 */
 static void begin_json_tracking(size_t failureOrdinal, TZrBool persistent) {
     cJSON_Hooks hooks = {tracked_json_malloc, tracked_json_free};
     g_attempts = 0;
@@ -73,6 +80,7 @@ static void begin_json_tracking(size_t failureOrdinal, TZrBool persistent) {
     cJSON_InitHooks(&hooks);
 }
 
+/* 断言后也由 tearDown 调用，避免后续 Unity 用例继续写入临时流。 */
 static void restore_stdout(void) {
     if (g_savedStdout >= 0) {
         fflush(stdout);
@@ -86,6 +94,7 @@ static void restore_stdout(void) {
     }
 }
 
+/* 借用当前进程 stdout 让真正的 JSON-RPC 帧发送路径接受输出故障注入。 */
 static void redirect_stdout(FILE *output) {
     fflush(stdout);
 #ifdef _WIN32
@@ -96,6 +105,7 @@ static void redirect_stdout(FILE *output) {
     TEST_ASSERT_TRUE(test_dup2(test_fileno(output), test_fileno(stdout)) >= 0);
 }
 
+/* 每例建立新的服务端上下文，使生命周期和协商开关互不污染。 */
 void setUp(void) {
     g_savedStdout = -1;
     g_output = ZR_NULL;
@@ -113,6 +123,7 @@ void setUp(void) {
     TEST_ASSERT_NOT_NULL(g_id);
 }
 
+/* 无论用例走到哪条故障路径，都恢复 hooks、描述符和 JSON 所有权。 */
 void tearDown(void) {
     cJSON_InitHooks(ZR_NULL);
     restore_stdout();
@@ -128,6 +139,8 @@ void tearDown(void) {
     TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, g_liveJson, "initialize must release every JSON allocation");
 }
 
+/* 直接调用 initialize 处理器，验证单个构造点失败会释放结果并回滚协商开关；
+ * 返回基准分配次数，供完整故障扫描和晚到取消用例定位阶段。 */
 static size_t run_allocation_case(size_t failureOrdinal, TZrBool persistent) {
     SZrLspHandlerResult response;
     TZrBool hasResult;
@@ -156,6 +169,7 @@ static size_t run_allocation_case(size_t failureOrdinal, TZrBool persistent) {
     return g_attempts;
 }
 
+/* 先测基准路径再逐个失败注入；分别覆盖可选能力存在与缺席的结果形状。 */
 static void sweep_allocations(TZrBool persistent, TZrBool optional) {
     size_t count;
     if (!optional) {
@@ -171,6 +185,7 @@ static void sweep_allocations(TZrBool persistent, TZrBool optional) {
     printf("initialize profile optional=%d persistent=%d: %zu allocation points\n", optional, persistent, count);
 }
 
+/* 锁定原生分派器对外公布的核心能力、URI 工作区能力与 UTF-8 协商结果。 */
 static void test_initialize_complete_capabilities(void) {
     SZrLspHandlerResult response = handle_initialize_request(g_server, g_params);
     const cJSON *capabilities;
@@ -197,11 +212,16 @@ static void test_initialize_complete_capabilities(void) {
     TEST_ASSERT_TRUE(cJSON_IsObject(get_object_item(operations, ZR_LSP_FIELD_DID_DELETE)));
 }
 
+/* 客户端提供可选能力时，单点 OOM 仍应保持能力发布原子性。 */
 static void test_initialize_transient_allocation_failures(void) { sweep_allocations(ZR_FALSE, ZR_TRUE); }
+/* 持续 OOM 也必须让可选能力构造路径释放全部结果。 */
 static void test_initialize_persistent_allocation_failures(void) { sweep_allocations(ZR_TRUE, ZR_TRUE); }
+/* 基础客户端不提供可选能力时，同样扫描所有结果构造点。 */
 static void test_initialize_base_transient_allocation_failures(void) { sweep_allocations(ZR_FALSE, ZR_FALSE); }
+/* 基础能力的持续 OOM 路径不得留下部分已发布状态。 */
 static void test_initialize_base_persistent_allocation_failures(void) { sweep_allocations(ZR_TRUE, ZR_FALSE); }
 
+/* 直接处理器在分派层之外调用时仍需拒绝无效 params。 */
 static void test_initialize_invalid_params(void) {
     SZrLspHandlerResult response = handle_initialize_request(g_server, ZR_NULL);
     g_response = response.result;
@@ -209,11 +229,13 @@ static void test_initialize_invalid_params(void) {
     TEST_ASSERT_NULL(g_response);
 }
 
+/* 为请求处理器的入口取消检查提供稳定回调。 */
 static TZrBool always_cancelled(void *userData) {
     ZR_UNUSED_PARAMETER(userData);
     return ZR_TRUE;
 }
 
+/* 入口取消不得改变默认位置编码或可选能力状态。 */
 static void test_initialize_cancelled_result_rolls_back_capabilities(void) {
     SZrLspHandlerResult response;
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(g_server->context, always_cancelled, ZR_NULL);
@@ -227,11 +249,13 @@ static void test_initialize_cancelled_result_rolls_back_capabilities(void) {
     TEST_ASSERT_EQUAL_INT(ZR_STDIO_POSITION_ENCODING_UTF16, g_server->positionEncoding);
 }
 
+/* 由分配 hook 在最后一个构造点触发，用于模拟响应生成末尾的取消。 */
 static TZrBool allocation_cancelled(void *userData) {
     ZR_UNUSED_PARAMETER(userData);
     return g_cancelled;
 }
 
+/* 晚到取消已拥有结果树时，结果封装器仍须回收树并回滚协商开关。 */
 static void test_initialize_late_cancellation_releases_result(void) {
     SZrLspHandlerResult response;
     size_t allocations = run_allocation_case(0, ZR_FALSE);
@@ -254,6 +278,7 @@ static void test_initialize_late_cancellation_releases_result(void) {
     TEST_ASSERT_EQUAL_UINT64(0, g_liveJson);
 }
 
+/* 走完整请求分派与真实帧发送，再读回 JSON-RPC 帧，核对生命周期只随成功发送推进。 */
 static void capture_request(const char *method, size_t failureOrdinal) {
     char *payload = ZR_NULL;
     TZrSize length = 0;
@@ -282,6 +307,7 @@ static void capture_request(const char *method, size_t failureOrdinal) {
     TEST_ASSERT_EQUAL_UINT64(0, g_liveJson);
 }
 
+/* 用只读流制造确定的发送失败，验证失败后允许 initialize/shutdown 重试。 */
 static void write_request_to_readonly_stdout(const char *method) {
     g_output = fopen(__FILE__, "rb");
 
@@ -293,6 +319,7 @@ static void write_request_to_readonly_stdout(const char *method) {
     g_output = ZR_NULL;
 }
 
+/* 处理器成功之后在响应外壳阶段注入 OOM，要求不输出部分帧。 */
 static void fail_response_envelope_allocation(const char *method, size_t failureOrdinal) {
     g_output = tmpfile();
     TEST_ASSERT_NOT_NULL(g_output);
@@ -308,6 +335,7 @@ static void fail_response_envelope_allocation(const char *method, size_t failure
     g_output = ZR_NULL;
 }
 
+/* 从捕获帧读取协议错误码，使下列用例核对实际可见响应。 */
 static void expect_error(int code) {
     const cJSON *error = get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_ERROR);
     const cJSON *actual = get_object_item(error, ZR_LSP_JSON_RPC_FIELD_CODE);
@@ -315,6 +343,7 @@ static void expect_error(int code) {
     TEST_ASSERT_EQUAL_INT(code, actual->valueint);
 }
 
+/* 处理器 OOM 后请求门禁维持 NEW，客户端仍可重试 initialize。 */
 static void test_initialize_failure_keeps_lifecycle_new(void) {
     capture_request(ZR_LSP_METHOD_INITIALIZE, 1);
     expect_error(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE);
@@ -329,6 +358,7 @@ static void test_initialize_failure_keeps_lifecycle_new(void) {
     expect_error(ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE);
 }
 
+/* 写出失败不得把未被客户端收到的 initialize 视作完成。 */
 static void test_initialize_output_failure_keeps_lifecycle_new(void) {
     write_request_to_readonly_stdout(ZR_LSP_METHOD_INITIALIZE);
     TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsNew(&g_server->lifecycle));
@@ -337,6 +367,7 @@ static void test_initialize_output_failure_keeps_lifecycle_new(void) {
     TEST_ASSERT_TRUE(cJSON_IsObject(get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_RESULT)));
 }
 
+/* shutdown 响应未送达时仍允许客户端再次请求关闭。 */
 static void test_shutdown_output_failure_keeps_lifecycle_active(void) {
     capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
     TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_CanProcessRequest(&g_server->lifecycle));
@@ -347,6 +378,7 @@ static void test_shutdown_output_failure_keeps_lifecycle_active(void) {
     TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
 }
 
+/* 结果树成功但响应外壳失败时，不推进生命周期并允许重试。 */
 static void test_initialize_envelope_failure_keeps_lifecycle_new(void) {
     size_t handlerAllocations = run_allocation_case(0, ZR_FALSE);
 
@@ -356,6 +388,7 @@ static void test_initialize_envelope_failure_keeps_lifecycle_new(void) {
     TEST_ASSERT_TRUE(cJSON_IsObject(get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_RESULT)));
 }
 
+/* shutdown 外壳分配失败时，运行态请求门禁不得提前关闭。 */
 static void test_shutdown_envelope_failure_keeps_lifecycle_running(void) {
     capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
     ZrLanguageServer_StdioLifecycle_MarkInitialized(&g_server->lifecycle);
@@ -365,6 +398,7 @@ static void test_shutdown_envelope_failure_keeps_lifecycle_running(void) {
     TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
 }
 
+/* 已激活请求被取消后，shutdown 不应提交状态；解除预留后才可成功关闭。 */
 static void test_cancelled_shutdown_keeps_lifecycle_running(void) {
     capture_request(ZR_LSP_METHOD_INITIALIZE, 0);
     ZrLanguageServer_StdioLifecycle_MarkInitialized(&g_server->lifecycle);
@@ -381,6 +415,7 @@ static void test_cancelled_shutdown_keeps_lifecycle_running(void) {
     TEST_ASSERT_TRUE(ZrLanguageServer_StdioLifecycle_IsShutdown(&g_server->lifecycle));
 }
 
+/* 分派层取消 initialize 后仍未初始化，协商开关保持默认且允许新的请求重试。 */
 static void test_initialize_cancelled_request_keeps_lifecycle_new(void) {
     TEST_ASSERT_EQUAL_INT(ZR_STDIO_REQUEST_RESERVATION_ACCEPTED,
                           ZrLanguageServer_StdioRequestRegistry_Reserve(g_server->requestRegistry, g_id));
@@ -398,6 +433,8 @@ static void test_initialize_cancelled_request_keeps_lifecycle_new(void) {
     TEST_ASSERT_TRUE(cJSON_IsObject(get_object_item(g_response, ZR_LSP_JSON_RPC_FIELD_RESULT)));
 }
 
+/* 由 stdio handler 的 CMake 测试矩阵登记为 initialize 可执行入口；
+ * 各用例串行覆盖响应能力、故障注入、取消和生命周期边界。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_initialize_complete_capabilities);

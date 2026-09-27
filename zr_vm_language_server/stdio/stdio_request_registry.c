@@ -9,12 +9,14 @@
 #include <pthread.h>
 #endif
 
+/* JSON-RPC 的数值、字符串和显式 null ID 不得互相折叠；同类值才参与去重。 */
 typedef enum EZrStdioRequestIdKind {
     ZR_STDIO_REQUEST_ID_NULL = 0,
     ZR_STDIO_REQUEST_ID_NUMBER,
     ZR_STDIO_REQUEST_ID_STRING,
 } EZrStdioRequestIdKind;
 
+/* 预留跨越消息入队和处理，字符串必须自有副本，取消位由注册表锁保护。 */
 typedef struct SZrStdioRequestRegistryEntry {
     EZrStdioRequestIdKind kind;
     double numberValue;
@@ -23,6 +25,7 @@ typedef struct SZrStdioRequestRegistryEntry {
     struct SZrStdioRequestRegistryEntry *next;
 } SZrStdioRequestRegistryEntry;
 
+/* 读线程写入预留/取消，主线程查询/完成；链表和取消位共享一把锁。 */
 struct SZrStdioRequestRegistry {
 #ifdef _WIN32
     CRITICAL_SECTION lock;
@@ -32,6 +35,7 @@ struct SZrStdioRequestRegistry {
     SZrStdioRequestRegistryEntry *entries;
 };
 
+/* 平台锁只用于短暂访问注册表；不得持锁执行处理器或输出通知。 */
 static void request_registry_lock(SZrStdioRequestRegistry *registry) {
 #ifdef _WIN32
     EnterCriticalSection(&registry->lock);
@@ -40,6 +44,7 @@ static void request_registry_lock(SZrStdioRequestRegistry *registry) {
 #endif
 }
 
+/* 与所有预留、取消、查询和完成路径配对，维持跨线程可见性。 */
 static void request_registry_unlock(SZrStdioRequestRegistry *registry) {
 #ifdef _WIN32
     LeaveCriticalSection(&registry->lock);
@@ -48,6 +53,7 @@ static void request_registry_unlock(SZrStdioRequestRegistry *registry) {
 #endif
 }
 
+/* 统一入口的 ID 类型判定，避免通知、请求和完成路径各自解释 ID。 */
 static TZrBool request_registry_get_id_kind(const cJSON *id, EZrStdioRequestIdKind *outKind) {
     if (id == ZR_NULL || outKind == ZR_NULL) {
         return ZR_FALSE;
@@ -67,6 +73,7 @@ static TZrBool request_registry_get_id_kind(const cJSON *id, EZrStdioRequestIdKi
     return ZR_FALSE;
 }
 
+/* BUG: 合法字符串 ID 含 U+0000 时 cJSON 保留内嵌 NUL，strlen/strcmp 只比较前缀，可能误判重复或取消目标。 */
 static TZrBool request_registry_id_equals(const SZrStdioRequestRegistryEntry *entry,
                                           EZrStdioRequestIdKind kind,
                                           const cJSON *id) {
@@ -82,6 +89,7 @@ static TZrBool request_registry_id_equals(const SZrStdioRequestRegistryEntry *en
     return strcmp(entry->stringValue, cJSON_GetStringValue((cJSON *)id)) == 0;
 }
 
+/* 返回借用的表项，仅可在持锁区间使用；Cancel 与 IsCancelled 都走同一匹配规则。 */
 static SZrStdioRequestRegistryEntry *request_registry_find_locked(
         SZrStdioRequestRegistry *registry,
         EZrStdioRequestIdKind kind,
@@ -97,6 +105,7 @@ static SZrStdioRequestRegistryEntry *request_registry_find_locked(
     return ZR_NULL;
 }
 
+/* 读线程的消息树可能先于预留完成而释放，注册表因此独立持有字符串 ID。 */
 static char *request_registry_duplicate_string(const char *text) {
     size_t length;
     char *copy;
@@ -112,6 +121,7 @@ static char *request_registry_duplicate_string(const char *text) {
     return copy;
 }
 
+/* 由 server 初始化拥有，锁初始化失败时不向读线程发布半成品。 */
 SZrStdioRequestRegistry *ZrLanguageServer_StdioRequestRegistry_New(void) {
     SZrStdioRequestRegistry *registry =
             (SZrStdioRequestRegistry *)calloc(1, sizeof(SZrStdioRequestRegistry));
@@ -130,6 +140,7 @@ SZrStdioRequestRegistry *ZrLanguageServer_StdioRequestRegistry_New(void) {
     return registry;
 }
 
+/* server 关闭读线程后调用；此处不持锁，依赖已无并发访问的生命周期约束。 */
 void ZrLanguageServer_StdioRequestRegistry_Free(SZrStdioRequestRegistry *registry) {
     SZrStdioRequestRegistryEntry *entry;
 
@@ -151,6 +162,7 @@ void ZrLanguageServer_StdioRequestRegistry_Free(SZrStdioRequestRegistry *registr
     free(registry);
 }
 
+/* 在读线程中先于入队执行，使排队请求也能观察后来到达的取消通知。 */
 EZrStdioRequestReservation ZrLanguageServer_StdioRequestRegistry_Reserve(
         SZrStdioRequestRegistry *registry,
         const cJSON *id) {
@@ -183,12 +195,14 @@ EZrStdioRequestReservation ZrLanguageServer_StdioRequestRegistry_Reserve(
             return ZR_STDIO_REQUEST_RESERVATION_FAILED;
         }
     }
+    /* 发布节点前完成 ID 自有副本；失败路径不留下半个预留。 */
     entry->next = registry->entries;
     registry->entries = entry;
     request_registry_unlock(registry);
     return ZR_STDIO_REQUEST_RESERVATION_ACCEPTED;
 }
 
+/* 取消位仅记录意图，处理器通过 IsCancelled 决定是否中止正在执行的请求。 */
 TZrBool ZrLanguageServer_StdioRequestRegistry_Cancel(SZrStdioRequestRegistry *registry,
                                                       const cJSON *id) {
     EZrStdioRequestIdKind kind;
@@ -206,6 +220,7 @@ TZrBool ZrLanguageServer_StdioRequestRegistry_Cancel(SZrStdioRequestRegistry *re
     return entry != ZR_NULL;
 }
 
+/* 锁内复制取消位，调用方不持有链表节点，以免 Complete 并发释放造成悬空引用。 */
 TZrBool ZrLanguageServer_StdioRequestRegistry_IsCancelled(
         SZrStdioRequestRegistry *registry,
         const cJSON *id) {
@@ -225,6 +240,7 @@ TZrBool ZrLanguageServer_StdioRequestRegistry_IsCancelled(
     return cancelled;
 }
 
+/* 主线程回复后移除预留；迟到取消只会匹配之后重新预留的同值 ID。 */
 void ZrLanguageServer_StdioRequestRegistry_Complete(SZrStdioRequestRegistry *registry,
                                                      const cJSON *id) {
     EZrStdioRequestIdKind kind;

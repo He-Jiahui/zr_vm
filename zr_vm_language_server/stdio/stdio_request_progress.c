@@ -3,6 +3,7 @@
 #include "stdio_request_progress.h"
 #include "stdio_json_builder.h"
 
+/* 数字 token 须可经 cJSON 的 double 无损往返，避免客户端按不同 ID 匹配通知。 */
 static TZrBool stdio_request_progress_token_is_valid(const cJSON *token) {
     double number;
 
@@ -19,6 +20,7 @@ static TZrBool stdio_request_progress_token_is_valid(const cJSON *token) {
            number == (double)(long long)number;
 }
 
+/* BUG: 字符串 token 含 U+0000 时 cJSON_Duplicate 经 strlen 截断，通知 token 与请求 token 不匹配。 */
 static cJSON *stdio_request_progress_token_duplicate(const cJSON *token) {
     char number[32];
     int length;
@@ -37,6 +39,7 @@ static cJSON *stdio_request_progress_token_duplicate(const cJSON *token) {
     return cJSON_CreateRaw(number);
 }
 
+/* 仅当前请求分发层能分批处理或报告长运行状态的方法接受进度 token。 */
 static TZrBool stdio_request_method_supports_progress(const char *method) {
     return method != ZR_NULL &&
            (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0 ||
@@ -49,6 +52,7 @@ static TZrBool stdio_request_method_supports_progress(const char *method) {
             strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0);
 }
 
+/* 数组响应直接分批；workspace diagnostic 的对象响应另由 items 分支处理。 */
 static TZrBool stdio_request_method_supports_array_partial_results(const char *method) {
     return method != ZR_NULL &&
            (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0 ||
@@ -59,6 +63,7 @@ static TZrBool stdio_request_method_supports_array_partial_results(const char *m
             strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0);
 }
 
+/* 消息树释放前终止借用，防止下一请求误用上个请求的 token。 */
 void stdio_request_progress_clear(SZrStdioServer *server) {
     if (server == ZR_NULL) {
         return;
@@ -68,6 +73,7 @@ void stdio_request_progress_clear(SZrStdioServer *server) {
     server->requestProgress.workDoneBegan = ZR_FALSE;
 }
 
+/* handle_request_message 在分发前调用；无进度能力的方法忽略扩展 token。 */
 TZrBool stdio_request_progress_prepare(SZrStdioServer *server,
                                         const char *method,
                                         const cJSON *params) {
@@ -92,6 +98,7 @@ TZrBool stdio_request_progress_prepare(SZrStdioServer *server,
     return ZR_TRUE;
 }
 
+/* 输出函数消费 params；本层必须在发送前建成完整通知并保留原 token 树。 */
 static TZrBool stdio_request_progress_send(SZrStdioServer *server,
                                             const char *kind,
                                             const char *title) {
@@ -134,6 +141,7 @@ static TZrBool stdio_request_progress_send(SZrStdioServer *server,
     return send_notification(ZR_LSP_METHOD_PROGRESS, params) == ZR_STDIO_SEND_OK;
 }
 
+/* begin 成功后才允许 end；发送失败则请求路径回传内部错误而不留下已开始标记。 */
 TZrBool stdio_request_progress_begin(SZrStdioServer *server, const char *method) {
     if (server == ZR_NULL || server->requestProgress.workDoneToken == ZR_NULL) {
         return ZR_TRUE;
@@ -145,6 +153,8 @@ TZrBool stdio_request_progress_begin(SZrStdioServer *server, const char *method)
     return ZR_TRUE;
 }
 
+/* BUG: begin 已发布时，end 构造若因一次性 OOM 失败仍被忽略且状态被清空；
+ * 内存恢复后 stdio_requests.c 可继续发送最终响应，客户端只收到 begin 而没有 end。 */
 void stdio_request_progress_end(SZrStdioServer *server) {
     if (server == ZR_NULL) {
         return;
@@ -155,6 +165,7 @@ void stdio_request_progress_end(SZrStdioServer *server) {
     stdio_request_progress_clear(server);
 }
 
+/* 保留原 result 树直至所有批次发布成功；逐批复制使发送端独占通知树。 */
 static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
                                                           cJSON *result,
                                                           const char *itemsField) {
@@ -175,6 +186,7 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
         cJSON *value;
         int batchEnd = resultIndex + ZR_LSP_PARTIAL_RESULT_BATCH_SIZE;
 
+        /* 每批发送前后都观察读线程的取消位，包含最后一批与最终响应之间的窗口。 */
         if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
             return ZR_FALSE;
         }
@@ -217,6 +229,7 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
                 return ZR_FALSE;
             }
         }
+        /* WorkspaceDiagnosticReport 的 partial value 仍须包在 items 对象里。 */
         value = batch;
         if (itemsField != ZR_NULL) {
             value = cJSON_CreateObject();
@@ -245,6 +258,7 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
     return ZR_TRUE;
 }
 
+/* handle_request_message 在响应编码之前调用；成功后替换调用方持有的完成结果。 */
 TZrBool stdio_request_progress_publish_partial_result(SZrStdioServer *server,
                                                       const char *method,
                                                       cJSON **inOutResult) {
@@ -265,6 +279,9 @@ TZrBool stdio_request_progress_publish_partial_result(SZrStdioServer *server,
         items = cJSON_GetObjectItemCaseSensitive(*inOutResult, ZR_LSP_FIELD_ITEMS);
         itemsField = ZR_LSP_FIELD_ITEMS;
     }
+    /* BUG: references 等结果含内部 UTF-16 坐标，分批通知在此直接发出；
+     * 协商 UTF-8 时，stdio_requests.c 仅在最终响应分支转换坐标，非 ASCII
+     * 文本下 partial Location 的 character 仍是 UTF-16 列号。 */
     if (!stdio_request_progress_send_array_partial(server, items, itemsField)) {
         return ZR_FALSE;
     }
@@ -272,7 +289,7 @@ TZrBool stdio_request_progress_publish_partial_result(SZrStdioServer *server,
         return ZR_FALSE;
     }
 
-    /* WorkspaceDiagnosticReport is non-null even after all items were streamed. */
+    /* WorkspaceDiagnosticReport 即使所有 items 已流式发送，最终响应仍须是对象。 */
     completedResult = itemsField == ZR_NULL ? cJSON_CreateNull() : cJSON_CreateObject();
     if (completedResult == ZR_NULL) {
         return ZR_FALSE;

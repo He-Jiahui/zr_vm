@@ -5,6 +5,8 @@
 
 #include "project/lsp_workspace.h"
 
+/* 结果树构造成功后采用客户端私有的选中项目提示；显式 null/空值用于撤销选择，
+ * 缺失字段保留上下文原值。项目发现流程稍后按该路径选择 .zrp。 */
 static void apply_initialization_selected_project(SZrStdioServer *server, const cJSON *params) {
     const cJSON *initializationOptions;
     const cJSON *uriJson;
@@ -48,6 +50,7 @@ static void apply_initialization_selected_project(SZrStdioServer *server, const 
     ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, cachedUri);
 }
 
+/* 把 LSP 文件 URI 交给 workspace 层做原生路径规范化与去重；无效 URI 不成为根目录。 */
 static void add_workspace_folder_uri(SZrStdioServer *server, const cJSON *uriJson) {
     const char *uriText;
     SZrString *uri;
@@ -63,6 +66,7 @@ static void add_workspace_folder_uri(SZrStdioServer *server, const cJSON *uriJso
     }
 }
 
+/* 兼容旧客户端的 rootPath：先转为文件 URI，再复用 workspace 的根目录规则。 */
 static void add_workspace_folder_path(SZrStdioServer *server, const cJSON *pathJson) {
     const char *pathText;
     SZrString *uri;
@@ -78,6 +82,8 @@ static void add_workspace_folder_path(SZrStdioServer *server, const cJSON *pathJ
     }
 }
 
+/* initialize 以 workspaceFolders 为权威列表，缺席时才依次回退 rootUri/rootPath；
+ * 空数组也表示无根目录。重试时重新建立列表，避免旧根目录混入新会话。 */
 static void apply_initialization_workspace_folders(SZrStdioServer *server, const cJSON *params) {
     const cJSON *workspaceFolders;
     const cJSON *rootUri;
@@ -107,6 +113,8 @@ static void apply_initialization_workspace_folders(SZrStdioServer *server, const
     add_workspace_folder_path(server, rootPath);
 }
 
+/* 仅由初始化响应后可处理普通消息的通知分派器调用，增删沿用 initialize 的 URI 规则；
+ * 删除根目录还可能使 workspace 层清除该根下的选中项目与项目索引。 */
 void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *params) {
     const cJSON *event;
     const cJSON *added;
@@ -146,6 +154,8 @@ void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *pa
     }
 }
 
+/* 生成与本地请求分派能力一致的 initialize Result；resolve 位从共享能力注册表读取，
+ * 客户端可选能力只在协商成功后公开。返回的整棵树交给结果封装/响应发送方接管。 */
 static cJSON *create_initialize_result(SZrStdioServer *server, const cJSON *params) {
     const char *completionTriggers[] = {
             ZR_LSP_COMPLETION_TRIGGER_CHARACTER_MEMBER_ACCESS,
@@ -170,7 +180,7 @@ static cJSON *create_initialize_result(SZrStdioServer *server, const cJSON *para
     cJSON *workspaceFolders;
     cJSON *serverInfo;
 
-    /* Attach children as they are created so result owns every completed allocation. */
+    /* 子节点立即挂到 result，任一后续分配失败都由同一根节点回收。 */
     if (result == NULL ||
         (capabilities = cJSON_AddObjectToObject(result, ZR_LSP_FIELD_CAPABILITIES)) == NULL ||
         (textDocumentSync = cJSON_AddObjectToObject(capabilities, ZR_LSP_FIELD_TEXT_DOCUMENT_SYNC)) == NULL ||
@@ -245,6 +255,8 @@ allocation_failed:
     return NULL;
 }
 
+/* initialize 请求的构造阶段：校验参数、协商响应能力，再设置工作区提示。
+ * 调用者负责发送结果，并且仅在写出成功后推进生命周期；失败响应不得持有 JSON 树。 */
 SZrLspHandlerResult handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     EZrStdioPositionEncoding previousPositionEncoding;
     TZrBool previousInlineCompletion;
@@ -273,6 +285,9 @@ SZrLspHandlerResult handle_initialize_request(SZrStdioServer *server, const cJSO
         return response;
     }
 
+    /* BUG: 此处在 stdio_requests.c 写出响应之前提交工作区与选中项目。
+     * 若响应封装或写出失败，生命周期仍为 NEW；重试时省略选中项目字段会沿用
+     * 失败请求留下的项目选择，后续项目发现会读取该路径。 */
     apply_initialization_workspace_folders(server, params);
     apply_initialization_selected_project(server, params);
     return response;
