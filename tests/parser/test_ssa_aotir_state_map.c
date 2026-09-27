@@ -150,6 +150,7 @@ void test_aotir_owns_state_map(void) {
 void test_aotir_moves_frame_layout_metadata(void) {
     SZrExecBcProjection source = {0};
     SZrAotIrProjection destination = {0};
+    SZrExecIrFrameSlot *originalSlots;
     source.ownershipTag = ZR_EXEC_IR_PROJECTION_TAG;
     source.logicalSlotCount = 2u;
     source.storageSlotCount = 3u;
@@ -162,6 +163,7 @@ void test_aotir_moves_frame_layout_metadata(void) {
             source.frameSlotCount, sizeof(*source.frameSlots));
     TEST_ASSERT_NOT_NULL(source.frameSlots);
     source.frameSlots[1].slotId = 2u;
+    originalSlots = source.frameSlots;
     ZrParser_ExecIr_MoveProjectionToAot(&source, &destination);
     TEST_ASSERT_EQUAL_UINT32(2u, destination.logicalSlotCount);
     TEST_ASSERT_EQUAL_UINT32(3u, destination.storageSlotCount);
@@ -170,7 +172,7 @@ void test_aotir_moves_frame_layout_metadata(void) {
     TEST_ASSERT_EQUAL_UINT32(32u, destination.frameByteSize);
     TEST_ASSERT_EQUAL_UINT32(8u, destination.frameByteAlign);
     TEST_ASSERT_EQUAL_UINT32(3u, destination.frameSlotCount);
-    TEST_ASSERT_EQUAL_PTR(source.frameSlots, destination.frameSlots);
+    TEST_ASSERT_EQUAL_PTR(originalSlots, destination.frameSlots);
     TEST_ASSERT_NULL(source.frameSlots);
     ZrParser_AotIrProjection_Free(&destination);
 }
