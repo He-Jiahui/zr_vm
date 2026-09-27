@@ -64,6 +64,7 @@ tests:
   - tests/acceptance/ssa-builder-control-edge-rejection.md
   - tests/acceptance/ssa-builder-iterator-invokes.md
   - tests/acceptance/ssa-builder-fact-identity.md
+  - tests/acceptance/ssa-builder-definition-identity.md
   - tests/acceptance/ssa-builder-test-registration.md
   - tests/acceptance/ssa-source-branch-slot-isolation.md
   - tests/acceptance/ssa-source-cleanup-cfg.md
@@ -402,6 +403,16 @@ source map. A mismatched value reports `INVALID_VALUE`; a mismatched
 instruction reports `INVALID_RANGE` with its actual source ID and the
 expected/actual IDs. Both leave caller output unchanged. See
 `tests/acceptance/ssa-builder-fact-identity.md`.
+
+The same preflight checks result definitions in both directions: each
+instruction result's ValueId must name a value whose cached
+`definitionInstructionId` is that instruction, and each nonzero cached
+definition must name an instruction producing that value. A missing cache,
+stale or absent writer, or second writer reports `INVALID_VALUE` with the
+offending instruction/source ID and expected/actual identities, leaving
+caller-owned output unchanged. Only values with no result instruction are
+external. The builder does not scan result references to repair an incomplete
+cache; see `tests/acceptance/ssa-builder-definition-identity.md`.
 
 Each instruction's operand range is checked against the logical operand
 side-pool length before copying. The check tests `start <= length` and then

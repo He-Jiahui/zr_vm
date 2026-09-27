@@ -64,6 +64,7 @@ static void make_iterator_function(
     for (TZrUInt32 index = 0u; index < 4u; ++index) {
         values[index].id = index + 1u;
         values[index].typeId = 1u;
+        values[index].definitionInstructionId = index + 1u;
         instructions[index].id = index + 1u;
         instructions[index].typeId = 1u;
     }

@@ -376,7 +376,7 @@ static void test_exception_edge_reports_throw_source(void) {
     SZrParserCfgBlock blocks[2];
     SZrParserCfgEdge edge;
     SZrSemanticIrInstruction instructions[2] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -459,7 +459,7 @@ static void test_conditional_branch_requires_ordered_typed_edges(void) {
     SZrParserCfgBlock blocks[3];
     SZrParserCfgEdge edges[2];
     SZrSemanticIrInstruction instructions[2] = {0};
-    SZrSemanticIrValue condition = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue condition = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -527,8 +527,8 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
     SZrParserCfgBlock blocks[3];
     SZrParserCfgEdge edges[2];
     SZrSemanticIrInstruction instructions[3] = {0};
-    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u},
-                                    {.id = 2u, .typeId = 1u}};
+    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u, .definitionInstructionId = 1u},
+                                    {.id = 2u, .typeId = 1u, .definitionInstructionId = 2u}};
     TZrValueId resultOperand = 2u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -601,6 +601,7 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
     instructions[1].resultValueId = ZR_VALUE_ID_INVALID;
     instructions[1].operandCount = 1u;
     instructions[1].operandStart = 0u;
+    values[1].definitionInstructionId = 3u;
     blocks[0].instructionCount = 3u;
     semantic.instructions = input_array(instructions, 3u, sizeof(*instructions));
     semantic.valueOperands = input_array(&resultOperand, 1u, sizeof(resultOperand));
@@ -610,6 +611,7 @@ static void test_typed_call_exception_edges_lower_to_invoke(void) {
           "non-call throwing operation borrowed the final call's exception edge");
     instructions[1] = instructions[2];
     instructions[1].id = 2u;
+    values[1].definitionInstructionId = 2u;
     blocks[0].instructionCount = 2u;
     semantic.instructions = input_array(instructions, 2u, sizeof(*instructions));
     semantic.valueOperands = input_array(NULL, 0u, sizeof(resultOperand));

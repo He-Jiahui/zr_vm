@@ -42,8 +42,8 @@ static void make_function(SZrSemanticIrFunction *semantic,
 static void test_rejects_use_before_definition(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
-    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u},
-                                    {.id = 2u, .typeId = 1u}};
+    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u, .definitionInstructionId = 2u},
+                                    {.id = 2u, .typeId = 1u, .definitionInstructionId = 1u}};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -81,8 +81,8 @@ static void test_rejects_use_before_definition(void) {
 static void test_accepts_use_after_definition(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
-    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u},
-                                    {.id = 2u, .typeId = 1u}};
+    SZrSemanticIrValue values[2] = {{.id = 1u, .typeId = 1u, .definitionInstructionId = 1u},
+                                    {.id = 2u, .typeId = 1u, .definitionInstructionId = 2u}};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -116,7 +116,7 @@ static void test_accepts_use_after_definition(void) {
 static void test_rejects_non_dominating_branch_definition(void) {
     SZrParserCfgBlock blocks[4];
     SZrSemanticIrInstruction instructions[4] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;

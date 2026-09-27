@@ -200,9 +200,11 @@ The SemIR-to-ExecIR builder consumes these facts without reconstructing them
 from bytecode: consuming ownership operations become `MOVE`, non-consuming
 ownership and view operations become `COPY`, release remains `DROP`, and loan
 lifecycle markers become source-mapped `NOP`. Values with no instruction
-definition are explicit external-entry values; instruction result references
-remain the compatibility authority for older synthetic fixtures whose cached
-definition field is zero.
+definition are explicit external-entry values. The builder accepts a zero
+`definitionInstructionId` only if no instruction produces that ValueId; it
+rejects missing, stale, and duplicate result definitions before constructing
+ExecIR. Synthetic builder fixtures must supply the same bidirectional identity
+as production SemanticIR.
 
 Production `ZrParser_SemanticIr_Emit` rejects a second result for an already
 defined ValueId before extending the operand, instruction, or source-map pools.

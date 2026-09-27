@@ -40,6 +40,7 @@ static void make_function(SZrSemanticIrFunction *semantic,
     block->instructionCount = 2u;
     value->id = 1u;
     value->typeId = 1u;
+    value->definitionInstructionId = 1u;
     *operand = 1u;
     instructions[0].id = 1u;
     instructions[0].opcode = ZR_SEMANTIC_IR_CONSTANT;
@@ -114,6 +115,56 @@ static void test_accepts_matching_canonical_ids(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+static void test_rejects_inconsistent_definition_identity(void) {
+    TZrUInt32 mode;
+    for (mode = 0u; mode < 5u; ++mode) {
+        SZrParserCfgBlock block;
+        SZrSemanticIrInstruction instructions[2];
+        SZrSemanticIrValue value = {0};
+        TZrValueId operand;
+        SZrSemanticIrFunction semantic;
+        SZrExecIrFunction output;
+        SZrExecIrDiagnostic diagnostic;
+        SZrExecIrBlock *originalBlocks;
+
+        make_function(&semantic, &block, instructions, &value, &operand);
+        if (mode == 0u) {
+            value.definitionInstructionId = 0u;
+        } else if (mode == 1u) {
+            value.definitionInstructionId = 2u;
+        } else if (mode == 2u) {
+            instructions[0].resultValueId = ZR_VALUE_ID_INVALID;
+        } else if (mode == 3u) {
+            instructions[1].opcode = ZR_SEMANTIC_IR_CONSTANT;
+            instructions[1].operandCount = 0u;
+            instructions[1].resultValueId = 1u;
+        } else {
+            instructions[0].resultValueId = ZR_VALUE_ID_INVALID;
+            value.definitionInstructionId = 9u;
+        }
+        ZrCore_ExecIr_FunctionInit(&output);
+        check(ZrCore_ExecIr_FunctionAddBlock(&output,
+                    ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
+              "could not prepare existing output for definition mismatch");
+        originalBlocks = output.blocks;
+        check(!ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE &&
+                  diagnostic.functionToken == 42u &&
+                  diagnostic.instructionId == (mode == 4u ? 9u :
+                                               mode == 3u ? 2u : 1u) &&
+                  diagnostic.sourceId == (mode == 4u ? 0u : diagnostic.instructionId) &&
+                  diagnostic.expectedVersion == (mode == 2u ? 1u :
+                                                mode == 3u ? 2u : 1u) &&
+                  diagnostic.actualVersion == (mode == 0u || mode == 4u ? 0u :
+                                              mode == 1u ? 2u :
+                                              mode == 2u ? 0u : 1u) &&
+                  output.blocks == originalBlocks &&
+                  output.blockCount == 1u && output.valueCount == 0u,
+              "builder accepted an inconsistent definition or changed output");
+        ZrCore_ExecIr_FreeFunction(&output);
+    }
+}
+
 static void test_preserves_value_facts(TZrBool external) {
     static const EZrExecIrOwnership expected[] = {
         ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
@@ -140,6 +191,7 @@ static void test_preserves_value_facts(TZrBool external) {
             semantic.instructions.capacity = 1u;
             block.instructionCount = 1u;
             instructions[1].id = 1u;
+            value.definitionInstructionId = 0u;
         }
         ZrCore_ExecIr_FunctionInit(&output);
         check(ZrParser_ExecIr_Build(&semantic, NULL, &output, &diagnostic),
@@ -221,6 +273,7 @@ int main(void) {
     test_rejects_value_id_mismatch();
     test_rejects_instruction_id_mismatch();
     test_accepts_matching_canonical_ids();
+    test_rejects_inconsistent_definition_identity();
     test_preserves_value_facts(ZR_FALSE);
     test_preserves_value_facts(ZR_TRUE);
     test_rejects_stale_or_invalid_facts();

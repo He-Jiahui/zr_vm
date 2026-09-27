@@ -255,7 +255,7 @@ static void test_rejects_excess_inline_successors(void) {
 static void test_builder_preserves_instruction_ranges_and_branch_successors(void) {
     SZrParserCfgBlock blocks[2];
     SZrSemanticIrInstruction instructions[3] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId returnValue = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -464,7 +464,8 @@ static void test_builder_copies_valid_variadic_operands(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
     SZrSemanticIrValue values[2] = {
-        {.id = 1u, .typeId = 1u}, {.id = 2u, .typeId = 1u}
+        {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u},
+        {.id = 2u, .typeId = 1u, .definitionInstructionId = 2u}
     };
     TZrValueId operands[2] = {1u, 2u};
     SZrSemanticIrFunction semantic;
@@ -506,7 +507,7 @@ static void test_builder_copies_valid_variadic_operands(void) {
 static void test_builder_rejects_nonterminal_tail(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instruction = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
     SZrExecIrDiagnostic diagnostic;
@@ -533,8 +534,8 @@ static void test_builder_preserves_canonical_type_test_target(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
     SZrSemanticIrValue values[2] = {
-        {.id = 1u, .typeId = 11u},
-        {.id = 2u, .typeId = 22u},
+        {.id = 1u, .typeId = 11u, .definitionInstructionId = 1u},
+        {.id = 2u, .typeId = 22u, .definitionInstructionId = 2u},
     };
     TZrValueId operands[2] = {1u, 2u};
     SZrSemanticIrFunction semantic;
@@ -597,8 +598,8 @@ static void test_builder_rejects_type_test_without_match_type(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
     SZrSemanticIrValue values[2] = {
-        {.id = 1u, .typeId = 11u},
-        {.id = 2u, .typeId = 22u},
+        {.id = 1u, .typeId = 11u, .definitionInstructionId = 1u},
+        {.id = 2u, .typeId = 22u, .definitionInstructionId = 2u},
     };
     TZrValueId operands[2] = {1u, 2u};
     SZrSemanticIrFunction semantic;
@@ -637,7 +638,7 @@ static void test_builder_rejects_type_test_without_match_type(void) {
 static void test_builder_rejects_premature_terminator(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[3] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId operands[2] = {1u, 1u};
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -698,7 +699,7 @@ static void test_builder_rejects_branch_with_two_successors(void) {
 static void test_builder_rejects_return_with_successor(void) {
     SZrParserCfgBlock blocks[2];
     SZrSemanticIrInstruction instructions[2] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -731,7 +732,7 @@ static void test_builder_rejects_return_with_successor(void) {
 static void test_builder_rejects_switch_without_successor(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[2] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId selector = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -762,7 +763,7 @@ static void test_builder_rejects_switch_without_successor(void) {
 static void test_builder_accepts_switch_with_successor(void) {
     SZrParserCfgBlock blocks[2];
     SZrSemanticIrInstruction instructions[2] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     TZrValueId selector = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -847,7 +848,7 @@ static void test_builder_rejects_unowned_semantic_instruction(void) {
 static void test_builder_accepts_out_of_order_instruction_slices(void) {
     SZrParserCfgBlock blocks[2];
     SZrSemanticIrInstruction instructions[3] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 2u};
     TZrValueId operand = 1u;
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
@@ -919,7 +920,7 @@ static void test_builder_reports_missing_canonical_result(void) {
 static void test_builder_reports_missing_fixed_operand(void) {
     SZrParserCfgBlock block;
     SZrSemanticIrInstruction instructions[2] = {0};
-    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u};
+    SZrSemanticIrValue value = {.id = 1u, .typeId = 1u, .definitionInstructionId = 1u};
     SZrSemanticIrFunction semantic;
     SZrExecIrFunction output;
     SZrExecIrDiagnostic diagnostic;

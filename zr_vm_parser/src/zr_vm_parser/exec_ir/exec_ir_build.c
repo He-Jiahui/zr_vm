@@ -111,35 +111,6 @@ static EZrExecIrNullability value_nullability(const SZrSemanticValueFacts *facts
     }
 }
 
-static TZrBool semantic_value_has_instruction_definition(
-        const SZrSemanticIrFunction *semantic,
-        const SZrSemanticIrValue *value) {
-    TZrUInt32 instructionIndex;
-
-    if (semantic == ZR_NULL || value == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    /* Older hand-built SemIR fixtures leave the cached definition field at
-     * zero, so the result references remain the authoritative fallback. */
-    if (value->definitionInstructionId !=
-        ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
-        return ZR_TRUE;
-    }
-    for (instructionIndex = 0u;
-         instructionIndex < (TZrUInt32)semantic->instructions.length;
-         instructionIndex++) {
-        const SZrSemanticIrInstruction *instruction =
-                (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
-                        (SZrArray *)&semantic->instructions,
-                        instructionIndex);
-        if (instruction != ZR_NULL &&
-            instruction->resultValueId == value->id) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
 static TZrBool validate_semantic_places(
         const SZrSemanticIrFunction *semantic,
         SZrExecIrDiagnostic *diagnostic) {
@@ -271,6 +242,55 @@ static TZrBool validate_semantic_ids(const SZrSemanticIrFunction *semantic,
                 diagnostic->sourceId = instruction->id;
                 diagnostic->expectedVersion = i + 1u;
                 diagnostic->actualVersion = instruction->id;
+            }
+            return ZR_FALSE;
+        }
+    }
+    for (i = 0u; i < semantic->instructions.length; ++i) {
+        const SZrSemanticIrInstruction *instruction = (const SZrSemanticIrInstruction *)
+            ZrCore_Array_Get((SZrArray *)&semantic->instructions, i);
+        if (instruction->resultValueId != ZR_VALUE_ID_INVALID) {
+            const SZrSemanticIrValue *result =
+                instruction->resultValueId <= semantic->values.length
+                    ? (const SZrSemanticIrValue *)ZrCore_Array_Get(
+                        (SZrArray *)&semantic->values,
+                        instruction->resultValueId - 1u)
+                    : ZR_NULL;
+            if (result == ZR_NULL || result->definitionInstructionId != instruction->id) {
+                diag_missing(diagnostic, ZR_NULL, 0u, instruction->id);
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+                    diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                    diagnostic->sourceId = instruction->id;
+                    diagnostic->expectedVersion = instruction->id;
+                    diagnostic->actualVersion = result != ZR_NULL
+                        ? result->definitionInstructionId : ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
+                }
+                return ZR_FALSE;
+            }
+        }
+    }
+    for (i = 0u; i < semantic->values.length; ++i) {
+        const SZrSemanticIrValue *value = (const SZrSemanticIrValue *)
+            ZrCore_Array_Get((SZrArray *)&semantic->values, i);
+        const TZrSemanticInstructionId definitionId =
+            value->definitionInstructionId;
+        const SZrSemanticIrInstruction *definition =
+            definitionId != ZR_SEMANTIC_INSTRUCTION_ID_INVALID &&
+                    definitionId <= semantic->instructions.length
+                ? (const SZrSemanticIrInstruction *)ZrCore_Array_Get(
+                    (SZrArray *)&semantic->instructions, definitionId - 1u)
+                : ZR_NULL;
+        if (definitionId != ZR_SEMANTIC_INSTRUCTION_ID_INVALID &&
+            (definition == ZR_NULL || definition->resultValueId != value->id)) {
+            diag_missing(diagnostic, ZR_NULL, 0u, definitionId);
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+                diagnostic->functionToken = (TZrMetadataToken)semantic->symbolId;
+                diagnostic->sourceId = definition != ZR_NULL ? definitionId : 0u;
+                diagnostic->expectedVersion = value->id;
+                diagnostic->actualVersion = definition != ZR_NULL
+                    ? definition->resultValueId : ZR_VALUE_ID_INVALID;
             }
             return ZR_FALSE;
         }
@@ -551,7 +571,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     for (i = 0u; i < (TZrUInt32)s->values.length; ++i) {
         const SZrSemanticIrValue *v = (const SZrSemanticIrValue *)ZrCore_Array_Get((SZrArray *)&s->values, i);
         TZrExecIrValueId valueId =
-                !semantic_value_has_instruction_definition(s, v)
+                v->definitionInstructionId == ZR_SEMANTIC_INSTRUCTION_ID_INVALID
                         ? ZrCore_ExecIr_FunctionAddExternalValue(
                                   output,
                                   (TZrMetadataToken)v->typeId,
