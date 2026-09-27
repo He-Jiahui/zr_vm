@@ -18,6 +18,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
@@ -57,6 +59,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
@@ -89,6 +93,8 @@ tests:
   - tests/acceptance/ssa-semantic-definition-identity.md
   - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
+  - tests/parser/test_pre_semantic_ir_callable_isolation.inc
+  - tests/parser/test_ownership_intrinsic_member_separation.c
   - tests/parser/test_pre_semantic_ir_optional_nested_call.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
@@ -396,10 +402,15 @@ required representative CFG exit while all abrupt blocks keep zero successors.
 Non-linear return/throw payloads, reachable syntax after a direct transfer or
 no-fall-through nested conditional, expression-form nested conditionals, and
 cleanup/finally context still persistently block later CFG startup.
-Declared child callables still lack separately published semantic functions,
-so their statement-form `if` nodes compile in a disposable isolated SemanticIR
-state just like their loops; a child branch cannot add a barrier, instruction,
-value, Place, slot, or block to the entry body's sidecar.
+Declared child callables still lack separately published semantic functions.
+Function declarations and class members therefore create a disposable
+SemanticIR state for the entire callable body and restore the caller's state
+after the callable's scope and metadata are complete. This includes ordinary
+expression statements, which can create temporary slot facts even when they
+start no source CFG. The closure analyzer reads the saved parent sidecar when
+it needs a captured local's slot identity. A child body cannot add a barrier,
+instruction, value, Place, slot, or block to the entry body's sidecar; the
+existing nested isolation for child branches, loops, and returns remains safe.
 
 Resolved, non-spread function calls now own a source control boundary even when
 they are the first non-linear operation in an otherwise straight-line caller.

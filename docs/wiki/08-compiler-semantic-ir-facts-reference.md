@@ -8,13 +8,20 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
 tests:
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_pre_semantic_ir_callable_isolation.inc
+  - tests/parser/test_ownership_intrinsic_member_separation.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_semantic_facts.c
   - tests/parser/test_semir_pipeline.c
@@ -74,6 +81,11 @@ Place graph ----------- CFG blocks and edges
 `ZrParser_Compiler_ValidatePreSemanticIr` 是面向编译流程的验证入口。普通宿主不应修改其
 内部数组，也不应把它当作可持久化格式。需要写出可交换产物时，使用 writer/artifact API，见
 [Artifact Writer、Loader 与元数据投影 API](05-interop/artifact-writer-loader-api.md)。
+
+当前声明的子函数和类成员尚未各自发布独立的 pre-semantic IR。编译器在整个子 callable
+编译期间隔离临时 Semantic IR、slot bridge 和 CFG 状态，结束后恢复调用者的 sidecar。
+普通表达式语句也可能产生临时 slot 事实，因此隔离覆盖整个函数体，而不只覆盖分支与 return。
+闭包捕获分析仍读取保存的父 sidecar，避免把子函数的同号栈槽误认为父局部变量。
 
 ### 必须保持的关系
 

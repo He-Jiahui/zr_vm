@@ -73,6 +73,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
+    SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
+    TZrBool hasSemanticIrIsolation = ZR_FALSE;
     TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
@@ -247,6 +249,15 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 保存父编译器引用（如果有）
     SZrCompilerState *parentCompiler = (oldFunction != ZR_NULL) ? cs : ZR_NULL;
     enter_scope(cs);
+    if (!compiler_semantic_ir_isolation_begin(cs, &semanticIrIsolation)) {
+        if (semanticIrIsolation.isActive) {
+            compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+        }
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate function declaration Semantic IR", node->location);
+    } else {
+        hasSemanticIrIsolation = ZR_TRUE;
+    }
     // 设置父编译器引用（在 enter_scope 之后，因为需要访问 scopeStack）
     if (parentCompiler != ZR_NULL && cs->scopeStack.length > 0) {
         SZrScope *currentScope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
@@ -323,9 +334,10 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
         parentCompilerSnapshot.typeEnv = cs->typeEnv;
-        parentCompilerSnapshot.preSemanticIr = cs->preSemanticIr;
-        parentCompilerSnapshot.preSemanticIrSlots = cs->preSemanticIrSlots;
-        parentCompilerSnapshot.preSemanticIrInitialized = cs->preSemanticIrInitialized;
+        // Captured parent slots must resolve against the saved parent sidecar.
+        parentCompilerSnapshot.preSemanticIr = semanticIrIsolation.function;
+        parentCompilerSnapshot.preSemanticIrSlots = semanticIrIsolation.slots;
+        parentCompilerSnapshot.preSemanticIrInitialized = semanticIrIsolation.initialized;
         ZrParser_ExternalVariables_Analyze(cs, funcDecl->body, &parentCompilerSnapshot);
     }
 
@@ -438,6 +450,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         } else {
             cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
         }
+    }
+    if (hasSemanticIrIsolation) {
+        compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
     }
     
     // 清空 const 变量跟踪（函数编译完成）

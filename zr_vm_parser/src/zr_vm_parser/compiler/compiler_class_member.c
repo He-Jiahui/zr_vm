@@ -401,6 +401,8 @@ static SZrFunction *compile_type_member_function(
     SZrFunctionLocalVariable *savedParentLocalVars = ZR_NULL;
     SZrTypeValue *savedParentConstants = ZR_NULL;
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
+    SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
+    TZrBool hasSemanticIrIsolation = ZR_FALSE;
     TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
@@ -517,6 +519,15 @@ static SZrFunction *compile_type_member_function(
     cs->hasCachedNullConstantIndex = ZR_FALSE;
 
     enter_scope(cs);
+    if (!compiler_semantic_ir_isolation_begin(cs, &semanticIrIsolation)) {
+        if (semanticIrIsolation.isActive) {
+            compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+        }
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate class member Semantic IR", node->location);
+    } else {
+        hasSemanticIrIsolation = ZR_TRUE;
+    }
 
     TZrUInt32 parameterCount = 0;
     if (injectThis) {
@@ -737,6 +748,9 @@ static SZrFunction *compile_type_member_function(
         } else {
             cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
         }
+    }
+    if (hasSemanticIrIsolation) {
+        compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
     }
 
     if (cs->hasError) {

@@ -1416,6 +1416,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_foreach_cfg.inc"
 #include "test_pre_semantic_ir_infinite_for_cfg.inc"
 #include "test_pre_semantic_ir_optional_value.inc"
+#include "test_pre_semantic_ir_callable_isolation.inc"
 #include "test_pre_semantic_ir_optional_nested_call.inc"
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
@@ -1478,6 +1479,7 @@ int main(void) {
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
     RUN_TEST(test_source_optional_call_skips_nested_argument_invoke);
     RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);
+    RUN_TEST(test_declared_callable_bodies_do_not_leak_semantic_slots);
     RUN_TEST(test_source_optional_field_value_merges_present_and_absent_paths);
     RUN_TEST(test_direct_weak_optional_call_keeps_source_cfg);
     RUN_TEST(test_direct_weak_optional_value_merges_after_guard);

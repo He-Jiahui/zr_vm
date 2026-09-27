@@ -9,9 +9,13 @@ implementation:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
 tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_optional_value.inc
+  - tests/parser/test_pre_semantic_ir_callable_isolation.inc
+  - tests/parser/test_ownership_intrinsic_member_separation.c
 status: partial
 ---
 
@@ -153,6 +157,57 @@ call predicate, and Weak or direct member access cannot satisfy the new field
 predicate. These failures do not exercise the new field producer; the broader
 ownership suite is recorded as failing, not treated as a passing gate for this
 checkpoint.
+
+## Callable SemanticIR isolation follow-up (2026-09-27)
+
+The GC-pressure failure happened during compilation, before GC ran. The
+optional result merge in `run` requested temporary slot 5 while the entry
+sidecar still held slot 5 from the earlier `readAfterGc` method body. Function
+and class-member compilers reset their ExecBC stack slot counters when entering
+a callable, but previously left pre-semantic slot facts in the caller's
+sidecar. Both callable compilation paths now use the existing SemanticIR
+isolation helper around the full callable body. Closure analysis still reads
+the saved parent sidecar for captured-local identity.
+
+A new focused fixture first failed on a current-source GCC build: direct
+`zr_vm_pre_semantic_ir_test` reported `114 Tests 1 Failures`, with the class
+member compilation changing the parent slot count from 0 to 6. The GCC build
+used `D:/tmp/zr_vm/ssa-optional-member-gcc`; ABI/schema/CMake input hashes
+were checked stable across the RED run. After the repair, the fixture also
+seeded nonempty parent SemanticIR facts and checked that class-member and
+standalone function compilation left its slots, Places, Values, and
+instructions unchanged. The rebuilt direct Unity run passed `114 Tests 0
+Failures`.
+
+The same current-source GCC ownership executable now reports `53 Tests 4
+Failures` (direct process exit 4). The GC-pressure case passes. Its four
+remaining failures are `test_weak_receiver_guard_releases_wake_on_suffix_throw`
+(`Expected 1 Was 0`), `test_live_weak_missing_member_is_not_null_reference_error`
+(`Expected Non-NULL`), and the named-member dispatch cases
+`test_weak_optional_intrinsic_named_members_use_normal_dispatch` and
+`test_weak_direct_wake_named_member_uses_normal_dispatch` (both `Expected 3
+Was 1`). The adjacent `zr_vm_ssa_source_cleanup_cfg_test` passed 52/52 and
+`zr_vm_ownership_receiver_guard_performance_test` passed 1/1. GCC direct logs
+are `D:/tmp/zr_vm/ssa-optional-member-gcc/red-unity.log`,
+`final-semantic.log`, `final-ownership.log`, `adjacent-cleanup.log`, and
+`adjacent-performance.log`.
+
+The current-source Clang 14 artifact cache built both focused executables in
+14 incremental edges. Direct Unity results were 114/114 for pre-semantic IR
+and 53/4 for ownership (exit 4), with the GC-pressure case passing and the
+same four remaining failures as GCC. The Clang logs are
+`D:/tmp/zr_vm/ssa-artifact-v6-clang/callable-isolation-*.log`.
+
+The MSVC 19.44 artifact cache had already compiled the current parser static
+library. A direct `zr_vm_parser_static` build reported no work; the native
+pre-semantic IR target then built in seven edges and passed 114/114. A parallel
+suffix-throw fixture edit in the shared worktree split that case into direct
+and optional tests before the MSVC ownership target was built. That transient
+native run reported 54 tests and five failures (exit 5): both suffix-throw
+cases observed `Expected 1 Was 0`; the missing-member and two named-dispatch
+failures matched GCC/Clang. The GC-pressure case passed. These are native runs
+against the static parser build, not a shared-library smoke. The MSVC logs are
+`D:/tmp/zr_vm/ssa-artifact-v6-msvc/callable-isolation-*.log`.
 
 ## Boundary
 
