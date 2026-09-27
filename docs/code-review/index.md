@@ -85,5 +85,6 @@ doc_type: category-index
 | 归档 AOT runtime、ABI 与测试脚本 | [875 项](coverage/zr_vm_aot_tests_runtime.tsv) | 33 文件独立复核，2351 个证据锚点有效，源码差异仅注释；根构建使用现役 runtime，归档 runtime 重接时的生成 helper 接口缺口已按非穷举集合标 BUG。累计保留 45 个 BUG、44 个 TODO；未运行完整构建或测试。 |
 | 多语言 benchmark runner、案例与注册检查 | [1015 项](coverage/tests_benchmarks.tsv) | 172 文件两轮独立复核，2477 个本地证据及 1830 个带行号 caller 引用有效；源码差异仅注释。8 个 BUG 和 1 个 TODO 留证；Node 缩放输入定向检查通过，未运行完整构建或 CTest。 |
 | core GDB 调试脚本 | [38 项](coverage/tests_core_gdb.tsv) | 23 个脚本两路独立复核，98 个非空证据锚点有效，差异仅新增注释；断点命令内 `finish` 后的采样失效等 7 个 BUG 和 8 个 TODO 留证。旧调试二进制不可用，未运行脚本。 |
+| core 调用与执行路径回归 | [696 项](coverage/tests_core_execution.tsv) | 24 个 C/头文件独立复核，2188 个证据锚点有效；源码仅改注释，GCC/Clang 对实现文件的语法检查通过。13 个 BUG 与 15 个 TODO 留证；未运行完整测试套件。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

@@ -13,6 +13,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
+// 构造可写字段原型，让 PIC 的命中条件由 shape 身份及代际决定。
 static SZrObjectPrototype *new_shape_prototype(SZrState *state,
                                                 SZrString *name,
                                                 SZrString *memberName) {
@@ -29,6 +30,7 @@ static SZrObjectPrototype *new_shape_prototype(SZrState *state,
     return prototype;
 }
 
+// 使用与原型描述符同名的真实字段，确保成员缓存能够返回可观察的测试值。
 static SZrObject *new_shape_instance(SZrState *state,
                                       SZrObjectPrototype *prototype,
                                       SZrString *memberName,
@@ -47,6 +49,7 @@ static SZrObject *new_shape_instance(SZrState *state,
     return instance;
 }
 
+// 函数持有测试栈上的成员表和缓存记录；销毁运行时前必须先解除这些借用指针。
 static void init_shape_cache(SZrFunction *function,
                              SZrFunctionMemberEntry *memberEntry,
                              SZrFunctionCallSiteCacheEntry *cacheEntry,
@@ -63,12 +66,14 @@ static void init_shape_cache(SZrFunction *function,
     cacheEntry->memberEntryIndex = 0u;
 }
 
+// profile 分类测试需从空 PIC 起步，否则前一组 shape 会污染下一组计数。
 static void reset_shape_cache_entry(SZrFunctionCallSiteCacheEntry *cacheEntry) {
     memset(cacheEntry, 0, sizeof(*cacheEntry));
     cacheEntry->kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
     cacheEntry->memberEntryIndex = 0u;
 }
 
+// GC 管理的函数不能在状态销毁时继续引用测试栈上的成员表和缓存记录。
 static void detach_shape_cache(SZrFunction *function) {
     if (function == ZR_NULL) {
         return;
@@ -80,6 +85,7 @@ static void detach_shape_cache(SZrFunction *function) {
     function->callSiteCacheLength = 0u;
 }
 
+// 原型身份在字段、父原型和元方法变更期间保持稳定，代际则使旧缓存失效。
 static void test_shape_ids_are_stable_and_generation_tracks_mutation(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *nameA;
@@ -134,6 +140,7 @@ static void test_shape_ids_are_stable_and_generation_tracks_mutation(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 四路 PIC 先覆盖多态命中，再用原型变更确认旧槽必须刷新后才能再次返回字段。
 static void test_member_cache_has_four_shape_slots_and_rejects_stale_generation(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *memberName;
@@ -200,6 +207,7 @@ static void test_member_cache_has_four_shape_slots_and_rejects_stale_generation(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 同一缓存入口随已见 shape 数量变化，性能计数应区分单态、多态和满槽命中。
 static void test_member_cache_profile_classifies_fixed_pic_hits(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrProfileRuntime profileRuntime;

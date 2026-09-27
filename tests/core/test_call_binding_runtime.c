@@ -12,6 +12,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
+// 各测试共用同一份合法的直接调用契约，再逐项改变签名、布局或代际来隔离拒绝原因。
 static SZrCallBindingContract contract(void) {
     SZrCallBindingContract value = {0};
     value.bindingKind = ZR_CALL_BINDING_DIRECT;
@@ -31,6 +32,7 @@ static void aot_invoke(struct SZrState *state, FZrAotEntryThunk target,
     (void)state; (void)target; (void)method; (void)self; (void)args; (void)result;
 }
 
+// 解析层必须保留目标表示形式；后续分派分别按 VM、native 和 AOT 入口消费这些联合体字段。
 static void test_resolve_vm_native_and_aot_targets(void) {
     SZrCallBindingContract expected = contract();
     SZrCallBindingCandidate candidate = {0};
@@ -60,6 +62,7 @@ static void test_resolve_vm_native_and_aot_targets(void) {
     TEST_ASSERT_EQUAL_INT64(19, binding.target.aot.thunk(ZR_NULL));
 }
 
+// 重载或契约漂移后不能继续使用旧入口；Validate 与再次 Resolve 都需清掉已解析目标。
 static void test_contract_mismatch_and_reload_clear_resolved_target(void) {
     SZrCallBindingContract expected = contract();
     SZrCallBindingCandidate candidate = {0};
@@ -86,6 +89,7 @@ static void test_contract_mismatch_and_reload_clear_resolved_target(void) {
             ZrCore_CallBinding_Resolve(&expected, &candidate, 1u, 2u, &binding, &diagnostic));
 }
 
+// 缺目标、重复目标或缺失签名证据均不可退化为任意一个可调用入口。
 static void test_missing_ambiguous_and_illegal_contracts_fail(void) {
     SZrCallBindingContract expected = contract();
     SZrCallBindingCandidate candidates[2] = {0};
@@ -108,6 +112,7 @@ static void test_missing_ambiguous_and_illegal_contracts_fail(void) {
             ZrCore_CallBinding_CheckContract(&expected, ZR_NULL));
 }
 
+// 虚调用额外依赖拥有者布局和槽范围，类型化函数值则允许不绑定固定的成员定义 token。
 static void test_virtual_interface_and_typed_function_keep_signature_contract(void) {
     SZrCallBindingContract expected = contract();
     SZrCallBindingCandidate candidate = {0};
@@ -139,6 +144,7 @@ static void test_virtual_interface_and_typed_function_keep_signature_contract(vo
     TEST_ASSERT_EQUAL_INT(ZR_CALL_BINDING_OK, ZrCore_CallBinding_CheckContract(&expected, ZR_NULL));
 }
 
+// provider 可独立于函数代际更新，闭包目标自身的代际也必须参与有效性检查。
 static void test_native_provider_generation_invalidates_resolved_closure(void) {
     SZrCallBindingContract expected = contract();
     SZrCallBindingCandidate candidate = {0};
@@ -161,6 +167,7 @@ static void test_native_provider_generation_invalidates_resolved_closure(void) {
     TEST_ASSERT_EQUAL_UINT32(ZR_CALL_BINDING_TARGET_NONE, binding.target.targetKind);
 }
 
+// 模块重载递增函数图代际；共享常量和反向引用不能导致重复递增或无限遍历。
 static void test_generation_walk_visits_shared_constant_and_cycle_once(void) {
     SZrFunction root = {0}, child = {0}, method = {0};
     SZrTypeValue constants[2] = {0}, backEdge = {0};
@@ -185,6 +192,7 @@ static void test_generation_walk_visits_shared_constant_and_cycle_once(void) {
     TEST_ASSERT_EQUAL_UINT64(2u, method.callBindingGeneration);
 }
 
+// LinkFunction 可分配指令索引映射；此夹具提供与全局状态契约一致的可释放分配器。
 static TZrPtr site_allocator(TZrPtr context, TZrPtr pointer, TZrSize oldSize,
                             TZrSize newSize, TZrInt64 type) {
     (void)context; (void)oldSize; (void)type;
@@ -195,6 +203,7 @@ static TZrPtr site_allocator(TZrPtr context, TZrPtr pointer, TZrSize oldSize,
     return realloc(pointer, newSize);
 }
 
+// 构造一个未解析的调用点，经真实链接入口检查指令、操作和缓存槽是否属于同一调用契约。
 static TZrBool link_deferred_site(TZrUInt32 kind, EZrInstructionCode opcode,
         TZrUInt32 operation, TZrUInt16 operandCacheIndex, TZrMetadataToken ownerToken,
         SZrCallBindingDiagnostic *diagnostic) {
@@ -229,6 +238,7 @@ static TZrBool link_deferred_site(TZrUInt32 kind, EZrInstructionCode opcode,
     return linked;
 }
 
+// 无效调用点必须在链接时拒绝，避免运行时将错误的缓存记录解释为另一个指令族。
 static void test_deferred_binding_rejects_operation_cache_and_instruction_mismatches(void) {
     const struct {
         TZrUInt32 kind;
@@ -261,6 +271,7 @@ static void test_deferred_binding_rejects_operation_cache_and_instruction_mismat
     }
 }
 
+// 链接产物中的 owner 必须指向定义实体，引用 token 不足以证明布局归属。
 static void test_imported_binding_owner_must_be_a_definition_token(void) {
     SZrCallBindingDiagnostic diagnostic = {0};
     TEST_ASSERT_FALSE(link_deferred_site(ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL,

@@ -11,6 +11,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
+// 记录强制搬迁次数，证明预调用的栈增长场景没有依赖偶然的原地扩容。
 typedef struct TestDirtyAllocatorContext {
     TZrUInt32 moveCount;
 } TestDirtyAllocatorContext;
@@ -19,6 +20,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 新空间以非零字节填充并搬迁旧块，用来暴露未初始化槽与陈旧栈指针。
 static TZrPtr test_dirty_allocator(TZrPtr userData,
                                    TZrPtr pointer,
                                    TZrSize originalSize,
@@ -29,6 +31,7 @@ static TZrPtr test_dirty_allocator(TZrPtr userData,
 
     ZR_UNUSED_PARAMETER(flag);
 
+    // TODO: TZrPtr 是 void*；低地址哨兵的顺序比较需核对目标平台和分配器契约。
     if (newSize == 0) {
         if (pointer != ZR_NULL && pointer >= (TZrPtr)0x1000) {
             free(pointer);
@@ -60,6 +63,7 @@ static TZrPtr test_dirty_allocator(TZrPtr userData,
     return newPointer;
 }
 
+// 返回由自定义分配器管理的主状态；销毁时仍通过运行时 harness 释放全局状态。
 static SZrState *test_create_state_with_dirty_allocator(TestDirtyAllocatorContext *context) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_dirty_allocator, context, 12345, &callbacks);
@@ -76,6 +80,7 @@ static SZrState *test_create_state_with_dirty_allocator(TestDirtyAllocatorContex
     return state;
 }
 
+// 函数对象在释放时接管指令缓冲区；用运行时分配器准备有效入口范围。
 static TZrInstruction *assign_owned_instructions(SZrState *state,
                                                  SZrFunction *function,
                                                  TZrUInt32 instructionCount) {
@@ -96,6 +101,7 @@ static TZrInstruction *assign_owned_instructions(SZrState *state,
     return instructions;
 }
 
+// VM 入口清理范围由活跃局部变量元数据推导，测试用此夹具指定需要重置的槽。
 static void assign_entry_local_metadata(SZrState *state,
                                         SZrFunction *function,
                                         const TZrUInt32 *stackSlots,
@@ -125,6 +131,7 @@ static void assign_entry_local_metadata(SZrState *state,
     }
 }
 
+// 在 VM 函数槽写入直接函数表示，供普通与已解析预调用路径复用。
 static SZrTypeValue *init_function_callable_value(SZrState *state,
                                                   TZrStackValuePointer callBase,
                                                   SZrFunction *function) {
@@ -141,11 +148,13 @@ static SZrTypeValue *init_function_callable_value(SZrState *state,
     return callableValue;
 }
 
+// 字节帧占用须向上取整到物理栈槽；仅声明的逻辑 stackSize 不足以预留内联值空间。
 static TZrSize test_frame_storage_slots_for_bytes(TZrUInt32 byteSize) {
     TZrSize slotByteSize = sizeof(SZrTypeValueOnStack);
     return (byteSize + slotByteSize - 1u) / slotByteSize;
 }
 
+// CallInfo 的缓存字段占用现有对齐空隙，保持供栈帧和调试路径共享的结构尺寸。
 static void test_call_info_frame_storage_cache_uses_legacy_padding(void) {
     TZrSize legacySize;
     TZrSize returnFlagEnd =
@@ -167,6 +176,7 @@ static void test_call_info_frame_storage_cache_uses_legacy_padding(void) {
     TEST_ASSERT_EQUAL_UINT32(legacySize, sizeof(SZrCallInfo));
 }
 
+// 在 VM 函数槽保留现有闭包身份，验证预调用不能将其改写为缓存闭包。
 static SZrTypeValue *init_vm_closure_callable_value(SZrState *state,
                                                     TZrStackValuePointer callBase,
                                                     SZrClosure *closure) {
@@ -184,6 +194,7 @@ static SZrTypeValue *init_vm_closure_callable_value(SZrState *state,
     return callableValue;
 }
 
+// 故意附带待关闭偏移，让实参保留检查同时覆盖值和槽元数据。
 static void write_int_argument_slot(SZrState *state,
                                     TZrStackValuePointer callBase,
                                     TZrSize argumentIndex,
@@ -199,6 +210,7 @@ static void write_int_argument_slot(SZrState *state,
     slot->toBeClosedValueOffset = toBeClosedOffset;
 }
 
+// 实参值与关闭链元数据必须在清理局部槽时一同保留。
 static void assert_int_argument_slot(TZrStackValuePointer functionBase,
                                      TZrSize argumentIndex,
                                      TZrInt64 expectedValue,
@@ -216,6 +228,7 @@ static void assert_int_argument_slot(TZrStackValuePointer functionBase,
                                      offsetMessage);
 }
 
+// 对入口应清理区间逐槽检查空值及关闭链元数据，避免只修复可见值。
 static void assert_reset_frame_slots(TZrStackValuePointer functionBase,
                                      TZrSize firstResetSlot,
                                      TZrSize stackSize,
@@ -228,6 +241,7 @@ static void assert_reset_frame_slots(TZrStackValuePointer functionBase,
     }
 }
 
+// 普通预调用进入已用过的帧时，局部槽的值和待关闭链标记都必须重置。
 static void test_precall_clears_reused_frame_slot_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -277,6 +291,7 @@ static void test_precall_clears_reused_frame_slot_metadata(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已解析 VM 目标的显式参数个数决定保留前缀；仅其后的入口局部槽可被清理。
 static void test_resolved_vm_precall_clears_reused_frame_slot_metadata_with_explicit_argument_count(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -334,6 +349,7 @@ static void test_resolved_vm_precall_clears_reused_frame_slot_metadata_with_expl
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 无入口局部变量时，复用帧中的暂存槽不能被过宽的 null 清理破坏。
 static void test_resolved_vm_precall_keeps_transient_temp_slots_intact_when_no_entry_locals_need_null_reset(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -393,6 +409,7 @@ static void test_resolved_vm_precall_keeps_transient_temp_slots_intact_when_no_e
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已声明类型化帧布局时，逻辑临时槽属于新入口，需清除旧帧的值和关闭元数据。
 static void test_resolved_vm_precall_clears_logical_temps_when_typed_frame_layout_is_present(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -455,6 +472,7 @@ static void test_resolved_vm_precall_clears_logical_temps_when_typed_frame_layou
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 精确实参缓存路径复用 CallInfo，必须刷新程序计数器、可变参数计数和返回目的地。
 static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -514,6 +532,7 @@ static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已准备调用的精确实参入口与普通入口共享重置契约，且要留下正确的栈顶。
 static void test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -574,6 +593,7 @@ static void test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializ
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 热路径探测命中已缓存 CallInfo 时，不应退化为完整预调用或保留旧帧状态。
 static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -634,6 +654,7 @@ static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_o
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 内联字节帧可能大于逻辑栈槽数；调用帧上界和清理范围必须覆盖额外物理槽。
 static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_slots(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -681,6 +702,7 @@ static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 指令生成的临时槽可超出函数声明 stackSize，预调用必须按生成摘要预留完整空间。
 static void test_resolved_vm_precall_reserves_generated_temp_slots_beyond_declared_stack_size(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -745,6 +767,7 @@ static void test_resolved_vm_precall_reserves_generated_temp_slots_beyond_declar
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 指令变化时摘要应在 finalize 后重建；调用方不能把旧缓存当作当前帧容量。
 static void test_generated_frame_slot_count_summary_is_finalize_only_and_refreshable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -781,11 +804,13 @@ static void test_generated_frame_slot_count_summary_is_finalize_only_and_refresh
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// GC 访客只借用槽地址，验证类型化帧会扫描字节布局中的真实值槽。
 typedef struct TestFrameGcVisitContext {
     TZrSize count;
     SZrTypeValue *lastValue;
 } TestFrameGcVisitContext;
 
+// VisitFrameGcValues 经回调提供实际被扫描的物理值地址，夹具仅在本次遍历中借用该地址。
 static void test_frame_gc_visit_value_slot(SZrState *state, SZrTypeValue *value, TZrPtr userData) {
     TestFrameGcVisitContext *context = (TestFrameGcVisitContext *)userData;
 
@@ -797,6 +822,7 @@ static void test_frame_gc_visit_value_slot(SZrState *state, SZrTypeValue *value,
     context->lastValue = value;
 }
 
+// 帧内联布局与逻辑栈槽可能重叠；GC 必须访问实际的类型化值地址。
 static void test_frame_gc_visitor_includes_value_layout_slots(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -851,6 +877,7 @@ static void test_frame_gc_visitor_includes_value_layout_slots(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 热路径探测因帧容量不足失败后，完整预调用仍须预留字节帧并恢复正确栈界。
 static void test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_fast_probe_fallback(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -896,6 +923,7 @@ static void test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// packed/direct 入口同时初始化物理帧布局与逻辑槽，旧值及关闭链不能穿透新帧。
 static void test_packed_direct_prepared_precall_clears_and_initializes_complete_frame(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -964,6 +992,7 @@ static void test_packed_direct_prepared_precall_clears_and_initializes_complete_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 栈扩容后新露出的入口局部槽来自非零内存，预调用必须主动归零。
 static void test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirty_allocator(void) {
     TestDirtyAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_dirty_allocator(&allocatorContext);
@@ -1015,6 +1044,7 @@ static void test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirt
     ZrCore_GlobalState_Free(state->global);
 }
 
+// 零捕获闭包缓存需跨多次栈搬迁保持身份，不能持有扩容前的函数槽地址。
 static void test_precall_growth_reuses_cached_zero_capture_closure_across_repeated_growths_with_dirty_allocator(void) {
     TestDirtyAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_dirty_allocator(&allocatorContext);
@@ -1101,6 +1131,7 @@ static void test_precall_growth_reuses_cached_zero_capture_closure_across_repeat
     ZrCore_GlobalState_Free(state->global);
 }
 
+// 已有 VM 闭包应保留其身份；新露出的局部槽仍须在搬迁后独立清理。
 static void test_precall_growth_with_existing_vm_closure_clears_newly_exposed_entry_local_slots_with_dirty_allocator(void) {
     TestDirtyAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_dirty_allocator(&allocatorContext);
@@ -1156,6 +1187,7 @@ static void test_precall_growth_with_existing_vm_closure_clears_newly_exposed_en
     ZrCore_GlobalState_Free(state->global);
 }
 
+// 多实参跨重复搬迁后保持原顺序和值，清理范围只能从实参末尾开始。
 static void test_resolved_vm_precall_preserves_multiple_explicit_arguments_across_repeated_growth_with_dirty_allocator(void) {
     TestDirtyAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_dirty_allocator(&allocatorContext);

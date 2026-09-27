@@ -9,6 +9,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 普通字符串的值复制应保留托管对象身份，避免在常见传参路径重复分配。
 static void test_value_copy_reuses_plain_string_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *text;
@@ -36,6 +37,7 @@ static void test_value_copy_reuses_plain_string_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 普通堆对象走引用语义；复制值容器不得隐式克隆对象或附加所有权控制。
 static void test_value_copy_reuses_plain_heap_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -64,6 +66,7 @@ static void test_value_copy_reuses_plain_heap_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 热路径的无 profile 尝试复制需要与公开 Copy 对普通对象的身份语义一致。
 static void test_value_try_copy_fast_reuses_plain_heap_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -91,6 +94,7 @@ static void test_value_try_copy_fast_reuses_plain_heap_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 非 ref-like 结构体是值语义；通用 Copy 必须返回独立对象而保留原型。
 static void test_value_copy_clones_plain_struct_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *prototypeName;
@@ -133,6 +137,7 @@ static void test_value_copy_clones_plain_struct_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 结构体复制需走深层路径；快速尝试失败时目的值必须仍处于空值状态。
 static void test_value_try_copy_fast_rejects_plain_struct_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *prototypeName;
@@ -167,6 +172,7 @@ static void test_value_try_copy_fast_rejects_plain_struct_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// ref-like 协议改变结构体的复制契约，快速与通用路径都应保留同一对象身份。
 static void test_value_copy_preserves_ref_like_struct_identity(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *prototypeName;
@@ -207,6 +213,7 @@ static void test_value_copy_preserves_ref_like_struct_identity(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 类型标签不能单独证明对象有效；空载荷须拒绝快速复制且不污染目的值。
 static void test_value_try_copy_fast_rejects_null_heap_object_payload(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue source;

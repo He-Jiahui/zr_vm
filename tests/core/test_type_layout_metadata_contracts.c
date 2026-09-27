@@ -5,6 +5,8 @@
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 
+/* 构造器将 AOT 字段表与复制、GC、所有权和跨域传递约束一起固化为布局身份。
+ * 本套件直接检查该身份，供 IO、反射和跨域路径依赖同一份契约。 */
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -146,6 +148,7 @@ static void test_layout_contract_exposes_canonical_copy_drop_and_scan_kinds(void
     TEST_ASSERT_FALSE(ZrCore_TypeLayout_CopyInline(ZR_NULL, &layout, destination, source));
 }
 
+/* 三张字段表的用途不同；可被 GC 扫描不自动意味着拥有引用。 */
 static void test_layout_contract_records_gc_ownership_and_ref_maps(void) {
     SZrTypeLayoutField fields[3];
     const TZrUInt32 gcOffsets[1] = {0u};
@@ -202,6 +205,7 @@ static void test_layout_contract_records_gc_ownership_and_ref_maps(void) {
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
 }
 
+/* 布局哈希用于发现元数据漂移；相同字段稳定，本例偏移变化产生不同身份。 */
 static void test_layout_hash_is_stable_and_tracks_structural_drift(void) {
     SZrTypeLayoutField baseFields[1];
     SZrTypeLayoutField changedFields[1];
@@ -247,6 +251,7 @@ static void test_layout_hash_is_stable_and_tracks_structural_drift(void) {
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&changed));
 }
 
+/* 验证端同时拒绝字段越界、映射失配、哈希漂移和版本漂移。 */
 static void test_layout_validation_rejects_invalid_spans_maps_and_identity(void) {
     const TZrUInt32 invalidGcOffset[1] = {12u};
     SZrTypeLayoutField field;
@@ -306,6 +311,7 @@ static void test_layout_validation_rejects_invalid_spans_maps_and_identity(void)
     TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&layout));
 }
 
+/* 跨域传递策略及 provider 身份参与布局约束，不能仅按字节形状作值复制。 */
 static void test_domain_transfer_kind_is_canonical_layout_identity(void) {
     SZrTypeLayout plainLayout;
     SZrTypeLayout forbiddenLayout;

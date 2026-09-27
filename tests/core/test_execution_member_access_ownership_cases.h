@@ -1,12 +1,14 @@
 #ifndef ZR_TEST_EXECUTION_MEMBER_ACCESS_OWNERSHIP_CASES_H
 #define ZR_TEST_EXECUTION_MEMBER_ACCESS_OWNERSHIP_CASES_H
 
+/* 与强/弱所有权交叉覆盖：缓存未命中、精确 pair 命中和多槽 PIC 命中。 */
 typedef enum EZrMemberAliasCachePath {
     ZR_TEST_MEMBER_ALIAS_CACHE_MISS,
     ZR_TEST_MEMBER_ALIAS_CACHE_EXACT_PAIR,
     ZR_TEST_MEMBER_ALIAS_CACHE_MULTI_SLOT
 } EZrMemberAliasCachePath;
 
+/* 输入和输出共用 VM 栈槽；读取成员后临时所有权应转给结果而非被覆盖时释放。 */
 static void assert_member_get_alias_transfers_owned_result(EZrMemberAliasCachePath cachePath,
                                                           TZrBool weakResult) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -40,6 +42,7 @@ static void assert_member_get_alias_transfers_owned_result(EZrMemberAliasCachePa
         TEST_ASSERT_EQUAL_UINT32(2u, control->strongRefCount);
     }
 
+    /* 同一所有权控制块分别经 miss、直接 pair 和多槽查找返回，便于比较引用计数。 */
     fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
     fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
     fixture.cacheEntry.picSlots[0].cachedReceiverPair = storedPair;
@@ -65,6 +68,7 @@ static void assert_member_get_alias_transfers_owned_result(EZrMemberAliasCachePa
     TEST_ASSERT_EQUAL_UINT32(3u,
                              weakResult ? control->weakRefCount : control->strongRefCount);
 
+    /* 依次撤销输出、成员存储和独立持有者，观察每次转交后的计数归属。 */
     ZrCore_Ownership_ReleaseValue(state, sharedSlot);
     TEST_ASSERT_EQUAL_UINT32(2u,
                              weakResult ? control->weakRefCount : control->strongRefCount);

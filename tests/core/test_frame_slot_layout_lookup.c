@@ -16,6 +16,8 @@
 #include "zr_vm_core/src/zr_vm_core/execution/execution_frame_value_slot_fast.h"
 #include "zr_vm_core/src/zr_vm_core/execution/execution_inline_frame_copy_fast.h"
 
+/* 这些用例直接构造加载后的函数布局，验证执行、调用前参数复制和帧回收
+ * 共同依赖的派生摘要。磁盘中的 reserved0 不能被当作可信的运行时标记。 */
 #define ZR_TEST_LAYOUT_COUNT 1024u
 #ifndef ZR_TEST_DENSE_LOOKUP_ITERATIONS
 #define ZR_TEST_DENSE_LOOKUP_ITERATIONS 2000000u
@@ -29,6 +31,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 只测布局查询本身；volatile 命中计数使编译器不能删除查询循环。 */
 static TZrBool measure_lookup_ticks(const SZrFunction *function,
                                     TZrUInt32 stackSlot,
                                     TZrUInt32 iterations,
@@ -207,6 +210,7 @@ static void test_direct_value_frame_place_preserves_checked_boundaries(void) {
             &state, &function, stack + 3, 0u, &place));
 }
 
+/* 载入后的 finalization 必须重新认证别名、对齐和范围，才允许执行器直取槽。 */
 static void test_direct_value_slot_finalization_rejects_unsafe_layouts(void) {
     SZrFunctionFrameSlotLayout layouts[3] = {0};
     SZrFunction function = {0};
@@ -238,6 +242,7 @@ static void test_direct_value_slot_finalization_rejects_unsafe_layouts(void) {
     }
 }
 
+/* 伪造的派生标记不能绕开规范索引及物理布局检查。 */
 static void test_direct_value_slot_rejects_untrusted_derived_flags(void) {
     SZrFunctionFrameSlotLayout layouts[2] = {0};
     SZrFunction function = {0};
@@ -441,6 +446,7 @@ static void test_direct_value_frame_drop_summary_requires_all_direct_value_slots
     TEST_ASSERT_EQUAL_UINT32(0u, function.directValueFrameSlotCountPlusOne);
 }
 
+/* IO 入口同时验证：合法布局重建摘要，输入伪造的运行时标记被拒绝。 */
 static void test_io_loader_rebuilds_direct_value_parameter_summary(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrIoFunctionFrameSlotLayout layout;
@@ -702,6 +708,7 @@ static void test_value_parameter_copy_profile_counts_direct_and_checked_paths(vo
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 跨帧参数复制必须以源帧的物理槽为准；源槽失去直取资格后改走检查路径。 */
 static void test_value_parameter_copy_from_frame_requires_direct_source(void) {
     SZrFunctionFrameSlotLayout calleeLayout = {0};
     SZrFunctionFrameSlotLayout sourceLayout = {0};
@@ -840,8 +847,11 @@ static void test_frame_value_drop_profile_counts_direct_and_checked_paths(void) 
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 初始化、批量回收和 dispatch 用例共享本文件的 Unity 入口及夹具。 */
 #include "frame_slot_layout_initialization_tests.inc"
 
+/* TODO: 这里只用 clock() 中位数判断性能层级；需在高负载 CI 和不同
+ * CLOCKS_PER_SEC 平台核查采样抖动是否会使正确的 O(1) 实现误报。 */
 static void test_dense_frame_slot_lookup_is_constant_time(void) {
     static SZrFunctionFrameSlotLayout denseLayouts[ZR_TEST_LAYOUT_COUNT];
     static SZrFunctionFrameSlotLayout sparseLayouts[ZR_TEST_LAYOUT_COUNT];

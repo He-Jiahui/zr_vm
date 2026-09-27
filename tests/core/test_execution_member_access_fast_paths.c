@@ -15,10 +15,15 @@
 #include "zr_vm_core/src/zr_vm_core/object/object_internal.h"
 #include "zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h"
 
+/* 正常返回时各用例自行销毁 VM；Unity 钩子不持有用例的局部 state。 */
 void setUp(void) {}
 
+/* BUG: TEST_ASSERT_* 失败会从用例提前跳出，Unity 随后执行空 tearDown；
+ * 用例末尾的 ZrTests_Runtime_State_Destroy/ZrCore_GlobalState_Free 因此被跳过，
+ * 当前 VM 泄漏且后续用例可能观察到遗留状态。见 unity.c:2283-2305。 */
 void tearDown(void) {}
 
+/* 供直接执行入口模拟成员调用点；fixture.function 的 memberEntries/callSiteCaches 借用栈上 memberEntry/cacheEntry，GC 函数复用时须在 VM 销毁前 detach。 */
 typedef struct SZrMemberAccessFixture {
     SZrFunction function;
     SZrFunctionCallSiteCacheEntry cacheEntry;
@@ -30,12 +35,14 @@ typedef struct SZrMemberAccessFixture {
     SZrFunction *callableFunction;
 } SZrMemberAccessFixture;
 
+/* 供忽略表扩容与短字符串探针共用；failAllocateActive/failAllocateSize 筛选分配故障，failAllocateCount 记录命中，context 须活至 GlobalState_Free。 */
 typedef struct SZrSelectiveAllocatorContext {
     TZrSize failAllocateSize;
     TZrBool failAllocateActive;
     TZrUInt32 failAllocateCount;
 } SZrSelectiveAllocatorContext;
 
+/* 分配失败只针对当前用例设定的大小；其余 VM 分配仍委托测试运行时。 */
 static TZrPtr test_selective_allocator(TZrPtr userData,
                                        TZrPtr pointer,
                                        TZrSize originalSize,
@@ -43,6 +50,7 @@ static TZrPtr test_selective_allocator(TZrPtr userData,
                                        TZrInt64 flag) {
     SZrSelectiveAllocatorContext *context = (SZrSelectiveAllocatorContext *)userData;
 
+    /* 不拦截释放或其他尺寸分配；用例只检测指定热路径是否尝试额外分配。 */
     if (context != ZR_NULL &&
         context->failAllocateActive &&
         pointer == ZR_NULL &&
@@ -54,6 +62,7 @@ static TZrPtr test_selective_allocator(TZrPtr userData,
     return ZrTests_Runtime_Allocator_Default(userData, pointer, originalSize, newSize, flag);
 }
 
+/* 在全局状态初始化时注入选择性分配器；调用方用 ZrCore_GlobalState_Free 收尾。 */
 static SZrState *create_runtime_state_with_selective_allocator(SZrSelectiveAllocatorContext *context) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_selective_allocator, context, 12345, &callbacks);
@@ -71,6 +80,7 @@ static SZrState *create_runtime_state_with_selective_allocator(SZrSelectiveAlloc
     return state;
 }
 
+/* 将 GC 忽略表填满，让后续任何临时注册都必然触发可拦截的扩容。 */
 static void fill_ignore_registry_to_capacity(SZrState *state) {
     SZrGarbageCollector *collector;
 
@@ -88,6 +98,7 @@ static void fill_ignore_registry_to_capacity(SZrState *state) {
     }
 }
 
+/* 与当前 GC 的双倍扩容布局配对；只供选择性分配器设定失败阈值。 */
 static TZrSize ignore_registry_growth_allocation_size(const SZrGarbageCollector *collector) {
     TZrSize currentCapacity;
 
@@ -98,6 +109,7 @@ static TZrSize ignore_registry_growth_allocation_size(const SZrGarbageCollector 
     return currentCapacity * 2u * sizeof(SZrRawObject *);
 }
 
+/* 将 fixture 的栈上成员/缓存数组借给 GC 管理的函数对象，覆盖真实函数对象参与的查找路径。 */
 static SZrFunction *create_runtime_fixture_function(SZrState *state, SZrMemberAccessFixture *fixture) {
     SZrFunction *function;
 
@@ -115,6 +127,7 @@ static SZrFunction *create_runtime_fixture_function(SZrState *state, SZrMemberAc
     return function;
 }
 
+/* VM 销毁可能回收该函数；先断开指向调用方栈上 fixture 的借用，避免释放路径误处理。 */
 static void detach_runtime_fixture_function(SZrFunction *function) {
     if (function == ZR_NULL) {
         return;
@@ -128,6 +141,7 @@ static void detach_runtime_fixture_function(SZrFunction *function) {
     function->prototypeInstancesLength = 0;
 }
 
+/* 构造对象存储层接受的字符串值键，供 fixture 的写入与缓存命中用例共享。 */
 static void init_string_key(SZrState *state, SZrString *stringValue, SZrTypeValue *outKey) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(stringValue);
@@ -137,6 +151,7 @@ static void init_string_key(SZrState *state, SZrString *stringValue, SZrTypeValu
     outKey->type = ZR_VALUE_TYPE_STRING;
 }
 
+/* 把测试回调装入 VM 原生闭包，供属性 getter 的成员读取路径直接调用。 */
 static SZrFunction *create_native_callable(SZrState *state, FZrNativeFunction nativeFunction) {
     SZrClosureNative *closure;
 
@@ -151,6 +166,7 @@ static SZrFunction *create_native_callable(SZrState *state, FZrNativeFunction na
     return ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 }
 
+/* 属性 getter 用固定返回值隔离调用帧恢复成本；只能在有效 native 调用帧内运行。 */
 static TZrInt64 test_member_property_getter_native(SZrState *state) {
     TZrStackValuePointer base;
 
@@ -164,6 +180,7 @@ static TZrInt64 test_member_property_getter_native(SZrState *state) {
     return 1;
 }
 
+/* 建立真实原型、实例与成员键，但让调用点元数据由 fixture 持有以便用例构造 PIC 状态。 */
 static void init_member_access_fixture(SZrState *state, SZrMemberAccessFixture *fixture, TZrInt64 storedValue) {
     SZrString *typeName;
     SZrMemberDescriptor descriptor;
@@ -220,6 +237,7 @@ static void init_member_access_fixture(SZrState *state, SZrMemberAccessFixture *
     fixture->cacheEntry.picSlots[0].cachedDescriptorIndex = 0;
 }
 
+/* 与 struct 值形成对照：普通堆对象在读取成员结果时允许复用原对象身份。 */
 static SZrObject *create_plain_member_value_object(SZrState *state) {
     SZrObject *object;
 
@@ -231,6 +249,7 @@ static SZrObject *create_plain_member_value_object(SZrState *state) {
     return object;
 }
 
+/* 构造按值语义的 struct 对象，用来验证读取热路径仍复制结果。 */
 static SZrObject *create_struct_member_value_object(SZrState *state, TZrNativeString prototypeNameNative) {
     SZrString *prototypeName;
     SZrStructPrototype *prototype;
@@ -251,6 +270,7 @@ static SZrObject *create_struct_member_value_object(SZrState *state, TZrNativeSt
     return object;
 }
 
+/* 写入成员后取回实际存储 pair，让缓存与所有权测试锚定同一底层槽。 */
 static SZrHashKeyValuePair *set_member_access_fixture_object_value(SZrState *state,
                                                                    SZrMemberAccessFixture *fixture,
                                                                    SZrObject *object) {
@@ -275,6 +295,7 @@ static SZrHashKeyValuePair *set_member_access_fixture_object_value(SZrState *sta
     return pair;
 }
 
+/* 属性描述符迫使成员读取进入 getter 调用链，用于检查结果槽与栈锚恢复。 */
 static void init_property_getter_member_access_fixture(SZrState *state, SZrMemberAccessFixture *fixture) {
     SZrString *typeName;
     SZrMemberDescriptor descriptor;
@@ -329,6 +350,7 @@ static void init_property_getter_member_access_fixture(SZrState *state, SZrMembe
     fixture->cacheEntry.picSlots[0].cachedDescriptorIndex = 0u;
 }
 
+/* 多态缓存用例共享同一成员名，分别变化接收者的原型和对象身份。 */
 static void init_shared_name_member_access_variant(SZrState *state,
                                                    SZrString *memberName,
                                                    TZrNativeString typeNameNative,
@@ -377,6 +399,7 @@ static void init_shared_name_member_access_variant(SZrState *state,
     *outInstance = instance;
 }
 
+/* 方法描述符加原型上的可调用值，验证 PIC 可缓存目标与接收者身份。 */
 static void init_callable_member_access_fixture(SZrState *state, SZrMemberAccessFixture *fixture) {
     SZrString *typeName;
     SZrMemberDescriptor descriptor;
@@ -430,6 +453,7 @@ static void init_callable_member_access_fixture(SZrState *state, SZrMemberAccess
     fixture->cacheEntry.memberEntryIndex = 0;
 }
 
+/* 原型仅含可调用成员值而无描述符，覆盖符号查找后缓存目标的退化路径。 */
 static void init_descriptorless_callable_member_access_fixture(SZrState *state, SZrMemberAccessFixture *fixture) {
     SZrString *typeName;
     SZrObject *instance;
@@ -476,6 +500,7 @@ static void init_descriptorless_callable_member_access_fixture(SZrState *state, 
     fixture->cacheEntry.memberEntryIndex = 0;
 }
 
+/* 计数器按用例归零并绑定当前 state/TLS，避免其他 VM 活动混入热路径断言。 */
 static void reset_profile_counters(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -489,6 +514,7 @@ static void reset_profile_counters(SZrState *state, SZrProfileRuntime *profileRu
     ZrCore_Profile_SetCurrentState(state);
 }
 
+/* 刻意清空 TLS 当前 state，证明执行辅助计数从显式 state 而非线程局部上下文取得。 */
 static void reset_profile_counters_from_state_only(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -501,6 +527,7 @@ static void reset_profile_counters_from_state_only(SZrState *state, SZrProfileRu
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 离开用例前撤销栈上 profileRuntime 的全局借用和 TLS 绑定。 */
 static void clear_profile_counters(SZrState *state) {
     if (state != ZR_NULL && state->global != ZR_NULL) {
         state->global->profileRuntime = ZR_NULL;
@@ -508,6 +535,7 @@ static void clear_profile_counters(SZrState *state) {
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 把结果置于当前 VM 帧内，并预留调用头部空间，以测试可复用的真实栈根结果槽。 */
 static SZrTypeValue *reserve_stack_result_slot_with_headroom(SZrState *state, TZrSize headroomSlots) {
     TZrStackValuePointer functionBase;
     SZrTypeValue *result;
@@ -534,6 +562,7 @@ static SZrTypeValue *reserve_stack_result_slot_with_headroom(SZrState *state, TZ
     return result;
 }
 
+/* 无额外 headroom 的所有权别名场景也复用同一帧布局。 */
 static SZrTypeValue *reserve_stack_result_slot(SZrState *state) {
     return reserve_stack_result_slot_with_headroom(state, 0u);
 }
@@ -1106,6 +1135,9 @@ static void test_member_get_cached_instance_field_pair_hit_does_not_require_desc
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: init_member_access_fixture 保留了 picSlots[0] 的 receiver/owner 原型缓存，
+ * 本用例与前一 pair 命中用例构造相同；若热路径重新依赖形状缓存，仍可能通过测试。
+ * 证据：夹具初始化设置这两个原型，而下面没有清空它们。 */
 static void test_member_get_cached_instance_field_pair_receiver_object_hit_does_not_require_receiver_shape_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -1966,6 +1998,8 @@ static void test_member_set_cached_multi_slot_exact_receiver_object_version_mism
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: 本用例没有清空夹具预置的 receiver/owner 原型缓存，与后一个 pair 命中
+ * 用例的输入和断言相同；将来误把形状缓存作为前提时，名称承诺的退化场景不会失败。 */
 static void test_member_set_cached_instance_field_pair_receiver_object_hit_does_not_require_receiver_shape_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -2568,6 +2602,7 @@ static void test_dispatch_exact_receiver_pair_set_checked_object_hot_fast_hits_a
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 用不同原型填满 PIC 再访问第五种接收者，确认轮换淘汰且既有其他槽仍可命中。 */
 static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -2764,6 +2799,7 @@ static void test_object_set_value_existing_pair_updates_value_and_bumps_member_v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 令忽略表扩容分配失败，确认栈内接收者和值能借用已有 VM 根完成成员写入。 */
 static void test_execution_member_set_by_name_stack_operands_reuse_vm_stack_roots_without_ignore_registry_growth(void) {
     SZrSelectiveAllocatorContext allocatorContext = {0};
     SZrState *state = create_runtime_state_with_selective_allocator(&allocatorContext);
@@ -3131,6 +3167,7 @@ static void test_execution_member_set_cached_descriptor_existing_pair_slow_lane_
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 已释放的短字符串不能借作直接存储键；后续慢路径须重新建立有效引用。 */
 static void test_object_direct_storage_key_fast_path_rejects_released_short_string_key(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *memberName;
@@ -3188,6 +3225,7 @@ static void test_object_set_value_references_released_short_string_key_through_s
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 两个不同地址但内容相等的长字符串应落在同一 pair，避免按指针身份增配存储。 */
 static void test_object_set_value_equal_long_string_key_reuses_cached_pair_without_extra_managed_memory(void) {
     static char longFieldName[] =
             "cached_member_lookup_long_field_name_that_must_stay_beyond_short_string_limit_"
@@ -3252,6 +3290,7 @@ static void test_object_set_value_equal_long_string_key_reuses_cached_pair_witho
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 等长只是快速筛选条件，不得让内容不同的长字符串误用已有成员 pair。 */
 static void test_object_set_value_distinct_long_string_same_length_does_not_reuse_cached_pair(void) {
     static char longFieldNameA[] =
             "cached_member_lookup_long_field_name_that_must_stay_beyond_short_string_limit_"
@@ -3382,6 +3421,7 @@ static void test_object_set_existing_pair_value_after_fast_miss_updates_value_wi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同长度的普通键不能被错当作隐藏 items 键，已有数组缓存须继续指向原对象。 */
 static void test_object_set_value_non_hidden_same_length_string_does_not_refresh_hidden_items_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -3921,6 +3961,8 @@ static void test_member_get_cached_callable_receiver_hit_does_not_fallback_when_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: 本用例把 cachedReceiverPrototype/cachedOwnerPrototype 显式设为有效原型；
+ * 因而无法验证可调用成员的精确对象命中在形状缓存缺失时仍工作。 */
 static void test_member_get_cached_callable_receiver_object_hit_does_not_require_receiver_shape_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -4015,6 +4057,7 @@ static void test_member_get_cached_multi_slot_exact_receiver_descriptor_hit_igno
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已核对接收者的可调用 PIC 可直接给调用指令目标，避免先构造成员读取结果。 */
 static void test_member_cached_known_vm_call_fast_path_resolves_cached_function_without_member_get_helper(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -4234,6 +4277,7 @@ static void test_member_get_cached_refresh_marks_non_hidden_plain_value_fast_set
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 读取 PIC 的容量和轮换规则与写入路径对称，但目标仍需保留各原型自己的成员值。 */
 static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -4339,6 +4383,7 @@ static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacit
 
 #include "test_execution_member_access_ownership_cases.h"
 
+/* core_runtime 套件的 Unity 入口；ownership 头中的参数化用例与缓存热路径共用夹具。 */
 int main(void) {
     UNITY_BEGIN();
 

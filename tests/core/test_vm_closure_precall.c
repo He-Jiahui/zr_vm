@@ -13,6 +13,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// GC 转发后的函数身份必须在生成闭包前刷新，闭包不得永久持有旧函数地址。
 static void test_push_to_stack_refreshes_forwarded_function_before_materializing_closure(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
@@ -50,6 +51,7 @@ static void test_push_to_stack_refreshes_forwarded_function_before_materializing
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 转发目标的捕获布局可以不同，入栈应按新函数描述读取捕获而非旧函数描述。
 static void test_push_to_stack_uses_forwarded_function_capture_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
@@ -115,6 +117,7 @@ static void test_push_to_stack_uses_forwarded_function_capture_layout(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 元数据查询服务于调试和调用帧处理，需要穿过闭包转发链取得当前函数。
 static void test_get_metadata_function_refreshes_forwarded_vm_closure(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
@@ -150,6 +153,7 @@ static void test_get_metadata_function_refreshes_forwarded_vm_closure(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 通用已知值调用应使用转发后函数的栈布局；旧函数的较小栈尺寸不能裁剪调用帧。
 static void test_precall_known_value_uses_forwarded_vm_closure_metadata_function(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
@@ -203,6 +207,7 @@ static void test_precall_known_value_uses_forwarded_vm_closure_metadata_function
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已在函数槽内的闭包保留身份；通用 PreCall 不应通过零捕获缓存替换调用目标。
 static void test_precall_reuses_existing_vm_closure_slot_without_rewriting_callable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -248,6 +253,7 @@ static void test_precall_reuses_existing_vm_closure_slot_without_rewriting_calla
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 链接期已解析的 VM 调用同样应保留现有零捕获闭包的对象身份。
 static void test_resolved_vm_precall_reuses_existing_vm_closure_slot_without_rewriting_callable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;

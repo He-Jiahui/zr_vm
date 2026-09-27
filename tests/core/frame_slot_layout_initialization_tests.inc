@@ -1,3 +1,5 @@
+/* 调用前帧初始化既不能清掉已传入的参数，也必须初始化未传入的物理槽；
+ * 派生摘要缺失时，检查路径应保持相同的可观察结果。 */
 static void test_frame_value_initialization_preserves_direct_and_checked_arguments(void) {
     SZrFunctionFrameSlotLayout layouts[2] = {0};
     SZrFunction function = {0};
@@ -70,6 +72,7 @@ static void test_frame_value_initialization_preserves_direct_and_checked_argumen
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 整帧快速回收在碰到任何所有者前先确认完整物理跨度可用。 */
 static void test_direct_value_frame_drop_preflights_complete_frame_span(void) {
     SZrFunctionFrameSlotLayout layouts[2] = {0};
     SZrFunction function = {0};
@@ -100,6 +103,7 @@ static void test_direct_value_frame_drop_preflights_complete_frame_span(void) {
             &state, &function, frameBase, ZR_NULL, ZR_NULL));
 }
 
+/* dense 与 byte 镜像上的值都要清空，不能因批量路径跳过其中一侧。 */
 static void test_packed_direct_value_frame_drop_keeps_batched_owner_release(void) {
     SZrFunctionFrameSlotLayout layouts[5] = {0};
     SZrFunction function = {0};
@@ -149,6 +153,7 @@ static void test_packed_direct_value_frame_drop_keeps_batched_owner_release(void
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(byteOwner->type));
 }
 
+/* 即使只传一个参数，整帧快速复制仍须先校验目标帧的完整范围。 */
 static void test_direct_value_parameter_copy_preflights_complete_frame_span(void) {
     SZrFunctionFrameSlotLayout layouts[2] = {0};
     SZrFunction function = {0};
@@ -182,6 +187,7 @@ static void test_direct_value_parameter_copy_preflights_complete_frame_span(void
             &state, &function, frameBase, stack, 1u));
 }
 
+/* 源与目标帧重合时，参数复制应保留 dense 源值，并清理 byte 目标残留的所有权元数据。 */
 static void test_direct_value_parameter_copy_keeps_dense_source_in_place(void) {
     SZrFunctionFrameSlotLayout layout = {0};
     SZrFunction function = {0};
@@ -233,6 +239,7 @@ static void test_direct_value_parameter_copy_keeps_dense_source_in_place(void) {
             profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
 }
 
+/* dispatch 内联快路只报告命中；未命中留给调用方走带边界检查的路径。 */
 static void test_dispatch_frame_value_slot_inline_signals_checked_fallback(void) {
     SZrFunctionFrameSlotLayout layout = {0};
     SZrFunction function = {0};
@@ -312,6 +319,7 @@ static void test_direct_value_copy_probe_skips_speculative_getters(void) {
             &function, 0u, 1u));
 }
 
+/* 探针计数只用于确认 dispatch 对纯值槽是否跳过昂贵的内联结构探测。 */
 static TZrUInt32 test_dispatch_copy_probe_call_count;
 
 static TZrBool test_dispatch_copy_probe_stub(
@@ -390,6 +398,7 @@ static void test_dispatch_direct_value_copy_bypasses_inline_probe_helper(void) {
     TEST_ASSERT_EQUAL_UINT32(1u, test_dispatch_copy_probe_call_count);
 }
 
+/* 严格摘要代表所有槽均已认证，precall 可跳过逐项内联参数扫描。 */
 static void test_strict_direct_value_summary_skips_precall_inline_parameter_scan(void) {
     SZrFunctionFrameSlotLayout layouts[2] = {0};
     SZrFunction function = {0};
@@ -410,6 +419,7 @@ static void test_strict_direct_value_summary_skips_precall_inline_parameter_scan
     TEST_ASSERT_TRUE(function_precall_has_inline_frame_parameters(&function));
 }
 
+/* 各槽可直取不等于整帧可按固定步长访问；存在间隙时不能生成整帧摘要。 */
 static void test_direct_value_frame_summary_rejects_gapped_mirror(void) {
     SZrFunctionFrameSlotLayout layouts[2] = {0};
     SZrFunction function = {0};

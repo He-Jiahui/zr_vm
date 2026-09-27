@@ -10,6 +10,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 通用 PreCall 将零捕获函数值物化为闭包；跨调用点复用同一对象避免重复分配。
 static void test_precall_reuses_zero_capture_function_closure_across_distinct_call_sites(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -72,6 +73,7 @@ static void test_precall_reuses_zero_capture_function_closure_across_distinct_ca
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已确认的 VM 入口可直接消费函数值，不应触碰通用路径的闭包缓存。
 static void test_known_vm_precall_keeps_zero_capture_function_value_materialized_as_function(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -111,6 +113,7 @@ static void test_known_vm_precall_keeps_zero_capture_function_value_materialized
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// GC 转发之后，直接 VM 调用仍需更新槽中函数指针，但不改变其值种类。
 static void test_known_vm_precall_refreshes_forwarded_zero_capture_function_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
@@ -158,6 +161,7 @@ static void test_known_vm_precall_refreshes_forwarded_zero_capture_function_valu
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 链接期已解析的 VM 目标沿用直接函数表示，避免在热路径创建无捕获闭包。
 static void test_resolved_vm_precall_keeps_zero_capture_function_value_materialized_as_function(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -197,6 +201,8 @@ static void test_resolved_vm_precall_keeps_zero_capture_function_value_materiali
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// BUG: tests/CMakeLists.txt:389,532 仅创建并链接本目标，全文件无 add_test 或维护测试列表引用；
+// 常规 CTest 不运行这四个零捕获闭包回归场景。注册入口应在 tests/CMakeLists.txt 核查。
 int main(void) {
     UNITY_BEGIN();
 

@@ -18,10 +18,13 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+/* 本组用手工函数字节码和调用帧触发 ZrCore_Execute，分别从调试回调、
+ * helper 计数和返回值观察 callable 刷新、缓存命中与值复制边界。 */
 void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 以下构造器仅供本文件的固定指令布局场景使用；操作数含义由 opcode 决定。 */
 static TZrInstruction test_create_instruction_1(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrInt32 operand) {
     TZrInstruction instruction;
 
@@ -80,6 +83,7 @@ static TZrInstruction test_create_instruction_member_call_1(TZrUInt16 resultSlot
     return instruction;
 }
 
+/* 空函数隔离调用分派成本；parameterCount 只决定被调帧的参数契约。 */
 static SZrFunction *test_create_noop_function_with_signature(SZrState *state, TZrUInt16 parameterCount) {
     SZrFunction *function;
     TZrInstruction instruction;
@@ -112,6 +116,7 @@ static SZrFunction *test_create_noop_function(SZrState *state) {
     return test_create_noop_function_with_signature(state, 0u);
 }
 
+/* 构造 GET_CONSTANT -> RETURN，单独观察常量装载后的复制与对象身份。 */
 static SZrFunction *test_create_get_constant_return_function(SZrState *state, const SZrTypeValue *constantValue) {
     SZrFunction *function;
 
@@ -146,6 +151,7 @@ static SZrFunction *test_create_get_constant_return_function(SZrState *state, co
     return function;
 }
 
+/* 多加 SET_STACK，用同一对象输入比较中间栈转存是否改变复制语义。 */
 static SZrFunction *test_create_get_constant_set_stack_return_function(SZrState *state,
                                                                        const SZrTypeValue *constantValue) {
     SZrFunction *function;
@@ -208,6 +214,8 @@ static SZrFunction *test_create_get_stack_return_function(SZrState *state) {
     return function;
 }
 
+/* 动态调用缓存将 native closure 作为 callable 原始对象传递，此处仅供该命中路径使用。
+ * TODO: cachedFunction 字段声明为 SZrFunction*，需核对其他消费方是否也可能收到 native closure。 */
 static SZrFunction *test_create_native_callable(SZrState *state, FZrNativeFunction nativeFunction) {
     SZrClosureNative *closure;
 
@@ -222,6 +230,7 @@ static SZrFunction *test_create_native_callable(SZrState *state, FZrNativeFuncti
     return ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 }
 
+/* 直接进入 ZrCore_Execute 前建立调用窗口；字节码函数、栈顶和 programCounter 必须一致。 */
 static SZrCallInfo *test_prepare_execute_call(SZrState *state,
                                               const SZrTypeValue *callableValue,
                                               SZrFunction *entryFunction) {
@@ -257,6 +266,7 @@ static SZrCallInfo *test_prepare_execute_call(SZrState *state,
     return callInfo;
 }
 
+/* 调试观察值只在一次执行期间有效；expected* 用于跳过 caller 帧。 */
 typedef struct TestDispatchCallableCapture {
     TZrUInt32 observedCount;
     EZrValueType observedType;
@@ -265,8 +275,10 @@ typedef struct TestDispatchCallableCapture {
     const TZrInstruction *expectedProgramCounter;
 } TestDispatchCallableCapture;
 
+/* 旧 debugHook 签名没有 userData，本指针仅借用当前同步测试的局部 capture。 */
 static TestDispatchCallableCapture *gDebugHookCapture = ZR_NULL;
 
+/* 在调度入口读函数基槽，确认 GC forwarding 后调试器看到的是新对象。 */
 static TZrDebugSignal test_capture_frame_callable(struct SZrState *state,
                                                   struct SZrFunction *function,
                                                   const TZrInstruction *programCounter,
@@ -307,6 +319,7 @@ static TZrDebugSignal test_capture_frame_callable(struct SZrState *state,
     return ZR_DEBUG_SIGNAL_NONE;
 }
 
+/* 同一契约通过 CALL hook 观察内层已知 VM 调用帧，不依赖返回后的栈内容。 */
 static void test_capture_call_hook_frame_callable(struct SZrState *state, SZrDebugInfo *debugInfo) {
     SZrCallInfo *callInfo;
     SZrTypeValue *callableValue;
@@ -336,6 +349,7 @@ static void test_capture_call_hook_frame_callable(struct SZrState *state, SZrDeb
     capture->observedCount = 1u;
 }
 
+/* 转发地址模拟移动 GC：执行器应在调试回调前刷新函数基槽的 callable。 */
 static void test_execute_refreshes_forwarded_function_base_value_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
@@ -421,6 +435,7 @@ static void test_execute_refreshes_forwarded_closure_base_value_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已知函数调用可直接使用转发后的无捕获函数，不应为它物化 closure 缓存。 */
 static void test_known_vm_call_refreshes_forwarded_stateless_function_without_materializing_closure(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalCalleeFunction;
@@ -488,11 +503,13 @@ static void test_known_vm_call_refreshes_forwarded_stateless_function_without_ma
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 只复制所需调用字节码；调用者按 opcode 决定栈大小和缓存元数据。 */
 static SZrFunction *test_create_simple_caller_function(SZrState *state,
                                                        const TZrInstruction *instructions,
                                                        TZrUInt32 instructionCount,
                                                        TZrUInt32 stackSize);
 
+/* 将已准备的调用帧交给 TryRun，使无效 callable 的异常留在测试范围内。 */
 static void test_execute_prepared_call(SZrState *state, TZrPtr arguments) {
     SZrCallInfo *callInfo = *(SZrCallInfo **)arguments;
 
@@ -565,6 +582,7 @@ static SZrFunction *test_create_simple_caller_function(SZrState *state,
     return function;
 }
 
+/* 测量只覆盖随后一次执行；profileRuntime 由调用者持有，结束前必须解除借用。 */
 static void test_enable_helper_profiling(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(profileRuntime);
@@ -582,6 +600,7 @@ static void test_disable_helper_profiling(SZrState *state) {
     }
 }
 
+/* 给动态缓存命中路径提供可正常完成的一结果 native 目标。 */
 static TZrInt64 test_super_dyn_call_cached_native_returns_constant(SZrState *state) {
     TZrStackValuePointer base;
 
@@ -595,6 +614,7 @@ static TZrInt64 test_super_dyn_call_cached_native_returns_constant(SZrState *sta
     return 1;
 }
 
+/* 在启用 profile 后只执行单条 KNOWN_VM_CALL，隔离分派额外栈读取。 */
 static TZrUInt64 test_execute_known_vm_call_stack_get_helper_count(SZrState *state,
                                                                    SZrFunction *callerFunction,
                                                                    SZrFunction *calleeFunction,
@@ -646,6 +666,7 @@ static TZrUInt64 test_execute_known_vm_call_stack_get_helper_count(SZrState *sta
     }
 }
 
+/* FUNCTION_CALL 与 TAIL_CALL 共用相同输入帧，允许直接比较两条分派路径。 */
 static TZrUInt64 test_execute_function_call_stack_get_helper_count(SZrState *state,
                                                                    EZrInstructionCode opcode,
                                                                    SZrFunction *callerFunction,
@@ -700,6 +721,7 @@ static TZrUInt64 test_execute_function_call_stack_get_helper_count(SZrState *sta
     }
 }
 
+/* 以仍打开的 closureValue 指向真实栈槽，分别测 GETUPVAL / SETUPVAL。 */
 static TZrUInt64 test_execute_upvalue_open_capture_stack_get_helper_count(SZrState *state,
                                                                           EZrInstructionCode opcode,
                                                                           TZrInt64 openCaptureInitialValue,
@@ -781,6 +803,7 @@ static TZrUInt64 test_execute_upvalue_open_capture_stack_get_helper_count(SZrSta
     }
 }
 
+/* 缓存命中后的 receiver 与实参均在帧内，统计动态调用准备期的栈读取。 */
 static TZrUInt64 test_execute_super_dyn_call_cached_stack_get_helper_count(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -827,6 +850,7 @@ static TZrUInt64 test_execute_super_dyn_call_cached_stack_get_helper_count(
     }
 }
 
+/* 手工提供单槽 PIC 与版本号，直接进入精确缓存路径并观察 helper 计数。 */
 static TZrUInt64 test_execute_known_vm_member_call_stack_get_helper_count(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -848,6 +872,7 @@ static TZrUInt64 test_execute_known_vm_member_call_stack_get_helper_count(
     TEST_ASSERT_NOT_NULL(callerFunction->callSiteCaches);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, callerFunction->callSiteCacheLength);
 
+    /* 精确命中要求 receiver / owner prototype 与版本同时匹配；缺任一字段会走慢路。 */
     cacheEntry = &callerFunction->callSiteCaches[0];
     memset(cacheEntry, 0, sizeof(*cacheEntry));
     cacheEntry->kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
@@ -1085,6 +1110,8 @@ static void test_known_vm_member_call_exact_cache_path_avoids_extra_stack_get_va
     ZrTests_Runtime_State_Destroy(memberCallState);
 }
 
+/* TODO: 当前只断言 cache hit 与 helper 计数，尚未断言 native 目标的 123 返回值；
+ * 需读取调用返回槽以确认命中路径执行了目标。 */
 static void test_super_dyn_call_cached_hit_path_avoids_stack_get_value_helpers(void) {
     TZrInstruction dynCallInstructions[1];
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1142,6 +1169,7 @@ static void test_super_dyn_call_cached_hit_path_avoids_stack_get_value_helpers(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 刻意不给 memberEntries；若缓存命中失效，元数据回退无法替测试掩盖问题。 */
 static void test_known_vm_member_call_exact_cache_path_runs_without_member_metadata_fallback(void) {
     TZrInstruction knownVmMemberCallInstructions[1];
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1275,6 +1303,7 @@ static void test_execute_get_stack_profiled_stack_destination_records_one_value_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 普通堆对象走引用复用；与后面的 struct 值对象复制场景成对验证。 */
 static void test_execute_get_constant_plain_heap_object_reuses_original_object(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -1416,6 +1445,8 @@ static void test_execute_get_constant_then_set_stack_struct_object_still_clones_
 }
 
 int main(void) {
+    /* BUG: 此目标只被 tests/CMakeLists.txt 构建/链接，未加入 core_runtime/add_test；
+     * 常规 ctest 不执行 callable、缓存及复制回归。 */
     UNITY_BEGIN();
 
     RUN_TEST(test_execute_refreshes_forwarded_function_base_value_object);

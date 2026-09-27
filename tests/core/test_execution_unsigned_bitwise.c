@@ -7,6 +7,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 
+/* 按固定八字节指令布局造最小函数，验证解释器位运算的动态结果类型。 */
 static TZrInstruction make_instruction_1(EZrInstructionCode opcode,
                                          TZrUInt16 operandExtra,
                                          TZrInt32 operand) {
@@ -29,6 +30,8 @@ static TZrInstruction make_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+/* 指令与常量表交给函数持有；调用者需执行后释放函数，再销毁 state。
+ * 当前只复制标量常量。TODO: 若加入 GC 对象常量，需核对 memcpy 后的写屏障与所有权。 */
 static SZrFunction *create_test_function(SZrState *state,
                                          const TZrInstruction *instructions,
                                          TZrUInt32 instructionCount,
@@ -84,6 +87,7 @@ static SZrFunction *create_test_function(SZrState *state,
     return function;
 }
 
+/* 经 GET_CONSTANT -> 位运算 -> RETURN 的完整执行链检查类型和值。 */
 static void assert_unsigned_binary_bitwise_result(EZrInstructionCode opcode,
                                                   TZrUInt64 left,
                                                   TZrUInt64 right,
@@ -126,6 +130,7 @@ static void test_bitwise_xor_uint_preserves_uint64_result(void) {
     assert_unsigned_binary_bitwise_result(ZR_INSTRUCTION_ENUM(BITWISE_XOR), 0xFu, 0x6u, 0x9u);
 }
 
+/* 左操作数 unsigned、位移量 signed；结果仍应保留 uint64 类型。 */
 static void assert_unsigned_shift_result(EZrInstructionCode opcode,
                                          TZrUInt64 left,
                                          TZrInt64 shift,
@@ -189,6 +194,7 @@ static void test_bitwise_not_uint_preserves_uint64_result(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 跨 opcode 组合验证：uint 位运算结果显式转换后可作为 signed add 输入。 */
 static void test_uint_bitwise_result_can_cast_to_signed_add_operand(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue constants[3];
@@ -225,6 +231,8 @@ void setUp(void) {}
 void tearDown(void) {}
 
 int main(void) {
+    /* BUG: 此目标未进入 tests/CMakeLists.txt 的 add_test / core_runtime 列表；
+     * 常规 ctest 不会运行这些 unsigned 位运算回归。 */
     UNITY_BEGIN();
 
     RUN_TEST(test_bitwise_and_uint_preserves_uint64_result);

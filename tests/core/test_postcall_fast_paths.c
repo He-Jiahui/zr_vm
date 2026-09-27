@@ -11,6 +11,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 快速返回测试借用已分配栈的尾部窗口；不能跨出当前栈基址或假设运行时会扩容。
 static TZrStackValuePointer reserve_postcall_window(SZrState *state, TZrSize slotCount) {
     TZrStackValuePointer windowBase;
 
@@ -22,6 +23,7 @@ static TZrStackValuePointer reserve_postcall_window(SZrState *state, TZrSize slo
     return windowBase;
 }
 
+// 构造无调试/异常状态的调用帧，这是单结果快速返回入口的使用前提。
 static void init_plain_call_info(SZrCallInfo *callInfo,
                                  SZrCallInfo *previous,
                                  TZrStackValuePointer functionBase,
@@ -47,6 +49,7 @@ static void init_plain_call_info(SZrCallInfo *callInfo,
     callInfo->hasReturnDestination = hasReturnDestination;
 }
 
+// 调用者预留独立目的槽时，返回值应直接落在该槽并恢复调用者帧和栈顶。
 static void test_postcall_prepared_single_result_fast_moves_return_to_explicit_destination(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer windowBase;
@@ -94,6 +97,7 @@ static void test_postcall_prepared_single_result_fast_moves_return_to_explicit_d
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 空返回不能遗留调用者目的槽中的旧值，否则下次读取会看到上一次调用结果。
 static void test_postcall_prepared_single_result_fast_resets_null_when_no_return_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer windowBase;
@@ -130,6 +134,7 @@ static void test_postcall_prepared_single_result_fast_resets_null_when_no_return
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 未指定目的槽的调用沿用函数基址作为结果槽，栈顶随该位置恢复。
 static void test_postcall_prepared_single_result_fast_falls_back_to_function_base_without_return_destination(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer windowBase;

@@ -13,14 +13,18 @@
 #include "native_binding/native_binding_dispatch_lanes.h"
 #include "native_binding/native_binding_internal.h"
 
+// 计数器证明原生回调中的扩容确实搬走了旧栈，而非仅原地扩展。
 typedef struct TestPoisoningAllocatorContext {
     TZrUInt32 moveCount;
 } TestPoisoningAllocatorContext;
 
+// 两条分派路径通过同一回调输出，测试开始时须重置这些观测值。
 static TZrUInt32 gNativeCallCount = 0u;
+// 回调观测结果在分派返回后比较，不允许保留对已搬迁栈的旧地址。
 static TZrBool gObservedInlineSpanResult = ZR_FALSE;
 static ZrLibInlineSpan gObservedInlineSpan;
 
+// 特意搬迁并毒化旧块，让使用扩容前 span 地址的错误在测试中可观察。
 static TZrPtr test_poisoning_allocator(TZrPtr userData,
                                        TZrPtr pointer,
                                        TZrSize originalSize,
@@ -31,6 +35,7 @@ static TZrPtr test_poisoning_allocator(TZrPtr userData,
 
     ZR_UNUSED_PARAMETER(flag);
 
+    // TODO: TZrPtr 是 void*；与 0x1000 的指针顺序比较依赖平台约定，需核对分配器哨兵契约。
     if (newSize == 0) {
         if (pointer != ZR_NULL && pointer >= (TZrPtr)0x1000) {
             free(pointer);
@@ -56,9 +61,11 @@ static TZrPtr test_poisoning_allocator(TZrPtr userData,
         context->moveCount++;
     }
 
+    // 旧块故意保留为毒化内存，以便测试捕捉扩容后继续使用旧地址的调用方。
     return newPointer;
 }
 
+// 创建由毒化分配器驱动的完整运行时；返回的 mainThreadState 随 GlobalState 一同释放。
 static SZrState *test_create_state_with_poisoning_allocator(TestPoisoningAllocatorContext *context) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_poisoning_allocator, context, 12345, &callbacks);
@@ -75,6 +82,7 @@ static SZrState *test_create_state_with_poisoning_allocator(TestPoisoningAllocat
     return state;
 }
 
+// 由 native descriptor 间接调用；先触发栈搬迁，再向 public call-context API 索取参数 span。
 static TZrBool test_native_grow_stack_then_observe_inline_argument_span_callback(ZrLibCallContext *context,
                                                                                  SZrTypeValue *result) {
     TZrSize grownSize;
@@ -93,10 +101,12 @@ static TZrBool test_native_grow_stack_then_observe_inline_argument_span_callback
     return ZR_TRUE;
 }
 
+// 两个 descriptor 使用同一回调，但参数数量决定命中内联快路还是通用分派器。
 static const ZrLibParameterDescriptor kInlineSpanParameters[] = {
         {"value", "InlineProbe", ZR_NULL},
 };
 
+// 一个原生参数使绑定入口选择内联快路。
 static const ZrLibFunctionDescriptor kInlineSpanFastLaneFunctionDescriptor = {
         .name = "observeInlineAfterFastLaneGrow",
         .minArgumentCount = 1,
@@ -112,6 +122,7 @@ static const ZrLibFunctionDescriptor kInlineSpanFastLaneFunctionDescriptor = {
         .dispatchFlags = 0u,
 };
 
+// 参数数超过内联容量以强制走通用分派器，回调契约保持不变。
 static const ZrLibFunctionDescriptor kInlineSpanGenericDispatcherFunctionDescriptor = {
         .name = "observeInlineAfterGenericDispatcherGrow",
         .minArgumentCount = ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY + 1u,
@@ -127,6 +138,7 @@ static const ZrLibFunctionDescriptor kInlineSpanGenericDispatcherFunctionDescrip
         .dispatchFlags = 0u,
 };
 
+// 缓存绑定记录借用此静态模块描述符，寿命必须覆盖原生闭包的调用过程。
 static const ZrLibModuleDescriptor kInlineSpanModule = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "probe.native_inline_span_dispatch",
@@ -148,12 +160,14 @@ static const ZrLibModuleDescriptor kInlineSpanModule = {
         .onMaterialize = ZR_NULL,
 };
 
+// 每次分派前清空全局观察值，避免前一场景的成功结果掩盖未调用回调。
 static void test_reset_observed_span(void) {
     gNativeCallCount = 0u;
     gObservedInlineSpanResult = ZR_FALSE;
     memset(&gObservedInlineSpan, 0, sizeof(gObservedInlineSpan));
 }
 
+// 构造和真实 native 入口一致的 CallInfo 与内联参数布局；函数接管分配出的布局表。
 static void test_prepare_inline_native_frame(SZrState *state,
                                              SZrClosureNative *closure,
                                              SZrFunction *function,
@@ -210,6 +224,7 @@ static void test_prepare_inline_native_frame(SZrState *state,
     *outFunctionBase = functionBase;
 }
 
+// 比对锚点恢复后的新帧地址与插件获得的 span，禁止插件继续使用已毒化的旧栈地址。
 static void test_assert_observed_relocated_inline_span(SZrState *state,
                                                        const SZrFunction *function,
                                                        const SZrFunctionFrameSlotLayout *layout,
@@ -235,6 +250,7 @@ static void test_assert_observed_relocated_inline_span(SZrState *state,
     TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, span.address, payloadSize);
 }
 
+// 单参数绑定命中 native 快路；栈搬迁后 callback 仍需读到原内联字节。
 static void test_native_fast_lane_inline_argument_span_refreshes_after_stack_growth(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -306,6 +322,7 @@ static void test_native_fast_lane_inline_argument_span_refreshes_after_stack_gro
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 参数数超出内联容量时走通用分派器；其参数视图也必须在栈搬迁后重建。
 static void test_native_generic_dispatcher_inline_argument_span_refreshes_after_stack_growth(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -363,6 +380,7 @@ static void test_native_generic_dispatcher_inline_argument_span_refreshes_after_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 帧内联局部值不属于原生函数参数；按参数索引请求 span 应失败且清空输出。
 static void test_native_inline_argument_span_rejects_inline_non_parameter_slot(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -411,6 +429,7 @@ static void test_native_inline_argument_span_rejects_inline_non_parameter_slot(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 内联结构参数只提供带布局的字节 span，装箱值访问接口不得返回伪造的参数对象。
 static void test_native_inline_parameter_requires_span_not_plain_argument_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -462,6 +481,7 @@ static void test_native_inline_parameter_requires_span_not_plain_argument_value(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 无内联布局的普通参数仍可经 Argument/ReadInt 使用，不受 span 拒绝逻辑影响。
 static void test_native_boxed_argument_stays_available_when_no_inline_frame_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrLibCallContext context = {0};
@@ -491,6 +511,7 @@ static void test_native_boxed_argument_stays_available_when_no_inline_frame_layo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 即使帧有布局，VALUE 槽也属于装箱参数，不能被误判为内联结构参数。
 static void test_native_plain_value_frame_slot_stays_boxed_argument(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -541,6 +562,7 @@ static void test_native_plain_value_frame_slot_stays_boxed_argument(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 结构体 view 只能由匹配的 AOT 布局注册表构成；缺表或尺寸漂移都需清空输出。
 static void test_native_inline_argument_view_validates_canonical_layout_registry(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -628,6 +650,8 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// BUG: tests/CMakeLists.txt:429,594 只创建并链接目标，未在本仓注册到 add_test 或维护列表；
+// 常规 CTest 不执行栈搬迁后的原生参数视图回归。应在 tests/CMakeLists.txt 补查注册意图。
 int main(void) {
     UNITY_BEGIN();
 

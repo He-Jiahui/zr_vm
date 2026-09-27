@@ -20,6 +20,8 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/type_layout.h"
 
+/* 从布局构造器一路验证栈帧地址、调用前参数传递和调用后清理。
+ * 测试自行构造的帧与原型元数据只在相应 Unity 用例期间有效。 */
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -29,6 +31,7 @@ static TZrUInt32 test_align_up(TZrUInt32 offset, TZrUInt32 align) {
     return remainder == 0u ? offset : offset + (align - remainder);
 }
 
+/* 构造 dense 登记槽与 byte 物理槽分离的帧，供 close 注册测试覆盖双位置所有权。 */
 static void test_prepare_distinct_value_frame_slot(
         SZrState *state,
         SZrFunction *function,
@@ -76,6 +79,7 @@ static void test_prepare_distinct_value_frame_slot(
     ZrCore_Value_ResetAsNull(*outPhysicalValue);
 }
 
+/* 注册 close 后必须同时清除登记镜像和对应的物理值。 */
 static void test_register_distinct_physical_owner(
         SZrState *state,
         TZrStackValuePointer frameBase,
@@ -98,6 +102,7 @@ static void test_register_distinct_physical_owner(
     TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, physicalValue->ownershipKind);
 }
 
+/* 普通对象、资源、借出值及栈迁移复用同一分离帧模型，防止 close 只释放登记镜像。 */
 static void test_distinct_frame_cleanup_releases_physical_and_registered_owners(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function;
@@ -232,6 +237,7 @@ static void test_distinct_frame_cleanup_releases_physical_and_registered_owners(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 析构回调只能以栈偏移重新定位登记值；增长栈后原始指针不再可靠。 */
 typedef struct TestRelocatingResourceDropRecord {
     TZrMemoryOffset registeredValueOffset;
     TZrUInt32 callCount;
@@ -239,6 +245,7 @@ typedef struct TestRelocatingResourceDropRecord {
     TZrBool grewStack;
 } TestRelocatingResourceDropRecord;
 
+/* 原生析构签名没有 userData；本指针仅在单个同步 Unity 用例的 close 期间有效。 */
 static TestRelocatingResourceDropRecord *g_relocating_resource_drop_record;
 
 static TZrInt64 test_relocating_resource_drop(SZrState *state) {
@@ -263,6 +270,7 @@ static TZrInt64 test_relocating_resource_drop(SZrState *state) {
     return 0;
 }
 
+/* close 可重入用户析构且析构可扩容栈，所以别名须先失效再触发析构。 */
 static void test_distinct_resource_cleanup_clears_alias_before_reentrant_stack_growth(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function;
@@ -347,6 +355,7 @@ typedef struct TestNestedDropRecord {
     TZrUInt32 order[4];
 } TestNestedDropRecord;
 
+/* 每个嵌套字段有独立上下文，回调顺序用于证明只析构已初始化字段。 */
 typedef struct TestNestedDropContext {
     TestNestedDropRecord *record;
     TZrUInt32 fieldId;
@@ -425,6 +434,7 @@ static void test_custom_drop_runs_before_reverse_field_teardown(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 外层看似可逐字段复制时，递归布局仍须阻止内部 move-only 字段被复制。 */
 static void test_registry_aware_nested_copy_rejects_move_only_field(void) {
     SZrTypeLayoutField nestedFields[1] = {0};
     SZrTypeLayoutField outerFields[1] = {0};
@@ -467,6 +477,7 @@ static void test_registry_aware_nested_copy_rejects_move_only_field(void) {
             ZR_NULL, &outerLayout, &registry, &destination, &source));
 }
 
+/* 构造失败回收以 bitmap 为准，且按正常析构的逆字段顺序执行。 */
 static void test_partial_drop_uses_initialized_bitmap_in_reverse_field_order(void) {
     SZrTypeLayoutField outerFields[3] = {0};
     SZrTypeLayoutContract nestedContracts[3] = {0};
@@ -956,6 +967,7 @@ static void test_function_frame_slot_inline_copy_uses_source_and_destination_lay
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 测试解析器把帧槽的 typeLayoutId 绑定到唯一布局，用于模拟生产解析回调。 */
 typedef struct TestFrameLayoutResolver {
     TZrUInt32 typeLayoutId;
     const SZrTypeLayout *layout;
@@ -971,6 +983,7 @@ typedef struct TestGcValueVisit {
     SZrTypeValue *value;
 } TestGcValueVisit;
 
+/* 写入与运行时原型解析器一致的二进制视图；buffer 由调用用例持有。 */
 static TZrUInt32 test_write_compiled_prototype_data(TZrByte *buffer,
                                                     TZrUInt32 bufferSize,
                                                     const SZrCompiledPrototypeInfo *prototype,
@@ -996,6 +1009,7 @@ static TZrUInt32 test_write_compiled_prototype_data(TZrByte *buffer,
     return cursor;
 }
 
+/* 两个原型必须按解码器读取顺序相邻，才能检验嵌套字段解析。 */
 static TZrUInt32 test_write_two_compiled_prototype_data(TZrByte *buffer,
                                                         TZrUInt32 bufferSize,
                                                         const SZrCompiledPrototypeInfo *firstPrototype,
@@ -1060,6 +1074,7 @@ static void test_init_string_constant(SZrState *state, SZrTypeValue *value, cons
     value->type = ZR_VALUE_TYPE_STRING;
 }
 
+/* 拒绝坏布局时输出参数也要复位，避免调用方误用上一次解析的 bitmap。 */
 static void assert_constructor_bitmap_layout_rejected_and_outputs_reset(
         SZrState *state,
         const SZrFunction *function) {
@@ -1075,6 +1090,7 @@ static void assert_constructor_bitmap_layout_rejected_and_outputs_reset(
     TEST_ASSERT_EQUAL_UINT32(0u, initializedFieldWordCount);
 }
 
+/* 构造器字段写入只在原型布局、帧槽及 bitmap 空间相互一致时留下初始化记录。 */
 static void test_constructor_field_store_marks_runtime_initialization_bitmap(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -1225,6 +1241,7 @@ static void test_constructor_field_store_marks_runtime_initialization_bitmap(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 异常退出的半成品结构只回收已写字段，不能调用要求完整对象的自定义析构。 */
 static void test_constructor_unwind_drops_only_initialized_fields_without_custom_drop(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -1357,6 +1374,7 @@ static void test_constructor_unwind_drops_only_initialized_fields_without_custom
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 给由 VM 持有的函数安装字段布局元数据；分配的布局随函数释放。 */
 static void test_install_managed_value_inline_frame_metadata(SZrState *state,
                                                              SZrFunction *function,
                                                              TZrUInt32 stackSlot,
@@ -1414,6 +1432,7 @@ static void test_install_managed_value_inline_frame_metadata(SZrState *state,
     function->prototypeCount = 1u;
 }
 
+/* 帧 GC、复制和回收通过此回调取得测试构造的布局，ID 不匹配时拒绝解析。 */
 static const SZrTypeLayout *test_resolve_function_frame_layout(const SZrFunction *function,
                                                                TZrUInt32 typeLayoutId,
                                                                TZrPtr userData) {
@@ -1511,6 +1530,7 @@ static const SZrTypeLayout *test_resolve_metadata_registry_layout(
     return ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(function, typeLayoutId);
 }
 
+/* AOT 注册表与函数元数据须共同解析嵌套布局，供帧 GC 和析构递归使用。 */
 static void test_function_frame_uses_metadata_registry_for_nested_gc_and_drop(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -1597,6 +1617,7 @@ static void test_function_frame_uses_metadata_registry_for_nested_gc_and_drop(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同一物理结构的别名槽不应重复参与 GC 遍历或析构。 */
 static void test_function_frame_alias_is_not_scanned_or_dropped_twice(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -1852,6 +1873,7 @@ static void test_function_prototype_type_layout_resolver_builds_gc_value_field_f
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 管理字段在嵌套结构中的偏移要投影到父布局，供父帧直接扫描和释放。 */
 static void test_function_prototype_type_layout_resolver_flattens_nested_managed_struct_fields(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -1932,6 +1954,7 @@ static void test_function_prototype_type_layout_resolver_flattens_nested_managed
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* POD 子结构保留嵌套布局身份，但不凭子结构的字节宽度误判为托管值槽。 */
 static void test_function_prototype_type_layout_resolver_marks_nested_inline_struct_field(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -2177,6 +2200,7 @@ static void test_function_prototype_type_layout_resolver_fails_recursive_struct_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 跨帧结构参数以源、目标各自的 byte 偏移定位；解析器缺失时失败。 */
 static void test_function_inline_parameters_copy_by_frame_layout_copies_byte_payloads(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction callerFunction = {0};
@@ -2276,6 +2300,7 @@ static void test_function_inline_parameters_copy_by_frame_layout_copies_byte_pay
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 调用方的物理镜像尚未物化时，参数复制可从同一槽的 dense 值读取。 */
 static void test_value_frame_parameter_copy_uses_dense_source_when_frame_value_slot_is_unmaterialized(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction callerFunction = {0};
@@ -2374,6 +2399,8 @@ static void test_value_frame_parameter_copy_uses_dense_source_when_frame_value_s
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 重用的 dense 与 byte 目标槽都可能留下上一轮所有权指针；
+ * 参数复制必须先复位，再赋予新参数值。 */
 static void test_value_frame_parameter_copy_normalizes_reused_destination_slots(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction calleeFunction = {0};
@@ -2469,6 +2496,7 @@ static void test_value_copy_normalizes_reused_no_ownership_destination(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已解析 VM 调用的稳态入口不能处理此内联结构参数，常规 precall 必须完成跨帧搬运。 */
 static void test_prepared_resolved_vm_precall_copies_inline_parameter_payload_from_caller_frame(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *callerFunction;
@@ -2612,6 +2640,7 @@ static void test_prepared_resolved_vm_precall_copies_inline_parameter_payload_fr
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 帧 GC 与析构共用 typeLayoutId 解析结果，均须访问 byte 区里的托管字段。 */
 static void test_function_inline_frame_gc_and_drop_scan_inline_struct_payload(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *text;
@@ -2701,6 +2730,7 @@ static void test_function_inline_frame_gc_and_drop_scan_inline_struct_payload(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 正常返回时 PostCall 必须经函数原型解析布局，释放帧中非返回的托管字段。 */
 static void test_function_post_call_drops_inline_frame_values_with_prototype_resolver(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2761,6 +2791,7 @@ static void test_function_post_call_drops_inline_frame_values_with_prototype_res
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 返回结构仍在被调用帧内时先复制到调用方，再执行被调用帧清理。 */
 static void test_function_post_call_copies_inline_return_payload_before_frame_drop(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *callerFunction;
@@ -2922,6 +2953,7 @@ static void test_function_post_call_copies_inline_return_payload_before_frame_dr
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 借用参数应保存可重定位的源帧绑定；栈扩容后不可沿用旧地址。 */
 static void test_borrowed_frame_alias_survives_stack_relocation(void) {
     static const TZrByte payload[] = {0x11u, 0x22u, 0x33u, 0x44u,
                                       0x55u, 0x66u, 0x77u, 0x88u};
@@ -3050,6 +3082,7 @@ static void test_borrowed_frame_alias_survives_stack_relocation(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 借用别名标记只能与对应版本及完整别名标志组合从 IO 产物进入运行时。 */
 static void test_borrowed_frame_alias_artifact_version_and_flags_are_validated(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrIoFunctionFrameSlotLayout layout;

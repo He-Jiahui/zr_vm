@@ -14,6 +14,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+/* 直接调用 ADD 和其内部分支，观察临时栈扩容后目标槽是否仍可定位，
+ * 并用 allocator / helper 计数锁住无需额外栈访问的快路径。 */
 TZrBool try_builtin_add(SZrState *state,
                         SZrTypeValue *outResult,
                         const SZrTypeValue *opA,
@@ -24,12 +26,14 @@ TZrBool concat_values_to_destination(SZrState *state,
                                      const SZrTypeValue *opB,
                                      TZrBool safeMode);
 
+/* 与移动 allocator 共用；计数只覆盖此测试状态创建后的原始内存请求。 */
 typedef struct TestMovingAllocatorContext {
     TZrUInt32 moveCount;
     TZrUInt32 allocationCount;
     TZrUInt32 freeCount;
 } TestMovingAllocatorContext;
 
+/* 强制每次扩容换地址，使误用扩容前栈指针的路径在测试中可见。 */
 static TZrPtr test_moving_allocator(TZrPtr userData,
                                     TZrPtr pointer,
                                     TZrSize originalSize,
@@ -78,6 +82,7 @@ static TZrPtr test_moving_allocator(TZrPtr userData,
     return newPointer;
 }
 
+/* 和常规运行时夹具保持相同 registry 初始化，但替换底层 allocator。 */
 static SZrState *test_create_state_with_moving_allocator(TestMovingAllocatorContext *context) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_moving_allocator, context, 12345, &callbacks);
@@ -102,6 +107,7 @@ static const TZrChar *string_value_native(SZrState *state, const SZrTypeValue *v
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, value->value.object));
 }
 
+/* 将字符串放入真实 VM 栈槽；拼接期间若栈移动，输入也需从新栈恢复。 */
 static void init_stack_string_value(SZrState *state, SZrTypeValue *slotValue, SZrString *stringValue) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(slotValue);
@@ -115,6 +121,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* helper 计数是当前 state 的动态配置，测量前清零并安装到全局及当前线程。 */
 static void reset_profile_counters(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -126,6 +133,7 @@ static void reset_profile_counters(SZrState *state, SZrProfileRuntime *profileRu
     ZrCore_Profile_SetCurrentState(state);
 }
 
+/* 必须在释放 state 前撤销指向测试局部 profileRuntime 的借用指针。 */
 static void clear_profile_counters(SZrState *state) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -134,6 +142,7 @@ static void clear_profile_counters(SZrState *state) {
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 栈增长不仅要重置值类型，也要清掉关闭标记和所有权元数据。 */
 static void assert_stack_slot_is_reset(const SZrTypeValueOnStack *slot, const char *message) {
     TEST_ASSERT_NOT_NULL(slot);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, slot->toBeClosedValueOffset, message);
@@ -145,6 +154,7 @@ static void assert_stack_slot_is_reset(const SZrTypeValueOnStack *slot, const ch
     TEST_ASSERT_NULL_MESSAGE(slot->value.ownershipWeakRef, message);
 }
 
+/* 字符串与对象走通用拼接，需要临时栈；验证调用方保留的目标槽地址失效后仍写到新栈。 */
 static void test_execution_add_restores_stack_destination_after_generic_string_concat_growth(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -206,6 +216,8 @@ static void test_execution_add_restores_stack_destination_after_generic_string_c
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* TODO: 名称称避免 helper，但断言允许最多一次；需核对通用拼接是否确实需要这次读取，
+ * 再决定收紧断言还是更正测试名称。 */
 static void test_execution_add_generic_string_concat_growth_avoids_stack_get_value_helper(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -273,6 +285,7 @@ static void test_execution_add_generic_string_concat_growth_avoids_stack_get_val
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 精确 string/string 路径绕过通用临时槽；输入占满逻辑栈时不应触发扩容。 */
 static void test_try_builtin_add_exact_string_pair_avoids_scratch_stack_growth(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -527,6 +540,7 @@ static void test_try_builtin_add_exact_string_pair_stack_inputs_avoid_stack_get_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* string/int 安全转换也应使用直接写入路径，避免通用拼接的临时栈。 */
 static void test_try_builtin_add_mixed_string_int_avoids_scratch_stack_growth(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -664,6 +678,7 @@ static void test_try_builtin_add_mixed_string_int_stack_inputs_avoid_stack_get_v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 计数只从调用 builtin 前开始，锁住最终字符串对象及字符串表项的两次分配预算。 */
 static void test_try_builtin_add_mixed_string_int_only_allocates_final_result_string(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -766,6 +781,7 @@ static void test_execution_add_mixed_string_int_writes_directly_without_value_co
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 混合数字测试直接约束 builtin 分派的结果类型；与执行器中的 typed opcode 测试互补。 */
 static void test_try_builtin_add_signed_bool_returns_int64_sum(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue leftValue;
@@ -842,6 +858,7 @@ static void test_try_builtin_add_bool_pair_returns_int64_sum(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* allocator 以脏字节填充新内存，暴露只调整逻辑边界而未初始化槽位的回归。 */
 static void test_stack_grow_initializes_newly_exposed_logical_slots(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -898,6 +915,7 @@ static void test_stack_grow_initializes_every_new_logical_slot_when_growing_by_m
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 第二次增长只能清理新暴露部分，第一次增长后写入的值和关闭元数据必须保留。 */
 static void test_stack_grow_preserves_existing_newly_exposed_slots_across_repeated_growth(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -929,6 +947,8 @@ static void test_stack_grow_preserves_existing_newly_exposed_slots_across_repeat
 }
 
 int main(void) {
+    /* BUG: tests/CMakeLists.txt 构建此目标却未加入 core_runtime 或其他 add_test；
+     * 常规 ctest 不执行这些栈移动与拼接回归（ctest -N 中无此目标）。 */
     UNITY_BEGIN();
 
     RUN_TEST(test_execution_add_restores_stack_destination_after_generic_string_concat_growth);

@@ -7,6 +7,7 @@
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/value.h"
 
+// 以 ArrayLike 原型和 __zr_items 隐藏字段构造真实 SuperArray 接收者，供专用入口解析载荷。
 static SZrObject *make_array_receiver(SZrState *state, SZrObject **outItems) {
     SZrObject *receiver;
     SZrObject *items;
@@ -19,7 +20,7 @@ static SZrObject *make_array_receiver(SZrState *state, SZrObject **outItems) {
     if (receiver == ZR_NULL || items == ZR_NULL) {
         return ZR_NULL;
     }
-    /* SuperArray helpers resolve payloads through the ArrayLike protocol. */
+    /* SuperArray 帮助函数通过 ArrayLike 协议定位载荷。 */
     receiver->prototype = state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_ARRAY];
     ZrCore_Object_Init(state, receiver);
     ZrCore_Object_Init(state, items);
@@ -42,6 +43,7 @@ static SZrObject *make_array_receiver(SZrState *state, SZrObject **outItems) {
 void setUp(void) {}
 void tearDown(void) {}
 
+// 纯整数追加维持原始数组为唯一存储；首次通用索引读取才物化节点映射。
 static void test_raw_int_appends_do_not_allocate_node_pairs_until_generic_boundary(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items = ZR_NULL;
@@ -80,6 +82,7 @@ static void test_raw_int_appends_do_not_allocate_node_pairs_until_generic_bounda
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 非二次幂长度在物化时仍需保留全部元素，覆盖节点映射扩容边界。
 static void test_raw_int_materialization_rounds_capacity_for_non_power_of_two_length(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items = ZR_NULL;
@@ -112,6 +115,7 @@ static void test_raw_int_materialization_rounds_capacity_for_non_power_of_two_le
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 通用写入引入字符串后，原始整数存储不再代表完整数组，节点存储必须接管。
 static void test_generic_type_drift_keeps_node_storage_canonical(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items = ZR_NULL;
@@ -146,6 +150,7 @@ static void test_generic_type_drift_keeps_node_storage_canonical(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 此用例意在覆盖数组搬迁后经根句柄解析的原始缓冲区与规范存储标记；模式缺口见下方 BUG。
 static void test_raw_int_storage_survives_gc_move_and_root_resolution(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items = ZR_NULL;
@@ -177,10 +182,12 @@ static void test_raw_int_storage_survives_gc_move_and_root_resolution(void) {
     originalRaw = ZR_CAST_RAW_OBJECT_AS_SUPER(items);
     originalRawData = items->superArrayRawIntData;
 
+    // BUG: 默认增量 GcFull 不搬迁数组；本用例的搬迁分支因此未被真正验证。
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
 
     TEST_ASSERT_TRUE(ZrCore_GcRootHandle_Resolve(state, &itemsRoot, &resolvedRaw));
     TEST_ASSERT_NOT_NULL(resolvedRaw);
+    // TODO: 若改用实际搬迁的次代路径，from-space 原对象可能已释放；断言需避免解引用 originalRaw。
     TEST_ASSERT_TRUE(resolvedRaw == originalRaw ||
                      originalRaw->garbageCollectMark.forwardingAddress == resolvedRaw);
     resolvedItems = ZR_CAST_OBJECT(state, resolvedRaw);
@@ -204,6 +211,7 @@ static void test_raw_int_storage_survives_gc_move_and_root_resolution(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 反射查询类型只观察数组身份，不应强制把原始整数存储物化为节点。
 static void test_reflection_boundary_reads_raw_int_array_without_losing_values(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items = ZR_NULL;
@@ -243,6 +251,7 @@ static void test_reflection_boundary_reads_raw_int_array_without_losing_values(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 对象值写入前须迁移已有整数，否则通用读路径会丢失更早的元素。
 static void test_int_to_object_transition_materializes_prior_raw_values(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items = ZR_NULL;
@@ -291,6 +300,7 @@ static void test_int_to_object_transition_materializes_prior_raw_values(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 四路批量追加接收不同规范存储模式，各路应在原模式中独立延续。
 static void test_four_lane_append_supports_mixed_raw_and_node_canonical_arrays(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *items[4] = {ZR_NULL, ZR_NULL, ZR_NULL, ZR_NULL};

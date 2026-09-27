@@ -16,6 +16,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 原生闭包从调用帧取捕获值时，负偏移必须以闭包而非普通 VM 函数槽解释。
 static void test_native_closure_stack_offset_value_accepts_native_closure_type(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer functionBase;
@@ -57,6 +58,7 @@ static void test_native_closure_stack_offset_value_accepts_native_closure_type(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 调试、GC 和返回路径通过 CallInfo 查询元数据；AOT 原生闭包需提供 shim 函数承接该查询。
 static void test_native_closure_metadata_uses_aot_shim_function(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrClosureNative *nativeClosure;
@@ -97,12 +99,14 @@ static void test_native_closure_metadata_uses_aot_shim_function(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 两个加载回调共享计数和模块指针，以验证优先级及缓存是否阻止重复加载。
 typedef struct TestAotLoaderContext {
     TZrUInt32 aotCalls;
     TZrUInt32 nativeCalls;
     SZrObjectModule *module;
 } TestAotLoaderContext;
 
+// 由 Module_ImportByPath 间接调用；测试函数持有 userData，须在本次导入期间保持有效。
 static SZrObjectModule *test_aot_loader(SZrState *state, SZrString *moduleName, TZrPtr userData) {
     TestAotLoaderContext *context = (TestAotLoaderContext *)userData;
 
@@ -117,6 +121,7 @@ static SZrObjectModule *test_aot_loader(SZrState *state, SZrString *moduleName, 
     return context->module;
 }
 
+// 由导入器在 AOT 未命中后才可能调用；返回空值以暴露错误的优先级选择。
 static SZrObjectModule *test_native_loader(SZrState *state, SZrString *moduleName, TZrPtr userData) {
     TestAotLoaderContext *context = (TestAotLoaderContext *)userData;
 
@@ -129,6 +134,7 @@ static SZrObjectModule *test_native_loader(SZrState *state, SZrString *moduleNam
     return ZR_NULL;
 }
 
+// 同一路径二次导入应返回已缓存模块，且 AOT 成功时不应再调用 native loader。
 static void test_aot_module_loader_runs_before_native_loader_and_populates_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *modulePath;

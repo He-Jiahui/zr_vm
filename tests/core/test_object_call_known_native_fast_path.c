@@ -20,6 +20,7 @@
 #include "native_binding/native_binding_dispatch_lanes.h"
 #include "native_binding/native_binding_internal.h"
 
+/* 直连入口检验 native 帧/固定实参契约。TODO: 本地 extern 重复于已包含头文件，核查保留目的以免签名漂移。 */
 extern struct SZrCallInfo *ZrCore_Function_PreCallResolvedNativeFunction(struct SZrState *state,
                                                                          TZrStackValuePointer stackPointer,
                                                                          FZrNativeFunction nativeFunction,
@@ -49,41 +50,57 @@ extern TZrBool ZrCore_Object_CallFunctionWithReceiverTwoArgumentsFast(struct SZr
                                                                       const SZrTypeValue *argument1,
                                                                       SZrTypeValue *result);
 
+/* 记录强制搬迁次数，供调用方证明指针恢复确实经过了栈迁移。 */
 typedef struct TestPoisoningAllocatorContext {
     TZrUInt32 moveCount;
 } TestPoisoningAllocatorContext;
 
+/* Unity 逐例执行；回调经闭包或描述符间接进入，用这些期望值跨越调用边界验收实参。 */
 static SZrObject *gExpectedReceiverObject = ZR_NULL;
 static SZrString *gExpectedArgumentString = ZR_NULL;
 static TZrInt64 gExpectedAssignedInt = 0;
+/* 计数与损坏标志区分未分派和入参被改写。 */
 static TZrUInt32 gNativeCallCount = 0;
 static TZrBool gObservedCorruption = ZR_FALSE;
+/* GC 临时忽略对象计数用于观察快路径是否额外固定输入。 */
 static TZrSize gObservedIgnoredObjectCount = 0;
+/* 三处输入地址用于验证只读内联调用是否原址借用。 */
 static const SZrTypeValue *gExpectedReceiverValuePointer = ZR_NULL;
 static const SZrTypeValue *gExpectedArgumentValuePointer = ZR_NULL;
 static const SZrTypeValue *gExpectedAssignedValuePointer = ZR_NULL;
+/* 捕获值与期望整数用于检查预解析帧的 upvalue 关闭。 */
 static SZrClosureValue *gCapturedClosureValue = ZR_NULL;
 static TZrInt64 gExpectedCapturedInt = 0;
+/* close 次数及资源身份共同定义帧退出后的释放观察。 */
 static TZrUInt32 gCloseMetaInvocationCount = 0;
 static SZrObject *gExpectedCloseMetaObject = ZR_NULL;
+/* 回调重绑定 self 后，调用者须读到这个稳定值。 */
 static SZrTypeValue gReboundSelfValue;
 static TZrInt64 gExpectedReboundSelfInt = 0;
+/* 分别计数内外嵌套回调，证明两层调用均到达。 */
 static TZrUInt32 gNestedGenericOuterNativeCallCount = 0;
 static TZrUInt32 gNestedGenericInnerNativeCallCount = 0;
+/* 包装器计数为直接绑定是否绕开缓存分派提供反证。 */
 static TZrUInt32 gWrappedCachedStackRootDispatchCount = 0;
 static TZrUInt32 gWrappedCachedStackRootDispatchTwoArgumentCount = 0;
+/* fast/fallback 计数区分 get/set 专用回调与通用绑定回退。 */
 static TZrUInt32 gReadonlyInlineGetFastCallCount = 0;
 static TZrUInt32 gReadonlyInlineGetFallbackCallCount = 0;
 static TZrUInt32 gReadonlyInlineSetFastCallCount = 0;
 static TZrUInt32 gReadonlyInlineSetFallbackCallCount = 0;
+/* 预填结果用于确认回调进入前的输出槽未被清空。 */
 static SZrString *gExpectedPrefilledResultString = ZR_NULL;
+/* 分离 self 与参数的 stack-get 成本，检验上下文读值路径。 */
 static TZrUInt64 gBoundContextSelfStackGetDelta = 0;
 static TZrUInt64 gBoundContextArgumentStackGetDelta = 0;
+/* 记录当前 native 帧 inline span 的成功状态与借用视图。 */
 static TZrBool gObservedInlineSpanResult = ZR_FALSE;
 static ZrLibInlineSpan gObservedInlineSpan;
+/* 两类描述符驱动的 GC native 模式仅在回调期间观察。 */
 static TZrBool gObservedDirectNoSafepointMode = ZR_FALSE;
 static TZrBool gObservedReadonlyBlockingDetachedMode = ZR_FALSE;
 
+/* 描述符声明无 safepoint 时，检查回调期间 STW 的可观察阻塞模式。 */
 static TZrBool test_direct_no_safepoint_mode_callback(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -108,6 +125,7 @@ static TZrBool test_direct_no_safepoint_mode_callback(
     return ZR_TRUE;
 }
 
+/* 只读元方法的专用回调检查其 native 阶段是否以 blocking-detached 运行。 */
 static TZrBool test_readonly_blocking_detached_fast_callback(
         SZrState *state,
         const SZrTypeValue *selfValue,
@@ -128,6 +146,7 @@ static TZrBool test_readonly_blocking_detached_fast_callback(
     return ZR_TRUE;
 }
 
+/* 为缓存描述符提供稳定的可调用端点，测试关注绑定身份而非返回值。 */
 static TZrBool test_binding_cache_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     TEST_ASSERT_NOT_NULL(context);
     TEST_ASSERT_NOT_NULL(result);
@@ -135,6 +154,7 @@ static TZrBool test_binding_cache_callback(ZrLibCallContext *context, SZrTypeVal
     return ZR_TRUE;
 }
 
+/* native 分派后读取当前帧的 inline span，避免误用过期帧元数据。 */
 static TZrBool test_native_observe_inline_argument_span_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     TEST_ASSERT_NOT_NULL(context);
     TEST_ASSERT_NOT_NULL(result);
@@ -146,6 +166,7 @@ static TZrBool test_native_observe_inline_argument_span_callback(ZrLibCallContex
     return ZR_TRUE;
 }
 
+/* 绑定回调核对 self/参数在栈搬迁后的身份，并记录读取栈值的 helper 成本。 */
 static TZrBool test_bound_verify_stack_rooted_receiver_and_argument(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrProfileRuntime *profileRuntime =
             (context != ZR_NULL && context->state != ZR_NULL && context->state->global != ZR_NULL)
@@ -184,6 +205,7 @@ static TZrBool test_bound_verify_stack_rooted_receiver_and_argument(ZrLibCallCon
     return ZR_TRUE;
 }
 
+/* 两实参绑定回调核对 receiver、key、value 的根与顺序，供 set 路径复用。 */
 static TZrBool test_bound_verify_stack_rooted_receiver_key_and_value(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *receiverValue = ZrLib_CallContext_Self(context);
     SZrTypeValue *keyValue = ZrLib_CallContext_Argument(context, 0);
@@ -215,6 +237,7 @@ static TZrBool test_bound_verify_stack_rooted_receiver_key_and_value(ZrLibCallCo
     return ZR_TRUE;
 }
 
+/* 在回调中主动扩栈后重新从 context 取值，检验绑定上下文不缓存悬空槽地址。 */
 static TZrBool test_bound_verify_receiver_key_and_value_then_grow_stack(ZrLibCallContext *context,
                                                                         SZrTypeValue *result) {
     SZrTypeValue *receiverValue = ZrLib_CallContext_Self(context);
@@ -266,6 +289,7 @@ static TZrBool test_bound_verify_receiver_key_and_value_then_grow_stack(ZrLibCal
     return ZR_TRUE;
 }
 
+/* 预填结果槽应作为回调输入保留；回调随后可明确覆盖为 null。 */
 static TZrBool test_bound_verify_prefilled_result_then_set_null(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *receiverValue = ZrLib_CallContext_Self(context);
     SZrTypeValue *argumentValue = ZrLib_CallContext_Argument(context, 0);
@@ -291,6 +315,7 @@ static TZrBool test_bound_verify_prefilled_result_then_set_null(ZrLibCallContext
     return ZR_TRUE;
 }
 
+/* 两实参场景先验收预填结果，再从赋值参数覆盖结果，检查槽别名契约。 */
 static TZrBool test_bound_verify_prefilled_result_then_copy_assigned_value(ZrLibCallContext *context,
                                                                            SZrTypeValue *result) {
     SZrTypeValue *receiverValue = ZrLib_CallContext_Self(context);
@@ -321,6 +346,7 @@ static TZrBool test_bound_verify_prefilled_result_then_copy_assigned_value(ZrLib
     return context->state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 只读内联绑定应借用原始 self/参数地址，避免对 GC 值做不必要的复制。 */
 static TZrBool test_bound_verify_readonly_inline_value_context_reuses_input_pointers(ZrLibCallContext *context,
                                                                                      SZrTypeValue *result) {
     SZrTypeValue *receiverValue = ZrLib_CallContext_Self(context);
@@ -347,6 +373,7 @@ static TZrBool test_bound_verify_readonly_inline_value_context_reuses_input_poin
     return ZR_TRUE;
 }
 
+/* 两实参只读内联路径也必须保留三个输入槽的地址与次序。 */
 static TZrBool test_bound_verify_readonly_inline_two_argument_value_context_reuses_input_pointers(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -379,6 +406,7 @@ static TZrBool test_bound_verify_readonly_inline_two_argument_value_context_reus
     return ZR_TRUE;
 }
 
+/* set 元方法无返回值时 result 可为空，回调仍需拿到原始输入槽。 */
 static TZrBool test_bound_verify_readonly_inline_two_argument_value_context_accepts_null_result(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -407,6 +435,7 @@ static TZrBool test_bound_verify_readonly_inline_two_argument_value_context_acce
     return ZR_TRUE;
 }
 
+/* 作为错误路径探针：专用 get 回调可用时，通用绑定回调不应被选中。 */
 static TZrBool test_bound_readonly_inline_get_fallback_should_not_run(ZrLibCallContext *context, SZrTypeValue *result) {
     gReadonlyInlineGetFallbackCallCount++;
     TEST_ASSERT_NOT_NULL(context);
@@ -415,6 +444,7 @@ static TZrBool test_bound_readonly_inline_get_fallback_should_not_run(ZrLibCallC
     return ZR_TRUE;
 }
 
+/* 作为错误路径探针：专用 set 回调可用时，通用绑定回调不应被选中。 */
 static TZrBool test_bound_readonly_inline_set_fallback_should_not_run(ZrLibCallContext *context, SZrTypeValue *result) {
     gReadonlyInlineSetFallbackCallCount++;
     ZR_UNUSED_PARAMETER(result);
@@ -422,6 +452,7 @@ static TZrBool test_bound_readonly_inline_set_fallback_should_not_run(ZrLibCallC
     return ZR_TRUE;
 }
 
+/* get 专用回调验证输入地址未变，并用计数区别于通用回退路径。 */
 static TZrBool test_direct_readonly_inline_get_fast_callback(SZrState *state,
                                                              const SZrTypeValue *selfValue,
                                                              const SZrTypeValue *argument0,
@@ -451,6 +482,7 @@ static TZrBool test_direct_readonly_inline_get_fast_callback(SZrState *state,
     return ZR_TRUE;
 }
 
+/* set 专用无结果回调验证三处输入地址未变及 GC 临时根未增加。 */
 static TZrBool test_direct_readonly_inline_set_fast_callback(SZrState *state,
                                                              const SZrTypeValue *selfValue,
                                                              const SZrTypeValue *argument0,
@@ -479,16 +511,19 @@ static TZrBool test_direct_readonly_inline_set_fast_callback(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 包装器只记录缓存分派次数，用来证明对象快路径何时绕开绑定分派器。 */
 static TZrInt64 test_wrapped_cached_stack_root_dispatch_one_argument(SZrState *state) {
     gWrappedCachedStackRootDispatchCount++;
     return native_binding_dispatch_cached_stack_root_one_argument(state);
 }
 
+/* 两实参包装器与一实参探针对应，区别缓存命中与直接分派。 */
 static TZrInt64 test_wrapped_cached_stack_root_dispatch_two_arguments(SZrState *state) {
     gWrappedCachedStackRootDispatchTwoArgumentCount++;
     return native_binding_dispatch_cached_stack_root_two_arguments(state);
 }
 
+/* 两个同模块描述符使热绑定缓存的双槽替换与闭包身份可分别观察。 */
 static const ZrLibFunctionDescriptor kBindingCacheFunctions[] = {
         {
                 .name = "probeA",
@@ -518,6 +553,7 @@ static const ZrLibFunctionDescriptor kBindingCacheFunctions[] = {
         },
 };
 
+/* 被多种闭包缓存测试借用的稳定模块身份，不承担真实插件装载职责。 */
 static const ZrLibModuleDescriptor kBindingCacheModule = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "probe.binding_cache",
@@ -539,6 +575,8 @@ static const ZrLibModuleDescriptor kBindingCacheModule = {
         .onMaterialize = ZR_NULL,
 };
 
+/* 强制 realloc 搬迁并涂毒旧块，使未恢复的栈指针在测试中可被识别。 */
+/* TODO: 旧块涂毒后未回收，且以 0x1000 地址阈值过滤指针；核查泄漏检测、哨兵约定与跨平台比较。 */
 static TZrPtr test_poisoning_allocator(TZrPtr userData,
                                        TZrPtr pointer,
                                        TZrSize originalSize,
@@ -577,6 +615,7 @@ static TZrPtr test_poisoning_allocator(TZrPtr userData,
     return newPointer;
 }
 
+/* 通过自定义分配器创建完整 VM 状态，供对象调用测试实际触发搬迁。 */
 static SZrState *test_create_state_with_poisoning_allocator(TestPoisoningAllocatorContext *context) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_poisoning_allocator, context, 12345, &callbacks);
@@ -593,6 +632,7 @@ static SZrState *test_create_state_with_poisoning_allocator(TestPoisoningAllocat
     return state;
 }
 
+/* 旧式 native ABI 从帧读取 self/参数，确认快路径在扩栈后仍传入原对象。 */
 static TZrInt64 test_native_verify_stack_rooted_receiver_and_argument(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = callInfo != ZR_NULL ? callInfo->functionBase.valuePointer : ZR_NULL;
@@ -623,6 +663,7 @@ static TZrInt64 test_native_verify_stack_rooted_receiver_and_argument(SZrState *
     return 1;
 }
 
+/* 两实参旧式 ABI 探针验证 set 调用的帧布局及参数顺序。 */
 static TZrInt64 test_native_verify_stack_rooted_receiver_key_and_value(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = callInfo != ZR_NULL ? callInfo->functionBase.valuePointer : ZR_NULL;
@@ -654,6 +695,7 @@ static TZrInt64 test_native_verify_stack_rooted_receiver_key_and_value(SZrState 
     return 1;
 }
 
+/* 在 native 帧上捕获开放 upvalue，用于验证预解析调用离开帧时执行关闭。 */
 static TZrInt64 test_native_capture_open_upvalue_and_return_int(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = callInfo != ZR_NULL ? callInfo->functionBase.valuePointer : ZR_NULL;
@@ -679,6 +721,7 @@ static TZrInt64 test_native_capture_open_upvalue_and_return_int(SZrState *state)
     return 1;
 }
 
+/* 注册待关闭实参，使预解析调用的帧退出清理可被 close 元方法观察。 */
 static TZrInt64 test_native_register_to_be_closed_argument_and_return_int(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = callInfo != ZR_NULL ? callInfo->functionBase.valuePointer : ZR_NULL;
@@ -703,6 +746,7 @@ static TZrInt64 test_native_register_to_be_closed_argument_and_return_int(SZrSta
     return 1;
 }
 
+/* close 元方法探针记录资源释放次数与资源身份。 */
 static TZrInt64 test_native_observe_close_meta_invocation(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = callInfo != ZR_NULL ? callInfo->functionBase.valuePointer : ZR_NULL;
@@ -719,6 +763,7 @@ static TZrInt64 test_native_observe_close_meta_invocation(SZrState *state) {
     return 0;
 }
 
+/* 内层 native 调用强制扩栈后返回标记值，检查嵌套帧锚点仍可恢复。 */
 static TZrInt64 test_native_return_marker_after_forced_stack_growth(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = callInfo != ZR_NULL ? callInfo->functionBase.valuePointer : ZR_NULL;
@@ -750,6 +795,7 @@ static TZrInt64 test_native_return_marker_after_forced_stack_growth(SZrState *st
     return 1;
 }
 
+/* 外层 native 回调再走通用预备调用，制造快路径与通用路径交叠的帧链。 */
 static TZrInt64 test_native_issue_nested_generic_prepared_call_and_return_marker(SZrState *state) {
     SZrCallInfo *outerCallInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase = outerCallInfo != ZR_NULL ? outerCallInfo->functionBase.valuePointer : ZR_NULL;
@@ -795,6 +841,7 @@ static TZrInt64 test_native_issue_nested_generic_prepared_call_and_return_marker
     return 1;
 }
 
+/* 绑定回调改写 self，验证缓存上下文在返回后同步重绑定的值。 */
 static TZrBool test_native_binding_rebinds_self_to_local_int(ZrLibCallContext *context, SZrTypeValue *result) {
     TEST_ASSERT_NOT_NULL(context);
     TEST_ASSERT_NOT_NULL(context->state);
@@ -806,6 +853,7 @@ static TZrBool test_native_binding_rebinds_self_to_local_int(ZrLibCallContext *c
     return ZR_TRUE;
 }
 
+/* 同时扩栈和改写 self，防止调用方从旧槽或旧地址读取重绑定值。 */
 static TZrBool test_native_binding_grows_stack_and_rebinds_self_to_local_int(ZrLibCallContext *context,
                                                                               SZrTypeValue *result) {
     TZrSize grownSize;
@@ -823,6 +871,7 @@ static TZrBool test_native_binding_grows_stack_and_rebinds_self_to_local_int(ZrL
     return ZR_TRUE;
 }
 
+/* 先验收别名 receiver 再扩栈重绑定，隔离调用输入别名与回调输出同步契约。 */
 static TZrBool test_native_binding_verifies_receiver_then_grows_stack_and_rebinds_self_to_local_int(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -855,6 +904,7 @@ static TZrBool test_native_binding_verifies_receiver_then_grows_stack_and_rebind
     return ZR_TRUE;
 }
 
+/* 交叉验证缓存的零/一/二实参绑定与固定元方法入口的参数布局。 */
 static void test_native_binding_cached_stack_root_dispatchers_match_fixed_arity_bindings(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "int", ZR_NULL}};
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "int", ZR_NULL},
@@ -938,6 +988,7 @@ static void test_native_binding_cached_stack_root_dispatchers_match_fixed_arity_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 命中绑定应填充直接分派缓存；重新绑定后旧回调不能继续生效。 */
 static void test_native_binding_cached_binding_primes_direct_dispatch_cache_and_clears_on_rebind(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "int", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -1107,6 +1158,7 @@ static void test_native_binding_cached_binding_primes_direct_dispatch_cache_and_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 重用被污染的 context 存储，防止缓存入口沿用上一次调用的槽布局。 */
 static void test_native_binding_init_cached_stack_root_context_overwrites_dirty_layout_state(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "int", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -1179,6 +1231,7 @@ static void test_native_binding_init_cached_stack_root_context_overwrites_dirty_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 从闭包恢复缓存上下文时也必须覆盖旧布局，避免跨闭包的参数别名。 */
 static void test_native_binding_init_cached_stack_root_context_from_closure_overwrites_dirty_layout_state(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "int", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -1250,10 +1303,14 @@ static void test_native_binding_init_cached_stack_root_context_from_closure_over
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 测试各自构造 VM 状态，Unity 的 setUp 不共享对象。 */
 void setUp(void) {}
 
+/* BUG: 用例中断言在末尾释放 VM 前失败时，Unity 的 TEST_PROTECT 跳过清理；空 tearDown 留下 VM 状态。
+ * 证据：tests/third_party/zr_unity/Unity/src/unity.c:2296-2304 与本文件用例末尾的 ZrCore_GlobalState_Free。 */
 void tearDown(void) {}
 
+/* helper 计数以当前线程状态为入口，用于检测通用 PreCall 等回退。 */
 static void reset_profile_counters(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -1265,6 +1322,7 @@ static void reset_profile_counters(SZrState *state, SZrProfileRuntime *profileRu
     ZrCore_Profile_SetCurrentState(state);
 }
 
+/* 故意清除 TLS 当前状态，验证计数仍能从传入 state 找到 profile。 */
 static void reset_profile_counters_from_state_only(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -1276,6 +1334,7 @@ static void reset_profile_counters_from_state_only(SZrState *state, SZrProfileRu
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 在 VM 销毁前清除指向栈上 profile 的全局/TLS 引用。 */
 static void clear_profile_counters(SZrState *state) {
     if (state != ZR_NULL && state->global != ZR_NULL) {
         state->global->profileRuntime = ZR_NULL;
@@ -1283,6 +1342,7 @@ static void clear_profile_counters(SZrState *state) {
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+/* 已知 native 对象调用强制扩栈，验证接收者和参数仍指向原值。 */
 static void test_object_call_known_native_fast_path_restores_stack_rooted_inputs_after_growth(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1362,6 +1422,7 @@ static void test_object_call_known_native_fast_path_restores_stack_rooted_inputs
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 内层调用搬迁后，外层帧边界与预留返回槽应保持可用。 */
 static void test_object_call_known_native_fast_path_restores_outer_frame_bounds_after_growth(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1454,6 +1515,7 @@ static void test_object_call_known_native_fast_path_restores_outer_frame_bounds_
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 结果写回 receiver 原槽时，native 入参必须先保持有效。 */
 static void test_object_call_known_native_fast_path_preserves_receiver_when_result_aliases_receiver_slot(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1525,6 +1587,7 @@ static void test_object_call_known_native_fast_path_preserves_receiver_when_resu
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 复用已有脏 scratch 槽时，调用结果和根必须覆盖旧值，避免残留值影响 GC。 */
 static void test_object_call_known_native_fast_path_overwrites_prefilled_future_scratch_slots(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1640,6 +1703,7 @@ static void test_object_call_known_native_fast_path_overwrites_prefilled_future_
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 非栈 GC 实参进入已知 native 路径时，仍须正确暂存且不经通用 PreCall。 */
 static void test_object_call_known_native_fast_path_accepts_non_stack_gc_inputs(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1704,6 +1768,7 @@ static void test_object_call_known_native_fast_path_accepts_non_stack_gc_inputs(
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* GC 输入借用 scratch 栈根，不应再增加浅层忽略对象计数。 */
 static void test_object_call_known_native_fast_path_reuses_stack_roots_without_repinning_shallow_gc_values(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1764,6 +1829,7 @@ static void test_object_call_known_native_fast_path_reuses_stack_roots_without_r
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 一实参公开快路径应复用根且绕开通用 PreCall helper。 */
 static void test_object_call_function_with_receiver_one_argument_fast_reuses_stack_roots_without_precall_helper(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -1855,6 +1921,7 @@ static void test_object_call_function_with_receiver_one_argument_fast_reuses_sta
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 命中绑定缓存后，对象一实参路径应直接调用回调，不经过包装分派器。 */
 static void test_object_call_native_binding_stack_root_one_argument_fast_bypasses_cached_dispatcher_wrapper(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -1977,6 +2044,7 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_bypasse
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 回调扩栈并重绑定 self 后，调用者读到的必须是新值与新栈位置。 */
 static void test_object_call_native_binding_stack_root_one_argument_fast_syncs_rebound_self_across_stack_growth(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -2082,6 +2150,7 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_syncs_r
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* receiver 与结果槽重叠且回调扩栈时，输入对象不能提前被结果覆盖。 */
 static void test_object_call_native_binding_stack_root_one_argument_fast_preserves_aliased_receiver_across_stack_growth(
         void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
@@ -2190,6 +2259,7 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_preserv
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 多次嵌套 native 调用应复用同一个 call-info 节点，不形成额外帧链。 */
 static void test_object_call_known_native_fast_path_reuses_single_nested_call_info_node(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -2298,6 +2368,7 @@ static void test_object_call_known_native_fast_path_reuses_single_nested_call_in
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* library CallValue 传入已知 native 闭包时也应走解析后的快速分派。 */
 static void test_library_call_value_known_native_path_bypasses_generic_precall_dispatcher(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -2355,6 +2426,7 @@ static void test_library_call_value_known_native_path_bypasses_generic_precall_d
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* get 元方法读取非栈 GC 输入时仍能稳定暂存接收者和 key。 */
 static void test_get_by_index_known_native_fast_path_accepts_non_stack_gc_inputs(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -2427,6 +2499,7 @@ static void test_get_by_index_known_native_fast_path_accepts_non_stack_gc_inputs
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 栈根 get 首次解析绑定后缓存直接回调，后续命中无需包装分派。 */
 static void test_get_by_index_known_native_stack_root_fast_path_caches_direct_dispatch(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -2559,6 +2632,7 @@ static void test_get_by_index_known_native_stack_root_fast_path_caches_direct_di
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 故意移除解析器侧信息，证明已缓存回调足以完成后续 get 调用。 */
 static void test_get_by_index_known_native_cached_direct_dispatch_survives_resolver_data_loss(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -2669,6 +2743,7 @@ static void test_get_by_index_known_native_cached_direct_dispatch_survives_resol
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 栈根 get 的 scratch callable 槽不应保留闭包，以免延长 GC 对象寿命。 */
 static void test_get_by_index_known_native_stack_root_fast_path_keeps_callable_scratch_slot_null(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentStackRootDescriptor = {
@@ -2777,6 +2852,7 @@ static void test_get_by_index_known_native_stack_root_fast_path_keeps_callable_s
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* get 只读内联绑定直接借用 self/key 地址，避免复制与重复固定。 */
 static void test_get_by_index_known_native_readonly_inline_fast_path_reuses_input_pointers(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentReadonlyInlineDescriptor = {
@@ -2889,6 +2965,7 @@ static void test_get_by_index_known_native_readonly_inline_fast_path_reuses_inpu
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 栈操作数版 get 只读内联入口应保持原输入槽地址。 */
 static void test_get_by_index_known_native_stack_operands_readonly_inline_fast_path_reuses_input_pointers(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentReadonlyInlineDescriptor = {
@@ -2996,6 +3073,7 @@ static void test_get_by_index_known_native_stack_operands_readonly_inline_fast_p
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* TLS 当前状态为空时，栈操作数版 get 的 helper 计数仍归属显式 state。 */
 static void
 test_get_by_index_known_native_stack_operands_readonly_inline_fast_path_records_helper_from_state_without_tls_current(
         void) {
@@ -3109,6 +3187,7 @@ test_get_by_index_known_native_stack_operands_readonly_inline_fast_path_records_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 描述符提供专用 get 回调时，应优先于通用绑定回调。 */
 static void test_get_by_index_known_native_readonly_inline_fast_path_prefers_meta_method_fast_callback(void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
     static const ZrLibMetaMethodDescriptor kOneArgumentReadonlyInlineDescriptor = {
@@ -3240,6 +3319,7 @@ static void test_get_by_index_known_native_readonly_inline_fast_path_prefers_met
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 缓存已建立后移除描述符回调指针，后续 get 仍应使用缓存的专用入口。 */
 static void test_get_by_index_known_native_readonly_inline_fast_path_keeps_cached_fast_callback_without_callback_pointer(
         void) {
     static const ZrLibParameterDescriptor kOneArgumentParameter[] = {{"key", "string", ZR_NULL}};
@@ -3362,6 +3442,7 @@ static void test_get_by_index_known_native_readonly_inline_fast_path_keeps_cache
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* set 元方法在扩栈后仍须保留栈根 receiver、key、value 的顺序与身份。 */
 static void test_set_by_index_known_native_fast_path_accepts_two_stack_rooted_arguments(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -3441,6 +3522,7 @@ static void test_set_by_index_known_native_fast_path_accepts_two_stack_rooted_ar
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 栈根 set 首次解析后缓存两实参直接回调，避开包装分派。 */
 static void test_set_by_index_known_native_stack_root_fast_path_caches_direct_dispatch(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -3572,6 +3654,7 @@ static void test_set_by_index_known_native_stack_root_fast_path_caches_direct_di
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 解析器数据失效后，set 的直接回调缓存仍应足够完成调用。 */
 static void test_set_by_index_known_native_cached_direct_dispatch_survives_resolver_data_loss(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -3677,6 +3760,7 @@ static void test_set_by_index_known_native_cached_direct_dispatch_survives_resol
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* set 的只读内联绑定允许无结果槽，仍需验证所有输入地址。 */
 static void test_set_by_index_known_native_readonly_inline_fast_path_can_ignore_result(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -3788,6 +3872,7 @@ static void test_set_by_index_known_native_readonly_inline_fast_path_can_ignore_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 栈操作数版 set 在无结果模式下仍借用原有 receiver/key/value 槽。 */
 static void test_set_by_index_known_native_stack_operands_readonly_inline_fast_path_can_ignore_result(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -3893,6 +3978,7 @@ static void test_set_by_index_known_native_stack_operands_readonly_inline_fast_p
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* TLS 当前状态为空时，栈操作数版 set 的 helper 计数仍归属显式 state。 */
 static void
 test_set_by_index_known_native_stack_operands_readonly_inline_fast_path_records_helper_from_state_without_tls_current(
         void) {
@@ -4010,6 +4096,7 @@ test_set_by_index_known_native_stack_operands_readonly_inline_fast_path_records_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 描述符提供专用 set 回调时，通用绑定回调不得执行。 */
 static void test_set_by_index_known_native_readonly_inline_fast_path_prefers_meta_method_fast_callback(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -4141,6 +4228,7 @@ static void test_set_by_index_known_native_readonly_inline_fast_path_prefers_met
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 缓存专用 set 回调后，即使描述符回调指针被清除，也继续使用缓存。 */
 static void test_set_by_index_known_native_readonly_inline_fast_path_keeps_cached_fast_callback_without_callback_pointer(
         void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
@@ -4262,6 +4350,7 @@ static void test_set_by_index_known_native_readonly_inline_fast_path_keeps_cache
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* receiver/key/value 分散于非连续栈槽时，无结果 set 仍可借用原地址。 */
 static void test_set_by_index_known_native_readonly_inline_fast_path_can_ignore_result_with_non_contiguous_stack_inputs(
         void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
@@ -4379,6 +4468,7 @@ static void test_set_by_index_known_native_readonly_inline_fast_path_can_ignore_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 栈根 set 复用 scratch 后应清空 callable 槽，避免无谓保留闭包根。 */
 static void test_set_by_index_known_native_stack_root_fast_path_keeps_callable_scratch_slot_null(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -4484,6 +4574,7 @@ static void test_set_by_index_known_native_stack_root_fast_path_keeps_callable_s
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 绑定回调扩栈后 context 重新定位栈槽，仍可读取 set 的三个输入。 */
 static void test_set_by_index_known_native_inline_value_context_survives_stack_growth(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -4610,6 +4701,7 @@ static void test_set_by_index_known_native_inline_value_context_survives_stack_g
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* set 的内联 context 接受非栈 GC 输入，且扩栈后不把它们误认为旧栈槽。 */
 static void test_set_by_index_known_native_inline_value_context_accepts_non_stack_gc_inputs(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -4712,6 +4804,7 @@ static void test_set_by_index_known_native_inline_value_context_accepts_non_stac
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 两实参公开快路径复用栈根并绕开通用 PreCall helper。 */
 static void test_object_call_function_with_receiver_two_arguments_fast_reuses_stack_roots_without_precall_helper(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -4809,6 +4902,7 @@ static void test_object_call_function_with_receiver_two_arguments_fast_reuses_st
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 直接绑定调用先传入已有结果，再允许回调显式写 null。 */
 static void test_direct_binding_one_argument_inline_value_context_preserves_prefilled_result_when_callback_writes_null(
         void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -4859,6 +4953,7 @@ static void test_direct_binding_one_argument_inline_value_context_preserves_pref
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 一实参直接绑定只读路径应原址借用 receiver 与参数。 */
 static void test_direct_binding_one_argument_readonly_inline_value_context_reuses_input_pointers(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *receiverObject;
@@ -4920,6 +5015,7 @@ static void test_direct_binding_one_argument_readonly_inline_value_context_reuse
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 有所有权的栈根参数仍可在只读绑定中原址借用，避免重复复制。 */
 static void test_direct_binding_one_argument_readonly_inline_value_context_reuses_stack_rooted_owned_argument(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *receiverObject;
@@ -4987,6 +5083,7 @@ static void test_direct_binding_one_argument_readonly_inline_value_context_reuse
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 两实参直接绑定在回调复制 value 前必须保留已有结果槽。 */
 static void
 test_direct_binding_two_arguments_inline_value_context_preserves_prefilled_result_when_callback_copies_argument(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -5041,6 +5138,7 @@ test_direct_binding_two_arguments_inline_value_context_preserves_prefilled_resul
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 两实参直接绑定只读路径保留 receiver/key/value 原地址。 */
 static void test_direct_binding_two_arguments_readonly_inline_value_context_reuses_input_pointers(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *receiverObject;
@@ -5107,6 +5205,7 @@ static void test_direct_binding_two_arguments_readonly_inline_value_context_reus
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 非连续且有所有权的栈槽也可用于两实参只读直接绑定。 */
 static void test_direct_binding_two_arguments_readonly_inline_value_context_reuses_non_contiguous_owned_input_pointers(
         void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -5186,6 +5285,7 @@ static void test_direct_binding_two_arguments_readonly_inline_value_context_reus
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 两实参对象调用命中直接绑定后，不应再进入缓存包装分派器。 */
 static void test_object_call_native_binding_stack_root_two_arguments_fast_bypasses_cached_dispatcher_wrapper(void) {
     static const ZrLibParameterDescriptor kTwoArgumentParameters[] = {{"key", "string", ZR_NULL},
                                                                       {"value", "int", ZR_NULL}};
@@ -5313,6 +5413,7 @@ static void test_object_call_native_binding_stack_root_two_arguments_fast_bypass
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* set 的已知 native 快路径也能暂存非栈 GC 输入并在搬迁后保值。 */
 static void test_set_by_index_known_native_fast_path_accepts_non_stack_gc_inputs(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -5384,6 +5485,7 @@ static void test_set_by_index_known_native_fast_path_accepts_non_stack_gc_inputs
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 预解析调用没有 callable 栈值时，扩栈后仍要恢复 receiver/参数槽。 */
 static void test_precall_resolved_native_function_restores_stack_rooted_arguments_after_growth_without_callable_value(
         void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
@@ -5456,6 +5558,7 @@ static void test_precall_resolved_native_function_restores_stack_rooted_argument
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 预解析 native 帧退出前须关闭捕获的开放 upvalue。 */
 static void test_call_prepared_resolved_native_function_closes_frame_open_upvalues(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer functionBase;
@@ -5507,6 +5610,7 @@ static void test_call_prepared_resolved_native_function_closes_frame_open_upvalu
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 预解析 native 帧退出应触发待关闭值的 close 元方法一次。 */
 static void test_call_prepared_resolved_native_function_closes_frame_to_be_closed_values(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrClosureNative *closeClosure;
@@ -5583,6 +5687,7 @@ static void test_call_prepared_resolved_native_function_closes_frame_to_be_close
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 单结果调用在嵌套与扩栈时复用 call-info 节点并保留外层帧链。 */
 static void test_call_prepared_resolved_native_function_single_result_fast_reuses_nested_call_info_node(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -5667,6 +5772,7 @@ static void test_call_prepared_resolved_native_function_single_result_fast_reuse
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 单结果快路径应把结果写回指定栈目标，外层帧布局不被内层覆盖。 */
 static void test_call_prepared_resolved_native_function_single_result_fast_supports_stack_return_destination(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -5728,6 +5834,7 @@ static void test_call_prepared_resolved_native_function_single_result_fast_suppo
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* 普通堆对象已有稳定身份，绑定准备阶段不应克隆或转移释放责任。 */
 static void test_native_binding_prepare_stable_value_reuses_plain_heap_object_without_release(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -5753,6 +5860,7 @@ static void test_native_binding_prepare_stable_value_reuses_plain_heap_object_wi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* struct 的绑定快照必须克隆并标记临时值释放责任。 */
 static void test_native_binding_prepare_stable_value_clones_struct_and_marks_release(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *prototypeName;
@@ -5785,6 +5893,7 @@ static void test_native_binding_prepare_stable_value_clones_struct_and_marks_rel
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* detached GC 值必须被识别，防止把无根对象当作安全借用输入。 */
 static void test_native_binding_detects_detached_gc_owned_values(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -5814,6 +5923,7 @@ static void test_native_binding_detects_detached_gc_owned_values(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 栈根回调通道返回时把重绑定 self 写回调用者可见槽。 */
 static void test_native_binding_stack_root_callback_lane_syncs_rebound_self_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TZrStackValuePointer functionBase;
@@ -5871,6 +5981,7 @@ static void test_native_binding_stack_root_callback_lane_syncs_rebound_self_valu
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同步重绑定 self 时考虑回调扩栈后的新槽地址。 */
 static void test_native_binding_stack_root_callback_lane_syncs_rebound_self_value_across_stack_growth(void) {
     TestPoisoningAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_poisoning_allocator(&allocatorContext);
@@ -5933,6 +6044,7 @@ static void test_native_binding_stack_root_callback_lane_syncs_rebound_self_valu
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 热闭包查找升入双槽缓存，交错命中时保留各自的描述符身份。 */
 static void test_native_registry_find_binding_promotes_hot_closures_into_two_slot_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrLibrary_NativeRegistryState *registry;
@@ -6012,6 +6124,7 @@ static void test_native_registry_find_binding_promotes_hot_closures_into_two_slo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* inline span 必须指向当前调用帧的连续参数载荷。 */
 static void test_native_call_context_inline_argument_span_points_at_frame_payload(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrLibCallContext context;
@@ -6066,6 +6179,7 @@ static void test_native_call_context_inline_argument_span_points_at_frame_payloa
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 经 native 分派进入回调后，inline span 取自本次帧元数据而非旧缓存。 */
 static void test_native_dispatch_callback_inline_argument_span_uses_current_frame_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -6165,6 +6279,7 @@ static void test_native_dispatch_callback_inline_argument_span_uses_current_fram
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 直接绑定回调按描述符进入 no-safepoint 模式，并在返回后恢复 GC 域状态。 */
 static void test_direct_binding_callback_uses_descriptor_no_safepoint_mode(void) {
     static const ZrLibMethodDescriptor kDescriptor = {
             .name = "critical",
@@ -6204,6 +6319,7 @@ static void test_direct_binding_callback_uses_descriptor_no_safepoint_mode(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 只读专用回调按描述符进入 blocking-detached 模式，并在返回后恢复 GC 域状态。 */
 static void test_readonly_direct_fast_callback_uses_descriptor_blocking_mode(void) {
     static const ZrLibMetaMethodDescriptor kDescriptor = {
             .metaType = ZR_META_GET_ITEM,
@@ -6263,6 +6379,8 @@ static void test_readonly_direct_fast_callback_uses_descriptor_blocking_mode(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: 此入口含全部 RUN_TEST，但 tests/CMakeLists.txt:425 只建目标，core_runtime 列表:6563 未收入该目标；
+ * zr_vm_add_unity_test_target 不注册 CTest，故常规 ctest 不会执行这些快路径回归。 */
 int main(void) {
     UNITY_BEGIN();
 

@@ -17,6 +17,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 函数对象析构会接管指令内存，夹具按运行时分配器创建一条可追踪的入口指令。
 static TZrInstruction *test_tail_reuse_assign_owned_instructions(SZrState *state,
                                                                  SZrFunction *function) {
     TZrInstruction *instructions;
@@ -34,6 +35,7 @@ static TZrInstruction *test_tail_reuse_assign_owned_instructions(SZrState *state
     return instructions;
 }
 
+// 内联槽析构读取编译期原型元数据；测试按生产二进制布局提供最小结构体字段描述。
 static TZrUInt32 test_tail_reuse_write_compiled_prototype_data(TZrByte *buffer,
                                                                TZrUInt32 bufferSize,
                                                                const SZrCompiledPrototypeInfo *prototype,
@@ -60,6 +62,7 @@ static TZrUInt32 test_tail_reuse_write_compiled_prototype_data(TZrByte *buffer,
     return cursor;
 }
 
+// 为当前调用帧安装含托管值的内联槽，使尾调用复用路径必须先执行旧帧析构。
 static void test_tail_reuse_install_managed_inline_frame_metadata(SZrState *state,
                                                                   SZrFunction *function,
                                                                   TZrUInt32 stackSlot,
@@ -121,6 +124,7 @@ static void test_tail_reuse_install_managed_inline_frame_metadata(SZrState *stat
     function->prototypeCount = 1u;
 }
 
+// 尾调用复用同一 CallInfo 时，调试陷阱、yield 传输范围及栈容量缓存不可泄漏给被调函数。
 static void test_tail_reuse_reinitializes_reused_callinfo_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *currentFunction;
@@ -214,6 +218,7 @@ static void test_tail_reuse_reinitializes_reused_callinfo_state(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 覆盖旧帧存储前应析构内联值，否则尾调用会遗留其托管引用和所有权状态。
 static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *currentFunction;
@@ -292,6 +297,7 @@ static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已存在的零捕获闭包仍有独立对象身份；复用帧不能把它替换成函数缓存的另一个对象。
 static void test_tail_reuse_with_existing_vm_closure_keeps_callable_object_and_cache_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *currentFunction;
@@ -362,6 +368,8 @@ static void test_tail_reuse_with_existing_vm_closure_keeps_callable_object_and_c
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// TODO: function.c:3906-3916 先准备 callable 再拒绝内联参数；本用例只验证 CallInfo/栈边界未变。
+// 拒绝前函数槽已物化为零捕获闭包；需核对返回 false 后调用方能否接受该副作用。
 static void test_tail_reuse_declines_inline_parameter_callee_until_layout_move_is_available(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *currentFunction;

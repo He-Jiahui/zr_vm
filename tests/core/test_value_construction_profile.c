@@ -10,6 +10,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
+// 帮助函数计数依赖全局配置和当前线程状态，两处必须指向同一测试运行时。
 static void enable_helper_profile(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -21,6 +22,7 @@ static void enable_helper_profile(SZrState *state, SZrProfileRuntime *profileRun
     ZrCore_Profile_SetCurrentState(state);
 }
 
+// profileRuntime 借用测试栈内对象，状态销毁前必须同时解绑全局指针和 TLS 当前状态。
 static void disable_helper_profile(SZrState *state) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -29,6 +31,7 @@ static void disable_helper_profile(SZrState *state) {
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 }
 
+// 内存指标使用独立开关；用例以此确认其不隐式打开帮助函数计数。
 static void enable_memory_profile(SZrState *state, SZrProfileRuntime *profileRuntime) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -45,6 +48,7 @@ static void test_value_construction_helper_has_stable_profile_name(void) {
                              ZrCore_Profile_HelperKindName(ZR_PROFILE_HELPER_VALUE_CONSTRUCT));
 }
 
+// profile 枚举值是统计输出契约；追加新计数项不能改变已有索引。
 static void test_value_construction_helper_appends_without_renumbering_existing_helpers(void) {
     TEST_ASSERT_EQUAL_INT(0, ZR_PROFILE_HELPER_VALUE_COPY);
     TEST_ASSERT_EQUAL_INT(1, ZR_PROFILE_HELPER_VALUE_RESET_NULL);
@@ -57,6 +61,7 @@ static void test_value_construction_helper_appends_without_renumbering_existing_
     TEST_ASSERT_EQUAL_INT(8, ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
 }
 
+// 公开初始化接口和快速设值宏应汇入同一个构造计数，空值重置另行计数。
 static void test_value_construction_profile_counts_public_materialization_paths(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -138,6 +143,7 @@ static void test_memory_metric_names_are_stable(void) {
     }
 }
 
+// TLS 当前状态和显式状态路径应写入同一计数器，且必须受 recordMemory 开关控制。
 static void test_memory_metrics_accumulate_only_when_enabled(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrProfileRuntime profileRuntime;
@@ -161,6 +167,7 @@ static void test_memory_metrics_accumulate_only_when_enabled(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 暂停样本环可覆盖旧样本，但全量次数、总耗时及最大值不可随覆盖丢失。
 static void test_pause_samples_use_a_bounded_ring(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrProfileRuntime profileRuntime;
@@ -212,6 +219,7 @@ static void test_managed_object_allocation_records_count_and_bytes(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 值复制字节数属于内存指标；只启用内存计数不应增加帮助函数调用数。
 static void test_value_copy_records_bytes_without_enabling_helper_counts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrProfileRuntime profileRuntime;
@@ -233,6 +241,7 @@ static void test_value_copy_records_bytes_without_enabling_helper_counts(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 已绑定数组的原始整数快速读取需要单独计入命中指标，以便区分节点物化路径。
 static void test_bound_raw_int_get_records_hit(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrProfileRuntime profileRuntime;

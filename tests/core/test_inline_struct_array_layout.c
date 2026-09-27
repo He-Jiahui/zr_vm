@@ -10,18 +10,22 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/type_layout.h"
 
+// 自定义析构回调记录元素地址和次序，验证数组释放时按逆序清理且只清理一次。
 typedef struct TestInlineArrayDropRecord {
     const TZrByte *elementAddresses[2];
     TZrUInt32 order[2];
     TZrUInt32 count;
 } TestInlineArrayDropRecord;
 
+// 布局驱动的 GC 访问结果借用元素值槽地址，仅在数组存活期间使用。
 typedef struct TestInlineArrayGcVisit {
     SZrTypeValue *values[2];
     TZrUInt32 count;
 } TestInlineArrayGcVisit;
 
+// 外部存储不在对象本体内，GC 只能经 owner 的 trace 回调发现此值。
 static SZrTypeValue gExternalTracedValue;
+// trace/finalize 次数在同一用例中重置，分别监测存活期扫描和失根后的终结。
 static TZrUInt32 gExternalTraceCount;
 static TZrUInt32 gExternalFinalizeCount;
 
@@ -29,6 +33,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+// 由 TypeLayout 的 customDrop 间接调用；仅记录受测数组的两个元素。
 static void test_inline_array_drop(
         SZrState *state,
         TZrPtr storage,
@@ -48,6 +53,7 @@ static void test_inline_array_drop(
     }
 }
 
+// 由 VisitInlineArrayGcValues 间接调用，用于区分可扫描布局和无需扫描的布局。
 static void test_inline_array_visit_gc_value(
         SZrState *state,
         SZrTypeValue *value,
@@ -62,6 +68,7 @@ static void test_inline_array_visit_gc_value(
     visit->values[visit->count++] = value;
 }
 
+// 只有完整验证、哈希一致且不含嵌套引用的布局才可跳过 GC 扫描。
 static void test_inline_struct_array_skips_verified_non_gc_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function;
@@ -135,6 +142,7 @@ static void test_inline_struct_array_skips_verified_non_gc_layout(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// GC 经 owner 的 trace 函数扫描外部托管值；全局槽用于跨移动观察刷新后的指针。
 static void test_external_storage_trace(
         SZrState *state,
         SZrRawObject *owner,
@@ -146,6 +154,7 @@ static void test_external_storage_trace(
     visitor(state, &gExternalTracedValue, userData);
 }
 
+// owner 最终失去根后才应触发终结；先前的增量完整收集不得过早执行此回调。
 static void test_external_storage_finalize(
         SZrState *state,
         SZrRawObject *owner) {
@@ -154,6 +163,7 @@ static void test_external_storage_finalize(
     gExternalFinalizeCount++;
 }
 
+// AOT 注册表是内联元素步长、GC 映射与析构策略的共同来源；节点映射不得替代它。
 static void test_inline_struct_array_uses_registry_layout_for_gc_and_drop(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function;
@@ -243,6 +253,7 @@ static void test_inline_struct_array_uses_registry_layout_for_gc_and_drop(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 根住 owner、经回调保留 child，再转向年轻代对象；屏障和次代 GC 都须维护外部引用。
 static void test_external_closed_storage_trace_survives_full_compaction(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *owner;

@@ -3,6 +3,8 @@
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_core/value.h"
 
+/* 这些定义对应 execution_internal.h 的私有操作编号，测试经链接直接进入数值分派。
+ * TODO: 若内部枚举调整，需核对本地镜像与实现的编号是否仍一致。 */
 typedef enum EZrExecutionNumericCompareOp {
     ZR_EXEC_NUMERIC_COMPARE_GREATER = 0,
     ZR_EXEC_NUMERIC_COMPARE_LESS,
@@ -44,6 +46,9 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 混合运算的共同前提：bool 转 0/1，整数保留符号；结果用于 add/mul 的快路径。 */
+/* TODO: 用例只有小整数；execution_numeric.c 将高位 uint64 转成 int64 并直接做有符号算术。
+ * 需先核对语言的越界语义，再补 UINT64_MAX / INT64_MAX 附近的回归。 */
 static void test_value_to_int64_converts_integral_and_bool_inputs(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue unsignedValue;
@@ -158,6 +163,7 @@ static void test_execution_try_builtin_mul_mixed_float_and_bool_returns_double_p
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 两个 bool 不在混合数值乘法快路径内，需保留给后续通用语义处理。 */
 static void test_execution_try_builtin_mul_rejects_bool_bool_pair(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue leftValue;
@@ -176,6 +182,7 @@ static void test_execution_try_builtin_mul_rejects_bool_bool_pair(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 直接检查解释器比较分支的跨类型输入转换与 bool 输出契约。 */
 static void test_execution_apply_binary_numeric_compare_mixed_uint_and_bool_returns_true(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue leftValue;
@@ -224,6 +231,7 @@ static void test_execution_apply_binary_numeric_compare_mixed_float_and_bool_ret
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 浮点回退应与内建加法的 bool 转换一致，且结果统一标为 double。 */
 static void test_execution_try_binary_numeric_float_fallback_add_mixed_float_and_bool_returns_double_sum(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue leftValue;
@@ -273,6 +281,8 @@ static void test_execution_try_binary_numeric_float_fallback_mod_mixed_uint_and_
 }
 
 int main(void) {
+    /* BUG: tests/CMakeLists.txt 创建此目标但没有把它加入常规 CTest 套件；
+     * ctest -N 仅登记 core_runtime 等套件，混合数值回归不会自动执行。 */
     UNITY_BEGIN();
 
     RUN_TEST(test_value_to_int64_converts_integral_and_bool_inputs);
