@@ -21,6 +21,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+/* C++ 与 C 构建共用 TryRun 契约；底层展开方式不同，恢复点都只在当前线程栈帧有效。 */
 #if defined(__cplusplus) && !defined(ZR_EXCEPTION_WITH_LONG_JUMP)
 #define ZR_EXCEPTION_NATIVE_THROW(state, context) throw(context)
 #define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
@@ -47,10 +48,12 @@
 
 /* Stack traces expose 0 as "no mapped source line" instead of the debug-hook-only 0xFFFFFFFF sentinel. */
 #define ZR_EXCEPTION_SOURCE_LINE_NONE ((TZrUInt32)0u)
+/* 非托管诊断暂存区有固定上限，格式化失败时上层仍可返回状态。 */
 #define ZR_EXCEPTION_TRACEBACK_BUFFER_SIZE 4096u
 
 static const TZrChar kZrExceptionDefaultRuntimeStatusFaultMessage[] = "Runtime status fault";
 
+/* 错误对象字段由宿主字符串键写入，供解释器和 AOT 的统一 catch/诊断路径读取。 */
 static void exception_set_object_field_cstring(SZrState *state,
                                                SZrObject *object,
                                                const TZrChar *fieldName,
@@ -92,6 +95,7 @@ static const SZrTypeValue *exception_get_object_field_cstring(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/* 栈帧列表使用运行时数组对象，Error.stacks 可继续交给用户代码检查。 */
 static SZrObject *exception_new_array(SZrState *state) {
     SZrObject *array;
 
@@ -120,6 +124,7 @@ static TZrBool exception_array_push_value(SZrState *state, SZrObject *array, con
     return ZR_TRUE;
 }
 
+/* 类型化 catch 和原生错误名都从全局 zr 对象查原型，而不是按字符串直接比较。 */
 static SZrObjectPrototype *exception_lookup_prototype(SZrState *state, SZrString *typeName) {
     SZrObject *zrObject;
     SZrTypeValue key;
@@ -175,6 +180,7 @@ static TZrBool exception_prototype_inherits(SZrObjectPrototype *prototype, SZrOb
     return ZR_FALSE;
 }
 
+/* 已是 Error 子类的抛出值可以保留原型与用户字段，不再包一层 Error。 */
 static TZrBool exception_value_is_error_object(SZrState *state, const SZrTypeValue *value) {
     SZrObject *object;
 
@@ -191,6 +197,7 @@ static TZrBool exception_value_is_error_object(SZrState *state, const SZrTypeVal
     return exception_prototype_inherits(object->prototype, state->global->errorPrototype);
 }
 
+/* 原生错误时栈顶未必是诊断载荷，只接受字符串或 Error，避免误报普通对象。 */
 static const SZrTypeValue *exception_normalize_status_stack_payload(struct SZrState *state,
                                                                     const SZrTypeValue *payload) {
     if (payload == ZR_NULL) {
@@ -213,6 +220,7 @@ static const SZrTypeValue *exception_normalize_status_stack_payload(struct SZrSt
     return ZR_NULL;
 }
 
+/* 将线程状态映射到公开 Error 原型；不存在特化原型时退回基础 Error。 */
 static SZrObjectPrototype *exception_status_prototype(SZrState *state, EZrThreadStatus status) {
     SZrObjectPrototype *prototype = ZR_NULL;
 
@@ -278,6 +286,7 @@ static void exception_set_message_field_from_value(SZrState *state, SZrObject *o
     exception_set_object_field_cstring(state, object, "message", &messageValue);
 }
 
+/* 从抛出点遍历调用链，把函数、源行和指令偏移物化成 Error.stacks。 */
 static SZrObject *exception_capture_stack_frames(SZrState *state, SZrCallInfo *throwCallInfo) {
     SZrObject *frames;
     SZrCallInfo *callInfo;
@@ -347,6 +356,7 @@ static SZrObject *exception_capture_stack_frames(SZrState *state, SZrCallInfo *t
     return frames;
 }
 
+/* 为解释器、AOT 和日志共享的 Error 对象填充 message、exception 与两种栈轨迹。 */
 static TZrBool exception_apply_error_fields(SZrState *state,
                                             SZrObject *errorObject,
                                             const SZrTypeValue *messageSource,
@@ -425,6 +435,7 @@ static const SZrTypeValue *exception_error_message_source(SZrState *state,
     return messageValue;
 }
 
+/* 当前异常值保存在 state 中，供异常调度和宿主在 TryRun 返回后读取。 */
 static TZrBool exception_set_current_error_object(SZrState *state, SZrObject *errorObject, EZrThreadStatus status) {
     if (state == ZR_NULL || errorObject == ZR_NULL) {
         return ZR_FALSE;
@@ -437,6 +448,7 @@ static TZrBool exception_set_current_error_object(SZrState *state, SZrObject *er
     return ZR_TRUE;
 }
 
+/* 原生状态错误没有显式 throw 值时创建统一 Error；内存错误可借用预建消息。 */
 static TZrBool exception_create_status_error(SZrState *state,
                                              EZrThreadStatus status,
                                              const SZrTypeValue *payload,
@@ -529,6 +541,7 @@ TZrBool ZrCore_Exception_RaiseNamedRuntimeError(
             state, errorObject, ZR_THREAD_STATUS_RUNTIME_ERROR);
 }
 
+/* 恢复点嵌套在当前线程栈上；Throw 的非局部跳转只回到最内层 TryRun。 */
 EZrThreadStatus ZrCore_Exception_TryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
     TZrUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
     SZrExceptionLongJump exceptionLongJump;
@@ -546,6 +559,7 @@ static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode)
     ZrCore_Exception_Throw(state, errorCode);
 }
 
+/* 抛出首先回当前线程的恢复点；没有恢复点的 worker 尝试向主线程转发。 */
 void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
     if (state->exceptionRecoverPoint != ZR_NULL) {
         /*
@@ -555,6 +569,7 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
          * Debug_RunError already normalizes; this covers raw Throw sites and keeps threadStatus
          * consistent with exceptionLongJump.status.
          */
+        /* BUG: 持续 OOM 时 NormalizeStatus 再次分配 Error，GcMalloc 重新 Throw，尚未 longjmp 即无限递归。 */
         if (!state->hasCurrentException &&
             (errorCode == ZR_THREAD_STATUS_RUNTIME_ERROR || errorCode == ZR_THREAD_STATUS_EXCEPTION_ERROR ||
              errorCode == ZR_THREAD_STATUS_MEMORY_ERROR)) {
@@ -570,6 +585,7 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
         ZR_ABORT();
     }
 
+    /* BUG: ResetThread 清除 worker 的 currentException 和标记，随后复制到 main 会丢失原始错误对象。 */
     if (state != state->global->mainThreadState) {
         errorCode = ZrCore_State_ResetThread(state, errorCode);
         state->threadStatus = errorCode;
@@ -588,12 +604,14 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
     ZR_ABORT();
 }
 
+/* TODO: 目前只回传 status，不按 level 停止嵌套层；需与 State_TryRun 的调用目标核对。 */
 EZrThreadStatus ZrCore_Exception_TryStop(SZrState *state, TZrMemoryOffset level, EZrThreadStatus status) {
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(level);
     return status;
 }
 
+/* 把线程当前异常或最后的栈顶载荷移至调用结果槽，随后恢复 VM 栈顶。 */
 void ZrCore_Exception_MarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackValuePointer previousTop) {
     if (state == ZR_NULL || previousTop == ZR_NULL) {
         return;
@@ -635,6 +653,7 @@ void ZrCore_Exception_ClearCurrent(struct SZrState *state) {
     state->hasCurrentException = ZR_FALSE;
 }
 
+/* 解释器/AOT 抛出任意值时，在当前线程保存可供 catch 检查的 Error 对象。 */
 TZrBool ZrCore_Exception_NormalizeThrownValue(struct SZrState *state,
                                               const SZrTypeValue *payload,
                                               struct SZrCallInfo *throwCallInfo,
@@ -676,6 +695,7 @@ TZrBool ZrCore_Exception_NormalizeThrownValue(struct SZrState *state,
     return exception_set_current_error_object(state, errorObject, status);
 }
 
+/* 原生失败状态在宿主边界也需对应 Error 对象，已有异常则沿用该对象。 */
 TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state, EZrThreadStatus status) {
     const SZrTypeValue *payload = ZR_NULL;
     SZrCallInfo *throwCallInfo;
@@ -699,6 +719,7 @@ TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state, EZrThreadStatus
     return exception_create_status_error(state, status, payload, throwCallInfo);
 }
 
+/* 类型化 catch 使用原型继承关系；未知类型当前退回基础 Error。 */
 TZrBool ZrCore_Exception_CatchMatchesTypeName(struct SZrState *state,
                                               const SZrTypeValue *errorValue,
                                               struct SZrString *typeName) {
@@ -715,6 +736,7 @@ TZrBool ZrCore_Exception_CatchMatchesTypeName(struct SZrState *state,
     }
 
     expectedPrototype = typeName != ZR_NULL ? exception_lookup_prototype(state, typeName) : state->global->errorPrototype;
+    /* TODO: 有注解但原型未找到时会匹配所有 Error；需验证编译阶段是否必然拒绝未知类型。 */
     if (expectedPrototype == ZR_NULL) {
         expectedPrototype = state->global->errorPrototype;
     }
@@ -722,6 +744,7 @@ TZrBool ZrCore_Exception_CatchMatchesTypeName(struct SZrState *state,
     return exception_prototype_inherits(errorObject->prototype, expectedPrototype);
 }
 
+/* 调试位置表按指令顺序组织，异常与 AOT 诊断共享此最近前驱查找。 */
 TZrUInt32 ZrCore_Exception_FindSourceLine(struct SZrFunction *function, TZrMemoryOffset instructionOffset) {
     TZrUInt32 bestLine = ZR_EXCEPTION_SOURCE_LINE_NONE;
 
@@ -740,12 +763,14 @@ TZrUInt32 ZrCore_Exception_FindSourceLine(struct SZrFunction *function, TZrMemor
     return bestLine;
 }
 
+/* 未捕获异常的可增长宿主文本缓冲区，最终由 PrintUnhandled/LogUnhandled 释放。 */
 typedef struct SZrExceptionTextBuilder {
     TZrChar *buffer;
     TZrSize length;
     TZrSize capacity;
 } SZrExceptionTextBuilder;
 
+/* 按需要扩充诊断文本；失败时保留旧缓冲区供调用方释放。 */
 static TZrBool exception_text_builder_reserve(SZrExceptionTextBuilder *builder, TZrSize requiredLength) {
     TZrChar *newBuffer;
     TZrSize newCapacity;
@@ -819,6 +844,7 @@ static TZrBool exception_text_builder_appendf(SZrExceptionTextBuilder *builder, 
     return ZR_TRUE;
 }
 
+/* 把 Error 对象或普通抛出值转换成宿主可输出文本；返回 malloc 缓冲区。 */
 static TZrChar *exception_format_unhandled_text(struct SZrState *state, const SZrTypeValue *errorValue) {
     SZrObject *errorObject;
     const SZrTypeValue *messageValue;

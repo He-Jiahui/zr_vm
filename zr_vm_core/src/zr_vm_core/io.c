@@ -11,9 +11,12 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 
+/* 源树原生数组统一记入 IO 内存类别；释放源树时由 io_source_free.c 对称回收。 */
 #define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrCore_Memory_RawMallocWithType(GLOBAL, (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
 #define ZR_IO_FREE_NATIVE_DATA(GLOBAL, DATA, SIZE)                                                                     \
     ZrCore_Memory_RawFreeWithType(GLOBAL, (DATA), (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
+/* 宿主读取回调可阻塞或进入外部代码；线程锁宏在启用锁的配置下临时让出锁，返回缓冲区仅借用。 */
+/* TODO: 若 io->read 在启用线程锁时 Throw，后续重新加锁被跳过；需核查宿主回调的异常约束和外层恢复路径。 */
 static TZrBool io_refill(SZrIo *io) {
     SZrState *state = io->state;
     TZrSize readSize = 0;
@@ -42,6 +45,8 @@ static TZrInt32 io_read_char(SZrIo *io) {
     return c;
 }
 
+/* 二进制协议当前直接采用宿主原生宽度；上层必须检查短读及文件头兼容性。 */
+/* BUG: 模块名短读后继续读取 md5 长度时，粘滞错误使 Read 返回零且不写目标，size 未初始化却用于后续分配；其余标量读取器同类。 */
 static ZR_FORCE_INLINE TZrSize io_read_size(SZrIo *io) {
     TZrSize size;
     ZrCore_Io_Read(io, (TZrBytePtr) &size, sizeof(size));
@@ -66,11 +71,14 @@ static ZR_FORCE_INLINE TZrUInt64 io_read_u_int(SZrIo *io) {
     return value;
 }
 
+/* 两类标量读取宏均依赖 SZrIo 的粘滞错误位，由最外层统一判定截断。 */
 #define ZR_IO_READ_RAW(IO, VALUE, SIZE) ZrCore_Io_Read(IO, &(VALUE), SIZE);
 
 #define ZR_IO_READ_NATIVE_TYPE(IO, DATA, TYPE) ZrCore_Io_Read(IO, (TZrBytePtr) & (DATA), sizeof(TYPE))
 
 
+/* 临时原生字符串只用于创建 GC 字符串，不转交给源树或加载器。 */
+/* BUG: 不可信长度 SIZE_MAX 使 length+1 回绕，随后终止符写入越界；分配失败也会解引用空指针。入口为 ReadSourceNew。 */
 static SZrString *io_read_string_with_length(SZrIo *io) {
     SZrGlobalState *global = io->state->global;
     TZrSize length = io_read_size(io);
@@ -85,6 +93,7 @@ static SZrString *io_read_string_with_length(SZrIo *io) {
     return string;
 }
 
+/* 依赖项名字和摘要均转成 GC 字符串，数组所有权保留在模块源树。 */
 static void io_read_imports(SZrIo *io, SZrIoImport *imports, TZrSize count) {
     // SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
@@ -96,6 +105,7 @@ static void io_read_imports(SZrIo *io, SZrIoImport *imports, TZrSize count) {
 
 static void io_read_typed_value(SZrIo *io, SZrTypeValue *value);
 
+/* 反序列化的纯值进入运行时值容器时恢复 GC 可追踪的对象引用。 */
 static void io_init_value_from_pure(struct SZrState *state,
                                     EZrValueType type,
                                     const TZrPureValue *pure,
@@ -160,6 +170,7 @@ static void io_init_value_from_pure(struct SZrState *state,
     }
 }
 
+/* 值的解码由序列化类型判别，调用方须已从对应字段读得类型。 */
 static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
     SZrState *state;
 
@@ -248,7 +259,7 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
             value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject);
         } break;
         default: {
-            // todo:
+            /* TODO: 未识别的值类型未设置错误位；需核对写入器允许的枚举集合和畸形类型的拒绝路径。 */
         } break;
     }
 }
@@ -353,6 +364,7 @@ static void io_read_function_constant_variables(SZrIo *io, SZrIoFunctionConstant
             ZR_IO_READ_NATIVE_TYPE(io, variable->hasFunctionValue, TZrBool);
             if (variable->hasFunctionValue) {
                 variable->functionValue = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
+                /* BUG: 函数常量分配失败时直接进入 io_read_functions，后者解引用空的 functionValue。 */
                 io_read_functions(io, variable->functionValue, 1);
             }
         } else {
@@ -515,6 +527,7 @@ static void io_read_function_typed_export_generic_parameters(
     }
 }
 
+/* 类型化导出携带签名 token、约束与参数侧表，保持与写入器的字段顺序一致。 */
 static void io_read_function_typed_export_symbols(SZrIo *io,
                                                   SZrIoFunctionTypedExportSymbol *symbols,
                                                   TZrSize count) {
@@ -584,6 +597,7 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
     }
 }
 
+/* token 记录表依赖版本化行协议；上层在整体模型完成后才将索引交给运行时。 */
 static void io_read_metadata_token_record_list(SZrIo *io,
                                                TZrSize *outRecordLength,
                                                SZrMetadataTokenRecord **outRecords) {
@@ -660,6 +674,7 @@ static void io_read_metadata_token_record_list(SZrIo *io,
     }
 }
 
+/* 模块绑定行将 token 与声明关系保留到运行时链接阶段。 */
 static void io_read_module_metadata_binding_list(SZrIo *io,
                                                  TZrSize *outBindingLength,
                                                  SZrMetadataTokenBinding **outBindings) {
@@ -717,6 +732,7 @@ static void io_read_module_metadata_binding_list(SZrIo *io,
     }
 }
 
+/* 签名中的字符串索引依赖此堆，必须与 token 表的版本及条目边界一致。 */
 static void io_read_metadata_string_heap(SZrIo *io,
                                          TZrSize *outStringHeapLength,
                                          SZrMetadataStringHeapEntry **outStringHeap) {
@@ -746,6 +762,7 @@ static void io_read_metadata_string_heap(SZrIo *io,
     }
 }
 
+/* token 表、签名堆及模块绑定属于同一版本化模型，后续运行时复制时必须成组解释。 */
 static void io_read_function_metadata_token_model(SZrIo *io, SZrIoFunction *function) {
     SZrGlobalState *global;
 
@@ -813,6 +830,7 @@ static void io_read_function_metadata_token_model(SZrIo *io, SZrIoFunction *func
     }
 }
 
+/* 作用约束与模块版本区间构成同一摘要，供能力检查使用。 */
 static void io_read_function_module_effects(SZrIo *io,
                                             SZrIoFunctionModuleEffect *effects,
                                             TZrSize count) {
@@ -905,6 +923,7 @@ static void io_read_function_top_level_callable_bindings(SZrIo *io,
     }
 }
 
+/* 参数默认值和装饰器值可能嵌套函数源树，必须与释放器的递归所有权一致。 */
 static void io_read_function_metadata_parameters(SZrIo *io,
                                                  SZrIoFunctionMetadataParameter **outParameters,
                                                  TZrSize *outCount) {
@@ -967,6 +986,7 @@ static void io_read_function_metadata_parameters(SZrIo *io,
     }
 }
 
+/* 编译期变量路径绑定是分析元数据，加载后仍需复制以保留跨模块诊断身份。 */
 static void io_read_function_compile_time_variable_infos(SZrIo *io,
                                                          SZrIoFunctionCompileTimeVariableInfo *infos,
                                                          TZrSize count) {
@@ -1034,6 +1054,7 @@ static void io_read_function_escape_bindings(SZrIo *io,
     }
 }
 
+/* 函数装饰器值可能嵌套函数常量，源树释放时需按同一标记递归清理。 */
 static void io_read_function_decorator_metadata(SZrIo *io, SZrIoFunction *function) {
     SZrGlobalState *global;
 
@@ -1155,6 +1176,7 @@ static void io_read_function_callsite_cache_table(SZrIo *io,
     }
 }
 
+/* SemIR 表按文件版本整体读取；表间索引在此阶段仍是序列化索引，运行时侧另行校验。 */
 static void io_read_function_semir_metadata(SZrIo *io, SZrIoFunction *function) {
     SZrGlobalState *global;
 
@@ -1228,6 +1250,7 @@ static void io_read_function_semir_metadata(SZrIo *io, SZrIoFunction *function) 
     }
 }
 
+/* 调用点缓存表在绑定契约表之前读取；后者按缓存索引附加可重定位事实。 */
 static void io_read_function_callsite_cache_metadata(SZrIo *io, SZrIoFunction *function) {
     SZrGlobalState *global;
 
@@ -1265,6 +1288,7 @@ static void io_read_ffi_type_contract(
     ZR_IO_READ_NATIVE_TYPE(io, type->aggregateFieldCount, TZrUInt32);
 }
 
+/* FFI 调用签名依赖值类型与所有权约束，运行时投影前还会执行公共验证。 */
 static void io_read_ffi_callable_contract(
         SZrIo *io,
         SZrFfiCallableContract *callable) {
@@ -1313,6 +1337,7 @@ static void io_read_ffi_callable_contract(
     ZR_IO_READ_NATIVE_TYPE(io, callable->contractHash, TZrUInt64);
 }
 
+/* FFI 导入契约随函数进入源树，运行时复制时再执行公共契约验证。 */
 static void io_read_function_native_import_contracts(
         SZrIo *io,
         SZrIoFunction *function) {
@@ -1471,16 +1496,19 @@ static void io_read_function_native_import_contracts(
 static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count);
 static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
+/* 子函数树嵌入所属函数的闭包列表，释放时沿 subFunction 递归。 */
 static void io_read_function_closures(SZrIo *io, SZrIoFunctionClosure *closures, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionClosure *closure = &closures[i];
         closure->subFunction = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
+        /* BUG: 子函数分配失败时直接递归读取，会在 io_read_functions 中解引用空指针。 */
         io_read_functions(io, closure->subFunction, 1);
-        // todo:
+        /* 子函数原生存储由所属函数源树递归回收。 */
     }
 }
 
+/* 调试源身份与逐指令位置按版本读取，供异常栈和调试器在加载后使用。 */
 static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debugInfos, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
@@ -1531,6 +1559,7 @@ static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debu
     }
 }
 
+/* 帧布局侧表按版本读取；此处保留原始槽位，运行时投影前另执行严格验证。 */
 static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
     SZrGlobalState *global = io->state->global;
 
@@ -1578,6 +1607,7 @@ static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
 }
 
 
+/* 递归构建函数及子函数原生树；长度字段与数组共同交由 ReadSourceFree 管理。 */
 static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
@@ -1990,7 +2020,7 @@ static void io_read_method(SZrIo *io, SZrIoMethod *method) {
 static void io_read_property(SZrIo *io, SZrIoProperty *property) {
     SZrGlobalState *global = io->state->global;
     property->name = io_read_string_with_length(io);
-    // todo: use enum
+    /* TODO: 文件固定读取 32 位 propertyType；需核对写入端是否承诺同一宽度与枚举域。 */
     ZR_IO_READ_NATIVE_TYPE(io, property->propertyType, TZrUInt32);
     property->getter = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
     io_read_functions(io, property->getter, 1);
@@ -2000,7 +2030,7 @@ static void io_read_property(SZrIo *io, SZrIoProperty *property) {
 
 static void io_read_meta(SZrIo *io, SZrIoMeta *meta) {
     SZrGlobalState *global = io->state->global;
-    // todo: use enum
+    /* TODO: metaType 按 32 位字段读取；需核对跨编译器枚举宽度的格式承诺。 */
     ZR_IO_READ_NATIVE_TYPE(io, meta->metaType, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, meta->functionsLength, TZrSize);
     meta->functions = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction) * meta->functionsLength);
@@ -2016,11 +2046,12 @@ static void io_read_enum_fields(SZrIo *io, SZrIoEnumField *fields, TZrSize count
     }
 }
 
+/* 成员类型决定联合体有效分支，释放器据同一判别式选择对应子树。 */
 static void io_read_member_declares(SZrIo *io, SZrIoMemberDeclare *declares, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoMemberDeclare *declare = &declares[i];
-        // todo:
+        /* TODO: 未识别的成员类型会静默保留空分支；需核对是否由格式版本保证合法类型。 */
         ZR_IO_READ_NATIVE_TYPE(io, declare->type, EZrIoMemberDeclareType);
         switch (declare->type) {
             case ZR_IO_MEMBER_DECLARE_TYPE_METHOD: {
@@ -2108,6 +2139,7 @@ static void io_read_enums(SZrIo *io, SZrIoEnum *enums, TZrSize count) {
         io_read_enum_fields(io, enum_->fields, enum_->fieldsLength, enum_->valueType);
     }
 }
+/* 模块级声明使用 type 判别子树，后续释放器按相同分支回收。 */
 static void io_read_module_declares(SZrIo *io, SZrIoModuleDeclare *declares, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
@@ -2145,6 +2177,8 @@ static void io_read_module_declares(SZrIo *io, SZrIoModuleDeclare *declares, TZr
     }
 }
 
+/* 模块数组接在文件头之后；导入、声明、入口函数成为单一源树的子对象。 */
+/* BUG: 文件内计数直接参与乘法分配及循环，超大计数可溢出分配大小或在分配失败后解引用空数组。 */
 static void io_read_modules(SZrIo *io, SZrIoModule *modules, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
@@ -2162,6 +2196,7 @@ static void io_read_modules(SZrIo *io, SZrIoModule *modules, TZrSize count) {
     }
 }
 
+/* BUG: IO 分配失败后立即写入 io 字段；调用链 State_DoRun/LoadSource 可触发空指针访问。 */
 SZrIo *ZrCore_Io_New(struct SZrGlobalState *global) {
     SZrIo *io = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIo));
     io->state = ZR_NULL;
@@ -2193,9 +2228,11 @@ void ZrCore_Io_Init(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close
     io->sourceVersionPatch = 0;
 }
 
+/* 短读以返回值与 hasReadError 双重报告；内部解码器依赖最外层检查粘滞错误。 */
 TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
     TZrSize requestedSize = size;
 
+    /* BUG: 已置 hasReadError 时不填充输出，忽略返回值的标量读取器会继续使用未初始化数据。 */
     if (io == ZR_NULL || buffer == ZR_NULL || io->hasReadError) {
         return 0u;
     }
@@ -2207,7 +2244,7 @@ TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
                 return requestedSize - size;
             }
         }
-        // todo: different endianness
+        /* TODO: 头部虽记录字节序，仍按宿主字节序复制；需核对跨字节序文件是否应拒绝或转换。 */
         TZrSize read = (size <= io->remained) ? size : io->remained;
         ZrCore_Memory_RawCopy(buffer, io->pointer, read);
         io->remained -= read;
@@ -2220,6 +2257,7 @@ TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
 }
 
 
+/* 文件头与模块原生树整体解析；调用方在运行时复制后负责释放成功结果。 */
 SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     if (io == ZR_NULL || io->state == ZR_NULL || io->state->global == ZR_NULL) {
         return ZR_NULL;
@@ -2231,7 +2269,7 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     }
     ZrCore_Memory_RawSet(source, 0, sizeof(*source));
     ZrCore_Io_Read(io, (TZrBytePtr) source->signature, sizeof(source->signature));
-    // todo: check signature
+    /* BUG: 未与 writer_binary.c 写入的 ZR_IO_SOURCE_SIGNATURE 比对；同版本的错误魔数仍会进入模块解析。 */
     ZR_IO_READ_NATIVE_TYPE(io, source->versionMajor, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, source->versionMinor, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, source->versionPatch, TZrUInt32);
@@ -2255,14 +2293,18 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
         return ZR_NULL;
     }
     ZR_IO_READ_NATIVE_TYPE(io, source->modulesLength, TZrSize);
+    /* BUG: 模块数来自输入，乘法未限界，分配失败也会继续向 io_read_modules 传入空数组。 */
     source->modules = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoModule) * source->modulesLength);
     io_read_modules(io, source->modules, source->modulesLength);
+    /* BUG: 截断输入到此返回空指针时，已分配的 source/嵌套数组未释放；版本拒绝路径也泄漏 source。 */
     if (io->hasReadError) {
         return ZR_NULL;
     }
     return source;
 }
 
+/* 兼容由全局加载器填充的路径：此函数拥有游标与 close，返回源树由调用方持有。 */
+/* TODO: sourceLoader 若通过 Throw 离开，当前调用不会执行 close/Io_Free；需核查宿主回调是否允许跨越此边界。 */
 SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeString sourceName, TZrNativeString md5) {
     SZrGlobalState *global = state->global;
     SZrIo *io = ZrCore_Io_New(global);

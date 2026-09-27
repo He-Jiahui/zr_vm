@@ -22,6 +22,7 @@ static TZrBool io_runtime_copy_static_imports(SZrState *state,
                                               const SZrIoFunction *source,
                                               SZrFunction *function);
 
+/* FFI 契约在进入运行时函数前统一验证并复制，不能借用即将释放的源树数组。 */
 static TZrBool io_runtime_copy_native_import_contracts(
         SZrState *state,
         const SZrIoFunction *source,
@@ -57,6 +58,7 @@ static TZrBool io_runtime_copy_native_import_contracts(
     return ZR_TRUE;
 }
 
+/* 测试清单是可选的版本化二进制附载；先验证边界与头部，再复制到函数所有的内存。 */
 static TZrBool io_runtime_copy_test_manifest(
         SZrState *state,
         const SZrIoFunction *source,
@@ -133,6 +135,7 @@ static TZrBool io_runtime_frame_storage_contains(TZrUInt32 frameByteSize,
                      storageSize <= frameByteSize - byteOffset);
 }
 
+/* 原生帧布局控制执行器的直接内存访问，因此在任何数组投影前验证标志、对齐和区间。 */
 static TZrBool io_runtime_validate_function_frame_layout(
         const SZrIoFunction *source) {
     const TZrUInt16 knownFlags =
@@ -225,6 +228,7 @@ static TZrBool io_runtime_validate_function_frame_layout(
     return ZR_TRUE;
 }
 
+/* 子函数嵌于父函数的原生数组，仍需标记为当前 GC 代以供常量函数值的存活性检查。 */
 static void io_runtime_init_inline_function(SZrState *state, SZrFunction *function) {
     ZrCore_Memory_RawSet(function, 0, sizeof(*function));
     ZrCore_RawObject_Construct(&function->super, ZR_RAW_OBJECT_TYPE_FUNCTION);
@@ -240,6 +244,7 @@ static void io_runtime_init_inline_function(SZrState *state, SZrFunction *functi
     }
 }
 
+/* 写入器仅存稳定编号；加载时恢复允许的内建函数指针，预留旧编号保持不可执行。 */
 FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helperId) {
     switch ((EZrIoNativeHelperId) helperId) {
         case ZR_IO_NATIVE_HELPER_MODULE_IMPORT:
@@ -298,6 +303,7 @@ static void io_runtime_copy_typed_type_ref(SZrFunctionTypedTypeRef *destination,
     destination->staticCTypeId = source->staticCTypeId;
 }
 
+/* 类型化导出的嵌套约束数组必须深拷贝，源树随后由模块加载器回收。 */
 static TZrBool io_runtime_copy_typed_export_generic_parameters(
         SZrState *state,
         const SZrIoFunctionTypedExportSymbol *source,
@@ -372,6 +378,7 @@ static TZrBool io_runtime_copy_typed_export_generic_parameters(
     return ZR_TRUE;
 }
 
+/* token、签名堆与模块绑定共享索引空间，成组投影到运行时函数。 */
 static TZrBool io_runtime_copy_metadata_token_model(SZrState *state,
                                                     const SZrIoFunction *source,
                                                     SZrFunction *function) {
@@ -459,6 +466,7 @@ static TZrBool io_runtime_copy_metadata_token_model(SZrState *state,
     return ZR_TRUE;
 }
 
+/* SemIR 侧表属于函数原生内存；投影后独立于被释放的二进制源树。 */
 static TZrBool io_runtime_copy_semir_metadata(SZrState *state,
                                               const SZrIoFunction *source,
                                               SZrFunction *function) {
@@ -555,6 +563,7 @@ static TZrBool io_runtime_copy_semir_metadata(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 调用点缓存保留二进制绑定契约以供后续链接和执行路径查询。 */
 static TZrBool io_runtime_copy_callsite_cache_metadata(SZrState *state,
                                                        const SZrIoFunction *source,
                                                        SZrFunction *function) {
@@ -597,6 +606,7 @@ static TZrBool io_runtime_copy_callsite_cache_metadata(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 源位置映射从二进制数组转换为运行时调试表，保证源树释放后仍可诊断。 */
 static TZrBool io_runtime_copy_debug_infos(SZrState *state,
                                            const SZrIoFunction *source,
                                            SZrFunction *function) {
@@ -697,6 +707,8 @@ static TZrBool io_runtime_copy_debug_infos(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 复制原生参数及装饰器名称数组并投影默认常量；GC 字符串引用共享，源树释放后签名仍有效。 */
+/* BUG: 内层常量或装饰器分配失败时 outCount 仍为零；外层 Function_Free 因计数为零跳过已分配的参数数组。 */
 static TZrBool io_runtime_copy_metadata_parameters(SZrState *state,
                                                    SZrFunctionMetadataParameter **outParameters,
                                                    TZrUInt32 *outCount,
@@ -767,10 +779,12 @@ static TZrBool io_runtime_copy_metadata_parameters(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 递归把原生源函数投影到运行时函数；调用者在失败时调用 Function_Free。 */
 static TZrBool io_runtime_populate_function(SZrState *state,
                                             const SZrIoFunction *source,
                                             SZrFunction *function);
 
+/* 编译产物中的纯值、嵌套函数与 helper 编号在此恢复为 GC 可管理的运行时值。 */
 static TZrBool io_runtime_convert_constant(SZrState *state,
                                            const SZrIoFunctionConstantVariable *source,
                                            SZrTypeValue *destination) {
@@ -902,6 +916,7 @@ static TZrBool io_runtime_convert_constant(SZrState *state,
     }
 }
 
+/* 递归投影函数和侧表；由最外层在失败时交给 Function_Free 清理已登记的数组。 */
 static TZrBool io_runtime_populate_function(SZrState *state,
                                             const SZrIoFunction *source,
                                             SZrFunction *function) {
@@ -1062,6 +1077,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             return ZR_FALSE;
         }
 
+        /* BUG: 某个常量转换失败时 constantValueLength 仍为零，Function_Free 跳过已分配的整张常量表。 */
         for (TZrSize index = 0; index < source->constantVariablesLength; index++) {
             if (!io_runtime_convert_constant(state,
                                              &source->constantVariables[index],
@@ -1160,6 +1176,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         function->typedClosureBindingLength = (TZrUInt32)source->typedClosureBindingsLength;
     }
 
+    /* BUG: 内层泛型约束或参数类型分配失败时，typedExportedSymbolLength 未登记，Function_Free 跳过整个已分配数组。 */
     if (source->typedExportedSymbolsLength > 0) {
         TZrSize exportSymbolBytes = sizeof(SZrFunctionTypedExportSymbol) * source->typedExportedSymbolsLength;
         function->typedExportedSymbols =
@@ -1255,6 +1272,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         io_runtime_copy_typed_type_ref(&function->callableReturnType, &source->callableReturnType);
     }
 
+    /* BUG: 路径绑定分配失败时 compileTimeVariableInfoLength 仍为零，Function_Free 跳过已分配的外层数组。 */
     if (source->compileTimeVariableInfosLength > 0) {
         TZrSize infoBytes = sizeof(SZrFunctionCompileTimeVariableInfo) * source->compileTimeVariableInfosLength;
         function->compileTimeVariableInfos =
@@ -1300,6 +1318,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         function->compileTimeVariableInfoLength = (TZrUInt32)source->compileTimeVariableInfosLength;
     }
 
+    /* BUG: 内层参数复制失败时 compileTimeFunctionInfoLength 仍为零，Function_Free 跳过已分配的函数信息数组。 */
     if (source->compileTimeFunctionInfosLength > 0) {
         TZrSize infoBytes = sizeof(SZrFunctionCompileTimeFunctionInfo) * source->compileTimeFunctionInfosLength;
         function->compileTimeFunctionInfos =
@@ -1424,6 +1443,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             return ZR_FALSE;
         }
 
+        /* BUG: 子函数中途加载失败时 childFunctionLength 尚为零，Function_Free 跳过子数组及已投影的子函数。 */
         for (TZrSize index = 0; index < source->closuresLength; index++) {
             io_runtime_init_inline_function(state, &function->childFunctionList[index]);
             if (source->closures[index].subFunction == ZR_NULL ||
@@ -1443,6 +1463,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 静态模块导入名需复制到函数自有数组，供源树释放后的导入解析使用。 */
 static TZrBool io_runtime_copy_static_imports(SZrState *state,
                                               const SZrIoFunction *source,
                                               SZrFunction *function) {
@@ -1473,6 +1494,7 @@ static TZrBool io_runtime_copy_static_imports(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 模块作用摘要数组由运行时独立持有；其中 GC 字符串引用与源树共享。 */
 static TZrBool io_runtime_copy_module_effects(SZrState *state,
                                               SZrFunctionModuleEffect **outEffects,
                                               TZrUInt32 *outCount,
@@ -1524,6 +1546,8 @@ static TZrBool io_runtime_copy_module_effects(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 导出可调用摘要独立复制，以供模块能力检查在源树释放后读取。 */
+/* BUG: 某个摘要的作用列表复制失败时 exportedCallableSummaryLength 仍为零，Function_Free 跳过已分配的摘要数组。 */
 static TZrBool io_runtime_copy_callable_summaries(SZrState *state,
                                                   const SZrIoFunction *source,
                                                   SZrFunction *function) {
@@ -1569,6 +1593,7 @@ static TZrBool io_runtime_copy_callable_summaries(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 顶层可调用绑定把导出槽位关联到已投影的子函数索引。 */
 static TZrBool io_runtime_copy_top_level_callable_bindings(SZrState *state,
                                                            const SZrIoFunction *source,
                                                            SZrFunction *function) {
@@ -1610,6 +1635,7 @@ static TZrBool io_runtime_copy_top_level_callable_bindings(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 逃逸标志与返回槽位集属于运行时函数的独立元数据，不能继续借用源树数组。 */
 static TZrBool io_runtime_copy_escape_metadata(SZrState *state,
                                                const SZrIoFunction *source,
                                                SZrFunction *function) {
@@ -1658,6 +1684,7 @@ static TZrBool io_runtime_copy_escape_metadata(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 模块加载器只执行首模块入口；失败时回收部分投影，成功后可立即释放二进制源树。 */
 struct SZrFunction *ZrCore_Io_LoadEntryFunctionToRuntime(struct SZrState *state, const SZrIoSource *source) {
     const SZrIoModule *module;
     SZrFunction *function;

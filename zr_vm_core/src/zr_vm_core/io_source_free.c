@@ -4,21 +4,25 @@
 static void io_source_free_functions(SZrGlobalState *global, SZrIoFunction *functions, TZrSize count);
 static void io_source_free_members(SZrGlobalState *global, SZrIoMemberDeclare *members, TZrSize count);
 
+/* 与 io.c 的 IO 内存类别配对；长度必须仍与实际分配时一致。 */
 static void io_source_free_storage(SZrGlobalState *global, TZrPtr storage, TZrSize bytes) {
     if (storage != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(global, storage, bytes, ZR_MEMORY_NATIVE_TYPE_IO);
     }
 }
 
+/* 源树每个数组均由所属节点的 count 定界，嵌套内容先递归回收。 */
 #define IO_SOURCE_FREE_ARRAY(GLOBAL, POINTER, COUNT) \
     io_source_free_storage((GLOBAL), (POINTER), sizeof(*(POINTER)) * (COUNT))
 
+/* 函数型常量拥有独立子函数树，普通值中的 GC 对象不由此释放。 */
 static void io_source_free_constant(SZrGlobalState *global, SZrIoFunctionConstantVariable *constant) {
     if (constant->hasFunctionValue) {
         io_source_free_functions(global, constant->functionValue, 1u);
     }
 }
 
+/* 参数默认值和装饰器值可能各自包含函数常量，需在参数数组前释放。 */
 static void io_source_free_parameters(SZrGlobalState *global,
                                       SZrIoFunctionMetadataParameter *parameters,
                                       TZrSize count) {
@@ -38,6 +42,7 @@ static void io_source_free_parameters(SZrGlobalState *global,
     IO_SOURCE_FREE_ARRAY(global, parameters, count);
 }
 
+/* 类型化导出有参数类型和泛型约束两层数组，按拥有者反向释放。 */
 static void io_source_free_typed_exports(SZrGlobalState *global,
                                         SZrIoFunctionTypedExportSymbol *symbols,
                                         TZrSize count) {
@@ -58,6 +63,7 @@ static void io_source_free_typed_exports(SZrGlobalState *global,
     IO_SOURCE_FREE_ARRAY(global, symbols, count);
 }
 
+/* 类原型持有继承引用和成员声明，成员的判别式由下层释放器处理。 */
 static void io_source_free_classes(SZrGlobalState *global, SZrIoClass *classes, TZrSize count) {
     if (classes == ZR_NULL) {
         return;
@@ -69,6 +75,7 @@ static void io_source_free_classes(SZrGlobalState *global, SZrIoClass *classes, 
     IO_SOURCE_FREE_ARRAY(global, classes, count);
 }
 
+/* 结构体原型与类原型共享成员所有权规则。 */
 static void io_source_free_structs(SZrGlobalState *global, SZrIoStruct *structs, TZrSize count) {
     if (structs == ZR_NULL) {
         return;
@@ -80,6 +87,7 @@ static void io_source_free_structs(SZrGlobalState *global, SZrIoStruct *structs,
     IO_SOURCE_FREE_ARRAY(global, structs, count);
 }
 
+/* 函数源树是释放的递归核心；仅回收 IO 原生数组，保留已转交 GC 管理的对象。 */
 static void io_source_free_functions(SZrGlobalState *global, SZrIoFunction *functions, TZrSize count) {
     if (functions == ZR_NULL) {
         return;
@@ -171,6 +179,7 @@ static void io_source_free_functions(SZrGlobalState *global, SZrIoFunction *func
     IO_SOURCE_FREE_ARRAY(global, functions, count);
 }
 
+/* 依照读取时的 type 判别成员联合体，先释放有效分支再释放声明表。 */
 static void io_source_free_members(SZrGlobalState *global, SZrIoMemberDeclare *members, TZrSize count) {
     if (members == ZR_NULL) {
         return;
@@ -210,6 +219,7 @@ static void io_source_free_members(SZrGlobalState *global, SZrIoMemberDeclare *m
     IO_SOURCE_FREE_ARRAY(global, members, count);
 }
 
+/* 模块声明的各类型子树所有权不同，释放器必须与读取器的分支协议一致。 */
 static void io_source_free_module_declares(SZrGlobalState *global,
                                           SZrIoModuleDeclare *declares,
                                           TZrSize count) {
@@ -252,11 +262,12 @@ static void io_source_free_module_declares(SZrGlobalState *global,
     IO_SOURCE_FREE_ARRAY(global, declares, count);
 }
 
+/* 释放已读取的源树；既可清理未投影的输入，也可在运行时或 AOT 复制所需数据后调用。 */
 void ZrCore_Io_ReadSourceFree(SZrGlobalState *global, SZrIoSource *source) {
     if (global == ZR_NULL || source == ZR_NULL) {
         return;
     }
-    /* Runtime loading copies native storage; GC retains shared strings and values. */
+    /* 只回收源树拥有的原生数组；字符串和值由 GC 管理。 */
     if (source->modules != ZR_NULL) {
         for (TZrSize index = 0u; index < source->modulesLength; ++index) {
             SZrIoModule *module = &source->modules[index];
