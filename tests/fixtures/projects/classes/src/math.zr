@@ -23,6 +23,7 @@ pub struct Point {
     }
 }
 
+// PointSet 独占底层数组；复合赋值扩展左值，普通加法创建新的所有者。
 pub resource class PointSet {
     pri var _points: Unique<Array<Point>> = own Array<Point>();
 

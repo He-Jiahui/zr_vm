@@ -16,6 +16,7 @@ fn labelFor(value: int) {
     return "odd_lo";
 }
 
+// 先核对各模块的基线值，再运行容器流水线，区分导入错误与计算错误。
 if (queueStage.queueExpected != 313248) {
     return -10;
 }
@@ -35,6 +36,7 @@ for (var item in fixed.fixedValues) {
     queue.addLast(new container.Pair<string, int>(labelFor(numeric), numeric));
 }
 
+// 直接摘除链表首节点时同步修复相邻链接、尾指针和计数。
 while (queue.count > 0) {
     var head = queue.first;
     var task = head.value;

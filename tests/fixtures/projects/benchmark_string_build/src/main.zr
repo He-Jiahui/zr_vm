@@ -49,6 +49,7 @@ while (index <= iterations - 1) {
         assembledScore = (assembledScore + 7) % 1000000007;
     }
 
+    // 周期性封存拼接结果作为映射键，使字符串构造与哈希更新共同参与负载。
     if (index % 9 == 8) {
         if (counts[assembled] == null) {
             counts[assembled] = 0;

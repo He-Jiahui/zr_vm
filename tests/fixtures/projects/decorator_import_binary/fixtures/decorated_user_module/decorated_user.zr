@@ -1,3 +1,4 @@
+// 此模块会先编译为二进制产物，再由项目入口导入并调用其导出函数。
 module decorated_user;
 
 let decorators = import("decorators");

@@ -12,6 +12,7 @@ fn labelFor(value: int) {
     return "odd_lo";
 }
 
+// 固定种子生成可重复输入，再经过队列、去重集合和分桶映射形成容器组合负载。
 var queue = new container.LinkedList<Pair<string, int>>();
 var seen = new container.Set<Pair<int, string>>();
 var buckets = new container.Map<string, Array<int>>();
@@ -24,6 +25,7 @@ while (index < 1024) {
     index = index + 1;
 }
 
+// 手工移除首节点时保持首尾指针、反向链接和元素计数一致。
 while (queue.count > 0) {
     var head = queue.first;
     var task = head.value;

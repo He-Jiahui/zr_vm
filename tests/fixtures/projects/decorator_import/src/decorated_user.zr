@@ -1,3 +1,4 @@
+// 保留旧样例名称，通过普通模块导入和显式调用检验跨模块导出。
 module decorated_user;
 
 let decorators = import("decorators");
