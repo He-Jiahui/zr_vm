@@ -5,6 +5,8 @@
 #include "backend_aot_c_typed_direct_bool_calls.h"
 #include "backend_aot_c_typed_direct_f64_calls.h"
 #include "backend_aot_c_typed_direct_i64_calls.h"
+
+/* 分派顺序覆盖布尔、无符号、浮点和有符号目标；各分支由槽位和 thunk 形状守卫。 */
 #include "backend_aot_c_typed_direct_u64_calls.h"
 
 static void backend_aot_write_c_static_direct_typed_no_arg_full_aot_function_call(
@@ -48,6 +50,7 @@ static void backend_aot_write_c_static_direct_typed_bool_two_arg_full_aot_functi
         TZrUInt32 firstArgumentSlot,
         TZrUInt32 secondArgumentSlot);
 
+/* full-AOT 只使用标量局部变量；其他模式按使用情况同步值槽并保留失效回退。 */
 TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         FILE *file,
         const SZrAotFunctionTable *functionTable,
@@ -81,6 +84,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                destinationSlot,
                                                                argumentCount,
                                                                calleeFunctionIndex)) {
+        /* full-AOT 只写标量局部变量，不生成混合模式的值槽同步和守卫回退。 */
         if (requireFullAot) {
             backend_aot_write_c_static_direct_typed_no_arg_full_aot_function_call(file,
                                                                                   "bool",
@@ -731,6 +735,7 @@ static void backend_aot_write_c_static_direct_typed_one_arg_full_aot_function_ca
             (unsigned)argumentSlot);
 }
 
+/* passStateToThunk 来自 callee 的形状判定，必须与生成的函数原型逐一对应。 */
 static void backend_aot_write_c_static_direct_typed_two_arg_full_aot_function_call(
         FILE *file,
         const char *kindName,
@@ -863,6 +868,7 @@ static void backend_aot_write_c_static_direct_typed_bool_two_arg_full_aot_functi
             (unsigned)secondArgumentSlot);
 }
 
+/* 零参数路径单独服务无参数调用点，同样保持 full-AOT 与值槽同步语义。 */
 TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         FILE *file,
         const SZrAotFunctionTable *functionTable,

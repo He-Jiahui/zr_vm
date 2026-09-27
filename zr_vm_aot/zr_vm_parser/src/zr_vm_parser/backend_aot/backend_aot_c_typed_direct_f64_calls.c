@@ -3,6 +3,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* 目标、结果槽和参数槽同时满足标量约束时，调用方才可绕开通用值调用。 */
 static const SZrAotFunctionEntry *backend_aot_typed_direct_f64_call_find_function_entry_by_flat_index(
         const SZrAotFunctionTable *table,
         TZrUInt32 flatIndex) {

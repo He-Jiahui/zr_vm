@@ -2,6 +2,7 @@
 
 #include "backend_aot_c_typed_u64_thunk_shapes.h"
 
+/* 除法和取模需要 state 报告零除；其他原生三参数运算保持无 state 原型。 */
 TZrBool backend_aot_c_can_emit_typed_u64_three_arg_thunk(const SZrFunction *function) {
     return (TZrBool)(backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_arg2_divide_return(function) ||
@@ -72,6 +73,7 @@ static void backend_aot_c_write_u64_three_arg_modulo_thunk_definition(FILE *file
             (unsigned)flatIndex);
 }
 
+/* 定义选择与前置声明共用形状识别器，未命中不占用此 flat index。 */
 TZrBool backend_aot_c_try_write_u64_three_arg_thunk_definition(FILE *file, const SZrAotFunctionEntry *entry) {
     if (file == ZR_NULL || entry == ZR_NULL) {
         return ZR_FALSE;

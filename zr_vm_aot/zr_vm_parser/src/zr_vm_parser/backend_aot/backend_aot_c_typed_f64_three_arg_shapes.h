@@ -3,6 +3,7 @@
 
 #include "backend_aot_internal.h"
 
+/** @brief 以下识别器仅接受三参数 f64 算术及其精确的返回槽拓扑。 */
 TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_add_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_subtract_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_multiply_return(const SZrFunction *function);

@@ -3,6 +3,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* 仅在函数表目标和本地槽类型都已证实时选择 i64 直接调用。 */
 static const SZrAotFunctionEntry *backend_aot_typed_direct_i64_call_find_function_entry_by_flat_index(
         const SZrAotFunctionTable *table,
         TZrUInt32 flatIndex) {

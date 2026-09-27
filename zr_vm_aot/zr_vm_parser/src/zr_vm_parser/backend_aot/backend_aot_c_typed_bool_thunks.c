@@ -4,6 +4,7 @@
 #include "backend_aot_c_typed_bool_two_arg_thunks.h"
 #include "backend_aot_c_typed_bool_three_arg_thunks.h"
 
+/* 布尔 thunk 家族既覆盖布尔运算，也覆盖数值比较返回 bool 的原生签名。 */
 static TZrBool backend_aot_c_type_ref_is_bool(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -156,6 +157,7 @@ static TZrBool backend_aot_c_try_get_bool_arg0_logical_not_return(const SZrFunct
                      returnInstruction->instruction.operand.operand1[0] == resultSlot);
 }
 
+/* 数值比较先验证 i64 参数和 bool 返回签名，再检查比较 opcode 与返回槽。 */
 static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(const SZrFunction *function,
                                                                        EZrInstructionCode compareOperationCode) {
     const TZrInstruction *compareInstruction;

@@ -2,6 +2,8 @@
 
 #include "backend_aot_c_emitter.h"
 
+/* 数值形状识别是 typed thunk 的唯一准入门槛，不能只凭返回类型选择原生 C 模板。 */
+/** @brief 读取 i64 二元运算两源槽的私有回调签名。 */
 typedef TZrBool (*TZrAotReadI64BinaryOperands)(const TZrInstruction *instruction,
                                                TZrUInt32 *outLeftSlot,
                                                TZrUInt32 *outRightSlot);
@@ -620,6 +622,7 @@ static TZrBool backend_aot_c_try_read_i64_bitwise_xor_operands(const TZrInstruct
     return ZR_TRUE;
 }
 
+/* 二元识别器复用槽位读取回调，但仍需同时核对参数签名和最终返回槽。 */
 static TZrBool backend_aot_c_try_get_i64_arg0_arg1_binary_return(
         const SZrFunction *function,
         TZrAotReadI64BinaryOperands readOperands) {
@@ -705,6 +708,7 @@ TZrBool backend_aot_c_try_get_i64_arg0_arg1_bitwise_xor_return(const SZrFunction
             backend_aot_c_try_read_i64_bitwise_xor_operands);
 }
 
+/* 三参数结果按左结合顺序经过临时槽，不能只匹配两个相同 opcode。 */
 static TZrBool backend_aot_c_try_get_i64_arg0_arg1_arg2_binary_return(
         const SZrFunction *function,
         TZrAotReadI64BinaryOperands readOperands,

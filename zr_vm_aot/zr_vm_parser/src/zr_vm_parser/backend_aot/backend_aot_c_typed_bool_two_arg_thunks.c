@@ -2,6 +2,7 @@
 
 #include "backend_aot_internal.h"
 
+/* 同时检查参数类型和字节码结果槽，避免把非布尔函数替换为标量比较。 */
 static TZrBool backend_aot_c_type_ref_is_bool(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -73,6 +74,7 @@ static TZrBool backend_aot_c_bool_stack_copy_reads_slot(const TZrInstruction *in
     return ZR_TRUE;
 }
 
+/* 仅接受已知短路跳转及结果复制序列；跳转偏移变化时必须交回一般字节码路径。 */
 static TZrBool backend_aot_c_try_get_bool_arg0_arg1_logical_return(const SZrFunction *function,
                                                                    EZrInstructionCode logicalOperationCode,
                                                                    EZrInstructionCode shortCircuitJumpCode) {

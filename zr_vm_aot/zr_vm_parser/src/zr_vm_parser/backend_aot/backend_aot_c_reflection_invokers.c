@@ -8,6 +8,7 @@
 #include "backend_aot_c_typed_i64_thunks.h"
 #include "backend_aot_c_typed_u64_thunks.h"
 
+/* 这里的 case 集合与各型别 thunk 生成条件共用识别器，防止反射索引越过已生成入口。 */
 static TZrBool backend_aot_c_method_metadata_has_i64_no_arg_reflection_case(
         const SZrAotFunctionTable *table) {
     if (table == ZR_NULL || table->entries == ZR_NULL) {
@@ -124,6 +125,7 @@ static void backend_aot_write_c_reflection_i64_two_arg_cases(FILE *file,
             continue;
         }
 
+        /* 反射调用也须遵循 thunk 的 state ABI，不可仅按参数数构造调用。 */
         if (backend_aot_c_can_emit_typed_i64_two_arg_state_free_thunk(entry->function)) {
             fprintf(file,
                     "        case %uu: {\n"
@@ -566,6 +568,7 @@ static void backend_aot_write_c_reflection_f64_two_arg_cases(FILE *file,
     }
 }
 
+/* 写出反射适配器：先检查动态签名和值标签，再分派到扁平索引对应的 typed thunk。 */
 void backend_aot_write_c_reflection_invokers(FILE *file, const SZrAotFunctionTable *table) {
     if (file == ZR_NULL) {
         return;
@@ -878,6 +881,7 @@ void backend_aot_write_c_reflection_invokers(FILE *file, const SZrAotFunctionTab
             "    return ZR_FALSE;\n"
             "}\n");
     backend_aot_write_c_reflection_f64_three_arg_invoker(file, table);
+    /* 原生快速路径未命中时保留原 entry thunk，不能丢掉非标量或未识别的方法。 */
     fprintf(file,
             "static void zr_aot_invoker_entry_thunk(struct SZrState *state,\n"
             "                                      FZrAotEntryThunk target,\n"

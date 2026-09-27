@@ -3,6 +3,7 @@
 #include "backend_aot_internal.h"
 #include "backend_aot_c_emitter.h"
 
+/* 识别精确短路控制流后才把解释器栈逻辑替换为 C 的 && 或 || 表达式。 */
 static TZrBool backend_aot_c_type_ref_is_bool(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -203,6 +204,7 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_or_return
                      returnInstruction->instruction.operand.operand1[0] == finalResultSlot);
 }
 
+/* 长度与跳转偏移共同限定短路模板，防止仅按 opcode 误认其他控制流。 */
 static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_return(
         const SZrFunction *function,
         EZrInstructionCode logicalOperationCode) {
@@ -233,6 +235,7 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_return(
         return ZR_FALSE;
     }
 
+    /* 两种短路展开拥有不同长度和跳转位移，必须先分流再验证各自拓扑。 */
     if (function->instructionsLength == 10u) {
         if (logicalOperationCode != ZR_INSTRUCTION_ENUM(LOGICAL_AND)) {
             return ZR_FALSE;
@@ -316,6 +319,7 @@ static void backend_aot_c_write_bool_three_arg_logical_or_thunk_definition(FILE 
             (unsigned)flatIndex);
 }
 
+/* 命中次序与 can_emit 保持一致，拒绝未识别函数而不写半个定义。 */
 TZrBool backend_aot_c_try_write_bool_three_arg_thunk_definition(FILE *file, const SZrAotFunctionEntry *entry) {
     if (file == ZR_NULL || entry == ZR_NULL) {
         return ZR_FALSE;

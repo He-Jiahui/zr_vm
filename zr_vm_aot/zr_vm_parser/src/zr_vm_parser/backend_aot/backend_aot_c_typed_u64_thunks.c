@@ -4,6 +4,7 @@
 #include "backend_aot_c_typed_u64_three_arg_thunks.h"
 #include "backend_aot_c_typed_u64_thunk_shapes.h"
 
+/* 形状识别、原型声明与定义生成共享同一条件，防止引用缺失的扁平索引 thunk。 */
 static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -19,6 +20,7 @@ static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *type
                      typeRef->staticCType == ZR_STATIC_C_TYPE_U64);
 }
 
+/* 常量 thunk 必须从函数自己的常量池读取已证实的 u64 值。 */
 static TZrBool backend_aot_c_try_get_u64_constant_return(const SZrFunction *function, TZrUInt64 *outValue) {
     const TZrInstruction *loadInstruction;
     const TZrInstruction *copyInstruction;

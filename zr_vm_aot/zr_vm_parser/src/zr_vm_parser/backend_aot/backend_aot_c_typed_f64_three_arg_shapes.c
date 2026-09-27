@@ -1,5 +1,6 @@
 #include "backend_aot_c_typed_f64_three_arg_shapes.h"
 
+/* 三参数算术只接受可还原左结合计算顺序和最终返回槽的字节码形状。 */
 static TZrBool backend_aot_c_type_ref_is_f64(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -157,6 +158,7 @@ TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_multiply_return(const SZrFuncti
                      returnInstruction->instruction.operand.operand1[0] == secondResultSlot);
 }
 
+/* 保留第一步结果的临时槽与第二步输入关系，以维持原函数的左结合求值。 */
 TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_divide_return(const SZrFunction *function) {
     const TZrInstruction *firstDivideInstruction;
     const TZrInstruction *secondDivideInstruction;

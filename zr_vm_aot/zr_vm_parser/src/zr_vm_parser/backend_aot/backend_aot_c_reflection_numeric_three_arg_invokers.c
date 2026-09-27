@@ -1,5 +1,7 @@
 #include "backend_aot_c_reflection_numeric_three_arg_invokers.h"
 
+/* 三参数反射 case 依赖对应 typed thunk 的形状和 state ABI 判定。 */
+
 #include "backend_aot_c_typed_f64_thunks.h"
 #include "backend_aot_c_typed_i64_thunks.h"
 #include "backend_aot_c_typed_u64_three_arg_thunks.h"

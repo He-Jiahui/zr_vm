@@ -2,6 +2,7 @@
 
 #include "backend_aot_c_typed_bool_three_arg_thunks.h"
 
+/* 分派 case 必须与三参数布尔 thunk 的形状识别结果保持一致。 */
 static TZrBool backend_aot_c_method_metadata_has_bool_three_arg_reflection_case(
         const SZrAotFunctionTable *table) {
     if (table == ZR_NULL || table->entries == ZR_NULL) {
@@ -47,6 +48,7 @@ static void backend_aot_write_c_reflection_bool_three_arg_cases(FILE *file,
     }
 }
 
+/* 生成的入口先验证签名和实参标签，未命中时由总反射入口回退。 */
 void backend_aot_write_c_reflection_bool_three_arg_invoker(FILE *file, const SZrAotFunctionTable *table) {
     if (file == ZR_NULL) {
         return;

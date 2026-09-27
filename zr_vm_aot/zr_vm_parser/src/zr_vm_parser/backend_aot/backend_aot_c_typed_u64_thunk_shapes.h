@@ -3,6 +3,7 @@
 
 #include "backend_aot_internal.h"
 
+/** @brief 以下识别器核对参数类型、固定指令序列及返回槽；返回假时不得生成对应标量 thunk。 */
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_add_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_multiply_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_divide_return(const SZrFunction *function);

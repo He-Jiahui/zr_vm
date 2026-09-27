@@ -4,6 +4,7 @@
 #include "backend_aot_c_typed_i64_loop_thunks.h"
 #include "backend_aot_c_typed_i64_thunk_shapes.h"
 
+/* 形状识别、前置声明和定义生成共用判定，保持反射与直接调用的 ABI 一致。 */
 TZrBool backend_aot_c_can_emit_typed_i64_no_arg_thunk(const SZrFunction *function) {
     TZrInt64 ignored;
 
@@ -93,6 +94,8 @@ static void backend_aot_c_write_i64_two_arg_thunk_definition(FILE *file,
             returnExpression);
 }
 
+/* BUG: 参数为 INT64_MIN/-1 时仅防零仍会执行 C 有符号除法，生成库可能崩溃或出现未定义结果；
+ * test_aot_c_typed_direct_call_arithmetic_shared_library_smoke.c 已证明此 thunk 可从普通静态调用到达。 */
 static void backend_aot_c_write_i64_two_arg_divide_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
@@ -105,6 +108,7 @@ static void backend_aot_c_write_i64_two_arg_divide_thunk_definition(FILE *file, 
             (unsigned)flatIndex);
 }
 
+/* BUG: INT64_MIN%-1 未被零除检查拦住，生成的有符号取模同样具有未定义行为。 */
 static void backend_aot_c_write_i64_two_arg_modulo_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
@@ -128,6 +132,7 @@ static void backend_aot_c_write_i64_three_arg_thunk_definition(FILE *file,
             returnExpression);
 }
 
+/* BUG: 左结合的任一除法步骤可遇到 INT64_MIN/-1；这里只检查零除。 */
 static void backend_aot_c_write_i64_three_arg_divide_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {\n"
@@ -140,6 +145,7 @@ static void backend_aot_c_write_i64_three_arg_divide_thunk_definition(FILE *file
             (unsigned)flatIndex);
 }
 
+/* BUG: 左结合取模中的 INT64_MIN%-1 仍可到达宿主 C 的未定义边界。 */
 static void backend_aot_c_write_i64_three_arg_modulo_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {\n"
@@ -169,6 +175,7 @@ void backend_aot_write_c_typed_i64_thunk_forward_decls(FILE *file, const SZrAotF
             fprintf(file,
                     "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0);\n",
                     (unsigned)entry->flatIndex);
+        /* 无 state 的原型必须先于带异常报告能力的同参数数原型判定。 */
         } else if (backend_aot_c_can_emit_typed_i64_two_arg_state_free_thunk(entry->function)) {
             fprintf(file,
                     "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);\n",
@@ -189,6 +196,8 @@ void backend_aot_write_c_typed_i64_thunk_forward_decls(FILE *file, const SZrAotF
     }
 }
 
+/* BUG: 可达的一参数取负及加减乘模板直接使用 C signed 算术，边界输入溢出时行为未定义；
+ * 形状判定不含取值范围证明，需与执行器数值契约和边界测试逐项对齐。 */
 void backend_aot_write_c_typed_i64_thunks(FILE *file, const SZrAotFunctionTable *table) {
     TZrUInt32 index;
 

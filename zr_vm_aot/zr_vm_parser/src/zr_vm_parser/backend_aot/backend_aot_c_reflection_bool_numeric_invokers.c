@@ -2,6 +2,7 @@
 
 #include "backend_aot_c_typed_bool_thunks.h"
 
+/* 反射路径只为已生成的比较 thunk 建立 case，避免方法索引指向未定义的原生入口。 */
 static TZrBool backend_aot_c_method_metadata_has_bool_i64_two_arg_reflection_case(
         const SZrAotFunctionTable *table) {
     if (table == ZR_NULL || table->entries == ZR_NULL) {
@@ -134,6 +135,7 @@ static void backend_aot_write_c_reflection_bool_f64_two_arg_cases(FILE *file,
     }
 }
 
+/* 运行时签名与值标签均须匹配，失败时交还上层反射分派器继续尝试。 */
 void backend_aot_write_c_reflection_bool_i64_two_arg_invoker(FILE *file, const SZrAotFunctionTable *table) {
     if (file == ZR_NULL) {
         return;

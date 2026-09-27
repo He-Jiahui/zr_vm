@@ -1,5 +1,7 @@
 #include "backend_aot_c_typed_u64_thunk_shapes.h"
 
+/* 操作码、参数槽、临时槽和返回槽共同证明 u64 模板与原函数等价。 */
+/** @brief 读取 u64 二元运算两源槽的私有回调签名。 */
 typedef TZrBool (*TZrAotReadU64BinaryOperands)(const TZrInstruction *instruction,
                                                TZrUInt32 *outLeftSlot,
                                                TZrUInt32 *outRightSlot);
@@ -161,6 +163,7 @@ static TZrBool backend_aot_c_try_read_u64_bitwise_xor_operands(const TZrInstruct
     return ZR_TRUE;
 }
 
+/* 三参数形状同时验证中间结果槽到第二步的连接和最后返回槽。 */
 static TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(
         const SZrFunction *function,
         TZrAotReadU64BinaryOperands readOperands,

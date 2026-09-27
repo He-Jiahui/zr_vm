@@ -3,6 +3,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_typed_f64_thunk_shapes.h"
 
+/* 无 state 的算术 thunk 与需要报告零除的 thunk 分别使用不同函数原型。 */
 TZrBool backend_aot_c_can_emit_typed_f64_no_arg_thunk(const SZrFunction *function) {
     TZrFloat64 ignored;
 
@@ -45,6 +46,8 @@ TZrBool backend_aot_c_can_emit_typed_f64_three_arg_state_free_thunk(const SZrFun
                      backend_aot_c_try_get_f64_arg0_arg1_arg2_multiply_return(function));
 }
 
+/* BUG: 语言的 Infinity/NaN 字面量可进入 f64 常量池；%.17g 将其写成 inf/nan 标识符，
+ * 生成 C 在未定义这些标识符时编译失败，需使用合法的非有限值表达式。 */
 static void backend_aot_c_write_f64_no_arg_thunk_definition(FILE *file,
                                                             TZrUInt32 flatIndex,
                                                             TZrFloat64 returnValue) {
@@ -174,6 +177,7 @@ void backend_aot_write_c_typed_f64_thunk_forward_decls(FILE *file, const SZrAotF
     }
 }
 
+/* BUG: 与前置声明共用形状优先级；一参常量模板的 %.17g 也会把 Infinity/NaN 写成未定义的 inf/nan。 */
 void backend_aot_write_c_typed_f64_thunks(FILE *file, const SZrAotFunctionTable *table) {
     TZrUInt32 index;
 

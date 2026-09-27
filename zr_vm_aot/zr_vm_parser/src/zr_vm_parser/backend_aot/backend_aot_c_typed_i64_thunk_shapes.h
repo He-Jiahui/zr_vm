@@ -3,6 +3,7 @@
 
 #include "backend_aot_internal.h"
 
+/** @brief 以下识别器严格匹配 i64 参数、运算指令和返回槽；未命中时不能采用标量 ABI。 */
 TZrBool backend_aot_c_try_get_i64_constant_return(const SZrFunction *function, TZrInt64 *outValue);
 TZrBool backend_aot_c_try_get_i64_identity_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_i64_arg0_negate_return(const SZrFunction *function);

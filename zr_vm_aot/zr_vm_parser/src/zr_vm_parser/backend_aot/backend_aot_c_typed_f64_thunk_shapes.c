@@ -2,6 +2,7 @@
 
 #include "backend_aot_c_emitter.h"
 
+/* 每个识别器对签名、指令数和操作数槽作保守匹配，失败即走一般函数生成。 */
 static TZrBool backend_aot_c_type_ref_is_f64(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -12,6 +13,7 @@ static TZrBool backend_aot_c_type_ref_is_f64(const SZrFunctionTypedTypeRef *type
                      typeRef->staticCType == ZR_STATIC_C_TYPE_F64);
 }
 
+/* 常量结果从函数常量池取值，复制或 reset 形式都必须保留最终返回槽。 */
 TZrBool backend_aot_c_try_get_f64_constant_return(const SZrFunction *function,
                                                           TZrFloat64 *outValue) {
     const TZrInstruction *loadInstruction;
@@ -648,6 +650,7 @@ TZrBool backend_aot_c_try_get_f64_arg0_arg1_multiply_return(const SZrFunction *f
                      returnInstruction->instruction.operand.operand1[0] == resultSlot);
 }
 
+/* 除法形状的零除处理由后续带 state 的 thunk 负责，识别器只证实字节码拓扑。 */
 TZrBool backend_aot_c_try_get_f64_arg0_arg1_divide_return(const SZrFunction *function) {
     const TZrInstruction *divideInstruction;
     const TZrInstruction *returnInstruction;

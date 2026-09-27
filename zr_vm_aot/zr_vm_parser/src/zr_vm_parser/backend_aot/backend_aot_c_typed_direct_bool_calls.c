@@ -3,6 +3,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* flat index 先映射到本次输出的函数表，随后才能引用其已识别的标量 thunk。 */
 static const SZrAotFunctionEntry *backend_aot_typed_direct_bool_call_find_function_entry_by_flat_index(
         const SZrAotFunctionTable *table,
         TZrUInt32 flatIndex) {
@@ -40,6 +41,7 @@ TZrBool backend_aot_can_write_c_static_direct_bool_no_arg_call(
                      backend_aot_c_can_emit_typed_bool_no_arg_thunk(calleeEntry->function));
 }
 
+/* 参数槽必须在当前调用前写入；成功后才向输出参数发布槽索引。 */
 TZrBool backend_aot_can_write_c_static_direct_bool_one_arg_call(
         const SZrAotFunctionTable *functionTable,
         const SZrAotExecIrFunction *functionIr,

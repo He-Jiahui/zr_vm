@@ -2,6 +2,7 @@
 
 #include "backend_aot_c_emitter.h"
 
+/* 只接受固定十条指令的求和循环；任一槽位或跳转关系改变都交回一般函数体。 */
 static TZrBool backend_aot_c_loop_type_ref_is_i64(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -122,6 +123,8 @@ TZrBool backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(const SZrFuncti
     return ZR_TRUE;
 }
 
+/* BUG: 输入足够大时累加器使用原生 signed 加法，求和溢出触发 C 未定义行为；
+ * 该路径由 i64 单参数形状识别进入，尚无范围守卫。 */
 void backend_aot_c_write_typed_i64_counting_sum_loop_thunk(FILE *file, TZrUInt32 flatIndex) {
     if (file == ZR_NULL) {
         return;

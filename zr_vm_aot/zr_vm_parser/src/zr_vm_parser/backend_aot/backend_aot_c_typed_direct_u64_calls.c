@@ -3,6 +3,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_locals.h"
 
+/* 与 thunk 识别器共用函数表目标，避免直接调用引用未生成的 u64 定义。 */
 static const SZrAotFunctionEntry *backend_aot_typed_direct_u64_call_find_function_entry_by_flat_index(
         const SZrAotFunctionTable *table,
         TZrUInt32 flatIndex) {
