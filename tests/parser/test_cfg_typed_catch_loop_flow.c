@@ -12,13 +12,16 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+// Unity 按用例重建状态；AST、CFG 和语义上下文都只在本次 setUp/tearDown 周期内有效。
 static SZrState *g_state;
 
+// 共享构造器依赖运行时分配器和字符串表，必须先于每个用例的手工 AST 构造。
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+// Unity 即使用例断言失败也会调用它；各用例另行拥有的 AST、CFG、context 仍需显式释放。
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,6 +29,7 @@ void tearDown(void) {
     }
 }
 
+// 所有合成节点共用一份单行源码坐标，使事实查询能按节点起点定位到对应 catch 语句。
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -40,6 +44,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+// 构造最终归 script 根树管理的节点；用例结束时从根节点递归释放整棵树。
 static SZrAstNode *test_node(EZrAstNodeType type,
                              TZrSize startOffset,
                              TZrSize endOffset) {
@@ -55,6 +60,7 @@ static SZrAstNode *test_node(EZrAstNodeType type,
     return node;
 }
 
+// 语句顺序是赋值能否沿 break/continue 流出的测试前提；数组接管这些子节点。
 static SZrAstNode *block_with_nodes(SZrAstNode **nodes,
                                     TZrSize count,
                                     TZrSize startOffset,
@@ -71,6 +77,7 @@ static SZrAstNode *block_with_nodes(SZrAstNode **nodes,
     return block;
 }
 
+// 以 script 为 CFG 入口，避免只测试单语句构建路径，并由根节点接管 try 子树。
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 180);
 
@@ -80,6 +87,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+// catch 顺序参与剩余已知 throw 类型的消耗；body 与 clauses 均归 try 节点持有。
 static SZrAstNode *try_statement_with_catches(SZrAstNode *body,
                                               SZrAstNode **catchNodes,
                                               TZrSize catchCount) {
@@ -120,6 +128,7 @@ static SZrAstNode *identifier_node(const char *name,
     return identifier;
 }
 
+// CFG 当前按简单类型名识别已知 throw 类型；返回的 typeInfo 由声明或参数节点释放。
 static SZrType *type_info_named(const char *typeName,
                                 TZrSize typeNameLength,
                                 TZrSize startOffset,
@@ -136,6 +145,7 @@ static SZrType *type_info_named(const char *typeName,
     return typeInfo;
 }
 
+// 参数持有 nameNode 的内嵌 identifier 字段及 typeInfo；AST 析构会回到容器节点释放。
 static SZrAstNode *typed_parameter(const char *name,
                                    TZrSize nameLength,
                                    const char *typeName,
@@ -159,6 +169,7 @@ static SZrAstNode *typed_parameter(const char *name,
     return parameter;
 }
 
+// 只给 typed catch 填 pattern；未调用此函数的最后一个 catch 保持 catch-all 语义。
 static void add_catch_parameter(SZrAstNode *catchNode, SZrAstNode *parameter) {
     catchNode->data.catchClause.pattern = ZrParser_AstNodeArray_New(g_state, 1);
     TEST_ASSERT_NOT_NULL(catchNode->data.catchClause.pattern);
@@ -207,6 +218,7 @@ static SZrAstNode *char_literal(TZrChar value,
     return literal;
 }
 
+// 先绑定 int 再在循环内改写为其他类型，才能检查循环退出路径与零次迭代的合并。
 static SZrAstNode *typed_variable_declaration(const char *name,
                                               TZrSize nameLength,
                                               const char *typeName,
@@ -271,6 +283,7 @@ static SZrAstNode *continue_statement(TZrSize startOffset, TZrSize endOffset) {
     return continueStmt;
 }
 
+// 抛出同一个局部变量，让 catch 可达性依赖循环后的类型集合，而非字面量类型。
 static SZrAstNode *throw_statement_with_expr(SZrAstNode *expr,
                                              TZrSize startOffset,
                                              TZrSize endOffset) {
@@ -280,6 +293,7 @@ static SZrAstNode *throw_statement_with_expr(SZrAstNode *expr,
     return throwStmt;
 }
 
+// 标记为语句后 CFG 才按控制转移选择分支；常量条件用例依赖未选分支不贡献类型。
 static SZrAstNode *if_statement(SZrAstNode *condition,
                                 SZrAstNode *thenBody,
                                 SZrAstNode *elseBody,
@@ -294,6 +308,7 @@ static SZrAstNode *if_statement(SZrAstNode *condition,
     return ifNode;
 }
 
+// 未知条件允许零次或多次迭代；break 出口和 continue 回边的绑定都须参与类型合并。
 static SZrAstNode *while_statement(SZrAstNode *condition,
                                    SZrAstNode *body,
                                    TZrSize startOffset,
@@ -306,6 +321,7 @@ static SZrAstNode *while_statement(SZrAstNode *condition,
     return whileNode;
 }
 
+// foreach 也可能零次迭代，循环体赋值的类型需与进入循环前的类型共同保留。
 static SZrAstNode *foreach_statement(SZrAstNode *iterable,
                                      SZrAstNode *body,
                                      TZrSize startOffset,
@@ -320,6 +336,7 @@ static SZrAstNode *foreach_statement(SZrAstNode *iterable,
     return foreachNode;
 }
 
+// 只查 catch 语句起点的不可达事实；无事实表示该分支仍可达，返回值借用 context 存储。
 static const SZrSemanticReachabilityFact *reachability_fact_at(
         SZrSemanticContext *context,
         SZrAstNode *node) {
@@ -328,6 +345,8 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(
             test_range(node->location.start.offset, node->location.start.offset));
 }
 
+// 未知条件分支内先改为 string 再 break；循环后 throw 可为 int/string/char，
+// 因而仅 bool 与末尾 catch-all 应被裁掉。
 static void
 test_cfg_preserves_conditional_break_assignment_for_post_loop_typed_catch_matching(
         void) {
@@ -412,6 +431,7 @@ test_cfg_preserves_conditional_break_assignment_for_post_loop_typed_catch_matchi
     tryNode = try_statement_with_catches(tryBody, catchNodes, 5);
     script = script_with_statement(tryNode);
 
+    // BUG: 六个用例在此处或后续致命断言失败时会跳过末尾的 CFG/AST/context 释放；此前已分配的原生块因此泄漏。
     TEST_ASSERT_NOT_NULL(context);
     ZrParser_Cfg_Init(g_state, &cfg);
 
@@ -422,6 +442,7 @@ test_cfg_preserves_conditional_break_assignment_for_post_loop_typed_catch_matchi
     TEST_ASSERT_NOT_NULL(fact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, fact->state);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, fact->cause);
+    // 无不可达事实是此 API 表达可达分支的方式；不能把 NULL 当成未查询到的测试遗漏。
     TEST_ASSERT_NULL(reachability_fact_at(context, intCatchStmt));
     TEST_ASSERT_NULL(reachability_fact_at(context, stringCatchStmt));
     TEST_ASSERT_NULL(reachability_fact_at(context, charCatchStmt));
@@ -436,6 +457,7 @@ test_cfg_preserves_conditional_break_assignment_for_post_loop_typed_catch_matchi
     ZrParser_SemanticContext_Free(context);
 }
 
+// 把 string 赋值移到条件 break 之前，验证嵌套退出路径仍继承先前的局部绑定。
 static void
 test_cfg_preserves_pre_branch_break_assignment_for_post_loop_typed_catch_matching(
         void) {
@@ -544,6 +566,7 @@ test_cfg_preserves_pre_branch_break_assignment_for_post_loop_typed_catch_matchin
     ZrParser_SemanticContext_Free(context);
 }
 
+// 条件 continue 路径上的 string 赋值须回到循环头，再参与循环后 throw 的类型合并。
 static void
 test_cfg_preserves_conditional_continue_assignment_for_post_loop_typed_catch_matching(
         void) {
@@ -652,6 +675,7 @@ test_cfg_preserves_conditional_continue_assignment_for_post_loop_typed_catch_mat
     ZrParser_SemanticContext_Free(context);
 }
 
+// foreach 的零次迭代保留 int，执行循环体则加入 string；两个 catch 都应可达。
 static void test_cfg_merges_foreach_assignment_with_incoming_type_for_typed_catch_matching(
         void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
@@ -736,6 +760,7 @@ static void test_cfg_merges_foreach_assignment_with_incoming_type_for_typed_catc
     ZrParser_SemanticContext_Free(context);
 }
 
+// 常量 true 的 break 已终止该路径，后续 char 赋值不得污染循环后的 throw 类型。
 static void
 test_cfg_prunes_assignment_after_constant_break_branch_for_typed_catch_matching(
         void) {
@@ -848,6 +873,7 @@ test_cfg_prunes_assignment_after_constant_break_branch_for_typed_catch_matching(
     ZrParser_SemanticContext_Free(context);
 }
 
+// 常量 if 仅选择 string 的 break 分支；未选中分支的 char 不能使 char catch 可达。
 static void
 test_cfg_prunes_unselected_constant_break_exit_branch_for_typed_catch_matching(
         void) {
@@ -965,6 +991,7 @@ test_cfg_prunes_unselected_constant_break_exit_branch_for_typed_catch_matching(
     ZrParser_SemanticContext_Free(context);
 }
 
+// 此目标只运行六个定向场景，保持循环类型绑定与 catch 裁剪的回归边界可定位。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(
