@@ -89,12 +89,13 @@ async function expectInvalidRequest(client, payload, id, label) {
     assertErrorEnvelope(response, id, -32600, label);
 }
 
-/** 每个场景独占服务器进程，失败时也回收，避免状态污染。 */
+/** 每次调用独占服务器进程；finally 尝试清理，避免不同场景的会话状态相互污染。 */
 async function withClient(serverPath, run) {
     const client = new StdioProtocolClient(serverPath);
     try {
         return await run(client);
     } finally {
+        // TODO: terminate 的拒绝在这里被吞掉；核实子进程 close 超时是否会留下孤儿进程，并决定如何同时保留原断言失败。
         await client.terminate().catch(() => {});
     }
 }
@@ -176,6 +177,7 @@ async function testShutdownExitOrdering(serverPath) {
         assert(exitCode === 1, `exit before successful shutdown must exit 1, actual=${exitCode}`);
     });
 
+    // 第二个独立进程只验证成功 shutdown 后的 exit，避免上一个失败状态影响退出码。
     await withClient(serverPath, async (client) => {
         await initialize(client, 'shutdown-exit-initialize');
         const shutdown = await client.request('shutdown', undefined, 'shutdown-exit-shutdown');
@@ -836,6 +838,7 @@ async function testDuplicateRequestId(serverPath) {
         const first = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const second = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const responses = [first, second];
+        // 两个同 id 回包允许先后顺序不同；分别核对一条拒绝重复请求、一条完成原请求。
         const errors = responses.filter((response) =>
             response && Object.prototype.hasOwnProperty.call(response, 'error'));
         const successes = responses.filter((response) =>
@@ -868,6 +871,7 @@ async function testDistinctTypedRequestIds(serverPath) {
         const first = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const second = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         const responses = [first, second];
+        // number 1 与 string "1" 必须保持不同身份，不能用字符串化后的 id 匹配回包。
         for (const id of [1, '1']) {
             const response = responses.find((item) => item && item.id === id);
             assertSuccessEnvelope(response, id, `distinct ${typeof id} request id`);
@@ -897,6 +901,7 @@ async function testNumericRequestIdPrecision(serverPath) {
                               'negative safe numeric request id');
     });
 
+    // 越过安全整数边界的原始 JSON 数字放入新进程，隔离前一批合法 id 的请求状态。
     await withClient(serverPath, async (client) => {
         for (const unsafeIdText of ['9007199254740992', '-9007199254740992']) {
             client.sendRawFrame(encodeRawJsonFrame(
@@ -916,7 +921,7 @@ async function testCancelUnknownIdHasNoResponse(serverPath) {
     });
 }
 
-/** 在昂贵文档建立后排队已知请求和取消，验证取消错误与文档版本。 */
+/** 发送大型 didOpen 后紧接着排队请求和取消，再以诊断版本核对文档处理结果。 */
 async function testCancelKnownRequestId(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///cancel-known-request.zr';
@@ -970,6 +975,7 @@ async function testSetTraceWritesOnlyStderr(serverPath) {
         assertSuccessEnvelope(tracedResponse, 'trace-request', 'traced request');
         assert(tracedResponse && Array.isArray(tracedResponse.result),
                `traced request must retain its framed result, actual=${JSON.stringify(tracedResponse)}`);
+        // TODO: stdout 响应与 stderr trace 来自不同管道；核对 stderr 是否需要显式等待，避免调度导致偶发误判。
         assert(client.stderr().includes('LSP trace inbound request workspace/symbol'),
                `messages trace must write inbound request to stderr, stderr=${client.stderr()}`);
         assert(client.stderr().includes('LSP trace outbound response workspace/symbol'),
@@ -1114,12 +1120,14 @@ async function testWorkspaceSymbolPartialResults(serverPath) {
                 uri: 'file:///partial-progress-symbol.zr',
                 languageId: 'zr',
                 version: 1,
+                // 65 个声明越过 64 项的首批边界，用于同时验证分批次序和最终空响应。
                 text: Array.from(
                     { length: 65 },
                     (_, index) => `class PartialProgressSymbol${index} { }`).join('\n'),
             },
         });
 
+        // TODO: 多个部分结果用例先发请求再等待 progress，最后才读取响应；若请求先拒绝，核查延后 await 是否触发未处理拒绝。
         const responsePromise = client.request('workspace/symbol', {
             query: 'PartialProgressSymbol',
             partialResultToken: 17,
@@ -1395,6 +1403,7 @@ async function testMalformedFramesCloseWithFailure(serverPath) {
         ['conflicting charset parameters', 'MALFORMED_HEADER',
          'Content-Length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8; charset=utf-16\r\n\r\n{}'],
         ['truncated payload', 'PAYLOAD_TRUNCATED', 'Content-Length: 4\r\n\r\n{}'],
+        // 33 个自定义头专门越过传输层头数上限，不能用重复头错误替代此场景。
         ['too many headers', 'TOO_LARGE',
          `${Array.from({ length: 33 }, (_, index) => `X-Test-${index}: value\r\n`).join('')}Content-Length: 2\r\n\r\n{}`],
     ];
