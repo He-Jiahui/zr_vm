@@ -7,6 +7,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_run.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_edge_identity.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_internal.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_oracle.h
@@ -25,6 +26,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_run.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_edge_identity.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_internal.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
@@ -59,6 +61,7 @@ tests:
   - tests/harness/ssa_differential_support.h
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-oracle-parallel-edges.md
+  - tests/acceptance/ssa-cfg-parallel-edge-reciprocity.md
   - tests/acceptance/ssa-projection-parallel-edges.md
   - tests/acceptance/ssa-projection-phi-schedule.md
   - tests/acceptance/ssa-execbc-scalar-runner.md
@@ -114,10 +117,12 @@ edges from one source to the same destination, the ordinal's occurrence number
 selects the corresponding occurrence in the destination's predecessor range;
 the phi incoming at that exact index is read before any phi result is written.
 This preserves distinct incoming values even when both branch arms target the
-same block. A missing or inconsistent edge occurrence reports
-`PHI_PREDECESSOR_MISMATCH` rather than silently reading another arm's value.
-The oracle's own preflight no longer rejects repeated predecessor IDs when
-their phi incoming positions match the predecessor range. See
+same block. Preflight checks every block range before pairing successor and
+predecessor occurrences, including edges that execution would not select;
+unpaired adjacency reports `INVALID_BLOCK`. A mismatch between a valid
+adjacency pair and the selected terminator/phi slot reports
+`PHI_PREDECESSOR_MISMATCH`. The oracle's own preflight accepts repeated
+predecessor IDs when their phi incoming positions match the predecessor range. See
 `tests/acceptance/ssa-oracle-parallel-edges.md` for the oracle regression;
 projection-layer evidence for the same edge pattern is recorded separately
 in `tests/acceptance/ssa-projection-parallel-edges.md`.

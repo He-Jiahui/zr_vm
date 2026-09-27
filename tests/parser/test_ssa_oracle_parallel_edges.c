@@ -194,10 +194,52 @@ static void test_rejects_selected_edge_missing_from_source_adjacency(void) {
     input.constantCount = 1u;
     ZrCore_ExecIr_OracleResultInit(&execution);
     check(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic) &&
-              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH &&
-              diagnostic.blockId == 2u && diagnostic.instructionId == 4u &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == 2u && diagnostic.instructionId == 0u &&
               execution.values == NULL,
           "oracle accepted a phi edge omitted by source adjacency");
+    ZrCore_ExecIr_OracleResultFree(&execution);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_rejects_unselected_unpaired_parallel_edge(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOracleExecutionResult execution;
+    SZrExecIrOracleInput input;
+    SZrExecIrOracleValue condition;
+
+    build_parallel_phi(&function);
+    memset(&input, 0, sizeof(input));
+    input.function = &function;
+    condition.kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
+    condition.as.boolean = ZR_TRUE;
+    input.constants = &condition;
+    input.constantCount = 1u;
+
+    function.blocks[0].successorRange.count = 1u;
+    ZrCore_ExecIr_OracleResultInit(&execution);
+    check(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == 2u && execution.values == NULL,
+          "oracle ignored an unselected predecessor occurrence");
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    function.blocks[0].successorRange.count = 2u;
+    function.blocks[1].predecessorRange.count = 1u;
+    ZrCore_ExecIr_OracleResultInit(&execution);
+    check(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == 1u && execution.values == NULL,
+          "oracle ignored an unselected successor occurrence");
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    function.blocks[1].predecessorRange.count = UINT32_MAX;
+    ZrCore_ExecIr_OracleResultInit(&execution);
+    check(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == 2u && execution.values == NULL,
+          "oracle read an invalid target range before validating all blocks");
     ZrCore_ExecIr_OracleResultFree(&execution);
     ZrCore_ExecIr_FreeFunction(&function);
 }
@@ -769,6 +811,7 @@ static void test_projections_reject_unpaired_edge_without_replacing_output(void)
 int main(void) {
     test_branch_and_switch_parallel_edges_select_distinct_incomings();
     test_rejects_selected_edge_missing_from_source_adjacency();
+    test_rejects_unselected_unpaired_parallel_edge();
     test_projections_preserve_parallel_phi_edges();
     test_oracle_execbc_parallel_phi_differential();
     test_projection_schedules_cycles_and_dependencies();

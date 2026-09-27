@@ -3,6 +3,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_edge_identity.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
@@ -11,6 +12,7 @@ related_code:
 implementation_files:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_edge_identity.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effect_backedges.c
@@ -25,6 +27,7 @@ tests:
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/acceptance/ssa-effect-chain-continuity.md
   - tests/acceptance/ssa-cfg-edge-symmetry.md
+  - tests/acceptance/ssa-cfg-parallel-edge-reciprocity.md
   - tests/acceptance/ssa-exception-payload.md
   - tests/parser/test_ssa_loops_specialization.c
   - tests/parser/test_ssa_pass_manager_scalar.c
@@ -61,13 +64,13 @@ contract. A graph-analysis module shared with parser effect synthesis
 classifies actual loop backedges without trusting block declaration order or
 serialized dominator hints.
 
-The structural phase requires every listed block successor to be listed as a
-predecessor of its destination, and every predecessor to list the block as a
-successor. It checks bounds and valid IDs before following either adjacency
-list. A missing reverse edge reports `INVALID_BLOCK` with the edge owner's
-block ID and both endpoints. This contract checks edge presence, not duplicate
-edge multiplicity or correspondence between a terminator's per-instruction
-successors and the containing block; these remain separate CFG obligations.
+The structural phase pairs every listed block successor with the same-numbered
+occurrence of that source in the destination's predecessor row, and vice
+versa. It checks bounds and valid IDs before following either adjacency list.
+Missing reverse occurrences report `INVALID_BLOCK` with the edge owner's block
+ID and both endpoints. This checks block adjacency multiplicity; correspondence
+between a terminator's per-instruction successors and its containing block
+remains a separate CFG obligation.
 
 Within one block, successive observable instructions must consume exactly the
 preceding observable instruction's `effectOut`: numerical growth alone does
@@ -206,8 +209,9 @@ The standalone SSA consumer targets compile the split verifier source through
 `tests/cmake/ssa-tests.cmake`; the full core library obtains it through the
 module source glob.  The loop-specialization and scalar pass-manager fixtures
 exercise PHI-aware LICM and post-pass revalidation.
-`ssa_core_model` independently validates a reciprocal edge and rejects each
-one-sided adjacency direction at the structural level with endpoint identity.
+`ssa_core_model` independently validates reciprocal and matching duplicate
+edges, and rejects each one-sided adjacency direction and unpaired duplicate
+at the structural level with endpoint identity.
 
 ## Plan scope and follow-up
 

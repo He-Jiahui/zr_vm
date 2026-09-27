@@ -1,4 +1,5 @@
 #include "exec_ir_interpreter_internal.h"
+#include "exec_ir_edge_identity.h"
 
 static TZrBool zr_oracle_range(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
@@ -34,30 +35,6 @@ static TZrBool zr_oracle_is_memory_phi_incoming(
                     block->memoryPhiIncomings[region].count) {
                 return ZR_TRUE;
             }
-        }
-    }
-    return ZR_FALSE;
-}
-
-static TZrBool zr_oracle_block_has_successor(const SZrExecIrFunction *f,
-                                              const SZrExecIrBlock *block,
-                                              TZrExecIrBlockId id) {
-    TZrUInt32 i;
-    for (i = 0u; i < block->successorRange.count; ++i) {
-        if (f->successors[block->successorRange.start + i] == id) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
-static TZrBool zr_oracle_block_has_predecessor(const SZrExecIrFunction *f,
-                                               const SZrExecIrBlock *block,
-                                               TZrExecIrBlockId id) {
-    TZrUInt32 i;
-    for (i = 0u; i < block->predecessorRange.count; ++i) {
-        if (f->predecessors[block->predecessorRange.start + i] == id) {
-            return ZR_TRUE;
         }
     }
     return ZR_FALSE;
@@ -195,31 +172,34 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
                 }
             }
         }
-        {
-            TZrUInt32 j;
-            for (j = 0u; j < b->successorRange.count; ++j) {
-                TZrExecIrBlockId successor = f->successors[b->successorRange.start + j];
-                const SZrExecIrBlock *target = &f->blocks[successor - 1u];
-                if (!zr_oracle_block_has_predecessor(f, target, b->id)) {
-                    zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
-                                   b->id, 0u, 0u, 1u, successor);
-                    return ZR_FALSE;
-                }
-            }
-            for (j = 0u; j < b->predecessorRange.count; ++j) {
-                TZrExecIrBlockId predecessor = f->predecessors[b->predecessorRange.start + j];
-                const SZrExecIrBlock *source = &f->blocks[predecessor - 1u];
-                if (!zr_oracle_block_has_successor(f, source, b->id)) {
-                    zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
-                                   b->id, 0u, 0u, 1u, predecessor);
-                    return ZR_FALSE;
-                }
-            }
-        }
     }
     for (i = 0u; i < f->blockCount; ++i) {
         const SZrExecIrBlock *b = &f->blocks[i];
         TZrUInt32 j;
+        for (j = 0u; j < b->successorRange.count; ++j) {
+            TZrUInt32 edgeIndex = b->successorRange.start + j;
+            TZrExecIrBlockId successor = f->successors[edgeIndex];
+            const SZrExecIrBlock *target = &f->blocks[successor - 1u];
+            if (!zr_exec_ir_edge_occurrence_matches(
+                        f->successors, b->successorRange, edgeIndex,
+                        f->predecessors, target->predecessorRange, b->id)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
+                               b->id, 0u, 0u, 1u, successor);
+                return ZR_FALSE;
+            }
+        }
+        for (j = 0u; j < b->predecessorRange.count; ++j) {
+            TZrUInt32 edgeIndex = b->predecessorRange.start + j;
+            TZrExecIrBlockId predecessor = f->predecessors[edgeIndex];
+            const SZrExecIrBlock *source = &f->blocks[predecessor - 1u];
+            if (!zr_exec_ir_edge_occurrence_matches(
+                        f->predecessors, b->predecessorRange, edgeIndex,
+                        f->successors, source->successorRange, b->id)) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
+                               b->id, 0u, 0u, 1u, predecessor);
+                return ZR_FALSE;
+            }
+        }
         for (j = 0u; j < b->phis.count; ++j) {
             const SZrExecIrPhi *phi = &f->phiPool[b->phis.start + j];
             if (phi->incomings.count != b->predecessorRange.count) {

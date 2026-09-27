@@ -3,6 +3,7 @@
 
 #include "exec_ir_verify_ssa.h"
 #include "exec_ir_deopt_aggregate.h"
+#include "exec_ir_edge_identity.h"
 
 #include <string.h>
 
@@ -128,19 +129,6 @@ static TZrBool zr_exec_ir_validate_deopt_values(
         }
     }
     return ZR_TRUE;
-}
-
-/* Only call after validating both the side-pool range and every block ID. */
-static TZrBool zr_exec_ir_edge_contains(const TZrExecIrBlockId *edges,
-                                        SZrExecIrRange range,
-                                        TZrExecIrBlockId blockId) {
-    TZrUInt32 index;
-    for (index = range.start; index < range.start + range.count; ++index) {
-        if (edges[index] == blockId) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
 }
 
 static TZrBool zr_exec_ir_verify_exception_result_terminator(
@@ -774,8 +762,10 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                 {
                     TZrExecIrBlockId from = function->predecessors[edgeIndex];
                     const SZrExecIrBlock *predecessor = &function->blocks[from - 1u];
-                    if (!zr_exec_ir_edge_contains(function->successors,
-                                                   predecessor->successorRange, block->id)) {
+                    if (!zr_exec_ir_edge_occurrence_matches(
+                                function->predecessors, block->predecessorRange,
+                                edgeIndex, function->successors,
+                                predecessor->successorRange, block->id)) {
                         zr_exec_ir_set_diagnostic(diagnostic,
                                                   ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
                                                   function, 0u, block->id, from, block->id);
@@ -800,8 +790,10 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                 {
                     TZrExecIrBlockId to = function->successors[edgeIndex];
                     const SZrExecIrBlock *successor = &function->blocks[to - 1u];
-                    if (!zr_exec_ir_edge_contains(function->predecessors,
-                                                   successor->predecessorRange, block->id)) {
+                    if (!zr_exec_ir_edge_occurrence_matches(
+                                function->successors, block->successorRange,
+                                edgeIndex, function->predecessors,
+                                successor->predecessorRange, block->id)) {
                         zr_exec_ir_set_diagnostic(diagnostic,
                                                   ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
                                                   function, 0u, block->id, block->id, to);
