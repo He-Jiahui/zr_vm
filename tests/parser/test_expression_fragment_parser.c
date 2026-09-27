@@ -1,3 +1,4 @@
+/* 回归独立表达式入口、语义引用身份和 AST/parser state 的释放合同。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -11,8 +12,10 @@
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/type_system.h"
 
+/* Unity 用例各自持有 VM state；正常路径先清理 parser/compiler 子对象，tearDown 再销毁 state。 */
 static SZrState *g_state;
 
+/* 同时收集结构化错误数和旧回调的首条文本，供两条失败路径断言。 */
 typedef struct SExpressionFragmentDiagnosticCapture {
     TZrUInt32 structuredErrorCount;
     TZrUInt32 legacyErrorCount;
@@ -66,6 +69,7 @@ static void capture_legacy_error(TZrPtr userData,
     capture->legacyErrorCount++;
 }
 
+/* 借用调用方的 capture/parser state；返回 AST 由用例释放，parser state 须另行 Free。 */
 static SZrAstNode *parse_fragment(const TZrChar *source,
                                   SExpressionFragmentDiagnosticCapture *capture,
                                   SZrParserState *outParserState) {
@@ -135,6 +139,7 @@ static void test_expression_fragment_rejects_trailing_tokens(void) {
     ZrParser_State_Free(&parserState);
 }
 
+/* 外部注入的 SymbolId、TypeId、PlaceId 和声明位置须原样进入 read reference fact。 */
 static void test_expression_fragment_preserves_external_canonical_binding_identity(void) {
     SExpressionFragmentDiagnosticCapture capture;
     SZrParserState parserState;
@@ -188,6 +193,7 @@ static void test_expression_fragment_preserves_external_canonical_binding_identi
     ZrParser_State_Free(&parserState);
 }
 
+/* 普通变量注册不能冒充外部 canonical place，reference fact 的 placeId 应为零。 */
 static void test_expression_fragment_marks_ordinary_binding_place_unavailable(void) {
     SExpressionFragmentDiagnosticCapture capture;
     SZrParserState parserState;
@@ -253,6 +259,7 @@ static void test_expression_fragment_marks_ordinary_binding_place_unavailable(vo
     ZrParser_State_Free(&parserState);
 }
 
+/* runtime root 需有效 kind/token，并把来源身份传给重复引用；普通声明可替换其绑定。 */
 static void test_expression_fragment_preserves_runtime_root_origin(void) {
     SExpressionFragmentDiagnosticCapture capture;
     SZrParserState parserState;
@@ -469,6 +476,7 @@ static void test_script_releases_decorator_lookahead_subtree(void) {
     ZrParser_State_Free(&parserState);
 }
 
+/* 同时释放正常解构 AST 和报错后仍返回的部分声明 AST。 */
 static void test_script_releases_destructuring_and_partial_declarations(void) {
     static const TZrChar validSource[] =
             "module lifecycle.cleanup;\n"
@@ -510,6 +518,7 @@ static void test_script_releases_destructuring_and_partial_declarations(void) {
     ZrParser_State_Free(&parserState);
 }
 
+/* 插值里的注释含括号或引号时仍应保留完整加法表达式。 */
 static void assert_template_comment_preserves_addition(const char *source) {
     SExpressionFragmentDiagnosticCapture capture;
     SZrParserState parserState;
@@ -561,6 +570,7 @@ static void test_compiler_state_releases_child_function_name_map(void) {
     TEST_ASSERT_FALSE(compilerState.childFunctionNameMap.isValid);
 }
 
+/* TODO: 此目标有文档记录的直接运行，但未见 CTest/manifest 注册；需确认自动回归归属。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_expression_fragment_parses_the_full_formal_expression);

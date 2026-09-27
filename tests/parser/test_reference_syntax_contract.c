@@ -1,3 +1,4 @@
+/* 验证引用参数、可调用语法在 lexer、AST 与 canonical type 合同中的一致性。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -10,15 +11,18 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/syntax_contract.h"
 
+/* Unity 每个用例独占 state；semantic context 借用该 state，销毁时先释放 context。 */
 static SZrState *g_state;
 static SZrSemanticContext *g_context;
 
+/* 累计所有解析错误，但只复制首条消息和位置供非零范围断言。 */
 typedef struct SParserErrorCapture {
     TZrUInt32 count;
     SZrFileRange firstRange;
     char firstMessage[192];
 } SParserErrorCapture;
 
+/* 回调入参仅在解析期间有效，所需诊断内容复制到用例栈上的 capture。 */
 static void capture_parser_error(
         TZrPtr userData,
         const SZrFileRange *location,
@@ -40,6 +44,7 @@ static void capture_parser_error(
     capture->count++;
 }
 
+/* 每个 RUN_TEST 建立新的 VM/context；tearDown 按依赖顺序释放。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
@@ -58,11 +63,13 @@ void tearDown(void) {
     }
 }
 
+/* 返回拥有型 AST 交用例释放；sourceName 由测试 state 管理。 */
 static SZrAstNode *parse_source(const char *source) {
     SZrString *sourceName = ZrCore_String_Create(g_state, "reference_syntax.zr", 19u);
     return ZrParser_Parse(g_state, source, strlen(source), sourceName);
 }
 
+/* 断言脚本边界后返回借用子节点，生命周期不超过 script。 */
 static SZrAstNode *script_statement(SZrAstNode *script, TZrSize index) {
     TEST_ASSERT_NOT_NULL(script);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
@@ -118,6 +125,7 @@ static void test_named_and_nested_function_type_syntax_preserves_delimiters(void
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 区分源码 passing 拼写与 canonical 逃逸上界，防止 scoped ref 被误当 caller escape。 */
 static void test_parameter_source_forms_normalize_to_canonical_contracts(void) {
     const char *source =
             "fn contracts(value: Data, input: in Data, writable: ref Data, "
@@ -226,6 +234,7 @@ static void test_anonymous_expression_body_and_call_markers_are_preserved(void) 
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 命名声明和函数类型注解应驻留为同一个 canonical callable identity。 */
 static void test_callable_syntaxes_intern_the_same_canonical_contract(void) {
     const char *source =
             "fn named(value: ref readonly Data): Data { return value; }\n"
@@ -263,6 +272,7 @@ static void test_callable_syntaxes_intern_the_same_canonical_contract(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 声明上的 readonly/可变/static 修饰须精化或保留 callable receiver effect。 */
 static void test_declaration_receiver_effect_refines_callable_contract(void) {
     const char *source =
             "class Service {\n"
@@ -367,6 +377,8 @@ static void test_fn_keyword_applies_to_class_struct_and_interface_methods(void) 
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 逐条拒绝旧箭头和错误修饰顺序，先释放 parser/AST 后比较首条诊断。 */
+/* BUG: 回调丢弃 token，断言仅检查消息子串和非零结束偏移；同消息落在错误 token/位置仍会通过，需逐例比较预期 token 与范围。 */
 static void test_invalid_callable_delimiters_and_modifier_orders_report_exact_token(void) {
     const char *sources[] = {
             "fn broken() -> int {}",
@@ -411,6 +423,7 @@ static void test_invalid_callable_delimiters_and_modifier_orders_report_exact_to
     }
 }
 
+/* TODO: CMake 仅创建此 Unity 目标，未见 CTest/manifest 注册；需确认语法契约应进入哪个自动套件。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_lexer_distinguishes_fn_ref_and_callable_delimiters);
