@@ -12,13 +12,18 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 手造 AST 隔离分支赋值对 throw 类型集合的影响；不代表源码经完整类型检查后可执行。 */
+/* 同一用例的原生节点、CFG 和事实表共用状态，Unity 每例重建以隔离绑定信息。 */
 static SZrState *g_state;
 
+/* Unity 在测试体前建立分配域；各测试体另建 context 承接可达性事实。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* BUG: 测试体断言失败经 Unity longjmp 跳过局部 AST/CFG/context 的显式 Free；
+ * 此处销毁 global 不回收这些未登记的原生块，失败用例会留下内存泄漏。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -40,6 +45,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 只填 CFG 在这些场景读取的字段；根 script 接管子节点并最终统一析构。 */
 static SZrAstNode *test_node(EZrAstNodeType type,
                              TZrSize startOffset,
                              TZrSize endOffset) {
@@ -55,6 +61,7 @@ static SZrAstNode *test_node(EZrAstNodeType type,
     return node;
 }
 
+/* nodes 是调用方临时指针数组；工厂复制节点引用并把节点所有权交给新块。 */
 static SZrAstNode *block_with_nodes(SZrAstNode **nodes,
                                     TZrSize count,
                                     TZrSize startOffset,
@@ -80,6 +87,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/* catch 按给定顺序匹配，末尾无 pattern 的 catch 用来观察前置精确匹配是否已消耗异常。 */
 static SZrAstNode *try_statement_with_catches(SZrAstNode *body,
                                               SZrAstNode **catchNodes,
                                               TZrSize catchCount) {
@@ -98,6 +106,8 @@ static SZrAstNode *try_statement_with_catches(SZrAstNode *body,
     return tryNode;
 }
 
+/* TODO: 所有 catch 共用固定范围，而部分 body 已越过 172；script/try 也固定到 180。
+ * 本例只查 body 中语句的位置，需另核查父范围相关的语义查询和诊断。 */
 static SZrAstNode *catch_clause(SZrAstNode *body) {
     SZrAstNode *catchNode = test_node(ZR_AST_CATCH_CLAUSE, 84, 172);
 
@@ -120,6 +130,7 @@ static SZrAstNode *identifier_node(const char *name,
     return identifier;
 }
 
+/* 类型名供 CFG 的内建异常种类匹配器读取，原生 SZrType 由所属 AST 析构。 */
 static SZrType *type_info_named(const char *typeName,
                                 TZrSize typeNameLength,
                                 TZrSize startOffset,
@@ -136,6 +147,7 @@ static SZrType *type_info_named(const char *typeName,
     return typeInfo;
 }
 
+/* name 指向独立 identifier 节点内的字段；参数析构会恢复节点地址并释放，不能提前释放 nameNode。 */
 static SZrAstNode *typed_parameter(const char *name,
                                    TZrSize nameLength,
                                    const char *typeName,
@@ -159,6 +171,7 @@ static SZrAstNode *typed_parameter(const char *name,
     return parameter;
 }
 
+/* 只对尚未设置 pattern 的 catch 调用一次；有一个带 typeInfo 的参数才进入 typed catch 匹配。 */
 static void add_catch_parameter(SZrAstNode *catchNode, SZrAstNode *parameter) {
     catchNode->data.catchClause.pattern = ZrParser_AstNodeArray_New(g_state, 1);
     TEST_ASSERT_NOT_NULL(catchNode->data.catchClause.pattern);
@@ -207,6 +220,7 @@ static SZrAstNode *char_literal(TZrChar value,
     return literal;
 }
 
+/* 故意保留 int 声明与后续不同字面量赋值，验证 CFG 使用到达 throw 的赋值事实。 */
 static SZrAstNode *typed_variable_declaration(const char *name,
                                               TZrSize nameLength,
                                               const char *typeName,
@@ -280,6 +294,7 @@ static SZrAstNode *if_statement(SZrAstNode *condition,
     return ifNode;
 }
 
+/* 只检查当前发射的不可达事实；null 表示此语句未被标为不可达，不验证运行时 catch 执行。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(
         SZrSemanticContext *context,
         SZrAstNode *node) {
@@ -288,6 +303,7 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(
             test_range(node->location.start.offset, node->location.start.offset));
 }
 
+/* 常真 then 的 string 赋值应覆盖初始 int；未选中 else 的 char 不得污染后续 throw 种类。 */
 static void
 test_cfg_uses_constant_true_branch_assignment_for_typed_catch_matching(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
@@ -381,6 +397,7 @@ test_cfg_uses_constant_true_branch_assignment_for_typed_catch_matching(void) {
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, fact->state);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, fact->cause);
 
+    /* 精确 string catch 已接纳唯一已知种类，之后的 char 与 catch-all 也应不可达。 */
     TEST_ASSERT_NULL(reachability_fact_at(context, stringCatchStmt));
 
     fact = reachability_fact_at(context, charCatchStmt);
@@ -398,6 +415,7 @@ test_cfg_uses_constant_true_branch_assignment_for_typed_catch_matching(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 未知条件下 then 赋值后立即 return，只有 else 的 char 赋值能到达后续 throw。 */
 static void
 test_cfg_prunes_terminating_symbolic_branch_assignment_for_typed_catch_matching(
         void) {
@@ -423,6 +441,7 @@ test_cfg_prunes_terminating_symbolic_branch_assignment_for_typed_catch_matching(
             39,
             51);
     SZrAstNode *terminatingReturn = return_statement(53, 59);
+    /* 顺序是本例关键：只写 string 的分支若未终止，就应与另一分支一起参与类型合并。 */
     SZrAstNode *fallthroughAssignment = expression_statement(
             assignment_expression(identifier_node("value", 5, 70, 75),
                                   char_literal('c', 78, 81),
@@ -511,6 +530,7 @@ test_cfg_prunes_terminating_symbolic_branch_assignment_for_typed_catch_matching(
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 目标齐备时此 Unity target 纳入 language_pipeline；两个用例只验 CFG 事实层的 catch 剪枝。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_uses_constant_true_branch_assignment_for_typed_catch_matching);
