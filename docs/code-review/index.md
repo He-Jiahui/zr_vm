@@ -162,5 +162,6 @@ doc_type: category-index
 | core artifact 定长行编解码 | [28 项](coverage/zr_vm_core_artifact_rows.tsv) | 1 个 C 文件独立复核，24 个函数与 4 个风险块；GCC/Clang 严格语法检查通过。公开单行读取缺少节类型、数据范围校验且成功后保留旧诊断状态，最小 C 调用已复现并标 BUG；CallBinding 写入返回值与 DomainTransfer 哈希边界保留 TODO。关联 encoding 与 call binding 台账锚点已校正，旧 call binding 台账的其他锚点仍待迁移。 |
 | parser 编译器套件入口与调用降级入口 | [147 项](coverage/tests_parser_compiler_suite_mains.tsv) | 2 个 C 文件独立复核，732 个有效锚点；源码仅将空行替换为注释，GCC/Clang 定向语法检查通过。专项目标手工运行，integration 入口属于 language_pipeline CTest；1 个 BUG 记录 W2 pair 分类测试的断言比较方向，未运行完整测试。 |
 | parser 编译器回归用例主体 | [115 项](coverage/tests_parser_compiler_regressions.tsv) | 1 个大型 C 测试文件独立复核，源码只把原有空行替换为注释且行号保持；GCC/Clang 定向语法检查通过。48 个 BUG 记录 Unity 硬断言失败跳过尾部资源清理的可达路径，1 个 TODO 保留空守卫语义，未运行完整测试。关联现代台账锚点有效，旧夹具与通用台账仍需迁移格式。 |
+| parser 数值 foreach 基数与符号系数读取 | [30 项](coverage/tests_parser_numeric_cardinality_symbolic.tsv) | 2 个 C 测试文件独立复核，214 个证据锚点，源码仅增 35 行注释；GCC/Clang 定向语法检查通过。3 个 BUG 记录 Unity 断言后跳过资源清理及 Array 初始化失败后的 Push 风险，未运行动态测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

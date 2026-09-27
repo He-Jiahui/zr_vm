@@ -13,13 +13,18 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* 单例 Unity 用例共享 VM state；AST 和编译器原生资源仍由用例负责。 */
 static SZrState *g_state;
 
+/* 为符号系数与中途读取的推断场景建立独立 VM 环境。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 中止用例后仍调用此钩子；这里只能回收 g_state。 */
+/* BUG: 编译器创建后的断言失败会 longjmp 跳过函数尾部的类型、AST 和
+ * 编译器外壳清理；tearDown 不持有这些指针，malloc 的 cs 等原生资源被遗留。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -27,6 +32,7 @@ void tearDown(void) {
     }
 }
 
+/* 构造具有类型环境和语义上下文的独立推断器；成功后须配对销毁。 */
 static SZrCompilerState *create_compiler_state(void) {
     SZrCompilerState *cs = (SZrCompilerState *)malloc(sizeof(SZrCompilerState));
 
@@ -38,6 +44,7 @@ static SZrCompilerState *create_compiler_state(void) {
     return cs;
 }
 
+/* 释放编译器内部环境后再释放测试自行分配的外壳。 */
 static void destroy_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -47,6 +54,7 @@ static void destroy_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/* 未知布尔条件迫使 while 合并零次和多次执行路径。 */
 static void register_bool_variable(SZrCompilerState *cs, const char *name) {
     SZrInferredType type;
 
@@ -59,6 +67,7 @@ static void register_bool_variable(SZrCompilerState *cs, const char *name) {
     ZrParser_InferredType_Free(g_state, &type);
 }
 
+/* 为目标、观察者和符号系数种下独立闭区间；环境复制临时类型。 */
 static void register_int64_range_variable(SZrCompilerState *cs,
                                            const char *name,
                                            TZrInt64 minValue,
@@ -77,6 +86,7 @@ static void register_int64_range_variable(SZrCompilerState *cs,
     ZrParser_InferredType_Free(g_state, &type);
 }
 
+/* 借出脚本语句供循环推断或后继事实查询，缺失时由用例断言处理。 */
 static SZrAstNode *statement_at(SZrAstNode *ast, TZrSize index) {
     if (ast == ZR_NULL ||
         ast->type != ZR_AST_SCRIPT ||
@@ -88,6 +98,7 @@ static SZrAstNode *statement_at(SZrAstNode *ast, TZrSize index) {
     return ast->data.script.statements->nodes[index];
 }
 
+/* 借出表达式节点，使推断结果与语义事实使用相同 AST 键。 */
 static SZrAstNode *expression_statement_expression(SZrAstNode *statement) {
     if (statement == ZR_NULL || statement->type != ZR_AST_EXPRESSION_STATEMENT) {
         return ZR_NULL;
@@ -96,6 +107,7 @@ static SZrAstNode *expression_statement_expression(SZrAstNode *statement) {
     return statement->data.expressionStatement.expr;
 }
 
+/* 同时验证推断类型和节点事实，防止读者区间仅在一个观察面更新。 */
 static void assert_int64_range_result_and_fact(SZrCompilerState *cs,
                                                SZrAstNode *expression,
                                                SZrInferredType *result,
@@ -115,6 +127,8 @@ static void assert_int64_range_result_and_fact(SZrCompilerState *cs,
     TEST_ASSERT_FALSE(numericFact->mayOverflow);
 }
 
+/* 多层乘积系数可跨零，other 在两次 narrowed 更新之间读取中间值；
+ * 验证目标与读者在循环合并后分别保持各自的保守区间。 */
 static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_sign_crossing_scale_product_coefficient_residual_propagates_reader_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     const char *sourceNameText =
@@ -165,6 +179,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     TEST_ASSERT_NOT_NULL(targetExpression);
     TEST_ASSERT_NOT_NULL(observerExpression);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    /* 两个后继表达式分别读取最终目标和中途观察者，不能混用其区间。 */
     assert_int64_range_result_and_fact(
             cs,
             targetExpression,
@@ -185,6 +200,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     destroy_compiler_state(cs);
 }
 
+/* 独立 Unity 可执行入口，也列于 language_pipeline 的 CTest manifest。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_sign_crossing_scale_product_coefficient_residual_propagates_reader_range);
