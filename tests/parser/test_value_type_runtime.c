@@ -16,12 +16,16 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/compiler.h"
 
+// 仅用于本文件的定长数组：回调记录容量和布局字段表；不能传退化后的指针。
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+// 每个测试自建 VM；fixture 不共享资源。
 void setUp(void) {}
 
+// BUG: Unity 断言失败会跳过测试体末尾的 State_Destroy，空 fixture 无法回收本地 state。
 void tearDown(void) {}
 
+// 编译独立源程序，调用者负责执行并结束 state 生命周期。
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -34,6 +38,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 先要求编译器确实分配 inline struct 槽位，再用执行结果验证布局语义。
 static TZrUInt32 count_inline_struct_slots(const SZrFunction *function) {
     TZrUInt32 count = 0u;
 
@@ -50,6 +55,7 @@ static TZrUInt32 count_inline_struct_slots(const SZrFunction *function) {
     return count;
 }
 
+// 原生探针从带元数据的字节偏移读取字段，避免只通过高级属性访问验证自身。
 static TZrBool point_field_value_equals(const SZrStackFramePlace *place,
                                         const SZrFunctionFrameFieldLayout *fieldLayout,
                                         TZrInt64 expected) {
@@ -66,6 +72,7 @@ static TZrBool point_field_value_equals(const SZrStackFramePlace *place,
     return (TZrBool)(actual == expected);
 }
 
+// Point 两字段一起匹配，避免局部拷贝与原值的不同槽位被误配。
 static TZrBool point_payload_equals(const SZrStackFramePlace *place,
                                     const SZrFunctionFrameFieldLayout *xLayout,
                                     const SZrFunctionFrameFieldLayout *yLayout,
@@ -75,17 +82,20 @@ static TZrBool point_payload_equals(const SZrStackFramePlace *place,
                       point_field_value_equals(place, yLayout, y));
 }
 
+// GC 布局回调的观察记录；容量固定且仅在单个同步访问期间有效。
 typedef struct SZrTypeLayoutGcVisitRecord {
     SZrTypeValue *values[4];
     TZrUInt32 count;
 } SZrTypeLayoutGcVisitRecord;
 
+// 非连续值槽验证元数据偏移，而不是由字段表位置猜测扫描位置。
 typedef struct SZrTypeLayoutGcOffsetStorage {
     SZrTypeValue first;
     TZrByte padding[8];
     SZrTypeValue second;
 } SZrTypeLayoutGcOffsetStorage;
 
+// TypeLayout_VisitGcValues 同步回调，将访问顺序和实际槽地址交给断言检查。
 static void record_gc_value_visit(SZrState *state, SZrTypeValue *value, TZrPtr userData) {
     SZrTypeLayoutGcVisitRecord *record = (SZrTypeLayoutGcVisitRecord *)userData;
 
@@ -98,6 +108,7 @@ static void record_gc_value_visit(SZrState *state, SZrTypeValue *value, TZrPtr u
     record->count++;
 }
 
+// 通过函数帧布局描述定位两个 Point 局部槽，证明拷贝后的字段写入没有覆盖原值。
 static TZrBool inline_point_frame_has_expected_payloads(SZrState *state,
                                                         const SZrFunction *function,
                                                         TZrStackValuePointer frameBase) {
@@ -140,6 +151,7 @@ static TZrBool inline_point_frame_has_expected_payloads(SZrState *state,
     return (TZrBool)(foundOriginal && foundMutatedCopy);
 }
 
+// 直接检查帧内字符串值槽，供普通探针和强制 GC 探针共用。
 static TZrBool inline_label_frame_has_expected_payloads(SZrState *state,
                                                         const SZrFunction *function,
                                                         TZrStackValuePointer frameBase) {
@@ -189,6 +201,7 @@ static TZrBool inline_label_frame_has_expected_payloads(SZrState *state,
     return (TZrBool)(foundOriginal && foundCopied);
 }
 
+// 从原生调用的上一层 call info 找到 Zr 调用帧；按原生 ABI 写一项整数返回值。
 static TZrInt64 probe_inline_point_frame_native(SZrState *state) {
     SZrCallInfo *nativeCallInfo;
     SZrCallInfo *callerCallInfo;
@@ -216,6 +229,7 @@ static TZrInt64 probe_inline_point_frame_native(SZrState *state) {
     return 0;
 }
 
+// 使用同一调用帧 ABI 验证含 GC 值槽的 Label 拷贝仍分别持有字符串。
 static TZrInt64 probe_inline_label_frame_native(SZrState *state) {
     SZrCallInfo *nativeCallInfo;
     SZrCallInfo *callerCallInfo;
@@ -243,6 +257,7 @@ static TZrInt64 probe_inline_label_frame_native(SZrState *state) {
     return 0;
 }
 
+// 在调用帧仍在栈上时强制完整 GC；前后两次观察验证值槽被准确枚举为根。
 static TZrInt64 force_gc_and_probe_inline_label_frame_native(SZrState *state) {
     SZrCallInfo *nativeCallInfo;
     SZrCallInfo *callerCallInfo;
@@ -274,6 +289,8 @@ static TZrInt64 force_gc_and_probe_inline_label_frame_native(SZrState *state) {
     return 0;
 }
 
+// 将测试探针安装到 zr 全局对象，标记原生闭包为永久对象直到 VM 状态结束。
+// 此入口只服务同步测试，回调依赖当前调用帧仍有效。
 static void install_zr_native_probe(SZrState *state, const char *name, FZrNativeFunction nativeFunction) {
     SZrObject *globalObject;
     SZrClosureNative *closure;
@@ -308,6 +325,7 @@ static void install_zr_native_probe(SZrState *state, const char *name, FZrNative
     ZrCore_Object_SetValue(state, globalObject, &key, &value);
 }
 
+// 字段读写的外部结果验证两个局部 Point 使用独立的按值存储。
 static void test_inline_struct_local_field_get_set_executes_from_frame_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -338,6 +356,7 @@ static void test_inline_struct_local_field_get_set_executes_from_frame_layout(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 原生回调绕开属性读取，直接核对拷贝前后两个帧槽的实际字节。
 static void test_inline_struct_local_field_get_set_updates_frame_bytes(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -369,6 +388,7 @@ static void test_inline_struct_local_field_get_set_updates_frame_bytes(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 被调函数修改 Point 参数时，调用方原值必须保持不变。
 static void test_inline_struct_parameter_mutation_is_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -402,6 +422,7 @@ static void test_inline_struct_parameter_mutation_is_by_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 从函数返回的 Point 与调用方先前局部值不得共享帧存储。
 static void test_inline_struct_return_mutation_is_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -436,6 +457,7 @@ static void test_inline_struct_return_mutation_is_by_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 超过少量机器字的 POD 构造也应按声明布局写入 inline 帧，而非截断字段。
 static void test_inline_large_pod_struct_constructor_initializes_frame_fields(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -480,6 +502,7 @@ static void test_inline_large_pod_struct_constructor_initializes_frame_fields(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 大 POD 返回路径必须复制完整布局，返回后局部字段修改仍独立。
 static void test_inline_large_pod_struct_return_is_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -530,6 +553,7 @@ static void test_inline_large_pod_struct_return_is_by_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 含 GC 字符串的值类型复制只复制值槽，字段赋新值不回写原结构体。
 static void test_inline_struct_string_field_copy_and_mutation_are_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -561,6 +585,7 @@ static void test_inline_struct_string_field_copy_and_mutation_are_by_value(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 原生帧探针验证字符串值槽在两个 inline Label 帧位中分别可见。
 static void test_inline_struct_string_field_updates_frame_bytes(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -590,6 +615,7 @@ static void test_inline_struct_string_field_updates_frame_bytes(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 强制 GC 后继续读取帧内 Label 字符串，检查 inline 值槽的根扫描。
 static void test_inline_struct_string_field_survives_gc_frame_scan(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -619,6 +645,7 @@ static void test_inline_struct_string_field_survives_gc_frame_scan(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// ref struct 位于被调帧时，同样要通过调用帧 GC 根保留字符串字段。
 static void test_ref_struct_string_field_survives_gc_frame_scan(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -655,6 +682,7 @@ static void test_ref_struct_string_field_survives_gc_frame_scan(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 含字符串值槽的参数按值传递，callee 改写不影响 caller 持有的 Label。
 static void test_inline_struct_string_field_parameter_is_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -689,6 +717,7 @@ static void test_inline_struct_string_field_parameter_is_by_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 含字符串值槽的返回值复制后仍允许调用方独立改写字段。
 static void test_inline_struct_string_field_return_is_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -724,6 +753,7 @@ static void test_inline_struct_string_field_return_is_by_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 将 Point 作为 Box 构造参数时，嵌套 inline 字段需保留完整 x/y 布局。
 static void test_inline_struct_constructor_copies_inline_struct_field_argument(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -759,6 +789,7 @@ static void test_inline_struct_constructor_copies_inline_struct_field_argument(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 嵌套 Box 拷贝后修改内部 Point 字段，不应修改源 Box 的嵌套字节。
 static void test_inline_nested_struct_field_copy_and_mutation_are_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -796,6 +827,8 @@ static void test_inline_nested_struct_field_copy_and_mutation_are_by_value(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 运算符重载返回构造值时，本用例检查可见结果；其它用例另查普通构造路径的帧布局。
+// TODO: 此路径当前只断言执行结果，需补槽位或原生帧探针以证明 inline 布局。
 static void test_inline_struct_operator_constructor_result_uses_inline_frame_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -828,6 +861,7 @@ static void test_inline_struct_operator_constructor_result_uses_inline_frame_lay
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 人为让字段表偏移重复，用不同的 metadata 偏移证明 GC 访问优先遵循元数据。
 static void test_type_layout_visit_gc_values_uses_metadata_offsets_when_available(void) {
     static const TZrUInt32 gcOffsets[] = {
             (TZrUInt32)offsetof(SZrTypeLayoutGcOffsetStorage, first),
@@ -882,6 +916,7 @@ static void test_type_layout_visit_gc_values_uses_metadata_offsets_when_availabl
     TEST_ASSERT_EQUAL_PTR(&storage.second, record.values[1]);
 }
 
+// 独立 Unity 入口覆盖局部、参数、返回、嵌套布局和 GC 根扫描路径。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_inline_struct_local_field_get_set_executes_from_frame_layout);

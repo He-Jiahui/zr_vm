@@ -12,8 +12,10 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_parser.h"
 
+// Unity 每个用例经 setUp/tearDown 独立创建并销毁 VM；辅助断言借此共享同一状态。
 static SZrState *g_state;
 
+// 检查动态调用展开是否真的进入 VM 指令，而非只在 AST 层被接受。
 static TZrBool function_contains_opcode(
         const SZrFunction *function,
         EZrInstructionCode opcode) {
@@ -31,6 +33,7 @@ static TZrBool function_contains_opcode(
     return ZR_FALSE;
 }
 
+// 与字节码断言配对，约束前端 SemIR 到执行路径的交接。
 static TZrBool function_contains_semir_opcode(
         const SZrFunction *function,
         EZrSemIrOpcode opcode) {
@@ -47,11 +50,13 @@ static TZrBool function_contains_semir_opcode(
     return ZR_FALSE;
 }
 
+// Unity 在每个 RUN_TEST 前调用；所有解析、编译与执行资源都属于本次 VM 状态。
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+// Unity 失败中止后仍运行 tearDown，避免单个用例留下跨用例状态。
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -59,6 +64,7 @@ void tearDown(void) {
     }
 }
 
+// 锁定展开实参为独立 AST，防止普通数组表达式吞掉省略号语义。
 static void test_call_spread_has_dedicated_argument_ast(void) {
     const char *source =
             "fn collect(...values: int): int { return 1; }\n"
@@ -73,6 +79,7 @@ static void test_call_spread_has_dedicated_argument_ast(void) {
     SZrAstNode *spread;
 
     TEST_ASSERT_NOT_NULL(script);
+    // BUG: 此后任一断言失败会 longjmp 跳过末尾 Ast_Free，泄漏非 GC 分配的 AST 树。
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
     TEST_ASSERT_NOT_NULL(script->data.script.statements);
     TEST_ASSERT_EQUAL_UINT32(
@@ -104,6 +111,7 @@ static void test_call_spread_has_dedicated_argument_ast(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+// 返回语句中的嵌套调用也必须保留展开实参节点供后续编译。
 static void test_return_call_spread_preserves_argument_ast(void) {
     const char *source =
             "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
@@ -117,6 +125,7 @@ static void test_return_call_spread_preserves_argument_ast(void) {
     SZrAstNode *call;
 
     TEST_ASSERT_NOT_NULL(script);
+    // BUG: 此后任一断言失败会 longjmp 跳过末尾 Ast_Free，泄漏非 GC 分配的 AST 树。
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
     TEST_ASSERT_NOT_NULL(script->data.script.statements);
     TEST_ASSERT_EQUAL_UINT32(
@@ -144,6 +153,7 @@ static void test_return_call_spread_preserves_argument_ast(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+// 同时检查 SemIR、VM 指令和执行结果，贯通动态数组展开的编译/运行边界。
 static void test_call_spread_executes_dynamic_array_arguments(void) {
     const char *source =
             "fn sum(a: int, b: int, c: int): int {\n"
@@ -169,6 +179,8 @@ static void test_call_spread_executes_dynamic_array_arguments(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+// 展开引用对象数组时压低堆上限并请求 full GC，检查调用结果仍可读取实参。
+// TODO: SetHeapLimitBytes/ScheduleCollection 仅安排收集；需观测展开窗口的收集计数以证明根保护。
 static void test_call_spread_struct_values_survive_gc_during_expansion(void) {
     const char *source =
             "class Pair {\n"
@@ -197,6 +209,7 @@ static void test_call_spread_struct_values_survive_gc_during_expansion(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+// 成功场景共用的编译与执行断言；调用者提供独立源文本和期望值。
 static void assert_source_executes_to_int64(
         const char *source,
         const char *sourceNameText,
@@ -217,6 +230,7 @@ static void assert_source_executes_to_int64(
     ZrCore_Function_Free(g_state, function);
 }
 
+// 固定前缀实参与尾随展开共存时仍应按源顺序传参。
 static void test_call_spread_supports_fixed_prefix(void) {
     assert_source_executes_to_int64(
             "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
@@ -225,6 +239,7 @@ static void test_call_spread_supports_fixed_prefix(void) {
             42);
 }
 
+// 空数组展开不能额外产生一个实参。
 static void test_call_spread_supports_empty_array(void) {
     assert_source_executes_to_int64(
             "fn answer(): int { return 42; }\n"
@@ -233,6 +248,7 @@ static void test_call_spread_supports_empty_array(void) {
             42);
 }
 
+// 用有副作用的元素表达式约束展开阶段不能重复求值。
 static void test_call_spread_evaluates_elements_once(void) {
     assert_source_executes_to_int64(
             "var count = 0;\n"
@@ -247,6 +263,7 @@ static void test_call_spread_evaluates_elements_once(void) {
             342);
 }
 
+// AOT C/LLVM 共用动态展开 fixture；两个用例各自编译并释放函数。
 static SZrFunction *compile_aot_call_spread_fixture(void) {
     const char *source =
             "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
@@ -263,6 +280,7 @@ static SZrFunction *compile_aot_call_spread_fixture(void) {
     return function;
 }
 
+// 要求 AOT C 生成器通过共享运行时入口调用动态展开，而非丢失该操作。
 static void test_call_spread_lowers_to_aot_c_runtime_boundary(void) {
     SZrFunction *function = compile_aot_call_spread_fixture();
     SZrAotWriterOptions options;
@@ -287,6 +305,7 @@ static void test_call_spread_lowers_to_aot_c_runtime_boundary(void) {
             g_state, function, generatedPath, &options));
 
     generatedText = ZrTests_ReadTextFile(generatedPath, &generatedLength);
+    // BUG: 读取成功后若后续断言失败，Unity 中止会跳过 free(generatedText)。
     TEST_ASSERT_NOT_NULL(generatedText);
     TEST_ASSERT_GREATER_THAN_UINT64(0u, generatedLength);
     TEST_ASSERT_NOT_NULL(strstr(
@@ -298,6 +317,7 @@ static void test_call_spread_lowers_to_aot_c_runtime_boundary(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+// LLVM 路径须保留运行时声明、调用及失败边，以匹配 C 路径语义。
 static void test_call_spread_lowers_to_aot_llvm_runtime_boundary(void) {
     SZrFunction *function = compile_aot_call_spread_fixture();
     SZrAotWriterOptions options;
@@ -322,6 +342,7 @@ static void test_call_spread_lowers_to_aot_llvm_runtime_boundary(void) {
             g_state, function, generatedPath, &options));
 
     generatedText = ZrTests_ReadTextFile(generatedPath, &generatedLength);
+    // BUG: 后续产物断言失败会跳过本地 malloc 缓冲区的 free。
     TEST_ASSERT_NOT_NULL(generatedText);
     TEST_ASSERT_GREATER_THAN_UINT64(0u, generatedLength);
     TEST_ASSERT_NOT_NULL(strstr(
@@ -335,6 +356,7 @@ static void test_call_spread_lowers_to_aot_llvm_runtime_boundary(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+// 负向用例只在编译阶段拒绝；运行时参数个数不足另由执行用例覆盖。
 static void assert_source_rejects(const char *source, const char *sourceNameText) {
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, (TZrNativeString)sourceNameText);
@@ -344,6 +366,7 @@ static void assert_source_rejects(const char *source, const char *sourceNameText
     TEST_ASSERT_NULL(function);
 }
 
+// 展开操作数的静态类型必须是数组。
 static void test_call_spread_rejects_non_array_operand(void) {
     assert_source_rejects(
             "fn identity(value: int): int { return value; }\n"
@@ -351,6 +374,7 @@ static void test_call_spread_rejects_non_array_operand(void) {
             "call_spread_non_array.zr");
 }
 
+// 展开实参只能位于参数列表末端。
 static void test_call_spread_rejects_non_trailing_operand(void) {
     assert_source_rejects(
             "fn sum(a: int, b: int): int { return a + b; }\n"
@@ -358,6 +382,7 @@ static void test_call_spread_rejects_non_trailing_operand(void) {
             "call_spread_non_trailing.zr");
 }
 
+// 同一调用不允许多个展开位置。
 static void test_call_spread_rejects_multiple_spreads(void) {
     assert_source_rejects(
             "fn sum(a: int, b: int): int { return a + b; }\n"
@@ -365,6 +390,7 @@ static void test_call_spread_rejects_multiple_spreads(void) {
             "call_spread_multiple.zr");
 }
 
+// 命名实参与展开实参的混用目前被编译契约拒绝。
 static void test_call_spread_rejects_named_arguments(void) {
     assert_source_rejects(
             "fn sum(a: int, b: int): int { return a + b; }\n"
@@ -372,6 +398,7 @@ static void test_call_spread_rejects_named_arguments(void) {
             "call_spread_named.zr");
 }
 
+// 元素类型不能依赖展开时的隐式转换去适配形参。
 static void test_call_spread_rejects_element_conversion(void) {
     assert_source_rejects(
             "fn identity(value: float): float { return value; }\n"
@@ -379,6 +406,7 @@ static void test_call_spread_rejects_element_conversion(void) {
             "call_spread_element_conversion.zr");
 }
 
+// 编译期可知数组长度时，实参数量错误应提前拒绝。
 static void test_call_spread_rejects_known_argument_count_mismatch(void) {
     assert_source_rejects(
             "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
@@ -386,6 +414,7 @@ static void test_call_spread_rejects_known_argument_count_mismatch(void) {
             "call_spread_known_arity.zr");
 }
 
+// TODO: 动态数组实参数量预期由运行时拒绝；当前只断言执行失败，需核验故障类别。
 static void test_call_spread_rejects_dynamic_argument_count_mismatch_at_runtime(void) {
     const char *source =
             "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
@@ -403,6 +432,7 @@ static void test_call_spread_rejects_dynamic_argument_count_mismatch_at_runtime(
     ZrCore_Function_Free(g_state, function);
 }
 
+// 独立 Unity 可执行入口；按 AST、执行、AOT 和拒绝路径注册全部场景。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_call_spread_has_dedicated_argument_ast);

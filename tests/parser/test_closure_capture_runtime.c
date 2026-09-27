@@ -9,10 +9,13 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 
+// 每个场景自建 VM，Unity fixture 不分配共享状态。
 void setUp(void) {}
 
+// BUG: 断言失败会从测试体 longjmp 到 Unity；本地 state 的末尾 Destroy 因而被跳过。
 void tearDown(void) {}
 
+// 以独立源文件编译测试程序；返回的函数随 state 的 GC 生命周期存在。
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -25,6 +28,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 创建函数返回的闭包必须延长捕获局部值的寿命，离开 makeRunner 后仍可读 seed。
 static void test_returned_lambda_preserves_captured_local_value(void) {
     const char *source =
             "fn makeRunner() {\n"
@@ -49,6 +53,7 @@ static void test_returned_lambda_preserves_captured_local_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 独立 Unity 入口，确保该跨调用帧捕获场景在构建系统中执行。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_returned_lambda_preserves_captured_local_value);
