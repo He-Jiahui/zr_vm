@@ -30,6 +30,9 @@
 #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
 
+/* 本套件同时检查 typed i64 生成 C 的形态与解释器/AOT 执行一致性。 */
+/* BUG: 断言失败会跳过末尾 embeddedBlob、state 等资源释放。 */
+/* 编译测试脚本并将来源名交给诊断路径。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -42,6 +45,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 写入测试项目及脚本，供生成共享库执行路径加载。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -55,6 +59,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* 读取生成 C 文本；调用方负责 free 返回缓冲区。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     TZrBytePtr bytes = ZR_NULL;
     TZrSize byteLength = 0u;
@@ -72,6 +77,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return text;
 }
 
+/* 排除 typed 快路径中不应出现的运行时 helper 标记。 */
 static void assert_text_does_not_contain(const char *text, const char *needle) {
     const char *found;
 
@@ -87,12 +93,14 @@ static void assert_text_does_not_contain(const char *text, const char *needle) {
     }
 }
 
+/* 确认生成 C 保留预期的 typed 标量表达式。 */
 static void assert_text_contains(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(text, needle), needle);
 }
 
+/* 计算嵌入模块的稳定哈希以绑定 AOT 输入。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -118,6 +126,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
 }
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 执行共享库编译命令并打印失败状态。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -130,6 +139,7 @@ static int run_command_expect_success(const char *command) {
 }
 #endif
 
+/* 取得相同脚本的解释器 i64 结果，作为 AOT 对照。 */
 static TZrInt64 execute_interpreter_i64(const char *source) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -151,6 +161,7 @@ static TZrInt64 execute_interpreter_i64(const char *source) {
     return result;
 }
 
+/* 检查生成代码直写标量、链接后实际走 AOT C 且返回解释器同值。 */
 static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C typed scalar lowering currently validates the Unix shared-library toolchain path");
@@ -1091,10 +1102,13 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
 #endif
 }
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册 typed i64 标量生成代码与解释器对照用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter);

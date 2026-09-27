@@ -30,10 +30,14 @@
 #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
 
+/* 反射构造测试先取解释器结果，再构建并加载生成的 Unix AOT C 共享库。 */
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 为两个执行后端分别编译同一脚本源码。 */
 static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const TZrChar *sourceNameText) {
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString) sourceNameText);
 
@@ -41,6 +45,7 @@ static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 确认编译后的 spread 调用没有在比较前被意外改写。 */
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
         return ZR_FALSE;
@@ -53,6 +58,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+/* 检查 createInstance(...args) 的 spread 参数在 AST 中仍完整。 */
 static void assert_reflection_spread_call_ast(SZrState *state, const TZrChar *source) {
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, "reflection_construction_ast.zr");
     SZrAstNode *script = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -81,6 +87,7 @@ static void assert_reflection_spread_call_ast(SZrState *state, const TZrChar *so
     ZrParser_Ast_Free(state, script);
 }
 
+/* 在生成产物目录写入项目声明和脚本。 */
 static void write_text_file_or_fail(const TZrChar *path, const TZrChar *text) {
     FILE *file;
 
@@ -91,6 +98,7 @@ static void write_text_file_or_fail(const TZrChar *path, const TZrChar *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* 计算 ZRO 的稳定哈希，作为 AOT writer 的输入身份。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file = fopen(path, "rb");
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -109,6 +117,8 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long) hash);
 }
 
+/* 比较构造器直参及 spread 调用之和，并确认实际经 AOT C 执行。 */
+/* BUG: 任意失败断言会跳过末尾 project、blob 和 state 清理。 */
 static void test_reflection_construction_executes_equivalently_in_vm_and_aot_c(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C reflection construction execution currently validates the Unix shared-library path");
@@ -226,6 +236,7 @@ static void test_reflection_construction_executes_equivalently_in_vm_and_aot_c(v
 #endif
 }
 
+/* 注册反射构造在解释器与 C AOT 共享库中的等价性用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reflection_construction_executes_equivalently_in_vm_and_aot_c);

@@ -8,6 +8,10 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本组检查整数移位 lowering 的源码合同和旧路径的排除。 */
+/* BUG: 失败断言会跳过用例末尾的源码缓冲区释放。 */
+
+/* 读取完整源码文本，失败返回 NULL，成功结果由测试释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +54,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从本测试文件路径定位仓库根目录。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +85,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 用共用匹配器验证必需源码片段。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +97,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 排除旧移位实现的文本标记。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +109,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 关联 typed-bitwise lowering、emitter 接口和函数体中的移位发射路径。 */
 static void test_aot_c_source_lowers_generic_integer_shift_to_direct_c(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_shift_left(FILE *file",
@@ -161,10 +169,13 @@ static void test_aot_c_source_lowers_generic_integer_shift_to_direct_c(void) {
     free(functionBodyText);
 }
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册通用整数移位的 C AOT 源码合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_generic_integer_shift_to_direct_c);

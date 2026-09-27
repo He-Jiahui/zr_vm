@@ -14,22 +14,29 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/writer.h"
 
+/* 本套件用手工函数元数据夹具检查 C AOT 裁剪根与 trim 告警。 */
+/* BUG: 各用例的释放在末尾；Unity 失败跳转会跳过已分配文本和 state 的清理。 */
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 核对生成 C 中应保留的标记。 */
 static void assert_text_contains(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NOT_NULL(strstr(text, needle));
 }
 
+/* 核对裁剪后不应出现的标记。 */
 static void assert_text_does_not_contain(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NULL(strstr(text, needle));
 }
 
+/* 构造有两个操作数的字节码，供静态调用夹具使用。 */
 static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
                                                 TZrUInt16 operandExtra,
                                                 TZrUInt16 operandA,
@@ -44,6 +51,7 @@ static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+/* 创建或复用函数元数据对象，让注解写入与 writer 输入一致。 */
 static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFunction *function) {
     SZrObject *metadataObject;
 
@@ -68,6 +76,7 @@ static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFun
     return metadataObject;
 }
 
+/* 写入布尔注解字段。 */
 static void mark_function_metadata_bool(SZrState *state,
                                         SZrFunction *function,
                                         const TZrChar *fieldName,
@@ -90,6 +99,7 @@ static void mark_function_metadata_bool(SZrState *state,
     ZrCore_Object_SetValue(state, metadataObject, &key, &value);
 }
 
+/* 写入字符串注解字段。 */
 static void mark_function_metadata_string(SZrState *state,
                                           SZrFunction *function,
                                           const TZrChar *fieldName,
@@ -118,6 +128,7 @@ static void mark_function_metadata_string(SZrState *state,
     ZrCore_Object_SetValue(state, metadataObject, &key, &value);
 }
 
+/* 写入无符号整数注解字段。 */
 static void mark_function_metadata_uint(SZrState *state,
                                         SZrFunction *function,
                                         const TZrChar *fieldName,
@@ -140,10 +151,12 @@ static void mark_function_metadata_uint(SZrState *state,
     ZrCore_Object_SetValue(state, metadataObject, &key, &value);
 }
 
+/* 将函数标为反射根。 */
 static void mark_function_reflectable(SZrState *state, SZrFunction *function) {
     mark_function_metadata_bool(state, function, "reflectable", ZR_TRUE);
 }
 
+/* 按函数索引标记动态依赖。 */
 static void mark_function_dynamic_dependency_function_index(SZrState *state,
                                                            SZrFunction *function,
                                                            TZrUInt32 targetFunctionIndex) {
@@ -153,6 +166,7 @@ static void mark_function_dynamic_dependency_function_index(SZrState *state,
                                 (TZrUInt64)targetFunctionIndex);
 }
 
+/* 按方法 token 标记动态依赖。 */
 static void mark_function_dynamic_dependency_method_token(SZrState *state,
                                                          SZrFunction *function,
                                                          TZrMetadataToken methodToken) {
@@ -162,6 +176,7 @@ static void mark_function_dynamic_dependency_method_token(SZrState *state,
                                 (TZrUInt64)methodToken);
 }
 
+/* 按方法名标记动态依赖。 */
 static void mark_function_dynamic_dependency_method_name(SZrState *state,
                                                         SZrFunction *function,
                                                         const TZrChar *methodName) {
@@ -171,6 +186,7 @@ static void mark_function_dynamic_dependency_method_name(SZrState *state,
                                   methodName);
 }
 
+/* 用签名哈希收窄同名方法的动态依赖。 */
 static void mark_function_dynamic_dependency_method_signature_hash(SZrState *state,
                                                                   SZrFunction *function,
                                                                   TZrUInt64 signatureHash) {
@@ -180,14 +196,17 @@ static void mark_function_dynamic_dependency_method_signature_hash(SZrState *sta
                                 signatureHash);
 }
 
+/* 为被调函数标记潜在的裁剪风险。 */
 static void mark_function_requires_unreferenced_code(SZrState *state, SZrFunction *function) {
     mark_function_metadata_bool(state, function, "requiresUnreferencedCode", ZR_TRUE);
 }
 
+/* 为调用点提供 trim 告警抑制注解。 */
 static void mark_function_suppresses_requires_unreferenced_code_warning(SZrState *state, SZrFunction *function) {
     mark_function_metadata_bool(state, function, "suppressRequiresUnreferencedCodeWarning", ZR_TRUE);
 }
 
+/* 写入带原因文本的风险注解，供诊断内容断言。 */
 static void mark_function_requires_unreferenced_code_with_reason(SZrState *state,
                                                                  SZrFunction *function,
                                                                  const TZrChar *reason) {
@@ -195,6 +214,7 @@ static void mark_function_requires_unreferenced_code_with_reason(SZrState *state
     mark_function_metadata_string(state, function, "requiresUnreferencedCodeReason", reason);
 }
 
+/* 构造测试中的静态函数调用指令。 */
 static TZrInstruction create_function_call_instruction(TZrUInt16 destinationSlot,
                                                        TZrUInt16 functionSlot,
                                                        TZrUInt16 argumentCount) {
@@ -204,6 +224,7 @@ static TZrInstruction create_function_call_instruction(TZrUInt16 destinationSlot
                                      argumentCount);
 }
 
+/* 构造可达与不可达子函数，让裁剪测试共享同一函数图。 */
 static SZrFunction *create_reflection_annotation_trim_fixture(SZrState *state) {
     SZrFunction *root;
 
@@ -246,6 +267,7 @@ static SZrFunction *create_reflection_annotation_trim_fixture(SZrState *state) {
     return root;
 }
 
+/* 为方法 token/name 夹具准备导出符号表。 */
 static SZrFunctionTypedExportSymbol *allocate_typed_exported_symbols(
         SZrState *state,
         SZrFunction *root,
@@ -266,6 +288,7 @@ static SZrFunctionTypedExportSymbol *allocate_typed_exported_symbols(
     return symbols;
 }
 
+/* 把方法 token 绑定到子函数元数据。 */
 static void attach_typed_method_token(SZrFunction *root,
                                       SZrFunctionTypedExportSymbol *symbol,
                                       TZrUInt32 callableChildIndex,
@@ -283,6 +306,7 @@ static void attach_typed_method_token(SZrFunction *root,
     root->typedExportedSymbolLength = 1u;
 }
 
+/* 把导出方法 token 绑定到根函数符号表。 */
 static void attach_typed_exported_method_token(SZrFunction *root,
                                                SZrFunctionTypedExportSymbol *symbol,
                                                TZrUInt32 callableChildIndex,
@@ -294,6 +318,7 @@ static void attach_typed_exported_method_token(SZrFunction *root,
                               ZR_MODULE_EXPORT_KIND_FUNCTION);
 }
 
+/* 初始化导出符号的方法名及关联元数据。 */
 static void init_typed_exported_method_name(SZrState *state,
                                             SZrFunctionTypedExportSymbol *symbol,
                                             TZrUInt32 callableChildIndex,
@@ -312,6 +337,7 @@ static void init_typed_exported_method_name(SZrState *state,
     symbol->signatureHash = signatureHash;
 }
 
+/* 为方法名动态依赖构造导出符号。 */
 static void attach_typed_exported_method_name(SZrState *state,
                                               SZrFunction *root,
                                               SZrFunctionTypedExportSymbol *symbol,
@@ -324,6 +350,7 @@ static void attach_typed_exported_method_name(SZrState *state,
     root->typedExportedSymbolLength = 1u;
 }
 
+/* 构造带来源位置的调用关系，以比较有无被调风险注解。 */
 static SZrFunction *create_requires_unreferenced_code_call_fixture(SZrState *state, TZrBool annotateCallee) {
     SZrFunction *root;
     SZrFunction *childFunction;
@@ -387,6 +414,7 @@ static SZrFunction *create_requires_unreferenced_code_call_fixture(SZrState *sta
     return root;
 }
 
+/* 扩展调用夹具，令诊断可携带被调函数的原因文本。 */
 static SZrFunction *create_requires_unreferenced_code_call_fixture_with_reason(SZrState *state,
                                                                                const TZrChar *reason) {
     SZrFunction *root = create_requires_unreferenced_code_call_fixture(state, ZR_FALSE);
@@ -397,6 +425,7 @@ static SZrFunction *create_requires_unreferenced_code_call_fixture_with_reason(S
     return root;
 }
 
+/* 反射注解应保留原本不可达的函数元数据。 */
 static void test_aot_c_code_stripping_preserves_reflectable_function_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -441,6 +470,7 @@ static void test_aot_c_code_stripping_preserves_reflectable_function_metadata(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 对照夹具：没有根注解时不可达函数应被裁剪。 */
 static void test_aot_c_code_stripping_prunes_unannotated_unreachable_function(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -486,6 +516,7 @@ static void test_aot_c_code_stripping_prunes_unannotated_unreachable_function(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 按函数索引声明的动态依赖应进入保留集。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_function_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -531,6 +562,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_function_meta
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 导出方法 token 依赖应保留目标函数元数据。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_token_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
@@ -580,6 +612,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_token_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 非导出方法 token 也可作为动态依赖保留根。 */
 static void test_aot_c_code_stripping_preserves_non_exported_dynamic_dependency_method_token_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 8u);
@@ -633,6 +666,7 @@ static void test_aot_c_code_stripping_preserves_non_exported_dynamic_dependency_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 方法名依赖应解析并保留目标方法元数据。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -681,6 +715,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_m
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同名方法依赖以签名哈希区分保留对象。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_signature_hash_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -731,6 +766,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_s
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 调用风险注解函数时应输出 trim 诊断。 */
 static void test_aot_c_emits_trim_annotation_warning_for_requires_unreferenced_code_callee(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -771,6 +807,7 @@ static void test_aot_c_emits_trim_annotation_warning_for_requires_unreferenced_c
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* writer 的全局抑制选项应隐藏被调函数的 trim 诊断并累计抑制数。 */
 static void test_aot_c_suppresses_trim_annotation_warning_for_requires_unreferenced_code_callee(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -813,6 +850,7 @@ static void test_aot_c_suppresses_trim_annotation_warning_for_requires_unreferen
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 调用点的抑制注解应阻止对应 trim 诊断。 */
 static void test_aot_c_suppresses_trim_annotation_warning_from_callsite_annotation(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -855,6 +893,7 @@ static void test_aot_c_suppresses_trim_annotation_warning_from_callsite_annotati
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 未标风险的静态被调函数不应产生 trim 诊断。 */
 static void test_aot_c_skips_trim_annotation_warning_for_unannotated_static_callee(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -894,6 +933,7 @@ static void test_aot_c_skips_trim_annotation_warning_for_unannotated_static_call
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 风险注解的原因文本应进入告警。 */
 static void test_aot_c_emits_trim_annotation_warning_reason_text_for_requires_unreferenced_code_callee(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -934,6 +974,7 @@ static void test_aot_c_emits_trim_annotation_warning_reason_text_for_requires_un
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 注册反射元数据保留、裁剪和 trim 告警合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_code_stripping_preserves_reflectable_function_metadata);

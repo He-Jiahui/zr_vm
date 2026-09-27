@@ -8,10 +8,16 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本套件通过源码合同守住值 SemIR 子模块和帧布局职责。 */
+/* BUG: 失败断言会跳过各用例末尾已读源码的释放。 */
+
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 读取完整源码文本，成功结果由对应测试释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -54,6 +60,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 用 __FILE__ 定位仓库根目录，兼容测试从构建树运行。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -84,6 +91,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 必需片段允许空白差异，确认源码职责仍在指定模块。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -96,6 +104,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 逐字排除重回单体 orchestrator 的旧代码片段。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -108,6 +117,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 检查字段 lowering 的实现位于独立模块而 orchestrator 只分派。 */
 static void test_aot_c_value_semir_field_lowering_lives_in_focused_module(void) {
     static const char *const fieldHeaderNeedles[] = {
             "backend_aot_write_c_value_semir_field_addr(",
@@ -182,6 +192,7 @@ static void test_aot_c_value_semir_field_lowering_lives_in_focused_module(void) 
     free(orchestratorText);
 }
 
+/* 检查非 POD 内联结构字段传递采用布局感知复制。 */
 static void test_aot_c_value_semir_inline_struct_field_transfer_uses_layout_copy_for_non_pod(void) {
     static const char *const fieldSourceNeedles[] = {
             "const SZrTypeLayout *zr_aot_field_layout =",
@@ -207,6 +218,7 @@ static void test_aot_c_value_semir_inline_struct_field_transfer_uses_layout_copy
     free(fieldSourceText);
 }
 
+/* 检查字段解析依赖稳定成员表项，而非临时位置。 */
 static void test_aot_c_value_semir_field_resolver_uses_stable_member_entries(void) {
     static const char *const fieldSourceNeedles[] = {
             "backend_aot_c_value_field_resolve_stable_member_name(",
@@ -223,6 +235,7 @@ static void test_aot_c_value_semir_field_resolver_uses_stable_member_entries(voi
     free(fieldSourceText);
 }
 
+/* 检查类型布局描述符的规范身份和映射表持续保留。 */
 static void test_aot_c_type_layout_descriptor_preserves_canonical_identity_and_maps(void) {
     static const char *const typeLayoutNeedles[] = {
             "backend_aot_c_type_layout_write_ref_offsets(",
@@ -250,6 +263,7 @@ static void test_aot_c_type_layout_descriptor_preserves_canonical_identity_and_m
     free(typeLayoutSourceText);
 }
 
+/* 检查帧别名保留寻址信息且不重复执行生命周期处理。 */
 static void test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecycle(void) {
     static const char *const execIrNeedles[] = {
             "destinationLayout->reserved0 = sourceLayout->reserved0;",
@@ -304,6 +318,7 @@ static void test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecy
     free(valueSemIrSourceText);
 }
 
+/* 检查间接别名字段访问仍走规范帧成员传递。 */
 static void test_aot_c_indirect_alias_field_access_uses_canonical_frame_member_transfer(void) {
     static const char *const fieldSourceNeedles[] = {
             "ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS",
@@ -341,6 +356,7 @@ static void test_aot_c_indirect_alias_field_access_uses_canonical_frame_member_t
     free(aotRuntimeText);
 }
 
+/* 检查 typed 调用返回实现在独立模块，orchestrator 负责分派。 */
 static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(void) {
     static const char *const callHeaderNeedles[] = {
             "backend_aot_write_c_value_semir_call_typed(",
@@ -432,6 +448,7 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
     free(orchestratorText);
 }
 
+/* 检查构造失败时只清理已初始化的内联帧成员。 */
 static void test_aot_c_constructor_failure_uses_partial_inline_frame_cleanup(void) {
     static const char *const cleanupNeedles[] = {
             "ZrCore_Function_DropInlineFrameValuesOnUnwind(",
@@ -457,6 +474,7 @@ static void test_aot_c_constructor_failure_uses_partial_inline_frame_cleanup(voi
     free(setupText);
 }
 
+/* 注册值语义 IR、布局与清理路径的源码合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_value_semir_field_lowering_lives_in_focused_module);

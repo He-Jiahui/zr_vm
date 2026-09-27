@@ -8,6 +8,11 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本套件按模块读取源码，守住 C AOT lowering 的分工和已移除路径。 */
+/* TODO: 文本匹配可命中注释或死代码，源码合同需由执行测试补足。 */
+/* BUG: 失败断言会跳过各用例末尾已读源码的释放。 */
+
+/* 完整读取源码文件，失败返回 NULL；成功缓冲区由测试释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +55,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从 __FILE__ 定位仓库根，以适应构建目录中的测试运行。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +86,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 必需片段允许空白差异；此检查只证明源码形态存在。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +98,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 逐字排除已迁移的旧实现片段。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +110,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 检查值 SemIR lowering 通过 frame layout 和对应 emitter 入口生成代码。 */
 static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_value_semir_for_function(",
@@ -314,6 +323,7 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
     free(functionBodyText);
 }
 
+/* 检查原始常量直写与对象常量边界的分流。 */
 static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_primitive_constant",
@@ -485,6 +495,7 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
     free(runtimeSyncSourceText);
 }
 
+/* 约束旧 int 算术指令仍走直接 C 表达式的源码路径。 */
 static void test_aot_c_source_lowers_legacy_int_arithmetic_to_direct_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add_int",
@@ -541,6 +552,7 @@ static void test_aot_c_source_lowers_legacy_int_arithmetic_to_direct_c_expressio
     free(functionBodyText);
 }
 
+/* 核对泛型数值运算经运行时边界处理，而非误用 typed 快路径。 */
 static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add",
@@ -726,6 +738,7 @@ static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_help
     free(functionBodyText);
 }
 
+/* 核对泛型原始类型转换调用边界 helper 的源码合同。 */
 static void test_aot_c_source_lowers_generic_primitive_conversions_to_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_to_bool",
@@ -851,6 +864,7 @@ static void test_aot_c_source_lowers_generic_primitive_conversions_to_boundary_h
     free(runtimeValuesText);
 }
 
+/* 检查逻辑布尔同步表达式的括号，防止 C 优先级改变值流。 */
 static void test_aot_c_source_parenthesizes_generic_logical_bool_sync_expressions(void) {
     static const char *const genericLogicalNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
@@ -873,6 +887,7 @@ static void test_aot_c_source_parenthesizes_generic_logical_bool_sync_expression
     free(genericLogicalText);
 }
 
+/* 约束有符号、无符号及浮点 typed 算术发射原生 C 表达式。 */
 static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add_signed",
@@ -1209,6 +1224,7 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
     free(scalarLocalsText);
 }
 
+/* 检查带有常量加载的有符号 typed 算术融合形态。 */
 static void test_aot_c_source_lowers_typed_signed_load_const_arithmetic_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add_signed_load_const",
@@ -1278,6 +1294,7 @@ static void test_aot_c_source_lowers_typed_signed_load_const_arithmetic_to_c_exp
     free(backendSupportText);
 }
 
+/* 检查栈加载加常量的有符号 typed 算术融合形态。 */
 static void test_aot_c_source_lowers_typed_signed_load_stack_const_arithmetic_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add_signed_load_stack_const",
@@ -1343,6 +1360,7 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_const_arithmetic_to
     free(backendSupportText);
 }
 
+/* 检查栈值与常量加载组合的有符号算术融合形态。 */
 static void test_aot_c_source_lowers_typed_signed_load_stack_load_const_arithmetic_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add_signed_load_stack_load_const",
@@ -1388,6 +1406,7 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_load_const_arithmet
     free(backendSupportText);
 }
 
+/* 检查有符号栈值直接参与 typed 算术的发射形态。 */
 static void test_aot_c_source_lowers_typed_signed_load_stack_arithmetic_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_add_signed_load_stack",
@@ -1436,6 +1455,7 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_arithmetic_to_c_exp
     free(backendSupportText);
 }
 
+/* 检查 typed 位运算发射原生 C 表达式及保护条件。 */
 static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_bitwise_not",
@@ -1547,6 +1567,7 @@ static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
     free(scalarBitwiseText);
 }
 
+/* 检查标量栈复制同步 C 局部变量，同时保留通用值槽回退。 */
 static void test_aot_c_source_mirrors_scalar_stack_copy_to_c_locals(void) {
     static const char *const stackCopyNeedles[] = {
             "#include \"backend_aot_c_scalar_locals.h\"",
@@ -1685,6 +1706,7 @@ static void test_aot_c_source_mirrors_scalar_stack_copy_to_c_locals(void) {
     free(frameDescriptorText);
 }
 
+/* 检查 typed 布尔相等比较的直接 C 路径。 */
 static void test_aot_c_source_lowers_typed_bool_equality_to_c_expressions(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_logical_equal_bool",
@@ -1809,6 +1831,7 @@ static void test_aot_c_source_lowers_typed_bool_equality_to_c_expressions(void) 
     free(scalarLocalsText);
 }
 
+/* 检查有符号 typed 条件跳转发射 C 比较而非泛型比较。 */
 static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) {
     static const char *const headerNeedles[] = {
             "typedef struct SZrAotExecIrFunction SZrAotExecIrFunction;",
@@ -1916,6 +1939,7 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
     free(execIrSourceLocationText);
 }
 
+/* 检查 typed 数值转换发射 C cast 和必要边界处理。 */
 static void test_aot_c_source_lowers_typed_numeric_conversion_to_c_casts(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_to_float_signed",
@@ -2006,6 +2030,7 @@ static void test_aot_c_source_lowers_typed_numeric_conversion_to_c_casts(void) {
     free(scalarConversionText);
 }
 
+/* 检查标量局部变量声明与初始化代码由对应模块生成。 */
 static void test_aot_c_source_emits_typed_scalar_local_declarations(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_scalar_locals(",
@@ -2149,6 +2174,7 @@ static void test_aot_c_source_emits_typed_scalar_local_declarations(void) {
     free(functionBodyText);
 }
 
+/* 检查值帧正常及异常退出经过 cleanup 发射路径。 */
 static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
     static const char *const emitterNeedles[] = {
             "#include \\\"zr_vm_core/function.h\\\"",
@@ -2389,6 +2415,7 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
     free(valueSemirCallText);
 }
 
+/* 核对 ZRP 元数据大小统计与二进制布局的源码职责分离。 */
 static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     static const char *const emitterNeedles[] = {
             "#include \"backend_aot_c_zrp_metadata_prune.h\"",
@@ -2853,6 +2880,7 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     free(typeSpecSourceText);
 }
 
+/* 检查方法元数据输出继续累计生成字节增量。 */
 static void test_aot_c_source_tracks_method_metadata_generated_byte_deltas(void) {
     static const char *const emitterNeedles[] = {
             "methodMetadataGeneratedBytesBeforeStripping",
@@ -2901,6 +2929,7 @@ static void test_aot_c_source_tracks_method_metadata_generated_byte_deltas(void)
     free(methodMetadataSourceText);
 }
 
+/* 核对生成 ABI 头文件的公开接口与内部引用边界。 */
 static void test_aot_c_generated_abi_header_is_public(void) {
     static const char *const abiHeaderNeedles[] = {
             "ZR_VM_COMMON_ZR_AOT_ABI_H",
@@ -3048,6 +3077,7 @@ static void test_aot_c_generated_abi_header_is_public(void) {
     free(aotRuntimeText);
 }
 
+/* 检查 writer 的 C AOT 选项向外暴露并传入实际写入路径。 */
 static void test_aot_c_writer_options_are_public(void) {
     static const char *const writerHeaderNeedles[] = {
             "#include \"zr_vm_common/zr_aot_abi.h\"",
@@ -3132,6 +3162,7 @@ static void test_aot_c_writer_options_are_public(void) {
     free(annotationWarningText);
 }
 
+/* 检查 DynamicDependency 方法 token 成为裁剪保留根的源码路径。 */
 static void test_aot_c_dynamic_dependency_method_token_roots_are_source_guarded(void) {
     static const char *const reachabilityNeedles[] = {
             "#include \"zr_vm_core/metadata_token.h\"",
@@ -3165,6 +3196,7 @@ static void test_aot_c_dynamic_dependency_method_token_roots_are_source_guarded(
     free(reachabilityText);
 }
 
+/* 检查动态依赖的类型布局根在类型元数据生成中保留。 */
 static void test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded(void) {
     static const char *const emitterNeedles[] = {
             "annotationTypeLayoutRoots",
@@ -3258,12 +3290,16 @@ static void test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded(v
     free(metadataRootSourceText);
 }
 
+/* 共用本文件的源码读取 helper 执行静态直调身份校验合同。 */
 #include "test_aot_static_direct_call_identity_source_contract_cases.h"
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册 C AOT 源码生成形态及公开 ABI 合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_value_semir_with_frame_layout);

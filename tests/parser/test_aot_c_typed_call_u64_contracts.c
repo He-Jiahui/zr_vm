@@ -2,6 +2,8 @@
 
 #include "aot_c_typed_call_contract_cases.h"
 
+/* 核对 u64 thunk 形态、无符号运算和静态直调模块的源码合同。 */
+/* BUG: 失败断言会跳过本用例末尾已读源码的释放。 */
 void test_aot_c_source_lowers_static_no_arg_u64_calls_to_typed_thunks(void) {
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_c_can_emit_typed_u64_no_arg_thunk(const SZrFunction *function)",

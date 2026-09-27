@@ -41,6 +41,7 @@
     #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
 
+/* typed 循环与通用循环脚本供代码形态、值构造计数和性能比较。 */
 static const char *const CZrAotTypedLoopSource =
         "fn sum_to(limit: int): int {\n"
         "    var index: int = 0;\n"
@@ -53,6 +54,7 @@ static const char *const CZrAotTypedLoopSource =
         "}\n"
         "return sum_to(4096);";
 
+/* 通用 AOT 对照保留运行时状态和安全点路径。 */
 static const char *const CZrAotGeneralLoopSource =
         "var index: int = 0;\n"
         "var sum: int = 0;\n"
@@ -82,6 +84,7 @@ typedef TZrInt64 (*TZrAotTypedLoopProbe)(TZrInt64 limit);
 #define ZR_AOT_LOOP_PERF_TARGET_SPEEDUP 3.0
 #define ZR_AOT_LOOP_PERF_MIN_GENERAL_AOT_SPEEDUP 1.1
 
+/* 用单调时钟采样，避免墙钟调整影响耗时。 */
 static double monotonic_time_ns(void) {
     struct timespec value;
 
@@ -91,6 +94,7 @@ static double monotonic_time_ns(void) {
     return (double)value.tv_sec * 1000000000.0 + (double)value.tv_nsec;
 }
 
+/* 逐次核对直接 thunk 返回值并累计校验和。 */
 static double benchmark_aot_probe_ns_per_call(TZrAotValueConstructionProbe probe,
                                                TZrUInt32 iterations,
                                                TZrInt64 *outChecksum) {
@@ -123,6 +127,7 @@ static double benchmark_aot_probe_ns_per_call(TZrAotValueConstructionProbe probe
     return (endNs - startNs) / (double)iterations;
 }
 
+/* 对同一脚本测解释器单次调用成本。 */
 static double benchmark_interpreter_ns_per_call(SZrState *state,
                                                  SZrFunction *function,
                                                  TZrUInt32 iterations,
@@ -157,6 +162,7 @@ static double benchmark_interpreter_ns_per_call(SZrState *state,
     return (endNs - startNs) / (double)iterations;
 }
 
+/* 测 typed 循环 thunk 的单次调用成本并核对结果。 */
 static double benchmark_typed_loop_probe_ns_per_call(TZrAotTypedLoopProbe probe,
                                                        TZrUInt32 iterations,
                                                        TZrInt64 *outChecksum) {
@@ -189,6 +195,7 @@ static double benchmark_typed_loop_probe_ns_per_call(TZrAotTypedLoopProbe probe,
     return (endNs - startNs) / (double)iterations;
 }
 
+/* 对 typed 循环脚本测解释器对照成本。 */
 static double benchmark_loop_interpreter_ns_per_call(SZrState *state,
                                                        SZrFunction *function,
                                                        TZrUInt32 iterations,
@@ -223,6 +230,7 @@ static double benchmark_loop_interpreter_ns_per_call(SZrState *state,
     return (endNs - startNs) / (double)iterations;
 }
 
+/* 对通用 AOT 循环测运行时边界的调用成本。 */
 static double benchmark_general_aot_loop_ns_per_call(SZrState *state,
                                                        TZrUInt32 iterations,
                                                        TZrInt64 *outChecksum) {
@@ -257,6 +265,7 @@ static double benchmark_general_aot_loop_ns_per_call(SZrState *state,
     return (endNs - startNs) / (double)iterations;
 }
 
+/* 取三轮中的最小正样本作为各后端速度门槛的输入。 */
 static double min_positive_sample(const double *samples, TZrUInt32 count) {
     double result = -1.0;
     TZrUInt32 index;
@@ -272,6 +281,7 @@ static double min_positive_sample(const double *samples, TZrUInt32 count) {
     return result;
 }
 
+/* 执行编译命令并保留失败命令输出。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -283,6 +293,7 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
+/* 从生成共享库中取得直接 typed thunk 地址。 */
 static void *load_symbol(void *library, const char *symbolName) {
     void *symbol;
 
@@ -296,6 +307,7 @@ static void *load_symbol(void *library, const char *symbolName) {
 }
 #endif
 
+/* 编译性能夹具脚本并携带来源名。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -308,6 +320,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 读回生成 C，用于验证 thunk 与通用路径的代码形态。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     TZrBytePtr bytes = ZR_NULL;
     TZrSize byteLength = 0u;
@@ -324,6 +337,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return text;
 }
 
+/* 为生成 C 追加性能测试所需的探针入口。 */
 static void append_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -335,6 +349,7 @@ static void append_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* 写入项目与源脚本，供通用 AOT 对照加载。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -346,6 +361,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* 计算通用 AOT 输入二进制的稳定哈希。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -371,6 +387,8 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 验证直接 i64 thunk 返回 42、值构造计数为零且通过最低速度门槛。 */
+/* BUG: 失败断言会跳过末尾 dlclose、blob 和 state 清理。 */
 static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C value-construction guardrail executes the Unix shared-library path");
@@ -552,6 +570,8 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
 #endif
 }
 
+/* 验证 typed 循环发射无 state 参数的直接 thunk 与 C 局部变量。 */
+/* BUG: 失败断言会跳过本用例末尾的 state 清理。 */
 static void test_full_aot_typed_i64_counting_loop_emits_state_free_thunk(void) {
     static const TZrByte embeddedBlob[] = {0x7a};
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -603,6 +623,9 @@ static void test_full_aot_typed_i64_counting_loop_emits_state_free_thunk(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 比较 typed thunk、解释器和通用 AOT 的正确值、计数与速度。 */
+/* BUG: 失败断言会跳过两个 state、blob 与共享库的尾部清理。 */
+/* TODO: 固定速度门槛对不同负载环境的稳定性尚需独立测量。 */
 static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C typed-loop performance guardrail executes the Unix shared-library path");
@@ -919,10 +942,13 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
 #endif
 }
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册 typed 值构造形态、执行及性能护栏用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_full_aot_typed_i64_thunk_constructs_no_type_values);

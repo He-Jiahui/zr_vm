@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_AOT_PARAMETER_PASSING_FORM_ROUNDTRIP_CASES_H
 #define ZR_VM_TEST_AOT_PARAMETER_PASSING_FORM_ROUNDTRIP_CASES_H
 
+/* 仅在参数前缀中按名称寻找 typed binding，排除同名局部变量。 */
 static const SZrFunctionTypedLocalBinding *find_typed_parameter_binding(
         const SZrFunction *function,
         const char *name) {
@@ -31,6 +32,7 @@ static const SZrFunctionTypedLocalBinding *find_typed_parameter_binding(
     return ZR_NULL;
 }
 
+/* 核对每个形参的槽序、数量和传参角色标记。 */
 static void assert_function_parameter_passing_roles(
         const SZrFunction *function,
         const char *const *names,
@@ -64,6 +66,7 @@ static void assert_function_parameter_passing_roles(
     }
 }
 
+/* 从编译产物的函数常量表安全取得实例方法候选。 */
 static SZrFunction *passing_form_function_constant_at(
         SZrState *state,
         SZrFunction *function,
@@ -83,6 +86,7 @@ static SZrFunction *passing_form_function_constant_at(
     return ZR_CAST_FUNCTION(state, constant->value.object);
 }
 
+/* 按栈槽读取 binding，供接收者与实例参数断言复用。 */
 static const SZrFunctionTypedLocalBinding *passing_form_binding_at_slot(
         const SZrFunction *function,
         TZrUInt32 stackSlot) {
@@ -100,6 +104,7 @@ static const SZrFunctionTypedLocalBinding *passing_form_binding_at_slot(
     return ZR_NULL;
 }
 
+/* 遍历原型成员表，寻找含 receiver 角色的三参数实例方法。 */
 static SZrFunction *passing_form_find_instance_member_function(
         SZrState *state,
         SZrFunction *function) {
@@ -161,6 +166,7 @@ static SZrFunction *passing_form_find_instance_member_function(
     return ZR_NULL;
 }
 
+/* 核对隐式 receiver 和显式 value/in 参数的角色顺序。 */
 static void assert_instance_parameter_passing_roles(
         const SZrFunction *function) {
     const SZrFunctionTypedLocalBinding *receiver =
@@ -186,6 +192,8 @@ static void assert_instance_parameter_passing_roles(
             input->roleFlags);
 }
 
+/* 编译七种传参形式，经 ZRO 写读后复核角色，再检查 Unix ExecIR 投影。 */
+/* BUG: 失败断言会跳过二进制缓冲区、函数和 state 的尾部清理。 */
 static void test_parameter_passing_forms_roundtrip_into_exec_ir(void) {
     static const char source[] =
             "fn contract(value: int, input: in int, writable: ref int, "
@@ -337,6 +345,8 @@ static void test_parameter_passing_forms_roundtrip_into_exec_ir(void) {
     destroy_test_state(state);
 }
 
+/* 同名局部变量不得继承形参传参角色。 */
+/* BUG: 失败断言会跳过本用例末尾的函数和 state 清理。 */
 static void test_parameter_passing_role_stops_at_parameter_prefix(void) {
     static const char source[] =
             "fn project(value: int): int { "

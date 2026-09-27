@@ -8,6 +8,10 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本组核对 super array 整数操作由 lowering 调用运行时边界。 */
+/* BUG: 失败断言会跳过用例末尾的源码缓冲区释放。 */
+
+/* 读取完整源码文本，成功缓冲区由测试释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +54,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 借本测试文件路径定位仓库根，兼容 CTest 的工作目录。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +85,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 验证运行时声明、实现及发射器中的必需片段。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +97,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 排除 lowering 和函数体中的过时直接实现。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +109,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 横向核对 runtime、emitter、super-array lowering 和函数体的调用合同。 */
 static void test_aot_c_source_lowers_super_array_int_ops_to_boundary_helpers(void) {
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_SuperArrayGetInt(",
@@ -224,10 +232,13 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_boundary_helpers(voi
     free(functionBodyText);
 }
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册 super 数组整数操作的 C AOT 源码合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_super_array_int_ops_to_boundary_helpers);

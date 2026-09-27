@@ -35,11 +35,15 @@
 #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
 
+/* 同一源码分别跑 C/LLVM 共享库，断言运行结果及实际执行后端。 */
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 覆盖弱接收者存活、失效、可选调用与异常参数求值。 */
 static const char *receiver_guard_source(void) {
     return "resource class Service {\n"
            "    pub const fn add(value: int): int { return value + 10; }\n"
@@ -89,6 +93,7 @@ static const char *receiver_guard_source(void) {
            "return run();\n";
 }
 
+/* 覆盖所有权内建操作及弱引用到期后的唤醒结果。 */
 static const char *ownership_intrinsics_source(void) {
     return "resource class Box {}\n"
            "fn run(): int {\n"
@@ -108,6 +113,7 @@ static const char *ownership_intrinsics_source(void) {
            "return run();\n";
 }
 
+/* 以同名成员验证可选成员调用不会误走所有权 intrinsic。 */
 static const char *intrinsic_named_members_source(void) {
     return "resource class Service {\n"
            "    pub const fn share(): int { return 1; }\n"
@@ -133,6 +139,7 @@ static const char *intrinsic_named_members_source(void) {
            "return run();\n";
 }
 
+/* 组合泛型引用和标量槽复制、分支合流及覆盖写入场景。 */
 static const char *scalar_stack_copy_overwrite_source(void) {
     return "class Box {\n"
            "    pub var value: int;\n"
@@ -192,6 +199,7 @@ static const char *scalar_stack_copy_overwrite_source(void) {
            "return 91;\n";
 }
 
+/* 将各脚本夹具编译为生成器输入。 */
 static SZrFunction *compile_source(SZrState *state, const char *source) {
     SZrString *sourceName;
 
@@ -204,6 +212,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 写入 ZRP 和源文件，供共享库加载路径读取。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -216,6 +225,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* 读取生成 C 文本，供局部函数源码合同断言。 */
 static char *read_text_file_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -236,6 +246,7 @@ static char *read_text_file_or_fail(const TZrChar *path) {
     return text;
 }
 
+/* 对生成文件执行整体片段断言。 */
 static void assert_text_file_contains(const TZrChar *path, const char *needle) {
     char *text;
 
@@ -245,6 +256,7 @@ static void assert_text_file_contains(const TZrChar *path, const char *needle) {
     free(text);
 }
 
+/* 截取 anchor 所在的生成函数，限制必需/禁止片段的搜索范围。 */
 static void assert_text_file_function_contract(const TZrChar *path,
                                                const char *anchorNeedle,
                                                const char *requiredNeedle,
@@ -280,6 +292,7 @@ static void assert_text_file_function_contract(const TZrChar *path,
     free(text);
 }
 
+/* 为嵌入 ZRO 计算稳定输入哈希。 */
 static void hash_file_or_fail(const TZrChar *path,
                               TZrChar *buffer,
                               TZrSize bufferSize) {
@@ -306,6 +319,7 @@ static void hash_file_or_fail(const TZrChar *path,
              (unsigned long long)hash);
 }
 
+/* 执行平台编译器命令并在失败时保留命令文本。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -317,6 +331,8 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
+/* 生成二进制和 C/LLVM 代码，链接共享库后验证结果及后端标记。 */
+/* BUG: Unity 失败跳转绕过末尾的 project、embeddedBlob 和 state 清理。 */
 static void execute_source_backend(const char *source,
                                    TZrInt64 expectedResult,
                                    EZrAotBackendKind backendKind,
@@ -484,6 +500,7 @@ static void execute_source_backend(const char *source,
 }
 #endif
 
+/* C AOT 验证弱接收者 optional 与直接调用的求值边界。 */
 static void test_aot_c_receiver_guards_execute_optional_and_direct_contracts(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT receiver-guard shared-library smoke validates the Unix toolchain path");
@@ -498,6 +515,7 @@ static void test_aot_c_receiver_guards_execute_optional_and_direct_contracts(voi
 #endif
 }
 
+/* LLVM AOT 复核同一弱接收者脚本。 */
 static void test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT receiver-guard shared-library smoke validates the Unix toolchain path");
@@ -512,6 +530,7 @@ static void test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts(
 #endif
 }
 
+/* C AOT 验证所有权 intrinsic 的运行结果。 */
 static void test_aot_c_ownership_intrinsics_execute_all_operations(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT ownership-intrinsic shared-library smoke validates the Unix toolchain path");
@@ -526,6 +545,7 @@ static void test_aot_c_ownership_intrinsics_execute_all_operations(void) {
 #endif
 }
 
+/* LLVM AOT 复核所有权 intrinsic 的运行结果。 */
 static void test_aot_llvm_ownership_intrinsics_execute_all_operations(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT ownership-intrinsic shared-library smoke validates the Unix toolchain path");
@@ -540,6 +560,7 @@ static void test_aot_llvm_ownership_intrinsics_execute_all_operations(void) {
 #endif
 }
 
+/* C AOT 验证同名普通成员经可选分派执行。 */
 static void test_aot_c_optional_intrinsic_named_members_use_normal_dispatch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT intrinsic-named member smoke validates the Unix toolchain path");
@@ -554,6 +575,7 @@ static void test_aot_c_optional_intrinsic_named_members_use_normal_dispatch(void
 #endif
 }
 
+/* LLVM AOT 复核同名普通成员的可选分派。 */
 static void test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT intrinsic-named member smoke validates the Unix toolchain path");
@@ -568,6 +590,7 @@ static void test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch(v
 #endif
 }
 
+/* C AOT 对照共享的 VM 清理预期值验证突发退出。 */
 static void test_aot_c_ownership_abrupt_cleanup_matches_vm(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT abrupt-cleanup shared-library smoke validates the Unix toolchain path");
@@ -582,6 +605,7 @@ static void test_aot_c_ownership_abrupt_cleanup_matches_vm(void) {
 #endif
 }
 
+/* LLVM AOT 对照相同的 VM 清理预期值验证突发退出。 */
 static void test_aot_llvm_ownership_abrupt_cleanup_matches_vm(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT abrupt-cleanup shared-library smoke validates the Unix toolchain path");
@@ -596,6 +620,7 @@ static void test_aot_llvm_ownership_abrupt_cleanup_matches_vm(void) {
 #endif
 }
 
+/* C AOT 验证混合槽覆盖，并检查生成函数的复制源码片段。 */
 static void test_aot_c_scalar_stack_copy_honors_nonprimitive_overwrite(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT scalar stack-copy smoke validates the Unix toolchain path");
@@ -632,6 +657,7 @@ static void test_aot_c_scalar_stack_copy_honors_nonprimitive_overwrite(void) {
 #endif
 }
 
+/* LLVM AOT 复核混合槽覆盖的运行结果。 */
 static void test_aot_llvm_scalar_stack_copy_honors_nonprimitive_overwrite(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT scalar stack-copy smoke validates the Unix toolchain path");
@@ -646,6 +672,7 @@ static void test_aot_llvm_scalar_stack_copy_honors_nonprimitive_overwrite(void) 
 #endif
 }
 
+/* 注册 C 与 LLVM 共享库的接收者守卫及所有权合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_receiver_guards_execute_optional_and_direct_contracts);

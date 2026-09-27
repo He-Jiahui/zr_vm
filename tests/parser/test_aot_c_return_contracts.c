@@ -8,10 +8,16 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本组从仓库源码核对导出返回、typed 返回和运行时边界的分工。 */
+/* BUG: 失败断言会跳过用例末尾的多个源码缓冲区释放。 */
+
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 读取完整源码文本；调用方负责释放成功返回的缓冲区。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -54,6 +60,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 用本测试源文件定位仓库根目录，兼容从构建目录运行的 CTest。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -84,6 +91,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 逐项验证必需的源码片段；空白差异由共用匹配器处理。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -95,6 +103,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 排除旧的返回路径和重复发布逻辑。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -106,6 +115,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 同时约束 emitter、runtime、control、export 和 scalar 代码的返回职责。 */
 static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_direct_return(void) {
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_write_c_publish_exports(FILE *file);",
@@ -398,6 +408,7 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
     free(scalarSourceText);
 }
 
+/* 注册导出返回值发布顺序的 C AOT 源码合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_export_return_to_boundary_publication_then_direct_return);

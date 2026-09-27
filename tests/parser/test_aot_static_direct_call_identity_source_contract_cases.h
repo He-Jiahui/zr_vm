@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_AOT_STATIC_DIRECT_CALL_IDENTITY_SOURCE_CONTRACT_CASES_H
 #define ZR_VM_TEST_AOT_STATIC_DIRECT_CALL_IDENTITY_SOURCE_CONTRACT_CASES_H
 
+/* 由 test_aot_c_source_contracts.c 包含，验证预备帧前先核对函数表与 thunk 身份。 */
 static void test_aot_static_direct_call_checks_frame_identity_before_preparation(void) {
     static const char *const helperNeedles[] = {
             "aot_runtime_static_direct_call_identity_matches(",
@@ -38,6 +39,7 @@ static void test_aot_static_direct_call_checks_frame_identity_before_preparation
     framePreparation = strstr(
             functionStart,
             "if (!aot_runtime_prepare_vm_direct_call_frame(");
+    /* TODO: 搜索未截断在此函数末尾，后续函数的同名调用可能造成误判。 */
     TEST_ASSERT_NOT_NULL(directCallReset);
     TEST_ASSERT_NOT_NULL(identityCheck);
     TEST_ASSERT_NOT_NULL(framePreparation);
@@ -48,6 +50,7 @@ static void test_aot_static_direct_call_checks_frame_identity_before_preparation
     free(runtimeText);
 }
 
+/* 验证 static 与 inline-struct 调用在扩栈前校验元数据身份。 */
 static void test_aot_direct_core_checks_frame_identity_before_stack_growth(void) {
     char *runtimeText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c");
@@ -78,6 +81,7 @@ static void test_aot_direct_core_checks_frame_identity_before_stack_growth(void)
             staticStart,
             "if (!aot_runtime_static_direct_call_identity_matches(");
     staticStackGrowth = strstr(staticStart, "ZrCore_Function_CheckStackAndGc(");
+    /* TODO: stackGrowth 未限定在 static 函数内，需加入边界或变异验证。 */
     TEST_ASSERT_NOT_NULL(staticMetadata);
     TEST_ASSERT_NOT_NULL(staticIdentity);
     TEST_ASSERT_NOT_NULL(staticStackGrowth);
@@ -92,6 +96,7 @@ static void test_aot_direct_core_checks_frame_identity_before_stack_growth(void)
             inlineStart,
             "if (!aot_runtime_static_direct_call_identity_matches(");
     inlineStackGrowth = strstr(inlineStart, "ZrCore_Function_CheckStackAndGc(");
+    /* TODO: 此搜索可能越过 dynamic bridge 的函数边界。 */
     TEST_ASSERT_NOT_NULL(inlineMetadata);
     TEST_ASSERT_NOT_NULL(inlineIdentity);
     TEST_ASSERT_NOT_NULL(inlineStackGrowth);

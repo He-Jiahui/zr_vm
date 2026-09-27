@@ -8,6 +8,10 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本组通过源码合同守住类型布局描述符及生成 C 的静态布局断言。 */
+/* BUG: 失败断言会跳过用例末尾的源码缓冲区释放。 */
+
+/* 读取完整源码文本，成功缓冲区由测试释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +54,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从本文件位置求仓库根目录，供 CTest 读取实现文件。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +85,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 共用匹配器允许空白差异，并保留每个片段内部字符顺序。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     for (size_t index = 0u; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
@@ -89,6 +95,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 核对布局定义、元数据根、token 生成与 emitter 的静态断言路径。 */
 static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_type_layout_declarations(",
@@ -221,10 +228,13 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
     free(emitterText);
 }
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册生成结构布局及静态断言的源码合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_type_layouts_emit_generated_struct_static_asserts);

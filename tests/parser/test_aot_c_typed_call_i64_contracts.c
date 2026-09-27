@@ -2,6 +2,8 @@
 
 #include "aot_c_typed_call_contract_cases.h"
 
+/* 跨 emitter、thunk 和 direct-call 模块核对 i64 静态调用的 typed 路径。 */
+/* BUG: 失败断言会跳过本用例末尾已读源码的释放。 */
 void test_aot_c_source_lowers_static_no_arg_i64_calls_to_typed_thunks(void) {
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_c_can_emit_typed_i64_no_arg_thunk(const SZrFunction *function)",

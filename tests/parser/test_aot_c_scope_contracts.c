@@ -8,6 +8,10 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 本组核对作用域关闭标记和退出路径是否下沉到 AOT 边界 helper。 */
+/* BUG: 失败断言会跳过用例末尾的源码缓冲区释放。 */
+
+/* 读取完整源码文本，失败返回 NULL，成功结果由测试释放。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +54,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 由 __FILE__ 求仓库根目录，供构建目录中的测试读取源码。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +85,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 用共用匹配器核对必需片段，允许格式空白差异。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +97,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* 防止 lowering 重引入原有内联生命周期代码。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +109,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 交叉检查 runtime 声明与实现、emitter 接口、scope lowering 和函数体调用。 */
 static void test_aot_c_source_lowers_scope_lifecycle_to_boundary_helpers(void) {
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_MarkToBeClosed(",
@@ -170,10 +178,13 @@ static void test_aot_c_source_lowers_scope_lifecycle_to_boundary_helpers(void) {
     free(functionBodyText);
 }
 
+/* Unity 每例初始化钩子；本套件不保留跨例状态。 */
 void setUp(void) {}
 
+/* Unity 每例收尾钩子；当前不执行自动资源回收。 */
 void tearDown(void) {}
 
+/* 注册作用域生命周期的 C AOT 源码合同用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_scope_lifecycle_to_boundary_helpers);
