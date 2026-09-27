@@ -54,6 +54,10 @@ static TZrBool semantic_diagnostic_copy_descriptor(
     return diagnostic->codeDescriptionHref != ZR_NULL;
 }
 
+/**
+ * @brief 深拷贝 parser 的结构化诊断供 LSP 响应及缓存独立持有。
+ * @note 任一附属字段复制失败都释放已创建对象，避免发布不完整的修复或相关信息。
+ */
 SZrDiagnostic *ZrLanguageServer_Diagnostic_FromStructured(
         SZrState *state,
         const SZrStructuredDiagnostic *structured) {

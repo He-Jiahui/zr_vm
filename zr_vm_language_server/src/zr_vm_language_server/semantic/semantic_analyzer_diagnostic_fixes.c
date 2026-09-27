@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/** 将 parser 的结构化修复复制进 LSP 诊断，供 code action 投影读取。 */
 TZrBool ZrLanguageServer_Diagnostic_AddFix(
         SZrState *state,
         SZrDiagnostic *diagnostic,

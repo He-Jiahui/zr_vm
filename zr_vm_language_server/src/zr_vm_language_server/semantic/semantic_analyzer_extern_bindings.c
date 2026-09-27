@@ -63,6 +63,7 @@ static SZrFunctionTypeInfo *find_function_type_binding_by_identity(
     return ZR_NULL;
 }
 
+/* 先在 runtime 环境登记完整外部函数签名，再为 compile-time 环境复用同一规范身份。 */
 static SZrFunctionTypeInfo *register_extern_function_type_binding_in_env(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -139,6 +140,8 @@ static SZrFunctionTypeInfo *register_extern_function_type_binding_in_env(
                             analyzer,
                             extern_parameter_diagnostic_location(paramNode));
                     ZrParser_InferredType_Free(state, &paramType);
+                    /* TODO: 当前参数会被跳过，但后续仍以缩短的 paramTypes 登记函数。
+                     * parser 会比较声明形参数量；需核对 LSP 签名/调用查询是否仍可能读到该部分绑定。 */
                     continue;
                 }
             }
@@ -172,6 +175,7 @@ static SZrFunctionTypeInfo *register_extern_function_type_binding_in_env(
             typeEnv, funcDecl->name->name, declarationNode);
 }
 
+/** 外部调用声明必须在运行时与编译期查询中共用规范符号、类型和声明范围。 */
 SZrFunctionTypeInfo *
 ZrLanguageServer_SemanticAnalyzer_RegisterCanonicalExternFunctionBindings(
         SZrState *state,

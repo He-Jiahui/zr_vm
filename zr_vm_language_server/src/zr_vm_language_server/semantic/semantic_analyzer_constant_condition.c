@@ -2,6 +2,7 @@
 
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 条件事实允许缺省 source 的同一分析树定位；显式双 URI 才要求相等。 */
 static TZrBool constant_condition_sources_match(SZrString *left, SZrString *right) {
     const TZrChar *leftText;
     const TZrChar *rightText;
@@ -157,6 +158,10 @@ static TZrBool constant_condition_try_variable_initializer(SZrSemanticAnalyzer *
     return ZR_TRUE;
 }
 
+/**
+ * @brief 只把字面量、已发布的精确逻辑事实及先于使用点声明的 const 布尔值用于可达性判断。
+ * @note 无法证明时返回 false；调用者不能把未知条件推断为恒假。
+ */
 TZrBool ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *node,

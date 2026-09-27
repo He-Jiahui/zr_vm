@@ -37,6 +37,7 @@ static TZrBool semantic_analysis_root_is_valid(SZrAstNode *ast, SZrAstNode *scop
            ZrLanguageServer_SemanticAnalyzer_IsAnalysisRoot(ast, scopeRoot);
 }
 
+/** 缓存只借用诊断指针；重做分析或释放诊断前必须先撤销这些别名。 */
 void ZrLanguageServer_SemanticAnalyzer_ClearCachedDiagnosticRefs(
         SZrSemanticAnalyzer *analyzer) {
     if (analyzer == ZR_NULL || analyzer->cache == ZR_NULL ||
@@ -46,6 +47,10 @@ void ZrLanguageServer_SemanticAnalyzer_ClearCachedDiagnosticRefs(
     analyzer->cache->cachedDiagnostics.length = 0;
 }
 
+/**
+ * @brief 结束当前诊断快照，并同步清除缓存中的借用引用。
+ * @note 分析重置需要重建数组存储；析构路径只清空元素，再由外层释放数组。
+ */
 void ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -115,6 +120,11 @@ void ZrLanguageServer_SemanticAnalyzer_GetMetrics(
     *outMetrics = analyzer->metrics;
 }
 
+/**
+ * @brief 为 LSP 局部查询生成符号、类型和诊断事实；全量分析也经由同一入口。
+ * @pre scopeRoot 必须是 ast 本身或其中受支持的声明根；传入 AST 的寿命由调用方或快照持有。
+ * @note 跨 AST 命中缓存时保留旧事实及其旧 AST；文档更新链先决定是否保留旧 AST，不能单凭相同位置复用。
+ */
 TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -225,6 +235,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
     return ZR_TRUE;
 }
 
+/** 项目索引与打开文档的全量分析入口，借用传入 AST 并复用局部分析的事实发布流程。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state,
                                                   SZrSemanticAnalyzer *analyzer,
                                                   SZrAstNode *ast) {

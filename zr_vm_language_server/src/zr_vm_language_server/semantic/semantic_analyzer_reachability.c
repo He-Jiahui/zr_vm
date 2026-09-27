@@ -67,6 +67,7 @@ EZrSemanticReachabilityCause ZrLanguageServer_SemanticAnalyzer_ReachabilityCause
     }
 }
 
+/** 区分离开外层控制流与仅跳出当前循环，避免把 break 误判成函数必然退出。 */
 typedef struct SZrSemanticLoopExitFlow {
     TZrBool definitelyTerminates;
     TZrBool allPathsExitEnclosingFlow;
@@ -350,6 +351,7 @@ static TZrBool semantic_for_loop_condition_is_constant_true_or_omitted(
     return semantic_loop_condition_is_constant_true(analyzer, conditionNode);
 }
 
+/** 类型检查器据此判定后续语句是否不可达；未知条件及缺失分支保持保守结论。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_StatementDefinitelyExits(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *node) {
@@ -478,6 +480,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_StatementDefinitelyExits(
     }
 }
 
+/** 在循环条件可被精确证明时写入逻辑与不可达事实，供统一诊断投影读取。 */
 void ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,

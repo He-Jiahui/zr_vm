@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/* 仅在精确位置和 AST 节点查询均未命中时容忍邻近列，用于不完整编辑期间的悬停。 */
 #define ZR_LSP_EXPRESSION_FACT_NEARBY_COLUMN_TOLERANCE ((TZrInt32)4)
 #define ZR_LSP_VISIBLE_RANGE_LINE_WIDTH ((TZrSize)100000)
 
@@ -183,6 +184,7 @@ static TZrBool expression_query_unary_operator_contains_position(SZrAstNode *nod
 static SZrAstNode *expression_query_find_node_in_array(SZrAstNodeArray *nodes,
                                                        SZrFileRange position);
 
+/** 沿 AST 找到位置所属的表达式，作为规范事实按位置未命中时的第二查询入口。 */
 ZR_LANGUAGE_SERVER_API SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
         SZrAstNode *node,
         SZrFileRange position) {
@@ -579,6 +581,10 @@ static SZrAstNode *expression_query_find_node_in_array(SZrAstNodeArray *nodes,
     return ZR_NULL;
 }
 
+/**
+ * @brief 先按规范位置、再按 AST 节点查询精确表达式事实，最后才采用短距离容错。
+ * @note 返回借用的事实指针；分析器重算后不可继续持有。
+ */
 const SZrSemanticExpressionFact *ZrLanguageServer_SemanticAnalyzer_FindExpressionFactAtPosition(
         SZrSemanticAnalyzer *analyzer,
         SZrFileRange position) {
@@ -610,6 +616,8 @@ const SZrSemanticExpressionFact *ZrLanguageServer_SemanticAnalyzer_FindExpressio
         return ZR_NULL;
     }
 
+    /* TODO: 邻近列回退没有检查候选事实是否属于查询表达式；同一行有多个表达式时
+     * 可能选到另一节点的类型。现有测试未覆盖这一回退，需增加相邻表达式悬停场景确认。 */
     for (TZrSize index = 0; index < analyzer->semanticContext->expressionFacts.length; index++) {
         const SZrSemanticExpressionFact *candidate =
             (const SZrSemanticExpressionFact *)ZrCore_Array_Get(&analyzer->semanticContext->expressionFacts, index);

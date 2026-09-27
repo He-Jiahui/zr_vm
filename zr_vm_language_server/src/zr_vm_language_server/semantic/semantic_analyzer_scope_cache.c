@@ -88,12 +88,14 @@ static const SZrType *scoped_cache_callable_return_type(
     }
 }
 
+/** 缓存依赖检查按“确定无依赖／确定直接依赖／证据不足”三值处理。 */
 typedef enum EZrScopedCacheDependency {
     ZR_SCOPED_CACHE_DEPENDENCY_UNKNOWN = 0,
     ZR_SCOPED_CACHE_DEPENDENCY_NONE,
     ZR_SCOPED_CACHE_DEPENDENCY_DIRECT
 } EZrScopedCacheDependency;
 
+/** 编辑分类传给调用方的缓存处置；不同失效原因分别进入指标。 */
 typedef enum EZrScopedCacheChangeDecision {
     ZR_SCOPED_CACHE_CHANGE_INVALIDATE_LOCAL = 0,
     ZR_SCOPED_CACHE_CHANGE_PRESERVE,
@@ -101,6 +103,7 @@ typedef enum EZrScopedCacheChangeDecision {
     ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE
 } EZrScopedCacheChangeDecision;
 
+/* 仅在引用、表达式和诊断事实完整时才能证明旧局部结果不依赖被修改的声明。 */
 static EZrScopedCacheDependency scoped_cache_dependency_to_callable(
         const SZrSemanticAnalyzer *scopedAnalyzer,
         const SZrAstNode *changedCallable) {
@@ -252,6 +255,7 @@ static EZrScopedCacheChangeDecision scoped_cache_change_decision(
                     changedCallable));
 }
 
+/** 返回主分析器拥有的局部查询分析器；父级重置、失效或释放会销毁该指针。 */
 SZrSemanticAnalyzer *
 ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
         SZrState *state,
@@ -279,6 +283,7 @@ ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
     return analyzer->scopedQueryAnalyzer;
 }
 
+/** 文档编辑、provider epoch 变化或快照退出时撤销全部局部事实及 AST 借用。 */
 void ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer) {
@@ -297,6 +302,10 @@ void ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
     ZrLanguageServer_SemanticAnalyzer_Free(state, scopedQueryAnalyzer);
 }
 
+/**
+ * @brief 在增量解析覆盖旧 AST 前做依赖判定，并告知调用方是否必须保留旧树。
+ * @note 只对长度稳定且缓存范围、事实和目标声明均满足条件的编辑保留结果。
+ */
 TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareScopedQueryCacheForChange(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -342,6 +351,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareScopedQueryCacheForChange(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在新 AST 生成后复核作用域位置与内容哈希，才让旧局部事实继续服务查询。
+ * @note 成功时局部分析器接管 retainedAst；失败路径负责释放未接管的树。
+ */
 TZrBool ZrLanguageServer_SemanticAnalyzer_CommitScopedQueryCachePreservation(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,

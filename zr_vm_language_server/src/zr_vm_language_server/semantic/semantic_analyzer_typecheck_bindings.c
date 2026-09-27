@@ -74,6 +74,7 @@ static TZrBool register_canonical_receiver_binding(
     return ZR_TRUE;
 }
 
+/** 为实例方法登记 this/super 的规范类型身份；静态方法不得继承实例接收者。 */
 void ZrLanguageServer_SemanticAnalyzer_RegisterTypecheckReceiverBindings(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,

@@ -11,8 +11,7 @@ static void typecheck_children(SZrState *state, SZrSemanticAnalyzer *analyzer,
     }
 }
 
-/* These nodes inherit the caller's lexical/type environment. Callable bodies,
- * declarations and branch scopes remain in the main type-checking dispatcher. */
+/* 值表达式沿用调用方的词法与类型环境；声明、分支和可调用体仍由主调度器建作用域。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_TypecheckValueChildren(
         SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     SZrAstNode *first = ZR_NULL;

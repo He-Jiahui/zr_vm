@@ -57,6 +57,10 @@ static SZrAstNode *semantic_change_scope_body(SZrAstNode *scopeRoot) {
     }
 }
 
+/**
+ * @brief 在增量解析前判定编辑是否只影响某个声明的正文或签名。
+ * @note 边界插入和无法定位的修改回退到模块级影响，避免局部缓存误认为声明不变。
+ */
 void ZrLanguageServer_SemanticAnalyzer_ClassifyFileChange(
         SZrAstNode *ast,
         SZrFileChangeInfo *changeInfo) {

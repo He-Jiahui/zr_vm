@@ -936,6 +936,7 @@ static void pop_runtime_type_binding_scope(SZrState *state,
     }
 }
 
+/** 符号收集跨入成员声明时保存父级类型与函数上下文；退出时必须完整恢复。 */
 typedef struct SZrSemanticCompilerContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
@@ -969,6 +970,7 @@ static SZrString *semantic_extract_owner_type_name(SZrAstNode *ownerTypeNode) {
     }
 }
 
+/* 符号遍历临时切入声明所属类型和函数，类型环境才能解析 this、super 及泛型参数。 */
 static void semantic_push_compiler_context(SZrSemanticAnalyzer *analyzer,
                                            SZrAstNode *ownerTypeNode,
                                            SZrAstNode *functionNode,
@@ -1358,6 +1360,7 @@ static SZrInferredType *create_type_info_for_foreach_element(SZrState *state,
     return typeInfo;
 }
 
+/* foreach 迭代绑定只在循环体作用域可见；推断类型同时写入符号表和规范类型环境。 */
 static void collect_foreach_scope(SZrState *state,
                                   SZrSemanticAnalyzer *analyzer,
                                   SZrAstNode *loopNode) {
@@ -1428,6 +1431,7 @@ static void collect_foreach_scope(SZrState *state,
     pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
 }
 
+/* 所有可调用体共用词法边界：先注入接收者和参数，再遍历正文，退出时恢复父级上下文。 */
 static void collect_function_like_scope(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrAstNode *scopeNode,
@@ -1551,6 +1555,7 @@ static void collect_symbols_from_node_array(SZrState *state,
     }
 }
 
+/* 有正文的 using 模式为命中分支建立独立符号作用域；资源表达式先于绑定收集。 */
 static void collect_using_statement_symbols(SZrState *state,
                                             SZrSemanticAnalyzer *analyzer,
                                             SZrAstNode *node) {
@@ -1589,6 +1594,8 @@ static void collect_using_statement_symbols(SZrState *state,
         ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
         pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
     } else {
+        /* TODO: 模式解析成功但 body 为空时，payload 会登记到当前环境，随后 elseBody
+         * 也在同一环境收集。需核对该语法组合是否可达，以及 else 是否应看到 payload。 */
         if (hasUnionPattern) {
             ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
                                                                            analyzer,
@@ -1607,6 +1614,7 @@ static void collect_using_statement_symbols(SZrState *state,
     ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
 }
 
+/* switch 的各 case 分别建立 payload 符号作用域，避免不同变体同名绑定互相污染。 */
 static void collect_switch_expression_symbols(SZrState *state,
                                               SZrSemanticAnalyzer *analyzer,
                                               SZrAstNode *node) {
@@ -1692,6 +1700,10 @@ static void collect_switch_expression_symbols(SZrState *state,
     }
 }
 
+/**
+ * @brief 将 AST 声明映射为 LSP 展示符号、规范身份和引用，供查询层复用。
+ * @note 分析入口先调用本函数，再执行类型检查；两阶段共享 compilerState 的类型环境。
+ */
 void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
         return;

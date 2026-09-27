@@ -1,3 +1,7 @@
+/**
+ * 分析器内部阶段契约：符号收集、类型检查、诊断投影和局部缓存共享同一分析轮次。
+ * 各阶段借用当前 AST 与 compilerState；只有显式快照交接会改变旧 AST 的所有权。
+ */
 #ifndef ZR_VM_LANGUAGE_SERVER_SEMANTIC_ANALYZER_INTERNAL_H
 #define ZR_VM_LANGUAGE_SERVER_SEMANTIC_ANALYZER_INTERNAL_H
 
@@ -27,6 +31,7 @@ ZR_FORCE_INLINE const TZrChar *semantic_string_native(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/** 未命名且无元素约束的 object 只表示未知类型，不足以支撑精确悬停或诊断。 */
 ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsWeakObjectType(const SZrInferredType *typeInfo) {
     return typeInfo != ZR_NULL &&
            typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
@@ -38,6 +43,7 @@ ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
     return typeInfo != ZR_NULL && !ZrLanguageServer_SemanticAnalyzer_IsWeakObjectType(typeInfo);
 }
 
+/** 内部调度器在已建立符号和类型环境后遍历 AST，向共享语义上下文发布诊断事实。 */
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);

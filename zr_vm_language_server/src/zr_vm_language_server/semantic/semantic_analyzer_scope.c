@@ -95,6 +95,7 @@ static SZrAstNode *semantic_analysis_scope_find_in_nodes(
     return ZR_NULL;
 }
 
+/** 文档更新与局部查询共用此入口，以文件位置选中可独立重算的最内层声明。 */
 SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
         SZrAstNode *ast,
         SZrFileRange position) {
@@ -162,6 +163,7 @@ static TZrBool semantic_analysis_scope_nodes_contain_root(
     return ZR_FALSE;
 }
 
+/** 局部分析接受整棵 AST，或该 AST 内受支持的声明根；拒绝外来节点。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_IsAnalysisRoot(
         SZrAstNode *ast,
         const SZrAstNode *candidate) {

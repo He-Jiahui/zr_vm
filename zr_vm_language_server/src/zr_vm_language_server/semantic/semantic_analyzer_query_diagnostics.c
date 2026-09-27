@@ -47,6 +47,7 @@ static TZrBool query_diagnostic_same_code(SZrString *left, SZrString *right) {
     return ZrCore_String_Equal(left, right);
 }
 
+/** 编译器错误先进入结构化查询事实，随后由唯一的诊断投影入口转成 LSP 诊断。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer) {
@@ -59,6 +60,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
             analyzer->compilerState);
 }
 
+/** 类型推断无法证明精确结果时使用统一诊断码；已有编译器错误优先保留。 */
 void ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -83,6 +85,7 @@ void ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
             location);
 }
 
+/* 同一位置及诊断码来自同一问题时复用槽位，避免规则层和编译器层重复发布。 */
 static SZrDiagnostic **query_diagnostic_find_reported_slot(
         SZrSemanticAnalyzer *analyzer,
         const SZrStructuredDiagnostic *structured) {
@@ -142,6 +145,10 @@ static void query_diagnostic_remove_other_reported_slots(
     }
 }
 
+/**
+ * @brief 将 parser 规范查询事实投影到 LSP 诊断数组，并合并已报告的同码同位置错误。
+ * @note 必须先完成确定赋值和所有权的控制流事实，查询诊断才能看到最终结果。
+ */
 void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer) {

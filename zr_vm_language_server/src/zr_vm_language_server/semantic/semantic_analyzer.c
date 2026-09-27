@@ -1590,6 +1590,7 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
     }
 }
 
+/** 缓存存储可延迟申请；即使分配失败，分析调用方仍可走无缓存路径。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer) {
@@ -1641,6 +1642,7 @@ static void semantic_analyzer_free_cache_storage(
     analyzer->cache = ZR_NULL;
 }
 
+/** 为每个文档创建事实、符号和引用的拥有者；编译器状态直到首次分析才创建。 */
 SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -1689,6 +1691,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     return analyzer;
 }
 
+/** provider 代次变化时清除缓存与借用事实，下一次分析按新 provider 重建语义上下文。 */
 void ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -1706,6 +1709,7 @@ void ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
     analyzer->hirModule = ZR_NULL;
 }
 
+/** 项目分析期间临时注入虚拟声明 URI 解析器；调用方在栈上上下文失效前必须撤销。 */
 void ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
         SZrSemanticAnalyzer *analyzer,
         FZrSemanticVirtualDeclarationUriResolver resolver,
@@ -1727,7 +1731,7 @@ void ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
     }
 }
 
-// 释放语义分析器
+/** 释放分析器拥有的诊断、符号、编译器状态和保留的旧 AST；普通 ast 仍归文档版本所有。 */
 void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer *analyzer) {
     if (state == ZR_NULL || analyzer == ZR_NULL) {
         return;
@@ -1765,6 +1769,11 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
     ZrCore_Memory_RawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));
 }
 
+/**
+ * @brief 把当前事实转移到历史快照，并原位重置活动分析器供新文档版本使用。
+ * @pre retainedAst 与当前分析 AST 相同，且尚未由局部缓存或其他快照拥有。
+ * @note 成功后返回的快照拥有旧 AST；可保留的局部查询缓存仍由活动分析器持有。
+ */
 SZrSemanticAnalyzer *
 ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
         SZrState *state,
@@ -1833,6 +1842,7 @@ ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
     return snapshot;
 }
 
+/** 释放历史快照前，撤销活动局部分析器对该快照 AST 的借用。 */
 void ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzerBorrowingAst(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -1849,9 +1859,10 @@ void ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzerBorrowingAst
             analyzer);
 }
 
-// 辅助函数：从 AST 节点提取标识符名称
-
-// 获取诊断信息
+/**
+ * @brief 向 LSP 发布当前分析的诊断指针视图。
+ * @note 结果数组只保存借用指针；下一轮分析或分析器析构后不可继续访问元素。
+ */
 TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrArray *result) {
@@ -1875,7 +1886,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,
     return ZR_TRUE;
 }
 
-// 获取位置的符号
+/** 从 parser 的规范符号事实定位身份，再映射回展示层符号；位置缺 source 时绑定当前 AST。 */
 SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *analyzer,
                                          SZrFileRange position) {
     SZrParserSemanticSymbolQuery canonicalSymbol;
@@ -1903,6 +1914,7 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
             canonicalSymbol.symbolId);
 }
 
+/** 仅在规范类型查询给出精确事实或已解析的类型引用时返回调用方可释放的类型副本。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
                                                                 SZrSemanticAnalyzer *analyzer,
                                                                 SZrFileRange position,
@@ -1950,7 +1962,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
     return ZR_TRUE;
 }
 
-// 获取悬停信息
+/** 将规范符号与推断类型转为展示文本；返回对象由调用方用 HoverInfo_Free 释放。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                      SZrSemanticAnalyzer *analyzer,
                                      SZrFileRange position,
@@ -1990,6 +2002,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
             snprintf(buffer, sizeof(buffer), "**expression**\n\nType: %s", resolvedTypeText);
             semantic_append_stable_slot_hover(
                     analyzer, &resolvedType, buffer, sizeof(buffer));
+            /* BUG: HoverInfo_New 仅借用 typeInfo；这里传入栈上 resolvedType，
+             * 返回的 HoverInfo.typeInfo 在函数返回后悬空，且下方立即释放其内部类型资源。
+             * 触发：悬停无符号但规范查询得到精确表达式类型。 */
             *result = ZrLanguageServer_HoverInfo_New(state,
                                                      buffer,
                                                      position,
@@ -2247,7 +2262,7 @@ void ZrLanguageServer_CompletionItem_Free(SZrState *state, SZrCompletionItem *it
     ZrCore_Memory_RawFree(state->global, item, sizeof(SZrCompletionItem));
 }
 
-// 创建悬停信息
+/** 建立悬停结果；contents 创建 GC 字符串，typeInfo 只借用，调用方须保证其寿命。 */
 SZrHoverInfo *ZrLanguageServer_HoverInfo_New(SZrState *state,
                               const TZrChar *contents,
                               SZrFileRange range,
@@ -2286,6 +2301,7 @@ void ZrLanguageServer_HoverInfo_Free(SZrState *state, SZrHoverInfo *info) {
 }
 
 // 启用/禁用缓存
+/** 将缓存策略同步到局部查询分析器，避免主分析与局部分析采用不同的重用语义。 */
 void ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(SZrSemanticAnalyzer *analyzer, TZrBool enabled) {
     if (analyzer == ZR_NULL) {
         return;
@@ -2299,6 +2315,7 @@ void ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(SZrSemanticAnalyzer *anal
 }
 
 // 清除缓存
+/** 文档重算或 provider 切换前清除旧事实的可复用标志及局部缓存。 */
 void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAnalyzer *analyzer) {
     if (state == ZR_NULL || analyzer == ZR_NULL) {
         return;
@@ -2362,6 +2379,7 @@ TZrSize ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
     return bytes;
 }
 
+/** 工作区缓存预算回收入口；保留分析器身份，释放可重新创建的缓存存储。 */
 void ZrLanguageServer_SemanticAnalyzer_ReleaseCacheStorage(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer) {

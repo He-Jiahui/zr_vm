@@ -46,6 +46,8 @@ static TZrBool string_equals_literal(SZrString *value, const TZrChar *literal) {
     return length == literalLength && memcmp(text, literal, literalLength) == 0;
 }
 
+/* TODO: 当前仓内调用搜索仅找到此定义和内部声明；需核对是否存在动态符号消费者，
+ * 再决定与仅服务本函数的 string_equals_literal 是否一起移除。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_IsImplicitRuntimeIdentifier(SZrString *name) {
     return string_equals_literal(name, "this") || string_equals_literal(name, "super");
 }
@@ -296,6 +298,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
 }
 
 // 辅助函数：计算 AST 哈希（递归实现）
+/** 局部缓存的 AST 内容指纹；仅用于重算判定，不能代替旧 AST 的寿命保证。 */
 TZrSize ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(SZrAstNode *ast) {
     if (ast == ZR_NULL) {
         return 0;
@@ -333,6 +336,7 @@ static TZrBool reset_symbol_tracking(SZrState *state, SZrSemanticAnalyzer *analy
     return ZR_TRUE;
 }
 
+/** 每次实际分析前重建符号追踪与编译器上下文，避免旧文档事实进入新版本查询。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
                                     SZrSemanticAnalyzer *analyzer,
                                     SZrAstNode *ast) {
@@ -390,6 +394,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
     return analyzer->semanticContext != ZR_NULL;
 }
 
+/** 编译器一次性错误经结构化查询事实发布，成功后清掉当前错误供下一节点继续分析。 */
 void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,
                                                                       SZrSemanticAnalyzer *analyzer,
                                                                       SZrFileRange fallbackLocation) {
@@ -424,6 +429,7 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
     ZrParser_Compiler_ClearStructuredError(compilerState);
 }
 
+/** 复用 parser 推断并只登记精确结果，供类型查询、悬停及模式绑定消费。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *state,
                                                                    SZrSemanticAnalyzer *analyzer,
                                                                    SZrAstNode *node,
@@ -521,6 +527,7 @@ static void record_field_cleanup_step(SZrSemanticAnalyzer *analyzer,
     ZrParser_Semantic_AppendCleanupStep(analyzer->semanticContext, &step);
 }
 
+/** 字段登记同时发布规范符号与确定性清理事实；静态字段及非拥有字段不进入实例清理表。 */
 void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *state,
                                            SZrSemanticAnalyzer *analyzer,
                                            SZrAstNode *fieldNode,

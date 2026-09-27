@@ -2,6 +2,7 @@
 #include "type_environment_declaration_binding.h"
 #include "interface/lsp_interface_internal.h"
 
+/** 在符号收集后把声明的规范身份写入类型环境，供后续表达式推断按作用域查找。 */
 void ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
         SZrState *state, SZrSemanticAnalyzer *analyzer, SZrString *name,
         const SZrInferredType *typeInfo, SZrAstNode *declarationNode) {
@@ -51,6 +52,7 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
     }
 }
 
+/** 复用 parser 已建立的声明身份；展示层符号不能覆盖编译器完整的函数类型事实。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAnalyzer *analyzer,
                                        SZrSymbol *symbol,
                                        EZrSemanticSymbolKind semanticKind,
@@ -116,6 +118,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAna
     return symbolId != 0;
 }
 
+/** 变量查询需要保留语义 ID 和可见范围；尚无精确类型时仍登记身份，避免引用漂移。 */
 void ZrLanguageServer_SemanticAnalyzer_RegisterVariableTypeBinding(SZrState *state,
                                                   SZrTypeEnvironment *typeEnv,
                                                   SZrString *name,

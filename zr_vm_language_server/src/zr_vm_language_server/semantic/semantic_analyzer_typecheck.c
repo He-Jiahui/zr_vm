@@ -192,6 +192,7 @@ static void semantic_record_constant_if_condition_facts(SZrState *state,
     }
 }
 
+/** 类型检查跨入可调用体时保存父级编译器上下文，避免接收者和泛型环境串到兄弟声明。 */
 typedef struct SZrSemanticTypecheckContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
@@ -530,6 +531,7 @@ static void semantic_typecheck_record_super_constructor_facts(
     }
 }
 
+/* 参数、this/super 绑定必须在正文检查之前进入新的词法类型环境，退出时恢复编译器上下文。 */
 static void semantic_typecheck_callable_body(SZrState *state,
                                              SZrSemanticAnalyzer *analyzer,
                                              SZrAstNode *functionNode,
@@ -592,6 +594,8 @@ static TZrBool semantic_publish_current_compiler_diagnostic(
             ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
                     state,
                     analyzer);
+    /* BUG: PublishCurrentDiagnostic 在构造或追加结构化事实失败时返回 false，
+     * 这里仍清除编译器错误；可达的诊断因此被静默丢弃。 */
     semantic_clear_compiler_error(analyzer);
     return published;
 }
@@ -646,6 +650,7 @@ static TZrBool semantic_infer_node_type(SZrState *state,
     return ZR_FALSE;
 }
 
+/* using 守卫的 union payload 仅在命中分支可见，同时记录资源离开作用域时的清理事实。 */
 static void semantic_typecheck_using_statement(SZrState *state,
                                                SZrSemanticAnalyzer *analyzer,
                                                SZrAstNode *node) {
@@ -688,6 +693,8 @@ static void semantic_typecheck_using_statement(SZrState *state,
         semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
     } else {
         if (hasUnionPattern) {
+            /* TODO: body 为空时 payload 被登记在当前类型环境，后续 elseBody 可见；
+             * 需与符号收集路径一同核对无正文 using 的 else 语义。 */
             ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
                                                                            analyzer,
                                                                            &resolution,
@@ -705,6 +712,7 @@ static void semantic_typecheck_using_statement(SZrState *state,
     ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
 }
 
+/* 每个 switch case 有独立 payload 类型环境；所有 case 后才判定 union 覆盖和 default 可达性。 */
 static void semantic_typecheck_switch_expression(SZrState *state,
                                                  SZrSemanticAnalyzer *analyzer,
                                                  SZrAstNode *node) {
@@ -854,6 +862,10 @@ static const SZrType *semantic_callable_return_type(SZrSymbol *symbol) {
     return ZR_NULL;
 }
 
+/**
+ * @brief 在符号收集后按 AST 作用域发布精确类型、所有权、控制流和结构化诊断事实。
+ * @note 值表达式继承当前环境；声明、分支和可调用体由此调度器单独管理环境边界。
+ */
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
         return;

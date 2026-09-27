@@ -142,6 +142,8 @@ static SZrString *union_lsp_create_base_type_name(SZrState *state, const TZrChar
                                 (TZrSize)(genericStart - resourceText));
 }
 
+/* TODO: 此处仅按尖括号深度切分逗号；需核对规范类型名是否允许函数类型参数
+ * 或其他包含逗号的嵌套形式，并用相应 union payload 用例验证替换结果。 */
 static TZrBool union_lsp_generic_argument_span_at(const TZrChar *resourceText,
                                                   TZrSize wantedIndex,
                                                   const TZrChar **outSpan,
@@ -196,6 +198,7 @@ static TZrBool union_lsp_generic_argument_span_at(const TZrChar *resourceText,
     return ZR_FALSE;
 }
 
+/* 泛型变体 payload 用资源实例的实际参数替换声明参数，避免悬停只显示形参名。 */
 static void union_lsp_apply_generic_payload_substitution(SZrState *state,
                                                          SZrSemanticAnalyzer *analyzer,
                                                          const SZrInferredType *resourceType,
@@ -382,6 +385,7 @@ void ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(
     memset(resolution, 0, sizeof(*resolution));
 }
 
+/** 从 using 资源的精确类型解析变体；失败的结果仍需经 ResolutionFree 释放类型副本。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveUsingUnionPattern(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -439,6 +443,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveUsingUnionPattern(
     return resolution->variant != ZR_NULL;
 }
 
+/** 以主表达式的 union 类型解释简写 case，并向后续分支绑定传回变体 AST。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveSwitchUnionPattern(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -569,6 +574,7 @@ static TZrBool union_lsp_switch_is_exhaustive(
     return ZR_TRUE;
 }
 
+/** 变体全覆盖时记录 default 不可达事实，交由规范诊断查询决定是否报告。 */
 void ZrLanguageServer_SemanticAnalyzer_AnalyzeSwitchUnionExhaustiveness(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -609,6 +615,7 @@ void ZrLanguageServer_SemanticAnalyzer_AnalyzeSwitchUnionExhaustiveness(
     ZrParser_SemanticFacts_AppendReachability(analyzer->semanticContext, &fact);
 }
 
+/** 为匹配分支登记 payload 名称及替换后的具体类型，分支退出后由调用方恢复类型作用域。 */
 void ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
