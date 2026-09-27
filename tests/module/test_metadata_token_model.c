@@ -1,3 +1,7 @@
+/* 验证编译器分配的元数据 token 经序列化、导入绑定和运行时恢复后
+ * 仍指向同一逻辑符号；负例同时检查失败不留下部分绑定。
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,12 +45,14 @@ TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *cs, SZrFunctio
 #define TEST_BINDING_RESOLVED_LAYOUT_VERSION 4u
 #define TEST_BINDING_RESOLVED_LAYOUT_HASH ((TZrUInt64)0x6162636465666768ULL)
 
+/* reader 借用由调用方持有的字节缓冲；consumed 限制 I/O 回调只交付一次。 */
 typedef struct SZrBinaryFixtureReader {
     TZrByte *bytes;
     TZrSize length;
     TZrBool consumed;
 } SZrBinaryFixtureReader;
 
+/* try 回调借用当前 I/O/source 对象，不接管其释放责任。 */
 typedef struct SZrReadSourceTryContext {
     SZrIo *io;
     SZrIoSource *source;

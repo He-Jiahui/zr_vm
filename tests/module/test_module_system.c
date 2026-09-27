@@ -1,3 +1,8 @@
+/* 本套件从解析、导入、缓存和二进制往返走到原生描述符与反射。
+ * 场景由 main 经 Unity 逐个运行；内存中的源码与原生模块描述符只服务测试夹具。
+ * 反射断言应以模块元数据和运行时实例两侧的可观察值互相核对。
+ */
+
 //
 // Created by Auto on 2025/01/XX.
 //
@@ -440,6 +445,8 @@ cleanup:
     return success;
 }
 
+/* 这些描述符数组共同构成一个原生测试模块：接口方法、泛型约束、
+ * 类型字段和函数签名最终都由 kProbeNativeModuleDescriptor 对外暴露。 */
 static const ZrLibMethodDescriptor kProbeReadableMethods[] = {
         {
                 .name = "read",
@@ -886,6 +893,7 @@ static const ZrLibModuleDescriptor kProbeUnsupportedCapabilityModuleDescriptor =
         ZR_NULL,
 };
 
+/* 只在指定原生分配类型上失败一次，供 GC 重试场景区分首次失败和后续成功。 */
 typedef struct ZrTestAllocatorFailureConfig {
     TZrBool armed;
     TZrBool fired;
@@ -933,7 +941,8 @@ typedef struct ZrTestAllocatorFailureConfig {
         fflush(stdout);                                                                                                \
     } while (0)
 
-// 简单的测试分配器
+/* TODO: 此处用与 0x1000 的指针关系比较区分早期哨兵和堆指针；
+ * TZrPtr 是 void*，需核对所有回调来源并改用可追踪的哨兵身份。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZrTestAllocatorFailureConfig *failureConfig = (ZrTestAllocatorFailureConfig *)userData;
     ZR_UNUSED_PARAMETER(originalSize);
@@ -1099,6 +1108,8 @@ typedef ZrTestsFixtureReader SZrModuleFixtureReader;
 #define read_test_file_bytes ZrTests_Fixture_ReadFileBytes
 #define module_fixture_reader_read ZrTests_Fixture_ReaderRead
 
+/* sourceLoader 只在当前场景持有的 fixture（局部或静态）存活期间借用它；
+ * 场景退出前先撤销回调，再恢复全局视图，避免后续场景读取失效数据。 */
 static const SZrModuleFixtureSource *g_module_fixture_sources = ZR_NULL;
 static TZrSize g_module_fixture_source_count = 0;
 
@@ -1263,6 +1274,7 @@ static char *read_reference_file(const TZrChar *relativePath, TZrSize *size) {
     return ZrTests_Reference_ReadFixture(relativePath, size);
 }
 
+/* parser 回调把诊断复制到固定缓冲，供拒绝导入的场景在解析结束后断言。 */
 typedef struct {
     TZrBool reported;
     SZrFileRange location;

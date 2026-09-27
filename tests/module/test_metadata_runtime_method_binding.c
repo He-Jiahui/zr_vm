@@ -1,3 +1,7 @@
+/* 验证方法 token 到 AOT 注册表的解析；测试同时要求缺失或歧义注册
+ * 清空返回视图，避免调用者沿用旧方法指针。
+ */
+
 #include "unity.h"
 
 #include "zr_vm_core/function.h"

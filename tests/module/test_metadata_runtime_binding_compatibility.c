@@ -1,3 +1,7 @@
+/* 逐层比较调用方引用与提供方元数据绑定，验证模块版本、
+ * 签名、token 与布局身份的诊断优先级和输出清理。
+ */
+
 #include "unity.h"
 
 #include "runtime_support.h"

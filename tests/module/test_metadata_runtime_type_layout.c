@@ -1,3 +1,7 @@
+/* 验证类型布局、GC 描述符和函数/原型布局查询只采用已附着的
+ * 元数据注册上下文，避免从可变原型缓存误取陈旧布局。
+ */
+
 #include "unity.h"
 
 #include "zr_vm_core/function.h"

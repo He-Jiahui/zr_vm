@@ -1,3 +1,7 @@
+/* 此头由 method_context.h 包含，场景验证 MakeGenericMethod 的
+ * 反射物化、可信闭包调用、模块缓存归属及 GC 后根的有效性。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_METHOD_MAKE_H
 #define ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_METHOD_MAKE_H
 
@@ -197,6 +201,8 @@ static void prepare_resolve_type_id_native_entry(
     state->stackTop.valuePointer = functionBase + 2;
 }
 
+/* TODO: 本文件调用点均传 ZR_FALSE，collectBeforeInvoke 的 GC 分支尚无
+ * 直接测试；核对经原生入口主动 GC 后的闭包与参数重定位。 */
 static TZrInt64 invoke_make_generic_method_native_entry(
         SZrState *state,
         TZrStackValuePointer functionBase,
@@ -277,6 +283,7 @@ static void test_make_generic_method_native_entry_uses_trusted_closure_runtime(v
     state->global->garbageCollector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
     TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(
             state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule)));
+    /* definitionObject/contextObject 已登记为忽略根以保活；full GC 后从栈槽重取闭包，再从 contextObject 读取实参数组。 */
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
     closure = ZR_CAST_NATIVE_CLOSURE(
             state, ZrCore_Stack_GetValue(functionBase)->value.object);

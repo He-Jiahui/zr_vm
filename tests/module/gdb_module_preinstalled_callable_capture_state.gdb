@@ -1,3 +1,5 @@
+# SIGABRT 后同时查看操作数、对象类型与预安装闭包捕获槽。
+# TODO: 当前无自动化入口固定 frame 7，运行前需用 bt 核对局部变量所在栈帧。
 set pagination off
 set confirm off
 set print pretty on

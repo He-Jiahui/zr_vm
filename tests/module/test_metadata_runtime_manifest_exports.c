@@ -1,3 +1,7 @@
+/* 验证 AOT manifest 导出表进入运行时后的查询与绑定门槛；
+ * 重名目标、缺失 token、签名和模块版本漂移必须在绑定前拒绝。
+ */
+
 #include "unity.h"
 
 #include "runtime_support.h"

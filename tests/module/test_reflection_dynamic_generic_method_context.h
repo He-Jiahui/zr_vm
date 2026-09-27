@@ -1,3 +1,7 @@
+/* 此头由动态泛型测试包含；手工 MethodSpec 元数据和捕获状态
+ * 用于验证泛型方法参数在调用帧与 full GC 后仍保持身份。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_METHOD_CONTEXT_H
 #define ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_METHOD_CONTEXT_H
 
@@ -37,6 +41,7 @@ static const TZrByte TEST_METHOD_CONTEXT_TYPE_REF_SIGNATURE[] = {
         41u, 0u, 0u, 0u,
 };
 
+/* module/function/token 表和字节池同生存期，避免 MethodSpec 视图悬空。 */
 typedef struct SMethodSpecGenericContextFixture {
     SZrObjectModule module;
     SZrFunction metadataFunction;
@@ -594,6 +599,7 @@ static void test_method_spec_generic_call_info_context_survives_full_gc(void) {
     destroy_reflection_test_state(state);
 }
 
+/* 调试回调记录运行中的 MethodSpec 身份；指针只借用当前调用帧。 */
 typedef struct SMethodSpecExecutionCapture {
     SZrMetadataRuntime *runtime;
     SZrFunction *expectedFunction;

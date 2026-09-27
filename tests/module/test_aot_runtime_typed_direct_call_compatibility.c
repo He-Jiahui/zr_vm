@@ -1,3 +1,7 @@
+/* 验证 AOT typed direct call 的元数据守卫和降级路径；
+ * 附带的核心身份场景还检查生成帧快照漂移不得先执行旧 thunk。
+ */
+
 #include "unity.h"
 
 #include "runtime_support.h"

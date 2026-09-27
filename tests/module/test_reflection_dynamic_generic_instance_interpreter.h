@@ -1,3 +1,7 @@
+/* 此头由动态泛型测试包含；场景覆盖解释器泛型实例的
+ * 引用/值语义、上下文解析、复制和 VM 方法执行。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_INSTANCE_INTERPRETER_H
 #define ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_INSTANCE_INTERPRETER_H
 
@@ -174,6 +178,7 @@ static void test_interpreter_generic_call_info_context_survives_full_gc(void) {
     destroy_reflection_test_state(state);
 }
 
+/* 调试回调对照解释器泛型实参和所属调用帧，不拥有 runtime 或解析出的对象。 */
 typedef struct SInterpreterGenericMethodExecutionCapture {
     SZrMetadataRuntime *runtime;
     SZrFunction *expectedFunction;

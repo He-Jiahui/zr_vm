@@ -1,3 +1,7 @@
+/* 此头仅由 typed direct call 测试翻译单元包含。夹具同时保留
+ * 调用帧、闭包、函数表与 thunk 快照，以验证拒绝漂移时调用者状态不变。
+ */
+
 #ifndef ZR_VM_TEST_AOT_RUNTIME_DIRECT_CORE_IDENTITY_CASES_H
 #define ZR_VM_TEST_AOT_RUNTIME_DIRECT_CORE_IDENTITY_CASES_H
 
@@ -8,6 +12,8 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/type_layout.h"
 
+/* 帧中的函数/闭包/返回槽与生成表快照同时存在；失败断言要确认
+ * 被拒绝的直接调用没有改写调用者栈或执行观察 thunk。 */
 typedef struct TestAotDirectCoreIdentityFixture {
     SZrState *state;
     SZrFunction *caller;

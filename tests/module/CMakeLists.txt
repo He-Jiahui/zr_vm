@@ -1,4 +1,6 @@
 # ZR-VM Module System Tests CMakeLists.txt
+# 当前根 tests/CMakeLists.txt 直接注册 zr_vm_module_system_test，未包含此文件。
+# 以下为独立子目录构建入口；其链接和包含路径不能作为当前 CTest 证据。
 
 # 添加模块系统测试源文件
 set(MODULE_TEST_SOURCES
@@ -22,6 +24,8 @@ target_include_directories(zr_vm_module_system_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
 )
 
+# TODO: 仓库内无 zr_configure_unity_test 定义；若重新纳入子目录构建，
+# 先提供此 helper 或按根 tests/CMakeLists.txt 的现行路径配置，否则 CMake 配置会在此处失败。
 zr_configure_unity_test(zr_vm_module_system_test)
 
 # 添加测试目标

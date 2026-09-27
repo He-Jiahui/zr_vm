@@ -1,3 +1,7 @@
+/* 此头由动态泛型测试包含；断言辅助函数从运行时对象读取
+ * 字段和数组元素，统一验证物化后的反射对象形状。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_INSTANCE_ASSERTIONS_H
 #define ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_INSTANCE_ASSERTIONS_H
 

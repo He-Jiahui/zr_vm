@@ -1,3 +1,7 @@
+/* 验证导入类型的 TypeRef/TypeSpec 从编译期标注追到提供方定义，
+ * 并检查模块装载时签名、导出 token 和诊断的绑定边界。
+ */
+
 #include "unity.h"
 
 #include "runtime_support.h"

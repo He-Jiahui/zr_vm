@@ -1,3 +1,7 @@
+/* 验证 TypeSpec、CTypeId 和布局 token 的双向解析与缓存；
+ * 缓存命中不能替代附着的 code registration 的身份检查。
+ */
+
 #include <string.h>
 
 #include "unity.h"

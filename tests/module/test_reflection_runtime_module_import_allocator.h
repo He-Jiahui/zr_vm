@@ -1,6 +1,12 @@
+/* 此头由动态泛型测试包含；故障注入状态仅在单个同步场景内
+ * 有效，失败后必须清除标志并核对 GC 重试已消费。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_RUNTIME_MODULE_IMPORT_ALLOCATOR_H
 #define ZR_VM_TEST_REFLECTION_RUNTIME_MODULE_IMPORT_ALLOCATOR_H
 
+/* 故障注入状态由当前 Unity 场景设置并清零；GC 后的 caller anchor
+ * 只在该场景的 runtime 与栈仍存活期间可解引用。 */
 static TZrBool reflection_import_allocator_fail_next_allocation = ZR_FALSE;
 static TZrBool reflection_import_allocator_waiting_for_gc_retry = ZR_FALSE;
 static SZrGlobalState *reflection_import_allocator_gc_global = ZR_NULL;

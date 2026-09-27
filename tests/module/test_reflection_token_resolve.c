@@ -1,3 +1,7 @@
+/* 通过真实反射入口把元数据 token 物化为类型、字段和方法对象；
+ * 内联字段读写、嵌套布局和数值宽度矩阵防止存储表示被误解释。
+ */
+
 #include <float.h>
 #include <string.h>
 #include <stdlib.h>
@@ -51,6 +55,8 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* TODO: 此处以 void* 地址关系判断 0x1000 哨兵；需核对回调指针来源，
+ * 再改为显式的哨兵身份记录，避免测试依赖平台指针排序。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
@@ -254,6 +260,8 @@ static TZrInt64 test_reflection_aot_entry(struct SZrState *state) {
     return 0;
 }
 
+/* invoker 回调同步写入这些观测槽；每个相关场景先 reset 再比较，
+ * 指针只在被测调用及其 state 存活期间有效。 */
 static TZrUInt32 test_reflection_invoker_call_count;
 static struct SZrState *test_reflection_invoker_state;
 static FZrAotEntryThunk test_reflection_invoker_target;

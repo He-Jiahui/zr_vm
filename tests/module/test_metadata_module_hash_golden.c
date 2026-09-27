@@ -1,3 +1,7 @@
+/* 用固定模块签名哈希锁定 token 构建器的稳定编码；
+ * 简单函数和带泛型 union 的模块分别覆盖不同符号形状。
+ */
+
 #include "unity.h"
 
 #include "runtime_support.h"

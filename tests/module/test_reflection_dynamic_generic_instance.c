@@ -1,3 +1,7 @@
+/* 组合本目录的动态泛型夹具头，在同一 Unity 目标中验证类型实例、
+ * MethodSpec、运行时反射模块和解释器调用的跨层身份与 GC 边界。
+ */
+
 #include <string.h>
 #include <stdlib.h>
 
@@ -100,6 +104,8 @@ static const TZrByte TEST_COMPOUND_GENERIC_INSTANCE_SIGNATURE[] = {
         (TZrByte)ZR_VALUE_TYPE_INT64, 0u, 0u, 0u,
 };
 
+/* 内嵌模块、函数、token 记录及 ZRP 字节，保证 runtime 附着的视图
+ * 在整个场景期间仍由同一夹具持有。 */
 typedef struct SReflectionDynamicGenericFixture {
     SZrObjectModule module;
     SZrFunction metadataFunction;
@@ -133,6 +139,8 @@ static const TZrChar *reflection_test_provider_name_resolver(
 
 #include "test_reflection_runtime_module_import_allocator.h"
 
+/* TODO: 0x1000 哨兵的 void* 地址关系比较依赖平台行为；
+ * 需核对故障注入回调指针来源并改为显式身份记录。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -944,6 +952,7 @@ static void test_dynamic_generic_type_object_materializes_interpreter_deopt_rout
     destroy_reflection_test_state(state);
 }
 
+/* 这些头文件提供本翻译单元的静态场景函数，Unity main 在下方统一注册。 */
 #include "test_reflection_dynamic_generic_method_context.h"
 #include "test_reflection_dynamic_generic_instance_interpreter.h"
 #include "test_reflection_dynamic_generic_cross_module.h"

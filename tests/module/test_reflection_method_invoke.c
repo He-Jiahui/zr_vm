@@ -1,3 +1,7 @@
+/* 验证反射方法调用在 AOT invoker 前核对签名与参数模式，
+ * 并在失败、未写返回值和 void 返回时隔离旧结果槽。
+ */
+
 #include "unity.h"
 
 #include "zr_vm_core/function.h"

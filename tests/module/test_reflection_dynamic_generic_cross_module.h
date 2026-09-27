@@ -1,3 +1,7 @@
+/* 此头由动态泛型测试包含；场景将 TypeSpec 绑定重映射到提供方模块，
+ * 检查反射解析依据提供方签名而非调用方本地 token。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_CROSS_MODULE_H
 #define ZR_VM_TEST_REFLECTION_DYNAMIC_GENERIC_CROSS_MODULE_H
 

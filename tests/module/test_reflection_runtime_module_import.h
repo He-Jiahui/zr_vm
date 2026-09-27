@@ -1,3 +1,7 @@
+/* 此头由动态泛型测试包含；从已加载调用者模块导入反射模块，
+ * 验证 provider role、模块缓存与调用方运行时的选择。
+ */
+
 #ifndef ZR_VM_TEST_REFLECTION_RUNTIME_MODULE_IMPORT_H
 #define ZR_VM_TEST_REFLECTION_RUNTIME_MODULE_IMPORT_H
 
