@@ -15,6 +15,7 @@
 #define ZR_M5_SCAN_PASS_COUNT ((TZrSize)8u)
 #define ZR_M5_VALIDATION_COUNT ((TZrSize)1000000u)
 
+/* M5 以相同样本规模对比 slab 与逐对象存储；耗时仅输出，正确性由计数断言约束。 */
 typedef struct SM5PoolElement {
     uint64_t identity;
     uint64_t payload[3];
@@ -103,6 +104,7 @@ static clock_t m5_scan_per_item_baseline(
     return clock() - start;
 }
 
+/* 固定样本量比较 slab 与逐对象分配的扫描工作量；时钟值只报告不作稳定阈值。 */
 static void test_m5_allocation_and_gc_pause_work_matrix(void) {
     const uint64_t expectedSlabAllocations =
             (ZR_M5_ELEMENT_COUNT + ZR_M5_SLAB_CAPACITY - 1u) /
@@ -234,6 +236,7 @@ static clock_t m5_validate_handle(
     return clock() - start;
 }
 
+/* 同量 handle 验证分别报告线程局部和并发模式耗时，断言只约束操作计数。 */
 static void test_m5_thread_local_and_concurrent_modes_report_separately(void) {
     SM5ScanProbe probe = {0};
     SZrPoolTypeLayout layout = m5_layout(ZR_POOL_GC_SCAN_FREE, &probe);

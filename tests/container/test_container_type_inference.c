@@ -31,6 +31,7 @@
         fflush(stdout);                                                                                                \
     } while (0)
 
+/* 经源码编译入口检查泛型约束、导入可见性及协议索引。 */
 static SZrAstNode *parse_test_ast(SZrState *state, const char *path, const char *source) {
     SZrString *sourceName;
 
@@ -50,6 +51,7 @@ static char *read_reference_file(const char *relativePath, size_t *outSize) {
     return ZrTests_Reference_ReadFixture(relativePath, outSize);
 }
 
+/* 定长数组长度参与类型身份，字面量长度不匹配必须报错。 */
 static void test_container_type_inference_fixed_array_length_identity_and_mismatch(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Fixed Array Length Identity And Mismatch";
@@ -107,6 +109,7 @@ static void test_container_type_inference_fixed_array_length_identity_and_mismat
     TEST_DIVIDER();
 }
 
+/* 定长数组可满足 ArrayLike 和 Iterable 泛型约束。 */
 static void test_container_type_inference_fixed_arrays_satisfy_arraylike_and_iteration_constraints(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Fixed Arrays Satisfy IArrayLike And Iteration Constraints";
@@ -171,6 +174,7 @@ static void test_container_type_inference_fixed_arrays_satisfy_arraylike_and_ite
     TEST_DIVIDER();
 }
 
+/* 旧协议名不再解析，防止静默接受过时约束。 */
 static void test_container_type_inference_old_protocol_names_are_rejected(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Old Protocol Names Are Rejected";
@@ -210,6 +214,7 @@ static void test_container_type_inference_old_protocol_names_are_rejected(void) 
     TEST_DIVIDER();
 }
 
+/* 定长字面量可赋给不定长注解，元素索引仍推断为 int。 */
 static void test_container_type_inference_fixed_array_assigns_to_unsized_array_annotation(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Fixed Array Assigns To Unsized Array Annotation";
@@ -256,6 +261,7 @@ static void test_container_type_inference_fixed_array_assigns_to_unsized_array_a
     TEST_DIVIDER();
 }
 
+/* 原生 Map/Set 的键约束接受 Pair，拒绝没有所需协议的普通类。 */
 static void test_container_type_inference_native_generic_constraints_accept_pair_and_reject_plain_source_type(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Native Generic Constraints Accept Pair And Reject Plain Source Type";
@@ -332,6 +338,7 @@ static void test_container_type_inference_native_generic_constraints_accept_pair
     TEST_DIVIDER();
 }
 
+/* 同一闭合实例的索引和原生方法签名应传播具体类型。 */
 static void test_container_type_inference_computed_access_and_native_method_signatures_flow_types(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Computed Access And Native Method Signatures Flow Types";
@@ -407,6 +414,7 @@ static void test_container_type_inference_computed_access_and_native_method_sign
     TEST_DIVIDER();
 }
 
+/* 容器跨类型化函数返回后仍保留原生成员的闭合返回类型。 */
 static void test_container_type_inference_typed_function_returns_preserve_native_container_method_types(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Typed Function Returns Preserve Native Container Method Types";
@@ -470,6 +478,7 @@ static void test_container_type_inference_typed_function_returns_preserve_native
     TEST_DIVIDER();
 }
 
+/* 模块别名导入不在局部作用域自动引入裸类型名。 */
 static void test_container_type_inference_requires_explicit_binding_for_imported_type_names(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Imported Type Names Require Explicit Binding";
@@ -512,6 +521,7 @@ static void test_container_type_inference_requires_explicit_binding_for_imported
     TEST_DIVIDER();
 }
 
+/* 限定名与解构导入均可作为容器类型注解。 */
 static void test_container_type_inference_accepts_qualified_and_destructured_imported_type_names(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Qualified And Destructured Imported Type Names";
@@ -564,6 +574,7 @@ static void test_container_type_inference_accepts_qualified_and_destructured_imp
     TEST_DIVIDER();
 }
 
+/* 模块别名上的类型值可访问，裸标识符仍应未绑定。 */
 static void test_container_type_inference_alias_import_does_not_leak_type_values(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Alias Import Does Not Leak Type Values";
@@ -610,6 +621,7 @@ static void test_container_type_inference_alias_import_does_not_leak_type_values
     TEST_DIVIDER();
 }
 
+/* Set 与 LinkedList 没有索引协议时，编译期拒绝下标访问。 */
 static void test_container_type_inference_rejects_invalid_computed_access_on_set_and_linked_list(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Rejects Invalid Computed Access On Set And LinkedList";
@@ -690,6 +702,7 @@ static void test_container_type_inference_rejects_invalid_computed_access_on_set
     TEST_DIVIDER();
 }
 
+/* 参考样例联测 ArrayLike、索引和迭代约束的组合推断。 */
 static void test_reference_protocols_arraylike_iteration_and_indexing_compose(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Protocol Fixture - IArrayLike Iteration And Indexing Compose";

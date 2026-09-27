@@ -13,6 +13,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 
+/* 同时覆盖公开模块信息与编译器闭合原型，核对两条路径的泛型形状。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
@@ -98,6 +99,7 @@ static SZrAstNode *parse_test_ast(SZrState *state, const char *path, const char 
     return ZrParser_Parse(state, source, strlen(source), sourceName);
 }
 
+/* 从已导入模块的公开信息验证泛型接口、约束和元方法。 */
 static void test_container_metadata_open_module_info_exposes_generic_shapes(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Metadata - Open Module Info Exposes Generic Shapes";
@@ -194,6 +196,7 @@ static void test_container_metadata_open_module_info_exposes_generic_shapes(void
     TEST_DIVIDER();
 }
 
+/* 编译闭合实例后核对成员和接口中的类型实参替换。 */
 static void test_container_metadata_closed_native_prototypes_substitute_members_and_interfaces(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Metadata - Closed Native Prototypes Substitute Members And Interfaces";
@@ -234,6 +237,7 @@ static void test_container_metadata_closed_native_prototypes_substitute_members_
     cs->currentFunction = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(cs->currentFunction);
 
+    /* 逐条编译使导入和实例化依次写入同一个类型原型表。 */
     for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
         ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[index]);
         TEST_ASSERT_FALSE(cs->hasError);
@@ -289,6 +293,7 @@ static void test_container_metadata_closed_native_prototypes_substitute_members_
     TEST_DIVIDER();
 }
 
+/* 闭合原生成员的参数既保留名称也保留 string/int 的底层值种类。 */
 static void test_container_metadata_closed_native_method_parameter_types_preserve_specialized_value_kinds(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Metadata - Closed Native Method Parameters Preserve Specialized Value Kinds";

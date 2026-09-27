@@ -27,6 +27,7 @@ ZR_PARSER_API TZrBool compiler_validate_reference_escapes(
         SZrCompilerState *compiler,
         SZrAstNode *node);
 
+/* 回调探针把初始化、析构和扫描计数与槽内容绑定，用于验证失败回滚和生命周期。 */
 typedef struct STestElement {
     int value;
     int marker;
@@ -141,6 +142,7 @@ static SZrAstNode *parse_pooling_source(
     return ZrParser_Parse(state, source, strlen(source), sourceName);
 }
 
+/* 原生描述符以角色公开稳定槽协议，防止名称匹配掩盖签名偏差。 */
 static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) {
     const ZrLibModuleDescriptor *module =
             ZrVmLibContainer_GetPoolingModuleDescriptor();
@@ -247,6 +249,7 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
     TEST_ASSERT_NOT_NULL(readRef->metaMethods[0].callback);
 }
 
+/* 反射只暴露受控 guard 接口，内部存储和绕过入口不可见。 */
 static void test_native_pool_reflection_hides_guard_bypass_and_runtime_storage(void) {
     SZrState *state = ZrContainerTests_CreateState();
     SZrObjectModule *module;
@@ -349,6 +352,7 @@ static void test_native_pool_reflection_hides_guard_bypass_and_runtime_storage(v
     ZrContainerTests_DestroyState(state);
 }
 
+/* 源码调用 Pool 的投递、标识和回收，联测原生注册及执行。 */
 static void test_native_pool_executes_identity_and_recycle_from_source(void) {
     static const TZrChar *source =
             "var {Pool} = import(\"zr.pooling\");\n"
@@ -378,6 +382,7 @@ static void test_native_pool_executes_identity_and_recycle_from_source(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 源码读写 guard 在作用域内投影槽值，退出后释放借用。 */
 static void test_native_pool_executes_scoped_read_write_guards_from_source(void) {
     static const TZrChar *source =
             "var {Pool, PoolRef, PoolReadRef} = import(\"zr.pooling\");\n"
@@ -417,6 +422,7 @@ static void test_native_pool_executes_scoped_read_write_guards_from_source(void)
     ZrContainerTests_DestroyState(state);
 }
 
+/* 语义导入保留 ref-like 与稳定槽能力及参数传递模式。 */
 static void test_native_semantic_import_preserves_ref_like_and_stable_slot_protocols(void) {
     static const TZrChar *source =
             "var {Pool, PoolHandle, PoolRef, PoolReadRef} = "
@@ -548,6 +554,7 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     ZrContainerTests_DestroyState(state);
 }
 
+/* 共用编译入口逐种检查 ref-like guard 不可被容器或字段持有。 */
 static void assert_native_pool_ref_storage_rejected(
         const TZrChar *source,
         const TZrChar *expectedMessage) {
@@ -583,6 +590,7 @@ static void assert_native_pool_ref_storage_rejected(
     ZrContainerTests_DestroyState(state);
 }
 
+/* 编译器拒绝把暂借 PoolRef 存入更长生命周期的位置。 */
 static void test_native_ref_like_capability_rejects_pool_ref_storage(void) {
     assert_native_pool_ref_storage_rejected(
             "let {PoolRef} = import(\"zr.pooling\");\n"
@@ -609,6 +617,7 @@ static void test_native_ref_like_capability_rejects_pool_ref_storage(void) {
             "cannot cross a native opaque ABI boundary");
 }
 
+/* 共用编译入口检查 return 等逃逸路径的诊断，而不执行非法源码。 */
 static void assert_native_pool_ref_escape_rejected(
         const TZrChar *source,
         const TZrChar *expectedMessage) {
@@ -645,6 +654,7 @@ static void assert_native_pool_ref_escape_rejected(
     ZrContainerTests_DestroyState(state);
 }
 
+/* 编译器拒绝从作用域或函数边界逃逸的 PoolRef。 */
 static void test_native_ref_like_capability_rejects_pool_ref_escape(void) {
     assert_native_pool_ref_escape_rejected(
             "let {PoolRef} = import(\"zr.pooling\");\n"
@@ -677,6 +687,7 @@ static void test_native_ref_like_capability_rejects_pool_ref_escape(void) {
             "cannot cross a yield suspension");
 }
 
+/* 回收和退休后旧 handle 不得重新指向复用槽位。 */
 static void test_identity_recycle_and_retirement_preserve_guarded_value(void) {
     STestCallbacks callbacks = {0};
     SZrPoolTypeLayout layout = test_layout(
@@ -740,6 +751,7 @@ static void test_identity_recycle_and_retirement_preserve_guarded_value(void) {
     TEST_ASSERT_EQUAL_UINT64(2u, callbacks.dropCount);
 }
 
+/* 同时读、独占写与释放顺序需产生确定的借用状态。 */
 static void test_reader_writer_conflicts_and_guard_release_are_deterministic(void) {
     STestCallbacks callbacks = {0};
     SZrPoolTypeLayout layout = test_layout(
@@ -781,6 +793,7 @@ static void test_reader_writer_conflicts_and_guard_release_are_deterministic(voi
     TEST_ASSERT_EQUAL_INT(ZR_POOL_STATUS_OK, ZrPool_Destroy(&pool));
 }
 
+/* 销毁期间先退休槽位，活跃 guard 释放后才允许最终回收。 */
 static void test_pool_destroy_retires_live_slots_and_waits_for_active_guard(void) {
     STestCallbacks callbacks = {0};
     SZrPoolTypeLayout layout = test_layout(
@@ -797,6 +810,7 @@ static void test_pool_destroy_retires_live_slots_and_waits_for_active_guard(void
             ZR_POOL_STATUS_OK, ZrPool_Deliver(pool, &value, &handle));
     TEST_ASSERT_EQUAL_INT(
             ZR_POOL_STATUS_OK, ZrPool_TryBorrow(pool, handle, &guard));
+    /* 销毁先退休对外 handle，但活跃 guard 的槽值要保留到 release。 */
     TEST_ASSERT_EQUAL_INT(ZR_POOL_STATUS_POOL_BUSY, ZrPool_Destroy(&pool));
     TEST_ASSERT_NOT_NULL(pool);
     TEST_ASSERT_EQUAL_INT(
@@ -810,6 +824,7 @@ static void test_pool_destroy_retires_live_slots_and_waits_for_active_guard(void
     TEST_ASSERT_NULL(pool);
 }
 
+/* 构造失败或代数耗尽时不可发布可用的别名 handle。 */
 static void test_construction_failure_and_generation_exhaustion_never_publish_aliases(void) {
     STestCallbacks callbacks = {0};
     SZrPoolTypeLayout layout = test_layout(
@@ -860,6 +875,7 @@ static void test_construction_failure_and_generation_exhaustion_never_publish_al
     TEST_ASSERT_EQUAL_INT(ZR_POOL_STATUS_OK, ZrPool_Destroy(&pool));
 }
 
+/* 跨 slab 检查元素对齐及仅扫描已初始化槽位。 */
 static void test_slabs_preserve_alignment_and_scan_only_initialized_slots(void) {
     STestCallbacks callbacks = {0};
     SZrPoolTypeLayout layout = test_layout(
@@ -904,6 +920,7 @@ static void test_slabs_preserve_alignment_and_scan_only_initialized_slots(void) 
     TEST_ASSERT_EQUAL_UINT64(5u, callbacks.dropCount);
 }
 
+/* 大量 validate 与 recycle 交错检查旧 handle 拒绝和统计。 */
 static void test_million_handle_validation_and_rejection_stress(void) {
     const TZrSize handleCount = 1000000u;
     STestCallbacks callbacks = {0};
@@ -949,6 +966,7 @@ static void test_million_handle_validation_and_rejection_stress(void) {
     free(handles);
 }
 
+/* 每个工作线程只使用自身 handle；共享 pool 的锁负责保护槽位元数据。 */
 static void run_concurrent_worker(SConcurrentWorker *worker) {
     for (TZrSize iteration = 0u;
          iteration < worker->iterationCount;
@@ -1010,6 +1028,7 @@ static void *concurrent_worker_entry(void *parameter) {
 }
 #endif
 
+/* 并发模式多线程操作应串行保持槽状态，独占线程模式不承受同样锁成本。 */
 static void test_concurrent_pool_serializes_state_without_charging_thread_local_mode(void) {
     enum {
         workerCount = 4,

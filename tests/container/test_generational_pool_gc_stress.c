@@ -5,6 +5,7 @@
 
 #include "zr_vm_lib_container/generational_pool.h"
 
+/* 失败初始化也会先写入目标内存，以便观察回滚回调与下一次复用。 */
 typedef struct SPoolProbeValue {
     int value;
     int marker;
@@ -81,6 +82,7 @@ static SZrPoolConfig probe_config(TZrSize slabCapacity) {
     return config;
 }
 
+/* 初始化回调部分写入后失败，必须清理再复用原槽。 */
 static void test_partial_initialization_rolls_back_before_slot_reuse(void) {
     SPoolProbe probe = {0};
     SZrPoolTypeLayout layout = probe_layout(&probe, ZR_POOL_GC_SCAN_FREE);
@@ -119,6 +121,7 @@ static void test_partial_initialization_rolls_back_before_slot_reuse(void) {
     TEST_ASSERT_EQUAL_UINT64(1u, probe.dropCount);
 }
 
+/* 屏障、映射和免扫描三类布局分别检查扫描工作量。 */
 static void test_barriered_cards_and_scan_classes_report_separately(void) {
     SPoolProbe barrierProbe = {0};
     SPoolProbe mappedProbe = {0};
@@ -219,6 +222,7 @@ static void test_barriered_cards_and_scan_classes_report_separately(void) {
     TEST_ASSERT_EQUAL_INT(ZR_POOL_STATUS_OK, ZrPool_Destroy(&freePool));
 }
 
+/* 持有 guard 的热循环不重复验证 handle，回收复用后旧 handle 仍失效。 */
 static void test_hot_guard_projection_and_churn_do_not_revalidate(void) {
     const TZrSize hotIterationCount = 1000000u;
     const TZrSize churnCount = 100000u;

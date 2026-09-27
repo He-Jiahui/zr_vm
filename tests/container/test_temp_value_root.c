@@ -12,6 +12,7 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/parser.h"
 
+/* 临时根测试复用 VM 栈顶，验证原生 helper 在对象存活期间恢复旧栈帧边界。 */
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -31,6 +32,7 @@ static SZrFunction *compile_test_script(SZrState *state, const char *path, const
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 返回值进入临时根后才允许调用其他 VM API；调用方关闭根时恢复原栈顶。 */
 static TZrBool execute_array_factory_and_root(SZrState *state,
                                               SZrFunction *factoryFunction,
                                               ZrLibTempValueRoot *root) {
@@ -52,6 +54,7 @@ static TZrBool execute_array_factory_and_root(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 已有函数栈顶下挂临时根，关闭后应恢复原位置且不扩栈。 */
 static void test_temp_value_root_restores_existing_function_top_without_growth(void) {
     SZrState *state = ZrContainerTests_CreateState();
     ZrLibTempValueRoot root;
@@ -96,6 +99,7 @@ static void test_temp_value_root_restores_existing_function_top_without_growth(v
     ZrContainerTests_DestroyState(state);
 }
 
+/* 成员调用可嵌套临时根，返回后保留调用方原栈顶。 */
 static void test_object_invoke_member_restores_existing_function_top_without_growth(void) {
     SZrState *state = ZrContainerTests_CreateState();
     SZrFunction *factoryFunction;
@@ -149,6 +153,7 @@ static void test_object_invoke_member_restores_existing_function_top_without_gro
     ZrContainerTests_DestroyState(state);
 }
 
+/* 字符串字段 helper 中的临时键和结果不能永久占用栈槽。 */
 static void test_object_field_cstring_helpers_restore_existing_function_top_without_growth(void) {
     SZrState *state = ZrContainerTests_CreateState();
     TZrStackValuePointer savedStackTop;
@@ -203,6 +208,7 @@ static void test_object_field_cstring_helpers_restore_existing_function_top_with
     ZrContainerTests_DestroyState(state);
 }
 
+/* 长字段名缓冲区复用时仍按字符串内容寻址。 */
 static void test_object_field_cstring_helpers_accept_distinct_long_field_name_buffers(void) {
     static char firstFieldName[] =
             "captured_long_member_name_that_must_stay_beyond_the_short_string_threshold_segment_a";

@@ -23,6 +23,7 @@
 #define POOL_CALLABLE_HASH UINT64_C(0x9100000000000005)
 #define POOL_MODULE_HASH UINT64_C(0x9100000000000006)
 
+/* 固定 token/哈希构成最小 Pool 工件，跨编码、消费者和反射验证能力位。 */
 typedef struct SPoolArtifactFixture {
     TZrByte signature[5];
     SZrArtifactTypeDefRow typeDef;
@@ -69,6 +70,7 @@ static const ZrLibConstantDescriptor *find_constant(
     return ZR_NULL;
 }
 
+/* 各 section 借用 fixture 内存；直到工件编码完成前必须保持 fixture 存活。 */
 static void init_fixture(
         SPoolArtifactFixture *fixture,
         const ZrLibTypeDescriptor *poolType,
@@ -120,6 +122,7 @@ static void init_fixture(
                     &fixture->layout,
                     ZR_NULL));
 
+    /* section 只借用上方静态数据和 fixture 字段；编码前不得销毁 fixture。 */
     fixture->sections[0] = (SZrArtifactSectionInput){
             ZR_ARTIFACT_SECTION_STRING_HEAP,
             ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
@@ -178,6 +181,7 @@ static void init_fixture(
     identity->moduleHash = POOL_MODULE_HASH;
 }
 
+/* 原生稳定槽能力经工件编码、消费及反射仍保持同一契约哈希。 */
 static void test_native_pool_contract_roundtrips_to_reflection_layout(void) {
     const ZrLibModuleDescriptor *module =
             ZrVmLibContainer_GetPoolingModuleDescriptor();
@@ -267,6 +271,7 @@ static void test_native_pool_contract_roundtrips_to_reflection_layout(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 能力描述缺少有效哈希或协议位时不得投影到工件布局。 */
 static void test_native_capability_projection_rejects_missing_or_dangling_hash(void) {
     const ZrLibModuleDescriptor *module =
             ZrVmLibContainer_GetPoolingModuleDescriptor();
@@ -297,6 +302,7 @@ static void test_native_capability_projection_rejects_missing_or_dangling_hash(v
                     &diagnostic));
 }
 
+/* 工件布局的零哈希和未知能力位应在编码前拒绝。 */
 static void test_pool_artifact_rejects_corrupt_and_unknown_layout_contracts(void) {
     const ZrLibTypeDescriptor *poolType = find_type(
             ZrVmLibContainer_GetPoolingModuleDescriptor(), "Pool");

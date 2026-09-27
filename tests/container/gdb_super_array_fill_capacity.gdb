@@ -1,3 +1,6 @@
+# TODO: 断点绑定 object_super_array.c/hash_set.c 行号；源码变更后核对行号与局部变量。
+# 同时观察批量填充和哈希桶扩容，定位 items 缓存容量与 Pair 池容量不同步。
+# 运行前由 gdb --args 指定可执行文件及触发批量填充的项目。
 set pagination off
 set confirm off
 

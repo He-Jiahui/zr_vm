@@ -13,6 +13,7 @@
 #include "zr_vm_parser.h"
 #include "harness/runtime_support.h"
 
+/* 经描述符角色查找回调，避免将名称匹配误作原生调用契约。 */
 static const ZrLibMethodDescriptor *find_type_method(
         const TZrChar *typeName,
         TZrUInt32 role) {
@@ -59,6 +60,7 @@ static TZrSize count_opcode_recursive(
     return count;
 }
 
+/* 手工构造内联 frame 参数直达原生 Pool，检查无需值镜像的投递路径。 */
 static void test_production_pool_consumes_inline_closed_type_without_value_mirror(void) {
     SZrState *state = ZrContainerTests_CreateState();
     SZrObjectModule *module;
@@ -172,6 +174,7 @@ static void test_production_pool_consumes_inline_closed_type_without_value_mirro
     ZrContainerTests_DestroyState(state);
 }
 
+/* 源码写 guard 修改闭合 struct 投影，作用域结束回写槽位。 */
 static void test_source_pool_struct_write_guard_projects_and_commits_closed_type(void) {
     static const TZrChar *source =
             "struct Particle {\n"
@@ -229,6 +232,7 @@ static void test_source_pool_struct_write_guard_projects_and_commits_closed_type
     ZrContainerTests_DestroyState(state);
 }
 
+/* return、throw、break、continue 与重新赋值均需关闭旧 guard。 */
 static void test_source_pool_guards_close_on_abrupt_exit_and_replacement(void) {
     static const TZrChar *source =
             "struct Particle {\n"
@@ -304,6 +308,7 @@ static void test_source_pool_guards_close_on_abrupt_exit_and_replacement(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 递归搜子函数 frame 布局，定位真正由编译器发布的内联参数槽。 */
 static TZrBool find_inline_struct_parameter(
         SZrFunction *function,
         SZrFunction **outFunction,
@@ -362,6 +367,7 @@ static TZrInt64 read_int_field(
     return value->value.nativeObject.nativeInt64;
 }
 
+/* 原生回调直接消费 frame 内联布局，关闭写 guard 后再读回投影。 */
 static void test_native_struct_write_guard_copies_projection_back_to_inline_slot(void) {
     static const TZrChar *source =
             "struct Particle {\n"
@@ -498,6 +504,7 @@ static void test_native_struct_write_guard_copies_projection_back_to_inline_slot
     TEST_ASSERT_EQUAL_UINT32(sourceRegistry.count, repeatedRegistry.count);
     TEST_ASSERT_NOT_NULL(sourceRegistry.layouts[inlineSpan.typeLayoutId]);
 
+    /* 伪造缺失的 AOT 注册必须拒绝视图；恢复源码 frame 布局后才调用原生 Pool。 */
     layoutFunction->metadataCodeRegistration = &invalidRegistration;
     layoutFunction->metadataTypeLayoutCount = inlineSpan.typeLayoutId + 1u;
     TEST_ASSERT_FALSE(ZrLib_CallContext_InlineArgumentView(

@@ -15,6 +15,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser/compiler.h"
 
+/* 测试 VM 的内存回调模拟宿主分配器；低地址哨兵不交给 C 堆释放。 */
 static TZrPtr zr_container_test_allocator(TZrPtr userData,
                                           TZrPtr pointer,
                                           TZrSize originalSize,
@@ -51,6 +52,7 @@ SZrState *ZrContainerTests_CreateState(void) {
         return ZR_NULL;
     }
 
+    /* 编译和执行测试均经模块注册表导入，返回主线程前先注册依赖模块。 */
     mainState = global->mainThreadState;
     if (mainState != ZR_NULL) {
         ZrCore_GlobalState_InitRegistry(mainState, global);

@@ -35,6 +35,7 @@
         fflush(stdout);                                                                                                \
     } while (0)
 
+/* 源码与原生绑定入口共同覆盖容器行为，部分场景检查稠密存储的性能契约。 */
 static SZrFunction *compile_test_script(SZrState *state, const char *path, const char *source) {
     SZrString *sourceName;
 
@@ -90,11 +91,13 @@ static TZrUInt32 count_instruction_opcode_recursive(const SZrFunction *function,
     return count;
 }
 
+/* 静态 foreach 应降为迭代协议指令，递归计数包括内层函数。 */
 static TZrUInt32 count_static_iterator_move_next_contract_opcodes(const SZrFunction *function) {
     return count_instruction_opcode(function, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) +
            count_instruction_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE));
 }
 
+/* 执行返回数组的源码函数后立刻建临时根，避免随后的断言分配使结果失活。 */
 static TZrBool execute_array_factory_and_root(SZrState *state,
                                               SZrFunction *factoryFunction,
                                               ZrLibTempValueRoot *root) {
@@ -217,6 +220,7 @@ static void assert_super_array_pair_pool_capacity_equals(SZrState *state,
     }
 }
 
+/* 固定数组从源码构造后交叉验证写入与迭代，防止定长元素与迭代协议分离。 */
 static void test_container_fixed_array_runtime_supports_mutation_and_iteration(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Fixed Array Supports Mutation And Iteration";
@@ -251,6 +255,7 @@ static void test_container_fixed_array_runtime_supports_mutation_and_iteration(v
     TEST_DIVIDER();
 }
 
+/* 对托管元素重复创建迭代器，防止第一次遍历后状态被复用污染。 */
 static void test_container_fixed_array_runtime_reiterates_managed_elements_without_corrupting_iterator_state(void) {
     SZrTestTimer timer = {0};
     const char *summary =
@@ -292,6 +297,7 @@ static void test_container_fixed_array_runtime_reiterates_managed_elements_witho
     TEST_DIVIDER();
 }
 
+/* 嵌套遍历同一托管数组，防止内外迭代器共享游标。 */
 static void test_container_fixed_array_runtime_supports_nested_independent_managed_iterators(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Fixed Array Supports Nested Independent Managed Iterators";
@@ -332,6 +338,7 @@ static void test_container_fixed_array_runtime_supports_nested_independent_manag
     TEST_DIVIDER();
 }
 
+/* 数值数组跨辅助函数调用，防止临时值或栈位置改变元素。 */
 static void test_container_fixed_array_runtime_preserves_numeric_items_across_helper_calls(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Fixed Array Foreach Preserves Numeric Items Across Helper Calls";
@@ -375,6 +382,7 @@ static void test_container_fixed_array_runtime_preserves_numeric_items_across_he
     TEST_DIVIDER();
 }
 
+/* 容量增长与结构相等联测，防止扩容时丢失比较所需的元素。 */
 static void test_container_array_runtime_supports_capacity_growth_and_structural_equality(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Supports Capacity Growth And Structural Equality";
@@ -414,6 +422,7 @@ static void test_container_array_runtime_supports_capacity_growth_and_structural
     TEST_DIVIDER();
 }
 
+/* 直接执行构造器后检查隐藏 items 缓存，覆盖绕过源码预热的入口。 */
 static void test_container_array_runtime_constructor_populates_hidden_items_cache_for_direct_execution(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Constructor Populates Hidden Items Cache For Direct Execution";
@@ -453,6 +462,7 @@ static void test_container_array_runtime_constructor_populates_hidden_items_cach
     TEST_DIVIDER();
 }
 
+/* 类型化 add/set 应保留整数原始存储，避免提前装箱改变布局。 */
 static void test_container_array_runtime_tracks_raw_int_storage_for_typed_add_and_set(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Tracks Raw Int Storage For Typed Add And Set";
@@ -531,6 +541,7 @@ static void test_container_array_runtime_tracks_raw_int_storage_for_typed_add_an
     TEST_DIVIDER();
 }
 
+/* 遍历整数数组后检查原始存储仍在，防止迭代器读路径改变表示。 */
 static void test_container_array_runtime_iterator_preserves_raw_int_storage(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Iterator Preserves Raw Int Storage";
@@ -588,6 +599,7 @@ static void test_container_array_runtime_iterator_preserves_raw_int_storage(void
     TEST_DIVIDER();
 }
 
+/* 删除原始整数后再走通用读取，覆盖索引移动与惰性物化顺序。 */
 static void test_container_array_runtime_raw_int_remove_at_materializes_on_generic_read(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Raw Int RemoveAt Materializes On Generic Read";
@@ -654,6 +666,7 @@ static void test_container_array_runtime_raw_int_remove_at_materializes_on_gener
     TEST_DIVIDER();
 }
 
+/* 插入原始整数后再走通用读取，覆盖位移与惰性物化顺序。 */
 static void test_container_array_runtime_raw_int_insert_materializes_on_generic_read(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Raw Int Insert Materializes On Generic Read";
@@ -720,6 +733,7 @@ static void test_container_array_runtime_raw_int_insert_materializes_on_generic_
     TEST_DIVIDER();
 }
 
+/* 清空后再次写入，防止重用原始整数存储时残留旧值。 */
 static void test_container_array_runtime_raw_int_clear_reuses_storage(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Raw Int Clear Reuses Storage";
@@ -767,6 +781,7 @@ static void test_container_array_runtime_raw_int_clear_reuses_storage(void) {
     TEST_DIVIDER();
 }
 
+/* 批量写入前后核对已有前缀，防止 helper 扩容覆盖旧项。 */
 static void test_container_array_runtime_bulk_super_array_helpers_preserve_existing_prefixes(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Bulk Super Array Helpers Preserve Existing Prefixes";
@@ -865,6 +880,7 @@ static void test_container_array_runtime_bulk_super_array_helpers_preserve_exist
     TEST_DIVIDER();
 }
 
+/* 批量填充后核对桶容量与缓存容量，防止元数据超前于实际存储。 */
 static void test_container_array_runtime_bulk_super_array_fill_keeps_dense_bucket_capacity_aligned_with_cached_capacity(
         void) {
     SZrTestTimer timer = {0};
@@ -918,6 +934,7 @@ static void test_container_array_runtime_bulk_super_array_fill_keeps_dense_bucke
     TEST_DIVIDER();
 }
 
+/* 先满足条目池长度再增长桶容量，覆盖两种容量不同步的边界。 */
 static void test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_to_length_before_bucket_capacity(void) {
     SZrTestTimer timer = {0};
     const char *summary =
@@ -951,6 +968,7 @@ static void test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_t
         receiverSlots[index].toBeClosedValueOffset = 0;
     }
 
+    /* 长度尚未到桶容量时仍须先补足 Pair 池，后续 add 才能安全复用槽。 */
     TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state, receiverSlots, 6, 5));
     assert_super_array_length_equals(state, receivers[0], 6);
     assert_super_array_dense_bucket_capacity_equals(state, receivers[0], 8);
@@ -973,6 +991,7 @@ static void test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_t
     TEST_DIVIDER();
 }
 
+/* 清空应保留容量且空位读取为 null，避免残留元素可见。 */
 static void test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Clear Preserves Capacity And Missing Item Returns Null";
@@ -1012,6 +1031,7 @@ static void test_container_array_runtime_clear_preserves_capacity_and_missing_it
     TEST_DIVIDER();
 }
 
+/* 对象负载经索引写入再读回，防止类型化 setter 丢失 GC 对象。 */
 static void test_container_array_runtime_set_item_preserves_object_payloads(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Set Item Preserves Object Payloads";
@@ -1048,6 +1068,7 @@ static void test_container_array_runtime_set_item_preserves_object_payloads(void
     TEST_DIVIDER();
 }
 
+/* 负号表达式经源码构造器参数进入原生边界，防止解析与参数传递失配。 */
 static void test_container_array_runtime_accepts_unary_negation_in_constructor_arguments(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Accepts Unary Negation In Constructor Arguments";
@@ -1078,6 +1099,7 @@ static void test_container_array_runtime_accepts_unary_negation_in_constructor_a
     TEST_DIVIDER();
 }
 
+/* 负容量在构造入口被拒绝，防止转为巨大无符号分配。 */
 static void test_container_array_runtime_rejects_negative_capacity(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Rejects Negative Capacity";
@@ -1106,6 +1128,7 @@ static void test_container_array_runtime_rejects_negative_capacity(void) {
     TEST_DIVIDER();
 }
 
+/* 越界及非法索引须走显式失败路径，防止损坏数组存储。 */
 static void test_container_array_runtime_rejects_invalid_indexes(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Rejects Invalid Indexes";
@@ -1156,6 +1179,7 @@ static void test_container_array_runtime_rejects_invalid_indexes(void) {
     TEST_DIVIDER();
 }
 
+/* Pair 键的哈希与覆写一并检查，防止相等键重复插入。 */
 static void test_container_map_runtime_supports_pair_keys_and_value_overwrite(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Supports Pair Keys And Value Overwrite";
@@ -1197,6 +1221,7 @@ static void test_container_map_runtime_supports_pair_keys_and_value_overwrite(vo
     TEST_DIVIDER();
 }
 
+/* 字符串索引与同名原型方法冲突时，检查键访问优先级。 */
 static void test_container_map_runtime_computed_access_beats_prototype_method_names(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Computed Access Beats Prototype Method Names";
@@ -1228,6 +1253,7 @@ static void test_container_map_runtime_computed_access_beats_prototype_method_na
     TEST_DIVIDER();
 }
 
+/* 迭代 Map 条目时只核对集合内容，避免把哈希桶顺序当作契约。 */
 static void test_container_map_runtime_iterator_aggregates_pairs_without_order_assumptions(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Iterator Aggregates Pairs Without Order Assumptions";
@@ -1267,6 +1293,7 @@ static void test_container_map_runtime_iterator_aggregates_pairs_without_order_a
     TEST_DIVIDER();
 }
 
+/* 重复索引访问预热条目及 Pair 字段缓存，覆盖热路径。 */
 static void test_container_map_runtime_repeated_index_access_primes_entries_and_pair_field_caches(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Repeated Index Access Primes Entries And Pair Field Caches";
@@ -1344,6 +1371,7 @@ static void test_container_map_runtime_repeated_index_access_primes_entries_and_
     TEST_DIVIDER();
 }
 
+/* 条目增长后重新查找，防止热缓存指向旧槽位。 */
 static void test_container_map_runtime_repeated_index_access_invalidates_hot_lookup_after_entry_growth(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Repeated Index Access Invalidates Hot Lookup After Entry Growth";
@@ -1382,6 +1410,7 @@ static void test_container_map_runtime_repeated_index_access_invalidates_hot_loo
     TEST_DIVIDER();
 }
 
+/* 多键拼接循环反复查改，覆盖临时字符串键的哈希与生存期。 */
 static void test_container_map_runtime_four_key_concat_cycle_preserves_values(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Four Key Concat Cycle Preserves Values";
@@ -1429,6 +1458,7 @@ static void test_container_map_runtime_four_key_concat_cycle_preserves_values(vo
     TEST_DIVIDER();
 }
 
+/* 稳定拼接键反复命中，防止热路径额外验证条目槽。 */
 static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_validation_on_hot_lookup(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Stable Concat Keys Avoid Entry Slot Validation On Hot Lookup";
@@ -1491,6 +1521,7 @@ static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_valid
     TEST_DIVIDER();
 }
 
+/* 清空 Map 后复用条目存储，防止旧键或旧值再现。 */
 static void test_container_map_runtime_clear_reuses_entries_storage(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Map Clear Reuses Entries Storage";
@@ -1555,6 +1586,7 @@ static void test_container_map_runtime_clear_reuses_entries_storage(void) {
     TEST_DIVIDER();
 }
 
+/* Pair 值集合检查结构相等下的去重，而非对象地址去重。 */
 static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Set Enforces Pair Uniqueness";
@@ -1593,6 +1625,7 @@ static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     TEST_DIVIDER();
 }
 
+/* 清空 Set 后重用条目存储，防止成员资格缓存残留。 */
 static void test_container_set_runtime_clear_reuses_entries_storage(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Set Clear Reuses Entries Storage";
@@ -1661,6 +1694,7 @@ static void test_container_set_runtime_clear_reuses_entries_storage(void) {
     TEST_DIVIDER();
 }
 
+/* 原始整数的 contains/remove 应读取当前存储，避免陈旧缓存。 */
 static void test_container_set_runtime_raw_int_contains_and_remove_use_current_storage(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Set Raw Int Contains And Remove Use Current Storage";
@@ -1715,6 +1749,7 @@ static void test_container_set_runtime_raw_int_contains_and_remove_use_current_s
     TEST_DIVIDER();
 }
 
+/* Pair 通过相等和比较入口体现值语义，防止退化为引用语义。 */
 static void test_container_pair_runtime_exposes_value_semantics(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Pair Exposes Value Semantics";
@@ -1751,6 +1786,7 @@ static void test_container_pair_runtime_exposes_value_semantics(void) {
     TEST_DIVIDER();
 }
 
+/* 删除与清空后检查节点脱链，避免返回节点仍指向链表。 */
 static void test_container_linked_list_runtime_detaches_removed_and_cleared_nodes(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - LinkedList Detaches Removed And Cleared Nodes";
@@ -1794,6 +1830,7 @@ static void test_container_linked_list_runtime_detaches_removed_and_cleared_node
     TEST_DIVIDER();
 }
 
+/* 空链表两端删除返回 null，覆盖无节点的原生边界。 */
 static void test_container_linked_list_runtime_empty_removals_return_null(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - LinkedList Empty Removals Return Null";
@@ -1827,6 +1864,7 @@ static void test_container_linked_list_runtime_empty_removals_return_null(void) 
     TEST_DIVIDER();
 }
 
+/* Pair 经类型化函数返回和链表删除，防止内联负载在栈边界丢失。 */
 static void test_container_linked_list_runtime_remove_first_preserves_pair_values_across_typed_function_boundary(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - LinkedList RemoveFirst Preserves Pair Values Across Typed Function Boundary";
@@ -1872,6 +1910,7 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     TEST_DIVIDER();
 }
 
+/* 全新 VM 中执行 Set 到 Map 转换，排除先前测试预热的影响。 */
 static void test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_state(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Set To Map Composite Preserves Bucket Values";
@@ -1937,6 +1976,7 @@ static void test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_s
     TEST_DIVIDER();
 }
 
+/* Pair 内联构造参数经 Array 原生 add，防止参数物化丢失字段。 */
 static void test_container_array_runtime_inline_pair_constructor_argument_preserves_payload(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Inline Pair Constructor Argument Preserves Payload";
@@ -1985,6 +2025,7 @@ static void test_container_array_runtime_inline_pair_constructor_argument_preser
     TEST_DIVIDER();
 }
 
+/* 全新 VM 中串接多类容器原生调用，覆盖参数栈复用。 */
 static void test_container_linked_set_map_runtime_preserves_native_call_arguments_in_fresh_state(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Linked Set Map Composite Preserves Native Call Arguments";
@@ -2076,6 +2117,7 @@ static void test_container_linked_set_map_runtime_preserves_native_call_argument
     TEST_DIVIDER();
 }
 
+/* 同名成员和字符串索引来自参考样例，核对两种访问协议。 */
 static void test_reference_object_member_vs_string_index_fixture_separates_member_and_index_contracts(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Object Fixture - Member And String Index Stay Separate";
@@ -2114,6 +2156,7 @@ static void test_reference_object_member_vs_string_index_fixture_separates_membe
     TEST_DIVIDER();
 }
 
+/* 成员缺失与键缺失具有不同错误语义，避免统一成静默 null。 */
 static void test_reference_object_missing_member_vs_missing_key_fixture_preserves_member_error_boundary(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Object Fixture - Missing Member Stays Distinct From Missing Key";
@@ -2159,6 +2202,7 @@ static void test_reference_object_missing_member_vs_missing_key_fixture_preserve
     TEST_DIVIDER();
 }
 
+/* 普通对象、Array、Map 的索引缺失分别按各自协议检查。 */
 static void test_reference_object_array_map_plain_index_fixture_keeps_contract_specific_miss_semantics(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Object Fixture - Array Map Plain Object Keep Index Semantics";
@@ -2206,6 +2250,7 @@ static void test_reference_object_array_map_plain_index_fixture_keeps_contract_s
     TEST_DIVIDER();
 }
 
+/* 属性 getter/setter 与直接字段路径并存时，检查属性协议优先级。 */
 static void test_reference_object_property_fixture_prefers_getter_and_setter_contracts(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Object Fixture - Property Getter Setter Keep Contract Precedence";
@@ -2242,6 +2287,7 @@ static void test_reference_object_property_fixture_prefers_getter_and_setter_con
     TEST_DIVIDER();
 }
 
+/* 参考 foreach 样例同时检查执行值与静态迭代指令降级。 */
 static void test_reference_protocols_foreach_fixture_lowers_to_iter_contract_opcodes(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Protocol Fixture - Foreach Lowers To Iterator Contracts";
@@ -2281,6 +2327,7 @@ static void test_reference_protocols_foreach_fixture_lowers_to_iter_contract_opc
     TEST_DIVIDER();
 }
 
+/* 空迭代器反复遍历时循环体不得执行。 */
 static void test_reference_protocols_empty_iterator_fixture_keeps_zero_body_execution_stable(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Protocol Fixture - Empty Iterator Stays Stable";
@@ -2318,6 +2365,7 @@ static void test_reference_protocols_empty_iterator_fixture_keeps_zero_body_exec
     TEST_DIVIDER();
 }
 
+/* 单元素迭代器每次遍历仅产出一次，覆盖复位路径。 */
 static void test_reference_protocols_singleton_iterator_fixture_yields_once_per_pass(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Protocol Fixture - Singleton Iterator Yields Once Per Pass";
@@ -2355,6 +2403,7 @@ static void test_reference_protocols_singleton_iterator_fixture_yields_once_per_
     TEST_DIVIDER();
 }
 
+/* 嵌套 foreach 需保留独立迭代状态，防止游标互相覆盖。 */
 static void test_reference_protocols_nested_foreach_fixture_keeps_iterators_independent(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Protocol Fixture - Nested Foreach Keeps Iterators Independent";
@@ -2392,6 +2441,7 @@ static void test_reference_protocols_nested_foreach_fixture_keeps_iterators_inde
     TEST_DIVIDER();
 }
 
+/* 比较与哈希协议同时驱动容器，防止相等关系不一致。 */
 static void test_reference_protocols_comparable_hashable_fixture_preserves_container_consistency(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Protocol Fixture - Comparable And Hashable Stay Consistent";
@@ -2426,6 +2476,7 @@ static void test_reference_protocols_comparable_hashable_fixture_preserves_conta
     TEST_DIVIDER();
 }
 
+/* 原生 setter 期间只用临时根保护 GC 对象，检查值在嵌套分配后仍可读。 */
 static void test_container_native_binding_temp_roots_preserve_gc_object_values_without_extra_pin_scope(void) {
     SZrTestTimer timer = {0};
     const char *summary =
@@ -2489,6 +2540,7 @@ static void test_container_native_binding_temp_roots_preserve_gc_object_values_w
     TEST_DIVIDER();
 }
 
+/* 底层 PushValue 存入 GC 对象后检查稠密 Pair 池归属。 */
 static void test_container_array_push_value_uses_dense_pair_pool_for_gc_object_values(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array PushValue Uses Dense Pair Pool For GC Object Values";
@@ -2530,6 +2582,7 @@ static void test_container_array_push_value_uses_dense_pair_pool_for_gc_object_v
     TEST_DIVIDER();
 }
 
+/* 源码 Array.add 存入 GC 对象后检查原生稠密 Pair 池路径。 */
 static void test_container_array_add_uses_dense_pair_pool_for_gc_object_values(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Add Uses Dense Pair Pool For GC Object Values";

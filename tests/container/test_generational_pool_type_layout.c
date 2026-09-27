@@ -9,6 +9,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_lib_container/generational_pool.h"
 
+/* 规范布局测试使用回调计数验证复制、扫描和 drop 责任的跨层传递。 */
 typedef struct SCanonicalPoolProbe {
     TZrUInt32 dropCount;
     TZrUInt32 visitCount;
@@ -59,6 +60,7 @@ static SZrPoolConfig canonical_pool_config(void) {
     return config;
 }
 
+/* 免扫描规范布局保留 drop 所有权，回收时恰好执行一次。 */
 static void test_canonical_gcfree_layout_defers_exactly_once_drop(void) {
     SCanonicalPoolProbe probe = {0};
     SZrTypeLayoutContract contract;
@@ -119,6 +121,7 @@ static void test_canonical_gcfree_layout_defers_exactly_once_drop(void) {
     TEST_ASSERT_EQUAL_UINT32(1u, probe.dropCount);
 }
 
+/* 映射布局的扫描回调应读取已投递的槽值。 */
 static void test_canonical_mapped_layout_drives_scan_visitor(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SCanonicalPoolProbe probe = {0};
@@ -204,6 +207,7 @@ static void test_canonical_mapped_layout_drives_scan_visitor(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 托管布局缺少扫描访问器时不可创建池。 */
 static void test_canonical_managed_layout_requires_scan_visitor(void) {
     SZrTypeLayout layout;
     SZrPool *pool = (SZrPool *)(uintptr_t)1u;
@@ -222,6 +226,7 @@ static void test_canonical_managed_layout_requires_scan_visitor(void) {
     TEST_ASSERT_NULL(pool);
 }
 
+/* 含托管值的布局缺少 VM 状态时不可创建池。 */
 static void test_canonical_managed_layout_requires_runtime_state(void) {
     SZrTypeLayoutField field;
     SZrTypeLayout layout;
@@ -270,6 +275,7 @@ static void test_canonical_managed_layout_requires_runtime_state(void) {
     TEST_ASSERT_NULL(pool);
 }
 
+/* 布局复制失败后撤销部分构造且不发布 handle。 */
 static void test_canonical_copy_error_rolls_back_without_publishing(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeLayout layout;
@@ -307,6 +313,7 @@ static void test_canonical_copy_error_rolls_back_without_publishing(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 依赖 VM 状态的布局拒绝并发池模式。 */
 static void test_canonical_stateful_layout_rejects_concurrent_mode(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeLayout layout;
@@ -333,6 +340,7 @@ static void test_canonical_stateful_layout_rejects_concurrent_mode(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 需要复制的规范布局缺少复制路径时不可投递。 */
 static void test_canonical_layout_rejects_missing_copy_path(void) {
     SCanonicalPoolProbe probe = {0};
     SZrTypeLayoutContract contract;
@@ -367,6 +375,7 @@ static void test_canonical_layout_rejects_missing_copy_path(void) {
     TEST_ASSERT_NULL(pool);
 }
 
+/* 嵌套布局索引未在 registry 中解析时拒绝创建。 */
 static void test_canonical_layout_rejects_dangling_nested_registry(void) {
     SZrTypeLayoutField field;
     SZrTypeLayout layout;
@@ -399,6 +408,7 @@ static void test_canonical_layout_rejects_dangling_nested_registry(void) {
     TEST_ASSERT_NULL(pool);
 }
 
+/* 父布局不能把嵌套托管布局降级为无需扫描或析构。 */
 static void test_canonical_layout_rejects_nested_scan_drop_downgrade(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeLayoutField field;
@@ -445,6 +455,7 @@ static void test_canonical_layout_rejects_nested_scan_drop_downgrade(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 含 move-only 嵌套值的根布局不得走原始复制。 */
 static void test_canonical_layout_rejects_raw_root_over_move_only_nested(void) {
     SZrTypeLayoutField field;
     SZrTypeLayout nestedLayout;
@@ -496,6 +507,7 @@ static void test_canonical_layout_rejects_raw_root_over_move_only_nested(void) {
     TEST_ASSERT_NULL(pool);
 }
 
+/* 直接 GC 值与嵌套 GC 值都必须进入扫描路径。 */
 static void test_canonical_nested_managed_layout_scans_direct_and_nested_values(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SCanonicalPoolProbe probe = {0};
@@ -566,6 +578,7 @@ static void test_canonical_nested_managed_layout_scans_direct_and_nested_values(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 嵌套 custom drop 经根布局传播且仅执行一次。 */
 static void test_canonical_nested_custom_drop_runs_exactly_once(void) {
     SCanonicalPoolProbe probe = {0};
     SZrTypeLayoutContract contract;
@@ -627,6 +640,7 @@ static void test_canonical_nested_custom_drop_runs_exactly_once(void) {
     TEST_ASSERT_EQUAL_UINT32(1u, probe.dropCount);
 }
 
+/* 拥有值的布局若无析构路径应在建池前拒绝。 */
 static void test_canonical_layout_rejects_owned_value_without_drop(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeLayoutField field;
@@ -665,6 +679,7 @@ static void test_canonical_layout_rejects_owned_value_without_drop(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 显式偏移表不能跳过嵌套布局中的托管字段。 */
 static void test_canonical_layout_rejects_offset_table_over_managed_nested(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeLayoutContract contract;

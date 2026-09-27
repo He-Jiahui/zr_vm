@@ -1,3 +1,5 @@
+# TODO: 此脚本依赖本机 build/dumps 绝对路径及 module.c 行号；重放前核对断点仍在 Pair 构造器。
+# 对照 Pair 构造前的实参与构造后的字段，定位内联参数的物化位置。
 set pagination off
 set confirm off
 set print pretty on

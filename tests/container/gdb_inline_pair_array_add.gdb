@@ -1,3 +1,5 @@
+# TODO: 此脚本依赖本机 build/dumps 绝对路径；移机后先核对可执行文件、项目和源码符号。
+# 跟踪 Array.add 接收内联 Pair 参数时的字段值，供原生边界回归定位。
 set pagination off
 set confirm off
 set print pretty on
