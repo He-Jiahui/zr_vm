@@ -1478,10 +1478,14 @@ int main(void) {
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
     RUN_TEST(test_source_optional_call_skips_nested_argument_invoke);
     RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);
+    RUN_TEST(test_source_optional_field_value_merges_present_and_absent_paths);
     RUN_TEST(test_direct_weak_optional_call_keeps_source_cfg);
     RUN_TEST(test_direct_weak_optional_value_merges_after_guard);
     RUN_TEST(test_unmodeled_weak_optional_value_abandons_source_cfg);
     RUN_TEST(test_unmodeled_optional_value_abandons_partial_source_cfg);
+    RUN_TEST(test_optional_getter_value_keeps_conservative_source_cfg);
+    RUN_TEST(test_optional_unannotated_field_keeps_conservative_source_cfg);
+    RUN_TEST(test_optional_field_chain_keeps_conservative_source_cfg);
     RUN_TEST(test_source_resolved_function_call_emits_typed_invoke_cfg);
     RUN_TEST(test_nested_calls_do_not_restart_abandoned_source_cfg);
     RUN_TEST(test_source_single_catch_all_emits_exception_handler_cfg);

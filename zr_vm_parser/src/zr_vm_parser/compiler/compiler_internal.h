@@ -214,6 +214,14 @@ TZrBool compiler_semantic_ir_load_optional_merge(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_optional_field_read(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        TZrPlaceId receiverPlaceId,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 resultSlot);
 TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 conditionSlot,
                                       SZrAstNode *node,

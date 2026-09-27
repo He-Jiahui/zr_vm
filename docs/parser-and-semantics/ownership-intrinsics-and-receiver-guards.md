@@ -317,7 +317,9 @@ and the absent block explicitly selects nullable versus void-no-op merge
 behavior from that stored mode.
 
 The pre-execution Semantic IR producer mirrors nullable optional call branches
-with either `VOID_NOOP` or `NULLABLE` lift. The receiver ValueId terminates the
+with either `VOID_NOOP` or `NULLABLE` lift and a single resolved nullable
+`receiver?.field` read of an explicitly typed, non-null primitive field with
+`NULLABLE` lift. The receiver ValueId terminates the
 prefix with ordered present-true and absent-false edges. Argument and suffix
 facts are owned only by the present path. A supported known member call occupies
 a separate terminal block and publishes a typed `CALL_*` fact with canonical
@@ -331,10 +333,15 @@ For `VOID_NOOP`, the absent edge skips directly to the join. For `NULLABLE`,
 the normal continuation converts and stores the call result into a typed
 temporary Place, the absent block stores typed null into that Place, and the
 join loads one merged ValueId after restoring the slot snapshot. The exception
-path never reaches the merge. Result-producing ownership operations bind their
+path never reaches the merge. A supported field read projects the canonical
+field Place and loads its primitive value on the present path; it has no invoke
+or exception continuation. Its nullable merge uses the same typed conversion,
+null store, and join load. Result-producing ownership operations bind their
 defining ValueId to the result stack slot, allowing an explicitly awakened
 nullable receiver to be the branch operand. Weak-wake guard frames, missing
-canonical call facts, and cleanup suffixes remain conservative fallback cases;
+canonical call or field facts, unannotated or nullable fields, property
+getters, longer field chains, and
+cleanup suffixes remain conservative fallback cases;
 encountering one after another source branch abandons the partial semantic CFG.
 
 The ownership setup for that branch now reaches ExecIR with canonical source

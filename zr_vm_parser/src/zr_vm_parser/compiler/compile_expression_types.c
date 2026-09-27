@@ -2949,6 +2949,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
     for (TZrSize i = memberStartIndex; i < members->count; i++) {
         SZrAstNode *member = members->nodes[i];
         TZrBool currentSegmentGuarded = ZR_FALSE;
+        TZrUInt32 memberReceiverSlot = currentSlot;
+        TZrPlaceId memberReceiverPlace = currentSemanticPlace;
         if (member == ZR_NULL) {
             continue;
         }
@@ -3634,6 +3636,20 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                     }
                     superLookupActive = ZR_FALSE;
                 }
+            }
+            if (currentSegmentGuarded &&
+                memberExpr->accessMode == ZR_POSTFIX_ACCESS_OPTIONAL &&
+                members->count == 1U && !nextIsFunctionCall &&
+                cs->preSemanticIrCfgActive &&
+                !compiler_semantic_ir_lower_optional_field_read(
+                        cs, primaryNode, member, typeMember,
+                        memberReceiverPlace, memberReceiverSlot, currentSlot)) {
+                if (!cs->hasError) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to lower semantic optional field read",
+                            member->location);
+                }
+                goto cleanup;
             }
         } else if (member->type == ZR_AST_FUNCTION_CALL) {
             SZrFunctionCall *call = &member->data.functionCall;

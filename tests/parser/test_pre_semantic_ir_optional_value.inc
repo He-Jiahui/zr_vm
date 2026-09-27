@@ -233,6 +233,170 @@ static TZrUInt32 count_optional_block_opcode(
     return count;
 }
 
+static void test_source_optional_field_value_merges_present_and_absent_paths(void) {
+    static const TZrChar source[] =
+            "resource class Service { pub var value: int = 7; }\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var receiver = wake(weak);\n"
+            "var result = receiver?.value;\n";
+    SZrString *name = ZrCore_String_CreateFromNative(
+            g_state, "optional_field_value_cfg.zr");
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfgBlock *entry;
+    const SZrParserCfgBlock *present;
+    const SZrParserCfgBlock *absent;
+    const SZrParserCfgBlock *join;
+    const SZrSemanticIrInstruction *fieldProject = ZR_NULL;
+    const SZrSemanticIrInstruction *fieldLoad = ZR_NULL;
+    const SZrSemanticIrInstruction *presentConvert = ZR_NULL;
+    const SZrSemanticIrInstruction *presentStore = ZR_NULL;
+    const SZrSemanticIrInstruction *absentConstant = ZR_NULL;
+    const SZrSemanticIrInstruction *absentStore = ZR_NULL;
+    const SZrSemanticIrInstruction *joinLoad = ZR_NULL;
+    const SZrParserPlace *fieldPlace;
+    const SZrParserPlace *receiverPlace;
+    const SZrParserPlaceProjection *fieldProjection;
+    const SZrSemanticSymbolRecord *fieldSymbol;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; ++index) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
+        TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    }
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(5U, function->cfg.blocks.length);
+    entry = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, function->cfg.entryBlockId);
+    present = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 1U);
+    absent = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 2U);
+    join = (const SZrParserCfgBlock *)ZrCore_Array_Get(
+            (SZrArray *)&function->cfg.blocks, 3U);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(present);
+    TEST_ASSERT_NOT_NULL(absent);
+    TEST_ASSERT_NOT_NULL(join);
+    TEST_ASSERT_EQUAL_UINT32(2U, entry->successorCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(present->id,
+            ZrParser_Cfg_BlockEdgeAt(entry, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->kind);
+    TEST_ASSERT_EQUAL_UINT32(absent->id,
+            ZrParser_Cfg_BlockEdgeAt(entry, 1U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(join->id,
+            ZrParser_Cfg_BlockEdgeAt(present, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(join->id,
+            ZrParser_Cfg_BlockEdgeAt(absent, 0U)->toBlockId);
+    TEST_ASSERT_EQUAL_UINT32(2U, join->predecessorCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, present, ZR_SEMANTIC_IR_PLACE_PROJECT));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, present, ZR_SEMANTIC_IR_LOAD));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, present, ZR_SEMANTIC_IR_CONVERT));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, present, ZR_SEMANTIC_IR_STORE));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, absent, ZR_SEMANTIC_IR_CONSTANT));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, absent, ZR_SEMANTIC_IR_STORE));
+    TEST_ASSERT_EQUAL_UINT32(1U, count_optional_block_opcode(
+            function, join, ZR_SEMANTIC_IR_LOAD));
+
+    for (index = 0U; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        if (index >= present->firstInstructionIndex &&
+            index < present->firstInstructionIndex + present->instructionCount) {
+            if (instruction->opcode == ZR_SEMANTIC_IR_PLACE_PROJECT) fieldProject = instruction;
+            if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) fieldLoad = instruction;
+            if (instruction->opcode == ZR_SEMANTIC_IR_CONVERT) presentConvert = instruction;
+            if (instruction->opcode == ZR_SEMANTIC_IR_STORE) presentStore = instruction;
+        } else if (index >= absent->firstInstructionIndex &&
+                   index < absent->firstInstructionIndex + absent->instructionCount) {
+            if (instruction->opcode == ZR_SEMANTIC_IR_CONSTANT) absentConstant = instruction;
+            if (instruction->opcode == ZR_SEMANTIC_IR_STORE) absentStore = instruction;
+        } else if (index >= join->firstInstructionIndex &&
+                   index < join->firstInstructionIndex + join->instructionCount &&
+                   instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
+            joinLoad = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(fieldProject);
+    TEST_ASSERT_NOT_NULL(fieldLoad);
+    TEST_ASSERT_NOT_NULL(presentConvert);
+    TEST_ASSERT_NOT_NULL(presentStore);
+    TEST_ASSERT_NOT_NULL(absentConstant);
+    TEST_ASSERT_NOT_NULL(absentStore);
+    TEST_ASSERT_NOT_NULL(joinLoad);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, fieldProject->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(fieldProject->placeId, fieldLoad->placeId);
+    TEST_ASSERT_EQUAL_UINT32(fieldProject->typeId, fieldLoad->typeId);
+    fieldPlace = ZrParser_PlaceGraph_Get(
+            &function->places, fieldProject->placeId);
+    TEST_ASSERT_NOT_NULL(fieldPlace);
+    TEST_ASSERT_EQUAL_UINT32(1U, fieldPlace->projections.length);
+    fieldProjection = ZrParser_Place_ProjectionAt(fieldPlace, 0U);
+    TEST_ASSERT_NOT_NULL(fieldProjection);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_PLACE_PROJECTION_FIELD,
+            fieldProjection->kind);
+    TEST_ASSERT_EQUAL_UINT32(fieldProject->symbolId,
+            fieldProjection->data.symbolId);
+    receiverPlace = ZrParser_PlaceGraph_Get(
+            &function->places, fieldPlace->parentId);
+    TEST_ASSERT_NOT_NULL(receiverPlace);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_PLACE_BASE_LOCAL,
+            receiverPlace->base.kind);
+    fieldSymbol = ZrParser_Semantic_FindSymbolById(
+            compiler.semanticContext, fieldProject->symbolId);
+    TEST_ASSERT_NOT_NULL(fieldSymbol);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD, fieldSymbol->kind);
+    TEST_ASSERT_NOT_NULL(fieldSymbol->astNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_FIELD, fieldSymbol->astNode->type);
+    TEST_ASSERT_EQUAL_UINT32(fieldLoad->resultValueId, presentConvert->valueId);
+    TEST_ASSERT_EQUAL_UINT32(presentConvert->resultValueId, presentStore->valueId);
+    TEST_ASSERT_EQUAL_UINT32(absentConstant->resultValueId, absentStore->valueId);
+    TEST_ASSERT_EQUAL_UINT32(presentStore->placeId, absentStore->placeId);
+    TEST_ASSERT_EQUAL_UINT32(presentStore->placeId, joinLoad->placeId);
+    TEST_ASSERT_EQUAL_UINT32(presentConvert->typeId, absentConstant->typeId);
+    TEST_ASSERT_EQUAL_UINT32(presentConvert->typeId, joinLoad->typeId);
+    TEST_ASSERT_NOT_EQUAL(fieldLoad->typeId, presentConvert->typeId);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    ZrCore_ExecIr_FreeFunction(&output);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_direct_weak_optional_call_keeps_source_cfg(void) {
     static const TZrChar source[] =
             "resource class Service {\n"
@@ -598,4 +762,100 @@ static void test_unmodeled_optional_value_abandons_partial_source_cfg(void) {
     compiler.currentFunction = ZR_NULL;
     ZrParser_CompilerState_Free(&compiler);
     ZrParser_Ast_Free(g_state, ast);
+}
+
+static void assert_optional_field_keeps_conservative_source_cfg(
+        const TZrChar *source, TZrNativeString sourceName) {
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, sourceName);
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    TZrSize index;
+    TZrBool sawSourceIf = ZR_FALSE;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; ++index) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(&compiler, statement);
+        }
+        TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+        if (statement->type == ZR_AST_IF_EXPRESSION) {
+            TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+            sawSourceIf = ZR_TRUE;
+        }
+    }
+    TEST_ASSERT_TRUE(sawSourceIf);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2U, function->cfg.blocks.length);
+    TEST_ASSERT_FALSE(semantic_ir_has_opcode(
+            function, ZR_SEMANTIC_IR_BRANCH));
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_optional_getter_value_keeps_conservative_source_cfg(void) {
+    static const TZrChar source[] =
+            "resource class Service {\n"
+            "    pub property value: int { get { return 7; } }\n"
+            "}\n"
+            "var flag: bool = true;\n"
+            "if (flag) { var yes: int = 1; } else { var no: int = 2; }\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var receiver = wake(weak);\n"
+            "var result = receiver?.value;\n";
+
+    assert_optional_field_keeps_conservative_source_cfg(
+            source, "optional_getter_fallback.zr");
+}
+
+static void test_optional_unannotated_field_keeps_conservative_source_cfg(void) {
+    static const TZrChar source[] =
+            "resource class Service { pub var value = 7; }\n"
+            "var flag: bool = true;\n"
+            "if (flag) { var yes: int = 1; } else { var no: int = 2; }\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var receiver = wake(weak);\n"
+            "var result = receiver?.value;\n";
+
+    assert_optional_field_keeps_conservative_source_cfg(
+            source, "optional_unannotated_field_fallback.zr");
+}
+
+static void test_optional_field_chain_keeps_conservative_source_cfg(void) {
+    static const TZrChar source[] =
+            "resource class Child {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "resource class Service {\n"
+            "    pub var child: Unique<Child>;\n"
+            "    pub @constructor() { this.child = own Child(7); }\n"
+            "}\n"
+            "var flag: bool = true;\n"
+            "if (flag) { var yes: int = 1; } else { var no: int = 2; }\n"
+            "var seed = own Service();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var receiver = wake(weak);\n"
+            "var result = receiver?.child.value;\n";
+
+    assert_optional_field_keeps_conservative_source_cfg(
+            source, "optional_field_chain_fallback.zr");
 }

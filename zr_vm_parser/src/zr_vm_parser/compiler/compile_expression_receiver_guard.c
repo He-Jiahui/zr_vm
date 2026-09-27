@@ -69,6 +69,49 @@ static TZrBool receiver_guard_chain_ends_in_call(
                      lastSegment->type == ZR_AST_FUNCTION_CALL);
 }
 
+static TZrBool receiver_guard_chain_is_resolved_single_field(
+        SZrCompilerState *cs,
+        const SZrReceiverGuardLoweringContext *context,
+        const SZrReceiverGuardFact *fact) {
+    const SZrAstNode *member;
+    const SZrSemanticReferenceFact *reference;
+    const SZrSemanticSymbolRecord *symbol;
+    const SZrSemanticExpressionFact *result;
+
+    if (cs == ZR_NULL || context == ZR_NULL || context->segments == ZR_NULL ||
+        context->segments->count != 1U || fact == ZR_NULL ||
+        fact->kind != ZR_RECEIVER_GUARD_NULL ||
+        fact->resultLift != ZR_RECEIVER_GUARD_RESULT_NULLABLE ||
+        fact->chainSegmentStart != 0U || fact->chainSegmentEnd != 1U) {
+        return ZR_FALSE;
+    }
+    member = context->segments->nodes[0];
+    if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
+        member->data.memberExpression.computed ||
+        member->data.memberExpression.property == ZR_NULL ||
+        member->data.memberExpression.property->type !=
+                ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+    reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, member->data.memberExpression.property,
+            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    result = ZrParser_SemanticFacts_FindExpressionByNode(
+            cs->semanticContext, context->primaryNode);
+    if (reference == ZR_NULL || !reference->isResolved ||
+        reference->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        reference->typeId == ZR_SEMANTIC_ID_INVALID || result == ZR_NULL ||
+        !result->inferredType.isNullable) {
+        return ZR_FALSE;
+    }
+    symbol = ZrParser_Semantic_FindSymbolById(
+            cs->semanticContext, reference->symbolId);
+    return (TZrBool)(symbol != ZR_NULL &&
+            symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FIELD &&
+            symbol->astNode != ZR_NULL &&
+            symbol->astNode->type == ZR_AST_CLASS_FIELD);
+}
+
 static SZrAstNode *receiver_guard_expected_receiver(
         const SZrReceiverGuardLoweringContext *context,
         TZrSize segmentIndex) {
@@ -493,7 +536,9 @@ TZrBool compiler_receiver_guard_begin_segment(
                           ZR_VALUE_ID_INVALID)) &&
                 (fact->resultLift == ZR_RECEIVER_GUARD_RESULT_VOID_NOOP ||
                  fact->resultLift == ZR_RECEIVER_GUARD_RESULT_NULLABLE) &&
-                receiver_guard_chain_ends_in_call(context, fact));
+                (receiver_guard_chain_ends_in_call(context, fact) ||
+                 receiver_guard_chain_is_resolved_single_field(
+                         cs, context, fact)));
         if (supportsSemanticCfg) {
             if (fact->resultLift == ZR_RECEIVER_GUARD_RESULT_NULLABLE) {
                 chainResultFact = ZrParser_SemanticFacts_FindExpressionByNode(

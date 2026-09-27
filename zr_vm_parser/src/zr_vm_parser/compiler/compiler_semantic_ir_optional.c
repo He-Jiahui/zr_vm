@@ -1,5 +1,129 @@
 #include "compiler_internal.h"
 
+TZrBool compiler_semantic_ir_lower_optional_field_read(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        TZrPlaceId receiverPlaceId,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 resultSlot) {
+    const SZrSemanticReferenceFact *reference;
+    const SZrSemanticSymbolRecord *symbol;
+    const SZrSemanticExpressionFact *result;
+    const SZrParserPlace *receiverPlace;
+    const SZrCanonicalTypeNode *valueType;
+    SZrInferredType declaredType;
+    SZrInferredType presentType;
+    SZrParserPlaceProjection projection;
+    SZrSemanticIrInstructionSpec spec;
+    TZrTypeId presentTypeId;
+    TZrPlaceId fieldPlaceId;
+    TZrValueId fieldValueId;
+    TZrBool declaredTypeMatches;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrCfgActive) {
+        return ZR_FALSE;
+    }
+    if (primaryNode == ZR_NULL || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        memberInfo == ZR_NULL || memberInfo->isStatic ||
+        memberInfo->memberType != ZR_AST_CLASS_FIELD ||
+        memberInfo->fieldType == ZR_NULL ||
+        receiverPlaceId == ZR_PLACE_ID_INVALID ||
+        receiverSlot == ZR_PARSER_SLOT_NONE ||
+        resultSlot == ZR_PARSER_SLOT_NONE ||
+        compiler_semantic_ir_slot_value(cs, receiverSlot) ==
+                ZR_VALUE_ID_INVALID) {
+        return compiler_semantic_cfg_abandon(cs);
+    }
+    reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext,
+            memberNode->data.memberExpression.property,
+            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    result = ZrParser_SemanticFacts_FindExpressionByNode(
+            cs->semanticContext, primaryNode);
+    receiverPlace = ZrParser_PlaceGraph_Get(
+            &cs->preSemanticIr.places, receiverPlaceId);
+    symbol = reference != ZR_NULL && reference->isResolved
+            ? ZrParser_Semantic_FindSymbolById(
+                      cs->semanticContext, reference->symbolId)
+            : ZR_NULL;
+    if (reference == ZR_NULL || !reference->isResolved ||
+        reference->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        reference->typeId == ZR_SEMANTIC_ID_INVALID ||
+        symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FIELD ||
+        symbol->astNode != memberInfo->declarationNode ||
+        reference->symbolId != memberInfo->symbolId ||
+        result == ZR_NULL || !result->inferredType.isNullable ||
+        receiverPlace == ZR_NULL ||
+        (receiverPlace->base.kind != ZR_PARSER_PLACE_BASE_LOCAL &&
+         receiverPlace->base.kind != ZR_PARSER_PLACE_BASE_PARAMETER)) {
+        return compiler_semantic_cfg_abandon(cs);
+    }
+    presentType = result->inferredType;
+    presentType.isNullable = ZR_FALSE;
+    if (!ZrParser_AstTypeToInferredType_Convert(
+                cs, memberInfo->fieldType, &declaredType)) {
+        return cs->hasError ? ZR_FALSE : compiler_semantic_cfg_abandon(cs);
+    }
+    declaredTypeMatches = (TZrBool)(
+            !declaredType.isNullable &&
+            ZrParser_InferredType_Equal(&declaredType, &presentType));
+    ZrParser_InferredType_Free(cs->state, &declaredType);
+    if (!declaredTypeMatches) {
+        return compiler_semantic_cfg_abandon(cs);
+    }
+    presentTypeId = ZrParser_Semantic_RegisterInferredType(
+            cs->semanticContext, &presentType,
+            ZR_SEMANTIC_TYPE_KIND_UNKNOWN, ZR_NULL, ZR_NULL);
+    valueType = ZrParser_CanonicalType_Find(
+            cs->semanticContext, presentTypeId);
+    if (presentTypeId == ZR_SEMANTIC_ID_INVALID || valueType == ZR_NULL ||
+        valueType->kind != ZR_CANONICAL_TYPE_PRIMITIVE) {
+        return compiler_semantic_cfg_abandon(cs);
+    }
+
+    memset(&projection, 0, sizeof(projection));
+    projection.kind = ZR_PARSER_PLACE_PROJECTION_FIELD;
+    projection.data.symbolId = reference->symbolId;
+    fieldPlaceId = ZrParser_PlaceGraph_Project(
+            &cs->preSemanticIr.places, receiverPlaceId, &projection,
+            presentTypeId, memberNode->location);
+    if (fieldPlaceId == ZR_PLACE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_PLACE_PROJECT;
+    spec.typeId = presentTypeId;
+    spec.placeId = fieldPlaceId;
+    spec.symbolId = reference->symbolId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = memberNode->location;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+
+    fieldValueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, presentTypeId, memberNode->location);
+    if (fieldValueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_LOAD;
+    spec.typeId = presentTypeId;
+    spec.placeId = fieldPlaceId;
+    spec.resultValueId = fieldValueId;
+    spec.symbolId = reference->symbolId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = memberNode->location;
+    return (TZrBool)(compiler_semantic_ir_emit(cs, &spec) &&
+            compiler_semantic_ir_bind_result_value(
+                    cs, resultSlot, presentTypeId, fieldValueId,
+                    memberNode->location));
+}
+
 TZrBool compiler_semantic_ir_wake_optional_receiver(
         SZrCompilerState *cs,
         TZrUInt32 sourceSlot,

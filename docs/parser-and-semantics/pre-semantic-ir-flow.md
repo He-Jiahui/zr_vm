@@ -179,8 +179,9 @@ boundary. The compiler producer now emits a deliberately bounded source CFG
 surface for `if`, straight-line `while`, condition-bearing linear `for`,
 conditionless linear `for`,
 direct terminal `while` exits,
-linear-operand `&&`/`||`, and known
-nullable optional calls with either `void`/no-op or nullable value results.
+linear-operand `&&`/`||`, known nullable optional calls with either `void`/no-op
+or nullable value results, and one resolved nullable `receiver?.field` read
+whose result is a primitive value.
 Non-fallthrough returns nested in an unsupported control arm, general loop
 control, Weak optional access, cleanup, suspension, and other unmodeled
 control still use the conservative legacy graph rather than publishing
@@ -568,6 +569,18 @@ the same owner, and explicitly rethrows the payload. No drop is emitted at the
 join, which is also reachable when the wake failed. An unavailable canonical
 source or suppressed CFG startup does not synthesize a partial WAKE graph.
 Unsupported calls still abandon a started graph and remove synthetic branches.
+
+A single resolved nullable `receiver?.field` chain with an explicitly typed,
+non-null primitive field uses the same ordered
+present/absent branch and nullable merge without an invoke block. The present
+path projects the canonical field symbol from a local or parameter receiver
+Place and loads the non-null primitive field value. The existing optional
+merge converts and stores that value into a nullable temporary; the absent
+path stores typed null, and the join loads the merged ValueId. Missing symbol,
+result type, receiver Place, or source ValueId facts abandon an active partial
+graph. Unannotated or nullable fields, property getters, longer member chains,
+and Weak guards remain outside
+this source CFG slice.
 ExecIR retains semantic `WAKE` as a distinct opcode. The direct oracle and
 ExecBC/AOT projections reject unsupported wake execution explicitly; this
 source-CFG checkpoint does not establish runtime wake/drop equivalence across
