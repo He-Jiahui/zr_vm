@@ -8,12 +8,16 @@
 
 #include <time.h>
 #include "xxHash/xxhash.h"
+
+/* 种子混合和运行期字符串共用带盐的 XXH3；稳定身份走无盐接口。 */
 ZR_FORCE_INLINE TZrUInt64 ZrHashSeedCreateInternal(TZrNativeString string, TZrSize length, TZrUInt64 seed) {
     return XXH3_64bits_withSeed(string, length, seed);
 }
 
 TZrUInt64 ZrCore_HashSeed_Create(SZrGlobalState *global, TZrUInt64 uniqueNumber) {
 #define ZR_HASH_SEED_BUFFER_SIZE (sizeof(TZrUInt64) << 2)
+    /* BUG: GlobalState_New 每次创建全局状态都会到此路径；char 数组没有 uint64 对齐/有效类型保证，
+     * 经 bufferPtr 写入四个整数是未定义行为。需改为 uint64 数组或显式字节编码后再混合。 */
     TZrChar buffer[ZR_HASH_SEED_BUFFER_SIZE];
     TZrUInt64 *bufferPtr = ZR_CAST_UINT64_PTR(buffer);
     TZrUInt64 timestamp = ZR_CAST_UINT64(time(ZR_NULL));
@@ -42,6 +46,8 @@ TZrUInt64 ZrCore_Hash_CreateStable64WithPrefix(const TZrByte *prefix,
     XXH3_state_t *state;
     TZrUInt64 result;
 
+    /* BUG: 分配/更新失败都编码为 0；CallBinding_FunctionSignatureHash 和 native_contract_hash_bytes
+     * 可把这个中间 0 继续折叠为非零错误身份。需让调用链能区分失败和合法的零哈希。 */
     state = XXH3_createState();
     if (state == ZR_NULL) {
         return 0;

@@ -1965,7 +1965,7 @@ zr_vm_core/include/zr_vm_core/gc_domain_clone.h	zr_vm_core	code	51123837c62a360e
 zr_vm_core/include/zr_vm_core/gc_major.h	zr_vm_core	code	6554e6a8daa0498634f8d260fe775f52bd51f70d527b0bd33764851b90016157	pending	-
 zr_vm_core/include/zr_vm_core/gc_young_allocation.h	zr_vm_core	code	8f374defe5eb981e50b8a4f765f0e2e198599a1a9bc267469573157baf2e76c7	pending	-
 zr_vm_core/include/zr_vm_core/global.h	zr_vm_core	code	98c5e1e3460b093d9c911457da98b6406801834e0e6673411a4238e115efb765	pending	-
-zr_vm_core/include/zr_vm_core/hash.h	zr_vm_core	code	230bc8d594a7256976e5c15fc68cf61dc532197e456a719fb9f180f3437592a5	pending	-
+zr_vm_core/include/zr_vm_core/hash.h	zr_vm_core	code	8dc4a746913dde38cdbabb585c2f206066b4eb5f629c68fd1a21b46f6a1db43a	reviewed	-
 zr_vm_core/include/zr_vm_core/hash_set.h	zr_vm_core	code	28194d03617697aa35ff6331833579b49d86093b1bbe81efa6bff25cd404fbe9	pending	-
 zr_vm_core/include/zr_vm_core/host_baseline_jit.h	zr_vm_core	code	69ed96cc85451e4e7273acdf348f7b97a3fa548001a3c8ac995b7a71f8866ecc	pending	-
 zr_vm_core/include/zr_vm_core/hotpatch.h	zr_vm_core	code	cb8df9970ad68e5547ffac1bb395ddf02282d85bd51f7e5cad62f591e6e14ab8	reviewed	-
@@ -2130,7 +2130,7 @@ zr_vm_core/src/zr_vm_core/gc/gc_remembered_set.c	zr_vm_core	code	247c06cf6edb1e1
 zr_vm_core/src/zr_vm_core/gc/gc_sweep.c	zr_vm_core	code	ed84b425de073de3826f101d6732c7a7a6ce276696518a4039529653d6b2bc60	pending	-
 zr_vm_core/src/zr_vm_core/gc/gc_tlab.c	zr_vm_core	code	9e8ef0e95628743ecb3088340c7e38b1db0456c390555d8b8f4384603b37808b	pending	-
 zr_vm_core/src/zr_vm_core/global.c	zr_vm_core	code	c73d50fc8206be3fcb70c9abca09f24d70d00f597c9e86e3de956faff6b0d149	pending	-
-zr_vm_core/src/zr_vm_core/hash.c	zr_vm_core	code	75232e6a67b34ae39bd2c3bfc44cf440bb9d678b55fec210ad13a6e4e8f8c836	pending	-
+zr_vm_core/src/zr_vm_core/hash.c	zr_vm_core	code	6736da847c6a6933765f427770d7875bccedbbee34e5d6edb774c6819bbdfa0a	reviewed	-
 zr_vm_core/src/zr_vm_core/hash_set.c	zr_vm_core	code	f50cd0bf629986b0fce6f8d059cc52bde4ab28c36d69fa10c2fe4700a5cc1817	pending	-
 zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_capability.c	zr_vm_core	code	b84f96a1d5d55ac85d031d9cdcb304199e4d0cac7aef85e10a0be4f514857973	reviewed	-
 zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c	zr_vm_core	code	f0829ef616447d3cc4feb00b8bf10da2a465561ab5826cbbf1a06025e08d281a	reviewed	-
