@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
@@ -31,10 +32,12 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
 implementation_files:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
@@ -64,6 +67,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
 plan_sources:
@@ -77,6 +81,9 @@ tests:
   - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
+  - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_c_llvm_lowering.c
+  - tests/acceptance/ssa-compiler-source-direct-weak-optional-cfg.md
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
@@ -163,6 +170,19 @@ its `PLACE_BASE`, `LOAD`, and `STORE` instructions remain authoritative.
 metadata table.  It records operand bounds, terminator/value flags, and effect
 classes for arithmetic, place, memory, call, allocation, ownership/drop,
 control-flow, exception, suspension, iterator protocol, and phi operations.
+The appended `WAKE` opcode preserves `OWN_CONSTRUCT(WAKE)` as a distinct
+one-operand/one-result operation. A weak upgrade can fail and return null or
+retain a live owner, so neither `COPY` nor `MOVE` is equivalent. It reads and
+writes the ownership region, ordering the attempted strong-reference acquisition
+with other ownership operations. Appending it leaves older opcode IDs unchanged.
+The source builder preserves its source ID and nullable result on the guarded
+branch; both direct weak optional access and an explicit `wake(weak)` use the
+same lowering. The oracle reports `UNSUPPORTED` before evaluating the operand,
+and the initial ExecBC/AOT projections preserve the opcode but mark themselves
+non-runnable; the shared AOT lowering classifies it as unsupported. No backend
+currently executes this new opcode. The legacy production ExecBC `OWN_WAKE`
+instruction remains the runtime reference until a real weak-upgrade adapter,
+including null and owner-release behavior, passes differential tests.
 Iterator initialization, advance, and current-value retrieval are distinct
 one-operand/one-result invoke terminators. Each conservatively declares managed
 heap and native-FFI reads/writes plus throw/allocation effects; lowering must not

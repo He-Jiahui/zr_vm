@@ -48,6 +48,8 @@ static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
 
 static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
     switch (opcode) {
+        case ZR_EXEC_IR_OPCODE_WAKE:
+            return ZR_FALSE;
         case ZR_EXEC_IR_OPCODE_NOP: case ZR_EXEC_IR_OPCODE_CONSTANT:
         case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE:
         case ZR_EXEC_IR_OPCODE_CONVERT: case ZR_EXEC_IR_OPCODE_ARITHMETIC:

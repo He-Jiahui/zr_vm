@@ -86,6 +86,20 @@ int main(void) {
     assert(result.sourceHash != 0u && result.loweringHash != 0u);
     assert(ZrParser_AotIr_LoweringIsPointerFree(&result));
     {
+        SZrAotIrInstruction wakeInstructions[5];
+        SZrAotIrFunction wakeFunction = function;
+        SZrAotIrModule wakeModule = module;
+        memcpy(wakeInstructions, instructions, sizeof(wakeInstructions));
+        wakeInstructions[0].opcode = ZR_EXEC_IR_OPCODE_WAKE;
+        wakeInstructions[0].operands.count = 1u;
+        wakeFunction.instructions = wakeInstructions;
+        wakeModule.functions = &wakeFunction;
+        assert(ZrParser_AotIr_LowerShared(&wakeModule, &result, &diagnostic));
+        assert(result.records[0].kind == ZR_AOT_IR_LOWERING_UNSUPPORTED &&
+               result.unsupportedCount == 1u &&
+               result.runtimeBridgeCount == 1u);
+    }
+    {
         SZrAotIrLoweringResult malformed = result;
         malformed.count = 1u;
         malformed.capacity = 0u;

@@ -287,6 +287,9 @@ static void zr_oracle_consume_operands(const SZrExecIrFunction *f,
 }
 
 static TZrBool zr_oracle_supported(EZrExecIrOpcode op, const SZrExecIrOracleInput *input) {
+    if (op == ZR_EXEC_IR_OPCODE_WAKE) {
+        return ZR_FALSE;
+    }
     if (op == ZR_EXEC_IR_OPCODE_CALL) {
         return (TZrBool)(input != ZR_NULL && input->call != ZR_NULL);
     }

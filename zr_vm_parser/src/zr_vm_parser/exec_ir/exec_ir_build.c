@@ -41,7 +41,9 @@ static EZrExecIrOpcode map_opcode(const SZrSemanticIrInstruction *instruction) {
         case ZR_SEMANTIC_IR_END_LOAN:
             return ZR_EXEC_IR_OPCODE_NOP;
         case ZR_SEMANTIC_IR_OWN_CONSTRUCT:
-            return instruction->ownershipOperation ==
+            return instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_WAKE
+                    ? ZR_EXEC_IR_OPCODE_WAKE
+                    : instruction->ownershipOperation ==
                                    ZR_SEMANTIC_OWNERSHIP_UNIQUE ||
                            instruction->ownershipOperation ==
                                    ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX ||

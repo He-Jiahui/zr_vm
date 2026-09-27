@@ -16,6 +16,7 @@ static TZrBool lowering_bool_valid(TZrBool value) {
 
 static EZrAotIrLoweringKind lowering_kind(TZrUInt32 opcode) {
     switch ((EZrExecIrOpcode)opcode) {
+        case ZR_EXEC_IR_OPCODE_WAKE:
         case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
             return ZR_AOT_IR_LOWERING_UNSUPPORTED;
         case ZR_EXEC_IR_OPCODE_CONSTANT:

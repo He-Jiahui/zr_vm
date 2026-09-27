@@ -1969,6 +1969,25 @@ static void test_unsupported_and_transactional_failures(void) {
     oldCount = bc.instructionCount;
     oldAotCount = aot.instructionCount;
     function.instructions[0].operands = range(0u, 1u);
+    function.instructions[0].opcode = ZR_EXEC_IR_OPCODE_WAKE;
+    assert(!ZrCore_ExecIr_RunOracle(&function, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+           diagnostic.instructionId == 1u &&
+           diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_WAKE);
+    assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
+    assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_WAKE &&
+           !bc.runnable);
+    ZrParser_ExecBcExecutionResult_Init(&bcExecution);
+    assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
+                                          &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    ZrParser_ExecBcExecutionResult_Free(&bcExecution);
+    oldInstructions = bc.instructions;
+    oldCount = bc.instructionCount;
+    assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
+    assert(aot.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_WAKE &&
+           !aot.runnable);
+    oldAotCount = aot.instructionCount;
     for (TZrUInt32 index = 0u;
          index < sizeof(iteratorOpcodes) / sizeof(iteratorOpcodes[0]);
          ++index) {

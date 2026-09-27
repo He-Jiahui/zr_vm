@@ -259,10 +259,13 @@ static void test_direct_weak_optional_call_keeps_source_cfg(void) {
     SZrExecIrFunction output;
     SZrExecIrDiagnostic diagnostic;
     TZrValueId wakeValueId = ZR_VALUE_ID_INVALID;
+    TZrSemanticInstructionId wakeInstructionId =
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
     TZrUInt32 wakeCount = 0U;
     TZrUInt32 guardedStoreCount = 0U;
     TZrUInt32 normalDropCount = 0U;
     TZrUInt32 execDropCount = 0U;
+    TZrUInt32 execWakeCount = 0U;
     TZrUInt32 execInvokeCount = 0U;
     TZrUInt32 execThrowCount = 0U;
     TZrSize index;
@@ -326,6 +329,7 @@ static void test_direct_weak_optional_call_keeps_source_cfg(void) {
             instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_WAKE) {
             ++wakeCount;
             wakeValueId = instruction->resultValueId;
+            wakeInstructionId = instruction->id;
             TEST_ASSERT_LESS_THAN_UINT32(
                     entry->firstInstructionIndex + entry->instructionCount,
                     (TZrUInt32)index);
@@ -379,6 +383,15 @@ static void test_direct_weak_optional_call_keeps_source_cfg(void) {
     TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
             function, ZR_NULL, &output, &diagnostic));
     for (index = 0U; index < output.instructionCount; ++index) {
+        if (output.instructions[index].sourceId == wakeInstructionId) {
+            TEST_ASSERT_EQUAL(ZR_EXEC_IR_OPCODE_WAKE,
+                    output.instructions[index].opcode);
+            TEST_ASSERT_GREATER_THAN_UINT32(0U,
+                    output.instructions[index].memoryIn.count);
+            TEST_ASSERT_GREATER_THAN_UINT32(0U,
+                    output.instructions[index].memoryOut.count);
+            ++execWakeCount;
+        }
         switch ((EZrExecIrOpcode)output.instructions[index].opcode) {
             case ZR_EXEC_IR_OPCODE_DROP: ++execDropCount; break;
             case ZR_EXEC_IR_OPCODE_INVOKE: ++execInvokeCount; break;
@@ -387,6 +400,7 @@ static void test_direct_weak_optional_call_keeps_source_cfg(void) {
         }
     }
     TEST_ASSERT_EQUAL_UINT32(2U, execDropCount);
+    TEST_ASSERT_EQUAL_UINT32(1U, execWakeCount);
     TEST_ASSERT_EQUAL_UINT32(1U, execInvokeCount);
     TEST_ASSERT_EQUAL_UINT32(1U, execThrowCount);
     ZrCore_ExecIr_FreeFunction(&output);

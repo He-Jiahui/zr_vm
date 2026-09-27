@@ -748,6 +748,7 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     TZrSize semanticCallCount = 0U;
     TZrSize moveCount = 0U;
     TZrSize copyCount = 0U;
+    TZrSize wakeCount = 0U;
     TZrSize nopCount = 0U;
     TZrSize invokeCount = 0U;
     TZrSize exceptionBlockCount = 0U;
@@ -882,6 +883,9 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
             case ZR_EXEC_IR_OPCODE_COPY:
                 copyCount++;
                 break;
+            case ZR_EXEC_IR_OPCODE_WAKE:
+                wakeCount++;
+                break;
             case ZR_EXEC_IR_OPCODE_NOP:
                 nopCount++;
                 break;
@@ -911,7 +915,8 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
         }
     }
     TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, moveCount);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(4U, copyCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(3U, copyCount);
+    TEST_ASSERT_EQUAL_UINT64(1U, wakeCount);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, nopCount);
     TEST_ASSERT_EQUAL_UINT64(1U, invokeCount);
     TEST_ASSERT_EQUAL_UINT64(1U, exceptionBlockCount);
