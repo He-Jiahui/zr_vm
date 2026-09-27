@@ -12,13 +12,16 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* Unity 串行运行每个场景；辅助构造器借用当前场景的 VM 状态。 */
 static SZrState *g_state;
 
+/* Unity 在每个 RUN_TEST 前调用，提供 AST 和语义事实共用的分配域。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 在测试成功或断言跳出后调用；测试体须自行释放原生 CFG/AST/语义上下文。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,6 +29,7 @@ void tearDown(void) {
     }
 }
 
+/* 各构造器复用同一虚拟源名，使位置查询能够按源与偏移命中不可达事实。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -40,6 +44,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 在测试状态的原生分配器中建立 AST 节点，最终由脚本根节点递归释放。 */
 static SZrAstNode *test_node(EZrAstNodeType type,
                              TZrSize startOffset,
                              TZrSize endOffset) {
@@ -55,6 +60,7 @@ static SZrAstNode *test_node(EZrAstNodeType type,
     return node;
 }
 
+/* 将调用方传入的节点所有权交给语句块，以模拟解析器产出的语句序列。 */
 static SZrAstNode *block_with_nodes(SZrAstNode **nodes,
                                     TZrSize count,
                                     TZrSize startOffset,
@@ -71,6 +77,9 @@ static SZrAstNode *block_with_nodes(SZrAstNode **nodes,
     return block;
 }
 
+/* CFG_Build 需要脚本根节点；脚本接管唯一顶层语句并作为释放入口。 */
+/* TODO: 第四、五场景的子节点偏移可达 242，而此处固定到 220；需核查
+ * parser 的位置查询是否要求父范围包含所有子节点。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 220);
 
@@ -80,6 +89,8 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/* 保持 catch 顺序，供 CFG 的类型分派与后备 catch 可达性检查。 */
+/* TODO: 与 script 一样固定结束偏移 220，需核查后续场景的嵌套范围约束。 */
 static SZrAstNode *try_statement_with_catches(SZrAstNode *body,
                                               SZrAstNode **catchNodes,
                                               TZrSize catchCount) {
@@ -98,6 +109,9 @@ static SZrAstNode *try_statement_with_catches(SZrAstNode *body,
     return tryNode;
 }
 
+/* catch 包住独立语句块，参数模式稍后由 add_catch_parameter 填入。 */
+/* TODO: 固定 100..210 会小于后两个场景的 catch 子节点终点；需核查
+ * 语义范围查询是否依赖 catch 范围包含其参数与块。 */
 static SZrAstNode *catch_clause(SZrAstNode *body) {
     SZrAstNode *catchNode = test_node(ZR_AST_CATCH_CLAUSE, 100, 210);
 
@@ -105,6 +119,7 @@ static SZrAstNode *catch_clause(SZrAstNode *body) {
     return catchNode;
 }
 
+/* 名称 AST 节点交父树释放；字符串随 VM/GC 状态有效，调用方须提供准确字节长度。 */
 static SZrAstNode *identifier_node(const char *name,
                                    TZrSize nameLength,
                                    TZrSize startOffset,
@@ -120,6 +135,7 @@ static SZrAstNode *identifier_node(const char *name,
     return identifier;
 }
 
+/* 为声明和 catch 参数构造具名类型；拥有的名称由 AST 析构链回收。 */
 static SZrType *type_info_named(const char *typeName,
                                 TZrSize typeNameLength,
                                 TZrSize startOffset,
@@ -136,6 +152,7 @@ static SZrType *type_info_named(const char *typeName,
     return typeInfo;
 }
 
+/* catch 模式使用值传递参数；参数节点接管名称及类型，随后交给 catch。 */
 static SZrAstNode *typed_parameter(const char *name,
                                    TZrSize nameLength,
                                    const char *typeName,
@@ -159,6 +176,7 @@ static SZrAstNode *typed_parameter(const char *name,
     return parameter;
 }
 
+/* 把单个类型模式交给 catch，以区分具名类型分支与无参数兜底分支。 */
 static void add_catch_parameter(SZrAstNode *catchNode, SZrAstNode *parameter) {
     catchNode->data.catchClause.pattern = ZrParser_AstNodeArray_New(g_state, 1);
     TEST_ASSERT_NOT_NULL(catchNode->data.catchClause.pattern);
@@ -174,6 +192,7 @@ static SZrAstNode *integer_literal(TZrInt64 value,
     return literal;
 }
 
+/* 字符串字面量同时设置语义值和词法值，供常量分支与 throw 类型推断共用。 */
 static SZrAstNode *string_literal(const char *value,
                                   TZrSize valueLength,
                                   TZrSize startOffset,
@@ -207,6 +226,9 @@ static SZrAstNode *boolean_literal(TZrBool value,
     return literal;
 }
 
+/* 直接拼 AST 绕开语义类型检查：五个场景先声明 value: int，再让 switch 分支写入
+ * string/char，单独测 CFG 对后续 throw 的路径相关类型推断。
+ * 此辅助函数的固定名称/类型偏移只适用于本文件调用时的 value/int 长度。 */
 static SZrAstNode *typed_variable_declaration(const char *name,
                                               TZrSize nameLength,
                                               const char *typeName,
@@ -228,6 +250,7 @@ static SZrAstNode *typed_variable_declaration(const char *name,
     return declaration;
 }
 
+/* 同一标识符的赋值用于检查 CFG 只合并实际可到达的 switch 出口绑定。 */
 static SZrAstNode *assignment_expression(SZrAstNode *left,
                                          SZrAstNode *right,
                                          TZrSize startOffset,
@@ -262,10 +285,12 @@ static SZrAstNode *throw_statement_with_expr(SZrAstNode *expr,
     return throwStmt;
 }
 
+/* return 使该 case 无法流入 switch 后的 throw，类型合并不应采用其赋值。 */
 static SZrAstNode *return_statement(TZrSize startOffset, TZrSize endOffset) {
     return test_node(ZR_AST_RETURN_STATEMENT, startOffset, endOffset);
 }
 
+/* 恒真分支内的 return 与恒假分支的赋值共同验证分支退出路径裁剪。 */
 static SZrAstNode *if_statement(SZrAstNode *condition,
                                 SZrAstNode *thenBody,
                                 SZrAstNode *elseBody,
@@ -301,6 +326,7 @@ static SZrAstNode *switch_default_node(SZrAstNode *body,
     return defaultNode;
 }
 
+/* 保留 case/default 两种出口，供非恒定 selector 场景合并后续 throw 绑定。 */
 static SZrAstNode *switch_statement_with_case_and_default(SZrAstNode *expr,
                                                           SZrAstNode *caseNode,
                                                           SZrAstNode *defaultNode,
@@ -320,6 +346,7 @@ static SZrAstNode *switch_statement_with_case_and_default(SZrAstNode *expr,
     return switchNode;
 }
 
+/* 保留 case 顺序，验证不同常量种类的前置 case 不遮蔽后续匹配 case。 */
 static SZrAstNode *switch_statement_with_cases_and_default(SZrAstNode *expr,
                                                            SZrAstNode **caseNodes,
                                                            TZrSize caseCount,
@@ -344,6 +371,7 @@ static SZrAstNode *switch_statement_with_cases_and_default(SZrAstNode *expr,
     return switchNode;
 }
 
+/* 仅查询当前语义上下文中的不可达事实；null 表示该位置未发射不可达记录。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(
         SZrSemanticContext *context,
         SZrAstNode *node) {
@@ -352,6 +380,10 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(
             test_range(node->location.start.offset, node->location.start.offset));
 }
 
+/* BUG: 以下五个测试在建立 CFG、AST 与语义上下文后使用 Unity 断言；断言失败会
+ * longjmp 到 Unity 运行器，跳过测试体末尾的三个 Free，而 tearDown 只释放 VM 状态。
+ * 原生 AST/CFG/上下文分配无法沿正常析构链回收；核查 UnityFail 与各测试的清理尾部。 */
+/* 非恒定 selector 下，case 和 default 都能到达 throw，catch 须覆盖 string 与 char。 */
 static void
 test_cfg_merges_switch_case_and_default_assignments_for_typed_catch_matching(
         void) {
@@ -465,6 +497,8 @@ test_cfg_merges_switch_case_and_default_assignments_for_typed_catch_matching(
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 恒定 selector 只选择匹配 case；default 产生的 char 不应进入后续 catch 集。 */
+/* BUG: 断言失败时 Unity longjmp 跳过末尾原生资源释放；tearDown 仅销毁 VM 状态。 */
 static void
 test_cfg_uses_matching_switch_case_assignment_for_constant_selector_typed_catch_matching(
         void) {
@@ -582,6 +616,8 @@ test_cfg_uses_matching_switch_case_assignment_for_constant_selector_typed_catch_
     ZrParser_SemanticContext_Free(context);
 }
 
+/* case 中赋值后 return 不会流至后续 throw，只有 default 的 char 仍可匹配。 */
+/* BUG: 断言失败时 Unity longjmp 跳过末尾原生资源释放；tearDown 仅销毁 VM 状态。 */
 static void
 test_cfg_ignores_terminating_switch_case_assignment_for_post_switch_typed_catch_matching(
         void) {
@@ -700,6 +736,8 @@ test_cfg_ignores_terminating_switch_case_assignment_for_post_switch_typed_catch_
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 前置 string case 与 int selector 不同型；后续 int case 仍须被选中并留下 string 绑定。 */
+/* BUG: 断言失败时 Unity longjmp 跳过末尾原生资源释放；tearDown 仅销毁 VM 状态。 */
 static void
 test_cfg_uses_matching_switch_case_after_mismatched_constant_kind_for_typed_catch_matching(
         void) {
@@ -833,6 +871,8 @@ test_cfg_uses_matching_switch_case_after_mismatched_constant_kind_for_typed_catc
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 恒定命中的 case 内，恒真 return 排除 string，未选中的 else 也不得污染出口绑定。 */
+/* BUG: 断言失败时 Unity longjmp 跳过末尾原生资源释放；tearDown 仅销毁 VM 状态。 */
 static void
 test_cfg_ignores_constant_terminating_switch_branch_assignment_for_post_switch_typed_catch_matching(
         void) {
@@ -969,6 +1009,7 @@ test_cfg_ignores_constant_terminating_switch_branch_assignment_for_post_switch_t
     ZrParser_SemanticContext_Free(context);
 }
 
+/* CMake 独立注册本程序；Unity 通过 RUN_TEST 间接调用各测试及 setUp/tearDown。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(
