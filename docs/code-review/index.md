@@ -168,5 +168,6 @@ doc_type: category-index
 | core 类型布局、复制与初始化 | [119 项](coverage/zr_vm_core_type_layout.tsv) | 3 个 C/H 文件独立复核，546 个证据锚点；GCC/Clang 定向语法、inline_copy 40/40 与两个 CTest 通过。27 条 BUG 台账行归并为 7 组可达缺陷，涵盖显式 GC 表、布局对齐、union tag、嵌套复制和 DROP_NONE 子字段释放；2 条 TODO 保留联合默认初始化疑点。关联 core 测试台账的 24 行布局入口锚点已校正。 |
 | core 函数图平坦索引解析 | [7 项](coverage/zr_vm_core_function_graph.tsv) | 1 个 C 文件审查 AOT 展平生产者、运行时元数据和模块绑定调用链，源码仅增宏观注释；GCC/Clang 严格语法检查通过。1 个 BUG 记录暂存分配失败后绑定应用路径直接解引用空结果，关联函数身份台账锚点已校正。 |
 | parser artifact 调用绑定与元数据投影 | [15 项](coverage/zr_vm_parser_artifact_projections.tsv) | 2 个 C 文件独立复核，93 个证据锚点，源码仅增 35 行注释；GCC/Clang 定向语法、6 项 call binding 与 3 项 metadata graph 测试通过。2 类 BUG 记录原生属性计数与物化门槛不一致、属性数失配诊断报告相等成员数；3 个 TODO 保留默认原型、声明槽位及同名属性契约。关联身份哈希台账锚点已校正。 |
+| core artifact ExecIR 视图与内部接口 | [46 项](coverage/zr_vm_core_artifact_exec_ir_internal.tsv) | 2 个 C/H 文件独立复核，432 个证据锚点，源码只增宏观注释；GCC/Clang 定向语法检查通过。7 条 BUG 台账行归并为 4 类缺陷：失败清零诊断 token、非零行数零步长、失败后残留视图和 codeOffset 越节；1 个 TODO 保留输入输出缓冲区重叠契约。旧 tests_library 台账的证据与失败视图分级已校正。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
