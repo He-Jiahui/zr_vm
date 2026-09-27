@@ -159,7 +159,7 @@ static TZrBool zr_sroa_alias_pair_safe(
          (b->escaped && (b->baseKind == ZR_EXEC_IR_ALIAS_BASE_EXTERNAL ||
                          b->baseKind == ZR_EXEC_IR_ALIAS_BASE_PARAMETER))))
         return ZR_FALSE;
-    if (a->generation != 0u && b->generation != 0u &&
+    if (a->generation == 0u || b->generation == 0u ||
         a->generation != b->generation)
         return ZR_FALSE;
     if (a->baseKind == b->baseKind && a->baseId == b->baseId) {
@@ -531,8 +531,7 @@ static TZrBool zr_aggregate_facts_validate_impl(
              field->aliasLocation.layoutId == 0u ||
              field->aliasLocation.unknownWrite || field->aliasLocation.escaped ||
              !field->aliasLocation.hasStableBase ||
-             (field->aliasLocation.generation != 0u &&
-              field->aliasLocation.generation != facts->generation))) {
+             field->aliasLocation.generation != facts->generation)) {
             zr_aggregate_diag(diagnostic, ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN,
                               facts, index);
             return ZR_FALSE;

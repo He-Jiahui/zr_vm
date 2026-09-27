@@ -14,6 +14,7 @@ plan_sources:
   - user: 2026-09-13 conservative aggregate SROA and AoS/SoA contract
 tests:
   - tests/parser/test_ssa_aggregate_soa.c
+  - tests/acceptance/ssa-aggregate-alias-generation.md
 doc_type: module-detail
 ---
 
@@ -58,6 +59,13 @@ field ranges, flags, and scalar enum/boolean encodings.  The ordinary
 identity, drop-order, root, and initialization proof for an optimization.
 This split deliberately lets an incomplete—but well-formed—witness produce an
 AoS/GENERIC fallback with its blocker preserved as the diagnostic reason.
+For an alias-observed field, its location generation must be nonzero and equal
+to the aggregate facts generation.  Zero means the location has no current
+generation proof; it is not a wildcard.  A missing or stale field generation
+remains structurally describable, but semantic validation reports
+`ALIAS_UNPROVEN` and neither SROA nor SoA may use it.  Observed alias pairs
+also require two equal, nonzero location generations before their projection
+or base identities can justify splitting storage.
 
 ## SROA candidate
 
@@ -140,15 +148,16 @@ future lowering stage performs the physical rewrite.
   evidence fields;
 - identity-preserving materialisation with root/ownership/drop metadata;
 - alias relation gating (disjoint projections accepted, may-alias projections
-  rejected);
+  rejected), including absent and stale location generations with AoS/GENERIC
+  fallback and source/IR diagnostics;
 - exact physical offset/stride validation and tamper rejection;
 - conservative generic planning when escape proof is unavailable.
 - incomplete alias or ownership-transfer proof remaining a valid AoS/GENERIC
   fallback rather than being mistaken for a malformed source record.
 
-The focused fixture is intentionally standalone until the owning CMake target
-is registered by the integration owner.  It has no heap ownership or lease to
-balance: all plans are fixed-size values and can be discarded on OOM,
+The focused fixture is registered as the `ssa_aggregate_soa` CTest target.
+It has no heap ownership or lease to balance: all plans are fixed-size values
+and can be discarded on OOM,
 cancellation, repeat calls, or partial construction without a release hook.
 
 ## Out of scope

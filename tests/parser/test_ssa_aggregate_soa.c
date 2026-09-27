@@ -151,6 +151,35 @@ static SZrExecIrDataLayoutCost make_profitable_cost(void) {
     return cost;
 }
 
+static void make_observed_alias_pair(SZrExecIrAggregateFacts *facts) {
+    make_private_pair(facts);
+    facts->identityToken = UINT64_C(0xabc);
+    facts->flags = ZR_EXEC_IR_AGGREGATE_FLAG_IDENTITY_OBSERVED |
+                   ZR_EXEC_IR_AGGREGATE_FLAG_ALIAS_OBSERVED;
+    facts->aliasProven = ZR_TRUE;
+    facts->fields[0].flags = ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING |
+                             ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED;
+    facts->fields[1].flags = facts->fields[0].flags;
+    facts->fields[0].aliasClass = UINT64_C(55);
+    facts->fields[1].aliasClass = UINT64_C(55);
+    facts->fields[0].aliasProven = ZR_TRUE;
+    facts->fields[1].aliasProven = ZR_TRUE;
+    facts->fields[0].aliasLocation.baseKind = ZR_EXEC_IR_ALIAS_BASE_ALLOCATION;
+    facts->fields[1].aliasLocation.baseKind = ZR_EXEC_IR_ALIAS_BASE_ALLOCATION;
+    facts->fields[0].aliasLocation.baseId = 100u;
+    facts->fields[1].aliasLocation.baseId = 100u;
+    facts->fields[0].aliasLocation.projectionId = 1u;
+    facts->fields[1].aliasLocation.projectionId = 2u;
+    facts->fields[0].aliasLocation.layoutId = facts->logicalLayoutId;
+    facts->fields[1].aliasLocation.layoutId = facts->logicalLayoutId;
+    facts->fields[0].aliasLocation.generation = facts->generation;
+    facts->fields[1].aliasLocation.generation = facts->generation;
+    facts->fields[0].aliasLocation.hasStableBase = ZR_TRUE;
+    facts->fields[1].aliasLocation.hasStableBase = ZR_TRUE;
+    facts->fields[0].aliasLocation.projectionDisjoint = ZR_TRUE;
+    facts->fields[1].aliasLocation.projectionDisjoint = ZR_TRUE;
+}
+
 static void test_closed_private_collection_chooses_soa_only_when_profitable(void) {
     SZrExecIrAggregateFacts facts;
     SZrExecIrDataLayoutCost cost;
@@ -251,33 +280,7 @@ static void test_alias_identity_stays_logical_and_not_unboxed(void) {
     SZrExecIrDataLayoutCost cost;
     SZrExecIrDataLayoutCandidate soa;
     SZrExecIrAggregateDiagnostic diagnostic;
-    make_private_pair(&facts);
-    facts.identityToken = UINT64_C(0xabc);
-    facts.flags = ZR_EXEC_IR_AGGREGATE_FLAG_IDENTITY_OBSERVED |
-                  ZR_EXEC_IR_AGGREGATE_FLAG_ALIAS_OBSERVED;
-    facts.aliasProven = ZR_TRUE;
-    facts.fields[0].flags = ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING |
-                            ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED;
-    facts.fields[1].flags = ZR_EXEC_IR_AGGREGATE_FIELD_IDENTITY_BEARING |
-                            ZR_EXEC_IR_AGGREGATE_FIELD_ALIAS_OBSERVED;
-    facts.fields[0].aliasClass = UINT64_C(55);
-    facts.fields[1].aliasClass = UINT64_C(55);
-    facts.fields[0].aliasProven = ZR_TRUE;
-    facts.fields[1].aliasProven = ZR_TRUE;
-    facts.fields[0].aliasLocation.baseKind = ZR_EXEC_IR_ALIAS_BASE_ALLOCATION;
-    facts.fields[1].aliasLocation.baseKind = ZR_EXEC_IR_ALIAS_BASE_ALLOCATION;
-    facts.fields[0].aliasLocation.baseId = 100u;
-    facts.fields[1].aliasLocation.baseId = 100u;
-    facts.fields[0].aliasLocation.projectionId = 1u;
-    facts.fields[1].aliasLocation.projectionId = 2u;
-    facts.fields[0].aliasLocation.layoutId = facts.logicalLayoutId;
-    facts.fields[1].aliasLocation.layoutId = facts.logicalLayoutId;
-    facts.fields[0].aliasLocation.generation = facts.generation;
-    facts.fields[1].aliasLocation.generation = facts.generation;
-    facts.fields[0].aliasLocation.hasStableBase = ZR_TRUE;
-    facts.fields[1].aliasLocation.hasStableBase = ZR_TRUE;
-    facts.fields[0].aliasLocation.projectionDisjoint = ZR_TRUE;
-    facts.fields[1].aliasLocation.projectionDisjoint = ZR_TRUE;
+    make_observed_alias_pair(&facts);
     assert(ZrParser_ExecIr_SroaBuildCandidate(&facts, &sroa, &diagnostic));
     assert(sroa.unboxedFieldCount == 0u);
     assert(ZrParser_ExecIr_SroaCandidateValidate(&facts, &sroa, &diagnostic));
@@ -297,6 +300,92 @@ static void test_alias_identity_stays_logical_and_not_unboxed(void) {
     assert(diagnostic.fieldIndex == 1u);
     assert(!ZrParser_ExecIr_DataLayoutCanUseSoA(&facts, &cost, &diagnostic));
     assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+}
+
+static void assert_observed_alias_generation_rejected(
+        const SZrExecIrAggregateFacts *facts, TZrUInt32 fieldIndex) {
+    SZrExecIrSroaCandidate sroa;
+    SZrExecIrDataLayoutCost cost = make_profitable_cost();
+    SZrExecIrDataLayoutCandidate layout;
+    SZrExecIrLayoutTransformPlan plan;
+    SZrExecIrAggregateDiagnostic diagnostic;
+
+    /* Incomplete alias evidence remains a valid input for safe fallbacks. */
+    assert(ZrParser_ExecIr_AggregateFactsValidateStructural(facts, &diagnostic));
+    assert(!ZrParser_ExecIr_AggregateFactsValidate(facts, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(diagnostic.fieldIndex == fieldIndex);
+    assert(diagnostic.sourceId == facts->sourceId);
+    assert(diagnostic.instructionId == facts->instructionId);
+    assert(!ZrParser_ExecIr_SroaCanScalarize(facts, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(!ZrParser_ExecIr_SroaBuildCandidate(facts, &sroa, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(!ZrParser_ExecIr_DataLayoutCanUseSoA(facts, &cost, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(ZrParser_ExecIr_DataLayoutBuildCandidate(facts, &cost, &layout,
+                                                    &diagnostic));
+    assert(layout.strategy == ZR_EXEC_IR_AGGREGATE_STRATEGY_AOS);
+    assert(layout.fallbackReason == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(ZrParser_ExecIr_DataLayoutCandidateValidate(facts, &layout,
+                                                        &diagnostic));
+    assert(ZrParser_ExecIr_PlanAggregateLayout(facts, &cost, &plan,
+                                                &diagnostic));
+    assert(plan.strategy == ZR_EXEC_IR_AGGREGATE_STRATEGY_GENERIC);
+    assert(plan.fallbackReason == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(ZrParser_ExecIr_ApplyAggregateLayout(facts, &plan, &diagnostic));
+}
+
+static void test_observed_alias_requires_current_nonzero_generation(void) {
+    SZrExecIrAggregateFacts facts;
+
+    make_observed_alias_pair(&facts);
+    facts.fields[0].aliasLocation.generation = 0u;
+    assert_observed_alias_generation_rejected(&facts, 0u);
+
+    make_observed_alias_pair(&facts);
+    facts.fields[1].aliasLocation.generation = 0u;
+    assert_observed_alias_generation_rejected(&facts, 1u);
+
+    make_observed_alias_pair(&facts);
+    facts.fields[0].aliasLocation.generation = 0u;
+    facts.fields[1].aliasLocation.generation = 0u;
+    assert_observed_alias_generation_rejected(&facts, 0u);
+
+    make_observed_alias_pair(&facts);
+    facts.fields[0].aliasLocation.generation = facts.generation + 1u;
+    assert_observed_alias_generation_rejected(&facts, 0u);
+}
+
+static void test_observed_alias_generation_invalidates_optimized_plans(void) {
+    SZrExecIrAggregateFacts facts;
+    SZrExecIrSroaCandidate sroa;
+    SZrExecIrDataLayoutCost cost = make_profitable_cost();
+    SZrExecIrDataLayoutCandidate soa;
+    SZrExecIrLayoutTransformPlan plan;
+    SZrExecIrAggregateDiagnostic diagnostic;
+
+    make_observed_alias_pair(&facts);
+    assert(ZrParser_ExecIr_SroaBuildCandidate(&facts, &sroa, &diagnostic));
+    assert(ZrParser_ExecIr_DataLayoutBuildCandidate(&facts, &cost, &soa,
+                                                    &diagnostic));
+    assert(soa.strategy == ZR_EXEC_IR_AGGREGATE_STRATEGY_SOA);
+    assert(ZrParser_ExecIr_PlanAggregateLayout(&facts, &cost, &plan,
+                                                &diagnostic));
+    assert(plan.strategy == ZR_EXEC_IR_AGGREGATE_STRATEGY_SOA);
+
+    facts.fields[1].aliasLocation.generation = 0u;
+    assert(!ZrParser_ExecIr_SroaCandidateValidate(&facts, &sroa,
+                                                   &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(diagnostic.fieldIndex == 1u);
+    assert(!ZrParser_ExecIr_DataLayoutCandidateValidate(&facts, &soa,
+                                                         &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(diagnostic.fieldIndex == 1u);
+    assert(!ZrParser_ExecIr_ApplyAggregateLayout(&facts, &plan, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_AGGREGATE_ALIAS_UNPROVEN);
+    assert(diagnostic.fieldIndex == 1u);
 }
 
 static void test_logical_field_order_is_independent_of_offsets(void) {
@@ -508,6 +597,8 @@ int main(void) {
     test_measured_evidence_is_kept_separate();
     test_boundary_materialization_is_explicit();
     test_alias_identity_stays_logical_and_not_unboxed();
+    test_observed_alias_requires_current_nonzero_generation();
+    test_observed_alias_generation_invalidates_optimized_plans();
     test_logical_field_order_is_independent_of_offsets();
     test_materialization_preserves_identity_alias_and_metadata();
     test_transform_plan_falls_back_without_proof();
