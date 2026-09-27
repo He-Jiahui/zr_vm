@@ -808,7 +808,6 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "ZrAotGeneratedContext",
             "ZrLibrary_AotRuntime_GetObservationPolicy",
             "ZrLibrary_AotRuntime_DefaultObservationMask()",
-            "frame.recordHandle = zr_aot_context.recordHandle;",
             "frame.functionIndex = zr_aot_context.resolvedFunctionIndex;",
             "frame.currentInstructionIndex = 0;",
             "frame.lastObservedInstructionIndex = UINT32_MAX;",
@@ -827,6 +826,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "zr_aot_context.methodInfo->gcRootMap",
     };
     const char *frameDescriptorStart;
+    const char *recordHandleAssignment;
     const char *functionTableAssignment;
     const char *functionCountAssignment;
     const char *functionThunkAssignment;
@@ -890,6 +890,8 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
 
     frameDescriptorStart = strstr(frameSetupSourceText, "if (includeFrameDescriptor) {");
     TEST_ASSERT_NOT_NULL(frameDescriptorStart);
+    recordHandleAssignment = strstr(
+            frameDescriptorStart, "frame.recordHandle = zr_aot_context.recordHandle;");
     functionTableAssignment = strstr(
             frameDescriptorStart, "frame.functionTable = zr_aot_context.functionTable;");
     functionCountAssignment = strstr(
@@ -903,19 +905,21 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     TEST_ASSERT_NOT_NULL(exportContextStart);
     moduleAssignment = strstr(exportContextStart, "frame.module = zr_aot_context.module;");
     codeRegistrationAssignment = strstr(
-            exportContextStart, "frame.codeRegistration = zr_aot_context.codeRegistration;");
+            frameDescriptorStart, "frame.codeRegistration = zr_aot_context.codeRegistration;");
+    TEST_ASSERT_NOT_NULL(recordHandleAssignment);
     TEST_ASSERT_NOT_NULL(functionTableAssignment);
     TEST_ASSERT_NOT_NULL(functionCountAssignment);
     TEST_ASSERT_NOT_NULL(functionThunkAssignment);
     TEST_ASSERT_NOT_NULL(functionThunkCountAssignment);
     TEST_ASSERT_NOT_NULL(moduleAssignment);
     TEST_ASSERT_NOT_NULL(codeRegistrationAssignment);
+    TEST_ASSERT_TRUE(recordHandleAssignment < exportContextStart);
     TEST_ASSERT_TRUE(functionTableAssignment < exportContextStart);
     TEST_ASSERT_TRUE(functionCountAssignment < exportContextStart);
     TEST_ASSERT_TRUE(functionThunkAssignment < exportContextStart);
     TEST_ASSERT_TRUE(functionThunkCountAssignment < exportContextStart);
     TEST_ASSERT_TRUE(exportContextStart < moduleAssignment);
-    TEST_ASSERT_TRUE(exportContextStart < codeRegistrationAssignment);
+    TEST_ASSERT_TRUE(codeRegistrationAssignment < exportContextStart);
 
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
