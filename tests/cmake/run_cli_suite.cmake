@@ -1,3 +1,5 @@
+# CTest 的 cli_integration 入口传入 CLI 与项目样例路径；本脚本也允许用 cmake -P 单独运行。
+# 各 case 在 GENERATED_DIR 下持有隔离副本，调用方须为并行的独立运行提供不同的生成目录。
 if (NOT DEFINED CLI_EXE OR CLI_EXE STREQUAL "")
     message(FATAL_ERROR "CLI_EXE is required.")
 endif()
@@ -12,6 +14,7 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
 
+# 显式非空 TIER 优先，其次使用非空 ZR_VM_TEST_TIER；两者均为空才运行全部 case。
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" CLI_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -20,22 +23,26 @@ else ()
     set(CLI_REQUESTED_TIER "")
 endif ()
 
+# 只清理本套件的生成根目录；后续增量用例在各自副本中保留同一 case 的跨次编译状态。
 set(CLI_SUITE_ROOT "${GENERATED_DIR}/cli_suite")
 file(REMOVE_RECURSE "${CLI_SUITE_ROOT}")
 file(MAKE_DIRECTORY "${CLI_SUITE_ROOT}")
 
+# 断言助手接收变量名，以便调用点把子进程退出状态及诊断文本成对传入。
 function(cli_assert_success case_name result_code output_text)
     if (NOT ${result_code} EQUAL 0)
         message(FATAL_ERROR "CLI case '${case_name}' failed with exit code ${${result_code}}.\nOutput:\n${${output_text}}")
     endif()
 endfunction()
 
+# 反向断言用于参数拒绝路径，失败退出本身是预期结果，后续仍需核对诊断所在流。
 function(cli_assert_failure case_name result_code output_text)
     if (${result_code} EQUAL 0)
         message(FATAL_ERROR "CLI case '${case_name}' unexpectedly succeeded.\nOutput:\n${${output_text}}")
     endif()
 endfunction()
 
+# 只验证约定片段存在；要求 stdout/stderr 分流的 case 应先调用 cli_run_split。
 function(cli_assert_contains case_name text_value expected)
     string(FIND "${${text_value}}" "${expected}" match_index)
     if (match_index EQUAL -1)
@@ -43,12 +50,14 @@ function(cli_assert_contains case_name text_value expected)
     endif()
 endfunction()
 
+# 版本输出等格式契约用正则检查，调用方负责选定所需的输出流。
 function(cli_assert_matches case_name text_value expected_regex)
     if (NOT "${${text_value}}" MATCHES "${expected_regex}")
         message(FATAL_ERROR "CLI case '${case_name}' did not match /${expected_regex}/.\nOutput:\n${${text_value}}")
     endif()
 endfunction()
 
+# TODO: 当前脚本没有此助手的调用点；核对产物内容是否还需它，或可随下一次测试整理删除。
 function(cli_assert_file_contains case_name path expected)
     if (NOT EXISTS "${path}")
         message(FATAL_ERROR "CLI case '${case_name}' expected file '${path}' to exist.")
@@ -61,6 +70,8 @@ function(cli_assert_file_contains case_name path expected)
     endif()
 endfunction()
 
+# 每个 case 从仓库样例取得独立可修改副本；跳过顶层 bin，避免预存产物掩盖编译退化。
+# destination_var 返回父作用域，调用方只可修改/删除该生成副本。
 function(cli_copy_fixture project_name destination_var)
     set(destination "${CLI_SUITE_ROOT}/${project_name}")
     file(REMOVE_RECURSE "${destination}")
@@ -95,6 +106,7 @@ function(cli_copy_fixture project_name destination_var)
     set(${destination_var} "${destination}" PARENT_SCOPE)
 endfunction()
 
+# 普通 CLI case 只关心整体文本和退出状态，合并两条输出流供内容断言使用。
 function(cli_run case_name output_var result_var)
     execute_process(
         COMMAND ${ARGN}
@@ -108,6 +120,7 @@ function(cli_run case_name output_var result_var)
     set(${result_var} "${case_result}" PARENT_SCOPE)
 endfunction()
 
+# 帮助、版本与拒绝路径把输出通道也视作接口契约，需分别返回 stdout/stderr。
 function(cli_run_split case_name stdout_var stderr_var result_var)
     execute_process(
         COMMAND ${ARGN}
@@ -121,18 +134,21 @@ function(cli_run_split case_name stdout_var stderr_var result_var)
     set(${result_var} "${case_result}" PARENT_SCOPE)
 endfunction()
 
+# 与 cli_run_split 配套，防止应在单一通道报告的结果误写到另一通道。
 function(cli_assert_empty case_name text_value label)
     if (NOT "${${text_value}}" STREQUAL "")
         message(FATAL_ERROR "CLI case '${case_name}' expected ${label} to be empty.\nOutput:\n${${text_value}}")
     endif()
 endfunction()
 
+# 增量测试只重写生成副本中的源文件，保留清单和编译产物以比较前后两次运行。
 function(cli_write_file path content)
     get_filename_component(parent_dir "${path}" DIRECTORY)
     file(MAKE_DIRECTORY "${parent_dir}")
     file(WRITE "${path}" "${content}")
 endfunction()
 
+# TODO: 当前脚本没有此封装的调用点；核对预制二进制复制路径后决定是否保留。
 function(cli_copy_file_or_fail case_name source_path destination_path description)
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${source_path}" "${destination_path}"
@@ -152,6 +168,8 @@ function(cli_copy_file_or_fail case_name source_path destination_path descriptio
     endif()
 endfunction()
 
+# 二进制导入用例先在临时项目编译模块，再把 .zro 交给被测项目，隔开预制与消费阶段。
+# source_rel 可指单文件或模块目录；目录模式需搬运同批编译的全部 .zro 依赖。
 function(cli_prepare_binary_module case_name project_dir source_rel output_name)
     set(temp_project_root "${CLI_SUITE_ROOT}/.prepare/${case_name}")
     set(temp_source_dir "${temp_project_root}/src")
@@ -202,6 +220,7 @@ function(cli_prepare_binary_module case_name project_dir source_rel output_name)
         message(FATAL_ERROR "CLI case '${case_name}' did not prepare ${output_name}.zro")
     endif()
 
+    # 目录 fixture 中的装饰器/provider 可能形成模块链，不能只复制入口模块。
     if (copy_all_outputs)
         file(GLOB prepared_outputs "${temp_binary_dir}/*.zro")
         foreach(prepared_output IN LISTS prepared_outputs)
@@ -242,6 +261,8 @@ function(cli_prepare_binary_module case_name project_dir source_rel output_name)
     file(REMOVE_RECURSE "${temp_project_root}")
 endfunction()
 
+# 每个顶层 case 自行声明 smoke/core/stress 归属；未指定档位时运行全部 case。
+# BUG: 指定未知 TIER（例如 typo）会过滤所有 case，脚本仍以 0 退出；用不存在的 CLI_EXE 已复现空跑通过。
 function(cli_case_matches_tier tiers out_var)
     if (CLI_REQUESTED_TIER STREQUAL "")
         set(${out_var} TRUE PARENT_SCOPE)
@@ -264,6 +285,7 @@ if (NOT CLI_REQUESTED_TIER STREQUAL "")
 endif()
 message("==========")
 
+# CLI 表面契约先核对帮助别名、版本通道和缺参诊断，再进入需要项目 fixture 的路径。
 cli_case_matches_tier("smoke;core;stress" run_help)
 if (run_help)
     message("---- help")
@@ -332,6 +354,7 @@ if (run_missing_project)
                         "require --compile <project.zrp>")
 endif()
 
+# 位置项目参数与 -- 后的用户参数分别覆盖默认入口及 zr.system.process.arguments 的透传顺序。
 cli_case_matches_tier("smoke;core;stress" run_positional)
 if (run_positional)
     message("---- positional_run")
@@ -362,6 +385,7 @@ if (run_positional_args)
     cli_assert_contains("positional_run_with_passthrough" cli_args_run_output "main_arg2=--debug")
 endif()
 
+# 编译 case 均从无 bin 的副本启动，分别确认 .zro、可选 .zri 及 --run 的二进制执行路径。
 cli_case_matches_tier("smoke;core;stress" run_compile_hello)
 if (run_compile_hello)
     message("---- compile_hello_world")
@@ -434,6 +458,7 @@ if (run_compile_run_default_binary)
     cli_assert_contains("compile_run_default_binary" compile_default_binary_output "executed_via=binary")
 endif()
 
+# 显式模块入口同时检查 binary、默认 interp、未知模式拒绝和模块参数的可观察顺序。
 cli_case_matches_tier("smoke;core;stress" run_project_module)
 if (run_project_module)
     message("---- project_module_run")
@@ -499,6 +524,7 @@ if (run_project_module_unknown_execution_mode)
     cli_assert_contains("project_module_unknown_execution_mode" cli_args_module_unknown_mode_stderr "Unknown execution mode: aot_c")
 endif()
 
+# -c/-e 内联源码经过 CMake 函数参数列表，分号需转义后才不会被拆成多个命令参数。
 cli_case_matches_tier("smoke;core;stress" run_inline_code)
 if (run_inline_code)
     message("---- inline_code_run")
@@ -563,6 +589,7 @@ return index;
     cli_assert_contains("inline_code_eval_alias" cli_inline_eval_output "inline_eval_arg1=foo")
 endif()
 
+# 只有活动运行路径才接受用户参数；纯编译模式的拒绝与递归导入编译分开验证。
 cli_case_matches_tier("smoke;core;stress" run_compile_passthrough_error)
 if (run_compile_passthrough_error)
     message("---- compile_passthrough_error")
@@ -598,6 +625,7 @@ if (run_compile_recursive)
     cli_assert_contains("compile_recursive_and_run" compile_run_output "hello from import")
 endif()
 
+# 装饰器导入的源码路径要求跨模块 .zro/.zri 同时生成，再由实际运行值证明消费成功。
 cli_case_matches_tier("smoke;core;stress" run_decorator_import_recursive)
 if (run_decorator_import_recursive)
     message("---- decorator_import_compile_recursive_and_run")
@@ -633,6 +661,7 @@ if (run_decorator_import_recursive)
     cli_assert_contains("decorator_import_compile_recursive_and_run" decorator_import_output "31")
 endif()
 
+# 对照源码路径，预编译模块由临时项目提供，验证被测项目可从二进制依赖解析装饰器。
 cli_case_matches_tier("smoke;core;stress" run_decorator_import_binary)
 if (run_decorator_import_binary)
     message("---- decorator_import_binary_run")
@@ -654,6 +683,7 @@ if (run_decorator_import_binary)
     cli_assert_contains("decorator_import_binary_run" decorator_import_binary_output "31")
 endif()
 
+# 深层编译期导入要求三个模块的二进制和中间产物齐全，防止仅入口编译成功的假阳性。
 cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_deep_import_recursive)
 if (run_decorator_compile_time_deep_import_recursive)
     message("---- decorator_compile_time_deep_import_compile_recursive_and_run")
@@ -693,6 +723,7 @@ if (run_decorator_compile_time_deep_import_recursive)
                         "43")
 endif()
 
+# provider、深层依赖及其组合分别走预制 .zro 消费路径，覆盖编译期装饰器跨阶段导入。
 cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_import_binary)
 if (run_decorator_compile_time_import_binary)
     message("---- decorator_compile_time_import_binary_run")
@@ -807,6 +838,7 @@ if (run_decorator_compile_time_provider_import_binary)
                         "71")
 endif()
 
+# 同一生成副本连续编译，比较首次、无变更、依赖修改后的清单和 compiled/skipped 计数。
 cli_case_matches_tier("core;stress" run_incremental)
 if (run_incremental)
     message("---- incremental")
@@ -829,6 +861,7 @@ if (run_incremental)
     cli_assert_contains("incremental_changed_dependency" incremental_changed_output "compile summary: compiled=2 skipped=0 removed=0")
 endif()
 
+# 删除入口对旧模块的引用后，旧 .zro 应从增量产物中回收，而不是继续靠残留文件运行。
 cli_case_matches_tier("core;stress" run_incremental_cleanup)
 if (run_incremental_cleanup)
     message("---- incremental_cleanup")
@@ -850,6 +883,7 @@ if (run_incremental_cleanup)
     endif()
 endif()
 
+# 把增量编译结果立即运行，核对更新的导入值与 executed_via=binary 始终一致。
 cli_case_matches_tier("core;stress" run_compile_run_incremental_binary_parity)
 if (run_compile_run_incremental_binary_parity)
     message("---- compile_run_incremental_binary_parity")
@@ -925,6 +959,7 @@ if (run_compile_run_incremental_binary_parity)
                         "executed_via=binary")
 endif()
 
+# 从 --intermediate 切换到普通增量构建后，缓存命中仍须清掉先前留下的 .zri。
 cli_case_matches_tier("core;stress" run_compile_run_incremental_intermediate_toggle_cleanup)
 if (run_compile_run_incremental_intermediate_toggle_cleanup)
     message("---- compile_run_incremental_intermediate_toggle_cleanup")
@@ -989,6 +1024,7 @@ if (run_compile_run_incremental_intermediate_toggle_cleanup)
     endif()
 endif()
 
+# REPL 通过输入文件驱动 :help、:reset 和提交后的求值；此 case 不属于 stress 档。
 cli_case_matches_tier("smoke;core" run_repl)
 if (run_repl)
     message("---- repl")
@@ -1019,6 +1055,7 @@ if (run_repl)
     endif()
 endif()
 
+# 项目执行后继续进入 REPL，确认项目参数作用域与 <repl> 参数作用域分开建立。
 cli_case_matches_tier("smoke;core;stress" run_interactive_after_run)
 if (run_interactive_after_run)
     message("---- interactive_after_run")
@@ -1053,6 +1090,7 @@ if (run_interactive_after_run)
     cli_assert_contains("interactive_after_run" interactive_after_run_output "<repl>")
 endif()
 
+# --compile --run -i 应先走二进制运行，再在同一进程接收交互输入。
 cli_case_matches_tier("smoke;core;stress" run_compile_interactive_after_run)
 if (run_compile_interactive_after_run)
     message("---- compile_interactive_after_run")
@@ -1088,6 +1126,7 @@ if (run_compile_interactive_after_run)
     cli_assert_contains("compile_interactive_after_run" compile_interactive_after_run_output "<repl>")
 endif()
 
+# REPL 的 native provider 输出与运行时错误各自校验 stdout/stderr，防止通道回归被合并输出遮蔽。
 cli_case_matches_tier("core;stress" run_repl_native_import)
 if (run_repl_native_import)
     message("---- repl_native_import")
