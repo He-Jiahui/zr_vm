@@ -3,6 +3,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 
+/* 比较已解析节点的完整编码片段，长度和范围由调用方传入的 view 界定。 */
 static TZrBool metadata_runtime_type_node_spans_match(
         const SZrZrpMetadataPoolSliceView *leftBlob,
         const SZrMetadataRuntimeSignatureTypeNodeView *leftNode,
@@ -29,6 +30,7 @@ static TZrBool metadata_runtime_type_node_spans_match(
                              leftLength) == 0);
 }
 
+/* 在指定 token 表逐条取经 ZRP 校验的签名，再匹配一个完整根节点与输入子节点。 */
 static const SZrMetadataTokenRecord *metadata_runtime_find_type_node_record(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *blob,
@@ -52,6 +54,8 @@ static const SZrMetadataTokenRecord *metadata_runtime_find_type_node_record(
             recordNode.nextBlobOffset != (TZrUInt32)recordBlob.byteLength) {
             continue;
         }
+        /* TODO: 此处只取首个字节匹配项；TypeRef 签名编码不含模块名，而记录可按模块区分。
+         * 需用跨模块同名 TypeRef 的泛型签名核对上层是否已限定身份及首项选择结果。 */
         if (metadata_runtime_type_node_spans_match(blob, nodeView, &recordBlob, &recordNode)) {
             return record;
         }
@@ -59,6 +63,9 @@ static const SZrMetadataTokenRecord *metadata_runtime_find_type_node_record(
     return ZR_NULL;
 }
 
+/* 将签名节点映射到当前函数元数据记录：TypeDef/TypeSpec 查主数组，TypeRef 查导入副本。
+ * 返回指针借自 metadataFunction，记录与底层 ZRP blob 均须在使用期间保持有效。
+ */
 const SZrMetadataTokenRecord *ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *blob,
