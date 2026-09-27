@@ -154,12 +154,12 @@ ZR_CALLBACK_DECLARE_NO_PARAM(FZrBeforeStateReleased)
 /** TODO: 已由 GlobalState_New 保存，但当前线程创建链未发现派发点；需核对是否为预留接口。 */
 ZR_CALLBACK_DECLARE_ONE_PARAM(FZrAfterThreadInitialized, struct SZrState *, threadState)
 
-/** GC 回收线程对象时直接调用，回调必须自行保证不跨越 GC 摘链后的异常边界。 */
+/** GC 消费待释放线程队列时调用；回调不得跨越队列摘链后的异常边界。 */
 ZR_CALLBACK_DECLARE_ONE_PARAM(FZrBeforeThreadReleased, struct SZrState *, threadState)
 
 
 /** 全局生命周期回调表；由宿主注册并在 State/GC 路径读取，未安装的字段为零。 */
-/** BUG: GC 在摘下待释放线程后直接调用 beforeThreadReleased；回调若 longjmp，线程对象未挂入 released 链表而失联。 */
+/** TODO: 尚未找到待释放队列的生产者；若启用此派发，需保证回调异常退出后线程对象仍可追踪。 */
 struct ZR_STRUCT_ALIGN SZrCallbackGlobal {
     FZrAfterStateInitialized afterStateInitialized;
     FZrBeforeStateReleased beforeStateReleased;

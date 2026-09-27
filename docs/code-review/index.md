@@ -126,7 +126,7 @@ doc_type: category-index
 | parser 位置、词法器与公开解析入口 | [82 项](coverage/zr_vm_parser_public_lexer_entry.tsv) | 6 个 C/H 文件独立复核，204 个非空证据锚点有效，源码仅改注释；GCC 对 3 个 C 文件语法检查通过。16 个 BUG 行记录词法边界、错误恢复和失败路径缺陷，另有 2 个 Unicode 契约 TODO；未运行运行时测试。 |
 | core 原生数组公开接口 | [18 项](coverage/zr_vm_core_array_api.tsv) | 1 个头文件独立复核，9 个函数和 9 个风险块、108 个非空证据锚点，源码仅增 36 行注释；GCC/Clang 语法检查通过。6 个 BUG 行标记已证实的溢出、分配失败和清理状态问题，3 个 TODO 保留可达性与别名契约疑点；未运行运行时测试。 |
 | core/parser 模块 API 可见性别名 | [2 项](coverage/zr_vm_core_parser_api_conf.tsv) | 两个配置头文件逐宏核对函数、TLS 数据和内部声明/定义用途，14 个非空证据锚点，源码各仅增一行注释；独立复核通过。实际 Windows 导出疑点沿用通用 API 配置的既有 TODO。 |
-| core IO、回调与异常跨层契约 | [338 项](coverage/zr_vm_core_io_callback_exception.tsv) | 8 个 C/H 文件独立复核，2,362 个 evidence 与 2,294 个 callers 锚点有效，源码仅改注释；GCC/Clang 对 5 个 C 文件语法检查通过。36 处源码 BUG/TODO 标签均有独立审查块；定向测试目标构建停在 CMake VerifyGlobs 预检查，未运行测试。 |
+| core IO、回调与异常跨层契约 | [338 项](coverage/zr_vm_core_io_callback_exception.tsv) | 8 个 C/H 文件独立复核，源码仅改注释；GCC/Clang 对 5 个 C 文件语法检查通过。36 处源码 BUG/TODO 标签均有独立审查块；跨批复核将线程释放回调风险降为 TODO，因待释放队列生产者未发现。定向测试目标构建停在 CMake VerifyGlobs 预检查，未运行测试。 |
 | core 原型元数据布局与常量引用路径 | [26 项](coverage/zr_vm_core_constant_reference.tsv) | 2 个 C/H 文件独立复核，127 个非空证据锚点，源码仅改注释；GCC/Clang 语法检查通过。原型布局有编译/运行消费方，路径解析 API 目前无外部调用；8 个 TODO 记录未来接入前需确认的边界，未标未证实的 BUG。 |
 | parser CFG union、switch 与 throw 测试 | [56 项](coverage/tests_parser_cfg_switch_union_throw.tsv) | 3 个 C 文件独立复核，262 个非空证据锚点，12 个 Unity 用例均已登记，源码仅增 55 行注释；GCC/Clang 语法检查 6/6 通过。3 个 BUG 行记录断言非局部退出跳过原生资源释放；未运行完整 CTest。 |
 | parser 泛型约束与实例化测试 | [19 项](coverage/tests_parser_generic_contracts.tsv) | 2 个 C 文件独立复核，148 个 evidence 路径锚点有效，源码仅增 15 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行记录失败断言跳过清理，1 个 TODO 留待真实命名结构体 AOT 用例核对；定向构建停在 CMake 重新生成，未运行 CTest。 |
