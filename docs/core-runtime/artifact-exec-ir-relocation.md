@@ -14,6 +14,7 @@ tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_schema_relocation.c
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
+  - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: module-detail
 status: partial
 ---
@@ -29,6 +30,12 @@ callable ABI or decode the ExecIR section's meaning. ERI1 remains schema 1
 because the envelope wire fields have not changed; the payload has its own
 EIS1 magic and version.
 
+The reader checks that a nonzero element count has a nonzero element width,
+matching the writer's rule. It builds the view privately and publishes it
+only after the entire directory and both optional byte hashes pass. Every
+failure clears the caller's view; on success, section pointers borrow the
+input buffer and remain valid only while those bytes remain alive.
+
 `artifact_exec_ir_scalar.c` adds EIS1, a fixed width canonical graph payload
 for one no argument i64 CONSTANT then RETURN function. The writer rejects
 nonzero or unencoded graph fields. The decoder builds a temporary
@@ -38,10 +45,19 @@ transfers ownership only after success. The outer
 module/function contracts, hashes, and the ZRO section policy.
 
 The existing `ZrCore_ArtifactExecIr_ValidateRelocations` API is separate and
-remains a raw relocation prototype. It accepts a resolver and publishes
-resolved indices only after callbacks succeed, but its code offset check is
-against the whole document and its failure diagnostic loses the target token.
-Neither this API nor the initial EIS1 loader resolves executable relocations.
+remains a raw relocation prototype. Its `codeOffset` is relative to the
+`EXEC_IR` section's byte start; an offset at or beyond that section's length
+is invalid even when it lies inside the enclosing ERI1 document. It checks
+every row before invoking any resolver callback. The callback receives the
+stable target token, kind, expected hash, and expected contract hash; a
+failure records the row and target token. Resolved indices are staged and
+copied to the caller only after all callbacks succeed. This contract does
+not promise rollback of a callback's own side effects, so resolvers must
+avoid publishing process-local targets during validation.
+
+Neither this raw API nor the initial EIS1 loader resolves executable
+relocations. The raw fixture's resolver maps a token to a test index; it does
+not validate a callable ABI or install a VM/native/AOT target.
 The EIS1 loader rejects any BINDINGS, STATE_MAPS, RELOCATIONS, or EXEC_BC
 section. Full 08.01 relocation validation and loader publication remain
 planned work.

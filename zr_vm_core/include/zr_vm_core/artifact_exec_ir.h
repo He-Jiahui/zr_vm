@@ -44,8 +44,7 @@ typedef enum EZrArtifactExecIrStatus {
     ZR_ARTIFACT_EXEC_IR_RESOLUTION_FAILED
 } EZrArtifactExecIrStatus;
 
-/** @brief 可选的失败位置；status、节、行和字节偏移由各入口写入。
- * BUG: relocation 回调拒绝时，通用失败函数会覆盖刚记录的目标 token。 */
+/** @brief 可选的失败位置；relocation 行失败时 token 保留稳定目标身份。 */
 typedef struct SZrArtifactExecIrDiagnostic {
     EZrArtifactExecIrStatus status;
     TZrUInt32 byteOffset;
@@ -87,7 +86,7 @@ typedef struct SZrArtifactExecIrSectionView {
 } SZrArtifactExecIrSectionView;
 
 /** @brief 读取成功后的完整视图；buffer 须在全部节访问期间保持有效。
- * BUG: 现行模块契约要求读取失败时清零视图，但后续目录或哈希失败会保留部分字段。 */
+ * @note 任何读取失败都清零调用方提供的视图。 */
 typedef struct SZrArtifactExecIrView {
     TZrUInt16 abiVersion;
     TZrUInt16 flags;
@@ -100,7 +99,8 @@ typedef struct SZrArtifactExecIrView {
     SZrArtifactExecIrSectionView sections[ZR_ARTIFACT_EXEC_IR_MAX_SECTIONS];
 } SZrArtifactExecIrView;
 
-/** @brief relocation 的宿主侧字段描述；固定 32 字节线格式不能直接 memcpy 此 C 结构。 */
+/** @brief relocation 的宿主侧字段描述；codeOffset 相对 EXEC_IR 节字节起点。
+ * @note 固定 32 字节线格式不能直接 memcpy 此 C 结构。 */
 typedef struct SZrArtifactExecIrRelocation {
     TZrUInt32 targetToken;
     TZrUInt32 targetKind;
@@ -132,8 +132,7 @@ ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIr_Write(
         const SZrArtifactExecIrDocument *document, TZrByte *buffer,
         TZrUInt32 capacity, TZrUInt32 *outWritten,
         SZrArtifactExecIrDiagnostic *diagnostic);
-/** @brief 校验有界字节流并发布借用原始 buffer 的视图；只在 OK 后消费 outView。
- * BUG: 非零 count、零槽宽的节会绕过长度校验；后续失败也可能留下部分视图。 */
+/** @brief 校验有界字节流并发布借用原始 buffer 的视图；失败时清零 outView。 */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIr_Read(
         const TZrByte *buffer, TZrUInt32 length, SZrArtifactExecIrView *outView,
         SZrArtifactExecIrDiagnostic *diagnostic);
@@ -143,8 +142,9 @@ ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIr_FindSection(
         const SZrArtifactExecIrView *view, EZrArtifactExecIrSectionKind kind,
         const SZrArtifactExecIrSectionView **outSection,
         SZrArtifactExecIrDiagnostic *diagnostic);
-/** @brief 调用 resolver 映射全部 relocation，成功后一次性写 resolvedTargetIndices。
- * BUG: codeOffset 只与整包长度比较，越过 ExecIR 节仍可通过；失败诊断丢失目标 token。 */
+/** @brief 先验证每个 codeOffset 位于 EXEC_IR 节内，再调用 resolver 映射目标。
+ * @note 任一行或回调失败时 resolvedTargetIndices 保持原样；失败诊断保留目标 token。
+ * 此原始 ERI1 接口不发布可调用 VM/native/AOT 目标。 */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIr_ValidateRelocations(
         const SZrArtifactExecIrView *view, FZrArtifactExecIrResolve resolver,
         TZrUInt32 *resolvedTargetIndices, TZrUInt32 capacity, TZrPtr userData,

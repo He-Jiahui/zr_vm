@@ -35,6 +35,7 @@ tests:
   - tests/library/test_zrm_container.c
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
+  - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -55,6 +56,15 @@ writer/reader/Oracle 验证；见
 [独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md)。
 该子切片不完成本计划的 ExecBC、binding、relocation、maps、copy、AOT
 projection 或 `ImportByPath` 迁移，以下任务和退出门禁继续有效。
+
+**后续 ERI1 边界子切片：** 在不改变 ZRAF schema 6、AOT ABI 17 或 ERI1
+线格式的前提下，原始 reader 对每个目录项采用与 writer 一致的计数/槽宽
+规则，全部目录和 hash 通过后才发布借用 view。原始 relocation 的
+`codeOffset` 只允许落在 `EXEC_IR` 节内，所有行先验证再触发 resolver；
+失败保留行与目标 token，结果数组不部分发布。见
+[独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md)。
+这只加固底层封套与解析接口；ZRAF EIS1 opener 继续拒绝 binding、
+relocation、maps 和 ExecBC，不能据此勾选真正跨进程目标解析门禁。
 
 ## 依赖与交付范围
 
