@@ -1,3 +1,4 @@
+# 复现 source extern 路径时自动记录 throw、FFI 错误及符号调用三处栈。
 set pagination off
 set print pretty on
 set breakpoint pending on

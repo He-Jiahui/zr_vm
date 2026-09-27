@@ -6,6 +6,7 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_core/native_call_contract.h"
 
+/* 直接构造两层 hash 均有效的契约，隔离 native 边界的二次校验与 lane 选择。 */
 static void native_abi_make_scalar_contract(
         SZrNativeImportContract *contract,
         EZrFfiDirection direction) {
@@ -85,6 +86,7 @@ static void native_abi_make_scalar_contract(
             ZrCommon_FfiSignatureContract_ComputeHash(&contract->signature);
 }
 
+/* 复用标量骨架，只替换聚合布局，让后续用例观察按值结构的直接/复制分流。 */
 static void native_abi_make_struct_contract(SZrNativeImportContract *contract) {
     SZrFfiParameterContract *parameter;
     SZrFfiAggregateFieldContract *field;
@@ -266,6 +268,7 @@ static void test_struct_direct_and_copy_lanes(void) {
     assert(!plan.directCompatible);
 }
 
+/* 注销要等待已进入的回调退出；期间的新进入必须被拒绝。 */
 static void test_callback_unregister_waits_for_in_flight(void) {
     SZrNativeCallbackSlot slot;
     SZrNativeCallDiagnostic diagnostic;
@@ -605,6 +608,7 @@ static void test_unregister_zero_spin_succeeds_when_quiescent(void) {
     assert(slot.state == ZR_NATIVE_CALLBACK_SLOT_UNREGISTERED);
 }
 
+/* 相同指针形状在 pin、注册根、转移所有权和 varargs 下需要不同的根管理。 */
 static void test_pointer_and_registered_lanes_are_conservative(void) {
     SZrNativeImportContract contract;
     SZrFfiParameterContract *parameter;
@@ -714,6 +718,8 @@ static void test_lease_requires_an_active_domain(void) {
     assert(diagnostic.status == ZR_NATIVE_CALL_STATUS_INVALID_ARGUMENT);
 }
 
+/* BUG: Release 构建定义 NDEBUG 时，assert 连被测调用一起删除，CTest 可零检查地通过。
+ * 证据：tests/cmake/ssa-tests.cmake 注册此目标但未为它取消 NDEBUG。 */
 int main(void) {
     test_prepare_and_marshal_lanes();
     test_zero_parameter_variadic_plan_stays_on_bridge_lane();

@@ -1,3 +1,4 @@
+# 在运行时符号调用入口观察由 source extern 构造的签名。
 set pagination off
 set print pretty on
 set breakpoint pending on

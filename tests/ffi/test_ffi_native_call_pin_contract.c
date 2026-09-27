@@ -44,6 +44,7 @@ static void assert_text_order(const char *before, const char *after, const char 
     TEST_ASSERT_TRUE_MESSAGE(before < after, message);
 }
 
+/* 固定 self、库所有者与实参在 ffi_call 前 pin、调用后 unpin 的文本顺序契约。 */
 static void test_zr_ffi_symbol_call_pins_gc_values_across_native_call_boundary(void) {
     char *runtimeSource;
     const char *selfPin;
@@ -54,6 +55,8 @@ static void test_zr_ffi_symbol_call_pins_gc_values_across_native_call_boundary(v
     const char *ownerUnpin;
     const char *selfUnpin;
 
+    /* BUG: pin/invoke/unpin 已迁至 ffi_runtime_invoke.c；继续读取 runtime.c 会让首个文本断言失败。
+     * 证据：ffi_runtime_invoke.c 中的 NativeCallPinObject、zr_ffi_invoke_native_symbol 与 NativeCallUnpin。 */
     runtimeSource = read_repo_text_file_or_fail("zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c");
     assert_text_contains(runtimeSource, "SZrGcNativeCallPin selfPin");
     assert_text_contains(runtimeSource, "SZrGcNativeCallPin ownerPin");
@@ -80,6 +83,7 @@ static void test_zr_ffi_symbol_call_pins_gc_values_across_native_call_boundary(v
     free(runtimeSource);
 }
 
+/* 回调可能触发栈扩容；恢复保存的栈位置前必须先按锚点重定位。 */
 static void test_zr_ffi_callback_trampoline_reanchors_saved_stack_after_native_callback(void) {
     char *internalHeader;
     char *callbackSource;

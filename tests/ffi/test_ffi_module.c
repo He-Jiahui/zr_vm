@@ -26,6 +26,7 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/* TODO: 这里用 0x1000 区分可释放地址和低值指针；需核对 VM allocator 合约是否保证真实堆指针不会落入低值区。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
@@ -49,6 +50,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     return malloc(newSize);
 }
 
+/* 每个用例新建已注册 parser 和 provider 的隔离状态，避免动态库句柄跨用例复用。 */
 static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0x4646495F54455354ULL, &callbacks);
@@ -77,6 +79,7 @@ static void destroy_test_state(SZrState *state) {
     }
 }
 
+/* 动态脚本先经过 parser 再进入 VM；失败时打印该阶段的异常以区分绑定和调用错误。 */
 static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const TZrChar *sourceNameText) {
     SZrAstNode *ast;
     SZrString *sourceName;
@@ -146,6 +149,7 @@ static const SZrTypeValue *object_field(SZrState *state, SZrObject *object, cons
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/* TODO: 调用方把转义后的路径写入更小的脚本缓冲且未核对 snprintf 截断；需用长构建路径验证。 */
 static void escape_for_zr_string_literal(char *destination, size_t destinationSize, const char *source) {
     size_t writeIndex = 0;
     size_t readIndex = 0;
@@ -172,12 +176,14 @@ static void escape_for_zr_string_literal(char *destination, size_t destinationSi
     destination[writeIndex] = '\0';
 }
 
+/* 异常保护回调与外层共享结果栈位；成功后再由外层复制返回值。 */
 typedef struct ZrFfiExecuteCaptureRequest {
     SZrFunction *function;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrFfiExecuteCaptureRequest;
 
+/* 在恢复锚点保护下调用脚本入口，允许异常用例读回原始错误状态。 */
 static void zr_ffi_execute_capture_body(SZrState *state, TZrPtr arguments) {
     ZrFfiExecuteCaptureRequest *request = (ZrFfiExecuteCaptureRequest *)arguments;
     SZrClosure *closure;
@@ -217,6 +223,7 @@ static void zr_ffi_execute_capture_body(SZrState *state, TZrPtr arguments) {
     request->callCompleted = (TZrBool)(state->threadStatus == ZR_THREAD_STATUS_FINE);
 }
 
+/* 错误测试需要状态和栈顶字符串；取证后才重置线程，避免后续用例继承异常。 */
 static EZrThreadStatus execute_function_capture_status(SZrState *state,
                                                        SZrFunction *function,
                                                        SZrTypeValue *result,
@@ -580,6 +587,7 @@ static void test_zr_ffi_can_fill_buffer_via_symbol(void) {
     ZR_TEST_DIVIDER();
 }
 
+/* 与显式 pin 的用例成对：仅 native 参数入口可把 BufferHandle 隐式降为指针。 */
 static void test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument(void) {
     static const TZrChar *kSourceTemplate =
             "var ffi = import(\"zr.ffi\");\n"
@@ -1090,6 +1098,8 @@ static void test_zr_ffi_stdcall_signature_matches_platform_support(void) {
     ZR_TEST_DIVIDER();
 }
 
+/* fixture 在新宿主线程回调，验证未附着线程不会擅自进入原 VM state。
+ * TODO: 目前只断言执行失败，需检查诊断确实指向跨线程策略。 */
 static void test_zr_ffi_foreign_thread_callback_reports_error(void) {
     static const TZrChar *kSourceTemplate =
             "var ffi = import(\"zr.ffi\");\n"
@@ -1253,6 +1263,8 @@ static void test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle(vo
     ZR_TEST_DIVIDER();
 }
 
+/* 普通 ZR 函数不能借用 native extern 的 delegate 包装转换。
+ * TODO: 这里只断言编译失败，需核对诊断确实来自包装转换限制。 */
 static void test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
@@ -1334,6 +1346,7 @@ static void test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper
     ZR_TEST_DIVIDER();
 }
 
+/* handle_id 解包只属于 native extern 边界，普通函数调用仍按声明类型检查。 */
 static void test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls(void) {
     static const TZrChar *kSourceTemplate =
             "#zr.ffi.lowering(\"handle_id\")#\n"
@@ -1506,6 +1519,7 @@ static void test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof(voi
     ZR_TEST_DIVIDER();
 }
 
+/* 偏移叠加视图必须让两个字段读取同一四字节区域，检验读取布局而非仅检验 sizeof。 */
 static void test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_read(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"

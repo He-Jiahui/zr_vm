@@ -1,3 +1,4 @@
+# 从 main 手动调用单个 Unity 用例，再在符号调用入口读取签名。
 set pagination off
 set print pretty on
 set breakpoint pending on

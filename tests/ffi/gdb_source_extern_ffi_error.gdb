@@ -1,3 +1,4 @@
+# 跟踪 source extern 调用进入 FFI runtime 后的错误码与栈。
 set pagination off
 set print pretty on
 set breakpoint pending on
@@ -8,6 +9,7 @@ file ./build/codex-wsl-gcc-debug/bin/zr_vm_ffi_test
 break test_zr_ffi_source_extern_can_bind_and_call_symbol
 run
 
+# TODO: 旧断点 runtime.c:267 已落在 PointerHandle 路径；错误上报入口现为 ffi_runtime/ffi_runtime_support.c:26，使用前须重定位断点。
 break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c:267
 continue
 

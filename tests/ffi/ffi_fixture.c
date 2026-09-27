@@ -17,6 +17,7 @@
 #define ZR_FFI_FIXTURE_STDCALL
 #endif
 
+/* 与 ZR 脚本中的 Point 声明共同充当按值结构体 ABI 的布局见证。 */
 typedef struct ZrFfiFixturePoint {
     int32_t x;
     int32_t y;
@@ -28,6 +29,7 @@ typedef enum ZrFfiFixtureMode {
 } ZrFfiFixtureMode;
 
 typedef double (*ZrFfiFixtureUnaryCallback)(double value);
+/* 两个 union 形状分别覆盖整数/浮点混合和不同宽度浮点的 ABI 分类。 */
 typedef union ZrFfiFixtureMixedUnion {
     double scalar;
     int32_t integer;
@@ -36,6 +38,7 @@ typedef union ZrFfiFixtureHeterogeneousFloatUnion {
     float narrow;
     double wide;
 } ZrFfiFixtureHeterogeneousFloatUnion;
+/* 故意跨一次 native 调用保留地址，用于验证 call 生命周期回调在返回后不可再执行。 */
 static ZrFfiFixtureUnaryCallback g_zr_ffi_stored_callback = NULL;
 
 static const char *kZrFfiFixtureVersion = "1.2.3-fixture";

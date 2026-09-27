@@ -1,3 +1,4 @@
+# 比较 longjmp 前后的调用帧与局部变量，辅助定位异常恢复路径。
 set pagination off
 set print pretty on
 set breakpoint pending on

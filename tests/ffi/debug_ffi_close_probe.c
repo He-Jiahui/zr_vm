@@ -16,6 +16,7 @@
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
 
+/* 探针独立于 Unity 测试运行，状态需自行注册动态 FFI 所依赖的 provider。 */
 static SZrState *create_probe_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
@@ -53,6 +54,7 @@ static const char *string_value_native(SZrState *state, const SZrTypeValue *valu
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, value->value.object));
 }
 
+/* TryRun 回调只传回栈锚结果，错误详情由外层在重置线程前提取。 */
 typedef struct ZrProbeExecuteCaptureRequest {
     SZrFunction *function;
     TZrStackValuePointer resultBase;
@@ -98,6 +100,7 @@ static void probe_execute_capture_body(SZrState *state, TZrPtr arguments) {
     request->callCompleted = (TZrBool)(state->threadStatus == ZR_THREAD_STATUS_FINE);
 }
 
+/* 失败模式需要可打印的 VM 错误，同时让宿主进程以约定退出码返回。 */
 static EZrThreadStatus execute_function_capture_status(SZrState *state,
                                                        SZrFunction *function,
                                                        SZrTypeValue *result,
@@ -172,6 +175,7 @@ static void escape_for_zr_string_literal(char *destination, size_t destinationSi
     destination[writeIndex] = '\0';
 }
 
+/* 命令行 mode 选择最小复现场景；涉及动态库的 mode 还要求第二个参数为 fixture 路径。 */
 int main(int argc, char **argv) {
     static const char *kLibraryTemplate =
             "var ffi = import(\"zr.ffi\");\n"

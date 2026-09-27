@@ -32,6 +32,7 @@
 #endif
 
 #if defined(ZR_PLATFORM_WIN)
+/* 持久签名含目标 ABI；两组固定向量防止跨平台布局漂移被重新计算掩盖。 */
 #define ZR_NATIVE_EXTERN_SCALAR_CONTRACT_HASH UINT64_C(0x65c022e3b9014c41)
 #define ZR_NATIVE_EXTERN_SCALAR_CONTRACT_HASH_TEXT "0x65c022e3b9014c41"
 #else
@@ -45,6 +46,7 @@ typedef struct SZrNativeExternBinaryReader {
     TZrBool consumed;
 } SZrNativeExternBinaryReader;
 
+/* ZRO 往返与 LLVM AOT 输入共用宿主文件读取；返回缓冲区由各用例释放。 */
 static TZrByte *native_extern_read_file(
         const TZrChar *path,
         TZrSize *outLength) {
@@ -138,6 +140,7 @@ static void native_extern_hash_file(
             (unsigned long long)hash);
 }
 
+/* IoSource 只取得一次输入，reader 的 bytes 仍由往返用例在释放后回收。 */
 static TZrBytePtr native_extern_binary_read(
         SZrState *state,
         TZrPtr customData,
@@ -153,6 +156,7 @@ static TZrBytePtr native_extern_binary_read(
     return reader->bytes;
 }
 
+/* 关闭输入视图不释放 reader；用例还要用原始字节构造截断输入。 */
 static void native_extern_binary_close(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(customData);
@@ -175,6 +179,7 @@ static TZrPtr native_extern_test_allocator(
     return pointer == ZR_NULL ? malloc(newSize) : realloc(pointer, newSize);
 }
 
+/* 将 parser、类型/系统/容器与 FFI provider 装在同一状态，覆盖源码到运行时的完整路径。 */
 static SZrState *native_extern_create_state(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(
@@ -234,6 +239,7 @@ static SZrAstNode *parse_source(
     return ZrParser_Parse(state, source, strlen(source), sourceName);
 }
 
+/* 每次构造临时语义上下文，使单个声明的契约测试不依赖先前的语义缓存。 */
 static EZrFfiContractStatus native_extern_build_contract(
         SZrState *state,
         const SZrExternBlock *externBlock,
@@ -273,6 +279,7 @@ static SZrAstNode *first_extern_function(SZrAstNode *script) {
     return block->data.externBlock.declarations->nodes[0];
 }
 
+/* 以 core 布局计算作独立预期值，核对 parser 生成的聚合哈希。 */
 static TZrUInt64 native_extern_canonical_layout_hash(
         const SZrFfiSignatureContract *signature,
         const SZrFfiTypeContract *type) {
@@ -416,6 +423,7 @@ static void test_native_extern_builds_persistent_scalar_contract(void) {
     native_extern_destroy_state(state);
 }
 
+/* 重新计算 hash 后仍应拒绝语义不一致的 callable 契约，避免仅凭签名 hash 放行。 */
 static void test_native_extern_preserves_ref_and_out_directions(void) {
     static const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -820,6 +828,7 @@ static void test_native_extern_requires_explicit_callback_policy(void) {
     native_extern_destroy_state(state);
 }
 
+/* 区分可序列化的公共契约与当前 FFI provider 真正支持的策略。 */
 static void test_native_extern_policy_contract_admission(void) {
     static const TZrChar *callbackSource =
             "native extern(\"fixture\") {\n"
@@ -1243,6 +1252,7 @@ static void test_native_extern_rejects_mismatched_callback_signature(void) {
     native_extern_destroy_state(state);
 }
 
+/* fixture 跨调用保留函数指针；call 生命周期结束后，晚到回调不能再次进入 ZR。 */
 static void test_native_extern_call_lifetime_rejects_late_callback(void) {
     static const TZrChar *sourceFormat =
             "native extern(\"%s\") {\n"
@@ -1477,6 +1487,7 @@ static void test_native_extern_union_first_member_is_not_overwritten(void) {
     native_extern_destroy_state(state);
 }
 
+/* 无活跃成员与先后写入多个成员均不能作为可确定的 by-value union 传出。 */
 static void test_native_extern_union_rejects_ambiguous_active_member(void) {
     static const TZrChar *sourceFormats[] = {
             "native extern(\"%s\") {\n"
@@ -1806,6 +1817,7 @@ static void test_native_extern_current_syntax_executes_out_contract(void) {
     native_extern_destroy_state(state);
 }
 
+/* 同一六项 native import 向量穿过 C 与 LLVM 生成物，再由动态加载结果交叉核对。 */
 static void test_native_extern_aot_uses_canonical_signature_vector(void) {
     static const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -2092,6 +2104,7 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
     native_extern_destroy_state(state);
 }
 
+/* 项目释放后全局 loader 不能保留指向 project 的悬垂 userData。 */
 static void test_aot_project_release_clears_global_loader_userdata(void) {
     static const TZrChar *projectJson =
             "{"
@@ -2125,6 +2138,7 @@ static void test_aot_project_release_clears_global_loader_userdata(void) {
     native_extern_destroy_state(state);
 }
 
+/* 用实际生成、链接和执行的 LLVM 模块验证注册表可被 AOT loader 消费。 */
 static void test_native_extern_llvm_aot_runtime_accepts_code_registration(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("LLVM AOT runtime admission currently validates the Unix shared-library path");
@@ -2266,6 +2280,7 @@ static void test_native_extern_llvm_aot_runtime_accepts_code_registration(void) 
 #endif
 }
 
+/* ZRO 加载前后须保持 callable/ABI/策略和来源信息，损坏计数与 hash 必须拒绝。 */
 static void test_native_extern_contract_roundtrips_through_zro(void) {
     static const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -2369,6 +2384,8 @@ static void test_native_extern_contract_roundtrips_through_zro(void) {
             &reader);
     TEST_ASSERT_NULL(ZrCore_Io_ReadSourceNew(&io));
 
+    /* BUG: ioSource 由 ReadSourceNew 分配，测试从未调用 ReadSourceFree；
+     * 每次运行都会泄漏整个 ZRO 读回结构，生产 module_loader.c 会显式释放。 */
     remove(binaryPath);
     free(bytes);
     ZrCore_Function_Free(state, function);
