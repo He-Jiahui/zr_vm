@@ -505,23 +505,6 @@ static TZrBool zr_exec_ir_ssa_report_exception_edge(
     return ZR_FALSE;
 }
 
-static TZrBool zr_exec_ir_ssa_block_has_predecessor(
-        const SZrExecIrFunction *function,
-        const SZrExecIrBlock *block,
-        TZrExecIrBlockId predecessor) {
-    TZrUInt32 index;
-
-    for (index = block->predecessorRange.start;
-         index < block->predecessorRange.start +
-                         block->predecessorRange.count;
-         ++index) {
-        if (function->predecessors[index] == predecessor) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
 static TZrBool zr_exec_ir_verify_ssa_with_dominance(
         const SZrExecIrFunction *function,
         const SZrExecIrSsaDominance *dominance,
@@ -781,6 +764,22 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
              ++phiIndex) {
             const SZrExecIrPhi *phi = &function->phiPool[phiIndex];
             TZrUInt32 incomingIndex;
+            if (phi->incomings.count != block->predecessorRange.count) {
+                TZrExecIrInstructionId site = block->terminatorInstructionId;
+                zr_exec_ir_set_diagnostic(
+                        diagnostic, ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
+                        function, site, block->id, block->predecessorRange.count,
+                        phi->incomings.count);
+                if (diagnostic != ZR_NULL &&
+                    site != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+                    site <= function->instructionCount) {
+                    diagnostic->sourceId = function->instructions[site - 1u].sourceId;
+                }
+                free(definitionKinds);
+                free(definitionInstructions);
+                free(definitionBlocks);
+                return ZR_FALSE;
+            }
             for (incomingIndex = phi->incomings.start;
                  incomingIndex < phi->incomings.start +
                                    phi->incomings.count;
@@ -790,8 +789,10 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                 TZrExecIrValueId valueId = incoming->value;
                 TZrUInt8 kind = definitionKinds[valueId];
                 TZrBool dominatesEdge = ZR_TRUE;
-                if (!zr_exec_ir_ssa_block_has_predecessor(
-                            function, block, incoming->predecessor)) {
+                TZrExecIrBlockId expectedPredecessor = function->predecessors[
+                        block->predecessorRange.start + incomingIndex -
+                        phi->incomings.start];
+                if (incoming->predecessor != expectedPredecessor) {
                     TZrExecIrInstructionId site = block->terminatorInstructionId;
                     TZrExecIrSourceId sourceId =
                             (site != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
@@ -802,7 +803,7 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                             diagnostic,
                             ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,
                             function, site, block->id,
-                            block->predecessorRange.count,
+                            expectedPredecessor,
                             incoming->predecessor);
                     if (diagnostic != ZR_NULL) {
                         diagnostic->sourceId = sourceId;

@@ -17,12 +17,15 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_effect_backedges.c
 plan_sources:
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
   - user: 2026-09-12 SSA implementation plan
 tests:
   - tests/parser/test_ssa_effects_verifier.c
   - tests/parser/test_ssa_core_model.c
+  - tests/parser/test_ssa_place_promotion.c
+  - tests/acceptance/ssa-value-phi-edge-order.md
   - tests/parser/test_ssa_builder_iterator_invokes.c
   - tests/parser/test_ssa_builder_control_edges.c
   - tests/acceptance/ssa-effect-chain-continuity.md
@@ -131,12 +134,17 @@ block and rejects duplicate result IDs or overlapping/uncovered instruction
 ranges.  A definition in the same block must occur before its use; a
 definition in another block must dominate the use block.  Values without an
 ordinary definition remain the model's explicit function-input/parameter
-form.  A block PHI defines its result at block entry, and each incoming value
-is checked against the predecessor edge named by that incoming.  Foreign PHI
-predecessors are rejected at the SSA boundary; effect verification additionally
-enforces one incoming per predecessor *edge occurrence* and exact range order.
-Two distinct incoming slots may name the same source block when it has two
-parallel edges to the destination; source-block uniqueness is not an invariant.
+form. A block PHI defines its result at block entry. Value SSA verification
+requires exactly one incoming per predecessor *edge occurrence*, in the same
+order as the block's predecessor row; it checks dominance and exceptional-edge
+availability for the value selected by that slot. A swapped pair of different
+predecessors, a missing incoming, or a foreign predecessor reports
+`PHI_PREDECESSOR_MISMATCH` at the destination block. Effect verification applies
+the same exact slot count/order requirement to memory and effect phis. Two
+distinct incoming slots may name the same source block when it has two parallel
+edges to the destination; source-block uniqueness is not an invariant. The
+current model identifies such edges by their ordered occurrence in both rows,
+not a separately serialized edge ID.
 
 The result of any value-producing terminator that may throw is committed only
 on a normal continuation. This covers generic `INVOKE` plus iterator init,

@@ -383,6 +383,38 @@ static void test_inserts_diamond_phi(void) {
               function.operands[function.instructions[9].operandRange.start] ==
                       phi->result,
           "diamond memory operations were not rewritten around the phi");
+
+    {
+        function.phiPool[function.blocks[join - 1u].phis.start].incomings.count = 1u;
+        check(!ZrCore_ExecIr_VerifyFunction(
+                          &function,
+                          ZR_EXEC_IR_VERIFY_STRUCTURE | ZR_EXEC_IR_VERIFY_SSA,
+                          &diagnostic) &&
+                      diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH &&
+                      diagnostic.blockId == join &&
+                      diagnostic.expectedVersion == 2u &&
+                      diagnostic.actualVersion == 1u,
+              "value phi accepted fewer incoming slots than predecessor edges");
+        function.phiPool[function.blocks[join - 1u].phis.start].incomings.count = 2u;
+
+        SZrExecIrPhiIncoming *incoming =
+                &function.phiIncoming[phi->incomings.start];
+        SZrExecIrPhiIncoming swapped = incoming[0];
+        incoming[0] = incoming[1];
+        incoming[1] = swapped;
+        check(!ZrCore_ExecIr_VerifyFunction(
+                          &function,
+                          ZR_EXEC_IR_VERIFY_STRUCTURE | ZR_EXEC_IR_VERIFY_SSA,
+                          &diagnostic) &&
+                      diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH &&
+                      diagnostic.blockId == join &&
+                      diagnostic.expectedVersion == left &&
+                      diagnostic.actualVersion == right,
+              "value phi accepted incoming values in the wrong edge order");
+        swapped = incoming[0];
+        incoming[0] = incoming[1];
+        incoming[1] = swapped;
+    }
     verify_promoted_function(&function,
                              "diamond promotion produced invalid SSA");
     check(ZrParser_ExecIr_BuildSsa(&function, &diagnostic) &&
