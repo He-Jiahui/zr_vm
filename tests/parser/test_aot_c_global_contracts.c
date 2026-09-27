@@ -5,9 +5,11 @@
 #include "unity.h"
 
 #include "aot_source_contract_match.h"
+/* 覆盖全局、对象、类型与元值操作的 C lowering 分界；通过源码合同约束 GC 写屏障和动态回退。 */
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 读取完整文件并把堆缓冲区交给调用者；所有错误分支在返回前关闭文件。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +52,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从 __FILE__ 推导仓库根目录；路径不含测试名时由当前工作目录解析。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +83,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +95,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +107,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 验证全局读取调用公开运行时边界。 */
 static void test_aot_c_source_lowers_get_global_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot);",
@@ -173,6 +179,7 @@ static void test_aot_c_source_lowers_get_global_to_runtime_boundary(void) {
     free(functionBodyText);
 }
 
+/* 验证对象和数组创建仍由运行时管理分配与根。 */
 static void test_aot_c_source_lowers_object_array_creation_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot);",
@@ -256,6 +263,7 @@ static void test_aot_c_source_lowers_object_array_creation_to_runtime_boundary(v
     free(functionBodyText);
 }
 
+/* 验证 typeof 查询通过运行时类型边界。 */
 static void test_aot_c_source_lowers_typeof_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_typeof(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
@@ -326,6 +334,7 @@ static void test_aot_c_source_lowers_typeof_to_runtime_boundary(void) {
     free(functionBodyText);
 }
 
+/* 验证对象与结构体转换由运行时承担布局和所有权。 */
 static void test_aot_c_source_lowers_object_struct_conversions_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_to_object(FILE *file,",
@@ -436,6 +445,7 @@ static void test_aot_c_source_lowers_object_struct_conversions_to_runtime_bounda
     free(functionBodyText);
 }
 
+/* 验证字符串化走运行时边界并保留错误路径。 */
 static void test_aot_c_source_lowers_to_string_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
@@ -512,6 +522,7 @@ static void test_aot_c_source_lowers_to_string_to_runtime_boundary(void) {
     free(functionBodyText);
 }
 
+/* 验证动态成员和索引访问不被误当静态直接访问。 */
 static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_get_member(FILE *file,",
@@ -637,6 +648,7 @@ static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundar
     free(functionBodyText);
 }
 
+/* 验证写入既有堆对象时使用公开 GC 写屏障。 */
 static void test_aot_c_member_index_heap_stores_use_public_gc_write_barrier(void) {
     static const char *const valueAccessBoundaryNeedles[] = {
             "ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));",
@@ -707,6 +719,7 @@ static void test_aot_c_member_index_heap_stores_use_public_gc_write_barrier(void
     free(objectInternalText);
 }
 
+/* 验证新所有者尚未发布的堆写入采用专用免屏障边界。 */
 static void test_aot_c_new_owner_heap_stores_use_no_write_barrier_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_set_member_new_owner_no_write_barrier(FILE *file,",
@@ -809,6 +822,7 @@ static void test_aot_c_new_owner_heap_stores_use_no_write_barrier_boundary(void)
     free(superArraySourceText);
 }
 
+/* 验证元值读写经显式运行时边界。 */
 static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_unsupported_meta_value_access(FILE *file,",

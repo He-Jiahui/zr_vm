@@ -5,9 +5,11 @@
 #include "unity.h"
 
 #include "aot_source_contract_match.h"
+/* 固定迭代器构造、前进和释放的 AOT runtime 边界，避免生成代码直接触及协议内部状态。 */
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 读取完整文件并把堆缓冲区交给调用者；所有错误分支在返回前关闭文件。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +52,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从 __FILE__ 推导仓库根目录；路径不含测试名时由当前工作目录解析。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +83,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +95,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +107,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 验证迭代操作的每个指令入口均落到配套边界 helper。 */
 static void test_aot_c_source_lowers_iterator_ops_to_boundary_helpers(void) {
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_IterInit(",

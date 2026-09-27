@@ -15,6 +15,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 比较值泛型单态化与引用泛型共享代码的生成路径，并通过项目 loader 核对缺失实例时的 full AOT 与 deopt 行为；后续三个头文件提供追加案例。 */
 
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h"
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h"
@@ -34,6 +35,7 @@
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -48,6 +50,7 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
+/* Unix 下编译生成的 C，并以链接失败暴露未解析的运行时边界。 */
 static void compile_generated_c_shared_library_or_fail(const TZrChar *generatedCPath, const TZrChar *sharedLibraryPath) {
     char command[4096];
 
@@ -75,6 +78,7 @@ static void compile_generated_c_shared_library_or_fail(const TZrChar *generatedC
 }
 #endif
 
+/* 编译测试源码并把函数所有权交还调用者。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -87,6 +91,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: 打开文件后任何定位、分配或读取断言失败都会跳过 fclose；成功返回的缓冲区由调用者 free。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -110,6 +115,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return buffer;
 }
 
+/* 把嵌入二进制长度与生成 C 的 size marker 对齐。 */
 static void assert_generated_c_reports_embedded_module_bytes(const char *generatedCText, TZrSize embeddedBlobLength) {
     char marker[128];
     int markerLength;
@@ -124,12 +130,14 @@ static void assert_generated_c_reports_embedded_module_bytes(const char *generat
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, marker));
 }
 
+/* 确认方法元数据体积被单独统计。 */
 static void assert_generated_c_reports_method_metadata_bytes(const char *generatedCText) {
     TEST_ASSERT_NOT_NULL(generatedCText);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* aot_size.methodMetadataBytes[0] = "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* aot_size.methodMetadataBytesTotal = "));
 }
 
+/* 仅替换首个静态方法槽，模拟共享实例缺失而保留其余字典表。 */
 static char *replace_first_static_method_with_null_owned_or_fail(const char *text) {
     const char *needle = ".staticMethod = zr_aot_fn_";
     const char *replacement = ".staticMethod = ZR_NULL";
@@ -158,6 +166,7 @@ static char *replace_first_static_method_with_null_owned_or_fail(const char *tex
     return buffer;
 }
 
+/* BUG: fwrite 失败会在 fclose 前跳出，留下已打开的 fixture 文件。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -171,6 +180,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* BUG: 读取错误使 feof 断言提前退出，已打开的输入文件不会关闭。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -195,6 +205,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 先取解释器结果作为 AOT 入口结果对照；执行失败路径在 TEST_FAIL 前主动释放状态。 */
 static TZrInt64 execute_interpreter_i64(const char *source) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -221,6 +232,7 @@ static TZrInt64 aot_test_generic_method(struct SZrState *state) {
     return 1234;
 }
 
+/* 验证泛型方法槽首次查找缓存静态 thunk，再次读取沿用缓存。 */
 static void test_aot_runtime_generic_dictionary_lazily_resolves_method_slot(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGenericSlot slot;
@@ -253,6 +265,7 @@ static void test_aot_runtime_generic_dictionary_lazily_resolves_method_slot(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证缺失泛型方法槽返回空而不伪造可调用目标。 */
 static void test_aot_runtime_generic_dictionary_returns_null_for_missing_method_slot(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGenericSlot slot;
@@ -277,6 +290,7 @@ static void test_aot_runtime_generic_dictionary_returns_null_for_missing_method_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证值类型单态化与引用类型字典共享两种发射形式并检查 Unix 可链接性。 */
 static void test_aot_c_generic_call_typed_emits_monomorphized_and_shared_method_forms(void) {
     const char *source =
             "struct Pair<TLeft, TRight> {\n"
@@ -354,6 +368,7 @@ static void test_aot_c_generic_call_typed_emits_monomorphized_and_shared_method_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证符号裁剪选项移除调试名而保留共享方法槽协议。 */
 static void test_aot_c_generic_call_typed_strips_generated_symbol_names_when_requested(void) {
     const char *source =
             "struct Pair<TLeft, TRight> {\n"
@@ -418,6 +433,7 @@ static void test_aot_c_generic_call_typed_strips_generated_symbol_names_when_req
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 以解释器结果为对照执行引用泛型共享方法槽调用。 */
 static void test_aot_c_reference_generic_call_typed_uses_shared_method_slot_callsite(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic call typed shared callsite currently validates the Unix shared-library path");
@@ -551,6 +567,7 @@ static void test_aot_c_reference_generic_call_typed_uses_shared_method_slot_call
 #endif
 }
 
+/* 验证 full AOT 输出没有为缺失的共享实例生成动态 deopt 路线。 */
 static void test_aot_c_reference_generic_call_typed_full_aot_omits_missing_instance_deopt(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic call typed full-AOT mode currently validates the Unix shared-library path");
@@ -686,6 +703,7 @@ static void test_aot_c_reference_generic_call_typed_full_aot_omits_missing_insta
 #endif
 }
 
+/* 通过改写共享字典静态方法槽，验证普通 AOT 回退解释器。 */
 static void test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_interpreter(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic call typed missing-instance deopt currently validates the Unix shared-library path");

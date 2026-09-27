@@ -1,5 +1,6 @@
 #ifndef ZR_TEST_AOT_C_METHOD_INFO_RETURN_PROJECTION_CASES_H
 #define ZR_TEST_AOT_C_METHOD_INFO_RETURN_PROJECTION_CASES_H
+/* 返回类型投影案例由 method_info_signature 翻译单元包含，区分原始 callable 元数据和写入器采用的 ExecIR 快照。 */
 
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -9,6 +10,7 @@
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.h"
 #endif
 
+/* 验证 callable 返回类型 accessor 只暴露规范投影字段。 */
 static void test_aot_exec_ir_callable_return_accessor_isolates_raw_metadata(void) {
     SZrFunction rawFunction;
     SZrAotExecIrFunction functionIr;
@@ -37,6 +39,7 @@ static void test_aot_exec_ir_callable_return_accessor_isolates_raw_metadata(void
 }
 
 #if defined(ZR_PLATFORM_UNIX)
+/* BUG: 临时流短读失败会在 Unity 断言处跳出，已分配文本不释放；成功结果由调用者 free。 */
 static char *read_return_projection_stream_owned(FILE *file) {
     long textLength;
     char *text;
@@ -55,6 +58,7 @@ static char *read_return_projection_stream_owned(FILE *file) {
     return text;
 }
 
+/* 按原函数身份从模块中借用返回类型投影行。 */
 static const SZrAotExecIrFunction *find_return_projection_function_ir(
         const SZrAotExecIrModule *module,
         const SZrFunction *function) {
@@ -70,6 +74,7 @@ static const SZrAotExecIrFunction *find_return_projection_function_ir(
     return ZR_NULL;
 }
 
+/* BUG: tmpfile 打开后的签名断言失败会跳过文本、文件、模块和状态清理；成功路径证明类型名快照仍指向原借用对象。 */
 static void test_aot_exec_ir_projects_callable_return_borrowed_snapshot(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -135,6 +140,7 @@ static void test_aot_exec_ir_projects_callable_return_borrowed_snapshot(void) {
 }
 #endif
 
+/* 验证方法元数据写入器优先使用投影返回类型。 */
 static void test_aot_c_method_info_uses_projected_callable_return_type(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -184,6 +190,7 @@ static void test_aot_c_method_info_uses_projected_callable_return_type(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证未知声明返回类型时才由标量结果推断。 */
 static void test_aot_c_unknown_callable_return_uses_scalar_inference(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -228,6 +235,7 @@ static void test_aot_c_unknown_callable_return_uses_scalar_inference(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证裁剪前拒绝不可达函数的非规范返回类型标志。 */
 static void test_aot_c_code_stripping_rejects_unreachable_noncanonical_callable_return_flag(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;

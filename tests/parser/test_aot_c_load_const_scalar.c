@@ -13,6 +13,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/writer.h"
+/* 手工构造字节码与 SemIR 对照夹具，验证 load-const 融合使有符号标量函数不物化帧或 Value 槽。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -39,6 +40,7 @@ static int run_command_expect_success(const char *command) {
 }
 #endif
 
+/* BUG: bytes 读取成功后若 malloc 断言失败，Unity 跳出并漏掉 free(bytes)。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     TZrBytePtr bytes = ZR_NULL;
     TZrSize byteLength = 0u;
@@ -62,6 +64,7 @@ static void assert_text_contains(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(text, needle), needle);
 }
 
+/* 禁止生成 C 保留帧/Value 回退，并报告首次命中位置。 */
 static void assert_text_does_not_contain(const char *text, const char *needle) {
     const char *found;
 
@@ -77,6 +80,7 @@ static void assert_text_does_not_contain(const char *text, const char *needle) {
     }
 }
 
+/* 把夹具槽类型设为公开 i64 标量 ABI 形式。 */
 static void init_i64_type_ref(SZrFunctionTypedTypeRef *typeRef) {
     TEST_ASSERT_NOT_NULL(typeRef);
     memset(typeRef, 0, sizeof(*typeRef));
@@ -168,6 +172,7 @@ static void init_i64_constant(SZrTypeValue *value, TZrInt64 intValue) {
     ZR_VALUE_FAST_SET(value, nativeInt64, intValue, ZR_VALUE_TYPE_INT64);
 }
 
+/* 同一函数同时提供原始指令和 SemIR，供融合选择及直接返回的生成路径比对。 */
 static SZrFunction *create_signed_load_const_scalar_function(SZrState *state) {
     SZrFunction *function;
 
@@ -235,6 +240,7 @@ static SZrFunction *create_signed_load_const_scalar_function(SZrState *state) {
     return function;
 }
 
+/* 验证三种 load-const 融合、栈复制和直接 i64 返回均无需生成帧物化。 */
 static void test_aot_c_signed_load_const_fusion_elides_frame_and_value_materialization(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C load-const scalar smoke currently validates the Unix shared-library toolchain path");
@@ -327,6 +333,7 @@ static void test_aot_c_signed_load_const_fusion_elides_frame_and_value_materiali
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 int main(void) {

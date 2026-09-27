@@ -13,9 +13,11 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 将函数参数与返回类型投影到公开 AOT 签名，并包含独立头文件中的返回布局与调用结果案例。 */
 
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
 
+/* 以来源名编译签名夹具，函数由调用方释放。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -28,6 +30,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: bytes 已取得后 malloc 断言失败会跳过 free(bytes)。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     TZrBytePtr bytes = ZR_NULL;
     TZrSize byteLength = 0u;
@@ -57,6 +60,7 @@ static void assert_text_does_not_contain(const char *text, const char *needle) {
     TEST_ASSERT_NULL_MESSAGE(strstr(text, needle), needle);
 }
 
+/* 同时检查返回类型描述、静态 C 类型和专用返回 helper，排除通用帧返回。 */
 static void assert_signature_scalar_return(const char *generatedCText,
                                            EZrValueType expectedBaseType,
                                            EZrStaticCType expectedStaticCType,
@@ -82,6 +86,7 @@ static void assert_signature_scalar_return(const char *generatedCText,
     assert_text_does_not_contain(generatedCText, "ZrLibrary_AotRuntime_Return(state, &frame,");
 }
 
+/* 从源码生成 C 并核对一个标量返回签名；成功路径释放文本、函数和状态。 */
 static void assert_script_return_signature(const char *caseName,
                                            const char *source,
                                            EZrValueType expectedBaseType,
@@ -118,6 +123,7 @@ static void assert_script_return_signature(const char *caseName,
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 在标量签名断言之外排除不应出现的回退片段。 */
 static void assert_script_return_signature_without(const char *caseName,
                                                    const char *source,
                                                    EZrValueType expectedBaseType,
@@ -158,6 +164,7 @@ static void assert_script_return_signature_without(const char *caseName,
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 初始化明确的参数基类与静态 C 类型，避免历史元数据残留。 */
 static void init_signature_type_ref(SZrFunctionTypedTypeRef *typeRef,
                                     EZrValueType baseType,
                                     EZrStaticCType staticCType) {
@@ -169,6 +176,7 @@ static void init_signature_type_ref(SZrFunctionTypedTypeRef *typeRef,
     typeRef->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
 }
 
+/* 按生成表项序号定位签名类型行，结果仅借用输入文本。 */
 static const char *find_signature_type_row(const char *signatureTypes,
                                            TZrUInt32 rowIndex) {
     const char *row = signatureTypes;
@@ -185,6 +193,7 @@ static const char *find_signature_type_row(const char *signatureTypes,
     return row;
 }
 
+/* 把预期基类与静态 C 类型限制在同一生成表项内。 */
 static void assert_signature_type_row(const char *signatureTypes,
                                       TZrUInt32 rowIndex,
                                       EZrValueType expectedBaseType,
@@ -215,6 +224,7 @@ static void assert_signature_type_row(const char *signatureTypes,
     TEST_ASSERT_TRUE(staticCType < rowEnd);
 }
 
+/* 把传参模式限制在指定签名类型表项内。 */
 static void assert_signature_type_row_passing_mode(
         const char *signatureTypes,
         TZrUInt32 rowIndex,
@@ -236,6 +246,7 @@ static void assert_signature_type_row_passing_mode(
     TEST_ASSERT_TRUE(passingMode < rowEnd);
 }
 
+/* 验证 ExecIR 已知/未知 passing form 与公开 ABI 枚举逐项对应。 */
 static void test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi(void) {
     const EZrAotParameterPassingMode expectedModes[] = {
             ZR_AOT_PARAMETER_PASSING_UNKNOWN,
@@ -267,6 +278,7 @@ static void test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi(void
 #include "test_aot_c_direct_inline_return_layout_projection_cases.h"
 #include "aot_c_ownership_call_result_projection_cases.h"
 
+/* 验证接收者先于显式参数进入签名表，且类型字段各自对齐。 */
 static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -409,6 +421,7 @@ static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证旧格式不能确定参数类型时保持 unknown 而非推测。 */
 static void test_aot_c_method_info_leaves_ambiguous_legacy_parameter_types_unknown(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -482,6 +495,7 @@ static void test_aot_c_method_info_leaves_ambiguous_legacy_parameter_types_unkno
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证四种脚本标量返回使用对应公开类型与返回 helper。 */
 static void test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures(void) {
     assert_script_return_signature("bool",
                                    "var left: int = 7;\n"
@@ -570,6 +584,7 @@ static void test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures(
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 int main(void) {

@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_AOT_C_GENERIC_CALL_TYPED_PARAMETER_LAYOUT_CASES_H
 #define ZR_VM_TEST_AOT_C_GENERIC_CALL_TYPED_PARAMETER_LAYOUT_CASES_H
+/* 引用泛型传参布局案例由 generic_call_typed 翻译单元包含；通过变异回调区分旧元数据、ExecIR sidecar 和 receiver 窗口。 */
 
+/* 判别参数类型是否为可共享的引用类型。 */
 static TZrBool parameter_layout_type_ref_is_reference(
         const SZrFunctionTypedTypeRef *typeRef) {
     return (TZrBool)(typeRef != ZR_NULL &&
@@ -8,6 +10,7 @@ static TZrBool parameter_layout_type_ref_is_reference(
                       typeRef->baseType == ZR_VALUE_TYPE_ARRAY));
 }
 
+/* 递归改写旧参数类型，检验 typed call 只信任投影事实。 */
 static TZrUInt32 replace_legacy_reference_parameter_types_recursive(
         SZrFunction *function) {
     TZrUInt32 replacementCount = 0u;
@@ -59,6 +62,7 @@ static TZrUInt32 replace_legacy_reference_parameter_types_recursive(
     return replacementCount;
 }
 
+/* 为写入夹具适配旧参数类型变异回调。 */
 static TZrUInt32 replace_legacy_reference_parameter_types(
         SZrState *state,
         SZrFunction *function) {
@@ -66,6 +70,7 @@ static TZrUInt32 replace_legacy_reference_parameter_types(
     return replace_legacy_reference_parameter_types_recursive(function);
 }
 
+/* 递归移除投影参数类型以构造 unknown 路径。 */
 static TZrUInt32 clear_projected_reference_parameter_types_recursive(
         SZrFunction *function) {
     TZrUInt32 clearedCount = 0u;
@@ -103,6 +108,7 @@ static TZrUInt32 clear_projected_reference_parameter_types_recursive(
     return clearedCount;
 }
 
+/* 为写入夹具适配 unknown 类型变异回调。 */
 static TZrUInt32 clear_projected_reference_parameter_types(
         SZrState *state,
         SZrFunction *function) {
@@ -110,6 +116,7 @@ static TZrUInt32 clear_projected_reference_parameter_types(
     return clear_projected_reference_parameter_types_recursive(function);
 }
 
+/* 递归把零号引用参数标成接收者，并可选择变异旧元数据。 */
 static TZrUInt32 mark_slot_zero_reference_parameter_as_receiver_recursive(
         SZrFunction *function,
         TZrBool clearProjectedType) {
@@ -157,6 +164,7 @@ static TZrUInt32 mark_slot_zero_reference_parameter_as_receiver_recursive(
     return 0u;
 }
 
+/* 构造带投影类型的零号 receiver。 */
 static TZrUInt32 project_slot_zero_receiver_parameter(
         SZrState *state,
         SZrFunction *function) {
@@ -168,6 +176,7 @@ static TZrUInt32 project_slot_zero_receiver_parameter(
             function, ZR_FALSE);
 }
 
+/* 只标记 receiver，不替换既有投影类型。 */
 static TZrUInt32 mark_slot_zero_receiver_parameter(
         SZrState *state,
         SZrFunction *function) {
@@ -176,6 +185,7 @@ static TZrUInt32 mark_slot_zero_receiver_parameter(
             function, ZR_FALSE);
 }
 
+/* 同时标记 receiver 并清除投影类型。 */
 static TZrUInt32 project_slot_zero_receiver_with_unknown_type(
         SZrState *state,
         SZrFunction *function) {
@@ -184,6 +194,7 @@ static TZrUInt32 project_slot_zero_receiver_with_unknown_type(
             function, ZR_TRUE);
 }
 
+/* 在目标 callee 前插入不可达函数，检验裁剪后的稀疏索引。 */
 static TZrUInt32 add_unreachable_nested_function_before_reference_callee(
         SZrState *state,
         SZrFunction *function) {
@@ -221,6 +232,7 @@ static TZrUInt32 add_unreachable_nested_function_before_reference_callee(
     return replacementCount + 1u;
 }
 
+/* 提供引用泛型普通调用夹具。 */
 static const char *parameter_layout_reference_generic_source(void) {
     return "struct Stamp {\n"
            "    pub var value: int;\n"
@@ -236,6 +248,7 @@ static const char *parameter_layout_reference_generic_source(void) {
            "return returned.value;";
 }
 
+/* 提供动态接收者调用夹具。 */
 static const char *parameter_layout_receiver_generic_source(void) {
     return "struct Stamp {\n"
            "    pub var value: int;\n"
@@ -256,6 +269,7 @@ static const char *parameter_layout_receiver_generic_source(void) {
            "return left.value + right.value;";
 }
 
+/* 提供接收者与多个显式参数共用窗口的夹具。 */
 static const char *parameter_layout_receiver_window_source(void) {
     return "struct Stamp {\n"
            "    pub var value: int;\n"
@@ -272,6 +286,7 @@ static const char *parameter_layout_receiver_window_source(void) {
            "return returned.value;";
 }
 
+/* 提供裁剪后仍应保留目标 callee 的夹具。 */
 static const char *parameter_layout_sparse_callee_source(void) {
     return "struct Stamp {\n"
            "    pub var value: int;\n"
@@ -287,6 +302,7 @@ static const char *parameter_layout_sparse_callee_source(void) {
            "return returned.value;";
 }
 
+/* 编译、变异并生成共享调用文本；返回堆文本由调用者 free。 */
 static char *write_parameter_layout_case(
         const char *caseName,
         const char *sourceName,
@@ -328,6 +344,7 @@ static char *write_parameter_layout_case(
     return generatedCText;
 }
 
+/* 验证完整 ExecIR 参数布局允许共享 typed call。 */
 static void test_aot_c_reference_generic_call_typed_uses_exec_ir_parameter_layout(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_parameter_layout",
@@ -341,6 +358,7 @@ static void test_aot_c_reference_generic_call_typed_uses_exec_ir_parameter_layou
     free(generatedCText);
 }
 
+/* 验证未知投影类型禁止 typed call。 */
 static void test_aot_c_reference_generic_call_typed_rejects_unknown_exec_ir_parameter_type(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_unknown_parameter",
@@ -354,6 +372,7 @@ static void test_aot_c_reference_generic_call_typed_rejects_unknown_exec_ir_para
     free(generatedCText);
 }
 
+/* 验证零号接收者的投影布局参与共享调用选择。 */
 static void test_aot_c_reference_generic_call_typed_uses_slot_zero_receiver_parameter_layout(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_receiver_slot_zero",
@@ -367,6 +386,7 @@ static void test_aot_c_reference_generic_call_typed_uses_slot_zero_receiver_para
     free(generatedCText);
 }
 
+/* 验证未知 receiver 类型不能走 typed route。 */
 static void test_aot_c_reference_generic_call_typed_rejects_unknown_receiver_parameter_type(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_unknown_receiver",
@@ -380,6 +400,7 @@ static void test_aot_c_reference_generic_call_typed_rejects_unknown_receiver_par
     free(generatedCText);
 }
 
+/* 验证动态 receiver 仍使用独立调用边界。 */
 static void test_aot_c_reference_generic_call_typed_keeps_dynamic_receiver_call_outside_typed_route(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_receiver_parameter",
@@ -396,6 +417,7 @@ static void test_aot_c_reference_generic_call_typed_keeps_dynamic_receiver_call_
     free(generatedCText);
 }
 
+/* 验证裁剪后的稀疏函数序号不丢失目标参数布局。 */
 static void test_aot_c_reference_generic_call_typed_finds_sparse_retained_callee_layout(void) {
     unsigned functionsRemoved = 0u;
     char *generatedCText = write_parameter_layout_case(
@@ -416,6 +438,7 @@ static void test_aot_c_reference_generic_call_typed_finds_sparse_retained_callee
     free(generatedCText);
 }
 
+/* BUG: project 绑定到 global->userData 后的断言失败跳过解绑、Project_Free、blob 和 state 清理；成功路径比对解释器与 AOT 结果。 */
 static void test_aot_c_reference_generic_call_typed_receiver_window_executes_in_aot(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE(

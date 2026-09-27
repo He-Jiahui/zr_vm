@@ -12,9 +12,11 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 针对生成 C 的标量直调做文本守卫：区分允许的运行时边界与禁止的 VM 帧/值对象回退。 */
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 编译标量调用夹具，函数由生成文本 helper 释放。 */
 static SZrFunction *aot_c_guardrail_compile_source(SZrState *state,
                                                    const char *source,
                                                    const char *sourceNameText) {
@@ -29,6 +31,7 @@ static SZrFunction *aot_c_guardrail_compile_source(SZrState *state,
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: fwrite 失败时 Unity 断言跳过 fclose，fixture 句柄保持打开。 */
 static void aot_c_guardrail_write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -42,6 +45,7 @@ static void aot_c_guardrail_write_text_file_or_fail(const TZrChar *path, const c
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* BUG: 读入 bytes 后若文本分配失败，Unity 跳出并漏掉 free(bytes)。 */
 static char *aot_c_guardrail_read_text_file_owned_or_fail(const TZrChar *path) {
     TZrBytePtr bytes = ZR_NULL;
     TZrSize byteLength = 0u;
@@ -58,6 +62,7 @@ static char *aot_c_guardrail_read_text_file_owned_or_fail(const TZrChar *path) {
     return text;
 }
 
+/* BUG: 读取错误使 feof 断言跳过 fclose。 */
 static void aot_c_guardrail_hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -83,6 +88,7 @@ static void aot_c_guardrail_hash_file_or_fail(const TZrChar *path, TZrChar *buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 生成项目二进制与 AOT C 文本，返回由调用者 free 的文本；内部状态、函数和嵌入 blob 在成功路径释放。 */
 static char *aot_c_guardrail_generate_c_text(const char *source,
                                              const char *projectDirectory,
                                              const char *artifactName) {
@@ -182,6 +188,7 @@ static char *aot_c_guardrail_generate_c_text(const char *source,
     return generatedCText;
 }
 
+/* 按禁止列表优先级返回首个命中的文本标记，供用例报告回退。 */
 static const char *aot_c_guardrail_find_forbidden_token(const char *text,
                                                         const char *const *tokens,
                                                         size_t tokenCount) {
@@ -211,6 +218,7 @@ static int aot_c_guardrail_has_prefix(const char *text, const char *prefix) {
     return strncmp(text, prefix, prefixLength) == 0;
 }
 
+/* 以允许前缀限定直接标量路径可调用的 GC、所有权和 AOT 边界。 */
 static int aot_c_guardrail_runtime_call_allowed(const char *callText) {
     static const char *const allowedPrefixes[] = {
             "ZrCore_Gc_SafePoint(",
@@ -262,6 +270,7 @@ static int aot_c_guardrail_runtime_call_allowed(const char *callText) {
     return 0;
 }
 
+/* 扫描 typed thunk 声明和调用的首参，排除隐藏 state 依赖。 */
 static const char *aot_c_guardrail_find_stateful_typed_thunk_use(const char *text, const char *functionPrefix) {
     const char *cursor;
     size_t functionPrefixLength;
@@ -292,6 +301,7 @@ static const char *aot_c_guardrail_find_stateful_typed_thunk_use(const char *tex
     return NULL;
 }
 
+/* TODO: 该花括号计数不区分 C 字符串或注释；需用含花括号字面量的生成函数验证扫描范围。 */
 static const char *aot_c_guardrail_find_matching_body_end(const char *openBrace) {
     const char *cursor;
     int depth = 0;
@@ -313,6 +323,7 @@ static const char *aot_c_guardrail_find_matching_body_end(const char *openBrace)
     return NULL;
 }
 
+/* TODO: 仅检查同前缀的首个函数体；扩充同类 typed thunk 时需验证后续函数也被扫描。 */
 static const char *aot_c_guardrail_find_forbidden_token_in_function_body(const char *text,
                                                                         const char *functionPrefix,
                                                                         const char *const *tokens,
@@ -353,6 +364,7 @@ static const char *aot_c_guardrail_find_forbidden_token_in_function_body(const c
     return NULL;
 }
 
+/* 提供四种标量返回型直调，供符号和 thunk 体守卫复用。 */
 static const char *aot_c_guardrail_scalar_typed_direct_call_fixture_source(void) {
     return "fn add_i64(left: int, right: int): int {\n"
            "    return left + right;\n"
@@ -384,6 +396,7 @@ static const char *aot_c_guardrail_scalar_typed_direct_call_fixture_source(void)
            "return i64Result + <int> u64Result + <int> f64Result;";
 }
 
+/* 验证禁止列表能够定位 VM 栈读取回退。 */
 static void test_aot_c_guardrail_reports_first_forbidden_vm_fallback_token(void) {
     static const char *const forbiddenTokens[] = {
             "ZrCore_Stack_GetValue(",
@@ -402,6 +415,7 @@ static void test_aot_c_guardrail_reports_first_forbidden_vm_fallback_token(void)
                                                                   ARRAY_COUNT(forbiddenTokens)));
 }
 
+/* 验证纯标量算术文本不会误触回退标记。 */
 static void test_aot_c_guardrail_accepts_pure_scalar_c_lowering(void) {
     static const char *const forbiddenTokens[] = {
             "ZrCore_Stack_GetValue(",
@@ -419,6 +433,7 @@ static void test_aot_c_guardrail_accepts_pure_scalar_c_lowering(void) {
                                                           ARRAY_COUNT(forbiddenTokens)));
 }
 
+/* 逐项覆盖允许的运行时边界前缀。 */
 static void test_aot_c_guardrail_classifies_allowed_runtime_boundary_calls(void) {
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrCore_Gc_SafePoint(state);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrCore_Gc_WriteBarrier(state, owner, newref);"));
@@ -452,12 +467,14 @@ static void test_aot_c_guardrail_classifies_allowed_runtime_boundary_calls(void)
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SuperArraySetIntNewOwnerNoWriteBarrier(state, &frame, receiver, index, value);"));
 }
 
+/* 验证 VM 值槽及通用运算入口不在允许名单中。 */
 static void test_aot_c_guardrail_rejects_vm_fallback_runtime_calls(void) {
     TEST_ASSERT_FALSE(aot_c_guardrail_runtime_call_allowed("ZrCore_Stack_GetValue(frame.slotBase + 2);"));
     TEST_ASSERT_FALSE(aot_c_guardrail_runtime_call_allowed("ZR_VALUE_FAST_SET(dst, nativeInt64, 42, ZR_VALUE_TYPE_INT64);"));
     TEST_ASSERT_FALSE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_Add(state, &frame, 2, 0, 1);"));
 }
 
+/* 检查四类直调调用点不创建 Value 或调用通用 VM 回退。 */
 static void test_aot_c_guardrail_generated_scalar_typed_direct_calls_stay_value_free(void) {
     static const char *const requiredTokens[] = {
             "static TZrInt64 zr_aot_typed_i64_fn_",
@@ -504,6 +521,7 @@ static void test_aot_c_guardrail_generated_scalar_typed_direct_calls_stay_value_
     free(generatedCText);
 }
 
+/* 检查四类 typed thunk 首个函数体不读取 state、frame 或值对象。 */
 static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_stay_environment_free(void) {
     static const char *const typedThunkDefinitionPrefixes[] = {
             "static TZrInt64 zr_aot_typed_i64_fn_",
@@ -547,6 +565,7 @@ static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_stay_enviro
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 int main(void) {

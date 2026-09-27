@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_AOT_C_GENERIC_CALL_TYPED_DEFAULT_DECLARATION_CASES_H
 #define ZR_VM_TEST_AOT_C_GENERIC_CALL_TYPED_DEFAULT_DECLARATION_CASES_H
+/* 默认参数声明案例由 generic_call_typed 翻译单元包含；用完整实参窗口和残缺 sidecar 比较 typed call 适用条件。 */
 
+/* 提供省略默认实参的调用源码夹具。 */
 static const char *parameter_layout_omitted_default_argument_source(void) {
     return "struct Stamp {\n"
            "    pub var value: int;\n"
@@ -16,6 +18,7 @@ static const char *parameter_layout_omitted_default_argument_source(void) {
            "return returned.value;";
 }
 
+/* 提供显式传入默认值的对照夹具。 */
 static const char *parameter_layout_explicit_default_value_source(void) {
     return "struct Stamp {\n"
            "    pub var value: int;\n"
@@ -31,6 +34,7 @@ static const char *parameter_layout_explicit_default_value_source(void) {
            "return returned.value;";
 }
 
+/* 递归查找带默认参数声明的 callee，返回函数树中的借用指针。 */
 static SZrFunction *parameter_layout_find_default_callee(
         SZrFunction *function) {
     if (function == ZR_NULL) {
@@ -59,6 +63,7 @@ static SZrFunction *parameter_layout_find_default_callee(
     return ZR_NULL;
 }
 
+/* BUG: 缩短 parameterMetadataCount 后的断言失败会跳过字段恢复与 state 销毁；成功路径返回调用者负责 free 的生成文本。 */
 static char *write_default_declaration_case(
         const char *source,
         TZrBool hideDefaultDeclaration,
@@ -114,6 +119,7 @@ static char *write_default_declaration_case(
     return generatedCText;
 }
 
+/* 验证省略默认实参时 typed call 仍看到完整实参布局。 */
 static void test_aot_c_reference_generic_call_typed_observes_defaultable_callee_at_full_arity(void) {
     char *omittedGeneratedCText;
     char *explicitGeneratedCText;
@@ -139,6 +145,7 @@ static void test_aot_c_reference_generic_call_typed_observes_defaultable_callee_
     free(explicitGeneratedCText);
 }
 
+/* 验证部分默认声明元数据保持 unknown。 */
 static void test_aot_c_reference_generic_call_typed_keeps_partial_default_metadata_unknown(void) {
     char *generatedCText = write_default_declaration_case(
             parameter_layout_omitted_default_argument_source(), ZR_TRUE, ZR_FALSE);
@@ -151,6 +158,7 @@ static void test_aot_c_reference_generic_call_typed_keeps_partial_default_metada
     free(generatedCText);
 }
 
+/* 验证 receiver 元数据不能代替缺失的默认参数声明。 */
 static void test_aot_c_reference_generic_call_typed_keeps_receiver_default_metadata_unknown(void) {
     char *generatedCText = write_default_declaration_case(
             parameter_layout_omitted_default_argument_source(), ZR_FALSE, ZR_TRUE);
@@ -164,6 +172,7 @@ static void test_aot_c_reference_generic_call_typed_keeps_receiver_default_metad
 }
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 按标志组合核对 ExecIR 的默认声明投影是否规范。 */
 static void assert_default_declaration_projection(
         TZrBool clearDefaultDeclaration,
         TZrBool hideDefaultDeclaration,
@@ -224,6 +233,7 @@ static void assert_default_declaration_projection(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: tmpfile 打开后的写入或读取断言失败会越过 fclose；成功返回文本由调用者释放。 */
 static char *write_default_sidecar_state_case(
         TZrBool defaultDeclarationKnown,
         TZrBool hasDeclaredDefault) {
@@ -294,6 +304,7 @@ static char *write_default_sidecar_state_case(
 }
 #endif
 
+/* 验证相互矛盾的默认参数 sidecar 标志被拒绝。 */
 static void test_aot_c_reference_generic_call_typed_rejects_invalid_default_sidecar_state(void) {
     SZrAotExecIrParameterLayout layout;
 
@@ -345,6 +356,7 @@ static void test_aot_c_reference_generic_call_typed_rejects_invalid_default_side
 #endif
 }
 
+/* 把非法默认标志放入不可达子函数以测试裁剪前验证。 */
 static TZrUInt32 add_unreachable_noncanonical_default_owner(
         SZrState *state,
         SZrFunction *function) {
@@ -388,6 +400,7 @@ static TZrUInt32 add_unreachable_noncanonical_default_owner(
     return 1u;
 }
 
+/* 验证 code stripping 之前仍拒绝不可达函数的非法默认标志。 */
 static void test_aot_c_reference_generic_call_typed_rejects_unreachable_noncanonical_default_flag_before_stripping(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -410,6 +423,7 @@ static void test_aot_c_reference_generic_call_typed_rejects_unreachable_noncanon
             ".c",
             generatedCPath,
             sizeof(generatedCPath)));
+    /* TODO: 仅检查 writer 返回 false；需补目标文件不存在的断言。 */
     (void)remove(generatedCPath);
     memset(&options, 0, sizeof(options));
     options.moduleName = "aot-c-generic-call-typed-invalid-default-declaration";

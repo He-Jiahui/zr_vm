@@ -5,9 +5,11 @@
 #include "unity.h"
 
 #include "aot_source_contract_match.h"
+/* 锁定常量、闭包和子函数访问的 AOT 边界，使生成代码与运行时记录解析职责保持分离。 */
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 读取完整文件并把堆缓冲区交给调用者；所有错误分支在返回前关闭文件。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +52,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从 __FILE__ 推导仓库根目录；路径不含测试名时由当前工作目录解析。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +83,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +95,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +107,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 只在指定生成器段落内查找片段，防止同名符号出现在无关路径时误报覆盖。 */
 static void assert_text_section_contains_all(const char *text,
                                              const char *startNeedle,
                                              const char *endNeedle,
@@ -125,6 +131,7 @@ static void assert_text_section_contains_all(const char *text,
     }
 }
 
+/* 验证未解析的 callable 常量留在明确的运行时解析边界。 */
 static void test_aot_c_source_makes_unresolved_callable_constant_explicit_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_unsupported_callable_constant_materialization(",
@@ -167,6 +174,7 @@ static void test_aot_c_source_makes_unresolved_callable_constant_explicit_bounda
     free(functionBodyText);
 }
 
+/* 验证常量记录解析不依赖执行帧句柄。 */
 static void test_aot_c_runtime_constant_helpers_resolve_record_without_frame_handle(void) {
     static const char *const runtimeSourceNeedles[] = {
             "SZrLibraryAotRuntimeState *runtimeState;",
@@ -195,6 +203,7 @@ static void test_aot_c_runtime_constant_helpers_resolve_record_without_frame_han
     free(runtimeSourceText);
 }
 
+/* 验证闭包创建经运行时边界而非生成代码私自构造。 */
 static void test_aot_c_source_makes_create_closure_explicit_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_unsupported_create_closure_materialization(",
@@ -238,6 +247,7 @@ static void test_aot_c_source_makes_create_closure_explicit_boundary(void) {
     free(functionBodyText);
 }
 
+/* 验证子函数获取使用原生闭包边界 helper。 */
 static void test_aot_c_source_lowers_get_sub_function_to_native_closure_boundary_helper(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_get_sub_function(",
@@ -308,6 +318,7 @@ static void test_aot_c_source_lowers_get_sub_function_to_native_closure_boundary
     free(runtimeSourceText);
 }
 
+/* 验证闭包捕获值的读写经运行时边界保持所有权语义。 */
 static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_get_closure_value(",

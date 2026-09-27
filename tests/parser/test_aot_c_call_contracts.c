@@ -5,9 +5,11 @@
 #include "unity.h"
 
 #include "aot_source_contract_match.h"
+/* 锁定调用 lowering 与运行时边界的源码形状，防止动态、静态和强类型调用退回隐式 VM 分派；这里验证源码合同，不执行生成的 C。 */
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+/* 读取完整文件并把堆缓冲区交给调用者；所有错误分支在返回前关闭文件。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -50,6 +52,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 从 __FILE__ 推导仓库根目录；路径不含测试名时由当前工作目录解析。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -80,6 +83,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -91,6 +95,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+/* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
 static void assert_text_contains_none(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
 
@@ -102,6 +107,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+/* 验证快化动态调用直接落到核心调用入口，并保留调用帧与错误边界。 */
 static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_calls(void) {
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_write_c_dynamic_function_call(FILE *file,",
@@ -216,6 +222,7 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
     free(runtimeSourceText);
 }
 
+/* 验证普通函数调用的参数准备与核心调用路径在生成器中保持显式。 */
 static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls(void) {
     static const char *const callBoundaryNeedles[] = {
             "backend_aot_write_c_core_function_call(FILE *file,",
@@ -265,6 +272,7 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
     free(callBoundaryText);
 }
 
+/* 验证已知成员调用按实参来源准备绑定，避免丢失接收者与参数窗口。 */
 static void test_aot_c_source_prepares_known_member_calls_with_argument_source(void) {
     static const char *const callBoundaryNeedles[] = {
             "backend_aot_write_c_known_member_call(FILE *file,",
@@ -342,6 +350,7 @@ static void test_aot_c_source_prepares_known_member_calls_with_argument_source(v
     free(llvmPreludeText);
 }
 
+/* 验证静态直调生成核心调用而不是运行时通用回退。 */
 static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(void) {
     static const char *const callBoundaryNeedles[] = {
             "backend_aot_write_c_static_direct_function_call(FILE *file,",
@@ -464,6 +473,7 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
     free(scalarLocalsText);
 }
 
+/* 验证元调用只通过明确的运行时边界进入动态分派。 */
 static void test_aot_c_source_makes_meta_calls_explicit_boundary(void) {
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_write_c_meta_call(FILE *file,",
@@ -536,6 +546,7 @@ static void test_aot_c_source_makes_meta_calls_explicit_boundary(void) {
     free(functionBodyText);
 }
 
+/* 验证 i64 强类型直调由元数据守卫限制适用范围。 */
 static void test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard(void) {
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_CanUseTypedDirectCall(struct SZrState *state,",
@@ -578,6 +589,7 @@ static void test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard(v
     free(callLoweringText);
 }
 
+/* 验证 u64 强类型直调由元数据守卫限制适用范围。 */
 static void test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard(void) {
     static const char *const callLoweringNeedles[] = {
             "zr_aot_static_u64_one_arg_direct_call_metadata_guard",
@@ -601,6 +613,7 @@ static void test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard(v
     free(callLoweringText);
 }
 
+/* 验证 f64 强类型直调由元数据守卫限制适用范围。 */
 static void test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard(void) {
     static const char *const callLoweringNeedles[] = {
             "zr_aot_static_f64_one_arg_direct_call_metadata_guard",
@@ -624,6 +637,7 @@ static void test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard(v
     free(callLoweringText);
 }
 
+/* 验证 bool 强类型直调由元数据守卫限制适用范围。 */
 static void test_aot_c_source_wraps_bool_typed_direct_calls_with_metadata_guard(void) {
     static const char *const boolCallLoweringNeedles[] = {
             "zr_aot_static_bool_one_arg_direct_call_metadata_guard",

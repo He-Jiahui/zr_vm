@@ -16,6 +16,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 把同一脚本的解释器 i64 结果与 Unix 共享库 AOT 入口结果作黄金对照，同时检查嵌入模块与标量函数发射。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -29,6 +30,7 @@
 #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
 
+/* 编译同一场景的源函数供解释器和 AOT 路径比较。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -41,6 +43,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: 写入失败断言先于 fclose，fixture 文件句柄未关闭。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -54,6 +57,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* BUG: fread 错误时 feof 断言跳过 fclose，输入文件句柄未关闭。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -91,6 +95,7 @@ static int run_command_expect_success(const char *command) {
 }
 #endif
 
+/* 解释器执行结果作为 AOT 黄金值；显式执行失败路径先释放状态再报告。 */
 static TZrInt64 execute_interpreter_i64(const char *source) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -112,6 +117,7 @@ static TZrInt64 execute_interpreter_i64(const char *source) {
     return result;
 }
 
+/* 验证生成标量 C 共享库的入口结果与解释器执行同一源码一致。 */
 static void test_aot_c_golden_scalar_matches_interpreter_result(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C golden scalar smoke currently validates the Unix shared-library toolchain path");
@@ -244,6 +250,7 @@ static void test_aot_c_golden_scalar_matches_interpreter_result(void) {
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 int main(void) {

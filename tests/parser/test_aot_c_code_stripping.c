@@ -20,23 +20,28 @@
 #include "zr_vm_parser/writer.h"
 
 #define ZR_AOT_TEST_TYPE_LAYOUT_CACHE_READY ((TZrUInt8)2u)
+/* 以手工函数图和 ZRP 元数据检查 AOT 裁剪的根、边、统计及拒绝后无产物约束。 */
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
+/* 检查生成文本包含统计或可达性标记；传入文本由用例持有。 */
 static void assert_text_contains(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NOT_NULL(strstr(text, needle));
 }
 
+/* 排除不可达代码与不应发布的元数据标记。 */
 static void assert_text_does_not_contain(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NULL(strstr(text, needle));
 }
 
+/* TODO: fopen 返回空也可能是权限或 I/O 错误；需以 errno 确认真正不存在，并核对前置 remove 的结果。 */
 static void assert_file_does_not_exist(const char *path) {
     FILE *file;
 
@@ -48,6 +53,7 @@ static void assert_file_does_not_exist(const char *path) {
     TEST_ASSERT_NULL(file);
 }
 
+/* 在写入前移除旧工件，断言坏输入被拒绝且未产生新文件。 */
 static void assert_aot_c_write_rejected_without_output(
         SZrState *state,
         SZrFunction *function,
@@ -59,6 +65,7 @@ static void assert_aot_c_write_rejected_without_output(
     assert_file_does_not_exist(path);
 }
 
+/* 获取或建立函数元数据对象供动态依赖注解复用。 */
 static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFunction *function) {
     SZrObject *metadataObject;
 
@@ -83,6 +90,7 @@ static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFun
     return metadataObject;
 }
 
+/* 把动态依赖的 token 或布局 ID 记入函数元数据。 */
 static void mark_function_metadata_uint(SZrState *state,
                                         SZrFunction *function,
                                         const TZrChar *fieldName,
@@ -202,6 +210,7 @@ static void assert_code_stripping_type_layout_byte_stats(const char *text,
     assert_text_contains(text, needle);
 }
 
+/* TODO: strtoull 未核对溢出与尾部注释格式；需用畸形数字 marker 扩充统计契约。 */
 static unsigned long long read_u64_marker(const char *text, const char *name) {
     char marker[160];
     const char *valueStart;
@@ -382,6 +391,7 @@ static void assert_zrp_metadata_code_stripping_delta_stats(const char *text,
     assert_code_stripping_zrp_metadata_size_marker(text, "zrpMetadataPoolBytesRemoved", 0u);
 }
 
+/* 构造两操作数指令，供手工函数图夹具重复使用。 */
 static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
                                                 TZrUInt16 operandExtra,
                                                 TZrUInt16 operandA,
@@ -396,6 +406,7 @@ static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+/* 给函数挂载内联结构体帧布局；指针和非零长度必须配对以供 Function_Free 释放。 */
 static void attach_inline_struct_layout_slot(SZrState *state,
                                              SZrFunction *function,
                                              TZrUInt32 typeLayoutId) {
@@ -422,6 +433,7 @@ static void attach_inline_struct_layout_slot(SZrState *state,
     function->frameSlotLayouts = slotLayout;
 }
 
+/* 给指令附上调试 sidecar，以验证裁剪前的坏元数据检查。 */
 static void attach_debug_sidecar_rows(SZrState *state,
                                       SZrFunction *function,
                                       TZrUInt32 rowCount,
@@ -474,6 +486,7 @@ static void attach_debug_sidecar_rows(SZrState *state,
     }
 }
 
+/* 构造普通 Value 帧槽作为内联布局的对照。 */
 static void attach_value_layout_slot(SZrState *state, SZrFunction *function) {
     SZrFunctionFrameSlotLayout *slotLayout;
 
@@ -498,6 +511,7 @@ static void attach_value_layout_slot(SZrState *state, SZrFunction *function) {
     function->frameSlotLayouts = slotLayout;
 }
 
+/* 初始化带分支的 union 布局夹具。 */
 static void initialize_test_union_layout(SZrTypeLayout *layout,
                                          TZrUInt32 byteSize,
                                          TZrUInt32 byteAlign,
@@ -517,6 +531,7 @@ static void initialize_test_union_layout(SZrTypeLayout *layout,
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(layout));
 }
 
+/* 初始化固定字节大小的结构体布局夹具。 */
 static void initialize_test_struct_layout(SZrTypeLayout *layout,
                                           TZrUInt32 byteSize,
                                           TZrUInt32 byteAlign,
@@ -536,6 +551,7 @@ static void initialize_test_struct_layout(SZrTypeLayout *layout,
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(layout));
 }
 
+/* 为根函数和两个子函数安装类型布局缓存及配套状态。 */
 static void install_static_callable_trim_type_layout_cache(SZrState *state, SZrFunction *root) {
     const TZrUInt32 prototypeCount = 3u;
 
@@ -564,6 +580,7 @@ static void install_static_callable_trim_type_layout_cache(SZrState *state, SZrF
     }
 }
 
+/* 把布局 ID 零作为可观察的边界值。 */
 static void enable_static_callable_trim_type_layout_zero(SZrFunction *root) {
     TEST_ASSERT_NOT_NULL(root);
     TEST_ASSERT_NOT_NULL(root->prototypeFrameTypeLayouts);
@@ -574,6 +591,7 @@ static void enable_static_callable_trim_type_layout_zero(SZrFunction *root) {
     root->prototypeFrameTypeLayoutStates[0] = ZR_AOT_TEST_TYPE_LAYOUT_CACHE_READY;
 }
 
+/* 按偏移与长度写 ZRP 区段头；调用者提供的缓冲区需覆盖完整 section。 */
 static void set_zrp_metadata_section(SZrZrpMetadataSection *section,
                                      TZrUInt32 *offset,
                                      TZrUInt32 byteLength,
@@ -594,6 +612,7 @@ static void set_zrp_metadata_section(SZrZrpMetadataSection *section,
     *offset += byteLength;
 }
 
+/* 构造 section/table/pool 组合，供字节统计断言读取。 */
 static TZrSize build_zrp_metadata_size_fixture(TZrByte *buffer,
                                                TZrSize bufferLength,
                                                TZrSize *outTokenRecordBytes,
@@ -662,6 +681,7 @@ static TZrSize build_zrp_metadata_size_fixture(TZrByte *buffer,
     return offset;
 }
 
+/* 构造两条方法定义与裁剪映射，检查删除函数后的 ZRP 方法表。 */
 static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
                                                           TZrSize bufferLength,
                                                           TZrSize *outMetadataBytesAfterTrim,
@@ -783,6 +803,7 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
     return offset;
 }
 
+/* 构造 TypeDef token 的动态布局根。 */
 static TZrSize build_zrp_metadata_type_token_layout_fixture(TZrByte *buffer,
                                                             TZrSize bufferLength) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
@@ -830,6 +851,7 @@ static TZrSize build_zrp_metadata_type_token_layout_fixture(TZrByte *buffer,
     return offset;
 }
 
+/* 构造 TypeRef token 的动态布局根。 */
 static TZrSize build_zrp_metadata_type_ref_token_layout_fixture(TZrByte *buffer,
                                                                 TZrSize bufferLength) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)(sizeof(SZrMetadataTokenRecord) * 2u);
@@ -879,6 +901,7 @@ static TZrSize build_zrp_metadata_type_ref_token_layout_fixture(TZrByte *buffer,
     return offset;
 }
 
+/* 构造 TypeSpec token 的动态布局根。 */
 static TZrSize build_zrp_metadata_type_spec_token_layout_fixture(TZrByte *buffer,
                                                                  TZrSize bufferLength) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
@@ -926,6 +949,7 @@ static TZrSize build_zrp_metadata_type_spec_token_layout_fixture(TZrByte *buffer
     return offset;
 }
 
+/* 构造字段 token 的动态布局根。 */
 static TZrSize build_zrp_metadata_field_token_layout_fixture(TZrByte *buffer,
                                                              TZrSize bufferLength) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)(sizeof(SZrMetadataTokenRecord) * 2u);
@@ -991,6 +1015,7 @@ static TZrSize build_zrp_metadata_field_token_layout_fixture(TZrByte *buffer,
     return offset;
 }
 
+/* 根函数只引用首个子函数，第二个子函数用于验证不可达裁剪；函数拥有附着的布局、指令和 sidecar 数组。 */
 static SZrFunction *create_static_callable_trim_fixture(SZrState *state) {
     SZrFunction *root;
 
@@ -1035,6 +1060,7 @@ static SZrFunction *create_static_callable_trim_fixture(SZrState *state) {
     return root;
 }
 
+/* 构造从函数常量和原型成员到 callable 的边，供特殊根案例复用。 */
 static SZrFunction *create_single_compiled_member_trim_fixture(
         SZrState *state,
         TZrUInt32 prototypeType,
@@ -1107,6 +1133,7 @@ static SZrFunction *create_single_compiled_member_trim_fixture(
     return root;
 }
 
+/* 建立属性访问器根以证明其不能被普通可达性裁剪。 */
 static SZrFunction *create_property_accessor_trim_fixture(SZrState *state,
                                                           TZrUInt32 accessorRole,
                                                           TZrUInt32 functionConstantIndex) {
@@ -1122,6 +1149,7 @@ static SZrFunction *create_property_accessor_trim_fixture(SZrState *state,
                                                       &member);
 }
 
+/* 建立资源 drop 根以证明清理函数保留。 */
 static SZrFunction *create_resource_drop_trim_fixture(SZrState *state,
                                                       TZrUInt32 functionConstantIndex) {
     SZrCompiledMemberInfo member;
@@ -1138,6 +1166,7 @@ static SZrFunction *create_resource_drop_trim_fixture(SZrState *state,
                                                       &member);
 }
 
+/* 建立反射构造器根以证明反射入口保留。 */
 static SZrFunction *create_reflection_constructor_trim_fixture(SZrState *state,
                                                                TZrUInt32 functionConstantIndex) {
     SZrCompiledMemberInfo member;
@@ -1155,6 +1184,7 @@ static SZrFunction *create_reflection_constructor_trim_fixture(SZrState *state,
                                                       &member);
 }
 
+/* 把第二个子函数公开为导出 callable 根。 */
 static void add_exported_second_child_callable_binding(SZrState *state, SZrFunction *root) {
     SZrFunctionTopLevelCallableBinding *binding;
 
@@ -1173,6 +1203,7 @@ static void add_exported_second_child_callable_binding(SZrState *state, SZrFunct
     root->topLevelCallableBindingLength = 1u;
 }
 
+/* 将已保留函数绑定到类型方法 token。 */
 static void add_typed_exported_first_child_method_token(SZrState *state,
                                                          SZrFunction *root,
                                                          TZrMetadataToken metadataToken) {
@@ -1195,6 +1226,7 @@ static void add_typed_exported_first_child_method_token(SZrState *state,
     root->typedExportedSymbolLength = 1u;
 }
 
+/* 将第二个子函数绑定到方法 token 以验证导出和动态依赖。 */
 static void add_typed_second_child_method_token(SZrState *state,
                                                  SZrFunction *root,
                                                  TZrMetadataToken metadataToken) {
@@ -1217,6 +1249,7 @@ static void add_typed_second_child_method_token(SZrState *state,
     root->typedExportedSymbolLength = 1u;
 }
 
+/* 用原生回调逃逸元数据建立额外可达边。 */
 static void add_native_callback_escape_binding(SZrState *state,
                                                SZrFunction *root,
                                                TZrUInt32 stackSlot) {
@@ -1238,6 +1271,7 @@ static void add_native_callback_escape_binding(SZrState *state,
     root->escapeBindingLength = 1u;
 }
 
+/* 为函数构造 native import 契约及其可达性根。 */
 static void add_native_import_contract(SZrState *state,
                                        SZrFunction *function,
                                        TZrUInt64 symbolId,
@@ -1314,6 +1348,7 @@ static void add_native_import_contract(SZrState *state,
     function->nativeImportContractLength = newLength;
 }
 
+/* BUG: 主裁剪用例取得 state 和生成文本后，任一统计断言失败会跳过末尾 free/State_Destroy；成功路径验证不可达静态 callable 被移除。 */
 static void test_aot_c_code_stripping_option_filters_unreachable_static_callable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1344,6 +1379,7 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
                                                        ".c",
                                                        generatedCPath,
                                                        sizeof(generatedCPath)));
+    /* TODO: 未先移除同名旧工件；需证明 writer 误报成功时不会读取上轮文本。 */
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
@@ -1431,6 +1467,7 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的畸形调试 sidecar 仍在裁剪前被拒绝。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_debug_sidecar(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1508,6 +1545,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_debug_sideca
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证保留函数缺失帧类型布局时写入失败。 */
 static void test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1545,6 +1583,7 @@ static void test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_lay
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的畸形帧类型布局不能绕过预校验。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_type_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1619,6 +1658,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_type_l
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的参数物化计数不足仍被拒绝。 */
 static void test_aot_c_code_stripping_rejects_unreachable_materialized_parameter_undercount(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1694,6 +1734,7 @@ static void test_aot_c_code_stripping_rejects_unreachable_materialized_parameter
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达构造器位图与布局不符时拒绝。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_bitmap(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1869,6 +1910,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的帧槽布局错误在裁剪前被拦截。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1924,6 +1966,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的接收者角色错误不能绕过校验。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_role(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2070,6 +2113,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_rol
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的参数绑定身份错误仍被拒绝。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_binding_identity(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2242,6 +2286,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_bi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: 用例把已分配的第二子函数帧槽布局长度置零后未恢复，State_Destroy 的 Function_Free 因长度为零跳过该数组；同时验证坏参数元数据形状被拒绝。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_metadata_shape(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2280,6 +2325,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_me
     assert_aot_c_write_rejected_without_output(
             state, function, generatedCPath, &options);
 
+    /* TODO: 此处分配两项，末尾恢复计数为一项；需核查 RawFree 的尺寸契约。 */
     metadata = (SZrFunctionMetadataParameter *)ZrCore_Memory_RawMallocWithType(
             state->global,
             sizeof(SZrFunctionMetadataParameter) * 2u,
@@ -2302,6 +2348,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_me
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证合法帧别名布局在裁剪后仍被保留。 */
 static void test_aot_c_code_stripping_preserves_legal_frame_alias_layouts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2444,6 +2491,7 @@ static void test_aot_c_code_stripping_preserves_legal_frame_alias_layouts(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证属性访问器作为隐式调用根不会被裁剪。 */
 static void test_aot_c_code_stripping_preserves_property_accessor_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2498,6 +2546,7 @@ static void test_aot_c_code_stripping_preserves_property_accessor_root(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证未解析的属性访问器根导致写入拒绝。 */
 static void test_aot_c_code_stripping_rejects_unresolved_property_accessor_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2534,6 +2583,7 @@ static void test_aot_c_code_stripping_rejects_unresolved_property_accessor_root(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证资源 drop 入口作为清理根保留。 */
 static void test_aot_c_code_stripping_preserves_resource_drop_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2578,6 +2628,7 @@ static void test_aot_c_code_stripping_preserves_resource_drop_root(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证资源 drop 根未解析时拒绝写入。 */
 static void test_aot_c_code_stripping_rejects_unresolved_resource_drop_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2614,6 +2665,7 @@ static void test_aot_c_code_stripping_rejects_unresolved_resource_drop_root(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证反射构造器保持可达。 */
 static void test_aot_c_code_stripping_preserves_reflection_constructor_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2658,6 +2710,7 @@ static void test_aot_c_code_stripping_preserves_reflection_constructor_root(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证未解析反射构造器根被拒绝。 */
 static void test_aot_c_code_stripping_rejects_unresolved_reflection_constructor_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2694,6 +2747,7 @@ static void test_aot_c_code_stripping_rejects_unresolved_reflection_constructor_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证布局 ID 零的帧边在可达性报告中可见。 */
 static void test_aot_c_code_stripping_reports_zero_type_layout_frame_edge(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2737,6 +2791,7 @@ static void test_aot_c_code_stripping_reports_zero_type_layout_frame_edge(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证布局 ID 零的动态注解根可见。 */
 static void test_aot_c_code_stripping_reports_zero_type_layout_annotation_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2780,6 +2835,7 @@ static void test_aot_c_code_stripping_reports_zero_type_layout_annotation_root(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证平坦帧布局的 predecessor 报告稳定。 */
 static void test_aot_c_code_stripping_reports_stable_flat_frame_predecessor(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2823,6 +2879,7 @@ static void test_aot_c_code_stripping_reports_stable_flat_frame_predecessor(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证动态依赖布局元数据保留目标类型。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_layout_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2887,6 +2944,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_layout_m
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 TypeDef token 动态依赖保留布局。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_token_layout_metadata(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -2956,6 +3014,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_token_la
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 TypeRef token 动态依赖保留布局。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_ref_token_layout_metadata(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -3019,6 +3078,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_ref_toke
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 TypeSpec token 动态依赖保留布局。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_spec_token_layout_metadata(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -3082,6 +3142,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_spec_tok
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证字段 token 动态依赖保留布局。 */
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_field_token_layout_metadata(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -3153,6 +3214,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_field_token_l
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证导出 callable 被视为裁剪根。 */
 static void test_aot_c_code_stripping_option_preserves_exported_callable_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3217,6 +3279,7 @@ static void test_aot_c_code_stripping_option_preserves_exported_callable_root(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 manifest 指定函数被视为裁剪根。 */
 static void test_aot_c_code_stripping_option_preserves_manifest_function_root(void) {
     static const TZrUInt32 manifestRoots[] = {2u};
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -3283,6 +3346,7 @@ static void test_aot_c_code_stripping_option_preserves_manifest_function_root(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证泛型 MethodSpec 根保留目标实例。 */
 static void test_aot_c_code_stripping_preserves_generic_methodspec_root(void) {
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -3341,6 +3405,7 @@ static void test_aot_c_code_stripping_preserves_generic_methodspec_root(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证无法解析的 MethodSpec 根被拒绝。 */
 static void test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3385,6 +3450,7 @@ static void test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证包级方法导出建立可达根。 */
 static void test_aot_c_code_stripping_preserves_package_method_export_root(void) {
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 11u);
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -3441,6 +3507,7 @@ static void test_aot_c_code_stripping_preserves_package_method_export_root(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证未解析包级方法导出被拒绝。 */
 static void test_aot_c_code_stripping_rejects_unresolved_package_method_export_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3485,6 +3552,7 @@ static void test_aot_c_code_stripping_rejects_unresolved_package_method_export_r
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 native callback 逃逸形成可达性边。 */
 static void test_aot_c_code_stripping_reports_native_callback_materialization_edge(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3530,6 +3598,7 @@ static void test_aot_c_code_stripping_reports_native_callback_materialization_ed
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 native callback 逃逸元数据畸形时拒绝。 */
 static void test_aot_c_code_stripping_rejects_malformed_native_callback_escape_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3567,6 +3636,7 @@ static void test_aot_c_code_stripping_rejects_malformed_native_callback_escape_m
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 native import 契约建立可达根。 */
 static void test_aot_c_code_stripping_reports_native_import_contract_reachability(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3662,6 +3732,7 @@ static void test_aot_c_code_stripping_reports_native_import_contract_reachabilit
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的坏 native import 契约仍被预校验。 */
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_native_import_contract(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3702,6 +3773,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_native_impor
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 ZRP 区段、表、池及嵌入模块的字节统计。 */
 static void test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -3772,6 +3844,7 @@ static void test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证删除函数后 ZRP MethodDef 表和发布映射同步裁剪。 */
 static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functions(void) {
     TZrByte metadataBlob[768];
     TZrSize metadataBytesBeforeTrim;

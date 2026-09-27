@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_AOT_C_PARAMETER_PASSING_FORM_PROJECTION_CASES_H
 #define ZR_VM_TEST_AOT_C_PARAMETER_PASSING_FORM_PROJECTION_CASES_H
+/* 传参形式 sidecar 案例由 generic_call_typed 翻译单元包含；覆盖 value/ref/readonly aggregate 与不可达函数的写入前验证。 */
 
+/* 按函数名文本比较目标；仅借用函数名。 */
 static TZrBool passing_form_function_name_equals(
         const SZrFunction *function,
         const char *name) {
@@ -18,6 +20,7 @@ static TZrBool passing_form_function_name_equals(
                    nameLength) == 0);
 }
 
+/* 递归定位 fixture 函数树中的目标函数。 */
 static SZrFunction *passing_form_find_named_function(
         SZrFunction *function,
         const char *name) {
@@ -43,6 +46,7 @@ static SZrFunction *passing_form_find_named_function(
     return ZR_NULL;
 }
 
+/* 变异引用泛型 callee 的传参形式事实。 */
 static TZrUInt32 passing_form_mutate_reference_callee(
         SZrFunction *function,
         TZrUInt32 passingFlag) {
@@ -71,6 +75,7 @@ static TZrUInt32 passing_form_mutate_reference_callee(
     return 0u;
 }
 
+/* 清除形式已知标志以构造 unknown 调用。 */
 static TZrUInt32 passing_form_clear_reference_callee(
         SZrState *state,
         SZrFunction *function) {
@@ -85,6 +90,7 @@ static TZrUInt32 passing_form_clear_reference_callee(
     return passing_form_mutate_reference_callee(function, 0u);
 }
 
+/* 构造非 value 的 readonly 引用传参。 */
 static TZrUInt32 passing_form_mark_reference_callee_ref_readonly(
         SZrState *state,
         SZrFunction *function) {
@@ -101,6 +107,7 @@ static TZrUInt32 passing_form_mark_reference_callee_ref_readonly(
             ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF_READONLY);
 }
 
+/* 清除指定栈槽的传参形式标志。 */
 static TZrUInt32 passing_form_clear_parameter_slot(
         SZrFunction *function,
         TZrUInt32 stackSlot) {
@@ -128,6 +135,7 @@ static TZrUInt32 passing_form_clear_parameter_slot(
     return 0u;
 }
 
+/* 向函数树追加带参数的不可达函数，检验裁剪前预校验。 */
 static TZrUInt32 passing_form_add_unreachable_parameter_function(
         SZrState *state,
         SZrFunction *function) {
@@ -187,6 +195,7 @@ static TZrUInt32 passing_form_add_unreachable_parameter_function(
     return 1u;
 }
 
+/* 先移除目标再确认非法布局写入失败且没有残留产物。 */
 static void passing_form_assert_aot_write_rejected_without_output(
         SZrState *state,
         SZrFunction *function,
@@ -204,6 +213,7 @@ static void passing_form_assert_aot_write_rejected_without_output(
     TEST_ASSERT_NULL(unexpectedArtifact);
 }
 
+/* 验证 sidecar 非规范组合无法形成 ExecIR。 */
 static void test_aot_exec_ir_parameter_passing_form_sidecar_rejects_noncanonical_states(void) {
     SZrAotExecIrParameterLayout layout;
 
@@ -242,6 +252,7 @@ static void test_aot_exec_ir_parameter_passing_form_sidecar_rejects_noncanonical
             &layout));
 }
 
+/* 验证未知形式不进入 typed call。 */
 static void test_aot_c_reference_generic_call_typed_rejects_unknown_parameter_passing_form(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_unknown_passing_form",
@@ -256,6 +267,7 @@ static void test_aot_c_reference_generic_call_typed_rejects_unknown_parameter_pa
     free(generatedCText);
 }
 
+/* 验证非 value 形式不进入当前 typed call。 */
 static void test_aot_c_reference_generic_call_typed_rejects_non_value_parameter_passing_form(void) {
     char *generatedCText = write_parameter_layout_case(
             "aot_c_reference_generic_call_typed_ref_readonly_passing_form",
@@ -270,6 +282,7 @@ static void test_aot_c_reference_generic_call_typed_rejects_non_value_parameter_
     free(generatedCText);
 }
 
+/* 直接调用 typed-call 写入器，返回是否接受指定 passing form。 */
 static TZrBool passing_form_try_write_typed_call(TZrUInt32 passingForm) {
 #if !defined(ZR_PLATFORM_UNIX)
     (void)passingForm;
@@ -331,6 +344,7 @@ static TZrBool passing_form_try_write_typed_call(TZrUInt32 passingForm) {
 #endif
 }
 
+/* 逐枚举确认当前写入器仅支持 value 传参。 */
 static void test_aot_c_value_semir_typed_call_accepts_only_value_passing_parameters(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE(
@@ -355,6 +369,7 @@ static void test_aot_c_value_semir_typed_call_accepts_only_value_passing_paramet
 #endif
 }
 
+/* 提供 readonly aggregate 参数与调用窗口夹具。 */
 static const char *passing_form_readonly_aggregate_source(void) {
     return
             "readonly struct Snapshot {\n"
@@ -378,6 +393,7 @@ static const char *passing_form_readonly_aggregate_source(void) {
             "return inValue + scalarValue + refValue + scopedValue + offsetValue + repeatedOffsetValue + temporaryValue;\n";
 }
 
+/* 筛选带实参的调用指令。 */
 static TZrBool passing_form_is_call_with_arguments(
         EZrInstructionCode opcode) {
     return (TZrBool)(
@@ -388,6 +404,7 @@ static TZrBool passing_form_is_call_with_arguments(
             opcode == ZR_INSTRUCTION_ENUM(META_CALL));
 }
 
+/* TODO: 当前按调用出现次序定位实参布局；若编译器重排，需改按 callee 身份绑定并补回归。 */
 static const SZrFunctionFrameSlotLayout *
 passing_form_nth_call_argument_layout(
         const SZrFunction *function,
@@ -429,6 +446,7 @@ passing_form_nth_call_argument_layout(
     return ZR_NULL;
 }
 
+/* 同时递归子函数与函数常量定位运行时函数。 */
 static SZrFunction *passing_form_find_runtime_function_named(
         SZrState *state,
         SZrFunction *function,
@@ -480,6 +498,7 @@ static SZrFunction *passing_form_find_runtime_function_named(
     return ZR_NULL;
 }
 
+/* 按参数槽取得 readonly aggregate 布局。 */
 static SZrFunctionFrameSlotLayout *passing_form_readonly_parameter_layout(
         SZrState *state,
         SZrFunction *entryFunction,
@@ -493,6 +512,7 @@ static SZrFunctionFrameSlotLayout *passing_form_readonly_parameter_layout(
             function, stackSlot);
 }
 
+/* 检查 readonly 参数从调用帧借用而不复制所有权。 */
 static void passing_form_assert_readonly_parameter_borrowed(
         SZrState *state,
         SZrFunction *entryFunction,
@@ -531,6 +551,7 @@ static void passing_form_assert_readonly_parameter_borrowed(
 }
 
 #if defined(ZR_PLATFORM_UNIX)
+/* BUG: 初始化栈槽提示数组后任一断言失败都会跳过 Array_Free；成功路径核对隔离调用窗口门控。 */
 static void passing_form_assert_readonly_argument_marker_requires_call_window(
         SZrState *state) {
     SZrCompilerState compilerState;
@@ -571,6 +592,7 @@ static void passing_form_assert_readonly_argument_marker_requires_call_window(
 }
 #endif
 
+/* 验证 readonly aggregate 编译、解释执行和 C/LLVM 写入均保持借用帧存储。 */
 static void test_aot_readonly_aggregate_parameters_use_borrowed_frame_storage(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -741,6 +763,7 @@ static void test_aot_readonly_aggregate_parameters_use_borrowed_frame_storage(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证参数存储角色与布局不符时 ExecIR 拒绝。 */
 static void test_aot_exec_ir_rejects_readonly_aggregate_parameter_storage_role_mismatch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE(
@@ -891,6 +914,7 @@ static void test_aot_exec_ir_rejects_readonly_aggregate_parameter_storage_role_m
 #endif
 }
 
+/* 验证两种后端在裁剪前均拒绝不可达坏布局。 */
 static void test_aot_code_writers_reject_unreachable_readonly_aggregate_storage_mismatch_before_stripping(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -962,6 +986,7 @@ static void test_aot_code_writers_reject_unreachable_readonly_aggregate_storage_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证不可达函数的缺失、冲突和局部标志均不能绕过检查。 */
 static void test_aot_c_code_stripping_rejects_unreachable_partial_parameter_passing_forms(void) {
     const char *source =
             "fn keep(value: int): int { return value; }\n"

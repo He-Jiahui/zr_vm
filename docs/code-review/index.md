@@ -101,5 +101,6 @@ doc_type: category-index
 | core 热更新与迭代器公开接口 | [84 项](coverage/zr_vm_core_hotpatch_iterator_api.tsv) | 9 个头文件独立复核，353 个证据锚点有效，83 个声明/类型/宏及兼容包含块均入账；GCC/Clang C11 语法检查通过。跨 manager 句柄、并发 Resolve、迭代器异常清理等已证实缺陷与受限状态枚举疑点均按契约标注；未运行完整测试。 |
 | core AOT 装箱与拆箱 bridge | [5 项](coverage/zr_vm_core_bridge.tsv) | 2 个 C/H 文件独立复核，19 个当前调用与实现锚点有效，差异仅新增注释；GCC/Clang C11 语法检查通过。公开拆箱入口的源原型匹配要求尚不明确，已标 TODO；未运行 AOT 测试。 |
 | AOT C 共享库与本地执行 smoke | [684 项](coverage/tests_parser_aot_smoke.tsv) | 27 个测试文件独立复核，2664 个证据锚点有效，源码仅增 97 行注释；GCC 对 27 文件语法检查通过。13 个目标属于 CTest 聚合，14 个有手工验收入口但注册意图待核，已标 TODO；完整构建停在旧 WSL 树 VerifyGlobs，未运行套件。 |
+| AOT C 早期调用、控制、泛型与代码裁剪契约测试 | [514 项](coverage/tests_parser_aot_contracts_early.tsv) | 27 个 C/H 文件独立复核，1727 个证据锚点有效，源码仅增 390 行注释；GCC 对 22 个实现文件语法检查通过。61 个 BUG 行含已证实的 code-stripping 正常路径泄漏与 Unity 失败清理，另有 9 个 TODO；完整 CMake/CTest 未完成。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

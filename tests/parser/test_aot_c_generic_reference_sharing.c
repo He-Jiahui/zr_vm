@@ -17,6 +17,7 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 检查引用泛型字典的运行时懒解析、规范 typeId 裁剪与共享 C 函数发射；Unix 下补充生成代码链接。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -32,6 +33,7 @@
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -47,6 +49,7 @@ static int run_command_expect_success(const char *command) {
 }
 #endif
 
+/* 编译引用泛型源码并把函数所有权交给用例。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -59,6 +62,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: 打开文件后的定位、分配或读取断言失败会越过 fclose。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -82,6 +86,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return buffer;
 }
 
+/* 按完整子串计数共享函数和字典引用，不解析生成 C 语法。 */
 static unsigned count_substring(const char *text, const char *needle) {
     unsigned count = 0u;
     const char *cursor;
@@ -111,6 +116,7 @@ static TZrInstruction create_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+/* 附加引用类型的规范 typeId 与名字绑定；分配归属函数。 */
 static void add_reference_generic_binding(SZrState *state,
                                           SZrFunction *function,
                                           const TZrChar *typeName,
@@ -138,6 +144,7 @@ static void add_reference_generic_binding(SZrState *state,
     function->typedLocalBindingLength = 1u;
 }
 
+/* 附加帧槽的类型布局 ID，供字典裁剪验证。 */
 static void add_generic_binding_layout(SZrState *state,
                                        SZrFunction *function,
                                        TZrUInt32 typeLayoutId) {
@@ -157,6 +164,7 @@ static void add_generic_binding_layout(SZrState *state,
     function->frameSlotLayoutLength = 1u;
 }
 
+/* 构造同 typeId 别名和不同 typeId 子函数，检验规范身份去重。 */
 static SZrFunction *create_generic_dictionary_trim_fixture(SZrState *state) {
     SZrFunction *root;
 
@@ -196,6 +204,7 @@ static SZrFunction *create_generic_dictionary_trim_fixture(SZrState *state) {
     return root;
 }
 
+/* 验证字典的类型布局与 sizeof 首次解析后缓存同一结果。 */
 static void test_aot_runtime_generic_dictionary_lazily_resolves_type_layout_and_sizeof(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeLayout layout;
@@ -248,6 +257,7 @@ static void test_aot_runtime_generic_dictionary_lazily_resolves_type_layout_and_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证静态布局缺席时从 metadata runtime 解析规范布局。 */
 static void test_aot_runtime_generic_dictionary_resolves_type_layout_from_metadata_runtime(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObjectModule module = {0};
@@ -308,6 +318,7 @@ static void test_aot_runtime_generic_dictionary_resolves_type_layout_from_metada
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证 metadata runtime 失败不会退回原型缓存。 */
 static void test_aot_runtime_generic_dictionary_type_layout_does_not_fallback_to_prototype_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObjectModule module = {0};
@@ -354,6 +365,7 @@ static void test_aot_runtime_generic_dictionary_type_layout_does_not_fallback_to
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证裁剪按规范 typeId 合并别名并剔除不可达字典。 */
 static void test_aot_c_code_stripping_uses_canonical_generic_dictionary_identity(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -402,6 +414,7 @@ static void test_aot_c_code_stripping_uses_canonical_generic_dictionary_identity
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 删除旧输出后确认非法字典使 writer 失败且不发布 C 文件。 */
 static void assert_generic_dictionary_writer_rejects(SZrState *state,
                                                      SZrFunction *function,
                                                      const TZrChar *artifactStem) {
@@ -435,6 +448,7 @@ static void assert_generic_dictionary_writer_rejects(SZrState *state,
     TEST_ASSERT_NULL(generatedFile);
 }
 
+/* 验证保留字典缺少规范 typeId 时拒绝生成。 */
 static void test_aot_c_rejects_retained_generic_dictionary_without_canonical_type_id(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -450,6 +464,7 @@ static void test_aot_c_rejects_retained_generic_dictionary_without_canonical_typ
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证非空绑定计数不可搭配空表。 */
 static void test_aot_c_rejects_nonempty_null_generic_binding_table(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -465,6 +480,7 @@ static void test_aot_c_rejects_nonempty_null_generic_binding_table(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证非空帧布局计数不可搭配空表。 */
 static void test_aot_c_rejects_nonempty_null_generic_frame_layout_table(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -480,6 +496,7 @@ static void test_aot_c_rejects_nonempty_null_generic_frame_layout_table(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证同一规范字典的 schema 冲突被拒绝。 */
 static void test_aot_c_rejects_conflicting_canonical_generic_dictionary_schema(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -496,6 +513,7 @@ static void test_aot_c_rejects_conflicting_canonical_generic_dictionary_schema(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证两个引用实例共享一个字典驱动函数而保有独立实例表项。 */
 static void test_aot_c_reference_generic_instances_share_dictionary_backed_code(void) {
     const char *source =
             "class RefA { }\n"

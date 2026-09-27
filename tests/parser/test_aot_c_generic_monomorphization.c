@@ -15,6 +15,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 从源码与嵌入二进制生成值泛型 C 代码，核对实例化布局和函数名，并在 Unix 下执行链接检查。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -30,6 +31,7 @@
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -45,6 +47,7 @@ static int run_command_expect_success(const char *command) {
 }
 #endif
 
+/* 创建带来源名的值泛型函数；返回对象由用例释放。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -57,6 +60,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: 写 fixture 失败时 Unity 跳过 fclose，文件句柄留在进程中。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -70,6 +74,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* BUG: 打开生成文件后的定位、分配、读取断言失败会跳过 fclose。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -93,6 +98,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return buffer;
 }
 
+/* BUG: fread 错误会在 feof 断言处跳出，输入文件句柄不关闭。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -116,6 +122,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 验证值泛型实例分别生成专用布局和函数，并与嵌入模块哈希绑定。 */
 static void test_aot_c_value_generic_instance_emits_monomorphized_layout_and_function(void) {
     const char *source =
             "struct Pair<TLeft, TRight> {\n"

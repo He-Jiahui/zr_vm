@@ -19,6 +19,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 构造精确 token、签名哈希与布局版本夹具，验证二进制嵌入模块与 AOT 调用绑定行的 loader 选择。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -45,8 +46,10 @@
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
+/* 执行固定 fixture 的共享库编译命令，并把非零状态交还断言。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -58,6 +61,7 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
+/* 编译待写入 ZRO 的场景源码，函数由调用方释放。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -70,6 +74,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: 写入失败时 Unity 跳过 fclose，项目 fixture 句柄保持打开。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -83,6 +88,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* BUG: fread 错误时 feof 断言跳过 fclose，输入文件句柄保持打开。 */
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     FILE *file;
     TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
@@ -106,6 +112,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 将绑定签名哈希改成不兼容值，保留其余 token 关系以单独验证拒绝原因。 */
 static void inject_signature_hash_drift(SZrState *state, SZrFunction *function) {
     SZrMetadataTokenBinding *binding;
 
@@ -128,6 +135,7 @@ static void inject_signature_hash_drift(SZrState *state, SZrFunction *function) 
     binding->resolvedLayoutHash = TEST_LAYOUT_HASH;
 }
 
+/* 验证 loader 对签名漂移的嵌入模块拒绝执行并报告绑定错误。 */
 static void test_aot_runtime_rejects_embedded_module_with_incompatible_metadata_binding(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT metadata binding loader test currently validates the Unix shared-library loader path");
@@ -257,6 +265,7 @@ static void test_aot_runtime_rejects_embedded_module_with_incompatible_metadata_
 #endif
 }
 
+/* 复用 C/LLVM 后端的生成、链接和加载流程，核对注册 thunk、property 与接口绑定行。 */
 static void assert_generated_call_binding_rows_backend(const char *source, const char *artifactSuite,
         EZrAotBackendKind backend,
         TZrUInt32 expectedGetters, TZrUInt32 expectedSetters, TZrUInt32 expectedDeferred) {
@@ -452,18 +461,21 @@ static void assert_generated_call_binding_rows_backend(const char *source, const
 #endif
 }
 
+/* 把默认 C 后端选择交给共享绑定行断言。 */
 static void assert_generated_call_binding_rows(const char *source, const char *artifactSuite,
         TZrUInt32 getters, TZrUInt32 setters, TZrUInt32 deferred) {
     assert_generated_call_binding_rows_backend(source, artifactSuite, ZR_AOT_BACKEND_KIND_C,
             getters, setters, deferred);
 }
 
+/* 验证普通调用绑定行选中已注册的 thunk。 */
 static void test_aot_runtime_generated_call_binding_row_selects_registered_thunk(void) {
     assert_generated_call_binding_rows(
             "class Math { pub static fn answer(): int { return 42; } }\n"
             "return Math.answer();\n", "aot_c_call_binding_loader", 0u, 0u, 0u);
 }
 
+/* 复用属性 getter/setter 夹具检查指定后端的绑定行。 */
 static void assert_generated_property_binding_rows(EZrAotBackendKind backend) {
     assert_generated_call_binding_rows_backend(
             "class Math { pub static fn answer(): int { return 42; } }\n"
@@ -475,14 +487,17 @@ static void assert_generated_property_binding_rows(EZrAotBackendKind backend) {
             backend, 1u, 1u, 0u);
 }
 
+/* 验证 C 后端属性绑定调用。 */
 static void test_aot_runtime_generated_property_rows_select_registered_thunks(void) {
     assert_generated_property_binding_rows(ZR_AOT_BACKEND_KIND_C);
 }
 
+/* 验证 LLVM 后端属性访问器能经绑定行执行。 */
 static void test_aot_llvm_property_binding_executes_accessors(void) {
     assert_generated_property_binding_rows(ZR_AOT_BACKEND_KIND_LLVM);
 }
 
+/* 验证接口调用绑定保留延迟解析槽。 */
 static void test_aot_runtime_generated_interface_row_preserves_deferred_slot(void) {
     assert_generated_call_binding_rows(
             "interface Readable { fn read(): int; }\n"
@@ -491,6 +506,7 @@ static void test_aot_runtime_generated_interface_row_preserves_deferred_slot(voi
             "aot_c_interface_binding_loader", 0u, 0u, 1u);
 }
 
+/* 验证元调用使用已注册的绑定行。 */
 static void test_aot_meta_call_consumes_registered_binding(void) {
     assert_generated_call_binding_rows(
             "class Callable { pub @call(value: int): int { return value + 1; } } "
@@ -498,6 +514,7 @@ static void test_aot_meta_call_consumes_registered_binding(void) {
             "aot_c_meta_binding_loader", 0u, 0u, 0u);
 }
 
+/* 验证零参数元调用仍读取绑定行。 */
 static void test_aot_zero_argument_meta_call_consumes_binding(void) {
     assert_generated_call_binding_rows(
             "class Callable { pub @call(): int { return 42; } } "
@@ -505,6 +522,7 @@ static void test_aot_zero_argument_meta_call_consumes_binding(void) {
             "aot_c_meta_noargs_binding_loader", 0u, 0u, 0u);
 }
 
+/* 验证 LLVM 元调用沿用相同绑定行契约。 */
 static void test_aot_llvm_meta_call_consumes_binding(void) {
     assert_generated_call_binding_rows_backend(
             "class Callable { pub @call(value: int): int { return value + 1; } } "

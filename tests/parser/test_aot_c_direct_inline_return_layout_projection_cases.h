@@ -1,5 +1,6 @@
 #ifndef ZR_TEST_AOT_C_DIRECT_INLINE_RETURN_LAYOUT_PROJECTION_CASES_H
 #define ZR_TEST_AOT_C_DIRECT_INLINE_RETURN_LAYOUT_PROJECTION_CASES_H
+/* 直接内联返回布局案例由 method_info_signature 测试翻译单元包含；同时覆盖 ExecIR 投影、不可达坏元数据预检与 C 值 SemIR 消费。 */
 
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
 #include "zr_vm_core/memory.h"
@@ -12,6 +13,7 @@
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h"
 #endif
 
+/* 验证布局 accessor 仅读取投影 sidecar，不依赖可变的原始函数元数据。 */
 static void test_aot_exec_ir_direct_inline_return_layout_accessor_isolates_raw_metadata(void) {
     SZrFunction rawFunction;
     SZrAotExecIrFunction functionIr;
@@ -47,6 +49,7 @@ static void test_aot_exec_ir_direct_inline_return_layout_accessor_isolates_raw_m
 }
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 递归定位声明直接内联返回的原始函数，返回借用指针。 */
 static SZrFunction *find_direct_inline_return_function(SZrFunction *function) {
     TZrUInt32 instructionIndex;
     TZrUInt32 childIndex;
@@ -77,6 +80,7 @@ static SZrFunction *find_direct_inline_return_function(SZrFunction *function) {
     return ZR_NULL;
 }
 
+/* 按原始函数身份定位 ExecIR 投影，返回模块借用行。 */
 static const SZrAotExecIrFunction *find_direct_inline_return_function_ir(
         const SZrAotExecIrModule *module,
         const SZrFunction *function) {
@@ -93,6 +97,7 @@ static const SZrAotExecIrFunction *find_direct_inline_return_function_ir(
     return ZR_NULL;
 }
 
+/* 按栈槽定位返回布局；结果随投影帧布局存活。 */
 static const SZrAotExecIrFrameSlotLayout *find_direct_inline_return_slot_layout(
         const SZrAotExecIrFrameLayout *frameLayout,
         TZrUInt32 stackSlot) {
@@ -112,6 +117,7 @@ static const SZrAotExecIrFrameSlotLayout *find_direct_inline_return_slot_layout(
     return ZR_NULL;
 }
 
+/* 提供分支返回与长类型名的源码夹具，供投影和 C 写入器共用。 */
 static const char *direct_inline_return_projection_source(void) {
     return "struct DirectInlineReturnProjectionPointWithArtifactNameLongerThanTheShortStringInterningBoundaryForContentStableCallableAndSemanticIrIdentityProof {\n"
            "    pub var x: int;\n"
@@ -124,6 +130,7 @@ static const char *direct_inline_return_projection_source(void) {
            "return 0;";
 }
 
+/* BUG: 临时替换 childFunctionList 后的断言失败会跳过恢复与三份扩展缓冲区释放；成功路径验证不可达布局在裁剪前被拒绝。 */
 static void test_aot_exec_ir_projects_and_validates_direct_inline_return_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -359,6 +366,7 @@ static void test_aot_exec_ir_projects_and_validates_direct_inline_return_layout(
     originalSourceSlotKind = unreachableReturnSourceLayout->slotKind;
     unreachableReturnSourceLayout->slotKind =
             (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    /* TODO: 拒绝返回 false 后仍需检查 writer 未留下部分输出文件。 */
     (void)remove(generatedCPath);
     TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
             state, root, generatedCPath, &writerOptions));
@@ -584,6 +592,7 @@ static void test_aot_exec_ir_projects_and_validates_direct_inline_return_layout(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 验证调用、返回及 skip-drop 写入器只消费一致的直接内联返回布局。 */
 static void test_aot_c_value_semir_consumes_direct_inline_return_layout_sidecar(void) {
     SZrFunction rawFunction;
     SZrAotExecIrFunction functionIr;

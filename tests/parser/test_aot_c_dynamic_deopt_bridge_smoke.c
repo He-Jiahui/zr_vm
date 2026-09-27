@@ -12,6 +12,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/writer.h"
+/* 以手工 SemIR 边界夹具验证动态调用、成员和索引访问的 deopt 桥；Unix 下再编译生成的 C 共享库。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -33,6 +34,7 @@
 #define ZR_AOT_DYNAMIC_DEOPT_ESCAPED_SOURCE_FILE "src\\quoted \"module\".zr"
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 执行生成 C 的 Unix 编译命令并返回进程状态供断言。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -47,8 +49,10 @@ static int run_command_expect_success(const char *command) {
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
+/* 构造夹具的返回终点，保证动态边界后的结果有可观察出口。 */
 static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16 sourceSlot) {
     TZrInstruction instruction;
 
@@ -59,6 +63,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 把调用目标槽与实参数编码为动态调用指令。 */
 static TZrInstruction create_dynamic_call_instruction(TZrUInt16 destinationSlot,
                                                       TZrUInt16 functionSlot,
                                                       TZrUInt16 argumentCount) {
@@ -72,6 +77,7 @@ static TZrInstruction create_dynamic_call_instruction(TZrUInt16 destinationSlot,
     return instruction;
 }
 
+/* 把接收者和成员表索引编码为动态成员读取指令。 */
 static TZrInstruction create_dynamic_member_get_instruction(TZrUInt16 destinationSlot,
                                                             TZrUInt16 receiverSlot,
                                                             TZrUInt16 memberEntryIndex) {
@@ -85,6 +91,7 @@ static TZrInstruction create_dynamic_member_get_instruction(TZrUInt16 destinatio
     return instruction;
 }
 
+/* 把接收者和键槽编码为动态索引读取指令。 */
 static TZrInstruction create_dynamic_index_get_instruction(TZrUInt16 destinationSlot,
                                                            TZrUInt16 receiverSlot,
                                                            TZrUInt16 keySlot) {
@@ -98,6 +105,7 @@ static TZrInstruction create_dynamic_index_get_instruction(TZrUInt16 destination
     return instruction;
 }
 
+/* 建立最小函数、指令及源位置元数据，由调用方通过 Function_Free 释放。 */
 static SZrFunction *create_dynamic_deopt_boundary_function(SZrState *state,
                                                            TZrInstruction boundaryInstruction,
                                                            TZrUInt16 returnSlot,
@@ -144,6 +152,7 @@ static SZrFunction *create_dynamic_deopt_call_boundary_function(SZrState *state)
     return create_dynamic_deopt_boundary_function(state, create_dynamic_call_instruction(6u, 2u, 3u), 6u, 8u);
 }
 
+/* 把 i64 局部绑定附到夹具，检查 deopt 前后标量同步。 */
 static void attach_i64_typed_local_binding(SZrState *state, SZrFunction *function, TZrUInt32 stackSlot) {
     SZrFunctionTypedLocalBinding *binding;
 
@@ -170,6 +179,7 @@ static SZrFunction *create_dynamic_index_deopt_boundary_function(SZrState *state
     return create_dynamic_deopt_boundary_function(state, create_dynamic_index_get_instruction(5u, 1u, 2u), 5u, 8u);
 }
 
+/* BUG: fseek、malloc 或 fread 断言失败会越过 fclose；调用成功后需由调用方 free 缓冲区。 */
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -194,6 +204,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 
 #if defined(ZR_PLATFORM_UNIX)
+/* Unix 下把生成的 C 链成共享库；链接失败是本用例失败而非运行时结果。 */
 static void assert_generated_source_compiles(const TZrChar *generatedCPath, const TZrChar *sharedLibraryPath) {
     char command[4096];
 
@@ -219,6 +230,7 @@ static void assert_generated_source_compiles(const TZrChar *generatedCPath, cons
 }
 #endif
 
+/* 验证动态调用 deopt 记录、源位置告警、标量同步及生成 C 可链接。 */
 static void test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bridge(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
@@ -283,6 +295,7 @@ static void test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bri
 #endif
 }
 
+/* 验证含反斜杠与引号的源文件名在回退告警中正确转义。 */
 static void test_aot_c_quotes_and_escapes_runtime_fallback_warning_source_file(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
@@ -328,6 +341,7 @@ static void test_aot_c_quotes_and_escapes_runtime_fallback_warning_source_file(v
 #endif
 }
 
+/* 验证总开关抑制回退告警时仍保留真实 deopt 桥代码。 */
 static void test_aot_c_suppresses_runtime_fallback_trim_warnings_when_requested(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
@@ -375,6 +389,7 @@ static void test_aot_c_suppresses_runtime_fallback_trim_warnings_when_requested(
 #endif
 }
 
+/* 验证只抑制指定回退原因，不改变其他告警计数。 */
 static void test_aot_c_suppresses_runtime_fallback_trim_warnings_by_reason(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
@@ -451,6 +466,7 @@ static void test_aot_c_suppresses_runtime_fallback_trim_warnings_by_reason(void)
 #endif
 }
 
+/* 验证 full AOT 模式拒绝动态调用 deopt 且不留下输出文件。 */
 static void test_aot_c_full_aot_rejects_semir_dynamic_call_deopt_bridge(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
@@ -495,6 +511,7 @@ static void test_aot_c_full_aot_rejects_semir_dynamic_call_deopt_bridge(void) {
 #endif
 }
 
+/* 复用无输出断言检查 full AOT 对成员或索引 deopt 的拒绝。 */
 static void assert_full_aot_rejects_dynamic_value_access_deopt_bridge(SZrState *state,
                                                                       SZrFunction *function,
                                                                       const TZrChar *moduleName,
@@ -533,6 +550,7 @@ static void assert_full_aot_rejects_dynamic_value_access_deopt_bridge(SZrState *
     TEST_ASSERT_NULL(generatedFile);
 }
 
+/* 分别覆盖动态成员与索引读取的 full AOT 拒绝路径。 */
 static void test_aot_c_full_aot_rejects_dynamic_value_access_deopt_bridges(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic value-access deopt bridge smoke currently validates the Unix shared-library toolchain path");
@@ -563,6 +581,7 @@ static void test_aot_c_full_aot_rejects_dynamic_value_access_deopt_bridges(void)
 #endif
 }
 
+/* 验证允许回退时成员与索引访问的桥代码均可生成并链接。 */
 static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_deopt_bridges(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C dynamic value-access deopt bridge smoke currently validates the Unix shared-library toolchain path");

@@ -13,6 +13,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+/* 构造故意失配的共享库描述符，经项目 loader 验证 ABI、代码注册和成员 token 重映射的诊断。Unix dlopen 路径由编译时门控。 */
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -24,8 +25,10 @@
 
 void setUp(void) {}
 
+/* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
 void tearDown(void) {}
 
+/* 运行测试生成的编译命令；非零状态由调用方作为共享库构建失败处理。 */
 static int run_command_expect_success(const char *command) {
     int result;
 
@@ -37,6 +40,7 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
+/* 将场景源码编译为由调用方负责释放的函数，sourceName 归属当前 VM。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -49,6 +53,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* BUG: fwrite 失败时 Unity 直接跳出，已打开的 FILE 未经 fclose。 */
 static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     FILE *file;
 
@@ -62,6 +67,7 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+/* BUG: 向描述符写嵌入模块字节时，任一写入断言失败都会跳过 blobFile 的关闭。 */
 static void write_c_byte_array_from_file_or_fail(FILE *sourceFile, const TZrChar *blobPath) {
     FILE *blobFile;
     int byteValue;
@@ -92,12 +98,14 @@ static void write_c_byte_array_from_file_or_fail(FILE *sourceFile, const TZrChar
     TEST_ASSERT_GREATER_THAN_INT(0, fprintf(sourceFile, "\n"));
 }
 
+/* 将固定 C 模板片段写入描述符源文件；文件所有权保留在调用方。 */
 static void write_c_text_or_fail(FILE *sourceFile, const char *text) {
     TEST_ASSERT_NOT_NULL(sourceFile);
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_EQUAL_size_t(strlen(text), fwrite(text, 1, strlen(text), sourceFile));
 }
 
+/* 生成仅 ABI 版本错误的共享库，使 loader 诊断能定位版本字段。 */
 static void write_bad_abi_descriptor_library(const TZrChar *descriptorSourcePath,
                                              const TZrChar *sharedLibraryPath) {
     const char *descriptorSource =
@@ -138,6 +146,7 @@ static void write_bad_abi_descriptor_library(const TZrChar *descriptorSourcePath
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 }
 
+/* 生成缺少代码注册信息的描述符以覆盖 loader 拒绝路径。 */
 static void write_missing_code_registration_descriptor_library(const TZrChar *descriptorSourcePath,
                                                                const TZrChar *sharedLibraryPath) {
     const char *descriptorSource =
@@ -184,6 +193,7 @@ static void write_missing_code_registration_descriptor_library(const TZrChar *de
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 }
 
+/* 把指定成员 token 映射表写进共享库描述符，供同一项目加载链检查。 */
 static void write_member_token_remap_descriptor_library(const TZrChar *descriptorSourcePath,
                                                         const TZrChar *sharedLibraryPath,
                                                         const TZrChar *embeddedBlobPath,
@@ -304,6 +314,7 @@ static void write_member_token_remap_descriptor_library(const TZrChar *descripto
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 }
 
+/* 复用完整项目、二进制与共享库加载流程检查重映射错误，并核对诊断细节。 */
 static void assert_member_token_remap_descriptor_rejected(const char *artifactDirectory,
                                                           const char *projectFileBase,
                                                           const char *projectName,
@@ -451,6 +462,7 @@ static void assert_member_token_remap_descriptor_rejected(const char *artifactDi
 #endif
 }
 
+/* 验证 ABI 版本不匹配被拒绝且错误文本包含期望值与实际值。 */
 static void test_aot_c_descriptor_diagnostic_names_abi_version_mismatch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C descriptor diagnostic test currently validates the Unix dlopen toolchain path");
@@ -543,6 +555,7 @@ static void test_aot_c_descriptor_diagnostic_names_abi_version_mismatch(void) {
 #endif
 }
 
+/* 验证缺失代码注册的共享库不被执行并给出字段级诊断。 */
 static void test_aot_c_descriptor_diagnostic_rejects_missing_code_registration(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C descriptor diagnostic test currently validates the Unix dlopen toolchain path");
@@ -632,6 +645,7 @@ static void test_aot_c_descriptor_diagnostic_rejects_missing_code_registration(v
 #endif
 }
 
+/* 验证成员重映射项非法时 loader 拒绝描述符。 */
 static void test_aot_c_descriptor_diagnostic_rejects_invalid_member_token_remap_entry(void) {
     assert_member_token_remap_descriptor_rejected(
             "runtime_project_bad_member_token_remap",
@@ -646,6 +660,7 @@ static void test_aot_c_descriptor_diagnostic_rejects_invalid_member_token_remap_
             "targetToken=0x03000001");
 }
 
+/* 验证同一来源 token 重复映射时拒绝描述符。 */
 static void test_aot_c_descriptor_diagnostic_rejects_duplicate_member_token_remap_source(void) {
     assert_member_token_remap_descriptor_rejected(
             "runtime_project_duplicate_member_token_remap_source",
@@ -661,6 +676,7 @@ static void test_aot_c_descriptor_diagnostic_rejects_duplicate_member_token_rema
             "sourceToken=0x03000001");
 }
 
+/* 验证多个来源指向同一目标 token 时拒绝描述符。 */
 static void test_aot_c_descriptor_diagnostic_rejects_duplicate_member_token_remap_target(void) {
     assert_member_token_remap_descriptor_rejected(
             "runtime_project_duplicate_member_token_remap_target",
