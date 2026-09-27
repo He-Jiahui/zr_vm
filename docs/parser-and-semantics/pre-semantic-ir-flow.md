@@ -546,7 +546,10 @@ exception continuation for nullable guards is an explicit zero-instruction
 propagation sink and does not reach that merge. The compiler does not invent a
 normal-entry exception payload for this sink. Ownership results remain bound to
 their result slots so an explicitly awakened nullable receiver can be the branch
-operand.
+operand. If an argument assigns an eligible local on the present path, a later
+read at the join uses an ExecIR phi: the absent predecessor contributes the
+pre-guard value and the normal post-call predecessor contributes the argument
+assignment. The exceptional propagation sink does not contribute an incoming.
 
 A direct `weak?.method(arguments)` guard with a canonical weak source value and
 a supported known call instead emits a nullable `WAKE` ownership result before
@@ -557,8 +560,10 @@ the same owner, and explicitly rethrows the payload. No drop is emitted at the
 join, which is also reachable when the wake failed. An unavailable canonical
 source or suppressed CFG startup does not synthesize a partial WAKE graph.
 Unsupported calls still abandon a started graph and remove synthetic branches.
-ExecIR currently projects semantic `WAKE` as `COPY`; this source-CFG checkpoint
-does not establish runtime wake/drop equivalence across backends.
+ExecIR retains semantic `WAKE` as a distinct opcode. The direct oracle and
+ExecBC/AOT projections reject unsupported wake execution explicitly; this
+source-CFG checkpoint does not establish runtime wake/drop equivalence across
+backends.
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 

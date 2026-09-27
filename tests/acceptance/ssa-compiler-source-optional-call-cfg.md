@@ -51,7 +51,12 @@ edge, two join predecessors, and the empty exceptional sink. It also proves
 that the argument's only semantic `STORE` belongs to the present block, the
 typed call is the invoke block's tail with its receiver/callee and explicit
 argument operands, and the
-resulting ExecIR contains exactly one `INVOKE` and one exception block.
+resulting ExecIR contains exactly one `INVOKE` and one exception block. A
+subsequent `side;` reads the same local at the join: its promoted ExecIR `COPY`
+consumes a two-incoming phi. The absent predecessor supplies the initialization
+value, the normal post-call predecessor supplies the argument assignment, and
+the exceptional sink supplies no incoming. This tests edge values as well as
+the present-path placement of the argument effect.
 
 Value-producing nullable optional calls are covered by the follow-up
 [nullable optional-call value merge](ssa-compiler-source-optional-value-cfg.md)
@@ -75,6 +80,28 @@ record.
   retained the same four pre-existing failures and passed the nullable optional
   argument-skipping regression, so those failures are not attributed to this
   checkpoint.
+
+## Edge-value regression (2026-09-27)
+
+- WSL GCC 11.4.0 Debug (`/home/hejiahui/zrvm-ssa-nested-gcc.4pVemu`):
+  recompiled the source test object and relinked the existing target using
+  `ninja -t commands`; direct `./bin/zr_vm_pre_semantic_ir_test` passed
+  108/108, including the strengthened optional-call fixture.
+- WSL Clang 14.0.0 Debug (`/home/hejiahui/zrvm-ssa-nested-clang.kBIWlA`):
+  the same object/relink/direct run passed 108/108. A direct source fixture
+  verifies phi predecessor identities and old/new ValueIds, not execution of
+  a nullable receiver through a runtime backend.
+- In both caches, `ctest -R
+  '^(ssa_builder_cfg|ssa_builder_dominance|ssa_place_promotion|ssa_construction)$'
+  --output-on-failure --no-tests=error` passed 4/4 after rebuilding the
+  outdated GCC place-promotion binary and the absent Clang builder-CFG target.
+- A malformed investigation fixture with an unreachable block using an
+  entry-only Place address failed the SSA dominance preflight at block 2,
+  instruction 6. It was removed: this is an invalid input, not evidence that
+  valid unreachable access disables promotion.
+- The full 01.02 four-backend differential/exception gate remains open. The
+  MSVC shared-parser source test still cannot link private compiler helpers;
+  no new Windows source-test pass is claimed.
 
 ## Boundary
 

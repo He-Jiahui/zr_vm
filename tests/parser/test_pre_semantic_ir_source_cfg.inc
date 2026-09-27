@@ -728,7 +728,8 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
             "var weak = degrade(shared);\n"
             "var receiver = wake(weak);\n"
             "var side: bool = false;\n"
-            "receiver?.consume(side = true);\n";
+            "receiver?.consume(side = true);\n"
+            "side;\n";
     SZrString *name = ZrCore_String_Create(
             g_state, "optional_call_cfg.zr", 20U);
     SZrAstNode *ast = ZrParser_Parse(
@@ -752,6 +753,9 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     TZrSize nopCount = 0U;
     TZrSize invokeCount = 0U;
     TZrSize exceptionBlockCount = 0U;
+    TZrValueId initialSide = ZR_VALUE_ID_INVALID;
+    TZrValueId assignedSide = ZR_VALUE_ID_INVALID;
+    TZrSemanticInstructionId joinReadId = ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
     TZrSize index;
 
     TEST_ASSERT_NOT_NULL(ast);
@@ -832,10 +836,24 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
         TEST_ASSERT_NOT_NULL(instruction);
         if (instruction->opcode == ZR_SEMANTIC_IR_STORE) {
             storeCount++;
+            assignedSide = instruction->valueId;
             TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
                     present->firstInstructionIndex, (TZrUInt32)index);
             TEST_ASSERT_LESS_THAN_UINT32(
                     present->firstInstructionIndex + present->instructionCount,
+                    (TZrUInt32)index);
+        }
+        if (instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE &&
+            instruction->sourceRange.start.line == 8U) {
+            initialSide = instruction->valueId;
+        }
+        if (instruction->opcode == ZR_SEMANTIC_IR_LOAD &&
+            instruction->sourceRange.start.line == 10U) {
+            joinReadId = instruction->id;
+            TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+                    join->firstInstructionIndex, (TZrUInt32)index);
+            TEST_ASSERT_LESS_THAN_UINT32(
+                    join->firstInstructionIndex + join->instructionCount,
                     (TZrUInt32)index);
         }
         if (instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED ||
@@ -856,6 +874,9 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     }
     TEST_ASSERT_EQUAL_UINT64(1U, storeCount);
     TEST_ASSERT_EQUAL_UINT64(1U, semanticCallCount);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, initialSide);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, assignedSide);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_INSTRUCTION_ID_INVALID, joinReadId);
     for (index = 0U; index < function->values.length; index++) {
         const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
                 function, (TZrValueId)index + 1U);
@@ -920,6 +941,36 @@ static void test_source_optional_call_skips_argument_semantic_effects(void) {
     TEST_ASSERT_GREATER_OR_EQUAL_UINT64(1U, nopCount);
     TEST_ASSERT_EQUAL_UINT64(1U, invokeCount);
     TEST_ASSERT_EQUAL_UINT64(1U, exceptionBlockCount);
+    {
+        const SZrExecIrPhi *sidePhi = ZR_NULL;
+        TZrUInt32 incomingIndex;
+        for (index = 0U; index < output.instructionCount; ++index) {
+            const SZrExecIrInstruction *instruction = &output.instructions[index];
+            TZrUInt32 phiIndex;
+            if (instruction->sourceId != joinReadId) continue;
+            TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_OPCODE_COPY, instruction->opcode);
+            TEST_ASSERT_EQUAL_UINT32(1U, instruction->operands.count);
+            for (phiIndex = 0U; phiIndex < output.phiCount; ++phiIndex) {
+                if (output.phiPool[phiIndex].result ==
+                    output.operands[instruction->operands.start]) {
+                    sidePhi = &output.phiPool[phiIndex];
+                }
+            }
+        }
+        TEST_ASSERT_NOT_NULL(sidePhi);
+        TEST_ASSERT_EQUAL_UINT32(2U, sidePhi->incomings.count);
+        for (incomingIndex = 0U; incomingIndex < 2U; ++incomingIndex) {
+            const SZrExecIrPhiIncoming *incoming = &output.phiIncoming[
+                    sidePhi->incomings.start + incomingIndex];
+            if (incoming->predecessor == entry->id + 1U) {
+                TEST_ASSERT_EQUAL_UINT32(initialSide, incoming->value);
+            } else {
+                TEST_ASSERT_EQUAL_UINT32(normal->id + 1U,
+                                         incoming->predecessor);
+                TEST_ASSERT_EQUAL_UINT32(assignedSide, incoming->value);
+            }
+        }
+    }
     ZrCore_ExecIr_FreeFunction(&output);
 
     ZrCore_Function_Free(g_state, compiler.currentFunction);

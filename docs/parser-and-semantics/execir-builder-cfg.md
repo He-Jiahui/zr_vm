@@ -5,6 +5,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
@@ -21,11 +22,13 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
 tests:
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_pre_semantic_ir_source_cfg.inc
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
@@ -39,6 +42,7 @@ tests:
   - tests/parser/test_ssa_source_for_short_circuit.c
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_place_eligibility.c
+  - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_ssa_cfg_effects_builder.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/cmake/ssa-tests.cmake
@@ -68,6 +72,7 @@ tests:
   - tests/acceptance/ssa-builder-test-registration.md
   - tests/acceptance/ssa-source-branch-slot-isolation.md
   - tests/acceptance/ssa-source-cleanup-cfg.md
+  - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
   - tests/acceptance/ssa-cleanup-exception-state.md
 doc_type: module-detail
 ---
@@ -127,17 +132,20 @@ before the sibling arm and again at the join. This prevents a recycled stack
 slot in one arm from resolving to a temporary defined only in another arm;
 nested diamonds use independent snapshots. Restoration changes only the
 compiler's mutable lookup bridge: instructions, values, Places, source ranges,
-and both arm CFG ranges remain in canonical SemanticIR. Values assigned across
-the join still require the planned promotion and phi/rename work.
+and both arm CFG ranges remain in canonical SemanticIR. Eligible locals
+assigned across the join are promoted by the builder's SSA pass, with phi
+incoming values tied to each predecessor occurrence. The source optional-call
+fixture checks the absent old value against the normal-path new value.
 
 Before SSA construction, the builder annotates every appended Place value as
 an address and screens direct local roots for promotion. The compiler records
 `isScalar` from the canonical type node only for primitive locals. The builder
 then rejects promotion for parameters, projections, and any root mentioned by
 a loan or escape fact. This keeps borrowed storage and inline-aggregate
-writeback on the explicit Place path while giving the standalone SSA pass an
-IR-visible eligibility contract. It does not yet insert phis or rewrite
-loads/stores; see `tests/acceptance/ssa-place-eligibility.md`.
+writeback on the explicit Place path while giving the SSA pass an IR-visible
+eligibility contract. The pass inserts pruned phis and rewrites eligible local
+loads/stores transactionally; see `tests/acceptance/ssa-place-eligibility.md`
+and `tests/acceptance/ssa-place-promotion.md`.
 
 For each source block, outgoing IDs occupy a contiguous segment of the
 function's successor side pool. The builder records the segment start before
