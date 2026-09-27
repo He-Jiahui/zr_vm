@@ -1,3 +1,5 @@
+# 追踪 classes_full 调用前的值类型，执行后再检查失败栈；固定 frame 仅适用于原始故障现场。
+# BUG: 当前首方源码已无 ZrFunctionPreCall，断点无法命中，后续 bt/局部变量输出不能证明调用路径。
 set pagination off
 set confirm off
 set print pretty on

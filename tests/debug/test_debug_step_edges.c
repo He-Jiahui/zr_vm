@@ -17,6 +17,7 @@
 #include <pthread.h>
 #endif
 
+/* VM 执行线程与客户端线程并行，state/function 的有效期覆盖整个调试会话。 */
 typedef struct ZrStepExecutionThread {
     SZrState *state;
     SZrFunction *function;
@@ -29,6 +30,7 @@ typedef struct ZrStepExecutionThread {
 #endif
 } ZrStepExecutionThread;
 
+/* 每例独占代理与连接；nextRequestId 绑定顺序消费的 JSON-RPC 响应。 */
 typedef struct ZrStepSession {
     SZrState *state;
     SZrFunction *function;
@@ -38,6 +40,7 @@ typedef struct ZrStepSession {
     int nextRequestId;
 } ZrStepSession;
 
+/* 从一次 stopped 事件复制字段，释放 JSON 后仍可检查跨帧的步进结果。 */
 typedef struct ZrObservedStop {
     char reason[32];
     char sourceFile[128];
@@ -45,8 +48,10 @@ typedef struct ZrObservedStop {
     int line;
 } ZrObservedStop;
 
+/* TODO: 此处手写声明省略 module.h 中的 ZR_API；后续用 Windows 共享构建核对导入约定并改用公共头。 */
 TZrBool ZrVmLibSystem_Register(SZrGlobalState *global);
 
+/* 源标签须与行断点请求一致，否则测试不能证明真实步进位置。 */
 static SZrFunction *compile_step_edge_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -62,6 +67,7 @@ static SZrFunction *compile_step_edge_source(SZrState *state, const char *source
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 平台线程入口只负责执行 VM；结果应在 join 后由客户端线程读取。 */
 static void step_thread_run(ZrStepExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return;
@@ -82,6 +88,7 @@ static void *step_thread_proc(void *argument) {
 }
 #endif
 
+/* 代理启动和连接完成后运行 VM，使首个 entry 停点可被客户端观察。 */
 static TZrBool step_thread_start(ZrStepExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return ZR_FALSE;
@@ -113,6 +120,7 @@ static void step_thread_join(ZrStepExecutionThread *thread) {
 #endif
 }
 
+/* 连接代理实际分配的 loopback 端口，允许各 Unity 可执行文件并行运行。 */
 static void step_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) {
     TZrChar endpointText[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
     TZrChar error[256];
@@ -125,6 +133,7 @@ static void step_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) {
     TEST_ASSERT_TRUE(ZrNetwork_StreamConnectLoopback(&endpoint, 3000, stream, error, sizeof(error)));
 }
 
+/* params 由请求对象接管并随序列化销毁；调用方不再持有它。 */
 static void step_client_send_request(SZrNetworkStream *stream, int id, const char *method, cJSON *params) {
     cJSON *request = cJSON_CreateObject();
     char *text;
@@ -157,6 +166,7 @@ static cJSON *step_client_read_message(SZrNetworkStream *stream) {
     return message;
 }
 
+/* 依赖代理按请求号返回应答；返回对象需由上层会话释放。 */
 static cJSON *step_client_expect_response(SZrNetworkStream *stream, int id) {
     cJSON *message = step_client_read_message(stream);
     cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
@@ -200,6 +210,7 @@ static void step_observed_copy_text(char *buffer, size_t bufferSize, const char 
     snprintf(buffer, bufferSize, "%s", text != ZR_NULL ? text : "");
 }
 
+/* 停点事件字段在 cJSON_Delete 后失效，先复制用于最终跨场景断言。 */
 static void step_capture_stop(cJSON *message, ZrObservedStop *outStop) {
     cJSON *params;
 
@@ -215,6 +226,7 @@ static void step_capture_stop(cJSON *message, ZrObservedStop *outStop) {
     outStop->line = step_json_int(params, "line");
 }
 
+/* 按需注册 zr.system 原生模块，并确认入口暂停后才允许行断点和步进请求。 */
 static void step_session_start(ZrStepSession *session,
                                const char *moduleName,
                                const char *sourcePath,
@@ -313,6 +325,7 @@ static void step_session_continue_to_breakpoint(ZrStepSession *session, int expe
     cJSON_Delete(message);
 }
 
+/* 所有边界案例共用 response/continued/stopped 事件顺序，比较的是下一可见停点。 */
 static void step_session_step(ZrStepSession *session, const char *method, ZrObservedStop *outStop) {
     cJSON *message;
 
@@ -328,6 +341,7 @@ static void step_session_step(ZrStepSession *session, const char *method, ZrObse
     cJSON_Delete(message);
 }
 
+/* 收尾必须先恢复并 join VM，再用代理报告 terminated；连接关闭发生在 cleanup。 */
 static void step_session_finish(ZrStepSession *session, TZrInt64 expectedResult) {
     cJSON *message;
 
@@ -349,6 +363,7 @@ static void step_session_finish(ZrStepSession *session, TZrInt64 expectedResult)
     TEST_ASSERT_EQUAL_INT64(expectedResult, session->thread.result);
 }
 
+/* 执行线程已退出后，依序释放流、代理、编译函数和运行状态。 */
 static void step_session_cleanup(ZrStepSession *session) {
     if (session == ZR_NULL) {
         return;
@@ -369,6 +384,7 @@ static void step_session_cleanup(ZrStepSession *session) {
     }
 }
 
+/* 尾调用可能复用物理栈帧；next 应按用户可见调用层次跳到调用点之后。 */
 static void test_step_over_tail_call_stops_after_logical_tail_frame(void) {
     const char *moduleName = "tests.debug.step_edges.tail";
     const char *sourcePath = "debug_step_tail_call.zr";
@@ -404,6 +420,7 @@ static void test_step_over_tail_call_stops_after_logical_tail_frame(void) {
     TEST_ASSERT_TRUE_MESSAGE(stop.line >= 8, "tail-call step over should resume at the caller's next visible location");
 }
 
+/* 原生函数无 ZR 源帧；stepIn 应回到 visit 的下一条可见语句。 */
 static void test_step_in_native_call_behaves_like_step_over(void) {
     const char *moduleName = "tests.debug.step_edges.native";
     const char *sourcePath = "debug_step_native_call.zr";
@@ -431,6 +448,7 @@ static void test_step_in_native_call_behaves_like_step_over(void) {
     TEST_ASSERT_EQUAL_INT(4, stop.line);
 }
 
+/* 抛异常会跳过直接父帧；stepOut 应落在实际接住异常的 top 帧。 */
 static void test_step_out_after_exception_unwind_stops_at_catcher(void) {
     const char *moduleName = "tests.debug.step_edges.unwind";
     const char *sourcePath = "debug_step_exception_unwind.zr";
@@ -467,6 +485,7 @@ static void test_step_out_after_exception_unwind_stops_at_catcher(void) {
                              "step out after unwind should stop at the next visible parent-frame location");
 }
 
+/* 递归子调用共用源行，next 应按帧深度越过子调用而非按行号误停。 */
 static void test_step_over_recursive_same_line_skips_child_call(void) {
     const char *moduleName = "tests.debug.step_edges.recursive";
     const char *sourcePath = "debug_step_recursive_same_line.zr";
@@ -501,6 +520,7 @@ static void test_step_over_recursive_same_line_skips_child_call(void) {
 
 void setUp(void) {}
 
+/* BUG: 线程启动后断言失败会经 Unity longjmp 跳过尾部 join/cleanup；空 tearDown 留下代理和暂停线程，影响下一用例。 */
 void tearDown(void) {}
 
 int main(void) {

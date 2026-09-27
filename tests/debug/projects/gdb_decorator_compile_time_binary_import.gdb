@@ -1,3 +1,4 @@
+# 复查二进制导入的调用现场；预期在故障停止后读取 frame 7 的 closure 与 callInfo。
 set pagination off
 set print pretty on
 set print elements 0

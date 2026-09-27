@@ -1,3 +1,4 @@
+/* logpoint 纯插值成功时输出值；不获授权的分配应在原位置输出错误片段而不中断事件。 */
 static void test_debug_breakpoint_logpoint_requires_pure_formal_evaluation(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;

@@ -17,6 +17,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 
+/* hook 写入有界文本缓冲；Unity 在 VM 执行完成后检查帧信息与截断。 */
 typedef struct SZrDebugTracebackCapture {
     TZrBool captured;
     TZrSize written;
@@ -59,6 +60,7 @@ static SZrFunction *compile_traceback_source(SZrState *state, const char *source
 static const TZrChar *debug_traceback_get_string_field(SZrState *state,
                                                        const SZrTypeValue *objectValue,
                                                        const char *fieldName) {
+    /* 返回异常对象内的借用字符串，仅供当前 state 存活期间的断言使用。 */
     SZrObject *object;
     SZrString *fieldString;
     SZrTypeValue key;
@@ -115,6 +117,7 @@ static SZrFunction *debug_traceback_new_metadata_function(SZrState *state,
 }
 
 static TZrStackValuePointer debug_traceback_push_native_callable(SZrState *state, SZrFunction *metadataFunction) {
+    /* 人工混合栈需要带名称的 native closure；slot 在 traceback 生成前保持栈根。 */
     SZrClosureNative *closure;
     TZrStackValuePointer slot;
     SZrTypeValue *value;
@@ -139,6 +142,7 @@ static TZrStackValuePointer debug_traceback_push_native_callable(SZrState *state
 }
 
 static TZrStackValuePointer debug_traceback_push_script_callable(SZrState *state, SZrFunction *function) {
+    /* 与 native callable 对称构造脚本帧，供 GetStack/Traceback 按帧类型区分。 */
     SZrClosure *closure;
     TZrStackValuePointer slot;
     SZrTypeValue *value;
@@ -260,6 +264,7 @@ static void test_traceback_formats_active_script_frames_and_truncates_safely(voi
 }
 
 static void test_traceback_formats_mixed_native_and_script_frames(void) {
+    /* 人工挂接 callInfo 链只用于格式化测试；退出前必须恢复 state 原有链表头。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *nativeOuterFunction;
     SZrFunction *scriptFunction;
@@ -344,6 +349,7 @@ static void test_traceback_folds_deep_stacks_with_skip_marker(void) {
 }
 
 static void test_throw_normalizes_exception_with_text_traceback(void) {
+    /* 捕获执行失败后保留规范化异常，再比对对象的 stack 字段与宿主打印文本。 */
     const char *source =
             "fn leaf(): int {\n"
             "    throw \"boom\";\n"
@@ -400,6 +406,7 @@ static void test_throw_normalizes_exception_with_text_traceback(void) {
 }
 
 static void debug_traceback_fill_scheduler_fact(SZrFunctionSchedulerSourceFact *fact) {
+    /* 构造完整且规范的源码 fact，随后逐项扰动以检查投影拒绝和契约比较。 */
     memset(fact, 0, sizeof(*fact));
     fact->schedulerTypeId = 61u;
     fact->taskTypeId = 62u;
@@ -419,6 +426,7 @@ static void debug_traceback_fill_scheduler_fact(SZrFunctionSchedulerSourceFact *
 }
 
 static void test_debug_projects_canonical_scheduler_contract_and_task_terminals(void) {
+    /* 同一调度契约经源码 fact 和制品 row 投影应相等；终态映射另覆盖故障来源。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     SZrArtifactSchedulerContractRow artifactRow;
@@ -502,6 +510,7 @@ static void test_debug_projects_canonical_scheduler_contract_and_task_terminals(
 
 void setUp(void) {}
 
+/* BUG: 五个用例均在断言前创建 state；失败会越过末尾的函数与 VM 销毁，空 tearDown 无法回收。 */
 void tearDown(void) {}
 
 int main(void) {

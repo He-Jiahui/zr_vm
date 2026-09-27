@@ -1,3 +1,4 @@
+/* 没有已编译目标身份的调用表达式即使可解析，也不得在暂停帧中执行。 */
 static void test_debug_evaluate_rejects_unresolved_function_call_without_canonical_facts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -17,6 +18,7 @@ static void test_debug_evaluate_rejects_unresolved_function_call_without_canonic
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 默认只读 evaluate 应拒绝赋值并提供有场景意义的原因与建议。 */
 static void test_debug_evaluate_rejects_assignment_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -47,6 +49,7 @@ static void test_debug_evaluate_rejects_assignment_with_cause_and_suggestion(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 分类区分纯常量、潜在调用、写入与未知身份，供授权门槛决定可否执行。 */
 static void test_debug_evaluation_effect_policy_classifies_canonical_expression_shapes(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -87,6 +90,7 @@ static void test_debug_evaluation_effect_policy_classifies_canonical_expression_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 许可集合必须覆盖表达式全部副作用位，缺少规范事实时一律拒绝。 */
 static void test_debug_evaluation_effect_policy_requires_explicit_capabilities(void) {
     ZrDebugEvaluationEffectPolicy policy;
 
@@ -119,6 +123,7 @@ static void test_debug_evaluation_effect_policy_requires_explicit_capabilities(v
             ZR_DEBUG_EVALUATION_EFFECT_OWNER_MUTATION));
 }
 
+/* 正式求值先验规范事实与能力，再处理安全算术、溢出、禁用写入和运行时根。 */
 static void test_debug_evaluate_with_capabilities_enforces_effect_set(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *arrayText;
@@ -212,6 +217,7 @@ static void test_debug_evaluate_with_capabilities_enforces_effect_set(void) {
 
     memset(&result, 0, sizeof(result));
     error[0] = '\0';
+    /* 溢出不能因算术是纯表达式而被强制执行；失败文本保留执行不可用语义。 */
     TEST_ASSERT_FALSE(ZrDebug_EvaluateWithCapabilities(
             &agent,
             1u,
@@ -326,6 +332,7 @@ static void test_debug_evaluate_with_capabilities_enforces_effect_set(void) {
 
     memset(&result, 0, sizeof(result));
     error[0] = '\0';
+    /* 授予 mutation 位只解决策略门槛，不使只读调试语法允许赋值。 */
     TEST_ASSERT_FALSE(ZrDebug_EvaluateWithCapabilities(
             &agent,
             1u,
@@ -394,6 +401,7 @@ static void test_debug_evaluate_with_capabilities_enforces_effect_set(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 解析失败优先返回原始结构化诊断，不应被正式执行不可用的泛化消息覆盖。 */
 static void test_debug_evaluate_with_capabilities_preserves_formal_parse_diagnostic(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -421,6 +429,7 @@ static void test_debug_evaluate_with_capabilities_preserves_formal_parse_diagnos
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 短路为真的分支也须解析并验证不活动侧的引用身份。 */
 static void test_debug_evaluate_rejects_unresolved_inactive_branch(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -441,6 +450,7 @@ static void test_debug_evaluate_rejects_unresolved_inactive_branch(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已解析的静态 property getter 虽有规范事实，仍需 getter 能力才能执行。 */
 static void test_debug_evaluation_effect_policy_marks_resolved_property_getter(void) {
     const TZrChar *source =
             "class Meter {\n"
@@ -479,6 +489,7 @@ static void test_debug_evaluation_effect_policy_marks_resolved_property_getter(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同一所有权绑定的普通读取保持纯净，ref 读取须标记 owner mutation。 */
 static void test_debug_evaluation_effect_policy_marks_resolved_ownership_member(void) {
     const TZrChar *source =
             "var owner: Unique<int>;\n"

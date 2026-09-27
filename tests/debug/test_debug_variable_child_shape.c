@@ -17,6 +17,7 @@
 #include <pthread.h>
 #endif
 
+/* 暂停的 VM 在独立线程；客户端只在停点内读取作用域与临时子项句柄。 */
 typedef struct ZrDebugExecutionThread {
     SZrState *state;
     SZrFunction *function;
@@ -29,6 +30,7 @@ typedef struct ZrDebugExecutionThread {
 #endif
 } ZrDebugExecutionThread;
 
+/* 源标签作为断点定位键；调用方传入的 sourcePath 必须与请求一致。 */
 static SZrFunction *compile_debug_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -44,6 +46,7 @@ static SZrFunction *compile_debug_source(SZrState *state, const char *sourceLabe
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 平台线程入口执行 VM；成功位只在 join 后由测试读取。 */
 static void debug_execution_thread_run(ZrDebugExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return;
@@ -66,6 +69,7 @@ static void *debug_execution_thread_proc(void *argument) {
 }
 #endif
 
+/* 代理和客户端就绪后启动执行，确保入口暂停事件有接收方。 */
 static TZrBool debug_execution_thread_start(ZrDebugExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return ZR_FALSE;
@@ -96,6 +100,7 @@ static void debug_execution_thread_join(ZrDebugExecutionThread *thread) {
 #endif
 }
 
+/* 查询实际绑定端口，保持每个测试实例的连接隔离。 */
 static void debug_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) {
     TZrChar endpointText[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
     TZrChar error[256];
@@ -108,6 +113,7 @@ static void debug_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) 
     TEST_ASSERT_TRUE(ZrNetwork_StreamConnectLoopback(&endpoint, 3000, stream, error, sizeof(error)));
 }
 
+/* params 转移给请求对象，调用方不得在发出后继续引用。 */
 static void debug_client_send_request(SZrNetworkStream *stream, int id, const char *method, cJSON *params) {
     cJSON *request = cJSON_CreateObject();
     char *text;
@@ -141,6 +147,7 @@ static cJSON *debug_client_read_message(SZrNetworkStream *stream) {
     return message;
 }
 
+/* 协议应答与异步事件按测试指定顺序读取；调用方负责删除返回 JSON。 */
 static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
     cJSON *message = debug_client_read_message(stream);
     cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
@@ -160,6 +167,7 @@ static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
     return message;
 }
 
+/* 仅用于当前不支持的 union 成员 evaluate；检查固定错误码而非把失败忽略。 */
 static cJSON *debug_client_expect_error_response(SZrNetworkStream *stream,
                                                  int id,
                                                  int code) {
@@ -227,6 +235,7 @@ static cJSON *debug_find_named_object(cJSON *array, const char *name) {
     return ZR_NULL;
 }
 
+/* 认证后确认 initialized、moduleLoaded、entry 停点，后续句柄均属于该暂停窗口。 */
 static void debug_client_initialize(SZrNetworkStream *client, const char *moduleName) {
     cJSON *message;
     cJSON *params = cJSON_CreateObject();
@@ -251,6 +260,7 @@ static void debug_client_initialize(SZrNetworkStream *client, const char *module
     cJSON_Delete(message);
 }
 
+/* 对比 globals 的 zr 子项句柄、展开数量和 evaluate 结果，保证两条展示路径形状一致。 */
 static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     const char *sourcePath = "debug_variable_child_shape_fixture.zr";
     const char *source =
@@ -371,6 +381,7 @@ static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     TEST_ASSERT_TRUE(cJSON_IsArray(values));
     zrItem = debug_find_named_object(values, "zr");
     TEST_ASSERT_NOT_NULL(zrItem);
+    /* 动态句柄只在当前停点有效；下文展开和 evaluate 都在 continue 前完成。 */
     zrHandle = debug_json_int(zrItem, "variablesReference");
     zrItemNamedVariables = debug_json_int(zrItem, "namedVariables");
     zrItemIndexedVariables = debug_json_int(zrItem, "indexedVariables");
@@ -502,6 +513,7 @@ static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* union 预览按当前变体展示具名负载；同时记录 evaluate 成员语法尚不可用的错误契约。 */
 static void test_debug_protocol_expands_union_variant_payloads(void) {
     const char *sourcePath = "debug_union_variant_payload_fixture.zr";
     const char *source =
@@ -701,6 +713,7 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 在闭包停点求值捕获变量，防止摘要把 closure 读取误报为普通局部读取。 */
 static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
     const char *sourcePath = "debug_closure_capture_semantic_summary_fixture.zr";
     const char *source =
@@ -797,8 +810,10 @@ static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
 
 void setUp(void) {}
 
+/* BUG: 线程启动后断言失败会经 Unity longjmp 跳过尾部 join/close；空 tearDown 留下代理和暂停线程，影响下一用例。 */
 void tearDown(void) {}
 
+/* BUG: 传入未知过滤名时所有 RUN_TEST 都跳过，UnityEnd 在零测试零失败时返回 0；命令行调用误报成功。 */
 #define RUN_DEBUG_TEST(filter, testName) \
     do { \
         if ((filter) == ZR_NULL || strcmp((filter), #testName) == 0) { \

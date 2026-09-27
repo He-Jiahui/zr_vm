@@ -8,6 +8,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
 
+/* VM hook 借调试事件写入，Unity 仅在执行返回后读取按值保存的字段。 */
 typedef struct SZrDebugTraceCapture {
     TZrUInt32 lineCount;
     TZrUInt32 lines[16];
@@ -29,6 +30,7 @@ static void debug_trace_capture_reset(void) {
 }
 
 static void debug_trace_capture(struct SZrState *state, SZrDebugInfo *debugInfo) {
+    /* 只在 line 事件里查询活动帧元数据；call/return 事件单独计数。 */
     SZrDebugInfo resolvedInfo;
 
     if (debugInfo == ZR_NULL) {
@@ -105,6 +107,7 @@ static SZrFunction *compile_debug_trace_fixture(SZrState *state, const char *sou
 }
 
 static void test_interp_debug_trace_publishes_line_events_and_resolves_debug_info(void) {
+    /* TODO: 已记录 lines[] 却只断言 lineCount，需补充具体源行映射的断言以识别错位事件。 */
     const char *sourcePath = "debug_trace_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -140,6 +143,7 @@ static void test_interp_debug_trace_publishes_line_events_and_resolves_debug_inf
 
 void setUp(void) {}
 
+/* BUG: 断言失败会跳过用例末尾的 hook 撤销和 function/state 释放；空 tearDown 无法回收这批 VM 资源。 */
 void tearDown(void) {}
 
 int main(void) {

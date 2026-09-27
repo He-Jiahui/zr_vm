@@ -4,7 +4,10 @@
 
 #include "unity.h"
 
+/* 静态架构门禁：从仓库源文件截取函数段，约束快照层只通过 core 调试接口读帧与变量。 */
+
 #ifndef ZR_VM_TESTS_REPO_ROOT
+/* 正常由 tests/CMakeLists 注入绝对仓库根；手动运行需先切到仓库根目录。 */
 #define ZR_VM_TESTS_REPO_ROOT "."
 #endif
 
@@ -69,6 +72,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 }
 
 static char *copy_section_owned(const char *text, const char *beginNeedle, const char *endNeedle) {
+    /* 区段边界由源码中的稳定符号指定；重命名时应同步更新此门禁。 */
     const char *begin;
     const char *end;
     size_t length;
@@ -100,6 +104,8 @@ static char *copy_section_owned(const char *text, const char *beginNeedle, const
 }
 
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
+    /* TODO: 子串也可能来自注释或不相关函数；此静态门禁只约束当前源码形态，
+     * 需结合行为测试或语法级检查证明读取实际走 core API。 */
     size_t index;
 
     TEST_ASSERT_NOT_NULL(text);
@@ -158,6 +164,7 @@ static void test_debug_snapshot_stack_reads_use_core_introspection(void) {
 }
 
 static void test_debug_snapshot_variables_use_core_local_and_upvalue_apis(void) {
+    /* 读局部变量和闭包捕获必须经 core 公共查询，避免直接依赖 VM 栈布局。 */
     static const char *const requiredVariablesNeedles[] = {
             "SZrDebugActivation activation;",
             "ZrCore_Debug_GetLocal(agent->state, &activation,",
@@ -227,6 +234,7 @@ static void test_debug_snapshot_loaded_module_count_uses_logical_array_length(vo
 
 void setUp(void) {}
 
+/* BUG: 三例取得 sourceText/section 后若断言失败，Unity 会跳过尾部 free；空 tearDown 遗留堆缓冲。 */
 void tearDown(void) {}
 
 int main(void) {

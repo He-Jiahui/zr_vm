@@ -15,18 +15,23 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* Unity 的单一编译单元直接收录各场景头文件；RUN_TEST 将调试表达式的诊断、
+ * 规范语义事实、纯策略判断和协议投递作为独立场景注册。 */
+/* 保留完整实际诊断作为失败消息，便于定位文本协议回归。 */
 static void assert_text_contains(const TZrChar *text, const TZrChar *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(text, needle), text);
 }
 
+/* 对摘要中的负向事实作断言，避免折叠后的子表达式重复出现在客户端展示中。 */
 static void assert_text_not_contains(const TZrChar *text, const TZrChar *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NULL_MESSAGE(strstr(text, needle), text);
 }
 
+/* 为语义绑定测试提供带来源标签的入口函数；调用方拥有返回函数并须先于 state 释放。 */
 static SZrFunction *compile_debug_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -45,6 +50,7 @@ static SZrFunction *compile_debug_source(SZrState *state, const char *sourceLabe
 #include "test_debug_canonical_binding_cases.h"
 #include "test_debug_formal_evaluation_cases.h"
 
+/* 未完成的二元表达式应返回含原因与修复建议的可操作诊断，供 evaluate 客户端展示。 */
 static void test_debug_evaluate_reports_missing_right_operand_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -67,6 +73,7 @@ static void test_debug_evaluate_reports_missing_right_operand_with_cause_and_sug
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 条件表达式缺少逻辑操作数时应指出断点场景，而不是只报告通用解析失败。 */
 static void test_debug_condition_expression_reports_missing_logical_operand_with_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -88,6 +95,7 @@ static void test_debug_condition_expression_reports_missing_logical_operand_with
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 短路为真的或分支仍须有规范语义事实，不能绕过未知名字的校验。 */
 static void test_debug_condition_rejects_unresolved_or_operand(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -107,6 +115,7 @@ static void test_debug_condition_rejects_unresolved_or_operand(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 短路为假的与分支仍须先确认所有引用的身份，不能接受未知名字。 */
 static void test_debug_condition_rejects_unresolved_and_operand(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -126,6 +135,7 @@ static void test_debug_condition_rejects_unresolved_and_operand(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 比较结果可参与布尔组合和取反，正式求值应向客户端返回稳定的 bool 文本。 */
 static void test_debug_evaluate_composed_comparison_logical_expression_returns_bool(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -155,6 +165,7 @@ static void test_debug_evaluate_composed_comparison_logical_expression_returns_b
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 语义摘要必须转义字符串字面量，避免调试展示破坏引号、反斜线和控制字符。 */
 static void test_debug_evaluate_semantic_summary_escapes_string_constants(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -177,6 +188,7 @@ static void test_debug_evaluate_semantic_summary_escapes_string_constants(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 常量折叠后的摘要同时保留有符号和无符号范围，供调试客户端解释数值事实。 */
 static void test_debug_evaluate_semantic_summary_reports_unsigned_numeric_range(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -201,6 +213,7 @@ static void test_debug_evaluate_semantic_summary_reports_unsigned_numeric_range(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 仅在 VM 全局槽写入 zr 值不足以建立可验证身份；无暂停帧令牌时正式求值须拒绝。 */
 static void test_debug_evaluate_rejects_runtime_global_without_canonical_identity(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *arrayText;
@@ -241,6 +254,7 @@ static void test_debug_evaluate_rejects_runtime_global_without_canonical_identit
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 入口函数的已编译 callable 元数据应回放成调用引用事实，并保留实参折叠摘要。 */
 static void test_debug_semantic_summary_replays_compiled_function_call_reference_fact(void) {
     const char *source =
             "fn pick(value: int): int {\n"
@@ -280,6 +294,7 @@ static void test_debug_semantic_summary_replays_compiled_function_call_reference
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 入口函数的已编译本地绑定应支持独立表达式中全局名的只读引用摘要。 */
 static void test_debug_semantic_summary_replays_compiled_top_level_variable_reference_fact(void) {
     const char *source =
             "var globalSeed: int = 2;\n"
@@ -309,6 +324,7 @@ static void test_debug_semantic_summary_replays_compiled_top_level_variable_refe
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 借用表达式的摘要需要沿已编译绑定继承所有权和只读借用事实。 */
 static void test_debug_semantic_summary_replays_compiled_ownership_fact(void) {
     const char *source =
             "var owner: Shared<int>;\n"
@@ -339,6 +355,7 @@ static void test_debug_semantic_summary_replays_compiled_ownership_fact(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* typeof 的操作数仍应作为变量读取进入语义事实遍历。 */
 static void test_debug_semantic_summary_walks_type_query_operand_reference(void) {
     const char *source =
             "var owner: Unique<int>;\n"
@@ -367,6 +384,7 @@ static void test_debug_semantic_summary_walks_type_query_operand_reference(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 索引成员访问的摘要应同时保留访问形状和索引操作数的读取来源。 */
 static void test_debug_semantic_summary_replays_member_expression_payload_fact(void) {
     const char *source =
             "var seed: int = 2;\n"
@@ -398,6 +416,7 @@ static void test_debug_semantic_summary_replays_member_expression_payload_fact(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 摘要即使不执行赋值，也须区分名字、字段和索引位置的写引用事实。 */
 static void test_debug_semantic_summary_replays_assignment_write_reference_facts(void) {
     const char *source =
             "var globalSeed: int = 2;\n"
@@ -441,6 +460,7 @@ static void test_debug_semantic_summary_replays_assignment_write_reference_facts
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 成员接收者内的常量折叠应保留最终事实，并避免展示已折叠的原始常量。 */
 static void test_debug_semantic_summary_walks_member_receiver_facts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -467,6 +487,7 @@ static void test_debug_semantic_summary_walks_member_receiver_facts(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 常量条件的摘要应表明选中分支与未执行分支，防止错误的可达性展示。 */
 static void test_debug_semantic_summary_replays_conditional_branch_facts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -488,6 +509,7 @@ static void test_debug_semantic_summary_replays_conditional_branch_facts(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* lambda 内局部初始化的折叠和后续读取应纳入同一语义摘要。 */
 static void test_debug_semantic_summary_walks_lambda_local_initializer_facts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -516,6 +538,7 @@ static void test_debug_semantic_summary_walks_lambda_local_initializer_facts(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 比较式构成的短路条件也不能跳过非活动分支中的未知名字。 */
 static void test_debug_condition_rejects_unresolved_comparison_operands(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -541,6 +564,7 @@ static void test_debug_condition_rejects_unresolved_comparison_operands(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 条件运算符两条分支都须预先通过规范绑定检查，不能按当前真值放行未知名。 */
 static void test_debug_condition_rejects_unresolved_ternary_branch(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -566,6 +590,7 @@ static void test_debug_condition_rejects_unresolved_ternary_branch(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已有运行时全局值不能掩盖三元表达式其他分支缺少规范身份的问题。 */
 static void test_debug_condition_rejects_unresolved_branch_with_runtime_globals(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *arrayText;
@@ -594,6 +619,7 @@ static void test_debug_condition_rejects_unresolved_branch_with_runtime_globals(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 缺少三元真分支时，诊断应保留断点上下文及补全建议。 */
 static void test_debug_condition_reports_missing_ternary_consequent_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -616,6 +642,7 @@ static void test_debug_condition_reports_missing_ternary_consequent_with_cause_a
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 缺少三元假分支时，诊断应指向缺失位置并提供断点场景建议。 */
 static void test_debug_condition_reports_missing_ternary_alternate_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -638,6 +665,7 @@ static void test_debug_condition_reports_missing_ternary_alternate_with_cause_an
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 非数值加法拒绝时应说明类型前提及可执行的替代写法。 */
 static void test_debug_evaluate_reports_numeric_operand_type_error_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -660,6 +688,7 @@ static void test_debug_evaluate_reports_numeric_operand_type_error_with_cause_an
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 常量除零应在调试求值中失败，并向调用方提供除数保护建议。 */
 static void test_debug_evaluate_reports_division_by_zero_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -682,6 +711,7 @@ static void test_debug_evaluate_reports_division_by_zero_with_cause_and_suggesti
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 非法小数字面量应保留明确的词法原因和更正建议。 */
 static void test_debug_evaluate_reports_invalid_numeric_literal_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -705,6 +735,7 @@ static void test_debug_evaluate_reports_invalid_numeric_literal_with_cause_and_s
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 成员访问符后缺少名字时应返回专门诊断，避免吞掉客户端输入错误。 */
 static void test_debug_evaluate_reports_missing_member_name_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -727,6 +758,7 @@ static void test_debug_evaluate_reports_missing_member_name_with_cause_and_sugge
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 断点条件中的索引表达式缺失右括号，应定位结构错误并给出补全方向。 */
 static void test_debug_condition_reports_missing_index_close_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -749,6 +781,7 @@ static void test_debug_condition_reports_missing_index_close_with_cause_and_sugg
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 断点条件中的分组未闭合，应在正式求值前给出可理解的诊断。 */
 static void test_debug_condition_reports_missing_group_close_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -771,6 +804,7 @@ static void test_debug_condition_reports_missing_group_close_with_cause_and_sugg
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 未闭合字符串应向 evaluate 客户端说明闭合引号需求。 */
 static void test_debug_evaluate_reports_unterminated_string_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -794,6 +828,7 @@ static void test_debug_evaluate_reports_unterminated_string_with_cause_and_sugge
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 不支持的转义应保留原始序列并建议使用受支持的转义。 */
 static void test_debug_evaluate_reports_unsupported_string_escape_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -823,10 +858,15 @@ static void test_debug_evaluate_reports_unsupported_string_escape_with_cause_and
 #include "test_debug_evaluate_result_transport_cases.h"
 #include "test_debug_evaluate_failure_transport_cases.h"
 
+/* BUG: 创建 state 后若 Unity 断言失败，UnityDefaultTestRun 的失败跳转会跳过
+ * 用例尾部的 hook 撤销和 state 销毁；空 tearDown 使该 VM 泄漏。
+ * 证据：tests/third_party/zr_unity/Unity/src/unity.c 的 UnityDefaultTestRun；
+ * 后续在失败注入用例中核对清理，再迁移到 fixture。 */
 void setUp(void) {}
 
 void tearDown(void) {}
 
+/* CTest 启动此 Unity 可执行文件；测试函数只由这里的 RUN_TEST 注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_debug_evaluate_reports_missing_right_operand_with_cause_and_suggestion);

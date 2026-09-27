@@ -21,6 +21,7 @@ static TZrSize read_file_into_buffer(FILE *file, char *buffer, TZrSize bufferSiz
 }
 
 static void test_heap_summary_prints_object_counts_bytes_and_gc_stats(void) {
+    /* TODO: 当前只核对栏目存在；应解析数值并验证新建 string/object 对计数的影响。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *stringValue;
     SZrObject *objectValue;
@@ -55,6 +56,7 @@ static void test_heap_summary_prints_object_counts_bytes_and_gc_stats(void) {
 
 void setUp(void) {}
 
+/* BUG: 建立 state 后断言失败会跳过末尾 State_Destroy；空 tearDown 无法回收 VM。 */
 void tearDown(void) {}
 
 int main(void) {

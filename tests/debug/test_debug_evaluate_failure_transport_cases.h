@@ -1,3 +1,4 @@
+/* 解析失败的 code/cause/suggestion 应跨 API 与协议保留；能力拒绝须有独立失败类别。 */
 static void test_debug_evaluate_failure_preserves_structured_diagnostic(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;

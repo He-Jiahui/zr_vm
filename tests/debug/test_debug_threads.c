@@ -15,6 +15,7 @@
 #include <pthread.h>
 #endif
 
+/* 唯一被调试的 VM state 在工作线程执行；客户端线程通过协议读取其暂停快照。 */
 typedef struct ZrThreadDebugExecution {
     SZrState *state;
     SZrFunction *function;
@@ -27,6 +28,7 @@ typedef struct ZrThreadDebugExecution {
 #endif
 } ZrThreadDebugExecution;
 
+/* 以固定源标签编译，使断点与 stackTrace 的路径可互相验证。 */
 static SZrFunction *compile_thread_debug_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -42,6 +44,7 @@ static SZrFunction *compile_thread_debug_source(SZrState *state, const char *sou
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 产生可在 addOne 内暂停的最小调用栈，供 threadId 路由和局部快照断言。 */
 static SZrFunction *compile_thread_debug_fixture(SZrState *state, const char *sourceLabel) {
     const char *source =
             "fn addOne(value: int): int {\n"
@@ -55,6 +58,7 @@ static SZrFunction *compile_thread_debug_fixture(SZrState *state, const char *so
     return compile_thread_debug_source(state, sourceLabel, source);
 }
 
+/* 只由平台线程入口调用；结果和成功位在 join 之前不供客户端读取。 */
 static void thread_debug_execution_run(ZrThreadDebugExecution *thread) {
     if (thread == ZR_NULL) {
         return;
@@ -75,6 +79,7 @@ static void *thread_debug_execution_proc(void *argument) {
 }
 #endif
 
+/* 代理、连接先就绪，执行线程才能把 entry 停点交给客户端观察。 */
 static TZrBool thread_debug_execution_start(ZrThreadDebugExecution *thread) {
     if (thread == ZR_NULL) {
         return ZR_FALSE;
@@ -106,6 +111,7 @@ static void thread_debug_execution_join(ZrThreadDebugExecution *thread) {
 #endif
 }
 
+/* 从已启动代理查询实际 loopback 端口，避免并行测试争用地址。 */
 static void thread_debug_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) {
     TZrChar endpointText[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
     TZrChar error[256];
@@ -118,6 +124,7 @@ static void thread_debug_client_connect(ZrDebugAgent *agent, SZrNetworkStream *s
     TEST_ASSERT_TRUE(ZrNetwork_StreamConnectLoopback(&endpoint, 3000, stream, error, sizeof(error)));
 }
 
+/* params 所有权转入请求对象；写帧成功后由本函数统一释放。 */
 static void thread_debug_send_request(SZrNetworkStream *stream, int id, const char *method, cJSON *params) {
     cJSON *request = cJSON_CreateObject();
     char *text;
@@ -150,6 +157,7 @@ static cJSON *thread_debug_read_message(SZrNetworkStream *stream) {
     return message;
 }
 
+/* 只处理顺序请求，检查 id 防止把异步事件误当作响应；返回 JSON 由调用方释放。 */
 static cJSON *thread_debug_expect_response(SZrNetworkStream *stream, int id) {
     cJSON *message = thread_debug_read_message(stream);
     cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
@@ -202,6 +210,8 @@ static cJSON *thread_debug_find_named_object(cJSON *array, const char *name) {
     return ZR_NULL;
 }
 
+/* 验证代理登记的单个 VM 主线程 ID 贯穿 threads、停点、栈帧、作用域和变量响应。 */
+/* TODO: 此用例只有一个 VM state；多 state 的 threadId 隔离需另从注册与切换路径补测。 */
 static void test_debug_threads_enumerates_main_thread_and_routes_snapshots(void) {
     const char *sourcePath = "debug_threads_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -368,6 +378,7 @@ static void test_debug_threads_enumerates_main_thread_and_routes_snapshots(void)
     message = thread_debug_expect_event(&client, "continued");
     cJSON_Delete(message);
 
+    /* join 后才能读执行结果并终止代理，随后才能销毁被 trace hook 引用的 state。 */
     thread_debug_execution_join(&thread);
     TEST_ASSERT_TRUE(thread.success);
     TEST_ASSERT_EQUAL_INT64(7, thread.result);
@@ -385,6 +396,7 @@ static void test_debug_threads_enumerates_main_thread_and_routes_snapshots(void)
 
 void setUp(void) {}
 
+/* BUG: join 前失败可能留下未 join 线程及悬空栈借用；join 后失败仍跳过剩余通知/JSON 和 client/agent/function/state 收尾。 */
 void tearDown(void) {}
 
 int main(void) {

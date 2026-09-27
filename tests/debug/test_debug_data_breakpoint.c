@@ -15,6 +15,7 @@
 #include <pthread.h>
 #endif
 
+/* VM 在独立线程运行，客户端才能在暂停点发请求；state/function 由 session 持有到 join 之后。 */
 typedef struct ZrDataBreakpointExecution {
     SZrState *state;
     SZrFunction *function;
@@ -27,6 +28,7 @@ typedef struct ZrDataBreakpointExecution {
 #endif
 } ZrDataBreakpointExecution;
 
+/* 一次测试独占代理、loopback 连接和递增请求号，避免两个停点间混用应答。 */
 typedef struct ZrDataBreakpointSession {
     SZrState *state;
     SZrFunction *function;
@@ -36,6 +38,7 @@ typedef struct ZrDataBreakpointSession {
     int nextRequestId;
 } ZrDataBreakpointSession;
 
+/* 将内嵌片段绑定到稳定的源文件名，后续 setBreakpoints 用同一标识定位行号。 */
 static SZrFunction *compile_data_breakpoint_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -51,6 +54,7 @@ static SZrFunction *compile_data_breakpoint_source(SZrState *state, const char *
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 只由平台线程入口调用；完成标志需在 join 后读取，不能与调试请求并发读写。 */
 static void data_breakpoint_thread_run(ZrDataBreakpointExecution *thread) {
     if (thread == ZR_NULL) {
         return;
@@ -71,6 +75,7 @@ static void *data_breakpoint_thread_proc(void *argument) {
 }
 #endif
 
+/* 代理和客户端先就绪，再启动会在入口暂停的 VM；成功后必须 join。 */
 static TZrBool data_breakpoint_thread_start(ZrDataBreakpointExecution *thread) {
     if (thread == ZR_NULL) {
         return ZR_FALSE;
@@ -102,6 +107,7 @@ static void data_breakpoint_thread_join(ZrDataBreakpointExecution *thread) {
 #endif
 }
 
+/* 使用代理实际绑定的临时端口，避免测试并行执行时争用固定端口。 */
 static void data_breakpoint_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) {
     TZrChar endpointText[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
     TZrChar error[256];
@@ -114,6 +120,7 @@ static void data_breakpoint_client_connect(ZrDebugAgent *agent, SZrNetworkStream
     TEST_ASSERT_TRUE(ZrNetwork_StreamConnectLoopback(&endpoint, 3000, stream, error, sizeof(error)));
 }
 
+/* params 转交给 request；调用方只能在此调用前使用该 cJSON 指针。 */
 static void data_breakpoint_send_request(SZrNetworkStream *stream, int id, const char *method, cJSON *params) {
     cJSON *request = cJSON_CreateObject();
     char *text;
@@ -146,6 +153,7 @@ static cJSON *data_breakpoint_read_message(SZrNetworkStream *stream) {
     return message;
 }
 
+/* 测试按协议发送顺序消费消息；调用方负责释放返回的 JSON。 */
 static cJSON *data_breakpoint_expect_response(SZrNetworkStream *stream, int id) {
     cJSON *message = data_breakpoint_read_message(stream);
     cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
@@ -198,6 +206,7 @@ static cJSON *data_breakpoint_find_named_object(cJSON *array, const char *name) 
     return ZR_NULL;
 }
 
+/* 初始化并确认 entry 停点；此时执行线程尚未完成，后续请求可安全读取当前帧。 */
 static void data_breakpoint_session_start(ZrDataBreakpointSession *session,
                                           const char *moduleName,
                                           const char *sourcePath,
@@ -280,6 +289,7 @@ static void data_breakpoint_session_set_line_breakpoint(ZrDataBreakpointSession 
     cJSON_Delete(message);
 }
 
+/* 消费 response/continued/stopped 三段握手，返回仍归调用方所有的停点事件。 */
 static cJSON *data_breakpoint_session_continue_to_stop(ZrDataBreakpointSession *session,
                                                        const char *expectedReason,
                                                        int expectedLine) {
@@ -303,6 +313,7 @@ static cJSON *data_breakpoint_session_continue_to_stop(ZrDataBreakpointSession *
     return message;
 }
 
+/* 从当前停点的顶层帧取得作用域引用；两个用例只在同一帧的相邻停点复用它。 */
 static int data_breakpoint_session_scope_id(ZrDataBreakpointSession *session, const char *scopeName) {
     cJSON *params;
     cJSON *message;
@@ -360,6 +371,7 @@ static void data_breakpoint_session_expect_variable(ZrDataBreakpointSession *ses
     cJSON_Delete(message);
 }
 
+/* 在停点内把作用域变量转换为可持久的 dataId，再交给 setDataBreakpoints。 */
 static void data_breakpoint_session_data_breakpoint_info(ZrDataBreakpointSession *session,
                                                          int scopeId,
                                                          const char *name,
@@ -392,6 +404,7 @@ static void data_breakpoint_session_data_breakpoint_info(ZrDataBreakpointSession
     accessTypes = cJSON_GetObjectItemCaseSensitive(result, "accessTypes");
     TEST_ASSERT_TRUE(cJSON_IsArray(accessTypes));
     TEST_ASSERT_EQUAL_STRING("write", cJSON_GetArrayItem(accessTypes, 0)->valuestring);
+    /* TODO: 目前只校验非空和名称，未断言 dataId 未被截断；扩展长标识用例时检查协议长度与缓冲上限。 */
     snprintf(dataId, dataIdSize, "%s", resultDataId);
     dataId[dataIdSize - 1u] = '\0';
     cJSON_Delete(message);
@@ -431,6 +444,7 @@ static void data_breakpoint_session_set_data_breakpoint(ZrDataBreakpointSession 
     cJSON_Delete(message);
 }
 
+/* 最后一次恢复后先 join，随后通知终止；否则 agent/state 可能被执行线程继续访问。 */
 static void data_breakpoint_session_finish(ZrDataBreakpointSession *session, TZrInt64 expectedResult) {
     cJSON *message;
 
@@ -452,6 +466,7 @@ static void data_breakpoint_session_finish(ZrDataBreakpointSession *session, TZr
     TEST_ASSERT_EQUAL_INT64(expectedResult, session->thread.result);
 }
 
+/* 正常完成路径按连接、代理、函数、状态的依赖顺序释放；调用前执行线程须已 join。 */
 static void data_breakpoint_session_cleanup(ZrDataBreakpointSession *session) {
     if (session == ZR_NULL) {
         return;
@@ -472,6 +487,7 @@ static void data_breakpoint_session_cleanup(ZrDataBreakpointSession *session) {
     }
 }
 
+/* 回归目标：局部变量写入触发 dataBreakpoint，且暂停快照已包含新值。 */
 static void test_debug_data_breakpoint_stops_when_local_value_changes(void) {
     const char *moduleName = "tests.debug.data_breakpoint";
     const char *sourcePath = "debug_data_breakpoint_local.zr";
@@ -511,6 +527,7 @@ static void test_debug_data_breakpoint_stops_when_local_value_changes(void) {
     data_breakpoint_session_cleanup(&session);
 }
 
+/* 回归目标：闭包捕获变量通过 Closures 作用域设置监视点，写入时仍命中原 dataId。 */
 static void test_debug_data_breakpoint_stops_when_upvalue_changes(void) {
     const char *moduleName = "tests.debug.data_breakpoint.upvalue";
     const char *sourcePath = "debug_data_breakpoint_upvalue.zr";
@@ -554,6 +571,7 @@ static void test_debug_data_breakpoint_stops_when_upvalue_changes(void) {
 
 void setUp(void) {}
 
+/* BUG: 线程启动后断言失败会经 Unity longjmp 跳过尾部 join/cleanup；空 tearDown 留下代理和暂停线程，影响下一用例。 */
 void tearDown(void) {}
 
 int main(void) {

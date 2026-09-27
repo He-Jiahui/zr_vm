@@ -1,3 +1,5 @@
+# 追踪属性调用返回值以区分 native 与脚本闭包，预期在现行 CLI 的调试构建运行。
+# BUG: 当前首方源码已无 ZrFunctionPostCall，pending 断点不会产出 POSTCALL 记录。
 set pagination off
 set breakpoint pending on
 set debuginfod enabled off

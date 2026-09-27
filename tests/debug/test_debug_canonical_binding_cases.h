@@ -1,3 +1,5 @@
+/* 行 hook 将 VM 暂停帧绑定、解析器引用事实及正式求值结果汇集到单次用例状态。
+ * agent 只在执行函数期间有效；用例必须先撤销 hook 再释放函数和 state。 */
 typedef struct SZrDebugCanonicalBindingCapture {
     ZrDebugAgent *agent;
     TZrBool sawPausedBinding;
@@ -27,8 +29,10 @@ typedef struct SZrDebugCanonicalBindingCapture {
     TZrChar formalEvaluationError[ZR_DEBUG_TEXT_CAPACITY];
 } SZrDebugCanonicalBindingCapture;
 
+/* Unity 单线程顺序运行，每个注册 hook 的用例在执行前重置此临时观测状态。 */
 static SZrDebugCanonicalBindingCapture g_debugCanonicalBindingCapture;
 
+/* 闭包捕获的身份由捕获槽、编译期 symbol/type、来源 token 和声明范围共同约束。 */
 typedef struct SZrDebugClosureBindingCapture {
     ZrDebugAgent *agent;
     TZrBool sawClosureActivation;
@@ -47,8 +51,10 @@ typedef struct SZrDebugClosureBindingCapture {
     TZrChar formalEvaluationError[ZR_DEBUG_TEXT_CAPACITY];
 } SZrDebugClosureBindingCapture;
 
+/* 用例先重置，closure hook 写入观测值；撤销 hook 后仍由该用例读取断言。 */
 static SZrDebugClosureBindingCapture g_debugClosureBindingCapture;
 
+/* 运行时根没有源码声明位置；跨层消费必须依赖暂停帧 token 检查其代际身份。 */
 typedef struct SZrDebugRuntimeRootBindingCapture {
     ZrDebugAgent *agent;
     TZrBool sawPausedFrame;
@@ -67,8 +73,10 @@ typedef struct SZrDebugRuntimeRootBindingCapture {
     TZrChar formalEvaluationError[ZR_DEBUG_TEXT_CAPACITY];
 } SZrDebugRuntimeRootBindingCapture;
 
+/* 与当前测试的暂停帧绑定，注销 hook 后才允许销毁其 agent。 */
 static SZrDebugRuntimeRootBindingCapture g_debugRuntimeRootBindingCapture;
 
+/* hook 在匹配编译期绑定名时兼容短串与长串存储；返回值借用原字符串的寿命。 */
 static const TZrChar *debug_canonical_binding_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return "";
@@ -79,6 +87,7 @@ static const TZrChar *debug_canonical_binding_string_text(SZrString *value) {
                    : ZrCore_String_GetNativeString(value);
 }
 
+/* 将运行时帧槽映射回编译期类型绑定，后续才能比较规范 symbol/type 与声明位置。 */
 static const SZrFunctionTypedLocalBinding *debug_canonical_binding_find_typed_local(
         const SZrFunction *function,
         TZrUInt32 stackSlot) {
@@ -98,6 +107,8 @@ static const SZrFunctionTypedLocalBinding *debug_canonical_binding_find_typed_lo
     return ZR_NULL;
 }
 
+/* 真实行 hook 中读取活动帧，再为独立解析的表达式注册同一绑定；其结果用于
+ * 比较规范引用身份、策略判断与正式求值。仅在 agent/state 尚存活时注册。 */
 static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     SZrDebugEvaluationContext context;
     SZrDebugFrameBinding frameBinding;
@@ -222,6 +233,8 @@ static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInf
             g_debugCanonicalBindingCapture.actualOriginToken = reference->originToken;
         }
     }
+    /* 故意在正式读值期间改变编译期 TypeId，确认消费端拒绝旧事实；
+     * 测试结束前恢复元数据，避免影响 VM 后续指令。 */
     if (g_debugCanonicalBindingCapture.rejectTypeDriftDuringFormalRead) {
         SZrDebugFormalEvaluationContext formalContext;
         SZrTypeValue formalValue;
@@ -258,6 +271,7 @@ static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInf
             zr_debug_formal_free_prepared_expression(&formalContext);
         }
     }
+    /* 此变体故意撤销可读位置，使分类与求值都不能把有名字的绑定当成可信值。 */
     if (g_debugCanonicalBindingCapture.clearPlaceBeforePolicy) {
         ((SZrFunctionTypedLocalBinding *)typedBinding)->placeId = 0u;
     }
@@ -320,6 +334,8 @@ static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInf
     ZrParser_State_Free(&parserState);
 }
 
+/* 在闭包激活帧核对捕获元数据与推断引用的一致性，再尝试纯求值；避免用
+ * 入口函数的同名变量替代真正的捕获来源。 */
 static void debug_closure_binding_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     SZrDebugEvaluationContext context;
     SZrDebugClosureCaptureBinding capture;
@@ -437,6 +453,8 @@ static void debug_closure_binding_hook(SZrState *state, SZrDebugInfo *debugInfo)
     }
 }
 
+/* 从核心暂停上下文取 zr 根令牌，经语义注册后验证无源码身份的正式表达式；
+ * 并临时注入错误声明范围与过期令牌，检查求值端的代际防护。 */
 static void debug_runtime_root_binding_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     SZrDebugEvaluationContext evaluationContext;
     SZrDebugRuntimeRootBinding runtimeRoot;
@@ -548,6 +566,8 @@ static void debug_runtime_root_binding_hook(SZrState *state, SZrDebugInfo *debug
                         mutableReference->hasDefinitionRange;
                 const TZrUInt64 originalToken = mutableReference->originToken;
 
+                /* 两次破坏性探针共用预备表达式，分别覆盖虚构源码位置和令牌漂移；
+                 * 每次恢复事实后才允许正常的 zr[1] 求值。 */
                 mutableReference->hasDefinitionRange = ZR_TRUE;
                 if (zr_debug_formal_evaluate_node(
                             g_debugRuntimeRootBindingCapture.agent,
@@ -610,6 +630,7 @@ static void debug_runtime_root_binding_hook(SZrState *state, SZrDebugInfo *debug
     }
 }
 
+/* 行 hook 中的暂停参数应与重新解析表达式的 symbol/type/place 和声明起点一致。 */
 static void test_debug_semantic_binding_preserves_paused_frame_canonical_identity(void) {
     const char *source =
             "fn target(paused: int): int {\n"
@@ -663,6 +684,7 @@ static void test_debug_semantic_binding_preserves_paused_frame_canonical_identit
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 带有编译期名字但失去运行时 place 的数组参数不得进入规范求值。 */
 static void test_debug_semantic_binding_rejects_missing_paused_place(void) {
     const char *source =
             "fn target(paused: int[]): int {\n"
@@ -704,6 +726,7 @@ static void test_debug_semantic_binding_rejects_missing_paused_place(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 源码参数 zr 应优先于同名运行时根，保留来源声明而不是根 token。 */
 static void test_debug_source_binding_shadows_runtime_root_spelling(void) {
     const char *source =
             "fn target(zr: int): int {\n"
@@ -757,6 +780,7 @@ static void test_debug_source_binding_shadows_runtime_root_spelling(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 准备表达式之后若暂停绑定 TypeId 漂移，正式读值必须拒绝过期事实。 */
 static void test_debug_formal_evaluation_rejects_paused_binding_type_drift(void) {
     const char *source =
             "fn target(paused: int): int {\n"
@@ -795,6 +819,7 @@ static void test_debug_formal_evaluation_rejects_paused_binding_type_drift(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 方法 this 接收者通过帧槽注册为规范绑定，供策略与正式求值共同消费。 */
 static void test_debug_semantic_binding_registers_canonical_receiver(void) {
     const char *source =
             "class Meter {\n"
@@ -847,6 +872,7 @@ static void test_debug_semantic_binding_registers_canonical_receiver(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 暂停数组参数的索引读取应使用带身份的帧绑定并得到实际元素。 */
 static void test_debug_formal_evaluation_reads_indexed_paused_frame_binding(void) {
     const char *source =
             "fn target(paused: int[]): int {\n"
@@ -890,6 +916,7 @@ static void test_debug_formal_evaluation_reads_indexed_paused_frame_binding(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* zr 根经令牌验证后可读取元素；伪造声明范围和更换令牌都应被拒绝。 */
 static void test_debug_formal_evaluation_resolves_generation_checked_runtime_root(void) {
     const char *source = "return 1;";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -943,6 +970,7 @@ static void test_debug_formal_evaluation_resolves_generation_checked_runtime_roo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 闭包捕获从运行时激活帧进入语义引用，须保持捕获槽、令牌及源码声明身份。 */
 static void test_debug_semantic_binding_publishes_canonical_closure_capture(void) {
     const char *source =
             "fn makeRunner() {\n"
@@ -992,6 +1020,7 @@ static void test_debug_semantic_binding_publishes_canonical_closure_capture(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 入口局部变量缺少编译期 symbol/type 时，策略不得宣称其有规范事实。 */
 static void test_debug_semantic_binding_rejects_entry_binding_without_identity(void) {
     const char *source =
             "var provisional: int = 4;\n"

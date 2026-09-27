@@ -59,6 +59,7 @@ static TZrSize read_file_into_buffer(FILE *file, char *buffer, TZrSize bufferSiz
 }
 
 static TZrSize count_instruction_rows(const char *text) {
+    /* 与 function->instructionsLength 对照，防止反汇编器静默漏掉指令行。 */
     TZrSize count = 0u;
     const char *cursor = text;
 
@@ -81,6 +82,7 @@ static TZrSize count_instruction_rows(const char *text) {
 }
 
 static void test_disassemble_function_prints_opcode_count_and_line_comments(void) {
+    /* 递归找到子函数，避免入口函数的指令覆盖掩盖具名函数反汇编缺失。 */
     const char *source =
             "fn add(left: int, right: int): int {\n"
             "    return left + right;\n"
@@ -119,6 +121,7 @@ static void test_disassemble_function_prints_opcode_count_and_line_comments(void
 
 void setUp(void) {}
 
+/* BUG: 建立 state 后断言失败会跳过 Function_Free/State_Destroy；空 tearDown 无法回收 VM 和函数。 */
 void tearDown(void) {}
 
 int main(void) {

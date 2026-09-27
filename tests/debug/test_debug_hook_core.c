@@ -7,6 +7,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
 
+/* 由 VM 的调试 hook 回调写入、Unity 断言读取；一次测试只驱动一个 state。 */
 typedef struct SZrCoreHookCapture {
     TZrUInt32 countEvents;
     TZrUInt32 lineEvents;
@@ -41,6 +42,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
 }
 
 static void count_capture_hook(struct SZrState *state, SZrDebugInfo *debugInfo) {
+    /* 同一回调接收 count、line 和调用边界事件，以核对掩码与去重语义。 */
     ZR_UNUSED_PARAMETER(state);
 
     if (debugInfo == ZR_NULL) {
@@ -63,6 +65,7 @@ static void count_capture_hook(struct SZrState *state, SZrDebugInfo *debugInfo) 
 }
 
 static void stack_capture_hook(struct SZrState *state, SZrDebugInfo *debugInfo) {
+    /* 只在内层函数的活动帧读栈；离开 hook 后 activation 不再作为快照使用。 */
     SZrDebugActivation innerActivation;
     SZrDebugActivation outerActivation;
     SZrDebugInfo innerInfo;
@@ -96,6 +99,8 @@ static void stack_capture_hook(struct SZrState *state, SZrDebugInfo *debugInfo) 
                  sizeof(g_hookCapture.sourceName),
                  "%s",
                  innerInfo.source != ZR_NULL ? innerInfo.source : "");
+        /* BUG: 断言失败时 Unity longjmp 跳过 ZrCore_Debug_Hook 的重锁和栈顶恢复；
+         * 应把检查结果记入 capture，返回 hook 后再由用例断言。 */
         TEST_ASSERT_TRUE(innerInfo.currentLine > 0);
         TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)innerInfo.parametersCount);
 
@@ -196,6 +201,7 @@ static void test_line_and_count_hooks_are_independent_and_line_events_are_dedupl
 }
 
 static void test_getstack_and_getinfo_resolve_nested_frames_and_respect_type_mask(void) {
+    /* 同时验证帧顺序和字段掩码，防止调试接口把未请求的名称/来源混入结果。 */
     const char *source =
             "fn inner(value: int): int {\n"
             "    var local = value + 1;\n"

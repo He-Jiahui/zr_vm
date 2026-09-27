@@ -16,6 +16,7 @@
 #include <pthread.h>
 #endif
 
+// 主线程负责协议交互，工作线程借用 state/function 执行 VM；销毁前必须 join。
 typedef struct ZrDebugExecutionThread {
     SZrState *state;
     SZrFunction *function;
@@ -28,6 +29,7 @@ typedef struct ZrDebugExecutionThread {
 #endif
 } ZrDebugExecutionThread;
 
+// 保留虚拟源文件名，使协议事件能和客户端请求的 sourceFile 对应。
 static SZrFunction *compile_debug_agent_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -43,6 +45,7 @@ static SZrFunction *compile_debug_agent_source(SZrState *state, const char *sour
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// TestManifest 场景走测试编译入口，普通源码编译不会生成同一份测试元数据。
 static SZrFunction *compile_debug_agent_test_source(
         SZrState *state,
         const char *sourceLabel,
@@ -60,6 +63,8 @@ static SZrFunction *compile_debug_agent_test_source(
                    : ZR_NULL;
 }
 
+// 为根函数和子函数注入一致的 scheduler source fact，供重连后的 stackTrace 验证异步契约投影。
+// 函数对象接管所分配的 fact，测试结束由 ZrCore_Function_Free 递归释放。
 static void debug_agent_attach_scheduler_contract(SZrFunction *function) {
     TZrUInt32 index;
 
@@ -93,6 +98,7 @@ static void debug_agent_attach_scheduler_contract(SZrFunction *function) {
     }
 }
 
+// 共享的子调用夹具给能力与断线场景固定的入口停点和返回值。
 static SZrFunction *compile_debug_agent_fixture(SZrState *state, const char *sourceLabel) {
     const char *source =
             "fn addOne(value: int): int {\n"
@@ -106,6 +112,7 @@ static SZrFunction *compile_debug_agent_fixture(SZrState *state, const char *sou
     return compile_debug_agent_source(state, sourceLabel, source);
 }
 
+// 后台执行让前台客户端能在 VM safepoint 发送 pause/continue 等请求。
 static void debug_execution_thread_run(ZrDebugExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return;
@@ -115,12 +122,14 @@ static void debug_execution_thread_run(ZrDebugExecutionThread *thread) {
 }
 
 #if defined(_WIN32)
+// Windows 线程入口仅转发共同执行路径，结果保存在借用的夹具内。
 static DWORD WINAPI debug_execution_thread_proc(LPVOID argument) {
     ZrDebugExecutionThread *thread = (ZrDebugExecutionThread *)argument;
     debug_execution_thread_run(thread);
     return 0;
 }
 #else
+// POSIX 入口与 Windows 入口保持相同的结果与所有权契约。
 static void *debug_execution_thread_proc(void *argument) {
     ZrDebugExecutionThread *thread = (ZrDebugExecutionThread *)argument;
     debug_execution_thread_run(thread);
@@ -128,6 +137,9 @@ static void *debug_execution_thread_proc(void *argument) {
 }
 #endif
 
+// 调用方须先解除暂停再 join；join 完成前不能销毁 thread/state/function。
+// BUG: VM 仍暂停时若后续 Unity 断言失败，longjmp 会越过 join；工作线程借用的测试栈对象随即失效。
+// 证据：Unity TEST_ABORT 与本文件各场景末尾的 debug_execution_thread_join。
 static TZrBool debug_execution_thread_start(ZrDebugExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return ZR_FALSE;
@@ -143,6 +155,7 @@ static TZrBool debug_execution_thread_start(ZrDebugExecutionThread *thread) {
 #endif
 }
 
+// 只在目标可以继续执行时等待退出；暂停期间直接等待会卡住套件。
 static void debug_execution_thread_join(ZrDebugExecutionThread *thread) {
     if (thread == ZR_NULL) {
         return;
@@ -158,6 +171,7 @@ static void debug_execution_thread_join(ZrDebugExecutionThread *thread) {
 #endif
 }
 
+// 从 agent 查询实际绑定端口连接 loopback，容许多个测试进程并行运行。
 static void debug_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) {
     TZrChar endpointText[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
     TZrChar error[256];
@@ -170,6 +184,8 @@ static void debug_client_connect(ZrDebugAgent *agent, SZrNetworkStream *stream) 
     TEST_ASSERT_TRUE(ZrNetwork_StreamConnectLoopback(&endpoint, 3000, stream, error, sizeof(error)));
 }
 
+// params 所有权交给请求树；调用方按事件和响应的协议次序读取帧。
+// BUG: 帧写入失败触发 Unity longjmp，text/request 的释放语句不可达，留下堆泄漏。
 static void debug_client_send_request(SZrNetworkStream *stream, int id, const char *method, cJSON *params) {
     cJSON *request = cJSON_CreateObject();
     char *text;
@@ -190,6 +206,7 @@ static void debug_client_send_request(SZrNetworkStream *stream, int id, const ch
     cJSON_Delete(request);
 }
 
+// 返回下一帧的已解析 JSON；调用方拥有结果并须删除，读取本身不关联请求 ID。
 static cJSON *debug_client_read_message(SZrNetworkStream *stream) {
     TZrChar frame[ZR_NETWORK_FRAME_BUFFER_CAPACITY];
     TZrSize length = 0;
@@ -203,6 +220,7 @@ static cJSON *debug_client_read_message(SZrNetworkStream *stream) {
     return message;
 }
 
+// 成功响应需有对应 ID 和 result；协议错误信息直接显示在断言中便于定位。
 static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
     cJSON *message = debug_client_read_message(stream);
     cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
@@ -220,6 +238,7 @@ static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
     return message;
 }
 
+// 负向能力与陈旧句柄场景只验证错误包结构，具体代码由各测试负责。
 static cJSON *debug_client_expect_error(SZrNetworkStream *stream, int id) {
     cJSON *message = debug_client_read_message(stream);
     cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
@@ -232,6 +251,7 @@ static cJSON *debug_client_expect_error(SZrNetworkStream *stream, int id) {
     return message;
 }
 
+// 事件是独立的无 ID 帧；返回的 JSON 树由调用者负责删除。
 static cJSON *debug_client_expect_event(SZrNetworkStream *stream, const char *method) {
     cJSON *message = debug_client_read_message(stream);
     cJSON *methodItem = cJSON_GetObjectItemCaseSensitive(message, "method");
@@ -242,11 +262,13 @@ static cJSON *debug_client_expect_event(SZrNetworkStream *stream, const char *me
     return message;
 }
 
+// 测试断言的容错字段读取，非空结果的生命周期不超过其所属 JSON 树。
 static const char *debug_json_string(cJSON *object, const char *field) {
     cJSON *item = cJSON_GetObjectItemCaseSensitive(object, field);
     return cJSON_IsString(item) ? item->valuestring : "";
 }
 
+// bool 能力位和数值字段统一转成断言整数；缺字段返回 0，需另验形状时显式断言。
 static int debug_json_int(cJSON *object, const char *field) {
     cJSON *item = cJSON_GetObjectItemCaseSensitive(object, field);
     if (cJSON_IsBool(item)) {
@@ -255,6 +277,7 @@ static int debug_json_int(cJSON *object, const char *field) {
     return cJSON_IsNumber(item) ? (int)item->valuedouble : 0;
 }
 
+// safepoint 可能停在指定区间内不同语句，位置校验因此使用范围并保留源/函数名约束。
 static void debug_assert_stopped_location(cJSON *message,
                                           const char *reason,
                                           const char *sourceFile,
@@ -286,6 +309,7 @@ static void debug_assert_stopped_location(cJSON *message,
     }
 }
 
+// scope/variables 的顺序不是测试契约；按 name 找回借用的 JSON 子对象。
 static cJSON *debug_find_named_object(cJSON *array, const char *name) {
     int index;
 
@@ -303,6 +327,7 @@ static cJSON *debug_find_named_object(cJSON *array, const char *name) {
     return ZR_NULL;
 }
 
+// suspend_on_start 场景需要依次消费握手、模块和入口停止事件后才能发 continue。
 static void debug_client_initialize(SZrNetworkStream *client, const char *moduleName) {
     cJSON *message;
     cJSON *params = cJSON_CreateObject();
@@ -328,6 +353,7 @@ static void debug_client_initialize(SZrNetworkStream *client, const char *module
     cJSON_Delete(message);
 }
 
+// 运行中重连只等待初始化与模块事件；此时不应凭空期待新的 entry 停止。
 static void debug_client_initialize_running(SZrNetworkStream *client, const char *moduleName) {
     cJSON *message;
     cJSON *params = cJSON_CreateObject();
@@ -349,6 +375,7 @@ static void debug_client_initialize_running(SZrNetworkStream *client, const char
     cJSON_Delete(message);
 }
 
+// 初始化响应公布的能力位应与断点、求值和暂停请求可用的协议面保持一致。
 static void test_debug_agent_initialize_reports_extended_capabilities(void) {
     const char *sourcePath = "debug_agent_protocol_capabilities_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -427,6 +454,7 @@ static void test_debug_agent_initialize_reports_extended_capabilities(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 测试编译元数据经 agent 复制为快照后可独立释放，不能依赖原函数内存继续存活。
 static void test_debug_agent_projects_typed_test_manifest(void) {
     static const TZrChar *source =
             "#zr.testing.test#\n"
@@ -465,6 +493,7 @@ static void test_debug_agent_projects_typed_test_manifest(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 先命中并撤销断点，再经 TCP 请求 pause，验证运行中循环的下一 safepoint 仍可暂停。
 static void test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint(void) {
     const char *sourcePath = "debug_agent_protocol_pause_fixture.zr";
     const char *source =
@@ -586,6 +615,8 @@ static void test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// hover/watch 对构造表达式应拒绝隐式能力，REPL 上下文可显式取得可展开结果。
+// 同时验证解析错误的数据字段与能力拒绝共享同一协议错误通道。
 static void test_debug_agent_evaluate_context_enforces_capabilities(void) {
     const char *sourcePath = "debug_agent_protocol_evaluate_context_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -694,6 +725,7 @@ static void test_debug_agent_evaluate_context_enforces_capabilities(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 暂停期间生成的变量引用在继续执行后失效，下一次停止不能复用旧句柄。
 static void test_debug_agent_invalidates_children_handle_after_resume(void) {
     const char *sourcePath = "debug_agent_protocol_stale_children_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -803,6 +835,7 @@ static void test_debug_agent_invalidates_children_handle_after_resume(void) {
     TEST_ASSERT_TRUE(thread.success);
     TEST_ASSERT_EQUAL_INT64(7, thread.result);
 
+    // 将最终断言放在释放之后，避免它们失败时再增加一条普通资源泄漏路径。
     ZrNetwork_StreamClose(&client);
     ZrDebug_AgentStop(agent);
     ZrCore_Function_Free(state, function);
@@ -812,6 +845,7 @@ static void test_debug_agent_invalidates_children_handle_after_resume(void) {
     TEST_ASSERT_TRUE(staleHandleRejected);
 }
 
+// 显式 disconnect 要解除入口暂停，让 VM 完成且不再依赖该客户端。
 static void test_debug_agent_disconnect_request_while_paused_resumes_target(void) {
     const char *sourcePath = "debug_agent_disconnect_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -858,6 +892,7 @@ static void test_debug_agent_disconnect_request_while_paused_resumes_target(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 没有协议 disconnect 的原始断线也应释放暂停目标，避免后台线程永久等待。
 static void test_debug_agent_raw_socket_close_while_paused_resumes_target(void) {
     const char *sourcePath = "debug_agent_raw_close_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -900,6 +935,7 @@ static void test_debug_agent_raw_socket_close_while_paused_resumes_target(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 首客户端继续执行后断线，第二客户端重连并暂停同一运行目标，检查异步契约与局部快照。
 static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(void) {
     const char *sourcePath = "debug_agent_running_reconnect_fixture.zr";
     const char *source =
@@ -972,6 +1008,7 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     message = debug_client_expect_event(&firstClient, "continued");
     cJSON_Delete(message);
 
+    // 此处目标已运行，重连握手与最初的 entry 停止握手有不同事件序列。
     ZrNetwork_StreamClose(&firstClient);
 
     memset(&secondClient, 0, sizeof(secondClient));
@@ -996,6 +1033,7 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
     TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 4);
     TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 10);
+    // 第二客户端读取的异步契约必须来自注入的源码 fact，而不是首次连接缓存。
     {
         cJSON *asyncContract = cJSON_GetObjectItemCaseSensitive(topFrame, "asyncContract");
         TEST_ASSERT_TRUE(cJSON_IsObject(asyncContract));
@@ -1043,6 +1081,7 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     TEST_ASSERT_NOT_NULL(indexItem);
     TEST_ASSERT_TRUE(debug_json_string(totalItem, "value")[0] != '\0');
     TEST_ASSERT_TRUE(debug_json_string(indexItem, "value")[0] != '\0');
+    // safepoint 落在内层变量进入作用域前时，允许 burst 尚未出现在局部快照。
     if (burstItem == ZR_NULL) {
         TEST_ASSERT_TRUE(pausedLine == 4 || pausedLine == 5);
     } else {
@@ -1071,10 +1110,13 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// Unity 要求的生命周期钩子；每个场景各自创建并释放 state/agent。
 void setUp(void) {}
 
+// 当前为空；失败断言后的资源收尾并未集中在此钩子处理。
 void tearDown(void) {}
 
+// CTest 运行该目标时无过滤参数，逐一执行协议与连接生命周期用例。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_debug_agent_initialize_reports_extended_capabilities);

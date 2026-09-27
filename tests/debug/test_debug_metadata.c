@@ -12,6 +12,7 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
+/* reader 借用测试持有的文件缓冲区；ReadSource 的 close 回调不能释放它。 */
 typedef struct SZrBinaryFixtureReader {
     TZrByte *bytes;
     TZrSize length;
@@ -19,6 +20,8 @@ typedef struct SZrBinaryFixtureReader {
 } SZrBinaryFixtureReader;
 
 static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) {
+    /* 返回的缓冲区由 Unity 用例持有；ReadSourceNew 经回调借用字节，
+     * 加载后的函数独立于 reader，测试在用例末尾释放缓冲区。 */
     FILE *file;
     long fileSize;
     TZrByte *buffer;
@@ -80,6 +83,7 @@ static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr cust
 }
 
 static void binary_fixture_reader_close(struct SZrState *state, TZrPtr customData) {
+    /* 缓冲区由各 Unity 用例在读取完成后释放，不随 SZrIo 关闭。 */
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(customData);
 }
@@ -235,6 +239,7 @@ static const SZrFunctionTypedLocalBinding *debug_metadata_find_receiver_binding_
         return ZR_NULL;
     }
 
+    /* 这里只检查本测试编译出的可信布局，不承担不可信二进制的格式验证职责。 */
     current = function->prototypeData + sizeof(TZrUInt32);
     remaining = function->prototypeDataLength - sizeof(TZrUInt32);
     for (prototypeIndex = 0u; prototypeIndex < function->prototypeCount; prototypeIndex++) {
@@ -276,6 +281,7 @@ static const SZrFunctionTypedLocalBinding *debug_metadata_find_receiver_binding_
 }
 
 static void test_binary_roundtrip_preserves_debug_source_identity_and_module_name(void) {
+    /* 编译、写盘、ReadSource、加载四层都必须保留源标识，供断点和栈帧定位。 */
     const char *binaryPath = "debug_metadata_roundtrip_test.zro";
     const char *sourcePath = "fixtures/debug/debug_metadata_roundtrip_test.zr";
     const char *moduleName = "fixtures.debug.debug_metadata_roundtrip_test";
@@ -301,6 +307,8 @@ static void test_binary_roundtrip_preserves_debug_source_identity_and_module_nam
     options.moduleName = moduleName;
     options.moduleHash = sourceHash;
 
+    /* BUG: 写盘成功后、remove 前若有 Unity 断言失败会遗留 .zro；
+     * 空 tearDown 不清理生成路径；应在失败保护层统一收尾。 */
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, binaryPath, &options));
 
     buffer = read_binary_file_owned(binaryPath, &bufferLength);
@@ -313,6 +321,8 @@ static void test_binary_roundtrip_preserves_debug_source_identity_and_module_nam
 
     ZrCore_Io_Init(state, &io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
     sourceObject = ZrCore_Io_ReadSourceNew(&io);
+    /* BUG: 本文件七条成功读取路径均未调用 ReadSourceFree；LoadEntryFunctionToRuntime
+     * 只复制加载结果，State_Destroy 也不回收这批 IO 原始分配，测试进程持续泄漏。 */
     TEST_ASSERT_NOT_NULL(sourceObject);
     TEST_ASSERT_EQUAL_UINT32(1u, sourceObject->modulesLength);
     TEST_ASSERT_NOT_NULL(sourceObject->modules[0].name);
@@ -394,6 +404,7 @@ static void test_binary_roundtrip_preserves_full_debug_source_path_without_write
 }
 
 static void test_binary_roundtrip_preserves_instruction_debug_ranges(void) {
+    /* 对照序列化范围与运行时位置表，防止二进制加载后只剩函数级源路径。 */
     const char *binaryPath = "debug_metadata_instruction_ranges_test.zro";
     const char *sourcePath = "fixtures/debug/debug_metadata_instruction_ranges_test.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -584,6 +595,7 @@ static void test_binary_roundtrip_preserves_canonical_local_binding_identity(voi
 }
 
 static void test_binary_roundtrip_preserves_canonical_receiver_binding_role(void) {
+    /* receiver 位于原型成员函数常量内，不能只比对入口函数的局部表。 */
     const char *binaryPath = "debug_metadata_receiver_role_roundtrip_test.zro";
     const char *sourcePath = "fixtures/debug/debug_metadata_receiver_role_roundtrip_test.zr";
     SZrState *sourceState = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -642,6 +654,7 @@ static void test_binary_roundtrip_preserves_canonical_receiver_binding_role(void
 }
 
 static void test_binary_roundtrip_preserves_canonical_closure_capture_identity(void) {
+    /* 比较捕获类型、符号和源范围，并验证越界查询会清空调用方输出。 */
     const char *binaryPath = "debug_metadata_closure_identity_roundtrip_test.zro";
     const char *sourcePath = "fixtures/debug/debug_metadata_closure_identity_roundtrip_test.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);

@@ -1,3 +1,4 @@
+/* 纯移位表达式可在暂停态正式求值，类型与结果必须可直接用于 watch 展示。 */
 static void test_debug_evaluate_formal_shift_expression_returns_int(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -19,6 +20,7 @@ static void test_debug_evaluate_formal_shift_expression_returns_int(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 右移与按位与应走同一正式整数求值路径，避免只支持语义分类。 */
 static void test_debug_evaluate_formal_bitwise_expressions_return_int(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -47,6 +49,7 @@ static void test_debug_evaluate_formal_bitwise_expressions_return_int(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 移位量可由括号内算术产生，运算优先级不得改变最终整数。 */
 static void test_debug_evaluate_formal_nested_shift_arithmetic_returns_int(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -68,6 +71,7 @@ static void test_debug_evaluate_formal_nested_shift_arithmetic_returns_int(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 数组字面量必须显式授权分配；授权后返回的变量句柄应能枚举元素。 */
 static void test_debug_formal_array_literal_requires_explicit_allocation(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;

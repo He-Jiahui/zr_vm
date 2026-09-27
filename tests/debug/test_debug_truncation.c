@@ -17,6 +17,7 @@ static void test_copy_text_marks_truncated_plain_text(void) {
 }
 
 static void test_copy_text_preserves_tail_for_paths(void) {
+    /* 文件名尾部比路径前缀更有助于定位断点，故路径截断须保留尾部。 */
     TZrChar buffer[40];
     const TZrChar *path = "/very/long/generated/debug/source/path/with/useful_tail_file.zr";
 
@@ -56,6 +57,7 @@ static void test_long_string_value_preview_marks_truncation(void) {
 }
 
 static void test_long_string_value_preview_exposes_paged_chunks(void) {
+    /* 直接构造暂停的 agent，仅验证内部 evaluate/variables 契约，不涉及 TCP 生命周期。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *entryFunction;
     SZrString *longString;
@@ -131,6 +133,7 @@ static void test_long_string_value_preview_exposes_paged_chunks(void) {
 
 void setUp(void) {}
 
+/* BUG: 后两例断言失败会跳过 State_Destroy；空 tearDown 留下 VM，分页例还可能遗留变量句柄。 */
 void tearDown(void) {}
 
 int main(void) {

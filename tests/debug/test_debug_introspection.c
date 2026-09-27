@@ -12,6 +12,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 
+/* hook 保存代际受检的上下文供执行结束后验证失效，布尔值区分各条观察路径。 */
 typedef struct SZrDebugIntrospectionCapture {
     TZrBool sawTargetFrame;
     TZrBool sawCallerFrame;
@@ -148,6 +149,7 @@ static void inspect_caller_frame(SZrState *state) {
 }
 
 static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
+    /* 在目标函数仍活动时读写局部变量；返回后的验证必须只使用失效状态码。 */
     SZrDebugActivation activation;
     SZrDebugInfo info;
     SZrDebugEvaluationContext evaluationContext;
@@ -192,6 +194,7 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
             evaluation_context_contains_stack_slot(state, &evaluationContext, inputBinding->stackSlot)) {
             g_debugIntrospectionCapture.sawCanonicalActiveBinding = ZR_TRUE;
         }
+        /* 只按值保存首个 context；后续同名帧再次进入时检查旧代际不能重用。 */
         if (!g_debugIntrospectionCapture.sawEvaluationContext) {
             g_debugIntrospectionCapture.capturedEvaluationContext = evaluationContext;
             g_debugIntrospectionCapture.sawEvaluationContext = ZR_TRUE;
@@ -260,6 +263,8 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
                     ? find_typed_local_binding_by_slot(activation.function, receiverInputLocal->stackSlot)
                     : ZR_NULL;
             if (receiverInputBinding != ZR_NULL) {
+                /* 人工赋予 receiver 身份以验证调试投影；该标志会留在函数元数据中，
+                 * outer 第二次调用 target 时仍可见，故无 receiver 检查只由首次命中证明。 */
                 receiverInputBinding->roleFlags |= ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
                 ZrCore_Value_ResetAsNull(&receiverValue);
                 if (ZrCore_Debug_EvaluationContext_GetReceiver(
@@ -292,6 +297,8 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
         }
     }
 
+    /* BUG: hook 内断言失败会由 Unity longjmp 离开 ZrCore_Debug_Hook，
+     * 跳过锁和栈顶恢复；应改为采集结果后在执行器返回时断言。 */
     TEST_ASSERT_NULL(ZrCore_Debug_GetLocal(state, &activation, 0, ZR_NULL));
     inspect_caller_frame(state);
 
@@ -326,6 +333,7 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
 }
 
 static void debug_closure_capture_hook(SZrState *state, SZrDebugInfo *debugInfo) {
+    /* 在闭包帧活动时取出捕获 token，再由测试验证篡改和帧退出后的拒绝语义。 */
     SZrDebugEvaluationContext context;
     SZrDebugClosureCaptureBinding capture;
     SZrDebugClosureCaptureBinding invalidCapture;
@@ -494,6 +502,7 @@ static void test_evaluation_context_resolves_generation_checked_closure_capture(
 }
 
 static void test_getupvalue_setupvalue_and_upvalue_id_use_closure_cells(void) {
+    /* 直接构造闭包单元，使 Get/SetUpvalue 与 UpvalueId 面向同一份可变存储。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     SZrClosure *closure;

@@ -1,3 +1,4 @@
+/* 命中断点前只允许纯条件正式求值；分配字面量应拒绝且不能误报满足条件。 */
 static void test_debug_breakpoint_condition_requires_pure_formal_evaluation(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;

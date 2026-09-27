@@ -1,3 +1,4 @@
+/* evaluate 的规范类型与停止代际必须同时经结果结构和协议 JSON 送达客户端。 */
 static void test_debug_evaluate_result_publishes_canonical_type_and_stop_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -31,6 +32,8 @@ static void test_debug_evaluate_result_publishes_canonical_type_and_stop_state(v
             &result,
             error,
             sizeof(error)));
+    /* TODO: 目前只检查较小的 stopStateId；协议层把 uint64 转成 cJSON double，
+     * 需核对允许范围，并补充 2^53 边界的协议往返测试。 */
     TEST_ASSERT_EQUAL_UINT64(73u, result.state_id);
     TEST_ASSERT_TRUE(result.has_canonical_type);
     TEST_ASSERT_NOT_EQUAL_UINT32(0u, result.canonical_type_id);
