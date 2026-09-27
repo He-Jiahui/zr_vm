@@ -50,19 +50,23 @@ Prepare -> Publish -> Claim(worker, epoch) -> Commit
 ```
 
 `Commit` requires a null destination and uses target-domain root handles while
-allocating and initializing the complete graph. If any allocation, decode, or
-target-state check fails, the destination remains unpublished and the caller
-can abort the transaction; the source value is never consumed. `Abort` uses the
-source as an explicit cancellation authority, including when the target domain
-has already become stale. The source-side branch is linear with commit through
-the envelope's `commitInProgress` guard, so a commit and cancellation have one
-terminal winner.
+allocating and initializing the complete graph. On an ordinary failure return,
+the destination remains unpublished and the caller can abort the transaction;
+the source value is never consumed. A protected OOM during target allocation
+can instead bypass temporary-root cleanup and leave `commitInProgress` set, so
+the ordinary `Abort`/`Free` cleanup guarantee does not cover that path. `Abort`
+uses the source as an explicit cancellation authority, including when the
+target domain has already become stale. The source-side branch is linear with
+commit through the envelope's `commitInProgress` guard, so a commit and
+cancellation have one terminal winner.
 
 The façade closes the runtime envelope immediately after a successful commit or
 abort while the source allocator is still valid. It retains a scalar
 `SZrOwnershipTransferSnapshot`, allowing callers to inspect the terminal state
-without retaining graph memory. `Free` is idempotent for the wrapper and also
-attempts to abort an unfinished transaction safely.
+without retaining graph memory. `Free(NULL)` tolerates repeated calls; a
+non-null wrapper is single-use once released. For an unfinished transaction,
+`Free` first attempts to abort it. If a concurrent commit prevents the abort,
+`Free` retains the wrapper and returns; the caller must coordinate a later retry.
 
 ## Ownership and lifetime invariants
 

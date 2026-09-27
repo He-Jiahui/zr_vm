@@ -7,6 +7,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
+/* wrapper 持有源分配器下的 envelope；提交或取消后缓存标量快照，允许先销毁源域再查询。 */
 struct SZrGcDomainCloneTransaction {
     SZrOwnershipTransferEnvelope *envelope;
     SZrState *sourceState;
@@ -19,6 +20,7 @@ struct SZrGcDomainCloneTransaction {
     TZrBool hasCachedSnapshot;
 };
 
+/* 各阶段只向可选诊断写状态与计数，不借出事务内部资源。 */
 static void gc_domain_clone_diagnostic_set(
         SZrDomainTransferDiagnostic *diagnostic,
         EZrDomainTransferStatus status,
@@ -34,6 +36,7 @@ static void gc_domain_clone_diagnostic_set(
     diagnostic->depth = depth;
 }
 
+/* 在可能关闭 envelope 的阶段前更新快照，避免终结后查询依赖源域内存。 */
 static void gc_domain_clone_cache_snapshot(
         SZrGcDomainCloneTransaction *transaction) {
     if (transaction == ZR_NULL || transaction->envelope == ZR_NULL) {
@@ -50,6 +53,7 @@ static TZrBool gc_domain_clone_state_is_terminal(
            state == ZR_OWNERSHIP_TRANSFER_STATE_ABORTED;
 }
 
+/* 只有状态机终结后才能归还源侧 envelope；wrapper 继续负责 GetSnapshot 的可观测性。 */
 static void gc_domain_clone_dispose_terminal(
         SZrGcDomainCloneTransaction *transaction) {
     SZrOwnershipTransferSnapshot snapshot;
@@ -65,14 +69,13 @@ static void gc_domain_clone_dispose_terminal(
     }
     transaction->cachedSnapshot = snapshot;
     transaction->hasCachedSnapshot = ZR_TRUE;
-    /* The wrapper owns the envelope and closes it while the source allocator
-     * is still valid.  The cached scalar snapshot keeps post-terminal
-     * inspection independent of that allocator. */
+    /* 源分配器仍有效时关闭 envelope；终结后的调用方仅从缓存读取快照。 */
     ZrCore_OwnershipTransfer_Free(
             transaction->sourceState, transaction->envelope);
     transaction->envelope = ZR_NULL;
 }
 
+/* 结构化复制必须跨两个活动域；相等的当前身份属于同域共享而非图复制。 */
 static EZrDomainTransferStatus gc_domain_clone_validate_domain_pair(
         SZrState *sourceState,
         SZrState *targetState,
@@ -103,6 +106,7 @@ static EZrDomainTransferStatus gc_domain_clone_validate_domain_pair(
     return ZR_DOMAIN_TRANSFER_STATUS_OK;
 }
 
+/* Prepare 在源侧编码；TODO: 通过预检的无原型 raw array 物化会改动源存储，核实 const source 契约。 */
 SZrGcDomainCloneTransaction *ZrCore_GcDomainClone_Prepare(
         SZrState *sourceState,
         SZrState *targetState,
@@ -159,8 +163,10 @@ SZrGcDomainCloneTransaction *ZrCore_GcDomainClone_Prepare(
     contract.kind = ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE;
     contract.schemaVersion = ZR_GC_DOMAIN_CLONE_SCHEMA_VERSION;
     contract.schemaHash = ZR_GC_DOMAIN_CLONE_SCHEMA_HASH;
+    /* TODO: 下层图提交仅校验非零 schema 字段；若允许跨版本传输，需核实目标端何处验证格式指纹。 */
     contract.flags = ZR_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE;
     contract.quota = *quota;
+    /* TODO: 无原型 raw array 物化若 OOM Throw，会越过事务清理；核实此源图在有效 TryRun 中是否可达。 */
     transaction->envelope = ZrCore_OwnershipTransfer_PrepareCrossDomain(
             sourceState,
             transaction->targetDomain,
@@ -175,6 +181,7 @@ SZrGcDomainCloneTransaction *ZrCore_GcDomainClone_Prepare(
     return transaction;
 }
 
+/* 仅转移事务的可领取状态，wrapper/envelope 仍由 Prepare 调用方负责终结。 */
 TZrBool ZrCore_GcDomainClone_Publish(
         SZrGcDomainCloneTransaction *transaction,
         SZrDomainTransferDiagnostic *diagnostic) {
@@ -207,6 +214,7 @@ TZrBool ZrCore_GcDomainClone_Publish(
     return ZR_TRUE;
 }
 
+/* 领取前再查目标域代数，避免向已经关闭的目标域提交预编码图。 */
 TZrBool ZrCore_GcDomainClone_Claim(
         SZrGcDomainCloneTransaction *transaction,
         TZrUInt64 workerId,
@@ -258,6 +266,7 @@ TZrBool ZrCore_GcDomainClone_Claim(
     return ZR_TRUE;
 }
 
+/* 目标域重建成功即关闭源侧信封；普通 false 失败需 Abort/Free，非局部 OOM 见下方 BUG。 */
 TZrBool ZrCore_GcDomainClone_Commit(
         SZrGcDomainCloneTransaction *transaction,
         SZrTypeValue *target,
@@ -284,6 +293,7 @@ TZrBool ZrCore_GcDomainClone_Commit(
                 0u);
         return ZR_FALSE;
     }
+    /* BUG: TryRun 内目标对象分配 OOM Throw 会跳过临时根清理及 commitInProgress 复位，令 Abort/Free 失败。 */
     result = ZrCore_OwnershipTransfer_CommitCrossDomain(
             transaction->envelope,
             transaction->targetState,
@@ -298,6 +308,7 @@ TZrBool ZrCore_GcDomainClone_Commit(
     return result;
 }
 
+/* 源域在目标域销毁后仍有取消权，因而领取后的取消使用保存的 worker 身份。 */
 TZrBool ZrCore_GcDomainClone_Abort(
         SZrGcDomainCloneTransaction *transaction,
         SZrDomainTransferDiagnostic *diagnostic) {
@@ -341,8 +352,7 @@ TZrBool ZrCore_GcDomainClone_Abort(
     workerId = 0u;
     claimEpoch = 0u;
     if (state == ZR_OWNERSHIP_TRANSFER_STATE_CLAIMED) {
-        /* The source domain is an explicit cancellation authority.  This is
-         * also the safe path after the target domain has been destroyed. */
+        /* 目标域已关闭时只剩源域具备取消权限。 */
         workerId = transaction->workerId;
         claimEpoch = transaction->claimEpoch;
     }
@@ -359,6 +369,7 @@ TZrBool ZrCore_GcDomainClone_Abort(
     return result;
 }
 
+/* 未终结事务先尝试取消；若并发提交占有信封，保留 wrapper 给外部重试。 */
 void ZrCore_GcDomainClone_Free(
         SZrGcDomainCloneTransaction *transaction) {
     SZrOwnershipTransferSnapshot snapshot;
@@ -371,8 +382,7 @@ void ZrCore_GcDomainClone_Free(
                 transaction->envelope, &snapshot);
         if (!gc_domain_clone_state_is_terminal(snapshot.state)) {
             if (!ZrCore_GcDomainClone_Abort(transaction, ZR_NULL)) {
-                /* A concurrent commit still owns the envelope.  Do not drop
-                 * the wrapper and strand that in-flight transaction. */
+                /* TODO: 此处静默保留 wrapper；核实跨线程调用方能否观察失败并安排再次 Free。 */
                 return;
             }
             if (transaction->envelope != ZR_NULL) {
@@ -382,8 +392,7 @@ void ZrCore_GcDomainClone_Free(
                 snapshot = transaction->cachedSnapshot;
             }
         }
-        /* The participating source state must remain alive through this
-         * terminal disposer because the envelope's allocator belongs to it. */
+        /* envelope 属于源分配器，终结清理前 sourceState 必须仍有效。 */
         if (gc_domain_clone_state_is_terminal(snapshot.state) &&
             transaction->sourceState != ZR_NULL) {
             ZrCore_OwnershipTransfer_Free(
@@ -394,6 +403,7 @@ void ZrCore_GcDomainClone_Free(
     free(transaction);
 }
 
+/* 对外暴露事务状态的拷贝；信封关闭后使用终结前缓存而不借用已释放内存。 */
 TZrBool ZrCore_GcDomainClone_GetSnapshot(
         const SZrGcDomainCloneTransaction *transaction,
         SZrOwnershipTransferSnapshot *outSnapshot) {
@@ -417,6 +427,7 @@ TZrBool ZrCore_GcDomainClone_GetSnapshot(
     return ZR_FALSE;
 }
 
+/* 便利入口顺序执行状态机，并在每个失败阶段尝试完成源侧取消与释放。 */
 TZrBool ZrCore_GcDomainClone_Execute(
         SZrState *sourceState,
         SZrState *targetState,

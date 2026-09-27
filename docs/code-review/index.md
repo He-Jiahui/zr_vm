@@ -188,5 +188,6 @@ doc_type: category-index
 | parser CFG 可达性测试 | [64 项](coverage/tests_parser_cfg_reachability.tsv) | 1 个 C 测试文件独立复核，覆盖 58 个函数、全局状态与 5 个关键块，29 个 Unity 注册；源码仅增 30 行注释，GCC/Clang 严格语法检查通过。1 个 BUG 标明断言失败跳过 AST 释放，5 个 TODO 记录分支原因、浮点常量边界及未知布尔选择器的覆盖疑问；同步校正文档将常量 true 用例误作布尔全集穷尽证明的表述，目标测试未运行。 |
 | language server stdio 初始化 | [50 项](coverage/zr_vm_language_server_stdio_initialize_flow.tsv) | 2 个生产 C 文件和 1 个测试文件独立复核，覆盖全部函数、宏和关键状态；源码仅增注释，GCC/Clang C11 严格语法检查通过。2 条 BUG 台账行记录初始化响应发送失败后选中项目可能遗留到后续重试的同一缺陷；相关测试经 CMake 动态注册，目标测试未运行。 |
 | language server stdio 请求注册与进度 | [71 项](coverage/zr_vm_language_server_stdio_request_coordination.tsv) | 2 个 C/H 模块和 1 个测试文件独立复核，源码仅增注释，GCC/Clang C11 严格语法检查通过。4 个 BUG 记录 NUL 请求 ID 错配、进度 token 截断、end 通知失败后仍回复及 UTF-8 partial 位置未转换。两批共迁移四份旧台账中 37 个不同源码行号引用，并更正输出和初始化测试的注册状态；目标运行测试未执行。 |
+| core GC 域运行时与跨域 clone | [55 项](coverage/zr_vm_core_gc_domain_runtime.tsv) | 2 个 C 文件独立复核，源码仅增注释，GCC/Clang C11 严格语法检查通过。5 条 BUG 台账行记录域登记失败后空指针风险及受保护 OOM 绕过跨域提交清理；10 条 TODO 保留边界契约疑问。对四份旧台账的 120 个反向锚点逐一校对并更新漂移行号，同时修正 clone 文档对失败清理及 `Free` 可重复调用的过度承诺；目标运行测试未执行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

@@ -8,8 +8,10 @@
 #include "zr_vm_core/value.h"
 
 #define ZR_GC_DOMAIN_ROOT_INITIAL_CAPACITY ((TZrSize)8u)
+/* 无效槽索引同时用于句柄与对象上的 ownership root 标记；槽代数负责识别复用。 */
 #define ZR_GC_DOMAIN_ROOT_NONE (~(TZrUInt32)0u)
 
+/* 失败输出也保持可安全 Release 的空句柄形态，避免旧槽信息被误认为本次创建成功。 */
 static void gc_domain_reset_handle(SZrGcRootHandle *handle) {
     if (handle == ZR_NULL) {
         return;
@@ -20,6 +22,7 @@ static void gc_domain_reset_handle(SZrGcRootHandle *handle) {
     handle->slotGeneration = 0u;
 }
 
+/* 域编号与代数须同时匹配；事务或句柄不得凭历史域编号重新进入已销毁的域。 */
 static TZrBool gc_domain_identity_matches(
         const SZrGcDomain *domain,
         SZrGcDomainIdentity identity) {
@@ -28,6 +31,7 @@ static TZrBool gc_domain_identity_matches(
            domain->identity.generation == identity.generation;
 }
 
+/* 对象戳记是跨域引用检查的依据，调用方仍须保证对象指针本身可解引用。 */
 static TZrBool gc_domain_object_matches(
         const SZrGcDomain *domain,
         const SZrRawObject *object) {
@@ -36,6 +40,7 @@ static TZrBool gc_domain_object_matches(
            object->gcDomainGeneration == domain->identity.generation;
 }
 
+/* 根表扩容先建新表再替换旧表，使分配失败时所有已有根仍然有效。 */
 static TZrBool gc_domain_grow_roots(SZrGcDomain *domain) {
     TZrSize newCapacity;
     TZrSize newBytes;
@@ -47,6 +52,7 @@ static TZrBool gc_domain_grow_roots(SZrGcDomain *domain) {
     newCapacity = domain->rootCapacity == 0u
                           ? ZR_GC_DOMAIN_ROOT_INITIAL_CAPACITY
                           : domain->rootCapacity * 2u;
+    /* TODO: 容量翻倍和字节乘法未检查溢出；核对 TZrSize 上界及根槽最大数量后限制分配。 */
     newBytes = newCapacity * sizeof(SZrGcDomainRootSlot);
     newRoots = (SZrGcDomainRootSlot *)ZrCore_Memory_RawMallocWithType(
             domain->global, newBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -65,6 +71,7 @@ static TZrBool gc_domain_grow_roots(SZrGcDomain *domain) {
     return ZR_TRUE;
 }
 
+/* 普通句柄与所有权系统共用根表，但分别计数；空闲槽仅在旧代数失效后复用。 */
 static TZrBool gc_domain_allocate_root(
         SZrGcDomain *domain,
         SZrRawObject *target,
@@ -102,10 +109,12 @@ static TZrBool gc_domain_allocate_root(
         domain->ownershipRootCount++;
     }
     *outIndex = (TZrUInt32)index;
+    /* TODO: slotIndex 为 32 位，rootLength 为 TZrSize；核查超出 UINT32_MAX 时的拒绝边界。 */
     *outGeneration = slot->generation;
     return ZR_TRUE;
 }
 
+/* 调用方须持有域锁；域代数与槽代数双重校验隔离域销毁和槽复用后的陈旧句柄。 */
 static SZrGcDomainRootSlot *gc_domain_resolve_slot(
         const SZrState *state,
         const SZrGcRootHandle *handle,
@@ -129,6 +138,7 @@ static SZrGcDomainRootSlot *gc_domain_resolve_slot(
     return slot;
 }
 
+/* clone 先递减共享保留数；最后一个引用释放时才撤销 GC 根并推进槽代数。 */
 static void gc_domain_release_slot(SZrGcDomain *domain, SZrGcDomainRootSlot *slot) {
     if (domain == ZR_NULL || slot == ZR_NULL || slot->kind == ZR_GC_DOMAIN_ROOT_KIND_FREE) {
         return;
@@ -152,6 +162,7 @@ static void gc_domain_release_slot(SZrGcDomain *domain, SZrGcDomainRootSlot *slo
     }
 }
 
+/* BUG: global.c 忽略域分配失败；后续注册表路径将无域分配的空对象交给 Object_Init，存在空指针访问。 */
 SZrGcDomain *ZrCore_GcDomain_New(
         SZrGlobalState *global,
         SZrGarbageCollector *collector) {
@@ -179,6 +190,7 @@ SZrGcDomain *ZrCore_GcDomain_New(
     return domain;
 }
 
+/* global 析构先撤下主 state，再使代际身份失效并释放域持有的两张表。 */
 void ZrCore_GcDomain_Free(SZrGcDomain *domain) {
     SZrGlobalState *global;
 
@@ -213,11 +225,13 @@ void ZrCore_GcDomain_Free(SZrGcDomain *domain) {
             global, domain, sizeof(SZrGcDomain), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
+/* 先登记 mutator 再暴露 state->gcDomain，确保安全点扫描能看到已附着 state。 */
 void ZrCore_GcDomain_AttachState(SZrGcDomain *domain, SZrState *state) {
     if (domain == ZR_NULL || state == ZR_NULL || !domain->active) {
         return;
     }
     if (!ZrCore_GcDomain_RegisterMutator(domain, state)) {
+        /* BUG: mutator 表扩容失败使 state 无域；global.c 不检查，后续注册表路径把空对象交给 Object_Init。 */
         return;
     }
     state->gcDomain = domain;
@@ -229,6 +243,7 @@ void ZrCore_GcDomain_AttachState(SZrGcDomain *domain, SZrState *state) {
     (void)ZrCore_GcDomain_AssignObject(domain, &state->super);
 }
 
+/* 解除 mutator 登记后再清除 state 链接；调用前所有执行与原生作用域须已退出。 */
 void ZrCore_GcDomain_DetachState(SZrGcDomain *domain, SZrState *state) {
     if (domain == ZR_NULL || state == ZR_NULL) {
         return;
@@ -246,6 +261,7 @@ void ZrCore_GcDomain_DetachState(SZrGcDomain *domain, SZrState *state) {
     }
 }
 
+/* 新对象及附着 state 的 super 使用同一域戳记，供写屏障和跨域传输预检。 */
 TZrBool ZrCore_GcDomain_AssignObject(SZrGcDomain *domain, SZrRawObject *object) {
     if (domain == ZR_NULL || object == ZR_NULL || !domain->active) {
         return ZR_FALSE;
@@ -323,6 +339,7 @@ TZrBool ZrCore_GcDomain_ValidateValueWrite(
     return gc_domain_object_matches(state->gcDomain, value->value.object);
 }
 
+/* task/checkpoint/跨域图重建通过句柄持有对象，输出槽的释放责任转给调用方。 */
 TZrBool ZrCore_GcRootHandle_Create(
         SZrState *state,
         SZrRawObject *target,
@@ -351,6 +368,7 @@ TZrBool ZrCore_GcRootHandle_Create(
     return ZR_TRUE;
 }
 
+/* clone 持有同一根槽的一份份额，不另建根；后续 Update 才按需分离。 */
 TZrBool ZrCore_GcRootHandle_Clone(
         SZrState *state,
         const SZrGcRootHandle *source,
@@ -377,6 +395,7 @@ TZrBool ZrCore_GcRootHandle_Clone(
     return ZR_TRUE;
 }
 
+/* 对共享句柄采用写时分离，避免改换一个调用方的根时影响其他 clone。 */
 TZrBool ZrCore_GcRootHandle_Update(
         SZrState *state,
         SZrGcRootHandle *handle,
@@ -420,6 +439,7 @@ TZrBool ZrCore_GcRootHandle_Update(
     return ZR_TRUE;
 }
 
+/* 只在锁内验证槽位；返回的是借用对象指针，调用方跨 GC 边界应重新解析句柄。 */
 TZrBool ZrCore_GcRootHandle_Resolve(
         const SZrState *state,
         const SZrGcRootHandle *handle,
@@ -481,6 +501,7 @@ TZrSize ZrCore_GcDomain_GetOwnershipRootCount(const SZrState *state) {
     return count;
 }
 
+/* unique/resource 的根与普通句柄根分开统计，并把槽身份回写对象供释放时核对。 */
 TZrBool ZrCore_GcDomain_RegisterOwnershipRoot(
         SZrState *state,
         SZrRawObject *object) {
@@ -514,6 +535,7 @@ TZrBool ZrCore_GcDomain_RegisterOwnershipRoot(
     return ZR_TRUE;
 }
 
+/* 只撤销仍由该对象持有的同代槽，防止迟到的释放清掉已复用根。 */
 void ZrCore_GcDomain_UnregisterOwnershipRoot(
         SZrState *state,
         SZrRawObject *object) {
