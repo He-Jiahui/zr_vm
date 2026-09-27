@@ -1,6 +1,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 
+/* 让缺失或冲突的捕获身份统一返回空输出，避免调试器读到旧结果。 */
 static void function_clear_closure_capture_identity_outputs(
         const SZrFunctionTypedTypeRef **outType,
         TZrUInt32 *outSymbolId,
@@ -20,6 +21,7 @@ static void function_clear_closure_capture_identity_outputs(
     }
 }
 
+/* 以 typed sidecar 为规范来源，并要求其与 legacy 捕获槽不存在冲突。 */
 TZrBool ZrCore_Function_GetClosureCaptureIdentity(
         const SZrFunction *function,
         TZrUInt32 captureIndex,
@@ -76,6 +78,7 @@ TZrBool ZrCore_Function_GetClosureCaptureIdentity(
         }
     }
 
+    /* 借出函数拥有的 type 字段；调用方不得越过函数释放或搬迁保存此指针。 */
     if (outType != ZR_NULL) {
         *outType = &match->type;
     }

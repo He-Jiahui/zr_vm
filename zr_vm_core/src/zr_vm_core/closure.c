@@ -9,9 +9,12 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/state.h"
+/* 待关闭栈槽链的 offset 字段所能表示的最大向后跨度。 */
 #define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
+/* 无待关闭登记项时的统一返回值。 */
 #define ZR_CLOSURE_CLOSED_COUNT_NONE ((TZrSize)0)
 
+/* 同一捕获被多个闭包引用时，保留覆盖范围最外层的有效深度。 */
 static TZrUInt32 closure_merge_scope_depth(TZrUInt32 currentScopeDepth, TZrUInt32 incomingScopeDepth) {
     if (currentScopeDepth == ZR_GC_SCOPE_DEPTH_NONE) {
         return incomingScopeDepth;
@@ -22,6 +25,7 @@ static TZrUInt32 closure_merge_scope_depth(TZrUInt32 currentScopeDepth, TZrUInt3
     return currentScopeDepth < incomingScopeDepth ? currentScopeDepth : incomingScopeDepth;
 }
 
+/* 分配或 GC 后刷新可能已搬迁对象的临时原始指针。 */
 static ZR_FORCE_INLINE SZrRawObject *closure_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
     SZrRawObject *forwardedObject;
 
@@ -33,24 +37,28 @@ static ZR_FORCE_INLINE SZrRawObject *closure_refresh_forwarded_raw_object(SZrRaw
     return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
 }
 
+/* 函数元数据随对象搬迁时，以转发地址恢复借用指针。 */
 static ZR_FORCE_INLINE SZrFunction *closure_refresh_forwarded_function(SZrFunction *function) {
     return function != ZR_NULL ? (SZrFunction *)closure_refresh_forwarded_raw_object(
                                          ZR_CAST_RAW_OBJECT_AS_SUPER(function))
                                : ZR_NULL;
 }
 
+/* 闭包分配后恢复局部引用；调用方随后再发布到栈根。 */
 static ZR_FORCE_INLINE SZrClosure *closure_refresh_forwarded_closure(SZrClosure *closure) {
     return closure != ZR_NULL ? (SZrClosure *)closure_refresh_forwarded_raw_object(
                                         ZR_CAST_RAW_OBJECT_AS_SUPER(closure))
                               : ZR_NULL;
 }
 
+/* 捕获单元被搬迁后恢复从父闭包借出的指针。 */
 static ZR_FORCE_INLINE SZrClosureValue *closure_refresh_forwarded_closure_value(SZrClosureValue *closureValue) {
     return closureValue != ZR_NULL ? (SZrClosureValue *)closure_refresh_forwarded_raw_object(
                                              ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue))
                                    : ZR_NULL;
 }
 
+/* 通过父帧的 callable 槽重新取得捕获数组，避免保存搬迁前的内存地址。 */
 static ZR_FORCE_INLINE SZrClosureValue **closure_refresh_parent_closure_values_from_base(SZrState *state,
                                                                                           TZrStackValuePointer base) {
     SZrTypeValue *ownerValue;
@@ -72,6 +80,7 @@ static ZR_FORCE_INLINE SZrClosureValue **closure_refresh_parent_closure_values_f
     return ownerClosure != ZR_NULL ? ownerClosure->closureValuesExtend : ZR_NULL;
 }
 
+/* 闭包创建时用父帧 callable 取得槽布局元数据。 */
 static ZR_FORCE_INLINE SZrFunction *closure_metadata_function_from_frame_base(SZrState *state,
                                                                               TZrStackValuePointer base) {
     if (state == ZR_NULL || base == ZR_NULL || base <= state->stackBase.valuePointer) {
@@ -82,6 +91,7 @@ static ZR_FORCE_INLINE SZrFunction *closure_metadata_function_from_frame_base(SZ
             ZrCore_Closure_GetMetadataFunctionFromValue(state, ZrCore_Stack_GetValueNoProfile(base - 1)));
 }
 
+/* 生成帧的逻辑栈槽可映射到独立物理存储；无布局时沿用普通栈。 */
 static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state,
                                                                  const SZrFunction *function,
                                                                  TZrStackValuePointer base,
@@ -110,6 +120,7 @@ static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state
     return base + stackSlot;
 }
 
+/* 定位待关闭登记槽对应的物理 owner，避免镜像值与物理值重复释放。 */
 static SZrTypeValue *closure_registered_mirror_frame_value(
         SZrState *state,
         TZrStackValuePointer registeredPointer) {
@@ -165,6 +176,7 @@ static SZrTypeValue *closure_registered_mirror_frame_value(
     return ZR_NULL;
 }
 
+/* 所有权值即使没有 CLOSE 元方法也必须走退出作用域清理。 */
 static ZR_FORCE_INLINE TZrBool closure_value_is_ownership_cleanup_value(
         const SZrTypeValue *value) {
     return (TZrBool)(value != ZR_NULL &&
@@ -174,6 +186,7 @@ static ZR_FORCE_INLINE TZrBool closure_value_is_ownership_cleanup_value(
                       value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
 }
 
+/* 无控制块的 UNIQUE/LOANED 镜像可通过对象地址判定直接别名。 */
 static ZR_FORCE_INLINE TZrBool closure_value_is_direct_owner_alias(
         const SZrTypeValue *value) {
     return (TZrBool)(value != ZR_NULL &&
@@ -183,6 +196,7 @@ static ZR_FORCE_INLINE TZrBool closure_value_is_direct_owner_alias(
                       value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
 }
 
+/* 单元关闭后才有内嵌值；锚定逃逸需在此时补传给该值。 */
 static void closure_value_apply_anchored_escape_to_closed_value(SZrState *state, SZrClosureValue *closureValue) {
     TZrUInt32 propagatedEscapeFlags;
 
@@ -199,6 +213,7 @@ static void closure_value_apply_anchored_escape_to_closed_value(SZrState *state,
                                              (EZrGarbageCollectPromotionReason)closureValue->anchoredPromotionReason);
 }
 
+/* 两组尾数组共享一次 GC 对象分配，初始化的 null 槽不形成 GC 边。 */
 SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closureValueCount) {
     TZrSize extraCaptureCount = closureValueCount > 1 ? closureValueCount - 1 : 0;
     TZrSize extraOwnerBytes = closureValueCount * sizeof(SZrRawObject *);
@@ -226,6 +241,7 @@ SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closu
     return closure;
 }
 
+/* 最少保留一个尾槽的结构体布局；零捕获也可创建 stateless 闭包。 */
 SZrClosure *ZrCore_Closure_New(struct SZrState *state, TZrSize closureValueCount) {
     // SZrClosure 已经包含了 closureValuesExtend[1]，所以只需要分配 (closureValueCount - 1) 个额外的指针
     TZrSize extraSize = closureValueCount > 1 ? (closureValueCount - 1) * sizeof(SZrClosureValue *) : 0;
@@ -240,7 +256,10 @@ SZrClosure *ZrCore_Closure_New(struct SZrState *state, TZrSize closureValueCount
     return closure;
 }
 
+/* 每个槽获得独立的已关闭单元，并以写屏障建立闭包到单元的 GC 边。 */
 void ZrCore_Closure_InitValue(struct SZrState *state, SZrClosure *closure) {
+    /* TODO: AOT shim 投影在创建 closure 后立即调用此处，发布到 projectedSelfValue 之前
+     * 尚无显式 GC 根；分配失败可触发完整 GC。需用分配失败注入核实该路径能否回收未锚定闭包。 */
     for (TZrSize i = 0; i < closure->closureValueCount; i++) {
         SZrRawObject *rawObject = ZrCore_RawObject_New(state, ZR_VALUE_TYPE_CLOSURE_VALUE, sizeof(SZrClosureValue), ZR_FALSE);
         SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, rawObject);
@@ -256,6 +275,7 @@ void ZrCore_Closure_InitValue(struct SZrState *state, SZrClosure *closure) {
     }
 }
 
+/* 插入线程开放链表；GC 只搬迁已关闭单元，链内 previous 地址保持有效。 */
 static SZrClosureValue *closure_value_new(struct SZrState *state, TZrStackValuePointer stackPointer,
                                           SZrClosureValue **previous) {
     SZrRawObject *rawObject = ZrCore_RawObject_New(state, ZR_VALUE_TYPE_CLOSURE_VALUE, sizeof(SZrClosureValue), ZR_FALSE);
@@ -279,6 +299,7 @@ static SZrClosureValue *closure_value_new(struct SZrState *state, TZrStackValueP
     return closureValue;
 }
 
+/* 共享同一栈槽的 upvalue；链表按栈地址降序，以便退栈时从头关闭。 */
 SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrStackValuePointer stackPointer) {
     SZrClosureValue **closureValues = &state->stackClosureValueList;
     SZrClosureValue *closureValue = ZR_NULL;
@@ -302,6 +323,7 @@ SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrSta
     return closure_value_new(state, stackPointer, closureValues);
 }
 
+/* 有序链表的第一个低于范围起点的槽之后无需继续扫描。 */
 TZrBool ZrCore_Closure_HasOpenStackValueInRange(const struct SZrState *state,
                                                 TZrStackValuePointer stackStart,
                                                 TZrStackValuePointer stackEnd) {
@@ -328,6 +350,7 @@ TZrBool ZrCore_Closure_HasOpenStackValueInRange(const struct SZrState *state,
     return ZR_FALSE;
 }
 
+/* 捕获元数据来自函数声明，多个闭包可共享并合并到一个单元。 */
 void ZrCore_ClosureValue_SetCaptureMetadata(SZrClosureValue *closureValue,
                                             TZrUInt32 scopeDepth,
                                             TZrUInt32 escapeFlags) {
@@ -339,6 +362,7 @@ void ZrCore_ClosureValue_SetCaptureMetadata(SZrClosureValue *closureValue,
     closureValue->captureEscapeFlags |= escapeFlags;
 }
 
+/* 对开放单元记下逃逸要求，待关闭时再应用于复制出的内嵌值。 */
 void ZrCore_ClosureValue_AnchorEscape(SZrState *state,
                                       SZrClosureValue *closureValue,
                                       TZrUInt32 escapeFlags,
@@ -361,6 +385,7 @@ void ZrCore_ClosureValue_AnchorEscape(SZrState *state,
     closure_value_apply_anchored_escape_to_closed_value(state, closureValue);
 }
 
+/* VM 捕获与原生 owner 捕获均传播到共享单元；直接捕获则标记其值。 */
 void ZrCore_Closure_PropagateEscapeFromObject(SZrState *state,
                                               SZrRawObject *closureObject,
                                               TZrUInt32 escapeFlags,
@@ -432,6 +457,7 @@ void ZrCore_Closure_PropagateEscapeFromObject(SZrState *state,
     }
 }
 
+/* 待关闭登记接受所有权值，其他值需要具备 CLOSE 元方法。 */
 static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackValuePointer stackPointer) {
     SZrTypeValue *stackValue = ZrCore_Stack_GetValue(stackPointer);
     if (stackValue != ZR_NULL &&
@@ -446,6 +472,7 @@ static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackVa
     return meta != ZR_NULL;
 }
 
+/* 先释放镜像帧的物理 owner，再处理登记槽；普通值调用 CLOSE 元方法。 */
 static void closure_value_call_close_meta(SZrState *state,
                                           TZrStackPointer stackPointer,
                                           EZrThreadStatus errorStatus,
@@ -464,6 +491,7 @@ static void closure_value_call_close_meta(SZrState *state,
                               physicalValue, registeredValue));
     SZrTypeValue *value = registeredValue;
 
+    /* 同一控制块的两个槽各自持有引用；直接别名只释放物理 owner 一次。 */
     if (closure_value_is_ownership_cleanup_value(registeredValue)) {
         TZrBool sharesRetainedOwnershipControl =
                 (TZrBool)(hasDistinctPhysicalValue &&
@@ -511,12 +539,14 @@ static void closure_value_call_close_meta(SZrState *state,
     }
 }
 
+/* 待关闭链表只需转发到统一的元方法与所有权清理路径。 */
 static void closure_value_pre_call_close_meta(SZrState *state, TZrStackPointer stackPointer, EZrThreadStatus errorStatus,
                                            TZrBool isYield) {
     closure_value_call_close_meta(state, stackPointer, errorStatus, isYield);
 }
 
 
+/* 长跨度以零 offset 桥接，非零 offset 指向前一登记值。 */
 void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer) {
     ZR_ASSERT(stackPointer > state->toBeClosedValueList.valuePointer);
     SZrTypeValue *stackValue = ZrCore_Stack_GetValue(stackPointer);
@@ -535,6 +565,7 @@ void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackVa
     state->toBeClosedValueList.valuePointer = stackPointer;
 }
 
+/* 摘链前单元仍指向活栈槽；调用方负责将其转为闭合值。 */
 void ZrCore_Closure_UnlinkValue(SZrClosureValue *closureValue) {
     ZR_ASSERT(!ZrCore_ClosureValue_IsClosed(closureValue));
     *closureValue->link.previous = closureValue->link.next;
@@ -543,6 +574,7 @@ void ZrCore_Closure_UnlinkValue(SZrClosureValue *closureValue) {
     }
 }
 
+/* 从高栈槽依次关停开放捕获；栈顶之外的登记暂不拷贝。 */
 void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer stackPointer) {
     SZrClosureValue **cursor = &state->stackClosureValueList;
 
@@ -579,6 +611,7 @@ void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer
     }
 }
 
+/* 跳过用于编码大跨度的零 offset 桥接槽，回到上一登记节点。 */
 static void closure_pop_to_be_closed_list(SZrState *state) {
     TZrStackValuePointer toBeClosed = state->toBeClosedValueList.valuePointer;
     ZR_ASSERT(toBeClosed->toBeClosedValueOffset > 0);
@@ -589,6 +622,7 @@ static void closure_pop_to_be_closed_list(SZrState *state) {
     state->toBeClosedValueList.valuePointer = toBeClosed;
 }
 
+/* 先冻结捕获再执行可调用的清理逻辑，每轮重取可能搬迁的阈值栈指针。 */
 TZrStackValuePointer ZrCore_Closure_CloseClosure(struct SZrState *state, TZrStackValuePointer stackPointer,
                                            EZrThreadStatus errorStatus, TZrBool isYield) {
     TZrMemoryOffset offset = ZrCore_Stack_SavePointerAsOffset(state, stackPointer);
@@ -603,6 +637,7 @@ TZrStackValuePointer ZrCore_Closure_CloseClosure(struct SZrState *state, TZrStac
     return stackPointer;
 }
 
+/* AOT 退出路径按登记数关闭，实际处理数可小于请求数。 */
 TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
                                        TZrSize count,
                                        EZrThreadStatus errorStatus,
@@ -624,6 +659,7 @@ TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
     return closedCount;
 }
 
+/* 分配与捕获查找均可能触发 GC，发布到栈后按父帧元数据连接共享单元。 */
 void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *function, SZrClosureValue **closureValueList,
                            TZrStackValuePointer base, TZrStackValuePointer closurePointer) {
     SZrFunctionStackAnchor baseAnchor;
@@ -663,6 +699,7 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
     SZrFunctionClosureVariable *closureVariables = function->closureValueList;
     closure->function = function;
     ZrCore_Stack_SetRawObjectValue(state, closurePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    /* 传入父闭包捕获列表时，重新从仍在栈上的父 callable 获取数组。 */
     if (closureValueList != ZR_NULL) {
         closureValueList = closure_refresh_parent_closure_values_from_base(state, base);
     }
@@ -704,6 +741,7 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
     }
 }
 
+/* AOT 原生闭包从 shim 取得元数据；普通 native callable 不提供函数元数据。 */
 SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state, const SZrTypeValue *value) {
     SZrRawObject *rawObject;
 
@@ -748,6 +786,7 @@ SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state,
     }
 }
 
+/* 调用帧可在 callable 被替换后保留显式 metadataFunction，优先使用该缓存。 */
 SZrFunction *ZrCore_Closure_GetMetadataFunctionFromCallInfo(struct SZrState *state, struct SZrCallInfo *callInfo) {
     if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
         return ZR_NULL;
