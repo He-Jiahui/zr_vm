@@ -1494,6 +1494,7 @@ int main(void) {
     RUN_TEST(test_source_catch_flows_payload_through_handler_local);
     RUN_TEST(test_source_catch_captures_simple_argument_before_invoke);
     RUN_TEST(test_source_catch_reads_preinvoke_assignment_value);
+    RUN_TEST(test_source_multiple_catches_merge_preinvoke_assignment_value);
     RUN_TEST(test_source_catch_compound_assignment_keeps_legacy_cfg);
     RUN_TEST(test_source_catch_captures_literal_argument_before_invoke);
     RUN_TEST(test_source_catch_local_flow_rejects_hidden_name_bindings);

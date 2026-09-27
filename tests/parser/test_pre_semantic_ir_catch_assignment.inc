@@ -203,3 +203,108 @@ static void test_source_catch_compound_assignment_keeps_legacy_cfg(void) {
     ZrParser_CompilerState_Free(&compiler);
     ZrParser_Ast_Free(g_state, ast);
 }
+
+static void test_source_multiple_catches_merge_preinvoke_assignment_value(void) {
+    static const TZrChar source[] =
+            "fn identity(): int { return 7; }\n"
+            "var result: int = 1;\n"
+            "try { result = identity(); }\n"
+            "catch (first: string) { result; }\n"
+            "catch (second) { result; }\n"
+            "result;\n";
+    static TZrChar sourceName[] = "source_multi_catch_assignment.zr";
+    SZrString *name = ZrCore_String_Create(
+            g_state, sourceName, sizeof(sourceName) - 1U);
+    SZrAstNode *ast = ZrParser_Parse(
+            g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *initialization = ZR_NULL;
+    const SZrSemanticIrInstruction *call = ZR_NULL;
+    const SZrSemanticIrInstruction *joinRead = ZR_NULL;
+    const SZrExecIrPhi *joinPhi = ZR_NULL;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrUInt32 oldEdges = 0U;
+    TZrUInt32 normalEdges = 0U;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    ZrParser_Compiler_PredeclareFunctionBindings(
+            &compiler, ast->data.script.statements);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    for (index = 0U; index < ast->data.script.statements->count; ++index) {
+        if (ast->data.script.statements->nodes[index]->type !=
+            ZR_AST_FUNCTION_DECLARATION) {
+            ZrParser_Statement_Compile(
+                    &compiler, ast->data.script.statements->nodes[index]);
+        }
+    }
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgStartupBlocked);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    for (index = 0U; index < function->instructions.length; ++index) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->sourceRange.start.line == 2U &&
+            instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE) {
+            initialization = instruction;
+        } else if (instruction->sourceRange.start.line == 3U &&
+                   instruction->opcode == ZR_SEMANTIC_IR_CALL_TYPED) {
+            call = instruction;
+        } else if (instruction->sourceRange.start.line == 6U &&
+                   instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
+            joinRead = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(initialization);
+    TEST_ASSERT_NOT_NULL(call);
+    TEST_ASSERT_NOT_NULL(joinRead);
+    TEST_ASSERT_EQUAL_UINT32(initialization->placeId, joinRead->placeId);
+
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    for (index = 0U; index < output.instructionCount; ++index) {
+        const SZrExecIrInstruction *instruction = &output.instructions[index];
+        TZrUInt32 phiIndex;
+        if (instruction->sourceId != joinRead->id) continue;
+        TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_OPCODE_COPY, instruction->opcode);
+        TEST_ASSERT_EQUAL_UINT32(1U, instruction->operands.count);
+        for (phiIndex = 0U; phiIndex < output.phiCount; ++phiIndex) {
+            if (output.phiPool[phiIndex].result ==
+                output.operands[instruction->operands.start]) {
+                joinPhi = &output.phiPool[phiIndex];
+            }
+        }
+    }
+    TEST_ASSERT_NOT_NULL(joinPhi);
+    TEST_ASSERT_EQUAL_UINT32(3U, joinPhi->incomings.count);
+    for (index = 0U; index < joinPhi->incomings.count; ++index) {
+        const SZrExecIrPhiIncoming *incoming =
+                &output.phiIncoming[joinPhi->incomings.start + index];
+        if (incoming->value == initialization->valueId) {
+            ++oldEdges;
+        } else if (incoming->value == call->resultValueId) {
+            ++normalEdges;
+        } else {
+            TEST_FAIL_MESSAGE("join phi has an unrelated definition");
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(2U, oldEdges);
+    TEST_ASSERT_EQUAL_UINT32(1U, normalEdges);
+    ZrCore_ExecIr_FreeFunction(&output);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}

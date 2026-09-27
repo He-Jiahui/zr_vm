@@ -71,6 +71,13 @@ first-match selection without introducing a spelling-based shortcut.
 - late protected-call fallback discards payload and catch-local reads from
   every handler in the list.
 
+`tests/parser/test_pre_semantic_ir_catch_assignment.inc` additionally checks
+a plain assignment interrupted by either of two catches: both handlers retain
+the pre-invoke initialization, and the source read after the catch consumes a
+three-incoming ExecIR phi with two old-value edges and one normal call-result
+edge. This extends the single-catch interrupted-assignment fixture without
+claiming executable backend subtype handling.
+
 ## Validation
 
 - TDD began with the prior producer suite passing 95 tests and the first new
@@ -89,3 +96,8 @@ first-match selection without introducing a spelling-based shortcut.
   halt-on-error enabled.
 - Wiki validation passes for 116 Markdown files, 115 manifest pages, and 644
   local links; the validator unit suite passes 5/5.
+- The additional multi-catch join fixture passes in the WSL GCC 11.4 and
+  Clang 14 producer suites at 108/108 each. Wiki validation passes for 116
+  pages and 646 local links. The Windows shared-parser source target still
+  cannot link four preexisting compiler-internal exports, so this new source
+  fixture has no MSVC execution result.

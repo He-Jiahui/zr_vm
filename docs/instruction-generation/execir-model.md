@@ -581,8 +581,8 @@ is not fabricated as an entry value, and the invoke result is never made
 available on the handler path. For the plain assignment, the normal
 continuation stores the completed call result into the existing local Place;
 the handler's load resolves to the pre-invoke definition of that Place. A later
-read after the catch resolves through a two-predecessor value phi, preserving
-both the normal assignment and exceptional old value. The
+read after the catch resolves through a value phi with the normal assignment
+and one exceptional old-value incoming for each falling-through handler. The
 compiler clears the active handler target before compiling the catch body, so
 a call introduced by a later phase cannot recursively target the same handler;
 after the join, a later call uses its independent propagation sink. Declared

@@ -458,8 +458,8 @@ For a plain assignment, the normal continuation stores the call result into
 the existing local Place; the exceptional handler instead loads its pre-try
 value, which SSA construction keeps distinct from the unfinished invoke result.
 If source reads that Place after the catch, its join load consumes a phi with
-the normal assignment result and the exceptional pre-invoke value on their
-respective predecessor edges.
+the normal assignment result and the pre-invoke value from every falling-through
+handler on their respective predecessor edges.
 The handler target is cleared before the body is compiled; the completed catch
 cannot capture later calls, which receive their ordinary propagation sink.
 If call lowering discovers missing canonical facts after this source form
