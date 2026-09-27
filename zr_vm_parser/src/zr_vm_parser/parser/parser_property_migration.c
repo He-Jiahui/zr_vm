@@ -3,17 +3,20 @@
 
 #include <ctype.h>
 
+/* 源文本中的字节切片；迁移建议必须保留原始拼写而非重新打印 AST。 */
 typedef struct SZrLegacyPropertySlice {
     TZrSize start;
     TZrSize length;
 } SZrLegacyPropertySlice;
 
+/* 替换文本的有界缓冲区，仅在构建诊断期间有效。 */
 typedef struct SZrLegacyPropertyTextBuilder {
     TZrChar *data;
     TZrSize length;
     TZrSize capacity;
 } SZrLegacyPropertyTextBuilder;
 
+/* 所有迁移切片都以当前 lexer 源文本为边界，避免诊断引用越界范围。 */
 static TZrBool legacy_property_slice_is_valid(
         SZrParserState *ps,
         SZrLegacyPropertySlice slice) {
@@ -21,6 +24,7 @@ static TZrBool legacy_property_slice_is_valid(
            slice.start <= ps->lexer->sourceLength &&
            slice.length <= ps->lexer->sourceLength - slice.start;
 }
+/* 将原始字节位置转换为 IDE 可展示的文件范围。 */
 static SZrFileRange legacy_property_range_from_slice(
         SZrParserState *ps,
         SZrLegacyPropertySlice slice) {
@@ -38,6 +42,7 @@ static SZrFileRange legacy_property_range_from_slice(
     return range;
 }
 
+/* 只裁掉类型拼写两端空白，保留用户写下的内部格式。 */
 static void legacy_property_trim_slice(
         SZrParserState *ps,
         SZrLegacyPropertySlice *slice) {
@@ -59,6 +64,7 @@ static void legacy_property_trim_slice(
     }
 }
 
+/* 在已验证的源码区间定位旧语法标点，不访问其他声明的文本。 */
 static TZrBool legacy_property_find_char(
         SZrParserState *ps,
         TZrSize start,
@@ -78,6 +84,7 @@ static TZrBool legacy_property_find_char(
     return ZR_FALSE;
 }
 
+/* class 旧访问器和 interface 旧签名使用不同 AST 形状，配对前统一取身份名。 */
 static SZrString *legacy_property_entry_name(
         const SZrLegacyPropertyMigrationEntry *entry) {
     SZrAstNode *node;
@@ -126,6 +133,7 @@ static TZrBool legacy_property_entry_is_setter(
                    ZR_AST_PROPERTY_SET;
 }
 
+/* class 使用已保存名称位置；interface 缺该字段，需在声明源码范围找原拼写。 */
 static TZrBool legacy_property_find_name_slice(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *entry,
@@ -168,6 +176,8 @@ static TZrBool legacy_property_find_name_slice(
         node->location.end.offset > ps->lexer->sourceLength) {
         return ZR_FALSE;
     }
+    /* BUG: interface 名称按声明全文首次匹配；如 `pub get b: int;` 的 `b`
+     * 先命中 `pub`，相关诊断指错位置，替换构建器也会找不到 get/set 而放弃自动修复。 */
     for (TZrSize offset = node->location.start.offset;
          offset + nameLength <= node->location.end.offset;
          offset++) {
@@ -180,6 +190,7 @@ static TZrBool legacy_property_find_name_slice(
     return ZR_FALSE;
 }
 
+/* 自动替换需要原类型文本；无法从旧声明可靠切出时只报告不提供机器修复。 */
 static TZrBool legacy_property_find_type_slice(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *entry,
@@ -244,6 +255,7 @@ static TZrBool legacy_property_find_type_slice(
     return outSlice->length > 0U;
 }
 
+/* 相关信息指向旧访问器体；无体签名以访问器本身作回退范围。 */
 static SZrFileRange legacy_property_body_range(
         const SZrLegacyPropertyMigrationEntry *entry) {
     SZrFileRange range;
@@ -263,6 +275,7 @@ static SZrFileRange legacy_property_body_range(
     return body != ZR_NULL ? body->location : modifier->location;
 }
 
+/* 比较类型的原始字节，避免把语义上可能相同但拼写不同的两个声明自动合并。 */
 static TZrBool legacy_property_slices_equal(
         SZrParserState *ps,
         SZrLegacyPropertySlice left,
@@ -285,6 +298,7 @@ static TZrBool legacy_property_names_equal(
            ZrCore_String_Equal(leftName, rightName);
 }
 
+/* 只有相邻访问器的类型、可见性、static、修饰符及装饰器条件均相容才给配对修复。 */
 static TZrBool legacy_property_contracts_match(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *left,
@@ -315,6 +329,7 @@ static TZrBool legacy_property_contracts_match(
            rightProperty->decorators->count == 0U;
 }
 
+/* 替换建议不能截断；缓冲区不足时放弃自动修复并保留纯诊断。 */
 static TZrBool legacy_property_text_append(
         SZrLegacyPropertyTextBuilder *builder,
         const TZrChar *text,
@@ -329,6 +344,7 @@ static TZrBool legacy_property_text_append(
     return ZR_TRUE;
 }
 
+/* 源切片加入替换文本前再次核对 lexer 边界。 */
 static TZrBool legacy_property_text_append_slice(
         SZrParserState *ps,
         SZrLegacyPropertyTextBuilder *builder,
@@ -340,6 +356,7 @@ static TZrBool legacy_property_text_append_slice(
                    slice.length);
 }
 
+/* 旧 setter 的非 value 参数名需要在统一属性体内补局部绑定，保持原体引用。 */
 static TZrBool legacy_property_append_class_accessor(
         SZrParserState *ps,
         SZrLegacyPropertyTextBuilder *builder,
@@ -405,6 +422,8 @@ static TZrBool legacy_property_append_class_accessor(
            legacy_property_text_append(builder, "\n", 1U);
 }
 
+/* 把一对旧式访问器压成单个统一 property 替换；结果只借给诊断构建器，
+ * 返回缓冲区仍由调用方释放。 */
 static TZrChar *legacy_property_build_replacement(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *first,
@@ -513,6 +532,7 @@ static TZrChar *legacy_property_build_replacement(
     return builder.data;
 }
 
+/* 为迁移入口发布结构化错误；只有无歧义的源切片才携带机器适用的替换。 */
 static void legacy_property_publish_diagnostic(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *first,
@@ -587,6 +607,7 @@ static void legacy_property_publish_diagnostic(
     }
 }
 
+/* class/interface 声明各自创建一个短期收集器；成员 AST 尚未交付正常编译器。 */
 void parser_property_migration_collection_init(
         SZrState *state,
         SZrLegacyPropertyMigrationCollection *collection) {
@@ -603,12 +624,15 @@ void parser_property_migration_collection_init(
     }
 }
 
+/* 成功后收集器暂持 declaration，直到 publish_and_free；失败则仍归调用者。 */
 TZrBool parser_property_migration_collection_append(
         SZrState *state,
         SZrLegacyPropertyMigrationCollection *collection,
         SZrAstNode *declaration) {
     SZrLegacyPropertyMigrationEntry entry;
 
+    /* BUG: Array_Init 分配 head 失败仍将 isValid 置真；这里通过校验后
+     * Array_Push 会断言空 head，OOM 时无法可靠返回失败给调用方。 */
     if (state == ZR_NULL || collection == ZR_NULL || declaration == ZR_NULL ||
         !collection->entries.isValid) {
         return ZR_FALSE;
@@ -619,6 +643,7 @@ TZrBool parser_property_migration_collection_append(
     return ZR_TRUE;
 }
 
+/* 普通成员也占一个序号，禁止把被其他成员隔开的旧 get/set 配成一组。 */
 void parser_property_migration_collection_mark_current_member(
         SZrLegacyPropertyMigrationCollection *collection) {
     if (collection != ZR_NULL) {
@@ -626,6 +651,7 @@ void parser_property_migration_collection_mark_current_member(
     }
 }
 
+/* 同名同类型旧声明若不相邻，单项修复也应降级，避免产生重复属性。 */
 static TZrBool legacy_property_entries_share_identity(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *left,
@@ -639,6 +665,8 @@ static TZrBool legacy_property_entries_share_identity(
            legacy_property_slices_equal(ps, leftType, rightType);
 }
 
+/* 迁移解析完成后先处理相邻 getter/setter，再处理单项或歧义项；
+ * 无论诊断是否成功构建，最终都释放暂存 AST，不交给声明成员数组。 */
 void parser_property_migration_collection_publish_and_free(
         SZrParserState *ps,
         SZrLegacyPropertyMigrationCollection *collection) {

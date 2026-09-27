@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 #include "parser_property_migration.h"
+/* 分类试探与正式成员解析共用修饰符集合；字段分支另行拒绝其中不适用的标志。 */
 static TZrUInt32 class_member_allowed_modifier_flags(void) {
     return ZR_DECLARATION_MODIFIER_ABSTRACT |
            ZR_DECLARATION_MODIFIER_VIRTUAL |
@@ -8,6 +9,7 @@ static TZrUInt32 class_member_allowed_modifier_flags(void) {
            ZR_DECLARATION_MODIFIER_SHADOW;
 }
 
+/* 在不提交游标的前提下选定 class 成员语法，供声明循环分派正式解析器。 */
 static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
     SZrParserCursor cursor;
     EZrAstNodeType kind = ZR_AST_CLASS_METHOD;
@@ -18,6 +20,8 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
 
     save_parser_cursor(ps, &cursor);
 
+    /* BUG: 带装饰器的成员在试探阶段创建 AST 后未释放；游标恢复只回退 token，
+     * 正式解析会再次分配，解析该成员时泄漏先前的装饰器树。 */
     while (ps->lexer->t.token == ZR_TK_SHARP) {
         parse_decorator_expression(ps);
     }
@@ -56,6 +60,8 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
     return kind;
 }
 
+/* 顶层声明分派器调用此入口；返回的声明 AST 统一拥有名称、泛型、继承和成员。
+ * 旧式 get/set 只在迁移解析模式暂存，发布诊断后回收，不进入正常成员树。 */
 SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange bodyOpenLoc = startLoc;
@@ -103,6 +109,8 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 泛型解析失败会返回 NULL；核查 parser 的 hasError 恢复契约，
+         * 确认此处继续建无泛型声明 AST 是否会掩盖原始错误。 */
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
@@ -142,6 +150,8 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         }
     }
 
+    /* BUG: malformed where 可使此处返回；声明节点尚未接管 nameNode/generic，
+     * AstNodeArray_Free 只释放容器，已有继承节点和装饰器节点也会泄漏。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         ZrParser_AstNodeArray_Free(ps->state, inherits);
@@ -160,6 +170,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     SZrLegacyPropertyMigrationCollection legacyProperties;
+    /* BUG: 成员数组分配失败时名称、泛型及已有子节点未释放。 */
     if (members == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         ZrParser_AstNodeArray_Free(ps->state, inherits);
@@ -256,6 +267,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange classLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_DECLARATION, classLoc);
+    /* BUG: 节点分配失败仅销毁数组容器，已解析的成员树和声明头资源仍被遗留。 */
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         ZrParser_AstNodeArray_Free(ps->state, inherits);
@@ -275,14 +287,16 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     return node;
 }
 
-// 解析接口字段声明
-
+/* class 成员分派器选择字段后调用；产出的名称、类型和初值由字段 AST 持有。
+ * 所有权约束写在字段类型而非旧式 field-scoped using 上。 */
 SZrAstNode *parse_class_field(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
 
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
+    /* BUG: 带装饰器的字段若在弃用 var const 或名称解析处失败，
+     * 下方早退只释放数组容器，装饰器 AST 泄漏。 */
     while (ps->lexer->t.token == ZR_TK_SHARP) {
         SZrAstNode *decorator = parse_decorator_expression(ps);
         if (decorator != ZR_NULL) {
@@ -382,6 +396,7 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     SZrFileRange fieldLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_FIELD, fieldLoc);
+    /* BUG: 节点分配失败时仅释放装饰器容器，名称、类型、初值和装饰器节点泄漏。 */
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -399,8 +414,8 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     return node;
 }
 
-// 解析类方法
-
+/* class 成员分派器调用；保留 bodyless 方法 AST 供后续语义阶段按修饰符判定，
+ * 参数、泛型、返回类型和方法体在成功时均转交方法节点。 */
 SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
@@ -482,6 +497,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 方法泛型解析失败后仍继续，需核对 hasError 如何阻止该 AST 被消费。 */
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
@@ -510,6 +526,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         }
     }
 
+    /* BUG: 缺失 ')' 的可达错误路径只释放数组容器，已解析参数、名称和泛型泄漏。 */
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
         report_missing_parameter_list_close(ps, get_current_token_location(ps));
         ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -526,6 +543,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         returnType = parse_type(ps);
     }
 
+    /* BUG: malformed where 返回时没有释放方法名、泛型、返回类型和参数子节点。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         if (params != ZR_NULL) {
@@ -541,6 +559,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         consume_token(ps, ZR_TK_SEMICOLON);
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
+        /* BUG: 方法体解析失败时 nameNode/generic/returnType 和参数子节点无所有者。 */
         if (body == ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
             if (params != ZR_NULL) {
@@ -557,6 +576,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrFileRange methodLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_METHOD, methodLoc);
+    /* BUG: 节点分配失败只释放数组容器，方法签名和可能已建的方法体泄漏。 */
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         if (params != ZR_NULL) {
@@ -582,8 +602,8 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     return node;
 }
 
-// 解析属性 Getter
-
+/* 仅供旧式分裂属性的迁移解析；普通 class 属性走统一 property 声明。
+ * getter AST 交给 classProperty，再由迁移收集器生成建议并释放。 */
 SZrAstNode *parse_property_get(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     TZrUInt32 modifierFlags;
@@ -616,6 +636,7 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
         consume_token(ps, ZR_TK_SEMICOLON);
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
+        /* BUG: 迁移模式下 body 解析失败仍遗留先前创建的 getter 名称和类型。 */
         if (body == ZR_NULL) {
             return ZR_NULL;
         }
@@ -628,6 +649,7 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
     SZrFileRange getLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PROPERTY_GET, getLoc);
+    /* BUG: 分配失败时 getter 的名称、类型和 body 均无 AST 接管。 */
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
@@ -640,8 +662,7 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
     return node;
 }
 
-// 解析属性 Setter
-
+/* 与旧式 getter 成对供迁移诊断使用；参数名可能在替换文本里变为局部绑定。 */
 SZrAstNode *parse_property_set(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     TZrUInt32 modifierFlags;
@@ -678,6 +699,7 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        /* BUG: setter 缺失 ')' 时临时名称、参数和类型未释放。 */
         report_missing_parameter_list_close(ps, get_current_token_location(ps));
         return ZR_NULL;
     }
@@ -691,6 +713,7 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
         consume_token(ps, ZR_TK_SEMICOLON);
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
+        /* BUG: 迁移模式下 setter 体失败仍遗留名称、参数和类型。 */
         if (body == ZR_NULL) {
             return ZR_NULL;
         }
@@ -703,6 +726,7 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
     SZrFileRange setLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PROPERTY_SET, setLoc);
+    /* BUG: 分配失败时 setter 的名称、参数、类型和 body 均无 AST 接管。 */
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
@@ -716,8 +740,7 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
     return node;
 }
 
-// 解析类属性
-
+/* 迁移模式暂存单个旧式 getter/setter，不能作为现代属性直接进入编译器成员表。 */
 SZrAstNode *parse_class_property(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
@@ -766,6 +789,7 @@ SZrAstNode *parse_class_property(SZrParserState *ps) {
     SZrFileRange propertyLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_PROPERTY, propertyLoc);
+    /* BUG: 迁移节点分配失败时只释放装饰器容器，已解析的 getter/setter 节点泄漏。 */
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -779,8 +803,7 @@ SZrAstNode *parse_class_property(SZrParserState *ps) {
     return node;
 }
 
-// 解析类元函数
-
+/* class 成员分派器用此入口构造元函数；显式 super 调用范围留给后续构造语义检查。 */
 SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
@@ -820,6 +843,7 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     SZrIdentifier *meta = &nameNode->data.identifier;
     if (meta->name != ZR_NULL &&
         strcmp(ZrCore_String_GetNativeString(meta->name), "decorate") == 0) {
+        /* BUG: 已删除的 @decorate 被拒绝后，先前创建的标识符节点未释放。 */
         report_error(
                 ps,
                 "@decorate was removed; use a declarationTransform comptime function");
@@ -852,6 +876,7 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        /* BUG: 元函数缺失 ')' 时仅释放参数容器，名称、参数子节点及可变参数泄漏。 */
         report_missing_parameter_list_close(ps, get_current_token_location(ps));
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -927,6 +952,8 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     SZrFileRange metaLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_META_FUNCTION, metaLoc);
+    /* BUG: 元函数节点分配失败时仅释放参数和 super 实参数组容器，
+     * 元名称、签名、实参子节点及方法体均未被接管。 */
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);

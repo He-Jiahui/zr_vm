@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* tuple/record 变体字段共用参数 AST 表示，以复用类型标注和装饰器的所有权规则。 */
 static SZrAstNode *parse_union_field(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNodeArray *decorators;
@@ -70,6 +71,7 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     return node;
 }
 
+/* union 变体的 tuple 负载；失败时必须连同已解析的字段节点回收。 */
 static SZrAstNodeArray *parse_union_tuple_fields(SZrParserState *ps) {
     SZrAstNodeArray *fields;
 
@@ -103,6 +105,7 @@ static SZrAstNodeArray *parse_union_tuple_fields(SZrParserState *ps) {
     return fields;
 }
 
+/* union 变体的命名负载；与 tuple 使用同一字段节点，分隔符由此入口约束。 */
 static SZrAstNodeArray *parse_union_struct_fields(SZrParserState *ps) {
     SZrAstNodeArray *fields;
 
@@ -142,6 +145,8 @@ static SZrAstNodeArray *parse_union_struct_fields(SZrParserState *ps) {
     return fields;
 }
 
+/* union 声明循环调用；@ 标记在这里保留为默认 using 变体候选，
+ * 唯一性由外层循环检查，字段数组由成功返回的变体 AST 接管。 */
 SZrAstNode *parse_union_variant(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNodeArray *decorators;
@@ -219,6 +224,8 @@ SZrAstNode *parse_union_variant(SZrParserState *ps) {
     return node;
 }
 
+/* 顶层声明入口；将泛型 where、默认 using 变体和负载形状交给后续 union 语义阶段。
+ * 失败路径显式释放名称、泛型和已建子树，因为尚未有声明 AST 接管它们。 */
 SZrAstNode *parse_union_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrFileRange bodyOpenLoc;

@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* class 与统一 property 声明共用修饰符词法范围；具体组合由容器语义阶段检查。 */
 static TZrUInt32 property_allowed_modifier_flags(void) {
     return ZR_DECLARATION_MODIFIER_ABSTRACT |
            ZR_DECLARATION_MODIFIER_VIRTUAL |
@@ -8,6 +9,7 @@ static TZrUInt32 property_allowed_modifier_flags(void) {
            ZR_DECLARATION_MODIFIER_SHADOW;
 }
 
+/* 访问器内部的可见性覆盖仅在明确出现访问关键字时生效。 */
 static TZrBool property_access_modifier_starts_here(SZrParserState *ps) {
     EZrToken token;
 
@@ -18,6 +20,7 @@ static TZrBool property_access_modifier_starts_here(SZrParserState *ps) {
     return token == ZR_TK_PRI || token == ZR_TK_PRO || token == ZR_TK_PUB;
 }
 
+/* 在属性体内判别访问器边界，不消耗正式解析器的输入。 */
 static TZrBool property_accessor_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool result;
@@ -38,6 +41,7 @@ static TZrBool property_accessor_starts_here(SZrParserState *ps) {
     return result;
 }
 
+/* 属性声明尚未交付 AST 时的统一清理入口，连同装饰器和访问器子树回收。 */
 static void property_free_declaration_parts(SZrParserState *ps,
                                             SZrAstNodeArray *decorators,
                                             SZrType *typeInfo,
@@ -50,6 +54,8 @@ static void property_free_declaration_parts(SZrParserState *ps,
     free_ast_node_array_with_elements(ps->state, accessors);
 }
 
+/* class/struct/interface 成员分派器的试探入口；临时装饰器必须回收，
+ * 然后恢复游标，让正式属性解析重新取得输入和所有权。 */
 TZrBool parser_property_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     SZrAstNodeArray *decorators;
@@ -70,6 +76,7 @@ TZrBool parser_property_declaration_starts_here(SZrParserState *ps) {
     return result;
 }
 
+/* 将 contextual init 与 get/set 收敛到同一访问器角色；位置用于后续诊断。 */
 static TZrBool property_consume_accessor_keyword(
         SZrParserState *ps,
         EZrPropertyAccessorKind *outKind,
@@ -92,6 +99,8 @@ static TZrBool property_consume_accessor_keyword(
     return ZR_TRUE;
 }
 
+/* 为统一 property AST 生成一个访问器，保留 bodyless、表达式和块体形状；
+ * 访问器自己的可见性可覆盖属性级默认值，语义约束留给编译器。 */
 static SZrAstNode *parse_property_accessor(SZrParserState *ps,
                                            EZrAccessModifier propertyAccess) {
     SZrFileRange startLocation = get_current_token_location(ps);
@@ -176,6 +185,9 @@ static SZrAstNode *parse_property_accessor(SZrParserState *ps,
     return node;
 }
 
+/* 三种容器的正式 property 解析入口，统一产生 ZR_AST_PROPERTY_DECLARATION。
+ * 容器实参只表示分派来源；编译器从父声明恢复容器并检查适用规则。
+ * 成功时名称、类型、装饰器和访问器均转交 AST；失败时调用本文件的清理入口。 */
 SZrAstNode *parse_property_declaration(SZrParserState *ps,
                                        EZrPropertyContainerKind containerKind) {
     SZrFileRange startLocation = get_current_token_location(ps);

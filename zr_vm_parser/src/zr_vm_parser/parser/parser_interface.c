@@ -1,6 +1,7 @@
 #include "parser_internal.h"
 #include "parser_property_migration.h"
 
+/* interface 成员分派器调用；字段只记录签名，名称和类型在成功时由字段 AST 持有。 */
 SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
 
@@ -52,6 +53,7 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     SZrFileRange fieldLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_FIELD_DECLARATION, fieldLoc);
+    /* BUG: 分配失败时字段名和类型仍无 AST 接管。 */
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
@@ -64,8 +66,8 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     return node;
 }
 
-// 解析接口方法签名
-
+/* interface 方法仅建立契约签名；泛型 where 和参数归属在节点创建后交给 AST，
+ * 缺失分号通过结构化诊断上报，编译阶段再校验实现匹配。 */
 SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     EZrMethodReceiverModifier receiverModifier = ZR_METHOD_RECEIVER_DEFAULT;
@@ -96,6 +98,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 泛型解析返回 NULL 后继续解析签名；核查 hasError 是否阻止缺泛型 AST 被消费。 */
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
@@ -125,6 +128,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        /* BUG: 缺失 ')' 时只释放参数容器，方法名、泛型和参数子节点泄漏。 */
         report_missing_parameter_list_close(ps, get_current_token_location(ps));
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -139,6 +143,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
         returnType = parse_type(ps);
     }
 
+    /* BUG: malformed where 返回时只销毁参数容器，名称、泛型、返回类型和参数节点泄漏。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -156,6 +161,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     SZrFileRange methodLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_METHOD_SIGNATURE, methodLoc);
+    /* BUG: 分配失败时只释放参数容器，签名的名称、泛型和返回类型泄漏。 */
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -173,8 +179,8 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     return node;
 }
 
-// 解析接口属性签名
-
+/* 只在迁移模式解析旧式 get/set 签名，供统一 property 替换诊断使用；
+ * 普通接口成员不能把这个旧 AST 交给编译器。 */
 SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
 
@@ -224,6 +230,7 @@ SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
     SZrFileRange propertyLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_PROPERTY_SIGNATURE, propertyLoc);
+    /* BUG: 迁移模式下节点分配失败时已解析名称和类型泄漏。 */
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
@@ -236,8 +243,7 @@ SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
     return node;
 }
 
-// 解析接口元函数签名
-
+/* interface 的元函数只承诺名称、参数和返回类型，不在这里生成实现体。 */
 SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
 
@@ -256,6 +262,7 @@ SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
     SZrIdentifier *meta = &nameNode->data.identifier;
     if (meta->name != ZR_NULL &&
         strcmp(ZrCore_String_GetNativeString(meta->name), "decorate") == 0) {
+        /* BUG: 拒绝已删除的 @decorate 后未释放标识符节点。 */
         report_error(
                 ps,
                 "@decorate was removed; use a declarationTransform comptime function");
@@ -312,6 +319,7 @@ SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
     SZrFileRange metaLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_META_SIGNATURE, metaLoc);
+    /* BUG: 分配失败时元名称、参数子节点和返回类型仍无所有者。 */
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -327,8 +335,8 @@ SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
     return node;
 }
 
-// 解析接口声明
-
+/* 顶层语句分派器调用；继承类型和成员由最终 interface AST 拥有。
+ * 迁移模式中的旧属性签名暂存到诊断收集器，并在建树前释放。 */
 SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrFileRange bodyOpenLoc = startLoc;
@@ -351,6 +359,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 泛型解析失败后仍继续创建 interface AST；核查 parser 错误状态的消费边界。 */
         generic = parse_generic_declaration(ps, ZR_TRUE);
     }
 
@@ -390,6 +399,8 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
         }
     }
 
+    /* BUG: malformed where 可达时尚未创建 interface 节点；只释放数组容器会
+     * 遗留名称、泛型及已解析的继承类型节点。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         return ZR_NULL;
@@ -407,6 +418,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     SZrLegacyPropertyMigrationCollection legacyProperties;
+    /* BUG: 成员数组分配失败时名称、泛型和继承节点未被释放。 */
     if (members == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         return ZR_NULL;
@@ -535,6 +547,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     SZrFileRange interfaceLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_DECLARATION, interfaceLoc);
+    /* BUG: 节点分配失败只释放两个数组容器，声明头和子节点仍泄漏。 */
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         ZrParser_AstNodeArray_Free(ps->state, members);

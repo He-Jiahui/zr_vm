@@ -1,9 +1,12 @@
 #include "parser_internal.h"
 
+/* struct 成员分派器调用；字段的所有权语义来自类型标注，不能用旧式 using 语法。 */
 SZrAstNode *parse_struct_field(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
 
+    /* BUG: 带装饰器的字段若在 using/%/var const 或名称解析处失败，
+     * 下方早退只释放数组容器，装饰器 AST 仍被遗留。 */
     while (ps->lexer->t.token == ZR_TK_SHARP) {
         SZrAstNode *decorator = parse_decorator_expression(ps);
         if (decorator != ZR_NULL) {
@@ -95,6 +98,7 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     SZrFileRange fieldLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_FIELD, fieldLoc);
+    /* BUG: 节点分配失败只释放装饰器容器，名称、类型、初值和装饰器子节点泄漏。 */
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -111,8 +115,8 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     return node;
 }
 
-// 解析结构体方法
-
+/* struct 成员分派器调用；readonly struct 的默认接收者随后被提升为 const，
+ * 显式 static/const 的语义约束由此 AST 与后续编译检查共同承担。 */
 SZrAstNode *parse_struct_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -179,6 +183,7 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 泛型解析返回 NULL 后仍继续方法解析；核查 hasError 的恢复/拒收契约。 */
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
@@ -216,6 +221,8 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
         returnType = parse_type(ps);
     }
 
+    /* BUG: malformed where 后只释放 params/decorators 容器，名称、泛型、
+     * 参数子节点和返回类型均未被最终 AST 接管。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -226,6 +233,7 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
 
     // 解析方法体
     SZrAstNode *body = parse_block(ps);
+    /* BUG: body 失败时名称、泛型、返回类型和已解析参数未释放。 */
     if (body == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -238,6 +246,7 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     SZrFileRange methodLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_METHOD, methodLoc);
+    /* BUG: 分配失败时只销毁数组容器，方法签名和 body 子树仍泄漏。 */
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -262,8 +271,7 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     return node;
 }
 
-// 解析结构体元函数
-
+/* struct 的 @ 元函数解析入口；成功节点负责参数、返回类型和方法体的生命周期。 */
 SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
 
@@ -289,6 +297,7 @@ SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
     SZrIdentifier *meta = &nameNode->data.identifier;
     if (meta->name != ZR_NULL &&
         strcmp(ZrCore_String_GetNativeString(meta->name), "decorate") == 0) {
+        /* BUG: 拒绝已删除的 @decorate 后未释放解析出来的名称 AST。 */
         report_error(
                 ps,
                 "@decorate was removed; use a declarationTransform comptime function");
@@ -342,6 +351,7 @@ SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
     SZrFileRange metaLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_META_FUNCTION, metaLoc);
+    /* BUG: 分配失败时名称、参数节点、返回类型和方法体尚无所有者。 */
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
@@ -359,8 +369,8 @@ SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
     return node;
 }
 
-// 解析结构体声明
-
+/* 顶层分派器在前缀可能是 readonly/ref 时使用该试探，必须恢复游标并释放
+ * 临时装饰器 AST，正式解析才可取得这些资源。 */
 TZrBool parser_struct_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     SZrAstNodeArray *decorators;
@@ -386,6 +396,8 @@ TZrBool parser_struct_declaration_starts_here(SZrParserState *ps) {
     return result;
 }
 
+/* 顶层声明入口；统一 property parser 的结果和普通字段/方法进入同一成员树。
+ * readonly 的默认接收者在此定型，供后续语义检查区分隐式与显式 const。 */
 SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
@@ -421,12 +433,16 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 与 union 不同，此处未处理泛型解析返回 NULL；
+         * 核查上层 hasError 是否保证该声明 AST 不被消费。 */
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
-    // TODO: 解析继承列表（可选，但注释说 struct 不允许继承，所以这里暂时不支持）
+    /* TODO: struct AST/编译器保留 inherits 支持，但当前语法只建空数组；
+     * 核对语言规范及 `struct : Interface` 需求后决定是否属于未实现的接口实现语法。 */
     SZrAstNodeArray *inherits = ZrParser_AstNodeArray_New(ps->state, 0);
 
+    /* BUG: malformed where 返回时名称、泛型和装饰器子节点没有被释放。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         if (decorators != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -551,6 +567,7 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange structLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_DECLARATION, structLoc);
+    /* BUG: 节点分配失败只释放数组容器，已解析成员及声明头仍泄漏。 */
     if (node == ZR_NULL) {
         if (decorators != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
