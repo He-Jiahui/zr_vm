@@ -2,6 +2,7 @@
 doc_type: acceptance-record
 plan: docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 implementation:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -11,6 +12,7 @@ implementation:
 tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
+  - tests/parser/test_pre_semantic_ir_optional_nested_call.inc
 status: partial
 ---
 
@@ -102,6 +104,33 @@ record.
 - The full 01.02 four-backend differential/exception gate remains open. The
   MSVC shared-parser source test still cannot link private compiler helpers;
   no new Windows source-test pass is claimed.
+
+## Nested argument invoke regression (2026-09-27)
+
+`test_source_optional_call_skips_nested_argument_invoke` compiles
+`receiver?.consume(sideEffect())`. The initial source test failed because the
+compiler abandoned its source CFG when the outer call could not find the inner
+call's ValueId in the designated argument slot. Primary-expression result
+normalization emitted an ExecBC `SET_STACK` without transferring its semantic
+ValueId to that slot. The normalization now transfers the value before the
+copy, using the existing semantic slot-bridge helper and a source-located
+error on failure. The fixture verifies that the absent edge bypasses both
+calls, the present path executes the inner invoke before the outer invoke,
+each call has separate normal/exception edges, and ExecIR contains two
+`INVOKE` instructions. The source test was red (108 pass, 1 failure) before
+the producer fix and green after it.
+
+- WSL GCC 11.4.0 and Clang 14.0.0 Debug, with the changed parser/test objects
+  recompiled and linked from their `ninja -t commands`: direct
+  `./bin/zr_vm_pre_semantic_ir_test` passed 109/109 on each toolchain.
+- WSL GCC adjacent `ssa_builder_cfg`, `ssa_builder_dominance`,
+  `ssa_place_promotion`, and `ssa_construction` CTests passed 4/4.
+- WSL Clang and MSVC Debug (`build/codex-ssa-conversion-msvc`) passed the
+  same adjacent CTest selection 4/4 each. MSVC also rebuilt and linked
+  `zr_vm_parser_shared`; its direct source test remains unavailable because
+  existing private compiler symbols are not exported from the shared library.
+- This is source CFG and ExecIR build evidence, not runtime proof that an
+  absent receiver suppresses the nested side effect across all backends.
 
 ## Boundary
 

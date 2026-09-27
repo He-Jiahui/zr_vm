@@ -33,8 +33,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
@@ -87,6 +89,7 @@ tests:
   - tests/acceptance/ssa-semantic-definition-identity.md
   - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
+  - tests/parser/test_pre_semantic_ir_optional_nested_call.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_catch_assignment.inc
@@ -536,7 +539,12 @@ ValueId, explicit argument ValueIds, resolved symbol, and typed result. The
 runtime-only hidden receiver count is excluded from the semantic explicit-
 argument range. Ordered normal and exception edges lower the call to `INVOKE`
 without assigning an earlier present-path operation the call's exceptional
-transfer.
+transfer. When an argument is itself a call, primary-expression slot
+normalization transfers its defining semantic ValueId along with the ExecBC
+`SET_STACK` copy. Its invoke has its own normal and exception edges before the
+outer invoke; the absent guard edge bypasses both calls. The slot transfer is
+also used by other primary-expression results that need a different target
+slot.
 
 `VOID_NOOP` absent edges reach the join directly. A `NULLABLE` result instead
 uses a typed temporary Place: the normal block converts and stores the call

@@ -672,12 +672,20 @@ void compile_type_literal_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
 static TZrUInt32 normalize_known_result_to_slot(SZrCompilerState *cs,
                                                 TZrUInt32 resultSlot,
-                                                TZrUInt32 targetSlot) {
+                                                TZrUInt32 targetSlot,
+                                                SZrFileRange sourceRange) {
     if (cs == ZR_NULL || cs->hasError || resultSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_PARSER_SLOT_NONE;
     }
 
     if (resultSlot != targetSlot) {
+        if (!compiler_semantic_ir_transfer_expression_result(
+                    cs, resultSlot, targetSlot, sourceRange)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to transfer primary expression value in pre-execution Semantic IR",
+                    sourceRange);
+            return ZR_PARSER_SLOT_NONE;
+        }
         TZrInstruction copyInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                                        (TZrUInt16)targetSlot,
                                                        (TZrInt32)resultSlot);
@@ -1078,7 +1086,8 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
         if (currentSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_PARSER_SLOT_NONE;
         }
-        return normalize_known_result_to_slot(cs, currentSlot, targetSlot);
+        return normalize_known_result_to_slot(
+                cs, currentSlot, targetSlot, node->location);
     }
     if (cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
@@ -1110,7 +1119,8 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
             return ZR_PARSER_SLOT_NONE;
         }
         if (currentSlot != targetSlot) {
-            return normalize_known_result_to_slot(cs, currentSlot, targetSlot);
+            return normalize_known_result_to_slot(
+                    cs, currentSlot, targetSlot, node->location);
         }
         cs->lastExpressionSlot = currentSlot;
         return currentSlot;
@@ -1136,7 +1146,8 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
         if (currentSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_PARSER_SLOT_NONE;
         }
-        return normalize_known_result_to_slot(cs, currentSlot, targetSlot);
+        return normalize_known_result_to_slot(
+                cs, currentSlot, targetSlot, node->location);
     }
 
     if (targetSlot == (TZrUInt32)cs->stackSlotCount && allocate_stack_slot(cs) != targetSlot) {
@@ -1173,7 +1184,8 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
     }
 
     if (currentSlot != targetSlot) {
-        return normalize_known_result_to_slot(cs, currentSlot, targetSlot);
+        return normalize_known_result_to_slot(
+                cs, currentSlot, targetSlot, node->location);
     }
 
     cs->lastExpressionSlot = currentSlot;
