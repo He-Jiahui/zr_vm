@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/contiguous_view.h
+  - zr_vm_core/src/zr_vm_core/object/contiguous_view.c
   - zr_vm_lib_container/include/zr_vm_lib_container/module.h
   - zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
@@ -8,14 +10,18 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_iteration/include/zr_vm_lib_iteration/module.h
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/object/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
 plan_sources:
+  - docs/plans/ssa/05-data-layout/02-arrays-slices.md
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
 tests:
+  - tests/core/test_ssa_arrays_slices.c
+  - tests/acceptance/ssa-arrays-slices-view-boundaries.md
   - tests/container/test_generational_pool.c
   - tests/container/test_generational_pool_gc_stress.c
   - tests/parser/test_span_core.c
@@ -73,6 +79,17 @@ var s = a.span();
 s[1] = 8;
 let r = s.slice(1, 1).asReadOnly();
 ```
+
+The SSA 05.02 core descriptor helpers now accept a zero-length slice at a
+representable tail byte offset, including `SIZE_MAX`. They classify an invalid
+output argument as `INVALID`, a slice window or index outside its view as
+`BOUNDS`, and checked byte-offset arithmetic overflow as `OVERFLOW`. Failed calls
+leave the destination unchanged. This is a metadata-only boundary check; the
+`zr.container` Span runtime does not yet use this core descriptor as its common
+storage adapter. Owner rooting, current-generation checks, resize exclusion,
+and pin lifetime remain open before the full 05.02 milestone can close. See
+the [core contiguous-storage contract](../../library-and-builtins/contiguous-storage-contract.md)
+and the [focused acceptance record](../../../tests/acceptance/ssa-arrays-slices-view-boundaries.md).
 
 `Span<T>` 是 inline、ref-like、mutable view；`ReadOnlySpan<T>` 只能读。两者都保存
 source、signed start、signed length。合法索引必须满足 `0 <= i < length`；slice 必须

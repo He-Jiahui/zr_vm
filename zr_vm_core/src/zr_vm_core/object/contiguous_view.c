@@ -36,9 +36,10 @@ TZrBool ZrCore_View_Validate(const SZrContiguousView *view,
     if (view == ZR_NULL || view->stride == 0u || view->elementSize == 0u ||
         (view->flags & ~(ZR_VIEW_FLAG_READ_ONLY | ZR_VIEW_FLAG_PINNED | ZR_VIEW_FLAG_INLINE_STORAGE)) != 0u ||
         (view->length != 0u && view->ownerRoot == ZR_NULL) ||
-        !checked_mul(view->length - (view->length != 0u ? 1u : 0u), view->stride, &span) ||
-        !checked_add(view->byteOffset, span, &span) ||
-        !checked_add(span, view->elementSize, &span)) {
+        (view->length != 0u &&
+         (!checked_mul(view->length - 1u, view->stride, &span) ||
+          !checked_add(view->byteOffset, span, &span) ||
+          !checked_add(span, view->elementSize, &span)))) {
         view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_INVALID, 0u, 0u); return ZR_FALSE;
     }
     if (currentGeneration != 0u && view->storageGeneration != currentGeneration) {
@@ -67,17 +68,30 @@ TZrBool ZrCore_View_Create(const SZrContiguousViewRequest *request,
 
 /* 子视图继承 owner、布局和借用元数据，仅改变窗口；直接供 SSA 数组切片契约测试。 */
 TZrBool ZrCore_View_Slice(const SZrContiguousView *view, TZrSize start,
-                          TZrSize length, SZrContiguousView *slice,
-                          SZrViewDiagnostic *diagnostic) {
+                           TZrSize length, SZrContiguousView *slice,
+                           SZrViewDiagnostic *diagnostic) {
     TZrSize delta, offset;
+    SZrContiguousView candidate;
     if (!ZrCore_View_Validate(view, 0u, diagnostic)) return ZR_FALSE;
-    if (slice == ZR_NULL || start > view->length || length > view->length - start ||
-        !checked_mul(start, view->stride, &delta) || !checked_add(view->byteOffset, delta, &offset)) {
-        /* BUG: start/length 合法而 start * stride 溢出时，此处仍报 BOUNDS 而非 OVERFLOW。 */
-        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_BOUNDS, view != ZR_NULL ? view->length : 0u, start); return ZR_FALSE;
+    if (slice == ZR_NULL) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_INVALID, 0u, 0u);
+        return ZR_FALSE;
     }
-    /* BUG: 尾部空切片可能令 offset + elementSize 溢出；这里仍返回成功但结果无法通过 Validate。 */
-    *slice = *view; slice->byteOffset = offset; slice->length = length; return ZR_TRUE;
+    if (start > view->length || length > view->length - start) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_BOUNDS, view->length, start);
+        return ZR_FALSE;
+    }
+    if (!checked_mul(start, view->stride, &delta) ||
+        !checked_add(view->byteOffset, delta, &offset)) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_OVERFLOW, 0u, 0u);
+        return ZR_FALSE;
+    }
+    candidate = *view;
+    candidate.byteOffset = offset;
+    candidate.length = length;
+    if (!ZrCore_View_Validate(&candidate, 0u, diagnostic)) return ZR_FALSE;
+    *slice = candidate;
+    return ZR_TRUE;
 }
 
 /* Exec IR 适配器把下标交给此处作有符号边界和字节偏移检查；结果不包含裸元素指针。 */
@@ -86,12 +100,19 @@ TZrBool ZrCore_View_IndexOffset(const SZrContiguousView *view, TZrInt64 index,
     TZrSize delta;
     /* TODO: 当前适配器未传真实存储代数；接入可变容器前需核对代数/借用检查的调用位置。 */
     if (!ZrCore_View_Validate(view, 0u, diagnostic)) return ZR_FALSE;
-    if (offset == ZR_NULL || index < 0 ||
-        (TZrUInt64)index >= (TZrUInt64)view->length ||
-        !checked_mul((TZrSize)index, view->stride, &delta) || !checked_add(view->byteOffset, delta, offset)) {
-        /* BUG: 非负 index >= length 是边界错误；空 offset 也是参数错误，二者都被误报为 OVERFLOW。 */
-        view_diag(diagnostic, index < 0 ? ZR_VIEW_DIAGNOSTIC_BOUNDS : ZR_VIEW_DIAGNOSTIC_OVERFLOW,
-                  view != ZR_NULL ? view->length : 0u, (TZrUInt64)(index < 0 ? 0 : index)); return ZR_FALSE;
+    if (offset == ZR_NULL) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_INVALID, 0u, 0u);
+        return ZR_FALSE;
+    }
+    if (index < 0 || (TZrUInt64)index >= (TZrUInt64)view->length) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_BOUNDS,
+                  view->length, (TZrUInt64)(index < 0 ? 0 : index));
+        return ZR_FALSE;
+    }
+    if (!checked_mul((TZrSize)index, view->stride, &delta) ||
+        !checked_add(view->byteOffset, delta, offset)) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_OVERFLOW, 0u, 0u);
+        return ZR_FALSE;
     }
     return ZR_TRUE;
 }
