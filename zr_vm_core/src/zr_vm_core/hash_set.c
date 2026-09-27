@@ -15,14 +15,19 @@
 static TZrBool hash_set_trace_enabled(void);
 static void hash_set_trace(const TZrChar *format, ...);
 #else
+/* 非调试构建移除跟踪调用及其参数求值。 */
 #define hash_set_trace(...) ((void)0)
 #endif
 
+/* 池块按编译器的尾数组布局分配，释放时必须复算相同大小。 */
 static TZrSize zr_hash_pair_pool_block_bytes(TZrSize capacity) {
+    /* TODO: extraPairs 乘法与头部加法未检查溢出；EnsurePairPool 接受任意 elementCount。
+     * 下一步用边界计数及拒绝超大分配的分配器核对返回容量和实际分配字节数。 */
     TZrSize extraPairs = capacity > ZR_HASH_PAIR_POOL_INLINE_COUNT ? capacity - ZR_HASH_PAIR_POOL_INLINE_COUNT : 0;
     return sizeof(SZrHashPairPoolBlock) + extraPairs * sizeof(SZrHashKeyValuePair);
 }
 
+/* 扩容后只清零新桶；原桶链随后由 Rehash 重排，或沿直索引路径保留。 */
 static ZR_FORCE_INLINE void zr_hash_set_zero_bucket_slots(SZrHashKeyValuePair **bucketSlots, TZrSize slotCount) {
     ZR_ASSERT(bucketSlots != ZR_NULL || slotCount == 0);
     if (slotCount > 0) {
@@ -30,6 +35,7 @@ static ZR_FORCE_INLINE void zr_hash_set_zero_bucket_slots(SZrHashKeyValuePair **
     }
 }
 
+/* 整块释放已预留 pair，池内删除过的槽位不单独释放。 */
 static void zr_hash_pair_pool_release(SZrGlobalState *global, SZrHashSet *set) {
     SZrHashPairPoolBlock *block;
 
@@ -54,6 +60,7 @@ static void zr_hash_pair_pool_release(SZrGlobalState *global, SZrHashSet *set) {
     set->pairPoolUsed = 0;
 }
 
+/* 先沿桶链释放独立节点，再整体释放池和桶；set 可在成功 Init 后重复使用。 */
 void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     SZrGlobalState *global = state->global;
     const TZrSize elementSize = sizeof(TZrPtr);
@@ -61,6 +68,8 @@ void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     TZrSize oldBucketCount = oldCapacity * elementSize;
     SZrHashKeyValuePair **oldBuckets = set->buckets;
 
+    /* TODO: 节点 key/value 未逐个执行 Value 的所有权释放；Object_SetValue 会复制 value，
+     * Object_Deconstruct 会走此处。需用含 owned value 的节点验证 GC/ownership 清理职责。 */
     if (oldBuckets != ZR_NULL) {
         for (TZrSize bucketIndex = 0; bucketIndex < oldCapacity; bucketIndex++) {
             SZrHashKeyValuePair *pair = oldBuckets[bucketIndex];
@@ -89,17 +98,23 @@ void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     set->isValid = ZR_FALSE;
 }
 
+/* 增加新的原生池块，不搬迁旧 pair；调用方须保证 GC 分配期间 set 地址稳定。 */
 TZrBool ZrCore_HashSet_EnsurePairPoolForElementCount(SZrState *state, SZrHashSet *set, TZrSize elementCount) {
     TZrSize additionalCapacity;
     TZrSize blockBytes;
     SZrHashPairPoolBlock *block;
 
+    /* TODO: Construct 后直接预留一个槽会返回真，但 TakeReservedPair 仍为空；
+     * 该调用违反公开的已 Init 前置条件，当前生产调用方会先校验有效性。
+     * 需确认接口是否应显式拒绝无效集合，再补对应契约测试。 */
     if (state == ZR_NULL || set == ZR_NULL || !set->isValid || elementCount <= set->pairPoolCapacity) {
         return state != ZR_NULL && set != ZR_NULL;
     }
 
     additionalCapacity = elementCount - set->pairPoolCapacity;
     blockBytes = zr_hash_pair_pool_block_bytes(additionalCapacity);
+    /* TODO: GcMalloc 的失败重试会执行 GcFull；IR 物化因此将 set 暂存于原生内存，
+     * 但数组路径传入对象内 nodeMap 地址。需用强制 GC 搬迁测试核对该调用方是否持有稳定地址。 */
     block = ZR_CAST(SZrHashPairPoolBlock *,
                     ZrCore_Memory_GcMalloc(state, ZR_MEMORY_NATIVE_TYPE_HASH_PAIR, blockBytes));
     if (block == ZR_NULL) {
@@ -126,6 +141,7 @@ TZrBool ZrCore_HashSet_EnsurePairPoolForElementCount(SZrState *state, SZrHashSet
     return ZR_TRUE;
 }
 
+/* realloc 成功后才替换桶指针，再逐链用新容量重排；失败依赖分配器保留旧桶。 */
 TZrBool ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
     ZR_ASSERT(set != NULL && newCapacity > set->capacity);
     const TZrSize elementSize = sizeof(TZrPtr);
@@ -205,6 +221,7 @@ TZrBool ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapac
     return ZR_TRUE;
 }
 
+/* 顺序整数键按桶下标直接寻址，扩容时原桶索引不变，因此只清空新增尾槽。 */
 TZrBool ZrCore_HashSet_GrowDenseSequentialIntKeys(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
     const TZrSize elementSize = sizeof(TZrPtr);
     SZrGlobalState *global;
@@ -251,6 +268,7 @@ TZrBool ZrCore_HashSet_GrowDenseSequentialIntKeys(SZrState *state, SZrHashSet *s
 }
 
 #if defined(ZR_DEBUG)
+/* 调试跟踪按环境变量延迟启用，生产构建由空宏完全剔除。 */
 static TZrBool hash_set_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -264,6 +282,7 @@ static TZrBool hash_set_trace_enabled(void) {
     return enabled;
 }
 
+/* 只在显式启用时向 stderr 写启动阶段桶变化。 */
 static void hash_set_trace(const TZrChar *format, ...) {
     va_list arguments;
 

@@ -1,5 +1,5 @@
 //
-// Mutable native buffer used to assemble one immutable runtime string.
+// 用原生可变缓冲区组装一个不可变运行时字符串。
 //
 #include "zr_vm_core/string_builder.h"
 
@@ -8,8 +8,10 @@
 
 #include <string.h>
 
+/* 首次追加从小块开始，后续按倍数扩容并保留结尾 NUL 空间。 */
 #define ZR_STRING_BUILDER_DEFAULT_CAPACITY ((TZrSize)32u)
 
+/* 先计算安全容量并申请新缓冲区，成功后才更新 builder 的指针与容量。 */
 static TZrBool string_builder_grow(SZrStringBuilder *builder, TZrSize requiredLength) {
     TZrSize nextCapacity;
     TZrNativeString nextData;
@@ -49,6 +51,7 @@ static TZrBool string_builder_grow(SZrStringBuilder *builder, TZrSize requiredLe
     return ZR_TRUE;
 }
 
+/* 仅为尚无资源的 builder 初始化；预留失败后可重新初始化。 */
 TZrBool ZrCore_StringBuilder_Init(SZrState *state,
                                   SZrStringBuilder *builder,
                                   TZrSize initialCapacity) {
@@ -70,6 +73,7 @@ TZrBool ZrCore_StringBuilder_Init(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 原生缓冲区必须由仍存活的 state/global 对应分配器释放。 */
 void ZrCore_StringBuilder_Dispose(SZrStringBuilder *builder) {
     if (builder == ZR_NULL) {
         return;
@@ -86,6 +90,7 @@ void ZrCore_StringBuilder_Dispose(SZrStringBuilder *builder) {
     builder->capacity = 0u;
 }
 
+/* 长度以字节计，成功追加后仍维护终止 NUL；失败不推进逻辑长度。 */
 TZrBool ZrCore_StringBuilder_AppendNative(SZrStringBuilder *builder,
                                           const TZrChar *string,
                                           TZrSize length) {
@@ -96,6 +101,8 @@ TZrBool ZrCore_StringBuilder_AppendNative(SZrStringBuilder *builder,
         return ZR_FALSE;
     }
     requiredLength = builder->length + length;
+    /* TODO: GetNativeString 暴露本缓冲区；若以该指针作为 string 且本次扩容搬迁，
+     * 下方 memcpy 仍读取旧地址。现有调用只传外部字符串，需补搬迁分配器下的自追加测试。 */
     if (!string_builder_grow(builder, requiredLength)) {
         return ZR_FALSE;
     }
@@ -107,6 +114,7 @@ TZrBool ZrCore_StringBuilder_AppendNative(SZrStringBuilder *builder,
     return ZR_TRUE;
 }
 
+/* 运行时字符串的字节视图只在本次追加期间借用。 */
 TZrBool ZrCore_StringBuilder_AppendString(SZrStringBuilder *builder,
                                           const SZrString *string) {
     if (string == ZR_NULL) {
@@ -117,6 +125,7 @@ TZrBool ZrCore_StringBuilder_AppendString(SZrStringBuilder *builder,
                                              ZrCore_String_GetByteLength(string));
 }
 
+/* 创建不可变字符串成功后才释放 builder，失败时保留内容供调用方处理。 */
 SZrString *ZrCore_StringBuilder_Freeze(SZrStringBuilder *builder) {
     SZrString *result;
 
