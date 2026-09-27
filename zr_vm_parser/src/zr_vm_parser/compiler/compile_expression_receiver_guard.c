@@ -632,8 +632,11 @@ TZrBool compiler_receiver_guard_begin_segment(
                         0u));
         add_pending_jump(
                 cs, cs->instructionCount - 1u, frame.nullLabelId);
+        /* A named call may reuse its receiver slot for the result; keep the
+         * registered wake owner in a separate slot through cleanup. */
         if (frame.hasWakeCleanup &&
-            segment->type == ZR_AST_FUNCTION_CALL) {
+            (segment->type == ZR_AST_FUNCTION_CALL ||
+             receiver_guard_chain_ends_in_call(context, fact))) {
             frame.guardedSlot = receiver_guard_emit_callable_view(
                     cs, fact, frame.wakeCleanupSlot);
             if (frame.guardedSlot == ZR_PARSER_SLOT_NONE) {
@@ -681,7 +684,8 @@ TZrBool compiler_receiver_guard_begin_segment(
             frame.hasWakeCleanup = ZR_TRUE;
             frame.semanticAbsentBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
             frame.semanticJoinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
-            if (segment->type == ZR_AST_FUNCTION_CALL) {
+            if (segment->type == ZR_AST_FUNCTION_CALL ||
+                receiver_guard_chain_ends_in_call(context, fact)) {
                 frame.guardedSlot = receiver_guard_emit_callable_view(
                         cs, fact, frame.wakeCleanupSlot);
                 if (frame.guardedSlot == ZR_PARSER_SLOT_NONE) {

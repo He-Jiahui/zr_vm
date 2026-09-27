@@ -115,6 +115,7 @@ tests:
   - tests/acceptance/ssa-compiler-source-optional-call-cfg.md
   - tests/acceptance/ssa-compiler-source-optional-value-cfg.md
   - tests/acceptance/ssa-compiler-ownership-execir.md
+  - tests/acceptance/ssa-weak-named-call-owner-lifetime.md
 doc_type: module-detail
 ---
 
@@ -446,6 +447,9 @@ target non-null.
 
 `test_ownership_intrinsic_member_separation.c` owns syntax, semantic facts,
 collision names, direct/optional behavior, and backend-facing integration.
+Its separate direct and optional suffix-throw cases check that caught method
+exceptions release the hidden wake, while the intrinsic-named method cases
+check normal dispatch and expiration after the final explicit Shared drop.
 `test_resource_shared_weak.c` includes the modular receiver-guard contract cases:
 fact drift must fail closed, canonical receiver drift and guarded-type drift are
 independent failures, nullable/Weak callable segments cannot omit their guard
@@ -537,6 +541,15 @@ synchronizes a scalar destination after a runtime copy when the source has
 proven or possible primitive provenance. This preserves ownership object
 identity without reintroducing unnecessary scalar synchronization for closure
 and object copies.
+
+The same slot separation applies when a Weak guard begins on a named member
+whose dominated suffix ends in a call, such as `weak.method()` or
+`weak?.method()`. Known member-call lowering may reuse the current receiver
+slot for its result. The guard therefore derives an `OWN_VIEW_SHARED` receiver
+before member lowering while keeping the `OWN_WAKE` result in its registered
+cleanup slot. The call may overwrite the view; normal scope close and exception
+unwind still find the hidden Shared owner in the cleanup slot. Field-only
+suffixes continue to use the awakened value directly.
 
 On one exact isolated source snapshot, GCC 11.4 and Clang 14 directly pass AOT C
 source contracts 26/26, call contracts 9/9, ownership separation 44/44, ExecBC
