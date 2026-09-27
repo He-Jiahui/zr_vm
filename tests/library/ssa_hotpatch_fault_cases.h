@@ -3,10 +3,8 @@
 
 #include "zr_vm_core/hotpatch_generation.h"
 
-/* Shared fault-injection vocabulary for rollback/restricted-profile tests.
- * These are test controls, not production state: a harness may map each point
- * to an allocator/signature/publisher failure without changing the runtime
- * ABI. */
+/* TODO: 故障注入词汇尚无实际包含者；rollback/restricted 测试目前只测正常和少量
+ * 拒绝路径，需从测试入口接入失败点矩阵后才能声称覆盖准备、发布和撤销故障。 */
 typedef enum EZrSsaHotPatchFaultPoint {
     ZR_SSA_HOTPATCH_FAULT_SIGNATURE = 0,
     ZR_SSA_HOTPATCH_FAULT_CONTENT,
@@ -25,8 +23,7 @@ typedef struct SZrSsaHotPatchFaultCase {
     TZrBool requiresRetry;
 } SZrSsaHotPatchFaultCase;
 
-/* Short aliases mirror the names used in the rollback plan while keeping the
- * SSA-prefixed names available to tests that include several fault matrices. */
+/* 短别名供计划中的 rollback 夹具使用；目前仍无消费者，不能视作已运行测试。 */
 typedef EZrSsaHotPatchFaultPoint EZrHotPatchFaultPoint;
 typedef SZrSsaHotPatchFaultCase SZrHotPatchFaultCase;
 #define ZR_HOT_PATCH_FAULT_SIGNATURE ZR_SSA_HOTPATCH_FAULT_SIGNATURE
@@ -38,6 +35,7 @@ typedef SZrSsaHotPatchFaultCase SZrHotPatchFaultCase;
 #define ZR_HOT_PATCH_FAULT_OOM ZR_SSA_HOTPATCH_FAULT_OOM
 #define ZR_HOT_PATCH_FAULT_STALE ZR_SSA_HOTPATCH_FAULT_STALE
 
+/* 供未来参数化测试输出失败点名称；无调用时不会改变运行时 ABI。 */
 static inline const TZrChar *ZrTests_SsaHotPatchFaultPointName(
         EZrSsaHotPatchFaultPoint point) {
     switch (point) {

@@ -47,6 +47,7 @@ static void normalize_path_text(TZrChar *path) {
     }
 }
 
+/* 只写项目和依赖清单，不生成 AOT 动态库，以便检验缺库时的路径诊断。 */
 static TZrBool prepare_provider_aot_runtime_fixture(TZrChar *projectPath, TZrSize projectPathSize) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar mathPath[ZR_TESTS_PATH_MAX];
@@ -103,6 +104,8 @@ static TZrBool prepare_provider_aot_runtime_fixture(TZrChar *projectPath, TZrSiz
     return write_text_file(projectPath, projectContent) && write_text_file(mathPath, mathContent);
 }
 
+/* TODO: 生成路径可跨次复用；需确认旧的 deps/math/bin/aot_c/lib 已清理，
+ * 否则“缺少 provider 动态库”的前提可能被残留产物破坏。 */
 static void test_aot_runtime_reports_provider_library_path_for_canonical_import(void) {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     SZrGlobalState *global;
@@ -146,6 +149,7 @@ static void test_aot_runtime_reports_provider_library_path_for_canonical_import(
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* BUG: 顶层 CMake 未为此可执行目标 add_test，普通 CTest 不会验证 AOT 错误路径。 */
 int main(void) {
     UNITY_BEGIN();
 

@@ -18,6 +18,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 每例在新 VM 上显式接入 parser；debug 模块是否可见仍由宿主注册决定。 */
 static SZrState *create_test_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
@@ -28,6 +29,7 @@ static SZrState *create_test_state(void) {
     return state;
 }
 
+/* 固定 source name 供 traceback/getinfo 比对，并返回 VM 持有的编译函数。 */
 static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const TZrChar *sourceNameText) {
     SZrString *sourceName;
 
@@ -96,6 +98,7 @@ static TZrInt64 get_int_field(SZrState *state, SZrObject *object, const TZrChar 
     return field->value.nativeObject.nativeInt64;
 }
 
+/* 只借用当前异常对象的 message，供脚本执行失败时的 Unity 诊断。 */
 static const TZrChar *current_exception_message(SZrState *state) {
     SZrObject *errorObject;
     const SZrTypeValue *messageValue;
@@ -114,6 +117,7 @@ static const TZrChar *current_exception_message(SZrState *state) {
     return value_as_cstring(state, messageValue);
 }
 
+/* GC 前暂时固定编译函数，避免清理 VM 栈时丢失仍需显式 Free 的对象。 */
 static void destroy_compiled_state(SZrState *state, SZrFunction *function) {
     TZrBool ignoredFunction = ZR_FALSE;
 
@@ -135,6 +139,7 @@ static void destroy_compiled_state(SZrState *state, SZrFunction *function) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* debug 是宿主授权模块，普通 VM 不应默认暴露可信或别名入口。 */
 static void test_debug_module_is_not_loaded_until_host_registers_it(void) {
     SZrState *state = create_test_state();
 
@@ -147,6 +152,7 @@ static void test_debug_module_is_not_loaded_until_host_registers_it(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 可信与沙箱描述符共享官方身份，但导出行为由注册模式限制。 */
 static void test_debug_descriptors_match_the_canonical_official_inventory(void) {
     const ZrLibModuleDescriptor *trusted = ZrVmLibDebug_GetModuleDescriptor();
     const ZrLibModuleDescriptor *sandboxed = ZrVmLibDebug_GetSandboxedModuleDescriptor();
@@ -192,6 +198,7 @@ static void test_registered_debug_module_exports_lua_aligned_api_surface(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已知 leaf→middle 脚本链及固定源名应出现在 traceback。 */
 static void test_traceback_returns_known_script_call_chain(void) {
     const TZrChar *source =
             "let debug = import(\"zr.debug\");\n"
@@ -292,6 +299,7 @@ static void test_getlocal_and_setlocal_read_and_change_active_script_locals(void
     destroy_compiled_state(state, function);
 }
 
+/* TODO: 目前两个 upvalueid 只查非空，未断言 setupvalue 前后是同一闭包 cell。 */
 static void test_upvalue_helpers_read_write_and_identify_closure_cells(void) {
     const TZrChar *source =
             "let debug = import(\"zr.debug\");\n"
@@ -326,6 +334,9 @@ static void test_upvalue_helpers_read_write_and_identify_closure_cells(void) {
     destroy_compiled_state(state, function);
 }
 
+/* BUG: debug 模块按 state 地址向进程级链表分配 hook record，sethook(null) 只清值；
+ * state 销毁后节点不释放，重复用例会泄漏并保留失效地址。
+ * TODO: 同时启用 line 和 count 后仅查 events>0，需显式断言 event == "line"。 */
 static void test_sethook_invokes_script_hook_and_gethook_reports_state(void) {
     const TZrChar *source =
             "let debug = import(\"zr.debug\");\n"
@@ -374,6 +385,7 @@ static void test_sethook_invokes_script_hook_and_gethook_reports_state(void) {
     destroy_compiled_state(state, function);
 }
 
+/* TODO: 名称中的 write APIs 当前只覆盖 setlocal；还需核查 setupvalue/sethook。 */
 static void test_sandboxed_debug_module_rejects_write_apis(void) {
     const TZrChar *source =
             "let debug = import(\"zr.debug\");\n"

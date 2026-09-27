@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <string.h>
 
+/* relocation 校验回调把稳定 token、hash 与 contract 映射为本地目标 99。 */
 static TZrBool resolve_ok(TZrUInt32 token, TZrUInt32 kind, TZrUInt64 hash,
                            TZrUInt64 contract, TZrUInt32 *out, TZrPtr user) {
     (void)kind; (void)user;
@@ -15,12 +16,14 @@ static TZrBool resolve_ok(TZrUInt32 token, TZrUInt32 kind, TZrUInt64 hash,
     return ZR_TRUE;
 }
 
+/* 失败桩用于确认解析失败不会覆盖调用方现有目标数组。 */
 static TZrBool resolve_fail(TZrUInt32 token, TZrUInt32 kind, TZrUInt64 hash,
                             TZrUInt64 contract, TZrUInt32 *out, TZrPtr user) {
     (void)token; (void)kind; (void)hash; (void)contract; (void)out; (void)user;
     return ZR_FALSE;
 }
 
+/* BUG: NDEBUG 会删除 writer、reader、relocation 和 ExecBC 校验调用，测试空跑成功。 */
 int main(void) {
     TZrByte relocation[ZR_ARTIFACT_EXEC_IR_RELOCATION_SIZE] = {0};
     TZrByte ir[] = {1u, 2u, 3u, 4u};
@@ -33,6 +36,8 @@ int main(void) {
     SZrExecIrReader reader;
     SZrExecIrWriter writer;
 
+    /* BUG: 目前只用合法偏移 1；artifact_exec_ir.c 的 ValidateRelocations 用整包长度
+     * 校验 codeOffset。改为 5 后虽超出 4 字节 ExecIR 段仍可解析，需补越段用例。 */
     relocation[0] = 7u;
     relocation[8] = 1u;
     relocation[16] = 11u;
@@ -70,12 +75,15 @@ int main(void) {
            ZR_ARTIFACT_EXEC_IR_OK);
     assert(resolved[0] == 99u);
 
+    /* BUG: 失败时 artifact_exec_ir.c 先记录 token 又由 fail 清零；此处只核查状态和
+     * 输出未变，漏掉诊断 token。补测应断言该字段保留 7。 */
     resolved[0] = 123u;
     assert(ZrCore_ArtifactExecIr_ValidateRelocations(
                    &view, resolve_fail, resolved, 1u, ZR_NULL, &diagnostic) ==
            ZR_ARTIFACT_EXEC_IR_RESOLUTION_FAILED);
     assert(resolved[0] == 123u);
 
+    /* 损坏总长度应在 reader 发布 view 前被拒绝。 */
     {
         TZrByte corrupt[512];
         memcpy(corrupt, bytes, writer.written);
@@ -84,6 +92,8 @@ int main(void) {
                                           &diagnostic) !=
                ZR_ARTIFACT_EXEC_IR_OK);
     }
+    /* TODO: 重叠目录被拒绝时 view 已部分填充；公开 Read 接口未约定失败时清空。
+     * 需先核查失败调用者是否消费 view，再决定是否要求清空并补相应断言。 */
     {
         TZrByte corrupt[512];
         memcpy(corrupt, bytes, writer.written);
@@ -95,6 +105,7 @@ int main(void) {
                ZR_ARTIFACT_EXEC_IR_OK);
     }
 
+    /* 手工构造 ExecBC section，将有效 opcode 与非法哨兵交给核心验证器。 */
     {
         TZrByte execBc[8] = {1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
         SZrArtifactExecIrView execBcView;

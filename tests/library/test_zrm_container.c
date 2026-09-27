@@ -35,6 +35,8 @@ static TZrBool write_bytes_file(const TZrChar *path, const TZrByte *bytes, TZrSi
     return written == byteCount;
 }
 
+/* BUG: ReadEntry 返回 miniz 按 byteCount 精确分配的字节，未保证 NUL 终止；
+ * 下方 strstr 在片段缺失时可读过缓冲区边界。应以 byteCount 做有界搜索。 */
 static TZrBool read_entry_text_contains(const SZrLibrary_ZrmArchive *archive,
                                         const TZrChar *entryName,
                                         const TZrChar *fragment) {
@@ -54,6 +56,7 @@ static TZrBool read_entry_text_contains(const SZrLibrary_ZrmArchive *archive,
     return result;
 }
 
+/* 产物载荷不应包含当前进程的函数地址；按字节模式审计序列化结果。 */
 static TZrBool contains_bytes(const TZrByte *bytes,
                               TZrSize length,
                               const void *value,
@@ -74,6 +77,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *text) {
     return write_bytes_file(path, (const TZrByte *)text, text != ZR_NULL ? strlen(text) : 0U);
 }
 
+/* 绕过项目写入器构造恶意清单，以单独检验读取器的拒绝边界。 */
 static TZrBool write_zip_with_entries(const TZrChar *path,
                                       const TZrChar *firstName,
                                       const TZrChar *firstText,
@@ -118,6 +122,7 @@ static TZrBool write_zip_with_manifest_and_entry(const TZrChar *path,
     return write_zip_with_entries(path, ZR_LIBRARY_ZRM_MANIFEST_ENTRY, manifestText, entryName, entryText);
 }
 
+/* pack/open/read 全链路验证清单身份、模块原样存储与资源压缩。 */
 static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
@@ -221,6 +226,7 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     ZrLibrary_Zrm_Close(&archive);
 }
 
+/* 跨 ZIP 往返只保留稳定绑定契约，不将当前进程 VM 函数指针封入模块字节。 */
 static void test_zrm_roundtrip_preserves_pointer_free_call_binding_payload(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
@@ -323,6 +329,7 @@ static void test_zrm_roundtrip_preserves_pointer_free_call_binding_payload(void)
     remove(modulePath);
 }
 
+/* compile-tool provider 必须有带版本的可执行 section，runtime provider 则不得伪装。 */
 static void test_zrm_compile_tool_uses_versioned_executable_section(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
@@ -463,6 +470,8 @@ static void test_zrm_compile_tool_uses_versioned_executable_section(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "forbidden for this provider phase"));
 }
 
+/* TODO: 当前只测写入器拒绝重复资源名；读取器对手工清单重复 logicalName
+ * 仍可能接受，需用 write_zip_with_entries 构造重复条目覆盖 Open。 */
 static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
@@ -518,6 +527,8 @@ static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "duplicate resource"));
 }
 
+/* TODO: 此处只损坏 ZIP 头或缺清单，未测单个条目提取失败时 ReadEntry
+ * 将 NULL bytes/零长度误报为成功的路径。 */
 static void test_zrm_open_rejects_missing_manifest_and_corrupt_zip(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar error[512];
@@ -551,6 +562,7 @@ static void test_zrm_open_rejects_missing_manifest_and_corrupt_zip(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "manifest is missing"));
 }
 
+/* OpenBytes 拥有 ZIP reader，但借用传入字节；Close 前 source 缓冲必须稳定。 */
 static void test_zrm_open_bytes_owns_reader_but_borrows_stable_source_bytes(void) {
     static const TZrByte moduleText[] = "memory-backed-zrm";
     static const TZrByte corruptBytes[] = "not-a-zip";
@@ -665,6 +677,7 @@ static void test_zrm_open_rejects_manifest_path_traversal_entries(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "unsafe"));
 }
 
+/* 旧清单缺 phase 时保持 runtime 兼容，显式未知或空 phase 必须拒绝。 */
 static void test_zrm_provider_phase_defaults_and_rejects_unknown_values(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar error[512];
@@ -800,6 +813,7 @@ static void test_zrm_rejects_default_entry_without_a_module(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "does not name a module entry"));
 }
 
+/* BUG: 顶层 CMake 只创建 zrm_container 目标，没有 add_test；普通 CTest 不执行此套件。 */
 int main(void) {
     UNITY_BEGIN();
 

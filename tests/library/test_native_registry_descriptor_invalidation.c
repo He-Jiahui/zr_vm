@@ -14,6 +14,7 @@
 #define ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH ""
 #endif
 
+/* 模块名与 CMake 注入的插件产物配套，注册表按此名称查找 owner record。 */
 static const TZrChar *kDescriptorPluginModuleName = "zr.pluginprobe";
 
 void setUp(void) {}
@@ -84,6 +85,7 @@ static TZrBool copy_binary_file(const TZrChar *sourcePath, const TZrChar *target
     return written == length ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 将 CMake 构建的插件复制到项目 native 目录，触发真实 descriptor 装载路径。 */
 static TZrBool prepare_descriptor_plugin_project(TZrChar *projectRoot,
                                                  TZrSize projectRootSize,
                                                  TZrChar *pluginPath,
@@ -124,6 +126,7 @@ static TZrBool prepare_descriptor_plugin_project(TZrChar *projectRoot,
     return copy_binary_file(ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH, pluginPath);
 }
 
+/* 测试故意越过公开 API 找内部 record，以模拟 owner 引用数的失效门禁。 */
 static ZrLibRegisteredModuleRecord *registered_descriptor_plugin_record(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
     TZrSize index;
@@ -146,6 +149,7 @@ static ZrLibRegisteredModuleRecord *registered_descriptor_plugin_record(SZrGloba
     return ZR_NULL;
 }
 
+/* TODO: 直接写 ownerRefCount 只验证门禁，不验证真实强引用观察器的增减链路。 */
 static void test_descriptor_plugin_invalidation_rejects_live_owner_refs(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrLibRegisteredModuleRecord *record;

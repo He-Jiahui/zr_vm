@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 测试直接调用项目解析入口，观察 parser/loader 共同依赖的规范模块键。 */
 extern TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary_Project *project,
                                                         const TZrChar *currentModuleKey,
                                                         const TZrChar *rawSpecifier,
@@ -30,6 +31,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 返回借用的 VM 字符串文本，断言必须先于 project/state 销毁。 */
 static const TZrChar *test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -40,6 +42,7 @@ static const TZrChar *test_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 以固定 v1 别名清单隔离相对与 alias 解析；调用者同时拥有 project 和 state。TODO: Project_New 的可写 raw 声明与只读解析实现不符，需统一 const 契约。 */
 static SZrLibrary_Project *create_test_project(SZrState **outState) {
     static const TZrChar manifestText[] =
             "{"
@@ -126,6 +129,7 @@ static TZrBool text_ends_with(const TZrChar *text, const TZrChar *suffix) {
     return textLength >= suffixLength && strcmp(text + textLength - suffixLength, suffix) == 0;
 }
 
+/* 落盘依赖图含同内容副本、不同版本及环，用于区分去重和包作用域。 */
 static SZrLibrary_Project *create_dependency_test_project(SZrState **outState, TZrChar *outProjectPath, TZrSize projectPathSize) {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
@@ -222,6 +226,7 @@ static SZrLibrary_Project *create_dependency_test_project(SZrState **outState, T
     return project;
 }
 
+/* 每个无效清单用例分配独立磁盘路径，使拒绝原因不受旧依赖文件影响。 */
 static TZrBool prepare_manifest_validation_fixture(const TZrChar *baseName,
                                                    const TZrChar *dependencyContent,
                                                    const TZrChar *declaredVersion,
@@ -282,6 +287,7 @@ static TZrBool prepare_manifest_validation_fixture(const TZrChar *baseName,
     return write_text_file(projectPath, projectContent) && write_text_file(dependencyPath, dependencyContent);
 }
 
+/* TODO: 当前只断言 Project_New 返回空，需核对诊断以防无关语法错误造成假通过。 */
 static void assert_project_manifest_rejected(const TZrChar *baseName,
                                              const TZrChar *dependencyContent,
                                              const TZrChar *declaredVersion) {
@@ -307,6 +313,7 @@ static void assert_project_manifest_rejected(const TZrChar *baseName,
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 项目持有 VM 对象，必须先释放 project 再销毁所属 state。 */
 static void destroy_test_project(SZrState *state, SZrLibrary_Project *project) {
     if (state != ZR_NULL && project != ZR_NULL) {
         ZrLibrary_Project_Free(state, project);
@@ -316,6 +323,7 @@ static void destroy_test_project(SZrState *state, SZrLibrary_Project *project) {
     }
 }
 
+/* 成功解析同时核对规范键，不能只看布尔返回。 */
 static void assert_import_resolves(const SZrLibrary_Project *project,
                                    const TZrChar *currentModuleKey,
                                    const TZrChar *rawSpecifier,
@@ -335,6 +343,7 @@ static void assert_import_resolves(const SZrLibrary_Project *project,
     TEST_ASSERT_EQUAL_STRING(expectedModuleKey, resolved);
 }
 
+/* 错误输入应带诊断，供上层导入错误定位而非静默失败。 */
 static void assert_import_rejected(const SZrLibrary_Project *project,
                                    const TZrChar *currentModuleKey,
                                    const TZrChar *rawSpecifier) {
@@ -509,6 +518,7 @@ static void test_project_import_resolver_resolves_dependency_imports_and_scopes(
     destroy_test_project(state, project);
 }
 
+/* v1 references 应收敛为带身份、版本范围及独立路径的 provider 请求。 */
 static void test_project_import_resolver_normalizes_assembly_references(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -725,6 +735,7 @@ static void test_project_manifest_parses_assembly_output_and_resources(void) {
     destroy_test_project(state, project);
 }
 
+/* ZRM 引用是 provider 归档入口，不能退化为普通 source 文件路径。 */
 static void test_project_references_accept_zrm_assembly_container(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -1045,6 +1056,7 @@ static void test_project_dependency_parser_handles_manifest_cycles(void) {
     destroy_test_project(state, project);
 }
 
+/* BUG: 顶层 CMake 只创建此可执行目标而未 add_test，普通 CTest 不运行这些断言。 */
 int main(void) {
     UNITY_BEGIN();
 

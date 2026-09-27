@@ -13,6 +13,7 @@
 
 #include <string.h>
 
+/* 期望表同时固定官方名称、层级、阶段和角色，阻止 provider 清单漂移。 */
 typedef struct SZrExpectedOfficialModule {
     const TZrChar *moduleName;
     EZrLibOfficialModuleTier tier;
@@ -20,12 +21,14 @@ typedef struct SZrExpectedOfficialModule {
     EZrProviderContractRole providerContractRole;
 } SZrExpectedOfficialModule;
 
+/* 三种宿主回调分别计数，验证 registry attach/free 的委托与恢复。 */
 typedef struct SZrHostNativeLoaderProbe {
     TZrSize loaderCallCount;
     TZrSize resolverCallCount;
     TZrSize observerCallCount;
 } SZrHostNativeLoaderProbe;
 
+/* 独立于被测清单维护预期值，避免实现和测试同步错误仍通过。 */
 static const SZrExpectedOfficialModule k_expected_modules[] = {
         {"zr.builtin", ZR_LIB_OFFICIAL_MODULE_TIER_N0, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
          ZR_PROVIDER_CONTRACT_ROLE_BUILTIN_TYPE_SURFACE},
@@ -60,6 +63,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 构造最小有效 provider 描述符供拒绝路径注入角色或阶段冲突。 */
 static ZrLibModuleDescriptor make_descriptor(const TZrChar *moduleName,
                                              EZrLibrary_ProviderPhase phase,
                                              const TZrChar *publicContractHash) {
@@ -90,6 +94,7 @@ static const ZrLibTypeDescriptor *find_descriptor_type(
     return ZR_NULL;
 }
 
+/* 官方 runtime 描述符必须和冻结清单的名称、阶段及非空契约一致。 */
 static void assert_official_runtime_descriptor(
         SZrState *state,
         const ZrLibModuleDescriptor *descriptor,
@@ -145,6 +150,7 @@ static void host_owner_observer_probe(SZrState *state,
     }
 }
 
+/* 独立表逐项核对，并拒绝未加 zr 前缀或未知的官方名字。 */
 static void test_official_inventory_is_frozen_unique_and_phase_typed(void) {
     TZrSize index;
     TZrSize otherIndex;
@@ -180,6 +186,7 @@ static void test_official_inventory_is_frozen_unique_and_phase_typed(void) {
     TEST_ASSERT_NULL(ZrLibrary_OfficialModuleInventory_Find(ZR_NULL));
 }
 
+/* canonical type role 归指定 builtin/reflection provider 所有，registry Free 后不可残留。 */
 static void test_registered_provider_contract_owns_reflection_type_roles(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const ZrLibModuleDescriptor *builtinProvider;
@@ -326,6 +333,7 @@ static void test_reflection_provider_contract_is_not_a_loadable_empty_module(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* registry 附着只拦截官方模块，未知模块仍委托宿主；释放后原回调应恢复。 */
 static void test_registry_composes_and_restores_host_native_loader(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrHostNativeLoaderProbe probe = {0u};
@@ -383,6 +391,7 @@ static void test_registry_composes_and_restores_host_native_loader(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 各官方模块的实际描述符必须收敛到库存阶段及角色，不能各自声明冲突相位。 */
 static void test_owner_descriptors_converge_on_inventory_phase(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const ZrLibModuleDescriptor *taskModule;

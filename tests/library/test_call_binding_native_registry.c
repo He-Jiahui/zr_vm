@@ -17,6 +17,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
+/* 同一回调作为模块导出、实例方法及元方法，检验三种入口共享原生目标身份。 */
 static TZrBool call_binding_probe(ZrLibCallContext *context, SZrTypeValue *result) {
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -25,6 +26,7 @@ static TZrBool call_binding_probe(ZrLibCallContext *context, SZrTypeValue *resul
     return ZR_TRUE;
 }
 
+/* 由模块函数创建原生对象，供脚本调用和描述符绑定链使用。 */
 static TZrBool call_binding_make(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *object = ZrLib_Type_NewInstance(context->state, "NativeThing");
     SZrTypeValue stored;
@@ -35,6 +37,7 @@ static TZrBool call_binding_make(ZrLibCallContext *context, SZrTypeValue *result
     return ZR_TRUE;
 }
 
+/* 属性 getter 依赖接收者及已登记的 stored 字段，失败时不制造有效结果。 */
 static TZrBool call_binding_get_value(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *self = ZrLib_CallContext_Self(context);
     SZrObject *object;
@@ -47,11 +50,13 @@ static TZrBool call_binding_get_value(ZrLibCallContext *context, SZrTypeValue *r
     return ZR_TRUE;
 }
 
+/* IO 借用栈上 fixture 和单独管理的 bytes，不拥有关闭时可释放的资源。 */
 static void close_fixture_reader(SZrState *state, TZrPtr data) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(data);
 }
 
+/* 两个静态描述符在 State_Destroy 之前保持有效，注册表借用其存储。 */
 static const ZrLibFunctionDescriptor kFunctions[] = {
         {
                 .name = "probe",
@@ -62,6 +67,7 @@ static const ZrLibFunctionDescriptor kFunctions[] = {
         },
 };
 
+/* 方法、只读属性与元方法刻意共存，用以区别 CALL、GET 和 META 契约。 */
 static const ZrLibMethodDescriptor kMethods[] = {
         {
                 .name = "read",
@@ -112,6 +118,7 @@ static const ZrLibFunctionDescriptor kTypeFunctions[] = {
         {.name = "make", .callback = call_binding_make, .returnTypeName = "NativeThing"},
 };
 
+/* 模块重注册测试依赖这些 ABI 与签名字段构成可比较的 provider 身份。 */
 static const ZrLibModuleDescriptor kModule = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "call_binding_native_registry",
@@ -132,6 +139,8 @@ static const ZrLibModuleDescriptor kTypeModule = {
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
 };
 
+/* BUG: NDEBUG 会删除含注册、调用、写文件和重载的 assert 表达式，
+ * Release 目标因而既不能验证绑定，也可能继续读取未初始化的结果。 */
 int main(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *moduleName;
@@ -146,6 +155,7 @@ int main(void) {
     assert(state != ZR_NULL);
     assert(ZrLibrary_NativeRegistry_RegisterModule(state->global, &kModule));
     assert(ZrLibrary_NativeRegistry_RegisterModule(state->global, &kTypeModule));
+    /* 手工调用、编译脚本及二进制重载应解析到同一原生方法契约。 */
     {
         SZrString *typeModuleName = ZrCore_String_CreateFromNative(state, (TZrNativeString)kTypeModule.moduleName);
         SZrObjectModule *typeModule = ZrCore_Module_ImportByPath(state, typeModuleName);
@@ -178,6 +188,7 @@ int main(void) {
             }
         }
     }
+    /* 编译端必须发布 provider relocation，而非把原生地址写进产物。 */
     {
         const char *source =
                 "var nativeModule = import(\"call_binding_native_types\");\n"
@@ -266,6 +277,7 @@ int main(void) {
     status = ZrLibrary_NativeRegistry_ResolveCallBinding(state, &contract, &target, &diagnostic);
     assert(status == ZR_CALL_BINDING_SIGNATURE_MISMATCH);
     assert(diagnostic.status == ZR_CALL_BINDING_SIGNATURE_MISMATCH);
+    /* 替换描述符后旧消费端须报告过时代际；静态存储保证注册表借用安全。 */
     {
         const char *source = "var provider = import(\"call_binding_native_registry\"); return provider.probe();";
         SZrFunction *compiled = ZrParser_Source_Compile(state, source, strlen(source),

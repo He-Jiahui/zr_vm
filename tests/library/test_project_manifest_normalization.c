@@ -13,6 +13,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 借用 project 持有的 VM 字符串；比较需在销毁前完成。 */
 static const TZrChar *test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -43,6 +44,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     return written == contentLength;
 }
 
+/* 不同兼容清单使用独立生成目录，避免依赖文件互相命中。 */
 static TZrBool make_project_root_path(const TZrChar *suiteName,
                                       const TZrChar *baseName,
                                       TZrChar *projectPath,
@@ -73,6 +75,7 @@ static TZrBool make_project_root_path(const TZrChar *suiteName,
     return ZR_TRUE;
 }
 
+/* project 引用 VM 值，必须先于 state 释放。 */
 static void destroy_test_project(SZrState *state, SZrLibrary_Project *project) {
     if (state != ZR_NULL && project != ZR_NULL) {
         ZrLibrary_Project_Free(state, project);
@@ -82,6 +85,7 @@ static void destroy_test_project(SZrState *state, SZrLibrary_Project *project) {
     }
 }
 
+/* 归一化后的旧/新引用应解析到同一规范模块键。 */
 static void assert_import_resolves(const SZrLibrary_Project *project,
                                    const TZrChar *currentModuleKey,
                                    const TZrChar *rawSpecifier,
@@ -101,6 +105,7 @@ static void assert_import_resolves(const SZrLibrary_Project *project,
     TEST_ASSERT_EQUAL_STRING(expectedModuleKey, resolved);
 }
 
+/* 旧 dependencies 与新 references 完全等价时只保留一份 provider 身份。 */
 static void test_project_manifest_normalization_keeps_identical_old_and_new_reference_once(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -178,6 +183,8 @@ static void test_project_manifest_normalization_keeps_identical_old_and_new_refe
     destroy_test_project(state, project);
 }
 
+/* 相同 alias 的路径或版本冲突不可静默选择其一。
+ * TODO: 该组拒绝用例多数只检查空 project，需补诊断以排除无关失败。 */
 static void test_project_manifest_normalization_rejects_conflicting_old_and_new_reference(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -348,6 +355,8 @@ static void test_project_manifest_normalization_rejects_legacy_dependency_declar
     destroy_test_project(state, project);
 }
 
+/* BUG: 当前输入是受支持的 manifestVersion 2，却仍用 v1 assembly 且缺 v2
+ * 必填 name/version/kind；Project_New 返回空不能证明“不支持的版本”分支生效。 */
 static void test_project_manifest_normalization_rejects_unsupported_manifest_version(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -955,6 +964,7 @@ static void test_project_manifest_normalization_rejects_invalid_preserve_rule(vo
     destroy_test_project(state, project);
 }
 
+/* BUG: 顶层 CMake 仅创建此目标而未 add_test，普通 CTest 不执行归一化用例。 */
 int main(void) {
     UNITY_BEGIN();
 

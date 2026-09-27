@@ -13,11 +13,13 @@
 void setUp(void) {}
 void tearDown(void) {}
 
+/* reader 借用栈上描述符和外部 bytes；IO 关闭时不能替调用方释放它们。 */
 static void close_reader(SZrState *state, TZrPtr data) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(data);
 }
 
+/* 审计写出的字节流中是否泄漏进程内函数指针，而非将其误作可重定位数据。 */
 static TZrBool contains_bytes(const TZrByte *bytes, TZrSize length,
                               const void *value, TZrSize size) {
     for (TZrSize offset = 0u; offset + size <= length; ++offset) {
@@ -28,6 +30,7 @@ static TZrBool contains_bytes(const TZrByte *bytes, TZrSize length,
     return ZR_FALSE;
 }
 
+/* 编译、序列化、重载后绑定契约应保留，VM 目标指针则必须重建。 */
 static void test_call_binding_binary_roundtrip_relocates_targets(void) {
     const char *source =
             "class Box { pub fn read(): int { return 29; } }\n"
@@ -91,6 +94,7 @@ static void test_call_binding_binary_roundtrip_relocates_targets(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 有意篡改 accessor 的操作或成员角色，要求加载边界拒绝伪造的绑定元数据。 */
 static void assert_corrupt_accessor_is_rejected(TZrUInt32 operation, TZrBool corruptStatic,
                                                TZrBool corruptInitializer) {
     const char *source =
@@ -158,18 +162,22 @@ static void assert_corrupt_accessor_is_rejected(TZrUInt32 operation, TZrBool cor
     TEST_ASSERT_EQUAL_UINT32(targetToken, diagnostic.targetMetadataToken);
 }
 
+/* getter 不得借相同目标 token 冒充普通调用。 */
 static void test_serialized_getter_cannot_be_relabelled_as_call(void) {
     assert_corrupt_accessor_is_rejected(ZR_CALL_BINDING_OPERATION_CALL, ZR_FALSE, ZR_FALSE);
 }
 
+/* getter 不得借相同目标 token 冒充写入。 */
 static void test_serialized_getter_cannot_be_relabelled_as_setter(void) {
     assert_corrupt_accessor_is_rejected(ZR_CALL_BINDING_OPERATION_SET, ZR_FALSE, ZR_FALSE);
 }
 
+/* 静态属性标志必须与成员描述符一致。 */
 static void test_serialized_accessor_static_role_must_match_descriptor(void) {
     assert_corrupt_accessor_is_rejected(ZR_CALL_BINDING_OPERATION_GET, ZR_TRUE, ZR_FALSE);
 }
 
+/* 属性初始化角色不能由普通 getter 的序列化条目伪造。 */
 static void test_serialized_getter_cannot_have_initializer_role(void) {
     assert_corrupt_accessor_is_rejected(ZR_CALL_BINDING_OPERATION_GET, ZR_FALSE, ZR_TRUE);
 }

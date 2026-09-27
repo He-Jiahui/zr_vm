@@ -14,6 +14,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser.h"
 
+/* 复用 harness 的源文本夹具类型，使测试关注宿主调用边界。 */
 typedef ZrTestsFixtureSource ZrTestsModuleFixtureSource;
 
 #define MODULE_FIXTURE_SOURCE_TEXT(pathValue, sourceValue) ZR_TESTS_FIXTURE_SOURCE_TEXT(pathValue, sourceValue)
@@ -23,9 +24,11 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* sourceLoader 借用用例内的静态数组；销毁 VM 前解除本轮回调引用。 */
 static const ZrTestsModuleFixtureSource *g_module_fixture_sources = ZR_NULL;
 static TZrSize g_module_fixture_source_count = 0;
 
+/* 宿主直调测试也要接入 parser，首次导入才能编译 fixture 源码。 */
 static SZrState *create_test_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
@@ -36,6 +39,7 @@ static SZrState *create_test_state(void) {
     return state;
 }
 
+/* 模块导入经 global 回调取得本轮夹具，字节归属仍由用例管理。 */
 static TZrBool module_fixture_source_loader(SZrState *state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo *io) {
     return ZrTests_Fixture_SourceLoaderFromArray(state,
                                                  sourcePath,
@@ -45,6 +49,7 @@ static TZrBool module_fixture_source_loader(SZrState *state, TZrNativeString sou
                                                  g_module_fixture_source_count);
 }
 
+/* 只在异常仍挂在 state 上时借用 message，供失败断言解释原因。 */
 static const TZrChar *current_exception_message(SZrState *state) {
     SZrObject *errorObject;
     const SZrTypeValue *messageValue;
@@ -67,6 +72,7 @@ static const TZrChar *current_exception_message(SZrState *state) {
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, messageValue->value.object));
 }
 
+/* 原生 provider 回调用显式 arity/类型检查，供闭包跨模块捕获场景调用。 */
 static TZrBool host_demo_bump_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrInt64 left = 0;
     TZrInt64 right = 0;
@@ -84,6 +90,7 @@ static TZrBool host_demo_bump_callback(ZrLibCallContext *context, SZrTypeValue *
     return ZR_TRUE;
 }
 
+/* 同一回调按 descriptor 名核查 GC 域模式，防止分发标记被忽略。 */
 static TZrBool host_demo_native_mode_callback(
         ZrLibCallContext *context,
         SZrTypeValue *result) {
@@ -141,6 +148,7 @@ static const ZrLibParameterDescriptor kHostDemoBumpParameters[] = {
         {"right", "int", "right operand"},
 };
 
+/* 三种 native dispatch flag 共享回调以比较实际进入的 mutator 范围。 */
 static const ZrLibFunctionDescriptor kHostDemoFunctions[] = {
         {
                 .name = "bump",
@@ -182,6 +190,7 @@ static const ZrLibConstantDescriptor kHostDemoConstants[] = {
         },
 };
 
+/* 静态描述符在整个 VM 生命周期内保持有效，供 registry 和脚本导入借用。 */
 static const ZrLibModuleDescriptor kHostDemoModuleDescriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "host_demo",
@@ -203,6 +212,7 @@ static const ZrLibModuleDescriptor kHostDemoModuleDescriptor = {
         .onMaterialize = ZR_NULL,
 };
 
+/* 宿主第一次直调导出时应完成源码导入、执行并恢复正常线程状态。 */
 static void test_direct_module_export_succeeds_for_source_module_function(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
@@ -233,6 +243,9 @@ static void test_direct_module_export_succeeds_for_source_module_function(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: 本例只让导出函数体抛错，模块顶层仍成功；首次导入的顶层异常发生在
+ * CallModuleExport 安装 panic 恢复点之前，当前会走 Exception_Throw 的宿主 abort。
+ * 需增加顶层失败用例，区分导出调用与导入阶段的错误边界。 */
 static void test_direct_module_export_runtime_error_returns_false_instead_of_aborting(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
@@ -267,6 +280,7 @@ static void test_direct_module_export_runtime_error_returns_false_instead_of_abo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 模块初始化的尾调用返回后，宿主再调用导出不得丢失其 scalar 闭包捕获。 */
 static void test_direct_module_export_preserves_scalar_captures_after_tail_called_entry(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
@@ -300,6 +314,7 @@ static void test_direct_module_export_preserves_scalar_captures_after_tail_calle
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 导出闭包捕获已导入的原生模块对象，宿主直调需保留其常量和函数可见性。 */
 static void test_direct_module_export_preserves_imported_native_module_captures(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
@@ -345,6 +360,7 @@ static void test_direct_module_export_preserves_imported_native_module_captures(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* GC_AWARE、BLOCKING_DETACHED 和 NO_SAFEPOINT_CRITICAL 必须进入各自精确域。 */
 static void test_native_descriptor_modes_enter_exact_domain_scope(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
@@ -381,6 +397,7 @@ static void test_native_descriptor_modes_enter_exact_domain_scope(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* BUG: 顶层 CMake 仅构建此目标而没有 add_test；普通 CTest 不执行宿主直调用例。 */
 int main(void) {
     UNITY_BEGIN();
 

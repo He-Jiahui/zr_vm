@@ -12,6 +12,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 返回借用的 GC 字符串文本，请在释放 project/state 前完成比较。 */
 static const TZrChar *test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -42,6 +43,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     return written == contentLength;
 }
 
+/* 为每种版本选择情形建立独立根路径，输出由调用方用于写入多个候选清单。 */
 static TZrBool make_project_root_path(const TZrChar *baseName,
                                       TZrChar *projectPath,
                                       TZrSize projectPathSize,
@@ -71,6 +73,7 @@ static TZrBool make_project_root_path(const TZrChar *baseName,
     return ZR_TRUE;
 }
 
+/* 请求含 project 借用字符串，先完成所有断言，再按 project→state 顺序释放。 */
 static void destroy_test_project(SZrState *state, SZrLibrary_Project *project) {
     if (state != ZR_NULL && project != ZR_NULL) {
         ZrLibrary_Project_Free(state, project);
@@ -105,6 +108,7 @@ static TZrBool text_ends_with(const TZrChar *text, const TZrChar *suffix) {
     return textLength >= suffixLength && strcmp(text + textLength - suffixLength, suffix) == 0;
 }
 
+/* 比较 provider 的规范键、版本约束和三种路径，避免只选对版本却装错产物。 */
 static void assert_provider_load_request(const SZrLibrary_Project *project,
                                          const TZrChar *specifier,
                                          const TZrChar *expectedModuleKey,
@@ -142,6 +146,7 @@ static void assert_provider_load_request(const SZrLibrary_Project *project,
     TEST_ASSERT_NOT_NULL(strstr(request.libraryPath, "/bin/aot_c/lib/zrvm_aot_ops_sum."));
 }
 
+/* 同一 assembly 的两个 alias 应保留各自确切版本和文件根目录。 */
 static void test_provider_import_selects_declared_alias_version_and_paths(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -228,6 +233,7 @@ static void test_provider_import_selects_declared_alias_version_and_paths(void) 
     destroy_test_project(state, project);
 }
 
+/* 多候选时只在声明范围内选择最高版本，不能越过上界。 */
 static void test_provider_import_selects_highest_candidate_within_declared_range(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -410,6 +416,7 @@ static void test_provider_import_rejects_candidate_set_without_range_match(void)
     destroy_test_project(state, project);
 }
 
+/* BUG: 顶层 CMake 仅建此目标，没有 add_test；普通 CTest 不运行版本选择用例。 */
 int main(void) {
     UNITY_BEGIN();
 

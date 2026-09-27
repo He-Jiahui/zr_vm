@@ -9,6 +9,7 @@ void setUp(void) {
 void tearDown(void) {
 }
 
+/* 用公开解析入口确认规范形式；错误文本让失败可归因于输入而非断言本身。 */
 static void assert_specifier_parses(const TZrChar *literal, SZrLibrary_ModuleSpecifier *outSpecifier) {
     TZrChar error[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -31,6 +32,7 @@ static void assert_specifier_rejected(const TZrChar *literal) {
     TEST_ASSERT_NOT_EQUAL('\0', error[0]);
 }
 
+/* 点号与斜杠在同一域内等价，不同域即使名字相同也不能共享身份。 */
 static void test_module_specifier_classifies_absolute_domains_and_separator_equivalence(void) {
     SZrLibrary_ModuleSpecifier officialDot;
     SZrLibrary_ModuleSpecifier officialSlash;
@@ -62,6 +64,7 @@ static void test_module_specifier_classifies_absolute_domains_and_separator_equi
     TEST_ASSERT_FALSE(ZrLibrary_ModuleIdentity_Equals(&nativeDot.identity, &workspaceDot.identity));
 }
 
+/* 相对解析保留 workspace/package 归属，并拒绝越根与缺失包身份。 */
 static void test_module_specifier_resolves_relative_identity_without_changing_domain(void) {
     SZrLibrary_ModuleSpecifier childSpecifier;
     SZrLibrary_ModuleSpecifier parentSpecifier;
@@ -189,6 +192,7 @@ static void test_module_specifier_resolves_relative_identity_without_changing_do
     TEST_ASSERT_EQUAL_STRING("engine.mesh", inplaceRelativeSpecifier.identity.segments);
 }
 
+/* alias 尚待项目清单解引用，单段 package 根则已有稳定 package 身份。 */
 static void test_module_specifier_parses_alias_and_single_segment_package_forms(void) {
     SZrLibrary_ModuleSpecifier aliasSpecifier;
     SZrLibrary_ModuleSpecifier packageRoot;
@@ -218,6 +222,7 @@ static void test_module_specifier_parses_alias_and_single_segment_package_forms(
     TEST_ASSERT_TRUE(ZrLibrary_ModuleIdentity_Equals(&packageDot.identity, &packageSlash.identity));
 }
 
+/* file locator 保留完整 URI，但不会在词法解析阶段冒充模块身份。 */
 static void test_module_specifier_classifies_canonical_file_locators_without_creating_identity(void) {
     SZrLibrary_ModuleSpecifier driveLocator;
     SZrLibrary_ModuleSpecifier posixLocator;

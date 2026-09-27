@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
+/* Map 正常路径的确定性回调，供尾部、别名和逆序布局共用。 */
 static TZrBool add_one(const TZrByte *input, TZrByte *output,
                        TZrSize size, TZrPtr userData) {
     TZrSize i;
@@ -13,6 +14,7 @@ static TZrBool add_one(const TZrByte *input, TZrByte *output,
     return ZR_TRUE;
 }
 
+/* 二输入回调让矩阵测试观察 Zip 和形状映射的组合结果。 */
 static TZrBool add_bytes(const TZrByte *left, const TZrByte *right,
                          TZrByte *output, TZrSize size, TZrPtr userData) {
     TZrSize i;
@@ -21,6 +23,7 @@ static TZrBool add_bytes(const TZrByte *left, const TZrByte *right,
     return ZR_TRUE;
 }
 
+/* 第三次调用主动失败，用来固定诊断索引与已写前缀的语义。 */
 static TZrBool fail_at_two(const TZrByte *input, TZrByte *output,
                            TZrSize size, TZrPtr userData) {
     TZrSize *calls = (TZrSize *)userData;
@@ -31,6 +34,7 @@ static TZrBool fail_at_two(const TZrByte *input, TZrByte *output,
     return ZR_TRUE;
 }
 
+/* 描述借用的单字节槽位；调用方负责保证底层栈数组仍有效。 */
 static SZrBatchBuffer bytes(TZrByte *data, TZrSize length, TZrMemoryOffset stride) {
     SZrBatchBuffer result;
     result.data = data;
@@ -40,6 +44,7 @@ static SZrBatchBuffer bytes(TZrByte *data, TZrSize length, TZrMemoryOffset strid
     return result;
 }
 
+/* 各长度下只允许写入指定元素，尾部哨兵保持不变。 */
 static void test_lengths_and_tail(void) {
     TZrByte input[9] = {0,1,2,3,4,5,6,7,8};
     TZrByte output[9] = {0};
@@ -59,6 +64,7 @@ static void test_lengths_and_tail(void) {
     }
 }
 
+/* 回调失败应停在第三个元素，报告索引 2 并保留已写前缀。 */
 static void test_callback_failure_preserves_order(void) {
     TZrByte input[4] = {1,2,3,4};
     TZrByte output[4] = {0};
@@ -73,6 +79,8 @@ static void test_callback_failure_preserves_order(void) {
     assert(output[0] == 2u && output[1] == 3u && output[2] == 0u);
 }
 
+/* TODO: 当前仅分别测正向重叠与负步长；需补两者叠加的布局。
+ * batch_contract.c 的 MayAlias 用 data 起点向后推范围，负步长可漏报重叠。 */
 static void test_alias_and_negative_stride(void) {
     TZrByte storage[8] = {0,1,2,3,4,5,6,7};
     TZrByte output[4] = {0};
@@ -87,6 +95,7 @@ static void test_alias_and_negative_stride(void) {
     assert(output[0] == 4u && output[3] == 1u);
 }
 
+/* 二维形状须先排除元素数溢出，再由 Zip 写入矩阵结果。 */
 static void test_zip_matrix_and_shape_overflow(void) {
     TZrByte left[6] = {1,2,3,4,5,6};
     TZrByte right[6] = {6,5,4,3,2,1};
@@ -106,6 +115,7 @@ static void test_zip_matrix_and_shape_overflow(void) {
     assert(diagnostic.code == ZR_BATCH_DIAGNOSTIC_OVERFLOW);
 }
 
+/* BUG: NDEBUG 删除各用例 assert 中的 Map、Zip 与验证调用，CTest 可空跑成功。 */
 int main(void) {
     test_lengths_and_tail();
     test_callback_failure_preserves_order();

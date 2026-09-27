@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <string.h>
 
+/* 测试专用签名桩，只验证输入形状与哨兵字节，不提供加密真实性保证。 */
 static TZrBool verify(const TZrByte *content, TZrUInt32 length,
                       const TZrByte *signature, TZrUInt32 signatureLength,
                       TZrPtr userData) {
@@ -12,6 +13,7 @@ static TZrBool verify(const TZrByte *content, TZrUInt32 length,
            signatureLength == 3u && signature[0] == 0xa5u;
 }
 
+/* BUG: 待测 Validate 等调用均包在 assert 内；NDEBUG 时 CTest 可不运行校验而成功。 */
 int main(void) {
     TZrByte bytes[4] = {1u, 2u, 3u, 4u};
     TZrByte signature[3] = {0xa5u, 0x5au, 0x01u};
@@ -56,6 +58,7 @@ int main(void) {
     assert(validated.signatureVerified && validated.immutableContent);
     assert(validated.requiredCapabilities == UINT64_C(0x03));
 
+    /* 独立核对声明能力闭包，不把主 Validate 的通过当作闭包证据。 */
     {
         TZrUInt64 required = 0u;
         assert(ZrCore_HotPatch_ComputeRequiredCapabilities(
@@ -64,6 +67,7 @@ int main(void) {
         assert(required == UINT64_C(0x03));
     }
 
+    /* 升级拒绝后 validated 应清空，不能让调用方复用旧授权。 */
     manifest.requiredCapabilities = UINT64_C(0x04);
     validated.contentHash = 777u;
     assert(ZrCore_HotPatch_Validate(&input, verify, ZR_NULL, &validated,

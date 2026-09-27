@@ -10,6 +10,7 @@ void setUp(void) {
 void tearDown(void) {
 }
 
+/* 比较借用的 VM 文本；调用方须在 project/state 销毁前使用。 */
 static const TZrChar *test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -20,12 +21,14 @@ static const TZrChar *test_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 固定清单来源路径，让所有 v2 用例只比较 envelope 或声明内容。 */
 static SZrLibrary_Project *new_project(SZrState *state, const TZrChar *manifest) {
     return ZrLibrary_Project_New(state,
                                  (TZrNativeString)manifest,
                                  "E:/repo/manifest-v2/manifest.zrp");
 }
 
+/* v2 的 name/version/kind 基础 envelope 是建模入口的必填前提。 */
 static void test_project_manifest_v2_reads_required_base_envelope(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrLibrary_Project *project;
@@ -202,6 +205,7 @@ static void test_project_manifest_v2_reads_structured_alias_package_and_dependen
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 同名依赖可在 build/runtime 两相共存，不能在序列化或 lock 中混合。 */
 static void test_project_manifest_v2_keeps_build_dependencies_phase_separated(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrLibrary_Project *project;
@@ -306,6 +310,7 @@ static void test_project_manifest_v2_keeps_build_dependencies_phase_separated(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 在 project 拥有的 lock 数组中按包名及阶段找借用项；调用方需先确认非空。 */
 static const SZrLibrary_ProjectManifestDependencyLockEntry *find_project_lock_entry(
         const SZrLibrary_Project *project,
         const TZrChar *packageName,
@@ -322,6 +327,7 @@ static const SZrLibrary_ProjectManifestDependencyLockEntry *find_project_lock_en
     return ZR_NULL;
 }
 
+/* lock 输入缓冲改写后仍可读，证明解析结果由 project 拥有且失败不改旧锁。 */
 static void test_project_manifest_v2_reads_owned_phase_separated_dependency_lock(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrLibrary_Project *project;
@@ -593,6 +599,7 @@ static void test_project_manifest_v2_writer_rejects_migration_and_absolute_path_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* lock 不写入项目声明；失败时输出缓冲清空，避免消费方误读旧内容。 */
 static void test_project_manifest_v2_writes_dependency_lock_separately(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrLibrary_Project *project;
