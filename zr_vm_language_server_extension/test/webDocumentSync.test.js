@@ -4,6 +4,7 @@ const { setImmediate: nextTurn } = require('node:timers/promises');
 const { loadWorker } = require('./helpers/workerHost');
 const { deferred } = require('./helpers/extensionHost');
 
+// 这些入口直接驱动生产 worker 的 LSP handler，观察真实桥接调用与推送诊断。
 const uri = 'file:///workspace/main.zr';
 const full = (text) => [{ text }];
 const edit = (start, end, text, rangeLength) => ({
@@ -17,6 +18,7 @@ const close = (host) => host.handlers.get('onDidCloseTextDocument')({ textDocume
 const modified = (promise) => assert.rejects(promise, (error) => error.code === -32801);
 const updates = (host) => host.bridgeCalls.filter(([method]) => method === 'updateDocument');
 
+// 一次通知中的任何非法编辑都不能把部分文本送进 WASM；失同步后须全文重建。
 test('Web rejects invalid edits atomically and only a single full replacement recovers', async () => {
     const host = loadWorker({ getHover: { contents: 'ok' } });
     await open(host);
@@ -32,6 +34,7 @@ test('Web rejects invalid edits atomically and only a single full replacement re
     assert.deepEqual(await hover(host), { contents: 'ok' });
 });
 
+// 版本须高于上次已提交版本并符合 WASM 的 signed 32-bit 边界；失败的版本可全文重试。
 test('Web rejects duplicate, decreasing and malformed versions without changing the snapshot', async () => {
     for (const version of [1, 0, -1, 1.5, undefined, null, '2', Number.NaN, 2 ** 32]) {
         const host = loadWorker({ getHover: null });
@@ -44,6 +47,7 @@ test('Web rejects duplicate, decreasing and malformed versions without changing 
     }
 });
 
+// LSP 位置按 UTF-16 计数；CRLF、代理对和 rangeLength 必须共用同一临时文本。
 test('Web validates UTF-16 boundaries, CRLF line endings and rangeLength', async () => {
     for (const invalid of [
         edit(pos(0, 2), pos(0, 3), ''), // inside the emoji surrogate pair
@@ -71,6 +75,7 @@ test('Web validates UTF-16 boundaries, CRLF line endings and rangeLength', async
     assert.equal(updates(host).at(-1)[2], 'aZY\rc\nend');
 });
 
+// 后端拒绝更新时继续保留上次提交版本；didSave 不能替代编辑器快照。
 test('Web update failures preserve the last committed text and save never changes it', async () => {
     let fail = false;
     const host = loadWorker({
@@ -89,6 +94,7 @@ test('Web update failures preserve the last committed text and save never change
     assert.equal(updates(host).at(-1)[2], 'ac');
 });
 
+// 第二条增量编辑应读取前一次异步更新成功后的文本，而非尚未提交的候选值。
 test('Web serializes changes behind pending updates and commits only successful results', async () => {
     const pending = deferred();
     const host = loadWorker({ updateDocument: (_uri, _text, version) => version === 2 ? pending.promise : {} });
@@ -103,6 +109,7 @@ test('Web serializes changes behind pending updates and commits only successful 
     assert.equal(updates(host).at(-1)[2], 'abce');
 });
 
+// 诊断由代际与修订号保护：即使关闭后以同版本重开，旧报告也不能发布。
 test('Web drops late diagnostics after edits, desynchronization and close/reopen at the same version', async () => {
     for (const action of ['change', 'invalid', 'reopen']) {
         const delayed = deferred();
@@ -120,6 +127,7 @@ test('Web drops late diagnostics after edits, desynchronization and close/reopen
     }
 });
 
+// 查询必须等候前序写入，并在返回后拒绝被后续通知淘汰的结果。
 test('Web queries wait for synchronization and reject a result from an obsolete revision', async () => {
     const pending = deferred();
     const host = loadWorker({ getHover: () => pending.promise });
@@ -133,6 +141,7 @@ test('Web queries wait for synchronization and reject a result from an obsolete 
     await modified(hover(host));
 });
 
+// 缺少打开状态或重复 didOpen 不应把无主/旧文本写进 WASM。
 test('Web rejects changes to unopened documents and duplicate opens do not overwrite snapshots', async () => {
     const host = loadWorker({ getHover: null });
     await change(host, 1, full('unopened'));
@@ -143,6 +152,7 @@ test('Web rejects changes to unopened documents and duplicate opens do not overw
     assert.equal(updates(host).length, 1);
 });
 
+// 在任何 WASM 调用前拒绝畸形通知与孤立代理项，避免位置编码和内容分歧。
 test('Web validates complete notification payloads and Unicode before reaching WASM', async () => {
     for (const changes of [[], null, {}, [null], [{ text: null }], [{ text: 'x', range: null }],
         [{ text: '\ud800' }], [{ text: '\udc00' }],
@@ -160,6 +170,7 @@ test('Web validates complete notification payloads and Unicode before reaching W
     }
 });
 
+// 查询跟随 URI 写入队列，不能对上一版后端文档抢先执行。
 test('Web document queries wait for the preceding backend update', async () => {
     const pending = deferred();
     const host = loadWorker({ updateDocument: (_uri, _text, version) => version === 2 ? pending.promise : {}, getHover: null });
@@ -173,6 +184,7 @@ test('Web document queries wait for the preceding backend update', async () => {
     assert.equal(await query, null);
 });
 
+// 首次同步失败后仍允许较新版本的单次全文替换建立第一个可读快照。
 test('Web can recover a failed initial update with a newer full replacement', async () => {
     let failing = true;
     const host = loadWorker({ updateDocument: () => {
@@ -187,6 +199,7 @@ test('Web can recover a failed initial update with a newer full replacement', as
     assert.equal(await hover(host), null);
 });
 
+// 关闭先清空旧诊断，WASM 关闭与重开则必须排在旧更新之后。
 test('Web close and reopen serialize backend mutation while clearing diagnostics immediately', async () => {
     const pending = deferred();
     const order = [];
