@@ -1,7 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "unity.h"
 
-typedef enum EJsonCase {
+typedef enum EJsonCase { /* 同一故障矩阵覆盖叶节点、诊断集合及两种请求报告。 */
     JSON_POSITION,
     JSON_RANGE,
     JSON_LOCATION,
@@ -10,7 +10,7 @@ typedef enum EJsonCase {
     JSON_DOCUMENT_REPORT,
     JSON_WORKSPACE_REPORT
 } EJsonCase;
-
+/* 每个 Unity 用例复用一套诊断和请求参数；输出树由测试独占，输入中的字符串随 server 状态存活。 */
 static const char g_uriText[] = "file:///diagnostic-json.zr";
 static SZrStdioServer *g_server;
 static SZrLspDiagnostic g_diagnostic;
@@ -23,8 +23,8 @@ static size_t g_attempts;
 static size_t g_failAt;
 static size_t g_failures;
 static size_t g_live;
-static TZrBool g_persistent;
-
+static TZrBool g_persistent; /* 钩子状态仅在序列化期间生效，用于区分单次与持续分配失败。 */
+/* cJSON 钩子只统计本次被测输出的分配；期望树与夹具在默认钩子下建立。 */
 static void *json_malloc(size_t size) {
     void *pointer;
 
@@ -40,20 +40,20 @@ static void *json_malloc(size_t size) {
     return pointer;
 }
 
-static void json_free(void *pointer) {
+static void json_free(void *pointer) { /* 与 json_malloc 配对，供每次失败注入后的泄漏断言使用。 */
     if (pointer != ZR_NULL) {
         g_live--;
         free(pointer);
     }
 }
 
-static SZrString *new_string(const char *text) {
-    SZrString *value = ZrCore_String_Create(g_server->state, text, strlen(text));
+static SZrString *new_string(const char *text) { /* 诊断字段借用 server 状态管理的字符串。 */
+    SZrString *value = ZrCore_String_Create(g_server->state, text, strlen(text)); /* TODO: API 声明为可变 char *，此 const 输入触发 -Werror；当前创建路径复制输入，需统一只读契约。 */
     TEST_ASSERT_NOT_NULL(value);
     return value;
 }
 
-void setUp(void) {
+void setUp(void) { /* 先建立真实 LSP 诊断及请求上下文，再让各测试仅切换序列化故障点。 */
     SZrLspDiagnosticRelatedInformation related = {0};
     SZrLspDiagnosticFix fix = {0};
     SZrLspDiagnostic *diagnostic = &g_diagnostic;
@@ -82,7 +82,7 @@ void setUp(void) {
     fix.editRange = g_location.range;
     fix.editText = new_string("int(value)");
     fix.applicability = ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE;
-    ZrCore_Array_Init(g_server->state, &g_diagnostic.relatedInformation, sizeof(related), 1);
+    ZrCore_Array_Init(g_server->state, &g_diagnostic.relatedInformation, sizeof(related), 1); /* 数组只复制记录，嵌套字符串归 server 状态。 */
     ZrCore_Array_Push(g_server->state, &g_diagnostic.relatedInformation, &related);
     ZrCore_Array_Init(g_server->state, &g_diagnostic.fixes, sizeof(fix), 1);
     ZrCore_Array_Push(g_server->state, &g_diagnostic.fixes, &fix);
@@ -95,7 +95,7 @@ void setUp(void) {
     TEST_ASSERT_NOT_NULL(g_workspaceParams);
 }
 
-void tearDown(void) {
+void tearDown(void) { /* Unity 断言可跳过用例局部清理；这里回收全局夹具并核对钩子净分配。 */
     cJSON_InitHooks(ZR_NULL);
     cJSON_Delete(g_expected);
     cJSON_Delete(g_documentParams);
@@ -110,13 +110,13 @@ void tearDown(void) {
     TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, g_live, "serializer must release every JSON allocation");
 }
 
-static void expect_number(const cJSON *object, const char *field, int expected) {
+static void expect_number(const cJSON *object, const char *field, int expected) { /* 公共坐标和元数据断言要求字段保持数值类型。 */
     const cJSON *value = get_object_item(object, field);
     TEST_ASSERT_TRUE(cJSON_IsNumber(value));
     TEST_ASSERT_EQUAL_INT(expected, value->valueint);
 }
 
-static void expect_range(const cJSON *range) {
+static void expect_range(const cJSON *range) { /* 各层序列化共享同一源范围，防止字段转换丢失端点。 */
     const cJSON *start = get_object_item(range, "start");
     const cJSON *end = get_object_item(range, "end");
     expect_number(start, "line", 3);
@@ -125,12 +125,12 @@ static void expect_range(const cJSON *range) {
     expect_number(end, "character", 9);
 }
 
-static void expect_location(const cJSON *location) {
+static void expect_location(const cJSON *location) { /* relatedInformation 和独立 location 应保持同一 URI 与范围。 */
     TEST_ASSERT_EQUAL_STRING(g_uriText, cJSON_GetStringValue(get_object_item(location, "uri")));
     expect_range(get_object_item(location, "range"));
 }
 
-static void expect_diagnostic(const cJSON *json, TZrBool withUri) {
+static void expect_diagnostic(const cJSON *json, TZrBool withUri) { /* 核对诊断协议字段及 URI 上下文决定的扩展 data。 */
     const cJSON *related = get_object_item(json, "relatedInformation");
     const cJSON *data = get_object_item(json, "data");
     const cJSON *fixes;
@@ -147,7 +147,7 @@ static void expect_diagnostic(const cJSON *json, TZrBool withUri) {
     expect_location(get_object_item(cJSON_GetArrayItem(related, 0), "location"));
     TEST_ASSERT_EQUAL_STRING("related message",
                             cJSON_GetStringValue(get_object_item(cJSON_GetArrayItem(related, 0), "message")));
-    if (!withUri) {
+    if (!withUri) { /* 独立诊断没有文档 URI；集合输出才携带用于修复与来源追踪的 data。 */
         TEST_ASSERT_NULL(data);
         return;
     }
@@ -166,7 +166,7 @@ static void expect_diagnostic(const cJSON *json, TZrBool withUri) {
                             cJSON_GetStringValue(get_object_item(get_object_item(fix, "edit"), "newText")));
 }
 
-static SZrLspHandlerResult serialize_case(EJsonCase kind) {
+static SZrLspHandlerResult serialize_case(EJsonCase kind) { /* 将叶节点与请求处理器放入同一分配失败契约测试。 */
     SZrLspHandlerResult response = {ZR_LSP_HANDLER_OK, ZR_NULL};
 
     switch (kind) {
@@ -187,7 +187,7 @@ static SZrLspHandlerResult serialize_case(EJsonCase kind) {
     return response;
 }
 
-static void expect_complete(EJsonCase kind, const cJSON *json) {
+static void expect_complete(EJsonCase kind, const cJSON *json) { /* 叶节点核对字段；报告分支只核对与同源参照结果一致。 */
     switch (kind) {
         case JSON_POSITION:
             expect_number(json, "line", 3);
@@ -202,11 +202,11 @@ static void expect_complete(EJsonCase kind, const cJSON *json) {
             expect_diagnostic(cJSON_GetArrayItem(json, 1), ZR_TRUE);
             break;
         case JSON_DOCUMENT_REPORT:
-        case JSON_WORKSPACE_REPORT: TEST_ASSERT_TRUE(cJSON_Compare(json, g_expected, 1)); break;
+        case JSON_WORKSPACE_REPORT: TEST_ASSERT_TRUE(cJSON_Compare(json, g_expected, 1)); break; /* TODO: 同源比较漏检稳定缺失的 full kind/resultId、unchanged resultId 和工作区 uri/version；需独立断言。 */
     }
 }
 
-static size_t run_case(EJsonCase kind, size_t failAt, TZrBool persistent) {
+static size_t run_case(EJsonCase kind, size_t failAt, TZrBool persistent) { /* 单次调用以钩子观测 cJSON 分配失败出口的结果及所有权。 */
     cJSON_Hooks hooks = {json_malloc, json_free};
     SZrLspHandlerResult response;
     TZrBool hasResult;
@@ -216,13 +216,13 @@ static size_t run_case(EJsonCase kind, size_t failAt, TZrBool persistent) {
     g_failAt = failAt;
     g_failures = 0;
     g_persistent = persistent;
-    cJSON_InitHooks(&hooks);
+    cJSON_InitHooks(&hooks); /* TODO: 位置和诊断字符串复制使用 libc 分配，此矩阵无法注入；需独立核对失败结果与所有权。 */
     response = serialize_case(kind);
     hasResult = response.result != ZR_NULL;
     if (failAt == 0) {
         cJSON_InitHooks(ZR_NULL);
         TEST_ASSERT_NOT_NULL(response.result);
-        expect_complete(kind, response.result);
+        expect_complete(kind, response.result); /* BUG: 此断言若因错误 JSON 跳出，局部 result 未释放，tearDown 也无法回收；Unity longjmp 会令泄漏掩盖原始差异。 */
         cJSON_InitHooks(&hooks);
     }
     cJSON_Delete(response.result);
@@ -241,7 +241,7 @@ static size_t run_case(EJsonCase kind, size_t failAt, TZrBool persistent) {
     return g_attempts;
 }
 
-static void sweep_case(EJsonCase kind) {
+static void sweep_case(EJsonCase kind) { /* 基线分配次数限定逐点故障扫描，分别覆盖单次和后续持续失败。 */
     size_t count = run_case(kind, 0, ZR_FALSE);
 
     TEST_ASSERT_TRUE(count > 0);
@@ -252,7 +252,7 @@ static void sweep_case(EJsonCase kind) {
     printf("diagnostic JSON case %d: %zu allocation points\n", kind, count);
 }
 
-static void prepare_report(EJsonCase kind, TZrBool unchanged) {
+static void prepare_report(EJsonCase kind, TZrBool unchanged) { /* 先从真实诊断报告取 resultId，再为 full/unchanged 建立同源比较参照。 */
     const char source[] = "fn main(): int {\n var amount: int = 3.75;\n return 0;\n}\n";
     SZrLspHandlerResult response;
     const cJSON *reports;
@@ -275,10 +275,10 @@ static void prepare_report(EJsonCase kind, TZrBool unchanged) {
             TEST_ASSERT_NOT_NULL(cJSON_AddStringToObject(g_documentParams, "previousResultId", resultId));
         } else {
             cJSON *previousIds = cJSON_AddArrayToObject(g_workspaceParams, "previousResultIds");
-            cJSON *previous = cJSON_CreateObject();
+            cJSON *previous = cJSON_CreateObject(); /* BUG: previousIds 分配失败时仍创建 previous，随后 Unity 跳出；未挂接节点无法被 tearDown 释放。 */
             TEST_ASSERT_NOT_NULL(previousIds);
             TEST_ASSERT_NOT_NULL(previous);
-            TEST_ASSERT_TRUE(cJSON_AddItemToArray(previousIds, previous));
+            TEST_ASSERT_TRUE(cJSON_AddItemToArray(previousIds, previous)); /* 前两项非空且节点不同；挂接后由参数树持有 previous。 */
             TEST_ASSERT_NOT_NULL(cJSON_AddStringToObject(previous, "uri", g_uriText));
             TEST_ASSERT_NOT_NULL(cJSON_AddStringToObject(previous, "value", resultId));
         }
@@ -291,7 +291,7 @@ static void prepare_report(EJsonCase kind, TZrBool unchanged) {
         TEST_ASSERT_NULL(get_object_item(report, "items"));
     }
 }
-
+/* Unity 入口逐类复用扫描器，使新增协议层能保持相同的内存失败覆盖。 */
 static void test_position_allocation_failures(void) { sweep_case(JSON_POSITION); }
 static void test_range_allocation_failures(void) { sweep_case(JSON_RANGE); }
 static void test_location_allocation_failures(void) { sweep_case(JSON_LOCATION); }
@@ -314,7 +314,7 @@ static void test_workspace_unchanged_report_allocation_failures(void) {
     sweep_case(JSON_WORKSPACE_REPORT);
 }
 
-int main(void) {
+int main(void) { /* CMake 单独注册本 Unity 可执行文件，逐类运行诊断 JSON 故障矩阵。 */
     UNITY_BEGIN();
     RUN_TEST(test_position_allocation_failures);
     RUN_TEST(test_range_allocation_failures);
