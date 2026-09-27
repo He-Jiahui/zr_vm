@@ -90,7 +90,7 @@ typedef struct SZrAotGcRootMap {
 
 ## Module registration
 
-生成 module 以 `SZrAotCodeRegistration` 暴露 function pointers、method infos/tokens、member remaps、manifest exports、invokers、type layouts/tokens、GC descriptors、native import contracts、call-binding rows 和 target function indices。`ZrAotCompiledModule.abiVersion` 必须匹配 `ZR_VM_AOT_ABI_VERSION`（当前头文件值为 `16`）。
+生成 module 以 `SZrAotCodeRegistration` 暴露 function pointers、method infos/tokens、member remaps、manifest exports、invokers、type layouts/tokens、GC descriptors、native import contracts、call-binding rows 和 target function indices。`ZrAotCompiledModule.abiVersion` 必须匹配 `ZR_VM_AOT_ABI_VERSION`（当前头文件值为 `17`）。
 
 持久 artifact 只保存 table index/token/hash；动态 thunk/function pointer 在 load 时由 registration 绑定。module reload 会使 function graph generation 前进并清理旧 witness。
 

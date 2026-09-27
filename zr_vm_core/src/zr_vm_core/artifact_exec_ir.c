@@ -92,6 +92,7 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIr_Read(const TZrByte *buffer, TZrUIn
     if (length<ZR_ARTIFACT_EXEC_IR_HEADER_SIZE) return fail(diag,ZR_ARTIFACT_EXEC_IR_TRUNCATED,0,0,0);
     if (get32(buffer)!=ZR_ARTIFACT_EXEC_IR_MAGIC) return fail(diag,ZR_ARTIFACT_EXEC_IR_BAD_MAGIC,0,0,0);
     if (get16(buffer+4)!=ZR_ARTIFACT_EXEC_IR_SCHEMA_VERSION) return fail(diag,ZR_ARTIFACT_EXEC_IR_UNSUPPORTED_VERSION,4,0,0);
+    if (get16(buffer+10)!=0u) return fail(diag,ZR_ARTIFACT_EXEC_IR_INVALID_DIRECTORY,10,0,0);
     TZrUInt32 count=get32(buffer+36), dirOff=get32(buffer+40), total=get32(buffer+44);
     if (count>ZR_ARTIFACT_EXEC_IR_MAX_SECTIONS || dirOff<ZR_ARTIFACT_EXEC_IR_HEADER_SIZE || !range_ok(dirOff,count*ZR_ARTIFACT_EXEC_IR_SECTION_SIZE,length) || total!=length || total>ZR_ARTIFACT_EXEC_IR_MAX_BYTES) return fail(diag,ZR_ARTIFACT_EXEC_IR_INVALID_DIRECTORY,36,0,0);
     out->abiVersion=get16(buffer+8); out->flags=get16(buffer+6); out->moduleHash=get64(buffer+12); out->execIrHash=get64(buffer+20); out->execBcHash=get64(buffer+28); out->sectionCount=count; out->buffer=buffer; out->bufferLength=length;

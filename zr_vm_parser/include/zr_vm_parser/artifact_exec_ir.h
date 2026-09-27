@@ -2,6 +2,8 @@
 #define ZR_VM_PARSER_ARTIFACT_EXEC_IR_H
 
 #include "zr_vm_core/artifact_exec_ir.h"
+#include "zr_vm_core/artifact_schema.h"
+#include "zr_vm_core/exec_ir.h"
 #include "zr_vm_parser/conf.h"
 
 typedef struct SZrExecIrReader {
@@ -21,5 +23,12 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_Read(
 ZR_PARSER_API TZrBool ZrParser_ExecIr_Write(
         const SZrArtifactExecIrDocument *module, SZrExecIrWriter *writer,
         SZrArtifactExecIrDiagnostic *diagnostic);
+
+/* Persist the first canonical ExecIR scalar subset as a ZRAF v6 ZRO file.
+ * metadata must contain the seven validated identity sections, and filename
+ * is opened only after all graph and artifact encoding succeeds. */
+ZR_PARSER_API EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
+        const SZrArtifactDocument *metadata, const SZrExecIrModule *module,
+        const char *filename, SZrArtifactDiagnostic *diagnostic);
 
 #endif

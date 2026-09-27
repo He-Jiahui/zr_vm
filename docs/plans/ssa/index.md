@@ -87,6 +87,7 @@ status: planned
 ### Artifact 与受限热更新（08-artifact-hotpatch）
 
 - [08.01 版本化 Artifact 与无地址 Relocation](08-artifact-hotpatch/01-schema-relocation.md)
+  首个 ZRAF v6 / ABI 17 canonical ExecIR 文件子切片见[验收记录](../../../tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md)；完整 08.01 门禁仍待完成。
 - [08.02 Capability manifest 与 Patch 验证](08-artifact-hotpatch/02-capability-validation.md)
 - [08.03 Generation 发布、旧 Frame 与回收](08-artifact-hotpatch/03-generation-publication.md)
 - [08.04 回滚、受限 Patch 与攻击面测试](08-artifact-hotpatch/04-rollback-restricted.md)
@@ -136,7 +137,7 @@ status: planned
 7. **热更需要入口及存活协议。** 旧 frame 合法使用所持版本，新入口取新版本；只有无有效 version lease 的失效 witness 才报 stale。可 patch 目标不能被未跟踪的 AOT direct call/内联绕过；回滚创建新 epoch，不能自动撤销外部 I/O。
 8. **布局与权限各有边界。** 自动布局不改变公开 ABI、反射、序列化和地址可观察性；effect 摘要不是安全 capability。Patch 所需能力必须全部属于 host/base allowlist，不能把交集裁剪后当作允许执行。
 9. **数据说明区分证据。** 软件 PIC miss、硬件 cache miss、静态 locality 估计分别记录。AOT 原生代码、原生 helper 和解释器 fallback 分开统计；90% coverage 与 3% 性能收益是两个门禁。
-10. **版本号在实施时冻结。** 当前 schema 5 / ABI 16 的下一版本可为 6 / 17；若其他工作已升级，则取届时下一版本。旧 artifact 明确要求重编译，JIT code/runtime pointer 从不进入 .zro/.zrm。
+10. **版本号在实施时冻结。** 本计划基线为 schema 5 / ABI 16；首个持久 ExecIR 子切片已升级为 6 / 17。旧 artifact 明确要求重编译，JIT code/runtime pointer 从不进入 .zro/.zrm。
 11. **无变长指令扩围。** 本主线保持现有固定宽度指令并使用 side tables；portable vector IR 不要求同时引入 opcode 前缀改造。平台受限热更是工程能力约束，不是分发审核保证。
 
 ## 需求覆盖索引
@@ -233,7 +234,7 @@ ZR 源码
 | 数值语义    | 默认严格 IEEE/整数/异常顺序；项目级配置可许可 fast-math，并生成明确诊断 |
 | 数据布局    | 在封闭、无反射/FFI/地址逃逸的范围自动 unbox、标量替换、AoS/SoA；公开 ABI 保持稳定 |
 | 热更新      | 只能更新已声明 AOT capability 范围内的 CoreIR/ExecBC；不得新增权限、native import、公开 layout 或 ABI |
-| artifact    | 当前 schema v5 / AOT ABI 16 直接升级为下一版本，例如 v6 / ABI 17；旧产物拒绝并要求重编译 |
+| artifact    | 首个持久 ExecIR 子切片使用 schema v6 / AOT ABI 17；旧 ZRAF 明确拒绝并要求重编译，完整 08.01 门禁仍待完成 |
 | JIT         | 只实现最小 host baseline JIT；不支持 Android/iOS/WASM 的机器码 JIT |
 | 仓库流程    | 遵守 `zr_vm` main-only 政策，不创建 worktree/分支，使用窄提交和独立构建目录隔离 |
 
@@ -599,7 +600,7 @@ Android、iOS、WASM 默认使用：
 
 ### 6. 热更新、权限与 artifact
 
-当前 [artifact_schema.h](/E:/Git/zr_vm/zr_vm_core/include/zr_vm_core/artifact_schema.h)、[zr_aot_abi.h](/E:/Git/zr_vm/zr_vm_common/include/zr_vm_common/zr_aot_abi.h) 的 schema/ABI 需要一次性升级。
+[artifact_schema.h](/E:/Git/zr_vm/zr_vm_core/include/zr_vm_core/artifact_schema.h) 与 [zr_aot_abi.h](/E:/Git/zr_vm/zr_vm_common/include/zr_vm_common/zr_aot_abi.h) 已为首个持久 ExecIR 子切片升级至 schema 6 / ABI 17；以下仍是完整 08.01 的交付要求。
 
 新 artifact 保存：
 

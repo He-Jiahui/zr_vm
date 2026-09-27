@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_MODULE_H
 #include "zr_vm_core/canonical_consumer.h"
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/metadata_runtime.h"
@@ -108,6 +109,13 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Module_OpenCanonicalArtifact(
         const SZrArtifactPublicIdentity *expectedIdentity,
         SZrCanonicalConsumerProjection *outProjection,
         SZrArtifactDiagnostic *diagnostic);
+/* Dedicated ZRAF v6 path. The caller owns a pre-initialized empty graph and
+ * supplies the expected public identity; legacy 01ZR ImportByPath is separate.
+ * Only a verified single-function scalar ExecIR graph is published. */
+ZR_CORE_API EZrArtifactStatus ZrCore_Module_OpenExecIrArtifact(
+        const TZrByte *buffer, TZrSize bufferLength,
+        const SZrArtifactPublicIdentity *expectedIdentity,
+        SZrExecIrModule *outModule, SZrArtifactDiagnostic *diagnostic);
 
 // 内部模块导入 helper
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);

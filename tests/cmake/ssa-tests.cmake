@@ -856,6 +856,33 @@ if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     set_tests_properties(ssa_schema_relocation PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_exec_ir_artifact_v6_test)
+    add_executable(zr_vm_ssa_exec_ir_artifact_v6_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_exec_ir_artifact_v6.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c)
+    target_include_directories(zr_vm_ssa_exec_ir_artifact_v6_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    target_compile_definitions(zr_vm_ssa_exec_ir_artifact_v6_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS ZR_ARTIFACT_TEST_IO_FAILURE)
+    zr_vm_link_parser_core(zr_vm_ssa_exec_ir_artifact_v6_test)
+    set(_ssa_exec_ir_artifact_v6_path
+            "${CMAKE_BINARY_DIR}/tests_generated/ssa-artifact-v6-canonical.zro")
+    add_test(NAME ssa_exec_ir_artifact_v6_write
+            COMMAND zr_vm_ssa_exec_ir_artifact_v6_test
+                    --write "${_ssa_exec_ir_artifact_v6_path}")
+    add_test(NAME ssa_exec_ir_artifact_v6_roundtrip
+            COMMAND zr_vm_ssa_exec_ir_artifact_v6_test
+                    --read "${_ssa_exec_ir_artifact_v6_path}")
+    set_tests_properties(ssa_exec_ir_artifact_v6_write PROPERTIES
+            FIXTURES_SETUP ssa_exec_ir_artifact_v6
+            LABELS "ssa;artifact")
+    set_tests_properties(ssa_exec_ir_artifact_v6_roundtrip PROPERTIES
+            FIXTURES_REQUIRED ssa_exec_ir_artifact_v6
+            LABELS "ssa;artifact")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_capability_validation_test)
     add_executable(zr_vm_ssa_capability_validation_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_capability_validation.c

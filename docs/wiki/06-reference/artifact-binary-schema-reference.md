@@ -21,13 +21,23 @@ tests:
 doc_type: reference
 ---
 
+> ZRAF v6 adds ZRO section 22, `EXEC_IR_BUNDLE`, required by the dedicated
+> ExecIR writer and opener. The first
+> executable payload is the fixed width EIS1 single function i64
+> CONSTANT→RETURN graph inside an ERI1 envelope with ABI 17. Use
+> `ZrParser_ExecIr_WriteCanonicalZroFile` and
+> `ZrCore_Module_OpenExecIrArtifact` for this subset. The historical `01ZR`
+> `.zro` bytes still use `ZrCore_Module_ImportByPath`; the new opener rejects
+> that magic. General binding, relocation, maps, ExecBC, and package
+> migration remain outside this slice.
+
 # Canonical Artifact 二进制 Schema 参考
 
 `.zrs`、`.zri`、`.zro` 使用 `zr_vm_core/artifact_schema.h` 定义的 canonical artifact
 容器；`.zrm` 是带 manifest/modules/resources 的 package 容器。两者有不同的 schema、
 identity、读写 API 和所有权规则，不能把一个文件扩展名的字节直接当成另一个容器解析。
 
-本页描述当前 artifact schema version 5 的公共模型。它是实现/工具参考，不是鼓励外部工具
+本页描述当前 artifact schema version 6 的公共模型。它是实现/工具参考，不是鼓励外部工具
 手工拼接字节的许可：跨版本产物应由 `ZrCore_Artifact_*`、writer 和 loader API 读写。
 
 ## 1. 格式家族
@@ -97,6 +107,7 @@ loader 用 `ZrCore_Artifact_ValidatePublicIdentity` 比较 artifact 与当前 ex
 | 并发/跨域 | domain transfer、scheduler contract | transfer kind、schema、policy、Send/Sync requirements |
 | metadata | metadata state、metadata record、metadata blob、layout map heap | reflection 保留和布局投影 |
 | 绑定 | call binding table | serialized `SZrCallBindingContract`/location rows |
+| 执行图 | `EXEC_IR_BUNDLE`（22，仅 ZRO） | 逐字节保存 ERI1 封套；专用 opener 要求 EIS1 图、ABI 17 和必选标志 |
 
 section flags 目前只有 `MANDATORY`（0）和 `OPTIONAL`（bit 0），未知 flag 会被拒绝。每种
 table row 也有固定 encoded size，例如 TypeDef 48、MemberDef 40、PropertyDef 48、Contract

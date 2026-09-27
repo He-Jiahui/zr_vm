@@ -6,6 +6,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
+  - zr_vm_core/include/zr_vm_core/artifact_exec_ir_scalar.h
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar.c
+  - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c
@@ -17,6 +21,10 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/execbc_verify.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir.c
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir.h
+  - zr_vm_core/include/zr_vm_core/artifact_exec_ir_scalar.h
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar.c
+  - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
@@ -25,6 +33,8 @@ tests:
   - tests/parser/test_artifact_schema_source_roundtrip.c
   - tests/parser/test_call_binding_artifact.c
   - tests/library/test_zrm_container.c
+  - tests/library/test_ssa_exec_ir_artifact_v6.c
+  - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -39,6 +49,13 @@ status: planned
 
 **Tech Stack：** C11、CMake、Unity/CTest；共享 ExecIR 与现有 ZR runtime。
 
+**首个持久子切片（2026-09-27）：** ZRAF v6、AOT ABI 17 和 ZRO
+`EXEC_IR_BUNDLE` 已用于单函数 i64 CONSTANT→RETURN 的 EIS1 逐字段
+writer/reader/Oracle 验证；见
+[独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md)。
+该子切片不完成本计划的 ExecBC、binding、relocation、maps、copy、AOT
+projection 或 `ImportByPath` 迁移，以下任务和退出门禁继续有效。
+
 ## 依赖与交付范围
 
 - 对应主计划：M1 artifact；M5 基础。
@@ -48,7 +65,10 @@ status: planned
 
 ## 现状与代码落点
 
-当前 artifact schema 5、AOT ABI 16；CallBinding source row 84 字节和 canonical row 96 字节是不同封装，不可直接 memcpy 混用。现有 writer_call_binding 与 artifact_call_binding_projection 已有基础。
+本计划起始基线为 artifact schema 5、AOT ABI 16；首个持久子切片已升为
+schema 6、ABI 17。CallBinding source row 84 字节和 canonical row 96 字节是
+不同封装，不可直接 memcpy 混用。现有 writer_call_binding 与
+artifact_call_binding_projection 已有基础。
 
 | 类别 | 路径 | 责任与修改边界 |
 | --- | --- | --- |

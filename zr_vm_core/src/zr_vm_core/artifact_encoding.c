@@ -74,7 +74,7 @@ TZrBool zr_artifact_kind_is_valid(EZrArtifactKind kind) {
 /* 区分本版本已知节与可跳过的未来可选节；写端只接受当前已知节。 */
 TZrBool zr_artifact_section_is_known(TZrUInt32 kind) {
     return (TZrBool)(kind >= ZR_ARTIFACT_SECTION_STRING_HEAP &&
-                     kind <= ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE);
+                     kind <= ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
 }
 
 /* 已知节还须符合 ZRS/ZRI/ZRO 的职责边界；调用方先检查 kind 是否已知。 */
@@ -87,7 +87,8 @@ TZrBool zr_artifact_section_is_allowed(EZrArtifactKind artifactKind, TZrUInt32 s
         return (TZrBool)(sectionKind != ZR_ARTIFACT_SECTION_SYNTAX_TREE &&
                          sectionKind != ZR_ARTIFACT_SECTION_CODE_TABLE &&
                          sectionKind != ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE &&
-                         sectionKind != ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE);
+                         sectionKind != ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE &&
+                         sectionKind != ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
     if (artifactKind == ZR_ARTIFACT_KIND_ZRO)
         return (TZrBool)(sectionKind != ZR_ARTIFACT_SECTION_SYNTAX_TREE &&
                          sectionKind != ZR_ARTIFACT_SECTION_SEMANTIC_IR);
@@ -122,6 +123,7 @@ TZrUInt32 zr_artifact_section_element_size(TZrUInt32 kind) {
         case ZR_ARTIFACT_SECTION_SEMANTIC_IR:
         case ZR_ARTIFACT_SECTION_METADATA_BLOB_HEAP:
         case ZR_ARTIFACT_SECTION_LAYOUT_MAP_HEAP: return 1u;
+        case ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE: return 1u;
         default: return 0u;
     }
 }

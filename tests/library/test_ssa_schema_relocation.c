@@ -1,4 +1,5 @@
 #include "zr_vm_core/artifact_exec_ir.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/execbc_verify.h"
 #include "zr_vm_parser/artifact_exec_ir.h"
 
@@ -53,7 +54,9 @@ int main(void) {
     sections[1].elementSize = ZR_ARTIFACT_EXEC_IR_RELOCATION_SIZE;
     sections[1].data = relocation;
     sections[1].byteLength = sizeof(relocation);
-    document.abiVersion = 16u;
+    /* Raw ERI1 codec test: the envelope accepts a supplied ABI value;
+     * executable ABI enforcement belongs to OpenExecIrArtifact. */
+    document.abiVersion = ZR_VM_AOT_ABI_VERSION;
     document.flags = 0u;
     document.moduleHash = 21u;
     document.execIrHash = ZrCore_ArtifactExecIr_HashBytes(ir, sizeof(ir));
@@ -69,7 +72,7 @@ int main(void) {
     reader.bytes = bytes;
     reader.length = writer.written;
     assert(ZrParser_ExecIr_Read(&reader, &view, &diagnostic));
-    assert(view.abiVersion == 16u && view.sectionCount == 2u);
+    assert(view.abiVersion == ZR_VM_AOT_ABI_VERSION && view.sectionCount == 2u);
     assert(ZrCore_ArtifactExecIr_ValidateRelocations(
                    &view, resolve_ok, resolved, 1u, ZR_NULL, &diagnostic) ==
            ZR_ARTIFACT_EXEC_IR_OK);

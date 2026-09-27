@@ -104,10 +104,10 @@ static void test_capability_is_not_inferred_from_effects(void) {
 int main(void) {
     expect_true(ZR_CALL_BINDING_SCHEMA_VERSION == 1u,
                 "legacy call-binding schema changed unexpectedly");
-    expect_true(ZR_ARTIFACT_SCHEMA_VERSION == 5u,
-                "legacy artifact schema changed unexpectedly");
-    expect_true(ZR_VM_AOT_ABI_VERSION == 16u,
-                "legacy AOT ABI changed unexpectedly");
+    expect_true(ZR_ARTIFACT_SCHEMA_VERSION == 6u,
+                "canonical artifact schema is not v6");
+    expect_true(ZR_VM_AOT_ABI_VERSION == 17u,
+                "AOT ABI is not v17");
     expect_true(ZR_EXECUTION_CONTRACT_SCHEMA_VERSION == 6u,
                 "candidate execution schema is not v6");
     expect_true(ZR_EXECUTION_CONTRACT_ABI_VERSION == 17u,

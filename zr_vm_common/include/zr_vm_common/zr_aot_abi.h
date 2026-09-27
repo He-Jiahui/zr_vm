@@ -15,7 +15,7 @@ struct SZrAotGcRootMap;
 struct SZrTypeLayout;
 
 /** @brief AOT 描述符的精确匹配版本，加载器据此拒绝不兼容的动态库。 */
-#define ZR_VM_AOT_ABI_VERSION 16u
+#define ZR_VM_AOT_ABI_VERSION 17u
 
 /** @brief 产物后端身份；加载器用它核对请求的是 C 还是 LLVM 动态库。 */
 typedef enum EZrAotBackendKind {

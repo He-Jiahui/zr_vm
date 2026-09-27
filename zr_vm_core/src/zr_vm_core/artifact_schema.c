@@ -1122,7 +1122,13 @@ EZrArtifactStatus ZrCore_Artifact_Read(const TZrByte *buffer,
     version = zr_artifact_read_u16(buffer + ZR_ARTIFACT_HEADER_VERSION_OFFSET);
     headerSize = zr_artifact_read_u16(buffer + ZR_ARTIFACT_HEADER_SIZE_OFFSET);
     if (version != ZR_ARTIFACT_SCHEMA_VERSION || headerSize != ZR_ARTIFACT_HEADER_ENCODED_SIZE) {
-        return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_UNSUPPORTED_VERSION, 0u, 0u, 4u);
+        EZrArtifactStatus versionStatus = zr_artifact_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_UNSUPPORTED_VERSION, 0u, 0u, 4u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedVersion = ZR_ARTIFACT_SCHEMA_VERSION;
+            diagnostic->actualVersion = version;
+        }
+        return versionStatus;
     }
     outView->kind = (EZrArtifactKind)zr_artifact_read_u32(buffer + ZR_ARTIFACT_HEADER_KIND_OFFSET);
     if (!zr_artifact_kind_is_valid(outView->kind)) {

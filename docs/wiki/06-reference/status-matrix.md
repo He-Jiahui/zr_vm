@@ -40,7 +40,7 @@ doc_type: reference
 | `zr.compile.declaration` typed GeneratedField/Patch | `current` | declaration-transform contract/transaction tests；其它 generated variants 未发布 |
 | reflection construction/generic instances | `experimental` | metadata preserve 和 AOT level 约束 |
 | stable-slot pooling / pinned pointer views | `experimental` | generation/barrier/loan tests |
-| AOT C | `experimental` | ABI v16、shared-library smoke；需逐 opcode parity |
+| AOT C | `experimental` | 当前 ABI v17；既有 shared-library smoke 需按 v17 重跑，仍需逐 opcode parity |
 | AOT LLVM | `experimental` | emitter/stripping tests，运行时覆盖较窄 |
 | CLI run/compile/REPL/test/migration | `current` | CLI and CMake suites |
 | LSP stdio semantic features | `current` | interface/stdio tests；能力按 initialize 协商 |

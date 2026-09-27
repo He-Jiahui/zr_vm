@@ -45,8 +45,8 @@ contract、type layout、call binding、TestManifest、CLI manifest 和 `.zrm` p
 | native runtime ABI | `ZR_VM_NATIVE_RUNTIME_ABI_VERSION = 4` | host runtime 对 provider 的最小服务面 | 拒绝 provider 或升级 runtime |
 | native plugin ABI | `ZR_VM_NATIVE_PLUGIN_ABI_VERSION = 6` | `ZrLibModuleDescriptor` / plugin entry 的 ABI | 拒绝加载 plugin |
 | native module info | `ZR_NATIVE_MODULE_INFO_VERSION = 1` | module information record | 按 loader 支持度拒绝 |
-| AOT ABI | `ZR_VM_AOT_ABI_VERSION = 16` | generated AOT module 与 loader 的 struct/function contract | 重新生成 AOT module |
-| artifact schema | `ZR_ARTIFACT_SCHEMA_VERSION = 5` | `.zrs/.zri/.zro` container/readers | 重新编译 artifact |
+| AOT ABI | `ZR_VM_AOT_ABI_VERSION = 17` | generated AOT module 与 loader 的 struct/function contract | 重新生成 AOT module |
+| artifact schema | `ZR_ARTIFACT_SCHEMA_VERSION = 6` | `.zrs/.zri/.zro` container/readers | 重新编译 artifact |
 | FFI contract schema | `ZR_FFI_CONTRACT_SCHEMA_VERSION = 4` | native import contract 结构 | 重新生成/验证 native import |
 | FFI ABI model | `ZR_FFI_CONTRACT_ABI_MODEL_VERSION = 3` | target ABI、layout、marshal model | 重新生成 target-specific binding |
 | type layout | `ZR_TYPE_LAYOUT_SCHEMA_VERSION = 2` | inline layout、GC scan、ownership map | 重新 materialize type / rebuild output |
