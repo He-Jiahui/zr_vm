@@ -5,8 +5,10 @@
 
 struct SZrString;
 
+/** @brief 表标记和 1 起始 RID 组成的 32 位元数据身份；零值表示缺席。 */
 typedef TZrUInt32 TZrMetadataToken;
 
+/** @brief 供编译器、模块绑定和反射共同解释 token 高字节的表种类。 */
 typedef enum EZrMetadataTableTag {
     ZR_METADATA_TABLE_MODULE = 1,
     ZR_METADATA_TABLE_TYPE_DEF = 2,
@@ -18,6 +20,9 @@ typedef enum EZrMetadataTableTag {
     ZR_METADATA_TABLE_SIGNATURE = 8
 } EZrMetadataTableTag;
 
+/* token 的高 8 位是表标记，低 24 位是 RID；MAKE 会截断越界输入。 */
+/* TODO: AOT 紧缩重映射以保留行数加一生成新 RID，未见该入口检查 24 位上限；
+ * 需核裁剪前后的最大行数约束，并用边界输入验证 MAKE 不产生碰撞。 */
 #define ZR_METADATA_TOKEN_TABLE_SHIFT 24U
 #define ZR_METADATA_TOKEN_RID_MASK ((TZrUInt32)0x00FFFFFFu)
 #define ZR_METADATA_TOKEN_TABLE_MASK ((TZrUInt32)0xFFu)
@@ -28,6 +33,7 @@ typedef enum EZrMetadataTableTag {
     (((TZrUInt32)(TOKEN) >> ZR_METADATA_TOKEN_TABLE_SHIFT) & ZR_METADATA_TOKEN_TABLE_MASK)
 #define ZR_METADATA_TOKEN_RID(TOKEN) ((TZrUInt32)(TOKEN) & ZR_METADATA_TOKEN_RID_MASK)
 
+/** @brief 签名 blob 的节点标记；校验器按根节点种类递归解释后续字节。 */
 typedef enum EZrMetadataSignatureNode {
     ZR_METADATA_SIGNATURE_NODE_INVALID = 0,
     ZR_METADATA_SIGNATURE_NODE_PRIMITIVE = 1,
@@ -47,6 +53,12 @@ typedef enum EZrMetadataSignatureNode {
     ZR_METADATA_SIGNATURE_NODE_MODULE = 15
 } EZrMetadataSignatureNode;
 
+/** @brief 函数及模块的 token 关系与签名/布局身份记录。
+ * 字符串指针是进程内 GC 对象引用；source 文件按字段序列化并重建，不能直接持久化指针。
+ * related/owner/target token 与签名哈希共同约束模块解析结果。
+ */
+/* TODO: AOT 修剪器按 native sizeof 复制 tokenRecords，包括三个字符串指针；
+ * 需核发布产物是否将非空宿主地址写入 blob，以及跨进程读取的字段约束。 */
 typedef struct SZrMetadataTokenRecord {
     TZrMetadataToken token;
     TZrMetadataToken relatedToken;
@@ -67,18 +79,22 @@ typedef struct SZrMetadataTokenRecord {
     struct SZrString *maxModuleVersionExclusive;
 } SZrMetadataTokenRecord;
 
-/* ownerIndex relocates a callable definition to this function's constant pool. */
+/* reserved0 标记可调用记录种类；ownerIndex 随种类解释，签名记录使用无槽哨兵。 */
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_CONSTANT ((TZrUInt32)1u)
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_OWNER ((TZrUInt32)2u)
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_MODULE ((TZrUInt32)3u)
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_SIGNATURE ((TZrUInt32)4u)
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_CHILD ((TZrUInt32)5u)
 
+/** @brief 编译期稳定排序的字符串堆条目；value 由 GC 管理，表仅借用。 */
 typedef struct SZrMetadataStringHeapEntry {
     TZrUInt32 stringIndex;
     struct SZrString *value;
 } SZrMetadataStringHeapEntry;
 
+/** @brief 调用方期望身份与绑定后实际身份的成对快照。
+ * refToken 指向被解析引用，expected/resolved 字段供运行时比对签名及布局兼容性。
+ */
 typedef struct SZrMetadataTokenBinding {
     TZrMetadataToken refToken;
     TZrMetadataToken refSignatureToken;
@@ -99,6 +115,7 @@ typedef struct SZrMetadataTokenBinding {
     TZrUInt64 resolvedLayoutHash;
 } SZrMetadataTokenBinding;
 
+/** @brief TypeSpec 绑定统计与首个失败样本；未出现的失败类别对应字段保持零值。 */
 typedef struct SZrMetadataTypeSpecBindStatus {
     TZrUInt32 callerTypeSpecCount;
     TZrUInt32 matchedTypeSpecCount;
@@ -117,6 +134,7 @@ typedef struct SZrMetadataTypeSpecBindStatus {
     TZrUInt64 firstActualLayoutHash;
 } SZrMetadataTypeSpecBindStatus;
 
+/** @brief TypeRef 绑定统计与首个失败样本；供模块链接诊断展示差异。 */
 typedef struct SZrMetadataTypeRefBindStatus {
     TZrUInt32 callerTypeRefCount;
     TZrUInt32 matchedTypeRefCount;
