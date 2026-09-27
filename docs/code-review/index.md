@@ -170,5 +170,6 @@ doc_type: category-index
 | parser artifact 调用绑定与元数据投影 | [15 项](coverage/zr_vm_parser_artifact_projections.tsv) | 2 个 C 文件独立复核，93 个证据锚点，源码仅增 35 行注释；GCC/Clang 定向语法、6 项 call binding 与 3 项 metadata graph 测试通过。2 类 BUG 记录原生属性计数与物化门槛不一致、属性数失配诊断报告相等成员数；3 个 TODO 保留默认原型、声明槽位及同名属性契约。关联身份哈希台账锚点已校正。 |
 | core artifact ExecIR 视图与内部接口 | [46 项](coverage/zr_vm_core_artifact_exec_ir_internal.tsv) | 2 个 C/H 文件独立复核，432 个证据锚点，源码只增宏观注释；GCC/Clang 定向语法检查通过。7 条 BUG 台账行归并为 4 类缺陷：失败清零诊断 token、非零行数零步长、失败后残留视图和 codeOffset 越节；1 个 TODO 保留输入输出缓冲区重叠契约。旧 tests_library 台账的证据与失败视图分级已校正。 |
 | core 元数据运行时查询与导出 | [20 项](coverage/zr_vm_core_metadata_runtime_queries.tsv) | 3 个 C 文件独立复核，177 个证据锚点，源码仅增注释；GCC/Clang 六项定向语法检查与两项对应 CTest 通过。3 个 TODO 保留 RID 非零、导出标志组合以及跨模块 TypeRef 签名首匹配契约；无反向旧锚点漂移。 |
+| parser SemIR 动态退优化测试 | [94 项](coverage/tests_parser_semir_dynamic_deopt.tsv) | 6 个 C 测试文件独立复核，554 个证据锚点，源码仅增 129 行注释；GCC/Clang 定向语法检查通过。12 个 BUG 行记录六处跨分配对象指针顺序比较及六处 Unity 中止后的资源清理缺口；8 个 TODO 保留测试覆盖疑问。目标可执行文件尚未构建，未运行对应 CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

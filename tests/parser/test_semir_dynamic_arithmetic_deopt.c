@@ -9,11 +9,16 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
+/* 为单指令测试的 VM state 提供宿主 malloc/realloc/free 分配器。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
 
+    /* BUG: 正常释放或扩容非空旧块会以 >= 比较不相关的指针；ISO C 不定义
+     * 这种关系比较，分配器返回和资源释放结果不受可移植 C 契约保证。 */
+    /* TODO: 此处把低于 0x1000 的非空地址当作无效旧块；需核查宿主分配
+     * 是否能返回该范围内的地址，以及漏释放或扩容不复制的可达性。 */
     if (newSize == 0) {
         if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
             free(pointer);
@@ -32,6 +37,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     return malloc(newSize);
 }
 
+/* 为元数据构建创建独立主线程 VM state，成功结果交给 destroy_test_state。 */
 static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);
@@ -43,12 +49,15 @@ static SZrState *create_test_state(void) {
     return global->mainThreadState;
 }
 
+/* 通过 global 释放测试 state；调用前先释放挂在其上的测试函数。 */
 static void destroy_test_state(SZrState *state) {
     if (state != ZR_NULL && state->global != ZR_NULL) {
         ZrCore_GlobalState_Free(state->global);
     }
 }
 
+/* 构造单条通用算术或比较 ExecBC 指令，直接检验 ExecBC 到 SemIR 的元数据投影。
+ * 成功返回的函数归调用方；其 instructionsList 随 Function_Free 一起释放。 */
 static SZrFunction *create_single_instruction_function(SZrState *state, EZrInstructionCode opcode) {
     SZrFunction *function;
     TZrInstruction *instructions;
@@ -65,6 +74,7 @@ static SZrFunction *create_single_instruction_function(SZrState *state, EZrInstr
     instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(state->global,
                                                                     sizeof(TZrInstruction),
                                                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    /* 指令缓冲区申请失败时归还尚未拥有指令的 function，交给上层断言。 */
     if (instructions == ZR_NULL) {
         ZrCore_Function_Free(state, function);
         return ZR_NULL;
@@ -76,12 +86,14 @@ static SZrFunction *create_single_instruction_function(SZrState *state, EZrInstr
     instructions[0].instruction.operand.operand1[0] = 0u;
     instructions[0].instruction.operand.operand1[1] = 1u;
 
+    /* 算术目的槽与两个操作数槽对应到 SemIR 动态边界；缓冲区所有权转入 function。 */
     function->instructionsList = instructions;
     function->instructionsLength = 1u;
     function->stackSize = 3u;
     return function;
 }
 
+/* 从函数持有的 SemIR 表借出目标 opcode；函数释放后该指针失效。 */
 static const SZrSemIrInstruction *find_semir_opcode(const SZrFunction *function, EZrSemIrOpcode opcode) {
     TZrUInt32 index;
 
@@ -98,6 +110,7 @@ static const SZrSemIrInstruction *find_semir_opcode(const SZrFunction *function,
     return ZR_NULL;
 }
 
+/* 核对动态效应、deopt 回链、槽位和动态结果类型，不执行算术本身。 */
 static void assert_dynamic_arithmetic_deopts(EZrInstructionCode execOpcode) {
     SZrState *state = create_test_state();
     SZrFunction *function;
@@ -107,6 +120,7 @@ static void assert_dynamic_arithmetic_deopts(EZrInstructionCode execOpcode) {
     function = create_single_instruction_function(state, execOpcode);
     TEST_ASSERT_NOT_NULL(function);
 
+    /* 调用真实元数据构建入口，检验转换后的元数据契约。 */
     TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, function));
     instruction = find_semir_opcode(function, ZR_SEMIR_OPCODE_DYN_ARITHMETIC);
     TEST_ASSERT_NOT_NULL(instruction);
@@ -129,6 +143,7 @@ static void assert_dynamic_arithmetic_deopts(EZrInstructionCode execOpcode) {
     destroy_test_state(state);
 }
 
+/* 通用算术和相等比较必须保留动态运行时边界及可回退记录。 */
 static void test_generic_arithmetic_exec_opcode_becomes_dynamic_deopt_boundary(void) {
     assert_dynamic_arithmetic_deopts(ZR_INSTRUCTION_ENUM(ADD));
     assert_dynamic_arithmetic_deopts(ZR_INSTRUCTION_ENUM(SUB));
@@ -139,10 +154,15 @@ static void test_generic_arithmetic_exec_opcode_becomes_dynamic_deopt_boundary(v
     assert_dynamic_arithmetic_deopts(ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL));
 }
 
+/* Unity 要求的用例前钩子；夹具在测试函数内创建。 */
 void setUp(void) {}
 
+/* BUG: state 创建成功后任一 Unity 断言失败会经 TEST_ABORT/longjmp 跳过
+ * 测试函数末尾的 Function_Free/destroy_test_state；空钩子无法补救，
+ * 当时已取得的函数或 VM 原生资源在本进程内失去正常清理路径。 */
 void tearDown(void) {}
 
+/* 独立 Unity 入口；CMake 以 semir_dynamic_arithmetic_deopt 注册 CTest。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_generic_arithmetic_exec_opcode_becomes_dynamic_deopt_boundary);
