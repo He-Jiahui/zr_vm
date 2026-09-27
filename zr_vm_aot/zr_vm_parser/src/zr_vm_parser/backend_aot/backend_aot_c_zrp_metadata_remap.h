@@ -5,6 +5,7 @@
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/zrp_metadata.h"
 
+/** 方法保留与最终 AOT 函数表一致；后续所有表计数和令牌重写共用该判定。 */
 TZrBool backend_aot_c_zrp_method_def_row_is_retained(const SZrZrpMetadataMethodDefRow *row,
                                                      const SZrAotFunctionTable *functionTable);
 TZrUInt32 backend_aot_c_zrp_count_retained_method_defs(const SZrZrpMetadataMethodDefRow *rows,
@@ -23,6 +24,10 @@ TZrBool backend_aot_c_zrp_remap_token_record(SZrMetadataTokenRecord *record,
                                              TZrUInt32 fieldCount,
                                              const SZrAotFunctionTable *functionTable,
                                              TZrUInt32 retainedMethodDefCount);
+/**
+ * @brief 判断记录的成员依赖是否仍存活，并把源 MemberDef 改写到压缩后的令牌空间。
+ * @return false 表示该记录不得写入目标表；调用方须与目标 count 使用同一判定。
+ */
 TZrBool backend_aot_c_zrp_remap_retained_token_record(
         SZrMetadataTokenRecord *record,
         const SZrZrpMetadataMethodDefRow *methodRows,
@@ -70,6 +75,7 @@ TZrUInt32 backend_aot_c_zrp_count_retained_token_records(const SZrMetadataTokenR
                                                          TZrUInt32 fieldCount,
                                                          const SZrAotFunctionTable *functionTable,
                                                          TZrUInt32 retainedMethodDefCount);
+/** MethodSpec 仅在其目标方法仍保留时写出；其签名偏移另由签名池重排阶段处理。 */
 TZrBool backend_aot_c_zrp_remap_method_spec_row(SZrZrpMetadataMethodSpecRow *row,
                                                 const SZrZrpMetadataMethodDefRow *methodRows,
                                                 TZrUInt32 methodCount,

@@ -5,12 +5,14 @@
 
 #include "zr_vm_core/zrp_metadata.h"
 
+/** 被保留字符串的旧范围和新位置；偏移仍相对于各自字符串池起点。 */
 typedef struct SZrAotCZrpStringPoolRemapEntry {
     TZrUInt32 oldOffset;
     TZrUInt32 byteLength;
     TZrUInt32 newOffset;
 } SZrAotCZrpStringPoolRemapEntry;
 
+/** 包含源池边界和临时映射条目，供行数据及签名内字符串偏移同步重写。 */
 typedef struct SZrAotCZrpStringPoolRemap {
     SZrAotCZrpStringPoolRemapEntry *entries;
     TZrUInt32 count;
@@ -27,6 +29,10 @@ TZrBool backend_aot_c_zrp_string_pool_remap_init(SZrAotCZrpStringPoolRemap *rema
 void backend_aot_c_zrp_string_pool_remap_destroy(SZrAotCZrpStringPoolRemap *remap);
 TZrBool backend_aot_c_zrp_string_pool_remap_is_identity(const SZrAotCZrpStringPoolRemap *remap);
 
+/**
+ * @brief 聚合保留行、manifest 导出和保留签名引用的字符串，防止裁剪后留下悬空偏移。
+ * @pre 签名映射已建立，且传入的保留方法集合与目标表相同。
+ */
 TZrBool backend_aot_c_zrp_build_string_pool_remap(
         SZrAotCZrpStringPoolRemap *stringRemap,
         const TZrByte *sourceStringPool,

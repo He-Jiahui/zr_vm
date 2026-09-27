@@ -8,6 +8,10 @@
 
 typedef struct SZrAotCZrpSignatureBlobRemap SZrAotCZrpSignatureBlobRemap;
 
+/**
+ * @brief 仅保留被有效导入根记录或保留签名实际引用的模块引用。
+ * @note 与签名池重排结果配套使用；仅按 token 记录搜索会遗漏签名中的引用。
+ */
 TZrBool backend_aot_c_zrp_module_ref_row_is_retained(
         const SZrZrpMetadataModuleRefRow *row,
         const SZrMetadataTokenRecord *tokenRecords,
@@ -53,6 +57,7 @@ TZrUInt32 backend_aot_c_zrp_count_retained_module_refs(
         TZrUInt32 signatureBlobPoolBytes,
         const SZrAotCZrpSignatureBlobRemap *signatureRemap);
 
+/** 按前方保留行数重建 AssemblyRef RID，须使用与计数阶段相同的根集合。 */
 TZrMetadataToken backend_aot_c_zrp_compacted_module_ref_token(
         const SZrZrpMetadataModuleRefRow *rows,
         TZrUInt32 count,

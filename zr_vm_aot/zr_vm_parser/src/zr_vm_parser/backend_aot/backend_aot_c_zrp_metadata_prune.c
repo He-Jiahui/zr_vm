@@ -1019,6 +1019,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     methodSpecs = (const SZrZrpMetadataMethodSpecRow *)(const void *)methodSpecView.data;
     moduleRefs = (const SZrZrpMetadataModuleRefRow *)(const void *)moduleRefView.data;
     manifestExports = (const SZrZrpMetadataManifestExportRow *)(const void *)manifestExportView.data;
+    /* 方法集合来自最终函数表；其他表、签名和三个池依次由这一集合求闭包。 */
     retainedMethodDefCount =
             backend_aot_c_zrp_count_retained_method_defs(methodRows, methodView.count, functionTable);
     retainedTypeDefCount =
@@ -1272,6 +1273,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         return ZR_FALSE;
     }
 
+    /* 身份映射直接借用原始 blob，避免无意义的分配和令牌重建。 */
     if (retainedTokenRecordCount == tokenRecordView.count &&
         retainedTypeDefCount == typeView.count &&
         retainedMethodDefCount == methodView.count &&
@@ -1326,6 +1328,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
+    /* 池先于行写入：签名重写后的字节决定各行最终 signatureHash。 */
     backend_aot_c_zrp_copy_string_pool(prunedBlob,
                                        options->embeddedModuleBlob,
                                        &sourceHeader,
@@ -1775,6 +1778,7 @@ TZrBool backend_aot_c_prepare_embedded_zrp_metadata(const SZrAotWriterOptions *o
         return ZR_FALSE;
     }
 
+    /* 声明合并必须晚于裁剪，才能把导出的绑定令牌指向目标表。 */
     if (!backend_aot_c_zrp_publish_manifest_export_declarations(
                 outMetadata,
                 options != ZR_NULL ? options->manifestExportDeclarations : ZR_NULL,

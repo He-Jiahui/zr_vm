@@ -35,6 +35,7 @@ void backend_aot_collect_zrp_metadata_size_stats_from_blob(const TZrByte *blob,
         return;
     }
 
+    /* 这些统计写入生成的 C 注释，缺失或无效元数据应呈现为零而非旧快照。 */
     memset(stats, 0, sizeof(*stats));
     if (blob != ZR_NULL &&
         blobLength > 0u &&

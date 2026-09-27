@@ -27,6 +27,8 @@ static const TZrByte CZrAotCZrpSignatureHashV1Prefix[] = {
         '\0',
 };
 
+/* 哈希域与 core 的元数据协议一致；重排签名后必须按最终字节重新计算。 */
+
 static TZrUInt64 backend_aot_c_zrp_signature_hash_v1(const TZrByte *signatureBlob, TZrUInt32 signatureBlobLength) {
     if (signatureBlob == ZR_NULL || signatureBlobLength == 0u) {
         return 0u;
@@ -744,6 +746,7 @@ TZrBool backend_aot_c_zrp_build_signature_blob_remap(
         TZrUInt32 retainedMethodDefCount) {
     (void)retainedTypeDefCount;
 
+    /* 收集顺序要覆盖所有将被复制的行，模块引用扫描随后直接使用此保留签名集合。 */
     return backend_aot_c_zrp_add_retained_token_record_signature_blobs(signatureRemap,
                                                                        tokenRecords,
                                                                        tokenRecordCount,
@@ -870,6 +873,8 @@ void backend_aot_c_zrp_copy_signature_blob_pool(TZrByte *targetBlob,
 
 #define CZrAotCZrpSignatureRewriteMaxRecursionDepth 64u
 
+/* 单次签名重写的只读依赖视图；输入数组、源池和映射由调用方保持有效，
+ * 仅在目标签名池原位改写期间借用，不延长这些输入的生命周期。 */
 typedef struct SZrAotCZrpSignatureRewriteContext {
     const SZrZrpMetadataTypeDefRow *typeRows;
     TZrUInt32 typeCount;
@@ -1445,6 +1450,7 @@ TZrBool backend_aot_c_zrp_rewrite_retained_signature_type_def_tokens(
     context.signatureRemap = signatureRemap;
     context.stringRemap = stringRemap;
 
+    /* 在目标池内改写，原始签名池仍供旧令牌解析；行哈希在此步骤完成后再取。 */
     targetPool = targetBlob + targetHeader->signatureBlobPool.offset;
     for (TZrUInt32 index = 0u; index < signatureRemap->count; index++) {
         const SZrAotCZrpSignatureBlobRemapEntry *entry = &signatureRemap->entries[index];

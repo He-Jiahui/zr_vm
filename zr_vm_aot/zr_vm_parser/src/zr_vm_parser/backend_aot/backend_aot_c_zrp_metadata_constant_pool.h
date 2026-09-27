@@ -5,12 +5,14 @@
 
 #include "zr_vm_core/zrp_metadata.h"
 
+/** 保留字段默认值的原始片段与压缩后位置的对应关系。 */
 typedef struct SZrAotCZrpConstantPoolRemapEntry {
     TZrUInt32 oldOffset;
     TZrUInt32 byteLength;
     TZrUInt32 newOffset;
 } SZrAotCZrpConstantPoolRemapEntry;
 
+/** 压缩阶段的临时状态；条目由 init 分配，destroy 在所有成功/失败路径调用。 */
 typedef struct SZrAotCZrpConstantPoolRemap {
     SZrAotCZrpConstantPoolRemapEntry *entries;
     TZrUInt32 count;
@@ -25,6 +27,10 @@ TZrBool backend_aot_c_zrp_constant_pool_remap_init(SZrAotCZrpConstantPoolRemap *
 void backend_aot_c_zrp_constant_pool_remap_destroy(SZrAotCZrpConstantPoolRemap *remap);
 TZrBool backend_aot_c_zrp_constant_pool_remap_is_identity(const SZrAotCZrpConstantPoolRemap *remap);
 
+/**
+ * @brief 仅收集裁剪后仍存在的字段默认值，供 copy 和字段行偏移重写使用。
+ * @pre remap 已用源池字节数初始化；字段是否保留必须与 type_def 裁剪规则一致。
+ */
 TZrBool backend_aot_c_zrp_build_constant_pool_remap(SZrAotCZrpConstantPoolRemap *constantPoolRemap,
                                                     const SZrZrpMetadataFieldDefRow *fieldRows,
                                                     TZrUInt32 fieldCount,

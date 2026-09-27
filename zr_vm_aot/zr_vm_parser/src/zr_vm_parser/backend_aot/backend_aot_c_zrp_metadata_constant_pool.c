@@ -113,6 +113,7 @@ TZrBool backend_aot_c_zrp_build_constant_pool_remap(SZrAotCZrpConstantPoolRemap 
         return ZR_FALSE;
     }
 
+    /* 默认值只由仍可反射的字段持有；先固定其片段顺序，写目标 FieldDef 时才能重写偏移。 */
     for (TZrUInt32 index = 0u; index < fieldCount; index++) {
         if (!backend_aot_c_zrp_field_def_row_is_retained(&fieldRows[index],
                                                          typeRows,

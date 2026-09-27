@@ -27,6 +27,7 @@ TZrBool backend_aot_c_zrp_type_spec_row_is_retained(const SZrZrpMetadataTypeSpec
         return ZR_FALSE;
     }
 
+    /* TypeSpec 没有独立代码入口，只从仍保留的引用记录和约束导出存活性。 */
     for (TZrUInt32 index = 0u; index < tokenRecordCount; index++) {
         SZrMetadataTokenRecord record = tokenRecords[index];
         if (record.token != row->token) {

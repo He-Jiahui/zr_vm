@@ -10,6 +10,10 @@ typedef struct SZrAotCZrpSignatureBlobRemap SZrAotCZrpSignatureBlobRemap;
 typedef struct SZrAotCZrpStringPoolRemap SZrAotCZrpStringPoolRemap;
 typedef struct SZrAotCEmbeddedZrpMetadata SZrAotCEmbeddedZrpMetadata;
 
+/**
+ * @brief 类型由仍保留的 token 记录、方法或泛型约束引用时才保留。
+ * @note 字段保留依赖其拥有者类型；必须先统一类型保留判定，再重排字段令牌和范围。
+ */
 TZrBool backend_aot_c_zrp_type_def_row_is_retained(
         const SZrZrpMetadataTypeDefRow *row,
         const SZrZrpMetadataTypeDefRow *typeRows,
@@ -104,6 +108,7 @@ void backend_aot_c_zrp_adjust_type_def_field_range(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount);
+/** 为 emitter 导出绑定建立源 TypeDef 到目标 TypeDef 的映射；失败时调用方释放已持有映射。 */
 TZrBool backend_aot_c_zrp_type_def_token_remap_build(
         SZrAotCEmbeddedZrpMetadata *metadata,
         const SZrZrpMetadataTypeDefRow *rows,

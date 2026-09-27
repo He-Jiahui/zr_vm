@@ -94,6 +94,8 @@ void backend_aot_c_zrp_set_section_layout(SZrZrpMetadataSection *section,
         return;
     }
 
+    /* TODO: offset 累加不会报告 32 位溢出；prune/manifest 构造目标 header 时
+     * 应在调用前显式检查总长度，而不是只依赖随后的 ValidateHeader/WriteHeader。 */
     section->offset = *offset;
     section->byteLength = byteLength;
     section->count = count;

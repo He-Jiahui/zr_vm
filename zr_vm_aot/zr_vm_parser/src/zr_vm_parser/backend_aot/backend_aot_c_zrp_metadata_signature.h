@@ -6,12 +6,14 @@
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/zrp_metadata.h"
 
+/** 保留签名的源片段与压缩签名池位置；相同源片段由构建阶段去重。 */
 typedef struct SZrAotCZrpSignatureBlobRemapEntry {
     TZrUInt32 oldOffset;
     TZrUInt32 byteLength;
     TZrUInt32 newOffset;
 } SZrAotCZrpSignatureBlobRemapEntry;
 
+/** 裁剪阶段临时持有的签名池布局，供模块引用扫描、原位重写及行哈希更新共用。 */
 typedef struct SZrAotCZrpSignatureBlobRemap {
     SZrAotCZrpSignatureBlobRemapEntry *entries;
     TZrUInt32 count;
@@ -28,6 +30,10 @@ TZrBool backend_aot_c_zrp_signature_blob_remap_init(SZrAotCZrpSignatureBlobRemap
 void backend_aot_c_zrp_signature_blob_remap_destroy(SZrAotCZrpSignatureBlobRemap *remap);
 TZrBool backend_aot_c_zrp_signature_blob_remap_is_identity(const SZrAotCZrpSignatureBlobRemap *remap);
 
+/**
+ * @brief 从所有保留记录和定义收集签名，再给后续模块引用保留及签名重写提供共同视图。
+ * @pre remap 已按源签名池长度初始化，且保留判定应与写表阶段一致。
+ */
 TZrBool backend_aot_c_zrp_build_signature_blob_remap(
         SZrAotCZrpSignatureBlobRemap *signatureRemap,
         const SZrMetadataTokenRecord *tokenRecords,
@@ -121,6 +127,7 @@ TZrBool backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(
         TZrUInt32 retainedMethodDefCount,
         const SZrAotCZrpSignatureBlobRemap *signatureRemap);
 
+/** 在复制签名池后原位改写保留签名的类型、模块及字符串引用；写表前完成以便重算哈希。 */
 TZrBool backend_aot_c_zrp_rewrite_retained_signature_type_def_tokens(
         TZrByte *targetBlob,
         const SZrZrpMetadataHeader *targetHeader,

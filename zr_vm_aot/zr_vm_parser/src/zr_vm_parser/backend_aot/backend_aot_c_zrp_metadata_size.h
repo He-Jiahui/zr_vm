@@ -5,6 +5,7 @@
 
 #include "zr_vm_parser/writer.h"
 
+/** emitter 写入生成 C 文件的元数据尺寸快照，用来比较裁剪前后各表和池的变化。 */
 typedef struct SZrAotZrpMetadataSizeStats {
     unsigned long long zrpMetadataBytes;
     unsigned long long tokenRecordBytes;
@@ -39,6 +40,7 @@ typedef struct SZrAotZrpMetadataSizeStats {
 
 void backend_aot_collect_zrp_metadata_size_stats(const SZrAotWriterOptions *options,
                                                  SZrAotZrpMetadataSizeStats *stats);
+/** 无有效 blob 时输出零值，避免诊断路径把缺失元数据误报为未初始化数值。 */
 void backend_aot_collect_zrp_metadata_size_stats_from_blob(const TZrByte *blob,
                                                            TZrSize blobLength,
                                                            SZrAotZrpMetadataSizeStats *stats);

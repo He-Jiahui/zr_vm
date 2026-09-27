@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/zrp_metadata.h"
 
+/** 保留原有 manifest 导出时，要求其绑定令牌在目标元数据中仍可解析。 */
 TZrBool backend_aot_c_zrp_manifest_export_row_is_retained(
         const SZrZrpMetadataManifestExportRow *row,
         const SZrMetadataTokenRecord *tokenRecords,
@@ -45,6 +46,10 @@ TZrBool backend_aot_c_zrp_copy_manifest_exports(
         TZrUInt32 retainedMethodDefCount,
         const SZrAotCZrpStringPoolRemap *stringRemap);
 
+/**
+ * @brief 把 AOT 导出声明写入 ZRP 元数据表，供脱离原始编译配置的模块消费者查询。
+ * @note 成功时可能以新分配的 blob 替换 metadata->blob；失败不移交临时分配。
+ */
 TZrBool backend_aot_c_zrp_publish_manifest_export_declarations(
         SZrAotCEmbeddedZrpMetadata *metadata,
         const SZrAotManifestExportDeclaration *declarations,

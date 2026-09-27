@@ -366,6 +366,7 @@ static TZrBool backend_aot_c_zrp_type_def_row_has_retained_root(
         return ZR_FALSE;
     }
 
+    /* 保留根包括仍可解析的 token 记录、生成的成员方法及泛型约束。 */
     return (TZrBool)(backend_aot_c_zrp_retained_token_record_references_type_def(row->token,
                                                                                  tokenRecords,
                                                                                  tokenRecordCount,
@@ -779,6 +780,7 @@ TZrBool backend_aot_c_zrp_type_def_token_remap_build(
         return ZR_FALSE;
     }
 
+    /* emitter 的导出声明仍携带源 TypeDef 令牌，发布前要持有这张独立映射。 */
     backend_aot_c_zrp_type_def_token_remap_destroy(metadata);
 
     if ((count > 0u && rows == ZR_NULL) ||

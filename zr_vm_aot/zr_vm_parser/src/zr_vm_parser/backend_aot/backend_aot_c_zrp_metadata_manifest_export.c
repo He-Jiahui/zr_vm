@@ -222,6 +222,7 @@ static TZrBool backend_aot_c_zrp_manifest_export_build_published_header(
         return ZR_FALSE;
     }
 
+    /* 其余 section 保持原顺序与内容；只为新增导出及字符串重新安排布局。 */
     *outHeader = *sourceHeader;
     for (TZrUInt32 sectionKind = 0u; sectionKind < ZR_ZRP_METADATA_SECTION_COUNT; sectionKind++) {
         const SZrZrpMetadataSection *sourceSection =
@@ -596,6 +597,8 @@ TZrBool backend_aot_c_zrp_publish_manifest_export_declarations(
         }
     }
 
+    /* TODO: 旧 ZRP 导出与本次声明若有相同 kind/target，目前仅拼接；core 的
+     * ValidateDefinitionTables 逐行校验形状。核对读取方的重名语义并补交叉来源测试。 */
     if (manifestExportView.count > 0u) {
         memcpy(manifestExportRows,
                manifestExportView.data,
@@ -657,6 +660,7 @@ TZrBool backend_aot_c_zrp_publish_manifest_export_declarations(
         goto cleanup;
     }
 
+    /* 只有完整写入并通过定义表校验后才替换视图，失败路径仍保留原始 blob。 */
     oldOwnedBlob = metadata->ownedBlob;
     metadata->blob = targetBlob;
     metadata->length = targetLength;

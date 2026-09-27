@@ -7,6 +7,7 @@
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/zrp_metadata.h"
 
+/** TypeSpec 由保留的 token 记录或泛型约束引用时进入目标表，未引用者不占新 RID。 */
 TZrBool backend_aot_c_zrp_type_spec_row_is_retained(const SZrZrpMetadataTypeSpecRow *row,
                                                     const SZrMetadataTokenRecord *tokenRecords,
                                                     TZrUInt32 tokenRecordCount,

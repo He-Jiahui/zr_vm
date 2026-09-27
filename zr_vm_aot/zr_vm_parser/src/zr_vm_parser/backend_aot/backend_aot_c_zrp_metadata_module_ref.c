@@ -415,6 +415,7 @@ TZrBool backend_aot_c_zrp_module_ref_row_is_retained(
         return ZR_FALSE;
     }
 
+    /* 导入根之外，仍保留的签名也可能独立引用 AssemblyRef。 */
     if (tokenRecords != ZR_NULL) {
         for (TZrUInt32 index = 0u; index < tokenRecordCount; index++) {
             SZrMetadataTokenRecord record = tokenRecords[index];

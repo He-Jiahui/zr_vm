@@ -16,6 +16,7 @@ TZrBool backend_aot_c_publish_compacted_zrp_metadata(const SZrAotWriterOptions *
     if (path == ZR_NULL || path[0] == '\0') {
         return ZR_TRUE;
     }
+    /* 发布副本必须与可被运行时读取的嵌入表一致，校验失败时清理旧输出。 */
     if (metadata == ZR_NULL ||
         metadata->blob == ZR_NULL ||
         metadata->length == 0u ||

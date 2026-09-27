@@ -172,6 +172,7 @@ TZrBool backend_aot_c_zrp_member_token_remap_build(
         return ZR_FALSE;
     }
 
+    /* 映射覆盖 emitter 仍可能发布的成员；旧令牌不得重复，目标 RID 与新表顺序一致。 */
     entryCapacity = retainedMethodDefCount + retainedFieldDefCount;
     if (entryCapacity < retainedMethodDefCount) {
         return ZR_FALSE;
@@ -261,6 +262,8 @@ TZrBool backend_aot_c_embedded_zrp_metadata_remap_member_token(const SZrAotCEmbe
     if (!backend_aot_c_zrp_member_token_is_member_def(*token)) {
         return ZR_TRUE;
     }
+    /* TODO: 空映射既可能表示无需裁剪，也可能表示所有 MemberDef 均已删除；
+     * 当前原样返回未核对目标表。核查字段导出和全裁剪组合是否可达，并补覆盖测试。 */
     if (metadata == ZR_NULL ||
         metadata->memberTokenRemapEntries == ZR_NULL ||
         metadata->memberTokenRemapCount == 0u) {
@@ -329,6 +332,7 @@ TZrBool backend_aot_c_zrp_manifest_export_table_build(
         return ZR_FALSE;
     }
 
+    /* 进程内描述符与写入 ZRP 的导出行共用裁剪后的令牌空间。 */
     for (TZrUInt32 index = 0u; index < declarationCount; index++) {
         const SZrAotManifestExportDeclaration *declaration = &declarations[index];
         SZrAotManifestExportEntry *entry = &entries[index];

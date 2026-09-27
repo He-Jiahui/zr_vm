@@ -662,6 +662,7 @@ TZrBool backend_aot_c_zrp_build_string_pool_remap(
 
     (void)retainedTypeDefCount;
 
+    /* 与各表的保留规则使用同一组源行，最后再加入签名里内嵌的 TypeRef 名称。 */
     for (TZrUInt32 index = 0u; index < typeCount; index++) {
         if (!backend_aot_c_zrp_type_def_row_is_retained(&typeRows[index],
                                                         typeRows,

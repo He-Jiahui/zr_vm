@@ -766,6 +766,7 @@ TZrBool backend_aot_c_zrp_remap_retained_token_record(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount) {
+    /* 每个 MemberDef 引用都必须仍有目标行；引用链不完整的记录不进入紧凑表。 */
     return (TZrBool)(record != ZR_NULL &&
                      backend_aot_c_zrp_remap_retained_member_def_token(&record->token,
                                                                        methodRows,
@@ -867,6 +868,8 @@ TZrUInt32 backend_aot_c_zrp_count_retained_token_records(const SZrMetadataTokenR
                                                          TZrUInt32 fieldCount,
                                                          const SZrAotFunctionTable *functionTable,
                                                          TZrUInt32 retainedMethodDefCount) {
+    /* TODO: 当前生产裁剪使用 prune.c 的多表计数器；此公开入口只计算直接
+     * MemberDef 依赖且没有生产调用。核对 export-token 测试和旧接口使用意图后决定是否移除。 */
     TZrUInt32 retainedCount = 0u;
 
     if (records == ZR_NULL) {
