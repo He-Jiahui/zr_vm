@@ -20,6 +20,7 @@
 #include <ctype.h>
 #include <string.h>
 
+/** @brief 将解析命中的文档版本留在查询视图中，供后续消费入口拒绝已过期的目标。 */
 static TZrBool semantic_query_capture_document_version(
         SZrState *state,
         SZrLspContext *context,
@@ -37,6 +38,7 @@ static TZrBool semantic_query_capture_document_version(
     return ZR_TRUE;
 }
 
+/** @brief 消费目标前核对版本和 scoped 虚拟文档所属项目，避免复用旧身份。 */
 static TZrBool semantic_query_document_version_is_current(
         SZrState *state,
         SZrLspContext *context,
@@ -60,6 +62,7 @@ static TZrBool semantic_query_document_version_is_current(
     return fileVersion != ZR_NULL && fileVersion->version == query->semanticVersion;
 }
 
+/** @brief 只展示没有被未解析类型引用污染的 canonical type；供本地符号 hover 的类型文本使用。 */
 static TZrBool semantic_query_type_id_is_available(
         const SZrSemanticContext *semanticContext,
         TZrTypeId typeId) {
@@ -87,6 +90,7 @@ static TZrBool semantic_query_type_id_is_available(
     return !hasTypeReference;
 }
 
+/** @brief 从位置事实复制可信的规范类型显示文本，避免把推断不精确的类型写进 hover。 */
 static TZrBool semantic_query_copy_canonical_type_at(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -117,6 +121,7 @@ static TZrBool semantic_query_copy_canonical_type_at(
     return outInfo->resolvedTypeText != ZR_NULL;
 }
 
+/** @brief 从已确认的规范符号身份派生显示类型；文本由 VM state 管理。 */
 static TZrBool semantic_query_copy_canonical_symbol_type(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -136,6 +141,7 @@ static TZrBool semantic_query_copy_canonical_symbol_type(
     return outInfo->resolvedTypeText != ZR_NULL;
 }
 
+/** @brief 把 provider 的成员类别与类型描述投影到共享查询结果，供 hover 与补全复用。 */
 static void semantic_query_copy_resolved_member_type(SZrState *state,
                                                      SZrLspResolvedMetadataMember *member,
                                                      SZrLspResolvedTypeInfo *outInfo) {
@@ -174,10 +180,12 @@ static void semantic_query_copy_resolved_member_type(SZrState *state,
     }
 }
 
+/** @brief token 后备扫描按 C 字符分类规则识别字母数字与下划线，供 import alias 名称提取。 */
 static TZrBool semantic_query_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
 }
 
+/** @brief 向元数据名称匹配借用 VM 字符串内容；不得跨字符串对象生命周期保留指针。 */
 static const TZrChar *semantic_query_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -187,6 +195,7 @@ static const TZrChar *semantic_query_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/** @brief 在 AST 命中不足时从打开文档提取 import alias token；只作后备路径的名称候选。 */
 static SZrString *semantic_query_extract_identifier_at_offset(SZrState *state,
                                                               const TZrChar *content,
                                                               TZrSize contentLength,
@@ -227,6 +236,9 @@ static SZrString *semantic_query_extract_identifier_at_offset(SZrState *state,
     return ZrCore_String_Create(state, (TZrNativeString)(content + start), end - start);
 }
 
+/** @brief 将 LSP 位置映射到当前快照的 token 后备扫描偏移。 */
+/* TODO: 此后备扫描把 LSP character 逐字节推进；需要用非 ASCII 前缀的 import alias
+ * 请求核对该路径是否可达，并与共享 UTF-16 position helper 统一。 */
 static TZrSize semantic_query_lsp_offset_from_position(const TZrChar *content,
                                                        TZrSize contentLength,
                                                        SZrLspPosition position) {
@@ -254,6 +266,7 @@ static TZrSize semantic_query_lsp_offset_from_position(const TZrChar *content,
     return offset < contentLength ? offset : contentLength > 0 ? contentLength - 1 : 0;
 }
 
+/** @brief 把快照偏移还原为 parser 范围，供跨文件成员引用位置输出。 */
 static SZrFileRange semantic_query_range_from_offset(const TZrChar *content,
                                                      TZrSize contentLength,
                                                      TZrSize startOffset,
@@ -295,6 +308,7 @@ static SZrFileRange semantic_query_range_from_offset(const TZrChar *content,
     return range;
 }
 
+/** @brief 原始文本后备解析前过滤注释和字符串；使用 owned snapshot 读取当前文档。 */
 static TZrBool semantic_query_position_is_code_span(SZrLspContext *context,
                                                     SZrString *uri,
                                                     SZrLspPosition position) {
@@ -322,6 +336,7 @@ static TZrBool semantic_query_position_is_code_span(SZrLspContext *context,
     return result;
 }
 
+/** @brief 为定义和引用结果统一映射来源坐标；返回的 location 由 result 消费方释放。 */
 static TZrBool semantic_query_append_location(SZrState *state,
                                               SZrLspContext *context,
                                               SZrArray *result,
@@ -364,6 +379,7 @@ static TZrBool semantic_query_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 将 parser 文件范围转为本请求文档的 LSP 高亮范围。 */
 static TZrBool semantic_query_append_document_highlight(SZrState *state,
                                                         SZrLspContext *context,
                                                         SZrString *uri,
@@ -391,6 +407,7 @@ static TZrBool semantic_query_append_document_highlight(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 已有 LSP 范围直接转高亮，避免进行没有内容上下文的反向坐标转换。 */
 static TZrBool semantic_query_append_lsp_document_highlight(SZrState *state,
                                                             SZrArray *result,
                                                             SZrLspRange range,
@@ -416,10 +433,12 @@ static TZrBool semantic_query_append_lsp_document_highlight(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 为磁盘 analyzer 后备与元数据 URI 分派复用统一 URI 到本地路径规则。 */
 static TZrBool semantic_query_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
     return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
+/** @brief 元数据来源判定只依赖末尾扩展名，供二进制与插件 URI 分派。 */
 static TZrBool semantic_query_path_has_extension(const TZrChar *path, const TZrChar *extension) {
     TZrSize pathLength;
     TZrSize extensionLength;
@@ -433,6 +452,7 @@ static TZrBool semantic_query_path_has_extension(const TZrChar *path, const TZrC
     return pathLength >= extensionLength && strcmp(path + pathLength - extensionLength, extension) == 0;
 }
 
+/** @brief native 插件声明 URI 的文件扩展名随宿主平台变化。 */
 static const TZrChar *semantic_query_dynamic_library_extension(void) {
 #if defined(ZR_VM_PLATFORM_IS_WIN) || defined(_WIN32)
     return ".dll";
@@ -443,6 +463,7 @@ static const TZrChar *semantic_query_dynamic_library_extension(void) {
 #endif
 }
 
+/** @brief 在源码分析前识别二进制/中间模块声明入口。 */
 static TZrBool semantic_query_uri_is_binary_metadata_uri(SZrString *uri) {
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -454,6 +475,7 @@ static TZrBool semantic_query_uri_is_binary_metadata_uri(SZrString *uri) {
            semantic_query_path_has_extension(nativePath, ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION);
 }
 
+/** @brief 在源码分析前识别 native 插件声明入口。 */
 static TZrBool semantic_query_uri_is_native_plugin_metadata_uri(SZrString *uri) {
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -464,6 +486,7 @@ static TZrBool semantic_query_uri_is_native_plugin_metadata_uri(SZrString *uri) 
     return semantic_query_path_has_extension(nativePath, semantic_query_dynamic_library_extension());
 }
 
+/** @brief 在已有缓存事实失效时重建 analyzer；优先快照，磁盘内容仅用于未持有快照的 URI。 */
 TZrBool ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
         SZrState *state,
         SZrLspContext *context,
@@ -555,6 +578,7 @@ TZrBool ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
     return ZR_TRUE;
 }
 
+/** @brief 仅保留当前文档位置，并沿用其已经转换完成的 LSP 范围。 */
 static TZrBool semantic_query_append_locations_as_highlights(SZrState *state,
                                                              SZrArray *locations,
                                                              SZrString *uri,
@@ -576,6 +600,7 @@ static TZrBool semantic_query_append_locations_as_highlights(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 从 parser 范围获取打开文档偏移；offset 未知时退回行列换算。 */
 static TZrSize semantic_query_file_offset_from_range_start(const TZrChar *content,
                                                            TZrSize contentLength,
                                                            SZrFileRange range) {
@@ -593,6 +618,7 @@ static TZrSize semantic_query_file_offset_from_range_start(const TZrChar *conten
                                                               range.start.column > 0 ? range.start.column - 1 : 0);
 }
 
+/** @brief 元数据声明匹配时比较源与坐标；某些 parser 范围缺 source 时允许借同文档上下文比较。 */
 static TZrBool semantic_query_file_ranges_equal(SZrFileRange left, SZrFileRange right) {
     return (ZrLanguageServer_Lsp_StringsEqual(left.source, right.source) ||
             left.source == ZR_NULL || right.source == ZR_NULL) &&
@@ -602,6 +628,7 @@ static TZrBool semantic_query_file_ranges_equal(SZrFileRange left, SZrFileRange 
            left.end.column == right.end.column;
 }
 
+/** @brief 判断声明范围能否作为跨快照身份，拒绝空源或逆序范围。 */
 static TZrBool semantic_query_file_range_is_known(SZrFileRange range) {
     if (range.source == ZR_NULL || range.start.line < 1 || range.start.column < 1 ||
         range.end.line < 1 || range.end.column < 1 || range.end.line < range.start.line ||
@@ -612,6 +639,7 @@ static TZrBool semantic_query_file_range_is_known(SZrFileRange range) {
     return ZR_TRUE;
 }
 
+/** @brief URI 已独立核对后，仅比较声明坐标，供导入成员身份判定。 */
 static TZrBool semantic_query_file_range_coordinates_equal(
         SZrFileRange left,
         SZrFileRange right) {
@@ -621,6 +649,7 @@ static TZrBool semantic_query_file_range_coordinates_equal(
            left.end.column == right.end.column;
 }
 
+/** @brief 将请求位置与 import 绑定范围比较；优先偏移，旧范围缺偏移时用行列。 */
 static TZrBool semantic_query_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL && position.source != ZR_NULL) {
@@ -638,6 +667,7 @@ static TZrBool semantic_query_range_contains_position(SZrFileRange range, SZrFil
             (position.end.line == range.end.line && position.end.column <= range.end.column));
 }
 
+/** @brief 引用查询必须有可核对的声明范围或外部身份，不能仅凭同名符号扩展。 */
 static TZrBool semantic_query_canonical_identity_is_available(
         const SZrLspSemanticQuery *query) {
     return query != ZR_NULL && query->hasCanonicalSymbol &&
@@ -647,6 +677,7 @@ static TZrBool semantic_query_canonical_identity_is_available(
                     &query->canonicalSymbol));
 }
 
+/** @brief 校验导入成员的规范身份与 provider 解析结果、provider 代际和声明范围一致。 */
 static TZrBool semantic_query_imported_canonical_identity_is_available(
         const SZrLspContext *context,
         const SZrLspSemanticQuery *query) {
@@ -682,12 +713,14 @@ static TZrBool semantic_query_imported_canonical_identity_is_available(
             &query->canonicalSymbol, &query->resolvedMember);
 }
 
+/** @brief 区分无关目标和已识别但身份失效目标；后者必须停止后备名称解析。 */
 typedef enum EZrLspSemanticExternalMemberResolution {
     ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_NOT_APPLICABLE = 0,
     ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_RESOLVED = 1,
     ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_INVALID = 2
 } EZrLspSemanticExternalMemberResolution;
 
+/** @brief 通过 parser 的外部目标 token 重新核对 provider 成员，避免元数据重载被同名匹配误认。 */
 static EZrLspSemanticExternalMemberResolution
 semantic_query_resolve_canonical_external_member_target(
         SZrState *state,
@@ -758,6 +791,7 @@ semantic_query_resolve_canonical_external_member_target(
     return ZR_LSP_SEMANTIC_EXTERNAL_MEMBER_RESOLVED;
 }
 
+/** @brief 读取 parser 规范身份并与 AST symbol 交叉校验；声明身份不足时按调用方要求拒绝。 */
 static TZrBool semantic_query_try_resolve_canonical_symbol(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -818,6 +852,7 @@ static TZrBool semantic_query_try_resolve_canonical_symbol(
     return ZR_TRUE;
 }
 
+/** @brief 把 import origin 规范符号映射为模块声明，供定义与引用直接使用。 */
 static EZrLspSemanticImportOriginResolution
 semantic_query_resolve_canonical_import_origin_target(
         SZrState *state,
@@ -857,6 +892,7 @@ semantic_query_resolve_canonical_import_origin_target(
     return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
 }
 
+/** @brief 先解析 import 字面量本身，避免后续通用符号后备误取同位置的局部 token。 */
 static EZrLspSemanticImportOriginResolution
 semantic_query_resolve_canonical_import_literal_target(
         SZrState *state,
@@ -898,6 +934,7 @@ semantic_query_resolve_canonical_import_literal_target(
     return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
 }
 
+/** @brief 在当前 AST 的 import 绑定中定位路径或别名声明；返回值只借用 bindings 的元素。 */
 static TZrBool semantic_query_find_import_binding_hit(SZrArray *bindings,
                                                       SZrFileRange queryRange,
                                                       SZrLspImportBinding **outBinding,
@@ -936,6 +973,7 @@ static TZrBool semantic_query_find_import_binding_hit(SZrArray *bindings,
     return ZR_FALSE;
 }
 
+/** @brief 用声明 URI 和范围匹配 receiver 解析结果，防止同名类型成员互相串扰。 */
 static TZrBool semantic_query_matches_external_type_member(SZrLspSemanticQuery *query,
                                                            SZrLspResolvedMetadataMember *candidate) {
     if (query == ZR_NULL || candidate == ZR_NULL) {
@@ -951,6 +989,7 @@ static TZrBool semantic_query_matches_external_type_member(SZrLspSemanticQuery *
            semantic_query_file_ranges_equal(query->resolvedMember.declarationRange, candidate->declarationRange);
 }
 
+/** @brief 为成员使用点先查项目类型，后查 native 类型；调用方用结果做声明身份比较。 */
 static TZrBool semantic_query_try_resolve_receiver_external_type_member(SZrState *state,
                                                                         SZrLspContext *context,
                                                                         SZrLspProjectIndex *projectIndex,
@@ -1003,6 +1042,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                               SZrString *uri,
                                                                               SZrArray *result);
 
+/** @brief 遍历一个 AST 子节点集合，汇总与目标声明同一身份的使用位置。 */
 static TZrBool semantic_query_append_external_type_member_locations_in_node_array(SZrState *state,
                                                                                   SZrLspContext *context,
                                                                                   SZrLspProjectIndex *projectIndex,
@@ -1038,6 +1078,7 @@ static TZrBool semantic_query_append_external_type_member_locations_in_node_arra
     return appended;
 }
 
+/** @brief 对 member expression 的 property token 核实 receiver 类型与声明身份后追加位置。 */
 static TZrBool semantic_query_try_append_primary_external_type_member_locations(SZrState *state,
                                                                                 SZrLspContext *context,
                                                                                 SZrLspProjectIndex *projectIndex,
@@ -1108,6 +1149,9 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
     return appended;
 }
 
+/** @brief 在 AST 各节点域递归收集外部类型成员引用；命中必须继续覆盖兄弟子树。 */
+/* BUG: 多子树 case 使用 left || right，左子树已有引用时 C 短路会跳过右子树，
+ * 例如二元表达式两侧都访问同一外部成员时，references 只返回左侧位置。 */
 static TZrBool semantic_query_append_external_type_member_locations_recursive(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrLspProjectIndex *projectIndex,
@@ -1929,6 +1973,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
     }
 }
 
+/** @brief 为指定文件取得 analyzer 与 owned 文本快照，再以同一快照遍历 AST 成员使用点。 */
 static TZrBool semantic_query_append_external_type_member_locations_for_uri(SZrState *state,
                                                                             SZrLspContext *context,
                                                                             SZrLspProjectIndex *projectIndex,
@@ -1969,6 +2014,7 @@ static TZrBool semantic_query_append_external_type_member_locations_for_uri(SZrS
     return appended;
 }
 
+/** @brief 按目标来源决定当前文件、声明文件或项目文件范围，聚合外部类型成员引用。 */
 static TZrBool semantic_query_append_project_external_type_member_references(SZrState *state,
                                                                              SZrLspContext *context,
                                                                              SZrLspSemanticQuery *query,
@@ -2036,6 +2082,7 @@ static TZrBool semantic_query_append_project_external_type_member_references(SZr
     return appended;
 }
 
+/** @brief 只将本文件的外部成员引用位置投影为高亮，避免跨文档位置泄漏到 documentHighlight。 */
 static TZrBool semantic_query_append_external_type_member_highlights(SZrState *state,
                                                                      SZrLspContext *context,
                                                                      SZrLspSemanticQuery *query,
@@ -2074,10 +2121,13 @@ static TZrBool semantic_query_append_external_type_member_highlights(SZrState *s
         appended = semantic_query_append_locations_as_highlights(state, &locations, query->uri, 2, result) || appended;
     }
 
+    /* BUG: append_location 为每项独立分配 SZrLspLocation；这里只释放数组缓冲区。
+     * 同文档外部类型成员每次请求高亮都会遗失这些 location 对象。 */
     ZrCore_Array_Free(state, &locations);
     return appended;
 }
 
+/** @brief 把虚拟或二进制元数据声明命中转换为可供 hover、definition、references 复用的查询目标。 */
 static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
                                                                SZrLspContext *context,
                                                                SZrString *uri,
@@ -2144,6 +2194,7 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 原始 receiver/member 命中须先通过代码区和声明来源验证，再进入外部成员查询域。 */
 static TZrBool semantic_query_resolve_receiver_type_member_target(SZrState *state,
                                                                   SZrLspContext *context,
                                                                   SZrString *uri,
@@ -2212,6 +2263,7 @@ static TZrBool semantic_query_resolve_receiver_type_member_target(SZrState *stat
     return ZR_TRUE;
 }
 
+/** @brief 在 native 虚拟声明文本内直接识别类型成员，保留其 provider 来源身份。 */
 static TZrBool semantic_query_resolve_external_metadata_type_member_declaration_target(
     SZrState *state,
     SZrLspContext *context,
@@ -2243,6 +2295,7 @@ static TZrBool semantic_query_resolve_external_metadata_type_member_declaration_
     return ZR_TRUE;
 }
 
+/** @brief 将 import 路径或别名绑定投影到模块声明；供定义和模块 hover 共享。 */
 static TZrBool semantic_query_resolve_import_binding_module_target(SZrState *state,
                                                                    SZrLspContext *context,
                                                                    SZrLspProjectIndex *projectIndex,
@@ -2289,6 +2342,7 @@ static TZrBool semantic_query_resolve_import_binding_module_target(SZrState *sta
     return ZR_TRUE;
 }
 
+/** @brief 在收集的绑定中优先比较明确范围，再使用项目 AST 命中补足路径语法。 */
 static TZrBool semantic_query_resolve_import_binding_target(SZrState *state,
                                                             SZrLspContext *context,
                                                             SZrLspProjectIndex *projectIndex,
@@ -2318,6 +2372,7 @@ static TZrBool semantic_query_resolve_import_binding_target(SZrState *state,
                                                               query);
 }
 
+/** @brief AST symbol 与 import alias 绑定比对，防止 token 后备把普通局部符号当模块别名。 */
 static TZrBool semantic_query_symbol_matches_import_binding(SZrSymbol *symbol, SZrLspImportBinding *binding) {
     if (symbol == ZR_NULL || binding == ZR_NULL) {
         return ZR_FALSE;
@@ -2332,6 +2387,7 @@ static TZrBool semantic_query_symbol_matches_import_binding(SZrSymbol *symbol, S
            semantic_query_file_ranges_equal(symbol->location, binding->aliasLocation);
 }
 
+/** @brief AST 符号后备路径中验证其为 import alias，而非普通同名局部符号。 */
 static TZrBool semantic_query_resolve_import_alias_symbol_target(SZrState *state,
                                                                  SZrLspContext *context,
                                                                  SZrLspProjectIndex *projectIndex,
@@ -2368,6 +2424,7 @@ static TZrBool semantic_query_resolve_import_alias_symbol_target(SZrState *state
     return resolved;
 }
 
+/** @brief 规范事实无法命中时，借打开文档 token 与 AST 绑定匹配 import alias。 */
 static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
                                                                 SZrLspContext *context,
                                                                 SZrLspProjectIndex *projectIndex,
@@ -2477,6 +2534,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     query->queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
 
+    /* scoped 虚拟 URI 的解释依赖项目身份；先解析元数据声明，不能交给普通源码符号后备。 */
     if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(uri)) {
         query->projectIndex = ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(context, uri);
         if (query->projectIndex == ZR_NULL) {
@@ -2508,6 +2566,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
     query->analyzer = analyzer;
 
+    /* 先用 parser 与 provider 的规范身份判定；已知身份失效时直接拒绝，避免同名后备。 */
     query->hasCanonicalSymbol = semantic_query_try_resolve_canonical_symbol(
             state, analyzer, query, ZR_TRUE);
     externalMemberResolution =
@@ -2625,6 +2684,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         return semantic_query_capture_document_version(state, context, query);
     }
 
+    /* AST、import 和元数据路径未命中后，才把规范事实解释为本地符号。 */
     if (query->hasCanonicalSymbol ||
         semantic_query_try_resolve_canonical_symbol(
                 state, analyzer, query, ZR_FALSE)) {
@@ -2653,6 +2713,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         return ZR_FALSE;
     }
 
+    /* 文本与 AST 的弱后备仅在代码区启用，避免注释和字符串中的同名 token 产生导航目标。 */
     if (!semantic_query_position_is_code_span(context, uri, position)) {
         return ZR_FALSE;
     }
@@ -2918,6 +2979,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         }
     }
 
+    /* receiver 明确要求 fail closed 时不回退到可见符号，避免成员位置出现无关的全局补全。 */
     if (!hasStructuredCompletions && !receiverCompletionFailClosed) {
         hasStructuredCompletions =
                 ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
@@ -3039,6 +3101,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
             return ZR_FALSE;
         }
 
+        /* 借用查询视图改写分派域；局部引用与跨快照入口以同一规范声明身份聚合。 */
         canonicalQuery = *query;
         canonicalQuery.kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;
         canonicalQuery.symbol = ZR_NULL;
