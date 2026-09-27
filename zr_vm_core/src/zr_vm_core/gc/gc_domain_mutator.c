@@ -16,6 +16,7 @@
 #define ZR_GC_DOMAIN_MUTATOR_INITIAL_CAPACITY ((TZrSize)4u)
 #define ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS ((TZrUInt32)10u)
 
+/* 登记表只在协调锁内定位；返回的表项指针不得跨等待或扩容保存。 */
 static SZrGcDomainMutatorRecord *gc_domain_find_mutator_locked(
         SZrGcDomain *domain,
         const SZrState *state) {
@@ -30,6 +31,7 @@ static SZrGcDomainMutatorRecord *gc_domain_find_mutator_locked(
     return ZR_NULL;
 }
 
+/* 附着 state 时扩容原生登记表；先建新表，分配失败时保留旧表和既有登记。 */
 static TZrBool gc_domain_grow_mutators_locked(SZrGcDomain *domain) {
     TZrSize newCapacity;
     TZrSize newBytes;
@@ -38,6 +40,7 @@ static TZrBool gc_domain_grow_mutators_locked(SZrGcDomain *domain) {
     if (domain == ZR_NULL || domain->global == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* TODO: 容量翻倍及字节乘法未校验上界；核查可达到的 mutator 数和分配器的溢出约束。 */
     newCapacity = domain->mutatorCapacity == 0u
                           ? ZR_GC_DOMAIN_MUTATOR_INITIAL_CAPACITY
                           : domain->mutatorCapacity * 2u;
@@ -66,6 +69,7 @@ static TZrBool gc_domain_grow_mutators_locked(SZrGcDomain *domain) {
     return ZR_TRUE;
 }
 
+/* 暂停超时与等待遥测共用单调时钟，避免墙上时间跳变改变握手期限。 */
 static TZrUInt64 gc_domain_now_milliseconds(void) {
 #if defined(ZR_PLATFORM_WIN)
     return (TZrUInt64)GetTickCount64();
@@ -79,6 +83,7 @@ static TZrUInt64 gc_domain_now_milliseconds(void) {
 #endif
 }
 
+/* 成功拿到暂停所有权后记录握手耗时；即使没有阻塞者也计为一次请求。 */
 static void gc_domain_record_safepoint_wait(
         SZrGcDomain *domain,
         TZrUInt64 startedMilliseconds) {
@@ -102,6 +107,7 @@ static void gc_domain_record_safepoint_wait(
     }
 }
 
+/* 持协调锁进入条件等待；短切片使广播丢失或超时竞争后仍能重查暂停状态。 */
 static void gc_domain_wait_locked(
         SZrGcDomain *domain,
         TZrUInt32 milliseconds) {
@@ -131,10 +137,14 @@ static void gc_domain_wait_locked(
 #endif
 }
 
+/* 新执行或原生入口必须在正在进行的暂停外等待；已运行者先公开本轮停靠代数。
+ * 条件等待会放开协调锁，重新取得记录以容忍等待期间的登记表搬移。 */
 static SZrGcDomainMutatorRecord *gc_domain_wait_for_entry_boundary_locked(
         SZrGcDomain *domain,
         SZrState *state,
         SZrGcDomainMutatorRecord *record) {
+    /* BUG: 前次 PARKED 尚未恢复时新 collector 可推进 epoch；旧代数的记录继续等待，
+     * first_blocker 会把它视为阻塞者，直到新暂停超时。 */
     while (record != ZR_NULL && domain->pauseRequested &&
            domain->collectorState != state) {
         if (record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING &&
@@ -154,6 +164,7 @@ static SZrGcDomainMutatorRecord *gc_domain_wait_for_entry_boundary_locked(
     return record;
 }
 
+/* collector 只等待尚未承认当前 epoch 的运行者；detached native 必须遵守不持有可移动引用的契约。 */
 static SZrGcDomainMutatorRecord *gc_domain_first_blocker_locked(
         SZrGcDomain *domain) {
     if (domain == ZR_NULL) {
@@ -176,6 +187,7 @@ static SZrGcDomainMutatorRecord *gc_domain_first_blocker_locked(
     return ZR_NULL;
 }
 
+/* 域构造时建立暂停条件变量和独立的递归 mutation lock；失败不得发布半初始化域。 */
 TZrBool ZrCore_GcDomain_CoordinationInit(SZrGcDomain *domain) {
     if (domain == ZR_NULL) {
         return ZR_FALSE;
@@ -217,6 +229,7 @@ TZrBool ZrCore_GcDomain_CoordinationInit(SZrGcDomain *domain) {
     return ZR_TRUE;
 }
 
+/* 域析构释放同步原语；调用者必须先使附着线程停止使用此域。 */
 void ZrCore_GcDomain_CoordinationFree(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
         return;
@@ -237,6 +250,7 @@ void ZrCore_GcDomain_CoordinationFree(SZrGcDomain *domain) {
     domain->coordinationInitialized = ZR_FALSE;
 }
 
+/* 根表、登记表及暂停状态的共同保护边界；不保护并发标记队列。 */
 void ZrCore_GcDomain_Lock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
         return;
@@ -248,6 +262,7 @@ void ZrCore_GcDomain_Lock(SZrGcDomain *domain) {
 #endif
 }
 
+/* 与 Lock 配对；释放后不得继续使用先前取得的 mutator 表项指针。 */
 void ZrCore_GcDomain_Unlock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
         return;
@@ -259,6 +274,7 @@ void ZrCore_GcDomain_Unlock(SZrGcDomain *domain) {
 #endif
 }
 
+/* 状态转换后唤醒暂停请求者和停靠者；两类等待方醒来都须自行重查条件。 */
 void ZrCore_GcDomain_Broadcast(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
         return;
@@ -270,6 +286,7 @@ void ZrCore_GcDomain_Broadcast(SZrGcDomain *domain) {
 #endif
 }
 
+/* 并发 major 的标记切片与写屏障用同一递归锁串行化共享标记状态。 */
 void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->mutationLockInitialized) {
         return;
@@ -281,6 +298,7 @@ void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain) {
 #endif
 }
 
+/* 与 MutationLock 配对；不得在另一个线程或域上释放。 */
 void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->mutationLockInitialized) {
         return;
@@ -292,6 +310,8 @@ void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain) {
 #endif
 }
 
+/* 写屏障和物化路径先过暂停边界，并仅在并发 major 活跃时借用 mutation lock。
+ * 返回值是是否持锁的令牌，调用方须原样交给 MutationEnd。 */
 TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -303,7 +323,10 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
     domain = state->gcDomain;
     ZrCore_GcDomain_Lock(domain);
     record = gc_domain_find_mutator_locked(domain, state);
+    /* BUG: 写屏障可在持递归 mutationLock 的对象写入内重入；若此时另一线程请求暂停，
+     * 内层在这里 PARKED，而 collector 停靠成功后等待外层持有的 mutationLock，形成永久互等。 */
     record = gc_domain_wait_for_entry_boundary_locked(domain, state, record);
+    /* TODO: false 同时表示无需锁和未登记；核查 Barrier/Object 写入调用方在登记失效时能否安全拒绝写入。 */
     if (record == ZR_NULL && domain->collectorState != state) {
         ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
@@ -313,17 +336,21 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
             domain->collector->concurrentMajorActive;
     ZrCore_GcDomain_Unlock(domain);
     if (concurrentMajorActive) {
+        /* BUG: Object_SetValue 的 HashSet_Add 可在持锁期间因持续 OOM Throw；
+         * longjmp 越过 MutationEnd，遗留递归锁使其他 mutator/标记切片无法进入。 */
         ZrCore_GcDomain_MutationLock(domain);
     }
     return concurrentMajorActive;
 }
 
+/* 只释放本次 Begin 确实取得的锁，使未开启并发 major 的写入无需额外同步。 */
 void ZrCore_GcDomain_MutationEnd(SZrState *state, TZrBool locked) {
     if (locked && state != ZR_NULL && state->gcDomain != ZR_NULL) {
         ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     }
 }
 
+/* 域先登记 inactive state，随后 AttachState 才发布 state->gcDomain 给 VM 和 GC 扫描。 */
 TZrBool ZrCore_GcDomain_RegisterMutator(
         SZrGcDomain *domain,
         SZrState *state) {
@@ -357,12 +384,14 @@ TZrBool ZrCore_GcDomain_RegisterMutator(
     return ZR_TRUE;
 }
 
+/* 从 GC 根扫描及暂停握手同时移除 state；调用者须已停止该 state 的所有执行。 */
 void ZrCore_GcDomain_UnregisterMutator(
         SZrGcDomain *domain,
         SZrState *state) {
     if (domain == ZR_NULL || state == ZR_NULL) {
         return;
     }
+    /* TODO: 此处未验证执行/原生深度；核查 State_Free 与 NativeCall_Detach 的并发退出路径。 */
     ZrCore_GcDomain_Lock(domain);
     for (TZrSize index = 0u; index < domain->mutatorLength; index++) {
         if (domain->mutators[index].state == state) {
@@ -383,6 +412,7 @@ void ZrCore_GcDomain_UnregisterMutator(
     ZrCore_GcDomain_Unlock(domain);
 }
 
+/* native/thread 入口只接受同一 global 的未附着 state，并复用 owner 的 GC 域。 */
 TZrBool ZrCore_GcDomain_MutatorAttach(
         SZrState *ownerState,
         SZrState *mutatorState) {
@@ -395,6 +425,7 @@ TZrBool ZrCore_GcDomain_MutatorAttach(
     return mutatorState->gcDomain == ownerState->gcDomain;
 }
 
+/* 解除 native/thread 临时附着；状态与执行栈的销毁仍由上层负责。 */
 void ZrCore_GcDomain_MutatorDetach(SZrState *mutatorState) {
     SZrGcDomain *domain;
 
@@ -405,6 +436,7 @@ void ZrCore_GcDomain_MutatorDetach(SZrState *mutatorState) {
     ZrCore_GcDomain_DetachState(domain, mutatorState);
 }
 
+/* VM 派发或次 state launch 进入可停靠执行作用域；嵌套进入只增加深度。 */
 TZrBool ZrCore_GcDomain_MutatorEnter(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -438,6 +470,7 @@ TZrBool ZrCore_GcDomain_MutatorEnter(SZrState *state) {
     return ZR_TRUE;
 }
 
+/* 与每次成功 Enter 配对；最后一层执行及原生层都结束才可视为 inactive。 */
 void ZrCore_GcDomain_MutatorLeave(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -461,6 +494,7 @@ void ZrCore_GcDomain_MutatorLeave(SZrState *state) {
     ZrCore_GcDomain_Unlock(domain);
 }
 
+/* Exception_Throw 的非局部展开会越过普通 Leave；恢复登记状态以免 GC 永久等待旧作用域。 */
 void ZrCore_GcDomain_MutatorUnwindScopes(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -472,6 +506,8 @@ void ZrCore_GcDomain_MutatorUnwindScopes(SZrState *state) {
     ZrCore_GcDomain_Lock(domain);
     record = gc_domain_find_mutator_locked(domain, state);
     if (record != ZR_NULL) {
+        /* BUG: attached-domain worker 只在循环前进入一次作用域；单个 Job 抛异常后
+         * 此处清零外层深度，TryRun 返回后 worker 继续处理 Job 却被 GC 当作 inactive。 */
         record->executionDepth = 0u;
         record->nativeDepth = 0u;
         record->nativeMode = ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE;
@@ -483,6 +519,7 @@ void ZrCore_GcDomain_MutatorUnwindScopes(SZrState *state) {
     ZrCore_GcDomain_Unlock(domain);
 }
 
+/* VM/GC 安全点响应暂停请求，并在 collector 结束前保持当前 epoch 的停靠状态。 */
 TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -503,6 +540,8 @@ TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     record->observedEpoch = domain->safepointEpoch;
     record->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
     ZrCore_GcDomain_Broadcast(domain);
+    /* BUG: 前一轮 End 与下一轮 Begin 可在本线程醒来前连续发生；旧 PARKED
+     * 记录没有更新到新 epoch，collector 把它当阻塞者，直到新请求超时。 */
     while (domain->pauseRequested && domain->collectorState != state) {
         gc_domain_wait_locked(domain, ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS);
     }
@@ -515,6 +554,7 @@ TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     return ZR_TRUE;
 }
 
+/* 诊断和线程测试读取域内登记编号；零表示没有可用登记。 */
 TZrUInt64 ZrCore_GcDomain_GetMutatorId(const SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -533,6 +573,7 @@ TZrUInt64 ZrCore_GcDomain_GetMutatorId(const SZrState *state) {
     return result;
 }
 
+/* 原生绑定进入前同时检查执行预算和暂停边界；嵌套原生层必须使用相同安全点模式。 */
 TZrBool ZrCore_GcDomain_NativeEnter(
         SZrState *state,
         EZrGcNativeSafepointMode mode) {
@@ -550,6 +591,8 @@ TZrBool ZrCore_GcDomain_NativeEnter(
     domain = state->gcDomain;
     ZrCore_GcDomain_Lock(domain);
     record = gc_domain_find_mutator_locked(domain, state);
+    /* BUG: critical 原生层内嵌套 NativeEnter 遇到 pauseRequested 时先在入口边界等待；
+     * collector 同时把该 NO_SAFEPOINT_CRITICAL 记录当作阻塞者，只能等到暂停超时。 */
     record = gc_domain_wait_for_entry_boundary_locked(domain, state, record);
     if (record == ZR_NULL ||
         (ZR_UNLIKELY(state->executionBudget != ZR_NULL) && !ZrCore_ExecutionBudget_Poll(state, ZR_FALSE))) {
@@ -596,6 +639,7 @@ TZrBool ZrCore_GcDomain_NativeEnter(
     return ZR_TRUE;
 }
 
+/* 原生层退出后恢复 VM 可停靠状态；若暂停已请求，先 Poll 再继续执行 VM。 */
 void ZrCore_GcDomain_NativeLeave(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
@@ -632,6 +676,7 @@ void ZrCore_GcDomain_NativeLeave(SZrState *state) {
     }
 }
 
+/* GC、checkpoint 和对象物化共用的域内暂停握手；成功者拥有一层须配对 End 的暂停。 */
 TZrBool ZrCore_GcDomain_StopTheWorldBegin(
         SZrState *state,
         TZrUInt32 timeoutMilliseconds,
@@ -680,6 +725,9 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
         ZrCore_GcDomain_Unlock(domain);
         return ZR_TRUE;
     }
+    /* BUG: 第二个 RUNNING mutator 竞争暂停时直接在此等待，未承认首个请求的 epoch；
+     * 首个 collector 把它当阻塞者，双方直到首个请求超时才可前进。 */
+    /* TODO: now_milliseconds 失败返回 0，若已记录非零起点，此处无符号差值会提前超时；核查时钟故障策略。 */
     while (domain->pauseRequested) {
         TZrUInt64 elapsed = gc_domain_now_milliseconds() - started;
         if (elapsed >= timeoutMilliseconds) {
@@ -721,6 +769,8 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
                 outDiagnostic->blockingMutatorId = blocker->mutatorId;
                 outDiagnostic->blockingNativeMode = blocker->nativeMode;
                 outDiagnostic->blockingState = blocker->state;
+                /* BUG: blocker 仍运行时会无协调锁地改写 callInfoList；跨线程读取
+                 * 形成数据竞争，且返回的帧指针可能在调用方使用前失效。 */
                 outDiagnostic->blockingNativeFrame =
                         blocker->state != ZR_NULL
                                 ? blocker->state->callInfoList
@@ -737,6 +787,7 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
     }
 }
 
+/* 只有发起暂停的 state 能释放本层；嵌套请求到最外层才允许其他 mutator 继续。 */
 void ZrCore_GcDomain_StopTheWorldEnd(SZrState *state) {
     SZrGcDomain *domain;
 
@@ -761,6 +812,7 @@ void ZrCore_GcDomain_StopTheWorldEnd(SZrState *state) {
     ZrCore_GcDomain_Unlock(domain);
 }
 
+/* 测试与遥测在协调锁内复制计数，避免向外泄露会随登记表扩容移动的记录。 */
 void ZrCore_GcDomain_GetMutatorSnapshot(
         const SZrState *state,
         SZrGcDomainMutatorSnapshot *outSnapshot) {
@@ -800,6 +852,7 @@ void ZrCore_GcDomain_GetMutatorSnapshot(
     ZrCore_GcDomain_Unlock(domain);
 }
 
+/* 外部线程改变等待条件后发信号；仅唤醒检查，不代替停靠或解除暂停。 */
 void ZrCore_GcDomain_WakeMutators(SZrState *state) {
     if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
         return;

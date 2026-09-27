@@ -196,5 +196,6 @@ doc_type: category-index
 | parser CFG typed catch 流测试 | [47 项](coverage/tests_parser_cfg_typed_catch_flow.tsv) | 1 个 C 测试文件独立复核，覆盖 39 个函数、全局状态和 7 个关键块；源码仅增注释，WSL GCC/Clang C11 严格语法检查通过。1 个 BUG 标明断言跳出导致原生资源未释放，5 个 TODO 保留测试和 AST/CFG 契约的核查缺口；目标运行测试未执行。 |
 | parser CFG typed catch switch 测试 | [34 项](coverage/tests_parser_cfg_typed_catch_switch_flow.tsv) | 1 个 C 测试文件独立复核，覆盖 33 个函数与全局状态；源码仅增 41 行注释，WSL GCC/Clang C11 严格语法检查通过。5 个 BUG 标明断言失败后资源泄漏路径，3 个 TODO 保留合成 AST 范围疑问；目标运行测试未执行。 |
 | parser CFG typed catch 循环测试 | [36 项](coverage/tests_parser_cfg_typed_catch_loop_flow.tsv) | 1 个 C 测试文件独立复核，覆盖 33 个函数、全局状态和 2 个关键块；源码仅增 27 行注释，WSL GCC/Clang C11 严格语法检查通过。1 个 BUG 标明六个用例中致命断言跳过 CFG/AST/context 显式释放；目标运行测试未执行。 |
+| core GC mutator 与暂停协调 | [70 项](coverage/zr_vm_core_gc_domain_mutator.tsv) | 2 个 C/H 文件独立复核，覆盖 31 个实现函数、19 个头部声明、6 个类型、3 个宏和 11 个关键块；源码仅增注释，GCC/Clang C11 严格语法检查通过。14 个 BUG 记录连续暂停代际、并发停顿互等、异常后 worker 状态及诊断帧数据竞争等可达问题，8 个 TODO 保留边界契约疑问。六份旧台账的 80 个行号引用已映射到逐字相同的源码行；目标运行测试未执行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
