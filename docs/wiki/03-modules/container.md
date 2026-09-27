@@ -88,8 +88,9 @@ leave the destination unchanged. This is a metadata-only boundary check; the
 `zr.container` Span runtime does not yet use this core descriptor as its common
 storage adapter. Owner rooting, current-generation checks, resize exclusion,
 and pin lifetime remain open before the full 05.02 milestone can close. See
-the [core contiguous-storage contract](../../library-and-builtins/contiguous-storage-contract.md)
-and the [focused acceptance record](../../../tests/acceptance/ssa-arrays-slices-view-boundaries.md).
+`docs/library-and-builtins/contiguous-storage-contract.md` and
+`tests/acceptance/ssa-arrays-slices-view-boundaries.md` for the contract and
+focused acceptance record.
 
 `Span<T>` 是 inline、ref-like、mutable view；`ReadOnlySpan<T>` 只能读。两者都保存
 source、signed start、signed length。合法索引必须满足 `0 <= i < length`；slice 必须
