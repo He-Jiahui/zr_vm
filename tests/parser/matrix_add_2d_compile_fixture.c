@@ -1,3 +1,4 @@
+/* 为矩阵热路径回归用例复制基准工程，固定被测源码并隔离编译产物。 */
 #include "matrix_add_2d_compile_fixture.h"
 
 #include <stdio.h>
@@ -20,6 +21,7 @@
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_parser.h"
 
+/* 用例在同一测试进程内顺序调用；序号与时间戳、PID 共同隔离输出路径。 */
 static unsigned int g_matrix_add_2d_fixture_sequence = 0;
 
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrSize length) {
@@ -40,6 +42,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrS
     }
 
     written = fwrite(content, 1, (size_t)length, file);
+    /* TODO: fclose 的延迟写入失败未纳入返回值；需用故障注入确认工程复制失败能否被报告。 */
     fclose(file);
     return written == (size_t)length;
 }
@@ -85,6 +88,7 @@ static TZrBool build_matrix_add_2d_fixture_source_path(const TZrChar *relativePa
     return ZR_TRUE;
 }
 
+/* 项目、main.zr 与 bench_config 均从基准目录复制到同一新工程。 */
 static TZrBool prepare_fresh_matrix_add_2d_project_files(ZrMatrixAdd2dCompileFixture *fixture,
                                                          const TZrChar *artifactName) {
     TZrChar fixtureProjectPath[ZR_TESTS_PATH_MAX];
@@ -180,6 +184,7 @@ TZrBool ZrTests_PrepareMatrixAdd2dCompileFixture(ZrMatrixAdd2dCompileFixture *fi
         return ZR_FALSE;
     }
 
+    /* 从此处起，失败路径统一借 Free 回收已取得的 VM/源码资源。 */
     fixture->global = ZrLibrary_CommonState_CommonGlobalState_New(fixture->projectPath);
     if (fixture->global == ZR_NULL) {
         ZrTests_FreeMatrixAdd2dCompileFixture(fixture);

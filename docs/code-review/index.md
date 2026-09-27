@@ -107,5 +107,6 @@ doc_type: category-index
 | core 哈希盐、稳定身份与节点契约 | [19 项](coverage/zr_vm_core_hash.tsv) | 2 个 C/H 文件独立复核，84 个证据锚点有效，源码仅改注释；GCC 语法检查通过。种子缓冲未定义行为及哈希失败被后续折叠均标 BUG，未使用的比较回调保留 TODO；未运行运行时测试。 |
 | AOT C 反射调用与类型化 thunk | [459 项](coverage/zr_vm_aot_c_thunks.tsv) | 44 个 C/H 文件独立复核，1524 个证据锚点及直接/间接调用者已核实，源码仅增 144 行注释/空行；GCC 对 22 个实现文件语法检查通过。9 个 BUG 行包括 i64 有符号运算边界及非有限 f64 常量生成无效 C；未运行完整 AOT 测试。 |
 | AOT C 测试支持头与类型调用辅助 | [75 项](coverage/tests_parser_aot_support_headers.tsv) | 10 个头文件独立复核，239 个证据锚点有效，源码仅增 66 行注释；GCC 对 13 个包含它们的宿主翻译单元语法检查通过。12 个 BUG 行记录 Unity 断言失败跳过清理的路径；未运行完整测试。 |
+| 编译 fixture、BufferPool FFI 与 W2 quickening 回归 | [125 项](coverage/tests_parser_compile_fixtures_quickening.tsv) | 7 个 C/H 文件独立复核，400 个证据锚点有效，源码仅增 51 行注释；GCC 对 5 个实现文件语法检查通过。4 个 BUG 行覆盖计数断言方向和融合调用扫描漏检，4 个 TODO 行保留延迟写失败与 CTest 注册疑点；未运行运行时测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

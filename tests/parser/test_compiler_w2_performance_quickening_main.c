@@ -1,3 +1,4 @@
+/* 独立 W2 quickening 可执行目标的 Unity 入口；少量用例也由 integration 目标调用。 */
 #include "unity.h"
 
 void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
@@ -21,6 +22,7 @@ void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void);
 void test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch(void);
 void test_w2_late_forward_get_stack_after_member_call_specialization(void);
 
+/* TODO: 该独立目标由 tests/CMakeLists 构建但当前未见 CTest suite 注册；需核实其余用例的自动回归要求。 */
 int main(void) {
     UNITY_BEGIN();
 

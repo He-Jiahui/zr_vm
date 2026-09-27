@@ -1,3 +1,4 @@
+/* 为调用链回归用例生成进程内唯一的工程副本，避免直接改写基准源码。 */
 #include "call_chain_polymorphic_compile_fixture.h"
 
 #include <stdio.h>
@@ -18,6 +19,7 @@
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_parser.h"
 
+/* 用例在同一测试进程内顺序调用；序号与时间戳、PID 共同隔离输出路径。 */
 static unsigned int g_call_chain_polymorphic_fixture_sequence = 0;
 
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrSize length) {
@@ -38,6 +40,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrS
     }
 
     written = fwrite(content, 1, (size_t)length, file);
+    /* TODO: fclose 的延迟写入失败未纳入返回值；需用故障注入确认工程复制失败能否被报告。 */
     fclose(file);
     return written == (size_t)length;
 }
@@ -83,6 +86,7 @@ static TZrBool build_call_chain_polymorphic_fixture_source_path(const TZrChar *r
     return ZR_TRUE;
 }
 
+/* 项目、main.zr 与固定 bench_config 必须同处新目录，避免源树配置污染编译结果。 */
 static TZrBool prepare_fresh_call_chain_polymorphic_project_files(
         ZrCallChainPolymorphicCompileFixture *fixture,
         const TZrChar *artifactName) {
@@ -177,6 +181,7 @@ TZrBool ZrTests_PrepareCallChainPolymorphicCompileFixture(ZrCallChainPolymorphic
         return ZR_FALSE;
     }
 
+    /* 从此处起，失败路径统一借 Free 回收已取得的 VM/源码资源。 */
     fixture->global = ZrLibrary_CommonState_CommonGlobalState_New(fixture->projectPath);
     if (fixture->global == ZR_NULL) {
         ZrTests_FreeCallChainPolymorphicCompileFixture(fixture);

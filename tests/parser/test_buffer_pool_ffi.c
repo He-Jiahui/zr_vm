@@ -1,3 +1,4 @@
+/* 跨编译器、VM、AOT 和容器/FFI 描述符检查 ref-like ABI 与借用视图生命周期。 */
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,6 +39,7 @@
 #define REF_LIKE_ABI_CONTRACT_HASH ((TZrUInt64)0x91ab1c0de7654321ULL)
 #define REF_LIKE_ABI_MODULE_HASH ((TZrUInt64)0x91f00d1e5eed1234ULL)
 
+/* 以相同 public identity 构造不同 ABI lowering 的最小工件，供 VM/AOT 共同验约。 */
 static TZrSize write_ref_like_abi_artifact(
         EZrArtifactAbiLoweringKind loweringKind,
         TZrByte *buffer,
@@ -240,6 +242,7 @@ static SZrFunction *compile_source(
             state, source, strlen(source), sourceName);
 }
 
+/* 在被测 zr 代码持有视图期间强制完整 GC，并按 native 调用约定写回标记。 */
 static TZrInt64 force_pool_ffi_gc_native(SZrState *state) {
     SZrCallInfo *nativeCallInfo;
     TZrStackValuePointer resultSlot;
@@ -258,6 +261,7 @@ static TZrInt64 force_pool_ffi_gc_native(SZrState *state) {
     return 1;
 }
 
+/* 将常驻 native closure 暴露给用例源码，生命周期随测试 VM state 结束。 */
 static void install_pool_ffi_gc_probe(SZrState *state) {
     SZrObject *globalObject;
     SZrClosureNative *closure;
@@ -274,6 +278,7 @@ static void install_pool_ffi_gc_probe(SZrState *state) {
     closure = ZrCore_ClosureNative_New(state, 0u);
     TEST_ASSERT_NOT_NULL(closure);
     closure->nativeFunction = force_pool_ffi_gc_native;
+    /* 在源码可调用该探针之前先保活 closure，覆盖随后用例主动触发的完整 GC。 */
     ZrCore_RawObject_MarkAsPermanent(
             state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 
@@ -290,6 +295,7 @@ static void install_pool_ffi_gc_probe(SZrState *state) {
     ZrCore_Object_SetValue(state, globalObject, &key, &value);
 }
 
+/* 同一 ref-like 工件先通过 VM/AOT 验约，再逐项破坏身份、布局和逃逸/降级字段。 */
 static void test_public_ref_like_abi_contract_is_validated_by_vm_and_aot(void) {
     const TZrUInt32 typeFlags = ZR_ARTIFACT_TYPE_FLAG_VALUE |
                                 ZR_ARTIFACT_TYPE_FLAG_READONLY |
@@ -505,6 +511,7 @@ static void test_pool_lease_close_is_rejected_while_view_remains_live(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 在反复租借、借用视图和完整 GC 之间核对归还次数与底层缓冲复用。 */
 static void test_pool_lease_reuse_survives_full_gc_stress(void) {
     static const char kSource[] =
             "var {Span} = import(\"zr.container\");\n"
@@ -538,6 +545,7 @@ static void test_pool_lease_reuse_survives_full_gc_stress(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* using 的异常清理必须归还租借，使 catch 后下一次租借能够复用。 */
 static void test_pool_lease_using_cleanup_returns_backing_on_throw(void) {
     static const char kSource[] =
             "var {BufferPool} = import(\"zr.pooling\");\n"
@@ -566,6 +574,7 @@ static void test_pool_lease_using_cleanup_returns_backing_on_throw(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* pin 持有的 span 在 owner 关闭和完整 GC 后仍可读写，重复 close 不重复释放。 */
 static void test_explicit_pinned_pointer_span_stays_valid_across_gc_and_owner_close(void) {
     static const char kSource[] =
             "var {Span} = import(\"zr.container\");\n"
@@ -620,6 +629,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* TODO: 该目标由 tests/CMakeLists 构建，但当前未见 CTest suite 注册；需核实是否只要求手工验收。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_public_ref_like_abi_contract_is_validated_by_vm_and_aot);

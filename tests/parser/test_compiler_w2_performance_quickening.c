@@ -1,3 +1,4 @@
+/* W2 回归同时检查优化后的字节码形状与关键可执行语义。 */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,6 +82,7 @@ static const TZrInstruction *find_first_opcode(const SZrFunction *function, EZrI
     return ZR_NULL;
 }
 
+/* 识别 add 前可选常量加载包围的死 receiver 拷贝链，递归覆盖内层函数。 */
 static TZrBool function_has_dead_super_array_add_receiver_setup_recursive(const SZrFunction *function) {
     TZrUInt32 index;
 
@@ -327,6 +329,7 @@ static TZrBool function_has_left_constant_add_mul_pair_recursive(const SZrFuncti
     return ZR_FALSE;
 }
 
+/* 读取 writer 产物供针脚断言；返回的缓冲由调用方 free。 */
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -479,6 +482,7 @@ static TZrBool function_has_adjacent_get_stack_to_mod_signed_const_pair_recursiv
     return ZR_FALSE;
 }
 
+/* 在已见到 known member call 的直线段内查找仍喂给有符号算术的 GET_STACK。 */
 static TZrBool function_has_post_member_call_get_stack_typed_arithmetic_pair_recursive(const SZrFunction *function) {
     TZrUInt32 index;
     TZrBool afterMemberCall = ZR_FALSE;
@@ -536,6 +540,7 @@ static TZrBool function_has_post_member_call_get_stack_typed_arithmetic_pair_rec
     return ZR_FALSE;
 }
 
+/* 与上项对应，检查直线段内常量临时槽是否仍直接喂给有符号算术。 */
 static TZrBool function_has_post_member_call_get_constant_typed_arithmetic_pair_recursive(
         const SZrFunction *function) {
     TZrUInt32 index;
@@ -596,6 +601,7 @@ static TZrBool function_has_post_member_call_get_constant_typed_arithmetic_pair_
     return ZR_FALSE;
 }
 
+/* 真实矩阵基准应把循环中的 Array<int> 索引访问降到 cached-items 形式。 */
 void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void) {
     SZrRegressionTestTimer timer;
     ZrMatrixAdd2dCompileFixture fixture;
@@ -646,6 +652,7 @@ void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void) {
     TEST_ASSERT_TRUE_MESSAGE(
             ZrParser_Quickening_CollectLoadTypedArithmeticProbeStats(fixture.function, &stats),
             "Expected load/typed arithmetic probe stats collection to succeed");
+    /* BUG: Unity 检查 actual >= threshold；分类数若超过总 pair 数，此方向仍通过，漏报探针过计数。 */
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
             stats.getStackTypedArithmeticPairs + stats.getConstantTypedArithmeticPairs,
             stats.safeFusionCandidates + stats.materializedLoadCandidates,
@@ -657,6 +664,7 @@ void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void) {
     ZR_TEST_DIVIDER();
 }
 
+/* 真实 dispatch_loops 基准既检查融合 opcode，也检查 writer 的可读中间表示。 */
 void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) {
     static const char *intermediatePath = "w2_dispatch_loops_add_mod_const_writer_test.zri";
     SZrRegressionTestTimer timer;
@@ -760,6 +768,7 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
             0u,
             fusedAddModConstCount,
             "Expected adjacent signed add plus const modulo to fuse");
+    /* writer 使用工作目录中的固定文件名；用前清旧产物，用后释放缓冲并删除。 */
     remove(intermediatePath);
     TEST_ASSERT_TRUE_MESSAGE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath),
                              "Expected intermediate writer to handle ADD_SIGNED_MOD_CONST");
@@ -1286,6 +1295,7 @@ void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void) {
             0u,
             function->generatedFrameSlotCountPlusOne,
             "Quickening should republish the generated frame-slot summary");
+    /* 暂时清空缓存以强制重新扫描，再比较 quickening 发布的帧槽摘要。 */
     cachedGeneratedFrameSlotCount =
             function->generatedFrameSlotCountPlusOne - 1u;
     function->generatedFrameSlotCountPlusOne = 0u;
@@ -1313,6 +1323,7 @@ void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void) {
     ZR_TEST_DIVIDER();
 }
 
+/* 合成 SET_MEMBER_SLOT 以区分缓存索引 0 与真正读取的 stack slot 0。 */
 void test_w2_set_member_slot_cache_index_does_not_kill_slot_zero_forwarding(void) {
     const TZrUInt32 instructionCount = 4u;
     SZrRegressionTestTimer timer;
@@ -1366,6 +1377,7 @@ void test_w2_set_member_slot_cache_index_does_not_kill_slot_zero_forwarding(void
     ZR_TEST_DIVIDER();
 }
 
+/* 删除 receiver 拷贝时，还须同步改写 SET_MEMBER_SLOT 对 receiver 槽的引用。 */
 void test_w2_set_member_slot_receiver_forwarding_rewrites_receiver(void) {
     const TZrUInt32 instructionCount = 4u;
     SZrRegressionTestTimer timer;
@@ -1669,6 +1681,7 @@ void test_w2_late_forward_get_stack_after_member_call_specialization(void) {
     function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile late member-call forwarding test source");
 
+    /* BUG: 此处接受 LOAD1_U8 融合调用，但下方两个残余拷贝扫描器只在见到 KNOWN_VM_MEMBER_CALL 后启用；仅有融合调用时会漏检。 */
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) +
