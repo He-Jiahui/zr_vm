@@ -146,5 +146,6 @@ doc_type: category-index
 | core 类型入口与全局静态初始化 | [13 项](coverage/zr_vm_core_type_meta_entry.tsv) | 4 个 C/H 文件独立复核，73 个非空证据锚点有效，源码仅增 19 行注释；GCC/Clang 定向语法检查通过。1 个 BUG 标出短串驻留桶扩容失败后 GlobalStaticsInit 将空结果传给永久标记函数的可达路径；未运行运行时测试。 |
 | parser typed 布尔跳转、逻辑取反与数值取负测试 | [35 项](coverage/tests_parser_typed_bool_neg.tsv) | 3 个 C 文件独立复核，210 个非空锚点与 4 个 Unity 注册有效，源码仅增 25 行注释；GCC/Clang 语法检查 6/6 通过。3 个 BUG 记录断言失败跳过局部函数和状态清理，3 个 TODO 保留目标是否应注册 CTest 的疑问；未运行动态测试。 |
 | core 对象布局映射与代际有效性 | [13 项](coverage/zr_vm_core_object_layout_map.tsv) | 2 个 C/H 文件独立复核，108 个非空证据锚点有效，源码仅增注释；GCC/Clang 定向语法检查通过。4 个 TODO 行归为 shape/布局身份绑定、以及上游 publicLayout/聚合准入证明两类；未发现可证实的新 BUG，现有构建未注册定向运行测试。 |
+| core 函数调用展开与解释器/AOT 参数交接 | [15 项](coverage/zr_vm_core_function_call_spread.tsv) | 3 个 C/H 文件独立复核，源码仅增注释；GCC/Clang 定向语法检查通过。2 个 TODO 分别保留继承属性与数组稠密索引的语义边界、以及实参数组固定前分配触发 GC 的疑问；未运行动态测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
