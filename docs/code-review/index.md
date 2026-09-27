@@ -192,5 +192,6 @@ doc_type: category-index
 | parser CFG try/catch 边测试 | [42 项](coverage/tests_parser_cfg_try_catch_edges.tsv) | 1 个 C 测试文件独立复核，覆盖 39 个函数、全局状态和 2 个关键块，246 个证据锚点及 11 个 Unity 注册；源码仅增 52 行注释，GCC/Clang C11 严格语法检查通过。1 个 BUG 标明断言失败跳过原生资源释放，4 个 TODO 记录合成 AST 范围、语句标志和赋值类型的核查入口；同步迁移 finally 台账的一处反向引用，目标测试未运行。 |
 | parser CFG typed catch 分支测试 | [30 项](coverage/tests_parser_cfg_typed_catch_branch_flow.tsv) | 1 个 C 测试文件独立复核，覆盖全部 26 个函数、全局状态和 3 个关键块；源码仅增 20 行注释，GCC/Clang C11 定向语法检查通过。1 个 BUG 标明断言失败跳过 AST/CFG/context 释放，1 个 TODO 保留合成父子 AST 范围不变量疑问；目标测试未运行。 |
 | language server stdio 诊断测试 | [72 项](coverage/tests_language_server_stdio_diagnostics.tsv) | 2 个 C 测试文件独立复核，源码仅增注释且行号不变，296 个证据锚点；GCC/Clang C11 定向语法检查通过，原有 `const char *` 传入可变参数的警告在本批局部降级。4 个 BUG 标明断言缺失字段时空指针解引用等已证实问题，5 个 TODO 保留测试覆盖与接口约束疑问；目标运行测试未执行。 |
+| VS Code 扩展客户端错误与恢复生命周期 | [30 项](coverage/zr_vm_language_server_extension_client_lifecycle.tsv) | 2 个 TS/JS 文件独立复核，覆盖双宿主构造与会话逆序释放链；源码仅增注释，TypeScript `--noEmit`、4 个 Node 测试与 JS 语法检查通过。3 个 TODO 记录 SDK 枚举升级核对、真实 SDK 关闭/预算验证和测试中间状态断言缺口。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
