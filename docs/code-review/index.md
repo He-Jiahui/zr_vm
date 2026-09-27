@@ -150,5 +150,6 @@ doc_type: category-index
 | parser const 赋值与接口查询生产者测试 | [22 项](coverage/tests_parser_const_query_producers.tsv) | 2 个 C 文件独立复核，233 个有效锚点，源码仅增 43 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 记录 Unity 断言退出时跳过资源清理，5 个 TODO 保留查询覆盖和 CTest 注册疑问；未运行动态测试。 |
 | core 闭包捕获与函数定义身份 | [83 项](coverage/zr_vm_core_closure_identity.tsv) | 5 个 C/H 文件独立复核，281 个有效锚点，源码仅增注释；GCC/Clang 定向语法检查通过。2 个 TODO 保留 AOT shim 投影时 GC 根及共享缓冲身份快速路径的疑问；未运行动态测试。 |
 | core 属性引用的创建、装载与写回 | [39 项](coverage/zr_vm_core_property_reference.tsv) | 2 个 C/H 文件独立复核，265 个有效锚点，源码仅增 63 行注释；GCC/Clang 定向语法检查通过。2 个 BUG 标出对象桶初始化或字段插入失败被虚报成功的同一失败链，3 个 TODO 保留 GC 局部根、普通对象保留字段及帧活性疑问；未运行动态测试。 |
+| core 批处理形状、视图校验与别名判断 | [30 项](coverage/zr_vm_core_batch_contract.tsv) | 2 个 C/H 文件独立复核，215 个有效锚点，源码仅改注释；GCC/Clang 语法及现有 batch 测试通过，Clang UBSan 复现 `INT64_MIN` 取负溢出。7 个 BUG 行涉及溢出、单元素误拒和负步长重叠漏报，2 个 TODO 保留负步长范围与诊断契约疑问；library 测试台账的反向证据锚点已校正。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

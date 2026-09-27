@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
+/* 将可选诊断的四个字段作为同一次失败结果写入；空指针仅省略报告。 */
 static void batch_diag(SZrBatchDiagnostic *d, EZrBatchDiagnosticCode code,
                        TZrUInt32 index, TZrUInt64 expected, TZrUInt64 actual) {
     if (d != ZR_NULL) {
@@ -62,6 +63,8 @@ TZrBool ZrCore_BatchBuffer_Validate(const SZrBatchBuffer *buffer, TZrSize count,
         return ZR_FALSE;
     }
     if (count == 0u) return ZR_TRUE;
+    /* BUG: 单元素的 stride=INT64_MIN 不需移动却被拒；在 32 位 ptrdiff_t 平台，
+     * 使用 INT64 界限还会放过超出本机偏移范围的乘法（如 INT32_MAX * 2）。 */
     if (buffer->stride == INT64_MIN ||
         (buffer->stride > 0 && (TZrUInt64)(count - 1u) >
              (TZrUInt64)INT64_MAX / (TZrUInt64)buffer->stride) ||
@@ -73,6 +76,8 @@ TZrBool ZrCore_BatchBuffer_Validate(const SZrBatchBuffer *buffer, TZrSize count,
         return ZR_FALSE;
     }
     last = (TZrMemoryOffset)(count - 1u) * buffer->stride;
+    /* BUG: stride=-2^62、count=3 可令 last=INT64_MIN；这里的 -last 有符号溢出，
+     * 且发生在长度拒绝之前，不能靠较短 byteLength 阻止。 */
     magnitude = (TZrUInt64)(last < 0 ? -last : last);
     if (magnitude > (TZrUInt64)buffer->byteLength ||
         buffer->elementSize > buffer->byteLength - (TZrSize)magnitude) {
@@ -104,10 +109,16 @@ TZrBool ZrCore_BatchBuffers_MayAlias(const SZrBatchBuffer *left,
                                      SZrBatchDiagnostic *diagnostic) {
     TZrUInt64 leftStart, rightStart, leftEnd, rightEnd;
     ZrCore_BatchDiagnostic_Clear(diagnostic);
+    /* TODO: mayAlias 为空时直接失败但诊断仍为 NONE；若将此视为无效实参，
+     * 需与其他校验入口的 INVALID_ARGUMENT 报告契约保持一致。 */
     if (mayAlias == ZR_NULL || !ZrCore_BatchBuffer_Validate(left, leftCount, diagnostic) ||
         !ZrCore_BatchBuffer_Validate(right, rightCount, diagnostic)) return ZR_FALSE;
     *mayAlias = ZR_FALSE;
     if (leftCount == 0u || rightCount == 0u) return ZR_TRUE;
+    /* BUG: 负 stride 的实际元素位于 data 之前。同一 storage[8] 中，两视图
+     * byteLength=4、elementSize=1、count=4；左 data=storage+4/stride=-1，
+     * 右 data=storage/stride=1。实际重叠却被判为不别名，Map 的 add_one
+     * 可得到 5,4,3,5 而非 5,4,3,2，Zip 也会越过重叠保护。 */
     leftStart = (TZrUInt64)(uintptr_t)left->data;
     rightStart = (TZrUInt64)(uintptr_t)right->data;
     leftEnd = leftStart + left->byteLength;
