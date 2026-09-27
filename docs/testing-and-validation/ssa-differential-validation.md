@@ -7,6 +7,7 @@ related_code:
   - tests/parser/test_ssa_oracle_call_differential.c
   - tests/parser/test_ssa_oracle_invoke_differential.c
   - tests/parser/test_ssa_execbc_place.c
+  - tests/parser/test_ssa_oracle_iterator_differential.c
   - tests/parser/test_ssa_oracle_resume.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
@@ -25,6 +26,7 @@ tests:
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
   - tests/acceptance/ssa-oracle-execbc-memory-differential.md
   - tests/acceptance/ssa-oracle-execbc-place-differential.md
+  - tests/acceptance/ssa-oracle-execbc-iterator-differential.md
   - tests/acceptance/ssa-oracle-execbc-call-differential.md
 doc_type: testing-guide
 ---
@@ -125,6 +127,15 @@ and an undefined normal result, leave the last published projection intact;
 the exceptional edge does not define a normal result. This fixture exercises
 pointer-free handler entry, not production exception state, checkpoint/resume,
 or AOT execution.
+
+The verifier-valid ITER_INIT, ITER_MOVE_NEXT, and ITER_CURRENT fixtures now
+compare independent Oracle/ExecBC provider calls, ordered normal/exception
+successors, ITERATOR event snapshots, and handler payloads. Missing or rejected
+ExecBC providers and an undefined normal result report precise iterator
+instruction/source diagnostics without replacing the previously published
+result. A throw with an undefined callback value leaves the normal result slot
+undefined. These are pointer-free test-runner checks, not executable production
+iterator or AOT coverage.
 
 The `ssa_oracle_resume` fixture also stops immediately after a verifier-valid
 INVOKE effect, compares its complete CALL snapshot with an independent

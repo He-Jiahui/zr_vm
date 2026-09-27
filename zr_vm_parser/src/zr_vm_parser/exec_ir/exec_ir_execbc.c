@@ -423,17 +423,24 @@ done:
     return success;
 }
 
-static TZrBool zr_execbc_invoke(const SZrExecBcProjection *projection,
-                               const SZrExecBcExecutionInput *input,
-                               SZrExecBcExecutionResult *candidate,
-                               const SZrExecBcInstruction *instruction,
-                               TZrExecIrBlockId block, TZrExecIrInstructionId id,
-                               TZrUInt32 *ordinal, SZrExecIrDiagnostic *diagnostic) {
+static TZrBool zr_execbc_invoke_or_iterator(const SZrExecBcProjection *projection,
+                                            const SZrExecBcExecutionInput *input,
+                                            SZrExecBcExecutionResult *candidate,
+                                            const SZrExecBcInstruction *instruction,
+                                            TZrExecIrBlockId block,
+                                            TZrExecIrInstructionId id,
+                                            TZrUInt32 *ordinal,
+                                            SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrOracleValue local[8], value = {0};
     SZrExecIrOracleValue *operands = local;
     TZrUInt32 count = instruction->operands.count;
     TZrBool threw = ZR_FALSE, success = ZR_FALSE;
-    if (input == ZR_NULL || input->invoke == ZR_NULL) {
+    TZrBool iterator = (TZrBool)(instruction->opcode != ZR_EXEC_IR_OPCODE_INVOKE);
+    FZrExecBcInvoke handler = input == ZR_NULL ? ZR_NULL :
+            (iterator ? input->iterator : input->invoke);
+    void *handlerData = input == ZR_NULL ? ZR_NULL :
+            (iterator ? input->iteratorUserData : input->invokeUserData);
+    if (handler == ZR_NULL) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
                        projection, block, id, instruction->opcode);
         return ZR_FALSE;
@@ -467,9 +474,10 @@ static TZrBool zr_execbc_invoke(const SZrExecBcProjection *projection,
     }
     if (!zr_execbc_reserve_event(candidate, projection, block, id, diagnostic))
         goto done;
-    if (!input->invoke(input->invokeUserData, instruction, operands, count,
-                       &value, &threw)) {
-        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR,
+    if (!handler(handlerData, instruction, operands, count, &value, &threw)) {
+        zr_execbc_diag(diagnostic, iterator
+                       ? ZR_EXEC_IR_DIAGNOSTIC_ORACLE_ITERATOR_ERROR
+                       : ZR_EXEC_IR_DIAGNOSTIC_ORACLE_INVOKE_ERROR,
                        projection, block, id, count);
         goto done;
     }
@@ -479,7 +487,9 @@ static TZrBool zr_execbc_invoke(const SZrExecBcProjection *projection,
                        projection, block, id, (TZrUInt32)value.kind);
         goto done;
     }
-    zr_execbc_record_event(candidate, instruction, id, ZR_EXEC_IR_ORACLE_EVENT_CALL,
+    zr_execbc_record_event(candidate, instruction, id,
+                           iterator ? ZR_EXEC_IR_ORACLE_EVENT_ITERATOR
+                                    : ZR_EXEC_IR_ORACLE_EVENT_CALL,
                            operands, count);
     if (!threw && !zr_execbc_assign(projection, instruction, candidate, &value)) {
         zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
@@ -784,8 +794,12 @@ TZrBool ZrParser_ExecBcProjection_Run(
                                         block, index + 1u, diagnostic)) goto fail;
                     break;
                 case ZR_EXEC_IR_OPCODE_INVOKE:
-                    if (!zr_execbc_invoke(projection, input, &candidate, instruction,
-                                          block, index + 1u, &ordinal, diagnostic)) goto fail;
+                case ZR_EXEC_IR_OPCODE_ITER_INIT:
+                case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
+                case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
+                    if (!zr_execbc_invoke_or_iterator(
+                                projection, input, &candidate, instruction,
+                                block, index + 1u, &ordinal, diagnostic)) goto fail;
                     terminated = ZR_TRUE;
                     goto select_successor;
                 case ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD:

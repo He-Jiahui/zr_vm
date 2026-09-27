@@ -37,9 +37,8 @@ static TZrBool zr_projection_bytes(TZrUInt32 count, size_t element, size_t *byte
 }
 
 /* The first projection is intentionally a no-optimization scalar/control
- * slice. Place operations require a caller-supplied token provider. ALLOC and
- * iterator operations remain metadata-only; executable allocation and
- * iterator ABI handling remain separate backend concerns. */
+ * slice. Place and iterator operations require caller-supplied providers.
+ * ALLOC remains metadata-only; executable allocation is a separate concern. */
 static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
         default:
@@ -67,6 +66,9 @@ static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED:
         case ZR_EXEC_IR_OPCODE_INVOKE:
         case ZR_EXEC_IR_OPCODE_EXCEPTION_PAYLOAD:
+        case ZR_EXEC_IR_OPCODE_ITER_INIT:
+        case ZR_EXEC_IR_OPCODE_ITER_MOVE_NEXT:
+        case ZR_EXEC_IR_OPCODE_ITER_CURRENT:
             return ZR_TRUE;
         default: return ZR_FALSE;
     }

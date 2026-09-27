@@ -95,7 +95,9 @@ tests:
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_ssa_execbc_place.c
+  - tests/parser/test_ssa_oracle_iterator_differential.c
   - tests/acceptance/ssa-oracle-execbc-place-differential.md
+  - tests/acceptance/ssa-oracle-execbc-iterator-differential.md
   - tests/parser/test_ssa_gvn_range.c
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/acceptance/ssa-external-entry-values.md
@@ -372,12 +374,14 @@ critical edges. For an already split generic or iterator invoke, a pre-invoke
 definition is available on both successors while the invoke result is available
 only on the normal successor; the core verifier checks that boundary.
 
-ExecBC and AOT projections now retain all three iterator invoke opcodes with
-their operand/result and ordered normal/exception successor ranges, but mark
-the containing projection non-runnable. This remains a deliberate backend
-boundary until iterator protocol and exception ABI lowering exists; the
-canonical opcodes are not silently advertised as executable. The direct Oracle
-executes iterator protocol operations only through the explicit
+ExecBC and AOT projections retain all three iterator invoke opcodes with their
+operand/result and ordered normal/exception successor ranges. In the pointer-
+free ExecBC test runner they are runnable through an explicit
+`FZrExecBcIterator` provider. The runner records an ITERATOR event on both
+edges, publishes the result only on the normal edge, and reports a missing
+provider or a rejected/undefined normal result at the iterator source. AOTIR
+remains non-runnable; no production iterator protocol or exception ABI is
+inferred from this test-runner contract. The direct Oracle uses the separate
 `FZrExecIrOracleIterator` provider described above.
 
 The source compiler supplies a canonical loop path directly for a

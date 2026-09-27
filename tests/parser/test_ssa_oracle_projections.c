@@ -1947,6 +1947,7 @@ static void test_phi_copy_and_critical_edge_split(void) {
 }
 
 void test_ssa_execbc_place_differential(void);
+void test_oracle_execbc_iterator_differential(void);
 
 static void test_unsupported_and_transactional_failures(void) {
     static const EZrExecIrOpcode iteratorOpcodes[] = {
@@ -1978,7 +1979,7 @@ static void test_unsupported_and_transactional_failures(void) {
                diagnostic.actualVersion == (TZrUInt32)iteratorOpcodes[index]);
         assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
         assert(bc.instructions[0u].opcode == iteratorOpcodes[index] &&
-               bc.instructions[0u].operands.count == 1u && !bc.runnable);
+               bc.instructions[0u].operands.count == 1u && bc.runnable);
         ZrParser_ExecBcExecutionResult_Init(&bcExecution);
         assert(!ZrParser_ExecBcProjection_Run(&bc, ZR_NULL, &bcExecution,
                                                &diagnostic));
@@ -2144,6 +2145,7 @@ int main(void) {
     test_place_oracle_provider();
     test_place_token_composes_with_memory_provider();
     test_ssa_execbc_place_differential();
+    test_oracle_execbc_iterator_differential();
     test_type_test_oracle_provider();
     test_exception_payload_oracle_provider();
     test_phi_copy_and_critical_edge_split();
