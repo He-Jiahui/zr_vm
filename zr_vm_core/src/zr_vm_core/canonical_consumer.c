@@ -2,12 +2,14 @@
 
 #include <string.h>
 
+/* 每次公开查询从空诊断开始，允许调用方复用同一个 diagnostic。 */
 static void canonical_consumer_clear_diagnostic(SZrArtifactDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
     }
 }
 
+/* 将失败状态及 section/row 位置集中写入可选诊断对象。 */
 static EZrArtifactStatus canonical_consumer_fail(SZrArtifactDiagnostic *diagnostic,
                                                  EZrArtifactStatus status,
                                                  TZrUInt32 sectionKind,
@@ -21,6 +23,7 @@ static EZrArtifactStatus canonical_consumer_fail(SZrArtifactDiagnostic *diagnost
     return status;
 }
 
+/* 根签名哈希不匹配时保留预期与实际值，供 VM/AOT 报告同一错误。 */
 static EZrArtifactStatus canonical_consumer_hash_fail(SZrArtifactDiagnostic *diagnostic,
                                                       TZrUInt64 expected,
                                                       TZrUInt64 actual) {
@@ -33,6 +36,7 @@ static EZrArtifactStatus canonical_consumer_hash_fail(SZrArtifactDiagnostic *dia
     return ZR_ARTIFACT_STATUS_SIGNATURE_HASH_MISMATCH;
 }
 
+/* 调度器可由本模块 TypeDef 或跨模块 TypeRef 标识，RID 必须非零。 */
 static TZrBool canonical_consumer_scheduler_type_token_is_valid(
         TZrMetadataToken token) {
     TZrUInt32 table = ZR_METADATA_TOKEN_TABLE(token);
@@ -41,6 +45,7 @@ static TZrBool canonical_consumer_scheduler_type_token_is_valid(
                       table == ZR_METADATA_TABLE_TYPE_REF));
 }
 
+/* 以 token、版本和哈希筛选布局；零表示该维度不限制，返回行的值副本。 */
 static TZrBool canonical_consumer_find_layout(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -65,6 +70,7 @@ static TZrBool canonical_consumer_find_layout(
     return ZR_FALSE;
 }
 
+/* 以签名 token 和可选哈希筛选 callable 契约，供根类型及 ABI 查询共用。 */
 static TZrBool canonical_consumer_find_contract(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken signatureToken,
@@ -87,6 +93,7 @@ static TZrBool canonical_consumer_find_contract(
     return ZR_FALSE;
 }
 
+/* 可选域传递表按类型 token 定位；缺表或缺行统一返回假。 */
 static TZrBool canonical_consumer_find_domain_transfer(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -109,6 +116,7 @@ static TZrBool canonical_consumer_find_domain_transfer(
     return ZR_FALSE;
 }
 
+/* 调度器表按精确 token 定位，避免仅凭名称或 canonical ID 误绑定。 */
 static TZrBool canonical_consumer_find_scheduler_contract(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken schedulerTypeToken,
@@ -131,6 +139,7 @@ static TZrBool canonical_consumer_find_scheduler_contract(
     return ZR_FALSE;
 }
 
+/* TypeRef/TypeSpec 的域传递契约可由同 canonical ID 的本地 TypeDef 承载。 */
 static TZrMetadataToken canonical_consumer_find_type_def_token_by_id(
         const SZrCanonicalConsumerProjection *projection,
         TZrUInt32 canonicalTypeId) {
@@ -151,6 +160,7 @@ static TZrMetadataToken canonical_consumer_find_type_def_token_by_id(
     return 0u;
 }
 
+/* 优先采用当前 token 的契约；TypeRef/TypeSpec 缺行时按 canonical ID 回退 TypeDef。 */
 static void canonical_consumer_project_domain_transfer(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -172,6 +182,7 @@ static void canonical_consumer_project_domain_transfer(
     }
 }
 
+/* 将根函数签名中的 effect/参数约束与契约表逐项对齐。 */
 static EZrArtifactStatus canonical_consumer_validate_callable_contract(
         const SZrCanonicalTypeProjection *type,
         SZrArtifactDiagnostic *diagnostic) {
@@ -208,6 +219,7 @@ static EZrArtifactStatus canonical_consumer_validate_callable_contract(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 从 TypeRef/TypeSpec 行投影签名视图，并核根身份哈希及关联布局/契约。 */
 static EZrArtifactStatus canonical_consumer_project_identity_row(
         const SZrCanonicalConsumerProjection *projection,
         const SZrArtifactSectionView *section,
@@ -231,6 +243,7 @@ static EZrArtifactStatus canonical_consumer_project_identity_row(
     outType->typeToken = row.token;
     outType->signatureToken = row.signatureToken;
     outType->capabilityFlags = row.flags;
+    /* signatureData 仍指向调用方 buffer；局部投影不复制签名字节。 */
     outType->signatureData = projection->signatures.data + row.signatureOffset;
     outType->signatureLength = row.signatureLength;
     actualHash = ZrCore_Artifact_HashBytes(outType->signatureData, outType->signatureLength);
@@ -246,6 +259,7 @@ static EZrArtifactStatus canonical_consumer_project_identity_row(
                                                         row.layoutVersion,
                                                         row.layoutHash,
                                                         &outType->layout);
+    /* 根身份与 TypeDef 的 token 可不同；根布局按版本和哈希跨 token 匹配。 */
     if (!outType->hasLayout && row.canonicalTypeId == projection->artifact.identity.canonicalTypeId) {
         outType->hasLayout = canonical_consumer_find_layout(
                 projection, 0u, row.layoutVersion, row.layoutHash, &outType->layout);
@@ -257,6 +271,7 @@ static EZrArtifactStatus canonical_consumer_project_identity_row(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* TypeDef 没有独立签名字节片段，投影时使用行内哈希与构造签名 token。 */
 static EZrArtifactStatus canonical_consumer_project_type_def(
         const SZrCanonicalConsumerProjection *projection,
         TZrUInt32 rowIndex,
@@ -286,6 +301,7 @@ static EZrArtifactStatus canonical_consumer_project_type_def(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 先按 token 的表号选择 TypeDef/TypeRef/TypeSpec，再复用各行投影逻辑。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveTypeToken(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -330,6 +346,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveTypeToken(
                                    section->kind, 0u);
 }
 
+/* 根 ID 优先返回已验证投影；其余查询 TypeSpec 再 TypeDef。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveTypeId(
         const SZrCanonicalConsumerProjection *projection,
         TZrUInt32 canonicalTypeId,
@@ -363,6 +380,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveTypeId(
     return canonical_consumer_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_SECTION, 0u, 0u);
 }
 
+/* 独立布局查询要求精确类型 token；未找到时保留空输出和 section 诊断。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveLayout(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -380,6 +398,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveLayout(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 经类型投影取得域传递契约，包含 TypeRef/TypeSpec 到 TypeDef 的 canonical ID 回退。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveDomainTransfer(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -410,6 +429,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveDomainTransfer(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 先验证调度器类型 token 的解析结果，再读取同 token 的契约行。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveSchedulerContract(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken schedulerTypeToken,
@@ -444,6 +464,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveSchedulerContract(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 以精确 token 和策略位筛选契约，分别报告 ABI、策略、要求位及哈希不匹配。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ValidateSchedulerContract(
         const SZrCanonicalConsumerProjection *projection,
         const SZrCanonicalSchedulerContractExpectation *expected,
@@ -503,6 +524,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ValidateSchedulerContract(
         }
         return ZR_ARTIFACT_STATUS_SCHEDULER_POLICY_MISMATCH;
     }
+    /* 要求位取当前选择的域策略对应字段，不混用 attached 与 isolated。 */
     actualRequirements = expected->policy == ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN
                                  ? contract.attachedRequirementFlags
                                  : contract.isolatedRequirementFlags;
@@ -545,6 +567,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ValidateSchedulerContract(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 公共 ref-like ABI 先核 TypeRef 身份，再核布局版本/哈希与 callable escape/lowering。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(
         const SZrCanonicalConsumerProjection *projection,
         const SZrCanonicalPublicRefLikeAbiExpectation *expected,
@@ -660,6 +683,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(
                 ZR_ARTIFACT_SECTION_CONTRACT_TABLE,
                 0u);
     }
+    /* NATIVE_DIRECT 即使与预期一致仍不属于此公共 ref-like 边界允许的 lowering。 */
     if (contract.escapeFlags != expected->callableEscapeFlags ||
         contract.abiLoweringKind != expected->abiLoweringKind ||
         contract.abiLoweringKind == ZR_ARTIFACT_ABI_LOWERING_NATIVE_DIRECT) {
@@ -672,6 +696,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 共享解码器校验格式与元数据图；此处建立 ZRO 专用借用视图及根身份合同。 */
 EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
         const TZrByte *buffer,
         TZrSize bufferLength,
@@ -699,6 +724,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
                 &outProjection->artifact, expectedIdentity, diagnostic);
         if (status != ZR_ARTIFACT_STATUS_OK) return status;
     }
+    /* 核心类型/签名/契约/布局表必须存在，缺任一表即沿 FindSection 状态退出。 */
 #define ZR_CANONICAL_CONSUMER_SECTION(KIND, FIELD) \
     status = ZrCore_Artifact_FindSection(&outProjection->artifact, KIND, \
                                          &outProjection->FIELD, diagnostic); \
@@ -710,6 +736,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
     ZR_CANONICAL_CONSUMER_SECTION(ZR_ARTIFACT_SECTION_CONTRACT_TABLE, contracts);
     ZR_CANONICAL_CONSUMER_SECTION(ZR_ARTIFACT_SECTION_LAYOUT_TABLE, layouts);
 #undef ZR_CANONICAL_CONSUMER_SECTION
+    /* 扩展表允许缺席；置空视图使后续查询自然走“未找到”状态。 */
     status = ZrCore_Artifact_FindSection(
             &outProjection->artifact,
             ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
@@ -736,6 +763,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
     if (status != ZR_ARTIFACT_STATUS_OK) {
         memset(&outProjection->callBindings, 0, sizeof(outProjection->callBindings));
     }
+    /* 根 TypeSpec 与 TypeRef 必须编码相同签名字节，然后核布局及 callable 契约。 */
     status = ZrCore_CanonicalConsumer_ResolveTypeToken(
             outProjection,
             outProjection->artifact.identity.typeSpecToken,
