@@ -5,6 +5,8 @@ EZrObjectLayoutMapStatus ZrCore_Object_ResolveLayoutMember(
         TZrUInt64 shapeGeneration, SZrObjectMemberLocation *location) {
     TZrUInt32 i;
     if (map == ZR_NULL || location == ZR_NULL) return ZR_OBJECT_LAYOUT_MAP_INVALID_ARGUMENT;
+    /* TODO: 接入生产 fast path 前核对 shapeId/布局身份由谁绑定；当前只比较代际，
+     * 两个不同 shape 若碰巧同代，可把错误的描述符偏移作为命中结果。 */
     if (shapeGeneration != map->shapeGeneration) return ZR_OBJECT_LAYOUT_MAP_STALE_SHAPE;
     if (map->entries == ZR_NULL) return ZR_OBJECT_LAYOUT_MAP_MEMBER_NOT_FOUND;
     for (i = 0u; i < map->entryCount; ++i) {
