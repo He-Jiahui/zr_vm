@@ -721,15 +721,22 @@ static void test_verified_loop_backedge_phi_swap(void) {
 static void test_branch_phi_moves_have_distinct_edge_blocks(void) {
     SZrExecIrFunction function;
     SZrExecBcProjection bytecode = {0};
+    SZrAotIrProjection aot = {0};
     SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOracleExecutionResult oracleResult;
+    SZrExecIrOracleInput oracleInput = {0};
+    SZrExecIrOracleValue initialValues[3] = {0};
     TZrExecIrBlockId destinations[2] = {2u, 3u}, source = 1u;
     SZrExecIrPhiIncoming incoming;
     SZrExecIrPhi phi;
     SZrExecIrRange incomingRange, operandRange = {0}, instructionSuccessors = {0};
     SZrExecIrRange empty = {.start = 0u, .count = 0u};
     TZrExecIrValueId condition = 3u;
+    SZrExecBcPhiMove *publishedMoves;
 
     ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 92u;
     add_value(&function);
     add_value(&function);
     add_value(&function);
@@ -775,6 +782,49 @@ static void test_branch_phi_moves_have_distinct_edge_blocks(void) {
               bytecode.successors[bytecode.instructions[0].successorRange.start] == 4u &&
               bytecode.successors[bytecode.instructions[0].successorRange.start + 1u] == 5u,
           "branch-local phi moves share a predecessor without an edge discriminator");
+
+    check(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                       &diagnostic),
+          "separate, equal terminator and block successor rows were rejected");
+    publishedMoves = bytecode.phiMoves;
+    function.successors[instructionSuccessors.start] = destinations[1];
+    function.successors[instructionSuccessors.start + 1u] = destinations[0];
+    check(!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                        &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == source && diagnostic.instructionId == 1u &&
+              diagnostic.expectedVersion == destinations[0] &&
+              diagnostic.actualVersion == destinations[1],
+          "core verifier accepted a reordered terminator successor row");
+
+    initialValues[0].kind = initialValues[1].kind =
+            ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    initialValues[0].as.signedInteger = 11;
+    initialValues[1].as.signedInteger = 22;
+    initialValues[2].kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
+    initialValues[2].as.boolean = ZR_TRUE;
+    oracleInput.function = &function;
+    oracleInput.initialValues = initialValues;
+    oracleInput.initialValueCount = 3u;
+    ZrCore_ExecIr_OracleResultInit(&oracleResult);
+    check(!ZrCore_ExecIr_RunOracleEx(&oracleInput, &oracleResult, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == source && diagnostic.instructionId == 1u &&
+              oracleResult.values == NULL,
+          "oracle accepted an unselected reordered successor before execution");
+    ZrCore_ExecIr_OracleResultFree(&oracleResult);
+
+    check(!ZrParser_ExecIr_LowerExecBc(&function, &bytecode, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == source && diagnostic.instructionId == 1u &&
+              bytecode.phiMoves == publishedMoves && bytecode.phiMoveCount == 2u,
+          "ExecBC projection accepted a reordered edge or replaced published output");
+    check(!ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == source && diagnostic.instructionId == 1u &&
+              aot.phiMoves == NULL,
+          "AOT projection accepted a reordered terminator edge");
+    ZrParser_AotIrProjection_Free(&aot);
     ZrParser_ExecBcProjection_Free(&bytecode);
     ZrCore_ExecIr_FreeFunction(&function);
 }

@@ -276,5 +276,38 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
             }
         }
     }
+    for (i = 0u; i < f->blockCount; ++i) {
+        const SZrExecIrBlock *block = &f->blocks[i];
+        const SZrExecIrInstruction *terminator;
+        TZrUInt32 lastIndex;
+        TZrUInt32 ordinal;
+        if (block->instructionRange.count == 0u) {
+            continue;
+        }
+        lastIndex = block->instructionRange.start + block->instructionRange.count - 1u;
+        terminator = &f->instructions[lastIndex];
+        if ((ZrCore_ExecIr_OpcodeInfo(terminator->opcode)->flags &
+             ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) == 0u) {
+            continue;
+        }
+        if (terminator->successorRange.count != block->successorRange.count) {
+            zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
+                           block->id, lastIndex + 1u, terminator->sourceId,
+                           block->successorRange.count, terminator->successorRange.count);
+            return ZR_FALSE;
+        }
+        for (ordinal = 0u; ordinal < block->successorRange.count; ++ordinal) {
+            TZrExecIrBlockId expected = f->successors[
+                    block->successorRange.start + ordinal];
+            TZrExecIrBlockId actual = f->successors[
+                    terminator->successorRange.start + ordinal];
+            if (expected != actual) {
+                zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
+                               block->id, lastIndex + 1u, terminator->sourceId,
+                               expected, actual);
+                return ZR_FALSE;
+            }
+        }
+    }
     return ZR_TRUE;
 }

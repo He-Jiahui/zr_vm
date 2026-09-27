@@ -1238,6 +1238,8 @@ static void test_ssa_rejects_invoke_result_on_exception_edge(void) {
     function->instructions[2].successorRange.start = 0u;
     function->instructions[2].successorRange.count = 0u;
     function->instructions[2].sourceId = 935u;
+    function->blocks[exception - 1u].successorRange.count = 0u;
+    function->blocks[cleanup - 1u].predecessorRange.count = 0u;
     ok(!ZrCore_ExecIr_VerifyFunction(
                function,
                (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
@@ -1250,6 +1252,8 @@ static void test_ssa_rejects_invoke_result_on_exception_edge(void) {
            diagnostic.actualVersion == result,
        "invoke exceptional result diagnostic lost identity");
 
+    function->blocks[exception - 1u].successorRange.count = 1u;
+    function->blocks[cleanup - 1u].predecessorRange.count = 1u;
     function->instructions[2].opcode = ZR_EXEC_IR_OPCODE_BRANCH;
     function->instructions[2].operands.start = 0u;
     function->instructions[2].operands.count = 0u;

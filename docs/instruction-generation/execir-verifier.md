@@ -71,9 +71,13 @@ The structural phase pairs every listed block successor with the same-numbered
 occurrence of that source in the destination's predecessor row, and vice
 versa. It checks bounds and valid IDs before following either adjacency list.
 Missing reverse occurrences report `INVALID_BLOCK` with the edge owner's block
-ID and both endpoints. This checks block adjacency multiplicity; correspondence
-between a terminator's per-instruction successors and its containing block
-remains a separate CFG obligation.
+ID and both endpoints. After validating both ranges and their targets, the
+structural phase also requires each block's final terminator to list exactly
+the same number of successors in the same order as its containing block.
+Separate successor-pool rows are valid when every ordered target agrees;
+otherwise `INVALID_BLOCK` identifies the block, terminator and first mismatched
+count or target. This keeps a terminator edge ordinal identical to the block
+edge ordinal used to identify phi incoming slots, including parallel edges.
 
 Within one block, successive observable instructions must consume exactly the
 preceding observable instruction's `effectOut`: numerical growth alone does

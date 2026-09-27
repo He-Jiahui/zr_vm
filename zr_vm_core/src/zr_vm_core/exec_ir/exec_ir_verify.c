@@ -829,6 +829,28 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
                             diagnostic)) {
                     return ZR_FALSE;
                 }
+                if (terminator->successorRange.count != block->successorRange.count) {
+                    zr_exec_ir_set_diagnostic(diagnostic,
+                                              ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                                              function, lastIndex + 1u, block->id,
+                                              block->successorRange.count,
+                                              terminator->successorRange.count);
+                    return ZR_FALSE;
+                }
+                for (TZrUInt32 ordinal = 0u;
+                     ordinal < block->successorRange.count; ++ordinal) {
+                    TZrExecIrBlockId expected = function->successors[
+                            block->successorRange.start + ordinal];
+                    TZrExecIrBlockId actual = function->successors[
+                            terminator->successorRange.start + ordinal];
+                    if (expected != actual) {
+                        zr_exec_ir_set_diagnostic(diagnostic,
+                                                  ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                                                  function, lastIndex + 1u, block->id,
+                                                  expected, actual);
+                        return ZR_FALSE;
+                    }
+                }
                 if (block->terminatorInstructionId != ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
                     block->terminatorInstructionId != lastIndex + 1u) {
                     zr_exec_ir_set_diagnostic(diagnostic,

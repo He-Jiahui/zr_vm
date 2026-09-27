@@ -119,8 +119,11 @@ the phi incoming at that exact index is read before any phi result is written.
 This preserves distinct incoming values even when both branch arms target the
 same block. Preflight checks every block range before pairing successor and
 predecessor occurrences, including edges that execution would not select;
-unpaired adjacency reports `INVALID_BLOCK`. A mismatch between a valid
-adjacency pair and the selected terminator/phi slot reports
+unpaired adjacency reports `INVALID_BLOCK`. It also compares the final
+terminator's successor count and ordered targets with its block's adjacency
+before allocating execution state, even when the instruction has a separate
+successor-pool row; mismatched rows report `INVALID_BLOCK`. With valid CFG and
+terminator rows, a mismatch at the selected phi slot reports
 `PHI_PREDECESSOR_MISMATCH`. The oracle's own preflight accepts repeated
 predecessor IDs when their phi incoming positions match the predecessor range. See
 `tests/acceptance/ssa-oracle-parallel-edges.md` for the oracle regression;
@@ -249,7 +252,9 @@ block; phi incoming predecessors are rewritten to the projected predecessor
 row, and each nontrivial copy is tagged with that edge's projected block ID.
 When a terminator refers to a distinct successor pool range, that range is
 rewritten by the same target-occurrence identity as the source block's range.
-Mismatched adjacency multiplicities fail preflight without replacing a
+Projection preflight requires these rows to have identical counts and ordered
+targets before rewriting either one. Mismatched adjacency multiplicities or
+terminator rows fail preflight without replacing a
 previously published projection. AOTIR owns the same move plan, but remains
 non-runnable. `ZrParser_ExecBcProjection_Run` consumes the projection's owned
 instruction and CFG arrays with an isolated pointer-free slot environment.

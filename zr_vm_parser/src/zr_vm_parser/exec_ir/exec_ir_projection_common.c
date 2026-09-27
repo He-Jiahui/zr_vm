@@ -326,6 +326,29 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
     for (i = 0u; i < f->blockCount; ++i) {
         const SZrExecIrBlock *b = &f->blocks[i];
         TZrUInt32 j;
+        if (b->instructionRange.count != 0u) {
+            TZrUInt32 lastIndex = b->instructionRange.start + b->instructionRange.count - 1u;
+            const SZrExecIrInstruction *last = &f->instructions[lastIndex];
+            const SZrExecIrOpcodeInfo *info =
+                    ZrCore_ExecIr_OpcodeInfo((EZrExecIrOpcode)last->opcode);
+            if ((info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
+                if (last->successorRange.count != b->successorRange.count) {
+                    zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
+                                       b->id, lastIndex + 1u, b->successorRange.count,
+                                       last->successorRange.count);
+                    return ZR_FALSE;
+                }
+                for (j = 0u; j < b->successorRange.count; ++j) {
+                    TZrExecIrBlockId expected = f->successors[b->successorRange.start + j];
+                    TZrExecIrBlockId actual = f->successors[last->successorRange.start + j];
+                    if (expected != actual) {
+                        zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK, f,
+                                           b->id, lastIndex + 1u, expected, actual);
+                        return ZR_FALSE;
+                    }
+                }
+            }
+        }
         for (j = 0u; j < b->phis.count; ++j) {
             const SZrExecIrPhi *phi = &f->phiPool[b->phis.start + j];
             TZrUInt32 k;

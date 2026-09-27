@@ -297,6 +297,7 @@ static void test_structure_requires_reciprocal_cfg_edges(void) {
 
     function->blocks[target - 1u].predecessorRange.count = 1u;
     function->blocks[entry - 1u].successorRange.count = 0u;
+    function->instructions[0].successorRange.count = 0u;
     expect_true(!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
                                                 &diagnostic),
                 "predecessor without reciprocal successor accepted");
@@ -306,6 +307,7 @@ static void test_structure_requires_reciprocal_cfg_edges(void) {
                 "reverse CFG edge diagnostic lost its endpoints");
 
     function->blocks[entry - 1u].successorRange.count = 1u;
+    function->instructions[0].successorRange.count = 1u;
     expect_true(ZrCore_ExecIr_FunctionAppendPredecessors(function, &entry, 1u, NULL),
                 "duplicate predecessor append failed");
     function->blocks[target - 1u].predecessorRange.count = 2u;
@@ -328,9 +330,29 @@ static void test_structure_requires_reciprocal_cfg_edges(void) {
                 "unmatched duplicate successor accepted");
 
     function->blocks[target - 1u].predecessorRange.count = 2u;
+    {
+        TZrExecIrValueId condition = ZrCore_ExecIr_FunctionAddValue(
+                function, 1u, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+                ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+        SZrExecIrRange conditionOperand = {0};
+        expect_true(condition != ZR_EXEC_IR_VALUE_ID_INVALID &&
+                        ZrCore_ExecIr_FunctionAppendOperands(
+                                function, &condition, 1u, &conditionOperand),
+                    "paired duplicate CFG condition append failed");
+        function->instructions[0].opcode = ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH;
+        function->instructions[0].operandRange = conditionOperand;
+        function->instructions[0].successorRange.count = 2u;
+    }
     expect_true(ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
                                               &diagnostic),
                 "matched duplicate CFG edges rejected");
+    function->instructions[0].successorRange.count = 1u;
+    expect_true(!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
+                                               &diagnostic) &&
+                    diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+                    diagnostic.blockId == entry && diagnostic.instructionId == 1u &&
+                    diagnostic.expectedVersion == 2u && diagnostic.actualVersion == 1u,
+                "terminator successor count diverged from block CFG without a diagnostic");
     ZrCore_ExecIr_FreeModule(&module);
 }
 
