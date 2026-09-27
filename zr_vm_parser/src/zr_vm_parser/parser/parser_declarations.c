@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 模块路径归 module AST 所有；缺分号只报告诊断以保留可恢复的声明节点。 */
 SZrAstNode *parse_module_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *name;
@@ -39,7 +40,7 @@ SZrAstNode *parse_module_declaration(SZrParserState *ps) {
     return node;
 }
 
-// 解析变量声明
+// 解析变量声明；普通语句与 for 头共享 AST 构造，仅分号策略不同。
 
 static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool reportMissingSemicolon) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -83,7 +84,7 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
         return ZR_NULL;
     }
 
-    // 可选类型注解
+    // 模式、类型和值在成功后移交给变量声明 AST，任一必需部分失败先回收已建子树。
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         typeInfo = parse_type(ps);
@@ -154,7 +155,7 @@ SZrAstNode *parse_variable_declaration_for_header(SZrParserState *ps) {
     return parse_variable_declaration_impl(ps, ZR_FALSE);
 }
 
-// 解析函数声明
+// 解析函数声明；统一清理出口覆盖名称、泛型、参数、返回类型及函数体的交接前状态。
 
 SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
@@ -216,6 +217,8 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
 
     // 解析泛型声明（可选）
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        /* TODO: 泛型解析返回 NULL 后仍继续解析参数；核对 hasError 是否在
+         * 顶层与块内入口统一拒绝消费缺泛型的函数 AST。 */
         generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
@@ -237,6 +240,8 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         params = ZrParser_AstNodeArray_New(ps->state, 0);
     } else {
         params = parse_parameter_list(ps);
+        /* TODO: parse_parameter_list 会吞掉后续逗号及 params 参数；
+         * 核查下方 args 分支可达性与编译器对变参位置的期望。 */
         if (consume_token(ps, ZR_TK_COMMA)) {
             if (ps->lexer->t.token == ZR_TK_PARAMS) {
                 // 普通参数后跟可变参数 (param1, param2, ...name: type)
@@ -274,6 +279,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         goto cleanup;
     }
 
+    /* where 在 generic 参数上就地附加约束，失败后仍由本函数的清理出口释放。 */
     if (!parse_optional_where_clauses(ps, generic)) {
         goto cleanup;
     }

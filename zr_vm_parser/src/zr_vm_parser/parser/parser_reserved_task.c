@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* await 是上下文关键字；操作数按一元表达式优先级解析并交由 await AST 持有。 */
 SZrAstNode *parse_await_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *operand;
@@ -29,6 +30,7 @@ SZrAstNode *parse_await_expression(SZrParserState *ps) {
     return awaitNode;
 }
 
+/* 由语句分派的 async fn 探测入口调用，复用普通函数解析后补上异步标记。 */
 SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *functionNode;
@@ -40,6 +42,8 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
 
     startLoc = get_current_token_location(ps);
     if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || ps->lexer->t.token == ZR_TK_PRO) {
+        /* BUG: pub/pro async fn 可达此分支；修饰符先被消费，后续
+         * parse_function_declaration 只看到 fn，AST 访问级别回落为 private。 */
         parse_access_modifier(ps);
     }
 

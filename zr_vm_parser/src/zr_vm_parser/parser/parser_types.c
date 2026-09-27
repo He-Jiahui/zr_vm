@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 将堆分配的 SZrType 内容移交给 AST；失败时连同内部子树一起销毁。 */
 static SZrAstNode *create_type_node_from_type_info(SZrParserState *ps, SZrType *type, SZrFileRange location) {
     SZrAstNode *typeNode;
 
@@ -19,6 +20,7 @@ static SZrAstNode *create_type_node_from_type_info(SZrParserState *ps, SZrType *
     return typeNode;
 }
 
+/* where 子句中的小写所有权词是约束标记，不按普通类型名解析。 */
 static TZrBool current_identifier_is_specific_owner_constraint(SZrParserState *ps,
                                                                EZrOwnershipQualifier *qualifier) {
     if (qualifier != ZR_NULL) {
@@ -53,6 +55,7 @@ static TZrBool current_identifier_is_specific_owner_constraint(SZrParserState *p
     return ZR_FALSE;
 }
 
+/* SZrType 随后由类型 AST 或声明节点接管，初始状态必须可递归释放。 */
 static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     SZrType *type = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (type == ZR_NULL) {
@@ -76,6 +79,7 @@ static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     return type;
 }
 
+/* 仅将内建包装器 Unique/Shared/Weak 标记为所有权类型。 */
 static TZrBool try_get_ownership_generic_qualifier(SZrString *name, EZrOwnershipQualifier *qualifier) {
     if (qualifier == ZR_NULL) {
         return ZR_FALSE;
@@ -115,6 +119,8 @@ static TZrBool type_generic_is_gc_bridge_builtin(SZrString *name) {
             zr_string_equals_literal(name, "GcBox"));
 }
 
+/* TODO: 本地仅由未被调用的 wrap_type_in_task_identifier 使用；
+ * 核对显式 Task 返回类型迁移后是否仍需要这条内建载体构造路径。 */
 static SZrAstNode *create_task_wrapper_identifier(SZrParserState *ps,
                                                   const TZrChar *name,
                                                   SZrFileRange location) {
@@ -132,6 +138,7 @@ static SZrAstNode *create_task_wrapper_identifier(SZrParserState *ps,
     return create_identifier_node_with_location(ps, value, location);
 }
 
+/* 将新标识符挂入类型描述；当前无直接调用，移除前需核对旧 Task 类型兼容入口。 */
 static SZrType *wrap_type_in_task_identifier(SZrParserState *ps,
                                              const TZrChar *wrapperName,
                                              SZrFileRange location) {
@@ -168,6 +175,7 @@ static TZrBool current_identifier_is(SZrParserState *ps, const TZrChar *value) {
            current_identifier_equals(ps, value);
 }
 
+/* 仅在后继 token 可组成类型前缀时把上下文词 scoped 当作引用契约。 */
 static TZrBool current_starts_scoped_ref_contract(SZrParserState *ps) {
     EZrToken nextToken;
 
@@ -178,6 +186,7 @@ static TZrBool current_starts_scoped_ref_contract(SZrParserState *ps) {
     return nextToken == ZR_TK_REF || token_can_start_type_expression(nextToken);
 }
 
+/* 函数类型参数同时允许 name:type 与匿名类型，游标回退用于消除标识符歧义。 */
 static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noGeneric) {
     SZrFileRange startLoc;
     EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
@@ -289,6 +298,7 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
     return node;
 }
 
+/* 参数节点在成功时由数组接管。 */
 static SZrAstNodeArray *parse_function_type_parameter_list(SZrParserState *ps, TZrBool noGeneric) {
     SZrAstNodeArray *params;
 
@@ -308,6 +318,7 @@ static SZrAstNodeArray *parse_function_type_parameter_list(SZrParserState *ps, T
     while (ZR_TRUE) {
         SZrAstNode *param = parse_function_type_parameter(ps, noGeneric);
         if (param == ZR_NULL) {
+            /* BUG: 第二个及后续参数解析失败时 Free 只释放数组容器，先前参数 AST 泄漏。 */
             ZrParser_AstNodeArray_Free(ps->state, params);
             return ZR_NULL;
         }
@@ -324,6 +335,7 @@ static SZrAstNodeArray *parse_function_type_parameter_list(SZrParserState *ps, T
     return params;
 }
 
+/* fn(...) -> T 最终包装为 SZrType，签名子节点先由函数类型 AST 接管。 */
 static SZrType *parse_function_type(
         SZrParserState *ps,
         TZrBool noGeneric,
@@ -381,6 +393,8 @@ static SZrType *parse_function_type(
         if (consume_token(ps, ZR_TK_COMMA) && ps->lexer->t.token == ZR_TK_PARAMS) {
             argsNode = parse_function_type_parameter(ps, noGeneric);
             if (argsNode == ZR_NULL) {
+                /* TODO: 前面的参数列表会消费逗号后的 params；需用签名测试确认
+                 * 此分支是否可达，以及变参是否被错误收进普通参数数组。 */
                 ZrParser_AstNodeArray_Free(ps->state, params);
                 free_generic_declaration(ps->state, generic);
                 return ZR_NULL;
@@ -476,6 +490,7 @@ static TZrBool is_generic_argument_terminator(EZrToken token) {
     return token == ZR_TK_COMMA || token == ZR_TK_GREATER_THAN || token == ZR_TK_RIGHT_SHIFT;
 }
 
+/* 元组类型元素由数组持有；解析失败时保持已收集元素供上层诊断恢复。 */
 static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
     SZrAstNodeArray *types = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (types == ZR_NULL) {
@@ -507,6 +522,7 @@ static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
     return types;
 }
 
+/* 先试类型实参；只有落在分隔符处才确认，否则回退并按加法表达式解析常量实参。 */
 static SZrAstNode *parse_generic_argument_node(SZrParserState *ps) {
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -532,6 +548,7 @@ static SZrAstNode *parse_generic_argument_node(SZrParserState *ps) {
     return parse_additive_expression(ps);
 }
 
+/* 同时解析嵌套泛型的 >> 拆分和源范围，结果数组由调用者接管。 */
 static SZrAstNodeArray *parse_generic_argument_list_with_closing_range(
         SZrParserState *ps,
         SZrFileRange *outClosingRange) {
@@ -605,6 +622,7 @@ SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
     return parse_generic_argument_list_with_closing_range(ps, ZR_NULL);
 }
 
+/* 泛型名称及实参数组移交给类型 AST；失败时递归释放未交接的子节点。 */
 SZrAstNode *parse_generic_type(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrFileRange closingLoc;
@@ -637,7 +655,7 @@ SZrAstNode *parse_generic_type(SZrParserState *ps) {
     return node;
 }
 
-// 解析元组类型
+// 解析元组类型，元素数组在返回后由类型 AST 持有。
 
 SZrAstNode *parse_tuple_type(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -657,6 +675,7 @@ SZrAstNode *parse_tuple_type(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_TUPLE_TYPE, tupleLoc);
     if (node == ZR_NULL) {
+        /* BUG: 元组节点分配失败时只释放容器，已解析的类型元素泄漏。 */
         ZrParser_AstNodeArray_Free(ps->state, elements);
         return ZR_NULL;
     }
@@ -665,6 +684,7 @@ SZrAstNode *parse_tuple_type(SZrParserState *ps) {
     return node;
 }
 
+/* 类型前缀与后缀在同一描述中组合；调用方接管返回的 SZrType。 */
 static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
     SZrType *type;
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -835,6 +855,8 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
         }
     }
 
+    /* TODO: 点号后 parse_type 失败会留下空 subType 并返回当前类型；
+     * 需核对 hasError 在各声明消费者中是否总能阻止部分类型进入后续阶段。 */
     if (consume_token(ps, ZR_TK_DOT)) {
         type->subType = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
     }
@@ -871,7 +893,7 @@ SZrType *parse_type_no_generic(SZrParserState *ps) {
     return parse_type_internal(ps, ZR_TRUE);
 }
 
-// 解析数组大小约束
+// 解析数组大小约束；先尝试字面量/范围，不匹配时完整恢复词法游标再交给表达式解析。
 // 支持语法：
 //   [N]      - 固定大小
 //   [M..N]   - 范围约束
@@ -966,6 +988,7 @@ TZrBool parse_array_size_constraint(SZrParserState *ps, SZrType *type) {
 
 // 解析泛型声明
 
+/* 泛型参数的名称嵌于参数 AST；const 参数另持有其整数类型描述。 */
 static SZrAstNode *parse_generic_parameter(SZrParserState *ps, TZrBool allowVariance) {
     SZrAstNode *nameNode = ZR_NULL;
     SZrAstNode *node;
@@ -1034,6 +1057,7 @@ static SZrAstNode *parse_generic_parameter(SZrParserState *ps, TZrBool allowVari
     return node;
 }
 
+/* where 子句只借用泛型参数指针，不改变泛型声明的所有权。 */
 static SZrParameter *find_generic_parameter_by_name(SZrParserState *ps,
                                                     SZrGenericDeclaration *generic,
                                                     SZrString *name) {
@@ -1069,6 +1093,7 @@ static TZrBool ensure_generic_constraint_array(SZrParserState *ps, SZrParameter 
     return parameter->genericTypeConstraints != ZR_NULL;
 }
 
+/* where 可重复出现；约束直接附着在 generic 的参数节点，调用方仍负责释放 generic。 */
 TZrBool parse_optional_where_clauses(SZrParserState *ps, SZrGenericDeclaration *generic) {
     while (ps != ZR_NULL && ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "where")) {
         SZrAstNode *nameNode;
@@ -1083,6 +1108,8 @@ TZrBool parse_optional_where_clauses(SZrParserState *ps, SZrGenericDeclaration *
         parameter = generic != ZR_NULL ? find_generic_parameter_by_name(ps, generic, nameNode->data.identifier.name)
                                        : ZR_NULL;
         if (parameter == ZR_NULL) {
+            /* TODO: 未知参数仅设置 hasError 后继续消耗约束并返回成功；
+             * 核对各声明入口是否都会拒绝消费这种带错误的部分 AST。 */
             report_error(ps, "Unknown generic parameter in where clause");
         }
 
@@ -1183,6 +1210,7 @@ TZrBool parse_optional_where_clauses(SZrParserState *ps, SZrGenericDeclaration *
     return ZR_TRUE;
 }
 
+/* 解析 <T,...> 并建立拥有参数 AST 的泛型声明；允许协变标记仅用于接口。 */
 SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool allowVariance) {
     SZrAstNodeArray *params;
     SZrGenericDeclaration *generic;
@@ -1212,6 +1240,7 @@ SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool all
 
         param = parse_generic_parameter(ps, allowVariance);
         if (param == ZR_NULL) {
+            /* BUG: 后续参数语法错误时只释放数组容器，已解析参数 AST 泄漏。 */
             ZrParser_AstNodeArray_Free(ps->state, params);
             return ZR_NULL;
         }
@@ -1221,6 +1250,7 @@ SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool all
     if (!consume_type_closing_angle(ps)) {
         expect_token(ps, ZR_TK_GREATER_THAN);
         if (!consume_token(ps, ZR_TK_GREATER_THAN)) {
+            /* BUG: 缺少泛型闭合符时只释放数组容器，全部参数 AST 泄漏。 */
             ZrParser_AstNodeArray_Free(ps->state, params);
             return ZR_NULL;
         }
@@ -1229,6 +1259,7 @@ SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool all
     generic = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrGenericDeclaration),
                                               ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (generic == ZR_NULL) {
+        /* BUG: 声明对象分配失败时参数节点仍由数组持有，仅 Free 容器会泄漏子树。 */
         ZrParser_AstNodeArray_Free(ps->state, params);
         return ZR_NULL;
     }
@@ -1237,7 +1268,7 @@ SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool all
     return generic;
 }
 
-// 解析元标识符
+// 解析元标识符；名称指针嵌入返回节点，析构契约仍需核对。
 
 SZrAstNode *parse_meta_identifier(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -1254,14 +1285,18 @@ SZrAstNode *parse_meta_identifier(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_META_IDENTIFIER, metaLoc);
     if (node == ZR_NULL) {
+        /* TODO: 当前无调用入口；若重新接入此解析器，节点分配失败时
+         * nameNode 尚无 AST 所有者，需要补充释放。 */
         return ZR_NULL;
     }
 
     node->data.metaIdentifier.name = &nameNode->data.identifier;
+    /* TODO: 当前无生产调用；parser_ast_free 的 default 分支未回收此 name 节点，
+     * 接入该语法前需补 META_IDENTIFIER 析构及覆盖测试。 */
     return node;
 }
 
-// 解析装饰器表达式
+// 解析装饰器表达式；表达式节点在成功时交给装饰器 AST。
 
 SZrAstNode *parse_decorator_expression(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
@@ -1290,7 +1325,7 @@ SZrAstNode *parse_decorator_expression(SZrParserState *ps) {
     return node;
 }
 
-// 解析解构对象模式
+// 解析解构对象模式；键值别名由 key/value 两个标识符节点共同承载。
 
 static SZrAstNode *parse_destructuring_object_entry(SZrParserState *ps) {
     SZrAstNode *bindingNode;
@@ -1333,6 +1368,7 @@ static SZrAstNode *parse_destructuring_object_entry(SZrParserState *ps) {
     return pairNode;
 }
 
+/* 变量声明和循环绑定入口都接收此模式，数组子树由返回 AST 接管。 */
 SZrAstNode *parse_destructuring_object(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_LBRACE);
@@ -1382,7 +1418,7 @@ SZrAstNode *parse_destructuring_object(SZrParserState *ps) {
     return node;
 }
 
-// 解析解构数组模式
+// 解析解构数组模式；标识符列表由返回 AST 接管。
 
 SZrAstNode *parse_destructuring_array(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -1421,6 +1457,7 @@ SZrAstNode *parse_destructuring_array(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_DESTRUCTURING_ARRAY, destructuringLoc);
     if (node == ZR_NULL) {
+        /* BUG: 节点分配失败只释放数组容器，已解析键名节点泄漏。 */
         ZrParser_AstNodeArray_Free(ps->state, keys);
         return ZR_NULL;
     }
@@ -1429,7 +1466,7 @@ SZrAstNode *parse_destructuring_array(SZrParserState *ps) {
     return node;
 }
 
-// 解析访问修饰符
+// 解析访问修饰符；未出现显式修饰符时保持 private 且不前进游标。
 
 EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
@@ -1446,7 +1483,7 @@ EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
     return ZR_ACCESS_PRIVATE; // 默认 private
 }
 
-// 解析参数
+// 解析参数；名称、类型、默认值与装饰器在成功后统一归参数 AST 所有。
 
 SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -1540,7 +1577,7 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     return node;
 }
 
-// 解析参数列表
+// 解析参数列表；用于函数、方法和 extern 签名，返回数组由调用者接管。
 
 SZrAstNodeArray *parse_parameter_list(SZrParserState *ps) {
     SZrAstNodeArray *params = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
@@ -1553,6 +1590,8 @@ SZrAstNodeArray *parse_parameter_list(SZrParserState *ps) {
         if (first != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, params, first);
         }
+        /* TODO: 首参数失败仍返回空列表；核查 hasError 是否阻止各签名调用方
+         * 将失效签名作为无参声明交给后续阶段。 */
 
         while (consume_token(ps, ZR_TK_COMMA)) {
             if (ps->lexer->t.token == ZR_TK_RPAREN) {

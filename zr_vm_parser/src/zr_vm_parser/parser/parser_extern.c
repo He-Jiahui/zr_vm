@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 枚举成员的名称、可选值与装饰器在成功后由成员 AST 接管。 */
 SZrAstNode *parse_enum_member(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
@@ -8,6 +9,7 @@ SZrAstNode *parse_enum_member(SZrParserState *ps) {
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         if (decorators != ZR_NULL) {
+            /* BUG: 装饰器已生成而名称解析失败时只释放容器，装饰器节点泄漏。 */
             ZrParser_AstNodeArray_Free(ps->state, decorators);
         }
         return ZR_NULL;
@@ -19,6 +21,7 @@ SZrAstNode *parse_enum_member(SZrParserState *ps) {
     if (consume_token(ps, ZR_TK_EQUALS)) {
         value = parse_expression(ps);
         if (value == ZR_NULL) {
+            /* BUG: 成员值解析失败时 nameNode 未交接，装饰器也仅释放容器。 */
             if (decorators != ZR_NULL) {
                 ZrParser_AstNodeArray_Free(ps->state, decorators);
             }
@@ -36,6 +39,7 @@ SZrAstNode *parse_enum_member(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ENUM_MEMBER, memberLoc);
     if (node == ZR_NULL) {
+        /* BUG: 节点分配失败时名称、值和装饰器子节点均未被递归释放。 */
         if (decorators != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
         }
@@ -48,7 +52,7 @@ SZrAstNode *parse_enum_member(SZrParserState *ps) {
     return node;
 }
 
-// 解析枚举声明
+// 解析枚举声明；枚举 AST 最终拥有名称、基类型、成员列表及装饰器。
 // 语法：enum Name[: baseType] { members }
 
 SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
@@ -79,6 +83,7 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     if (consume_token(ps, ZR_TK_COLON)) {
         baseType = parse_type(ps);
         if (baseType == ZR_NULL) {
+            /* BUG: 非法基类型触发早退时，已解析名称与装饰器未释放。 */
             return ZR_NULL;
         }
     }
@@ -95,6 +100,7 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (members == ZR_NULL) {
+        /* BUG: 成员数组分配失败时名称和可选基类型尚无 AST 所有者。 */
         if (decorators != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
         }
@@ -135,6 +141,7 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ENUM_DECLARATION, enumLoc);
     if (node == ZR_NULL) {
+        /* BUG: 枚举节点分配失败只释放数组容器，名称、基类型与成员子树泄漏。 */
         ZrParser_AstNodeArray_Free(ps->state, members);
         if (decorators != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -150,6 +157,7 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     return node;
 }
 
+/* extern 两类签名共用 ')' 检查；此处仅处理数组指针，不拥有调用方的名称等资源。 */
 static TZrBool consume_extern_parameter_list_close_or_report(SZrParserState *ps,
                                                              SZrAstNodeArray **params,
                                                              SZrAstNodeArray **decorators) {
@@ -160,6 +168,7 @@ static TZrBool consume_extern_parameter_list_close_or_report(SZrParserState *ps,
 
     report_missing_parameter_list_close(ps, get_current_token_location(ps));
     if (params != ZR_NULL && *params != ZR_NULL) {
+        /* BUG: 缺失 ')' 时仅释放参数数组容器，已解析参数 AST 泄漏。 */
         ZrParser_AstNodeArray_Free(ps->state, *params);
         *params = ZR_NULL;
     }
@@ -170,6 +179,7 @@ static TZrBool consume_extern_parameter_list_close_or_report(SZrParserState *ps,
     return ZR_FALSE;
 }
 
+/* native extern 的 fn 声明接管调用方传入的装饰器，结果由 extern 块持有。 */
 SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArray *decorators) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *nameNode;
@@ -208,6 +218,7 @@ SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArra
     }
 
     if (!consume_extern_parameter_list_close_or_report(ps, &params, &decorators)) {
+        /* BUG: 签名缺失 ')' 时 helper 不接管名称与可变参数节点，返回后均泄漏。 */
         return ZR_NULL;
     }
 
@@ -221,6 +232,7 @@ SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArra
     node = create_ast_node(ps, ZR_AST_EXTERN_FUNCTION_DECLARATION,
                            ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (node == ZR_NULL) {
+        /* BUG: 声明节点分配失败时名称、返回类型和参数子节点未释放。 */
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
         }
@@ -238,6 +250,7 @@ SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArra
     return node;
 }
 
+/* delegate 与 extern fn 使用同一参数关闭契约，成功后节点拥有装饰器及签名。 */
 SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArray *decorators) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *nameNode;
@@ -285,6 +298,7 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
     }
 
     if (!consume_extern_parameter_list_close_or_report(ps, &params, &decorators)) {
+        /* BUG: 签名缺失 ')' 时名称与可变参数节点未被 helper 或调用方释放。 */
         return ZR_NULL;
     }
 
@@ -298,6 +312,7 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
     node = create_ast_node(ps, ZR_AST_EXTERN_DELEGATE_DECLARATION,
                            ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (node == ZR_NULL) {
+        /* BUG: 声明节点分配失败时名称、返回类型和参数子节点未释放。 */
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
         }
@@ -315,6 +330,7 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
     return node;
 }
 
+/* extern 成员分派将前置装饰器移交给函数/delegate，或替换 struct/enum 自带装饰器。 */
 static SZrAstNode *parse_extern_member_declaration_impl(SZrParserState *ps) {
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     SZrAstNode *node = ZR_NULL;
@@ -358,6 +374,7 @@ static SZrAstNode *parse_extern_member_declaration_impl(SZrParserState *ps) {
     }
 
     if (decorators != ZR_NULL) {
+        /* BUG: 非法成员或 struct/enum 解析失败时只释放容器，前置装饰器节点泄漏。 */
         ZrParser_AstNodeArray_Free(ps->state, decorators);
     }
     if (node != ZR_NULL) {
@@ -381,6 +398,7 @@ static SZrAstNode *parse_extern_member_declaration_impl(SZrParserState *ps) {
     return node;
 }
 
+/* native extern 可包单成员或花括号列表；库名及声明数组移交给 extern 块 AST。 */
 SZrAstNode *parse_extern_block(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrFileRange bodyOpenLoc = startLoc;
@@ -473,6 +491,7 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
     return node;
 }
 
+/* comptime 按后继 token 分派函数、条件分支、块或表达式，并记录剪枝语义。 */
 SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
     TZrBool isConditionalPruning = ZR_FALSE;
@@ -532,6 +551,7 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_COMPILE_TIME_DECLARATION, compileTimeLoc);
     if (node == ZR_NULL) {
+        /* BUG: 外层节点分配失败时 declaration 已构造却未释放。 */
         return ZR_NULL;
     }
 
@@ -543,7 +563,7 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     return node;
 }
 
-// 解析生成器表达式（{{}}）
+// 解析生成器表达式（{{}}）；内部语句数组先由块接管，再由生成器 AST 接管块。
 
 SZrAstNode *parse_generator_expression(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -587,6 +607,8 @@ SZrAstNode *parse_generator_expression(SZrParserState *ps) {
     SZrFileRange blockLoc = ZrParser_FileRange_Merge(blockStartLoc, blockEndLoc);
     SZrAstNode *block = create_ast_node(ps, ZR_AST_BLOCK, blockLoc);
     if (block == ZR_NULL) {
+        /* TODO: 当前无生成器解析调用入口；若恢复该语法，块分配失败时
+         * 只释放容器会遗留已解析的语句节点。 */
         ZrParser_AstNodeArray_Free(ps->state, statements);
         return ZR_NULL;
     }
@@ -598,6 +620,7 @@ SZrAstNode *parse_generator_expression(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_GENERATOR_EXPRESSION, generatorLoc);
     if (node == ZR_NULL) {
+        /* TODO: 若恢复调用，此时块已接管 statements；失败需释放整个块子树。 */
         ZrParser_AstNodeArray_Free(ps->state, statements);
         return ZR_NULL;
     }

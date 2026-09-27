@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 将 => 表达式包装成返回语句和块；成功后块节点拥有整棵表达式子树。 */
 static SZrAstNode *create_expression_body_block(SZrParserState *ps, SZrAstNode *expression) {
     SZrAstNode *returnNode;
     SZrAstNode *blockNode;
@@ -10,6 +11,7 @@ static SZrAstNode *create_expression_body_block(SZrParserState *ps, SZrAstNode *
     }
     returnNode = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, expression->location);
     if (returnNode == ZR_NULL) {
+        /* BUG: 返回语句节点分配失败时 expression 尚未交接，调用方也未释放它。 */
         return ZR_NULL;
     }
     returnNode->data.returnStatement.expr = expression;
@@ -29,6 +31,7 @@ static SZrAstNode *create_expression_body_block(SZrParserState *ps, SZrAstNode *
     return blockNode;
 }
 
+/* 匿名 fn 支持块体与 => 表达式体；参数、返回类型和块最终由 lambda AST 接管。 */
 SZrAstNode *parse_fn_expression(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange returnDelimiterLoc;
@@ -50,10 +53,14 @@ SZrAstNode *parse_fn_expression(SZrParserState *ps) {
 
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
+        /* TODO: 可变参数解析失败仍继续构造签名；核查 hasError 是否总能挡住
+         * 带空 args 的 lambda 进入语义阶段。 */
         args = argsNode != ZR_NULL ? &argsNode->data.parameter : ZR_NULL;
         params = ZrParser_AstNodeArray_New(ps->state, 0u);
     } else {
         params = parse_parameter_list(ps);
+        /* TODO: parse_parameter_list 已消费连续逗号和 params 参数；
+         * 核查此独立 args 分支是否可达及 AST 的变参归属。 */
         if (consume_token(ps, ZR_TK_COMMA) && ps->lexer->t.token == ZR_TK_PARAMS) {
             SZrAstNode *argsNode = parse_parameter(ps);
             args = argsNode != ZR_NULL ? &argsNode->data.parameter : ZR_NULL;
