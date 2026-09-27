@@ -131,5 +131,6 @@ doc_type: category-index
 | parser CFG union、switch 与 throw 测试 | [56 项](coverage/tests_parser_cfg_switch_union_throw.tsv) | 3 个 C 文件独立复核，262 个非空证据锚点，12 个 Unity 用例均已登记，源码仅增 55 行注释；GCC/Clang 语法检查 6/6 通过。3 个 BUG 行记录断言非局部退出跳过原生资源释放；未运行完整 CTest。 |
 | parser 泛型约束与实例化测试 | [19 项](coverage/tests_parser_generic_contracts.tsv) | 2 个 C 文件独立复核，148 个 evidence 路径锚点有效，源码仅增 15 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行记录失败断言跳过清理，1 个 TODO 留待真实命名结构体 AOT 用例核对；定向构建停在 CMake 重新生成，未运行 CTest。 |
 | core 哈希集合与字符串构建器 | [75 项](coverage/zr_vm_core_hash_set_string_builder.tsv) | 4 个 C/H 文件独立复核，259 个非空证据锚点，源码仅改注释；GCC/Clang 对两个 C 文件语法检查通过。11 个 TODO 保留所有权、极端容量、GC 地址稳定和自追加契约疑点；未运行运行时测试。 |
+| parser cast 操作数与逻辑表达式事实测试 | [33 项](coverage/tests_parser_expression_fact_focus.tsv) | 2 个 C 文件独立复核，141 个非空证据锚点、8 个 Unity 用例，源码仅增 33 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行记录失败退出后的悬挂状态或原生资源泄漏，1 个 TODO 为 logical 目标自动套件归属；未运行完整 CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
