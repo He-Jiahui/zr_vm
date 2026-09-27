@@ -138,5 +138,6 @@ doc_type: category-index
 | core canonical artifact 消费与类型投影 | [41 项](coverage/zr_vm_core_canonical_consumer.tsv) | 2 个 C/H 文件独立复核，172 个非空证据锚点有效，源码仅增 58 行注释；GCC/Clang 定向语法检查通过。类型、布局与调度器合同的借用期和错误语义已按当前调用链核准；未发现可证实的新 BUG/TODO，未运行运行时测试。 |
 | core 会话 checkpoint 的捕获与回滚 | [36 项](coverage/zr_vm_core_session_checkpoint.tsv) | 2 个 C/H 文件独立复核，211 个 evidence 与 128 个 callers 锚点有效，非注释 token 未变；GCC/Clang 定向语法检查通过。4 个 BUG 记录常量恢复、map 失败回滚、扩容所有权及异常退出时 GC 暂停清理，1 个 TODO 待核模块重挂路径；未运行运行时测试。 |
 | core 数值幂与值转换宏 | [50 项](coverage/zr_vm_core_math_conversion.tsv) | 2 个头文件独立复核，125 个非空证据锚点有效，源码只改注释；GCC/Clang 普通及 Debug 语法检查通过。7 个 BUG 行涉及零底数幂、整数溢出和长串指针槽误读，1 个 TODO 待核原始函数指针转换 ABI；未运行运行时测试。 |
+| parser 编译期导入所有权与调用绑定测试 | [64 项](coverage/tests_parser_import_call_binding.tsv) | 2 个 C 文件独立复核，314 个非空证据锚点与 20 个 Unity 注册有效，源码仅增 49 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 记录断言失败后的旧状态或编译器资源清理缺口，1 个 TODO 待核首个缓存项是否为目标调用；未运行 CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

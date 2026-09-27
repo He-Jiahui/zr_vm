@@ -10,23 +10,30 @@
 #include "zr_vm_parser/parser.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
+/* 每例运行时持有编译函数图；GC 终结时释放函数的原生绑定缓存。 */
 static SZrState *state;
 
+/* Unity 为每例提供独立运行时，使绑定代际和错误状态不串例。 */
 void setUp(void) {
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
 }
 
+/* 运行时析构会终结 GC 函数及其绑定元数据。 */
 void tearDown(void) {
     ZrTests_Runtime_State_Destroy(state);
     state = ZR_NULL;
 }
 
+/* 编译脚本并返回由运行时 GC 持有的函数图。 */
 static SZrFunction *compile_source(const char *source) {
     return ZrParser_Source_Compile(state, source, strlen(source),
             ZrCore_String_CreateFromNative(state, "call_binding_pipeline.zr"));
 }
 
+/* 在前置语义校验通过后编译脚本，确认目标错误确由 call binding 报出。 */
+/* BUG: 初始化 compiler 后任一 Unity 断言失败会跳过本函数末尾的 Free；
+ * tearDown 只销毁运行时，compiler.semanticContext 等原生分配泄漏。 */
 static void assert_compile_diagnostic(const char *source, const char *expectedMessage) {
     SZrAstNode *ast;
     SZrCompilerState compiler;
@@ -58,6 +65,7 @@ static void assert_compile_diagnostic(const char *source, const char *expectedMe
     ZrParser_Ast_Free(state, ast);
 }
 
+/* 深度优先返回首个有契约的调用点，借用函数图内缓存项。 */
 static const SZrFunctionCallSiteCacheEntry *find_binding(const SZrFunction *function) {
     for (TZrUInt32 index = 0u; index < function->callSiteCacheLength; ++index) {
         const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[index];
@@ -72,6 +80,7 @@ static const SZrFunctionCallSiteCacheEntry *find_binding(const SZrFunction *func
     return ZR_NULL;
 }
 
+/* 遍历顶层与子函数缓存，按 GET/SET 操作统计 property 绑定。 */
 static void count_property_bindings(const SZrFunction *function,
                                     TZrUInt32 *getters,
                                     TZrUInt32 *setters) {
@@ -87,6 +96,9 @@ static void count_property_bindings(const SZrFunction *function,
     }
 }
 
+/* 检查首个绑定的 token/hash、实际执行结果和该缓存项的运行时命中次数。 */
+/* TODO: 首个绑定未必是源码中的最终调用；需按 call-site 或目标身份定位，
+ * 才能证明链式/接口/meta 调用自身的契约，而非旁侧构造调用的契约。 */
 static void assert_bound_result(const char *source, TZrInt64 expected) {
     SZrFunction *function = compile_source(source);
     const SZrFunctionCallSiteCacheEntry *entry;
@@ -104,12 +116,14 @@ static void assert_bound_result(const char *source, TZrInt64 expected) {
     TEST_ASSERT_GREATER_THAN_UINT64(0u, entry->runtimeHitCount);
 }
 
+/* 静态方法编译应产生可执行的带 token 调用。 */
 static void test_static_method_has_token_binding(void) {
     assert_bound_result(
             "class Math { pub static fn answer(): int { return 42; } }\n"
             "return Math.answer();\n", 42);
 }
 
+/* 字段链访问后最终方法调用应保留运行时结果。 */
 static void test_object_chain_preserves_field_reads_and_binds_final_call(void) {
     assert_bound_result(
             "class Leaf { pub fn read(): int { return 17; } }\n"
@@ -118,12 +132,14 @@ static void test_object_chain_preserves_field_reads_and_binds_final_call(void) {
             "var root = new Root(); return root.middle.leaf.read();\n", 17);
 }
 
+/* 未声明成员必须在编译期被拒绝。 */
 static void test_unknown_static_member_is_a_compile_error(void) {
     TEST_ASSERT_NULL(compile_source(
             "class Box { pub fn read(): int { return 1; } }\n"
             "var box = new Box(); return box.missing();\n"));
 }
 
+/* 返回类型不同但参数相同的重载无法唯一绑定，检查诊断文本。 */
 static void test_member_overload_ambiguity_is_a_compile_error(void) {
     assert_compile_diagnostic(
             "class Box { pub fn pick(value: int): int { return value; } "
@@ -132,6 +148,7 @@ static void test_member_overload_ambiguity_is_a_compile_error(void) {
             "Ambiguous overload for member 'pick'");
 }
 
+/* 参数类型不匹配时检查编译器的具体诊断。 */
 static void test_member_signature_mismatch_is_a_compile_error(void) {
     assert_compile_diagnostic(
             "class Box { pub fn pick(value: int): int { return value; } } "
@@ -139,6 +156,7 @@ static void test_member_signature_mismatch_is_a_compile_error(void) {
             "Expected 'int' but found 'float'");
 }
 
+/* 篡改函数图代际后旧静态绑定应拒绝执行并报告 token。 */
 static void test_invalidated_generation_rejects_static_call(void) {
     SZrFunction *function = compile_source(
             "class Math { pub static fn answer(): int { return 42; } } return Math.answer();");
@@ -151,6 +169,7 @@ static void test_invalidated_generation_rejects_static_call(void) {
     TEST_ASSERT_NOT_EQUAL_UINT32(0u, state->lastCallBindingError.targetMetadataToken);
 }
 
+/* getter 与 setter 应各生成一条操作契约且能完成读写。 */
 static void test_property_getter_and_setter_have_binding_contracts(void) {
     SZrFunction *function = compile_source(
             "class Box { pri var stored: int = 1; "
@@ -166,6 +185,7 @@ static void test_property_getter_and_setter_have_binding_contracts(void) {
     TEST_ASSERT_EQUAL_INT64(31, result);
 }
 
+/* 基类声明的虚调用在运行时应分派到派生类覆盖实现。 */
 static void test_virtual_binding_uses_receiver_override(void) {
     assert_bound_result(
             "class Base { pub virtual fn read(): int { return 1; } } "
@@ -173,6 +193,7 @@ static void test_virtual_binding_uses_receiver_override(void) {
             "var box: Base = new Derived(); return box.read();", 23);
 }
 
+/* 接口实现调用应得到结果；本例另编译一份函数图只验证成功创建。 */
 static void test_interface_binding_uses_contract_slot(void) {
     SZrFunction *function = compile_source(
             "interface Readable { fn read(): int; } "
@@ -185,6 +206,7 @@ static void test_interface_binding_uses_contract_slot(void) {
             "var box: Readable = new Box(); return box.read();", 37);
 }
 
+/* 同一虚调用点面对两种接收者仍须按覆盖实现分派。 */
 static void test_virtual_parameter_dispatches_multiple_receiver_types(void) {
     assert_bound_result(
             "class Base { pub virtual fn read(): int { return 1; } } "
@@ -194,6 +216,7 @@ static void test_virtual_parameter_dispatches_multiple_receiver_types(void) {
             "return readValue(new First()) + readValue(new Second());", 42);
 }
 
+/* 不同接口即使槽号相同，也不能把各自的目标混淆。 */
 static void test_two_interfaces_with_equal_slots_remain_distinct(void) {
     assert_bound_result(
             "interface Left { fn left(): int; } interface Right { fn right(): int; } "
@@ -204,6 +227,7 @@ static void test_two_interfaces_with_equal_slots_remain_distinct(void) {
             "var value = new Both(); return fromLeft(value) + fromRight(value);", 42);
 }
 
+/* meta @call 的有参与无参形式都须消费绑定目标并返回正确值。 */
 static void test_meta_call_consumes_bound_target_with_and_without_arguments(void) {
     assert_bound_result(
             "class Callable { pub @call(value: int): int { return value + 1; } } "
@@ -213,6 +237,7 @@ static void test_meta_call_consumes_bound_target_with_and_without_arguments(void
             "var value = new Callable(); return value();", 42);
 }
 
+/* meta @call 契约的代际失效应在执行前被拒绝。 */
 static void test_meta_call_rejects_stale_binding_generation(void) {
     SZrFunction *function = compile_source(
             "class Callable { pub @call(): int { return 42; } } "
@@ -228,6 +253,7 @@ static void test_meta_call_rejects_stale_binding_generation(void) {
     TEST_ASSERT_EQUAL_INT(ZR_CALL_BINDING_STALE_GENERATION, state->lastCallBindingError.status);
 }
 
+/* 子方法内的绑定也应执行正常，并随整个函数图的代际推进失效。 */
 static void test_nested_method_body_is_linked_and_invalidated(void) {
     SZrFunction *function = compile_source(
             "class Box { pub fn read(): int { return 42; } } "
@@ -243,6 +269,7 @@ static void test_nested_method_body_is_linked_and_invalidated(void) {
     TEST_ASSERT_EQUAL_INT(ZR_CALL_BINDING_STALE_GENERATION, state->lastCallBindingError.status);
 }
 
+/* 接口实现布局改变后旧绑定应给出布局不匹配错误。 */
 static void test_interface_implementation_layout_change_is_rejected(void) {
     SZrFunction *function = compile_source(
             "interface Readable { fn read(): int; } "
@@ -263,6 +290,7 @@ static void test_interface_implementation_layout_change_is_rejected(void) {
     TEST_ASSERT_EQUAL_INT(ZR_CALL_BINDING_LAYOUT_MISMATCH, state->lastCallBindingError.status);
 }
 
+/* GC 前把函数图放入 VM 栈根，收集后从根重新取回再执行绑定。 */
 static void test_bound_graph_survives_full_collection(void) {
     SZrFunction *function = compile_source(
             "class Box { pub fn read(): int { return 42; } } "
@@ -281,6 +309,7 @@ static void test_bound_graph_survives_full_collection(void) {
     TEST_ASSERT_EQUAL_INT64(42, result);
 }
 
+/* CTest call_binding_pipeline 经此入口运行全部绑定与失效场景。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_static_method_has_token_binding);
