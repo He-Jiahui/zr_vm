@@ -13,6 +13,7 @@
 #include <time.h>
 #endif
 
+/* 宿主拥有令牌；只有取消位跨线程访问，令牌本体在调用结束前不得释放。 */
 struct SZrExecutionCancelToken {
     volatile TZrInt32 cancelled;
 };
@@ -47,6 +48,7 @@ void ZrCore_ExecutionCancelToken_Free(SZrExecutionCancelToken *token) {
     free(token);
 }
 
+/* 失败时取最大值，保证带期限的 Poll 不会因时钟故障继续放行。 */
 TZrUInt64 ZrCore_ExecutionBudget_NowMicros(void) {
 #if defined(ZR_PLATFORM_WIN)
     LARGE_INTEGER counter;
@@ -66,6 +68,7 @@ TZrUInt64 ZrCore_ExecutionBudget_NowMicros(void) {
 #endif
 }
 
+/* 先同步内存峰值，再按取消、期限、资源、指令的顺序锁存首次终止原因。 */
 TZrBool ZrCore_ExecutionBudget_Poll(SZrState *state, TZrBool consumeInstruction) {
     SZrExecutionBudget *budget = state != ZR_NULL ? state->executionBudget : ZR_NULL;
     if (budget == ZR_NULL) {
@@ -110,9 +113,8 @@ TZrBool ZrCore_ExecutionBudget_NativeEnter(SZrState *state, TZrBool throughBindi
     if (!ZrCore_ExecutionBudget_Poll(state, ZR_FALSE)) {
         return ZR_FALSE;
     }
-    /* A registered native function can pass through both function.c and the
-     * binding dispatch. Consume its call frame once, while direct binding
-     * operations inside a VM frame remain distinct calls. */
+    /* 注册 native 会依次经过 function.c 和 binding 分派，同一调用帧仅记一次；
+     * VM 帧中的直接 binding 操作仍作为独立调用计数。 */
     if (throughBinding && budget->countedNativeFrame != ZR_NULL &&
         budget->countedNativeFrame == state->callInfoList) {
         budget->countedNativeFrame = ZR_NULL;
@@ -129,6 +131,7 @@ TZrBool ZrCore_ExecutionBudget_NativeEnter(SZrState *state, TZrBool throughBindi
     return ZR_TRUE;
 }
 
+/* 嵌套 GC 共用外层起点，避免暂停和重入时重复收取时间。 */
 void ZrCore_ExecutionBudget_GcBegin(SZrState *state) {
     SZrExecutionBudget *budget = state != ZR_NULL ? state->executionBudget : ZR_NULL;
     if (budget != ZR_NULL && budget->gcDepth++ == 0u) {
@@ -147,6 +150,7 @@ void ZrCore_ExecutionBudget_GcEnd(SZrState *state) {
     }
 }
 
+/* 经 TryRun 清理当前 VM 帧；保存栈偏移是为容忍关闭 upvalue 时的栈重定位。 */
 static void execution_budget_release_frame(SZrState *state, TZrPtr argument) {
     SZrCallInfo *callInfo = (SZrCallInfo *)argument;
     SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
@@ -163,10 +167,8 @@ static void execution_budget_release_frame(SZrState *state, TZrPtr argument) {
 
 void ZrCore_ExecutionBudget_UnwindVmFrames(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
-    /* Unwind only to the enclosing native frame. Budget termination skips guest
-     * catch/finally and inhibits guest close callbacks, while releasing frame
-     * ownership/upvalues through the existing cleanup path. C recovery remains
-     * inside this helper and cannot jump across a foreign native callback. */
+    /* 只回收到外层 native 帧：跳过 guest catch/finally 与 close 回调，仍经现有路径
+     * 释放帧所有权和 upvalue；C 层恢复留在 helper 内，不能跨越外部 native 回调。 */
     while (callInfo != ZR_NULL && ZR_CALL_INFO_IS_VM(callInfo)) {
         TZrUInt32 depth = state->exceptionHandlerStackLength;
         while (depth > 0 && state->exceptionHandlerStack[depth - 1].callInfo == callInfo) {

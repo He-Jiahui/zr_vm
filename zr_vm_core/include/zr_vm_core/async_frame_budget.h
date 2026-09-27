@@ -1,15 +1,8 @@
 #ifndef ZR_VM_CORE_ASYNC_FRAME_BUDGET_H
 #define ZR_VM_CORE_ASYNC_FRAME_BUDGET_H
 
-/*
- * Frame-safe asynchronous execution contract.
- *
- * The contract is deliberately independent of the concrete VM state and
- * scheduler.  It gives the scheduler a small, scalar state machine for
- * suspended frames, waiters, and background compilation jobs.  Runtime
- * adapters may embed these records in their own objects, but must not bypass
- * the state transitions below.
- */
+/* 与具体 VM state、调度器分离的异步帧状态机。调度器可嵌入这些标量记录，
+ * 但须经公开转移函数维护帧、等待槽和后台编译任务；当前仓内入口是独立 SSA 测试。 */
 
 #include "zr_vm_core/conf.h"
 
@@ -17,9 +10,11 @@
 extern "C" {
 #endif
 
+/* 帧、等待请求与编译请求共用的 ABI 版本；Validate/Queue 拒绝不匹配值。 */
 #define ZR_ASYNC_FRAME_BUDGET_SCHEMA_VERSION ((TZrUInt32)1u)
 #define ZR_ASYNC_FRAME_BUDGET_MAGIC ((TZrUInt32)0x31464241u) /* ABF1 */
 
+/** @brief 跨调度边界传递的失败分类，stage 与身份细节见 diagnostic。 */
 typedef enum EZrAsyncFrameDiagnosticCode {
     ZR_ASYNC_FRAME_DIAGNOSTIC_NONE = 0,
     ZR_ASYNC_FRAME_DIAGNOSTIC_INVALID_ARGUMENT,
@@ -48,7 +43,7 @@ typedef enum EZrAsyncFrameDiagnosticCode {
     ZR_ASYNC_FRAME_DIAGNOSTIC_COUNT
 } EZrAsyncFrameDiagnosticCode;
 
-/* Stable scalar diagnostic; it is safe to copy across a scheduler boundary. */
+/** @brief 稳定的标量诊断，可跨调度边界复制；不持有源位置或对象指针。 */
 typedef struct SZrAsyncFrameDiagnostic {
     EZrAsyncFrameDiagnosticCode code;
     TZrUInt32 stage;
@@ -60,6 +55,7 @@ typedef struct SZrAsyncFrameDiagnostic {
     TZrUInt64 generation;
 } SZrAsyncFrameDiagnostic;
 
+/** @brief 帧生命周期状态；完成、取消及故障后须经 Teardown 收尾。 */
 typedef enum EZrAsyncFrameStatus {
     ZR_ASYNC_FRAME_STATUS_IDLE = 0,
     ZR_ASYNC_FRAME_STATUS_RUNNING,
@@ -72,9 +68,10 @@ typedef enum EZrAsyncFrameStatus {
     ZR_ASYNC_FRAME_STATUS_COUNT
 } EZrAsyncFrameStatus;
 
-/* Compatibility spelling used by scheduler adapters. */
+/* 调度器适配器沿用的旧拼写，不引入额外状态。 */
 #define ZR_ASYNC_FRAME_STATUS_TEARDOWN ZR_ASYNC_FRAME_STATUS_TORN_DOWN
 
+/** @brief 暂停用途；预算暂停和等待/编译暂停共享相同状态门禁。 */
 typedef enum EZrAsyncFrameSuspendReason {
     ZR_ASYNC_FRAME_SUSPEND_NONE = 0,
     ZR_ASYNC_FRAME_SUSPEND_WAIT,
@@ -83,6 +80,7 @@ typedef enum EZrAsyncFrameSuspendReason {
     ZR_ASYNC_FRAME_SUSPEND_COUNT
 } EZrAsyncFrameSuspendReason;
 
+/** @brief Poll 对调度器返回的状态；仅在安全边界实际取消或暂停。 */
 typedef enum EZrAsyncFramePollOutcome {
     ZR_ASYNC_FRAME_POLL_RUNNING = 0,
     ZR_ASYNC_FRAME_POLL_SUSPENDED,
@@ -91,7 +89,7 @@ typedef enum EZrAsyncFramePollOutcome {
     ZR_ASYNC_FRAME_POLL_FAULTED
 } EZrAsyncFramePollOutcome;
 
-/* An async contract is explicit.  Synchronous callers must not infer it. */
+/* 异步许可必须显式声明；借用、栈别名、锁保护和 native 临界区禁止跨暂停。 */
 #define ZR_ASYNC_FRAME_FLAG_ASYNC_CONTRACT ((TZrUInt32)1u << 0u)
 #define ZR_ASYNC_FRAME_FLAG_ALLOW_SUSPEND ((TZrUInt32)1u << 1u)
 #define ZR_ASYNC_FRAME_FLAG_STATE_MAP_VALID ((TZrUInt32)1u << 2u)
@@ -105,10 +103,16 @@ typedef enum EZrAsyncFramePollOutcome {
      ZR_ASYNC_FRAME_FLAG_HAS_STACK_ALIAS | ZR_ASYNC_FRAME_FLAG_HAS_LOCK_GUARD | \
      ZR_ASYNC_FRAME_FLAG_NATIVE_CRITICAL)
 
+/* Poll 登记待处理的预算和取消；等待位保留给未来调度器适配器。 */
 #define ZR_ASYNC_FRAME_PENDING_BUDGET ((TZrUInt32)1u << 0u)
 #define ZR_ASYNC_FRAME_PENDING_CANCEL ((TZrUInt32)1u << 1u)
 #define ZR_ASYNC_FRAME_PENDING_WAIT ((TZrUInt32)1u << 2u)
 
+/**
+ * @brief 调度器持有的帧预算与可恢复状态标量。
+ * @note Init 后由适配器填入非零 frameId/generation；允许暂停时还须提供
+ *       与 generation 一致的 state map。maxWorkUnits 为零表示不设工作量上限。
+ */
 typedef struct SZrAsyncFrameBudget {
     TZrUInt32 magic;
     TZrUInt32 schemaVersion;
@@ -129,58 +133,82 @@ typedef struct SZrAsyncFrameBudget {
     TZrUInt32 reserved;
 } SZrAsyncFrameBudget;
 
+/** @brief 清空可选诊断输出；空指针无操作。 */
 ZR_CORE_API void ZrCore_AsyncFrameBudget_DiagnosticClear(
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 返回静态诊断名称；未知值返回 unknown。 */
 ZR_CORE_API const TZrChar *ZrCore_AsyncFrameBudget_DiagnosticName(
         EZrAsyncFrameDiagnosticCode code);
+/** @brief 返回静态帧状态名称；未知值返回 unknown。 */
 ZR_CORE_API const TZrChar *ZrCore_AsyncFrameBudget_StatusName(
         EZrAsyncFrameStatus status);
+/** @brief 初始化帧 ABI 与空闲状态；不分配资源。 */
 ZR_CORE_API void ZrCore_AsyncFrameBudget_Init(SZrAsyncFrameBudget *frame);
+/** @brief 校验标识、代际、标志及 state map 一致性。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Validate(
         const SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 从 IDLE 进入 RUNNING 并重置用量；保留此前收到的取消请求。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Begin(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 检查异步许可、活跃资源与 state map 边界；失败填写诊断。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_CanSuspend(
         const SZrAsyncFrameBudget *frame,
         TZrBool atStateMapBoundary,
         TZrBool inNativeCritical,
         SZrAsyncFrameDiagnostic *diagnostic);
+/**
+ * @brief 累计工作量并兑现可安全处理的取消或预算暂停。
+ * @note native 临界区只登记待处理事件；无 state map 边界时继续运行。
+ */
 ZR_CORE_API EZrAsyncFramePollOutcome ZrCore_AsyncFrameBudget_Poll(
         SZrAsyncFrameBudget *frame,
         TZrUInt64 workUnits,
         TZrBool atStateMapBoundary,
         TZrBool inNativeCritical,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 将可暂停帧按指定原因置为 SUSPENDED；须通过 CanSuspend 的边界检查。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Suspend(
         SZrAsyncFrameBudget *frame,
         EZrAsyncFrameSuspendReason reason,
         TZrBool atStateMapBoundary,
         TZrBool inNativeCritical,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 标记帧完成；活跃 pin 阻止终结。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Complete(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 将非终态帧标为故障；活跃 pin 阻止终结。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Fault(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 增加活跃引用数；过量时以诊断拒绝。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Pin(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 释放一份活跃引用；下溢时以诊断拒绝。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Unpin(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/**
+ * @brief 请求在下一个安全边界取消；Begin 保留启动前的请求。
+ * TODO: 是否允许跨线程调用尚未由适配器规定。实现只原子写取消位，
+ *       同时读写普通 status/pendingFlags；需在接入调度器前明确同步约束并补并发测试。
+ */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_RequestCancel(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 恢复暂停帧；若已请求取消，则改为 CANCELLED。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Resume(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 回收非运行帧；活跃 pin 被拒绝，重复 teardown 可成功。 */
 ZR_CORE_API TZrBool ZrCore_AsyncFrameBudget_Teardown(
         SZrAsyncFrameBudget *frame,
         SZrAsyncFrameDiagnostic *diagnostic);
 
+/** @brief 等待槽状态；唤醒、取消、超时仅有一个终态获胜。 */
 typedef enum EZrAsyncWaitState {
     ZR_ASYNC_WAIT_STATE_FREE = 0,
     ZR_ASYNC_WAIT_STATE_REGISTERING,
@@ -192,6 +220,7 @@ typedef enum EZrAsyncWaitState {
     ZR_ASYNC_WAIT_STATE_COUNT
 } EZrAsyncWaitState;
 
+/** @brief 注册表借用的单个槽位；token/generation 防止旧 handle 误认新等待。 */
 typedef struct SZrAsyncWaitSlot {
     volatile TZrUInt32 state;
     volatile TZrUInt32 resumeCount;
@@ -201,6 +230,7 @@ typedef struct SZrAsyncWaitSlot {
     TZrUInt64 deadlineMicros;
 } SZrAsyncWaitSlot;
 
+/** @brief 持有槽位数组的注册表；Deinit 前须先停止并释放所有等待操作。 */
 typedef struct SZrAsyncWaitRegistry {
     volatile TZrUInt32 lock;
     TZrUInt64 nextToken;
@@ -209,6 +239,7 @@ typedef struct SZrAsyncWaitRegistry {
     TZrUInt32 reserved;
 } SZrAsyncWaitRegistry;
 
+/** @brief 指向注册表槽位的可复制身份；Release 前须结束同槽所有访问并保持 registry 有效。 */
 typedef struct SZrAsyncWaitHandle {
     SZrAsyncWaitRegistry *registry;
     TZrUInt32 slotIndex;
@@ -216,6 +247,11 @@ typedef struct SZrAsyncWaitHandle {
     TZrUInt64 generation;
 } SZrAsyncWaitHandle;
 
+/**
+ * @brief 一次等待注册的标量输入；包装入口使用内含的 registry/outHandle，
+ *        显式 Begin 使用对应形参，所用对象均由调用方保持有效。
+ * @note deadlineMicros 仅随槽位保存，超时事件由调度器显式调用 Timeout。
+ */
 typedef struct SZrAsyncWaitRequest {
     TZrUInt32 schemaVersion;
     SZrAsyncWaitRegistry *registry;
@@ -234,48 +270,59 @@ typedef struct SZrAsyncWaitRequest {
     TZrBool reserved0;
 } SZrAsyncWaitRequest;
 
+/** @brief 借用调用方槽位数组建立等待注册表；拒绝零容量。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWaitRegistry_Init(
         SZrAsyncWaitRegistry *registry,
         SZrAsyncWaitSlot *slots,
         TZrUInt32 capacity,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 清空注册表状态；仅在所有访问与 handle 生命周期结束后调用。 */
 ZR_CORE_API void ZrCore_AsyncWaitRegistry_Deinit(
         SZrAsyncWaitRegistry *registry);
 
-/* The request carries registry/outHandle so this matches the plan's two-arg
- * execution entry while retaining a convenient explicit form below. */
+/** @brief 用请求内的 registry/outHandle 注册等待；可能与唤醒并发。 */
 ZR_CORE_API TZrBool ZrCore_Execution_BeginAsyncWait(
         const SZrAsyncWaitRequest *request,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 显式传入注册表与输出 handle 的等待注册入口。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Begin(
         SZrAsyncWaitRegistry *registry,
         const SZrAsyncWaitRequest *request,
         SZrAsyncWaitHandle *outHandle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 注册后重新检查条件；已获胜的唤醒/取消/超时不会被覆盖。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Recheck(
         SZrAsyncWaitHandle *handle,
         TZrBool conditionReady,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 尝试将 REGISTERING/WAITING 原子转成 READY。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Wake(
         SZrAsyncWaitHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 尝试让等待由取消赢得终态。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Cancel(
         SZrAsyncWaitHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 调度器显式触发超时，尝试赢得终态。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Timeout(
         SZrAsyncWaitHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 对 READY/CANCELLED/TIMED_OUT 槽位只恢复一次。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Resume(
         SZrAsyncWaitHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief RESUMED 后释放槽位并清空 handle；不可与任何同槽句柄访问并发。 */
 ZR_CORE_API TZrBool ZrCore_AsyncWait_Release(
         SZrAsyncWaitHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 查询匹配 handle 的槽位状态；失效时返回 FREE。 */
 ZR_CORE_API EZrAsyncWaitState ZrCore_AsyncWait_State(
         const SZrAsyncWaitHandle *handle);
+/** @brief 查询匹配槽位的恢复次数；失效时返回零。 */
 ZR_CORE_API TZrUInt32 ZrCore_AsyncWait_ResumeCount(
         const SZrAsyncWaitHandle *handle);
 
+/** @brief 后台编译任务状态；RUNNING 的取消要等 worker Complete 确认。 */
 typedef enum EZrCompileJobState {
     ZR_COMPILE_JOB_FREE = 0,
     ZR_COMPILE_JOB_QUEUED,
@@ -286,9 +333,11 @@ typedef enum EZrCompileJobState {
     ZR_COMPILE_JOB_COUNT
 } EZrCompileJobState;
 
+/* 预热任务由请求显式标记；其余位由 Queue 拒绝。 */
 #define ZR_COMPILE_QUEUE_REQUEST_WARMUP ((TZrUInt32)1u << 0u)
 #define ZR_COMPILE_QUEUE_REQUEST_KNOWN_MASK ZR_COMPILE_QUEUE_REQUEST_WARMUP
 
+/** @brief 队列拥有的任务记录；snapshot 是从请求复制的 IR 字节。 */
 typedef struct SZrCompileJobRecord {
     volatile TZrUInt32 state;
     volatile TZrUInt32 cancellationRequested;
@@ -304,6 +353,7 @@ typedef struct SZrCompileJobRecord {
     TZrUInt32 reserved;
 } SZrCompileJobRecord;
 
+/** @brief 借用固定记录数组并拥有各记录快照；Deinit 须在 worker 停止后进行。 */
 typedef struct SZrCompileQueue {
     volatile TZrUInt32 lock;
     TZrUInt64 nextJobId;
@@ -313,12 +363,17 @@ typedef struct SZrCompileQueue {
     TZrSize maxSnapshotBytes;
 } SZrCompileQueue;
 
+/** @brief 用 slotIndex/jobId 验证记录身份；调用者保管 handle 对象。 */
 typedef struct SZrCompileJobHandle {
     SZrCompileQueue *queue;
     TZrUInt32 slotIndex;
     TZrUInt64 jobId;
 } SZrCompileJobHandle;
 
+/**
+ * @brief 任务请求；queue/outHandle 必须等于显式 Queue 参数，IR 由队列复制。
+ * @note generation、模块/签名/布局哈希在 Complete 时用于拒绝过期结果。
+ */
 typedef struct SZrCompileQueueRequest {
     TZrUInt32 schemaVersion;
     SZrCompileQueue *queue;
@@ -336,59 +391,51 @@ typedef struct SZrCompileQueueRequest {
     TZrBool reserved3;
 } SZrCompileQueueRequest;
 
-/*
- * Queue/request identity and worker lifetime contract:
- *
- * - request->queue and request->outHandle are required to be non-NULL and
- *   must equal the queue/output arguments supplied to Queue/QueueWarmup.
- *   The wrapper QueueCompilation uses those same fields, so it cannot publish
- *   a job through an unrelated queue or handle.
- * - Queue record transitions are serialized by the queue lock.  A handle
- *   value may be copied for a worker, but one handle object must not be
- *   concurrently mutated (for example, Release must not race a call that
- *   reads that same object).  The queue must remain initialized until every
- *   handle is terminal and released; Deinit is a quiescent operation.
- * - GetSnapshot returns a borrowed immutable pointer.  The worker must finish
- *   reading it before Complete; after Complete acknowledges cancellation or
- *   publishes/discards a result, Release may free the snapshot.
- * - Cancel transitions QUEUED jobs to CANCELLED.  For RUNNING jobs it only
- *   sets cancellationRequested and deliberately keeps RUNNING until the
- *   worker calls Complete.  Release rejects RUNNING, preventing a snapshot
- *   from being freed while the worker may still read it.
- */
+/* 队列锁串行化记录转移。worker 可复制 handle 值，但同一 handle 对象不能与 Release
+ * 并发访问；GetSnapshot 的借用字节在 Complete 前有效。运行中的取消保持 RUNNING，
+ * 由 worker Complete 确认后才允许 Release 释放快照；Deinit 只用于静止队列。 */
 
+/** @brief 借用固定记录数组创建队列，并设置单任务快照字节上限。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_Init(
         SZrCompileQueue *queue,
         SZrCompileJobRecord *records,
         TZrUInt32 capacity,
         TZrSize maxSnapshotBytes,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 释放队列仍持有的快照；须在所有 worker 与 handle 停止后调用。 */
 ZR_CORE_API void ZrCore_CompileQueue_Deinit(SZrCompileQueue *queue);
+/** @brief 用请求中的 queue/outHandle 排入任务。 */
 ZR_CORE_API TZrBool ZrCore_Execution_QueueCompilation(
         const SZrCompileQueueRequest *request,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 复制 IR 快照并原子发布 QUEUED 任务；满队列或分配失败不发布记录。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_Queue(
         SZrCompileQueue *queue,
         const SZrCompileQueueRequest *request,
         SZrCompileJobHandle *outHandle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 按相同身份约束排入带 WARMUP 标志的任务。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_QueueWarmup(
         SZrCompileQueue *queue,
         const SZrCompileQueueRequest *request,
         SZrCompileJobHandle *outHandle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief worker 认领一个 QUEUED 任务，转成 RUNNING 并得到 handle。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_ClaimNext(
         SZrCompileQueue *queue,
         SZrCompileJobHandle *outHandle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 取消排队任务，或对运行任务只记录待取消请求。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_Cancel(
         SZrCompileJobHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 借用队列中的不可变 IR 快照；worker 须在 Complete 前读完。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_GetSnapshot(
         const SZrCompileJobHandle *handle,
         const TZrByte **outSnapshot,
         TZrSize *outLength,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief worker 按代际及哈希确认结果；过期或已取消任务转为 DISCARDED。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_Complete(
         SZrCompileJobHandle *handle,
         TZrUInt64 currentGeneration,
@@ -397,11 +444,14 @@ ZR_CORE_API TZrBool ZrCore_CompileQueue_Complete(
         TZrUInt64 layoutHash,
         TZrUInt64 resultHash,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 仅对终态任务释放快照与槽位，并清空调用方 handle。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_Release(
         SZrCompileJobHandle *handle,
         SZrAsyncFrameDiagnostic *diagnostic);
+/** @brief 查询匹配 handle 的记录状态；失效时返回 FREE。 */
 ZR_CORE_API EZrCompileJobState ZrCore_CompileQueue_State(
         const SZrCompileJobHandle *handle);
+/** @brief 查询匹配任务的预热标志；失效时返回假。 */
 ZR_CORE_API TZrBool ZrCore_CompileQueue_IsWarmup(
         const SZrCompileJobHandle *handle);
 
