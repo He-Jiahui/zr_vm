@@ -171,12 +171,12 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}')` 现
   - `.zrp` 语言注册
   - `.zrp` 的 `jsonValidation` schema 绑定
 - `npm run compile` 在 `zr_vm_language_server_extension/` 通过
-- `node -e "const schema=require('./schemas/zrp.schema.json')..."` 能成功读取 schema，并确认：
-  - `required = [binary, source, entry]`
-  - 覆盖字段数量为 13
+- `node -e "const schema=require('./schemas/zrp.schema.json')..."` 能成功读取当时的 schema。
+
+2026-09-27 复核当前 schema：顶层 `properties` 为 23 项，`required = [binary, source, entry]`。字段数量只说明编辑器知道这些名称，不代表与项目加载器的验证规则一致。
 
 ## 当前限制
 
 - 当前 `.zrp` 仍然是“先以 `zr-project` 打开，再切到 `json`”的两段式路径；这比静态文件关联多一步，但能保证扩展在 `.zrp` 首次打开时就被激活。
 - `.zri` 不再进入 LSP 语义链；如果后续 debug/link 能力需要消费 `.zri`，应走独立 debug artifact 管线，而不是回到 language server metadata loader。
-- schema 目前只覆盖 `zr_vm_library/src/zr_vm_library/project/project.c` 已知字段；如果 project loader 后续扩展出数组或嵌套对象结构，需要同步升级 schema。
+- 编辑器 schema 与项目加载器仍有已复现的差异：schema 将 `manifestVersion` 限为 1，而 v2 加载器接受 2；`pathAliases` 和 `resources` 的部分无效名称也会被 schema 接受。资源的 `hash` 字段虽获 schema 接受，却在普通项目加载与 CLI 打包链中被丢弃。`supportMultithread` 由加载器消费，但 schema 未声明它。证据及待核查条件记录在 `docs/code-review/coverage/zr_vm_language_server_extension_config.tsv`；后续调整 schema 时应以加载器当前规则和仓内 v2 样例共同验证。
