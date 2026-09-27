@@ -1,10 +1,13 @@
 #include "parser_internal.h"
 
+/* scoped/readonly 在此语法位置仍是标识符，按文本识别以免扩大保留词范围。 */
 static TZrBool current_identifier_is(SZrParserState *ps, const TZrChar *value) {
     return ps != ZR_NULL && ps->lexer->t.token == ZR_TK_IDENTIFIER &&
            current_identifier_equals(ps, value);
 }
 
+/* 将 in/out/ref 及 scoped ref readonly 折叠为规范源传递形式，同时保留旧 passing mode。 */
+/* 仅识别完整前缀时写输出字段；孤立 scoped 报错并交给调用方终止参数解析。 */
 TZrBool parse_parameter_source_passing_form(
         SZrParserState *ps,
         EZrParameterSourcePassingForm *sourceForm,

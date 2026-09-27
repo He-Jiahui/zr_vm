@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 名称与标记数组只持有词法值或小型标记，不拥有实参 AST。 */
 static void free_argument_syntax_array(SZrParserState *ps, SZrArray *array) {
     if (ps == ZR_NULL || array == ZR_NULL) {
         return;
@@ -11,6 +12,7 @@ static void free_argument_syntax_array(SZrParserState *ps, SZrArray *array) {
                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
 }
 
+/* 空名称占位对应位置参数；仅非空名称决定 hasNamedArgs。 */
 static TZrBool argument_names_have_named_entry(const SZrArray *argNames) {
     if (argNames == ZR_NULL) {
         return ZR_FALSE;
@@ -24,6 +26,7 @@ static TZrBool argument_names_have_named_entry(const SZrArray *argNames) {
     return ZR_FALSE;
 }
 
+/* init 解析尚未成功时，集中回收类型、实参节点和并行的元数据数组。 */
 static void free_struct_init_parts(SZrParserState *ps,
                                    SZrType *typeInfo,
                                    SZrAstNodeArray *args,
@@ -38,6 +41,7 @@ static void free_struct_init_parts(SZrParserState *ps,
     free_argument_syntax_array(ps, argumentMarkers);
 }
 
+/* init Type(...) 先解析独立类型，再沿用调用参数语法；成功后整体归 struct-init AST。 */
 SZrAstNode *parse_struct_init_expression(SZrParserState *ps) {
     SZrFileRange startLocation;
     SZrFileRange closeLocation;
@@ -85,6 +89,7 @@ SZrAstNode *parse_struct_init_expression(SZrParserState *ps) {
         free_struct_init_parts(ps, typeInfo, args, argNames, argumentMarkers);
         return ZR_NULL;
     }
+    /* AST 析构路径负责四份数据；本层从此不再单独释放。 */
     node->data.structInitExpression.typeInfo = typeInfo;
     node->data.structInitExpression.args = args;
     node->data.structInitExpression.argNames = argNames;

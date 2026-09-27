@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 将 ref/out 前缀保存为调用点标记；无前缀时保留 NONE 占位以对齐实参数组。 */
 static SZrCallArgumentSyntax parse_call_argument_marker(SZrParserState *ps) {
     SZrCallArgumentSyntax syntax;
     memset(&syntax, 0, sizeof(syntax));
@@ -19,6 +20,7 @@ static SZrCallArgumentSyntax parse_call_argument_marker(SZrParserState *ps) {
     return syntax;
 }
 
+/* 展开语法先包成独立 AST 节点，后续编译阶段再判定位置及元素类型是否合法。 */
 static SZrAstNode *parse_call_argument_expression(SZrParserState *ps) {
     SZrFileRange spreadLocation;
     SZrAstNode *expression;
@@ -48,6 +50,8 @@ static SZrAstNode *parse_call_argument_expression(SZrParserState *ps) {
     return spread;
 }
 
+/* 返回由调用者接管的表达式数组，并按实参顺序并行返回名称与 ref/out 标记数组。 */
+/* 语法错误可能留下部分列表；调用者须结合当前 token/错误状态递归释放已建 AST。 */
 SZrAstNodeArray *parse_argument_list(
         SZrParserState *ps,
         SZrArray **argNames,
@@ -66,6 +70,7 @@ SZrAstNodeArray *parse_argument_list(
     if (argNames != ZR_NULL) {
         *argNames = ZR_NULL;
     }
+    /* TODO: 标记数组分配或初始化失败后仍继续解析；需用分配失败注入验证 ref/out 不会被误当普通表达式。 */
     if (argumentMarkers != ZR_NULL) {
         *argumentMarkers = ZR_NULL;
         markers = ZrCore_Memory_RawMallocWithType(
@@ -107,6 +112,7 @@ SZrAstNodeArray *parse_argument_list(
         {
             SZrAstNode *first = parse_call_argument_expression(ps);
             if (first != ZR_NULL) {
+                /* BUG: 扩容分配失败时 AstNodeArray_Add 静默丢弃节点；当前无返回值可检查，实参 AST 会泄漏。 */
                 ZrParser_AstNodeArray_Add(ps->state, args, first);
             } else {
                 if (names != ZR_NULL) {
@@ -165,6 +171,7 @@ SZrAstNodeArray *parse_argument_list(
             {
                 SZrAstNode *arg = parse_call_argument_expression(ps);
                 if (arg != ZR_NULL) {
+                    /* 同一扩容失败路径还会使表达式、名称和标记三个数组长度失配。 */
                     ZrParser_AstNodeArray_Add(ps->state, args, arg);
                 } else {
                     break;
@@ -182,6 +189,7 @@ SZrAstNodeArray *parse_argument_list(
     return args;
 }
 
+/* TODO: 全仓当前只有声明和定义，无调用点；核查是否应接入 ref/out 校验或移除该查询。 */
 TZrBool call_has_explicit_argument_marker(const SZrArray *markers) {
     if (markers == ZR_NULL) {
         return ZR_FALSE;

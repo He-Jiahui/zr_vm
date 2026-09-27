@@ -1,11 +1,13 @@
 #include "parser_internal.h"
 
+/* 保留的所有权操作在表达式入口走专门的单参数解析，成员名上下文则另行放行。 */
 TZrBool is_ownership_intrinsic_token(EZrToken token) {
     return token == ZR_TK_SHARE || token == ZR_TK_DEGRADE ||
            token == ZR_TK_WAKE || token == ZR_TK_INTO_GC ||
            token == ZR_TK_DROP;
 }
 
+/* 把词法 token 映射到 AST 操作码；调用前已由保留 token 检查限定输入。 */
 static EZrOwnershipIntrinsicOperation intrinsic_operation(EZrToken token) {
     switch (token) {
         case ZR_TK_SHARE:
@@ -23,6 +25,7 @@ static EZrOwnershipIntrinsicOperation intrinsic_operation(EZrToken token) {
     }
 }
 
+/* 优先形成带精确范围的结构化诊断，构建失败时回退到原 token 错误。 */
 static void report_ownership_intrinsic_syntax_error(
         SZrParserState *ps,
         SZrFileRange location,
@@ -60,6 +63,7 @@ static void report_ownership_intrinsic_syntax_error(
     ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
 }
 
+/* 声明和成员访问中的保留操作名按普通成员名保存，不触发调用语法。 */
 SZrAstNode *parse_member_identifier(SZrParserState *ps) {
     SZrFileRange location;
     const TZrChar *name;
@@ -83,6 +87,8 @@ SZrAstNode *parse_member_identifier(SZrParserState *ps) {
     return create_identifier_node_with_location(ps, value, location);
 }
 
+/* 所有权 intrinsic 仅接受一个位置实参；多参数诊断后消耗到右括号以恢复后续解析。 */
+/* 成功时实参节点归 intrinsic AST，缺少右括号或节点分配失败由此层释放。 */
 SZrAstNode *parse_ownership_intrinsic_expression(SZrParserState *ps) {
     EZrToken token;
     EZrOwnershipIntrinsicOperation operation;
@@ -151,6 +157,7 @@ SZrAstNode *parse_ownership_intrinsic_expression(SZrParserState *ps) {
     if (argument == ZR_NULL) {
         return ZR_NULL;
     }
+    /* 错误已记入 parser；保留首个实参用于诊断恢复，额外 token 不构造 AST。 */
     if (ps->lexer->t.token == ZR_TK_COMMA) {
         report_ownership_intrinsic_syntax_error(
                 ps,

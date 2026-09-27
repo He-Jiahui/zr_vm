@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+/* 失败路径递归释放实参 AST，同时释放只保存字符串引用的名称和标记数组。 */
 static void free_call_metadata(SZrParserState *ps,
                                SZrAstNodeArray *args,
                                SZrArray *argNames,
@@ -25,6 +26,8 @@ static void free_call_metadata(SZrParserState *ps,
     }
 }
 
+/* 普通/可选后缀调用共享此入口；成功时把三个实参数组交给函数调用 AST。 */
+/* prototype 特例改写成构造表达式，名称和标记在转交前由本层处理。 */
 SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
                                        SZrAstNode *base,
                                        SZrFileRange chainStartLoc,
@@ -59,6 +62,7 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
         SZrAstNode *constructNode;
 
         if (!reject_named_construct_arguments(ps, argNames, chainStartLoc)) {
+            /* 拒绝函数已释放 argNames；此处只清理实参节点与标记，避免二次释放。 */
             free_call_metadata(ps, args, ZR_NULL, argumentMarkers);
             return base;
         }
@@ -73,6 +77,7 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
             argumentMarkers = ZR_NULL;
         }
 
+        /* 从 prototype 包装节点取走 target，再用构造节点接管它和 args。 */
         base->data.prototypeReferenceExpression.target = ZR_NULL;
         ZrCore_Memory_RawFreeWithType(
                 ps->state->global,
@@ -90,6 +95,7 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
                 ZR_OWNERSHIP_BUILTIN_KIND_NONE,
                 fullLoc);
         if (constructNode == ZR_NULL) {
+            /* BUG: 构造节点分配失败只释放数组容器，已解析的实参节点不随之释放。 */
             if (args != ZR_NULL) {
                 ZrParser_AstNodeArray_Free(ps->state, args);
             }
@@ -123,5 +129,6 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
         }
     }
 
+    /* BUG: append_primary_member 分配失败仅返回 base，不释放刚交给它的 callNode 与实参。 */
     return append_primary_member(ps, base, callNode, chainStartLoc);
 }
