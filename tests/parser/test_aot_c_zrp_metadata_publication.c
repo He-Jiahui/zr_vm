@@ -14,8 +14,10 @@
 
 void setUp(void) {}
 
+// BUG: 建立 VM state 或读取文件字节后若断言失败，函数尾部 Destroy/free 被 Unity TEST_ABORT 跳过；空 tearDown 无法清理资源（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 顺序构造节布局，零长度节清空描述符，避免夹具绕过正式头部校验。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -36,6 +38,7 @@ static void set_section(SZrZrpMetadataSection *section,
     *offset += byteLength;
 }
 
+// 编码根函数的子函数引用，使裁剪器从真实指令追踪保留目标。
 static TZrInstruction make_instruction_2(EZrInstructionCode opcode,
                                          TZrUInt16 operandExtra,
                                          TZrUInt16 operandA,
@@ -50,6 +53,7 @@ static TZrInstruction make_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+// 建立仅引用首个子函数的树，用另一个子函数制造可裁剪的方法行。
 static SZrFunction *create_two_child_trim_fixture(SZrState *state) {
     SZrFunction *root;
 
@@ -91,6 +95,7 @@ static SZrFunction *create_two_child_trim_fixture(SZrState *state) {
     return root;
 }
 
+// 让两个方法行共享类型，其中只有一个函数可达；同时放入待清理的孤立池。
 static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
                                                           TZrSize bufferLength,
                                                           TZrSize *outExpectedPublishedLength) {
@@ -158,6 +163,7 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 构造缺失所属类型的定义表，验证发布失败时不会留下旧 sidecar。
 static TZrSize build_zrp_metadata_invalid_definition_tables_fixture(TZrByte *buffer, TZrSize bufferLength) {
     const TZrUInt32 methodDefRowBytes = (TZrUInt32)sizeof(SZrZrpMetadataMethodDefRow);
     SZrZrpMetadataHeader header;
@@ -185,6 +191,7 @@ static TZrSize build_zrp_metadata_invalid_definition_tables_fixture(TZrByte *buf
     return offset;
 }
 
+// 写入旧 sidecar 哨兵，供失败路径检验输出文件是否被清理。
 static TZrBool write_binary_file(const TZrChar *path, const TZrByte *bytes, TZrSize length) {
     FILE *file;
     size_t written;
@@ -203,6 +210,7 @@ static TZrBool write_binary_file(const TZrChar *path, const TZrByte *bytes, TZrS
     return (TZrBool)(written == (size_t)length);
 }
 
+// 经 AOT C writer 发布元数据，核对方法 RID、函数索引及孤立池都已压紧。
 static void test_aot_c_writer_publishes_compacted_zrp_metadata_file(void) {
     TZrByte metadataBlob[768];
     TZrSize metadataBytesBeforeTrim;
@@ -268,6 +276,7 @@ static void test_aot_c_writer_publishes_compacted_zrp_metadata_file(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 无效定义表应使 writer 失败，且预先存在的 sidecar 不得被误认为新产物。
 static void test_aot_c_writer_rejects_invalid_compacted_zrp_metadata_sidecar(void) {
     static const TZrByte staleSidecarBytes[] = {'s', 't', 'a', 'l', 'e'};
     TZrByte metadataBlob[512];

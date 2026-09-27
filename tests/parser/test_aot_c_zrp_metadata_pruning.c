@@ -10,8 +10,10 @@
 
 void setUp(void) {}
 
+// BUG: 取得 prunedMetadata.ownedBlob 后若断言失败，函数尾部 release 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收堆块，后续 RUN_TEST 仍在同进程执行（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 按元数据头部顺序铺排各节，空节归零以保持字节布局合法。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -43,6 +45,7 @@ static TZrUInt32 read_u32_le(const TZrByte *source) {
            ((TZrUInt32)source[3] << 24u);
 }
 
+// 同时构造存活和已删方法的 token record，检验记录与方法表同步裁剪。
 static TZrSize build_method_def_token_pruning_fixture(TZrByte *buffer,
                                                       TZrSize bufferLength,
                                                       TZrSize *outExpectedPrunedLength) {
@@ -107,6 +110,7 @@ static TZrSize build_method_def_token_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 将孤立 TypeDef 放在尾部，验证无根类型行被移除。
 static TZrSize build_trailing_orphan_type_def_pruning_fixture(TZrByte *buffer,
                                                               TZrSize bufferLength,
                                                               TZrSize *outExpectedPrunedLength,
@@ -183,6 +187,7 @@ static TZrSize build_trailing_orphan_type_def_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 给待删类型挂泛型参数，检验 owner 消失后参数行不残留。
 static TZrSize build_pruned_type_def_owned_generic_param_fixture(TZrByte *buffer,
                                                                  TZrSize bufferLength,
                                                                  TZrSize *outExpectedPrunedLength) {
@@ -251,6 +256,7 @@ static TZrSize build_pruned_type_def_owned_generic_param_fixture(TZrByte *buffer
     return offset;
 }
 
+// 孤立类型携带字段，验证字段不能错误保住所属类型。
 static TZrSize build_orphan_type_def_with_field_pruning_fixture(TZrByte *buffer,
                                                                 TZrSize bufferLength,
                                                                 TZrSize *outExpectedPrunedLength,
@@ -353,6 +359,7 @@ static TZrSize build_orphan_type_def_with_field_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 在存活字段之前放置无根字段，检验成员 RID 中间缺口压紧。
 static TZrSize build_dead_field_before_live_field_token_pruning_fixture(TZrByte *buffer,
                                                                         TZrSize bufferLength,
                                                                         TZrSize *outExpectedPrunedLength) {
@@ -436,6 +443,7 @@ static TZrSize build_dead_field_before_live_field_token_pruning_fixture(TZrByte 
     return offset;
 }
 
+// 让 TypeDef 仅由死字段的 ownerToken 引用，防止伪根保住孤立类型。
 static TZrSize build_dead_field_owner_type_token_record_pruning_fixture(TZrByte *buffer,
                                                                         TZrSize bufferLength,
                                                                         TZrSize *outExpectedPrunedLength) {
@@ -454,6 +462,7 @@ static TZrSize build_dead_field_owner_type_token_record_pruning_fixture(TZrByte 
     return length;
 }
 
+// 让 TypeSpec 仅由死字段 token record 引用，检验根记录删除后的连带裁剪。
 static TZrSize build_typespec_dead_field_token_record_root_fixture(TZrByte *buffer,
                                                                    TZrSize bufferLength,
                                                                    TZrSize *outExpectedPrunedLength) {
@@ -580,6 +589,7 @@ static TZrSize build_typespec_dead_field_token_record_root_fixture(TZrByte *buff
     return offset;
 }
 
+// 同一类型同时含方法和字段，检查方法裁剪不误改存活字段。
 static TZrSize build_method_def_with_field_fixture(TZrByte *buffer,
                                                    TZrSize bufferLength,
                                                    TZrSize *outExpectedPrunedLength) {
@@ -664,6 +674,7 @@ static TZrSize build_method_def_with_field_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 构造绑定及无绑定 manifest 导出，核对 token 和目标字符串存续。
 static TZrSize build_method_def_with_manifest_exports_fixture(TZrByte *buffer,
                                                               TZrSize bufferLength,
                                                               TZrSize *outExpectedPrunedLength,
@@ -781,6 +792,7 @@ static TZrSize build_method_def_with_manifest_exports_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 让类型导出成为 TypeDef 的根，并预留需重排的类型 RID。
 static TZrSize build_type_def_manifest_export_declaration_fixture(TZrByte *buffer,
                                                                   TZrSize bufferLength,
                                                                   TZrSize *outExpectedPrunedLength,
@@ -857,6 +869,7 @@ static TZrSize build_type_def_manifest_export_declaration_fixture(TZrByte *buffe
     return offset;
 }
 
+// 方法和类型各带泛型参数，验证 owner 与索引区间分别重映射。
 static TZrSize build_method_def_with_generic_param_fixture(TZrByte *buffer,
                                                            TZrSize bufferLength,
                                                            TZrSize *outExpectedPrunedLength) {
@@ -938,6 +951,7 @@ static TZrSize build_method_def_with_generic_param_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 把字段 token 置入仅方法可用的引用位置，检验无效根被丢弃。
 static TZrSize build_field_def_as_method_owner_fixture(TZrByte *buffer,
                                                        TZrSize bufferLength,
                                                        TZrSize *outExpectedPrunedLength) {
@@ -1054,6 +1068,7 @@ static TZrSize build_field_def_as_method_owner_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 让方法和类型参数都带约束，检验参数区间压紧后的约束索引。
 static TZrSize build_method_def_with_generic_param_constraint_fixture(TZrByte *buffer,
                                                                       TZrSize bufferLength,
                                                                       TZrSize *outExpectedPrunedLength) {
@@ -1156,6 +1171,7 @@ static TZrSize build_method_def_with_generic_param_constraint_fixture(TZrByte *b
     return offset;
 }
 
+// 约束指向 TypeSpec，迫使约束、类型规格和关联 token 同步压紧。
 static TZrSize build_generic_param_constraint_with_typespec_fixture(TZrByte *buffer,
                                                                     TZrSize bufferLength,
                                                                     TZrSize *outExpectedPrunedLength) {
@@ -1280,6 +1296,7 @@ static TZrSize build_generic_param_constraint_with_typespec_fixture(TZrByte *buf
     return offset;
 }
 
+// TypeSpec 仅由存活泛型约束引用，验证没有 token record 也可成为根。
 static TZrSize build_generic_param_constraint_constraint_rooted_typespec_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -1391,6 +1408,7 @@ static TZrSize build_generic_param_constraint_constraint_rooted_typespec_fixture
     return offset;
 }
 
+// 为可删与存活方法建立 MethodSpec，检验实例化记录和签名同步裁剪。
 static TZrSize build_method_def_with_method_spec_fixture(TZrByte *buffer,
                                                          TZrSize bufferLength,
                                                          TZrSize *outExpectedPrunedLength) {
@@ -1517,6 +1535,7 @@ static TZrSize build_method_def_with_method_spec_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 制造缺少签名 token record 的 MethodSpec，验证拒绝不完整输入。
 static TZrSize build_method_spec_missing_signature_record_fixture(TZrByte *buffer, TZrSize bufferLength) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
     const TZrUInt32 typeDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
@@ -1600,6 +1619,7 @@ static TZrSize build_method_spec_missing_signature_record_fixture(TZrByte *buffe
     return offset;
 }
 
+// 在签名 blob 嵌入成员引用，检验方法 RID 改变时重写并重算哈希。
 static TZrSize build_signature_member_ref_token_rewrite_fixture(TZrByte *buffer,
                                                                 TZrSize bufferLength,
                                                                 TZrSize *outExpectedPrunedLength) {
@@ -1674,6 +1694,7 @@ static TZrSize build_signature_member_ref_token_rewrite_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 删除不可达方法后，相关 token record 一并移除，保留记录使用新 RID。
 static void test_aot_c_zrp_metadata_pruning_prunes_token_records_for_removed_method_defs(void) {
     TZrByte blob[768];
     TZrSize expectedPrunedLength;
@@ -1738,6 +1759,7 @@ static void test_aot_c_zrp_metadata_pruning_prunes_token_records_for_removed_met
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 尾部孤立 TypeDef 不得因原表中存在而留在发布元数据里。
 static void test_aot_c_zrp_metadata_pruning_drops_trailing_orphan_type_defs(void) {
     static const TZrByte expectedStringPool[] = "LiveType\0Example\0Kept";
     TZrByte blob[1024];
@@ -1819,6 +1841,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_trailing_orphan_type_defs(void
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 孤立 TypeDef 即使拥有字段也连同字段与引用记录一起消失。
 static void test_aot_c_zrp_metadata_pruning_drops_orphan_type_defs_with_fields(void) {
     static const TZrByte expectedStringPool[] = "LiveType\0Example\0Kept\0liveField";
     TZrByte blob[1280];
@@ -1913,6 +1936,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_orphan_type_defs_with_fields(v
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 方法成员 RID 缩短后，存活字段及引用记录须迁到新位置。
 static void test_aot_c_zrp_metadata_pruning_remaps_field_def_member_tokens_after_method_pruning(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -2011,6 +2035,7 @@ static void test_aot_c_zrp_metadata_pruning_remaps_field_def_member_tokens_after
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 删除排在前面的字段后，存活字段 token 不得保留旧 RID 缺口。
 static void test_aot_c_zrp_metadata_pruning_drops_pruned_field_def_member_tokens_before_live_fields(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -2110,6 +2135,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_pruned_field_def_member_tokens
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 已删字段的 ownerToken 不构成类型根，避免孤立 TypeDef 被误保留。
 static void test_aot_c_zrp_metadata_pruning_drops_typedef_rooted_only_by_pruned_field_owner_token(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -2186,6 +2212,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_typedef_rooted_only_by_pruned_
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 已删字段 token record 不能继续保住 TypeSpec 和签名。
 static void test_aot_c_zrp_metadata_pruning_drops_typespec_rooted_only_by_pruned_field_token_record(void) {
     TZrByte blob[1536];
     TZrSize expectedPrunedLength;
@@ -2272,6 +2299,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_typespec_rooted_only_by_pruned
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 绑定导出行跟随方法 RID 重映射，目标字符串仍须可寻址。
 static void test_aot_c_zrp_metadata_pruning_remaps_manifest_export_rows_after_method_pruning(void) {
     TZrByte blob[2048];
     TZrSize expectedPrunedLength;
@@ -2354,6 +2382,7 @@ static void test_aot_c_zrp_metadata_pruning_remaps_manifest_export_rows_after_me
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 无 token 绑定的 manifest 目标字符串仍是存活数据，不能被池裁剪。
 static void test_aot_c_zrp_metadata_pruning_keeps_manifest_export_target_only_strings(void) {
     TZrByte blob[2048];
     TZrSize expectedPrunedLength;
@@ -2434,6 +2463,7 @@ static void test_aot_c_zrp_metadata_pruning_keeps_manifest_export_target_only_st
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 方法裁剪后无绑定导出仍保留原种类与目标，不得凭空附加 token。
 static void test_aot_c_zrp_metadata_pruning_preserves_unbound_manifest_export_rows_after_method_pruning(void) {
     TZrByte blob[2048];
     TZrSize expectedPrunedLength;
@@ -2515,6 +2545,7 @@ static void test_aot_c_zrp_metadata_pruning_preserves_unbound_manifest_export_ro
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// writer 输入的导出声明落为元数据行，方法绑定对应压紧后 token。
 static void test_aot_c_zrp_metadata_pruning_publishes_manifest_export_declarations_as_rows(void) {
     TZrByte blob[2048];
     TZrSize expectedPrunedLength;
@@ -2625,6 +2656,7 @@ static void test_aot_c_zrp_metadata_pruning_publishes_manifest_export_declaratio
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 动态方法、类型和字段声明发布为无绑定行，目标字符串仍可寻址。
 static void test_aot_c_zrp_metadata_pruning_publishes_unbound_manifest_export_declarations_as_rows(void) {
     TZrByte blob[2048];
     TZrSize expectedPrunedLength;
@@ -2740,6 +2772,7 @@ static void test_aot_c_zrp_metadata_pruning_publishes_unbound_manifest_export_de
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 类型导出保住所指 TypeDef，发布行使用裁剪后的类型 token。
 static void test_aot_c_zrp_metadata_pruning_publishes_type_manifest_export_declarations_as_rows(void) {
     TZrByte blob[2048];
     TZrSize expectedPrunedLength;
@@ -2837,6 +2870,7 @@ static void test_aot_c_zrp_metadata_pruning_publishes_type_manifest_export_decla
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 方法成员 token 改变后，方法和类型参数的 owner 与区间各自正确。
 static void test_aot_c_zrp_metadata_pruning_remaps_generic_param_owner_tokens_after_method_pruning(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -2929,6 +2963,7 @@ static void test_aot_c_zrp_metadata_pruning_remaps_generic_param_owner_tokens_af
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 所属 TypeDef 被删除时，它的泛型参数和索引区间必须归零。
 static void test_aot_c_zrp_metadata_pruning_drops_generic_params_owned_by_pruned_type_defs(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -3009,6 +3044,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_generic_params_owned_by_pruned
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 字段 token 不能冒充方法引用来保住泛型参数或 MethodSpec。
 static void test_aot_c_zrp_metadata_pruning_drops_field_def_method_only_member_tokens(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -3104,6 +3140,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_field_def_method_only_member_t
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 方法参数压紧后，约束的参数索引及各 owner 连续区间仍一致。
 static void test_aot_c_zrp_metadata_pruning_remaps_generic_param_constraints_after_method_pruning(void) {
     TZrByte blob[1280];
     TZrSize expectedPrunedLength;
@@ -3186,6 +3223,7 @@ static void test_aot_c_zrp_metadata_pruning_remaps_generic_param_constraints_aft
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// TypeSpec 先被压紧时，约束内的类型 token 也须映射到同一新 RID。
 static void
 test_aot_c_zrp_metadata_pruning_remaps_generic_param_constraint_typespec_tokens_after_typespec_pruning(void) {
     TZrByte blob[1536];
@@ -3275,6 +3313,7 @@ test_aot_c_zrp_metadata_pruning_remaps_generic_param_constraint_typespec_tokens_
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 存活约束足以保住 TypeSpec，不能只依赖 token record 扫描。
 static void test_aot_c_zrp_metadata_pruning_keeps_typespec_referenced_only_by_generic_param_constraint(void) {
     TZrByte blob[1536];
     TZrSize expectedPrunedLength;
@@ -3353,6 +3392,7 @@ static void test_aot_c_zrp_metadata_pruning_keeps_typespec_referenced_only_by_ge
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// MethodSpec 缺签名记录时准备失败，输出 blob 与长度保持空值。
 static void test_aot_c_zrp_metadata_pruning_rejects_method_spec_without_signature_record(void) {
     TZrByte blob[1024];
     TZrSize originalLength;
@@ -3383,6 +3423,7 @@ static void test_aot_c_zrp_metadata_pruning_rejects_method_spec_without_signatur
     TEST_ASSERT_EQUAL_UINT64(0u, prunedMetadata.length);
 }
 
+// 方法 RID 压紧后签名内 MemberRef token 和记录哈希也须更新。
 static void test_aot_c_zrp_metadata_pruning_rewrites_signature_member_ref_tokens(void) {
     TZrByte blob[768];
     TZrSize expectedPrunedLength;
@@ -3460,6 +3501,7 @@ static void test_aot_c_zrp_metadata_pruning_rewrites_signature_member_ref_tokens
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 存活 MethodSpec 的 owner、目标、签名与哈希共同映射到压紧方法。
 static void test_aot_c_zrp_metadata_pruning_remaps_method_specs_after_method_pruning(void) {
     TZrByte blob[1280];
     TZrSize expectedPrunedLength;

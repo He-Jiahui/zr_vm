@@ -9,8 +9,10 @@
 
 void setUp(void) {}
 
+// BUG: 取得 prunedMetadata.ownedBlob 后若断言失败，函数尾部 release 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收堆块（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 节描述按实际字节序列推进，空节归零以满足元数据头部约束。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -35,6 +37,7 @@ static void write_u32_le(TZrByte *target, TZrUInt32 value) {
     target[3] = (TZrByte)((value >> 24u) & 0xFFu);
 }
 
+// 构造只被待删 token record 引用的 TypeSpec，验证两者连带清理。
 static TZrSize build_orphan_typespec_fixture(TZrByte *buffer,
                                              TZrSize bufferLength,
                                              TZrSize *outExpectedPrunedLength) {
@@ -125,6 +128,7 @@ static TZrSize build_orphan_typespec_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 把孤立 TypeSpec 置于两个存活实例之间，测试中间 RID 缺口映射。
 static TZrSize build_compacted_typespec_fixture(TZrByte *buffer,
                                                 TZrSize bufferLength,
                                                 TZrSize *outExpectedPrunedLength) {
@@ -230,6 +234,7 @@ static TZrSize build_compacted_typespec_fixture(TZrByte *buffer,
     return offset;
 }
 
+// token record 被裁剪后，失去所有根的 TypeSpec 行和签名切片须移除。
 static void test_aot_c_zrp_metadata_pruning_drops_orphan_typespec_rows_after_token_record_pruning(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -284,6 +289,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_orphan_typespec_rows_after_tok
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 压紧存活 TypeSpec 的 RID，并同步修正行与引用记录中的 token。
 static void test_aot_c_zrp_metadata_pruning_compacts_retained_typespec_tokens(void) {
     TZrByte blob[1280];
     TZrSize expectedPrunedLength;

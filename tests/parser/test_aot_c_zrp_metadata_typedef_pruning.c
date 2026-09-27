@@ -9,8 +9,10 @@
 
 void setUp(void) {}
 
+// BUG: 取得 prunedMetadata.ownedBlob 后若断言失败，函数尾部 release 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收堆块（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 手工构造连续的元数据节，空节用零描述符避免伪造可达内容。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -42,6 +44,7 @@ static TZrUInt32 read_u32_le(const TZrByte *source) {
            ((TZrUInt32)source[3] << 24u);
 }
 
+// 把孤立 TypeDef 放在两个存活类型之间，专门验证中间 RID 缺口压紧。
 static TZrSize build_interior_orphan_type_def_fixture(TZrByte *buffer,
                                                       TZrSize bufferLength,
                                                       TZrSize *outExpectedPrunedLength,
@@ -118,6 +121,7 @@ static TZrSize build_interior_orphan_type_def_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 在签名 blob 中嵌入 TypeDef token，令类型行重排后需连同签名修正。
 static TZrSize build_signature_embedded_type_def_fixture(TZrByte *buffer,
                                                          TZrSize bufferLength,
                                                          TZrSize *outExpectedPrunedLength) {
@@ -212,6 +216,7 @@ static TZrSize build_signature_embedded_type_def_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 删除中间孤立类型后核对定义表、关联 token record 和保留类型的新 RID。
 static void test_aot_c_zrp_metadata_pruning_compacts_retained_type_def_tokens(void) {
     static const TZrByte expectedStringPool[] = "LiveType\0Example\0Kept";
     TZrByte blob[1024];
@@ -309,6 +314,7 @@ static void test_aot_c_zrp_metadata_pruning_compacts_retained_type_def_tokens(vo
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 被保留签名中的 TypeDef token 不可沿用旧 RID，签名哈希也须重新计算。
 static void test_aot_c_zrp_metadata_pruning_rewrites_embedded_signature_type_def_tokens(void) {
     TZrByte blob[1280];
     TZrSize expectedPrunedLength;
@@ -414,6 +420,8 @@ static void test_aot_c_zrp_metadata_pruning_rewrites_embedded_signature_type_def
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// TODO: CMake 仅创建此 Unity target，验收文档当前要求直接执行，未见 add_test 注册。
+// 后续对照现行测试矩阵和 CTest 注册段，确认这两个 TypeDef 剪枝用例是否应纳入常规门禁。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_zrp_metadata_pruning_compacts_retained_type_def_tokens);

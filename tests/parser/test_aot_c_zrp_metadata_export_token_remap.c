@@ -10,8 +10,10 @@
 
 void setUp(void) {}
 
+// BUG: 成功构建映射或 manifest 表后若断言失败，函数尾部 destroy 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收已分配表项，后续 RUN_TEST 仍在同进程执行（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 删除前后方法时，保留的导出方法 token 必须压紧，已删方法不可再映射。
 static void test_aot_c_zrp_metadata_export_token_remap_compacts_retained_method_export_tokens(void) {
     SZrZrpMetadataMethodDefRow methodDefs[3];
     SZrAotFunctionEntry retainedEntry;
@@ -73,6 +75,7 @@ static void test_aot_c_zrp_metadata_export_token_remap_compacts_retained_method_
                                                                   retainedMethodDefCount));
 }
 
+// 方法 RID 压紧后字段导出须接在保留方法之后，维持成员表统一编号。
 static void test_aot_c_zrp_metadata_export_token_remap_compacts_field_export_tokens_after_methods(void) {
     SZrZrpMetadataMethodDefRow methodDefs[2];
     SZrZrpMetadataFieldDefRow fieldDefs[2];
@@ -129,6 +132,7 @@ static void test_aot_c_zrp_metadata_export_token_remap_compacts_field_export_tok
                              secondFieldExportToken);
 }
 
+// 传入错误的保留方法数时拒绝映射，且保持调用方原 token 不变。
 static void test_aot_c_zrp_metadata_export_token_remap_rejects_retained_method_count_drift(void) {
     SZrZrpMetadataMethodDefRow methodDefs[2];
     SZrZrpMetadataFieldDefRow fieldDefs[1];
@@ -170,6 +174,7 @@ static void test_aot_c_zrp_metadata_export_token_remap_rejects_retained_method_c
     TEST_ASSERT_EQUAL_UINT32(fieldToken, fieldExportToken);
 }
 
+// sidecar 同时公布方法和字段的源到目标映射，并拒绝已裁剪方法。
 static void test_aot_c_zrp_metadata_export_token_sidecar_publishes_compacted_member_tokens(void) {
     SZrZrpMetadataMethodDefRow methodDefs[3];
     SZrZrpMetadataFieldDefRow fieldDefs[1];
@@ -248,6 +253,7 @@ static void test_aot_c_zrp_metadata_export_token_sidecar_publishes_compacted_mem
     backend_aot_c_zrp_member_token_remap_destroy(&metadata);
 }
 
+// manifest 的方法、类型和无绑定字段声明须分别携带正确 token 与标志。
 static void test_aot_c_zrp_metadata_manifest_export_table_publishes_remapped_member_tokens(void) {
     SZrAotCEmbeddedZrpMetadata metadata;
     SZrAotCZrpMemberTokenRemapEntry remapEntries[1];
@@ -306,6 +312,7 @@ static void test_aot_c_zrp_metadata_manifest_export_table_publishes_remapped_mem
     backend_aot_c_zrp_manifest_export_table_destroy(&metadata);
 }
 
+// 声明种类与绑定 token 类型不符时，构建失败且不发布部分表。
 static void test_aot_c_zrp_metadata_manifest_export_table_rejects_kind_token_mismatch(void) {
     SZrAotCEmbeddedZrpMetadata metadata;
     SZrAotManifestExportDeclaration declaration;
@@ -345,6 +352,7 @@ static void test_aot_c_zrp_metadata_manifest_export_table_rejects_kind_token_mis
     TEST_ASSERT_NULL(metadata.ownedManifestExportEntries);
 }
 
+// 同种类同目标的重复声明应被拒绝，避免发布表产生歧义。
 static void test_aot_c_zrp_metadata_manifest_export_table_rejects_duplicate_kind_target(void) {
     SZrAotCEmbeddedZrpMetadata metadata;
     SZrAotCZrpMemberTokenRemapEntry remapEntries[1];
@@ -376,6 +384,7 @@ static void test_aot_c_zrp_metadata_manifest_export_table_rejects_duplicate_kind
     TEST_ASSERT_NULL(metadata.ownedManifestExportEntries);
 }
 
+// 方法和字段共用一个源 token 时必须拒绝整个 sidecar，保持映射唯一。
 static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_duplicate_source_tokens(void) {
     SZrZrpMetadataMethodDefRow methodDefs[1];
     SZrZrpMetadataFieldDefRow fieldDefs[1];
@@ -432,6 +441,7 @@ static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_duplicate_sourc
     TEST_ASSERT_NULL(metadata.ownedMemberTokenRemapEntries);
 }
 
+// 成员映射不能接受 TypeDef 表 token，失败时输出成员数组仍为空。
 static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_non_member_source_tokens(void) {
     SZrZrpMetadataMethodDefRow methodDefs[1];
     SZrAotFunctionEntry retainedEntry;
@@ -477,6 +487,7 @@ static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_non_member_sour
     TEST_ASSERT_NULL(metadata.ownedMemberTokenRemapEntries);
 }
 
+// 零 RID 成员 token 不代表有效行，失败时不得留下部分映射。
 static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_zero_rid_source_tokens(void) {
     SZrZrpMetadataMethodDefRow methodDefs[1];
     SZrAotFunctionEntry retainedEntry;
@@ -522,6 +533,7 @@ static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_zero_rid_source
     TEST_ASSERT_NULL(metadata.ownedMemberTokenRemapEntries);
 }
 
+// sidecar 构建前复核保留方法数，避免字段目标 RID 从错误边界起算。
 static void test_aot_c_zrp_metadata_export_token_sidecar_rejects_retained_method_count_drift(void) {
     SZrZrpMetadataMethodDefRow methodDefs[2];
     SZrZrpMetadataFieldDefRow fieldDefs[1];

@@ -7,6 +7,7 @@
 
 void setUp(void) {}
 
+// BUG: tmpfile 成功后若断言失败，函数尾部 fclose 被 Unity TEST_ABORT 跳过；空 tearDown 无法关闭文件句柄（unity.c:2296-2303）。
 void tearDown(void) {}
 
 static void assert_text_contains(const char *text, const char *needle) {
@@ -15,6 +16,7 @@ static void assert_text_contains(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(text, needle), needle);
 }
 
+// 同时核对节的裁剪前、后和移除字节数，防止报告只更新汇总值。
 static void assert_zrp_metadata_section_delta(const char *text,
                                               const char *sectionName,
                                               unsigned long long bytesBefore,
@@ -44,6 +46,7 @@ static void assert_zrp_metadata_section_delta(const char *text,
     assert_text_contains(text, expected);
 }
 
+// 对每个节核对行数变化，覆盖零变化及完全删除两类边界。
 static void assert_zrp_metadata_section_count_delta(const char *text,
                                                     const char *sectionName,
                                                     unsigned long long countBefore,
@@ -73,6 +76,7 @@ static void assert_zrp_metadata_section_count_delta(const char *text,
     assert_text_contains(text, expected);
 }
 
+// 对独立统计输出核对节计数标记，避免与差值报告混用。
 static void assert_zrp_metadata_section_count_stat(const char *text,
                                                    const char *sectionName,
                                                    unsigned long long count) {
@@ -86,6 +90,7 @@ static void assert_zrp_metadata_section_count_stat(const char *text,
     assert_text_contains(text, expected);
 }
 
+// 使用零变化和完全删除的差值数据，验证总量、定义表、池及逐节字节和计数报告。
 static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_stripping_markers(void) {
     SZrAotZrpMetadataSizeStats beforeStats;
     SZrAotZrpMetadataSizeStats afterStats;
@@ -198,6 +203,7 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     assert_zrp_metadata_section_count_delta(text, "manifestExports", 2u, 1u, 1u);
 }
 
+// 无裁剪前值时仍应发布各节原始计数，供后续产物诊断使用。
 static void test_aot_c_zrp_metadata_size_stats_emit_section_count_markers(void) {
     SZrAotZrpMetadataSizeStats stats;
     FILE *file;

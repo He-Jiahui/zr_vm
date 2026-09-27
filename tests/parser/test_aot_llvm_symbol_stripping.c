@@ -20,6 +20,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/writer.h"
 
+// 测试仅借用运行时私有记录的前缀字段；recordHandle 所读字段的顺序须保持一致。
 typedef struct SZrAotLlvmReceiverAliasTestLoadedModule {
     EZrAotBackendKind backendKind;
     TZrChar *moduleName;
@@ -39,18 +40,22 @@ typedef struct SZrAotLlvmReceiverAliasTestLoadedModule {
     TZrBool moduleExecuted;
 } SZrAotLlvmReceiverAliasTestLoadedModule;
 
+// 捕获调用钩子是否确实触发扩栈及地址迁移，供借用别名断言区分路径。
 typedef struct SZrAotLlvmStackRelocationCapture {
     TZrBool hookCalled;
     TZrBool growSucceeded;
     TZrBool stackRelocated;
 } SZrAotLlvmStackRelocationCapture;
 
+// 统计主动迁移次数，确认测试没有只在原地址扩容。
 typedef struct SZrAotLlvmMovingAllocatorContext {
     TZrUInt32 moveCount;
 } SZrAotLlvmMovingAllocatorContext;
 
+// 调试钩子没有用户上下文；每个迁移场景开始前清零该短期捕获状态。
 static SZrAotLlvmStackRelocationCapture g_aotLlvmStackRelocationCapture;
 
+// 先分配并复制再释放旧块，强制真实地址迁移以暴露悬空栈指针。
 static TZrPtr aot_llvm_moving_allocator(TZrPtr userData,
                                         TZrPtr pointer,
                                         TZrSize originalSize,
@@ -85,6 +90,7 @@ static TZrPtr aot_llvm_moving_allocator(TZrPtr userData,
     return newPointer;
 }
 
+// 用移动分配器建立独立 VM 状态；成功后由测试释放所属 global。
 static SZrState *aot_llvm_create_state_with_moving_allocator(
         SZrAotLlvmMovingAllocatorContext *context) {
     SZrCallbackGlobal callbacks = {0};
@@ -100,6 +106,7 @@ static SZrState *aot_llvm_create_state_with_moving_allocator(
 
 void setUp(void) {}
 
+// BUG: 生成文本或建立 VM global 后若断言失败，函数尾部 free/Destroy 被 Unity TEST_ABORT 跳过；空 tearDown 无法清理资源（unity.c:2296-2303）。
 void tearDown(void) {}
 
 static void assert_text_contains(const char *text, const char *needle) {
@@ -114,6 +121,7 @@ static void assert_text_does_not_contain(const char *text, const char *needle) {
     TEST_ASSERT_NULL(strstr(text, needle));
 }
 
+// 生成子函数获取和静态直接调用指令，令 LLVM writer 输出真实调用关系。
 static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
                                                 TZrUInt16 operandExtra,
                                                 TZrUInt16 operandA,
@@ -128,16 +136,19 @@ static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+// 稳定的生成入口用于校验函数表与注册表指向同一 callee。
 static TZrInt64 aot_llvm_receiver_alias_test_thunk(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     return 1;
 }
 
+// 不同入口专用于模拟 thunk 身份漂移的拒绝路径。
 static TZrInt64 aot_llvm_receiver_alias_drift_test_thunk(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     return 2;
 }
 
+// 静态调用身份校验失败后，输出必须归零且 caller 帧、目标槽和借用源字节不变。
 static void assert_aot_llvm_static_direct_call_identity_drift_preserves_caller(
         SZrState *state,
         ZrAotGeneratedFrame *frame,
@@ -180,6 +191,7 @@ static void assert_aot_llvm_static_direct_call_identity_drift_preserves_caller(
     state->threadStatus = ZR_THREAD_STATUS_FINE;
 }
 
+// 只在首次 CALL 钩子扩栈，检验参数借用在回调导致的栈迁移后仍有效。
 static void aot_llvm_force_call_hook_stack_relocation(SZrState *state,
                                                        SZrDebugInfo *debugInfo) {
     TZrStackValuePointer previousStackBase;
@@ -202,6 +214,7 @@ static void aot_llvm_force_call_hook_stack_relocation(SZrState *state,
             state->stackBase.valuePointer != previousStackBase;
 }
 
+// 构造根函数调用子函数的最小指令树，使符号改名同时覆盖定义和引用。
 static SZrFunction *create_llvm_direct_call_fixture(SZrState *state) {
     SZrFunction *root;
     SZrFunction *child;
@@ -249,6 +262,7 @@ static SZrFunction *create_llvm_direct_call_fixture(SZrState *state) {
     return root;
 }
 
+// 按 stripGeneratedSymbols 生成 LLVM IR；返回由调用方 free 的文本，VM 状态在此释放。
 static char *write_llvm_fixture(TZrBool stripGeneratedSymbols, TZrSize *outGeneratedLength) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -282,6 +296,7 @@ static char *write_llvm_fixture(TZrBool stripGeneratedSymbols, TZrSize *outGener
     return generatedLlvmText;
 }
 
+// 默认模式保留可读的函数符号，并验证定义、表项和直接调用一致。
 static void test_aot_llvm_default_preserves_generated_function_symbols(void) {
     TZrSize generatedLength = 0u;
     char *generatedLlvmText = write_llvm_fixture(ZR_FALSE, &generatedLength);
@@ -299,6 +314,7 @@ static void test_aot_llvm_default_preserves_generated_function_symbols(void) {
     free(generatedLlvmText);
 }
 
+// 剥离模式只重命名私有函数；外部模块描述符入口仍保持公开名称。
 static void test_aot_llvm_strip_generated_symbols_renames_private_function_symbols(void) {
     TZrSize generatedLength = 0u;
     char *generatedLlvmText = write_llvm_fixture(ZR_TRUE, &generatedLength);
@@ -317,6 +333,7 @@ static void test_aot_llvm_strip_generated_symbols_renames_private_function_symbo
     free(generatedLlvmText);
 }
 
+// 真实运行时准备调用时，接收者别名须在身份拒绝和扩栈后仍指向 caller 存储。
 static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(void) {
     static const TZrByte payload[] = {0x10u, 0x32u, 0x54u, 0x76u,
                                       0x98u, 0xbau, 0xdcu, 0xfeu};
@@ -502,6 +519,7 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
     frame.functionThunks = generatedFunctionPointers;
     frame.functionThunkCount = 2u;
 
+    // 分别破坏函数对象和 thunk 身份，失败必须发生在任何 callee 帧写入之前。
     generatedFunctionTable[1] = callerFunction;
     assert_aot_llvm_static_direct_call_identity_drift_preserves_caller(
             state,
@@ -522,6 +540,7 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
             sizeof(payload));
     generatedFunctionPointers[1] = aot_llvm_receiver_alias_test_thunk;
 
+    // CALL 钩子在准备 callee 时移动整段栈，迫使后续位置通过新基址重取。
     memset(&g_aotLlvmStackRelocationCapture,
            0,
            sizeof(g_aotLlvmStackRelocationCapture));
@@ -554,6 +573,7 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
     TEST_ASSERT_EQUAL_PTR(sourcePlace.address, borrowedPlace.address);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, borrowedPlace.address, sizeof(payload));
 
+    // 修改 callee 借用视图应立即反映到 caller 原槽，证明没有复制出临时接收者。
     ((TZrByte *)borrowedPlace.address)[0] = 0x5au;
     TEST_ASSERT_EQUAL_HEX8(0x5au, ((const TZrByte *)sourcePlace.address)[0]);
     TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_FinishDirectCall(

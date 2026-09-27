@@ -9,8 +9,10 @@
 
 void setUp(void) {}
 
+// BUG: 取得 prunedMetadata.ownedBlob 后若断言失败，函数尾部 release 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收堆块，后续 RUN_TEST 仍在同进程执行（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 统一铺排人工元数据节，空节归零以保持头部与字节流一致。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -46,6 +48,7 @@ static TZrUInt32 read_u32_le(const TZrByte *source) {
            ((TZrUInt32)source[3] << 24u);
 }
 
+// 给可删与保留方法分配不同名称，使字符串池的可达切片可直接比较。
 static TZrSize build_method_def_string_pool_pruning_fixture(TZrByte *buffer,
                                                             TZrSize bufferLength,
                                                             TZrSize *outExpectedPrunedLength,
@@ -141,6 +144,7 @@ static TZrSize build_method_def_string_pool_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 只让已裁剪方法引用常量，检验孤立常量池整体消失。
 static TZrSize build_method_def_constant_pool_pruning_fixture(TZrByte *buffer,
                                                               TZrSize bufferLength,
                                                               TZrSize *outExpectedPrunedLength) {
@@ -215,6 +219,7 @@ static TZrSize build_method_def_constant_pool_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 为保留字段设置默认值切片，验证常量池压紧后字段偏移仍有效。
 static TZrSize build_field_default_value_constant_pool_pruning_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -313,6 +318,7 @@ static TZrSize build_field_default_value_constant_pool_pruning_fixture(
     return offset;
 }
 
+// 多个存活元数据行共享重复文本，检验去重与偏移回填。
 static TZrSize build_duplicate_string_pool_pruning_fixture(TZrByte *buffer,
                                                            TZrSize bufferLength,
                                                            TZrBool retainRemovedMethod,
@@ -421,6 +427,7 @@ static TZrSize build_duplicate_string_pool_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 同时放入可达和孤立模块引用，验证裁剪后的引用行与名称池。
 static TZrSize build_orphan_module_ref_pruning_fixture(TZrByte *buffer,
                                                        TZrSize bufferLength,
                                                        TZrSize *outExpectedPrunedLength,
@@ -560,6 +567,7 @@ static TZrSize build_orphan_module_ref_pruning_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 在签名 blob 中嵌入 AssemblyRef token，检验压紧后递归重写。
 static TZrSize build_module_ref_signature_token_rewrite_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -684,6 +692,7 @@ static TZrSize build_module_ref_signature_token_rewrite_fixture(
     return offset;
 }
 
+// 让模块引用只由签名 blob 成为根，避免只扫描表字段而误删引用。
 static TZrSize build_signature_rooted_module_ref_retention_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -827,6 +836,7 @@ static TZrSize build_signature_rooted_module_ref_retention_fixture(
     return offset;
 }
 
+// 删除方法后只保留被存活行引用的名称，并核对最终池长度和偏移。
 static void test_aot_c_zrp_metadata_pool_pruning_compacts_string_pool_after_method_pruning(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -911,6 +921,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_compacts_string_pool_after_meth
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 唯一使用者被裁剪后，常量池与其头部计数都应归零。
 static void test_aot_c_zrp_metadata_pool_pruning_drops_orphan_constant_pool_after_method_pruning(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -960,6 +971,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_drops_orphan_constant_pool_afte
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 字段默认值必须保留精确字节切片，并更新压紧后的起始偏移。
 static void test_aot_c_zrp_metadata_pool_pruning_remaps_field_default_value_constant_pool_slices(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -1024,6 +1036,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_remaps_field_default_value_cons
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 类型名与字段名重复时只发布一份文本字节，并让两种元数据行共享偏移。
 static void test_aot_c_zrp_metadata_pool_pruning_deduplicates_retained_string_slices(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -1109,6 +1122,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_deduplicates_retained_string_sl
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 即使未删除方法也要折叠重复字符串，避免去重依赖方法裁剪路径。
 static void test_aot_c_zrp_metadata_pool_pruning_compacts_duplicate_strings_without_method_pruning(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -1199,6 +1213,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_compacts_duplicate_strings_with
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 移除无根的 ModuleRef 后，存活行的 token 与字符串偏移须同步压紧。
 static void test_aot_c_zrp_metadata_pool_pruning_drops_orphan_module_refs(void) {
     TZrByte blob[1536];
     TZrSize expectedPrunedLength;
@@ -1300,6 +1315,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_drops_orphan_module_refs(void) 
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// AssemblyRef RID 改变时，签名内嵌 token 也要跟随新 RID。
 static void test_aot_c_zrp_metadata_pool_pruning_rewrites_signature_assembly_ref_tokens(void) {
     TZrByte blob[1536];
     TZrSize expectedPrunedLength;
@@ -1354,6 +1370,7 @@ static void test_aot_c_zrp_metadata_pool_pruning_rewrites_signature_assembly_ref
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 签名是唯一引用源时仍保留 ModuleRef，防止间接依赖被误判为孤立。
 static void test_aot_c_zrp_metadata_pool_pruning_retains_module_refs_rooted_only_by_signature_blobs(void) {
     TZrByte blob[1536];
     TZrSize expectedPrunedLength;

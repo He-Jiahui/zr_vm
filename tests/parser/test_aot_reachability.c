@@ -19,8 +19,10 @@
 
 void setUp(void) {}
 
+// BUG: 建立 VM state 或 tmpfile 后若断言失败，函数尾部 Destroy/fclose 被 Unity TEST_ABORT 跳过；空 tearDown 无法清理资源（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 用实际字节码操作数构造静态调用边，避免只凭手工图验证扫描器。
 static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
                                                 TZrUInt16 operandExtra,
                                                 TZrUInt16 operandA,
@@ -35,6 +37,7 @@ static TZrInstruction test_create_instruction_2(EZrInstructionCode opcode,
     return instruction;
 }
 
+// 复用或建立函数 decorator 对象，让反射根测试通过真实元数据字段进入扫描器。
 static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFunction *function) {
     SZrObject *metadataObject;
 
@@ -59,6 +62,7 @@ static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFun
     return metadataObject;
 }
 
+// 写入数值型反射注解，字段和值由 VM 状态管理。
 static void mark_function_metadata_uint(SZrState *state,
                                         SZrFunction *function,
                                         const TZrChar *fieldName,
@@ -83,6 +87,7 @@ static void mark_function_metadata_uint(SZrState *state,
     ZrCore_Object_SetValue(state, metadataObject, &key, &value);
 }
 
+// 写入字符串型反射注解，模拟方法名形式的动态依赖。
 static void mark_function_metadata_string(SZrState *state,
                                           SZrFunction *function,
                                           const TZrChar *fieldName,
@@ -114,6 +119,7 @@ static void mark_function_metadata_string(SZrState *state,
     ZrCore_Object_SetValue(state, metadataObject, &key, &value);
 }
 
+// 把方法 token 绑定到指定子函数，供 MethodSpec 和包导出根解析。
 static void attach_typed_method_token(SZrFunction *rootFunction,
                                       SZrFunctionTypedExportSymbol *symbol,
                                       TZrUInt32 callableChildIndex,
@@ -128,6 +134,7 @@ static void attach_typed_method_token(SZrFunction *rootFunction,
     rootFunction->typedExportedSymbolLength = 1u;
 }
 
+// 建立公开方法 token 绑定，覆盖反射和泛型根的常规入口。
 static void attach_typed_exported_method_token(SZrFunction *rootFunction,
                                                SZrFunctionTypedExportSymbol *symbol,
                                                TZrUInt32 callableChildIndex,
@@ -139,6 +146,7 @@ static void attach_typed_exported_method_token(SZrFunction *rootFunction,
                               ZR_MODULE_EXPORT_KIND_FUNCTION);
 }
 
+// 构造名字及签名哈希绑定，使同名方法的匹配策略可被单独验证。
 static void init_typed_exported_method_name(SZrState *state,
                                             SZrFunctionTypedExportSymbol *symbol,
                                             TZrUInt32 callableChildIndex,
@@ -153,6 +161,7 @@ static void init_typed_exported_method_name(SZrState *state,
     symbol->signatureHash = signatureHash;
 }
 
+// 把名称绑定接到根函数的导出符号表，供动态依赖查询。
 static void attach_typed_exported_method_name(SZrState *state,
                                               SZrFunction *rootFunction,
                                               SZrFunctionTypedExportSymbol *symbol,
@@ -163,6 +172,7 @@ static void attach_typed_exported_method_name(SZrState *state,
     rootFunction->typedExportedSymbolLength = 1u;
 }
 
+// 以生产格式写入原型和成员信息；函数持有这些 VM 分配的夹具内存。
 static void install_single_compiled_member_metadata(
         SZrState *state,
         SZrFunction *owner,
@@ -213,6 +223,7 @@ static void install_single_compiled_member_metadata(
     memcpy(owner->prototypeData + offset, member, sizeof(*member));
 }
 
+// 在编译成员记录里编码属性身份和访问器角色，供可达性扫描器识别。
 static void install_property_accessor_metadata(SZrState *state,
                                                SZrFunction *owner,
                                                SZrFunction *target,
@@ -235,6 +246,7 @@ static void install_property_accessor_metadata(SZrState *state,
                                             &member);
 }
 
+// 把析构等元方法编码到成员记录，区分资源类有效根与普通元数据。
 static void install_meta_method_metadata(SZrState *state,
                                          SZrFunction *owner,
                                          SZrFunction *target,
@@ -260,6 +272,7 @@ static void install_meta_method_metadata(SZrState *state,
                                             &member);
 }
 
+// 组合原型种类、访问权限和构造器标志，测试反射构造策略。
 static void install_reflection_constructor_metadata(SZrState *state,
                                                     SZrFunction *owner,
                                                     SZrFunction *target,
@@ -288,6 +301,7 @@ static void install_reflection_constructor_metadata(SZrState *state,
                                             &member);
 }
 
+// 从入口根追踪多级直接调用与字段访问，孤立子图必须保持未标记。
 static void test_reachability_marks_roots_and_direct_dependencies(void) {
     static const TZrUInt32 roots[] = {0u};
     static const EZrAotReachabilityReason rootReasons[] = {ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY};
@@ -329,6 +343,7 @@ static void test_reachability_marks_roots_and_direct_dependencies(void) {
     TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[5].state);
 }
 
+// 显式根原因优先于到达它的边；队列不足或越界边必须拒绝。
 static void test_reachability_preserves_root_reason_and_rejects_invalid_graphs(void) {
     static const TZrUInt32 roots[] = {0u, 2u};
     static const EZrAotReachabilityReason rootReasons[] = {
@@ -382,6 +397,7 @@ static void test_reachability_preserves_root_reason_and_rejects_invalid_graphs(v
                                                        &markedCount));
 }
 
+// 根和边只接受各自合法的原因类别，失败时已标记计数清零。
 static void test_reachability_rejects_invalid_reason_schema(void) {
     static const TZrUInt32 roots[] = {0u};
     static const EZrAotReachabilityReason validRootReasons[] = {
@@ -465,6 +481,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
                                                        &markedCount));
 }
 
+// 读回 manifest 临时文件；返回 malloc 文本由测试释放。
 static char *test_read_stream(FILE *file) {
     long length;
     char *text;
@@ -483,6 +500,7 @@ static char *test_read_stream(FILE *file) {
     return text;
 }
 
+// 输出只包含已处理节点，保留确定顺序、原因及前驱链。
 static void test_reachability_function_manifest_is_stable_and_preserves_reason_chain(void) {
     static const SZrAotReachabilityMark marks[] = {
             {ZR_AOT_REACHABILITY_STATE_PROCESSED,
@@ -520,6 +538,7 @@ static void test_reachability_function_manifest_is_stable_and_preserves_reason_c
     fclose(file);
 }
 
+// 待处理、伪根、越界、循环和脏未标记节点均不能写出部分 manifest。
 static void test_reachability_function_manifest_rejects_malformed_reason_chains(void) {
     static const SZrAotReachabilityMark pendingMarks[] = {
             {ZR_AOT_REACHABILITY_STATE_MARKED_PENDING,
@@ -565,6 +584,7 @@ static void test_reachability_function_manifest_rejects_malformed_reason_chains(
     fclose(file);
 }
 
+// 只压紧表项而保留 flatIndex 空间，非法索引输入不得部分改写表。
 static void test_function_table_filter_keeps_reachable_entries_without_renumbering(void) {
     SZrFunction functions[4];
     SZrAotFunctionEntry entries[4] = {
@@ -617,6 +637,7 @@ static void test_function_table_filter_keeps_reachable_entries_without_renumberi
     TEST_ASSERT_EQUAL_UINT32(0u, invalidTable.entries[0].flatIndex);
 }
 
+// 声明索引空间超过容量或与表项冲突时不能推导有效空间。
 static void test_function_table_index_space_rejects_value_larger_than_capacity(void) {
     SZrFunction function;
     SZrAotFunctionEntry entries[1];
@@ -641,6 +662,7 @@ static void test_function_table_index_space_rejects_value_larger_than_capacity(v
             backend_aot_function_table_index_space(&table));
 }
 
+// 扫描 GET_SUB_FUNCTION 的真实子函数操作数并标记静态调用边。
 static void test_static_callable_reachability_marks_get_sub_function_target(void) {
     TZrInstruction rootInstructions[1];
     SZrFunction functions[3];
@@ -718,6 +740,7 @@ static void test_static_callable_reachability_marks_get_sub_function_target(void
                                                                        &edgeCount));
 }
 
+// 子函数通过 native callback 逃逸时，以回调原因而非普通调用保留目标。
 static void test_static_callable_reachability_marks_native_callback_get_sub_function_edge(void) {
     TZrInstruction rootInstruction;
     SZrFunction functions[2];
@@ -777,6 +800,7 @@ static void test_static_callable_reachability_marks_native_callback_get_sub_func
     TEST_ASSERT_EQUAL_UINT32(0u, marks[1].predecessor);
 }
 
+// 同一回调逃逸绑定分别覆盖常量读取和闭包创建指令。
 static void assert_native_callback_constant_materialization_edge(EZrInstructionCode opcode) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -871,11 +895,13 @@ static void assert_native_callback_constant_materialization_edge(EZrInstructionC
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 两种常量物化指令均应生成 native callback 可达边。
 static void test_static_callable_reachability_marks_native_callback_constant_materialization_edges(void) {
     assert_native_callback_constant_materialization_edge(ZR_INSTRUCTION_ENUM(GET_CONSTANT));
     assert_native_callback_constant_materialization_edge(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE));
 }
 
+// 缺少逃逸绑定数组的 callback 元数据必须拒绝，不能静默漏标。
 static void test_static_callable_reachability_rejects_malformed_native_callback_escape_metadata(void) {
     TZrInstruction rootInstruction;
     SZrFunction functions[2];
@@ -924,6 +950,7 @@ static void test_static_callable_reachability_rejects_malformed_native_callback_
                                                                        &edgeCount));
 }
 
+// 公开子函数即使没有指令引用也以导出根保留，其前驱为空。
 static void test_static_callable_reachability_keeps_exported_child_roots(void) {
     SZrFunction functions[3];
     SZrFunctionTopLevelCallableBinding exportedCallable;
@@ -987,6 +1014,7 @@ static void test_static_callable_reachability_keeps_exported_child_roots(void) {
     TEST_ASSERT_EQUAL_UINT32(ZR_AOT_REACHABILITY_NO_NODE, marks[2].predecessor);
 }
 
+// 显式反射注解根不依赖调用边，标记为独立可达入口。
 static void test_static_callable_reachability_keeps_reflection_annotation_roots(void) {
     SZrFunction functions[3];
     SZrAotFunctionEntry entries[3] = {
@@ -1039,6 +1067,7 @@ static void test_static_callable_reachability_keeps_reflection_annotation_roots(
     TEST_ASSERT_EQUAL_UINT32(ZR_AOT_REACHABILITY_NO_NODE, marks[2].predecessor);
 }
 
+// 函数索引注解可直接解析到目标子函数并形成反射根。
 static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_function_index(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction functions[3];
@@ -1074,6 +1103,7 @@ static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_fu
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 方法 token 注解通过类型化导出绑定解析目标子函数。
 static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_method_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
@@ -1118,6 +1148,7 @@ static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_me
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 非公开的类型化方法 token 也可作为显式动态依赖目标。
 static void test_collect_reflection_annotation_roots_keeps_non_exported_dynamic_dependency_method_token(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 8u);
@@ -1166,6 +1197,7 @@ static void test_collect_reflection_annotation_roots_keeps_non_exported_dynamic_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 方法名注解经类型化符号查找目标，而非按索引猜测。
 static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_method_name(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction functions[3];
@@ -1209,6 +1241,7 @@ static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_me
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 签名哈希参与同名方法匹配，只保留准确的动态依赖目标。
 static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_method_name_signature_hash(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction functions[3];
@@ -1261,6 +1294,7 @@ static void test_collect_reflection_annotation_roots_keeps_dynamic_dependency_me
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 无签名约束的重名方法不可任选其一，必须报告歧义。
 static void test_collect_reflection_annotation_roots_rejects_ambiguous_dynamic_dependency_method_name(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction functions[3];
@@ -1301,6 +1335,7 @@ static void test_collect_reflection_annotation_roots_rejects_ambiguous_dynamic_d
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 显式零哈希仍是可用匹配条件，不能误作字段缺省值。
 static void test_collect_reflection_annotation_roots_keeps_zero_dynamic_dependency_method_signature_hash(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction functions[3];
@@ -1353,6 +1388,7 @@ static void test_collect_reflection_annotation_roots_keeps_zero_dynamic_dependen
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// manifest 指定的函数成为独立根，越界索引须拒绝。
 static void test_static_callable_reachability_keeps_manifest_function_roots(void) {
     SZrFunction functions[3];
     SZrAotFunctionEntry entries[3] = {
@@ -1423,6 +1459,7 @@ static void test_static_callable_reachability_keeps_manifest_function_roots(void
                                                                        &edgeCount));
 }
 
+// 有效属性访问器的各角色都应形成根，未引用函数保持可裁剪。
 static void test_static_callable_reachability_keeps_all_property_accessor_roles(void) {
     for (TZrUInt32 accessorRole = 1u; accessorRole <= 3u; accessorRole++) {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1493,6 +1530,7 @@ static void test_static_callable_reachability_keeps_all_property_accessor_roles(
     }
 }
 
+// 有效访问器记录无法解析函数常量时，应拒绝整个可达性计算。
 static void test_static_callable_reachability_rejects_unresolved_property_accessor_roles(void) {
     for (TZrUInt32 accessorRole = 1u; accessorRole <= 3u; accessorRole++) {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1550,6 +1588,7 @@ static void test_static_callable_reachability_rejects_unresolved_property_access
     }
 }
 
+// 抽象访问器没有可执行目标，不能误标为保留根。
 static void test_static_callable_reachability_ignores_abstract_property_accessor_roles(void) {
     for (TZrUInt32 accessorRole = 1u; accessorRole <= 3u; accessorRole++) {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1615,7 +1654,9 @@ static void test_static_callable_reachability_ignores_abstract_property_accessor
     }
 }
 
+// 缺属性身份或角色不合法的成员不得伪装成访问器根。
 static void test_static_callable_reachability_ignores_non_accessor_members(void) {
+    // 分别排除无属性身份、无访问器角色和未知角色，避免普通成员被误保留。
     static const struct {
         TZrUInt32 propertyIdentity;
         TZrUInt32 accessorRole;
@@ -1691,6 +1732,7 @@ static void test_static_callable_reachability_ignores_non_accessor_members(void)
     }
 }
 
+// 资源类型的析构元方法须保留为独立 drop 根。
 static void test_static_callable_reachability_keeps_resource_destructor_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -1766,6 +1808,7 @@ static void test_static_callable_reachability_keeps_resource_destructor_root(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 资源析构记录指向不存在的函数时，不能发布不完整保留集合。
 static void test_static_callable_reachability_rejects_unresolved_resource_destructor(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -1828,7 +1871,9 @@ static void test_static_callable_reachability_rejects_unresolved_resource_destru
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 非资源、非析构或抽象成员均不应触发资源 drop 根。
 static void test_static_callable_reachability_ignores_non_resource_destructor_metadata(void) {
+    // 资源修饰、析构标志和可执行性须同时成立；每行缺少一项必要条件。
     static const struct {
         TZrUInt32 prototypeModifierFlags;
         TZrBool isMetaMethod;
@@ -1911,6 +1956,7 @@ static void test_static_callable_reachability_ignores_non_resource_destructor_me
     }
 }
 
+// 符合反射策略的公开构造器须保留，非目标函数仍可裁剪。
 static void test_static_callable_reachability_keeps_reflection_constructor_roots(void) {
     static const TZrUInt32 prototypeTypes[] = {
             ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
@@ -1988,7 +2034,9 @@ static void test_static_callable_reachability_keeps_reflection_constructor_roots
     }
 }
 
+// 可执行构造器解析失败应拒绝；不符合策略的成员仅被忽略。
 static void test_static_callable_reachability_enforces_reflection_constructor_policy(void) {
+    // 这些组合合法但不满足反射构造策略，应忽略而不是当成损坏元数据拒绝。
     static const struct {
         TZrUInt32 prototypeType;
         TZrUInt32 prototypeModifierFlags;
@@ -2139,6 +2187,7 @@ static void test_static_callable_reachability_enforces_reflection_constructor_po
     }
 }
 
+// MethodSpec 绑定的方法通过类型化 token 成为独立泛型根。
 static void test_static_callable_reachability_keeps_generic_methodspec_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
@@ -2213,6 +2262,7 @@ static void test_static_callable_reachability_keeps_generic_methodspec_root(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 缺失、错表或歧义的方法绑定必须拒绝；纯 TypeSpec 不生成函数根。
 static void test_static_callable_reachability_rejects_invalid_generic_methodspec_roots(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 8u);
@@ -2288,6 +2338,7 @@ static void test_static_callable_reachability_rejects_invalid_generic_methodspec
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 包级方法导出的成员 token 使目标函数以 package 根保留。
 static void test_static_callable_reachability_keeps_package_method_export_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 9u);
@@ -2364,6 +2415,7 @@ static void test_static_callable_reachability_keeps_package_method_export_root(v
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 方法导出须有唯一有效成员绑定；类型和字段导出不制造函数根。
 static void test_static_callable_reachability_enforces_package_method_export_bindings(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 10u);

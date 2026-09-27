@@ -9,8 +9,10 @@
 
 void setUp(void) {}
 
+// BUG: 取得 prunedMetadata.ownedBlob 后若断言失败，函数尾部 release 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收堆块（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 逐节铺排二进制头，保持空节为零以检验解析器的正式边界。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -35,6 +37,7 @@ static void write_u32_le(TZrByte *target, TZrUInt32 value) {
     target[3] = (TZrByte)((value >> 24u) & 0xFFu);
 }
 
+// 构造经泛型约束 token record 间接引用的 module ref，并留出可删除的前置行。
 static TZrSize build_constraint_rooted_module_ref_fixture(TZrByte *buffer, TZrSize bufferLength) {
     static const TZrByte stringPool[] = "Provider\0" "1.2.3";
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
@@ -149,6 +152,7 @@ static TZrSize build_constraint_rooted_module_ref_fixture(TZrByte *buffer, TZrSi
     return offset;
 }
 
+// 裁剪后 module ref 仍须存在，约束记录的 relatedToken 须指向压紧后的 RID。
 static void test_aot_c_zrp_module_ref_pruning_keeps_generic_constraint_rooted_import_ref(void) {
     TZrByte blob[1280];
     TZrSize originalLength;

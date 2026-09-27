@@ -10,8 +10,10 @@
 
 void setUp(void) {}
 
+// BUG: 取得 prunedMetadata.ownedBlob 后若断言失败，函数尾部 release 被 Unity TEST_ABORT 跳过；空 tearDown 无法回收堆块，后续 RUN_TEST 仍在同进程执行（unity.c:2296-2303）。
 void tearDown(void) {}
 
+// 夹具按头部声明的顺序放置各节；空节归零以满足正式元数据校验。
 static void set_section(SZrZrpMetadataSection *section,
                         TZrUInt32 *offset,
                         TZrUInt32 byteLength,
@@ -50,6 +52,7 @@ static void copy_literal(TZrByte *target,
     memcpy(target + offset, literal, byteLength);
 }
 
+// 让保留的 MethodSpec 经导入 MemberRef 指向方法，并同时设置待重算的签名哈希。
 static TZrSize build_imported_member_ref_method_spec_fixture(TZrByte *buffer,
                                                              TZrSize bufferLength,
                                                              TZrBool includeImportedMemberRefRecord,
@@ -185,6 +188,7 @@ static TZrSize build_imported_member_ref_method_spec_fixture(TZrByte *buffer,
     return offset;
 }
 
+// 在导入 MemberRef 链中再嵌一层引用，检验递归保留而非只看直接目标。
 static TZrSize build_nested_imported_member_ref_method_spec_fixture(TZrByte *buffer,
                                                                     TZrSize bufferLength,
                                                                     TZrBool nestedMemberRefTargetsRemovedMethod,
@@ -307,6 +311,7 @@ static TZrSize build_nested_imported_member_ref_method_spec_fixture(TZrByte *buf
     return offset;
 }
 
+// 将 TypeRef 名称写入实例化签名，验证池压紧后嵌入偏移同步重写。
 static TZrSize build_imported_member_ref_method_spec_typeref_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -440,6 +445,7 @@ static TZrSize build_imported_member_ref_method_spec_typeref_fixture(
     return offset;
 }
 
+// 将模块名和版本字符串嵌入实例化签名，检验两处池偏移都随裁剪移动。
 static TZrSize build_imported_member_ref_method_spec_module_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -581,6 +587,7 @@ static TZrSize build_imported_member_ref_method_spec_module_fixture(
     return offset;
 }
 
+// 将 union 基类名嵌入实例化签名，覆盖复合节点中的字符串偏移。
 static TZrSize build_imported_member_ref_method_spec_union_fixture(
         TZrByte *buffer,
         TZrSize bufferLength,
@@ -718,6 +725,7 @@ static TZrSize build_imported_member_ref_method_spec_union_fixture(
     return offset;
 }
 
+// 保留的实例化方法须维系导入 MemberRef、token record 和重算后的签名哈希。
 static void test_aot_c_zrp_metadata_methodspec_pruning_keeps_imported_member_ref_method_token(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -821,6 +829,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_keeps_imported_member_ref
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 多级导入引用链上的每一行都必须留存，MethodSpec 的关联 token 不可悬空。
 static void test_aot_c_zrp_metadata_methodspec_pruning_keeps_nested_imported_member_ref_method_token(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -927,6 +936,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_keeps_nested_imported_mem
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 没有存活 MethodSpec 使用的导入成员引用与签名池应一起裁剪。
 static void test_aot_c_zrp_metadata_methodspec_pruning_drops_orphan_imported_member_ref_method_token(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -988,6 +998,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_drops_orphan_imported_mem
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 导入引用指向已删目标方法时，其 MethodSpec 和签名不应残留。
 static void test_aot_c_zrp_metadata_methodspec_pruning_drops_imported_member_ref_with_pruned_target(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
@@ -1049,6 +1060,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_drops_imported_member_ref
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// TypeRef 名称仅经签名引用仍须保留，签名内的字符串偏移必须重写。
 static void test_aot_c_zrp_metadata_methodspec_pruning_remaps_typeref_string_offset(void) {
     TZrByte blob[1024];
     TZrUInt32 expectedStringPoolBytes;
@@ -1125,6 +1137,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_remaps_typeref_string_off
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 模块名与版本经签名引用时同时保留并重映射，防止只修正其中一处。
 static void test_aot_c_zrp_metadata_methodspec_pruning_remaps_module_string_offsets(void) {
     TZrByte blob[1024];
     TZrUInt32 expectedStringPoolBytes;
@@ -1207,6 +1220,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_remaps_module_string_offs
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// union 基类名的嵌套偏移须指向裁剪后的池，而非旧字节位置。
 static void test_aot_c_zrp_metadata_methodspec_pruning_remaps_union_base_name_string_offset(void) {
     TZrByte blob[1024];
     TZrUInt32 expectedStringPoolBytes;
@@ -1286,6 +1300,7 @@ static void test_aot_c_zrp_metadata_methodspec_pruning_remaps_union_base_name_st
     backend_aot_c_release_embedded_zrp_metadata(&prunedMetadata);
 }
 
+// 多级引用链终点被裁剪时整条链和实例化签名均应移除。
 static void test_aot_c_zrp_metadata_methodspec_pruning_drops_nested_imported_member_ref_with_pruned_target(void) {
     TZrByte blob[1024];
     TZrSize expectedPrunedLength;
