@@ -1,3 +1,4 @@
+# Task 3 契约的预期失败子进程：超过 runner 20 样本上限时应在策略层拒绝。
 if (DEFINED TASK3_EXPECT_INVALID_POLICY AND TASK3_EXPECT_INVALID_POLICY)
     if (NOT DEFINED TASK3_MODULE OR TASK3_MODULE STREQUAL "")
         message(FATAL_ERROR "TASK3_MODULE is required")
@@ -9,6 +10,7 @@ if (DEFINED TASK3_EXPECT_INVALID_POLICY AND TASK3_EXPECT_INVALID_POLICY)
     message(FATAL_ERROR "initial sample count above 20 was accepted")
 endif ()
 
+# CTest 注入模块、脚本和独立输出目录；此入口兼查注册/接线及策略的可观察结果。
 foreach (required_variable IN ITEMS
         TASK3_MODULE EXECUTION_PLAN_SCRIPT PERFORMANCE_SUITE_SCRIPT ASSEMBLY_SCRIPT TESTS_CMAKE PYTHON_EXE TEST_OUTPUT_DIR)
     if (NOT DEFINED ${required_variable} OR "${${required_variable}}" STREQUAL "")
@@ -16,6 +18,7 @@ foreach (required_variable IN ITEMS
     endif ()
 endforeach ()
 
+# 静态标记用于发现套件接线遗漏；运行时策略、计划和 JSON 断言在下方独立执行。
 file(READ "${TESTS_CMAKE}" tests_cmake_source)
 foreach (registered_test IN ITEMS
         benchmark_statistics_python
@@ -56,6 +59,7 @@ endif ()
 
 include("${TASK3_MODULE}")
 
+# 对比最终策略而非单个入参，固定 process、steady、profile 的样本预算边界。
 function(expect_policy scope tier default_warmup default_iterations requested_warmup requested_iterations
          expected_warmup expected_iterations expected_extra expected_profile expected_minimum_mode)
     zr_benchmark_task3_resolve_policy(
@@ -88,6 +92,7 @@ expect_policy(steady core 1 1 7 12 7 12 8 false registry)
 expect_policy(steady core 1 1 7 20 7 20 0 false registry)
 expect_policy(process profile 0 1 99 99 0 1 0 true disabled)
 
+# .NET 只有预热或校准已执行时才可声明 JIT 状态复用；进程模式始终不复用。
 zr_benchmark_task3_dotnet_jit_state_reused(TRUE 0 TRUE calibrated_jit_reused)
 zr_benchmark_task3_dotnet_jit_state_reused(TRUE 1 FALSE warmed_jit_reused)
 zr_benchmark_task3_dotnet_jit_state_reused(TRUE 0 FALSE cold_jit_reused)
@@ -98,6 +103,7 @@ if (NOT calibrated_jit_reused OR NOT warmed_jit_reused OR cold_jit_reused OR pro
             "${calibrated_jit_reused}/${warmed_jit_reused}/${cold_jit_reused}/${process_jit_reused}")
 endif ()
 
+# 策略层的 FATAL_ERROR 必须隔离到子进程，否则无法检验拒绝原因。
 execute_process(
         COMMAND "${CMAKE_COMMAND}"
                 -DTASK3_EXPECT_INVALID_POLICY=ON
@@ -128,6 +134,7 @@ endforeach ()
 
 file(MAKE_DIRECTORY "${TEST_OUTPUT_DIR}")
 set(plan_path "${TEST_OUTPUT_DIR}/execution-plan.json")
+# 先筛选 case/实现再用固定 seed 洗牌；测试计划顺序保证该两阶段契约。
 set(jobs_json [=[[
   {"case":"a","implementation":"c"},
   {"case":"a","implementation":"zr_interp"},
@@ -160,6 +167,7 @@ if (NOT plan_algorithm STREQUAL "fisher_yates_splitmix64" OR
     message(FATAL_ERROR "execution plan was not filtered before the fixed-seed shuffle: ${plan_json}")
 endif ()
 
+# 以完整 runner 报告验证 Task 3 解析输出，供汇总脚本使用的字段不可从 stdout 猜测。
 set(runner_json [=[{
   "iterations": 10,
   "sample_count": 13,
@@ -215,6 +223,7 @@ if (NOT parsed_coefficient_of_variation EQUAL 0.04)
             "runner JSON coefficient_of_variation: expected 0.04, got ${parsed_coefficient_of_variation}")
 endif ()
 
+# profile 结果有采样值但不允许参与跨实现比较或 gate。
 set(profile_json [=[{
   "iterations": 1,
   "sample_count": 1,

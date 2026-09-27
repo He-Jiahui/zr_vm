@@ -1,3 +1,5 @@
+# benchmark_support 的 CTest 入口同时验证 runner 的测量口径、导出脚本和汇总器。
+# 所有依赖路径由 tests/CMakeLists.txt 注入；输出目录在每次执行前重建。
 foreach (required_var IN ITEMS
         EXE
         PERF_RUNNER_EXE
@@ -26,11 +28,13 @@ foreach (path_var IN ITEMS
     file(TO_CMAKE_PATH "${${path_var}}" ${path_var})
 endforeach ()
 
+# 各场景累积失败，最后统一交给 CTest；宏需在当前作用域修改计数与诊断。
 macro(benchmark_support_fail message_text)
     math(EXPR benchmark_support_failures "${benchmark_support_failures} + 1")
     string(APPEND benchmark_support_failure_messages "\n- ${message_text}")
 endmacro()
 
+# runner JSON 的契约字段必须存在且值固定，避免 CSV/汇总层读取含糊报告。
 macro(benchmark_support_expect_json_string json_text field_name expected_value label)
     string(JSON benchmark_support_value ERROR_VARIABLE benchmark_support_error GET "${json_text}" "${field_name}")
     if (NOT benchmark_support_error STREQUAL "NOTFOUND")
@@ -40,6 +44,7 @@ macro(benchmark_support_expect_json_string json_text field_name expected_value l
     endif ()
 endmacro()
 
+# 同时核对 JSON 类型和值，字符串 "false" 不能冒充布尔值。
 macro(benchmark_support_expect_json_false json_text field_name label)
     string(JSON benchmark_support_type ERROR_VARIABLE benchmark_support_type_error TYPE "${json_text}" "${field_name}")
     string(JSON benchmark_support_value ERROR_VARIABLE benchmark_support_value_error GET "${json_text}" "${field_name}")
@@ -56,6 +61,7 @@ set(benchmark_support_failure_messages "")
 file(REMOVE_RECURSE "${TEST_OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${TEST_OUTPUT_DIR}")
 
+# 先守住套件生成的 ZR 源码语法，再用 C fixture 验证 runner 对测量标签的处理。
 file(READ "${PERFORMANCE_SUITE_SCRIPT}" performance_suite_source)
 if (NOT performance_suite_source MATCHES "pub fn scale\\(\\): int")
     benchmark_support_fail("performance suite does not generate canonical ZR bench_config syntax")
@@ -132,10 +138,12 @@ if (invalid_bool_result EQUAL 0)
     benchmark_support_fail("perf runner accepted a non-canonical boolean")
 endif ()
 
+# 映射表在套件和报告消费者之间共享；缺失模块记为测试失败，而不执行后续接口调用。
 include("${MEASUREMENT_CONTRACT_MODULE}" OPTIONAL RESULT_VARIABLE measurement_contract_loaded)
 if (measurement_contract_loaded STREQUAL "NOTFOUND")
     benchmark_support_fail("measurement contract module is missing")
 else ()
+    # 各语言的 prepare 阶段必须与运行方式一致，否则相同计时值也不可直接比较。
     macro(benchmark_support_expect_mapping implementation_id expected_prepare_scope)
         zr_benchmark_measurement_contract_get("${implementation_id}"
                 mapped_measurement_scope
@@ -194,9 +202,11 @@ else ()
     endif ()
 endif ()
 
+# 从同一对合成报告检查 CSV 与聚合 JSON，防止导出时丢失测量契约字段。
 set(tests_generated_dir "${TEST_OUTPUT_DIR}/tests_generated")
 set(performance_dir "${tests_generated_dir}/performance")
 file(MAKE_DIRECTORY "${performance_dir}")
+# 正例先确认 CSV 保留契约字段，聚合 JSON 同时保持空问题清单。
 file(WRITE "${performance_dir}/benchmark_report.json" [=[
 {
   "suite": "performance_report",
@@ -308,6 +318,7 @@ else ()
     endif ()
 endif ()
 
+# 缺失或冲突的计时范围必须删除比率，同时保留同范围的 C 自比正例。
 file(WRITE "${performance_dir}/benchmark_report.json" [=[
 {
   "suite": "performance_report",
@@ -658,6 +669,7 @@ sys.exit(0 if valid else 1)
     endif ()
 endif ()
 
+# 重复 case/实现标识让比率归属不唯一；汇总器须记录并清除受影响比率。
 set(duplicate_summary_path "${tests_generated_dir}/benchmark_suite_summary_duplicates.json")
 execute_process(
         COMMAND "${PYTHON_EXE}" "${AGGREGATE_SCRIPT}"
@@ -715,6 +727,7 @@ else ()
     endif ()
 endif ()
 
+# 缺失、空白或非字符串标识也不能靠内容猜测归属；保留原记录以便诊断。
 file(WRITE "${performance_dir}/benchmark_report.json" [=[
 {
   "suite": "performance_report",
@@ -921,6 +934,7 @@ sys.exit(0 if valid else 1)
     endif ()
 endif ()
 
+# 结构错误和有效对照项同报，确保聚合层局部拒绝而非吞掉整份报告。
 file(WRITE "${performance_dir}/benchmark_report.json" [=[
 {
   "suite": "performance_report",

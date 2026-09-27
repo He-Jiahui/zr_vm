@@ -1,9 +1,7 @@
-# Task 3 deferred case/report assembly.
-# Contract: this include runs after PERF_RESULT_<case>_<implementation>_* has
-# been populated for every planned job. It consumes PERF_CASE_ORDER,
-# PERF_PLANNED_IMPLEMENTATIONS_<case>, the PERF_RESULT_* fields, registry
-# metadata, and existing perf_* helper functions; it updates the report row
-# accumulators and PERF_GC_* fields in the including script's scope.
+# Task 3 报告汇总由 run_performance_suite.cmake 在全部计划任务结束后 include。
+# 依赖调用方作用域中的 PERF_CASE_ORDER、PERF_PLANNED_IMPLEMENTATIONS_<case>、
+# PERF_RESULT_<case>_<implementation>_*、registry 元数据和 perf_* helper；
+# 同一作用域内累积 Markdown/JSON 行，交给包含它的主套件写盘。
 
 foreach (case_name IN LISTS PERF_CASE_ORDER)
     perf_case_scale("${case_name}" case_scale)
@@ -30,6 +28,7 @@ foreach (case_name IN LISTS PERF_CASE_ORDER)
     set(case_interp_working_directory "")
     set(case_interp_ready FALSE)
 
+    # 先收集符合 runner 稳定性与 gate 条件的均值，供后续同口径比率计算。
     foreach (implementation_id IN LISTS PERF_PLANNED_IMPLEMENTATIONS_${case_name})
         set(result_prefix "PERF_RESULT_${case_name}_${implementation_id}")
         set(result_status "${${result_prefix}_status}")
@@ -77,6 +76,7 @@ foreach (case_name IN LISTS PERF_CASE_ORDER)
         endif ()
     endforeach ()
 
+    # 再逐项输出报告；环境资格在此限制 Markdown 记录和相对 C 比率。
     foreach (implementation_id IN LISTS PERF_PLANNED_IMPLEMENTATIONS_${case_name})
         set(result_prefix "PERF_RESULT_${case_name}_${implementation_id}")
         foreach (result_field IN ITEMS
@@ -127,6 +127,10 @@ foreach (case_name IN LISTS PERF_CASE_ORDER)
             perf_escape_json_string("${implementation_id}" json_impl_id)
             perf_escape_json_string("${language}" json_language)
             perf_escape_json_string("${mode}" json_mode)
+            # BUG: Task 4 环境资格为 FALSE 时，局部 comparable/gate_eligible 已关闭，
+            # 但这里从 runner 的原始 JSON 组装 PASS 记录且未覆写这两个字段；最终
+            # benchmark_report.json 仍可能声明 true，与 Markdown 和环境状态矛盾。
+            # 应把环境门控后的值写回 JSON，并增加原始报告的回归断言。
             string(JSON json_object SET "${perf_json_text}" id "\"${json_impl_id}\"")
             string(JSON json_object SET "${json_object}" language "\"${json_language}\"")
             string(JSON json_object SET "${json_object}" mode "\"${json_mode}\"")
@@ -186,6 +190,10 @@ foreach (case_name IN LISTS PERF_CASE_ORDER)
     perf_escape_json_string("${case_banner}" json_case_banner)
     perf_escape_json_string("${ZR_VM_BENCHMARK_WORKLOAD_TAG_${case_name}}" json_case_workload_tag)
 
+    # BUG: Linux 缺少最终隔离证据等场景下环境比较资格为 FALSE，
+    # 上方单项 gate 已关闭，但首轮仍保存 runner 均值，故这里仍写出 comparison_report
+    # 的非空比率；run_performance_suite.cmake 会将其写入原始 md/json，汇总器才会清除。
+    # 应让首轮均值收集也受环境资格约束，并补充 Task4 报告级回归用例。
     if (NOT case_interp_mean STREQUAL "")
         zr_benchmark_measurement_contract_ratio("${case_interp_mean}" "${case_c_baseline_mean}" "${case_interp_measurement_scope}" "${case_c_measurement_scope}" ratio_to_c)
         zr_benchmark_measurement_contract_ratio("${case_interp_mean}" "${case_lua_mean}" "${case_interp_measurement_scope}" "${case_lua_measurement_scope}" ratio_to_lua)
@@ -235,6 +243,10 @@ foreach (case_name IN LISTS PERF_CASE_ORDER)
 
     perf_case_is_hotspot_representative("${case_name}" case_hotspot_representative)
 
+    # 指令画像属于解释器的附属证据；Callgrind 只对代表性 case 且工具齐备时运行。
+    # BUG: profile 采集失败后若上轮同路径文件仍在，仅凭 EXISTS 会将旧画像写入
+    # 本轮 instruction/hotspot 报告；需核对主套件的采集失败路径并清除旧文件，
+    # 或以本轮生成凭据判定有效性。
     if (NOT case_profile_report_path STREQUAL "" AND EXISTS "${case_profile_report_path}")
         string(APPEND PERF_INSTRUCTION_MARKDOWN_ROWS
                 "| ${case_name} | available | `${case_profile_report_path}` |\n")
@@ -405,6 +417,7 @@ foreach (case_name IN LISTS PERF_CASE_ORDER)
         set(PERF_HOTSPOT_JSON_CASES "${PERF_HOTSPOT_JSON_CASES},\n${hotspot_case_json}")
     endif ()
 
+    # 保留执行计划中 case 首次出现的顺序，供最终报告与计划交叉核对。
     string(CONCAT case_json
             "    {\n"
             "      \"name\": \"${json_case_name}\",\n"

@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
+# benchmark_persistent_protocol 的 CTest 入口：runner 与 fixture 必填；可用的
+# Lua/QuickJS/.NET/ZR 运行器再验证同一协议的跨语言实现。输出目录归本测试所有。
 foreach (required_variable IN ITEMS PERF_RUNNER_EXE FIXTURE_EXE TEST_OUTPUT_DIR)
     if (NOT DEFINED ${required_variable} OR "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR "${required_variable} is required")
@@ -8,6 +10,7 @@ endforeach ()
 
 set(input_zr_benchmark_server_exe "${ZR_BENCHMARK_SERVER_EXE}")
 if (DEFINED PERSISTENT_COMMAND_MODULE AND EXISTS "${PERSISTENT_COMMAND_MODULE}")
+    # 用占位工具路径检查命令映射，不启动外部语言；随后恢复真实路径给集成测试。
     include("${PERSISTENT_COMMAND_MODULE}")
     set(actual_benchmarks_dir "${BENCHMARKS_DIR}")
     set(PERF_LUA_EXE "fixture-lua")
@@ -56,6 +59,7 @@ endif ()
 
 file(MAKE_DIRECTORY "${TEST_OUTPUT_DIR}")
 
+# fixture 的解析入口固定严格 ASCII 请求格式，再交给 runner 检查会话协议。
 foreach (valid_request IN ITEMS "WARMUP 1 1" "RUN 42 1048576")
     execute_process(COMMAND "${FIXTURE_EXE}" --parse-request "${valid_request}"
             RESULT_VARIABLE parse_result)
@@ -76,6 +80,7 @@ endforeach ()
 set(report_path "${TEST_OUTPUT_DIR}/normal.json")
 file(REMOVE "${report_path}")
 
+# 所有持久会话场景共用计时与超时契约，失败场景只改变被测响应行为。
 set(common_runner_args
         --name fixture
         --iterations 2
@@ -138,6 +143,7 @@ foreach (run_index RANGE 0 1)
     endif ()
 endforeach ()
 
+# 进程级超时不仅要拒绝报告，还须杀掉 fixture 产生的子进程。
 set(timeout_report "${TEST_OUTPUT_DIR}/process-timeout.json")
 set(descendant_pid_file "${TEST_OUTPUT_DIR}/process-timeout-descendant.pid")
 if (WIN32)
@@ -190,6 +196,7 @@ if (persistent_timeout_option_result EQUAL 0 OR
     message(FATAL_ERROR "persistent mode accepted --process-timeout-ms")
 endif ()
 
+# 校准在 process 与 persistent 模式都应按 2 的幂扩展重复次数，而非混淆样本数。
 function(expect_calibrated_path mode)
     set(calibrated_report "${TEST_OUTPUT_DIR}/calibrated-${mode}.json")
     file(REMOVE "${calibrated_report}")
@@ -248,6 +255,7 @@ endfunction()
 expect_calibrated_path(process)
 expect_calibrated_path(persistent)
 
+# 十个稳定样本可通过 gate；不稳定样本追加到预算上限后仍不得通过。
 set(stable_ten_report "${TEST_OUTPUT_DIR}/stable-ten.json")
 execute_process(
         COMMAND "${PERF_RUNNER_EXE}"
@@ -316,6 +324,7 @@ foreach (run_index RANGE 0 19)
     endif ()
 endforeach ()
 
+# profile 单样本只供诊断，不参与统计比较。
 set(profile_report "${TEST_OUTPUT_DIR}/profile.json")
 execute_process(
         COMMAND "${PERF_RUNNER_EXE}"
@@ -340,6 +349,7 @@ if (NOT profile_count EQUAL 1 OR profile_comparable OR profile_gate OR
     message(FATAL_ERROR "profile report was not explicitly non-comparable: ${profile_json}")
 endif ()
 
+# 非法选项必须在启动 workload 前被 runner 拒绝，并给出对应诊断。
 function(expect_new_option_rejection label expected_pattern)
     execute_process(
             COMMAND "${PERF_RUNNER_EXE}"
@@ -363,6 +373,7 @@ expect_new_option_rejection(bootstrap-seed "Invalid --bootstrap-seed" --bootstra
 expect_new_option_rejection(profile-count "Profile mode requires" --profile)
 expect_new_option_rejection(total-samples "must not exceed 20" --iterations 20 --max-extra-samples 1)
 
+# 不同握手/响应异常均须失败且不留成功 JSON，调用方提供 fixture 行为和诊断片段。
 function(expect_persistent_failure behavior expected_pattern)
     set(failure_report "${TEST_OUTPUT_DIR}/${behavior}.json")
     file(REMOVE "${failure_report}")
@@ -411,6 +422,7 @@ expect_persistent_failure(stop_timeout "STOP timeout")
 expect_persistent_failure(stop_nonzero "nonzero after STOP")
 expect_persistent_failure(repetition_checksum_mismatch "child ERROR" --min-sample-ms 100)
 
+# 持久选项齐全也不能替代 measurement_scope，runner 必须拒绝缺失的计时范围。
 execute_process(
         COMMAND "${PERF_RUNNER_EXE}"
                 --name invalid
@@ -436,6 +448,7 @@ if (missing_scope_result EQUAL 0 OR
     message(FATAL_ERROR "missing persistent scope was not rejected safely")
 endif ()
 
+# process 模式不能声称复用持久运行时或带持久协议选项。
 function(expect_process_label_rejection label)
     execute_process(
             COMMAND "${PERF_RUNNER_EXE}"
@@ -470,10 +483,12 @@ expect_process_label_rejection(process-persistent-options
         --runtime-reused false
         --checksum-contract fixture-contract-v1)
 
+# 跨语言阶段以本机工具可用性为前提；缺少解释器时仍保留 fixture 协议覆盖。
 if (DEFINED BENCHMARKS_DIR AND IS_DIRECTORY "${BENCHMARKS_DIR}")
     find_program(protocol_lua_exe NAMES lua lua54 lua5.4)
     find_program(protocol_qjs_exe NAMES qjs quickjs)
 
+    # 用相同 runner 参数核对各语言 server 的持久会话及校验值。
     function(expect_language_server language expected_checksum)
         set(language_report "${TEST_OUTPUT_DIR}/${language}.json")
         set(language_jit_reused false)
@@ -508,6 +523,7 @@ if (DEFINED BENCHMARKS_DIR AND IS_DIRECTORY "${BENCHMARKS_DIR}")
         endif ()
     endfunction()
 
+    # 大于有符号 int 的请求索引必须由语言 server 自身拒绝，不能回卷成合法索引。
     function(expect_language_index_rejection language executable)
         set(invalid_index_input "${TEST_OUTPUT_DIR}/${language}-invalid-index.txt")
         file(WRITE "${invalid_index_input}" "RUN 2147483648 1\nSTOP\n")

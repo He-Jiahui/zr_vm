@@ -1,3 +1,5 @@
+# CTest 入口将正例与会 FATAL_ERROR 的反例分进子进程，并核验反例的诊断契约。
+# REGISTRY_FILE 和 FIXTURE_SCRIPT 由 tests/CMakeLists.txt 指向源码树中的配对文件。
 foreach (required_variable IN ITEMS REGISTRY_FILE FIXTURE_SCRIPT)
     if (NOT DEFINED ${required_variable} OR "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR "${required_variable} is required")
@@ -17,6 +19,7 @@ if (NOT valid_result EQUAL 0)
 endif ()
 
 foreach (invalid_mode IN ITEMS zero negative non_integer)
+    # 退出非零本身不足以证明 MIN_SAMPLE_MS 校验生效，还需匹配注册接口的错误信息。
     execute_process(
             COMMAND "${CMAKE_COMMAND}"
                     "-DREGISTRY_FILE=${REGISTRY_FILE}"

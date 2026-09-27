@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
+# Task 4 CTest 入口同时检查环境解析结果和主套件/Task 3 汇总的接线。
+# TEST_OUTPUT_DIR 是本测试独占的构建树目录，入口会清除并重建它。
 foreach (required_var IN ITEMS TASK4_MODULE PERFORMANCE_SUITE_SCRIPT ASSEMBLY_SCRIPT TEST_OUTPUT_DIR)
     if (NOT DEFINED ${required_var} OR "${${required_var}}" STREQUAL "")
         message(FATAL_ERROR "Missing -D${required_var}=...")
@@ -10,6 +12,7 @@ include("${TASK4_MODULE}")
 file(REMOVE_RECURSE "${TEST_OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${TEST_OUTPUT_DIR}")
 
+# IN_PROGRESS 的隔离快照有效但仍待最终确认，不能提前授予比较资格。
 set(isolated_path "${TEST_OUTPUT_DIR}/isolated.json")
 file(WRITE "${isolated_path}"
         "{\"capture_status\":\"IN_PROGRESS\","
@@ -40,6 +43,7 @@ if (NOT nonisolated_status STREQUAL "INCOMPARABLE")
     message(FATAL_ERROR "unexpected non-isolated status: ${nonisolated_status}")
 endif ()
 
+# 缺报告的 Linux 运行与没有等价亲和性证据的 Windows 运行具有不同有效性。
 zr_benchmark_task4_resolve_environment(
         "Linux" ""
         missing_valid missing_comparable missing_json missing_issue)
@@ -62,6 +66,7 @@ if (windows_reason_index LESS 0)
     message(FATAL_ERROR "Windows diagnostic reason is missing")
 endif ()
 
+# 文本检查只证明包含关键接线；报告值是否真被门控须由端到端用例验证。
 file(READ "${PERFORMANCE_SUITE_SCRIPT}" suite_source)
 foreach (required_text IN ITEMS
         "benchmark_task4_environment.cmake"
