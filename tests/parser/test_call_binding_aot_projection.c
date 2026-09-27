@@ -14,13 +14,16 @@
 #include "zr_vm_parser/writer.h"
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_bindings.h"
 
+/* Unity 单用例 VM，由 tearDown 释放；测试局部 malloc 缓冲区不归此状态管理。 */
 static SZrState *g_state;
 
+/* 供注册表模拟 AOT 函数地址，绑定检查只验证指针身份而不执行返回值。 */
 static TZrInt64 test_runtime_aot_thunk(struct SZrState *state) {
     (void)state;
     return 71;
 }
 
+/* 注册表使用的空 invoker；此组用例只检验重定位，不发起 AOT 调用。 */
 static void test_runtime_aot_invoker(struct SZrState *state,
                                      FZrAotEntryThunk target,
                                      const SZrAotMethodInfo *method,
@@ -35,15 +38,19 @@ static void test_runtime_aot_invoker(struct SZrState *state,
     (void)outReturn;
 }
 
+/** @brief 为每个绑定投影用例创建独立 VM。 */
 void setUp(void) { g_state = ZrTests_Runtime_State_Create(ZR_NULL); }
+/** @brief 回收当前用例 VM；局部堆资源仍须在各测试函数中释放。 */
 void tearDown(void) { ZrTests_Runtime_State_Destroy(g_state); }
 
+/* 使用虚方法调用生成真实 call-site cache，供源端投影和运行时链接共用。 */
 static SZrFunction *compile_source(void) {
     const char *source = "class Box { pub virtual fn value(): int { return 29; } } var box = new Box(); return box.value();";
     SZrString *name = ZrCore_String_Create(g_state, "call_binding_aot.zr", 19u);
     return ZrParser_Source_Compile(g_state, source, strlen(source), name);
 }
 
+/* 投影行保留原始契约和位置，并拒绝被篡改的签名哈希。 */
 static void test_aot_projection_preserves_contract_and_resolves_index(void) {
     SZrFunction *function = compile_source();
     SZrAotFunctionTable table;
@@ -81,6 +88,7 @@ static void test_aot_projection_preserves_contract_and_resolves_index(void) {
     backend_aot_release_function_table(g_state, &table);
 }
 
+/* 去掉目标函数表后，投影必须失败且不能留下看似有效的绑定行。 */
 static void test_aot_projection_rejects_missing_target_after_stripping(void) {
     SZrFunction *function = compile_source();
     SZrAotFunctionTable table;
@@ -107,6 +115,7 @@ static void test_aot_projection_rejects_missing_target_after_stripping(void) {
     backend_aot_release_function_table(g_state, &table);
 }
 
+/* 任一次运行时链接失败后，所有缓存都不应保留上次链接的目标或代际。 */
 static void assert_runtime_bindings_invalidated(const SZrAotFunctionTable *table) {
     for (TZrUInt32 index = 0u; index < table->count; ++index) {
         const SZrFunction *function = table->entries[index].function;
@@ -120,6 +129,8 @@ static void assert_runtime_bindings_invalidated(const SZrAotFunctionTable *table
     }
 }
 
+/* 把投影行编码为无进程指针字节，再检验加载、失败回滚及多态延迟绑定。 */
+/* BUG: 分配 rows/indices/函数指针数组后任一 Unity 断言失败会 longjmp，跳过局部 free；tearDown 只释放 VM。 */
 static void test_aot_runtime_links_pointer_free_rows_and_preserves_interpreter_callable(void) {
     SZrFunction *function = compile_source();
     SZrAotFunctionTable table;
@@ -181,6 +192,7 @@ static void test_aot_runtime_links_pointer_free_rows_and_preserves_interpreter_c
             targetIndices[rowIndex++] = targetIndex;
         }
     }
+    /* 编码行与目标索引共享遍历顺序，loader 以行号配对两张表。 */
     registration.functionCount = table.indexSpace;
     registration.functionPointers = functionPointers;
     registration.methodInfos = methodInfos;
@@ -214,6 +226,7 @@ static void test_aot_runtime_links_pointer_free_rows_and_preserves_interpreter_c
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
             ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &originalRow, ZR_NULL));
 
+    /* 逐次破坏签名、模块、布局、目标和行大小；每次失败均须清除旧绑定。 */
     changedRow = originalRow;
     changedRow.contract.signatureHash ^= 1u;
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK, ZrCore_Artifact_WriteCallBindingRow(
@@ -258,10 +271,7 @@ static void test_aot_runtime_links_pointer_free_rows_and_preserves_interpreter_c
     registration.callBindingRowSize = ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE;
     TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_LinkCallBindings(g_state, runtime));
 
-    /* Reclassify one polymorphic local row as a MODULE relocation.  The
-     * module marker carries only the member-entry coordinate; no process
-     * pointer is promoted until receiver dispatch supplies the implementation.
-     */
+    /* 将多态行改为 MODULE 重定位，仅留下成员位置；接收者分派前不能提前晋升进程指针。 */
     {
         SZrMetadataRuntimeCallBindingView deferredView;
         SZrFunction *deferredFunction;
@@ -340,6 +350,8 @@ static void test_aot_runtime_links_pointer_free_rows_and_preserves_interpreter_c
     backend_aot_release_function_table(g_state, &table);
 }
 
+/* C 发射物必须以固定 ABI 字节行和独立目标索引表注册，而非写入进程指针。 */
+/* BUG: 读入 bytes 后断言失败会泄漏 bytes；text 分配后失败还会泄漏 text，tearDown 无法代为释放。 */
 static void test_generated_c_registers_pointer_free_binding_bytes(void) {
     SZrFunction *function = compile_source();
     SZrAotWriterOptions options;
@@ -367,6 +379,8 @@ static void test_generated_c_registers_pointer_free_binding_bytes(void) {
     free(bytes);
 }
 
+/* LLVM 发射物必须注册与 C 相同大小的绑定行及目标函数索引。 */
+/* BUG: 读入 bytes 后断言失败会泄漏 bytes；text 分配后失败还会泄漏 text，tearDown 无法代为释放。 */
 static void test_generated_llvm_registers_binding_bytes_with_current_abi(void) {
     SZrFunction *function = compile_source();
     SZrAotWriterOptions options;
@@ -393,6 +407,7 @@ static void test_generated_llvm_registers_binding_bytes_with_current_abi(void) {
     free(bytes);
 }
 
+/** @brief 注册 AOT 投影、重定位回滚及 C/LLVM 发射回归用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_projection_preserves_contract_and_resolves_index);

@@ -4,13 +4,17 @@
 #include "harness/module_fixture_support.h"
 
 #if defined(ZR_PLATFORM_UNIX)
+/* 供 sourceLoader 回调借用；每个用例在编译 provider 前重设，回调不得跨用例保留。 */
 static ZrTestsFixtureSource binding_aot_provider;
 
+/* 编译 main 时从当前用例的 provider 文本提供导入源码，Io 的关闭由消费方负责。 */
 static TZrBool binding_aot_source_loader(SZrState *state, TZrNativeString path,
         TZrNativeString hash, SZrIo *io) {
     return ZrTests_Fixture_SourceLoaderFromArray(state, path, hash, io, &binding_aot_provider, 1u);
 }
 
+/* 依次产出二进制模块、嵌入该模块的 AOT 源和共享库，供后续项目加载验证。 */
+/* BUG: 读取 blob 后任一 Unity 断言失败都会 longjmp，跳过 blob/function 释放；包含方的空 tearDown 无法回收。 */
 static void write_binding_aot_module(SZrState *state, const char *suite,
         const char *module, const char *source, EZrAotBackendKind backend) {
     TZrChar sourcePath[ZR_TESTS_PATH_MAX], binaryPath[ZR_TESTS_PATH_MAX];
@@ -66,6 +70,8 @@ static void write_binding_aot_module(SZrState *state, const char *suite,
 }
 #endif
 
+/* 分别用编译 VM 和运行 VM 检验跨模块绑定；重载后的缓存必须指向 provider thunk 且发生命中。 */
+/* BUG: 创建 state/project 后断言失败会跳过局部清理；包含方 tearDown 为空，VM 与项目资源遗留到进程退出。 */
 static void assert_aot_module_binding_backend(const char *suite, const char *providerSource,
         const char *consumerSource, EZrAotBackendKind backend) {
 #if !defined(ZR_PLATFORM_UNIX)
@@ -81,6 +87,7 @@ static void assert_aot_module_binding_backend(const char *suite, const char *pro
     SZrTypeValue result;
     TZrUInt32 boundCalls = 0u;
     TEST_ASSERT_NOT_NULL(state);
+    /* 编译阶段回调只在首个 VM 有效，输出落盘后销毁该 VM，再由项目运行时加载。 */
     binding_aot_provider = (ZrTestsFixtureSource)ZR_TESTS_FIXTURE_SOURCE_TEXT("provider", providerSource);
     state->global->sourceLoader = binding_aot_source_loader;
     state->global->compileSource = ZrParser_Source_Compile;
@@ -117,31 +124,37 @@ static void assert_aot_module_binding_backend(const char *suite, const char *pro
         ++boundCalls;
     }
     TEST_ASSERT_EQUAL_UINT32(1u, boundCalls);
+    /* userData 借用 project，必须先解除引用再释放项目和运行 VM。 */
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
 
+/* C 后端的固定入口，和 LLVM 用例共用跨模块重定位断言。 */
 static void assert_aot_module_binding(const char *suite, const char *providerSource, const char *consumerSource) {
     assert_aot_module_binding_backend(suite, providerSource, consumerSource, ZR_AOT_BACKEND_KIND_C);
 }
 
+/* LLVM 导入 provider 时也必须从模块元数据恢复可调用目标。 */
 static void test_aot_llvm_imports_provider_without_internal_bindings(void) {
     assert_aot_module_binding_backend("aot_llvm_binding_module_function", "pub fn answer(): int { return 42; }",
             "var provider = import(\"provider\"); return provider.answer();", ZR_AOT_BACKEND_KIND_LLVM);
 }
 
+/* 普通导出函数经 C AOT 模块导入后应绑定到 provider thunk。 */
 static void test_aot_imported_module_function_uses_provider_thunk(void) {
     assert_aot_module_binding("aot_binding_module_function", "pub fn answer(): int { return 42; }",
             "var provider = import(\"provider\"); return provider.answer();");
 }
 
+/* 静态成员调用经过模块导入后仍应使用 provider 的 AOT 目标。 */
 static void test_aot_imported_static_method_uses_provider_thunk(void) {
     assert_aot_module_binding("aot_binding_module_static", "pub class Math { pub static fn answer(): int { return 42; } }",
             "var provider = import(\"provider\"); return provider.Math.answer();");
 }
 
+/* provider 函数读取模块变量时，跨模块绑定不得丢失其模块捕获。 */
 static void test_aot_imported_function_preserves_module_capture(void) {
     assert_aot_module_binding("aot_binding_module_capture", "var offset: int = 42; pub fn answer(): int { return offset; }",
             "var provider = import(\"provider\"); return provider.answer();");

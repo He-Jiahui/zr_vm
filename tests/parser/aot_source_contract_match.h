@@ -3,11 +3,13 @@
 
 #include <string.h>
 
+/* 源码契约只折叠 ASCII 空白，避免生成器换行和缩进变化误伤片段断言。 */
 static int zr_test_aot_source_contract_is_ascii_whitespace(char value) {
     return value == ' ' || value == '\t' || value == '\r' || value == '\n' ||
            value == '\f' || value == '\v';
 }
 
+/* AOT 合约测试先查原样片段，再允许模式与生成源码之间插入 ASCII 空白。 */
 static int zr_test_aot_source_contract_contains(const char *text, const char *needle) {
     const char *start;
 
