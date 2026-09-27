@@ -183,5 +183,6 @@ doc_type: category-index
 | parser CFG finally 回归测试 | [36 项](coverage/tests_parser_cfg_finally_abrupt.tsv) | 1 个 C 测试文件独立复核，覆盖 32 个函数、全局状态和 3 个关键块；源码仅增 37 行注释，GCC/Clang C11 定向语法检查通过。1 个 BUG 标明断言失败跳过原生 AST/CFG/context 释放，5 个 TODO 保留合成源长度、break 目标、throw 经 finally、克隆出口归属与 AST 范围的核查入口；目标测试未运行。 |
 | language server stdio 输出测试 | [34 项](coverage/tests_language_server_stdio_transport_output.tsv) | 1 个 C 测试文件独立复核，覆盖 16 个函数及输出关键块；源码仅改注释且行号不变，439 个证据锚点，GCC/Clang C11 严格语法检查通过。1 个 BUG 标明断言失败跳过 JSON 树释放，5 个 TODO 记录输出恢复、夹具分配、null 断言和写失败路径的核查缺口；目标测试未运行。 |
 | VS Code 扩展客户端请求与虚拟文档 | [24 项](coverage/zr_vm_language_server_extension_client_virtual_documents.tsv) | 4 个 TS/JS 文件独立复核，覆盖桌面和浏览器入口、视图请求及 7 个现有测试；源码仅增注释，TypeScript `--noEmit` 与 7 个 Node 测试通过。1 个 BUG 标明注销虚拟文档提供器后订阅仍持有旧对象；2 个 TODO 保留监听器异常隔离与提供器生命周期测试缺口。 |
+| parser CFG 常量条件测试 | [44 项](coverage/tests_parser_cfg_constant_conditions.tsv) | 1 个 C 测试文件独立复核，覆盖 42 个函数、全局状态和断言失败块，278 个证据锚点及 22 个 Unity 注册；源码仅增 46 行注释，GCC/Clang C11 严格语法检查通过。1 个 BUG 标明断言失败跳过原生资源释放，1 个 TODO 保留 if 范围覆盖疑问；目标测试未运行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

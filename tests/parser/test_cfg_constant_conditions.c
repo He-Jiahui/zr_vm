@@ -13,13 +13,16 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* Unity 每个用例重新建 VM；所有手工 AST、CFG 和语义事实都以该状态为资源域。 */
 static SZrState *g_state;
 
+/* Unity 在每次 RUN_TEST 前建立独立状态，隔离常量条件用例的 GC 与语义事实。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 即使在断言中止后也调用此入口；它仅销毁 VM 状态，不代替局部 CFG/AST 清理。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -27,6 +30,7 @@ void tearDown(void) {
     }
 }
 
+/* 为手工 AST 和位置查询提供同一虚拟源文件，保证事实查找只比较目标语句的范围。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -40,6 +44,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 测试直接构造原生 AST，绕开解析器；成功后节点须接入 script 并由 Ast_Free 递归释放。 */
 static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *node = (SZrAstNode *)ZrCore_Memory_RawMallocWithType(
         g_state->global,
@@ -53,6 +58,7 @@ static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize e
     return node;
 }
 
+/* 把待测控制语句作为脚本唯一入口，让 CFG 从 entry 节点遍历该场景。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 80);
 
@@ -62,6 +68,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/* 用单语句块隔离分支或循环体；事实应落在内部语句，而非仅落在控制节点。 */
 static SZrAstNode *block_with_statement(SZrAstNode *statement,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
@@ -74,6 +81,7 @@ static SZrAstNode *block_with_statement(SZrAstNode *statement,
     return block;
 }
 
+/* 将已知布尔值交给 CFG 条件折叠路径，供取反和逻辑组合场景复用。 */
 static SZrAstNode *boolean_literal(TZrBool value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_BOOLEAN_LITERAL, startOffset, endOffset);
 
@@ -81,6 +89,7 @@ static SZrAstNode *boolean_literal(TZrBool value, TZrSize startOffset, TZrSize e
     return literal;
 }
 
+/* 提供整数字面量，包括溢出边界，以区分可折叠和必须保守处理的条件。 */
 static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_INTEGER_LITERAL, startOffset, endOffset);
 
@@ -88,6 +97,7 @@ static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize 
     return literal;
 }
 
+/* 固定使用双精度字面量；本组只覆盖有限普通数的关系判断。 */
 static SZrAstNode *float_literal(TZrDouble value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_FLOAT_LITERAL, startOffset, endOffset);
 
@@ -96,6 +106,7 @@ static SZrAstNode *float_literal(TZrDouble value, TZrSize startOffset, TZrSize e
     return literal;
 }
 
+/* 提供 GC 字符串参与常量相等判断；AST 持有节点，字符串由测试状态管理。 */
 static SZrAstNode *string_literal(const TZrChar *value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_STRING_LITERAL, startOffset, endOffset);
 
@@ -104,6 +115,7 @@ static SZrAstNode *string_literal(const TZrChar *value, TZrSize startOffset, TZr
     return literal;
 }
 
+/* 供字符比较用例检验 CFG 对相同类型标量的关系判断。 */
 static SZrAstNode *char_literal(TZrChar value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_CHAR_LITERAL, startOffset, endOffset);
 
@@ -111,6 +123,7 @@ static SZrAstNode *char_literal(TZrChar value, TZrSize startOffset, TZrSize endO
     return literal;
 }
 
+/* 模拟尚无常量值的运行时标识符，验证短路条件不会被未知右操作数阻断。 */
 static SZrAstNode *identifier_node(const TZrChar *name, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *identifier = test_node(ZR_AST_IDENTIFIER_LITERAL, startOffset, endOffset);
 
@@ -119,6 +132,7 @@ static SZrAstNode *identifier_node(const TZrChar *name, TZrSize startOffset, TZr
     return identifier;
 }
 
+/* 将操作符和子表达式接入手工 AST；操作符使用静态字面量，生命期覆盖整个用例。 */
 static SZrAstNode *unary_expression(const TZrChar *op,
                                     SZrAstNode *argument,
                                     TZrSize startOffset,
@@ -130,12 +144,14 @@ static SZrAstNode *unary_expression(const TZrChar *op,
     return expression;
 }
 
+/* 把布尔取反场景统一交给一元表达式夹具，防止构造差异掩盖折叠结果。 */
 static SZrAstNode *unary_not_expression(SZrAstNode *argument,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
     return unary_expression("!", argument, startOffset, endOffset);
 }
 
+/* 构造短路逻辑条件，检验 CFG 在部分操作数未知时的保守性。 */
 static SZrAstNode *logical_expression(SZrAstNode *left,
                                       const TZrChar *op,
                                       SZrAstNode *right,
@@ -149,6 +165,7 @@ static SZrAstNode *logical_expression(SZrAstNode *left,
     return expression;
 }
 
+/* 让同一比较入口承接标量比较和嵌套算术折叠，避免借助解析器预处理。 */
 static SZrAstNode *binary_expression(SZrAstNode *left,
                                      const TZrChar *op,
                                      SZrAstNode *right,
@@ -162,11 +179,12 @@ static SZrAstNode *binary_expression(SZrAstNode *left,
     return expression;
 }
 
+/* 生成有两支的语句型 if；测试借此核对被排除分支的原因节点仍是原条件。 */
 static SZrAstNode *if_statement(SZrAstNode *condition,
                                 SZrAstNode *thenBlock,
                                 SZrAstNode *elseBlock) {
+    /* TODO: 溢出用例 elseBlock 结束于 74，超出固定范围 64；增加父节点位置查询前核对夹具范围。 */
     SZrAstNode *ifNode = test_node(ZR_AST_IF_EXPRESSION, 0, 64);
-
     ifNode->data.ifExpression.condition = condition;
     ifNode->data.ifExpression.thenExpr = thenBlock;
     ifNode->data.ifExpression.elseExpr = elseBlock;
@@ -174,6 +192,7 @@ static SZrAstNode *if_statement(SZrAstNode *condition,
     return ifNode;
 }
 
+/* 生成语句型 while；常假条件应让循环体不可达，但不使整个脚本不可达。 */
 static SZrAstNode *while_statement(SZrAstNode *condition, SZrAstNode *body) {
     SZrAstNode *whileNode = test_node(ZR_AST_WHILE_LOOP, 0, 64);
 
@@ -183,6 +202,7 @@ static SZrAstNode *while_statement(SZrAstNode *condition, SZrAstNode *body) {
     return whileNode;
 }
 
+/* 在语句起点内部查借用事实；无记录在本测试中表示该语句未被标为不可达。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(SZrSemanticContext *context,
                                                                SZrAstNode *node) {
     return ZrParser_SemanticFacts_FindReachabilityAtPosition(
@@ -190,6 +210,7 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(SZrSemanticContex
         test_range(node->location.start.offset + 1, node->location.start.offset + 1));
 }
 
+/* !false 应保留 then 路径，并把 else 的不可达原因追溯到完整取反条件。 */
 static void test_cfg_folds_unary_not_false_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -204,6 +225,9 @@ static void test_cfg_folds_unary_not_false_if_condition(void) {
     const SZrSemanticReachabilityFact *thenFact;
     const SZrSemanticReachabilityFact *elseFact;
 
+    /* BUG: 本文件各用例在取得原生 AST、CFG 或 context 后用 Unity 断言；任一失败
+     * 会跳过局部 Free，仅由 tearDown 销毁 VM，导致这些原生块泄漏。需用失败路径也
+     * 能执行的清理入口持有三者。 */
     TEST_ASSERT_NOT_NULL(context);
     ZrParser_Cfg_Init(g_state, &cfg);
 
@@ -223,6 +247,7 @@ static void test_cfg_folds_unary_not_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* !true 使循环零次执行；循环体事实应标为条件假而非普通分支淘汰。 */
 static void test_cfg_folds_unary_not_true_while_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -251,6 +276,7 @@ static void test_cfg_folds_unary_not_true_while_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* true && false 应淘汰 then，验证逻辑表达式可作为 if 的常量条件。 */
 static void test_cfg_folds_logical_and_false_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -285,6 +311,7 @@ static void test_cfg_folds_logical_and_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* false || false 保持循环入口可退出，并将循环体归因为条件假。 */
 static void test_cfg_folds_logical_or_false_while_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -314,6 +341,7 @@ static void test_cfg_folds_logical_or_false_while_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* false && 未知标识符仍可确定整体为假；未知右项不应保留 then 路径。 */
 static void test_cfg_folds_short_circuit_false_and_unknown_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -348,6 +376,7 @@ static void test_cfg_folds_short_circuit_false_and_unknown_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* true || 未知标识符仍可确定整体为真；未知右项不应保留 else 路径。 */
 static void test_cfg_folds_short_circuit_true_or_unknown_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -382,6 +411,7 @@ static void test_cfg_folds_short_circuit_true_or_unknown_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 不等的整数常量淘汰 then，核对比较折叠与不可达事实的连接。 */
 static void test_cfg_folds_integer_equality_false_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -416,6 +446,7 @@ static void test_cfg_folds_integer_equality_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 常假的整数关系条件应阻止进入 while 体，并保留条件节点为诊断来源。 */
 static void test_cfg_folds_integer_relational_false_while_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -445,6 +476,7 @@ static void test_cfg_folds_integer_relational_false_while_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 不同字符串内容的比较应淘汰 then；此处只验证 CFG 的局部常量判断。 */
 static void test_cfg_folds_string_equality_false_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -479,6 +511,7 @@ static void test_cfg_folds_string_equality_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 相同字符的 != 结果为假；循环体应带 CONDITION_FALSE 原因。 */
 static void test_cfg_folds_char_inequality_false_while_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -508,6 +541,7 @@ static void test_cfg_folds_char_inequality_false_while_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 双精度常量的 >= 结果为假；验证浮点比较能驱动 if 分支剔除。 */
 static void test_cfg_folds_float_relational_false_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -542,6 +576,7 @@ static void test_cfg_folds_float_relational_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 跨类型字面量相等比较在 CFG 局部路径折为假；夹具不检验源语言类型合法性。 */
 static void test_cfg_folds_mixed_kind_equality_false_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -576,6 +611,7 @@ static void test_cfg_folds_mixed_kind_equality_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 先折叠整数加法再比较；缺少该折叠会使 else 的不可达事实缺失。 */
 static void test_cfg_folds_integer_addition_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -614,6 +650,7 @@ static void test_cfg_folds_integer_addition_equality_true_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 检验减法结果进入比较条件，保证 CFG 能淘汰恒假的 else。 */
 static void test_cfg_folds_integer_subtraction_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -652,6 +689,7 @@ static void test_cfg_folds_integer_subtraction_equality_true_if_condition(void) 
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 检验乘法的安全常量结果可继续参与相等判断与分支剔除。 */
 static void test_cfg_folds_integer_multiplication_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -690,6 +728,7 @@ static void test_cfg_folds_integer_multiplication_equality_true_if_condition(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 非零除数的整除常量可驱动分支选择；这里只覆盖可定义的算术输入。 */
 static void test_cfg_folds_integer_division_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -728,6 +767,7 @@ static void test_cfg_folds_integer_division_equality_true_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 非零除数的取余常量可驱动分支选择，防止该运算被误判为未知。 */
 static void test_cfg_folds_integer_modulo_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -766,6 +806,7 @@ static void test_cfg_folds_integer_modulo_equality_true_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 算术折叠结果仍应进入关系比较，而不局限于与字面量做相等判断。 */
 static void test_cfg_folds_folded_integer_relational_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -804,6 +845,7 @@ static void test_cfg_folds_folded_integer_relational_true_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 安全的一元取负应产生可比较的整数常量，淘汰恒假的 else。 */
 static void test_cfg_folds_integer_unary_minus_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -841,6 +883,7 @@ static void test_cfg_folds_integer_unary_minus_equality_true_if_condition(void) 
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 一元正号保持数值不变；CFG 应继续使用其结果确定 if 路径。 */
 static void test_cfg_folds_integer_unary_plus_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -878,6 +921,7 @@ static void test_cfg_folds_integer_unary_plus_equality_true_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 位取反的确定结果应进入相等判断，避免把所有一元运算视为未知。 */
 static void test_cfg_folds_integer_bitwise_not_equality_true_if_condition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -915,6 +959,7 @@ static void test_cfg_folds_integer_bitwise_not_equality_true_if_condition(void) 
     ZrParser_SemanticContext_Free(context);
 }
 
+/* -INT64_MIN 不可表示；CFG 必须保留两支可达，防止以溢出结果错误裁剪路径。 */
 static void test_cfg_keeps_overflowed_integer_unary_minus_condition_unknown(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -945,6 +990,7 @@ static void test_cfg_keeps_overflowed_integer_unary_minus_condition_unknown(void
     ZrParser_SemanticContext_Free(context);
 }
 
+/* Unity 显式注册全部常量条件场景；CMake 目标把本入口纳入语言流水线测试。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_folds_unary_not_false_if_condition);
