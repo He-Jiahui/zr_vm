@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 头名与 charset 参数采用同一大小写宽容规则，避免客户端拼写差异改变协议判定。 */
 static TZrBool frame_reader_ascii_equals(const char *left, const char *right) {
     while (*left != '\0' && *right != '\0') {
         if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
@@ -18,6 +19,7 @@ static TZrBool frame_reader_ascii_equals(const char *left, const char *right) {
     return *left == '\0' && *right == '\0';
 }
 
+/* 头部字段的空白归一化只处理协议允许的空格和制表符。 */
 static char *frame_reader_skip_spaces(char *text) {
     while (*text == ' ' || *text == '\t') {
         text++;
@@ -25,6 +27,7 @@ static char *frame_reader_skip_spaces(char *text) {
     return text;
 }
 
+/* 与 skip_spaces 配对，使头名和参数名的比较不受边缘空白影响。 */
 static void frame_reader_trim_spaces(char *text) {
     size_t length = strlen(text);
 
@@ -33,6 +36,7 @@ static void frame_reader_trim_spaces(char *text) {
     }
 }
 
+/* 显式 charset 只能是 UTF-8；入参来自可复用的头部行缓冲区，允许原地切分。 */
 static TZrBool frame_reader_content_type_is_utf8(char *value) {
     char *parameter = strchr(value, ';');
 
@@ -80,9 +84,11 @@ static TZrBool frame_reader_content_type_is_utf8(char *value) {
         parameter = next;
     }
 
+    /* TODO: 当前仅约束 charset，尚需结合协议一致性用例确认是否应拒绝其他媒体类型。 */
     return ZR_TRUE;
 }
 
+/* 在分配 payload 前同时检查数字格式、主机大小和服务端消息预算。 */
 static EZrStdioFrameReadStatus frame_reader_parse_content_length(const char *value,
                                                                    TZrSize maxMessageBytes,
                                                                    TZrSize *outLength) {
@@ -108,6 +114,7 @@ static EZrStdioFrameReadStatus frame_reader_parse_content_length(const char *val
     return ZR_STDIO_FRAME_READ_OK;
 }
 
+/* 外部限额只能收紧编译期上限，避免调用方意外扩大固定头缓冲区的边界。 */
 static SZrStdioFrameReaderLimits frame_reader_normalize_limits(
         const SZrStdioFrameReaderLimits *limits) {
     SZrStdioFrameReaderLimits normalized;
@@ -129,6 +136,7 @@ static SZrStdioFrameReaderLimits frame_reader_normalize_limits(
     return normalized;
 }
 
+/* 传输线程与测试共用这一组默认值，防止生产与测试采用不同预算。 */
 void ZrLanguageServer_StdioFrameReader_DefaultLimits(SZrStdioFrameReaderLimits *outLimits) {
     if (outLimits == ZR_NULL) {
         return;
@@ -139,6 +147,7 @@ void ZrLanguageServer_StdioFrameReader_DefaultLimits(SZrStdioFrameReaderLimits *
     outLimits->maxMessageBytes = ZR_LSP_MAX_MESSAGE_BYTES;
 }
 
+/* 完整帧才返回调用方；调用方解析 JSON 后释放缓冲，失败时输出始终为空。 */
 EZrStdioFrameReadStatus ZrLanguageServer_StdioFrameReader_Read(
         FILE *input,
         const SZrStdioFrameReaderLimits *limits,
@@ -164,6 +173,7 @@ EZrStdioFrameReadStatus ZrLanguageServer_StdioFrameReader_Read(
         return ZR_STDIO_FRAME_READ_IO_ERROR;
     }
 
+    /* 先封闭头部边界，才允许依据已验证的 Content-Length 分配消息缓冲区。 */
     for (;;) {
         character = fgetc(input);
         if (character == EOF) {
@@ -233,6 +243,7 @@ EZrStdioFrameReadStatus ZrLanguageServer_StdioFrameReader_Read(
         return ZR_STDIO_FRAME_READ_MALFORMED_HEADER;
     }
 
+    /* 读完精确字节数后追加 NUL，长度仍交给 cJSON_ParseWithLength 作为权威边界。 */
     {
         char *payload = (char *)malloc(contentLength + 1U);
         TZrSize totalRead = 0;
@@ -259,6 +270,7 @@ EZrStdioFrameReadStatus ZrLanguageServer_StdioFrameReader_Read(
     return ZR_STDIO_FRAME_READ_OK;
 }
 
+/* 故障名称仅用于日志，不参与客户端可见的 JSON-RPC 错误码选择。 */
 const char *ZrLanguageServer_StdioFrameReader_StatusName(EZrStdioFrameReadStatus status) {
     switch (status) {
         case ZR_STDIO_FRAME_READ_OK:

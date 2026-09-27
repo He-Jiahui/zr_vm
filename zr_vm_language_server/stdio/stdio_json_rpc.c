@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h>
 
+/* id 经 cJSON 的 double 表示后仅接受可精确往返的安全整数，避免请求预留错配。 */
 static TZrBool json_rpc_number_id_is_valid(const cJSON *id) {
     double value;
 
@@ -17,6 +18,7 @@ static TZrBool json_rpc_number_id_is_valid(const cJSON *id) {
     return value == (double)(long long)value;
 }
 
+/* 缺少 id 与显式 null 是两种不同信封，不能在通知分类前合并。 */
 static TZrBool json_rpc_id_is_valid(const cJSON *id) {
     return id == ZR_NULL ||
            cJSON_IsString((cJSON *)id) ||
@@ -24,6 +26,7 @@ static TZrBool json_rpc_id_is_valid(const cJSON *id) {
            cJSON_IsNull((cJSON *)id);
 }
 
+/* 输入线程先调用以预留/取消请求，主循环再调用以选择响应或通知路径。 */
 EZrJsonRpcEnvelopeStatus ZrLanguageServer_StdioJsonRpc_ParseEnvelope(
         const cJSON *message,
         SZrJsonRpcEnvelope *outEnvelope,
@@ -43,6 +46,7 @@ EZrJsonRpcEnvelopeStatus ZrLanguageServer_StdioJsonRpc_ParseEnvelope(
         return ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST;
     }
 
+    /* 即使后续字段不合格，也尽量保留合法 id 供 Invalid Request 回复使用。 */
     id = cJSON_GetObjectItemCaseSensitive((cJSON *)message, ZR_LSP_JSON_RPC_FIELD_ID);
     if (json_rpc_id_is_valid(id)) {
         outEnvelope->id = id;
