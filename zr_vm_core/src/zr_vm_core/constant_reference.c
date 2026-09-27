@@ -12,7 +12,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_common/zr_string_conf.h"
 
-// 创建常量引用路径（分配内存）
+/* 路径和步骤数组共用 state->global 分配器；第二次分配失败时回收路径本体。 */
 SZrConstantReferencePath *ZrCore_ConstantReferencePath_Create(
     struct SZrState *state,
     TZrUInt32 depth) {
@@ -28,6 +28,8 @@ SZrConstantReferencePath *ZrCore_ConstantReferencePath_Create(
     }
     
     path->depth = depth;
+    // TODO: depth 来自调用方或二进制路径；32 位 TZrSize 下字节数可能回绕。
+    // 当前仅内部解码调用且无外部入口；接入前须用 32 位目标验证上限。
     path->steps = (TZrUInt32 *)ZrCore_Memory_RawMalloc(global, depth * sizeof(TZrUInt32));
     if (path->steps == ZR_NULL) {
         ZrCore_Memory_RawFree(global, path, sizeof(SZrConstantReferencePath));
@@ -39,7 +41,7 @@ SZrConstantReferencePath *ZrCore_ConstantReferencePath_Create(
     return path;
 }
 
-// 释放常量引用路径（释放内存）
+/* 调用方须传入创建时的全局分配器所属 state，先释放步骤再释放路径。 */
 void ZrCore_ConstantReferencePath_Free(
     struct SZrState *state,
     SZrConstantReferencePath *path) {
@@ -54,8 +56,7 @@ void ZrCore_ConstantReferencePath_Free(
     ZrCore_Memory_RawFree(global, path, sizeof(SZrConstantReferencePath));
 }
 
-// 辅助函数：查找函数的entry function（最顶层的函数，通常是模块入口函数）
-// entry function通常包含prototypeData
+/* 路径解析优先取当前函数的 prototypeData，再从栈帧寻找，找不到时退回首个可识别函数。 */
 static struct SZrFunction *find_entry_function_from_call_stack(struct SZrState *state, struct SZrFunction *currentFunction) {
     if (state == ZR_NULL || currentFunction == ZR_NULL) {
         return ZR_NULL;
@@ -94,8 +95,7 @@ static struct SZrFunction *find_entry_function_from_call_stack(struct SZrState *
     return entryFunction;
 }
 
-// 辅助函数：从全局模块注册表中查找模块
-// 通过遍历已加载的模块，查找包含指定entry function的模块
+/* 优先按 prototype 实例的导出身份找模块；未实例化时暂取首个候选模块。 */
 static struct SZrObjectModule *find_module_by_entry_function(struct SZrState *state, struct SZrFunction *entryFunction) {
     if (state == ZR_NULL || entryFunction == ZR_NULL || state->global == ZR_NULL) {
         return ZR_NULL;
@@ -155,12 +155,8 @@ static struct SZrObjectModule *find_module_by_entry_function(struct SZrState *st
                         }
                     } else if (entryFunction->prototypeData != ZR_NULL && 
                                entryFunction->prototypeCount > 0) {
-                        // 如果prototypeInstances还未创建，但prototypeData存在，
-                        // 则通过检查模块是否已创建prototype来判断
-                        // 这是一个启发式方法：如果模块的prototype数量与entry function的prototypeCount匹配，
-                        // 则很可能是匹配的模块
-                        // 注意：这种方法不是100%准确，但在大多数情况下有效
-                        // 更准确的方法需要在模块对象中存储entry function引用（需要修改模块结构）
+                        // TODO: 实例尚未生成时直接返回首个模块，未核对身份或数量。
+                        // 此路径 API 仓内无外部调用；未来接入时须由模块入口身份或测试确认匹配规则。
                         return module;
                     }
                 }
@@ -172,8 +168,7 @@ static struct SZrObjectModule *find_module_by_entry_function(struct SZrState *st
     return ZR_NULL;
 }
 
-// 辅助函数：从调用栈获取parent function
-// 通过查找调用栈中上一个callInfo的closure来获取parent function
+/* 用栈帧中的 callable 元数据定位当前函数，再从上一帧取得父函数。 */
 static SZrFunction *get_parent_function_from_call_stack(struct SZrState *state, struct SZrFunction *currentFunction) {
     if (state == ZR_NULL || currentFunction == ZR_NULL) {
         return ZR_NULL;
@@ -211,7 +206,7 @@ static SZrFunction *get_parent_function_from_call_stack(struct SZrState *state, 
     return ZR_NULL;
 }
 
-// 解析常量引用路径，返回目标对象
+/* 依带符号步骤遍历函数、常量池、模块与 prototype；失败直接返回 false。 */
 TZrBool ZrCore_Constant_ResolveReference(
     struct SZrState *state,
     struct SZrFunction *startFunction,
@@ -268,8 +263,7 @@ TZrBool ZrCore_Constant_ResolveReference(
                     }
                     SZrTypeValue *constant = &currentFunction->constantValueList[constantIndex];
                     ZrCore_Value_Copy(state, result, constant);
-                    // 如果还有后续步骤，需要继续解析
-                    // TODO: 这里暂时假设常量池引用是最终结果
+                    // 后续步骤仍会执行，最终结果由末尾统一写回逻辑决定。
                     stepIndex++;
                     continue;
                 }
@@ -331,9 +325,7 @@ TZrBool ZrCore_Constant_ResolveReference(
                                             SZrString *entryPath = ZR_CAST_STRING(state, pair->key.value.object);
                                             // 检查路径是否与模块名匹配（可以是完整路径或模块名）
                                             if (entryPath != ZR_NULL) {
-                                                // 比较字符串：检查路径是否包含模块名，或模块名是否匹配路径
-                                                // TODO: 这里简化处理：如果路径的哈希与模块名的哈希匹配，或路径等于模块名
-                                                // 更精确的匹配需要字符串比较
+                                                // 注册键与模块名按字符串内容或对象身份比较。
                                                 if (entryPath == moduleName ||
                                                     ZrCore_String_Compare(state, entryPath, moduleName)) {
                                                     // 检查值是否是模块对象
@@ -342,7 +334,8 @@ TZrBool ZrCore_Constant_ResolveReference(
                                                         if (cachedObject != ZR_NULL && 
                                                             cachedObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
                                                             targetModule = (struct SZrObjectModule *)cachedObject;
-                                                            // 同时检查模块的moduleName是否匹配
+                                                            // TODO: moduleName 不匹配时仍保留 targetModule，外层会提前退出。
+                                                            // 解析 API 尚无外部调用；接入前须验证注册键与模块名不一致的场景。
                                                             if (targetModule->moduleName != ZR_NULL &&
                                                                 (targetModule->moduleName == moduleName ||
                                                                  ZrCore_String_Compare(state, targetModule->moduleName, moduleName))) {
@@ -449,8 +442,9 @@ TZrBool ZrCore_Constant_ResolveReference(
                 }
                 
             default:
-                // 正数: 作为childFunctionList或prototypes的索引
-                // TODO: 根据上下文判断（暂时先假设是childFunctionList索引）
+                // 非负步骤（含 CHILD=0）：当前按 childFunctionList 索引解释。
+                // TODO: 当前生成端只写 CHILD_FUNC_INDEX 标签；若未来允许无标签索引，
+                // 须从消费方契约确认其是子函数索引还是 prototype 索引。
                 if (step >= currentFunction->childFunctionLength) {
                     return ZR_FALSE;
                 }
@@ -460,7 +454,8 @@ TZrBool ZrCore_Constant_ResolveReference(
         }
     }
     
-    // 如果路径解析完成，返回当前函数作为结果
+    // TODO: 常量池、模块导出和 prototype 分支已写入 result，此处无条件覆盖为函数。
+    // 解析 API 仓内无外部调用；未来接入时须用非函数末端路径确定预期结果。
     if (currentFunction != ZR_NULL) {
         ZrCore_Value_InitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(currentFunction));
         result->type = ZR_VALUE_TYPE_FUNCTION;
@@ -470,7 +465,7 @@ TZrBool ZrCore_Constant_ResolveReference(
     return ZR_FALSE;
 }
 
-// 从常量池中的引用常量解析路径
+/* 将借用的字符串字节复制为独立路径；分配失败仍由 Create 回收本体。 */
 SZrConstantReferencePath *ZrCore_ConstantReferencePath_FromConstant(
     struct SZrState *state,
     const SZrTypeValue *constant) {
@@ -505,6 +500,8 @@ SZrConstantReferencePath *ZrCore_ConstantReferencePath_FromConstant(
         return ZR_NULL;
     }
     
+    // TODO: 二进制字符串按 uint32 指针直接读取；生成端与解码入口均无调用。
+    // 接入前须用目标平台确认对齐、字节序及长度乘法的边界。
     // 读取路径深度
     TZrUInt32 pathDepth = *(TZrUInt32 *)nativeStr;
     

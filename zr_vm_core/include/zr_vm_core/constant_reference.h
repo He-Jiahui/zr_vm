@@ -16,16 +16,12 @@ struct SZrState;
 struct SZrFunction;
 struct SZrObjectModule;
 
-// 编译时和运行时共享的prototype序列化结构定义
-// 这些结构用于将prototype信息序列化为紧凑二进制格式存储到常量池
-// 布局：
-// SZrCompiledPrototypeInfo +
-// [inheritsCount * 4字节] +
-// [decoratorsCount * 4字节] +
-// [membersCount * SZrCompiledMemberInfo]
+/** 编译器写入、运行时物化和反射读取共用的 prototype blob 布局。
+ * 函数的 prototypeData 先有数量头；每条记录随后依次包含本头部、
+ * inheritsCount 个索引、decoratorsCount 个索引及 membersCount 个成员。
+ * parser/compiler_internal.h 另有同布局镜像，字段顺序与打包方式须同步。 */
 
-// 编译时prototype信息结构（序列化格式头部）
-// 这是磁盘/内存共享的二进制协议，必须显式禁止编译器填充。
+/** @brief 每条编译原型记录的固定头部；磁盘与内存共用无填充布局。 */
 #pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 nameStringIndex;              // 类型名称字符串在常量池中的索引
@@ -49,7 +45,7 @@ typedef struct SZrCompiledPrototypeInfo {
     // 成员数据紧跟在 decorator 数组后面。
 } SZrCompiledPrototypeInfo;
 
-// 编译时成员信息结构（序列化格式）
+/** @brief 原型的固定 31 字成员记录；字段类别决定复用槽位的解释。 */
 typedef struct SZrCompiledMemberInfo {
     TZrUInt32 memberType;                   // EZrAstNodeType
     TZrUInt32 nameStringIndex;              // 成员名称字符串在常量池中的索引（如果为0表示无名）
@@ -90,6 +86,7 @@ typedef struct SZrCompiledMemberInfo {
 
 #pragma pack(pop)
 
+/* v34 成员 ABI 固定为 31 个 32 位字，禁止无版本扩展。 */
 typedef char ZrCompiledMemberInfoV34LayoutMustRemainStable[
         sizeof(SZrCompiledMemberInfo) == 31U * sizeof(TZrUInt32) ? 1 : -1];
 
@@ -99,13 +96,16 @@ typedef char ZrCompiledMemberInfoV34LayoutMustRemainStable[
  * without changing the stable v34 31-word layout.  Accessor rows continue to
  * use the original method meanings.
  */
+/* 可见属性 carrier 借用无方法载荷的旧槽位；方法与访问器仍按原语义读取。 */
 #define ZR_COMPILED_PROPERTY_VALUE_TYPE_ID(MEMBER) ((MEMBER)->parameterCount)
 #define ZR_COMPILED_PROPERTY_REFERENCE_ACCESS(MEMBER) ((MEMBER)->metaType)
 #define ZR_COMPILED_PROPERTY_EXPORTS_WRITABLE_REF(MEMBER) ((MEMBER)->isMetaMethod)
 
-// 常量引用路径结构（从parser模块引用）
+/* 与 parser/compiler.h 的同名声明共用 guard，保持字段布局一致。 */
 #ifndef ZR_CONSTANT_REFERENCE_PATH_DECLARED
 #define ZR_CONSTANT_REFERENCE_PATH_DECLARED
+/** @brief 带符号步骤以 uint32 存储的常量引用路径。
+ * @note steps 由创建者分配；Create/FromConstant 的结果须用 Free 释放。 */
 typedef struct SZrConstantReferencePath {
     TZrUInt32 depth;              // 路径深度（总步骤数）
     TZrUInt32 *steps;             // 路径步骤数组（depth个元素）
@@ -113,10 +113,10 @@ typedef struct SZrConstantReferencePath {
 } SZrConstantReferencePath;
 #endif
 
-// 解析常量引用路径，返回目标对象
-// 从startFunction开始，按照path中的步骤解析引用
-// module: 模块上下文（可选，用于prototype延迟实例化和模块引用），如果为ZR_NULL则尝试从全局状态查找
-// 返回：解析后的值（存储在result中），成功返回ZR_TRUE，失败返回ZR_FALSE
+/** @brief 从函数与可选模块上下文沿路径解析目标值。
+ * @pre path->steps 含 depth 个已初始化步骤；需要模块查找时 state->global 有效。
+ * @return 成功写入 result 并返回 true；失败返回 false。
+ * @note TODO: 仓内没有外部调用；非函数末端的结果语义仍须对照未来消费方核实。 */
 ZR_CORE_API TZrBool ZrCore_Constant_ResolveReference(
     struct SZrState *state,
     struct SZrFunction *startFunction,
@@ -124,20 +124,22 @@ ZR_CORE_API TZrBool ZrCore_Constant_ResolveReference(
     struct SZrObjectModule *module,
     SZrTypeValue *result);
 
-// 创建常量引用路径（分配内存）
-// 返回：新创建的路径对象，失败返回ZR_NULL
+/** @brief 分配路径结构和未初始化的步骤数组。
+ * @pre state 及 state->global 有效，depth 大于零。
+ * @return 成功后由调用方持有，并用相同全局分配器对应的 Free 释放；失败返回 null。 */
 ZR_CORE_API SZrConstantReferencePath *ZrCore_ConstantReferencePath_Create(
     struct SZrState *state,
     TZrUInt32 depth);
 
-// 释放常量引用路径（释放内存）
+/** @brief 释放路径和步骤数组；state 须对应创建时的全局分配器。 */
 ZR_CORE_API void ZrCore_ConstantReferencePath_Free(
     struct SZrState *state,
     SZrConstantReferencePath *path);
 
-// 从常量池中的引用常量解析路径
-// constant必须是引用类型的常量（type为ZR_VALUE_TYPE_OBJECT且internalType为特定标记，或特殊处理）
-// 返回：解析后的路径对象，失败返回ZR_NULL
+/** @brief 从二进制字符串常量解析 [depth, steps...] 路径。
+ * @return 成功返回需用 Free 释放的原生路径；类型、长度或分配失败返回 null。
+ * @note TODO: 当前编译器路径生成函数及此解码入口都没有实际调用者，
+ * 须从未来消费方确认二进制字符串的来源与边界。 */
 ZR_CORE_API SZrConstantReferencePath *ZrCore_ConstantReferencePath_FromConstant(
     struct SZrState *state,
     const SZrTypeValue *constant);
