@@ -1,3 +1,4 @@
+/* 为未支持指令和函数返回写出终结块，失败统一报告给 AOT runtime。 */
 #include "backend_aot_llvm_text_terminal.h"
 
 void backend_aot_llvm_write_report_unsupported_return(FILE *file,

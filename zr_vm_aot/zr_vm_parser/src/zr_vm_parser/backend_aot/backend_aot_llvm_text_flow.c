@@ -1,3 +1,4 @@
+/* 每条指令先进入运行时步进检查，异常续执行使用显式目标索引分派。 */
 #include "backend_aot_llvm_text_flow.h"
 
 void backend_aot_llvm_write_begin_instruction(FILE *file,

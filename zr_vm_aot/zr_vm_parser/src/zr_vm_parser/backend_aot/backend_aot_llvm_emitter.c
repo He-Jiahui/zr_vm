@@ -1,3 +1,6 @@
+/* LLVM writer 依次建立 ExecIR、发射函数体并发布模块描述符；失败路径须释放临时表。 */
+/* TODO: 归档 README 称后端退出主构建，但 parser CMake 当前仍收集本目录源码；
+ * 核对预期支持边界并同步构建配置或归档说明。 */
 #include "backend_aot_llvm_emitter.h"
 
 #include "backend_aot_llvm_function_body.h"
@@ -53,6 +56,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
     requireExecutableLowering = options != ZR_NULL && options->requireExecutableLowering;
     stripGeneratedSymbols = backend_aot_option_strip_generated_symbols(options);
 
+    /* 可执行产物不能把未覆盖指令留到运行时才发现；拒绝时移除已打开的输出文件。 */
     if (requireExecutableLowering || backend_aot_report_first_unsupported_instruction("aot_llvm", moduleName, &functionTable)) {
         for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
             const SZrAotFunctionEntry *entry = &functionTable.entries[functionIndex];
@@ -97,6 +101,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
                                           callBindingRowCount,
                                           stripGeneratedSymbols);
 
+    /* BUG: 写入或 flush 失败（如输出到 /dev/full）时未检查 ferror/fclose，
+     * 仍返回成功，使调用方接收空白或截断的 LLVM 产物。 */
     fclose(file);
     backend_aot_release_function_table(state, &functionTable);
     backend_aot_exec_ir_release_module(state, &module);

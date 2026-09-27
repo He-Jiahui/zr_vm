@@ -1,3 +1,4 @@
+/* 声明函数符号、指令标签与临时编号的 LLVM 文本辅助接口。 */
 #ifndef ZR_VM_PARSER_BACKEND_AOT_LLVM_TEXT_EMIT_H
 #define ZR_VM_PARSER_BACKEND_AOT_LLVM_TEXT_EMIT_H
 

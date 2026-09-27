@@ -1,3 +1,4 @@
+/* try/catch 和待决控制转移通过运行时 helper 与 resume 分派维持异常语义。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_resume_control_instruction(const SZrAotLlvmLoweringContext *context,

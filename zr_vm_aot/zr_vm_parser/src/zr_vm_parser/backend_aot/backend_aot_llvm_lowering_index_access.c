@@ -1,3 +1,4 @@
+/* 索引读写及合并数组操作按操作码调用运行时，并仅在写入新值时失效调用出处。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_triple_slot_index_call(const SZrAotLlvmLoweringContext *context,

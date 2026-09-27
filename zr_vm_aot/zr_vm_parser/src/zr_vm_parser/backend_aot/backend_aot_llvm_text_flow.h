@@ -1,3 +1,4 @@
+/* 声明逐指令步进和异常恢复分派的 LLVM 文本接口。 */
 #ifndef ZR_VM_PARSER_BACKEND_AOT_LLVM_TEXT_FLOW_H
 #define ZR_VM_PARSER_BACKEND_AOT_LLVM_TEXT_FLOW_H
 

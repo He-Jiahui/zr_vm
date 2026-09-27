@@ -1,3 +1,4 @@
+/* 普通与直接调用共用准备、回退和续执行控制，尾调用直接形成返回终结块。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrUInt32 backend_aot_llvm_function_call_argument_count(const SZrFunction *function,
@@ -245,6 +246,7 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
                                                 "tail_return");
     }
 
+    /* 静态索引允许直接调用生成符号，准备和完成阶段仍由运行时管理接收者与恢复状态。 */
     if (calleeFlatIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
         TZrUInt32 invocationTemp;
         TZrUInt32 invocationSucceededTemp;

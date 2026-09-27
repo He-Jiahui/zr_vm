@@ -1,3 +1,4 @@
+/* 对可直接证明类型的数值路径发射 LLVM 运算，其他情形保留运行时 helper 回退。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_binary_value_instruction(const SZrAotLlvmLoweringContext *context,
@@ -318,6 +319,8 @@ static TZrBool backend_aot_llvm_add_integer_const_literal(const SZrAotLlvmLoweri
     }
 }
 
+/* TODO: 两条整型加法快路径只校验类型便发射 add i64，而运行时有符号 helper 在极值溢出时存在 C 未定义行为。
+ * 先确认语言溢出契约，再用极值回归核对 LLVM 直算与运行时回退。 */
 static TZrBool backend_aot_llvm_lower_add_integer_family_instruction(
         const SZrAotLlvmLoweringContext *context,
         const SZrAotLlvmInstructionContext *instruction,
@@ -689,6 +692,7 @@ static TZrBool backend_aot_llvm_lower_add_instruction(const SZrAotLlvmLoweringCo
     snprintf(unsignedResultLabel, sizeof(unsignedResultLabel), "zr_aot_add_unsigned_%u", (unsigned)labelSeed);
     snprintf(fallbackLabel, sizeof(fallbackLabel), "zr_aot_add_fallback_%u", (unsigned)labelSeed);
 
+    /* 动态 ADD 只在两侧均为数值或布尔值时内联；字符串和重载加法保留运行时语义。 */
     fprintf(context->file,
             "  br i1 %%t%u, label %%%s, label %%%s\n",
             (unsigned)bothNumericOrBoolTemp,

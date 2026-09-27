@@ -1,3 +1,4 @@
+/* 聚合全局、构造、转换及成员/索引访问的值指令分派。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_object_value_family(const SZrAotLlvmLoweringContext *context,

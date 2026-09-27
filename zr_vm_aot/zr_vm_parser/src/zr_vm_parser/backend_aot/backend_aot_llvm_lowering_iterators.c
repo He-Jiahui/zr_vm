@@ -1,3 +1,4 @@
+/* 迭代器初始化、推进和当前值读取由运行时 helper 按槽位执行。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_pair_slot_iterator_call(const SZrAotLlvmLoweringContext *context,

@@ -1,3 +1,4 @@
+/* 聚合对象、迭代器、meta 访问和所有权值指令的分派。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_object_meta_owning_value_family(const SZrAotLlvmLoweringContext *context,

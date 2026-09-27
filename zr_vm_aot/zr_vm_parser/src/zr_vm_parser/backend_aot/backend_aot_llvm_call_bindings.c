@@ -1,3 +1,4 @@
+/* 将共享调用绑定行及 method 映射写成 LLVM 常量，供生成模块按运行时 ABI 注册。 */
 #include "backend_aot_llvm_call_bindings.h"
 
 void backend_aot_llvm_write_bound_method_infos(FILE *file, const SZrAotFunctionTable *table) {

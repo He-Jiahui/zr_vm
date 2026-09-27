@@ -1,3 +1,4 @@
+/* typeof 和类型转换按输入槽数调用运行时 helper，并失效新目标槽的调用出处。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_pair_slot_type_conversion_call(const SZrAotLlvmLoweringContext *context,

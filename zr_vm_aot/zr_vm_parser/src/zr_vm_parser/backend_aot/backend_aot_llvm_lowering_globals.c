@@ -1,3 +1,4 @@
+/* 全局读取交运行时完成，并清除新目标槽可能继承的可调用出处。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_global_value_family(const SZrAotLlvmLoweringContext *context,

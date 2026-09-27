@@ -1,3 +1,4 @@
+/* 成员与属性引用的创建、读写经运行时完成，并按是否覆盖目标槽维护调用出处。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_triple_slot_member_call(const SZrAotLlvmLoweringContext *context,

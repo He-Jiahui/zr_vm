@@ -1,3 +1,4 @@
+/* 常量比较从运行时取布尔结果，再将确定的布尔位直接写回目标槽。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_logical_equal_signed_const_instruction(

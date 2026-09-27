@@ -1,3 +1,4 @@
+/* 声明函数 thunk 表与模块导出描述符的发射接口。 */
 #ifndef ZR_VM_PARSER_BACKEND_AOT_LLVM_MODULE_ARTIFACTS_H
 #define ZR_VM_PARSER_BACKEND_AOT_LLVM_MODULE_ARTIFACTS_H
 

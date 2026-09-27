@@ -1,3 +1,4 @@
+/* 所有权变换交运行时 helper 执行，避免 LLVM 层绕过借用与释放规则。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_pair_slot_ownership_call(const SZrAotLlvmLoweringContext *context,

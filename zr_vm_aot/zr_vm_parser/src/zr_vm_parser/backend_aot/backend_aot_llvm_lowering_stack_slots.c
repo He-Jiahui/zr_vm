@@ -1,3 +1,4 @@
+/* 栈槽复制区分所有权转移、弱引用及可直接位拷贝值，其他情况走慢路径。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_stack_copy_instruction(const SZrAotLlvmLoweringContext *context,
@@ -101,6 +102,7 @@ static TZrBool backend_aot_llvm_lower_stack_copy_instruction(const SZrAotLlvmLow
     notGcObjectTemp = backend_aot_llvm_next_temp(context->tempCounter);
     fastPlainCopyTemp = backend_aot_llvm_next_temp(context->tempCounter);
 
+    /* SET_STACK 的所有权转移要清空源槽；弱引用与 GC 对象不能走普通位拷贝路径。 */
     labelSeed = backend_aot_llvm_next_temp(context->tempCounter);
     snprintf(transferLabel, sizeof(transferLabel), "zr_aot_stack_copy_transfer_%u", (unsigned)labelSeed);
     snprintf(weakCheckLabel, sizeof(weakCheckLabel), "zr_aot_stack_copy_weak_check_%u", (unsigned)labelSeed);

@@ -1,3 +1,4 @@
+/* 将运行时契约、ABI 类型和模块输入元数据写成可链接的 LLVM 文本前导。 */
 #include "backend_aot_llvm_module_prelude.h"
 
 #include <string.h>
@@ -319,6 +320,8 @@ void backend_aot_llvm_write_module_prelude(FILE *file,
     backend_aot_write_runtime_contract_array_llvm(file, module->runtimeContracts);
     fprintf(file, "\n");
     backend_aot_write_instruction_listing(file, "; ", module);
+    /* BUG: 公开 options 的名称与哈希只做非空检查；含双引号时原样插入 LLVM c"..."，
+     * clang 拒绝等价 IR：a"b 原样失败，逐字节转义后通过。 */
     fprintf(file, "@zr_aot_module_name = private unnamed_addr constant [%llu x i8] c\"%s\\00\"\n",
             (unsigned long long)(strlen(moduleName) + 1),
             moduleName);

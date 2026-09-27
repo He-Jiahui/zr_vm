@@ -1,3 +1,4 @@
+/* 按 meta 访问操作码选择普通、缓存或静态缓存运行时 helper。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_triple_slot_meta_call(const SZrAotLlvmLoweringContext *context,

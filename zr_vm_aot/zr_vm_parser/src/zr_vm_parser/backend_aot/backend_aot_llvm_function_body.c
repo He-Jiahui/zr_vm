@@ -1,3 +1,4 @@
+/* 逐条把函数指令发射为 LLVM 基本块，未识别的操作码显式报告 unsupported。 */
 #include "backend_aot_llvm_function_body.h"
 
 #include "backend_aot_llvm_emitter.h"
@@ -71,6 +72,7 @@ void backend_aot_write_llvm_function_body(FILE *file,
                 failLabel);
     }
 
+    /* 即使下面走内联快路径，每条指令仍先进入运行时步进点以同步异常和恢复状态。 */
     for (TZrUInt32 instructionIndex = 0; instructionIndex < instructionCount; instructionIndex++) {
         const TZrInstruction *instruction = &entry->function->instructionsList[instructionIndex];
         SZrAotLlvmInstructionContext instructionContext;

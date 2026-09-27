@@ -1,3 +1,4 @@
+/* 统一生成函数符号、基本块标签和 SSA 临时编号，避免跨 helper 名称冲突。 */
 #include "backend_aot_llvm_text_emit.h"
 
 TZrUInt32 backend_aot_llvm_next_temp(TZrUInt32 *tempCounter) {

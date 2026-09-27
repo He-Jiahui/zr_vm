@@ -1,3 +1,4 @@
+/* 标量常量可直接写入值槽；其他常量交运行时复制并同步可调用出处。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_immediate_constant_instruction(const SZrAotLlvmLoweringContext *context,

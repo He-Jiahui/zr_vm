@@ -1,3 +1,4 @@
+/* 将相对跳转和条件分支映射到指令标签，越界目标走 unsupported 终止路径。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_jump_instruction(const SZrAotLlvmLoweringContext *context,

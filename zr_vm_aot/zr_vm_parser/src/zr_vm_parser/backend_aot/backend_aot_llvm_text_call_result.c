@@ -1,3 +1,4 @@
+/* 运行时调用结果按布尔成功或非零整数约定分支到续执行和失败标签。 */
 #include "backend_aot_llvm_text_call_result.h"
 
 void backend_aot_llvm_write_guarded_call_text(FILE *file,

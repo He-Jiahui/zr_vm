@@ -1,3 +1,4 @@
+/* 对象、数组及内联数组构造由运行时 helper 完成，创建后清除目标槽调用出处。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_single_slot_creation_call(const SZrAotLlvmLoweringContext *context,

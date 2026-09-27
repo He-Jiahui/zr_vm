@@ -1,3 +1,4 @@
+/* meta 调用先准备目标，再按普通或尾调用方式处理续执行。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrUInt32 backend_aot_llvm_meta_call_argument_count(const SZrFunction *function,

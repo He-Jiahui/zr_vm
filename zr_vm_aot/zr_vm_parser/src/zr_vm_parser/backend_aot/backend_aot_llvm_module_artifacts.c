@@ -1,3 +1,4 @@
+/* 将 FFI/native import 契约、函数 thunk 和模块描述符写为运行时 ABI 对应的 LLVM 常量。 */
 #include "backend_aot_llvm_module_artifacts.h"
 #include "backend_aot_llvm_call_bindings.h"
 
@@ -396,6 +397,7 @@ void backend_aot_llvm_write_module_exports(FILE *file,
 
     backend_aot_llvm_write_entry_thunk(file, functionTable, stripGeneratedSymbols);
     backend_aot_llvm_write_reflection_invoker(file);
+    /* method/native-import 数组按扁平索引空间布局，空洞也需占位以保持运行时查表一致。 */
     functionIndexSpace = backend_aot_function_table_index_space(functionTable);
     backend_aot_llvm_write_bound_method_infos(file, functionTable);
     nativeImportContractCount = backend_aot_llvm_write_native_import_tables(

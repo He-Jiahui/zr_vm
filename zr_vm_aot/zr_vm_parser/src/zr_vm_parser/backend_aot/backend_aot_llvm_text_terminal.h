@@ -1,3 +1,4 @@
+/* 声明 unsupported 报告和函数返回终结块的发射接口。 */
 #ifndef ZR_VM_PARSER_BACKEND_AOT_LLVM_TEXT_TERMINAL_H
 #define ZR_VM_PARSER_BACKEND_AOT_LLVM_TEXT_TERMINAL_H
 

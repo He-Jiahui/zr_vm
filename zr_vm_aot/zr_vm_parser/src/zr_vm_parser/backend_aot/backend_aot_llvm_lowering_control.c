@@ -1,3 +1,4 @@
+/* 异常、分支与作用域控制共享末级分派，未识别操作码继续向 unsupported 路径传递。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_scope_control_instruction(const SZrAotLlvmLoweringContext *context,

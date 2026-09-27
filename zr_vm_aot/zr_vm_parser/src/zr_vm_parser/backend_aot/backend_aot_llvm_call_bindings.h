@@ -1,3 +1,4 @@
+/* 声明 LLVM 调用绑定表和 method 映射的发射接口。 */
 #ifndef ZR_VM_PARSER_BACKEND_AOT_LLVM_CALL_BINDINGS_H
 #define ZR_VM_PARSER_BACKEND_AOT_LLVM_CALL_BINDINGS_H
 

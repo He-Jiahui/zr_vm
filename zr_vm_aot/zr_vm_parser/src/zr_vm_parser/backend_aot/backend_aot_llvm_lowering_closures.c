@@ -1,3 +1,4 @@
+/* 闭包创建与取值同时维护可调用槽的函数索引出处，供后续直接调用判断。 */
 #include "backend_aot_llvm_emitter.h"
 
 static TZrBool backend_aot_llvm_lower_closure_index_call(const SZrAotLlvmLoweringContext *context,

@@ -1,3 +1,4 @@
+/* 按调用操作码分流普通、已知、动态与 meta 调用的发射路径。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_call_instruction(const SZrAotLlvmLoweringContext *context,

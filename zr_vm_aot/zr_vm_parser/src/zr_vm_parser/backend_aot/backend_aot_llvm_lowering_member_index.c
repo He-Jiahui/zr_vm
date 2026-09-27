@@ -1,3 +1,4 @@
+/* 将对象成员和索引访问分流到各自的值 lowering。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_member_index_value_family(const SZrAotLlvmLoweringContext *context,

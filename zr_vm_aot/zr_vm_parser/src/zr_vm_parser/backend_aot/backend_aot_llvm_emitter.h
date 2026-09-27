@@ -1,3 +1,4 @@
+/* lowering 上下文与值字段定位共用宿主 ABI 布局，所有生成指令使用同一临时编号。 */
 #ifndef ZR_VM_PARSER_BACKEND_AOT_LLVM_EMITTER_H
 #define ZR_VM_PARSER_BACKEND_AOT_LLVM_EMITTER_H
 
@@ -10,6 +11,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/aot_runtime.h"
 
+/** @brief 单函数发射期间借用 writer 状态；临时编号和失败标签在各 lowering 间共享。 */
 typedef struct SZrAotLlvmLoweringContext {
     FILE *file;
     SZrState *state;
@@ -23,6 +25,7 @@ typedef struct SZrAotLlvmLoweringContext {
     TZrBool stripGeneratedSymbols;
 } SZrAotLlvmLoweringContext;
 
+/** @brief 将当前指令操作数与下一基本块标签固定后传给分层 lowering。 */
 typedef struct SZrAotLlvmInstructionContext {
     TZrUInt32 instructionIndex;
     TZrUInt32 opcode;

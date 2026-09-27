@@ -1,3 +1,4 @@
+/* 值指令的顶层分派按常量、闭包槽、对象和算术类别逐级尝试。 */
 #include "backend_aot_llvm_emitter.h"
 
 TZrBool backend_aot_llvm_lower_value_instruction(const SZrAotLlvmLoweringContext *context,
