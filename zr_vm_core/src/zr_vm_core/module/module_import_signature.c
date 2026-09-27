@@ -6,8 +6,10 @@
 
 #include "zr_vm_core/function.h"
 
+/* 反射层附加的入口函数保留了提供方 ABI 元数据，导入校验通过该隐藏字段读取它。 */
 #define ZR_MODULE_RUNTIME_ENTRY_FUNCTION_FIELD "__zr_reflection_entry_function"
 
+/* 名称查找只提供兼容性回退候选；有签名和 token 时还需后续筛选。 */
 static const SZrFunctionTypedExportSymbol *module_import_signature_find_typed_export_symbol(
         const SZrFunction *function,
         SZrString *name) {
@@ -36,6 +38,7 @@ static TZrBool module_import_signature_symbol_name_matches(const SZrFunctionType
     return symbol->name == name || ZrCore_String_Equal(symbol->name, name) ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 从运行时模块追到编译入口，供导入方与提供方元数据交叉核对。 */
 static SZrFunction *module_import_signature_get_module_entry_function(SZrState *state, SZrObjectModule *module) {
     SZrString *fieldName;
     SZrTypeValue key;
@@ -163,6 +166,7 @@ static const SZrString *module_import_signature_find_string_heap_entry(const SZr
     return ZR_NULL;
 }
 
+/* 带字符串堆的记录按索引解析；不带堆的记录直接比较 blob 内文本。 */
 static TZrBool module_import_signature_heap_string_matches(const SZrFunction *function,
                                                            const TZrByte *blob,
                                                            TZrUInt32 blobLength,
@@ -212,6 +216,7 @@ static SZrString *module_import_signature_read_string(SZrState *state,
     return ZrCore_String_Create(state, (TZrNativeString)(blob + offset), encodedLength);
 }
 
+/* MemberRef 反解沿用上述两种编码约定，返回值由运行时字符串管理。 */
 static SZrString *module_import_signature_read_heap_string(SZrState *state,
                                                            const SZrFunction *function,
                                                            const TZrByte *blob,
@@ -236,6 +241,7 @@ static SZrString *module_import_signature_read_heap_string(SZrState *state,
     return (SZrString *)candidate;
 }
 
+/* 在调用方的引用记录中定位目标签名，避免仅凭导出名或哈希接受不同 ABI。 */
 static TZrBool module_import_signature_find_blob_in_records(const SZrMetadataTokenRecord *records,
                                                             TZrUInt32 recordCount,
                                                             const SZrFunction *callerFunction,
@@ -342,12 +348,15 @@ static const SZrMetadataTokenRecord *module_import_signature_find_member_ref_rec
             continue;
         }
 
+        /* TODO: 此处仅按模块名、成员名和 effect kind 命中首条记录；同名重载若落在
+         * 多个 MemberRef 中，需核对 effect 与记录的目标 token/哈希后再选绑定对象。 */
         return record;
     }
 
     return ZR_NULL;
 }
 
+/* 优先取模块专用记录；通用元数据表也可能保存相同引用。 */
 static const SZrMetadataTokenRecord *module_import_signature_find_effect_member_ref_record(
         const SZrFunction *callerFunction,
         const SZrFunctionModuleEffect *effect) {
@@ -524,6 +533,7 @@ static TZrBool module_import_signature_string_is_semver(SZrString *value) {
                                                 &patch);
 }
 
+/* 仅当两端都有可解析的三段版本时执行范围门禁，其他情况本函数放行。 */
 static TZrBool module_import_signature_version_range_matches(const SZrFunctionModuleEffect *effect,
                                                              const SZrFunction *entryFunction) {
     SZrString *actualVersion;
@@ -566,6 +576,7 @@ static void module_import_signature_record_version_mismatch(SZrModuleImportSigna
     outMismatch->actualModuleVersion = entryFunction != ZR_NULL ? entryFunction->moduleVersion : ZR_NULL;
 }
 
+/* 优先使用导出符号指向的签名记录，再按关联 token 和哈希查找备选记录。 */
 static const SZrMetadataTokenRecord *module_import_signature_find_export_signature_record(
         const SZrFunction *entryFunction,
         const SZrFunctionTypedExportSymbol *symbol) {
@@ -600,6 +611,7 @@ static const SZrMetadataTokenRecord *module_import_signature_find_export_signatu
     return ZR_NULL;
 }
 
+/* 模块专用引用须保留 MemberRef -> TypeRef -> AssemblyRef 来源链。 */
 static TZrBool module_import_signature_member_ref_owner_chain_is_valid(
         const SZrMetadataTokenRecord *records,
         TZrUInt32 recordCount,
@@ -631,6 +643,7 @@ static TZrBool module_import_signature_member_ref_owner_chain_is_valid(
            : ZR_FALSE;
 }
 
+/* 从独立 MemberRef 还原导入要求，使没有 moduleEntryEffects 的工件也接受同一校验。 */
 static TZrBool module_import_signature_decode_member_ref_effect(SZrState *state,
                                                                 const SZrFunction *callerFunction,
                                                                 const SZrMetadataTokenRecord *record,
@@ -673,6 +686,8 @@ static TZrBool module_import_signature_decode_member_ref_effect(SZrState *state,
     }
 
     ZrCore_Memory_RawSet(outEffect, 0, sizeof(*outEffect));
+    /* TODO: effectKind 来自 32 位 blob，缩为 8 位前未验证枚举范围；需核对工件读取层是否拒绝非法值，
+     * 并补充畸形 MemberRef 不得被静默跳过的测试。 */
     outEffect->kind = (TZrUInt8)effectKind;
     outEffect->moduleName = moduleName;
     outEffect->symbolName = symbolName;
@@ -683,6 +698,7 @@ static TZrBool module_import_signature_decode_member_ref_effect(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 显式 effect 是调用方约束的首选来源；缺字段才从对应 MemberRef 补齐。 */
 static SZrFunctionModuleEffect module_import_signature_effect_with_ref_identity(
         const SZrFunctionModuleEffect *effect,
         const SZrMetadataTokenRecord *record) {
@@ -742,6 +758,7 @@ static const SZrMetadataTokenRecord *module_import_signature_find_assembly_ref_f
     return ZR_NULL;
 }
 
+/* 版本约束可由 AssemblyRef 提供，但不得覆盖 effect 中更直接的声明。 */
 static SZrFunctionModuleEffect module_import_signature_effect_with_assembly_version(
         const SZrFunction *callerFunction,
         const SZrMetadataTokenRecord *memberRefRecord,
@@ -773,6 +790,7 @@ static SZrFunctionModuleEffect module_import_signature_effect_with_assembly_vers
     return resolvedEffect;
 }
 
+/* 调用方签名先查模块记录，兼容通用记录；缺失时上层只执行哈希/token 门禁。 */
 static TZrBool module_import_signature_find_effect_target_signature_blob(const SZrFunction *callerFunction,
                                                                          const SZrFunctionModuleEffect *effect,
                                                                          const TZrByte **outBlob,
@@ -975,6 +993,7 @@ static TZrBool module_import_signature_blob_matches(const SZrFunction *callerFun
                    : ZR_FALSE;
 }
 
+/* 只有双方都提供完整 token 时才把 token 漂移作为硬错误，缺 token 时依赖签名门禁。 */
 static TZrBool module_import_signature_token_matches_or_allows_legacy_fallback(
         const SZrFunctionModuleEffect *effect,
         const SZrFunctionTypedExportSymbol *symbol) {
@@ -985,6 +1004,7 @@ static TZrBool module_import_signature_token_matches_or_allows_legacy_fallback(
     return !module_import_signature_has_complete_target_tokens(effect, symbol);
 }
 
+/* 先挑选名称、哈希、blob、token 全匹配者；再放宽缺失 token 的候选约束。 */
 static const SZrFunctionTypedExportSymbol *module_import_signature_find_matching_export_symbol(
         const SZrFunction *callerFunction,
         const SZrFunctionModuleEffect *effect,
@@ -1048,6 +1068,7 @@ static TZrBool module_import_signature_module_hash_matches(const SZrFunctionModu
     return entryFunction->moduleSignatureHash == effect->targetModuleSignatureHash ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 单个导入先查版本和模块 ABI，再选成员并校验 manifest，最后才写绑定侧表。 */
 static TZrBool module_import_signature_verify_resolved_effect(SZrState *state,
                                                               SZrFunction *callerFunction,
                                                               const SZrMetadataTokenRecord *memberRefRecord,
@@ -1059,6 +1080,8 @@ static TZrBool module_import_signature_verify_resolved_effect(SZrState *state,
     SZrFunctionModuleEffect versionResolvedEffect;
     const SZrFunctionModuleEffect *effectiveEffect;
 
+    /* TODO: 无目标签名哈希时直接跳过后续版本、模块哈希和 manifest 门禁；
+     * 编译器可为未解析导入写出零哈希，需核对加载器是否另行强制这些约束。 */
     if (state == ZR_NULL || callerFunction == ZR_NULL || effect == ZR_NULL || module == ZR_NULL ||
         ioEntryFunction == ZR_NULL || effect->targetSignatureHash == 0u) {
         return ZR_TRUE;
@@ -1146,6 +1169,7 @@ static TZrBool module_import_signature_verify_resolved_effect(SZrState *state,
     return ZR_TRUE;
 }
 
+/* effect 路径处理编译期模块入口分析记录，只筛选当前加载模块的受保护导入。 */
 static TZrBool module_import_signature_verify_effects(SZrState *state,
                                                       SZrFunction *callerFunction,
                                                       const SZrFunctionModuleEffect *effects,
@@ -1187,6 +1211,7 @@ static TZrBool module_import_signature_verify_effects(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 独立引用路径补齐无 effect 的工件；校验来源链后复用同一成员门禁。 */
 static TZrBool module_import_signature_verify_module_ref_records(SZrState *state,
                                                                  SZrFunction *callerFunction,
                                                                  SZrString *path,

@@ -16,8 +16,10 @@
 #include <windows.h>
 #endif
 
+/* 新模块的反射身份不能复用零代际；跨线程创建共享这一递增源。 */
 static volatile TZrUInt32 gNextModuleMetadataGeneration = 0u;
 
+/* 元数据身份的零值留给未初始化状态，回绕时继续寻找非零值。 */
 static TZrUInt32 zr_module_next_metadata_generation(void) {
     TZrUInt32 generation;
 
@@ -31,6 +33,7 @@ static TZrUInt32 zr_module_next_metadata_generation(void) {
     return generation;
 }
 
+/* 模块长期持有名称和路径，安装后向 GC 登记跨代引用。 */
 static void zr_module_barrier_string_field(SZrState *state,
                                            struct SZrObjectModule *module,
                                            SZrString *stringValue) {
@@ -43,6 +46,7 @@ static void zr_module_barrier_string_field(SZrState *state,
                              ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
 }
 
+/* protected 导出表绕过普通对象写入接口，键和值都需由模块持有并写屏障。 */
 static void zr_module_barrier_hash_pair(SZrState *state,
                                         struct SZrObjectModule *module,
                                         SZrHashKeyValuePair *pair) {
@@ -54,10 +58,12 @@ static void zr_module_barrier_hash_pair(SZrState *state,
     ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module), &pair->value);
 }
 
+/* AOT 成员重编号只作用于 MemberDef 身份；其他 token 保持原表号。 */
 static TZrBool zr_module_metadata_token_is_member_def(TZrMetadataToken token) {
     return token != 0u && ZR_METADATA_TOKEN_TABLE(token) == ZR_METADATA_TABLE_MEMBER_DEF ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 注册表中的映射以有效目标 token 为前提，未匹配时保留源身份。 */
 static TZrMetadataToken zr_module_remap_aot_member_token(const SZrAotCodeRegistration *codeRegistration,
                                                          TZrMetadataToken token) {
     if (codeRegistration == ZR_NULL ||
@@ -77,6 +83,7 @@ static TZrMetadataToken zr_module_remap_aot_member_token(const SZrAotCodeRegistr
     return token;
 }
 
+/* 注册 AOT 元数据前对齐导出 symbol 的 token，供后续反射/导入按同一身份查找。 */
 static void zr_module_apply_aot_member_token_remaps_to_exports(SZrFunction *metadataFunction,
                                                                const SZrAotCodeRegistration *codeRegistration) {
     if (metadataFunction == ZR_NULL ||
@@ -91,6 +98,7 @@ static void zr_module_apply_aot_member_token_remaps_to_exports(SZrFunction *meta
     }
 }
 
+/* 创建由 GC 管理的模块根；初始化公开/受保护两表和独立元数据代际。 */
 struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     SZrObject *object;
     struct SZrObjectModule *module;
@@ -123,6 +131,7 @@ struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     return module;
 }
 
+/* 加载器、AOT 和项目模块共同设置可追踪的模块身份；字符串仍归 GC 管理。 */
 void ZrCore_Module_SetInfo(SZrState *state,
                            struct SZrObjectModule *module,
                            SZrString *moduleName,
@@ -139,6 +148,7 @@ void ZrCore_Module_SetInfo(SZrState *state,
     zr_module_barrier_string_field(state, module, fullPath);
 }
 
+/* 公开导出同时进入对象属性和本模块的 protected 表，供运行时访问与内部解析复用。 */
 void ZrCore_Module_AddPubExport(SZrState *state,
                                 struct SZrObjectModule *module,
                                 SZrString *name,
@@ -169,6 +179,7 @@ void ZrCore_Module_AddPubExport(SZrState *state,
                                              ZR_GARBAGE_COLLECT_PROMOTION_REASON_MODULE_ROOT);
 }
 
+/* protected 导出仅对模块内部与编译期投影可见，不写入普通对象公开属性。 */
 void ZrCore_Module_AddProExport(SZrState *state,
                                 struct SZrObjectModule *module,
                                 SZrString *name,
@@ -197,6 +208,7 @@ void ZrCore_Module_AddProExport(SZrState *state,
                                              ZR_GARBAGE_COLLECT_PROMOTION_REASON_MODULE_ROOT);
 }
 
+/* 返回模块对象持有的公开值借用指针；调用方不得越过 GC/表更新保存地址。 */
 const SZrTypeValue *ZrCore_Module_GetPubExport(SZrState *state,
                                                struct SZrObjectModule *module,
                                                SZrString *name) {
@@ -210,6 +222,7 @@ const SZrTypeValue *ZrCore_Module_GetPubExport(SZrState *state,
     return ZrCore_Object_GetValue(state, &module->super, &key);
 }
 
+/* 内部类型解析读取 protected 表；返回值由模块哈希表持有。 */
 const SZrTypeValue *ZrCore_Module_GetProExport(SZrState *state,
                                                struct SZrObjectModule *module,
                                                SZrString *name) {
@@ -228,6 +241,7 @@ const SZrTypeValue *ZrCore_Module_GetProExport(SZrState *state,
     return &pair->value;
 }
 
+/* 将完整路径的原始字节映射为缓存/模块身份哈希；空路径使用零哨兵。 */
 TZrUInt64 ZrCore_Module_CalculatePathHash(SZrState *state, SZrString *fullPath) {
     TZrNativeString pathStr;
     TZrSize pathLen;
@@ -252,6 +266,7 @@ TZrUInt64 ZrCore_Module_CalculatePathHash(SZrState *state, SZrString *fullPath) 
     return XXH3_64bits(pathStr, pathLen);
 }
 
+/* 只接受注册表中真实模块对象，防止路径键被其他对象值冒充。 */
 struct SZrObjectModule *ZrCore_Module_GetFromCache(SZrState *state, SZrString *path) {
     SZrObject *registry;
     SZrTypeValue key;
@@ -281,6 +296,7 @@ struct SZrObjectModule *ZrCore_Module_GetFromCache(SZrState *state, SZrString *p
     return (struct SZrObjectModule *)cachedObject;
 }
 
+/* 缓存可先登记 INITIALIZING 模块，使循环导入看到同一个模块身份。 */
 void ZrCore_Module_AddToCache(SZrState *state, SZrString *path, struct SZrObjectModule *module) {
     SZrObject *registry;
     SZrTypeValue key;
@@ -300,6 +316,7 @@ void ZrCore_Module_AddToCache(SZrState *state, SZrString *path, struct SZrObject
     ZrCore_Object_SetValue(state, registry, &key, &moduleValue);
 }
 
+/* 从缓存移除前让函数图目标过期，再撤销哈希表引用，防止旧 provider 被继续调用。 */
 void ZrCore_Module_RemoveFromCache(SZrState *state, SZrString *path) {
     SZrObject *registry;
     SZrTypeValue key;
@@ -323,6 +340,7 @@ void ZrCore_Module_RemoveFromCache(SZrState *state, SZrString *path) {
     ZrCore_HashSet_Remove(state, &registry->nodeMap, &key);
 }
 
+/* 导出状态表按字符串身份查询，供访问检查与导入签名校验共享。 */
 const SZrModuleExportDescriptor *ZrCore_Module_FindExportDescriptor(struct SZrObjectModule *module, SZrString *name) {
     TZrUInt32 index;
 
@@ -340,10 +358,12 @@ const SZrModuleExportDescriptor *ZrCore_Module_FindExportDescriptor(struct SZrOb
     return ZR_NULL;
 }
 
+/* 仅模块加载阶段修改描述符；返回地址属于模块的可替换原生数组。 */
 SZrModuleExportDescriptor *ZrCore_Module_FindExportDescriptorMutable(struct SZrObjectModule *module, SZrString *name) {
     return (SZrModuleExportDescriptor *)ZrCore_Module_FindExportDescriptor(module, name);
 }
 
+/* 加载前登记导出可见性和就绪契约，同名注册覆盖旧描述符以支持重新发布。 */
 TZrBool ZrCore_Module_RegisterExportDescriptor(SZrState *state,
                                                struct SZrObjectModule *module,
                                                const SZrModuleExportDescriptor *descriptor) {
@@ -390,6 +410,7 @@ TZrBool ZrCore_Module_RegisterExportDescriptor(SZrState *state,
     return ZR_TRUE;
 }
 
+/* entry 执行与循环导入解锁通过此位控制，缺少描述符时无操作。 */
 void ZrCore_Module_SetExportDescriptorReady(struct SZrObjectModule *module, struct SZrString *name, TZrBool isReady) {
     SZrModuleExportDescriptor *descriptor;
 
@@ -403,6 +424,7 @@ void ZrCore_Module_SetExportDescriptorReady(struct SZrObjectModule *module, stru
     }
 }
 
+/* 导入器在缓存可见期间发布 INITIALIZING、READY 或 FAILED 状态。 */
 void ZrCore_Module_SetInitializationState(struct SZrObjectModule *module, EZrModuleInitializationState state) {
     if (module == ZR_NULL) {
         return;
@@ -411,6 +433,7 @@ void ZrCore_Module_SetInitializationState(struct SZrObjectModule *module, EZrMod
     module->initState = (TZrUInt8)state;
 }
 
+/* AOT 注册或重载时替换模块内嵌元数据运行时；返回指针由模块持有。 */
 SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(SZrObjectModule *module,
                                                         SZrFunction *metadataFunction,
                                                         const SZrAotCodeRegistration *codeRegistration) {
@@ -421,6 +444,8 @@ SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(SZrObjectModule *module,
     }
 
     previousMetadataFunction = module->hasMetadataRuntime ? module->metadataRuntime.metadataFunction : ZR_NULL;
+    /* BUG: 重挂先改变反射身份代际，再尝试可能失败的函数图失效；失败返回时
+     * 旧 metadataRuntime 仍在，但 reflection type identity 已按新代际导出。 */
     if (module->hasMetadataRuntime) {
         if (module->metadataGeneration == UINT32_MAX) {
             module->metadataGeneration = 1u;
@@ -453,6 +478,7 @@ SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(SZrObjectModule *module,
     return &module->metadataRuntime;
 }
 
+/* 只在完成 Attach 后暴露模块内嵌运行时；返回借用指针。 */
 SZrMetadataRuntime *ZrCore_Module_GetMetadataRuntime(SZrObjectModule *module) {
     if (module == ZR_NULL || !module->hasMetadataRuntime) {
         return ZR_NULL;

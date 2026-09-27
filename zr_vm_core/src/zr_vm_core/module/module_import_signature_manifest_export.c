@@ -2,6 +2,7 @@
 
 #include "zr_vm_core/metadata_runtime.h"
 
+/* 把导入 effect 投影到 manifest 的 TYPE/METHOD/FIELD 命名空间，供统一兼容检查使用。 */
 static TZrUInt32 module_import_signature_manifest_export_kind(const SZrFunctionModuleEffect *effect) {
     if (effect == ZR_NULL) {
         return 0u;
@@ -21,6 +22,7 @@ static TZrUInt32 module_import_signature_manifest_export_kind(const SZrFunctionM
     return 0u;
 }
 
+/* 构造只用于本次比对的绑定快照，不提前写入调用方持久绑定表。 */
 static void module_import_signature_manifest_fill_binding(
         const SZrMetadataTokenRecord *memberRefRecord,
         const SZrFunctionModuleEffect *effect,
@@ -49,6 +51,7 @@ static void module_import_signature_manifest_fill_binding(
     }
 }
 
+/* 将底层兼容状态映射为加载器能报告的版本、模块或成员不匹配。 */
 static void module_import_signature_record_manifest_export_mismatch(
         SZrModuleImportSignatureMismatch *outMismatch,
         const SZrFunctionModuleEffect *effect,
@@ -102,6 +105,7 @@ static void module_import_signature_record_manifest_export_mismatch(
     }
 }
 
+/* 只有提供方确实附带 manifest 表时，此门禁才约束 typed export 的对外身份。 */
 TZrBool zr_module_import_signature_verify_manifest_export_binding(
         SZrObjectModule *module,
         const SZrMetadataTokenRecord *memberRefRecord,

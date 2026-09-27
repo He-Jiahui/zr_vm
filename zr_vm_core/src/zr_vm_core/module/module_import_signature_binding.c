@@ -2,6 +2,7 @@
 
 #include "zr_vm_core/function.h"
 
+/* AssemblyRef 解析到提供方模块自身，而不是沿用调用方的引用 token。 */
 #define ZR_MODULE_METADATA_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MODULE, 1u)
 
 static const SZrMetadataTokenRecord *module_import_signature_find_record(const SZrFunction *function,
@@ -19,6 +20,7 @@ static const SZrMetadataTokenRecord *module_import_signature_find_record(const S
     return ZR_NULL;
 }
 
+/* 成员绑定旁登记所属模块 ABI，使运行时能追溯 AssemblyRef -> Module 的解析结果。 */
 static void module_import_signature_record_assembly_ref_binding(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -35,6 +37,8 @@ static void module_import_signature_record_assembly_ref_binding(
         return;
     }
 
+    /* TODO: 扩容失败只会略过此绑定，当前 void 接口无法向导入校验传播失败；
+     * 需核对后续元数据兼容检查是否会因缺失 AssemblyRef 记录而漏检。 */
     binding = ZrCore_Function_UpsertModuleMetadataBinding(state, callerFunction, assemblyRefRecord->token);
     if (binding == ZR_NULL) {
         return;
@@ -87,6 +91,9 @@ void zr_module_import_signature_record_binding(SZrState *state,
         return;
     }
 
+    /* 成员引用与解析后的提供方 token 成对保存，供后续重定位和兼容检查使用。 */
+    /* TODO: 此表扩容失败会漏登 MemberRef，但上层签名校验仍报告成功；
+     * 需通过故障注入确认调用链接或运行时兼容门禁能否发现缺失绑定。 */
     binding = ZrCore_Function_UpsertModuleMetadataBinding(state, callerFunction, memberRefRecord->token);
     if (binding == ZR_NULL) {
         return;
@@ -122,6 +129,7 @@ static const TZrChar *module_import_signature_string_text(SZrString *value) {
     return text != ZR_NULL ? text : "<unknown>";
 }
 
+/* TypeSpec 未匹配时记录最早的定义或布局差异，方便定位泛型类型签名漂移。 */
 static void module_import_signature_record_type_spec_diagnostic(
         SZrState *state,
         const SZrFunctionModuleEffect *effect,
@@ -161,6 +169,7 @@ static void module_import_signature_record_type_spec_diagnostic(
             (unsigned long long)status->firstActualLayoutHash);
 }
 
+/* TypeRef 绑定不是成员签名门禁，但保留独立诊断以定位提供方类型布局漂移。 */
 static void module_import_signature_record_type_ref_diagnostic(
         SZrState *state,
         const SZrFunctionModuleEffect *effect,
@@ -216,6 +225,8 @@ void zr_module_import_signature_bind_type_metadata_with_diagnostic(
         module_import_signature_record_type_ref_diagnostic(state, effect, &typeRefStatus);
     }
     ZrCore_Memory_RawSet(&status, 0, sizeof(status));
+    /* TODO: TypeRef 和 TypeSpec 同时失败时，后者写入的全局诊断会覆盖前者；
+     * 需核对调用方是否只需要最后一条，并为双重不匹配增加诊断测试。 */
     if (!ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus(state,
                                                                callerFunction,
                                                                entryFunction,

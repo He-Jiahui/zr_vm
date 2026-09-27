@@ -6,11 +6,13 @@
 #include "zr_vm_core/reflection.h"
 #include <string.h>
 
+/* 将装饰器公开字段投影到 FFI runtime 使用的隐藏原型字段。 */
 typedef struct SZrPrototypeMetadataFieldMapping {
     const TZrChar *metadataFieldName;
     const TZrChar *hiddenFieldName;
 } SZrPrototypeMetadataFieldMapping;
 
+/* 字段名属于运行时反射协议，修改时需同步 FFI 消费方。 */
 static const SZrPrototypeMetadataFieldMapping kModulePrototypeFfiMetadataFieldMappings[] = {
         {"ffiLoweringKind", "__zr_ffiLoweringKind"},
         {"ffiViewTypeName", "__zr_ffiViewTypeName"},
@@ -18,11 +20,13 @@ static const SZrPrototypeMetadataFieldMapping kModulePrototypeFfiMetadataFieldMa
         {"ffiOwnerMode", "__zr_ffiOwnerMode"},
         {"ffiReleaseHook", "__zr_ffiReleaseHook"},
 };
+/* 枚举装饰器值与运行时实例字段使用同一隐藏命名约定。 */
 static const TZrChar *kModulePrototypeEnumMembersFieldName = "__zr_enumMembers";
 static const TZrChar *kModulePrototypeEnumValueTypeFieldName = "__zr_enumValueTypeName";
 static const TZrChar *kModulePrototypeEnumValueFieldName = "__zr_enumValue";
 static const TZrChar *kModulePrototypeEnumNameFieldName = "__zr_enumName";
 
+/* 内建/加载类型加入全局查找域，供继承解析和非限定类型名回退。 */
 static void register_prototype_in_global_scope(SZrState *state,
                                                SZrString *typeName,
                                                const SZrTypeValue *prototypeValue) {
@@ -46,6 +50,7 @@ static void register_prototype_in_global_scope(SZrState *state,
     ZrCore_Object_SetValue(state, globalObject, &key, prototypeValue);
 }
 
+/* 只接受有效原型对象；返回由全局对象持有的借用引用。 */
 static SZrObjectPrototype *find_prototype_in_global_scope(SZrState *state, SZrString *typeName) {
     SZrObject *globalObject;
     SZrTypeValue key;
@@ -79,6 +84,7 @@ static SZrObjectPrototype *find_prototype_in_global_scope(SZrState *state, SZrSt
     return prototype;
 }
 
+/* 限定类型名先定位指定模块公开导出，必要时触发导入。 */
 static SZrObjectPrototype *find_prototype_in_qualified_module(SZrState *state, const TZrChar *typeNameText) {
     const TZrChar *genericStart;
     const TZrChar *lastDot;
@@ -136,9 +142,12 @@ static SZrObjectPrototype *find_prototype_in_qualified_module(SZrState *state, c
         return ZR_NULL;
     }
 
+    /* TODO: 这里只核对值为 OBJECT，尚未核对其 internalType 为原型；核查模块
+     * 导出在初始化后能否由普通对象替换，以及嵌入 API 的注入路径。 */
     return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exportedValue->value.object);
 }
 
+/* 原型缓存以函数元数据持有，二次物化保留已有对象身份。 */
 static TZrBool ensure_prototype_instance_storage(SZrState *state, SZrFunction *entryFunction) {
     struct SZrObjectPrototype **newStorage;
     TZrSize storageBytes;
@@ -152,6 +161,8 @@ static TZrBool ensure_prototype_instance_storage(SZrState *state, SZrFunction *e
         return ZR_TRUE;
     }
 
+    /* TODO: 工件计数可直接进入这里；32 位 size_t 下乘法可能回绕并分配不足。
+     * 核对 32 位运行时支持范围，并用畸形计数工件验证分配前的上限检查。 */
     storageBytes = entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *);
     newStorage = (struct SZrObjectPrototype **)ZrCore_Memory_RawMalloc(state->global, storageBytes);
     if (newStorage == ZR_NULL) {
@@ -176,6 +187,7 @@ static TZrBool ensure_prototype_instance_storage(SZrState *state, SZrFunction *e
     return ZR_TRUE;
 }
 
+/* 编译成员只保存函数常量索引，物化时恢复当前 GC 图的函数见证。 */
 static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeValue *constant) {
     if (state == ZR_NULL || constant == ZR_NULL) {
         return ZR_NULL;
@@ -184,6 +196,7 @@ static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeVal
     return ZrCore_Closure_GetMetadataFunctionFromValue(state, constant);
 }
 
+/* 从 entry 常量池读取原型身份字段，结果由函数常量持有。 */
 static SZrString *module_prototype_get_string_constant(SZrState *state,
                                                        SZrFunction *entryFunction,
                                                        TZrUInt32 constantIndex) {
@@ -201,6 +214,9 @@ static SZrString *module_prototype_get_string_constant(SZrState *state,
     return ZR_CAST_STRING(state, constantValue->value.object);
 }
 
+/* 编译期协议位在原型建立后安装，供迭代等运行时契约选择。
+ * BUG: 编译器完整写入 protocolMask，但循环只恢复到 ARRAY_LIKE(6)；
+ * TASK_HANDLE(7) 等更高协议位在物化后丢失，运行时协议查询会返回 false。 */
 static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
     if (prototype == ZR_NULL || protocolMask == 0) {
         return;
@@ -215,10 +231,12 @@ static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, 
     }
 }
 
+/* 与编译 blob 的 accessorRole ABI 一致，解析时不可重新编号。 */
 #define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER 1u
 #define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER 2u
 #define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER 3u
 
+/* 内部 getter/setter 名还原为同一个对外 property 身份。 */
 static SZrString *module_prototype_public_property_name_from_accessor(SZrState *state,
                                                                       SZrString *accessorName,
                                                                       TZrUInt32 accessorRole) {
@@ -254,6 +272,7 @@ static SZrString *module_prototype_public_property_name_from_accessor(SZrState *
     return ZrCore_String_Create(state, (TZrNativeString)(text + prefixLength), publicNameLength);
 }
 
+/* 只在当前原型寻找同名同静态性的属性，不跨继承链合并声明。 */
 static SZrMemberDescriptor *module_prototype_find_own_property_descriptor(SZrObjectPrototype *prototype,
                                                                           SZrString *propertyName,
                                                                           TZrBool isStatic) {
@@ -274,6 +293,7 @@ static SZrMemberDescriptor *module_prototype_find_own_property_descriptor(SZrObj
     return ZR_NULL;
 }
 
+/* 优先用编译器分配的 propertyIdentity 合并访问器，避免仅靠文本名碰撞。 */
 static SZrMemberDescriptor *module_prototype_find_own_property_descriptor_by_identity(
         SZrObjectPrototype *prototype,
         TZrUInt32 propertyIdentity,
@@ -293,6 +313,9 @@ static SZrMemberDescriptor *module_prototype_find_own_property_descriptor_by_ide
     return ZR_NULL;
 }
 
+/* 将单独编译的访问器归并到属性描述符，保留读写权限和接收者效果。
+ * TODO: 更新 getter/setter/initializer 指针后未见显式写屏障；核对永久原型在
+ * young GC 中是否每轮扫描，并用年轻代回收用例验证。 */
 static TZrBool module_prototype_add_property_accessor_descriptor(SZrState *state,
                                                               SZrObjectPrototype *prototype,
                                                               SZrFunction *entryFunction,
@@ -391,6 +414,9 @@ static TZrBool module_prototype_add_property_accessor_descriptor(SZrState *state
     return ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
 }
 
+/* 编译成员行投影为运行时描述符及迭代协议入口，供反射与绑定器共用。
+ * TODO: 迭代协议函数指针直接写入永久原型后未见显式写屏障；与访问器同查
+ * young GC 扫描范围，勿仅以完整 GC 的 mark/rewrite 路径推断安全。 */
 static void module_prototype_add_runtime_descriptor(SZrState *state,
                                                     SZrObjectPrototype *prototype,
                                                     SZrFunction *entryFunction,
@@ -426,6 +452,8 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
     descriptor.setterAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
     descriptor.initializerAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
 
+    /* BUG: 属性访问器注册可因分配失败返回 false，但这里丢弃结果；之后继续
+     * 发布成员与模块，调用方无法区分缺失的 property 描述符。 */
     if (member->accessorRole != 0u && function != ZR_NULL) {
         (void)module_prototype_add_property_accessor_descriptor(state,
                                                                 prototype,
@@ -469,6 +497,7 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
             return;
     }
 
+    /* BUG: 描述符扩容失败返回 false 未向原型物化入口传播；模块仍可被标为 READY。 */
     ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
 
     if (function != ZR_NULL && !descriptor.isStatic) {
@@ -491,6 +520,9 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
     }
 }
 
+/* 继承解析先用限定模块、本模块与全局域，最后扫描已加载模块公开导出。
+ * TODO: 多个已加载模块若公开同名类型，最后一步取决于哈希桶顺序；核对编译器
+ * 对无模块限定继承名的约束及合法导入路径，再决定是否要求唯一匹配。 */
 static SZrObjectPrototype *find_prototype_by_name(SZrState *state,
                                                   struct SZrObjectModule *module,
                                                   SZrString *typeName) {
@@ -564,6 +596,7 @@ static SZrObjectPrototype *find_prototype_by_name(SZrState *state,
     return ZR_NULL;
 }
 
+/* 无显式基类的类/模块回退到各自内建原型。 */
 static SZrString *module_prototype_default_builtin_super_name(SZrState *state, EZrObjectPrototypeType type) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -579,6 +612,7 @@ static SZrString *module_prototype_default_builtin_super_name(SZrState *state, E
     return ZR_NULL;
 }
 
+/* 同批原型在发布阶段已创建，继承关系优先引用本批对象。 */
 static SZrObjectPrototype *find_local_created_prototype_by_name(SZrArray *prototypeInfos, SZrString *typeName) {
     if (prototypeInfos == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -599,6 +633,7 @@ static SZrObjectPrototype *find_local_created_prototype_by_name(SZrArray *protot
     return ZR_NULL;
 }
 
+/* 闭合泛型缺少显式继承时可继承同名开放泛型的运行时原型。 */
 static SZrString *module_prototype_extract_open_generic_base_name(SZrState *state, SZrString *typeName) {
     TZrNativeString typeNameText;
     TZrSize typeNameLength;
@@ -628,6 +663,7 @@ static SZrString *module_prototype_extract_open_generic_base_name(SZrState *stat
     return ZrCore_String_Create(state, typeNameText, (TZrSize)(genericStart - typeNameText));
 }
 
+/* 仅在无其他父类的相同原型种类上建立开放泛型继承。 */
 static void module_prototype_attach_open_generic_super(SZrState *state,
                                                        struct SZrObjectModule *module,
                                                        SZrPrototypeCreationInfo *protoInfo,
@@ -658,6 +694,7 @@ static void module_prototype_attach_open_generic_super(SZrState *state,
     ZrCore_ObjectPrototype_SetSuper(state, protoInfo->prototype, superPrototype);
 }
 
+/* 从装饰器对象读取可选文本元数据；缺字段不阻止原型主体物化。 */
 static TZrBool module_prototype_read_metadata_string_field(SZrState *state,
                                                            const SZrTypeValue *metadataValue,
                                                            const TZrChar *fieldName,
@@ -696,6 +733,7 @@ static TZrBool module_prototype_read_metadata_string_field(SZrState *state,
     return *outText != ZR_NULL;
 }
 
+/* 将装饰器事实复制为原型持有的隐藏字符串供运行时查询。 */
 static void module_prototype_set_hidden_string_metadata(SZrState *state,
                                                         SZrObjectPrototype *prototype,
                                                         const TZrChar *fieldName,
@@ -721,6 +759,7 @@ static void module_prototype_set_hidden_string_metadata(SZrState *state,
     ZrCore_Object_SetValue(state, &prototype->super, &key, &fieldValue);
 }
 
+/* 在元数据对象内借用字段值，不转移所有权。 */
 static const SZrTypeValue *module_prototype_get_object_field_value(SZrState *state,
                                                                    SZrObject *object,
                                                                    SZrString *fieldName) {
@@ -734,6 +773,7 @@ static const SZrTypeValue *module_prototype_get_object_field_value(SZrState *sta
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/* 装饰器 metadata 对象与具体字段名之间的受检访问入口。 */
 static const SZrTypeValue *module_prototype_get_metadata_field_value(SZrState *state,
                                                                      const SZrTypeValue *metadataValue,
                                                                      const TZrChar *fieldName) {
@@ -754,6 +794,7 @@ static const SZrTypeValue *module_prototype_get_metadata_field_value(SZrState *s
     return module_prototype_get_object_field_value(state, metadataObject, fieldNameString);
 }
 
+/* 枚举底层类型信息由装饰器写入原型隐藏字段，供反射/值转换使用。 */
 static void module_prototype_attach_enum_hidden_metadata(SZrState *state,
                                                          SZrObjectPrototype *prototype,
                                                          const SZrPrototypeCreationInfo *protoInfo) {
@@ -776,6 +817,7 @@ static void module_prototype_attach_enum_hidden_metadata(SZrState *state,
     }
 }
 
+/* 枚举成员的标量值来自装饰器映射，返回值借用该映射对象。 */
 static const SZrTypeValue *module_prototype_get_enum_member_scalar_value(SZrState *state,
                                                                          const SZrPrototypeCreationInfo *protoInfo,
                                                                          SZrString *memberName) {
@@ -801,6 +843,7 @@ static const SZrTypeValue *module_prototype_get_enum_member_scalar_value(SZrStat
     return module_prototype_get_object_field_value(state, membersObject, memberName);
 }
 
+/* 将 enum 实例和原型的反射字段经对象写入接口安装，沿用其 GC 屏障。 */
 static TZrBool module_prototype_set_object_field_string(SZrState *state,
                                                         SZrObject *object,
                                                         SZrString *fieldName,
@@ -816,6 +859,7 @@ static TZrBool module_prototype_set_object_field_string(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 为静态枚举成员建立携带 name/value 的实例并挂在枚举原型上。 */
 static TZrBool module_prototype_add_enum_member_instance(SZrState *state,
                                                          SZrObjectPrototype *prototype,
                                                          SZrString *memberName,
@@ -856,6 +900,7 @@ static TZrBool module_prototype_add_enum_member_instance(SZrState *state,
     return module_prototype_set_object_field_string(state, &prototype->super, memberName, &enumObjectValue);
 }
 
+/* FFI 包装类型的装饰器字段在原型创建时投影为运行时隐藏字段。 */
 static void module_prototype_attach_ffi_wrapper_hidden_metadata(SZrState *state,
                                                                 SZrObjectPrototype *prototype,
                                                                 const SZrPrototypeCreationInfo *protoInfo) {
@@ -881,6 +926,8 @@ static void module_prototype_attach_ffi_wrapper_hidden_metadata(SZrState *state,
     }
 }
 
+/* 动态原型原生入口：验证栈参数后创建并按访问级别导出，失败返回 null 值。
+ * TODO: 首方生产代码未发现注册/调用该入口；核对嵌入 API 是否仍依赖此旧路径。 */
 TZrInt64 ZrCore_PrototypeNativeFunction_Create(SZrState *state) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
@@ -903,6 +950,7 @@ TZrInt64 ZrCore_PrototypeNativeFunction_Create(SZrState *state) {
 
     functionBase = state->callInfoList->functionBase.valuePointer;
     argBase = functionBase + 1;
+/* 所有原生返回路径都恢复同一结果槽宽度。 */
 #define ZR_RETURN_CREATE_PROTOTYPE_RESULT() \
     do {                                    \
         state->stackTop.valuePointer = functionBase + 1; \
@@ -984,6 +1032,7 @@ TZrInt64 ZrCore_PrototypeNativeFunction_Create(SZrState *state) {
 #undef ZR_RETURN_CREATE_PROTOTYPE_RESULT
 }
 
+/* 从编译 blob 恢复一个原型的稳定身份与成员切片；members 只借用 entry blob。 */
 static TZrBool parse_compiled_prototype_info(SZrState *state,
                                              SZrFunction *entryFunction,
                                              const TZrByte *serializedData,
@@ -1012,6 +1061,8 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     membersCount = protoInfoHeader->membersCount;
     decoratorsCount = protoInfoHeader->decoratorsCount;
 
+    /* TODO: 三个工件计数参与字节数乘加；32 位 size_t 下回绕会绕过长度门禁。
+     * 核对 32 位目标并补逐项 checked arithmetic 与畸形 blob 用例。 */
     expectedSize =
             sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TZrUInt32) +
             decoratorsCount * sizeof(TZrUInt32) +
@@ -1081,6 +1132,7 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 两阶段物化：先发布全部原型身份，再补继承、成员和接口表以支持同批互引。 */
 TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                                struct SZrObjectModule *module,
                                                SZrFunction *entryFunction) {
@@ -1112,6 +1164,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
     ZrCore_Array_Init(state, &prototypeInfos, sizeof(SZrPrototypeCreationInfo), prototypeCount);
     createdCount = 0;
 
+    /* TODO: 标准 .zro 读取端保证 blob 至少含计数头，但本公开入口只检查非零长度；
+     * 核对直接 C 调用的构造前提，并在允许伪造 Function 时补最小长度防护。 */
     prototypeData = entryFunction->prototypeData + sizeof(TZrUInt32);
     remainingDataSize = entryFunction->prototypeDataLength - sizeof(TZrUInt32);
     currentPos = prototypeData;
@@ -1125,6 +1179,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
             const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
             TZrUInt32 inheritsCount = protoInfo->inheritsCount;
             TZrUInt32 membersCount = protoInfo->membersCount;
+            /* TODO: 这里再次由工件计数计算游标步长；32 位 size_t 回绕后
+             * remainingDataSize 检查可能接受越界成员。与单记录解析共查。 */
             TZrSize inheritArraySize = inheritsCount * sizeof(TZrUInt32);
             TZrSize decoratorArraySize = protoInfo->decoratorsCount * sizeof(TZrUInt32);
             TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
@@ -1436,6 +1492,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
 
     }
 
+    /* BUG: 接口表分配失败只写加载诊断并退出当前继承循环；函数仍返回 createdCount，
+     * 模块加载器又忽略该返回值，部分分派表可随 READY 模块发布。 */
     for (TZrSize index = 0u; index < prototypeInfos.length; ++index) {
         SZrPrototypeCreationInfo *protoInfo = ZrCore_Array_Get(&prototypeInfos, index);
         if (protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL) continue;
@@ -1463,6 +1521,7 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
     return createdCount;
 }
 
+/* 兼容旧入口：有编译原型 blob 时交给统一物化路径，无原型则返回零。 */
 TZrSize ZrCore_Module_CreatePrototypesFromConstants(SZrState *state,
                                                     struct SZrObjectModule *module,
                                                     SZrFunction *entryFunction) {

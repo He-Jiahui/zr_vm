@@ -1,6 +1,7 @@
 #include "module/module_internal.h"
 #include "zr_vm_core/gc.h"
 
+/* 物化时保存声明接口槽与实现描述符的稳定配对，引用归 receiver 的 GC 图持有。 */
 static TZrBool interface_dispatch_append(SZrState *state, SZrObjectPrototype *receiver,
         SZrObjectPrototype *interfacePrototype, TZrUInt32 slot,
         SZrObjectPrototype *implementation, TZrUInt32 descriptorIndex) {
@@ -28,6 +29,7 @@ static TZrBool interface_dispatch_append(SZrState *state, SZrObjectPrototype *re
     return ZR_TRUE;
 }
 
+/* 原型构造期建立接口分派表；运行时仅以接口身份和槽位寻找已绑定实现。 */
 TZrBool zr_module_bind_interface_dispatch(SZrState *state, SZrObjectPrototype *receiver,
                                          SZrObjectPrototype *interfacePrototype) {
     if (receiver == ZR_NULL || interfacePrototype == ZR_NULL ||
@@ -37,8 +39,9 @@ TZrBool zr_module_bind_interface_dispatch(SZrState *state, SZrObjectPrototype *r
         SZrObjectPrototype *implementation = receiver;
         TZrBool matched = ZR_FALSE;
         if (required->isStatic || required->kind != ZR_MEMBER_DESCRIPTOR_KIND_METHOD) continue;
-        /* Resolve declaration names once while materializing the module. Calls
-         * use only the interface identity, slot, and implementation descriptor. */
+        /* 名称匹配发生在原型物化期；调用时只能依据接口身份、槽和描述符分派。
+         * BUG: 同名重载会为同一接口槽追加多个实现，调用端取首项后若签名不合即失败，
+         * 不会继续尝试正确重载；编译器原本按签名区分这些成员。 */
         while (implementation != ZR_NULL && !matched) {
             for (TZrUInt32 member = 0u; member < implementation->memberDescriptorCount; ++member) {
                 const SZrMemberDescriptor *candidate = &implementation->memberDescriptors[member];

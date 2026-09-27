@@ -13,13 +13,16 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 循环导入期间暂缓暴露 entry 阶段导出，直到外层初始化链结束。 */
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
 
+/* 异常边界内执行模块 entry，并将返回栈基传回加载器。 */
 typedef struct SZrModuleLoaderExecuteRequest {
     const SZrFunctionStackAnchor *anchor;
     TZrStackValuePointer resultBase;
 } SZrModuleLoaderExecuteRequest;
 
+/* 加载过程中的分配可能移动 GC 对象，后续访问须采用转发后的地址。 */
 static ZR_FORCE_INLINE SZrRawObject *module_loader_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
     SZrRawObject *forwardedObject;
 
@@ -31,18 +34,21 @@ static ZR_FORCE_INLINE SZrRawObject *module_loader_refresh_forwarded_raw_object(
     return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
 }
 
+/* 函数指针穿过栈扩容与 GC 后重新定位。 */
 static ZR_FORCE_INLINE SZrFunction *module_loader_refresh_forwarded_function(SZrFunction *function) {
     return function != ZR_NULL ? (SZrFunction *)module_loader_refresh_forwarded_raw_object(
                                          ZR_CAST_RAW_OBJECT_AS_SUPER(function))
                                : ZR_NULL;
 }
 
+/* entry 闭包与函数同属可移动 GC 对象。 */
 static ZR_FORCE_INLINE SZrClosure *module_loader_refresh_forwarded_closure(SZrClosure *closure) {
     return closure != ZR_NULL ? (SZrClosure *)module_loader_refresh_forwarded_raw_object(
                                         ZR_CAST_RAW_OBJECT_AS_SUPER(closure))
                               : ZR_NULL;
 }
 
+/* 嵌套导入不覆盖调用者帧；临时执行区从当前有效栈上界之后开始。 */
 static ZR_FORCE_INLINE TZrStackValuePointer module_loader_resolve_scratch_base(TZrStackValuePointer savedStackTop,
                                                                                SZrCallInfo *savedCallInfo) {
     TZrStackValuePointer scratchBase = savedStackTop;
@@ -55,6 +61,7 @@ static ZR_FORCE_INLINE TZrStackValuePointer module_loader_resolve_scratch_base(T
     return scratchBase;
 }
 
+/* 按运行时布局寻址导出槽；旧格式无布局时沿用线性栈槽。 */
 static ZR_FORCE_INLINE TZrStackValuePointer module_loader_entry_stack_slot_pointer(SZrState *state,
                                                                                    const SZrFunction *function,
                                                                                    TZrStackValuePointer frameBase,
@@ -85,6 +92,7 @@ static ZR_FORCE_INLINE TZrStackValuePointer module_loader_entry_stack_slot_point
     return ZR_CAST_STACK_VALUE(place.address);
 }
 
+/* 将布局寻址结果转换为模块导出可读取的值槽，地址只在当前栈状态有效。 */
 static ZR_FORCE_INLINE SZrTypeValue *module_loader_entry_value_slot(SZrState *state,
                                                                     const SZrFunction *function,
                                                                     TZrStackValuePointer frameBase,
@@ -94,6 +102,7 @@ static ZR_FORCE_INLINE SZrTypeValue *module_loader_entry_value_slot(SZrState *st
     return slotPointer != ZR_NULL ? ZrCore_Stack_GetValue(slotPointer) : ZR_NULL;
 }
 
+/* 回调可能阻塞，读取时临时释放 VM 线程锁；成功后借用 IO 提供的字节块。 */
 static TZrBool refill_io_chunk(SZrIo *io) {
     SZrState *state;
     TZrSize readSize;
@@ -117,6 +126,7 @@ static TZrBool refill_io_chunk(SZrIo *io) {
     return ZR_TRUE;
 }
 
+/* 源码编译入口需要连续的零结尾缓冲区；调用方负责按返回长度释放原生内存。 */
 static TZrBytePtr read_all_from_io(SZrState *state, SZrIo *io, TZrSize *outSize) {
     SZrGlobalState *global;
     TZrSize capacity;
@@ -171,6 +181,7 @@ static TZrBytePtr read_all_from_io(SZrState *state, SZrIo *io, TZrSize *outSize)
     return buffer;
 }
 
+/* 将顶层 callable 绑定映射到对外导出声明，返回函数元数据中的借用行。 */
 static const SZrFunctionExportedVariable *module_loader_find_exported_variable(const SZrFunction *function,
                                                                                SZrString *name) {
     TZrUInt32 index;
@@ -189,6 +200,7 @@ static const SZrFunctionExportedVariable *module_loader_find_exported_variable(c
     return ZR_NULL;
 }
 
+/* typed 导出符号优先于旧导出变量行，防止同名描述符重复发布。 */
 static const SZrFunctionTypedExportSymbol *module_loader_find_typed_export_symbol(const SZrFunction *function,
                                                                                   SZrString *name) {
     TZrUInt32 index;
@@ -207,6 +219,7 @@ static const SZrFunctionTypedExportSymbol *module_loader_find_typed_export_symbo
     return ZR_NULL;
 }
 
+/* entry 阶段导出的可见性与值是否已预装分开管理。 */
 static void module_loader_set_entry_export_descriptors_ready(SZrObjectModule *module, TZrBool isReady) {
     TZrUInt32 index;
 
@@ -222,6 +235,7 @@ static void module_loader_set_entry_export_descriptors_ready(SZrObjectModule *mo
     }
 }
 
+/* 判断当前模块是否嵌在更外层的导入执行链中，决定何时释放 entry 导出。 */
 static TZrBool module_loader_registry_has_other_initializing_modules(SZrState *state, const SZrObjectModule *exclude) {
     SZrObject *registry;
     TZrSize bucketIndex;
@@ -249,6 +263,7 @@ static TZrBool module_loader_registry_has_other_initializing_modules(SZrState *s
     return ZR_FALSE;
 }
 
+/* 外层 entry 完成时一次性解锁此前 READY 但等待循环导入收束的模块。 */
 static void module_loader_finalize_pending_entry_exports(SZrState *state) {
     SZrObject *registry;
     TZrSize bucketIndex;
@@ -276,6 +291,7 @@ static void module_loader_finalize_pending_entry_exports(SZrState *state) {
     }
 }
 
+/* 执行 entry 前先登记导出访问约束，循环导入才能区分声明可见与尚未就绪。 */
 static TZrBool module_loader_register_export_descriptors(SZrState *state,
                                                          SZrObjectModule *module,
                                                          const SZrFunction *function) {
@@ -330,6 +346,7 @@ static TZrBool module_loader_register_export_descriptors(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 从调用栈恢复发起 import 的函数，用于签名校验和反射 provider 归属。 */
 static SZrFunction *module_loader_find_import_caller_function(SZrState *state) {
     SZrCallInfo *callInfo;
 
@@ -347,6 +364,7 @@ static SZrFunction *module_loader_find_import_caller_function(SZrState *state) {
     return ZR_NULL;
 }
 
+/* 签名错误路径允许缺失模块/成员名，仍需生成可读诊断。 */
 static const TZrChar *module_loader_string_text_or_unknown(SZrString *value) {
     TZrNativeString text;
 
@@ -358,6 +376,7 @@ static const TZrChar *module_loader_string_text_or_unknown(SZrString *value) {
     return text != ZR_NULL ? text : "<unknown>";
 }
 
+/* 当 token 身份漂移时为签名错误补充两侧 token，便于定位 provider 版本。 */
 static void module_loader_append_import_signature_token_details(
         TZrChar *buffer,
         TZrSize bufferLength,
@@ -394,6 +413,7 @@ static void module_loader_append_import_signature_token_details(
     }
 }
 
+/* 版本约束诊断复用稳定的缺值表示。 */
 static const TZrChar *module_loader_version_text_or_unknown(SZrString *value) {
     TZrNativeString text;
 
@@ -405,6 +425,7 @@ static const TZrChar *module_loader_version_text_or_unknown(SZrString *value) {
     return text != ZR_NULL ? text : "<unknown>";
 }
 
+/* 严格 import 的身份不匹配必须中断调用，避免继续使用错误 ABI 的 provider。 */
 static ZR_NO_RETURN void module_loader_raise_import_signature_mismatch(
         SZrState *state,
         const SZrModuleImportSignatureMismatch *mismatch,
@@ -477,6 +498,7 @@ static ZR_NO_RETURN void module_loader_raise_import_signature_mismatch(
     ZrCore_Debug_RunError(state, "%s", message);
 }
 
+/* 严格 import 失败时保留 AOT/native/source 加载器提供的最具体原因。 */
 static ZR_NO_RETURN void module_loader_raise_import_load_unavailable(SZrState *state, SZrString *path) {
     const TZrChar *diagnostic =
             state != ZR_NULL ? ZrCore_GlobalState_GetModuleLoadDiagnostic(state->global) : ZR_NULL;
@@ -493,6 +515,7 @@ static ZR_NO_RETURN void module_loader_raise_import_load_unavailable(SZrState *s
                           module_loader_string_text_or_unknown(path));
 }
 
+/* 以底层函数身份判断预装闭包是否仍代表同一导出，不比较可移动闭包地址。 */
 static TZrBool module_loader_slot_matches_function(SZrState *state,
                                                    const SZrTypeValue *value,
                                                    SZrFunction *function) {
@@ -506,6 +529,7 @@ static TZrBool module_loader_slot_matches_function(SZrState *state,
     return existingFunction == function ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 声明导出刷新时按访问级别读取模块已安装的值；返回借用引用。 */
 static const SZrTypeValue *module_loader_get_existing_export_value(SZrState *state,
                                                                    SZrObjectModule *module,
                                                                    const SZrFunctionExportedVariable *exported) {
@@ -523,6 +547,7 @@ static const SZrTypeValue *module_loader_get_existing_export_value(SZrState *sta
     return ZR_NULL;
 }
 
+/* 只将 entry 自己的子函数值重新封装为导出闭包，避免改写外部 callable。 */
 static SZrFunction *module_loader_find_child_function_for_value(SZrState *state,
                                                                 SZrFunction *entryFunction,
                                                                 const SZrTypeValue *value) {
@@ -548,6 +573,7 @@ static SZrFunction *module_loader_find_child_function_for_value(SZrState *state,
     return ZR_NULL;
 }
 
+/* 安装声明期 callable；尾调用可复用帧槽，已有匹配闭包比返回后的槽值更可信。 */
 static TZrBool module_loader_bind_exported_function(SZrState *state,
                                                     SZrObjectModule *module,
                                                     SZrFunction *function,
@@ -607,6 +633,7 @@ static TZrBool module_loader_bind_exported_function(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 判断捕获变量是否也属于可预装的顶层 callable，供循环导入前的闭包安全性筛选。 */
 static TZrBool module_loader_stack_slot_is_preinstalled_callable(const SZrFunction *entryFunction, TZrUInt32 stackSlot) {
     TZrUInt32 index;
 
@@ -624,6 +651,7 @@ static TZrBool module_loader_stack_slot_is_preinstalled_callable(const SZrFuncti
     return ZR_FALSE;
 }
 
+/* 只有闭包依赖均可在 entry 前建立时，导出才可提前公开。 */
 static TZrBool module_loader_callable_can_be_preinstalled(const SZrFunction *entryFunction,
                                                           const SZrFunction *childFunction) {
     TZrUInt32 index;
@@ -646,6 +674,7 @@ static TZrBool module_loader_callable_can_be_preinstalled(const SZrFunction *ent
     return ZR_TRUE;
 }
 
+/* 声明导出先按稳定子函数身份发布，后续执行完再按需要刷新捕获值。 */
 static TZrBool module_loader_preinstall_exported_function(SZrState *state,
                                                           SZrObjectModule *module,
                                                           SZrFunction *function,
@@ -654,6 +683,7 @@ static TZrBool module_loader_preinstall_exported_function(SZrState *state,
     return module_loader_bind_exported_function(state, module, function, exported, base, ZR_FALSE);
 }
 
+/* entry 前发布能安全形成的顶层闭包，让循环导入可解析声明期函数。 */
 static TZrBool module_loader_preinstall_top_level_callables(SZrState *state,
                                                             SZrObjectModule *module,
                                                             SZrFunction *function,
@@ -717,6 +747,7 @@ static TZrBool module_loader_preinstall_top_level_callables(SZrState *state,
     return ZR_TRUE;
 }
 
+/* entry 返回后更新声明期函数导出，修复执行期间形成的捕获环境。 */
 static TZrBool module_loader_refresh_declaration_exports(SZrState *state,
                                                          SZrObjectModule *module,
                                                          SZrFunction *function,
@@ -744,6 +775,7 @@ static TZrBool module_loader_refresh_declaration_exports(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 仅在 entry 执行后发布 entry 就绪导出；子函数值需封装为可持有捕获的闭包。 */
 static void module_loader_backfill_entry_exports(SZrState *state,
                                                  SZrObjectModule *module,
                                                  SZrFunction *function,
@@ -801,6 +833,7 @@ static void module_loader_backfill_entry_exports(SZrState *state,
     }
 }
 
+/* 异常边界回调保留 anchor，以便抛错后由加载器恢复栈。 */
 static void module_loader_execute_entry_body(SZrState *state, TZrPtr arguments) {
     SZrModuleLoaderExecuteRequest *request = (SZrModuleLoaderExecuteRequest *)arguments;
 
@@ -811,6 +844,7 @@ static void module_loader_execute_entry_body(SZrState *state, TZrPtr arguments) 
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, request->anchor, 0);
 }
 
+/* import 与 import? 共用加载、签名校验和绑定路径；严格模式抛错，guard 模式可返回 null。 */
 static TZrInt64 module_loader_import_native_entry(SZrState *state, TZrBool allowSignatureMismatchFallback) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
@@ -900,14 +934,17 @@ static TZrInt64 module_loader_import_native_entry(SZrState *state, TZrBool allow
     return 1;
 }
 
+/* VM 原生 import 入口：模块不可得或身份不匹配时报告运行错误。 */
 TZrInt64 ZrCore_Module_ImportNativeEntry(SZrState *state) {
     return module_loader_import_native_entry(state, ZR_FALSE);
 }
 
+/* VM 守卫式导入入口：加载或签名不匹配允许返回 null。 */
 TZrInt64 ZrCore_Module_ImportGuardNativeEntry(SZrState *state) {
     return module_loader_import_native_entry(state, ZR_TRUE);
 }
 
+/* 先复用缓存，再尝试 AOT/native，最后编译或读取源模块；成功值由缓存/GC 持有。 */
 struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *path) {
     struct SZrObjectModule *cachedModule;
     SZrGlobalState *global;
@@ -1076,6 +1113,8 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     ZrCore_Module_SetInfo(state, module, path, pathHash, path);
     ZrCore_Reflection_AttachModuleRuntimeMetadata(state, module, func);
 
+    /* BUG: 原型构建的返回值被忽略；接口分派分配失败可能留下部分原型/分派表，
+     * 随后模块仍进入缓存并被公开为 READY。 */
     if (func != ZR_NULL) {
         ZrCore_Module_CreatePrototypesFromConstants(state, module, func);
     }
@@ -1165,6 +1204,8 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
                                 callBase + 1,
                                 ZR_THREAD_STATUS_INVALID,
                                 ZR_FALSE);
+    /* BUG: 若外层 entry 随后抛错，失败路径只标记 FAILED 而不解锁当前 READY 模块；
+     * pending 位使其导出在之后的访问中仍被判为循环导入。 */
     if (module_loader_registry_has_other_initializing_modules(state, module)) {
         module->reserved0 = (TZrUInt8)(module->reserved0 | ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS);
         module_loader_set_entry_export_descriptors_ready(module, ZR_FALSE);

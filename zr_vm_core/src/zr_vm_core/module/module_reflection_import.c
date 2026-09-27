@@ -7,8 +7,10 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/reflection.h"
 
+/* 损坏或成环的 owner 链不能使特殊导入路径无限循环。 */
 #define ZR_MODULE_REFLECTION_OWNER_DEPTH_LIMIT ((TZrUInt32)1024u)
 
+/* GC 转发后读取当前函数地址，避免缓存的 owner 指针指向旧对象。 */
 static ZR_FORCE_INLINE SZrFunction *module_reflection_import_refresh_function(
         SZrFunction *function) {
     SZrRawObject *forwarded;
@@ -20,6 +22,7 @@ static ZR_FORCE_INLINE SZrFunction *module_reflection_import_refresh_function(
     return forwarded != ZR_NULL ? (SZrFunction *)forwarded : function;
 }
 
+/* 将调用者和 provider 归一到所属根函数；越界或损坏时拒绝猜测来源。 */
 static SZrFunction *module_reflection_import_owner_root(SZrFunction *function) {
     TZrUInt32 depth;
 
@@ -39,6 +42,7 @@ static SZrFunction *module_reflection_import_owner_root(SZrFunction *function) {
     return ZR_NULL;
 }
 
+/* 特殊反射导入只接受当前 provider 合约公布的完整模块名。 */
 static TZrBool module_reflection_import_path_matches(
         SZrGlobalState *global,
         SZrString *path) {
@@ -67,6 +71,7 @@ static TZrBool module_reflection_import_path_matches(
                    : ZR_FALSE;
 }
 
+/* 扫描全局注册表前验证键值确为模块条目；返回的模块仍由注册表持有。 */
 static TZrBool module_reflection_import_pair_has_module(
         SZrHashKeyValuePair *pair,
         SZrObjectModule **outModule) {
@@ -100,6 +105,7 @@ static TZrBool module_reflection_import_pair_has_module(
     return ZR_TRUE;
 }
 
+/* 通过调用者根函数唯一定位已就绪 AOT runtime，避免将别的模块的反射视图泄漏给调用者。 */
 static SZrMetadataRuntime *module_reflection_import_find_runtime(
         SZrState *state,
         SZrFunction *callerFunction) {
@@ -155,6 +161,7 @@ static SZrMetadataRuntime *module_reflection_import_find_runtime(
                    : ZR_NULL;
 }
 
+/* 导入器在普通缓存查找前调用此入口；命中路径后不再退回同名普通模块。 */
 TZrBool zr_module_reflection_import_try_resolve(
         SZrState *state,
         SZrString *path,
