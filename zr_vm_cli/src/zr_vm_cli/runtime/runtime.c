@@ -36,6 +36,7 @@ typedef struct ZrCliExecuteRequest {
     TZrBool callCompleted;
 } ZrCliExecuteRequest;
 
+/* 启动跟踪由环境变量一次性选定，避免每次 VM 入口调用都查询进程环境。 */
 static TZrBool zr_cli_runtime_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -166,6 +167,7 @@ static TZrBool zr_cli_runtime_write_profile_report(SZrState *state,
         }
     }
 
+    /* BUG: fprintf/fclose/fflush 的失败未传给调用方；输出设备写满时 --profile 仍报告执行成功。 */
     if (closeOutput) {
         fclose(output);
     } else {
@@ -210,6 +212,7 @@ static TZrBool zr_cli_runtime_write_coverage_report(SZrState *state,
                 line->name);
     }
 
+    /* BUG: 写入或关闭失败未检查；--coverage-output 的文件可能不完整却返回成功。 */
     if (closeOutput) {
         fclose(output);
     } else {
@@ -244,6 +247,8 @@ static TZrBool zr_cli_runtime_dump_bytecode(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* TODO: DisassembleFunction 与 fclose 的写入错误没有反馈到 CLI；
+     * 需核查调试转储是否必须对短写入返回失败，并补输出设备故障测试。 */
     ZrCore_Debug_DisassembleFunction(state, entryFunction, output);
     fclose(output);
     return ZR_TRUE;
@@ -269,6 +274,8 @@ static TZrBool zr_cli_runtime_write_heap_summary_report(SZrState *state,
             ZrCore_Log_Error(state, "failed to open heap summary output: %s\n", command->heapSummaryOutputPath);
             return ZR_FALSE;
         }
+        /* BUG: HeapSummary 为 void 且内部 fprintf 不报告失败；这里及 stdout 分支又忽略
+         * fclose/fflush，输出设备写满时仍返回 true，文件报告可能不完整。 */
         ZrCore_Debug_HeapSummary(state, output);
         fclose(output);
         return ZR_TRUE;
@@ -298,6 +305,7 @@ static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
                          (void *)state->stackTop.valuePointer,
                          (unsigned long long)request->function->stackSize);
     base = state->stackTop.valuePointer;
+    /* VM 栈扩容会搬移 slot；anchor 保证解释器返回位置可在调用结束后重新定位。 */
     base = ZrCore_Function_CheckStackAndAnchor(state, request->function->stackSize + 1, base, base, &anchor);
     zr_cli_runtime_trace("execute body anchored base=%p stackTop=%p",
                          (void *)base,
@@ -344,6 +352,7 @@ static TZrBool zr_cli_runtime_capture_failure(SZrState *state, EZrThreadStatus s
         effectiveStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
     }
 
+    /* capture 路径保留异常给调试器/宿主查看，最后才由 handle_failure 输出并清线程状态。 */
     if (!state->hasCurrentException) {
         (void)ZrCore_Exception_NormalizeStatus(state, effectiveStatus);
     }
@@ -399,6 +408,7 @@ static TZrBool zr_cli_runtime_resolve_effective_entry_module(const SZrCliCommand
         return ZR_FALSE;
     }
 
+    /* run-module 的用户标识和加载路径不同：前者进入 process.arguments，后者须归一化为模块路径。 */
     if (command->mode != ZR_CLI_MODE_RUN_PROJECT_MODULE) {
         *outEffectiveEntryModule = project->entryModule;
         *outEntryIdentifier = command->projectPath;
@@ -459,7 +469,11 @@ TZrBool ZrCli_Runtime_InjectProcessArguments(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 构建字符串参数可触发 GC；数组在发布为模块 export 前必须保持可达。 */
+    /* TODO: IgnoreObject 可因根注册表扩容失败返回 false；核对后续字符串分配触发 GC 时
+     * argumentsArray 是否仍有其他根，当前路径继续使用该裸指针。见 gc/gc.c。 */
     ignoredArray = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsArray));
+    /* BUG: SetString 无返回值且分配失败时不写 argumentsValue；随后 PushValue 可读取未初始化值。 */
     ZrLib_Value_SetString(state, &argumentsValue, entryIdentifier);
     if (!ZrLib_Array_PushValue(state, argumentsArray, &argumentsValue)) {
         if (ignoredArray) {
@@ -473,6 +487,7 @@ TZrBool ZrCli_Runtime_InjectProcessArguments(SZrState *state,
             continue;
         }
 
+        /* BUG: 参数字符串分配失败会保留上一次 argumentsValue，随后 PushValue 仍以旧值为输入。 */
         ZrLib_Value_SetString(state, &argumentsValue, programArgs[index]);
         if (!ZrLib_Array_PushValue(state, argumentsArray, &argumentsValue)) {
             if (ignoredArray) {
@@ -573,6 +588,7 @@ static void zr_cli_runtime_prepare_entry_module(SZrState *state,
         return;
     }
 
+    /* 直接加载入口的路径也要补建模块元数据与 prototype，供脚本反射和 import 观察。 */
     projectModule = ZrCore_Module_Create(state);
     if (projectModule == ZR_NULL) {
         return;
@@ -630,6 +646,7 @@ static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
     ZrCli_Project_ResolveBinaryPath(project, entryModule, entryBinaryPath, sizeof(entryBinaryPath));
     ZrCli_Project_ResolveSourcePath(project, entryModule, entrySourcePath, sizeof(entrySourcePath));
 
+    /* 显式 binary 模式优先成品字节码；成品缺失时仍可回落到源文件。 */
     if (preferBinary && ZrLibrary_File_Exist(entryBinaryPath) == ZR_LIBRARY_FILE_IS_FILE) {
         SZrIo io;
         SZrIoSource *ioSource;
@@ -701,6 +718,7 @@ static TZrBool zr_cli_runtime_source_first_loader(SZrState *state, TZrNativeStri
         return ZR_FALSE;
     }
 
+    /* 安装到 global->sourceLoader 后供 import 回调使用；项目内部源文件优先于同名二进制。 */
     if (ZrCli_Project_ResolveSourcePath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
         ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
         return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_FALSE, io);
@@ -737,6 +755,7 @@ static TZrBool zr_cli_runtime_binary_first_loader(SZrState *state, TZrNativeStri
         return ZR_FALSE;
     }
 
+    /* binary 运行模式让 import 与入口采用同一优先级，找不到成品时回退源文件。 */
     if (ZrCli_Project_ResolveBinaryPath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
         ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
         return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_TRUE, io);
@@ -907,6 +926,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
 
     zr_cli_runtime_reset_capture(outCapture);
     ZrCore_Value_ResetAsNull(&result);
+    /* capture 成功前 VM 始终属于 prepared；任何执行/报告失败路径都由本函数释放它。 */
     global = prepared->global;
     project = &prepared->project;
     effectiveEntryModule = prepared->effectiveEntryModule;
@@ -1146,6 +1166,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
         return ZR_FALSE;
     }
 
+    /* 仅在所有附加报告完成后转移 VM；result 中的 GC 对象依赖此 global 的有效期。 */
     outCapture->global = prepared->global;
     outCapture->result = result;
     snprintf(outCapture->executedVia,

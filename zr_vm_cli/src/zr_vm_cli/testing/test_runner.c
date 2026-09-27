@@ -73,6 +73,8 @@ static void test_runner_append_constant(
             test_runner_append(buffer, capacity, scratch);
             break;
         case ZR_PARSER_TEST_CONSTANT_STRING:
+            /* TODO: ID 中的字符串未转义引号和分隔符；核查不同参数序列能否形成
+             * 相同 exactCaseId，并以包含这些字符的 manifest case 验证。 */
             test_runner_append(buffer, capacity, "\"");
             test_runner_append(
                     buffer,
@@ -96,6 +98,8 @@ static void test_runner_format_id(
         return;
     }
     buffer[0] = '\0';
+    /* BUG: 512 字节 ID 可在长模块名或函数名处截断，甚至丢失后面的 ordinal；
+     * 不同 case 因而共用 exactCaseId，子 worker 会选中多个 case 并报错退出。 */
     snprintf(
             buffer,
             capacity,
@@ -211,6 +215,7 @@ static void test_runner_execute_case(SZrCliTestWorker *worker, TZrSize caseIndex
 }
 
 static void test_runner_worker_run(SZrCliTestWorker *worker) {
+    /* 同模块 case 串行，模块组按 worker index 分片；executor 的 userData 仍被多线程共享。 */
     for (TZrSize groupIndex = worker->workerIndex;
          groupIndex < worker->groupCount;
          groupIndex += worker->workerCount) {
@@ -391,6 +396,9 @@ TZrBool ZrCli_TestRunner_Run(
                 }
             }
             if (workerCount > 0U) {
+                /* BUG: --jobs 接受任意正 uint32，模块组超过 MAXIMUM_WAIT_OBJECTS 时
+                 * WaitForMultipleObjects 失败且返回值被忽略；随后释放 workers/groups，
+                 * 未完成的 worker 继续访问这些对象。 */
                 WaitForMultipleObjects((DWORD)workerCount, handles, TRUE, INFINITE);
             }
             for (TZrSize index = 0U; index < workerCount; index++) CloseHandle(handles[index]);

@@ -115,10 +115,13 @@ static TZrBool test_process_create_windows_child(
         return ZR_FALSE;
     }
 
+    /* worker 通过环境变量选定唯一 case；加锁防止本 runner 的并行 CreateProcess 相互串号。 */
     AcquireSRWLockExclusive(&g_test_process_environment_lock);
     previousLength = GetEnvironmentVariableA(ZR_CLI_TEST_WORKER_CASE_ENV, ZR_NULL, 0U);
     if (previousLength > 0U) {
         previousValue = (TZrChar *)malloc(previousLength);
+        /* BUG: 若旧值存在而 malloc 失败，仍会改写环境并在结束时删掉原有变量。
+         * Windows 启动路径应在无法保存旧值时停止，而不是继续启动子进程。 */
         hadPreviousValue = previousValue != ZR_NULL &&
                            GetEnvironmentVariableA(
                                    ZR_CLI_TEST_WORKER_CASE_ENV,
@@ -280,6 +283,7 @@ static TZrUInt64 test_process_monotonic_milliseconds(void) {
 }
 
 static void test_process_read_pipe(int pipeFd, SZrCliTestProcessResult *result) {
+    /* 非阻塞读取供 waitpid 轮询和超时宽限期复用，避免子进程输出填满管道后阻塞。 */
     TZrChar buffer[512];
     ssize_t count;
 
@@ -349,6 +353,7 @@ TZrBool ZrCli_TestProcess_Run(
         close(outputPipe[1]);
         return ZR_FALSE;
     }
+    /* 父进程短暂改写 case ID 后立即恢复；子进程继承专属值并重入同一 CLI。 */
     if (processId == 0) {
         close(outputPipe[0]);
         dup2(outputPipe[1], STDOUT_FILENO);
@@ -372,6 +377,8 @@ TZrBool ZrCli_TestProcess_Run(
     free(previousCaseId);
     pthread_mutex_unlock(&g_test_process_environment_lock);
     close(outputPipe[1]);
+    /* TODO: 两次 fcntl 的错误被忽略；故障注入后核对 read 是否会退化为阻塞，
+     * 从而让无输出 worker 绕过超时轮询。 */
     fcntl(outputPipe[0], F_SETFL, fcntl(outputPipe[0], F_GETFL, 0) | O_NONBLOCK);
     while (!completed) {
         pid_t waitResult;

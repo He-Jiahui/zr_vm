@@ -55,6 +55,7 @@ static void repl_reference_fact_range_for_member(SZrAstNode *memberNode, SZrFile
         return;
     }
 
+    /* computed member 的 reference fact 可能锚定在 '['，因此优先尝试 key 前一个位置。 */
     *outRange = property->location;
     if (outRange->start.offset > memberNode->location.start.offset) {
         outRange->start.offset -= 1;
@@ -179,6 +180,7 @@ static TZrBool repl_expression_fact_should_descend(SZrAstNode *node,
         case ZR_SEMANTIC_EXPRESSION_FACT_LAMBDA:
             return ZR_TRUE;
         case ZR_SEMANTIC_EXPRESSION_FACT_MEMBER:
+            /* 成员 fact 已说明当前节点；额外展示有事实的接收者与调用参数即可。 */
             if (node != ZR_NULL &&
                 node->type == ZR_AST_PRIMARY_EXPRESSION) {
                 receiver = node->data.primaryExpression.property;

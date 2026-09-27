@@ -153,6 +153,7 @@ static TZrBool repl_input_has_statement_semicolon(const TZrChar *code) {
     return ZR_FALSE;
 }
 
+/* 不完整尾符只阻止自动 return 包装，不能代替 parser 报告精确语法错误。 */
 static TZrBool repl_input_ends_with_incomplete_expression_marker(const TZrChar *code) {
     const TZrChar *begin;
     const TZrChar *end;
@@ -237,6 +238,7 @@ static const TZrChar *repl_input_skip_computed_object_key(const TZrChar *code) {
     return ZR_NULL;
 }
 
+/* 首个对象成员形状用于区分 {key: value} 表达式和 { statement } 块。 */
 static TZrBool repl_input_starts_with_object_literal_expression(const TZrChar *code) {
     const TZrChar *cursor;
 
@@ -322,6 +324,7 @@ static const TZrChar *repl_input_skip_space_and_comments(const TZrChar *code) {
     }
 }
 
+/* 只允许最外层唯一分号作为赋值语句边界；嵌套结构和注释中的分号不计入。 */
 static TZrBool repl_input_has_single_top_level_statement_terminator(const TZrChar *code) {
     TZrBool inSingleQuote = ZR_FALSE;
     TZrBool inDoubleQuote = ZR_FALSE;

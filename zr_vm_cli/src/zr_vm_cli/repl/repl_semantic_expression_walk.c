@@ -14,6 +14,7 @@ static void repl_semantic_expression_walk_list(SZrAstNodeArray *nodes,
     }
 }
 
+/* :type 的 fact walkers 在回调中决定是否下探，以复用同一 AST 访问顺序而不生成新 fact。 */
 void ZrCli_ReplSemanticExpressionWalk(SZrAstNode *node,
                                       FZrCliReplSemanticExpressionVisit visit,
                                       void *userData) {

@@ -164,6 +164,7 @@ static TZrBool zr_cli_repl_session_context(
         return ZR_FALSE;
     }
 
+    /* 编译器借用当前 binding 表，generation 必须与执行环境一同推进。 */
     memset(outContext, 0, sizeof(*outContext));
     outContext->bindings = session->bindings;
     outContext->bindingCount = session->bindingCount;
@@ -190,6 +191,7 @@ static TZrBool zr_cli_repl_session_copy_prior_captures(
         return ZR_FALSE;
     }
 
+    /* successor 保留每个既有 capture 的结构化槽位，后续 cell 不能按同名文本重新绑定。 */
     for (TZrSize index = 0u; index < session->bindingCount; index++) {
         SZrClosureValue *sourceValue = prior->closureValuesExtend[index];
         SZrClosureValue *destinationValue = successor->closureValuesExtend[index];
@@ -230,6 +232,7 @@ static TZrBool zr_cli_repl_session_execute_rooted(
     callBase = session->state->stackTop.valuePointer;
     callBase = ZrCore_Function_CheckStackAndGc(session->state, function->stackSize + 1u, callBase);
 
+    /* 栈扩容可触发 GC；执行前必须用根重新解析 closure，不能沿用先前的裸指针。 */
     closure = zr_cli_repl_session_resolve_closure(session, closureRoot);
     if (closure == ZR_NULL || closure->function == ZR_NULL) {
         return ZR_FALSE;
@@ -276,6 +279,7 @@ static TZrBool zr_cli_repl_session_refresh_runtime_facts(
         return ZR_FALSE;
     }
 
+    /* 后续 :type 消费已执行值的整数区间与布尔事实，而非旧 initializer 推断。 */
     for (TZrSize index = 0u; index < bindingCount; index++) {
         SZrParserSubmissionBinding *binding = &bindings[index];
         SZrClosureValue *capture;
@@ -390,6 +394,7 @@ static TZrBool zr_cli_repl_session_publish_result(
                sizeof(*newSignatures) * result->callableSignatureCount);
     }
 
+    /* 全部 capture identity 与运行时事实确认后再替换会话持有的 binding 表。 */
     for (TZrSize index = 0u; index < totalBindingCount; index++) {
         SZrParserSubmissionBinding *binding = &newBindings[index];
 
@@ -647,6 +652,7 @@ int ZrCli_ReplSession_Submit(ZrCliReplSession *session, const TZrChar *code) {
                 ZR_CAST_RAW_OBJECT_AS_SUPER(successor))) {
         goto cleanup;
     }
+    /* 执行先于发布：发布失败可恢复环境根，普通外部副作用则不会回滚。 */
     if (!zr_cli_repl_session_publish_result(session, &result)) {
         SZrClosure *prior = zr_cli_repl_session_resolve_closure(session, &priorRoot);
         if (prior != ZR_NULL) {

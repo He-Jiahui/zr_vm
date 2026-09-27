@@ -97,6 +97,7 @@ static const TZrChar *repl_string_text(SZrString *value) {
 }
 
 static void repl_write_escaped_string_constant(SZrState *state, SZrString *value) {
+    /* :type 的常量展示须保留控制字符的可辨识形式，不能把字符串内容当作日志格式。 */
     const TZrChar *text = repl_string_text(value);
     TZrSize length = ZrCore_String_GetByteLength(value);
     TZrSize index;
@@ -246,6 +247,7 @@ static void repl_write_expression_constant(SZrState *state, const SZrSemanticExp
 }
 
 void ZrCli_ReplSemanticFacts_WriteExpression(SZrState *state, const SZrSemanticExpressionFact *fact) {
+    /* 仅展示 parser 已产出的 fact；不从运行时值反推调用或成员语义。 */
     const TZrChar *callTargetName;
     const TZrChar *memberName;
 
@@ -305,6 +307,7 @@ void ZrCli_ReplSemanticFacts_WriteReferenceAtRange(SZrState *state,
         return;
     }
 
+    /* 声明自身不作为引用输出，避免 :type 同一标识符重复报告定义与使用。 */
     fact = ZrParser_SemanticFacts_FindReferenceAtPosition(semanticContext, range);
     if (fact == ZR_NULL || fact->kind == ZR_SEMANTIC_REFERENCE_DECLARATION) {
         return;

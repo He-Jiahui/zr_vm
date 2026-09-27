@@ -21,6 +21,7 @@ static void zr_cli_repl_prepare_stdio(void) {
     prepared = ZR_TRUE;
 }
 
+/* REPL 控制命令与源码提交共用 stdin；帮助文本只在缓冲区为空时由命令分派调用。 */
 static void zr_cli_repl_write_help(void) {
     ZrCore_Log_Helpf(ZR_NULL,
                      "Available commands:\n"
@@ -30,6 +31,7 @@ static void zr_cli_repl_write_help(void) {
                      "  :quit   Exit the REPL.\n");
 }
 
+/* 裸表达式须变成可返回的 cell；包装只改当前提交，不会拼接或重放历史源码。 */
 static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     static const TZrChar prefix[] = "return ";
     static const TZrChar suffix[] = ";";
@@ -76,6 +78,7 @@ static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     return wrapper;
 }
 
+/* 分类仅决定是否包装；正式语法与代际合法性仍由 Submission 编译器判定。 */
 static int zr_cli_repl_submit_session(ZrCliReplSession *session, const TZrChar *code) {
     TZrChar *wrappedExpressionCode = ZR_NULL;
     const TZrChar *compileCode = code;
@@ -183,6 +186,9 @@ int ZrCli_Repl_Run(void) {
             bufferCapacity = newCapacity;
         }
 
+        /* BUG: 单个物理输入行超过 1023 字节时，fgets 分段但这里仍为每段插入换行。
+         * 例如长字符串字面量会被改写为含换行源码并在空行提交时意外编译失败；
+         * tests/cli/test_cli_repl_e2e.c 目前只覆盖短行。 */
         memcpy(buffer + bufferLength, line, lineLength);
         bufferLength += lineLength;
         buffer[bufferLength++] = '\n';

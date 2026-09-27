@@ -71,5 +71,6 @@ doc_type: category-index
 | Benchmark 计时口径、持久命令、采样策略与环境证据 | [21 项](coverage/tests_cmake_benchmark_contracts.tsv) | 4 个 CMake helper 独立复核，源码仅改注释；四个脚本解析以及 Task 3、Task 4 定向契约脚本通过。Linux 环境报告路径含双引号导致最终 JSON 无效的可达缺陷已标 BUG，未修改行为。 |
 | 测试清单、宿主库搜索路径与 fixture 生成入口 | [16 项](coverage/tests_cmake_harness.tsv) | 6 个 CMake 脚本独立复核，源码仅改注释；通用注册器和宿主环境桥接可单独解析，未运行聚合套件。七个直接包含点与多配置 DLL 回退已核准；Linux 构建路径含双引号使生成的 FFI 头文件无效，已标 BUG。 |
 | 二进制元数据、导入所有权与调用绑定测试注册 | [13 项](coverage/tests_cmake_registration.tsv) | 6 个 CMake 脚本独立复核，81 个证据锚点有效且源码只增注释；CTest 回归目标与仅供手工计时的辅助目标已区分。未重构建或运行聚合套件。 |
+| CLI REPL、运行时报告与测试执行 | [217 项](coverage/zr_vm_cli_repl_runtime.tsv) | 17 文件独立复核，241 个证据锚点有效，源码仅增注释；GCC/Clang 语法检查通过，未运行完整 CLI 测试。堆摘要、profile、coverage 的写入失败和参数生命周期等保留 9 个 BUG、6 个 TODO。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
