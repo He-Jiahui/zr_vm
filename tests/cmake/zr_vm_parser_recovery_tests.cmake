@@ -1,3 +1,5 @@
+# 解析出错后的恢复路径须归还已构造的子节点；启用 UBSan 时让其错误直接使测试失败。
+# 该目标由 tests/CMakeLists.txt 的解析器测试组包含。
 zr_vm_add_unity_test_target(
         zr_vm_parser_recovery_ownership_test
         ${CMAKE_SOURCE_DIR}/tests/parser/test_parser_recovery_ownership.c

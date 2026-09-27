@@ -1,3 +1,5 @@
+# 文件列表与 glob 在空目录、单项及多项结果下须保持存储和排序契约。
+# 该目标由 tests/CMakeLists.txt 的 library/system 测试组包含。
 zr_vm_add_unity_test_target(zr_vm_file_list_test
         ${CMAKE_SOURCE_DIR}/tests/library/test_file_list.c)
 target_include_directories(zr_vm_file_list_test PRIVATE
