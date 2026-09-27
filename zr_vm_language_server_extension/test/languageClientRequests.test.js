@@ -1,3 +1,4 @@
+// 用可替换的请求客户端验证可选请求与严格请求在重启、协议差异下的边界。
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -7,6 +8,7 @@ const {
     setLanguageClientRequestClient,
 } = require('../out/languageClientRequests.js');
 
+// 模块级客户端会跨测试保留；每例结束时撤销它，避免顺序影响无客户端断言。
 test.afterEach(() => {
     setLanguageClientRequestClient(undefined);
 });
