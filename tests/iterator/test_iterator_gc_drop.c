@@ -10,11 +10,13 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
 
+/* 同一清理断言分别从完成和故障路径触发。 */
 typedef enum EZrIteratorGcDropTerminal {
     ZR_ITERATOR_GC_DROP_COMPLETE = 0,
     ZR_ITERATOR_GC_DROP_FAULT
 } EZrIteratorGcDropTerminal;
 
+/* yieldedObject 由 frame root 保活；cleanupOwner 独立持有资源并在回调释放。 */
 typedef struct SZrIteratorGcDropContext {
     SZrObject *yieldedObject;
     SZrTypeValue cleanupOwner;
@@ -24,15 +26,18 @@ typedef struct SZrIteratorGcDropContext {
     TZrBool emitted;
 } SZrIteratorGcDropContext;
 
+/* 每个 Unity 用例独占状态；析构计数用于检测重复 drop。 */
 static SZrState *g_state;
 static TZrUInt32 g_resourceDropCount;
 
+/* 资源析构由 Ownership_ReleaseValue 间接调用。 */
 static TZrInt64 iterator_gc_drop_resource_destructor(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     g_resourceDropCount++;
     return 0;
 }
 
+/* 构造带析构元方法的 unique owner，使终态清理有可观察的 drop。 */
 static void iterator_gc_drop_init_resource_unique(
         SZrIteratorGcDropContext *context) {
     SZrString *name = ZrCore_String_CreateFromNative(
@@ -63,6 +68,7 @@ static void iterator_gc_drop_init_resource_unique(
             ZR_CAST_RAW_OBJECT_AS_SUPER(object)));
 }
 
+/* 第一轮发布对象，下一轮按用例选择 Complete 或 Fault。 */
 static void iterator_gc_drop_produce(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -87,6 +93,7 @@ static void iterator_gc_drop_produce(
     }
 }
 
+/* 在释放独立 owner 前观测 frame root 数，验证先撤根再清理。 */
 static void iterator_gc_drop_cleanup(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -100,6 +107,7 @@ static void iterator_gc_drop_cleanup(
     ZrCore_Ownership_ReleaseValue(state, &context->cleanupOwner);
 }
 
+/* 创建非资源产值和资源 owner，保持两种寿命互不混淆。 */
 static void iterator_gc_drop_init_context(
         SZrIteratorGcDropContext *context,
         EZrIteratorGcDropTerminal terminal) {
@@ -123,6 +131,7 @@ void tearDown(void) {
     }
 }
 
+/* compact GC 后从 frame root 解析 current，再完成所有权清理。 */
 static void test_iterator_gc_root_resolves_current_value_after_compact_collection(void) {
     SZrIteratorFrame frame;
     SZrIteratorGcDropContext context;
@@ -154,6 +163,7 @@ static void test_iterator_gc_root_resolves_current_value_after_compact_collectio
     TEST_ASSERT_EQUAL_UINT32(1u, g_resourceDropCount);
 }
 
+/* 正常耗尽时先释放 current root，随后回调才释放独立资源。 */
 static void test_iterator_completion_releases_root_before_direct_owner_cleanup(void) {
     SZrIteratorFrame frame;
     SZrIteratorGcDropContext context;
@@ -181,6 +191,7 @@ static void test_iterator_completion_releases_root_before_direct_owner_cleanup(v
             (TZrUInt64)ZrCore_GcDomain_GetRootCount(g_state));
 }
 
+/* 故障终态与正常完成应保持同一撤根及析构次序。 */
 static void test_iterator_fault_releases_root_before_direct_owner_cleanup(void) {
     SZrIteratorFrame frame;
     SZrIteratorGcDropContext context;
@@ -208,6 +219,7 @@ static void test_iterator_fault_releases_root_before_direct_owner_cleanup(void) 
             (TZrUInt64)ZrCore_GcDomain_GetRootCount(g_state));
 }
 
+/* 提前 Close 也须先撤根，重复 Close 不得重复析构。 */
 static void test_iterator_close_releases_root_before_direct_owner_cleanup_once(void) {
     SZrIteratorFrame frame;
     SZrIteratorGcDropContext context;

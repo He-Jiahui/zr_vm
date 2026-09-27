@@ -8,8 +8,10 @@
 #include "zr_vm_parser/lexer.h"
 #include "zr_vm_parser/parser.h"
 
+/* lexer/parser 用例共享每例新建的状态，AST 在状态销毁前释放。 */
 static SZrState *g_state;
 
+/* 只检查语法诊断，屏蔽预期错误输出以保持测试日志可读。 */
 static TZrBool parse_source_has_error(const TZrChar *source, TZrChar *name) {
     SZrString *sourceName = ZrCore_String_Create(g_state, name, strlen(name));
     SZrParserState parser;
@@ -42,6 +44,7 @@ void tearDown(void) {
     }
 }
 
+/* 词法层须先把 yield 识别为专用 token，避免被当作普通标识符。 */
 static void test_yield_is_a_reserved_statement_keyword(void) {
     static const TZrChar source[] = "yield 1;";
     SZrString *sourceName = ZrCore_String_Create(
@@ -55,6 +58,7 @@ static void test_yield_is_a_reserved_statement_keyword(void) {
     ZrParser_Lexer_Free(&lexer);
 }
 
+/* parser 将函数体中的 yield 表达式保留为专用 AST 节点供编译器处理。 */
 static void test_yield_parses_as_a_dedicated_statement(void) {
     static const TZrChar source[] =
             "fn numbers(limit: int): Iterator<int> {\n"
@@ -91,6 +95,7 @@ static void test_yield_parses_as_a_dedicated_statement(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* yield 缺少值或语句终止符均不能进入后续语义阶段。 */
 static void test_yield_requires_expression_and_terminating_semicolon(void) {
     static const TZrChar missingExpression[] =
             "fn values(): Iterator<int> { yield; }\n";
@@ -101,6 +106,7 @@ static void test_yield_requires_expression_and_terminating_semicolon(void) {
     TEST_ASSERT_TRUE(parse_source_has_error(missingSemicolon, "yield_missing_semicolon.zr"));
 }
 
+/* 迭代器身份来自返回载体与 yield，不引入独立 iterator 函数修饰符。 */
 static void test_iterator_function_modifier_remains_rejected(void) {
     static const TZrChar source[] =
             "iterator fn values(): Iterator<int> { yield 1; }\n";

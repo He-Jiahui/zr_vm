@@ -6,6 +6,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_parser/semantic_ir.h"
 
+/* 每例独立状态供 SemanticIrFunction 的分配和释放。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -20,6 +21,7 @@ void tearDown(void) {
     }
 }
 
+/* 构造可辨认的源码区间，验证语义事实仍可回溯到 yield。 */
 static SZrFileRange source_range(TZrUInt32 startOffset, TZrUInt32 endOffset) {
     SZrFileRange range;
 
@@ -29,6 +31,7 @@ static SZrFileRange source_range(TZrUInt32 startOffset, TZrUInt32 endOffset) {
     return range;
 }
 
+/* 给测试发射器显式填无目标 CFG 块，避免零值被误认为有效目标。 */
 static TZrSemanticInstructionId emit_iterator_instruction(
         SZrSemanticIrFunction *function,
         EZrSemanticIrOpcode opcode,
@@ -46,6 +49,7 @@ static TZrSemanticInstructionId emit_iterator_instruction(
     return ZrParser_SemanticIr_Emit(function, &spec);
 }
 
+/* yield 的 value/suspend/resume 与最终 complete 顺序须在 canonical IR 中稳定。 */
 static void test_iterator_yield_sequence_has_canonical_suspension_facts(void) {
     static const TZrChar expected[] =
             "1 yield.value type=7 place=0 value=1 result=0\n"
@@ -110,6 +114,7 @@ static void test_iterator_yield_sequence_has_canonical_suspension_facts(void) {
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
+/* 缺失 canonical value ID 的 yield 不能通过 IR 校验。 */
 static void test_yield_value_requires_a_canonical_value(void) {
     SZrSemanticIrFunction function;
     TZrSemanticInstructionId instructionId;
@@ -126,6 +131,7 @@ static void test_yield_value_requires_a_canonical_value(void) {
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
+/* CFG 流分析须跨 yield suspend 保留借用，直至 resume 后再使用。 */
 static void test_yield_suspension_keeps_borrowed_value_live_until_resume(void) {
     SZrSemanticIrFunction function;
     SZrSemanticFlowResult result;
@@ -218,6 +224,7 @@ static void test_yield_suspension_keeps_borrowed_value_live_until_resume(void) {
     TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_INSTRUCTION_ID_INVALID, suspendId);
     TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_INSTRUCTION_ID_INVALID, resumeId);
 
+    /* 将完整指令序列绑定入口块，LoanIsLiveAt 才能比较暂停两侧。 */
     entryBlock = ZrParser_Cfg_AppendBlock(
             g_state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
     exitBlock = ZrParser_Cfg_AppendBlock(

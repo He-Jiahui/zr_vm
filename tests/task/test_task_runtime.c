@@ -16,11 +16,13 @@
 #include "zr_vm_parser/syntax_contract.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
+/* parser 回调只保存首条诊断，避免错误恢复覆盖预期拒绝原因。 */
 typedef struct {
     TZrBool reported;
     char message[256];
 } SZrTaskCapturedParserDiagnostic;
 
+/* 创建同时具备 parser 和 task 原生模块的隔离状态。 */
 static SZrState *create_task_test_state(void) {
     SZrState *state = ZrTests_State_Create(ZR_NULL);
 
@@ -37,6 +39,7 @@ static SZrState *create_task_test_state(void) {
     return state;
 }
 
+/* 若 project 测试把工程挂到 global userData，先释放工程再销毁状态。 */
 static void destroy_task_test_state(SZrState *state) {
     if (state == ZR_NULL) {
         return;
@@ -50,6 +53,7 @@ static void destroy_task_test_state(SZrState *state) {
     ZrTests_State_Destroy(state);
 }
 
+/* 单独构造编译器以检查完整编译失败时的精确诊断阶段。 */
 static SZrCompilerState *create_task_test_compiler_state(SZrState *state) {
     SZrCompilerState *cs;
 
@@ -66,6 +70,7 @@ static SZrCompilerState *create_task_test_compiler_state(SZrState *state) {
     return cs;
 }
 
+/* 先释放编译产物，再释放持有其语义环境的 CompilerState。 */
 static void destroy_task_test_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -85,6 +90,7 @@ static void destroy_task_test_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/* 手工逐语句编译时建立与脚本入口相同的根 scope 前提。 */
 static void ensure_task_test_root_scope(SZrCompilerState *cs) {
     SZrScope scope;
 
@@ -98,6 +104,7 @@ static void ensure_task_test_root_scope(SZrCompilerState *cs) {
     ZrCore_Array_Push(cs->state, &cs->scopeStack, &scope);
 }
 
+/* 复用真实声明/语句编译器，以定位 task 失败所处阶段。 */
 static void compile_task_top_level_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL) {
         return;
@@ -129,6 +136,7 @@ static void compile_task_top_level_statement(SZrCompilerState *cs, SZrAstNode *n
     }
 }
 
+/* 公共源码编译入口用于检查可执行路径或整体编译拒绝。 */
 static SZrFunction *compile_task_source(SZrState *state, const char *source, const char *name) {
     SZrString *sourceName;
 
@@ -144,6 +152,7 @@ static SZrFunction *compile_task_source(SZrState *state, const char *source, con
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 返回的 AST 归调用方所有，必须早于 state 释放。 */
 static SZrAstNode *parse_task_source_ast(SZrState *state, const char *source, const char *name) {
     SZrString *sourceName;
 
@@ -159,6 +168,7 @@ static SZrAstNode *parse_task_source_ast(SZrState *state, const char *source, co
     return ZrParser_Parse(state, source, strlen(source), sourceName);
 }
 
+/* 复用诊断存储前清除 reported，保证只观测当前源码。 */
 static void clear_task_parser_diagnostic(SZrTaskCapturedParserDiagnostic *diagnostic) {
     if (diagnostic == ZR_NULL) {
         return;
@@ -167,6 +177,7 @@ static void clear_task_parser_diagnostic(SZrTaskCapturedParserDiagnostic *diagno
     memset(diagnostic, 0, sizeof(*diagnostic));
 }
 
+/* parser 错误回调仅复制首条消息；原消息寿命由 parser 管理。 */
 static void capture_task_parser_error(TZrPtr userData,
                                       const SZrFileRange *location,
                                       const TZrChar *message,
@@ -185,6 +196,7 @@ static void capture_task_parser_error(TZrPtr userData,
     }
 }
 
+/* 将语法错误与后续 task effect/类型错误分开判定。 */
 static TZrBool task_source_reports_parser_error(SZrState *state, const char *source, const char *name) {
     SZrString *sourceName;
     SZrParserState parserState;
@@ -214,6 +226,7 @@ static TZrBool task_source_reports_parser_error(SZrState *state, const char *sou
     return diagnostic.reported;
 }
 
+/* 先验证公共入口拒绝，再逐阶段编译以核对拒绝的具体原因。 */
 static void expect_task_compile_failure_contains(const char *source,
                                                  const char *name,
                                                  const char *expectedMessage) {
@@ -248,6 +261,7 @@ static void expect_task_compile_failure_contains(const char *source,
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
 
+    /* 复现公共编译入口的前置阶段，诊断才对应同一源语言约束。 */
     cs->currentAst = ast;
     cs->scriptAst = ast;
     if (compiler_validate_task_effects(cs, ast)) {
@@ -279,6 +293,7 @@ static void expect_task_compile_failure_contains(const char *source,
     destroy_task_test_state(inspectState);
 }
 
+/* 在预计算 comptime 事实后直接检查 async/await 效果约束。 */
 static void expect_task_effect_failure_contains(const char *source,
                                                 const char *name,
                                                 const char *expectedMessage) {
@@ -314,6 +329,7 @@ static void expect_task_effect_failure_contains(const char *source,
     destroy_task_test_state(state);
 }
 
+/* 函数预声明后效果检查应接受合法的 async 返回与 await。 */
 static void expect_task_effect_success_after_predeclare(const char *source, const char *name) {
     SZrState *state;
     SZrCompilerState *cs;
@@ -346,6 +362,7 @@ static void expect_task_effect_success_after_predeclare(const char *source, cons
     destroy_task_test_state(state);
 }
 
+/* 读取原生模块的公开类型形状，指针随描述符存活。 */
 static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescriptor *descriptor, const char *typeName) {
     TZrSize index;
 
@@ -363,6 +380,7 @@ static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescript
     return ZR_NULL;
 }
 
+/* 定位类型方法的名称、参数及 contractRole 供 ABI 断言。 */
 static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescriptor *descriptor,
                                                            const char *methodName) {
     TZrSize index;
@@ -381,6 +399,7 @@ static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescri
     return ZR_NULL;
 }
 
+/* 定位模块函数描述符，核对 Task API 的公开范围。 */
 static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModuleDescriptor *descriptor,
                                                                 const char *functionName) {
     TZrSize index;
@@ -399,6 +418,7 @@ static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModule
     return ZR_NULL;
 }
 
+/* 项目未显式启用多线程时，默认保持单线程配置。 */
 static void test_project_config_defaults_enable_local_async_manual_threads_disabled(void) {
     const char *json =
             "{\n"
@@ -423,6 +443,7 @@ static void test_project_config_defaults_enable_local_async_manual_threads_disab
     ZrTests_State_Destroy(state);
 }
 
+/* 旧 autoCoroutine 字段不能覆盖显式的 supportMultithread 配置。 */
 static void test_project_config_ignores_legacy_auto_coroutine_flag(void) {
     const char *json =
             "{\n"
@@ -447,6 +468,7 @@ static void test_project_config_ignores_legacy_auto_coroutine_flag(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* zr.task 注册表仅暴露当前 canonical Task/Job/Scheduler API。 */
 static void test_zr_task_registers_only_canonical_public_shapes(void) {
     SZrState *state = create_task_test_state();
     const ZrLibModuleDescriptor *taskDescriptor;
@@ -486,6 +508,7 @@ static void test_zr_task_registers_only_canonical_public_shapes(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* 旧百分号语法、coroutine 模块和旧 Scheduler 成员均应被拒绝。 */
 static void test_legacy_task_source_surfaces_are_rejected(void) {
     static const char *source =
             "async addOne(value: int): int {\n"
@@ -529,6 +552,7 @@ static void test_legacy_task_source_surfaces_are_rejected(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* Job 构造、调度和 Task.result 的源语言路径返回 callable 的值。 */
 static void test_canonical_job_scheduler_path_executes(void) {
     static const char *source =
             "let task = import(\"zr.task\");\n"
@@ -547,6 +571,7 @@ static void test_canonical_job_scheduler_path_executes(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* async 函数 AST 保留显式 Task<T> 返回载体及 await 操作数。 */
 static void test_async_function_preserves_explicit_task_return_and_direct_await(void) {
     static const char *source =
             "async fn waitFor(value: Task<int>): Task<int> {\n"
@@ -593,6 +618,7 @@ static void test_async_function_preserves_explicit_task_return_and_direct_await(
     ZrTests_State_Destroy(state);
 }
 
+/* 效果检查只分析 comptime 选中的分支，未选分支不产生 await 错误。 */
 static void test_task_effects_follow_active_comptime_branch(void) {
     static const char *activeSource =
             "comptime if (true) {\n"
@@ -616,6 +642,7 @@ static void test_task_effects_follow_active_comptime_branch(void) {
             "task_inactive_comptime_branch_effects_test.zr");
 }
 
+/* import 别名写法应解析到同一原生 zr.task.Task<T> 载体。 */
 static void test_async_task_alias_signature_uses_native_task_carrier(void) {
     expect_task_effect_success_after_predeclare(
             "var task = import(\"zr.task\");\n"
@@ -625,6 +652,7 @@ static void test_async_task_alias_signature_uses_native_task_carrier(void) {
             "task_async_alias_signature_test.zr");
 }
 
+/* async lambda 的 Task 返回和 await 既保留在 AST，也通过效果检查。 */
 static void test_async_lambda_preserves_explicit_task_signature(void) {
     static const char *source =
             "var waitFor = async fn(value: zr.task.Task<int>): zr.task.Task<int> => await value;\n";
@@ -655,6 +683,7 @@ static void test_async_lambda_preserves_explicit_task_signature(void) {
     expect_task_effect_success_after_predeclare(source, "task_async_lambda_effect_test.zr");
 }
 
+/* 类/结构成员遵守同一 async Task<T> 返回契约。 */
 static void test_async_member_requires_explicit_task_signature(void) {
     expect_task_effect_success_after_predeclare(
             "class Worker {\n"
@@ -674,6 +703,7 @@ static void test_async_member_requires_explicit_task_signature(void) {
             "async functions must declare a closed zr.task.Task<T> return type");
 }
 
+/* 命名函数、lambda、类和结构成员统一投影 canonical async effect 位。 */
 static void test_async_callable_effect_projection_is_canonical(void) {
     static const char *source =
             "async fn named(value: zr.task.Task<int>): zr.task.Task<int> { return await value; }\n"
@@ -726,6 +756,7 @@ static void test_async_callable_effect_projection_is_canonical(void) {
     destroy_task_test_state(state);
 }
 
+/* 普通函数即使声明 Task 返回，也不能直接使用 await。 */
 static void test_direct_await_requires_async_effect(void) {
     static const char *source =
             "fn invalid(value: Task<int>): Task<int> {\n"
@@ -737,6 +768,7 @@ static void test_direct_await_requires_async_effect(void) {
                                         "await is only allowed inside async bodies");
 }
 
+/* await Task<int> 的表达式类型应是 payload int，而非 Task 载体。 */
 static void test_direct_await_infers_task_payload_type(void) {
     static const char *source =
             "async fn waitFor(value: zr.task.Task<int>): zr.task.Task<int> {\n"
@@ -788,6 +820,7 @@ static void test_direct_await_infers_task_payload_type(void) {
     destroy_task_test_state(state);
 }
 
+/* await 的操作数必须具有原生 Task<T> 载体。 */
 static void test_direct_await_rejects_non_task_operand(void) {
     static const char *source =
             "async fn waitFor(value: int): zr.task.Task<int> {\n"
@@ -837,6 +870,7 @@ static void test_direct_await_rejects_non_task_operand(void) {
     destroy_task_test_state(state);
 }
 
+/* 局部借用跨 await 后再使用须被生命周期检查拒绝。 */
 static void test_direct_await_rejects_borrow_crossing_suspension(void) {
     expect_task_effect_failure_contains(
             "async fn invalid(task: zr.task.Task<int>): zr.task.Task<int> {\n"
@@ -849,6 +883,7 @@ static void test_direct_await_rejects_borrow_crossing_suspension(void) {
             "Borrowed binding 'value' cannot be used after an await boundary");
 }
 
+/* async 签名要求闭合 Task<T> 返回且参数可按值保存于暂停帧。 */
 static void test_async_signature_requires_closed_task_return_and_value_parameters(void) {
     expect_task_compile_failure_contains(
             "async fn invalid(): int { return 1; }\n",
@@ -860,6 +895,7 @@ static void test_async_signature_requires_closed_task_return_and_value_parameter
             "async functions cannot declare in, ref, or out parameters");
 }
 
+/* 旧百分号 mutex/atomic 类型不再由 parser 接受。 */
 static void test_percent_mutex_and_percent_atomic_are_rejected(void) {
     static const char *source =
             "var guarded: %mutex int;\n"

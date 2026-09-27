@@ -1,13 +1,13 @@
 /*
- * Focused contract tests for the frame-safe async wait/budget boundary.
- * This is intentionally a plain C test so the state machine can be checked
- * without constructing a complete VM state or scheduler.
+ * 不构造完整 VM 或 scheduler，直接检查 async frame budget、wait 与 compile queue
+ * 的状态机契约；测试运行需保留 assert 表达式求值。
  */
 #include <assert.h>
 #include <string.h>
 
 #include "zr_vm_core/async_frame_budget.h"
 
+/* 工作量耗尽只能在有效 state map 边界暂停，不能切断指令。 */
 static void test_frame_budget_only_suspends_at_a_coherent_boundary(void) {
     SZrAsyncFrameBudget frame;
     SZrAsyncFrameDiagnostic diagnostic;
@@ -40,6 +40,7 @@ static void test_frame_budget_only_suspends_at_a_coherent_boundary(void) {
     assert(frame.suspensionCount == 1u);
 }
 
+/* 活跃借用阻止暂停，pin 释放后取消和 teardown 可安全完成。 */
 static void test_frame_budget_rejects_unsafe_suspend_and_balances_pin(void) {
     SZrAsyncFrameBudget frame;
     SZrAsyncFrameDiagnostic diagnostic;
@@ -74,6 +75,7 @@ static void test_frame_budget_rejects_unsafe_suspend_and_balances_pin(void) {
     assert(ZrCore_AsyncFrameBudget_Teardown(&frame, &diagnostic));
 }
 
+/* 活跃 pin 阻止完成；解除后可按 wait 暂停、恢复并完成。 */
 static void test_frame_budget_supports_wait_suspend_and_completion_gates(void) {
     SZrAsyncFrameBudget frame;
     SZrAsyncFrameDiagnostic diagnostic;
@@ -101,6 +103,7 @@ static void test_frame_budget_supports_wait_suspend_and_completion_gates(void) {
     assert(ZrCore_AsyncFrameBudget_Teardown(&frame, &diagnostic));
 }
 
+/* Start 前收到的取消请求不得被 Begin 重置。 */
 static void test_frame_budget_preserves_prestart_cancellation(void) {
     SZrAsyncFrameBudget frame;
     SZrAsyncFrameDiagnostic diagnostic;
@@ -121,6 +124,7 @@ static void test_frame_budget_preserves_prestart_cancellation(void) {
     assert(ZrCore_AsyncFrameBudget_Teardown(&frame, &diagnostic));
 }
 
+/* 注册与 recheck 之间的唤醒不得丢失，且只恢复一次。 */
 static void test_wait_registration_recheck_and_wake_resume_once(void) {
     SZrAsyncWaitSlot slots[2];
     SZrAsyncWaitRegistry registry;
@@ -150,6 +154,7 @@ static void test_wait_registration_recheck_and_wake_resume_once(void) {
     ZrCore_AsyncWaitRegistry_Deinit(&registry);
 }
 
+/* 取消和超时竞态只能有一个终态胜出，之后释放槽位。 */
 static void test_wait_cancel_and_timeout_are_single_winners(void) {
     SZrAsyncWaitSlot slot;
     SZrAsyncWaitRegistry registry;
@@ -181,6 +186,7 @@ static void test_wait_cancel_and_timeout_are_single_winners(void) {
     ZrCore_AsyncWaitRegistry_Deinit(&registry);
 }
 
+/* 栈别名在暂停后会失效，BeginAsyncWait 必须拒绝此请求。 */
 static void test_wait_rejects_non_suspendable_resources(void) {
     SZrAsyncWaitSlot slot;
     SZrAsyncWaitRegistry registry;
@@ -202,6 +208,7 @@ static void test_wait_rejects_non_suspendable_resources(void) {
     ZrCore_AsyncWaitRegistry_Deinit(&registry);
 }
 
+/* 队列持有 IR 快照副本；过期代际的编译结果不可发布。 */
 static void test_compile_queue_copies_snapshot_and_discards_stale_result(void) {
     SZrCompileJobRecord records[2];
     SZrCompileQueue queue;
@@ -212,6 +219,10 @@ static void test_compile_queue_copies_snapshot_and_discards_stale_result(void) {
     const TZrByte *snapshot = ZR_NULL;
     TZrSize snapshotLength = 0u;
 
+    /* BUG: Release 的 -DNDEBUG 会去掉 assert 内的 Init/Queue 等调用，
+     * 但下面的 Deinit 仍执行，可能读取未初始化 queue，测试也可能假通过。
+     * 证据：tests/cmake/ssa-tests.cmake 注册此目标且未覆盖 NDEBUG；
+     * CMakeCache.txt 的 CMAKE_C_FLAGS_RELEASE 含 -DNDEBUG。 */
     assert(ZrCore_CompileQueue_Init(&queue, records, 2u, 64u, &diagnostic));
     memset(&request, 0, sizeof(request));
     request.schemaVersion = ZR_ASYNC_FRAME_BUDGET_SCHEMA_VERSION;
@@ -241,6 +252,7 @@ static void test_compile_queue_copies_snapshot_and_discards_stale_result(void) {
     ZrCore_CompileQueue_Deinit(&queue);
 }
 
+/* 缺失快照被拒绝；有效排队任务取消后可释放槽位。 */
 static void test_compile_queue_cancel_and_reject_bad_snapshot(void) {
     SZrCompileJobRecord record;
     SZrCompileQueue queue;
@@ -269,6 +281,7 @@ static void test_compile_queue_cancel_and_reject_bad_snapshot(void) {
     ZrCore_CompileQueue_Deinit(&queue);
 }
 
+/* 运行中取消须等待 worker 完成确认后才能释放快照。 */
 static void test_compile_queue_running_cancel_keeps_snapshot_until_ack(void) {
     SZrCompileJobRecord record;
     SZrCompileQueue queue;
@@ -315,6 +328,7 @@ static void test_compile_queue_running_cancel_keeps_snapshot_until_ack(void) {
     ZrCore_CompileQueue_Deinit(&queue);
 }
 
+/* 请求中的 queue/outHandle 必须与调用入口实参指向同一任务。 */
 static void test_compile_queue_rejects_request_identity_mismatch(void) {
     SZrCompileJobRecord record;
     SZrCompileJobRecord otherRecord;

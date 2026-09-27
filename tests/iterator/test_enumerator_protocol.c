@@ -13,6 +13,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/type_system.h"
 
+/* 在原生模块描述符内定位类型，返回值仅在描述符存活期间有效。 */
 static const ZrLibTypeDescriptor *find_type(const ZrLibModuleDescriptor *descriptor, const char *name) {
     TZrSize index;
 
@@ -30,6 +31,7 @@ static const ZrLibTypeDescriptor *find_type(const ZrLibModuleDescriptor *descrip
     return ZR_NULL;
 }
 
+/* 读取类型公开方法的契约字段，不执行绑定回调。 */
 static const ZrLibMethodDescriptor *find_method(const ZrLibTypeDescriptor *type, const char *name) {
     TZrSize index;
 
@@ -47,6 +49,7 @@ static const ZrLibMethodDescriptor *find_method(const ZrLibTypeDescriptor *type,
     return ZR_NULL;
 }
 
+/* 验证容器声明指向 zr.iteration 中的协议所有者。 */
 static TZrBool type_implements(const ZrLibTypeDescriptor *type, const char *typeName) {
     TZrSize index;
 
@@ -64,6 +67,7 @@ static TZrBool type_implements(const ZrLibTypeDescriptor *type, const char *type
     return ZR_FALSE;
 }
 
+/* 观察源语言编译结果中的静态/动态迭代指令选择。 */
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 index;
 
@@ -80,6 +84,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+/* zr.iteration 发布公共 Iterable/Enumerator/Iterator/AsyncIterator 协议与角色。 */
 static void test_iteration_descriptor_owns_public_enumerator_contract(void) {
     const ZrLibModuleDescriptor *descriptor = ZrVmLibIteration_GetModuleDescriptor();
     const ZrLibTypeDescriptor *iterable;
@@ -122,6 +127,7 @@ static void test_iteration_descriptor_owns_public_enumerator_contract(void) {
     TEST_ASSERT_EQUAL_STRING("zr.task.Task<void>", close->returnTypeName);
 }
 
+/* 内建容器通过 implements 与 getIterator 指向统一的迭代协议。 */
 static void test_container_descriptor_uses_iteration_contract_owner(void) {
     const ZrLibModuleDescriptor *container = ZrVmLibContainer_GetModuleDescriptor();
     const ZrLibTypeDescriptor *array;
@@ -152,6 +158,7 @@ static void test_container_descriptor_uses_iteration_contract_owner(void) {
     TEST_ASSERT_EQUAL_UINT32(ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT, getEnumerator->contractRole);
 }
 
+/* 旧 zr.builtin 枚举协议不能重新成为类型查找的来源。 */
 static void test_builtin_descriptor_does_not_own_iteration_protocols(void) {
     SZrState *state = ZrContainerTests_CreateState();
     const ZrLibModuleDescriptor *builtin;
@@ -165,6 +172,7 @@ static void test_builtin_descriptor_does_not_own_iteration_protocols(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 元素类型推断依赖注册协议事实，原始数组形状本身不构成协议。 */
 static void test_enumerator_binding_uses_protocol_facts_only(void) {
     SZrState *state = ZrContainerTests_CreateState();
     SZrCompilerState *compiler = ZrContainerTests_CreateCompilerState(state);
@@ -262,6 +270,7 @@ static void test_enumerator_binding_uses_protocol_facts_only(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 带 break 的已知类型 foreach 仍选择静态迭代指令，保留退出清理路径。 */
 static void test_typed_foreach_keeps_static_iterator_lowering_through_break_cleanup(void) {
     SZrState *state = ZrContainerTests_CreateState();
     SZrString *sourceName;

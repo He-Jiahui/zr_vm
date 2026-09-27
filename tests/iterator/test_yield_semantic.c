@@ -9,6 +9,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_ir.h"
 
+/* 读取编译后的语义 IR，确认 yield 分阶段事实实际被发射。 */
 static TZrBool semantic_ir_has_opcode(const SZrSemanticIrFunction *function,
                                       EZrSemanticIrOpcode opcode) {
     TZrSize index;
@@ -26,6 +27,7 @@ static TZrBool semantic_ir_has_opcode(const SZrSemanticIrFunction *function,
     return ZR_FALSE;
 }
 
+/* 对特定 opcode 计数，防止重复插入暂停或恢复事实。 */
 static TZrSize semantic_ir_opcode_count(const SZrSemanticIrFunction *function,
                                         EZrSemanticIrOpcode opcode) {
     TZrSize count = 0U;
@@ -44,6 +46,7 @@ static TZrSize semantic_ir_opcode_count(const SZrSemanticIrFunction *function,
     return count;
 }
 
+/* 返回所属 IR 内的只读指令，调用方需保持编译器存活。 */
 static const SZrSemanticIrInstruction *semantic_ir_first_opcode(
         const SZrSemanticIrFunction *function,
         EZrSemanticIrOpcode opcode) {
@@ -62,6 +65,7 @@ static const SZrSemanticIrInstruction *semantic_ir_first_opcode(
     return ZR_NULL;
 }
 
+/* 从顶层编译器读取函数产物，索引对应源代码声明次序。 */
 static const SZrFunction *compiled_child_function_at(SZrCompilerState *compiler,
                                                       TZrSize index) {
     SZrFunction *const *child;
@@ -73,6 +77,7 @@ static const SZrFunction *compiled_child_function_at(SZrCompilerState *compiler,
     return child != ZR_NULL ? *child : ZR_NULL;
 }
 
+/* 经 parser 和逐语句编译走真实 yield 降低链路；outAst 由调用方释放。 */
 static SZrCompilerState *compile_source(SZrState *state,
                                         const TZrChar *source,
                                         SZrAstNode **outAst) {
@@ -111,6 +116,7 @@ static SZrCompilerState *compile_source(SZrState *state,
     return compiler;
 }
 
+/* 先释放编译函数和编译器，再释放 AST；调用方随后销毁 state。 */
 static void destroy_compilation(SZrState *state,
                                 SZrCompilerState *compiler,
                                 SZrAstNode *ast) {
@@ -124,6 +130,7 @@ static void destroy_compilation(SZrState *state,
     }
 }
 
+/* 显式 zr.iteration.Iterator<T> 返回载体使 yield 投影三阶段语义事实。 */
 static void test_yield_requires_canonical_iterator_carrier_and_projects_facts(void) {
     static const TZrChar source[] =
             "var iteration = import(\"zr.iteration\");\n"
@@ -178,6 +185,7 @@ static void test_yield_requires_canonical_iterator_carrier_and_projects_facts(vo
     ZrContainerTests_DestroyState(state);
 }
 
+/* Iterable<T> 不是同步 Iterator<T> 载体，元素类型亦须兼容。 */
 static void test_yield_rejects_iterable_carrier_and_incompatible_payload(void) {
     static const TZrChar iterableSource[] =
             "var iteration = import(\"zr.iteration\");\n"
@@ -206,6 +214,7 @@ static void test_yield_rejects_iterable_carrier_and_incompatible_payload(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 产值靠 yield，显式 return 只能表示无值完成。 */
 static void test_yield_function_allows_only_empty_return_completion(void) {
     static const TZrChar emptyReturnSource[] =
             "var iteration = import(\"zr.iteration\");\n"
@@ -238,6 +247,7 @@ static void test_yield_function_allows_only_empty_return_completion(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 顶层无 iterator frame，yield 必须被语义阶段拒绝。 */
 static void test_yield_rejects_top_level_statement(void) {
     static const TZrChar source[] = "yield 1;\n";
     SZrState *state = ZrContainerTests_CreateState();
@@ -252,6 +262,7 @@ static void test_yield_rejects_top_level_statement(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 属性访问器不提供迭代器返回载体，不能借用 yield 语法。 */
 static void test_yield_rejects_property_accessor_context(void) {
     static const TZrChar propertyAccessorSource[] =
             "class Box {\n"
@@ -270,6 +281,7 @@ static void test_yield_rejects_property_accessor_context(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+/* 内层函数的 yield 不得把外层普通函数误分类为迭代器。 */
 static void test_nested_iterator_yield_does_not_reclassify_the_outer_function(void) {
     static const TZrChar source[] =
             "var iteration = import(\"zr.iteration\");\n"

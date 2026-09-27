@@ -58,5 +58,6 @@ doc_type: category-index
 | FFI fixture、动态调用与 native extern 回归 | [183 项](coverage/tests_ffi.tsv) | 16 文件独立复核，15 个改动文件仅增注释；WSL GCC/Clang fixture 语法及 GCC SSA ABI 语法检查通过，未执行运行时测试。源码定位测试仍读取旧文件、ZRO 用例遗漏 IoSource 释放及 Release 构建 assert 跳过被测调用，均已标 BUG；9 处待核实边界已标 TODO。 |
 | GC 回归、工具与调试探针 | [121 项](coverage/tests_gc.tsv) | 21 文件独立复核，67 个测试函数与 RUN_TEST 一一对应，源码非注释内容等价；7 个 BUG 和 7 个 TODO 均有现行证据。缺少 GC 测试二进制及多数 GDB 输入，未运行测试或探针。 |
 | 项目 fixture：基准到 decorator 导入 | [229 项](coverage/tests_fixtures_projects_early.tsv) | 96 文件独立复核，6 个 `.zr` 仅增 8 处中文注释；29 个项目清单可解析。三处现有 CLI 失败均在 HEAD 原样 fixture 复现并标 TODO；四个基准副本仅有手工入口。 |
+| iterator、yield 与 task 回归 | [176 项](coverage/tests_iterator_task.tsv) | 10 文件独立复核，72 个测试函数均由入口注册，495 个调用与定义证据复核有效；源码仅改注释。SSA frame budget 已注册到 CTest，其 Release 构建在 `NDEBUG` 下跳过初始化和断言的缺陷已标 BUG；本批未完成构建或运行测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

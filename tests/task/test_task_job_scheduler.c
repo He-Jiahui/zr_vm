@@ -8,6 +8,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser.h"
 
+/* 注册核心 task 运行时及 parser，供源码编译与描述符回调共用。 */
 static SZrState *create_task_job_scheduler_test_state(void) {
     SZrState *state = ZrTests_State_Create(ZR_NULL);
 
@@ -21,6 +22,7 @@ static SZrState *create_task_job_scheduler_test_state(void) {
     return state;
 }
 
+/* 描述符指针依附原生模块注册表，调用方不能在 state 销毁后持有。 */
 static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescriptor *module,
                                                         const char *typeName) {
     TZrSize index;
@@ -38,6 +40,7 @@ static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescript
     return ZR_NULL;
 }
 
+/* 通过公共源码编译入口验证 Job/Scheduler 语义，而非手造字节码。 */
 static SZrFunction *compile_task_job_scheduler_source(SZrState *state, const char *source, const char *name) {
     SZrString *sourceName;
 
@@ -53,6 +56,7 @@ static SZrFunction *compile_task_job_scheduler_source(SZrState *state, const cha
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 查找方法的 ABI 字段及回调，用于源语言和原生调用的交叉检查。 */
 static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescriptor *type,
                                                             const char *methodName) {
     TZrSize index;
@@ -70,6 +74,7 @@ static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescri
     return ZR_NULL;
 }
 
+/* 查找模块函数的 contractRole、返回类型和原生回调。 */
 static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModuleDescriptor *module,
                                                                 const char *functionName) {
     TZrSize index;
@@ -87,6 +92,7 @@ static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModule
     return ZR_NULL;
 }
 
+/* 用 Task.result 原生回调消费完成结果，验证 yieldNow/delay 返回 ABI。 */
 static void assert_task_completes_with_void(SZrState *state,
                                             const ZrLibMethodDescriptor *resultMethod,
                                             SZrTypeValue *taskValue) {
@@ -103,6 +109,7 @@ static void assert_task_completes_with_void(SZrState *state,
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, result.type);
 }
 
+/* zr.task 描述符对外发布 Job、Scheduler、yieldNow、delay 的 canonical 形状。 */
 static void test_zr_task_descriptor_publishes_job_scheduler_contract(void) {
     SZrState *state = create_task_job_scheduler_test_state();
     const ZrLibModuleDescriptor *taskModule;
@@ -153,6 +160,7 @@ static void test_zr_task_descriptor_publishes_job_scheduler_contract(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* 直接调用模块回调后经 Task.result 取 void，覆盖原生边界。 */
 static void test_yield_now_and_delay_complete_through_task_result_abi(void) {
     SZrState *state = create_task_job_scheduler_test_state();
     const ZrLibModuleDescriptor *taskModule;
@@ -191,6 +199,7 @@ static void test_yield_now_and_delay_complete_through_task_result_abi(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* Job 被 schedule 消费一次；同一绑定再调用须在编译阶段拒绝。 */
 static void test_scheduler_consumes_job_at_source_call_boundary(void) {
     static const char *source =
             "var task = import(\"zr.task\");\n"
@@ -209,6 +218,7 @@ static void test_scheduler_consumes_job_at_source_call_boundary(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* Task 是 must-use 结果，直接丢弃 yieldNow 返回值应拒绝。 */
 static void test_discarded_task_expression_is_rejected(void) {
     static const char *source =
             "var task = import(\"zr.task\");\n"
@@ -222,6 +232,7 @@ static void test_discarded_task_expression_is_rejected(void) {
     ZrTests_State_Destroy(state);
 }
 
+/* 源语言端到端经过 Job 构造、当前 Scheduler 调度和 Task.result。 */
 static void test_job_constructor_and_current_scheduler_schedule_complete_callable_once(void) {
     static const char *source =
             "var task = import(\"zr.task\");\n"

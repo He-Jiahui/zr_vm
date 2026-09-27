@@ -8,35 +8,42 @@
 #include "zr_vm_core/iterator_runtime.h"
 #include "zr_vm_core/object.h"
 
+/* 生产器的游标只由 MoveNext 回调推进，终止后不再发布 current。 */
 typedef struct SZrIteratorRuntimeTestProducer {
     TZrInt64 values[3];
     TZrSize count;
     TZrSize nextIndex;
 } SZrIteratorRuntimeTestProducer;
 
+/* 记录终态清理次数，以检查重复 MoveNext/Close 的幂等性。 */
 typedef struct SZrIteratorRuntimeTestCleanup {
     TZrUInt32 count;
 } SZrIteratorRuntimeTestCleanup;
 
+/* 同一 userData 在生产和清理回调之间共享。 */
 typedef struct SZrIteratorRuntimeTestContext {
     SZrIteratorRuntimeTestProducer producer;
     SZrIteratorRuntimeTestCleanup cleanup;
 } SZrIteratorRuntimeTestContext;
 
+/* 捕获同一个 frame 内嵌套 MoveNext 的拒绝结果。 */
 typedef struct SZrIteratorRuntimeTestReentrantProducer {
     TZrBool attemptedNestedMove;
     TZrBool nestedMoveResult;
     TZrUInt32 publishCount;
 } SZrIteratorRuntimeTestReentrantProducer;
 
+/* 原始对象指针只用于发布，跨 compact GC 的可达性由 frame root 保证。 */
 typedef struct SZrIteratorRuntimeTestObjectProducer {
     SZrObject *objects[2];
     TZrSize count;
     TZrSize nextIndex;
 } SZrIteratorRuntimeTestObjectProducer;
 
+/* Unity 在每个用例前后重建状态；回调均在该状态存活期间执行。 */
 static SZrState *g_state;
 
+/* MoveNext 调用的生产回调：每次仅发布一个值，耗尽时显式完成。 */
 static void iterator_runtime_test_produce(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -55,6 +62,7 @@ static void iterator_runtime_test_produce(
     TEST_ASSERT_TRUE(ZrCore_IteratorFrame_Publish(state, frame, &value));
 }
 
+/* 让 MoveNext 路径触发正常终态。 */
 static void iterator_runtime_test_complete(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -63,6 +71,7 @@ static void iterator_runtime_test_complete(
     ZrCore_IteratorFrame_Complete(state, frame);
 }
 
+/* 让 MoveNext 路径触发故障终态。 */
 static void iterator_runtime_test_fault(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -71,6 +80,7 @@ static void iterator_runtime_test_fault(
     ZrCore_IteratorFrame_Fault(state, frame);
 }
 
+/* 终态回调不得自行改变 frame 状态，只记录调用次数。 */
 static void iterator_runtime_test_cleanup(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -83,6 +93,7 @@ static void iterator_runtime_test_cleanup(
     cleanup->count++;
 }
 
+/* 将组合 userData 中的生产器转交给通用生产回调。 */
 static void iterator_runtime_test_context_produce(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -93,6 +104,7 @@ static void iterator_runtime_test_context_produce(
     iterator_runtime_test_produce(state, frame, &context->producer);
 }
 
+/* 将组合 userData 中的清理计数器转交给通用清理回调。 */
 static void iterator_runtime_test_context_cleanup(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -103,6 +115,7 @@ static void iterator_runtime_test_context_cleanup(
     iterator_runtime_test_cleanup(state, frame, &context->cleanup);
 }
 
+/* 在生产回调内重入同一 frame，验证内层调用不会覆盖外层发布。 */
 static void iterator_runtime_test_reentrant_produce(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -122,6 +135,7 @@ static void iterator_runtime_test_reentrant_produce(
     }
 }
 
+/* 发布 GC 对象，供 currentRoot 的建立、替换和释放用例复用。 */
 static void iterator_runtime_test_object_produce(
         SZrState *state,
         SZrIteratorFrame *frame,
@@ -156,6 +170,7 @@ void tearDown(void) {
     }
 }
 
+/* IteratorFrame 的源语言迭代顺序：逐次产值，耗尽后 current 失效。 */
 static void test_iterator_frame_yields_multiple_values_then_completes(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestProducer producer;
@@ -182,6 +197,7 @@ static void test_iterator_frame_yields_multiple_values_then_completes(void) {
     TEST_ASSERT_EQUAL_INT(ZR_ITERATOR_FRAME_COMPLETED, frame.state);
 }
 
+/* 正常完成后的重复推进不能再次清理 userData。 */
 static void test_iterator_frame_completion_runs_cleanup_once(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestCleanup cleanup;
@@ -200,6 +216,7 @@ static void test_iterator_frame_completion_runs_cleanup_once(void) {
     TEST_ASSERT_EQUAL_UINT32(1U, cleanup.count);
 }
 
+/* 故障也是终态，重复推进不能重入清理回调。 */
 static void test_iterator_frame_fault_runs_cleanup_once(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestCleanup cleanup;
@@ -219,6 +236,7 @@ static void test_iterator_frame_fault_runs_cleanup_once(void) {
     TEST_ASSERT_EQUAL_UINT32(1U, cleanup.count);
 }
 
+/* 缺失生产回调须走故障清理，避免半初始化 frame 泄漏。 */
 static void test_iterator_frame_missing_producer_faults_and_cleans_up(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestCleanup cleanup;
@@ -236,6 +254,7 @@ static void test_iterator_frame_missing_producer_faults_and_cleans_up(void) {
     TEST_ASSERT_EQUAL_UINT32(1U, cleanup.count);
 }
 
+/* 先到的终态决定外部可见结果，后续终态请求不能改写它。 */
 static void test_iterator_frame_preserves_the_first_terminal_state(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestCleanup cleanup;
@@ -267,6 +286,7 @@ static void test_iterator_frame_preserves_the_first_terminal_state(void) {
     TEST_ASSERT_EQUAL_UINT32(2U, cleanup.count);
 }
 
+/* 消费方提前退出时 Close 使 current 失效并只清理一次。 */
 static void test_iterator_frame_early_close_runs_cleanup_once(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestContext context;
@@ -292,6 +312,7 @@ static void test_iterator_frame_early_close_runs_cleanup_once(void) {
     TEST_ASSERT_EQUAL_UINT32(1U, context.cleanup.count);
 }
 
+/* 同 frame 重入被拒绝后外层仍能完成一次发布。 */
 static void test_iterator_frame_rejects_same_frame_reentrancy(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestReentrantProducer producer;
@@ -310,6 +331,7 @@ static void test_iterator_frame_rejects_same_frame_reentrancy(void) {
     TEST_ASSERT_EQUAL_UINT32(1U, producer.publishCount);
 }
 
+/* 发布的对象经 compact GC 移动后 Current 必须解析新地址。 */
 static void test_iterator_frame_roots_current_object_across_compact_gc(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestObjectProducer producer;
@@ -348,6 +370,7 @@ static void test_iterator_frame_roots_current_object_across_compact_gc(void) {
             (TZrUInt64)ZrCore_GcDomain_GetRootCount(g_state));
 }
 
+/* 连续发布对象只保留当前一个 root，避免 root 数随迭代增长。 */
 static void test_iterator_frame_replaces_the_previous_object_root(void) {
     SZrIteratorFrame frame;
     SZrIteratorRuntimeTestObjectProducer producer;
@@ -381,6 +404,7 @@ static void test_iterator_frame_replaces_the_previous_object_root(void) {
             (TZrUInt64)ZrCore_GcDomain_GetRootCount(g_state));
 }
 
+/* 池复用同一内存时，旧 current、回调和清理标记必须重新初始化。 */
 static void test_iterator_frame_pool_reuses_storage_without_state_leaks(void) {
     SZrIteratorFramePool pool;
     SZrIteratorFrame *firstFrame;
@@ -429,6 +453,7 @@ static void test_iterator_frame_pool_reuses_storage_without_state_leaks(void) {
     ZrCore_IteratorFramePool_Free(g_state, &pool);
 }
 
+/* 运行中的 frame 不可归还池；终态后才允许新租约复用。 */
 static void test_iterator_frame_pool_rejects_a_nonterminal_lease(void) {
     SZrIteratorFramePool pool;
     SZrIteratorFrame *frame;
