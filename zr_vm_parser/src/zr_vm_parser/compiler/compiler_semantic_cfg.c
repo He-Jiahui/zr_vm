@@ -135,7 +135,7 @@ TZrBool compiler_semantic_cfg_arm_falls_through(const SZrAstNode *node) {
                              compiler_semantic_cfg_arm_falls_through(
                                      node->data.ifExpression.elseExpr));
         case ZR_AST_WHILE_LOOP:
-            return (TZrBool)(compiler_semantic_cfg_while_condition_is_supported(
+            return (TZrBool)(compiler_semantic_cfg_loop_condition_is_supported(
                                      node->data.whileLoop.cond) &&
                              compiler_semantic_cfg_arm_falls_through(
                                      node->data.whileLoop.block));
@@ -464,7 +464,7 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     if (cs->preSemanticIrCfgTerminated) {
         return ZR_FALSE;
     }
-    if (!compiler_semantic_cfg_while_condition_is_supported(
+    if (!compiler_semantic_cfg_loop_condition_is_supported(
                 node->data.whileLoop.cond) ||
         !compiler_semantic_cfg_loop_body_analyze(
                 node->data.whileLoop.block, ZR_TRUE, ZR_TRUE, ZR_TRUE,

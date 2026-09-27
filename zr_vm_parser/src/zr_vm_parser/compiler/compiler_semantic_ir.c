@@ -2167,6 +2167,9 @@ TZrBool compiler_semantic_ir_transfer_expression_result(
         TZrUInt32 destinationSlot,
         SZrFileRange sourceRange) {
     const SZrCompilerSemanticIrSlot *source;
+    const SZrCompilerSemanticIrSlot *destination;
+    const SZrParserPlace *destinationPlace;
+    TZrValueId valueId;
 
     if (cs == ZR_NULL) {
         return ZR_FALSE;
@@ -2180,12 +2183,23 @@ TZrBool compiler_semantic_ir_transfer_expression_result(
         return ZR_TRUE;
     }
     source = compiler_semantic_ir_find_slot(cs, sourceSlot);
-    if (source == ZR_NULL || source->valueId == ZR_VALUE_ID_INVALID ||
-        compiler_semantic_ir_find_slot(cs, destinationSlot) != ZR_NULL) {
+    if (source == ZR_NULL || source->valueId == ZR_VALUE_ID_INVALID) {
         return ZR_TRUE;
     }
+    valueId = source->valueId;
+    destination = compiler_semantic_ir_find_slot(cs, destinationSlot);
+    if (destination != ZR_NULL) {
+        destinationPlace = ZrParser_PlaceGraph_Get(
+                &cs->preSemanticIr.places, destination->placeId);
+        if (destination->valueId == valueId ||
+            destinationPlace == ZR_NULL ||
+            destinationPlace->base.kind != ZR_PARSER_PLACE_BASE_TEMPORARY) {
+            return ZR_TRUE;
+        }
+    }
+    /* A recycled temporary slot must name this expression, not its prior user. */
     return (TZrBool)(compiler_semantic_ir_add_temporary_slot(
-            cs, destinationSlot, sourceRange, source->valueId) != ZR_NULL);
+            cs, destinationSlot, sourceRange, valueId) != ZR_NULL);
 }
 
 TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,

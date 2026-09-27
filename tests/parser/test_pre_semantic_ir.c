@@ -334,6 +334,8 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_CONVERT,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_LOAD,
@@ -344,8 +346,12 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
+        ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_PLACE_BASE,
         ZR_SEMANTIC_IR_CONVERT,
         ZR_SEMANTIC_IR_INITIALIZE,
+        ZR_SEMANTIC_IR_BRANCH,
+        ZR_SEMANTIC_IR_RETURN,
     };
     static const TZrChar source[] =
             "var value: int = 1;\n"
@@ -378,7 +384,7 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
     TEST_ASSERT_FALSE(compiler.hasError);
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     TEST_ASSERT_TRUE(ZrParser_Compiler_PreSemanticIrIsValidated(&compiler));
-    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
     function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_EQUAL_UINT64(

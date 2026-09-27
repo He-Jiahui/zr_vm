@@ -9,6 +9,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
@@ -34,6 +35,7 @@ tests:
   - tests/parser/test_ssa_source_value_facts.c
   - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/parser/test_ssa_source_while_short_circuit.c
+  - tests/parser/test_ssa_source_for_short_circuit.c
   - tests/parser/test_semantic_value_facts.c
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_cfg_effects_builder.c
@@ -43,6 +45,7 @@ tests:
   - tests/acceptance/ssa-builder-cfg.md
   - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/acceptance/ssa-source-while-short-circuit.md
+  - tests/acceptance/ssa-source-for-short-circuit.md
   - tests/acceptance/ssa-builder-instruction-lowering.md
   - tests/acceptance/ssa-builder-module-transaction.md
   - tests/acceptance/ssa-builder-canonical-input-shape.md
@@ -93,6 +96,13 @@ unmodeled RHS still abandons executable source CFG production. The focused
 source regression checks graph ownership, strict build, and actual short-
 circuit execution through the Oracle; it does not expand the builder's
 accepted instruction families.
+
+The statement-form `for` producer uses the same short-circuit topology, but
+routes body/continue through its step block before returning to the original
+condition entry. A shared source slot-transfer correction prevents a reused
+temporary from supplying the wrong initializer value before this CFG is built.
+The focused Oracle fixture verifies the short-circuit RHS and step events;
+unsupported operands still leave the source graph analysis-only.
 
 For a SemanticIR CONSTANT with `hasConstantPoolIndex`, the builder retains
 `constantPoolIndex` in the existing ExecIR CONSTANT `layoutId` field. Oracle

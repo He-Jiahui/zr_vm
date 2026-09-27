@@ -1,6 +1,6 @@
 #include "compiler_internal.h"
 
-TZrBool compiler_semantic_cfg_while_condition_is_supported(
+TZrBool compiler_semantic_cfg_loop_condition_is_supported(
         const SZrAstNode *node) {
     return (TZrBool)(compiler_semantic_cfg_expression_is_linear(node) ||
                      compiler_semantic_cfg_short_circuit_is_supported(node));
@@ -107,7 +107,7 @@ TZrBool compiler_semantic_cfg_for_is_supported(
     loop = &node->data.forLoop;
     if (!loop->isStatement ||
         (loop->cond != ZR_NULL &&
-         !compiler_semantic_cfg_expression_is_linear(loop->cond)) ||
+         !compiler_semantic_cfg_loop_condition_is_supported(loop->cond)) ||
         (loop->init != ZR_NULL &&
          !compiler_semantic_cfg_arm_falls_through(loop->init) &&
          !compiler_semantic_cfg_expression_is_linear(loop->init)) ||

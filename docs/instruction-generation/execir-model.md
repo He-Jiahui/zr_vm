@@ -489,6 +489,21 @@ This does not admit nested logical operands or an unmodeled RHS: those loops
 retain the analysis-only CFG. The source-backed Oracle regression checks both
 the executed RHS store count and the returned boolean across `&&` and `||`.
 
+Statement-form `for` conditions use the same preflight when present, while
+their initializer and step must still meet the existing linear requirements.
+The logical join branches to body/exit, and a body or `continue` reaches the
+step block before the backedge to the original condition entry. The source
+Oracle regression counts RHS and step writes separately on taken and skipped
+paths; an unmodeled condition retains the analysis-only fallback.
+
+When an expression result is transferred into a recycled compiler stack
+slot, an older temporary Place may still be indexed by that slot. The shared
+SemanticIR transfer now publishes a new temporary binding for a different
+ValueId, leaving previously emitted temporary uses intact. A later local
+registration therefore converts/initializes from the current expression
+rather than the previous statement's value. Actual local Places retain their
+existing write semantics and are not overwritten by this transfer.
+
 A resolved, non-spread source function call can also establish the source CFG
 when no earlier branch has done so. The existing straight-line facts become the
 entry block, which jumps to a dedicated call block. A typed `CALL_TYPED` or

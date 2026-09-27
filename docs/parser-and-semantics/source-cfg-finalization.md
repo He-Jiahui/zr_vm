@@ -5,6 +5,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
@@ -24,10 +25,12 @@ tests:
   - tests/parser/gdb_ssa_source_straight_line_cfg.gdb
   - tests/parser/test_ssa_source_straight_line_cfg.c
   - tests/parser/test_ssa_source_while_short_circuit.c
+  - tests/parser/test_ssa_source_for_short_circuit.c
   - tests/parser/test_ssa_source_value_facts.c
   - tests/parser/test_pre_semantic_ir.c
   - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/acceptance/ssa-source-while-short-circuit.md
+  - tests/acceptance/ssa-source-for-short-circuit.md
   - tests/acceptance/ssa-source-cfg-promotion-recovery.md
 doc_type: module-detail
 ---
@@ -105,6 +108,21 @@ short-circuit expression shape for its condition: both operands must be
 linear. The logical join owns the loop body/exit branch and the body returns
 to the original condition entry. Unsupported RHS operations keep the
 analysis-only fallback and cannot be treated as executable ExecIR.
+
+Statement-form `for` also accepts that condition shape when its initializer
+and step remain linear. Its step block, rather than its body, owns the
+backedge to the original condition entry. Reusing a stack slot for a later
+expression must not reuse the prior temporary's ValueId: the SemanticIR slot
+transfer establishes a fresh binding before local registration. Otherwise a
+source local initialized to zero could accidentally consume the preceding
+boolean declaration's value even before the loop is entered.
+
+The same corrected transfer can promote a straight-line body with an
+explicitly typed string local when its initializer and destination have the
+same canonical type: its generic `CONVERT` is identity-preserving and the
+strict builder accepts its real terminal instructions. The pre-semantic IR
+golden now includes those extra temporary initializations and the terminal
+branch/return. Cross-type nonnumeric conversion remains analysis-only.
 
 Typed numeric `+`, `-`, and `*` are now a supported producer subset. When type
 inference selects a signed, unsigned, or floating-point operation and both
