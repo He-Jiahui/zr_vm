@@ -1,5 +1,6 @@
 module reference.binary_meta;
 
+// 二进制模块往返样例同时保留编译期计算和运行期导出供导入端核对。
 const MAX_SCALE: int = 8;
 
 comptime fn buildBias(seed: int): int {

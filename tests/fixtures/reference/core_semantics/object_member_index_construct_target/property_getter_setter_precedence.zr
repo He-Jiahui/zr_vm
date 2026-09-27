@@ -5,6 +5,7 @@ class Box {
         this.raw = raw;
     }
 
+    // 让读写偏移不同，以便运行结果区分属性访问和直接字段访问。
     pub property value: int {
         get { return this.raw + 1; }
         set { this.raw = value + 2; }

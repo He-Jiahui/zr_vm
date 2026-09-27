@@ -7,6 +7,7 @@ var map = new container.Map<Pair<int, string>, int>();
 var items = new container.Set<Pair<int, string>>();
 var score = 0;
 
+// 等值 Pair 应复用 Map 键和 Set 槽，并保持 equals、hashCode、compareTo 一致。
 map[left] = 5;
 map[same] = 7;
 items.add(left);

@@ -1,6 +1,7 @@
 resource class Session {}
 resource class Cache {}
 
+// 用位掩码逐段见证借用结束、所有权转移和最后一个共享持有者释放后的状态。
 fn runSessionLifecycle(): int {
     var sessionSeed = own Session();
     var sharedSession = share(sessionSeed);
@@ -36,6 +37,7 @@ fn runSessionLifecycle(): int {
         mask = mask + 16;
     }
 
+    // 两个共享持有者都释放后，弱引用再唤醒必须失效。
     var releasedShared = drop(sharedSession);
     var releasedWoken = drop(wokenSession);
     var expiredSession = wake(watcher);

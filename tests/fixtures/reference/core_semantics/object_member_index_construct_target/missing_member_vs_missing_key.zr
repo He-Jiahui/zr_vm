@@ -1,3 +1,4 @@
+// 成员缺失应抛出诊断；同名字符串键缺失则由调用处验证为 null。
 fn probe(obj) {
     try {
         var value = obj.missing;
