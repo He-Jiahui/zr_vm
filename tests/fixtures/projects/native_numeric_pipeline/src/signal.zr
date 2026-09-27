@@ -1,5 +1,6 @@
 let math = import("zr.math");
 
+// 将 Complex 和 Vector2 的原生方法结果打包，交由回调汇总路径消费。
 fn mixSignalImpl(scale: float) {
     var base = new math.Complex(3.0, 4.0);
     var normalized = base.normalized();

@@ -60,5 +60,6 @@ doc_type: category-index
 | 项目 fixture：基准到 decorator 导入 | [229 项](coverage/tests_fixtures_projects_early.tsv) | 96 文件独立复核，6 个 `.zr` 仅增 8 处中文注释；29 个项目清单可解析。三处现有 CLI 失败均在 HEAD 原样 fixture 复现并标 TODO；四个基准副本仅有手工入口。 |
 | iterator、yield 与 task 回归 | [176 项](coverage/tests_iterator_task.tsv) | 10 文件独立复核，72 个测试函数均由入口注册，495 个调用与定义证据复核有效；源码仅改注释。SSA frame budget 已注册到 CTest，其 Release 构建在 `NDEBUG` 下跳过初始化和断言的缺陷已标 BUG；本批未完成构建或运行测试。 |
 | 项目 fixture：network、语法参考与 using | [140 项](coverage/tests_fixtures_projects_late.tsv) | 53 文件独立复核，21 个 `.zr` 仅增注释；现有 MSVC CLI 七个项目入口及 testing reference 脚本通过。network loopback 在旧二进制失败待新构建定位，失效的 VS Code 调试路径已标 BUG；WSL 语法参考 C 测试未完成。 |
+| 项目 fixture：导入、GC 与 Native 流程 | [108 项](coverage/tests_fixtures_projects_middle.tsv) | 53 文件独立复核，18 个 `.zr` 仅增注释，17 个 JSON 配置可解析；12 个入口及一次 `zr test` 运行通过。现有 CLI 下四个入口的 Semantic IR 失败在去注释副本复现，GC 校验和注释已按真实断言收紧。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

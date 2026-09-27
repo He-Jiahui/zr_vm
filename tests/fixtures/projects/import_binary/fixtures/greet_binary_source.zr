@@ -1,3 +1,4 @@
+// 项目套件先将该导出编译为 greet.zro，再验证入口可只从二进制模块调用它。
 pub var greet = fn() => {
     return "hello from import";
 };

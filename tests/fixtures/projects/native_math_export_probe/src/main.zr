@@ -1,6 +1,7 @@
 let math = import("zr.math");
 let system = import("zr.system");
 
+// 同时走字符串查找导出与静态成员调用，覆盖两种 native 模块分派入口。
 var byName = system.vm.callModuleExport("zr.math", "sqrt", [4.0]);
 var direct = math.Matrix4x4.scale(2.0, 3.0, 4.0);
 

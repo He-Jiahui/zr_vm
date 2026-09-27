@@ -9,6 +9,7 @@ fn summarizeCallbackImpl(value: float) {
     return value + 7.0;
 }
 
+// 汇合三个导入模块，并让原生 math 回调脚本函数后通过名称再次调用本模块导出。
 fn runCallbacksImpl(lin, signal, tensor) {
     var vectorInfo = lin.projectVectors(2.0);
     var signalInfo = signal.mixSignal(5.0);
@@ -17,6 +18,7 @@ fn runCallbacksImpl(lin, signal, tensor) {
     var exportedValue = system.vm.callModuleExport("callbacks", "summarizeCallback", [callbackValue]);
     var modules = system.vm.loadedModules();
     var state = system.vm.state();
+    // 串起暂停、显式收集和恢复后的统计读取，覆盖 native GC 控制 API 的顺序。
     system.gc.disable();
     system.gc.collect("minor");
     system.gc.enable();

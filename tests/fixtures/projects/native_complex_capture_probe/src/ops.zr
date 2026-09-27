@@ -1,5 +1,6 @@
 let math = import("zr.math");
 
+// 通过导出闭包再次访问 native Complex，检查模块捕获在跨模块调用后仍有效。
 fn runImpl() {
     return new math.Complex(5.0, 12.0).magnitude();
 }

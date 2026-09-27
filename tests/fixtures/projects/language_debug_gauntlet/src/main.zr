@@ -2,6 +2,7 @@ let helper = import("helper");
 let fixedModule = import("fixed_data");
 let sizing = import("sizing");
 
+// 施加固定的嵌套循环负载；只检查它完成且为正，不将步数混入稳定校验和。
 fn spin(limit: int, burstLimit: int = 5): int {
     var total = 0;
     var index = 0;
@@ -16,6 +17,7 @@ fn spin(limit: int, burstLimit: int = 5): int {
     return total;
 }
 
+// 汇合跨模块默认参数、定长/动态数组和循环结果，返回稳定标记供 parser 集成测试核对。
 fn runGauntlet(): string {
     var dynamic: int[] = [helper.twist(4), helper.twist(5), fixedModule.edgeValue(), fixedModule.length()];
     var banner = helper.banner();

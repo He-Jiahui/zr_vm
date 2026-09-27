@@ -40,6 +40,7 @@ class BossHero: BaseHero {
     }
 }
 
+// TODO: zr test 能发现并通过此用例，但 void 声明返回数值是否属预期语义仍需核对语言契约。
 #zr.testing.test#
 fn classesFullProjectShape(): void {
     var boss = new BossHero(30);

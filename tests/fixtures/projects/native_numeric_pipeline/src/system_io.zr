@@ -1,5 +1,6 @@
 let system = import("zr.system");
 
+// 项目套件会替换输出目录；写入后读回覆盖文件系统 API，报告文件另由套件检查。
 fn persistReportImpl(summary) {
     var outDir = "tests/fixtures/projects/native_numeric_pipeline/bin/out";
     system.fs.createDirectories(outDir);

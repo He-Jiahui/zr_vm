@@ -1,5 +1,6 @@
 let math = import("zr.math");
 
+// 通过原生 Tensor 的矩阵乘法与链式计算，检查跨模块返回的聚合结果。
 fn runTensorPassImpl() {
     var lhs = new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);
     var rhs = new math.Tensor([2, 2], [5.0, 6.0, 7.0, 8.0]);

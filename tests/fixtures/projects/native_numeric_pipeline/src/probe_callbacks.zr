@@ -8,6 +8,7 @@ fn scaleValue(input: float) {
     return input * 2.0;
 }
 
+// 每跨过一个 native 或模块调用就打印进度，供项目套件定位失败阶段。
 fn runProbeImpl() {
     system.console.printLine("probe:begin");
     var vectorInfo = lin.projectVectors(2.0);

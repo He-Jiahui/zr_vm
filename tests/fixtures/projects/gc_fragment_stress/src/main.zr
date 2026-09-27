@@ -38,6 +38,7 @@ fn payloadFor(seed: int, cycle: int, slot: int): string {
     return head + "-" + middle + "-" + tail + ":" + toText(seed) + ":" + toText(cycle) + ":" + toText(slot);
 }
 
+// 将新建包装对象发布到长期全局根，覆盖跨周期可达性和根更新路径。
 fn publishArchivedGlobal(slot: int, value: string) {
     var bucket = slot % 8;
     var archiveBox = { value: value, slot: slot };
@@ -72,6 +73,7 @@ fn publishArchivedGlobal(slot: int, value: string) {
     gcOld7 = archiveBox;
 }
 
+// 将回收统计与校验和落盘并读回，供项目套件同时检查执行结果和文件系统边界。
 fn writeReport(checksum: int,
             minorSamples: int,
             minorMaxStepUs: int,
@@ -101,6 +103,7 @@ fn writeReport(checksum: int,
     return system.fs.readText(reportPath);
 }
 
+// 反复创建短期负载，并通过跨周期容器与全局根施压分代回收。
 fn runStress(): int {
     var survivors = new container.Array<string>();
     var scratch = new container.Array<string>();
@@ -123,6 +126,7 @@ fn runStress(): int {
     system.gc.enable();
     system.gc.set_heap_limit(0);
     system.gc.set_budget(800);
+    // 保留归档容器，后续写入与清理会在多轮 minor/full 回收之间发生。
     gcArchiveRoot = oldArchive;
     gcLookupRoot = oldLookup;
 
@@ -194,6 +198,7 @@ fn runStress(): int {
             peakGcDebtBytes = preGcDebtBytes;
         }
 
+        // 按周期选择 full 或 minor 收集，并将采样到的 lastStepWork 混入校验和。
         if (cycle % 6 == 5) {
             system.gc.collect("full");
             var fullStats = system.gc.get_stats();
@@ -260,6 +265,7 @@ fn runStress(): int {
         cycle = cycle + 1;
     }
 
+    // 清空临时引用后再强制 full 回收，记录归档根仍在时的末次统计。
     scratch.clear();
     anchors.clear();
     survivors.clear();

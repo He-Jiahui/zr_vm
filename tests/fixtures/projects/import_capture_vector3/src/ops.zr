@@ -1,5 +1,6 @@
 let math = import("zr.math");
 
+// 经模块导出调用原生 Vector3 构造器，检验捕获的 math 绑定仍可用。
 fn runImpl() {
 return init math.Vector3(4.0, 5.0, 6.0).y;
 }

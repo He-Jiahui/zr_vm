@@ -1,5 +1,6 @@
 let math = import("zr.math");
 
+// 让跨模块调用穿过 Vector3 和 Matrix4x4 的原生构造及返回值字段读取。
 fn projectVectorsImpl(seed: float) {
     var a = init math.Vector3(seed, seed + 1.0, seed + 2.0);
     var b = init math.Vector3(seed + 3.0, seed + 4.0, seed + 5.0);
