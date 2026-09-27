@@ -10,6 +10,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* Unity 每个用例各建一个运行时；AST 与编译器状态仍由用例自身负责释放。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -18,12 +19,17 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: Unity 断言失败会跳过用例末尾的 Ast_Free/CompilerState_Free；
+     * 这里只销毁运行时，解析树和编译器的原生资源未按所有权契约清理。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
 }
 
+/** @brief 从唯一 extern delegate 中取出待校验参数，使装饰器测试直达参数校验器。
+ * @note 返回的参数借用自 *outAst；调用方须在编译器状态释放后释放整棵 AST。
+ */
 static SZrAstNode *parse_extern_parameter(
         const TZrChar *source,
         const TZrChar *sourceName,
@@ -59,6 +65,9 @@ static SZrAstNode *parse_extern_parameter(
     return declaration->data.externDelegateDeclaration.params->nodes[0];
 }
 
+/** @brief 从模块查询结果定位发布的错误，供断言诊断身份及源码范围。
+ * @note 返回值借用语义上下文的物化数组；重新物化或释放编译器后失效。
+ */
 static const SZrStructuredDiagnostic *find_diagnostic_by_code(
         const SZrParserSemanticQueryDiagnostics *diagnostics,
         const TZrChar *code) {
@@ -75,6 +84,9 @@ static const SZrStructuredDiagnostic *find_diagnostic_by_code(
     return ZR_NULL;
 }
 
+/** @brief 验证参数装饰器的形状、取值或冲突错误能贯穿编译器与语义查询。
+ * @pre decoratorIndex 指向待报错装饰器，且 decoratorText 必须原样存在于 source。
+ */
 static void assert_invalid_parameter_decorator(
         const TZrChar *source,
         const TZrChar *sourceName,
@@ -128,6 +140,7 @@ static void assert_invalid_parameter_decorator(
             compiler.structuredError.noFixReason);
     TEST_ASSERT_FALSE(compiler.structuredError.fixes.isValid);
 
+    /* 发布会深拷贝诊断事实；清除当前错误后仍须能从模块查询取得相同位置与修复约束。 */
     TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&compiler));
     compiler.hasError = ZR_FALSE;
     ZrParser_Compiler_ClearStructuredError(&compiler);
@@ -151,6 +164,7 @@ static void assert_invalid_parameter_decorator(
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/** @brief 以方向及字符集的合法组合约束参数校验器不能误报。 */
 static void test_valid_extern_parameter_decorators_are_accepted(void) {
     const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -259,6 +273,8 @@ static void test_unknown_parameter_decorator_publishes_query_fact(void) {
             "Decorator is not valid on extern parameters");
 }
 
+/* TODO: 此目标已在 tests/CMakeLists.txt 建立，但尚无 add_test 注册，
+ * 当前不会作为 CTest 用例运行；需确认 CI 是否直接运行该目标，或补注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_valid_extern_parameter_decorators_are_accepted);

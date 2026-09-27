@@ -10,6 +10,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* Unity 每个用例各建一个运行时；AST 与编译器状态仍由用例自身负责释放。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -18,12 +19,17 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: Unity 断言失败会跳过用例末尾的 Ast_Free/CompilerState_Free；
+     * 这里只销毁运行时，解析树和编译器的原生资源未按所有权契约清理。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
 }
 
+/** @brief 为装饰器测试取得唯一 extern 枚举声明，避免其他编译阶段干扰校验结果。
+ * @note 返回的声明借用自 *outAst；调用方必须在编译器状态释放后释放整棵 AST。
+ */
 static SZrAstNode *parse_extern_enum(
         const TZrChar *source,
         const TZrChar *sourceName,
@@ -52,6 +58,9 @@ static SZrAstNode *parse_extern_enum(
     return externBlock->data.externBlock.declarations->nodes[0];
 }
 
+/** @brief 从模块查询结果定位发布的错误，供断言诊断身份及源码范围。
+ * @note 返回值借用语义上下文的物化数组；重新物化或释放编译器后失效。
+ */
 static const SZrStructuredDiagnostic *find_diagnostic_by_code(
         const SZrParserSemanticQueryDiagnostics *diagnostics,
         const TZrChar *code) {
@@ -68,6 +77,9 @@ static const SZrStructuredDiagnostic *find_diagnostic_by_code(
     return ZR_NULL;
 }
 
+/** @brief 验证枚举或成员装饰器的拒绝结果能够贯穿编译器与语义查询。
+ * @pre decoratorText 必须原样存在于 source，且 memberDecorator 指向唯一待检装饰器。
+ */
 static void assert_invalid_enum_decorator(
         const TZrChar *source,
         const TZrChar *sourceName,
@@ -132,6 +144,7 @@ static void assert_invalid_enum_decorator(
             compiler.structuredError.noFixReason);
     TEST_ASSERT_FALSE(compiler.structuredError.fixes.isValid);
 
+    /* 发布会深拷贝诊断事实；清除当前错误后仍须能从模块查询取得相同位置与修复约束。 */
     TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&compiler));
     compiler.hasError = ZR_FALSE;
     ZrParser_Compiler_ClearStructuredError(&compiler);
@@ -155,6 +168,7 @@ static void assert_invalid_enum_decorator(
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/** @brief 以合法的枚举底层类型和成员常量作反例，约束校验器不能误报。 */
 static void test_valid_extern_enum_and_member_decorators_are_accepted(void) {
     const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -234,6 +248,8 @@ static void test_unknown_extern_enum_member_decorator_publishes_query_fact(void)
             ZR_TRUE);
 }
 
+/* TODO: 此目标已在 tests/CMakeLists.txt 建立，但尚无 add_test 注册，
+ * 当前不会作为 CTest 用例运行；需确认 CI 是否直接运行该目标，或补注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_valid_extern_enum_and_member_decorators_are_accepted);
