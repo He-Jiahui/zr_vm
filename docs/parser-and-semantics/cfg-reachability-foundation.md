@@ -214,7 +214,7 @@ When building a `try` statement, the try statement block connects to the try bod
 - `try { A } finally { return; B }` marks the finally-body statement after `return` unreachable with `AFTER_RETURN` and causeNode set to the return statement.
 - `switch (x) { case y { return; A } }` marks the case-body statement after `return` unreachable with `AFTER_RETURN` and causeNode set to the return statement.
 - `switch (true) { case false { A } }` marks the non-matching boolean case unreachable with `CONSTANT_BRANCH` and causeNode set to the switch selector.
-- `switch (true) { case true { A } case false { B } default { C } }` marks the default branch unreachable with `CONSTANT_BRANCH` and causeNode set to the switch selector.
+- `switch (true) { case true { A } case false { B } default { C } }` marks the default branch unreachable with `CONSTANT_BRANCH` and causeNode set to the switch selector because the known selector matches `case true`. This test does not establish whether `true`/`false` cases make default unreachable for an unknown selector.
 - `switch (1) { case 2 { A } }` marks the non-matching integer case unreachable with `CONSTANT_BRANCH` and causeNode set to the switch selector.
 - `switch (1) { case 1 { A } default { B } }` marks the default branch unreachable because the constant selector is consumed by the matching integer case.
 - `switch (1) { case 1 { return; } } A` marks the statement after switch unreachable because the known matching case terminates and there is no default/no-match path.

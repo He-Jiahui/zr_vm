@@ -12,13 +12,17 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 直接构造最小 AST 来隔离 CFG 构建与事实发布；合成偏移只用于定位诊断，不代表真实源码。 */
 static SZrState *g_state;
 
+/* Unity 每个用例都取得独立 VM 状态，AST 节点和文件名字符串不能跨用例借用。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* BUG: 构造 AST 后的断言失败会 longjmp 跳过用例末尾的 Ast_Free；
+ * Unity 随后调用 tearDown，但状态销毁不持有 RawMalloc 节点指针，故泄漏。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,6 +30,7 @@ void tearDown(void) {
     }
 }
 
+/* 位置查询会重新创建同名 source；事实查找按字符串内容匹配来源，再用偏移定位。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -39,6 +44,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 构造可由根 AST 递归释放的测试节点；不经过 parser，调用者须填好被测 CFG 所需字段。 */
 static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *node = (SZrAstNode *)ZrCore_Memory_RawMallocWithType(
         g_state->global,
@@ -52,6 +58,7 @@ static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize e
     return node;
 }
 
+/* 根节点拥有传入语句，统一交给 Ast_Free；双语句形式专门观察前句终止后的后句。 */
 static SZrAstNode *script_with_statements(SZrAstNode *first, SZrAstNode *second) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 24);
 
@@ -62,6 +69,7 @@ static SZrAstNode *script_with_statements(SZrAstNode *first, SZrAstNode *second)
     return script;
 }
 
+/* 单语句脚本把控制结构作为 CFG 的根入口，避免顶层其它语句影响连边。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 64);
 
@@ -71,6 +79,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/* CFG 按 block.body 展开语句；isStatement 保持测试 AST 的语句块形态，并非 CFG 展开的门槛。 */
 static SZrAstNode *block_with_statement(SZrAstNode *statement, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *block = test_node(ZR_AST_BLOCK, startOffset, endOffset);
 
@@ -81,6 +90,7 @@ static SZrAstNode *block_with_statement(SZrAstNode *statement, TZrSize startOffs
     return block;
 }
 
+/* 双语句块用于检查 return/break 终止后仍保留不可达节点及原始位置。 */
 static SZrAstNode *block_with_statements(SZrAstNode *first,
                                          SZrAstNode *second,
                                          TZrSize startOffset,
@@ -95,6 +105,7 @@ static SZrAstNode *block_with_statements(SZrAstNode *first,
     return block;
 }
 
+/* 常量节点直接喂给 CFG 折叠分支；本组不验证词法、解析或表达式求值。 */
 static SZrAstNode *boolean_literal(TZrBool value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_BOOLEAN_LITERAL, startOffset, endOffset);
 
@@ -132,6 +143,7 @@ static SZrAstNode *char_literal(TZrChar value, TZrSize startOffset, TZrSize endO
     return literal;
 }
 
+/* 控制结构只填 CFG 使用的关系和 statement 标志，避免语义分析引入额外路径。 */
 static SZrAstNode *if_statement(SZrAstNode *condition, SZrAstNode *thenBlock, SZrAstNode *elseBlock) {
     SZrAstNode *ifNode = test_node(ZR_AST_IF_EXPRESSION, 0, 64);
 
@@ -151,6 +163,7 @@ static SZrAstNode *while_statement(SZrAstNode *condition, SZrAstNode *body) {
     return whileNode;
 }
 
+/* 缺省 step 的 for 与显式 step 分开构造，测试 continue 的实际目标是否随之改变。 */
 static SZrAstNode *for_statement(SZrAstNode *condition, SZrAstNode *body) {
     SZrAstNode *forNode = test_node(ZR_AST_FOR_LOOP, 0, 56);
 
@@ -169,6 +182,7 @@ static SZrAstNode *for_statement_with_step(SZrAstNode *condition,
     return forNode;
 }
 
+/* foreach 的迭代源在这些测试里无关；仅检验循环头、退出 join 与 abrupt 边。 */
 static SZrAstNode *foreach_statement(SZrAstNode *body) {
     SZrAstNode *foreachNode = test_node(ZR_AST_FOREACH_LOOP, 0, 56);
 
@@ -177,6 +191,7 @@ static SZrAstNode *foreach_statement(SZrAstNode *body) {
     return foreachNode;
 }
 
+/* try/catch/finally 使用结构形状驱动 CFG；测试不执行异常，也不推断 catch 类型。 */
 static SZrAstNode *try_statement(SZrAstNode *body) {
     SZrAstNode *tryNode = test_node(ZR_AST_TRY_CATCH_FINALLY_STATEMENT, 0, 64);
 
@@ -207,6 +222,7 @@ static SZrAstNode *try_statement_with_finally(SZrAstNode *body, SZrAstNode *fina
     return tryNode;
 }
 
+/* switch case/default 的 AST 关系决定常量选择器可走的边，未命中分支仍须保留供诊断。 */
 static SZrAstNode *switch_case_node(SZrAstNode *value, SZrAstNode *body) {
     SZrAstNode *caseNode = test_node(ZR_AST_SWITCH_CASE, 24, 72);
 
@@ -258,6 +274,7 @@ static SZrAstNode *switch_statement_with_two_cases_and_default(SZrAstNode *expr,
     return switchNode;
 }
 
+/* 仅供简单循环断言：同一 AST 在 finally 展开时可能对应多个 CFG 块，不能据此推断唯一性。 */
 static const SZrParserCfgBlock *find_block_for_statement(SZrParserCfg *cfg,
                                                          SZrAstNode *statement) {
     TZrSize index;
@@ -277,6 +294,7 @@ static const SZrParserCfgBlock *find_block_for_statement(SZrParserCfg *cfg,
     return ZR_NULL;
 }
 
+/* 事实查询同时锁定不可达状态、原因节点及范围；单纯找不到事实表示该位置仍可达。 */
 static void test_cfg_marks_statement_after_return_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -304,6 +322,7 @@ static void test_cfg_marks_statement_after_return_unreachable(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* return 仍须连到函数 exit，后继语句则不能借此获得来自 entry 的路径。 */
 static void test_cfg_connects_return_terminator_to_exit(void) {
     SZrParserCfg cfg;
     SZrAstNode *returnStmt = test_node(ZR_AST_RETURN_STATEMENT, 0, 7);
@@ -350,6 +369,7 @@ static void test_cfg_leaves_statement_after_expression_reachable(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 常量条件应剪除错误分支，同时保留被剪语句以发布带条件节点的诊断。 */
 static void test_cfg_marks_false_branch_of_constant_true_if_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -466,6 +486,7 @@ static void test_cfg_marks_statement_after_foreach_break_unreachable(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 测试 break/continue 的边目标而非只测事实：错误目标也可能碰巧保留部分诊断。 */
 static void test_cfg_connects_while_break_to_loop_join(void) {
     SZrParserCfg cfg;
     SZrAstNode *condition = boolean_literal(ZR_TRUE, 6, 10);
@@ -560,6 +581,7 @@ static void test_cfg_connects_for_break_to_loop_join(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 无条件 for 不能凭空增加零迭代出口；break 是离开循环的唯一已建路径。 */
 static void test_cfg_connects_unconditional_for_break_to_loop_join(void) {
     SZrParserCfg cfg;
     SZrAstNode *breakStmt = test_node(ZR_AST_BREAK_CONTINUE_STATEMENT, 18, 24);
@@ -592,6 +614,7 @@ static void test_cfg_connects_unconditional_for_break_to_loop_join(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* for 的 continue 先进入 step-entry join，执行 step 后才回到条件头。 */
 static void test_cfg_connects_for_continue_to_step(void) {
     SZrParserCfg cfg;
     SZrAstNode *condition = boolean_literal(ZR_TRUE, 6, 10);
@@ -692,6 +715,7 @@ static void test_cfg_connects_foreach_continue_to_loop_header(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 嵌套保护区域仍须把 return 之后的语句归因于原 return，而非外层 try。 */
 static void test_cfg_marks_statement_after_return_in_try_body_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -781,6 +805,7 @@ static void test_cfg_marks_statement_after_return_in_finally_body_unreachable(vo
     ZrParser_SemanticContext_Free(context);
 }
 
+/* switch 与异常体一样，保留不可达 case 内语句，供位置事实追溯终止节点。 */
 static void test_cfg_marks_statement_after_return_in_switch_case_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -812,6 +837,7 @@ static void test_cfg_marks_statement_after_return_in_switch_case_unreachable(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 已知选择器只连接匹配 case；未匹配 case/default 的事实应指向选择器。 */
 static void test_cfg_marks_non_matching_boolean_switch_case_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -905,6 +931,7 @@ static void test_cfg_marks_integer_switch_default_after_matching_case_unreachabl
     ZrParser_SemanticContext_Free(context);
 }
 
+/* TODO: 本例只断言后继不可达及范围，未核 cause/causeNode；需追踪匹配 case 的 return 归因。 */
 static void test_cfg_marks_after_integer_switch_matching_return_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -1060,6 +1087,7 @@ static void test_cfg_marks_char_switch_default_after_matching_case_unreachable(v
     ZrParser_SemanticContext_Free(context);
 }
 
+/* TODO: 浮点 case 仅覆盖普通有限字面量；需检查 cfg_constants.c 对 NaN 和有符号零的等价规则。 */
 static void test_cfg_marks_non_matching_float_switch_case_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -1123,6 +1151,7 @@ static void test_cfg_marks_float_switch_default_after_matching_case_unreachable(
     ZrParser_SemanticContext_Free(context);
 }
 
+/* TODO: 此例常量 true 已命中 case，只证明 default 无前驱；需用未知选择器核对布尔全集穷尽规则。 */
 static void test_cfg_marks_exhaustive_boolean_switch_default_unreachable(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -1163,6 +1192,7 @@ static void test_cfg_marks_exhaustive_boolean_switch_default_unreachable(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* Unity 负责在每次 RUN_TEST 前后调用 setUp/tearDown；这里注册全部控制流族用例。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_marks_statement_after_return_unreachable);
