@@ -8,6 +8,7 @@
 
 #include "zr_vm_core/ownership.h"
 
+/* 摘要只用于同一模式版本的布局一致性复验，不承担抗碰撞认证。 */
 #define ZR_TYPE_LAYOUT_HASH_OFFSET_BASIS UINT64_C(1469598103934665603)
 #define ZR_TYPE_LAYOUT_HASH_PRIME UINT64_C(1099511628211)
 static TZrUInt32 type_layout_normalize_align(TZrUInt32 align) {
@@ -76,6 +77,7 @@ static const SZrTypeLayout *type_layout_registry_resolve(
         typeLayoutIndex >= registry->count) {
         return ZR_NULL;
     }
+    /* 嵌套索引来自字段描述符；每次递归前复验借用表中的目标布局。 */
     layout = registry->layouts[typeLayoutIndex];
     return layout != ZR_NULL && ZrCore_TypeLayout_Validate(layout) ? layout : ZR_NULL;
 }
@@ -85,6 +87,8 @@ static TZrBool type_layout_is_blittable(EZrTypeLayoutCopyKind copyKind,
                                         TZrUInt32 gcFieldCount,
                                         TZrUInt32 ownershipFieldCount,
                                         TZrUInt32 refFieldCount) {
+    /* 这里仅复验父布局的直接字段计数；嵌套布局的复制承诺另需 registry
+     * 递归核实。当前 CopyInlineWithRegistry 的位拷贝分支未做该核实。 */
     return (TZrBool)(copyKind == ZR_TYPE_LAYOUT_COPY_KIND_BITWISE &&
                      dropKind == ZR_TYPE_LAYOUT_DROP_KIND_NONE &&
                      gcFieldCount == 0u &&
@@ -143,6 +147,7 @@ static TZrBool type_layout_try_get_map_offset(const SZrTypeLayout *layout,
     if (outOffset == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 显式映射优先；旧式元数据仅靠字段 flag 时按声明顺序重建映射。 */
     if (offsets != ZR_NULL) {
         *outOffset = offsets[mapIndex];
         return ZR_TRUE;
@@ -206,6 +211,7 @@ TZrUInt64 ZrCore_TypeLayout_ComputeHash(const SZrTypeLayout *layout) {
         return 0u;
     }
 
+    /* 对构建后仍被借用的表内容求摘要，故调用方不可在使用期间修改这些表。 */
     hash = type_layout_hash_u32(hash, ZR_TYPE_LAYOUT_SCHEMA_VERSION);
     hash = type_layout_hash_u32(hash, layout->byteSize);
     hash = type_layout_hash_u32(hash, layout->byteAlign);
@@ -272,6 +278,9 @@ static TZrBool type_layout_validate_map(const SZrTypeLayout *layout,
                                         const TZrUInt32 *offsets,
                                         TZrUInt32 count,
                                         TZrUInt32 flag) {
+    /* BUG: 显式表项仅做边界检查，未与相应 flag 字段的偏移核对。
+     * 可传入范围内的错误 GC 偏移并通过 Validate；非联合 GC 快路径随后
+     * 扫描错误值槽，漏掉真实的 GC_VALUE 字段。 */
     for (TZrUInt32 index = 0u; index < count; index++) {
         TZrUInt32 byteOffset;
 
@@ -287,6 +296,11 @@ static TZrBool type_layout_validate_map(const SZrTypeLayout *layout,
 TZrBool ZrCore_TypeLayout_Validate(const SZrTypeLayout *layout) {
     TZrUInt32 cursor = 0u;
 
+    /* BUG: byteSize=25、byteAlign=8 的构建结果可通过此门槛；内联数组按
+     * byteSize 作 stride，第二个元素不再满足声明的 8 字节对齐。
+     * 内置 InitValue 在现有 ABI 上也可能声明 size=48、align=32；修复时
+     * 须一并核对声明对齐与实际类型对齐或数组 stride，不能只新增拒绝条件。
+     * 证据: InitStructWithContract、InitValue、NewInlineArray 的逐项地址计算。 */
     if (layout == ZR_NULL ||
         layout->layoutVersion != ZR_TYPE_LAYOUT_SCHEMA_VERSION ||
         layout->layoutHash == 0u ||
@@ -364,6 +378,9 @@ TZrBool ZrCore_TypeLayout_Validate(const SZrTypeLayout *layout) {
             return ZR_FALSE;
         }
 
+        /* BUG: 此处只核字段范围和标记，不核 VALUE_SLOT 的天然对齐，
+         * 也不核 NESTED_LAYOUT 偏移对齐；偏移 1 的描述符可通过验证，
+         * 初始化/复制/GC 随后会把未对齐地址当作 SZrTypeValue 访问。 */
         for (TZrUInt32 index = 0u; index < layout->fieldCount; index++) {
             const SZrTypeLayoutField *field = &layout->fields[index];
             TZrUInt32 fieldEnd;
@@ -392,6 +409,9 @@ TZrBool ZrCore_TypeLayout_Validate(const SZrTypeLayout *layout) {
         }
     }
 
+    /* BUG: 需读取活动 tag 的联合布局未在此验证 tagSize/范围；
+     * tagSize=3 可通过布局校验，但进入逐字段复制、需释放字段或 GC
+     * 扫描等实际读 tag 的路径时会被拒绝。 */
     if ((!type_layout_is_value(layout) &&
          (!type_layout_validate_map(layout,
                                     layout->gcFieldOffsets,
@@ -526,6 +546,7 @@ static TZrBool type_layout_copy_inline_union(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 联合成员替换先释放旧活动成员；之后若嵌套解析失败，目的对象已改变。 */
     if (!type_layout_drop_inline_with_registry(
                 state, layout, registry, destination, ZR_NULL, 0u, ZR_FALSE, depth)) {
         return ZR_FALSE;
@@ -637,6 +658,10 @@ static TZrBool type_layout_copy_inline_with_registry(
         return ZR_TRUE;
     }
 
+    /* 位拷贝承诺可绕过字段递归；非平凡值槽必须走下方语义复制。
+     * BUG: 父布局的 blittable 仅计直接字段，未复验子布局策略；已有
+     * pool 测试构造的 BITWISE 父布局包裹 MOVE_ONLY 子布局在此会浅拷贝
+     * 并返回成功，绕过子布局的复制禁令。 */
     if (ZrCore_TypeLayout_CanRawCopy(layout)) {
         memmove(destinationBytes, sourceBytes, layout->byteSize);
         return ZR_TRUE;
@@ -740,6 +765,9 @@ static TZrBool type_layout_drop_inline_with_registry(
         return ZR_TRUE;
     }
 
+    /* BUG: DROP_NONE 父布局即使含直接 OWNERSHIP_VALUE 或托管子布局
+     * 仍可通过 Validate；此早退报告成功却跳过对应所有权释放。
+     * pool 层另有拒绝门槛，帧和内联数组调用时没有同等保护。 */
     if (layout == ZR_NULL || storage == ZR_NULL ||
         depth > ZR_TYPE_LAYOUT_MAX_NESTING_DEPTH ||
         layout->dropKind == (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_NONE) {
@@ -747,6 +775,7 @@ static TZrBool type_layout_drop_inline_with_registry(
                          depth <= ZR_TYPE_LAYOUT_MAX_NESTING_DEPTH);
     }
 
+    /* 构建失败的部分对象没有履行完整构造契约，不能调用宿主完整析构。 */
     if (!partial &&
         layout->dropKind == (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS) {
         if (layout->customDrop == ZR_NULL) {
@@ -762,6 +791,7 @@ static TZrBool type_layout_drop_inline_with_registry(
         return ZR_FALSE;
     }
 
+    /* 逆序与初始化的前进顺序对应，使完整析构和部分构建回滚保持同一顺序。 */
     for (TZrUInt32 index = layout->fieldCount; index > 0u; index--) {
         const SZrTypeLayoutField *field = &layout->fields[index - 1u];
         TZrUInt32 fieldEnd;
@@ -872,6 +902,10 @@ static TZrBool type_layout_visit_gc_values_with_registry(
         return ZR_FALSE;
     }
 
+    /* 非联合布局可直接扫描显式 GC 表；联合布局必须先选择活动成员。
+     * BUG: 即使显式表准确覆盖直接字段，此快速返回仍会跳过嵌套布局。
+     * pool 测试构造出可通过 Validate 的直接 GC 槽加托管嵌套字段描述符；在此扫描会
+     * 漏掉嵌套根，pool 层的额外拒绝不能保护帧与内联数组的直接调用。 */
     if (type_layout_can_visit_gc_offset_table(layout)) {
         for (TZrUInt32 index = 0; index < layout->gcFieldCount; index++) {
             TZrUInt32 byteOffset = layout->gcFieldOffsets[index];
@@ -976,6 +1010,7 @@ TZrBool ZrCore_StackFrameLayout_BuildSequential(SZrStackFrameLayout *frameLayout
         return ZR_FALSE;
     }
 
+    /* 帧概要仅在全部槽位完成且总长度对齐后发布。 */
     frameLayout->byteSize = cursor;
     frameLayout->maxAlign = maxAlign;
     frameLayout->slotCount = slotCount;

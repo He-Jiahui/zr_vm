@@ -30,6 +30,9 @@ static TZrBool type_layout_is_blittable(EZrTypeLayoutCopyKind copyKind,
                                         TZrUInt32 gcFieldCount,
                                         TZrUInt32 ownershipFieldCount,
                                         TZrUInt32 refFieldCount) {
+    /* BUG: 此推导只看直接值槽计数，未核 NESTED_LAYOUT 子布局的复制策略；
+     * BITWISE 父布局包裹 MOVE_ONLY 子布局仍可被封存为 blittable，随后
+     * CopyInlineWithRegistry 的原始复制分支会绕过子布局禁令。 */
     return (TZrBool)(copyKind == ZR_TYPE_LAYOUT_COPY_KIND_BITWISE &&
                      dropKind == ZR_TYPE_LAYOUT_DROP_KIND_NONE &&
                      gcFieldCount == 0u &&
@@ -52,11 +55,13 @@ static void type_layout_apply_contract(SZrTypeLayout *layout,
                                             : (layout->gcFieldCount > 0u
                                                        ? ZR_TYPE_LAYOUT_GC_SCAN_MAPPED
                                                        : ZR_TYPE_LAYOUT_GC_SCAN_FREE));
+    /* 契约对象可为临时对象，三张映射表及回调上下文则随布局长期借用。 */
     layout->gcFieldOffsets = contract != ZR_NULL ? contract->gcFieldOffsets : ZR_NULL;
     layout->ownershipFieldOffsets = contract != ZR_NULL ? contract->ownershipFieldOffsets : ZR_NULL;
     layout->refFieldOffsets = contract != ZR_NULL ? contract->refFieldOffsets : ZR_NULL;
     hasExplicitDomainTransfer = (TZrBool)(
             contract != ZR_NULL && contract->hasDomainTransferContract);
+    /* 默认跨域复制依据父布局的 blittable 判定；嵌套策略缺口见上方 BUG。 */
     if (hasExplicitDomainTransfer) {
         layout->domainTransferKind = (TZrUInt8)contract->domainTransferKind;
         layout->domainTransferSchemaVersion =
@@ -92,6 +97,7 @@ static const SZrTypeLayout *type_layout_initialization_resolve_nested(
         typeLayoutIndex >= registry->count) {
         return ZR_NULL;
     }
+    /* 外层入口已验证自身；子布局在递归入口重新 Validate。 */
     return registry->layouts[typeLayoutIndex];
 }
 
@@ -108,6 +114,7 @@ static TZrBool type_layout_initialize_storage_with_registry(
         depth > ZR_TYPE_LAYOUT_MAX_NESTING_DEPTH) {
         return ZR_FALSE;
     }
+    /* 对帧槽和数组元素建立统一的空值起点；递归失败后不能当作完整对象。 */
     memset(storage, 0, layout->byteSize);
     if (layout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_VALUE) {
         if (layout->byteSize < sizeof(SZrTypeValue)) {
@@ -117,6 +124,10 @@ static TZrBool type_layout_initialize_storage_with_registry(
         return ZR_TRUE;
     }
 
+    /* 值槽显式重置，保证后续所有权释放和 GC 扫描看到可辨认的空值。
+     * TODO: 联合布局此处遍历所有成员，未按默认 tag 过滤；非活动 VALUE_SLOT
+     * 的空值写入可覆盖活动变体的标量负载。需核对 compiler_union 的默认
+     * 变体读取规则，以及帧/数组初始化后首次写入前的可观察性。 */
     for (TZrUInt32 index = 0u; index < layout->fieldCount; index++) {
         const SZrTypeLayoutField *field = &layout->fields[index];
         TZrUInt32 fieldEnd;
@@ -303,6 +314,7 @@ void ZrCore_TypeLayout_InitStructWithContract(SZrTypeLayout *layout,
     layout->kind = (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT;
     layout->copyKind = (TZrUInt8)copyKind;
     layout->dropKind = (TZrUInt8)dropKind;
+    /* 字段数组不复制；函数缓存及对象布局消费期间构建方须保留其有效期。 */
     layout->fields = fields;
     layout->fieldCount = fieldCount;
     layout->gcFieldCount = gcFieldCount;
@@ -328,6 +340,7 @@ void ZrCore_TypeLayout_InitStructWithContract(SZrTypeLayout *layout,
             layout->domainTransferSchemaHash = 1u;
         }
     }
+    /* 摘要封存结构契约；尺寸、表项及直接字段计数由消费前的 Validate 复核。 */
     layout->layoutHash = ZrCore_TypeLayout_ComputeHash(layout);
 }
 
@@ -376,6 +389,7 @@ void ZrCore_TypeLayout_InitUnionWithContract(SZrTypeLayout *layout,
         return;
     }
 
+    /* 复用结构字段及契约构建，再把 tag 纳入联合布局的最终摘要。 */
     layout->kind = (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION;
     layout->tagOffset = tagOffset;
     layout->tagSize = tagSize;
