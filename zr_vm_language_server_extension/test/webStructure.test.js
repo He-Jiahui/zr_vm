@@ -5,6 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 
+// 以拒绝项目解析/LSP 请求的宿主替身证明 Web 仍保留当前文件和内置库树，
+// 同时把项目索引不可用显示为不可点击的信息节点。
 test('Web structure keeps current file and builtins and explains unavailable project indexing', async () => {
     const commands = new Map();
     const disposable = () => ({ dispose() {} });
@@ -40,6 +42,8 @@ test('Web structure keeps current file and builtins and explains unavailable pro
                 return { onDidChangeSelectedProject: disposable, resolveSelectedWorkspaceProject: () => assert.fail('Web must not scan projects') };
             }
             assert.equal(name, './structure/builtinModules');
+            // BUG: test:unit 不先编译；本用例实时转译 structure.ts，却加载旧 out
+            // 内置库，可能让当前 builtinModules.ts 的回归在此测试中误报通过。
             return require('../out/structure/builtinModules');
         },
     }, { filename: source });
