@@ -200,5 +200,6 @@ doc_type: category-index
 | VS Code Web 文档同步与 WASM 响应 | [48 项](coverage/zr_vm_language_server_extension_web_document_sync.tsv) | 3 个 TS/JS 文件独立复核，覆盖 Worker 文档同步、WASM 响应与 12 个现有测试；源码仅增注释，Worker TypeScript `--noEmit`、12 个 Node 测试与 JS 语法检查通过。1 个 TODO 保留响应泛型的运行时业务载荷核查缺口。 |
 | VS Code 引用 CodeLens 点击入口 | [6 项](coverage/zr_vm_language_server_extension_reference_codelens.tsv) | 1 个 TS 文件独立复核，追踪双宿主注册、服务端生成与 stdio/WASM 参数序列化；源码仅增注释，TypeScript `--noEmit` 通过。2 个 TODO 保留非法数值坐标及真实点击链的宿主验证缺口。 |
 | VS Code 原生资产发现与路径选择 | [34 项](coverage/zr_vm_language_server_extension_native_assets.tsv) | 3 个 TS/JS 文件独立复核，源码仅增注释，TypeScript `--noEmit`、9 个 Node 测试与 JS 语法检查通过。2 个 BUG 标明显式配置目录被当作可执行文件及测试用固定时钟导致较新构建判断失真；3 个 TODO 保留路径契约疑问。旧 fixture 台账的 2 个引用已映射到等价源码行。 |
+| VS Code 扩展会话与重启回归 | [122 项](coverage/zr_vm_language_server_extension_session_restart.tsv) | 3 个 TS/JS 文件独立复核，覆盖 session、宿主资源替身和 20 个重启用例；源码仅增注释，TypeScript `--noEmit`、20 个 Node 测试与 JS 语法检查通过。2 个 TODO 保留真实 SDK 关闭故障注入验证缺口；旧客户端生命周期台账的 9 个引用已映射到等价源码行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 const { setImmediate: nextTurn } = require('node:timers/promises');
 const { deferred, loadExtensionHost } = require('./helpers/extensionHost');
 
+// 宿主重启回归执行真实桌面/Web 入口，仅将 VS Code 与 language-client 外部边界替换为可控资源。
+// 覆盖退休、超时和并发重启后旧尝试不能夺回请求客户端，资源必须按归属释放。
+
+/** 给预期能立即退休的操作设测试上限，防止回归变成无限挂起的测试进程。 */
 async function within(promise) {
     let timer;
     try {
@@ -14,6 +18,7 @@ async function within(promise) {
     }
 }
 
+/** 对同一次宿主尝试的公开资源、监听器和客户端发布状态做共同验收。 */
 function assertAttemptReleased(host) {
     for (const resource of host.resources.filter((item) => ['watcher', 'channel', 'diagnostics'].includes(item.kind))) {
         assert.ok(resource.disposals > 0, `${resource.kind} was not released`);
@@ -26,6 +31,7 @@ function assertAttemptReleased(host) {
 }
 
 for (const kind of ['native', 'web']) {
+    // SDK 自动恢复不经过 controller.restart，退役后的迟到完成仍须由 start 覆盖收尾。
     test(`${kind} retirement also releases a pending SDK automatic restart`, async () => {
         const host = loadExtensionHost(kind);
         await host.activate(host.extensionContext);
@@ -33,6 +39,7 @@ for (const kind of ['native', 'web']) {
         const restart = deferred();
         client.state = 1;
         client.plan = restart.promise;
+        // TODO: 这里手动模拟 SDK 恢复；真实连接关闭触发覆盖层后的时序与清理仍需故障注入验证。
         const restarted = client.start();
         const settled = restarted.catch(() => {});
         await nextTurn(); // Acquire native transports before retirement.
@@ -45,6 +52,7 @@ for (const kind of ['native', 'web']) {
         assertAttemptReleased(host);
     });
 
+    // 自动恢复也必须受独立启动期限约束；挂起的 SDK promise 在期限后仍可能结算。
     test(`${kind} a hanging SDK automatic restart has its own startup deadline`, async () => {
         const host = loadExtensionHost(kind, { startupTimeoutMs: 20 });
         await host.activate(host.extensionContext);
@@ -59,6 +67,7 @@ for (const kind of ['native', 'web']) {
         await host.deactivate();
     });
 
+    // 激活入口会呈报错误但保留重启命令，使用户能在初次失败后重试。
     test(`${kind} activation reports failure and a subsequent restart succeeds`, async () => {
         const host = loadExtensionHost(kind, { starts: [new Error('startup failed')] });
         await assert.doesNotReject(host.activate(host.extensionContext));
@@ -71,6 +80,7 @@ for (const kind of ['native', 'web']) {
         assertAttemptReleased(host);
     });
 
+    // 一次拒绝不能污染 controller 的队列尾部；第二次命令应获得新的会话。
     test(`${kind} concurrent restarts remain serialized after a rejection`, async () => {
         const host = loadExtensionHost(kind, { starts: [undefined, new Error('restart failed'), undefined] });
         await host.activate(host.extensionContext);
@@ -82,6 +92,7 @@ for (const kind of ['native', 'web']) {
         assertAttemptReleased(host);
     });
 
+    // 停用不能等待永不完成的初始化，迟到的客户端也不能保留订阅或重新启动。
     test(`${kind} deactivation retires pending startup and its late completion`, async () => {
         const startup = deferred();
         const host = loadExtensionHost(kind, { starts: [startup.promise] });
@@ -98,6 +109,7 @@ for (const kind of ['native', 'web']) {
         assert.equal((await host.clients[0].options.errorHandler.closed()).action, 1);
     });
 
+    // SDK 停止错误会传给调用方，但 session 应继续释放其他独立拥有的资源。
     test(`${kind} stop errors still release every owned resource`, async () => {
         const host = loadExtensionHost(kind, { stopError: new Error('shutdown failed') });
         await host.activate(host.extensionContext);
@@ -105,6 +117,7 @@ for (const kind of ['native', 'web']) {
         assertAttemptReleased(host);
     });
 
+    // 已超时的旧 promise 结算后不得覆盖下一次成功尝试的请求客户端。
     test(`${kind} a timed out startup cannot replace the client from a later retry`, async () => {
         const startup = deferred();
         const host = loadExtensionHost(kind, { starts: [startup.promise], startupTimeoutMs: 20 });
@@ -123,6 +136,7 @@ for (const kind of ['native', 'web']) {
         assertAttemptReleased(host);
     });
 
+    // 停止等待有界；停止 promise 未结算时仍应清空宿主自己的资源租约。
     test(`${kind} a hanging stop is bounded and still releases owned resources`, async () => {
         const stop = deferred();
         const host = loadExtensionHost(kind, { stopPending: stop.promise });
@@ -133,6 +147,7 @@ for (const kind of ['native', 'web']) {
     });
 }
 
+// Worker 构造在 URL 获取之后失败，先登记的 URL 清理必须支持后续重试。
 test('web Worker construction failure revokes its Blob URL and permits another attempt', async () => {
     const options = { workerError: new Error('worker failed') };
     const host = loadExtensionHost('web', options);
@@ -146,6 +161,7 @@ test('web Worker construction failure revokes its Blob URL and permits another a
     assertAttemptReleased(host);
 });
 
+// 停用发出取消信号；模拟 fetch 即使忽略信号并迟到完成，也不得再构造 Worker。
 test('web deactivation during worker fetch prevents late worker creation', async () => {
     const pendingFetch = deferred();
     const host = loadExtensionHost('web', { fetch: pendingFetch.promise });
@@ -160,6 +176,7 @@ test('web deactivation during worker fetch prevents late worker creation', async
 });
 
 for (const retirement of ['deactivation', 'timeout']) {
+// Node SDK 可在异步工作目录检查后才创建传输，故释放不得等待初始化结算。
 test(`native transport acquired after ${retirement} is released without waiting for initialization`, async () => {
     const transport = deferred();
     const initialization = deferred();
