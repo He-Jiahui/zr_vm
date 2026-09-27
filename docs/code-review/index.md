@@ -87,5 +87,6 @@ doc_type: category-index
 | core GDB 调试脚本 | [38 项](coverage/tests_core_gdb.tsv) | 23 个脚本两路独立复核，98 个非空证据锚点有效，差异仅新增注释；断点命令内 `finish` 后的采样失效等 7 个 BUG 和 8 个 TODO 留证。旧调试二进制不可用，未运行脚本。 |
 | core 调用与执行路径回归 | [696 项](coverage/tests_core_execution.tsv) | 24 个 C/头文件独立复核，2188 个证据锚点有效；源码仅改注释，GCC/Clang 对实现文件的语法检查通过。13 个 BUG 与 15 个 TODO 留证；未运行完整测试套件。 |
 | core GC、资源转移与字符串回归 | [229 项](coverage/tests_core_gc_resource.tsv) | 14 个 C/头文件独立复核，838 个证据锚点有效；源码仅改注释，GCC/Clang 对 12 个实现文件的语法检查通过。33 个 BUG 与 9 个 TODO 留证，其中 8 个未注册测试目标待核查；未运行 CTest。 |
+| core UTF-8 验证、解码与编码边界 | [12 项](coverage/zr_vm_core_utf8.tsv) | 2 个 C/H 文件独立复核，57 个证据锚点有效，源码仅新增注释；GCC C11 语法检查通过。编码代理区码点生成无效 UTF-8 已标 BUG，码点偏移仅验证前缀的契约已写明；未运行完整测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
