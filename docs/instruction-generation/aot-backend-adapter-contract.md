@@ -7,6 +7,10 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_c.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_llvm.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_coverage.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_coverage.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_link_profile.h
@@ -25,6 +29,8 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_aot_backend_adapters.c
   - tests/parser/test_ssa_aot_callable_abi.c
+  - tests/parser/test_ssa_aot_scalar_text.c
+  - tests/acceptance/ssa-aotir-scalar-text-emitter.md
 doc_type: module-detail
 status: implemented-subset
 ---
@@ -35,12 +41,17 @@ status: implemented-subset
 
 The files in this slice live in the dormant `zr_vm_aot` archive.  They consume
 the shared `SZrAotIrModule` and parser lowering facade; they do not revive the
-retired quickened-bytecode emitter.  The C and LLVM entry points therefore
-return scalar lowering facts with `descriptorOnly = true` and
-`artifactAvailable = false`.  A caller that requires source text, LLVM IR, or
-machine code uses the `_emit_ex(..., requireArtifact = ZR_TRUE, ...)` entry
-point and receives `ZR_BACKEND_AOT_IR_ARTIFACT_UNAVAILABLE`.  No successful
-result is labelled as an executable artifact.
+retired quickened-bytecode emitter.  The C and LLVM adapter entry points
+therefore return scalar lowering facts with `descriptorOnly = true` and
+`artifactAvailable = false`. A caller that requires a loadable VM artifact
+uses the `_emit_ex(..., requireArtifact = ZR_TRUE, ...)` entry point and
+receives `ZR_BACKEND_AOT_IR_ARTIFACT_UNAVAILABLE`. No successful adapter
+result is labelled as an executable artifact. The separate
+`backend_aot_ir_{c,llvm}_emit_const_i64` functions can now emit standalone
+text for one explicitly qualified `CONSTANT` to `RETURN` shape; they do not
+change these adapter artifact results or register a VM entry. Their limits
+and executable host-compiler checks are recorded in
+`docs/instruction-generation/aotir-scalar-text-emitter.md`.
 
 `backend_aot_ir_adapter_validate` applies the core AOTIR schema, execution
 contract, CFG/range, and relocation checks.  `backend_aot_ir_adapter_collect`
