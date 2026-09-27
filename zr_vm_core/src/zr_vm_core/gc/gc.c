@@ -10,6 +10,7 @@
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/execution_budget.h"
 
+/* 暂停域等待上界，完整回收与步骤失败时均按此边界放弃本次尝试。 */
 #define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
 
 #if defined(ZR_PLATFORM_WIN)
@@ -19,6 +20,7 @@
 #include <time.h>
 #endif
 
+/* 回收遥测使用的时钟；跨平台结果仅用于时长估计，不承担同步职责。 */
 TZrUInt64 garbage_collector_now_us(void) {
 #if defined(ZR_PLATFORM_WIN)
     static LARGE_INTEGER frequency = {0};
@@ -39,6 +41,7 @@ TZrUInt64 garbage_collector_now_us(void) {
 #endif
 }
 
+/* 将每类回收的累计统计投影到宿主可读取的快照。 */
 static void garbage_collector_refresh_cumulative_snapshot(SZrGarbageCollector *collector) {
     if (collector == ZR_NULL) {
         return;
@@ -64,6 +67,7 @@ static void garbage_collector_refresh_cumulative_snapshot(SZrGarbageCollector *c
             collector->collectionMaxDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL];
 }
 
+/* 汇总仍有活动对象的区段压力；诊断视图不等同于分配器总占用。 */
 static void garbage_collector_refresh_pressure_snapshot(SZrGarbageCollector *collector) {
     TZrUInt32 regionCount = 0u;
     TZrUInt32 edenRegionCount = 0u;
@@ -158,6 +162,7 @@ static void garbage_collector_refresh_pressure_snapshot(SZrGarbageCollector *col
     collector->statsSnapshot.permanentLiveBytes = permanentLiveBytes;
 }
 
+/* 仅在一轮回收到达终态时累计次数，避免把切片计作完整周期。 */
 static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collector, TZrUInt64 startedUs) {
     TZrUInt64 finishedUs;
     TZrUInt64 durationUs;
@@ -191,6 +196,9 @@ static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collect
     garbage_collector_refresh_cumulative_snapshot(collector);
 }
 
+/* AOT 帧链借用调用方栈内 frame、根槽和映射；扫描前须保持三者有效。
+ * BUG: 生成函数在受保护调用中抛异常可跳过 Pop，TryRun 不清链；后续 GC
+ * 遍历已失效的栈内 frame，可能读取悬垂根槽。 */
 TZrBool ZrCore_Gc_AotRootFramePush(SZrState *state,
                                     SZrAotGcRootFrame *frame,
                                     TZrStackValuePointer frameBase,
@@ -213,6 +221,7 @@ TZrBool ZrCore_Gc_AotRootFramePush(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 只接受栈顶帧，失败时不改动链；异常回退可用深度检查平衡。 */
 TZrBool ZrCore_Gc_AotRootFramePop(SZrState *state, SZrAotGcRootFrame *frame) {
     if (state == ZR_NULL || frame == ZR_NULL || state->aotGcRootFrameStack != frame) {
         return ZR_FALSE;
@@ -228,10 +237,12 @@ TZrBool ZrCore_Gc_AotRootFramePop(SZrState *state, SZrAotGcRootFrame *frame) {
     return ZR_TRUE;
 }
 
+/* 调用方用深度核对本次 AOT 根帧是否已完全弹出。 */
 TZrUInt32 ZrCore_Gc_AotRootFrameDepth(const SZrState *state) {
     return state != ZR_NULL ? state->aotGcRootFrameDepth : 0u;
 }
 
+/* 逸出对象保留更外层的锚定作用域，避免后续较短生命周期覆盖旧约束。 */
 static TZrUInt32 garbage_collector_merge_scope_depth(TZrUInt32 currentScopeDepth, TZrUInt32 incomingScopeDepth) {
     if (currentScopeDepth == ZR_GC_SCOPE_DEPTH_NONE) {
         return incomingScopeDepth;
@@ -242,6 +253,7 @@ static TZrUInt32 garbage_collector_merge_scope_depth(TZrUInt32 currentScopeDepth
     return currentScopeDepth < incomingScopeDepth ? currentScopeDepth : incomingScopeDepth;
 }
 
+/* 将调用方的逸出类别转为诊断所需的晋升原因；显式原因优先。 */
 static EZrGarbageCollectPromotionReason garbage_collector_promotion_reason_from_escape_flags(
         TZrUInt32 escapeFlags,
         EZrGarbageCollectPromotionReason promotionReason) {
@@ -270,6 +282,7 @@ static EZrGarbageCollectPromotionReason garbage_collector_promotion_reason_from_
     return ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
 }
 
+/* 记录跨作用域对象及其闭包捕获的逸出，只在信息变化时传播捕获链。 */
 static void garbage_collector_mark_raw_object_escaped_internal(SZrState *state,
                                                                SZrRawObject *object,
                                                                TZrUInt32 escapeFlags,
@@ -286,6 +299,7 @@ static void garbage_collector_mark_raw_object_escaped_internal(SZrState *state,
         return;
     }
 
+    /* TODO: 任意非零逸出登记都会撤销既有 ignore 根；屏障测试预期图接管，需核查宿主持有或无持久图边时的前提。 */
     if (object->garbageCollectMark.ignoredRegistryIndex != ZR_MAX_SIZE) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, object);
     }
@@ -311,6 +325,8 @@ static void garbage_collector_mark_raw_object_escaped_internal(SZrState *state,
     }
 }
 
+/* 合并显式请求和堆压力请求为待执行类型，并以正债务唤醒安全点。
+ * TODO: 显式 kind 未做范围检查；需核对无效枚举的宿主处理契约。 */
 static void garbage_collector_schedule_collection_internal(SZrGlobalState *global,
                                                            EZrGarbageCollectCollectionKind kind,
                                                            TZrBool isExplicitRequest) {
@@ -333,14 +349,18 @@ static void garbage_collector_schedule_collection_internal(SZrGlobalState *globa
     }
 }
 
+/* 全局状态在创建主线程后调用；管理器所有权立即转给 global。 */
 void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     SZrGarbageCollector *gc =
             ZrCore_Memory_RawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
     SZrState *state;
 
+    /* BUG: global.c 的构造路径无失败分支；管理器分配为 NULL 时下方首次访问 gc 即崩溃。 */
     global->garbageCollector = gc;
     state = global->mainThreadState;
 
+    /* BUG: 此管理器并非零初始化；budgetConfigured 与预算字段未写入初值，
+     * 宿主首次调用 GetBudget/GetBudgetStats 时会读取未初始化状态。 */
     gc->managedMemories = sizeof(SZrGlobalState) + sizeof(SZrState);
     gc->gcDebtSize = 0;
     gc->atomicMemories = 0;
@@ -449,6 +469,7 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     garbage_collector_refresh_cumulative_snapshot(gc);
 }
 
+/* 关闭阶段没有存续根；保留主 state 本体，释放最终回收后仍挂在对象链的条目。 */
 static void garbage_collector_release_shutdown_objects(SZrState *state, SZrGarbageCollector *collector) {
     SZrRawObject *stateObject = ZR_CAST_RAW_OBJECT_AS_SUPER(state);
 
@@ -463,6 +484,7 @@ static void garbage_collector_release_shutdown_objects(SZrState *state, SZrGarba
     }
 }
 
+/* GlobalState_Free 的单次收尾入口；先尝试终结，再释放剩余对象和辅助表。 */
 void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *collector) {
     TZrSize ignoredBytes;
     TZrSize regionBytes;
@@ -546,6 +568,7 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
     ZrCore_Memory_RawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
+/* 分配累加、回收抵扣均落在同一债务槽；调用方须持有有效管理器。 */
 void ZrCore_GarbageCollector_AddDebtSpace(SZrGlobalState *global, TZrMemoryOffset size) {
     TZrMemoryOffset currentDebt = global->garbageCollector->gcDebtSize;
 
@@ -565,6 +588,8 @@ void ZrCore_GarbageCollector_AddDebtSpace(SZrGlobalState *global, TZrMemoryOffse
     }
 }
 
+/* 显式保活表承担宿主/反射临时根；重复登记不增加引用计数，扩容失败时调用方须保留其他根。
+ * BUG: NativeCallPinObject 可从同域多个 RUNNING mutator 并发进入，本表的计数/数组读写未持锁。 */
 TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *object) {
     SZrGarbageCollector *collector;
 
@@ -588,6 +613,7 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
         return ZR_FALSE;
     }
 
+    /* BUG: 两个首登者可写同一槽并丢根；扩容还可释放另一线程正在读取的旧表。 */
     collector->ignoredObjects[collector->ignoredObjectCount] = object;
     object->garbageCollectMark.ignoredRegistryIndex = collector->ignoredObjectCount;
     collector->ignoredObjectCount++;
@@ -595,6 +621,8 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
     return ZR_TRUE;
 }
 
+/* 撤销该 global 的保活登记；过期索引只清对象侧，不碰其他登记。
+ * BUG: 与并行登记/撤销共用无锁计数和交换删除，可能破坏其他对象的索引。 */
 TZrBool ZrCore_GarbageCollector_UnignoreObject(SZrGlobalState *global, SZrRawObject *object) {
     SZrGarbageCollector *collector;
     TZrSize index;
@@ -636,6 +664,7 @@ TZrBool ZrCore_GarbageCollector_IsObjectIgnored(SZrGlobalState *global, SZrRawOb
     return ZrCore_GarbageCollector_IsObjectIgnoredFast(global, object);
 }
 
+/* 供关闭、内存压力和宿主强制回收共用的暂停域完整回收入口。 */
 void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     SZrGlobalState *global;
     SZrGarbageCollector *collector;
@@ -673,6 +702,8 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
 
     ZR_ASSERT(!collector->isImmediateGcFlag);
     collector->isImmediateGcFlag = isImmediate;
+    /* BUG: 对象 scanMarkGcFunction 在受保护调用内抛异常时，longjmp 越过下方 mutation unlock、
+     * StopTheWorldEnd 和 GcEnd，后续 mutator 可被留在暂停域外等待。 */
     if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
         work += garbage_collector_run_generational_full(state);
     } else {
@@ -695,6 +726,7 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     ZrCore_ExecutionBudget_GcEnd(state);
 }
 
+/* 安全点的债务偿还入口：按回收模式执行一个暂停或并发标记切片。 */
 void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     SZrGlobalState *global;
     SZrGarbageCollector *collector;
@@ -756,6 +788,8 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         }
         collector->statsSnapshot.collectionPhase = collector->collectionPhase;
         if (concurrentMarkSlice) {
+            /* BUG: 多个 RUNNING mutator 可同时到达此分支；扫描本体虽持 mutation lock，
+             * 切片累计与本函数的共享遥测写入在锁外，形成数据竞争。 */
             collector->gcLastStepWork =
                     garbage_collector_concurrent_major_mark_slice(
                             state,
@@ -763,6 +797,8 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
                                     ? (TZrSize)collector->workerCount * 8u
                                     : 8u);
         } else {
+            /* BUG: minor 疏散时复制分配 OOM 可由 Exception_Throw longjmp；
+             * 受保护调用因此跳过 StopTheWorldEnd/GcEnd，暂停请求残留。 */
             garbage_collector_run_generational_step(state);
         }
     } else {
@@ -820,6 +856,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     ZrCore_ExecutionBudget_GcEnd(state);
 }
 
+/* 宿主设置软阈值；达到阈值仅安排完整回收，不在此入口分配/暂停。 */
 void ZrCore_GarbageCollector_SetHeapLimitBytes(SZrGlobalState *global, TZrMemoryOffset heapLimitBytes) {
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
         return;
@@ -829,6 +866,7 @@ void ZrCore_GarbageCollector_SetHeapLimitBytes(SZrGlobalState *global, TZrMemory
     global->garbageCollector->statsSnapshot.heapLimitBytes = heapLimitBytes;
 }
 
+/* 更新暂停阶段的预算配置并同步诊断快照。 */
 void ZrCore_GarbageCollector_SetPauseBudgetUs(SZrGlobalState *global,
                                               TZrUInt64 pauseBudgetUs,
                                               TZrUInt64 remarkBudgetUs) {
@@ -843,6 +881,7 @@ void ZrCore_GarbageCollector_SetPauseBudgetUs(SZrGlobalState *global,
     global->garbageCollector->statsSnapshot.remarkBudgetUs = remarkBudgetUs;
 }
 
+/* workerCount 当前只作为并发标记单次切片的工作量系数。 */
 void ZrCore_GarbageCollector_SetWorkerCount(SZrGlobalState *global, TZrUInt32 workerCount) {
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
         return;
@@ -852,10 +891,13 @@ void ZrCore_GarbageCollector_SetWorkerCount(SZrGlobalState *global, TZrUInt32 wo
     global->garbageCollector->statsSnapshot.workerCount = workerCount;
 }
 
+/* 将宿主请求提交给安全点，保留“显式”来源供驱动器决策。 */
 void ZrCore_GarbageCollector_ScheduleCollection(SZrGlobalState *global, EZrGarbageCollectCollectionKind kind) {
     garbage_collector_schedule_collection_internal(global, kind, ZR_TRUE);
 }
 
+/* 调试器/宿主拉取压力与域指标；域字段只在域锁内采集。
+ * BUG: 压力汇总遍历 regions 时另一 mutator 可扩容释放旧数组，产生悬垂读取。 */
 void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbageCollectorStatsSnapshot *outSnapshot) {
     SZrGcDomain *domain;
 
@@ -920,6 +962,7 @@ void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbage
     *outSnapshot = global->garbageCollector->statsSnapshot;
 }
 
+/* 屏障和测试用成员查询；仅接受该 global 管理器中的对象。 */
 TZrBool ZrCore_GarbageCollector_HasRememberedObject(SZrGlobalState *global, SZrRawObject *object) {
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
         return ZR_FALSE;
@@ -928,6 +971,7 @@ TZrBool ZrCore_GarbageCollector_HasRememberedObject(SZrGlobalState *global, SZrR
     return garbage_collector_remembered_registry_contains(global->garbageCollector, object);
 }
 
+/* 对象跨作用域、模块或宿主持有时登记逸出，通知闭包捕获传播。 */
 void ZrCore_GarbageCollector_MarkRawObjectEscaped(SZrState *state,
                                                   SZrRawObject *object,
                                                   TZrUInt32 escapeFlags,
@@ -942,6 +986,7 @@ void ZrCore_GarbageCollector_MarkRawObjectEscaped(SZrState *state,
             ZR_TRUE);
 }
 
+/* 泛值入口仅把 GC 对象交给同一逸出登记逻辑。 */
 void ZrCore_GarbageCollector_MarkValueEscaped(SZrState *state,
                                               const SZrTypeValue *value,
                                               TZrUInt32 escapeFlags,
@@ -967,6 +1012,7 @@ void ZrCore_GarbageCollector_MarkValueEscaped(SZrState *state,
             ZR_TRUE);
 }
 
+/* 宿主和跨域资源持有的对象转入不可移动区，并记录晋升原因。 */
 void ZrCore_GarbageCollector_PinObject(SZrState *state,
                                        SZrRawObject *object,
                                        EZrGarbageCollectPinKind pinKind) {
@@ -992,6 +1038,8 @@ void ZrCore_GarbageCollector_PinObject(SZrState *state,
     }
     ZrCore_RawObject_SetStorageKind(object, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED);
     ZrCore_RawObject_SetRegionKind(object, ZR_GARBAGE_COLLECT_REGION_KIND_PINNED);
+    /* BUG: 区段登记表扩容 OOM 时重分配返回零；此 void 入口已改固定类别，
+     * 仍把零 ID 留给对象且不向调用方报告失败，区段快照会漏计该对象。 */
     object->garbageCollectMark.regionId = garbage_collector_reassign_region_id_cached(
             state->global,
             previousRegionId,
@@ -1018,6 +1066,7 @@ TZrBool ZrCore_GarbageCollector_IsSweeping(SZrGlobalState *global) {
            status <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
 }
 
+/* 安全点按堆压力/债务触发回收；请求与实际完成之间可能跨多个步骤。 */
 void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
     SZrGlobalState *global;
     SZrGarbageCollector *collector;
@@ -1045,16 +1094,19 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
 #endif
 }
 
+/* 先响应跨线程暂停，再执行本线程的 GC 债务检查。 */
 void ZrCore_Gc_SafePoint(SZrState *state) {
     ZrCore_GcDomain_MutatorPoll(state);
     ZrCore_GarbageCollector_CheckGc(state);
 }
 
+/* VM 写入路径统一转交值屏障，并记录屏障频次。 */
 void ZrCore_Gc_WriteBarrier(SZrState *state, SZrRawObject *ownerObject, SZrTypeValue *value) {
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_WRITE_BARRIER_COUNT, 1u);
     ZrCore_Value_Barrier(state, ownerObject, value);
 }
 
+/* 凭据只记录本次调用新增的状态，避免解除其他调用方的长期保活。 */
 static void garbage_collector_reset_native_call_pin(SZrGcNativeCallPin *pin) {
     if (pin == ZR_NULL) {
         return;
@@ -1066,6 +1118,7 @@ static void garbage_collector_reset_native_call_pin(SZrGcNativeCallPin *pin) {
     pin->pinKindAddedByCaller = ZR_FALSE;
 }
 
+/* 本地调用前取得临时固定和保活，失败时清理本次凭据。 */
 TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZrGcNativeCallPin *pin) {
     TZrUInt32 previousPinFlags;
     TZrBool wasIgnored;
@@ -1091,6 +1144,8 @@ TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZr
         pin->pinKindAddedByCaller = ZR_TRUE;
     }
     ZrCore_GarbageCollector_PinObject(state, object, ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+    /* BUG: 保活表扩容失败时只回退 pinFlags；PinObject 已更改 storage、region、
+     * escape 状态，失败后对象仍可能被排除老区压实。 */
     if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global,
                                                           state,
                                                           object,
@@ -1105,6 +1160,7 @@ TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZr
     return ZR_TRUE;
 }
 
+/* 值不是托管对象时不建立凭据，调用方仍可统一执行 Unpin。 */
 TZrBool ZrCore_Gc_NativeCallPinValue(SZrState *state, const SZrTypeValue *value, SZrGcNativeCallPin *pin) {
     SZrRawObject *object;
 
@@ -1120,6 +1176,7 @@ TZrBool ZrCore_Gc_NativeCallPinValue(SZrState *state, const SZrTypeValue *value,
     return ZrCore_Gc_NativeCallPinObject(state, object, pin);
 }
 
+/* 本地调用结束时仅撤销凭据新增的 pin 标记和显式根。 */
 void ZrCore_Gc_NativeCallUnpin(SZrGlobalState *global, SZrGcNativeCallPin *pin) {
     SZrRawObject *object;
 
