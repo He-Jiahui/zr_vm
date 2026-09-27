@@ -79,7 +79,7 @@ doc_type: category-index
 | Benchmark 性能套件编排 | [41 项](coverage/tests_cmake_performance_suite.tsv) | 1 个 CMake 脚本独立复核，18 个函数及 145 个证据锚点有效，源码仅增注释；脚本在预期缺少 CLI_EXE 前置条件处退出，未运行完整基准。旧 profile 误收、GC 配对门控及未筛选工具链预构建等 5 个 BUG 和 2 个 TODO 留证。 |
 | Benchmark 注册与 Task 3 环境门控 | [49 项](coverage/tests_cmake_benchmark_registration.tsv) | 8 个 CMake 脚本独立复核，173 个证据锚点有效且只改注释；registry、Task 3 和 Task 4 三项可直跑契约测试通过，缺 runner/fixture 二进制的两项仅检查脚本入口。Task 3 环境失格仍保留原始 gate 和比值的两处 BUG 已用最小夹具复现。 |
 | AOT ZRP 元数据裁剪与发布 | [341 项](coverage/zr_vm_aot_metadata.tsv) | 26 个 C/H 文件独立复核，924 个证据锚点有效，源码仅增注释；GCC/Clang 对 13 个实现文件的语法检查通过，未运行完整构建。空成员映射、签名重写借用期及发布失败边界已校正，保留 12 个 TODO。 |
-| core 调用绑定、持久化契约与导入重定位 | [111 项](coverage/zr_vm_core_call_binding.tsv) | 16 个 C/H 文件独立复核，源码仅改注释；GCC/Clang 对 12 个实现文件的语法检查通过，未运行完整测试。artifact 读端错误分类和链接分配失败的错误报告已标 2 个 BUG，另有 3 个 TODO。 |
+| core 调用绑定、持久化契约与导入重定位 | [111 项](coverage/zr_vm_core_call_binding.tsv) | 16 个 C/H 文件独立复核，源码仅改注释；GCC/Clang 对 12 个实现文件的语法检查通过，未运行完整测试。artifact 读端错误分类和链接分配失败的错误报告已标 2 个 BUG，另有 3 个 TODO。旧台账 15 个失效锚点和其他漂移已按当前调用语义重锚，296 个证据锚点通过独立复核与 `check-batch`。 |
 | CLI 脚本套件编排 | [53 项](coverage/tests_cmake_cli_suite.tsv) | 1 个 CMake 脚本独立复核，覆盖 13 个函数及 35 个案例，源码仅增注释；未知 `TIER` 空跑成功退出已标 BUG，另外保留 3 个 TODO。脚本定向检查通过，未运行完整 CLI 套件。 |
 | 项目 fixture 脚本套件编排 | [67 项](coverage/tests_cmake_projects_suite.tsv) | 1 个 CMake 脚本独立复核，覆盖 44 个项目案例与 9 个函数；源码仅增注释，脚本解析及未知 `TIER` 空跑复现通过。未知档位无案例仍成功退出已标 BUG，删除目标与 binary 回退保留 2 个 TODO。 |
 | 归档 AOT runtime、ABI 与测试脚本 | [875 项](coverage/zr_vm_aot_tests_runtime.tsv) | 33 文件独立复核，2351 个证据锚点有效，源码差异仅注释；根构建使用现役 runtime，归档 runtime 重接时的生成 helper 接口缺口已按非穷举集合标 BUG。累计保留 45 个 BUG、44 个 TODO；未运行完整构建或测试。 |
@@ -159,7 +159,7 @@ doc_type: category-index
 | core 元数据 token 与 ZRP 表格式 | [44 项](coverage/zr_vm_core_metadata_format_headers.tsv) | 2 个头文件独立复核，283 个有效锚点，源码仅改注释；GCC/Clang 定向语法检查通过。1 个 BUG 标出合法但未对齐的 TypeSpec section 被强转读取，3 个 TODO 保留 RID 截断、AOT token 指针序列化及跨 ABI 行格式疑问；未运行动态测试。 |
 | core artifact 小端编码与公开身份 | [24 项](coverage/zr_vm_core_artifact_encoding_identity.tsv) | 2 个 C 文件独立复核，源码仅增注释；GCC/Clang 严格语法检查通过。公开 `StatusName` 对五个合法状态返回 `unknown` 已由最小 C 调用复现并标 BUG；4 个 TODO 行保留 token 诊断和跨 ABI 原始结构哈希等边界，关联 artifact 行台账锚点已校正。 |
 | core artifact 签名校验与文本往返 | [38 项](coverage/zr_vm_core_artifact_signature_text.tsv) | 2 个 C 文件独立复核，406 个有效锚点，源码仅增 33 行注释；GCC/Clang 定向语法检查通过。2 个 TODO 保留 WriteText/ReadText 输入输出缓冲区重叠契约，未运行完整测试。 |
-| core artifact 定长行编解码 | [28 项](coverage/zr_vm_core_artifact_rows.tsv) | 1 个 C 文件独立复核，24 个函数与 4 个风险块；GCC/Clang 严格语法检查通过。公开单行读取缺少节类型、数据范围校验且成功后保留旧诊断状态，最小 C 调用已复现并标 BUG；CallBinding 写入返回值与 DomainTransfer 哈希边界保留 TODO。关联 encoding 与 call binding 台账锚点已校正，旧 call binding 台账的其他锚点仍待迁移。 |
+| core artifact 定长行编解码 | [28 项](coverage/zr_vm_core_artifact_rows.tsv) | 1 个 C 文件独立复核，24 个函数与 4 个风险块；GCC/Clang 严格语法检查通过。公开单行读取缺少节类型、数据范围校验且成功后保留旧诊断状态，最小 C 调用已复现并标 BUG；CallBinding 写入返回值与 DomainTransfer 哈希边界保留 TODO。关联 encoding 与 call binding 台账锚点已校正。 |
 | parser 编译器套件入口与调用降级入口 | [147 项](coverage/tests_parser_compiler_suite_mains.tsv) | 2 个 C 文件独立复核，732 个有效锚点；源码仅将空行替换为注释，GCC/Clang 定向语法检查通过。专项目标手工运行，integration 入口属于 language_pipeline CTest；1 个 BUG 记录 W2 pair 分类测试的断言比较方向，未运行完整测试。 |
 | parser 编译器回归用例主体 | [115 项](coverage/tests_parser_compiler_regressions.tsv) | 1 个大型 C 测试文件独立复核，源码只把原有空行替换为注释且行号保持；GCC/Clang 定向语法检查通过。48 个 BUG 记录 Unity 硬断言失败跳过尾部资源清理的可达路径，1 个 TODO 保留空守卫语义，未运行完整测试。关联现代台账锚点有效，旧夹具与通用台账仍需迁移格式。 |
 | parser 数值 foreach 基数与符号系数读取 | [30 项](coverage/tests_parser_numeric_cardinality_symbolic.tsv) | 2 个 C 测试文件独立复核，214 个证据锚点，源码仅增 35 行注释；GCC/Clang 定向语法检查通过。3 个 BUG 记录 Unity 断言后跳过资源清理及 Array 初始化失败后的 Push 风险，未运行动态测试。 |
