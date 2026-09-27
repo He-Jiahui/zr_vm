@@ -116,7 +116,10 @@ publish a partial source exception graph.
 - the protected plain assignment stores the call result on the normal path,
   while the handler loads the same Place through the exceptional edge;
 - the handler's ExecIR `COPY` reads the pre-invoke initialization ValueId,
-  never the invoke result; and
+  never the invoke result;
+- a read after the catch consumes a two-predecessor phi whose incoming values
+  come from the normal assignment and the exceptional pre-invoke definition;
+  and
 - compound assignment remains on the complete legacy fallback path without
   publishing an exception payload into the source graph.
 
@@ -131,6 +134,10 @@ publish a partial source exception graph.
   effect verification, and place promotion adjacency suites each pass 3/3;
   the MSVC 19.44 Debug shared-parser build and the same adjacency suite pass
   3/3. Wiki validation passes for 116 pages and 646 local links.
+  Extending the source fixture with a read after the catch confirms the join
+  `COPY` uses a two-incoming phi: the exception predecessor supplies the
+  initialization and the normal predecessor supplies the call result. Both
+  source suites still pass 107/107 after verifying the mapped ExecIR block IDs.
   Windows shared-parser source tests cannot link four existing unexported
   compiler-internal helpers, so no MSVC source-fixture result is claimed.
 - TDD started with the new source fixture failing `1/78`: the protected call

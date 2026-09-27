@@ -3,7 +3,8 @@ static void test_source_catch_reads_preinvoke_assignment_value(void) {
             "fn identity(): int { return 7; }\n"
             "var result: int = 1;\n"
             "try { result = identity(); }\n"
-            "catch (error) { result; }\n";
+            "catch (error) { result; }\n"
+            "result;\n";
     static TZrChar sourceName[] = "source_catch_interrupted_assignment.zr";
     SZrString *name = ZrCore_String_Create(
             g_state, sourceName, sizeof(sourceName) - 1U);
@@ -15,6 +16,7 @@ static void test_source_catch_reads_preinvoke_assignment_value(void) {
     const SZrSemanticIrInstruction *initialization = ZR_NULL;
     const SZrSemanticIrInstruction *assignment = ZR_NULL;
     const SZrSemanticIrInstruction *catchRead = ZR_NULL;
+    const SZrSemanticIrInstruction *joinRead = ZR_NULL;
     const SZrParserCfgBlock *callBlock = ZR_NULL;
     const SZrParserCfgBlock *assignmentBlock = ZR_NULL;
     const SZrParserCfgBlock *catchBlock = ZR_NULL;
@@ -59,14 +61,19 @@ static void test_source_catch_reads_preinvoke_assignment_value(void) {
         } else if (instruction->sourceRange.start.line == 4U &&
                    instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
             catchRead = instruction;
+        } else if (instruction->sourceRange.start.line == 5U &&
+                   instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
+            joinRead = instruction;
         }
     }
     TEST_ASSERT_NOT_NULL(initialization);
     TEST_ASSERT_NOT_NULL(call);
     TEST_ASSERT_NOT_NULL(assignment);
     TEST_ASSERT_NOT_NULL(catchRead);
+    TEST_ASSERT_NOT_NULL(joinRead);
     TEST_ASSERT_EQUAL_UINT32(initialization->placeId, assignment->placeId);
     TEST_ASSERT_EQUAL_UINT32(assignment->placeId, catchRead->placeId);
+    TEST_ASSERT_EQUAL_UINT32(assignment->placeId, joinRead->placeId);
     TEST_ASSERT_EQUAL_UINT32(call->resultValueId, assignment->valueId);
     for (index = 0U; index < function->cfg.blocks.length; ++index) {
         const SZrParserCfgBlock *block =
@@ -116,6 +123,31 @@ static void test_source_catch_reads_preinvoke_assignment_value(void) {
         ++catchReadCount;
     }
     TEST_ASSERT_EQUAL_UINT32(1U, catchReadCount);
+    {
+        const SZrExecIrPhi *joinPhi = ZR_NULL;
+        for (index = 0U; index < output.instructionCount; ++index) {
+            const SZrExecIrInstruction *instruction = &output.instructions[index];
+            if (instruction->sourceId != joinRead->id) continue;
+            TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_OPCODE_COPY, instruction->opcode);
+            TEST_ASSERT_EQUAL_UINT32(1U, instruction->operands.count);
+            for (TZrUInt32 phiIndex = 0U; phiIndex < output.phiCount; ++phiIndex) {
+                if (output.phiPool[phiIndex].result ==
+                    output.operands[instruction->operands.start]) {
+                    joinPhi = &output.phiPool[phiIndex];
+                }
+            }
+        }
+        TEST_ASSERT_NOT_NULL(joinPhi);
+        TEST_ASSERT_EQUAL_UINT32(2U, joinPhi->incomings.count);
+        TEST_ASSERT_EQUAL_UINT32(catchBlock->id + 1U,
+                output.phiIncoming[joinPhi->incomings.start].predecessor);
+        TEST_ASSERT_EQUAL_UINT32(initialization->valueId,
+                output.phiIncoming[joinPhi->incomings.start].value);
+        TEST_ASSERT_EQUAL_UINT32(assignmentBlock->id + 1U,
+                output.phiIncoming[joinPhi->incomings.start + 1U].predecessor);
+        TEST_ASSERT_EQUAL_UINT32(call->resultValueId,
+                output.phiIncoming[joinPhi->incomings.start + 1U].value);
+    }
     ZrCore_ExecIr_FreeFunction(&output);
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;
