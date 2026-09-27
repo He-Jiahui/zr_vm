@@ -15,17 +15,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* GC 值改存对象图索引，避免快照在移动 GC 后保留失效的对象地址。 */
 typedef struct ZrCheckpointValue {
     SZrTypeValue scalar;
     TZrSize objectIndex;
     TZrBool isObject;
 } ZrCheckpointValue;
 
+/* 保留哈希表的键值关系，恢复时再按当前对象地址重建桶。 */
 typedef struct ZrCheckpointPair {
     ZrCheckpointValue key;
     ZrCheckpointValue value;
 } ZrCheckpointPair;
 
+/* 每个可恢复对象只登记一次；句柄保身份，原生数组保留可变侧数据。 */
 typedef struct ZrCheckpointObject {
     SZrGcRootHandle handle;
     EZrRawObjectType type;
@@ -55,6 +58,7 @@ typedef struct ZrCheckpointObject {
     TZrUInt64 rawIntStorageGeneration;
 } ZrCheckpointObject;
 
+/* 快照借用创建线程，并以该线程 GC 域的根句柄固定对象图生命周期。 */
 struct SZrSessionCheckpoint {
     SZrState *state;
     ZrCheckpointObject *objects;
@@ -75,8 +79,10 @@ struct SZrSessionCheckpoint {
     TZrBool hasMetaFunctionName[ZR_META_ENUM_MAX];
 };
 
+/* 未登记的可选引用不能与对象图中的零号节点混淆。 */
 #define ZR_CHECKPOINT_NO_INDEX ((TZrSize)-1)
 
+/* 所有快照侧数组统一检查倍增和字节乘法溢出；失败时保持原缓冲区。 */
 static TZrBool checkpoint_grow(void **memory, TZrSize *capacity, TZrSize elementSize, TZrSize required) {
     TZrSize next;
     void *grown;
@@ -103,6 +109,7 @@ static TZrBool checkpoint_grow(void **memory, TZrSize *capacity, TZrSize element
     return ZR_TRUE;
 }
 
+/* 拒绝借用所有权、原生指针和线程值，防止逻辑快照假装拥有外部生命周期。 */
 static TZrBool checkpoint_value_is_recoverable(const SZrTypeValue *value) {
     if (value == ZR_NULL || value->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
         value->ownershipControl != ZR_NULL || value->ownershipWeakRef != ZR_NULL) {
@@ -120,6 +127,7 @@ static TZrBool checkpoint_value_is_recoverable(const SZrTypeValue *value) {
     return value->type != ZR_VALUE_TYPE_THREAD;
 }
 
+/* 白名单只接受没有资源终结义务的 VM 对象；扩展对象需自行定义恢复契约。 */
 static TZrBool checkpoint_object_is_recoverable(const SZrRawObject *raw) {
     if (raw == ZR_NULL || raw->resourceLifecycleState != ZR_RESOURCE_LIFECYCLE_NONE) {
         return ZR_FALSE;
@@ -150,6 +158,7 @@ static TZrBool checkpoint_object_is_recoverable(const SZrRawObject *raw) {
     }
 }
 
+/* 通过 GC 句柄查重，环和别名都引用同一快照节点。 */
 static TZrSize checkpoint_find_object(const SZrSessionCheckpoint *checkpoint, const SZrRawObject *raw) {
     TZrSize index;
     SZrRawObject *resolved;
@@ -176,6 +185,7 @@ static TZrBool checkpoint_capture_value(SZrSessionCheckpoint *checkpoint,
                                          const SZrTypeValue *value,
                                          ZrCheckpointValue *outValue);
 
+/* 函数体本身不克隆；遍历其引用以保留仍由常量、子函数和缓存指向的对象。 */
 static TZrBool checkpoint_capture_function_refs(SZrSessionCheckpoint *checkpoint,
                                                  SZrFunction *function) {
     TZrSize ignored;
@@ -187,6 +197,8 @@ static TZrBool checkpoint_capture_function_refs(SZrSessionCheckpoint *checkpoint
                                    &ignored)) {
         return ZR_FALSE;
     }
+    /* BUG: SET_CONSTANT 可改写常量值，但这里只发现其对象引用而丢弃 captured；
+     * Rollback 不恢复 constantValueList，故成功返回后仍保留快照后的常量。 */
     for (index = 0u; index < function->constantValueLength; index++) {
         ZrCheckpointValue captured;
         if (!checkpoint_capture_value(checkpoint, &function->constantValueList[index], &captured)) {
@@ -223,6 +235,7 @@ static TZrBool checkpoint_capture_function_refs(SZrSessionCheckpoint *checkpoint
     return ZR_TRUE;
 }
 
+/* 标量按值保存；GC 指针交给对象图索引和句柄，避免直接保存移动中的地址。 */
 static TZrBool checkpoint_capture_value(SZrSessionCheckpoint *checkpoint,
                                          const SZrTypeValue *value,
                                          ZrCheckpointValue *outValue) {
@@ -248,6 +261,7 @@ static TZrBool checkpoint_capture_value(SZrSessionCheckpoint *checkpoint,
     return ZR_TRUE;
 }
 
+/* 按实际桶链保存键值；失败时本地释放未挂入快照的数组，已登记对象根由 Create 清理。 */
 static TZrBool checkpoint_capture_pairs(SZrSessionCheckpoint *checkpoint,
                                         SZrHashSet *set,
                                         ZrCheckpointPair **outPairs,
@@ -285,6 +299,7 @@ static TZrBool checkpoint_capture_pairs(SZrSessionCheckpoint *checkpoint,
     return ZR_TRUE;
 }
 
+/* 先登记节点和 GC 根再递归其边，允许模块、原型及闭包图中存在环。 */
 static TZrBool checkpoint_capture_object(SZrSessionCheckpoint *checkpoint,
                                           SZrRawObject *raw,
                                           TZrSize *outIndex) {
@@ -337,6 +352,9 @@ static TZrBool checkpoint_capture_object(SZrSessionCheckpoint *checkpoint,
         }
         checkpoint->objects[index].pairs = capturedPairs;
         checkpoint->objects[index].pairCount = capturedPairCount;
+        /* TODO: 当前仅保留 module 的两张 map、初始化代际和描述符 ready 位；
+         * moduleName/fullPath/pathHash、metadataRuntime 及完整 exportDescriptors 未恢复。
+         * 需核查项目会话重载是否会修改同一已保留模块的这些字段。 */
         if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
             SZrObjectModule *module = (SZrObjectModule *)object;
             capturedPairs = ZR_NULL;
@@ -423,6 +441,7 @@ static TZrBool checkpoint_capture_object(SZrSessionCheckpoint *checkpoint,
     return ZR_TRUE;
 }
 
+/* 恢复时重新解析句柄，既保留原对象身份也兼容快照期间的 GC 移动。 */
 static TZrBool checkpoint_restore_value(SZrState *state,
                                         const SZrSessionCheckpoint *checkpoint,
                                         const ZrCheckpointValue *source,
@@ -446,6 +465,7 @@ static TZrBool checkpoint_restore_value(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 原位重建集合，避免替换宿主对象；恢复后键的哈希和 GC 屏障都按当前地址计算。 */
 static TZrBool checkpoint_restore_map(SZrState *state,
                                              const SZrSessionCheckpoint *checkpoint,
                                              SZrRawObject *owner,
@@ -458,6 +478,8 @@ static TZrBool checkpoint_restore_map(SZrState *state,
     SZrTypeValue key;
     SZrTypeValue value;
 
+    /* BUG: 若后续 Init 或 Add 的桶 rehash 返回分配失败，旧表已销毁；Rollback 返回假时
+     * Rust project session 仍可继续使用已部分改写的 registry/对象。 */
     if (set->isValid) {
         ZrCore_HashSet_Deconstruct(state, set);
     }
@@ -486,6 +508,7 @@ static TZrBool checkpoint_restore_map(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 先恢复全局根再逐对象重建可变数据；函数执行缓存失效后按需重新填充。 */
 static TZrBool checkpoint_restore(SZrState *state, const SZrSessionCheckpoint *checkpoint) {
     TZrSize index;
     SZrRawObject *raw;
@@ -605,6 +628,8 @@ static TZrBool checkpoint_restore(SZrState *state, const SZrSessionCheckpoint *c
                 }
             }
             if (snapshot->rawIntData != ZR_NULL) {
+                /* BUG: realloc 失败保留旧块，但直接覆盖指针和容量会丢失旧块；
+                 * Rollback 返回假后对象的数组侧存储也已损坏。 */
                 if (object->superArrayRawIntCapacity != snapshot->rawIntCapacity) {
                     object->superArrayRawIntData = ZR_CAST(TZrInt64 *,
                         ZrCore_Memory_Allocate(state->global,
@@ -677,6 +702,7 @@ static TZrBool checkpoint_restore(SZrState *state, const SZrSessionCheckpoint *c
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* Rust 项目会话在无 live Value 时进入；暂停同域 mutator 后捕获全局根与对象图。 */
 TZrBool ZrCore_SessionCheckpoint_Create(SZrState *state, SZrSessionCheckpoint **outCheckpoint) {
     SZrSessionCheckpoint *checkpoint;
     SZrGcDomainPauseDiagnostic pauseDiagnostic;
@@ -761,6 +787,7 @@ TZrBool ZrCore_SessionCheckpoint_Create(SZrState *state, SZrSessionCheckpoint **
     return ZR_TRUE;
 }
 
+/* 同一 state 上重用快照；先清空异常执行态，再在暂停区恢复对象图。 */
 TZrBool ZrCore_SessionCheckpoint_Rollback(SZrState *state, const SZrSessionCheckpoint *checkpoint) {
     SZrGcDomainPauseDiagnostic pauseDiagnostic;
     TZrBool restored;
@@ -779,11 +806,15 @@ TZrBool ZrCore_SessionCheckpoint_Rollback(SZrState *state, const SZrSessionCheck
         ZrCore_GcDomain_StopTheWorldEnd(state);
         return ZR_FALSE;
     }
+    /* BUG: map 的 pair 池预留或 Add 的 GcMalloc 失败且错误对象规范化成功时，
+     * Throw 可跳出受保护调用；
+     * 非局部退出绕过 StopTheWorldEnd，使 GC 域继续停在 pauseRequested 状态。 */
     restored = checkpoint_restore(state, checkpoint);
     ZrCore_GcDomain_StopTheWorldEnd(state);
     return restored;
 }
 
+/* GC 根须在创建时的 state 上释放；原生副本随后可直接用 C 分配器回收。 */
 void ZrCore_SessionCheckpoint_Free(SZrState *state, SZrSessionCheckpoint *checkpoint) {
     if (checkpoint == ZR_NULL) {
         return;
