@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
+/* 账本诊断与预算评估共用公开错误类型，但这里的字段编号只在账本内解释。 */
 static void gc_budget_ledger_diag(
         SZrGcBudgetDiagnostic *diagnostic,
         EZrGcBudgetDiagnosticCode code,
@@ -18,10 +19,12 @@ static void gc_budget_ledger_diag(
     diagnostic->actual = actual;
 }
 
+/* 长周期遥测采用饱和累计，避免回绕后伪装成较小工作量。 */
 static TZrUInt64 gc_budget_sat_add(TZrUInt64 left, TZrUInt64 right) {
     return right > UINT64_MAX - left ? UINT64_MAX : left + right;
 }
 
+/* 状态名称供日志或宿主展示；调度判断仍应使用枚举值。 */
 const TZrChar *ZrCore_GcBudget_StatusName(EZrGcBudgetStepStatus status) {
     switch (status) {
         case ZR_GC_BUDGET_STEP_ACCEPTED:
@@ -37,6 +40,7 @@ const TZrChar *ZrCore_GcBudget_StatusName(EZrGcBudgetStepStatus status) {
     }
 }
 
+/* 暂停归因可来自不同调度路径，此处只提供统一展示名称。 */
 const TZrChar *ZrCore_GcBudget_PauseReasonName(EZrGcBudgetPauseReason reason) {
     switch (reason) {
         case ZR_GC_BUDGET_PAUSE_NONE:
@@ -60,6 +64,7 @@ const TZrChar *ZrCore_GcBudget_PauseReasonName(EZrGcBudgetPauseReason reason) {
     }
 }
 
+/* 建立空账本的有效布局及一致性边界，供后续切片累计。 */
 void ZrCore_GcBudget_LedgerInit(SZrGcBudgetLedger *ledger) {
     if (ledger == ZR_NULL) {
         return;
@@ -70,6 +75,7 @@ void ZrCore_GcBudget_LedgerInit(SZrGcBudgetLedger *ledger) {
     ledger->consistentBoundary = ZR_TRUE;
 }
 
+/* 校验可持久化账本的头与状态范围，拒绝在非一致边界继续累计。 */
 TZrBool ZrCore_GcBudget_LedgerValidate(
         const SZrGcBudgetLedger *ledger,
         SZrGcBudgetDiagnostic *diagnostic) {
@@ -94,6 +100,8 @@ TZrBool ZrCore_GcBudget_LedgerValidate(
                               ledger->schemaVersion);
         return ZR_FALSE;
     }
+    /* TODO: 这里只校验枚举上界；有符号枚举 ABI 下负值可能通过。
+     * 多字段拒绝还共用 lastPhase 作为 actual，需核对下界与诊断语义。 */
     if (ledger->lastStatus > ZR_GC_BUDGET_STEP_OVER_BUDGET ||
         ledger->lastPhase >= ZR_GC_BUDGET_PHASE_COUNT ||
         ledger->lastPauseReason >= ZR_GC_BUDGET_PAUSE_COUNT ||
@@ -106,6 +114,7 @@ TZrBool ZrCore_GcBudget_LedgerValidate(
     return ZR_TRUE;
 }
 
+/* 只接纳与当前账本游标相容的单步见证，完成态与延迟态分别处理游标。 */
 TZrBool ZrCore_GcBudget_LedgerAccumulate(
         SZrGcBudgetLedger *ledger,
         const SZrGcBudgetStepResult *result,
@@ -119,6 +128,8 @@ TZrBool ZrCore_GcBudget_LedgerAccumulate(
                               0u, 1u, 0u);
         return ZR_FALSE;
     }
+    /* TODO: 结果的三种枚举也仅验上界，有符号枚举 ABI 下负值可能通过；
+     * 多字段拒绝共用 result->phase 作为 actual，需核对下界与诊断语义。 */
     if (!ZrCore_GcBudget_LedgerValidate(ledger, diagnostic) ||
         result->status > ZR_GC_BUDGET_STEP_OVER_BUDGET ||
         result->phase >= ZR_GC_BUDGET_PHASE_COUNT ||
@@ -135,6 +146,8 @@ TZrBool ZrCore_GcBudget_LedgerAccumulate(
 
     advancesCursor = result->status == ZR_GC_BUDGET_STEP_ACCEPTED ||
                      result->status == ZR_GC_BUDGET_STEP_OVER_BUDGET;
+    /* TODO: 相同的已完成见证可再次通过相等游标检查并重复累加计数；
+     * 需明确调用方禁止重放，或在账本层实现幂等识别。 */
     if ((advancesCursor && result->nextCursor < ledger->cursor) ||
         (!advancesCursor && result->nextCursor != ledger->cursor)) {
         gc_budget_ledger_diag(diagnostic,
@@ -143,12 +156,15 @@ TZrBool ZrCore_GcBudget_LedgerAccumulate(
         return ZR_FALSE;
     }
 
+    /* 门禁完成后才写账本；被本函数拒绝的见证不留下半更新状态。 */
     if (advancesCursor) {
         ledger->cursor = result->nextCursor;
     }
     ledger->lastStatus = result->status;
     ledger->lastPhase = result->phase;
     ledger->lastPauseReason = result->pauseReason;
+    /* TODO: 评估器对 REJECTED/DEFERRED 仍保留输入 bytes/objects；
+     * 此处无条件累计，重试时这些数值是否重复计入待明确。 */
     ledger->workDone = gc_budget_sat_add(ledger->workDone,
                                          result->workDone);
     ledger->elapsedUs = gc_budget_sat_add(ledger->elapsedUs,
