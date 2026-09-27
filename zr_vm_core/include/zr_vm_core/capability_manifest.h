@@ -5,6 +5,7 @@
 
 #define ZR_HOT_PATCH_CAPABILITY_SCHEMA_VERSION ((TZrUInt32)1u)
 
+/** @brief manifest 与 host 准入失败的机器可读类别；部署方应按枚举而非状态名决策。 */
 typedef enum EZrHotPatchCapabilityStatus {
     ZR_HOT_PATCH_OK = 0,
     ZR_HOT_PATCH_INVALID_ARGUMENT,
@@ -20,6 +21,7 @@ typedef enum EZrHotPatchCapabilityStatus {
     ZR_HOT_PATCH_LIMIT
 } EZrHotPatchCapabilityStatus;
 
+/** @brief 把单个元数据 token 的能力需求及来源位置带入授权闭包。 */
 typedef struct SZrHotPatchCapabilityRequirement {
     TZrUInt32 token;
     TZrUInt64 requiredBits;
@@ -27,6 +29,7 @@ typedef struct SZrHotPatchCapabilityRequirement {
     TZrUInt32 reserved;
 } SZrHotPatchCapabilityRequirement;
 
+/** @brief 候选身份、目标环境与能力需求的策略输入；requirements 由调用方持有。 */
 typedef struct SZrHotPatchCapabilityManifest {
     TZrUInt32 schemaVersion;
     TZrUInt32 flags;
@@ -41,6 +44,7 @@ typedef struct SZrHotPatchCapabilityManifest {
     const SZrHotPatchCapabilityRequirement *requirements;
 } SZrHotPatchCapabilityManifest;
 
+/* 主验证器拒绝新增机器码、原生导入及公开布局/签名变动；未知 flag 也不放行。 */
 #define ZR_HOT_PATCH_FLAG_HAS_MACHINE_CODE ((TZrUInt32)1u << 0u)
 #define ZR_HOT_PATCH_FLAG_ADDS_NATIVE_IMPORT ((TZrUInt32)1u << 1u)
 #define ZR_HOT_PATCH_FLAG_CHANGES_PUBLIC_LAYOUT ((TZrUInt32)1u << 2u)
@@ -49,6 +53,7 @@ typedef struct SZrHotPatchCapabilityManifest {
     (ZR_HOT_PATCH_FLAG_HAS_MACHINE_CODE | ZR_HOT_PATCH_FLAG_ADDS_NATIVE_IMPORT | \
      ZR_HOT_PATCH_FLAG_CHANGES_PUBLIC_LAYOUT | ZR_HOT_PATCH_FLAG_CHANGES_PUBLIC_SIGNATURE)
 
+/** @brief host 的当前模块身份与准入策略；artifact/manifest 及签名在验证调用期间保持有效。 */
 typedef struct SZrHotPatchValidationInput {
     const SZrArtifactExecIrView *artifact;
     const SZrHotPatchCapabilityManifest *manifest;
@@ -63,12 +68,15 @@ typedef struct SZrHotPatchValidationInput {
     TZrUInt32 signatureLength;
 } SZrHotPatchValidationInput;
 
+/** @brief 同步验签回调，读取借用的 artifact 字节和调用方传入的签名，不接管其所有权。 */
 typedef TZrBool (*FZrHotPatchVerifySignature)(const TZrByte *content,
                                                TZrUInt32 contentLength,
                                                const TZrByte *signature,
                                                TZrUInt32 signatureLength,
                                                TZrPtr userData);
 
+/** @brief 验证后交给 Prepare/Apply 的借用令牌，不复制或冻结 artifact 与 manifest。
+ * TODO: 核查 host 能否在发布前改写底层内容；immutableContent 当前只是声明。 */
 typedef struct SZrValidatedHotPatch {
     const SZrArtifactExecIrView *artifact;
     const SZrHotPatchCapabilityManifest *manifest;
@@ -80,6 +88,7 @@ typedef struct SZrValidatedHotPatch {
     TZrBool immutableContent;
 } SZrValidatedHotPatch;
 
+/** @brief 首个拒绝点的结构化信息；token/sourceOffset 为逐需求错误定位。 */
 typedef struct SZrHotPatchDiagnostic {
     EZrHotPatchCapabilityStatus status;
     TZrUInt32 token;
@@ -88,14 +97,20 @@ typedef struct SZrHotPatchDiagnostic {
     TZrUInt64 actual;
 } SZrHotPatchDiagnostic;
 
+/** @brief 部署前同时核对字节哈希、基模块、ABI/profile、授权集合与 host 验签。
+ * @pre verifySignature 可调用；输入指向的内容在验证及后续使用令牌期间保持稳定。
+ * @return 成功才填充 validated；失败时清零输出并通过可选 diagnostic 报告原因。
+ * TODO: 此入口允许 1048576 项需求，独立闭包入口仅允许 4096；核对两条准入路径的上限意图。 */
 ZR_CORE_API EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         const SZrHotPatchValidationInput *input,
         FZrHotPatchVerifySignature verifySignature,
         TZrPtr userData,
         SZrValidatedHotPatch *validated,
         SZrHotPatchDiagnostic *diagnostic);
+/** @brief 为同一 host/base/manifest 策略计算稳定身份；结果不代表签名或内容完整性。 */
 ZR_CORE_API TZrUInt64 ZrCore_HotPatch_ComputePolicyHash(
         const SZrHotPatchValidationInput *input);
+/** @brief 返回适合诊断展示的状态名；调用方仍以状态枚举判断失败类别。 */
 ZR_CORE_API const TZrChar *ZrCore_HotPatch_StatusName(
         EZrHotPatchCapabilityStatus status);
 
