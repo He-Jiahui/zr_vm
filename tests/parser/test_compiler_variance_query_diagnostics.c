@@ -10,6 +10,7 @@
 
 #include "harness/runtime_support.h"
 
+/* Unity 每个用例各建运行时；解析树与编译器状态由用例另行释放。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -18,16 +19,23 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: Unity 断言失败会跳过用例末尾的 Ast_Free/CompilerState_Free；
+     * 这里只销毁运行时，局部原生资源未按所有权契约清理。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
 }
 
+/** @brief 核对模块查询中的 variance 诊断元数据，并统计发布数量。
+ * @note diagnostics 借用编译器语义上下文，须在 CompilerState_Free 前读取。
+ */
 static TZrSize count_variance_diagnostics(
         const SZrParserSemanticQueryDiagnostics *diagnostics) {
     TZrSize count = 0U;
 
+    /* TODO: 当前只核对数量及共同字段，无法证明三处具体违规都被覆盖。
+     * 需逐项核对源码范围与上下文；事实层仅按范围、代码及消息去重。 */
     for (TZrSize index = 0U;
          diagnostics != ZR_NULL && index < diagnostics->count;
          index++) {
@@ -51,6 +59,9 @@ static TZrSize count_variance_diagnostics(
     return count;
 }
 
+/** @brief 直接验证 LSP 所用发布接口会将接口中的多处 variance 违规写入模块查询。
+ * @note 常规接口编译另走首项校验路径；本用例不代表该路径会发布全部违规。
+ */
 static void test_parser_publishes_all_interface_variance_diagnostics(void) {
     static TZrChar source[] =
             "interface Mixed<out T> {\n"
@@ -82,6 +93,7 @@ static void test_parser_publishes_all_interface_variance_diagnostics(void) {
     compiler.suppressErrorOutput = ZR_TRUE;
     compiler.scriptAst = ast;
 
+    /* LSP 直接调用该发布接口；常规编译只通过另一入口报告首个违规。 */
     TEST_ASSERT_TRUE(ZrParser_Variance_PublishInterfaceDiagnostics(
             &compiler, interfaceNode));
     TEST_ASSERT_FALSE(compiler.hasError);
@@ -98,6 +110,8 @@ static void test_parser_publishes_all_interface_variance_diagnostics(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* TODO: 此目标已在 tests/CMakeLists.txt 建立，但尚无 add_test 注册，
+ * 当前不会作为 CTest 用例运行；需确认 CI 是否直接运行该目标，或补注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_parser_publishes_all_interface_variance_diagnostics);

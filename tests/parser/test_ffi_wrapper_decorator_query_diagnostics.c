@@ -10,6 +10,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* Unity 每个用例各建运行时；解析树与编译器状态由用例另行释放。 */
 static SZrState *g_state;
 
 void setUp(void) {
@@ -18,12 +19,17 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: Unity 断言失败会跳过用例末尾的 Ast_Free/CompilerState_Free；
+     * 这里只销毁运行时，局部原生资源未按所有权契约清理。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
 }
 
+/** @brief 从测试源码取得首个类声明，供 FFI wrapper 装饰器校验使用。
+ * @note 返回类节点借用自 *outAst；调用方须先释放编译器状态，再释放整棵 AST。
+ */
 static SZrAstNode *parse_wrapper_class(
         const TZrChar *source,
         const TZrChar *sourceName,
@@ -56,6 +62,9 @@ static SZrAstNode *parse_wrapper_class(
     return ZR_NULL;
 }
 
+/** @brief 按源码起点选择被期待报错的类装饰器，避免多装饰器用例误验其他项。
+ * @note 返回节点借用自类声明所属 AST。
+ */
 static SZrAstNode *find_decorator_at_offset(
         SZrAstNodeArray *decorators,
         TZrSize offset) {
@@ -73,6 +82,9 @@ static SZrAstNode *find_decorator_at_offset(
     return ZR_NULL;
 }
 
+/** @brief 从模块查询视图定位已发布诊断，供确认错误跨越编译器与查询层。
+ * @note 返回项借用语义上下文；重新物化或释放编译器后失效。
+ */
 static const SZrStructuredDiagnostic *find_diagnostic_by_code(
         const SZrParserSemanticQueryDiagnostics *diagnostics,
         const TZrChar *code) {
@@ -90,6 +102,9 @@ static const SZrStructuredDiagnostic *find_diagnostic_by_code(
     return ZR_NULL;
 }
 
+/** @brief 验证非法类 wrapper 装饰器被校验器及 LSP 共用的诊断查询链保留。
+ * @pre decoratorText 必须原样出现在 source 中，且对应待检类装饰器。
+ */
 static void assert_invalid_wrapper_decorator(
         const TZrChar *source,
         const TZrChar *sourceName,
@@ -120,6 +135,7 @@ static void assert_invalid_wrapper_decorator(
     memset(&compiler, 0, sizeof(compiler));
     ZrParser_CompilerState_Init(&compiler, g_state);
     compiler.suppressErrorOutput = ZR_TRUE;
+    /* viewType 要在整份脚本中查找 native extern struct；只传类节点不足以验证该约束。 */
     compiler.scriptAst = ast;
     TEST_ASSERT_FALSE(
             ZrParser_Compiler_ValidateFfiWrapperDecorators(
@@ -140,6 +156,7 @@ static void assert_invalid_wrapper_decorator(
             compiler.structuredError.noFixReason);
     TEST_ASSERT_FALSE(compiler.structuredError.fixes.isValid);
 
+    /* 发布时深拷贝诊断事实；清除当前错误后，模块查询仍应保留身份和范围。 */
     TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&compiler));
     compiler.hasError = ZR_FALSE;
     ZrParser_Compiler_ClearStructuredError(&compiler);
@@ -160,6 +177,9 @@ static void assert_invalid_wrapper_decorator(
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/** @brief 以合法 wrapper 元数据组合约束校验器不能误报。
+ * @note 常规类编译调用同一内部绑定器；公开校验接口也供 LSP 直接使用。
+ */
 static void test_valid_ffi_wrapper_decorators_are_accepted(void) {
     const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -251,6 +271,8 @@ static void test_unknown_wrapper_ffi_decorator_publishes_query_fact(void) {
             "#zr.ffi.unknown(\"bad\")#");
 }
 
+/* TODO: 此目标已在 tests/CMakeLists.txt 建立，但尚无 add_test 注册，
+ * 当前不会作为 CTest 用例运行；需确认 CI 是否直接运行该目标，或补注册。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_valid_ffi_wrapper_decorators_are_accepted);
