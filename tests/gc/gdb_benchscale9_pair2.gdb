@@ -1,3 +1,4 @@
+# 缩小 benchscale_9 的排查范围到 cachedHiddenItemsPair 与返回值的关系。
 set pagination off
 set confirm off
 set print pretty on

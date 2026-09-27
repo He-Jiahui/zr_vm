@@ -1,3 +1,6 @@
+# 跟踪 GC fragment 基准的内部容器字段读取，再于 SIGABRT 收集相邻栈帧。
+# BUG: 当前 module.c 只有 zr_container_get_object_field_fast，脚本所断的旧符号不存在；
+# set breakpoint pending on 使字段跟踪断点保持 pending，运行时仅 SIGABRT 分支仍可触发。
 set pagination off
 set confirm off
 set print pretty on

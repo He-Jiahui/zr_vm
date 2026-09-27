@@ -1,3 +1,4 @@
+# 用 RelWithDebInfo CLI 复查第 126 次 GC fragment 周期的崩溃栈和前三帧局部状态。
 set pagination off
 set print pretty on
 set print elements 0

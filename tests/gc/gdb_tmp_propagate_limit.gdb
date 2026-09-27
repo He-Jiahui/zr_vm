@@ -1,3 +1,6 @@
+# 原意是在 GC 传播迭代上限处输出队列和迭代计数。
+# BUG: gc_mark.c:906 现为 gray-list 去重断言，当前作用域没有 iterationCount/maxIterations；
+# 断点命中后不能产生预期上限证据，应重定位传播循环的条件点。
 set pagination off
 set confirm off
 file /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_cli

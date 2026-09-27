@@ -1,3 +1,4 @@
+# 在 array+map benchmark 的 SIGABRT 处检查容器快路径值、隐藏项缓存和 GC 区域标记。
 set pagination off
 set confirm off
 set print pretty on

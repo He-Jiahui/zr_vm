@@ -1,3 +1,4 @@
+# 在 array+map 压测崩溃帧记录待扫描队列及 GC 阶段，判断是否仍有灰对象。
 set pagination off
 set confirm off
 file /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_cli

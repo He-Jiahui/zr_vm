@@ -27,6 +27,7 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_lib_system/gc.h"
 
+// 推进到并发 major 不再活动后再读快照，避免断言尚未提交的统计。
 static void gc_test_finish_concurrent_major(SZrState *state) {
     TZrUInt32 stepCount = 0u;
 
@@ -43,6 +44,7 @@ static void gc_test_finish_concurrent_major(SZrState *state) {
             state->global->garbageCollector->concurrentMajorActive);
 }
 
+// 本文件经 Unity main 顺序运行；计时仅用于诊断输出，不作为性能阈值。
 // 测试时间测量结构
 typedef struct {
     clock_t startTime;
@@ -248,6 +250,8 @@ static void test_gc_status_macros(void) {
     // 设置世代状态
     obj->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL;
     fflush(stdout);  // 确保输出刷新
+    // BUG: 此分支改用手写表达式，宏即使退化，本断言也可能通过；
+    // 复现入口是让 ZR_GC_IS_OLD 对 SURVIVAL 返回假后单跑本用例。
     // 直接检查状态值，避免宏调用可能的问题
     TZrBool isOldResult = (obj->garbageCollectMark.generationalStatus >= ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL);
     fflush(stdout);  // 确保输出刷新
@@ -448,6 +452,8 @@ static void test_gc_mark_traversal(void) {
     TEST_DIVIDER();
 }
 
+// BUG: 该用例只检查根容器存在，没有运行根扫描或断言对象标记；
+// 即使根标记路径退化也可能通过，需以实际 GC 周期中的根存活断言复核。
 // 测试GC根对象标记
 static void test_gc_root_marking(void) {
     SZrTestTimer timer;
@@ -1032,6 +1038,7 @@ static void test_gc_barrier_unignores_escaped_object(void) {
     TEST_DIVIDER();
 }
 
+// Ownership 用例跨越 GC 忽略登记、强/弱引用控制块和返还 GC 的生命周期。
 static void test_ownership_shared_refcount_and_stable_weak_after_release(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Shared Refcount And Stable Weak After Release";
@@ -1298,6 +1305,7 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
     TEST_DIVIDER();
 }
 
+// 控制面与快照用例检查调度请求、区域压力和回收完成后的统计提交。
 static void test_gc_region_configuration_defaults(void) {
     SZrTestTimer timer;
     const char *testSummary = "GC Region Configuration Defaults";
@@ -1828,6 +1836,7 @@ static void test_gc_full_collection_reassigns_old_reference_graph_in_place(void)
     TEST_DIVIDER();
 }
 
+// 写屏障用例从 old/permanent 所有者出发，核对 remembered set 与子对象逃逸标记。
 static void test_gc_barrier_records_old_to_young_remembered_escape(void) {
     SZrTestTimer timer;
     const char *testSummary = "GC Barrier Records Old To Young Remembered Escape";
@@ -2340,6 +2349,7 @@ static void test_gc_region_allocator_reassigns_with_stale_descriptor_index(void)
     TEST_DIVIDER();
 }
 
+// 函数元数据测试覆盖标记遍历、返回逃逸与闭包捕获的 GC 根传播。
 static void test_function_escape_metadata_defaults(void) {
     SZrTestTimer timer;
     const char *testSummary = "Function Escape Metadata Defaults";
@@ -3096,6 +3106,7 @@ static void test_gc_escaped_closure_propagates_capture_escape_on_close(void) {
     TEST_DIVIDER();
 }
 
+// Minor GC 用例按栈帧、旧对象链和缓存入口检查转发后的引用仍指向存活对象。
 static void test_gc_minor_collection_evacuates_stack_root_young_object(void) {
     SZrTestTimer timer;
     const char *testSummary = "GC Minor Collection Promotes Stack Root Young Object";
@@ -4010,6 +4021,7 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
     TEST_DIVIDER();
 }
 
+// 区域登记测试核对无新生代分配时的区域稳定性和 major 压缩判定。
 static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_new_young_allocations(void) {
     SZrTestTimer timer;
     const char *testSummary =
@@ -4331,6 +4343,7 @@ static void test_gc_current_region_cache_tracks_descriptor_index_across_registry
     TEST_DIVIDER();
 }
 
+// 字符串缓存与驻留表用例直接检查槽位、短串链和 young bucket 元数据。
 static TZrSize gc_test_concat_pair_cache_bucket_index(const SZrString *left, const SZrString *right) {
     TZrUInt64 leftHash;
     TZrUInt64 rightHash;

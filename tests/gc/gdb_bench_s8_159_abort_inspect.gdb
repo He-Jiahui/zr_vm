@@ -1,3 +1,4 @@
+# 在 bench_s8_159 的 SIGABRT 处检查容器字段快路径及隐藏项缓存是否仍指向有效对象。
 set pagination off
 set confirm off
 set print pretty on

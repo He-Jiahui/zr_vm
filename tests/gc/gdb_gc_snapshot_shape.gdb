@@ -1,3 +1,6 @@
+# 检查 GC 快照中的区域数量、存活字节与对象所属区域。
+# BUG: 当前断点 gc_tests.c:1298 在 ownership 测试结尾，snapshot/gc/oldObject 等均不在作用域；
+# 执行后 print 失败，目标快照测试实际从 test_gc_snapshot_reports_region_pressure_shape 开始。
 set pagination off
 file /mnt/e/Git/zr_vm/build/codex-wsl-gcc-debug/bin/zr_vm_gc_test
 break tests/gc/gc_tests.c:1298

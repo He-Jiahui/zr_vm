@@ -1,3 +1,4 @@
+# 为 benchscale_9 捕获容器字段访问失败和段错误的对象、pair 缓存及调用栈。
 set pagination off
 set confirm off
 set print pretty on

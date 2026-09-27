@@ -11,7 +11,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 
-// 简单的测试分配器
+// 交给真实全局状态的分配回调；测试状态和 GC 均经此入口分配/释放。
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
@@ -43,7 +43,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
-// 创建测试用的SZrState
+// 全局状态构造会创建 mainThreadState；注册表必须随后初始化，测试才能使用根对象。
 SZrState* createTestState(void) {
     // 创建全局状态
     SZrCallbackGlobal callbacks = {0};
@@ -59,7 +59,7 @@ SZrState* createTestState(void) {
     return mainState;
 }
 
-// 销毁测试用的SZrState
+// mainThreadState 归 global 管理，不能单独释放。
 void destroyTestState(SZrState* state) {
     if (!state) return;
     
@@ -70,7 +70,7 @@ void destroyTestState(SZrState* state) {
     }
 }
 
-// 创建测试对象
+// 仅为 OBJECT/STRING 补足基础布局，避免后续 GC 类型扫描越界。
 SZrRawObject* createTestObject(SZrState* state, EZrValueType type, TZrSize size) {
     if (!state || !state->global) return NULL;
 
@@ -83,7 +83,7 @@ SZrRawObject* createTestObject(SZrState* state, EZrValueType type, TZrSize size)
     return ZrCore_RawObject_New(state, type, size, ZR_FALSE);
 }
 
-// 创建测试用的Native Data对象
+// TODO: 当前调用点只传正数；如需覆盖空值槽，先确认零长度 native-data 布局并防止 valueCount - 1 下溢。
 struct SZrNativeData* createTestNativeData(SZrState* state, TZrUInt32 valueCount) {
     if (!state || !state->global) return NULL;
     

@@ -1,3 +1,4 @@
+# 在 array+map 压测崩溃帧检查字段所有者的标记、转发和 remembered 索引。
 set pagination off
 set confirm off
 file /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_cli

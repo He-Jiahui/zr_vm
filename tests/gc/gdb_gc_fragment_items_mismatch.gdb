@@ -1,3 +1,6 @@
+# 定位 __zr_items 字段值类型与原始对象类型不一致的调用路径。
+# BUG: 条件断点现落在 module.c:293 的 zr_container_make_field_key，作用域没有 value；
+# 运行到该处时条件求值失败，无法捕获预期失配。现行目标实现见 module.c:291 和 :1397。
 set pagination off
 set confirm off
 set print pretty on

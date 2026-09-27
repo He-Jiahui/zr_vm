@@ -56,5 +56,6 @@ doc_type: category-index
 | 异常处理编译与运行时回归 | [31 项](coverage/tests_exceptions.tsv) | 2 文件独立复核，仅改注释；Clang C11 语法检查通过。Unity 断言中断后的 VM 状态清理缺口已标 BUG，两个覆盖疑问及孤立的子目录 CMake 配方已标 TODO；测试目标未完成构建或运行。 |
 | 迁移、reference、decorator 与项目调试小边界 | [24 项](coverage/tests_small_contracts.tsv) | 5 文件独立复核，3 个 C 文件仅加注释且 Clang C11 语法通过；迁移缓冲区、reference 文本及 decorator 测试失败后的资源泄漏和过期 GDB 断点已标 BUG。生成 suite 清单只登记来源，未改动；运行测试未执行。 |
 | FFI fixture、动态调用与 native extern 回归 | [183 项](coverage/tests_ffi.tsv) | 16 文件独立复核，15 个改动文件仅增注释；WSL GCC/Clang fixture 语法及 GCC SSA ABI 语法检查通过，未执行运行时测试。源码定位测试仍读取旧文件、ZRO 用例遗漏 IoSource 释放及 Release 构建 assert 跳过被测调用，均已标 BUG；9 处待核实边界已标 TODO。 |
+| GC 回归、工具与调试探针 | [121 项](coverage/tests_gc.tsv) | 21 文件独立复核，67 个测试函数与 RUN_TEST 一一对应，源码非注释内容等价；7 个 BUG 和 7 个 TODO 均有现行证据。缺少 GC 测试二进制及多数 GDB 输入，未运行测试或探针。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

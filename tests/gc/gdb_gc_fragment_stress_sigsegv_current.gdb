@@ -1,3 +1,4 @@
+# 在生成的 GC fragment 压测中分别捕获 SIGABRT 与 SIGSEGV，检查值和 pair 的存活状态。
 set pagination off
 set confirm off
 set print pretty on

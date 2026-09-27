@@ -1,3 +1,4 @@
+# 在 array+map 压测的 SIGABRT 帧核对字段对象的 forwardingAddress 与代际标记。
 set pagination off
 set confirm off
 set print pretty on

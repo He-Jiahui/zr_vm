@@ -1,3 +1,4 @@
+# 为 bench_s8_159 的 SIGABRT/SIGSEGV 收集崩溃帧局部变量，供 GC 堆状态回溯。
 set pagination off
 set confirm off
 set print pretty on

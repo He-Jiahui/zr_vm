@@ -7,8 +7,8 @@
 # Usage (WSL bash, repo root):
 #   gdb -q -x ./tests/gc/gdb_gc_fragment_stress_project.gdb
 #
-# Override CLI path (if your build dir differs):
-#   gdb -q -ex 'set $zr_cli="/mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_cli"' -x ./tests/gc/gdb_gc_fragment_stress_project.gdb
+# BUG: 先用 -ex 设置 $zr_cli 会被下方 set $zr_cli 覆盖，无法更换 CLI 路径。
+# 使用其他构建目录时，请先修改下方默认 CLI 路径再运行本脚本。
 #
 # MSVC: use WinDbg/cdb with the Windows zr_vm_cli + PDB, or debug the Linux binary in WSL with this script.
 
@@ -25,6 +25,7 @@ eval "file %s", $zr_cli
 set args tests/fixtures/projects/gc_fragment_stress/gc_fragment_stress.zrp
 cd .
 
+# BUG: 下方提示仍建议覆盖 $zr_cli，但上方 file 已选定程序，事后改变量不会重选。
 printf "Using CLI path (override convenience variable zr_cli if wrong):\n"
 printf "%s\n", $zr_cli
 printf "Args: tests/fixtures/projects/gc_fragment_stress/gc_fragment_stress.zrp\n"

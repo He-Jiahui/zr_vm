@@ -1,3 +1,4 @@
+# 在 GC fragment 基准的 SIGABRT 处保留字段值、对象和隐藏项缓存的崩溃上下文。
 set pagination off
 set confirm off
 set print pretty on
