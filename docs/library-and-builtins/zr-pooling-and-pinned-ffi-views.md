@@ -67,8 +67,10 @@ plan_sources:
   - user: 2026-08-04 确认 55 份状态、重新测试验收 review 后详细提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
+  - docs/plans/ssa/05-data-layout/02-arrays-slices.md
 tests:
   - tests/parser/test_buffer_pool_ffi.c
+  - tests/acceptance/ssa-buffer-pin-close-lifecycle.md
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
   - tests/container/test_generational_pool.c
@@ -88,7 +90,7 @@ tests:
   - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
   - tests/acceptance/2026-08-04-syntax-09-m5-performance-promotion.md
 doc_type: module-detail
-last_verified: 2026-08-23
+last_verified: 2026-09-27
 ---
 
 # Pooling And Pinned FFI Views
@@ -291,6 +293,9 @@ native-pinned contiguous source. It rejects an already closed owner, increments
 the owner's pin count, and returns a pointer handle that retains the owner object,
 the native address, and its byte length. `BufferHandle.close()` records close
 immediately but defers freeing bytes until the last pin releases the owner.
+After close, the owner rejects `read`, `write`, `slice`, and new `pin` calls even
+while its bytes remain allocated for an existing pointer. A pointer issued
+before close can continue to access its pinned byte range until it closes.
 
 `Ptr<u8>.span()` creates a `Span<u8>` whose source is the pointer handle. The
 pointer descriptor publishes `CONTIGUOUS_SOURCE_NATIVE_PINNED`, length, view-create,
@@ -310,7 +315,8 @@ marshaller/lowering contract.
 - Active owner views prevent lease close, return, or reuse.
 - Active native views prevent pointer close/unpin.
 - Closed leases reject indexing and view creation.
-- Closed buffers reject new pins; zero-length pins remain valid empty views.
+- Closed buffers reject owner `read`, `write`, `slice`, and new `pin` calls;
+  zero-length pins issued before close remain valid empty views.
 - Pointer byte indexing checks `0 <= index < length`; writes accept only `0..255`.
 - Pool and pointer close operations are idempotent and cannot decrement ownership
   counters twice.
@@ -320,9 +326,17 @@ marshaller/lowering contract.
 `zr_vm_buffer_pool_ffi_test` covers descriptor contracts, exact-generation reuse,
 double close, live-view close rejection, 32 rent/view/full-compact-GC/return
 rounds, `using` cleanup through throw/catch, pinned byte mutation after owner
-close and full compact GC, idempotent unpin, and live native-view unpin rejection.
+close and full compact GC, idempotent unpin, live native-view unpin rejection,
+and closed owner `read`/`write`/`slice` diagnostics with a live pin.
 The same target also validates the cross-module ref-like artifact ABI consumed by
 VM and AOT projections.
+
+The executable's `--closed-owner` mode runs the live-view pointer-close
+rejection and the three closed-owner checks, including pinned byte read/write
+after owner close and full GC. The focused GCC run passed 4/4. The default
+full entry still stops in an earlier pool lease closure assertion; the
+per-slice result and full-suite limitation are recorded in
+`tests/acceptance/ssa-buffer-pin-close-lifecycle.md`.
 
 `zr_vm_generational_pool_test` covers descriptor roles, canonical import,
 ref-like storage/escape rejection, identity/ABA, read/write conflict, deferred

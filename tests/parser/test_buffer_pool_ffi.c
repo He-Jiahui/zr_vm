@@ -1,4 +1,5 @@
 /* 跨编译器、VM、AOT 和容器/FFI 描述符检查 ref-like ABI 与借用视图生命周期。 */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -625,13 +626,91 @@ static void test_pinned_pointer_close_is_rejected_while_view_remains_live(void) 
     ZrContainerTests_DestroyState(state);
 }
 
+static void expect_closed_buffer_owner_operation_error(
+        const char *operation, const char *path) {
+    static const char kSourceFormat[] =
+            "var ffi = import(\"zr.ffi\");\n"
+            "var buffer = ffi.BufferHandle.allocate(2);\n"
+            "buffer.write(0, [7, 8]);\n"
+            "var pin = buffer.pin();\n"
+            "buffer.close();\n"
+            "var gcMarker = zr.__forcePoolFfiGc();\n"
+            "if (gcMarker != 1) { return \"GC probe did not run\"; }\n"
+            "pin[1] = 42;\n"
+            "if (pin[0] != 7) { return \"pin lost first byte\"; }\n"
+            "if (pin[1] != 42) { return \"pin lost write\"; }\n"
+            "%s\n"
+            "return \"owner operation succeeded\";\n";
+    char source[1024];
+    SZrState *state;
+    SZrFunction *function;
+    SZrTypeValue result;
+    SZrObject *errorObject;
+    const SZrTypeValue *messageValue;
+    const char *message;
+    int written = snprintf(source, sizeof(source), kSourceFormat, operation);
+
+    TEST_ASSERT_TRUE(written > 0 && (size_t)written < sizeof(source));
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+    install_pool_ffi_gc_probe(state);
+    function = compile_source(state, path, source);
+    TEST_ASSERT_NOT_NULL(function);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_FALSE(ZrTests_Runtime_Function_ExecuteCaptureFailure(
+            state, function, &result));
+    TEST_ASSERT_TRUE(state->hasCurrentException);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, state->currentException.type);
+    TEST_ASSERT_NOT_NULL(state->currentException.value.object);
+    errorObject = ZR_CAST_OBJECT(state, state->currentException.value.object);
+    TEST_ASSERT_NOT_NULL(errorObject);
+    messageValue = ZrLib_Object_GetFieldCString(state, errorObject, "message");
+    TEST_ASSERT_NOT_NULL(messageValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, messageValue->type);
+    TEST_ASSERT_NOT_NULL(messageValue->value.object);
+    message = ZrCore_String_GetNativeString(
+            ZR_CAST_STRING(state, messageValue->value.object));
+    TEST_ASSERT_NOT_NULL(message);
+    TEST_ASSERT_NOT_NULL(strstr(message, "[NativeCallError]"));
+    TEST_ASSERT_NOT_NULL(strstr(message, "buffer handle is closed"));
+
+    ZrCore_Function_Free(state, function);
+    ZrContainerTests_DestroyState(state);
+}
+
+static void test_closed_buffer_with_live_pin_rejects_owner_read(void) {
+    expect_closed_buffer_owner_operation_error(
+            "buffer.read(0, 1);", "ffi_closed_buffer_read.zr");
+}
+
+static void test_closed_buffer_with_live_pin_rejects_owner_write(void) {
+    expect_closed_buffer_owner_operation_error(
+            "buffer.write(0, [9]);", "ffi_closed_buffer_write.zr");
+}
+
+static void test_closed_buffer_with_live_pin_rejects_owner_slice(void) {
+    expect_closed_buffer_owner_operation_error(
+            "buffer.slice(0, 1);", "ffi_closed_buffer_slice.zr");
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
 
 /* TODO: 该目标由 tests/CMakeLists 构建，但当前未见 CTest suite 注册；需核实是否只要求手工验收。 */
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc > 1 && (argc != 2 || strcmp(argv[1], "--closed-owner") != 0)) {
+        fprintf(stderr, "usage: %s [--closed-owner]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
     UNITY_BEGIN();
+    if (argc == 2) {
+        RUN_TEST(test_pinned_pointer_close_is_rejected_while_view_remains_live);
+        RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_read);
+        RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_write);
+        RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_slice);
+        return UNITY_END();
+    }
     RUN_TEST(test_public_ref_like_abi_contract_is_validated_by_vm_and_aot);
     RUN_TEST(test_pooling_and_pinned_pointer_descriptors_publish_structured_contracts);
     RUN_TEST(test_pool_lease_returns_once_and_reuses_backing_after_view_nll);
@@ -640,5 +719,8 @@ int main(void) {
     RUN_TEST(test_pool_lease_using_cleanup_returns_backing_on_throw);
     RUN_TEST(test_explicit_pinned_pointer_span_stays_valid_across_gc_and_owner_close);
     RUN_TEST(test_pinned_pointer_close_is_rejected_while_view_remains_live);
+    RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_read);
+    RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_write);
+    RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_slice);
     return UNITY_END();
 }

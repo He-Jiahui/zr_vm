@@ -630,7 +630,7 @@ TZrBool ZrFfi_Buffer_Allocate(ZrLibCallContext *context, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 
-/* close 先阻止新 pin；已有 view 继续持有 native 地址，最后一次 unpin 才回收字节。 */
+/* close 立即关闭 owner 操作；已有 view 继续持有 native 地址，最后一次 unpin 才回收字节。 */
 TZrBool ZrFfi_Buffer_Close(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *selfObject = zr_ffi_get_self_object(context);
     ZrFfiBufferData *bufferData = (ZrFfiBufferData *) zr_ffi_get_handle_data(context->state, selfObject);
@@ -644,6 +644,15 @@ TZrBool ZrFfi_Buffer_Close(ZrLibCallContext *context, SZrTypeValue *result) {
         bufferData->size = 0;
     }
     ZrLib_Value_SetNull(result);
+    return ZR_TRUE;
+}
+
+static TZrBool zr_ffi_buffer_require_open_owner(
+        ZrLibCallContext *context, const ZrFfiBufferData *bufferData) {
+    if (bufferData->closeRequested) {
+        zr_ffi_raise_error(context->state, ZR_FFI_ERROR_NATIVE_CALL, "buffer handle is closed");
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }
 
@@ -705,10 +714,7 @@ TZrBool ZrFfi_Buffer_Pin(ZrLibCallContext *context, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 
-/* 按范围复制成脚本数组；结果不借用 BufferHandle 的 native 存储。
- * BUG: 有存活 pin 时 close 只标记 closeRequested，read/write/slice 未检查该标记，
- * 关闭后的句柄仍可读取、改写和切片；Pin 和公开 closed-handle 契约均要求拒绝新操作。
- */
+/* 按范围复制成脚本数组；结果不借用 BufferHandle 的 native 存储。 */
 TZrBool ZrFfi_Buffer_Read(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *selfObject = zr_ffi_get_self_object(context);
     ZrFfiBufferData *bufferData = (ZrFfiBufferData *) zr_ffi_get_handle_data(context->state, selfObject);
@@ -718,6 +724,9 @@ TZrBool ZrFfi_Buffer_Read(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrLibTempValueRoot arrayRoot;
     TZrSize index;
     if (selfObject == ZR_NULL || bufferData == ZR_NULL || bufferData->base.kind != ZR_FFI_HANDLE_BUFFER) {
+        return ZR_FALSE;
+    }
+    if (!zr_ffi_buffer_require_open_owner(context, bufferData)) {
         return ZR_FALSE;
     }
     if (!ZrLib_CallContext_ReadInt(context, 0, &offsetValue) || !ZrLib_CallContext_ReadInt(context, 1, &lengthValue)) {
@@ -761,6 +770,9 @@ TZrBool ZrFfi_Buffer_Write(ZrLibCallContext *context, SZrTypeValue *result) {
     if (selfObject == ZR_NULL || bufferData == ZR_NULL || bufferData->base.kind != ZR_FFI_HANDLE_BUFFER) {
         return ZR_FALSE;
     }
+    if (!zr_ffi_buffer_require_open_owner(context, bufferData)) {
+        return ZR_FALSE;
+    }
     if (!ZrLib_CallContext_ReadInt(context, 0, &offsetValue) || !ZrLib_CallContext_ReadArray(context, 1, &bytesArray) ||
         bytesArray == ZR_NULL) {
         return ZR_FALSE;
@@ -799,6 +811,9 @@ TZrBool ZrFfi_Buffer_Slice(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrFfiBufferData *sliceData;
     SZrObject *sliceObject;
     if (selfObject == ZR_NULL || bufferData == ZR_NULL || bufferData->base.kind != ZR_FFI_HANDLE_BUFFER) {
+        return ZR_FALSE;
+    }
+    if (!zr_ffi_buffer_require_open_owner(context, bufferData)) {
         return ZR_FALSE;
     }
     if (!ZrLib_CallContext_ReadInt(context, 0, &offsetValue) || !ZrLib_CallContext_ReadInt(context, 1, &lengthValue)) {
