@@ -129,5 +129,6 @@ doc_type: category-index
 | core IO、回调与异常跨层契约 | [338 项](coverage/zr_vm_core_io_callback_exception.tsv) | 8 个 C/H 文件独立复核，2,362 个 evidence 与 2,294 个 callers 锚点有效，源码仅改注释；GCC/Clang 对 5 个 C 文件语法检查通过。36 处源码 BUG/TODO 标签均有独立审查块；定向测试目标构建停在 CMake VerifyGlobs 预检查，未运行测试。 |
 | core 原型元数据布局与常量引用路径 | [26 项](coverage/zr_vm_core_constant_reference.tsv) | 2 个 C/H 文件独立复核，127 个非空证据锚点，源码仅改注释；GCC/Clang 语法检查通过。原型布局有编译/运行消费方，路径解析 API 目前无外部调用；8 个 TODO 记录未来接入前需确认的边界，未标未证实的 BUG。 |
 | parser CFG union、switch 与 throw 测试 | [56 项](coverage/tests_parser_cfg_switch_union_throw.tsv) | 3 个 C 文件独立复核，262 个非空证据锚点，12 个 Unity 用例均已登记，源码仅增 55 行注释；GCC/Clang 语法检查 6/6 通过。3 个 BUG 行记录断言非局部退出跳过原生资源释放；未运行完整 CTest。 |
+| parser 泛型约束与实例化测试 | [19 项](coverage/tests_parser_generic_contracts.tsv) | 2 个 C 文件独立复核，148 个 evidence 路径锚点有效，源码仅增 15 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行记录失败断言跳过清理，1 个 TODO 留待真实命名结构体 AOT 用例核对；定向构建停在 CMake 重新生成，未运行 CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

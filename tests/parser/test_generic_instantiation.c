@@ -8,6 +8,7 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/* Unity 每个用例持有独立 state；类型名由它管理，实例化表的原生数组仍需显式 Free。 */
 static SZrState *g_state = ZR_NULL;
 
 void setUp(void) {
@@ -15,11 +16,13 @@ void setUp(void) {
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* BUG: 断言失败会跳过各用例末尾的 Table_Free；仅销毁 state 不会释放表的原生数组。 */
 void tearDown(void) {
     ZrTests_State_Destroy(g_state);
     g_state = ZR_NULL;
 }
 
+/* 构造表键的输入类型；可选类型名留在当前 Unity state 中供拷贝后的记录借用。 */
 static void test_type_init(SZrInferredType *type, EZrValueType baseType, TZrNativeString typeName) {
     if (typeName != ZR_NULL) {
         ZrParser_InferredType_InitFull(
@@ -40,6 +43,7 @@ static void test_type_free_all(SZrInferredType *types, TZrSize count) {
     }
 }
 
+/* 引用形状组合共享实例编号；重复的 base token 与类型键不应新增记录。 */
 static void test_reference_arguments_share_and_dedupe(void) {
     SZrGenericInstantiationTable table;
     const SZrGenericInstantiationRecord *first = ZR_NULL;
@@ -78,6 +82,7 @@ static void test_reference_arguments_share_and_dedupe(void) {
     test_type_free_all(args, ZR_ARRAY_COUNT(args));
 }
 
+/* 值类型要求单态化，且参数类型或泛型基底变化都会形成新的实例键。 */
 static void test_value_argument_monomorphizes_and_distinguishes_keys(void) {
     SZrGenericInstantiationTable table;
     const SZrGenericInstantiationRecord *first = ZR_NULL;
@@ -117,6 +122,9 @@ static void test_value_argument_monomorphizes_and_distinguishes_keys(void) {
     ZrParser_InferredType_Free(g_state, &intArg);
 }
 
+/* 同为 OBJECT 基础类型时，显式传入的类/结构体形状决定共享或单态化。 */
+/* TODO: CLI AOT 的 preserve 实参目前先由类型文本构成 OBJECT，再从基础类型推断形状；
+ * 需用命名结构体 TypeSpec 的集成用例核对导出的 shareKind 是否保持值形状。 */
 static void test_resolved_object_shape_controls_share_kind(void) {
     SZrGenericInstantiationTable table;
     const SZrGenericInstantiationRecord *classRecord = ZR_NULL;

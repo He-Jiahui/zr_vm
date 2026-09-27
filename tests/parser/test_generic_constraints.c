@@ -15,6 +15,7 @@ static SZrState *generic_constraints_create_state(void) {
     return ZrTests_State_Create(ZR_NULL);
 }
 
+/* 单独调用声明编译入口时，测试负责创建并最终销毁完整编译上下文。 */
 static SZrCompilerState *generic_constraints_create_compiler_state(SZrState *state) {
     SZrCompilerState *cs;
 
@@ -31,6 +32,7 @@ static SZrCompilerState *generic_constraints_create_compiler_state(SZrState *sta
     return cs;
 }
 
+/* CompilerState_Free 不代管这两个函数指针；先释放函数对象，再销毁上下文的其它资源。 */
 static void generic_constraints_destroy_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -50,6 +52,7 @@ static void generic_constraints_destroy_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/* 绕过常规脚本编译入口时，声明绑定仍需要一个顶层作用域。 */
 static void generic_constraints_ensure_root_scope(SZrCompilerState *cs) {
     SZrScope scope;
 
@@ -66,6 +69,7 @@ static void generic_constraints_ensure_root_scope(SZrCompilerState *cs) {
     ZrCore_Array_Push(cs->state, &cs->scopeStack, &scope);
 }
 
+/* 先将脚本中的类型声明登记到同一编译环境，再单独推断后续构造表达式。 */
 static void generic_constraints_compile_top_level_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(node);
@@ -96,8 +100,11 @@ static void generic_constraints_compile_top_level_declaration(SZrCompilerState *
 
 void setUp(void) {}
 
+/* BUG: Unity 断言失败会跳过用例末尾的 AST、编译上下文和 state 清理；
+ * 此处没有接管这些原生资源，失败路径会一直保留它们直至进程退出。 */
 void tearDown(void) {}
 
+/* 同一声明环境中，具备无参构造的类满足 new()，接口类型实参则必须报约束错误。 */
 static void test_generic_new_constraint_accepts_constructible_and_rejects_interface(void) {
     SZrState *state = generic_constraints_create_state();
     SZrCompilerState *cs = generic_constraints_create_compiler_state(state);
