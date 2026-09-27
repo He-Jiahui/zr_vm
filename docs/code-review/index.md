@@ -174,5 +174,6 @@ doc_type: category-index
 | core GC 预算、跨域共享、遥测与扫尾 | [28 项](coverage/zr_vm_core_gc_auxiliary.tsv) | 4 个 C 文件独立复核，170 个调用与证据锚点，源码仅增注释；GCC/Clang 语法检查、隔离构建的域桥接 5/5、并发 major 10/10、跨域资源转移 24/24，以及预算单文件测试通过。BUG 标记扫尾计数上限与异常中断后的清理/债务缺口；TODO 保留枚举、计数、拒绝状态和 ShareValue 契约疑问。5 份旧台账共 47 次反向锚点引用已按源码等价行校正；其中 2 份仍有其他历史格式诊断。 |
 | parser BZMS 计数范围变体测试 | [90 项](coverage/tests_parser_bzms_range_variants.tsv) | 9 个 C 测试文件独立复核，1,251 个证据锚点、117 个调用条目；原行号保持不变，GCC/Clang 各 9 文件语法检查通过。9 个 BUG 行指向同一共用 helper 在 Unity 断言失败后跳过 compiler state 释放的缺陷；测试可执行文件未构建，未运行目标测试。 |
 | language server stdio 帧与 JSON-RPC 信封 | [26 项](coverage/zr_vm_language_server_stdio_frame_envelope.tsv) | 4 个 C/H 文件独立复核，90 个证据锚点、43 个调用条目，源码仅增注释；GCC/Clang 对两份 C 文件的严格语法检查通过。1 个 TODO 保留 Content-Type 媒体类型判定范围疑问；目标生命周期测试未构建运行。 |
+| language server stdio 生命周期状态机 | [20 项](coverage/zr_vm_language_server_stdio_lifecycle.tsv) | 2 个 C/H 文件独立复核，接口、状态和通知字段均有调用证据，源码仅增注释；GCC/Clang 严格语法检查通过。1 个 TODO 记录 initialized 通知标志目前仅由测试读取、是否需保留外部可观测状态的疑问。同步校正前一批 stdio 台账的 3 处调用锚点；目标生命周期测试未构建运行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
