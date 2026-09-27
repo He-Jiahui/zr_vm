@@ -3,6 +3,8 @@
 #include <ctype.h>
 #include <string.h>
 
+/* 同一份解析结果供 willRenameFiles 规划编辑和 didRenameFiles 更新记录使用；
+ * projectIndex/record 都借用当前 context，不能在项目刷新或删除后继续使用。 */
 typedef struct SZrLspSourceRenameResolution {
     SZrLspProjectIndex *projectIndex;
     SZrLspProjectFileRecord *record;
@@ -10,6 +12,7 @@ typedef struct SZrLspSourceRenameResolution {
     TZrChar newModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
 } SZrLspSourceRenameResolution;
 
+/* 仅在解析与生成编辑期间借用 VM 字符串的原生内容，不转移所有权。 */
 static const TZrChar *source_rename_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -19,6 +22,7 @@ static const TZrChar *source_rename_string_text(SZrString *value) {
                    : ZrCore_String_GetNativeString(value);
 }
 
+/* 文件操作入口只处理 .zr 源文件；项目描述符及二进制元数据走监听重载路径。 */
 static TZrBool source_rename_uri_ends_with(SZrString *uri,
                                            const TZrChar *suffix) {
     const TZrChar *text = source_rename_string_text(uri);
@@ -36,6 +40,7 @@ static TZrBool source_rename_uri_ends_with(SZrString *uri,
            : ZR_FALSE;
 }
 
+/* 为重命名的目标路径与项目源根比较建立平台一致的分隔符和大小写语义。 */
 static void source_rename_normalize_path(const TZrChar *path,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
@@ -64,6 +69,7 @@ static void source_rename_normalize_path(const TZrChar *path,
     buffer[writeIndex] = '\0';
 }
 
+/* 源模块重命名只在原项目的 source 根内承诺自动改写导入名。 */
 static TZrBool source_rename_path_is_within(const TZrChar *path,
                                             const TZrChar *directory) {
     TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -74,6 +80,8 @@ static TZrBool source_rename_path_is_within(const TZrChar *path,
     source_rename_normalize_path(
             directory, normalizedDirectory, sizeof(normalizedDirectory));
     directoryLength = strlen(normalizedDirectory);
+    /* TODO: POSIX 根目录 "/" 保留尾斜线，而下方边界判断只接受后继为 '/' 或结束；
+     * 核查 project.sourceRootPath 是否可能经 PathJoin 成为根目录，并补根路径的重命名用例。 */
     return directoryLength > 0U &&
                    strncmp(normalizedPath, normalizedDirectory, directoryLength) == 0 &&
                    (normalizedPath[directoryLength] == '\0' ||
@@ -82,6 +90,8 @@ static TZrBool source_rename_path_is_within(const TZrChar *path,
            : ZR_FALSE;
 }
 
+/* 先定位旧 URI 所属记录，再验证目标仍属同一源根且不会与现有记录冲突；
+ * 编辑计划和事后记录迁移共享此判定，避免两个 LSP 文件操作阶段给出不同承诺。 */
 static TZrBool source_rename_resolve(SZrState *state,
                                      SZrLspContext *context,
                                      SZrString *oldUri,
@@ -119,6 +129,8 @@ static TZrBool source_rename_resolve(SZrState *state,
         if (record == ZR_NULL) {
             continue;
         }
+        /* TODO: 同一旧 URI 若登记在重叠项目中，首个索引目标源根不匹配就直接失败；
+         * 核查文件重命名应否改选其他匹配项目，并用多项目记录覆盖该顺序。 */
         if ((*projectPtr)->sourceRootPath == ZR_NULL ||
             !source_rename_path_is_within(
                     outResolution->newPath,
@@ -150,6 +162,7 @@ static TZrBool source_rename_resolve(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 把 AST 的源范围转为客户端 WorkspaceEdit 所需范围；location 对象由结果数组调用方释放。 */
 static TZrBool source_rename_append_location(SZrState *state,
                                              SZrLspContext *context,
                                              SZrArray *locations,
@@ -183,6 +196,8 @@ static TZrBool source_rename_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 显式 module 声明只有仍与索引中的旧模块键一致时才纳入编辑，
+ * 避免将文本上相似但语义已偏离索引的声明改写成新文件名。 */
 static TZrBool source_rename_append_explicit_module_declaration(
         SZrState *state,
         SZrLspContext *context,
@@ -250,6 +265,8 @@ static TZrBool source_rename_append_explicit_module_declaration(
             state, context, locations, oldUri, moduleNameRange);
 }
 
+/* didRenameFiles 已发生后先移除旧 URI 的分析器/解析缓存，再让磁盘更新入口按新 URI 重新建档；
+ * 此时 record 的模块键暂保留旧值，直到后续项目刷新重算，调用方不得在中途做模块查询。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
         SZrState *state,
         SZrLspContext *context,
@@ -280,6 +297,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
     return ZR_TRUE;
 }
 
+/* willRenameFiles 只在模块键改变且找到实际引用时生成编辑，
+ * 包含 provider 的显式声明及项目范围内的 import 目标；结果借出供响应封装。 */
 static TZrBool source_rename_collect_edits(
         SZrState *state,
         SZrLspContext *context,
@@ -330,6 +349,7 @@ static TZrBool source_rename_collect_edits(
     return ZR_TRUE;
 }
 
+/* 供直接消费者获取原始位置列表；调用方负责释放产生的 location 数组。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEdits(
         SZrState *state,
         SZrLspContext *context,
@@ -346,6 +366,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEd
             outLocations);
 }
 
+/* 在位置列表之外捕获每份文档的打开状态、版本或磁盘内容，供响应发送前排除过期编辑。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
         SZrState *state,
         SZrLspContext *context,
@@ -368,6 +389,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEd
             state, context, outLocations, outDocumentSnapshots);
 }
 
+/* 规划后若编辑器版本或未打开文件内容发生变化，调用方应放弃整份 WorkspaceEdit。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
         SZrState *state,
         SZrLspContext *context,
@@ -376,6 +398,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ValidateSourceRenameE
             state, context, documentSnapshots);
 }
 
+/* 供编辑封装读取与目标 URI 对应的快照；返回值借用快照数组。 */
 ZR_LANGUAGE_SERVER_API const SZrLspSourceRenameDocumentSnapshot *
 ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
         const SZrArray *documentSnapshots,

@@ -18,6 +18,7 @@
 #include <dirent.h>
 #endif
 
+/* 为项目路径、模块键和诊断文字取得 VM 字符串视图；借用值不可在状态释放后使用。 */
 static const TZrChar *project_navigation_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -28,6 +29,8 @@ static const TZrChar *project_navigation_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 将 URI 解码后的原生路径收敛为平台相关的比较形式，供插件目标去重。 */
+/* TODO: 输出超出 buffer 时静默截断；核查超长路径是否可能使两个不同插件路径被认作同一个。 */
 static void project_navigation_normalize_path_for_compare(const TZrChar *path,
                                                           TZrChar *buffer,
                                                           TZrSize bufferSize) {
@@ -61,6 +64,7 @@ static void project_navigation_normalize_path_for_compare(const TZrChar *path,
     buffer[writeIndex] = '\0';
 }
 
+/* 导航到 native 插件时按文件路径身份匹配，而不要求 URI 文本完全相同。 */
 static TZrBool project_navigation_native_paths_equal(const TZrChar *left, const TZrChar *right) {
     TZrChar normalizedLeft[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar normalizedRight[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -74,6 +78,7 @@ static TZrBool project_navigation_native_paths_equal(const TZrChar *left, const 
     return normalizedLeft[0] != '\0' && strcmp(normalizedLeft, normalizedRight) == 0;
 }
 
+/* 插件声明导航遵循当前目标平台的实际动态库后缀。 */
 static const TZrChar *project_navigation_dynamic_library_extension(void) {
 #if defined(ZR_VM_PLATFORM_IS_WIN) || defined(_WIN32)
     return ".dll";
@@ -84,6 +89,7 @@ static const TZrChar *project_navigation_dynamic_library_extension(void) {
 #endif
 }
 
+/* 与项目 native 插件命名规则对应，生成用于反向查找的安全文件名片段。 */
 static void project_navigation_sanitize_module_name(const TZrChar *moduleName,
                                                     TZrChar *buffer,
                                                     TZrSize bufferSize) {
@@ -105,6 +111,7 @@ static void project_navigation_sanitize_module_name(const TZrChar *moduleName,
     buffer[cursor] = '\0';
 }
 
+/* 根据项目根与模块名推导约定插件路径，供从二进制文件跳回导入模块。 */
 static TZrBool project_navigation_build_descriptor_plugin_path(SZrLspProjectIndex *projectIndex,
                                                                SZrString *moduleName,
                                                                TZrChar *buffer,
@@ -144,6 +151,7 @@ static TZrBool project_navigation_build_descriptor_plugin_path(SZrLspProjectInde
     return buffer[0] != '\0';
 }
 
+/* 按源类型选用源码、二进制元数据或描述符坐标协议，结果 Location 归调用方所有。 */
 static TZrBool append_lsp_location(SZrState *state,
                                    SZrLspContext *context,
                                    SZrArray *result,
@@ -188,15 +196,18 @@ static TZrBool append_lsp_location(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 外部元数据没有源码声明范围时用文档起点代表模块条目。 */
 static SZrFileRange project_navigation_metadata_file_entry_range(SZrString *uri) {
     SZrFilePosition start = ZrParser_FilePosition_Create(0, 1, 1);
     return ZrParser_FileRange_Create(start, start, uri);
 }
 
+/* 仅文档起点允许按模块整体查找；其他位置须命中具体导出声明。 */
 static TZrBool project_navigation_position_is_module_entry(SZrLspPosition position) {
     return position.line == 0 && position.character == 0;
 }
 
+/* 匹配二进制导出元数据位置，偏移缺失时采用元数据的行列坐标。 */
 static TZrBool project_navigation_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (range.start.offset > 0 && range.end.offset > 0 && position.start.offset > 0 && position.end.offset > 0) {
         return range.start.offset <= position.start.offset && position.end.offset <= range.end.offset;
@@ -208,6 +219,7 @@ static TZrBool project_navigation_file_range_contains_position(SZrFileRange rang
             (position.end.line == range.end.line && position.end.column <= range.end.column));
 }
 
+/* 对只有列号的旧二进制导出信息采用首行约定，保持可导航性。 */
 static TZrInt32 project_navigation_binary_export_normalize_line(TZrUInt32 line, TZrUInt32 column) {
     if (line > 0) {
         return (TZrInt32)line;
@@ -216,6 +228,7 @@ static TZrInt32 project_navigation_binary_export_normalize_line(TZrUInt32 line, 
     return column > 0 ? 1 : 0;
 }
 
+/* 校验导出符号元数据后建立文件范围；无效坐标由调用方跳过该成员。 */
 static TZrBool project_navigation_binary_export_symbol_try_range(
     SZrString *uri,
     const SZrIoFunctionTypedExportSymbol *symbol,
@@ -251,8 +264,10 @@ static TZrBool project_navigation_binary_export_symbol_try_range(
     return ZR_TRUE;
 }
 
+/* 项目导航沿用公开查询结果布局，避免在语义查询层复制外部声明状态。 */
 typedef SZrLspExternalMetadataDeclaration SZrLspProjectResolvedExternalMetadataDeclaration;
 
+/* 已有 analyzer 时从同一 AST 提取绑定和成员引用，保证临时绑定的生命周期覆盖遍历。 */
 static TZrBool append_imported_member_locations_from_analyzer(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -294,6 +309,7 @@ static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
                                                              SZrSemanticAnalyzer *analyzer,
                                                              SZrString *moduleName,
                                                              SZrArray *result);
+/* 只在文档快照内寻找目标行，避免磁盘文本与打开的编辑器内容错位。 */
 static TZrBool project_navigation_try_find_line_bounds(const TZrChar *content,
                                                        TZrSize contentLength,
                                                        TZrInt32 fileLine,
@@ -339,6 +355,9 @@ static TZrBool project_navigation_try_find_line_bounds(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/* 用打开文档的原文校正不完整的 import 字符串位置，供重命名和引用准确指向目标。 */
+/* TODO: moduleName 是规范化模块键；相对路径原文字面量可能不同，需与路径规范化规则核对回退范围是否准确。 */
+/* BUG: 同一行有两个相同模块字面量时，每次都选行内首个匹配并覆盖原范围；第二个导入的引用/重命名位置会错到第一个。 */
 static SZrFileRange project_navigation_refine_import_module_path_location(const TZrChar *content,
                                                                           TZrSize contentLength,
                                                                           SZrFileRange range,
@@ -380,6 +399,7 @@ static SZrFileRange project_navigation_refine_import_module_path_location(const 
     return range;
 }
 
+/* 批量校正临时绑定的目标范围，不修改持久 AST 或项目索引。 */
 static void project_navigation_refine_import_binding_target_locations(const TZrChar *content,
                                                                       TZrSize contentLength,
                                                                       SZrArray *bindings) {
@@ -408,6 +428,7 @@ static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
                                                             SZrString *moduleName,
                                                             SZrArray *result);
 
+/* 项目遍历框架的单文档回调；不同入口选择成员、别名或目标字面量。 */
 typedef TZrBool (*TZrLspProjectSourceReferenceAppender)(SZrState *state,
                                                         SZrLspContext *context,
                                                         SZrString *uri,
@@ -416,6 +437,8 @@ typedef TZrBool (*TZrLspProjectSourceReferenceAppender)(SZrState *state,
                                                         SZrString *memberName,
                                                         SZrArray *result);
 
+/* 引用查询可触及未打开源文件：优先当前 analyzer/文档快照，再读磁盘并更新语义缓存。 */
+/* 调用约束：成功但 outAnalyzer 为空表示无法取得文本，调用者必须允许跳过该文件。 */
 static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *uri,
@@ -497,6 +520,7 @@ static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 纯 AST 成员引用回调；未取得 analyzer 时不让整个项目查询失败。 */
 static TZrBool project_navigation_append_imported_member_for_uri(SZrState *state,
                                                                  SZrLspContext *context,
                                                                  SZrString *uri,
@@ -515,6 +539,7 @@ static TZrBool project_navigation_append_imported_member_for_uri(SZrState *state
                : ZR_TRUE;
 }
 
+/* native 描述符成员借语义导入链处理别名与再导出，而非仅检查直接 AST 形状。 */
 static TZrBool project_navigation_append_semantic_imported_member_for_uri(SZrState *state,
                                                                           SZrLspContext *context,
                                                                           SZrString *uri,
@@ -533,6 +558,7 @@ static TZrBool project_navigation_append_semantic_imported_member_for_uri(SZrSta
                                                                                   result);
 }
 
+/* 模块级引用回调收集别名使用；无法分析的文件被视为无可见引用。 */
 static TZrBool project_navigation_append_imported_module_for_uri(SZrState *state,
                                                                  SZrLspContext *context,
                                                                  SZrString *uri,
@@ -547,6 +573,7 @@ static TZrBool project_navigation_append_imported_module_for_uri(SZrState *state
                : ZR_TRUE;
 }
 
+/* 模块级引用回调收集 import 别名声明，补足成员使用以外的位置。 */
 static TZrBool project_navigation_append_import_binding_for_uri(SZrState *state,
                                                                 SZrLspContext *context,
                                                                 SZrString *uri,
@@ -561,6 +588,7 @@ static TZrBool project_navigation_append_import_binding_for_uri(SZrState *state,
                : ZR_TRUE;
 }
 
+/* 模块级引用回调收集 import 目标字面量；用于源文件重命名和外部模块引用。 */
 static TZrBool project_navigation_append_import_target_for_uri(SZrState *state,
                                                                SZrLspContext *context,
                                                                SZrString *uri,
@@ -574,6 +602,7 @@ static TZrBool project_navigation_append_import_target_for_uri(SZrState *state,
     return append_import_target_locations_from_analyzer(state, context, uri, moduleName, result);
 }
 
+/* 单文件适配层：先保证 analyzer 可用，再交给指定类型的引用收集器。 */
 static TZrBool project_navigation_append_source_reference_for_uri(SZrState *state,
                                                                   SZrLspContext *context,
                                                                   SZrString *uri,
@@ -595,6 +624,7 @@ static TZrBool project_navigation_append_source_reference_for_uri(SZrState *stat
     return appender(state, context, uri, analyzer, moduleName, memberName, result);
 }
 
+/* 从文件系统枚举路径转入 LSP URI/文档缓存身份。 */
 static TZrBool project_navigation_append_source_reference_for_path(SZrState *state,
                                                                    SZrLspContext *context,
                                                                    const TZrChar *path,
@@ -623,6 +653,8 @@ static TZrBool project_navigation_append_source_reference_for_path(SZrState *sta
                                                               result);
 }
 
+/* 项目范围引用需要覆盖未打开的 .zr 文件，按源根目录逐个交给单文档回调。 */
+/* TODO: 两个平台均递归跟随目录且未追踪访问过的真实路径；核查目录链接环与超深目录的行为。 */
 static TZrBool project_navigation_append_source_root_references_recursive(
     SZrState *state,
     SZrLspContext *context,
@@ -744,6 +776,7 @@ static TZrBool project_navigation_append_source_root_references_recursive(
 #endif
 }
 
+/* 有项目时遍历完整源根；无项目时只查请求文档，统一各类引用入口的范围。 */
 static TZrBool project_navigation_append_project_source_references(
     SZrState *state,
     SZrLspContext *context,
@@ -785,6 +818,7 @@ static TZrBool project_navigation_append_project_source_references(
                                                                       result);
 }
 
+/* 从元数据声明反向追踪项目源码中的成员引用。 */
 static TZrBool append_project_imported_references(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrLspProjectIndex *projectIndex,
@@ -802,6 +836,7 @@ static TZrBool append_project_imported_references(SZrState *state,
                                                                result);
 }
 
+/* 在一个 analyzer 上重建短期绑定，以模块键收集别名接收者及成员位置。 */
 static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -829,6 +864,7 @@ static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
     return appended;
 }
 
+/* 在一个 analyzer 上为模块键收集别名声明位置；收集后立即释放原生绑定。 */
 static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrString *uri,
@@ -855,6 +891,7 @@ static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
     return appended;
 }
 
+/* 从当前 AST 与文档快照定位 import 字面量，避免无关文件创建结果或读取过期磁盘文本。 */
 static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
                                                             SZrLspContext *context,
                                                             SZrString *uri,
@@ -913,6 +950,7 @@ static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
     return appended;
 }
 
+/* 项目级模块引用中的别名使用部分。 */
 static TZrBool append_project_imported_module_references(SZrState *state,
                                                          SZrLspContext *context,
                                                          SZrLspProjectIndex *projectIndex,
@@ -929,6 +967,7 @@ static TZrBool append_project_imported_module_references(SZrState *state,
                                                                result);
 }
 
+/* 项目级模块引用中的别名声明部分。 */
 static TZrBool append_project_import_binding_references(SZrState *state,
                                                         SZrLspContext *context,
                                                         SZrLspProjectIndex *projectIndex,
@@ -945,6 +984,7 @@ static TZrBool append_project_import_binding_references(SZrState *state,
                                                                result);
 }
 
+/* 项目级模块引用中的导入字符串部分。 */
 static TZrBool append_project_import_target_references(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrLspProjectIndex *projectIndex,
@@ -961,6 +1001,7 @@ static TZrBool append_project_import_target_references(SZrState *state,
                                                                result);
 }
 
+/* 源文件重命名借此取得所有项目文件中的 import 目标范围；调用方负责结果释放。 */
 TZrBool ZrLanguageServer_LspProject_AppendProjectImportTargetReferences(
         SZrState *state,
         SZrLspContext *context,
@@ -976,6 +1017,7 @@ TZrBool ZrLanguageServer_LspProject_AppendProjectImportTargetReferences(
                                                    result);
 }
 
+/* 插件文件本身缺少模块声明时，反查项目导入边并验证 native 路径身份。 */
 static TZrBool project_navigation_resolve_descriptor_plugin_module_from_project(SZrState *state,
                                                                                 SZrLspContext *context,
                                                                                 SZrLspProjectIndex *projectIndex,
@@ -1061,6 +1103,7 @@ static TZrBool project_navigation_resolve_descriptor_plugin_module_from_project(
     return ZR_FALSE;
 }
 
+/* 把跨文件引用结果收窄为当前文档高亮；只拷贝坐标，临时 Location 仍由调用方持有。 */
 static TZrBool append_locations_as_document_highlights(SZrState *state,
                                                        SZrArray *locations,
                                                        SZrString *uri,
@@ -1097,6 +1140,7 @@ static TZrBool append_locations_as_document_highlights(SZrState *state,
     return result->length > 0;
 }
 
+/* 声明本身的高亮仍要按元数据来源转换坐标，kind 由上层决定。 */
 static TZrBool append_document_highlight(SZrState *state,
                                          SZrLspContext *context,
                                          SZrString *uri,
@@ -1140,6 +1184,7 @@ static TZrBool append_document_highlight(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 从二进制导出表按光标坐标识别成员声明；成员位置不匹配时不提供外部声明。 */
 static TZrBool project_navigation_try_find_binary_export_declaration_at(
     SZrState *state,
     SZrLspContext *context,
@@ -1206,6 +1251,7 @@ static TZrBool project_navigation_try_find_binary_export_declaration_at(
     return ZR_FALSE;
 }
 
+/* native 虚拟文档以描述符为声明权威，命中字段或方法后交给引用查询。 */
 static TZrBool project_navigation_try_find_descriptor_plugin_member_declaration_at(
     SZrState *state,
     SZrLspContext *context,
@@ -1274,6 +1320,7 @@ static TZrBool project_navigation_try_find_descriptor_plugin_member_declaration_
     return ZR_TRUE;
 }
 
+/* 将描述符里的原生名称转为语义引用查询的模块/成员键。 */
 static TZrBool project_append_imported_references_for_native_name(SZrState *state,
                                                                   SZrLspContext *context,
                                                                   SZrLspProjectIndex *projectIndex,
@@ -1302,6 +1349,7 @@ static TZrBool project_append_imported_references_for_native_name(SZrState *stat
                                                                result);
 }
 
+/* 在插件模块入口查询时覆盖所有公开成员，含链接、常量、函数与类型。 */
 static TZrBool project_append_descriptor_plugin_entry_member_references(SZrState *state,
                                                                         SZrLspContext *context,
                                                                         const SZrLspExternalMetadataDeclaration *resolved,
@@ -1385,6 +1433,8 @@ static TZrBool project_append_descriptor_plugin_entry_member_references(SZrState
     return appended;
 }
 
+/* 语义查询从源码/二进制/插件文档反向解析外部声明，结果供定义、引用和高亮共用。 */
+/* 调用约束：仅在返回成功且 hasDeclaration 为真时消费 declarationUri/range；失败可能留下部分结果。 */
 TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
     SZrState *state,
     SZrLspContext *context,
@@ -1556,6 +1606,8 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
     return ZR_FALSE;
 }
 
+/* 把外部声明映射到项目 import 目标、别名和成员使用；includeDeclaration 控制声明是否入结果。 */
+/* TODO: 多个 append 分支用 || 合并“有结果”和“成功”语义；核查分配失败时是否会被已有结果掩盖。 */
 TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(
     SZrState *state,
     SZrLspContext *context,
@@ -1620,6 +1672,8 @@ TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(
     return appended || result->length > 0;
 }
 
+/* 高亮复用引用收集，只保留 queryUri 对应文档并分别标出声明与引用。 */
+/* BUG: append_lsp_location 为每个引用分配 SZrLspLocation，结尾只 Array_Free 指针数组；每次高亮查询都会泄漏所收集的 Location。 */
 TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(
     SZrState *state,
     SZrLspContext *context,

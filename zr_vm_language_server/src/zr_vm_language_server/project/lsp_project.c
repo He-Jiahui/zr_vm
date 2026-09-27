@@ -29,6 +29,8 @@
 
 #define ZR_LSP_PROJECT_HEX_DIGIT_INVALID ((TZrInt32)-1)
 
+/* 同步 Analyze 期间临时替换全局 sourceLoader；保存原回调及其 userData 以便项目解析失败时回退。
+ * 此结构在调用栈上，不能被异步加载器留存。 */
 typedef struct SZrLspProjectSourceLoaderContext {
     SZrLspProjectIndex *projectIndex;
     FZrIoLoadSource fallbackSourceLoader;
@@ -36,12 +38,15 @@ typedef struct SZrLspProjectSourceLoaderContext {
     TZrPtr fallbackUserData;
 } SZrLspProjectSourceLoaderContext;
 
+/* 语义分析器回调借用本次请求的项目作用域，分析结束后必须清空回调以免悬垂。 */
 typedef struct SZrLspProjectVirtualDeclarationUriResolverContext {
     SZrState *state;
     SZrLspContext *context;
     SZrLspProjectIndex *projectIndex;
 } SZrLspProjectVirtualDeclarationUriResolverContext;
 
+/* 语义分析器只需要可导航的虚拟声明 URI；在本次同步分析期间借用解析上下文，
+ * 由元数据提供者把外部来源映射回当前项目的声明视图。 */
 static SZrString *project_resolve_virtual_declaration_uri(
         SZrSemanticContext *semanticContext,
         SZrString *externalOriginUri,
@@ -88,6 +93,7 @@ static TZrBool project_refresh_for_updated_document_internal(SZrState *state,
                                                              TZrBool rescanAllLoadedSources,
                                                              TZrBool advanceProviderGeneration);
 
+/* 为项目路径和模块键提供保留长度的只读视图，返回指针由 VM 字符串持有。 */
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
         return;
@@ -108,6 +114,7 @@ static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *le
     }
 }
 
+/* 仅供需要 NUL 结尾文本的项目路径接口使用；调用方不得保留返回指针越过字符串生命周期。 */
 static const TZrChar *get_string_text(SZrString *value) {
     TZrNativeString text;
     TZrSize length;
@@ -116,6 +123,7 @@ static const TZrChar *get_string_text(SZrString *value) {
     return text;
 }
 
+/* 把文件系统返回的暂存文本复制进 VM 字符串，以便索引长期引用。 */
 static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *text) {
     if (state == ZR_NULL || text == ZR_NULL) {
         return ZR_NULL;
@@ -124,6 +132,8 @@ static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
+/* 导入规范化依赖当前项目作为解析器上下文；调用期间临时安装项目并在返回前恢复。
+ * 调用方须持有同步分析范围内的 state 和 AST。 */
 static TZrBool project_canonicalize_ast_for_path(SZrState *state,
                                                  SZrLspProjectIndex *projectIndex,
                                                  SZrAstNode *ast,
@@ -169,6 +179,7 @@ static TZrBool project_canonicalize_ast_for_path(SZrState *state,
     return success;
 }
 
+/* 文件记录优先采用 AST 规范化后的模块身份，磁盘扫描无法取得 AST 时再由路径推导。 */
 static TZrBool project_determine_source_module_key(SZrState *state,
                                                    SZrLspProjectIndex *projectIndex,
                                                    const TZrChar *path,
@@ -214,6 +225,7 @@ static TZrBool project_determine_source_module_key(SZrState *state,
                                                     0);
 }
 
+/* 按进程首次查询固定追踪开关，供本模块的热路径避免重复读取环境。 */
 static TZrBool lsp_project_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -227,6 +239,7 @@ static TZrBool lsp_project_trace_enabled(void) {
     return enabled;
 }
 
+/* 将项目装载和增量刷新决策写到 stderr，帮助诊断跨文件失效链路。 */
 static void lsp_project_trace(const TZrChar *format, ...) {
     va_list arguments;
 
@@ -264,6 +277,7 @@ static TZrBool project_scan_source_module_graph(SZrState *state,
                                                 SZrLspProjectIndex *projectIndex,
                                                 SZrString *moduleName);
 
+/* 向 VM 源加载器交付已由项目解析器定位的文件流；成功后流由 SZrIo 的关闭回调接管。 */
 static TZrBool project_load_resolved_file_to_io(SZrState *state,
                                                 const TZrChar *path,
                                                 TZrBool isBinary,
@@ -284,6 +298,7 @@ static TZrBool project_load_resolved_file_to_io(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 项目候选未命中时恢复原加载器的 userData 语境，保持外层注册的源加载行为。 */
 static TZrBool project_source_loader_invoke_fallback(SZrState *state,
                                                      SZrLspProjectSourceLoaderContext *context,
                                                      TZrNativeString sourcePath,
@@ -307,6 +322,8 @@ static TZrBool project_source_loader_invoke_fallback(SZrState *state,
     return success;
 }
 
+/* 语义分析期间优先按项目 source/binary 根解析导入；未命中才交还原加载器。
+ * 此回调依赖栈上的 loader context，只能在安装它的同步 Analyze 调用内使用。 */
 static TZrBool project_source_loader(SZrState *state,
                                      TZrNativeString sourcePath,
                                      TZrNativeString md5,
@@ -335,6 +352,7 @@ static TZrBool project_source_loader(SZrState *state,
     return project_source_loader_invoke_fallback(state, context, sourcePath, md5, io);
 }
 
+/* 先读取 AST 导入并注册项目 native 描述插件，使后续语义分析能解析插件声明。 */
 static void project_preload_descriptor_plugin_imports(SZrState *state,
                                                       SZrLspProjectIndex *projectIndex,
                                                       SZrAstNode *ast) {
@@ -372,6 +390,7 @@ static void project_preload_descriptor_plugin_imports(SZrState *state,
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
 }
 
+/* 轻量源码图不一定有 AST；用已发现的模块名提前准备相同的 native 插件。 */
 static void project_preload_descriptor_plugin_import_names(SZrState *state,
                                                            SZrLspProjectIndex *projectIndex,
                                                            SZrArray *moduleNames) {
@@ -404,10 +423,12 @@ static void project_preload_descriptor_plugin_import_names(SZrState *state,
     }
 }
 
+/* 统一调用文件库的项目根拼接接口，结果必须由调用方提供最大路径缓冲区。 */
 static void path_join_const_inputs(const TZrChar *path1, const TZrChar *path2, TZrChar *result) {
     ZrLibrary_File_PathJoin((TZrNativeString)path1, (TZrNativeString)path2, result);
 }
 
+/* URI 的文件类型分流只比较字节后缀，调用方需先排除虚拟 URI。 */
 static TZrBool string_ends_with(SZrString *value, const TZrChar *suffix) {
     TZrNativeString text;
     TZrSize length;
@@ -423,6 +444,7 @@ static TZrBool string_ends_with(SZrString *value, const TZrChar *suffix) {
            memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
 }
 
+/* 监听事件用此后缀识别需失效的 native 插件文件。 */
 static TZrBool native_path_has_dynamic_library_extension(const TZrChar *path) {
     TZrSize length;
 
@@ -438,6 +460,7 @@ static TZrBool native_path_has_dynamic_library_extension(const TZrChar *path) {
 
 static void normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize);
 
+/* 文件监听与项目归属比较使用同一形式：分隔符统一，Windows 上折叠大小写。 */
 static void normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize writeIndex = 0;
 
@@ -467,6 +490,7 @@ static void normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZr
     buffer[writeIndex] = '\0';
 }
 
+/* 用路径段边界判定项目归属，供多项目选择、监听重载和已装载源枚举共享。 */
 static TZrBool native_path_is_within_directory(const TZrChar *path, const TZrChar *directory) {
     TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar normalizedDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -483,10 +507,12 @@ static TZrBool native_path_is_within_directory(const TZrChar *path, const TZrCha
     return normalizedPath[directoryLength] == '\0' || normalizedPath[directoryLength] == '/';
 }
 
+/* 复用项目解析器的模块键规范，避免导航和加载器使用不同模块命名。 */
 static TZrBool normalize_module_key(const TZrChar *modulePath, TZrChar *buffer, TZrSize bufferSize) {
     return ZrLibrary_Project_NormalizeModuleKey(modulePath, buffer, bufferSize);
 }
 
+/* 仅将顶层 extern 声明视为 FFI 源包装器，供导航选择源码或元数据路径。 */
 static TZrBool project_script_contains_top_level_ffi_wrapper(SZrAstNode *ast) {
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT ||
         ast->data.script.statements == ZR_NULL || ast->data.script.statements->nodes == ZR_NULL) {
@@ -513,10 +539,14 @@ static TZrBool project_script_contains_top_level_ffi_wrapper(SZrAstNode *ast) {
     return ZR_FALSE;
 }
 
+/* 以源码标记辅助识别 FFI 包装器，轻量扫描在没有可靠 AST 时也能使用。
+ * BUG: 普通注释或字符串只要包含 native extern 也会命中，登记为 FFI 源并影响导航来源；
+ * 触发链为 project_register_source_record -> lsp_project_navigation.c 的 sourceKind 分流。 */
 static TZrBool project_content_contains_ffi_wrapper_marker(const TZrChar *content) {
     return content != ZR_NULL && strstr(content, "native extern") != ZR_NULL;
 }
 
+/* 导入图按语义字符串去重，避免同一模块被重复预装载或递归扫描。 */
 static TZrBool project_string_array_contains(SZrArray *values, SZrString *needle) {
     if (values == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -532,6 +562,7 @@ static TZrBool project_string_array_contains(SZrArray *values, SZrString *needle
     return ZR_FALSE;
 }
 
+/* 复制导入名到本轮扫描数组；调用方负责释放数组，字符串由 VM 状态管理。 */
 static TZrBool project_append_unique_import_module_name(SZrState *state,
                                                         SZrArray *moduleNames,
                                                         SZrString *moduleName) {
@@ -565,6 +596,7 @@ static TZrBool project_append_unique_import_module_name(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 优先沿真实 AST 导入绑定枚举依赖，避免文本匹配误认非代码内容。 */
 static TZrBool project_collect_import_module_names_from_ast(SZrState *state,
                                                             SZrAstNode *ast,
                                                             SZrArray *moduleNames) {
@@ -594,6 +626,7 @@ static TZrBool project_collect_import_module_names_from_ast(SZrState *state,
     return success;
 }
 
+/* 文本回退路径只定位 import( 形态，不保证位于代码区；供无 AST 时尽量发现依赖。 */
 static const TZrChar *project_find_import_call(const TZrChar *content, const TZrChar *cursor) {
     const TZrChar *match;
 
@@ -621,6 +654,8 @@ static const TZrChar *project_find_import_call(const TZrChar *content, const TZr
     return ZR_NULL;
 }
 
+/* 无 AST 时为轻量引用图保留可发现的字面量导入。
+ * TODO: 扫描未跳过注释和字符串，需核对解析失败场景下的误报如何影响诊断与跨文件引用。 */
 static TZrBool project_collect_import_module_names_from_text(SZrState *state,
                                                              const TZrChar *content,
                                                              SZrArray *moduleNames) {
@@ -683,6 +718,7 @@ static TZrBool project_collect_import_module_names_from_text(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 在 AST 和源码文本之间选择依赖发现路径，轻量扫描与引用查询共用此口径。 */
 static TZrBool project_collect_import_module_names(SZrState *state,
                                                    SZrAstNode *ast,
                                                    const TZrChar *content,
@@ -694,6 +730,7 @@ static TZrBool project_collect_import_module_names(SZrState *state,
     return project_collect_import_module_names_from_text(state, content, moduleNames);
 }
 
+/* 监听文件失效时从项目源码路径反推模块键，再清除 VM 中对应的缓存别名。 */
 static TZrBool derive_module_name_from_path(SZrLspProjectIndex *projectIndex,
                                             const TZrChar *path,
                                             TZrChar *buffer,
@@ -712,6 +749,7 @@ static TZrBool derive_module_name_from_path(SZrLspProjectIndex *projectIndex,
                                                     0);
 }
 
+/* 项目 binary 根由描述文件目录和输出配置共同决定，供二进制加载与监听失效使用。 */
 static TZrBool project_binary_root_path(SZrLspProjectIndex *projectIndex,
                                         TZrChar *buffer,
                                         TZrSize bufferSize) {
@@ -737,6 +775,8 @@ static TZrBool project_binary_root_path(SZrLspProjectIndex *projectIndex,
     return buffer[0] != '\0';
 }
 
+/* 从 binary 根内的产物路径恢复模块键，供虚拟导航与缓存失效共享。
+ * TODO: 当前仅检查字节前缀，/out 与 /outside 会混淆；核对旁路产物能否误删同名 VM 缓存。 */
 static TZrBool derive_binary_module_name_from_path(SZrLspProjectIndex *projectIndex,
                                                    const TZrChar *path,
                                                    TZrChar *buffer,
@@ -767,6 +807,7 @@ static TZrBool derive_binary_module_name_from_path(SZrLspProjectIndex *projectIn
     return normalize_module_key(relative, buffer, bufferSize);
 }
 
+/* 对项目导航暴露二进制文件到模块身份的映射，后续还须核对实际产物 URI。 */
 TZrBool ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(SZrLspProjectIndex *projectIndex,
                                                                    const TZrChar *path,
                                                                    TZrChar *buffer,
@@ -774,6 +815,7 @@ TZrBool ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(SZrLspProject
     return derive_binary_module_name_from_path(projectIndex, path, buffer, bufferSize);
 }
 
+/* 监听事件按一个模块键清除 VM 缓存，字符串键为本次调用临时创建。 */
 static void project_remove_module_cache_key_text(SZrState *state, const TZrChar *cacheKeyText) {
     SZrString *cacheKey;
 
@@ -787,6 +829,7 @@ static void project_remove_module_cache_key_text(SZrState *state, const TZrChar 
     }
 }
 
+/* VM 缓存可能以原路径、规范路径或异种分隔符为键，监听失效需逐一移除。 */
 static void project_remove_path_cache_key_variants(SZrState *state, const TZrChar *path) {
     TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar separatorVariant[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -819,6 +862,7 @@ static void project_remove_path_cache_key_variants(SZrState *state, const TZrCha
     }
 }
 
+/* 文件变更同时撤销路径键与推导出的模块键，保证重载使用新产物。 */
 static void project_invalidate_module_cache_for_watched_path(SZrState *state,
                                                              SZrLspProjectIndex *projectIndex,
                                                              const TZrChar *affectedPath) {
@@ -850,6 +894,7 @@ static void project_invalidate_module_cache_for_watched_path(SZrState *state,
     }
 }
 
+/* 项目源加载器把模块键映射到 .zr；保留 $ 包引用的项目解析器优先级。 */
 static TZrBool project_resolve_source_path(SZrLspProjectIndex *projectIndex,
                                            const TZrChar *moduleName,
                                            TZrChar *buffer,
@@ -883,6 +928,7 @@ static TZrBool project_resolve_source_path(SZrLspProjectIndex *projectIndex,
     return buffer[0] != '\0';
 }
 
+/* 源文件缺席时回退已存在的 .zro 产物，确保编辑器可分析依赖的二进制声明。 */
 static TZrBool project_resolve_binary_path(SZrLspProjectIndex *projectIndex,
                                            const TZrChar *moduleName,
                                            TZrChar *buffer,
@@ -918,6 +964,7 @@ static TZrBool project_resolve_binary_path(SZrLspProjectIndex *projectIndex,
     return ZrLibrary_File_Exist(buffer) == ZR_LIBRARY_FILE_IS_FILE;
 }
 
+/* 为导航和缓存刷新返回项目拥有的文件记录；返回指针随索引移除而失效。 */
 SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByUri(SZrLspProjectIndex *projectIndex,
                                                                      SZrString *uri) {
     for (TZrSize index = 0; projectIndex != ZR_NULL && index < projectIndex->files.length; index++) {
@@ -933,6 +980,7 @@ SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByUri(SZrLspProje
     return ZR_NULL;
 }
 
+/* 装载与轻量扫描按模块键查重；返回记录仍由项目索引持有。 */
 SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByModuleName(SZrLspProjectIndex *projectIndex,
                                                                             SZrString *moduleName) {
     for (TZrSize index = 0; projectIndex != ZR_NULL && index < projectIndex->files.length; index++) {
@@ -947,6 +995,7 @@ SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByModuleName(SZrL
     return ZR_NULL;
 }
 
+/* 诊断收集按 URI 等价关系去重，避免多个索引共同拥有文件时重复发布。 */
 static TZrBool project_uri_array_contains(const SZrArray *uris, SZrString *uri) {
     for (TZrSize index = 0U; uris != ZR_NULL && index < uris->length; index++) {
         SZrString *const *existing = (SZrString *const *)ZrCore_Array_Get((SZrArray *)uris, index);
@@ -959,6 +1008,8 @@ static TZrBool project_uri_array_contains(const SZrArray *uris, SZrString *uri) 
     return ZR_FALSE;
 }
 
+/* stdio/WASM 诊断入口需要项目图和打开文档的并集；先确保每个项目能提供轻量源码图。
+ * 返回数组由调用方持有，元素 URI 仍由项目记录或解析器持有。 */
 TZrBool ZrLanguageServer_LspProject_CollectDiagnosticDocumentUris(SZrState *state,
                                                                    SZrLspContext *context,
                                                                    SZrArray *outUris) {
@@ -1027,6 +1078,7 @@ TZrBool ZrLanguageServer_LspProject_CollectDiagnosticDocumentUris(SZrState *stat
     return ZR_TRUE;
 }
 
+/* 虚拟 URI 作用域和项目移除按描述文件 URI 精确定位索引，而非按目录推断。 */
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspContext *context,
                                                                         SZrString *uri,
                                                                         TZrSize *outIndex) {
@@ -1046,6 +1098,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspCo
     return ZR_NULL;
 }
 
+/* 多项目环境优先选最深的 source/project 根，虚拟文档则用其显式作用域。 */
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext *context, SZrString *uri) {
     TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
     SZrLspProjectIndex *bestProject = ZR_NULL;
@@ -1103,6 +1156,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext 
     return bestProject;
 }
 
+/* 文件删除后仅释放索引记录；记录内字符串仍由 VM 状态管理，数组位置随之压缩。 */
 static void project_remove_file_record_at_index(SZrState *state,
                                                 SZrLspProjectIndex *projectIndex,
                                                 TZrSize recordIndex) {
@@ -1125,6 +1179,7 @@ static void project_remove_file_record_at_index(SZrState *state,
     projectIndex->files.length--;
 }
 
+/* watcher 删除事件先试 URI 等价，再按本地规范路径查找原项目索引。 */
 static TZrBool project_find_index_by_project_uri(SZrLspContext *context,
                                                  SZrString *uri,
                                                  TZrSize *outProjectIndexOffset) {
@@ -1167,6 +1222,7 @@ static TZrBool project_find_index_by_project_uri(SZrLspContext *context,
     return ZR_TRUE;
 }
 
+/* 移除一个项目时，共享源的解析器/分析器状态仍由其他项目使用，不能一并撤销。 */
 static TZrBool project_uri_is_referenced_by_other_index(SZrLspContext *context,
                                                          TZrSize excludedProjectIndexOffset,
                                                          SZrString *uri) {
@@ -1195,6 +1251,7 @@ static TZrBool project_uri_is_referenced_by_other_index(SZrLspContext *context,
     return ZR_FALSE;
 }
 
+/* 工作区移除项目时同步撤销其文件缓存；保留打开的编辑覆盖层供其他入口继续分析。 */
 static TZrBool project_remove_index_at(SZrState *state,
                                        SZrLspContext *context,
                                        TZrSize projectIndexOffset,
@@ -1238,6 +1295,7 @@ static TZrBool project_remove_index_at(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 文件监听的项目删除事件释放对应索引以及不再共享的分析器与解析器状态。 */
 TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri) {
@@ -1250,6 +1308,7 @@ TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
     return project_remove_index_at(state, context, projectIndexOffset, ZR_FALSE);
 }
 
+/* 工作区配置移除项目时保留编辑器打开的文档覆盖层，避免未保存内容被磁盘状态替代。 */
 TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUriPreservingOpenDocuments(
         SZrState *state,
         SZrLspContext *context,
@@ -1263,6 +1322,9 @@ TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUriPreservingOpenDocum
     return project_remove_index_at(state, context, projectIndexOffset, ZR_TRUE);
 }
 
+/* 文件删除或关闭时按 URI/规范路径摘除一份项目记录，并撤销该文件的分析缓存。
+ * BUG: 同一个 URI 若同时登记在多个项目，stdio 的 watcher 删除事件只调用一次，
+ * 其余项目仍保留旧记录；关闭文档入口则用循环重复调用。见 stdio_workspace_files.c 和 stdio_documents.c。 */
 TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrString *uri) {
@@ -1316,6 +1378,8 @@ TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 二进制或 native 插件监听事件选择最深归属项目，失效 VM 缓存并以磁盘 .zrp 重建分析图。
+ * 适用于无编辑覆盖层的元数据变更；项目文件内容在返回前释放。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                                             SZrLspContext *context,
                                                                                             SZrString *uri) {
@@ -1404,6 +1468,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
     return refreshed;
 }
 
+/* 索引独占文件记录、数组及 Project 对象；VM 字符串不在此逐个释放。 */
 static void project_index_free(SZrState *state, SZrLspProjectIndex *projectIndex) {
     if (state == ZR_NULL || projectIndex == ZR_NULL) {
         return;
@@ -1425,6 +1490,8 @@ static void project_index_free(SZrState *state, SZrLspProjectIndex *projectIndex
     ZrCore_Memory_RawFree(state->global, projectIndex, sizeof(SZrLspProjectIndex));
 }
 
+/* 编辑覆盖层或 watcher 提供 .zrp 内容时建立项目索引，保留描述文件 URI 作为索引身份。
+ * 返回索引在加入 context 前由调用方持有，失败时不得留下半成品。 */
 static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
                                                            SZrString *projectUri,
                                                            const TZrChar *content,
@@ -1482,6 +1549,7 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
     return projectIndex;
 }
 
+/* 按磁盘描述文件建立索引，供首次发现项目和按项目 URI 打开查询使用。 */
 static SZrLspProjectIndex *project_index_new_from_path(SZrState *state, const TZrChar *projectPath) {
     TZrNativeString jsonBuffer;
     SZrString *projectUri;
@@ -1509,6 +1577,7 @@ static SZrLspProjectIndex *project_index_new_from_path(SZrState *state, const TZ
     return projectIndex;
 }
 
+/* 项目自动发现沿物理目录向上爬升；到平台根目录即停止。 */
 static TZrBool path_get_parent_directory_in_place(TZrChar *path) {
     TZrSize length;
 
@@ -1561,6 +1630,9 @@ static TZrBool path_get_parent_directory_in_place(TZrChar *path) {
     return ZR_TRUE;
 }
 
+/* 自动发现只接受单一 .zrp 的目录，多于一个需由客户端显式选择。
+ * BUG: POSIX 分支仅检查名称后缀，名为 *.zrp 的目录也计数，可能把唯一真实项目误判为歧义；
+ * Windows 分支已有目录属性过滤，需在 POSIX 使用文件类型核验。 */
 static TZrSize directory_count_project_files(const TZrChar *directory,
                                              TZrChar *firstProjectPath,
                                              TZrSize bufferSize) {
@@ -1625,6 +1697,7 @@ static TZrSize directory_count_project_files(const TZrChar *directory,
     return count;
 }
 
+/* 从文档目录向上找最近的唯一 .zrp；当前层多项目即报告歧义而不擅自越层选择。 */
 static TZrBool discover_project_path_for_uri(SZrString *uri,
                                              TZrChar *projectPath,
                                              TZrSize projectPathSize,
@@ -1664,6 +1737,7 @@ static TZrBool discover_project_path_for_uri(SZrString *uri,
     return ZR_FALSE;
 }
 
+/* 自动发现失败或歧义时，客户端选中的 .zrp 仅能接管其目录下文件。 */
 static TZrBool discover_project_path_with_context(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrString *uri,
@@ -1704,6 +1778,7 @@ static TZrBool discover_project_path_with_context(SZrState *state,
     return ZR_FALSE;
 }
 
+/* .zrp 内容替换前清空旧索引记录关联的语义分析器，避免新配置复用旧项目语境。 */
 static void project_invalidate_loaded_analyzers(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrLspProjectIndex *projectIndex) {
@@ -1720,6 +1795,8 @@ static void project_invalidate_loaded_analyzers(SZrState *state,
     }
 }
 
+/* 编辑后或反向依赖刷新复用已解析 AST，临时安装项目 loader 与虚拟声明 URI 回调。
+ * loader/回调上下文在栈上，Analyze 必须同步完成且恢复全局钩子后方可返回。 */
 static TZrBool project_reanalyze_loaded_document(SZrState *state,
                                                  SZrLspContext *context,
                                                  SZrLspProjectIndex *projectIndex,
@@ -1798,6 +1875,7 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     return analyzeSuccess;
 }
 
+/* LSP 文档更新入口以所在项目规范化导入，再执行语义分析；无项目时维持普通分析路径。 */
 TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
                                                     SZrLspContext *context,
                                                     SZrString *uri,
@@ -1882,6 +1960,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
     return analyzeSuccess;
 }
 
+/* 全量刷新只重分析当前项目 source 根内已进入增量解析器的 .zr 文档。 */
 static TZrBool project_collect_loaded_source_uris(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrLspProjectIndex *projectIndex,
@@ -1918,6 +1997,8 @@ static TZrBool project_collect_loaded_source_uris(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 维护源码 URI、模块键和 FFI 分类以供导航及反向依赖查询；已有记录原位更新，
+ * 公共契约哈希随后由 project_register_loaded_document 刷新。 */
 static TZrBool project_register_source_record(SZrState *state,
                                               SZrLspProjectIndex *projectIndex,
                                               SZrString *uri,
@@ -1971,6 +2052,7 @@ static TZrBool project_register_source_record(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 轻量扫描重试前清空旧图，避免部分失败记录被误当作完整模块。 */
 static void project_clear_file_records(SZrState *state, SZrLspProjectIndex *projectIndex) {
     if (state == ZR_NULL || projectIndex == ZR_NULL || !projectIndex->files.isValid) {
         return;
@@ -1987,6 +2069,7 @@ static void project_clear_file_records(SZrState *state, SZrLspProjectIndex *proj
     projectIndex->files.length = 0;
 }
 
+/* 语义分析完成后把 AST 与编辑快照登记为项目记录，并保存当前公开契约摘要。 */
 static TZrBool project_register_loaded_document(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrLspProjectIndex *projectIndex,
@@ -2032,6 +2115,8 @@ static TZrBool project_load_imports_from_uri(SZrState *state,
                                              SZrLspProjectIndex *projectIndex,
                                              SZrString *uri);
 
+/* 语义项目图递归装载真实源文件，活动模块栈避免循环导入；优先复用分析器记录。
+ * 读取磁盘只发生在解析器尚未持有该 URI 时，避免覆盖已打开文档。 */
 static TZrBool project_ensure_module_loaded(SZrState *state,
                                             SZrLspContext *context,
                                             SZrLspProjectIndex *projectIndex,
@@ -2114,6 +2199,7 @@ cleanup:
     return success;
 }
 
+/* 元数据提供者请求某个项目模块时复用项目入口的递归装载规则。 */
 TZrBool ZrLanguageServer_LspProject_EnsureModuleLoadedByName(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrLspProjectIndex *projectIndex,
@@ -2121,6 +2207,9 @@ TZrBool ZrLanguageServer_LspProject_EnsureModuleLoadedByName(SZrState *state,
     return project_ensure_module_loaded(state, context, projectIndex, moduleName);
 }
 
+/* 引用与诊断的轻量路径先登记模块再递归导入，以便循环依赖能终止。
+ * BUG: 登记成功后导入子图失败会留下部分记录；导航入口忽略 EnsureScannedSourceGraph 失败并继续查此记录，
+ * 从而可把未完成扫描误报为可导航源码；见 lsp_project_navigation.c 的解析路径。 */
 static TZrBool project_scan_source_module_graph(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrLspProjectIndex *projectIndex,
@@ -2245,6 +2334,7 @@ cleanup:
     return success;
 }
 
+/* 完成一个分析器的导入预装载；单个导入未找到由独立导入诊断处理，不中止整个文档刷新。 */
 static TZrBool project_load_imports_from_uri(SZrState *state,
                                              SZrLspContext *context,
                                              SZrLspProjectIndex *projectIndex,
@@ -2278,6 +2368,7 @@ static TZrBool project_load_imports_from_uri(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 语义查询与代码操作入口确保项目入口模块已加载，才将索引标为语义可用。 */
 SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *state,
                                                                     SZrLspContext *context,
                                                                     SZrString *uri) {
@@ -2331,6 +2422,7 @@ SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *st
     return projectIndex;
 }
 
+/* 文档更新和源码导航只建立项目索引，语义图按需引导加载。 */
 SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateForUri(SZrState *state,
                                                                   SZrLspContext *context,
                                                                   SZrString *uri) {
@@ -2373,6 +2465,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateForUri(SZrState *stat
     return projectIndex;
 }
 
+/* 按明确 .zrp URI 打开项目索引，供项目级引用查询避免依赖任一源文件已打开。 */
 SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateByProjectUri(SZrState *state,
                                                                         SZrLspContext *context,
                                                                         SZrString *projectUri) {
@@ -2402,6 +2495,8 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateByProjectUri(SZrState
     return projectIndex;
 }
 
+/* 诊断/跨快照引用需要源码图时从项目入口做轻量扫描；语义图已加载则直接复用。
+ * 失败返回前保留的部分文件记录不可作为完整图使用。 */
 TZrBool ZrLanguageServer_LspProject_EnsureScannedSourceGraph(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrLspProjectIndex *projectIndex) {
@@ -2423,6 +2518,7 @@ TZrBool ZrLanguageServer_LspProject_EnsureScannedSourceGraph(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 跨文件引用查询按解析器覆盖层优先、磁盘次之收集导入模块，并在有项目时规范化 AST。 */
 TZrBool ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(SZrState *state,
                                                                    SZrLspContext *context,
                                                                    SZrString *uri,
@@ -2507,6 +2603,7 @@ cleanup:
     return success;
 }
 
+/* LSP context 析构时释放所有项目索引；必须在 VM state 仍有效时调用。 */
 void ZrLanguageServer_Lsp_ProjectIndexes_Free(SZrState *state, SZrLspContext *context) {
     if (state == ZR_NULL || context == ZR_NULL || !context->projectIndexes.isValid) {
         return;
@@ -2523,6 +2620,7 @@ void ZrLanguageServer_Lsp_ProjectIndexes_Free(SZrState *state, SZrLspContext *co
     ZrCore_Array_Free(state, &context->projectIndexes);
 }
 
+/* 反向依赖广度遍历的已发现集合以 URI 避免循环重分析。 */
 static TZrBool project_uri_contained_in_string_array(SZrArray *uris, SZrString *needle) {
     TZrSize index;
 
@@ -2540,6 +2638,7 @@ static TZrBool project_uri_contained_in_string_array(SZrArray *uris, SZrString *
     return ZR_FALSE;
 }
 
+/* 反向依赖刷新从当前分析器 AST 读取真实 import 绑定，避免依赖旧文本快照。 */
 static TZrBool project_file_imports_module_name(SZrState *state,
                                                SZrLspContext *context,
                                                SZrString *fileUri,
@@ -2573,6 +2672,7 @@ static TZrBool project_file_imports_module_name(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 在项目文件记录中寻找直接导入者，放入广度遍历队列并去重。 */
 static void project_enqueue_importers_of_module(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrLspProjectIndex *projectIndex,
@@ -2614,6 +2714,7 @@ static void project_enqueue_importers_of_module(SZrState *state,
     }
 }
 
+/* 公开契约改变时按旧/新模块键传播失效到所有传递导入者；逐层重分析并登记新记录。 */
 static TZrBool project_refresh_transitive_importers(SZrState *state,
                                                     SZrLspContext *context,
                                                     SZrLspProjectIndex *projectIndex,
@@ -2700,6 +2801,8 @@ static TZrBool project_refresh_transitive_importers(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 更新 .zrp 时重建索引并全量重分析；更新 .zr 时比较公开契约，只在变化时传播反向依赖。
+ * watcher 请求可额外递增外部提供者代数并强制扫描已加载源码。 */
 static TZrBool project_refresh_for_updated_document_internal(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -2868,6 +2971,7 @@ static TZrBool project_refresh_for_updated_document_internal(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 文档编辑入口执行按契约变化选择性的项目刷新；普通更新不递增 watcher 的提供者代数。 */
 TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -2883,6 +2987,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                           ZR_FALSE);
 }
 
+/* 对外仅报告当前 context 中是否已有某 URI 的项目归属，不主动发现或加载项目。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri) {
@@ -2890,6 +2995,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState 
     return ZrLanguageServer_LspProject_FindProjectForUri(context, uri) != ZR_NULL;
 }
 
+/* workspace/symbol 合并所有已分析项目文件的顶层符号，并在长循环中响应请求取消。
+ * 结果数组由调用方持有，追加的 SymbolInformation 按 LSP 结果生命周期管理。 */
 TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *query,

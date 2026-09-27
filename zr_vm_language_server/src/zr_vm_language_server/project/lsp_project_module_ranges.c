@@ -1,5 +1,7 @@
 #include "project/lsp_project_internal.h"
 
+/* 项目源模块的导航/诊断入口优先指向当前 AST 中与索引模块键一致的声明。 */
+/* AST 缺失或编辑中模块名暂不一致时退回文件首位，避免跳到过期声明。 */
 SZrFileRange ZrLanguageServer_LspProject_GetSourceModuleEntryRange(
         SZrLspContext *context,
         const SZrLspProjectFileRecord *record) {

@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+/* 在 AST 字符串与路径标准化之间提供短串/长串统一视图；返回的字节仍由 VM 字符串持有。 */
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
         return;
@@ -26,6 +27,7 @@ static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *le
     }
 }
 
+/* 将临时规范化路径移入状态管理的字符串，供绑定跨越本次 AST 遍历继续使用。 */
 static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *text) {
     if (state == ZR_NULL || text == ZR_NULL) {
         return ZR_NULL;
@@ -36,6 +38,8 @@ static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *
 
 static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange position);
 
+/* 导入字面量范围不完整时为导航提供可用位置；调用方需保留原始 source URI。 */
+/* TODO: 该回推只依赖长度，需用带转义/多字节的导入路径核对与当前解析器位置约定的一致性。 */
 static SZrFileRange normalize_import_module_path_location(SZrFileRange range, TZrSize moduleNameLength) {
     TZrInt32 spanColumns;
     TZrInt64 spanOffsets;
@@ -66,6 +70,7 @@ static SZrFileRange normalize_import_module_path_location(SZrFileRange range, TZ
     return range;
 }
 
+/* 把解析器的零宽标识符位置补成引用可见范围，供定义、引用和高亮共享。 */
 static SZrFileRange normalize_zero_width_identifier_location(SZrFileRange range, SZrString *identifierName) {
     TZrNativeString text = ZR_NULL;
     TZrSize length = 0;
@@ -88,15 +93,20 @@ static SZrFileRange normalize_zero_width_identifier_location(SZrFileRange range,
     return range;
 }
 
+/* 绑定只存项目解析器接受的模块键，避免各导航入口分别解释相对路径。 */
 static TZrBool normalize_module_key(const TZrChar *modulePath, TZrChar *buffer, TZrSize bufferSize) {
     return ZrLibrary_Project_NormalizeModuleKey(modulePath, buffer, bufferSize);
 }
 
+/* 保留导入形式分类入口，以便审查相对导入与规范键的契约。 */
+/* TODO: append_import_binding_from_literal 的两个分支目前调用同一规范化函数；确认此分类是否仍有语义用途。 */
 static TZrBool import_module_key_is_already_canonical(const TZrChar *modulePath) {
     return modulePath != ZR_NULL && modulePath[0] != '\0' &&
            modulePath[0] != '.' && modulePath[0] != '@' && modulePath[0] != '&';
 }
 
+/* 与 CollectImportBindings 配对：逐个释放原生绑定记录，再释放指针数组；字符串由 state 管理。 */
+/* 调用约束：只要数组中有绑定，state 必须是创建这些记录时使用的状态。 */
 void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *bindings) {
     for (TZrSize index = 0; bindings != ZR_NULL && index < bindings->length; index++) {
         SZrLspImportBinding **bindingPtr =
@@ -111,6 +121,7 @@ void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *b
     }
 }
 
+/* 建立导入目标与可选局部别名的共同记录，供诊断、导航与重命名复用同一来源位置。 */
 static TZrBool append_import_binding(SZrState *state,
                                      SZrArray *bindings,
                                      SZrString *aliasName,
@@ -148,6 +159,7 @@ static TZrBool append_import_binding(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 只承认静态字符串目标；无法在编辑期确定的动态导入不进入项目模块索引。 */
 static TZrBool import_expression_get_module_path_literal(SZrAstNode *node, SZrAstNode **outLiteralNode) {
     if (outLiteralNode != ZR_NULL) {
         *outLiteralNode = ZR_NULL;
@@ -166,6 +178,7 @@ static TZrBool import_expression_get_module_path_literal(SZrAstNode *node, SZrAs
     return ZR_TRUE;
 }
 
+/* 识别变量初始化中的直接 import 及其 primary 包装，避免把任意嵌套表达式误当别名绑定。 */
 static TZrBool expression_get_direct_import_module_path_literal(SZrAstNode *node, SZrAstNode **outLiteralNode) {
     if (outLiteralNode != ZR_NULL) {
         *outLiteralNode = ZR_NULL;
@@ -185,6 +198,7 @@ static TZrBool expression_get_direct_import_module_path_literal(SZrAstNode *node
     return ZR_FALSE;
 }
 
+/* 将 AST 字面量转换为规范模块键和源位置；失败的目标不应进入后续引用/诊断查询。 */
 static TZrBool append_import_binding_from_literal(SZrState *state,
                                                   SZrArray *bindings,
                                                   SZrString *aliasName,
@@ -237,6 +251,8 @@ static TZrBool append_import_binding_from_literal(SZrState *state,
 
 static void collect_import_bindings_in_node_array(SZrState *state, SZrAstNodeArray *nodes, SZrArray *bindings);
 
+/* 为项目图、诊断和跨文件引用扫描静态导入；调用方初始化 bindings 并最终 FreeImportBindings。 */
+/* 这里收集函数及局部块中的导入，因此后续按别名查询必须处理词法作用域。 */
 void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNode *node, SZrArray *bindings) {
     SZrAstNode *modulePathLiteral = ZR_NULL;
 
@@ -556,6 +572,7 @@ void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNo
     }
 }
 
+/* 统一遍历列表形 AST 子节点，使收集器覆盖声明、参数表达式和语句块中的导入。 */
 static void collect_import_bindings_in_node_array(SZrState *state, SZrAstNodeArray *nodes, SZrArray *bindings) {
     if (nodes == ZR_NULL || nodes->nodes == ZR_NULL) {
         return;
@@ -566,6 +583,8 @@ static void collect_import_bindings_in_node_array(SZrState *state, SZrAstNodeArr
     }
 }
 
+/* 供命中、语义导入链和诊断把接收者映射回模块；返回值借用 bindings 的记录。 */
+/* BUG: CollectImportBindings 跨所有函数/局部块收集，而这里只按名字取首项；同名别名遮蔽时会返回错误模块，影响成员诊断和引用。 */
 SZrLspImportBinding *ZrLanguageServer_LspProject_FindImportBindingByAlias(SZrArray *bindings, SZrString *aliasName) {
     for (TZrSize index = 0; bindings != ZR_NULL && index < bindings->length; index++) {
         SZrLspImportBinding **bindingPtr =
@@ -579,6 +598,7 @@ SZrLspImportBinding *ZrLanguageServer_LspProject_FindImportBindingByAlias(SZrArr
     return ZR_NULL;
 }
 
+/* 将光标落在别名声明或导入字面量的情况交给导航入口，结果位置沿用绑定记录。 */
 static TZrBool variable_declaration_get_import_binding_hit(SZrAstNode *node,
                                                            SZrArray *bindings,
                                                            SZrFileRange position,
@@ -620,6 +640,7 @@ static TZrBool variable_declaration_get_import_binding_hit(SZrAstNode *node,
     return ZR_TRUE;
 }
 
+/* 导入命中判断优先使用解析器偏移，缺失时退回行列；两端有 URI 时须为同一来源。 */
 static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL && position.source != ZR_NULL) {
@@ -637,6 +658,8 @@ static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange pos
             (position.end.line == range.end.line && position.end.column <= range.end.column));
 }
 
+/* 跨文件引用只追踪 import 别名后的首个静态成员，后续成员由语义查询另行处理。 */
+/* BUG: 此处未排除 computed 成员，alias[name] 的标识符会被当作名为 name 的静态导出；诊断侧同类识别明确排除了 computed。 */
 static TZrBool primary_expression_get_imported_member(SZrAstNode *node,
                                                       SZrArray *bindings,
                                                       SZrLspImportedMemberHit *outHit) {
@@ -674,6 +697,7 @@ static TZrBool primary_expression_get_imported_member(SZrAstNode *node,
     return ZR_TRUE;
 }
 
+/* 在 alias.member 的接收者上提供模块级定义/引用入口；成员本身由成员查询处理。 */
 static TZrBool primary_expression_get_import_binding_hit(SZrAstNode *node,
                                                          SZrArray *bindings,
                                                          SZrFileRange position,
@@ -710,6 +734,7 @@ static TZrBool find_import_binding_hit_recursive(SZrAstNode *node,
                                                  SZrLspImportBinding **outBinding,
                                                  SZrFileRange *outLocation);
 
+/* 对列表子树按源顺序寻找唯一光标命中，避免后续节点覆盖已识别的别名。 */
 static TZrBool find_import_binding_hit_in_node_array(SZrAstNodeArray *nodes,
                                                      SZrArray *bindings,
                                                      SZrFileRange position,
@@ -733,6 +758,8 @@ static TZrBool find_import_binding_hit_in_node_array(SZrAstNodeArray *nodes,
     return ZR_FALSE;
 }
 
+/* 项目导航按 AST 位置识别导入别名/目标，命中后返回借用的 binding 和源范围。 */
+/* BUG: CollectImportBindings 会进入结构体、类、枚举及接口声明，这里的 switch 不进入这些声明；其中的导入命中不可达。 */
 static TZrBool find_import_binding_hit_recursive(SZrAstNode *node,
                                                  SZrArray *bindings,
                                                  SZrFileRange position,
@@ -1150,6 +1177,7 @@ static TZrBool find_import_binding_hit_recursive(SZrAstNode *node,
     return ZR_FALSE;
 }
 
+/* 语义查询入口：要求 bindings 与 node 来源于同一 AST，输出指针仅在 bindings 存活期间有效。 */
 TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
                                                          SZrArray *bindings,
                                                          SZrFileRange position,
@@ -1158,6 +1186,7 @@ TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
     return find_import_binding_hit_recursive(node, bindings, position, outBinding, outLocation);
 }
 
+/* 统一把解析器文件范围转换为 LSP 文档坐标，并把新 Location 所有权交给结果数组调用方。 */
 static TZrBool append_lsp_location(SZrState *state,
                                    SZrLspContext *context,
                                    SZrArray *result,
@@ -1195,6 +1224,7 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
                                                                    SZrString *memberName,
                                                                    SZrArray *result);
 
+/* 将跨文件成员引用扫描扩展到列表子节点；失败时保留已追加的结果供调用方清理。 */
 static TZrBool append_matching_imported_member_locations_in_node_array(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri,
@@ -1223,6 +1253,8 @@ static TZrBool append_matching_imported_member_locations_in_node_array(SZrState 
     return ZR_TRUE;
 }
 
+/* 按模块键及可选成员名收集源码引用；模块级查询同时包含别名接收者和首个成员。 */
+/* BUG: 遍历未进入结构体、类、枚举及接口声明，而绑定收集器进入这些声明；其内部成员引用会从项目引用结果消失。 */
 static TZrBool append_matching_imported_member_locations_recursive(SZrState *state,
                                                                    SZrLspContext *context,
                                                                    SZrString *uri,
@@ -1847,6 +1879,7 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
     return ZR_TRUE;
 }
 
+/* 项目级成员引用的 AST 入口；由导航层先为当前文档收集静态导入绑定。 */
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrState *state,
                                                                           SZrLspContext *context,
                                                                           SZrString *uri,
@@ -1865,6 +1898,7 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrSta
                                                                result);
 }
 
+/* 模块引用入口重用成员遍历，但以空成员名同时收集导入别名接收者和成员位置。 */
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrState *state,
                                                                           SZrLspContext *context,
                                                                           SZrString *uri,
@@ -1882,6 +1916,7 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrSta
                                                                result);
 }
 
+/* 为重命名/模块引用返回局部别名的声明位置；不包含没有别名的裸 import。 */
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrState *state,
                                                                          SZrLspContext *context,
                                                                          SZrString *uri,
@@ -1916,6 +1951,7 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrStat
     return ZR_TRUE;
 }
 
+/* 为模块引用和源文件重命名返回 import 字符串目标的位置，包含裸导入。 */
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState *state,
                                                                         SZrLspContext *context,
                                                                         SZrString *uri,

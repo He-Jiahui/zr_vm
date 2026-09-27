@@ -4,6 +4,8 @@
 
 #include "zr_vm_parser/semantic_query.h"
 
+/* 仅在分析器具备完整语义状态时缓存导出契约；未知状态保留 hasHash=false，
+ * 后续刷新必须保守地重析逆向依赖，不能把缺失哈希当成“无变化”。 */
 void ZrLanguageServer_LspProject_UpdatePublicContractRecord(
         SZrLspProjectFileRecord *record,
         const SZrSemanticAnalyzer *analyzer) {
@@ -31,6 +33,8 @@ void ZrLanguageServer_LspProject_UpdatePublicContractRecord(
     }
 }
 
+/* 在替换当前文档分析结果之前抓取旧导出摘要，作为刷新后是否重析 importer 的比较基线；
+ * moduleName 是 VM 管理的字符串，不由快照持有；分类期间须保持该 VM state 有效。 */
 void ZrLanguageServer_LspProject_CapturePublicContract(
         SZrLspProjectIndex *projectIndex,
         SZrString *uri,
@@ -51,6 +55,8 @@ void ZrLanguageServer_LspProject_CapturePublicContract(
     outSnapshot->hasHash = record->hasPublicContractHash;
 }
 
+/* 模块键、摘要和导出数都一致才保留逆向依赖；其他可比较变化触发重析，
+ * 任一侧语义摘要缺失则返回 unavailable，由刷新路径保守处理。 */
 EZrLspProjectPublicContractChange ZrLanguageServer_LspProject_ClassifyPublicContractChange(
         SZrLspProjectIndex *projectIndex,
         const SZrLspProjectPublicContractSnapshot *previous,

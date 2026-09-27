@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 将项目索引和解析器摘要中的 VM 字符串借用为诊断文本；不可延长到 state 生命周期之外。 */
 static const TZrChar *project_diagnostic_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -17,12 +18,14 @@ static const TZrChar *project_diagnostic_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 区分缺少解析器源范围与合法的文件起点，以选择可显示的诊断回退位置。 */
 static TZrBool project_diagnostic_location_is_empty(SZrFileRange location) {
     return location.start.line == 0 && location.start.column == 0 &&
            location.end.line == 0 && location.end.column == 0 &&
            location.start.offset == 0 && location.end.offset == 0;
 }
 
+/* 诊断发布前补齐 URI 与可显示位置，避免把未知范围发送成协议中的空位置。 */
 static void project_diagnostic_ensure_location_source(SZrFileRange *location, SZrString *uri) {
     if (location == ZR_NULL) {
         return;
@@ -38,11 +41,13 @@ static void project_diagnostic_ensure_location_source(SZrFileRange *location, SZ
     }
 }
 
+/* 当关联信息只知道目标模块时，用模块文件入口提供稳定的跳转点。 */
 static SZrFileRange project_diagnostic_module_entry_location(SZrString *uri) {
     SZrFilePosition start = ZrParser_FilePosition_Create(0, 1, 1);
     return ZrParser_FileRange_Create(start, start, uri);
 }
 
+/* 将解析器/项目错误加入 LSP 诊断集合；可选输出供后续追加 import 路径信息。 */
 static TZrBool project_diagnostic_append_ex(SZrState *state,
                                             SZrArray *result,
                                             SZrFileRange location,
@@ -74,6 +79,7 @@ static TZrBool project_diagnostic_append_ex(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 不需要关联信息的导入错误使用同一分配与归属规则。 */
 static TZrBool project_diagnostic_append(SZrState *state,
                                          SZrArray *result,
                                          SZrFileRange location,
@@ -82,6 +88,7 @@ static TZrBool project_diagnostic_append(SZrState *state,
     return project_diagnostic_append_ex(state, result, location, message, code, ZR_NULL);
 }
 
+/* 把导入边或目标模块纳入已有诊断的关联信息，来源缺失时沿用调用文档。 */
 static TZrBool project_diagnostic_add_related_information(SZrState *state,
                                                           SZrDiagnostic *diagnostic,
                                                           SZrFileRange location,
@@ -95,6 +102,7 @@ static TZrBool project_diagnostic_add_related_information(SZrState *state,
     return ZrLanguageServer_Diagnostic_AddRelatedInformation(state, diagnostic, location, message);
 }
 
+/* 导入链 BFS 用模块键映射到项目文件数组的稳定下标。 */
 static TZrBool project_diagnostic_find_record_index_by_module_name(SZrLspProjectIndex *projectIndex,
                                                                    SZrString *moduleName,
                                                                    TZrSize *outIndex) {
@@ -122,12 +130,14 @@ static TZrBool project_diagnostic_find_record_index_by_module_name(SZrLspProject
     return ZR_FALSE;
 }
 
+/* 从当前诊断文档反查项目模块键，作为导入追踪的起点。 */
 static SZrString *project_diagnostic_find_module_name_for_uri(SZrLspProjectIndex *projectIndex, SZrString *uri) {
     SZrLspProjectFileRecord *record =
         projectIndex != ZR_NULL && uri != ZR_NULL ? ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, uri) : ZR_NULL;
     return record != ZR_NULL ? record->moduleName : ZR_NULL;
 }
 
+/* 追踪边最终汇合到目标模块入口，让编辑器能从错误逐步跳转到终点。 */
 static TZrBool project_diagnostic_append_module_entry_related_information(SZrState *state,
                                                                           SZrDiagnostic *diagnostic,
                                                                           SZrLspProjectIndex *projectIndex,
@@ -156,6 +166,8 @@ static TZrBool project_diagnostic_append_module_entry_related_information(SZrSta
                                                       message);
 }
 
+/* 在已解析项目导入图上找最短可见路径，并把每条 import 边作为关联信息。 */
+/* 不可达或 analyzer 尚未创建时返回成功但不追加信息；调用方不应据此断言不存在导入链。 */
 static TZrBool project_diagnostic_append_import_trace_between_modules(SZrState *state,
                                                                       SZrLspContext *context,
                                                                       SZrLspProjectIndex *projectIndex,
@@ -325,6 +337,7 @@ cleanup:
     return success;
 }
 
+/* 模块初始化摘要与 AST 错误位置按行列匹配，避免 URI 或偏移差异阻断诊断追踪。 */
 static TZrBool project_diagnostic_locations_overlap(SZrFileRange left, SZrFileRange right) {
     if (left.start.line == 0 || right.start.line == 0) {
         return ZR_FALSE;
@@ -336,6 +349,7 @@ static TZrBool project_diagnostic_locations_overlap(SZrFileRange left, SZrFileRa
            left.end.column == right.end.column;
 }
 
+/* 从循环初始化摘要中找触发错误的模块读取效果，用于构造双向导入追踪。 */
 static const SZrFunctionModuleEffect *project_diagnostic_find_effect_for_location(
     const SZrParserModuleInitSummary *summary,
     SZrFileRange location) {
@@ -364,6 +378,7 @@ static const SZrFunctionModuleEffect *project_diagnostic_find_effect_for_locatio
     return ZR_NULL;
 }
 
+/* 元数据提供者可能以不同字段表达导出；任何已解析成员都应阻止“未知导出”误报。 */
 static TZrBool project_diagnostic_resolved_member_exists(const SZrLspResolvedMetadataMember *resolvedMember) {
     return resolvedMember != ZR_NULL &&
            (resolvedMember->memberKind != ZR_LSP_METADATA_MEMBER_NONE ||
@@ -377,6 +392,7 @@ static TZrBool project_diagnostic_resolved_member_exists(const SZrLspResolvedMet
             resolvedMember->resolvedTypeText != ZR_NULL);
 }
 
+/* 仅识别静态 alias.member，动态下标访问不能按固定导出名报错。 */
 static TZrBool project_diagnostic_primary_expression_get_imported_member(SZrAstNode *node,
                                                                          SZrArray *bindings,
                                                                          SZrLspImportedMemberHit *outHit) {
@@ -414,6 +430,7 @@ static TZrBool project_diagnostic_primary_expression_get_imported_member(SZrAstN
     return ZR_TRUE;
 }
 
+/* 静态 import 目标由元数据提供者与项目索引统一判定，无法解析时报告目标字面量。 */
 static TZrBool project_diagnostic_append_unresolved_imports(SZrState *state,
                                                             SZrLspMetadataProvider *provider,
                                                             SZrSemanticAnalyzer *analyzer,
@@ -455,6 +472,8 @@ static TZrBool project_diagnostic_append_unresolved_imports(SZrState *state,
     return ZR_TRUE;
 }
 
+/* AST 身份对应解析器初始化摘要，只有循环初始化错误进入本批诊断。 */
+/* TODO: 通过英文 errorMessage 子串筛选错误类型；核对摘要是否有结构化错误码可替代文本契约。 */
 static const SZrParserModuleInitSummary *project_diagnostic_find_cycle_summary_by_ast(SZrState *state,
                                                                                       const SZrAstNode *ast) {
     const SZrParserModuleInitSummary *summary;
@@ -472,6 +491,7 @@ static const SZrParserModuleInitSummary *project_diagnostic_find_cycle_summary_b
     return summary;
 }
 
+/* 成员访问落在循环导入模块时，按模块键取得初始化错误而非继续报未知导出。 */
 static const SZrParserModuleInitSummary *project_diagnostic_find_cycle_summary_by_module(SZrState *state,
                                                                                          SZrString *moduleName) {
     const SZrParserModuleInitSummary *summary;
@@ -498,6 +518,7 @@ static TZrBool project_diagnostic_append_member_diagnostics_recursive(SZrState *
                                                                       SZrAstNode *node,
                                                                       SZrArray *result);
 
+/* 把成员错误扫描应用到列表 AST，遇到分配/关联信息失败立即停止上报。 */
 static TZrBool project_diagnostic_append_member_diagnostics_in_array(SZrState *state,
                                                                      SZrLspMetadataProvider *provider,
                                                                      SZrSemanticAnalyzer *analyzer,
@@ -526,6 +547,8 @@ static TZrBool project_diagnostic_append_member_diagnostics_in_array(SZrState *s
     return ZR_TRUE;
 }
 
+/* 优先报告循环初始化；其余已解析模块的未知静态成员才标记为导出缺失。 */
+/* 调用方先排除 computed 成员，并传入由当前 AST 的 bindings 提取的 hit。 */
 static TZrBool project_diagnostic_append_missing_imported_member(SZrState *state,
                                                                  SZrLspMetadataProvider *provider,
                                                                  SZrSemanticAnalyzer *analyzer,
@@ -637,6 +660,8 @@ static TZrBool project_diagnostic_append_missing_imported_member(SZrState *state
     return ZR_TRUE;
 }
 
+/* 在当前文档 AST 中扫描 alias.member；绑定表由顶层统一收集以复用模块解析结果。 */
+/* BUG: CollectImportBindings 可进入结构体、类、枚举及接口声明，而这里不递归进入它们；其中的未知成员不会产生诊断。 */
 static TZrBool project_diagnostic_append_member_diagnostics_recursive(SZrState *state,
                                                                       SZrLspMetadataProvider *provider,
                                                                       SZrSemanticAnalyzer *analyzer,
@@ -1252,6 +1277,7 @@ static TZrBool project_diagnostic_append_member_diagnostics_recursive(SZrState *
     return ZR_TRUE;
 }
 
+/* 把解析器级循环初始化摘要作为文档错误发布，并附上进出循环的 import 边。 */
 static TZrBool project_diagnostic_append_cycle_error(SZrState *state,
                                                      SZrLspMetadataProvider *provider,
                                                      SZrSemanticAnalyzer *analyzer,
@@ -1315,6 +1341,7 @@ static TZrBool project_diagnostic_append_cycle_error(SZrState *state,
     return ZR_TRUE;
 }
 
+/* LSP 发布诊断时统一收集目标缺失、成员缺失及初始化循环；结果归发布方释放。 */
 TZrBool ZrLanguageServer_LspProject_CollectImportDiagnostics(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrLspProjectIndex *projectIndex,
