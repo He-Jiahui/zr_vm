@@ -12,8 +12,10 @@ plan_sources:
   - user: 2026-09-17 staged SSA plan execution
 tests:
   - tests/parser/test_ssa_dominator_cfg.c
+  - tests/parser/test_ssa_construction.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-dominator-cfg.md
+  - tests/acceptance/ssa-construction-builder-phi.md
 doc_type: module-detail
 ---
 
@@ -76,7 +78,9 @@ and core ExecIR sources. The separate 01.03 structural verifier still owns
 the broader IR contract; this analysis validates edge symmetry before relying
 on its own cached predecessor information.
 
-An existing uncommitted `ssa_construction` fixture still needs its edge-range
-construction corrected before it can serve as an integration acceptance gate.
-The builder's production edge emission and the full M1 four-backend parity
-remain open; see `tests/acceptance/ssa-dominator-cfg.md` for actual results.
+The `ssa_construction` fixture now exercises a canonical SemanticIR diamond
+through the production builder and checks the join phi against both predecessor
+occurrences. This covers one builder integration path, not all exceptional,
+cleanup, suspend, or loop source paths. The full M1 four-backend parity remains
+open; see `tests/acceptance/ssa-dominator-cfg.md` for the standalone analysis
+and `tests/acceptance/ssa-construction-builder-phi.md` for the builder check.

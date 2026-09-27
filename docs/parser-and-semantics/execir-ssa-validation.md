@@ -13,6 +13,7 @@ implementation_files:
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 tests:
+  - tests/parser/test_ssa_construction.c
   - tests/parser/test_ssa_value_validation.c
   - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_ssa_place_eligibility.c
@@ -23,6 +24,7 @@ tests:
   - tests/acceptance/ssa-value-validation.md
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-place-promotion.md
+  - tests/acceptance/ssa-construction-builder-phi.md
 doc_type: module-detail
 ---
 
@@ -35,6 +37,16 @@ values, then promotes eligible Places with pruned phis and dominator-tree
 renaming. Exceptional-result availability is checked by the core SSA verifier.
 The builder invokes this step after emitting CFG adjacency and computing
 immediate dominators, and before synthesizing memory/effect tokens.
+
+The `ssa_construction` integration fixture feeds a canonical four-block
+SemanticIR diamond into `ZrParser_ExecIr_Build`. Stores to the same eligible
+local in both arms produce one join phi whose incoming values follow the
+predecessor row; the join load becomes a `COPY` from that phi. Replacing the
+load with a constant prunes the unused phi. Removing an arm's reaching store
+instead reports `INVALID_VALUE` at the join and leaves previously published
+builder output intact. These assertions cover normal diamond control flow;
+they do not establish source-level optional, exception, cleanup, suspend, or
+loop parity required by the full 01.02 gate.
 
 Before this check, source-produced canonical Places are assigned separate
 ExecIR address values. Place results are ordinary instruction definitions;
