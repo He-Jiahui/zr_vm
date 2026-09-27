@@ -118,5 +118,6 @@ doc_type: category-index
 | parser 字面量、语法与旧式迁移测试 | [362 项](coverage/tests_parser_syntax_literals_migration.tsv) | 10 个 C 文件独立复核，1,195 个证据锚点有效，源码仅增 37 行注释；GCC 语法检查 10/10 通过。1 个 BUG 行记录未注册 Unity 用例，5 个 TODO 行归于 3 类覆盖疑点；定向构建停在共享 CMake 再生成，未运行测试。 |
 | parser 项目导入、规范键与反射压力测试 | [142 项](coverage/tests_parser_project_reflection_runtime.tsv) | 3 个 C 文件独立复核，356 个证据锚点有效，源码仅改注释；GCC/Clang 语法检查通过。16 个 BUG 行含正常路径原生数组与源树泄漏，另有 7 个 TODO；定向构建停在共享 CMake 再生成，未运行测试。 |
 | parser 类型、函数、泛型与 extern 语法 | [80 项](coverage/zr_vm_parser_syntax_types_functions.tsv) | 5 个 C 文件独立复核，154 个证据锚点有效，源码仅改注释；GCC/Clang 语法检查通过。26 个 BUG 行记录可达清理缺陷与异步函数修饰符问题，另有 19 个 TODO；定向构建停在共享 CMake 再生成，未运行测试。 |
+| parser 错误恢复与 AST 清理测试 | [23 项](coverage/tests_parser_recovery_ownership.tsv) | 1 个 C 文件独立复核，85 个证据锚点有效，源码仅增注释；GCC 语法检查通过。2 个 BUG 行记录装饰器和可变形参 fixture 没有触及声称的路径；未运行运行时测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
