@@ -4,6 +4,7 @@
 
 #include "artifact_schema_internal.h"
 
+/* 将 TypeDef 的类型与构造身份写成固定行；文档校验已核 token 和类型能力。 */
 static void artifact_write_type_def_row(TZrByte *bytes, const SZrArtifactTypeDefRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->token);
     zr_artifact_write_u32(bytes + 4u, row->flags);
@@ -16,6 +17,7 @@ static void artifact_write_type_def_row(TZrByte *bytes, const SZrArtifactTypeDef
     zr_artifact_write_u64(bytes + 40u, 0u);
 }
 
+/* TypeRef 与 TypeSpec 共用身份行格式；签名窗口须由上层与 signature heap 对照。 */
 static void artifact_write_type_identity_row(TZrByte *bytes, const SZrArtifactTypeIdentityRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->token);
     zr_artifact_write_u32(bytes + 4u, row->signatureToken);
@@ -29,6 +31,7 @@ static void artifact_write_type_identity_row(TZrByte *bytes, const SZrArtifactTy
     zr_artifact_write_u64(bytes + 40u, row->layoutHash);
 }
 
+/* 成员的 owner、签名及契约随行持久化；跨表引用由文档/元数据图校验负责。 */
 static void artifact_write_member_row(TZrByte *bytes, const SZrArtifactMemberDefRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->token);
     zr_artifact_write_u32(bytes + 4u, row->ownerTypeToken);
@@ -40,6 +43,7 @@ static void artifact_write_member_row(TZrByte *bytes, const SZrArtifactMemberDef
     zr_artifact_write_u64(bytes + 32u, row->contractHash);
 }
 
+/* 属性把访问器和初始化器身份绑定到 owner；写出前由上层检查成员归属。 */
 static void artifact_write_property_row(TZrByte *bytes, const SZrArtifactPropertyDefRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->token);
     zr_artifact_write_u32(bytes + 4u, row->ownerTypeToken);
@@ -53,6 +57,7 @@ static void artifact_write_property_row(TZrByte *bytes, const SZrArtifactPropert
     zr_artifact_write_u32(bytes + 44u, row->nameStringOffset);
 }
 
+/* 保留 callable 的 receiver、逃逸与 ABI 契约，供后续 canonical consumer 比对。 */
 static void artifact_write_contract_row(TZrByte *bytes, const SZrArtifactContractRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->memberToken);
     zr_artifact_write_u32(bytes + 4u, row->signatureToken);
@@ -65,6 +70,7 @@ static void artifact_write_contract_row(TZrByte *bytes, const SZrArtifactContrac
     zr_artifact_write_u64(bytes + 32u, row->contractHash);
 }
 
+/* 固定布局行承载 GC 扫描和稳定 slot 合同；ownership map 内容另存于 heap。 */
 static void artifact_write_layout_row(TZrByte *bytes, const SZrArtifactLayoutRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->typeToken);
     zr_artifact_write_u32(bytes + 4u, row->version);
@@ -78,6 +84,7 @@ static void artifact_write_layout_row(TZrByte *bytes, const SZrArtifactLayoutRow
     zr_artifact_write_u64(bytes + 40u, row->stableSlotContractHash);
 }
 
+/* 反射保留级别、代数与摘要同列写出，以便加载时由元数据图复算核验。 */
 static void artifact_write_metadata_state_row(
         TZrByte *bytes,
         const SZrArtifactMetadataStateRow *row) {
@@ -95,6 +102,7 @@ static void artifact_write_metadata_state_row(
     zr_artifact_write_u64(bytes + 56u, row->metadataHash);
 }
 
+/* 元数据记录引用独立 blob 载荷；此行只保存其坐标、有效期代数与摘要。 */
 static void artifact_write_metadata_record_row(
         TZrByte *bytes,
         const SZrArtifactMetadataRecordRow *row) {
@@ -109,6 +117,7 @@ static void artifact_write_metadata_record_row(
     zr_artifact_write_u64(bytes + 32u, row->recordHash);
 }
 
+/* 传输声明绑定 provider token/contract hash 与 schema 窗口；TODO: 需确认谁核实体与哈希对应。 */
 static void artifact_write_domain_transfer_row(
         TZrByte *bytes,
         const SZrArtifactDomainTransferRow *row) {
@@ -124,6 +133,7 @@ static void artifact_write_domain_transfer_row(
     zr_artifact_write_u64(bytes + 40u, row->providerContractHash);
 }
 
+/* 调度器政策、需求与传输摘要进入固定行，供二进制 consumer 精确比对。 */
 static void artifact_write_scheduler_contract_row(
         TZrByte *bytes,
         const SZrArtifactSchedulerContractRow *row) {
@@ -139,6 +149,7 @@ static void artifact_write_scheduler_contract_row(
     zr_artifact_write_u64(bytes + 40u, row->schedulerContractHash);
 }
 
+/* 重定位记录将代码坐标与预期目标身份绑定；写端先校验代码节和 token。 */
 static void artifact_write_relocation_row(TZrByte *bytes, const SZrArtifactRelocationRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->codeOffset);
     zr_artifact_write_u32(bytes + 4u, row->kind);
@@ -149,6 +160,8 @@ static void artifact_write_relocation_row(TZrByte *bytes, const SZrArtifactReloc
     zr_artifact_write_u64(bytes + 32u, row->expectedModuleHash);
 }
 
+/* 整文档 writer 已校验节种类、行数据和目标容量；此处分派固定行或原始 byte heap。
+ * 输入 section->data 不得与 writer 的输出 buffer 重叠，写端先清空输出区。 */
 void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionInput *section) {
     TZrUInt32 index;
     TZrUInt32 elementSize = zr_artifact_section_element_size(section->kind);
@@ -215,6 +228,7 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
                                               &((const SZrArtifactRelocationRow *)section->data)[index]);
             break;
         case ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE:
+            /* TODO: 当前依赖上层以同一约束预检每行；若写入路径分离，需传播行编码失败。 */
             for (index = 0u; index < section->elementCount; ++index)
                 ZrCore_Artifact_WriteCallBindingRow(
                         &((const SZrArtifactCallBindingRow *)section->data)[index],
@@ -226,6 +240,9 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
     }
 }
 
+/* 单行 API 的共同入口；正常解码路径从 Read/FindSection 取得已验证的借用节视图。 */
+/* BUG: 公开调用可用错误 kind、空 data 或不足 byteLength 且匹配的步长通过检查；
+ * 随后的读取可能误解码或越界，需按目标行种类和完整字节范围拒绝该输入。 */
 static EZrArtifactStatus artifact_get_row_bytes(const SZrArtifactSectionView *section,
                                                 TZrUInt32 rowIndex,
                                                 TZrUInt32 expectedSize,
@@ -239,10 +256,13 @@ static EZrArtifactStatus artifact_get_row_bytes(const SZrArtifactSectionView *se
                                 rowIndex,
                                 0u);
     }
+    /* BUG: 复用 diagnostic 时成功不清旧状态，可返回 OK 而 diagnostic.status 仍为上次错误。 */
     *outBytes = section->data + (TZrSize)rowIndex * expectedSize;
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 以下单行读取仅在 OK 时发布可用输出；outRow 不得与 section 的编码字节重叠。 */
+/* 从已验证 TypeDef 节投影类型身份；字段合法性仍由整文档和元数据图校验。 */
 EZrArtifactStatus ZrCore_Artifact_ReadTypeDefRow(const SZrArtifactSectionView *section,
                                                  TZrUInt32 rowIndex,
                                                  SZrArtifactTypeDefRow *outRow,
@@ -265,6 +285,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadTypeDefRow(const SZrArtifactSectionView *s
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 为 TypeRef/TypeSpec consumer 还原签名窗口与布局身份，不复制 signature heap 字节。 */
 EZrArtifactStatus ZrCore_Artifact_ReadTypeIdentityRow(const SZrArtifactSectionView *section,
                                                       TZrUInt32 rowIndex,
                                                       SZrArtifactTypeIdentityRow *outRow,
@@ -289,6 +310,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadTypeIdentityRow(const SZrArtifactSectionVi
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 供成员引用与反射图读取 owner、名称及 callable 身份；不在单行阶段解析引用。 */
 EZrArtifactStatus ZrCore_Artifact_ReadMemberDefRow(const SZrArtifactSectionView *section,
                                                    TZrUInt32 rowIndex,
                                                    SZrArtifactMemberDefRow *outRow,
@@ -311,6 +333,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMemberDefRow(const SZrArtifactSectionView 
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 将属性访问器和名称坐标交给元数据图；owner/访问器关联在上层复核。 */
 EZrArtifactStatus ZrCore_Artifact_ReadPropertyDefRow(const SZrArtifactSectionView *section,
                                                      TZrUInt32 rowIndex,
                                                      SZrArtifactPropertyDefRow *outRow,
@@ -336,6 +359,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadPropertyDefRow(const SZrArtifactSectionVie
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 恢复 callable 的 receiver/ref 逃逸与 ABI 字段，供解码校验及 canonical consumer 复核。 */
 EZrArtifactStatus ZrCore_Artifact_ReadContractRow(const SZrArtifactSectionView *section,
                                                   TZrUInt32 rowIndex,
                                                   SZrArtifactContractRow *outRow,
@@ -360,6 +384,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadContractRow(const SZrArtifactSectionView *
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 恢复 GC/ownership 布局标识；独立 map 载荷和 type 关联仍需上层验证。 */
 EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(const SZrArtifactSectionView *section,
                                                 TZrUInt32 rowIndex,
                                                 SZrArtifactLayoutRow *outRow,
@@ -385,6 +410,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(const SZrArtifactSectionView *se
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 反射加载路径取得保留级别、generation 和摘要；图校验再核关联与哈希。 */
 EZrArtifactStatus ZrCore_Artifact_ReadMetadataStateRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
@@ -422,6 +448,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMetadataStateRow(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 读取指向 metadata blob 的记录坐标；不复制或拥有 blob 载荷。 */
 EZrArtifactStatus ZrCore_Artifact_ReadMetadataRecordRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
@@ -456,6 +483,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMetadataRecordRow(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 供二进制消费方恢复 provider 与 schema 合同；签名窗口由整文档先检查。 */
 EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
@@ -494,6 +522,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 调度器 consumer 依据此行核政策、ABI 和哈希；单行 API 仅投影字段。 */
 EZrArtifactStatus ZrCore_Artifact_ReadSchedulerContractRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
@@ -529,6 +558,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadSchedulerContractRow(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 将 code offset 与预期目标身份交给重定位校验；代码偏移范围由整文档先核。 */
 EZrArtifactStatus ZrCore_Artifact_ReadRelocationRow(const SZrArtifactSectionView *section,
                                                     TZrUInt32 rowIndex,
                                                     SZrArtifactRelocationRow *outRow,
