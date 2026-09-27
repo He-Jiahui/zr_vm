@@ -1,11 +1,13 @@
 const { spawnSync } = require('child_process');
 
+// 断言每个跨 JSON-RPC 边界的回归契约；首个失配即终止此单进程 smoke。
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+// 以 LSP Content-Length 帧发送 UTF-8 JSON，确保测试经过真实 stdio 协议解码而非直接调用 C 接口。
 function createMessage(payload) {
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
     return Buffer.concat([
@@ -14,6 +16,11 @@ function createMessage(payload) {
     ]);
 }
 
+// 从服务端 stdout 还原通知与请求响应，供后续按 URI、版本和诊断码验证序列化结果。
+// BUG: LSP Content-Length 是 UTF-8 字节数，但此处对已解码 stdout 字符串切片；
+// 用含“诊”的首帧接第二帧可复现 JSON.parse 错帧，新增非 ASCII 诊断时 smoke 会误失败。
+// TODO: 尾部若缺完整帧头会直接退出；后续应校验已消费完整 stdout，并覆盖截断帧。
+// 服务端退出状态先由调用方检查；修正时先按 Buffer 字节边界切帧再解码正文。
 function parseMessages(output) {
     const messages = [];
     let offset = 0;
@@ -38,9 +45,11 @@ function parseMessages(output) {
     return messages;
 }
 
+// CTest 提供当前构建出的 stdio 服务端路径；所有用例在同一进程内观察诊断发布与后续清除。
 const serverPath = process.argv[2];
 assert(serverPath, 'Expected stdio server executable path');
 
+// 各场景使用独立 URI，避免同一增量解析缓存或旧版本通知污染另一项修复断言。
 const documentUri = 'file:///zr-diagnostic-fix-smoke.zr';
 const semicolonDocumentUri = 'file:///zr-diagnostic-semicolon-fix-smoke.zr';
 const conditionDocumentUri = 'file:///zr-diagnostic-condition-close-fix-smoke.zr';
@@ -74,6 +83,7 @@ const methodCallMismatchDocumentUri =
     'file:///zr-diagnostic-method-call-mismatch-smoke.zr';
 const invalidCallableDecoratorDocumentUri =
     'file:///zr-diagnostic-invalid-callable-decorator-smoke.zr';
+// 未初始化读取检验语义诊断描述符、帮助链接及需人工填值的占位修复能完整穿过 stdio。
 const documentText = [
     'fn choose(flag: bool): int {',
     '    var seed: int;',
@@ -84,6 +94,8 @@ const documentText = [
     '}',
     '',
 ].join('\n');
+// 部分缺标点样例配对 didOpen/didChange：第 2 版用预置修复后文本验证诊断消失；
+// 无确定编辑的阴性样例仅检查第 1 版未提供自动修复。
 const semicolonDocumentText = 'var answer = 42';
 const conditionDocumentText = 'if (ready { return 1; }\n';
 const indexDocumentText = 'return value[0;\n';
@@ -105,6 +117,7 @@ const conditionalAlternateDocumentText = 'return true ? 1 : ;';
 const conditionalWithoutAlternateDocumentText = 'return true ? 1;';
 const arrayElementSeparatorDocumentText = 'return [1 2];';
 const arrayElementAssignmentDocumentText = 'return [value = 1];';
+// 类型失配核对关联位置与占位修复；无效装饰器核对“需用户决定”的无自动修复处置。
 const functionCallMismatchDocumentText = [
     'fn pick(value: int): int { return value; }',
     'fn main(): int {',
@@ -131,6 +144,8 @@ const invalidCallableDecoratorDocumentText = [
     '',
 ].join('\n');
 
+// 每次文档通知后穿插 documentSymbol 请求，让服务端按同一会话顺序处理文档和后续请求；
+// 最后按 shutdown/exit 握手关闭，使退出码也进入协议回归断言。
 const payload = Buffer.concat([
     createMessage({
         jsonrpc: '2.0',
@@ -710,6 +725,7 @@ const payload = Buffer.concat([
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
+// 一次性输入保持消息顺序，测试真实启动、增量更新和干净退出，不依赖共享磁盘 fixture。
 const result = spawnSync(serverPath, [], {
     input: payload,
     encoding: 'utf8',
@@ -720,7 +736,9 @@ const result = spawnSync(serverPath, [], {
 assert(result.status === 0,
     `Expected stdio server to exit cleanly, got status=${result.status} signal=${result.signal}`);
 
+// 响应顺序可与通知交错；以下断言以 URI、版本和诊断码定位目标发布。
 const messages = parseMessages(result.stdout);
+// 语义诊断保留注册表身份、帮助文档和占位修复的精确范围，供编辑器安全呈现代码操作。
 const publication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -754,6 +772,7 @@ assert(fix.edit.range.start.line === 5 && fix.edit.range.start.character === 11 
     fix.edit.range.end.line === 5 && fix.edit.range.end.character === 15,
     'Expected serialized fix range for seed read');
 
+// EOF 分号修复必须是零宽插入；预置修复后文本的第 2 版不能沿用第 1 版的错误诊断。
 const semicolonPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -795,6 +814,7 @@ assert(fixedSemicolonPublication &&
         entry.code === 'missing_statement_semicolon'),
     'Expected the applied semicolon fix to clear the diagnostic');
 
+// 条件右括号应插在块开始前，避免将修复放到 if 条件内部或行末。
 const conditionPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -836,6 +856,7 @@ assert(fixedConditionPublication &&
         entry.code === 'missing_condition_close'),
     'Expected the applied condition-close fix to clear the diagnostic');
 
+// 下标右括号位于语句终止符前；版本更新同时验证诊断清除。
 const indexPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -877,6 +898,7 @@ assert(fixedIndexPublication &&
         entry.code === 'missing_index_close'),
     'Expected the applied index-close fix to clear the diagnostic');
 
+// 形参列表右括号应在返回类型冒号之前，区分函数声明恢复与表达式恢复。
 const parameterListPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -918,6 +940,7 @@ assert(fixedParameterListPublication &&
         entry.code === 'missing_parameter_list_close'),
     'Expected the applied parameter-list-close fix to clear the diagnostic');
 
+// 调用表达式同时检查主诊断定位开括号、修复定位结束标记，两种范围不能混用。
 const callPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -964,6 +987,7 @@ assert(fixedCallPublication &&
         entry.code === 'missing_call_close'),
     'Expected the applied call-close fix to clear the diagnostic');
 
+// 分组表达式与调用共享右括号字符，但须归属不同诊断码和原始开括号。
 const groupPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1010,6 +1034,7 @@ assert(fixedGroupPublication &&
         entry.code === 'missing_group_close'),
     'Expected the applied group-close fix to clear the diagnostic');
 
+// 数组在 EOF 缺少右方括号时可在末尾安全插入，并由下一版本验证诊断失效。
 const arrayPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1056,6 +1081,7 @@ assert(fixedArrayPublication &&
         entry.code === 'missing_array_close'),
     'Expected the applied array-close fix to clear the diagnostic');
 
+// 对象在 EOF 缺少右花括号时使用同样的增量修复链，保持对象专属诊断身份。
 const objectPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1102,6 +1128,7 @@ assert(fixedObjectPublication &&
         entry.code === 'missing_object_close'),
     'Expected the applied object-close fix to clear the diagnostic');
 
+// 计算属性键的右方括号位于冒号之前；主范围仍需指向原开括号以便定位问题。
 const objectComputedKeyPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1149,6 +1176,7 @@ assert(fixedObjectComputedKeyPublication &&
         entry.code === 'missing_object_computed_key_close'),
     'Expected the applied computed-key close fix to clear the diagnostic');
 
+// 属性名与值之间缺失冒号时，修复只插入标点而不替换值 token。
 const objectPropertyColonPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1196,6 +1224,7 @@ assert(fixedObjectPropertyColonPublication &&
         entry.code === 'missing_object_property_colon'),
     'Expected the applied property-colon fix to clear the diagnostic');
 
+// 相邻对象属性缺逗号时，编辑锚在后一个键之前，避免触及前一属性的值。
 const objectPropertySeparatorPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1244,6 +1273,7 @@ assert(fixedObjectPropertySeparatorPublication &&
         entry.code === 'missing_object_property_separator'),
     'Expected the applied property-separator fix to clear the diagnostic');
 
+// 三元表达式的缺失冒号有确定插入点；下方无分支表达式的案例则不得提供盲目标点修复。
 const conditionalColonPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1291,6 +1321,7 @@ assert(fixedConditionalColonPublication &&
         entry.code === 'missing_conditional_colon'),
     'Expected the applied conditional-colon fix to clear the diagnostic');
 
+// 缺少 consequent/alternate 的三元表达式需要用户决定表达式内容，不发布可直接应用的修复。
 for (const [uri, code] of [
     [conditionalConsequentDocumentUri, 'missing_conditional_consequent'],
     [conditionalAlternateDocumentUri, 'missing_conditional_alternate'],
@@ -1312,6 +1343,7 @@ for (const [uri, code] of [
         `Expected ${code} to publish no machine-applicable punctuation fix`);
 }
 
+// 两个数组元素之间的缺失逗号可在后一元素前插入；第 2 版验证该错误被清除。
 const arrayElementSeparatorPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1360,6 +1392,7 @@ assert(fixedArrayElementSeparatorPublication &&
         entry.code === 'missing_array_element_separator'),
     'Expected the applied array-element-separator fix to clear the diagnostic');
 
+// 数组元素中的赋值属于语义选择，必须保留 noFixReason 而不是猜测自动编辑。
 const arrayElementAssignmentPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1385,6 +1418,7 @@ assert(arrayElementAssignmentDiagnostic.codeDescription &&
         'https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md',
     'Expected array_element_assignment to publish its registered code description');
 
+// 普通函数实参类型失配应只产生一条规范诊断，并指向实参与参数类型的两端。
 const functionCallMismatchPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1422,6 +1456,7 @@ assert(functionCallMismatchFix.applicability === 2 &&
     functionCallMismatchFix.edit.newText === '<int> <expression>',
     'Expected the typed placeholder fix from the parser diagnostic fact');
 
+// 方法调用沿相同事实投影链，另验证描述符身份与占位类型修复未在 stdio 层丢失。
 const methodCallMismatchPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
@@ -1460,6 +1495,7 @@ assert(methodCallMismatchFix.applicability === 2 &&
     methodCallMismatchFix.edit.newText === '<int> <expression>',
     'Expected the method-call typed placeholder from the parser query fact');
 
+// FFI 调用约定装饰器参数无效时，保留精确装饰器范围和“需用户决定”的无修复处置。
 const invalidCallableDecoratorPublication = messages.find((message) =>
     message.method === 'textDocument/publishDiagnostics' &&
     message.params &&
