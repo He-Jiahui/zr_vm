@@ -857,6 +857,7 @@ static void test_repeated_throw_try_finally_dispatches_pending_state(void) {
 }
 
 #include "test_ssa_source_cleanup_cfg_exceptional.inc"
+#include "test_ssa_source_cleanup_cfg_interrupted_assignment.inc"
 #include "test_ssa_source_cleanup_cfg_loop.inc"
 
 int main(void) {
@@ -874,6 +875,8 @@ int main(void) {
     RUN_TEST(test_conditional_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_repeated_throw_try_finally_dispatches_pending_state);
     RUN_TEST(test_invoke_try_finally_rethrows_exception_after_cleanup);
+    RUN_TEST(test_invoke_assignment_finally_reads_preinvoke_value);
+    RUN_TEST(test_compound_invoke_assignment_finally_keeps_legacy_cfg);
     RUN_TEST(test_invoke_argument_is_captured_before_exception_cleanup);
     RUN_TEST(test_literal_argument_is_captured_before_exception_cleanup);
     RUN_TEST(test_two_arguments_are_captured_before_exception_cleanup);

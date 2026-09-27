@@ -15,7 +15,8 @@ accepted by the SemanticIR-to-ExecIR builder.
   control. Each call may take no arguments or up to three exact,
   ownership/reference/GC-neutral integer, `bool`, or `float` identifiers or
   literals by value; integer arguments must match the resolved parameter type
-  exactly.
+  exactly. A direct call may also be the right side of a plain `=` assignment
+  to a previously initialized local.
   When directly nested in a supported `while`,
   linear statement-form `for`, or statically typed `foreach`, it may instead
   contain one or more operand-free `break` sites or one or more operand-free
@@ -47,6 +48,11 @@ accepted by the SemanticIR-to-ExecIR builder.
   `throw` sites may share that path when every explicit payload is an exact
   non-null, ownership-neutral `object`; the explicit payloads and exceptional
   payload then use the same pending `THROW` completion.
+- When a protected call is assigned to a local, its normal continuation stores
+  the result before branching to cleanup. The exceptional landing block is
+  emitted only after that normal block is closed; its cleanup entry still sees
+  the pre-invoke definition. A `finally` read merges those two definitions in
+  one value phi and never reads the incomplete invoke result.
 - For the loop-transfer shape, the pending destination is the existing loop
   join for `break`, the `while` condition block for a `while` `continue`, the
   `for` step block for a `for` `continue`, or the foreach move-next block for a
@@ -62,6 +68,9 @@ its focused exceptional-call cases live in
 `tests/parser/test_ssa_source_cleanup_cfg_exceptional.inc` so the shared test
 harness and individual case family remain bounded. Focused loop-completion
 cases live in `tests/parser/test_ssa_source_cleanup_cfg_loop.inc`.
+`tests/parser/test_ssa_source_cleanup_cfg_interrupted_assignment.inc` checks
+the two cleanup predecessors and the exact pre-invoke/normal-result phi. It
+also checks that compound assignment retains complete legacy fallback.
 The terminal `break` through `finally` and protected `INVOKE` rethrow cases
 also assert that the resulting ExecIR passes the effect verifier. They cover
 the interaction between private cleanup Place promotion and surviving heap
@@ -72,7 +81,8 @@ memory operations on loop and exceptional edges.
 The same test keeps nonlinear return/throw payloads, mixed return/throw sites,
 and a combined catch-plus-finally statement on the legacy path. Converting,
 non-value, multiple, or conditional arguments, dynamic or unresolved calls,
-declarations, nested nonlinear control flow, ownership cleanup, and mixed
+declarations, compound call assignment, nested nonlinear control flow,
+ownership cleanup, and mixed
 explicit/exceptional completion other than all-exact `object` throws are also
 outside this slice. Integer or otherwise incompatible explicit throws and
 other mixed completion kinds must not publish a partial cleanup graph or
@@ -121,3 +131,28 @@ resulting effect graph before publishing the candidate.
   were not rebuilt as part of this slice).
 - WSL Clang: rebuilt the same four targets and passed 4/4.
 - Windows MSVC: rebuilt the same four targets and passed 4/4.
+
+## Interrupted assignment (2026-09-27)
+
+`test_invoke_assignment_finally_reads_preinvoke_value` started RED because
+the protected `result = identity()` failed finally preflight (1/51). After
+reusing the catch assignment shape, its first builder run rejected an unowned
+normal-path `STORE` (`INVALID_RANGE`, source instruction 21, 39 instructions
+versus 38 claimed). Closing the normal block before emitting the exceptional
+landing block keeps every source instruction owned and prevents the unfinished
+invoke result from reaching the cleanup entry. The cleanup read now consumes
+a two-incoming phi: its exceptional edge supplies the pre-invoke
+initialization and its normal edge supplies the completed call result.
+`test_compound_invoke_assignment_finally_keeps_legacy_cfg` confirms that a
+compound assignment still rejects the entire source cleanup graph.
+
+- WSL GCC 11.4 and Clang 14: source cleanup suites pass 52/52 each; pre-
+  semantic source suites pass 108/108 each. Cleanup, construction, effect
+  verifier, and Place promotion CTest selection passes 4/4 per compiler.
+- Windows MSVC 19.44 Debug: shared parser and source cleanup target rebuild;
+  the same four CTest targets pass 4/4. The separate pre-semantic source target
+  remains unavailable due four existing unexported compiler-internal symbols.
+- Wiki validation passes for 116 pages, 115 manifest pages, and 646 local
+  links. No runtime exception payload or executable backend subtype semantics
+  are claimed by this source-level fixture. The available ASan cache has no
+  built source-cleanup target; this slice has no sanitizer execution result.

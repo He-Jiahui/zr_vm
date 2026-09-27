@@ -47,13 +47,16 @@ typedef struct SZrCompilerSemanticFinallyFlowInfo {
     const SZrAstNode *completionExpression;
 } SZrCompilerSemanticFinallyFlowInfo;
 
-static TZrBool compiler_semantic_cfg_finally_is_supported_direct_call(
-        const SZrAstNode *node) {
+static const SZrAstNode *compiler_semantic_cfg_finally_supported_call(
+        SZrCompilerState *cs, const SZrAstNode *node) {
     const SZrAstNode *callNode =
             compiler_semantic_cfg_supported_direct_call(node);
-
-    return (TZrBool)(callNode != ZR_NULL &&
-                    callNode->type == ZR_AST_FUNCTION_CALL);
+    if (callNode != ZR_NULL && callNode->type == ZR_AST_FUNCTION_CALL) {
+        return node;
+    }
+    callNode = compiler_semantic_cfg_supported_local_assignment_call(cs, node);
+    return callNode != ZR_NULL && callNode->type == ZR_AST_FUNCTION_CALL
+            ? node->data.assignmentExpression.right : ZR_NULL;
 }
 
 static TZrBool compiler_semantic_cfg_finally_call_is_resolved(
@@ -86,11 +89,12 @@ static TZrBool compiler_semantic_cfg_finally_calls_are_resolved(
         return ZR_TRUE;
     }
     if (node->type == ZR_AST_EXPRESSION_STATEMENT) {
+        const SZrAstNode *expression = node->data.expressionStatement.expr;
+        const SZrAstNode *call =
+                compiler_semantic_cfg_finally_supported_call(cs, expression);
         return (TZrBool)(
-                !compiler_semantic_cfg_finally_is_supported_direct_call(
-                        node->data.expressionStatement.expr) ||
-                compiler_semantic_cfg_finally_call_is_resolved(
-                        cs, node->data.expressionStatement.expr));
+                call == ZR_NULL ||
+                compiler_semantic_cfg_finally_call_is_resolved(cs, call));
     }
     if (node->type == ZR_AST_BLOCK) {
         if (node->data.block.body == ZR_NULL) {
@@ -168,6 +172,7 @@ static TZrBool compiler_semantic_cfg_finally_throw_payloads_are_objects(
 }
 
 static TZrBool compiler_semantic_cfg_finally_protected_flow(
+        SZrCompilerState *cs,
         const SZrAstNode *node,
         SZrCompilerSemanticFinallyFlowInfo *outInfo) {
     SZrCompilerSemanticFinallyFlowInfo info;
@@ -198,7 +203,7 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
                 if ((info.flow &
                      ZR_COMPILER_SEMANTIC_FINALLY_FLOW_FALLTHROUGH) == 0U ||
                     !compiler_semantic_cfg_finally_protected_flow(
-                            statement, &statementInfo)) {
+                            cs, statement, &statementInfo)) {
                     return ZR_FALSE;
                 }
                 info.flow =
@@ -215,8 +220,8 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
             }
         }
     } else if (node->type == ZR_AST_EXPRESSION_STATEMENT) {
-        if (compiler_semantic_cfg_finally_is_supported_direct_call(
-                    node->data.expressionStatement.expr)) {
+        if (compiler_semantic_cfg_finally_supported_call(
+                    cs, node->data.expressionStatement.expr) != ZR_NULL) {
             info.exceptionalSiteCount = 1U;
         } else if (!compiler_semantic_cfg_expression_is_linear(
                            node->data.expressionStatement.expr)) {
@@ -231,9 +236,9 @@ static TZrBool compiler_semantic_cfg_finally_protected_flow(
             !compiler_semantic_cfg_expression_is_linear(
                     node->data.ifExpression.condition) ||
             !compiler_semantic_cfg_finally_protected_flow(
-                    node->data.ifExpression.thenExpr, &thenInfo) ||
+                    cs, node->data.ifExpression.thenExpr, &thenInfo) ||
             !compiler_semantic_cfg_finally_protected_flow(
-                    node->data.ifExpression.elseExpr, &elseInfo)) {
+                    cs, node->data.ifExpression.elseExpr, &elseInfo)) {
             return ZR_FALSE;
         }
         info.flow = thenInfo.flow | elseInfo.flow;
@@ -376,7 +381,7 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
             (statement->catchClauses == ZR_NULL ||
              statement->catchClauses->count == 0U) &&
             compiler_semantic_cfg_finally_protected_flow(
-                    statement->block, &flowInfo) &&
+                    cs, statement->block, &flowInfo) &&
             compiler_semantic_cfg_finally_loop_target_is_supported(
                     cs, flowInfo.flow) &&
             (flowInfo.exceptionalSiteCount == 0U ||
@@ -593,7 +598,7 @@ TZrBool compiler_semantic_cfg_begin_try_finally(
     plan->completionSelectorSlot = ZR_PARSER_SLOT_NONE;
     plan->completionPayloadSlot = ZR_PARSER_SLOT_NONE;
     if (!compiler_semantic_cfg_finally_protected_flow(
-                node->data.tryCatchFinallyStatement.block,
+                cs, node->data.tryCatchFinallyStatement.block,
                 &flowInfo)) {
         return ZR_FALSE;
     }
@@ -875,14 +880,9 @@ TZrBool compiler_semantic_cfg_enter_try_finally_cleanup(
             compiler_semantic_cfg_finally_fail(cs, plan);
             return ZR_TRUE;
         }
-        if (!compiler_semantic_cfg_finally_capture_exception(
-                    cs, node, plan)) {
-            compiler_semantic_cfg_finally_fail(cs, plan);
-            return ZR_FALSE;
-        }
     }
     if (plan->completionOpcode != ZR_SEMANTIC_IR_INVALID
-                 ? (!plan->completionPending ||
+                 ? ((!plan->completionPending && !plan->hasExceptionalEntry) ||
                     (plan->hasFallthrough
                              ? (cs->preSemanticIrCfgBlock ==
                                         ZR_PARSER_CFG_INVALID_BLOCK_ID ||
@@ -898,6 +898,11 @@ TZrBool compiler_semantic_cfg_enter_try_finally_cleanup(
                              cs, plan->cleanupBlock,
                              ZR_PARSER_CFG_EDGE_CLEANUP,
                              node, node->location))) {
+        compiler_semantic_cfg_finally_fail(cs, plan);
+        return ZR_FALSE;
+    }
+    if (plan->hasExceptionalEntry &&
+        !compiler_semantic_cfg_finally_capture_exception(cs, node, plan)) {
         compiler_semantic_cfg_finally_fail(cs, plan);
         return ZR_FALSE;
     }

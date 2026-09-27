@@ -90,6 +90,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_catch_assignment.inc
+  - tests/parser/test_ssa_source_cleanup_cfg_interrupted_assignment.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
@@ -487,6 +488,15 @@ machinery authoritative until general catch-body control/effect flow, general
 argument effects, arbitrary handled-throw routing, and cleanup edges are
 modeled. TYPE_TEST-bearing graphs
 also remain non-executable until backend subtype projection is implemented.
+
+A bounded no-catch `try/finally` also routes resolved direct calls through one
+exception landing and a shared cleanup block. When the call is the right side
+of a plain assignment to an initialized local, its normal block must store
+the completed result and branch to cleanup before the exception landing is
+emitted. The exceptional entry retains the pre-invoke local definition, and a
+read in `finally` joins that value with the normal call result through a phi.
+Compound assignment, catch-plus-finally, and unmodeled effects remain on the
+whole-scope legacy path.
 
 An explicit `throw` outside that boundary now consumes its source expression's
 canonical ValueId and terminates the source-owned graph directly. The compiler

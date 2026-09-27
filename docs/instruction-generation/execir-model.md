@@ -88,6 +88,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_assignment.inc
+  - tests/parser/test_ssa_source_cleanup_cfg_interrupted_assignment.inc
   - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
@@ -328,7 +329,11 @@ integer literal passed by value. The argument ValueId is captured before `INVOKE
 retains `false`, while its direct
 exception landing block defines `EXCEPTION_PAYLOAD`, stores that payload plus
 `true`, and enters the shared cleanup without reading the interrupted call
-result. After the `finally` body, cleanup loads the selector and emits an
+result. A plain assignment of that call to an initialized local closes the
+normal continuation before emitting the exceptional landing block, keeping
+the completed store out of the exceptional path. A `finally` read of that
+Place uses a phi of the pre-invoke and completed-call definitions. After the
+`finally` body, cleanup loads the selector and emits an
 ordered `CLEANUP_DISPATCH`: `SWITCH_CASE` reaches the abrupt block, whose
 operand is reloaded from the private payload Place and rethrown, while final
 `SWITCH_DEFAULT` reaches the normal join. This preserves source evaluation

@@ -367,7 +367,7 @@ const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
     return callNode;
 }
 
-static const SZrAstNode *compiler_semantic_cfg_supported_local_assignment_call(
+const SZrAstNode *compiler_semantic_cfg_supported_local_assignment_call(
         SZrCompilerState *cs, const SZrAstNode *expression) {
     const SZrAstNode *left;
 

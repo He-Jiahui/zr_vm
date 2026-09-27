@@ -328,6 +328,8 @@ TZrBool compiler_semantic_cfg_try_catch_handler_terminates(
         TZrSize catchIndex);
 const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
         const SZrAstNode *node);
+const SZrAstNode *compiler_semantic_cfg_supported_local_assignment_call(
+        SZrCompilerState *cs, const SZrAstNode *expression);
 TZrBool compiler_semantic_cfg_emit_exception_payload(
         SZrCompilerState *cs,
         SZrFileRange sourceRange,
